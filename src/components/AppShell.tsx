@@ -1,8 +1,13 @@
 import { Link } from "@tanstack/react-router";
-import { Moon, Sun, TriangleAlert } from "lucide-react";
+import { Info, Moon, Sun, TriangleAlert } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
-import { DATA_PROVIDER } from "@/lib/engine/mockProvider";
+export interface AppShellSource {
+  isLive: boolean;
+  provider: string;
+  notes: string[];
+  fallbackReason: string | null;
+}
 
 const NAV = [
   { to: "/", label: "대시보드" },
