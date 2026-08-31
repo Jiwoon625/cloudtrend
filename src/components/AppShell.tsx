@@ -1,6 +1,9 @@
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Info, Moon, Sun, TriangleAlert } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+
+import { analysisQueryOptions } from "@/lib/analysisQuery";
 
 export interface AppShellSource {
   isLive: boolean;
@@ -42,7 +45,18 @@ export function AppShell({
   children: ReactNode;
   source?: AppShellSource;
 }) {
-  const live = source?.isLive ?? false;
+  const { data } = useQuery({ ...analysisQueryOptions, enabled: !source });
+  const resolved: AppShellSource | undefined =
+    source ??
+    (data
+      ? {
+          isLive: data.analysis.isLive,
+          provider: data.analysis.dataProvider,
+          notes: data.analysis.notes,
+          fallbackReason: data.source.fallbackReason,
+        }
+      : undefined);
+  const live = resolved?.isLive ?? false;
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-40 border-b border-border bg-surface/95 backdrop-blur">
@@ -79,8 +93,8 @@ export function AppShell({
           )}
           <span>
             {live
-              ? `실데이터 모드 (${source?.provider ?? "-"}) — 일봉 기준 계산이며 투자 판단 및 자동 주문 기능은 제공하지 않습니다.`
-              : `합성 데이터 모드 (${source?.provider ?? "mock"}) — 화면 검증용 mock 데이터이며 실제 시세·재무가 아닙니다.${source?.fallbackReason ? ` 폴백 사유: ${source.fallbackReason}` : ""}`}
+              ? `실데이터 모드 (${resolved?.provider ?? "-"}) — 일봉 기준 계산이며 투자 판단 및 자동 주문 기능은 제공하지 않습니다.`
+              : `합성 데이터 모드 (${resolved?.provider ?? "mock"}) — 화면 검증용 mock 데이터이며 실제 시세·재무가 아닙니다.${resolved?.fallbackReason ? ` 폴백 사유: ${resolved.fallbackReason}` : ""}`}
           </span>
         </div>
       </header>
