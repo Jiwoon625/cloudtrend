@@ -156,7 +156,7 @@ export function ScreenerView({ mode }: { mode: Mode }) {
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="예: 샘플전자 / 005930"
+            placeholder="예: 삼성전자 / 005930"
             className="h-8 text-[12px]"
           />
         </div>

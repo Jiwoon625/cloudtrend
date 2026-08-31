@@ -4,7 +4,6 @@
 import { createServerFn } from "@tanstack/react-start";
 
 import type { MarketDataset } from "@/lib/engine/dataset";
-import { getMockDataset } from "@/lib/engine/mockProvider";
 import {
   chartSeries,
   runAnalysis,
@@ -24,36 +23,18 @@ export interface DataSourceStatus {
 
 async function loadDataset(): Promise<{ dataset: MarketDataset; status: DataSourceStatus }> {
   const { buildTossDataset, hasTossCredentials } = await import("@/lib/engine/toss.server");
-  const configured = hasTossCredentials();
-  if (!configured) {
-    return {
-      dataset: getMockDataset(),
-      status: {
-        live: false,
-        credentialsConfigured: false,
-        fallbackReason:
-          "토스증권 Open API 키(TOSS_CLIENT_ID / TOSS_CLIENT_SECRET)가 등록되지 않아 합성 데이터를 사용합니다.",
-      },
-    };
+  if (!hasTossCredentials()) {
+    throw new Error(
+      "토스증권 Open API 키(TOSS_CLIENT_ID / TOSS_CLIENT_SECRET)가 등록되지 않았습니다. 실데이터만 사용하도록 설정되어 있어 화면을 그릴 수 없습니다.",
+    );
   }
-  try {
-    const dataset = await buildTossDataset();
-    return {
-      dataset,
-      status: { live: true, credentialsConfigured: true, fallbackReason: null },
-    };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      dataset: getMockDataset(),
-      status: {
-        live: false,
-        credentialsConfigured: true,
-        fallbackReason: `토스증권 API 조회 실패로 합성 데이터로 대체했습니다: ${message}`,
-      },
-    };
-  }
+  const dataset = await buildTossDataset();
+  return {
+    dataset,
+    status: { live: true, credentialsConfigured: true, fallbackReason: null },
+  };
 }
+
 
 export interface AnalysisPayload {
   analysis: AnalysisResult;
