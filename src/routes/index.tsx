@@ -67,7 +67,9 @@ function KeyValue({ label, value, hint }: { label: string; value: React.ReactNod
 
 function Dashboard() {
   const { data } = useSuspenseQuery(analysisQueryOptions);
+  const { data: ip } = useSuspenseQuery(ipQueryOptions);
   const analysis = data.analysis;
+
   const { marketGate: gate, rows, sectors } = analysis;
 
   const passed = rows.filter((r) => r.hardFilterPassed);
