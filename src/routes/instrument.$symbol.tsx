@@ -165,7 +165,10 @@ function InstrumentDetail() {
         <Stat label="종합점수" value={formatNumber(row.totalScoreNormalized, 1)} />
         <Stat label="기술등급" value={<GradeBadge grade={row.grade} />} />
         <Stat label="상태 라벨" value={row.actionLabelText} />
-        <Stat label="시가총액" value={formatWon(row.marketCap)} />
+        <Stat
+          label="시가총액"
+          value={row.marketCap === null ? "데이터 없음" : formatWon(row.marketCap)}
+        />
         <Stat label="52주 고점 거리" value={<Delta value={snap.distanceFrom52wHigh} />} />
       </div>
 

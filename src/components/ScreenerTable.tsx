@@ -82,7 +82,7 @@ function sortValue(row: ScreeningRow, key: SortKey): number {
     case "distanceHigh":
       return row.snapshot.distanceFrom52wHigh ?? -999;
     case "marketCap":
-      return row.marketCap;
+      return row.marketCap ?? -1;
     case "close":
       return row.snapshot.close;
   }
@@ -121,7 +121,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
         r.snapshot.volumeRatio20?.toFixed(1) ?? "",
         r.rs20?.toFixed(2) ?? "",
         r.snapshot.distanceFrom52wHigh?.toFixed(2) ?? "",
-        r.marketCap,
+        r.marketCap ?? "",
         r.actionLabelText,
         r.warnings.join("|"),
       ]
@@ -267,7 +267,15 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
                     <Delta value={r.snapshot.distanceFrom52wHigh} digits={1} />
                   </span>
                 ),
-                marketCap: <span className="num">{formatWon(r.marketCap)}</span>,
+                marketCap: (
+                  <span className="num">
+                    {r.marketCap === null ? (
+                      <span className="text-muted-foreground">데이터 없음</span>
+                    ) : (
+                      formatWon(r.marketCap)
+                    )}
+                  </span>
+                ),
                 status: (
                   <div className="flex flex-col items-start gap-0.5">
                     <span className="text-[11px] font-medium">{r.actionLabelText}</span>
