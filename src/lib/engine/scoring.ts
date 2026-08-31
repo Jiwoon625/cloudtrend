@@ -666,7 +666,7 @@ export const WARNING_LABELS: Record<string, string> = {
 export function collectWarnings(input: {
   snap: IndicatorSnapshot;
   gate: MarketGate;
-  etf?: EtfFacts;
+  etf?: EtfFacts | undefined;
   inst: Instrument;
   dataCompletenessRatio: number;
   vkospi: number | null;

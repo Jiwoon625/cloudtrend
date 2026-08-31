@@ -10,33 +10,115 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DataStatusRouteImport } from './routes/data-status'
+import { Route as PositionSizingRouteImport } from './routes/position-sizing'
+import { Route as SectorsRouteImport } from './routes/sectors'
+import { Route as InstrumentSymbolRouteImport } from './routes/instrument.$symbol'
+import { Route as ScreenerEtfsRouteImport } from './routes/screener.etfs'
+import { Route as ScreenerStocksRouteImport } from './routes/screener.stocks'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DataStatusRoute = DataStatusRouteImport.update({
+  id: '/data-status',
+  path: '/data-status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PositionSizingRoute = PositionSizingRouteImport.update({
+  id: '/position-sizing',
+  path: '/position-sizing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SectorsRoute = SectorsRouteImport.update({
+  id: '/sectors',
+  path: '/sectors',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InstrumentSymbolRoute = InstrumentSymbolRouteImport.update({
+  id: '/instrument/$symbol',
+  path: '/instrument/$symbol',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScreenerEtfsRoute = ScreenerEtfsRouteImport.update({
+  id: '/screener/etfs',
+  path: '/screener/etfs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScreenerStocksRoute = ScreenerStocksRouteImport.update({
+  id: '/screener/stocks',
+  path: '/screener/stocks',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/data-status': typeof DataStatusRoute
+  '/position-sizing': typeof PositionSizingRoute
+  '/sectors': typeof SectorsRoute
+  '/instrument/$symbol': typeof InstrumentSymbolRoute
+  '/screener/etfs': typeof ScreenerEtfsRoute
+  '/screener/stocks': typeof ScreenerStocksRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/data-status': typeof DataStatusRoute
+  '/position-sizing': typeof PositionSizingRoute
+  '/sectors': typeof SectorsRoute
+  '/instrument/$symbol': typeof InstrumentSymbolRoute
+  '/screener/etfs': typeof ScreenerEtfsRoute
+  '/screener/stocks': typeof ScreenerStocksRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/data-status': typeof DataStatusRoute
+  '/position-sizing': typeof PositionSizingRoute
+  '/sectors': typeof SectorsRoute
+  '/instrument/$symbol': typeof InstrumentSymbolRoute
+  '/screener/etfs': typeof ScreenerEtfsRoute
+  '/screener/stocks': typeof ScreenerStocksRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/data-status'
+    | '/position-sizing'
+    | '/sectors'
+    | '/instrument/$symbol'
+    | '/screener/etfs'
+    | '/screener/stocks'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/data-status'
+    | '/position-sizing'
+    | '/sectors'
+    | '/instrument/$symbol'
+    | '/screener/etfs'
+    | '/screener/stocks'
+  id:
+    | '__root__'
+    | '/'
+    | '/data-status'
+    | '/position-sizing'
+    | '/sectors'
+    | '/instrument/$symbol'
+    | '/screener/etfs'
+    | '/screener/stocks'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DataStatusRoute: typeof DataStatusRoute
+  PositionSizingRoute: typeof PositionSizingRoute
+  SectorsRoute: typeof SectorsRoute
+  InstrumentSymbolRoute: typeof InstrumentSymbolRoute
+  ScreenerEtfsRoute: typeof ScreenerEtfsRoute
+  ScreenerStocksRoute: typeof ScreenerStocksRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +130,59 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/data-status': {
+      id: '/data-status'
+      path: '/data-status'
+      fullPath: '/data-status'
+      preLoaderRoute: typeof DataStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/position-sizing': {
+      id: '/position-sizing'
+      path: '/position-sizing'
+      fullPath: '/position-sizing'
+      preLoaderRoute: typeof PositionSizingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sectors': {
+      id: '/sectors'
+      path: '/sectors'
+      fullPath: '/sectors'
+      preLoaderRoute: typeof SectorsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/instrument/$symbol': {
+      id: '/instrument/$symbol'
+      path: '/instrument/$symbol'
+      fullPath: '/instrument/$symbol'
+      preLoaderRoute: typeof InstrumentSymbolRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/screener/etfs': {
+      id: '/screener/etfs'
+      path: '/screener/etfs'
+      fullPath: '/screener/etfs'
+      preLoaderRoute: typeof ScreenerEtfsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/screener/stocks': {
+      id: '/screener/stocks'
+      path: '/screener/stocks'
+      fullPath: '/screener/stocks'
+      preLoaderRoute: typeof ScreenerStocksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DataStatusRoute: DataStatusRoute,
+  PositionSizingRoute: PositionSizingRoute,
+  SectorsRoute: SectorsRoute,
+  InstrumentSymbolRoute: InstrumentSymbolRoute,
+  ScreenerEtfsRoute: ScreenerEtfsRoute,
+  ScreenerStocksRoute: ScreenerStocksRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
