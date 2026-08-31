@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+import { analysisQueryOptions } from "@/lib/analysisQuery";
+
 import { AppShell } from "@/components/AppShell";
 import { ScreenerView } from "@/components/ScreenerView";
 
@@ -19,6 +21,7 @@ export const Route = createFileRoute("/screener/etfs")({
       },
     ],
   }),
+  loader: ({ context }) => context.queryClient.ensureQueryData(analysisQueryOptions),
   component: () => (
     <AppShell>
       <ScreenerView mode="ETF" />
