@@ -1,5 +1,6 @@
 // Mock data provider — 화면 테스트용 합성 데이터. 실제 시세/재무가 아닙니다.
 // 시드 기반 결정론적 생성: 같은 시드 = 같은 데이터 = 같은 점수.
+import { FULL_CAPABILITIES, type MarketDataset } from "./dataset";
 import type {
   DailyPrice,
   EtfFacts,
