@@ -48,6 +48,11 @@ async function getAccessToken(): Promise<string> {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
+    if (res.status === 403 && text.includes("IP address not allowed")) {
+      throw new Error(
+        "토스증권 API가 이 서버 IP를 거부했습니다(403 IP address not allowed). 토스증권 개발자센터 > 앱 설정에서 허용 IP에 서버 IP를 등록해야 합니다.",
+      );
+    }
     throw new Error(`토스증권 토큰 발급 실패 (HTTP ${res.status}): ${text.slice(0, 200)}`);
   }
   const json = (await res.json()) as { access_token: string; expires_in?: number };
