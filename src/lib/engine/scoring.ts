@@ -286,7 +286,7 @@ export function priorityScore(
   inst: Instrument,
   snap: IndicatorSnapshot,
   facts: FinancialFacts | undefined,
-  marketCap: number,
+  marketCap: number | null,
   benchmarkDayReturn: number | null,
 ): ScoreBlock {
   const rows: RuleRow[] = [];
