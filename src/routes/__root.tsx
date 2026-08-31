@@ -77,19 +77,28 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "TrendScore KR — 한국 주식·ETF 중기 추세추종 스크리너" },
+      {
+        name: "description",
+        content:
+          "한국 주식과 국내 상장 ETF를 규칙 기반으로 스크리닝하고 모든 점수의 계산 근거를 공개하는 리서치 도구입니다.",
+      },
+      { property: "og:title", content: "TrendScore KR" },
+      {
+        property: "og:description",
+        content: "한국 주식·ETF 중기 추세추종 스크리너 — 투명한 점수 산정 근거 제공",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
       {
         rel: "stylesheet",
         href: appCss,
+      },
+      {
+        rel: "stylesheet",
+        href: "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css",
       },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
