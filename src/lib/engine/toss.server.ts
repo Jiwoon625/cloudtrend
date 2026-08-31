@@ -411,11 +411,16 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
       ...NO_CAPABILITIES,
       exactTradingValue: false,
       investorFlow: marketFlowOk,
+      marketCap: marketCapCount > 0,
     },
     notes: [
       `토스증권 Open API 실데이터 — 거래대금 상위 ${instruments.length}종목, 일봉 최대 ${CANDLE_COUNT}개(≈9개월).`,
-      "토스 Open API는 시가총액·재무제표·ETF NAV/총보수·업종 분류를 제공하지 않습니다. 해당 규칙과 점수 항목은 “데이터 없음”으로 표시되고 가중치에서 제외됩니다(0점 처리 아님).",
+      marketCapCount > 0
+        ? `시가총액은 발행주식수(종목 상세) × 해당일 종가로 계산합니다(${marketCapCount}/${instruments.length}종목). 발행주식수는 최신 스냅샷이라 과거 봉의 시가총액은 근사치입니다.`
+        : "발행주식수를 가져오지 못해 시가총액은 “데이터 없음”으로 처리됩니다.",
+      "토스 Open API는 재무제표·ETF NAV/총보수·업종 분류를 제공하지 않습니다. 해당 규칙과 점수 항목은 “데이터 없음”으로 표시되고 가중치에서 제외됩니다(0점 처리 아님).",
       "종목별 거래대금은 최신 거래일만 실측값이며, 과거 봉은 종가×거래량 근사치입니다.",
+
       marketFlowOk
         ? "시장 게이트의 외국인 순매수는 코스피 전체 투자자별 매매대금 실측값을 사용합니다."
         : "투자자별 매매대금을 가져오지 못해 외국인 수급 판정은 “데이터 없음”으로 처리됩니다.",
