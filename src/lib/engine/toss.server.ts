@@ -2,6 +2,7 @@
 // https://openapi.tossinvest.com — OAuth2 client_credentials 로 토큰 발급 후 시세 조회.
 // 이 파일은 절대 클라이언트로 반입되지 않습니다(*.server.ts 는 클라이언트 번들에서 차단).
 import { NO_CAPABILITIES, type MarketDataset } from "./dataset";
+import { THEME_SECTORS, resolveSectorCode } from "./sectors";
 import type { DailyPrice, EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
 
 const BASE = "https://openapi.tossinvest.com";
@@ -347,7 +348,7 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
 
   const instruments: Instrument[] = [];
   const bars: Record<string, DailyPrice[]> = {};
-  const sectors = [{ code: "UNCLASSIFIED", name: "미분류" }];
+  const usedSectors = new Set<string>();
   let marketCapCount = 0;
 
   ranked.forEach((r, i) => {
@@ -369,6 +370,8 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
     }
 
     const leverageFactor = info?.leverageFactor != null ? Number(info.leverageFactor) : null;
+    const sector = resolveSectorCode(r.symbol, m.listed.name, isEtf);
+    usedSectors.add(sector.code);
 
     instruments.push({
       id: r.symbol,
@@ -376,8 +379,8 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
       name: m.listed.name,
       market: isEtf ? "ETF" : m.market,
       instrumentType: isEtf ? "ETF" : "STOCK",
-      sectorCode: "UNCLASSIFIED",
-      sectorName: "미분류",
+      sectorCode: sector.code,
+      sectorName: sector.name,
       indexMemberships: [],
       isPreferredStock: !isEtf && !m.listed.isCommonShare,
       isManagementIssue: false,
@@ -412,13 +415,15 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
       exactTradingValue: false,
       investorFlow: marketFlowOk,
       marketCap: marketCapCount > 0,
+      sectors: true,
     },
     notes: [
       `토스증권 Open API 실데이터 — 거래대금 상위 ${instruments.length}종목, 일봉 최대 ${CANDLE_COUNT}개(≈9개월).`,
       marketCapCount > 0
         ? `시가총액은 발행주식수(종목 상세) × 해당일 종가로 계산합니다(${marketCapCount}/${instruments.length}종목). 발행주식수는 최신 스냅샷이라 과거 봉의 시가총액은 근사치입니다.`
         : "발행주식수를 가져오지 못해 시가총액은 “데이터 없음”으로 처리됩니다.",
-      "토스 Open API는 재무제표·ETF NAV/총보수·업종 분류를 제공하지 않습니다. 해당 규칙과 점수 항목은 “데이터 없음”으로 표시되고 가중치에서 제외됩니다(0점 처리 아님).",
+      "업종(섹터)은 토스 Open API가 제공하지 않아, 프로젝트에 내장한 테마 섹터 매핑(종목코드 기준, ETF는 상품명 규칙)으로 분류합니다. 섹터지수 시계열이 없어 섹터 상대강도는 구성종목 집계로 산출합니다.",
+      "토스 Open API는 재무제표·ETF NAV/총보수를 제공하지 않습니다. 해당 규칙과 점수 항목은 “데이터 없음”으로 표시되고 가중치에서 제외됩니다(0점 처리 아님).",
       "종목별 거래대금은 최신 거래일만 실측값이며, 과거 봉은 종가×거래량 근사치입니다.",
 
       marketFlowOk
@@ -426,7 +431,7 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
         : "투자자별 매매대금을 가져오지 못해 외국인 수급 판정은 “데이터 없음”으로 처리됩니다.",
       `데이터는 ${CACHE_TTL_MS / 60000}분간 캐시됩니다.`,
     ],
-    sectors,
+    sectors: THEME_SECTORS.filter((s) => usedSectors.has(s.code)),
     tradeDates,
     instruments,
     bars,
