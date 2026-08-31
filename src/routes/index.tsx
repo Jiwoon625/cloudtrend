@@ -109,7 +109,7 @@ function Dashboard() {
       </div>
 
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
-        <Card title="코스피200 종목 CSV 업로드" icon={<Upload className="size-4 text-primary" />}>
+        <Card title="종목 CSV 업로드 (코스피200 / 코스닥)" icon={<Upload className="size-4 text-primary" />}>
           <UniverseUpload />
         </Card>
         <Card title="ETF 스크리닝 종목코드" icon={<ListPlus className="size-4 text-primary" />}>
