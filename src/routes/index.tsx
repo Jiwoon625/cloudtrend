@@ -25,7 +25,11 @@ export const Route = createFileRoute("/")({
       },
     ],
   }),
-  loader: ({ context }) => context.queryClient.ensureQueryData(analysisQueryOptions),
+  loader: ({ context }) =>
+    Promise.all([
+      context.queryClient.ensureQueryData(analysisQueryOptions),
+      context.queryClient.ensureQueryData(ipQueryOptions),
+    ]),
   component: Dashboard,
 });
 
