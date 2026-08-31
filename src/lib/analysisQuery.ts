@@ -1,6 +1,12 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { getDataStatus, getInstrumentDetail, getMarketAnalysis } from "@/lib/market.functions";
+import {
+  getDataStatus,
+  getInstrumentDetail,
+  getMarketAnalysis,
+  getServerEgressIp,
+} from "@/lib/market.functions";
+
 
 export const analysisQueryOptions = queryOptions({
   queryKey: ["market-analysis"],
@@ -20,3 +26,10 @@ export const instrumentQueryOptions = (symbol: string) =>
     queryFn: () => getInstrumentDetail({ data: { symbol } }),
     staleTime: 5 * 60 * 1000,
   });
+
+export const ipQueryOptions = queryOptions({
+  queryKey: ["server-egress-ip"],
+  queryFn: () => getServerEgressIp(),
+  staleTime: 60 * 1000,
+});
+

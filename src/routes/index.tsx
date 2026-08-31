@@ -5,7 +5,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { GradeBadge, ScreenerTable } from "@/components/ScreenerTable";
 import { Badge } from "@/components/ui/badge";
-import { analysisQueryOptions } from "@/lib/analysisQuery";
+import { analysisQueryOptions, ipQueryOptions } from "@/lib/analysisQuery";
 import { WARNING_LABELS } from "@/lib/engine/scoring";
 import { formatCount, formatNumber, formatPercent, formatWon } from "@/lib/format";
 
@@ -25,7 +25,11 @@ export const Route = createFileRoute("/")({
       },
     ],
   }),
-  loader: ({ context }) => context.queryClient.ensureQueryData(analysisQueryOptions),
+  loader: ({ context }) =>
+    Promise.all([
+      context.queryClient.ensureQueryData(analysisQueryOptions),
+      context.queryClient.ensureQueryData(ipQueryOptions),
+    ]),
   component: Dashboard,
 });
 
@@ -63,7 +67,9 @@ function KeyValue({ label, value, hint }: { label: string; value: React.ReactNod
 
 function Dashboard() {
   const { data } = useSuspenseQuery(analysisQueryOptions);
+  const { data: ip } = useSuspenseQuery(ipQueryOptions);
   const analysis = data.analysis;
+
   const { marketGate: gate, rows, sectors } = analysis;
 
   const passed = rows.filter((r) => r.hardFilterPassed);
@@ -94,7 +100,8 @@ function Dashboard() {
           </p>
         </div>
         <p className="text-[11px] text-muted-foreground">
-          계산 시각 {analysis.calculatedAt.slice(0, 16).replace("T", " ")} (미래 데이터 미사용)
+          서버 출구 IP {ip ?? "알 수 없음"} · 계산 시각{" "}
+          {analysis.calculatedAt.slice(0, 16).replace("T", " ")} (미래 데이터 미사용)
         </p>
       </div>
 
