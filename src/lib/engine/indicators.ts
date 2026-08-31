@@ -139,7 +139,14 @@ export function ichimoku(
   };
 }
 
-/** 당일 제외 직전 N거래일 평균 대비 비율(%) */
+/** 비율의 표시 상한(%) — 초저유동성 종목의 수천만 % 왜곡을 막는다. */
+export const RATIO_CAP = 9999;
+
+/**
+ * 당일 제외 직전 N거래일 평균 대비 비율(%).
+ * 기준 구간의 절반 이상이 0(거래 없음)이면 평균이 의미가 없으므로 null(데이터 없음)을 반환한다.
+ * 유효한 경우에도 RATIO_CAP으로 상한을 둔다.
+ */
 export function ratioToPriorAverage(
   values: number[],
   endIndex: number,
@@ -147,10 +154,16 @@ export function ratioToPriorAverage(
   includeToday = false,
 ): number | null {
   const refEnd = includeToday ? endIndex : endIndex - 1;
+  const refStart = refEnd - period + 1;
+  if (refStart < 0 || endIndex >= values.length) return null;
+  let positive = 0;
+  for (let i = refStart; i <= refEnd; i++) if ((values[i] ?? 0) > 0) positive++;
+  if (positive * 2 < period) return null;
   const avg = sma(values, period, refEnd);
-  if (avg === null || avg === 0) return null;
-  return (values[endIndex]! / avg) * 100;
+  if (avg === null || avg <= 0) return null;
+  return Math.min((values[endIndex]! / avg) * 100, RATIO_CAP);
 }
+
 
 export function periodReturn(closes: number[], endIndex: number, lookback: number): number | null {
   const past = closes[endIndex - lookback];

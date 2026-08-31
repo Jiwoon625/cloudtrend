@@ -39,7 +39,6 @@ type SortKey =
   | "total"
   | "technical"
   | "priority"
-  | "quality"
   | "volumeRatio"
   | "rs20"
   | "distanceHigh"
@@ -56,7 +55,6 @@ const COLUMNS: Array<{ key: SortKey | "static"; label: string; id: string }> = [
   { key: "static", label: "기술등급", id: "grade" },
   { key: "technical", label: "기술점수", id: "technical" },
   { key: "priority", label: "우선점수", id: "priority" },
-  { key: "quality", label: "펀더멘털/건전성", id: "quality" },
   { key: "volumeRatio", label: "거래량 비율", id: "volumeRatio" },
   { key: "rs20", label: "RS20", id: "rs20" },
   { key: "distanceHigh", label: "52주 고점 거리", id: "distanceHigh" },
@@ -73,8 +71,6 @@ function sortValue(row: ScreeningRow, key: SortKey): number {
       return row.technical.points;
     case "priority":
       return row.priority.points;
-    case "quality":
-      return row.qualityScore ?? -1;
     case "volumeRatio":
       return row.snapshot.volumeRatio20 ?? -1;
     case "rs20":
@@ -117,7 +113,6 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
         r.grade,
         `${r.technical.points}/${r.technical.availableMaxPoints}`,
         `${r.priority.points}/${r.priority.availableMaxPoints}`,
-        r.qualityScore === null ? "데이터없음" : r.qualityScore.toFixed(1),
         r.snapshot.volumeRatio20?.toFixed(1) ?? "",
         r.rs20?.toFixed(2) ?? "",
         r.snapshot.distanceFrom52wHigh?.toFixed(2) ?? "",
@@ -243,11 +238,6 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
                 priority: (
                   <span className="num">
                     {r.priority.points}/{r.priority.availableMaxPoints}
-                  </span>
-                ),
-                quality: (
-                  <span className="num">
-                    {r.qualityScore === null ? "데이터 없음" : formatNumber(r.qualityScore, 1)}
                   </span>
                 ),
                 volumeRatio: (

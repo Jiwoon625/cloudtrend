@@ -19,7 +19,6 @@ type PresetId =
   | "VOLUME"
   | "NEAR_HIGH"
   | "FOREIGN"
-  | "FUNDAMENTAL"
   | "VALUEUP"
   | "HEAD_FAKE"
   | "EXIT";
@@ -39,7 +38,6 @@ const PRESETS: Array<{ id: PresetId; label: string; test: (r: ScreeningRow) => b
     label: "외국인 수급 우수",
     test: (r) => (r.snapshot.foreignNet60d ?? -1) > 0,
   },
-  { id: "FUNDAMENTAL", label: "펀더멘털 우수", test: (r) => (r.qualityScore ?? 0) >= 60 },
   {
     id: "VALUEUP",
     label: "밸류업",
