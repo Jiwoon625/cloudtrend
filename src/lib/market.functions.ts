@@ -261,3 +261,34 @@ export const getUniverse = createServerFn({ method: "GET" }).handler(
     return { count: cur?.count ?? 0, uploadedAt: cur?.uploadedAt ?? null };
   },
 );
+
+export interface EtfUniversePayload {
+  symbols: string[];
+  updatedAt: string | null;
+}
+
+/** 스크리닝할 ETF 종목코드를 직접 지정한다. 빈 목록이면 거래대금 상위 ETF 자동 선정으로 되돌아간다. */
+export const setEtfUniverse = createServerFn({ method: "POST" })
+  .inputValidator((input: { symbols: string[] }) => ({
+    symbols: (input.symbols ?? [])
+      .map((s) => String(s).trim().toUpperCase())
+      .filter((s) => /^[0-9A-Z]{6}$/.test(s))
+      .slice(0, 100),
+  }))
+  .handler(async ({ data }): Promise<EtfUniversePayload> => {
+    const { setEtfUniverseOverride, getEtfUniverseOverride } = await import(
+      "@/lib/engine/toss.server"
+    );
+    setEtfUniverseOverride(data.symbols);
+    const cur = getEtfUniverseOverride();
+    return { symbols: cur?.symbols ?? [], updatedAt: cur?.updatedAt ?? null };
+  });
+
+export const getEtfUniverse = createServerFn({ method: "GET" }).handler(
+  async (): Promise<EtfUniversePayload> => {
+    const { getEtfUniverseOverride } = await import("@/lib/engine/toss.server");
+    const cur = getEtfUniverseOverride();
+    return { symbols: cur?.symbols ?? [], updatedAt: cur?.updatedAt ?? null };
+  },
+);
+
