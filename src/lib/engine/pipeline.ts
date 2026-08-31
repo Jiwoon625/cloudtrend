@@ -98,7 +98,7 @@ export interface AnalysisResult {
 }
 
 function indexOf(ds: MarketDataset, code: string): IndexSeries | undefined {
-  return ds.indexSeries.find((s) => s.code === code);
+  return ds.indexSeries.find((s) => s.indexCode === code);
 }
 
 function indexSnapshot(ds: MarketDataset, code: string, offset = 0): IndicatorSnapshot | null {
