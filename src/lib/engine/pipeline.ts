@@ -116,15 +116,44 @@ function sectorSnapshotScores(ds: MarketDataset, rows: ScreeningRow[]): SectorSc
   const marketReturn60 = periodReturn(kospiCloses, lastIndex, 60) ?? 0;
   const marketReturn20Prev = periodReturn(kospiCloses, lastIndex - 5, 20) ?? 0;
 
+  // 섹터지수 시계열이 없는 경우(토스 Open API), 구성종목 일봉의 기간수익률 중위값으로 섹터 수익률을 합성한다.
+  const median = (xs: number[]): number | null => {
+    if (xs.length === 0) return null;
+    const s = [...xs].sort((a, b) => a - b);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 === 1 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
+  };
+  const memberReturn = (symbols: string[], period: number, offset: number): number | null =>
+    median(
+      symbols
+        .map((sym) => {
+          const bars = ds.bars[sym] ?? [];
+          if (bars.length === 0) return null;
+          const closes = bars.map((b) => b.close);
+          return periodReturn(closes, closes.length - 1 - offset, period);
+        })
+        .filter((v): v is number => v !== null),
+    );
+
   const raw = ds.sectors.map((s) => {
     const series = indexOf(ds, `KRX_${s.code}`);
     const isSynthetic = !series;
     const closes = series ? series.bars.map((b) => b.close) : [];
     const li = closes.length - 1;
-    const r20 = series ? (periodReturn(closes, li, 20) ?? 0) : 0;
-    const r60 = series ? (periodReturn(closes, li, 60) ?? 0) : 0;
-    const r20prev = series ? (periodReturn(closes, li - 5, 20) ?? 0) : 0;
+    const memberSymbols = rows
+      .filter((r) => r.instrument.sectorCode === s.code && r.instrument.instrumentType === "STOCK")
+      .map((r) => r.instrument.symbol);
+    const r20 = series
+      ? (periodReturn(closes, li, 20) ?? 0)
+      : (memberReturn(memberSymbols, 20, 0) ?? marketReturn20);
+    const r60 = series
+      ? (periodReturn(closes, li, 60) ?? 0)
+      : (memberReturn(memberSymbols, 60, 0) ?? marketReturn60);
+    const r20prev = series
+      ? (periodReturn(closes, li - 5, 20) ?? 0)
+      : (memberReturn(memberSymbols, 20, 5) ?? marketReturn20Prev);
     const snap = series ? computeIndicators(series.bars, li) : null;
+
 
     const members = rows.filter((r) => r.instrument.sectorCode === s.code);
     const aligned = members.filter((m) => m.snapshot.maAligned === true).length;
