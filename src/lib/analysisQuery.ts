@@ -26,3 +26,10 @@ export const instrumentQueryOptions = (symbol: string) =>
     queryFn: () => getInstrumentDetail({ data: { symbol } }),
     staleTime: 5 * 60 * 1000,
   });
+
+export const ipQueryOptions = queryOptions({
+  queryKey: ["server-egress-ip"],
+  queryFn: () => getServerEgressIp(),
+  staleTime: 60 * 1000,
+});
+
