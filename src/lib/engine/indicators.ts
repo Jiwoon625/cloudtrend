@@ -259,10 +259,15 @@ export interface IndicatorSnapshot {
   atrExtension: number | null; // ATR 배수
 }
 
-function sumLast(values: number[], endIndex: number, n: number): number | null {
+/** 구간 중 하나라도 데이터가 없으면(null) 합계를 만들지 않고 null을 반환한다. */
+function sumLast(values: Array<number | null>, endIndex: number, n: number): number | null {
   if (endIndex - n + 1 < 0) return null;
   let s = 0;
-  for (let i = endIndex - n + 1; i <= endIndex; i++) s += values[i]!;
+  for (let i = endIndex - n + 1; i <= endIndex; i++) {
+    const v = values[i];
+    if (v === null || v === undefined) return null;
+    s += v;
+  }
   return s;
 }
 
