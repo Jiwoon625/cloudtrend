@@ -94,13 +94,15 @@ export interface UniverseResult {
 export function evaluateUniverse(
   inst: Instrument,
   snap: IndicatorSnapshot,
-  marketCap: number,
+  marketCap: number | null,
   tradingValue: number,
   barCount: number,
   etf: EtfFacts | undefined,
   params: UniverseParams,
+  availability: UniverseAvailability = ALL_AVAILABLE,
 ): UniverseResult {
   const failed: string[] = [];
+  const skipped: string[] = [];
   if (!inst.isActive) failed.push("거래정지 또는 비활성 종목");
   if (barCount < 120) failed.push("최근 120거래일 데이터 부족");
 
@@ -110,12 +112,14 @@ export function evaluateUniverse(
     if (inst.isInvestmentWarning) failed.push("투자경고종목 제외");
     if (snap.close < params.minPrice) failed.push(`주가 ${params.minPrice.toLocaleString()}원 미만`);
     if (snap.close > params.maxPrice) failed.push(`주가 ${params.maxPrice.toLocaleString()}원 초과`);
-    if (marketCap < params.minMarketCap) failed.push("시가총액 기준 미달");
+    if (!availability.marketCap || marketCap === null) skipped.push("시가총액 기준 (데이터 없음)");
+    else if (marketCap < params.minMarketCap) failed.push("시가총액 기준 미달");
     if (tradingValue < params.minTradingValue) failed.push("당일 거래대금 기준 미달");
   } else {
     if (params.excludeLeveragedInverse && (inst.isLeveraged || inst.isInverse))
       failed.push("레버리지·인버스 기본 제외");
-    if (!etf) failed.push("ETF 메타데이터 없음");
+    if (!availability.etfFacts) skipped.push("ETF 상품 메타데이터 기준 (데이터 없음)");
+    else if (!etf) failed.push("ETF 메타데이터 없음");
     else {
       if (etf.assetsUnderManagement < params.etfMinAum) failed.push("순자산 기준 미달");
       if (etf.averageTradingValue20d < params.etfMinTradingValue20d)
@@ -124,7 +128,7 @@ export function evaluateUniverse(
         failed.push("괴리율 기준 초과");
     }
   }
-  return { passed: failed.length === 0, failedRules: failed };
+  return { passed: failed.length === 0, failedRules: failed, skippedRules: skipped };
 }
 
 export interface ScoreBlock {
