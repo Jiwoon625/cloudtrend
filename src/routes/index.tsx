@@ -19,7 +19,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "한국 주식·국내 상장 ETF의 시장 게이트, 섹터 상대강도, 기술·우선·펀더멘털 점수를 한 화면에서 확인하는 규칙 기반 스크리닝 대시보드입니다.",
+          "한국 주식·국내 상장 ETF의 시장 게이트, 섹터 상대강도, 기술·우선순위 점수를 한 화면에서 확인하는 규칙 기반 스크리닝 대시보드입니다.",
       },
       { property: "og:title", content: "대시보드 | TrendScore KR" },
       {

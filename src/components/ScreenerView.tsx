@@ -19,7 +19,6 @@ type PresetId =
   | "VOLUME"
   | "NEAR_HIGH"
   | "FOREIGN"
-  | "FUNDAMENTAL"
   | "VALUEUP"
   | "HEAD_FAKE"
   | "EXIT";
