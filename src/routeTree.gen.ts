@@ -16,6 +16,7 @@ import { Route as SectorsRouteImport } from './routes/sectors'
 import { Route as InstrumentSymbolRouteImport } from './routes/instrument.$symbol'
 import { Route as ScreenerEtfsRouteImport } from './routes/screener.etfs'
 import { Route as ScreenerStocksRouteImport } from './routes/screener.stocks'
+import { Route as ApiPublicDebugCandlesRouteImport } from './routes/api/public/debug-candles'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -52,6 +53,11 @@ const ScreenerStocksRoute = ScreenerStocksRouteImport.update({
   path: '/screener/stocks',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicDebugCandlesRoute = ApiPublicDebugCandlesRouteImport.update({
+  id: '/api/public/debug-candles',
+  path: '/api/public/debug-candles',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -61,6 +67,7 @@ export interface FileRoutesByFullPath {
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
   '/screener/stocks': typeof ScreenerStocksRoute
+  '/api/public/debug-candles': typeof ApiPublicDebugCandlesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,6 +77,7 @@ export interface FileRoutesByTo {
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
   '/screener/stocks': typeof ScreenerStocksRoute
+  '/api/public/debug-candles': typeof ApiPublicDebugCandlesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -80,6 +88,7 @@ export interface FileRoutesById {
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
   '/screener/stocks': typeof ScreenerStocksRoute
+  '/api/public/debug-candles': typeof ApiPublicDebugCandlesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
     | '/instrument/$symbol'
     | '/screener/etfs'
     | '/screener/stocks'
+    | '/api/public/debug-candles'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/instrument/$symbol'
     | '/screener/etfs'
     | '/screener/stocks'
+    | '/api/public/debug-candles'
   id:
     | '__root__'
     | '/'
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
     | '/instrument/$symbol'
     | '/screener/etfs'
     | '/screener/stocks'
+    | '/api/public/debug-candles'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -119,6 +131,7 @@ export interface RootRouteChildren {
   InstrumentSymbolRoute: typeof InstrumentSymbolRoute
   ScreenerEtfsRoute: typeof ScreenerEtfsRoute
   ScreenerStocksRoute: typeof ScreenerStocksRoute
+  ApiPublicDebugCandlesRoute: typeof ApiPublicDebugCandlesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -172,6 +185,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ScreenerStocksRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/debug-candles': {
+      id: '/api/public/debug-candles'
+      path: '/api/public/debug-candles'
+      fullPath: '/api/public/debug-candles'
+      preLoaderRoute: typeof ApiPublicDebugCandlesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -183,6 +203,7 @@ const rootRouteChildren: RootRouteChildren = {
   InstrumentSymbolRoute: InstrumentSymbolRoute,
   ScreenerEtfsRoute: ScreenerEtfsRoute,
   ScreenerStocksRoute: ScreenerStocksRoute,
+  ApiPublicDebugCandlesRoute: ApiPublicDebugCandlesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -549,3 +549,13 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
   return dataset;
 }
 
+
+/** 임시 진단용: 특정 심볼의 최근 일봉 거래량을 반환한다. */
+export async function debugCandles(symbol: string) {
+  const bars = await fetchCandles(symbol);
+  return {
+    symbol,
+    count: bars.length,
+    last30: bars.slice(-30).map((b) => ({ d: b.tradeDate, c: b.close, v: b.volume })),
+  };
+}
