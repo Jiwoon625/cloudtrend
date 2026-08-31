@@ -1,6 +1,12 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { getDataStatus, getInstrumentDetail, getMarketAnalysis } from "@/lib/market.functions";
+import {
+  getDataStatus,
+  getInstrumentDetail,
+  getMarketAnalysis,
+  getServerEgressIp,
+} from "@/lib/market.functions";
+
 
 export const analysisQueryOptions = queryOptions({
   queryKey: ["market-analysis"],
