@@ -167,6 +167,16 @@ interface ListedStock {
   isCommonShare: boolean;
   isinCode: string;
 }
+/** GET /api/v1/stocks 상세 — 발행주식수(sharesOutstanding) 제공 */
+interface StockInfo {
+  symbol: string;
+  name: string;
+  securityType: string;
+  isCommonShare: boolean;
+  status: string;
+  sharesOutstanding: string | null;
+  leverageFactor: string | number | null;
+}
 interface InvestorTradingRecord {
   date: string;
   foreigner: { buyAmount: string; sellAmount: string };
