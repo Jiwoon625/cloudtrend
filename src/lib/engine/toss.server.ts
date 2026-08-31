@@ -33,9 +33,21 @@ export function hasTossCredentials(): boolean {
   return Boolean(process.env["TOSS_CLIENT_ID"] && process.env["TOSS_CLIENT_SECRET"]);
 }
 
+// 토큰 발급을 단일화(single-flight)한다. 동시에 여러 번 발급하면 이전 토큰이 무효화되어 401이 발생한다.
+let tokenInflight: Promise<string> | null = null;
+
 async function getAccessToken(): Promise<string> {
   const now = Date.now();
   if (tokenState && tokenState.expiresAt > now + 60_000) return tokenState.token;
+  if (tokenInflight) return tokenInflight;
+  tokenInflight = issueToken().finally(() => {
+    tokenInflight = null;
+  });
+  return tokenInflight;
+}
+
+async function issueToken(): Promise<string> {
+  const now = Date.now();
   const { clientId, clientSecret } = credentials();
   const res = await fetch(`${BASE}/oauth2/token`, {
     method: "POST",
