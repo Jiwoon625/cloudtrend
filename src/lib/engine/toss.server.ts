@@ -376,7 +376,9 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
   const amountBySymbol = new Map(rankings.map((r) => [r.symbol, num(r.tradingAmount)]));
 
   // 유니버스: KOSPI200 구성종목 + 거래대금 상위 ETF
-  const kospi200 = KOSPI200_SYMBOLS.filter((s) => meta.has(s));
+  const baseSymbols = universeOverride?.symbols ?? KOSPI200_SYMBOLS;
+  const kospi200 = baseSymbols.filter((s) => meta.has(s));
+
   const etfSymbols = rankings
     .filter((r) => {
       const m = meta.get(r.symbol);
