@@ -332,6 +332,24 @@ export function getUniverseOverride(): { count: number; uploadedAt: string } | n
     : null;
 }
 
+// 사용자가 직접 입력한 ETF 종목코드 목록. 설정되면 거래대금 상위 ETF 대신 사용한다.
+let etfOverride: { symbols: string[]; at: number } | null = null;
+
+export function setEtfUniverseOverride(symbols: string[]): string[] {
+  const unique = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
+  etfOverride = unique.length > 0 ? { symbols: unique, at: Date.now() } : null;
+  cache = null;
+  return unique;
+}
+
+export function getEtfUniverseOverride(): { symbols: string[]; updatedAt: string } | null {
+  return etfOverride
+    ? { symbols: etfOverride.symbols, updatedAt: new Date(etfOverride.at).toISOString() }
+    : null;
+}
+
+
+
 
 export interface TossDatasetOptions {
   /** 함께 스크리닝할 ETF 수 (거래대금 상위) */
