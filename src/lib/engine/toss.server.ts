@@ -518,11 +518,11 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
       sectors: true,
     },
     notes: [
-      `토스증권 Open API 실데이터 — KOSPI200 구성종목 ${stockCount}종목 + ETF ${instruments.length - stockCount}종목, 일봉 최대 ${CANDLE_COUNT}개(≈9개월).`,
+      `토스증권 Open API 실데이터 — 주식 ${stockCount}종목(업로드 유니버스 또는 KOSPI200 스냅샷) + ETF ${instruments.length - stockCount}종목, 일봉 최대 ${CANDLE_COUNT}개(≈9개월).`,
       pending > 0
         ? `일봉 수집이 진행 중입니다(${instruments.length}/${universe.length}종목 완료). 잠시 후 새로고침하면 남은 ${pending}종목이 추가된 결과를 볼 수 있습니다.`
         : `유니버스 ${universe.length}종목 전체의 일봉 수집이 완료되었습니다.`,
-      "KOSPI200 구성종목은 토스 Open API가 지수 구성종목을 제공하지 않아, 코스피 보통주를 발행주식수×종가 시가총액으로 정렬한 상위 200종목 스냅샷을 사용합니다(실제 KRX 정기변경과 소수 종목이 다를 수 있습니다).",
+      "유니버스를 직접 업로드하지 않으면(코스피/코스닥 CSV), 토스 Open API가 지수 구성종목을 제공하지 않아, 코스피 보통주를 발행주식수×종가 시가총액으로 정렬한 상위 200종목 스냅샷을 사용합니다(실제 KRX 정기변경과 소수 종목이 다를 수 있습니다).",
       marketCapCount > 0
         ? `시가총액은 발행주식수(종목 상세) × 해당일 종가로 계산합니다(${marketCapCount}/${instruments.length}종목). 발행주식수는 최신 스냅샷이라 과거 봉의 시가총액은 근사치입니다.`
         : "발행주식수를 가져오지 못해 시가총액은 “데이터 없음”으로 처리됩니다.",

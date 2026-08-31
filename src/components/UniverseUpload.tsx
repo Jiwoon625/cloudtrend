@@ -52,9 +52,10 @@ export function UniverseUpload() {
   return (
     <div className="space-y-2">
       <p className="text-[12px] text-muted-foreground">
-        코스피200 구성종목 CSV(첫 열 종목코드, 둘째 열 종목명)를 올리면 스크리닝 유니버스가 해당
-        목록으로 교체됩니다.
+        코스피·코스닥 구성종목 CSV(첫 열 종목코드, 둘째 열 종목명)를 올리면 스크리닝 유니버스가
+        해당 목록으로 교체됩니다. 코스피200과 코스닥 종목을 한 파일에 섞어 올려도 됩니다.
       </p>
+
       <div className="flex flex-wrap items-center gap-2">
         <input
           ref={inputRef}
