@@ -75,18 +75,48 @@ async function issueToken(): Promise<string> {
   return tokenState.token;
 }
 
-async function api<T>(path: string, params: Record<string, string | number | boolean> = {}) {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** 요청 간 최소 간격(ms) — 토스 Open API 레이트리밋(429) 회피용 직렬 스로틀. */
+const MIN_REQUEST_GAP_MS = 350;
+let gate: Promise<void> = Promise.resolve();
+/** 모든 요청을 최소 간격을 두고 직렬화한다. */
+function throttle<T>(fn: () => Promise<T>): Promise<T> {
+  const run = gate.then(fn);
+  gate = run.then(
+    () => sleep(MIN_REQUEST_GAP_MS),
+    () => sleep(MIN_REQUEST_GAP_MS),
+  );
+  return run;
+}
+
+async function api<T>(
+  path: string,
+  params: Record<string, string | number | boolean> = {},
+  attempt = 0,
+): Promise<T> {
   const token = await getAccessToken();
   const url = new URL(`${BASE}${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
-  });
+  const res = await throttle(() =>
+    fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } }),
+  );
   if (res.status === 401) {
     tokenState = null;
+    if (attempt < 2) {
+      await sleep(500 * (attempt + 1));
+      return api<T>(path, params, attempt + 1);
+    }
     throw new Error(`토스증권 API 인증 실패 (401): 클라이언트 ID/시크릿을 확인하세요.`);
   }
-  if (res.status === 429) throw new Error("토스증권 API 호출 한도(429) 초과 — 잠시 후 다시 시도하세요.");
+  if (res.status === 429) {
+    if (attempt < 5) {
+      const retryAfter = Number(res.headers.get("retry-after")) || 0;
+      await sleep(retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt);
+      return api<T>(path, params, attempt + 1);
+    }
+    throw new Error("토스증권 API 호출 한도(429) 초과 — 잠시 후 다시 시도하세요.");
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`토스증권 API 오류 ${path} (HTTP ${res.status}): ${text.slice(0, 200)}`);
