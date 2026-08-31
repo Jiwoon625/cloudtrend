@@ -25,20 +25,6 @@ export const Route = createFileRoute("/data-status")({
   component: DataStatusPage,
 });
 
-const CAP_LABELS: Array<{ key: keyof ReturnType<typeof capKeys>; label: string }> = [];
-function capKeys() {
-  return {
-    marketCap: true,
-    fundamentals: true,
-    etfFacts: true,
-    sectors: true,
-    investorFlow: true,
-    volatilityIndex: true,
-    exactTradingValue: true,
-  };
-}
-void CAP_LABELS;
-
 const CAPABILITY_LABELS: Record<string, string> = {
   marketCap: "시가총액",
   fundamentals: "재무(펀더멘털)",
