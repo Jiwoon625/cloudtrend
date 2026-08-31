@@ -35,7 +35,14 @@ function ThemeToggle() {
   );
 }
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({
+  children,
+  source,
+}: {
+  children: ReactNode;
+  source?: AppShellSource;
+}) {
+  const live = source?.isLive ?? false;
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-40 border-b border-border bg-surface/95 backdrop-blur">
