@@ -343,10 +343,12 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
   const marketFlowOk = await attachMarketInvestorFlow(kospiIdx, "KOSPI");
 
   const barsList = await mapLimited(ranked, CONCURRENCY, (r) => fetchCandles(r.symbol));
+  const infos = await fetchStockInfos(ranked.map((r) => r.symbol));
 
   const instruments: Instrument[] = [];
   const bars: Record<string, DailyPrice[]> = {};
   const sectors = [{ code: "UNCLASSIFIED", name: "미분류" }];
+  let marketCapCount = 0;
 
   ranked.forEach((r, i) => {
     const b = barsList[i] ?? [];
@@ -357,6 +359,16 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
     const lastBar = b[b.length - 1]!;
     const amount = num(r.tradingAmount);
     if (amount > 0) lastBar.tradingValue = amount;
+
+    // 시가총액 = 발행주식수 × 해당일 종가 (발행주식수는 최신 스냅샷이므로 과거 봉은 근사치)
+    const info = infos.get(r.symbol);
+    const shares = info?.sharesOutstanding ? Number(info.sharesOutstanding) : 0;
+    if (shares > 0) {
+      marketCapCount++;
+      for (const bar of b) bar.marketCap = shares * bar.close;
+    }
+
+    const leverageFactor = info?.leverageFactor != null ? Number(info.leverageFactor) : null;
 
     instruments.push({
       id: r.symbol,
@@ -370,12 +382,17 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
       isPreferredStock: !isEtf && !m.listed.isCommonShare,
       isManagementIssue: false,
       isInvestmentWarning: false,
-      isLeveraged: isEtf && isLeveragedName(m.listed.name),
-      isInverse: isEtf && isInverseName(m.listed.name),
+      isLeveraged:
+        isEtf &&
+        (isLeveragedName(m.listed.name) ||
+          (leverageFactor !== null && Math.abs(leverageFactor) > 1)),
+      isInverse:
+        isEtf && (isInverseName(m.listed.name) || (leverageFactor !== null && leverageFactor < 0)),
       isActive: true,
     });
     bars[r.symbol] = b;
   });
+
 
   if (instruments.length === 0) {
     throw new Error("토스증권 API에서 유효한 종목 일봉을 가져오지 못했습니다.");
