@@ -100,7 +100,8 @@ function Dashboard() {
           </p>
         </div>
         <p className="text-[11px] text-muted-foreground">
-          계산 시각 {analysis.calculatedAt.slice(0, 16).replace("T", " ")} (미래 데이터 미사용)
+          서버 출구 IP {ip ?? "알 수 없음"} · 계산 시각{" "}
+          {analysis.calculatedAt.slice(0, 16).replace("T", " ")} (미래 데이터 미사용)
         </p>
       </div>
 
