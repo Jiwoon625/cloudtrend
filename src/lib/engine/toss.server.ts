@@ -316,6 +316,23 @@ let cache: { dataset: MarketDataset; at: number } | null = null;
 let indexCache: { kospi: IndexSeries; kosdaq: IndexSeries | null; flowOk: boolean; at: number } | null =
   null;
 
+// 사용자가 홈 화면에서 업로드한 유니버스(코스피200 CSV). 설정되면 내장 스냅샷 대신 사용한다.
+let universeOverride: { symbols: string[]; at: number } | null = null;
+
+export function setUniverseOverride(symbols: string[]): number {
+  const unique = [...new Set(symbols.map((s) => s.trim()).filter(Boolean))];
+  universeOverride = unique.length > 0 ? { symbols: unique, at: Date.now() } : null;
+  cache = null; // 다음 요청에서 새 유니버스로 재구성
+  return unique.length;
+}
+
+export function getUniverseOverride(): { count: number; uploadedAt: string } | null {
+  return universeOverride
+    ? { count: universeOverride.symbols.length, uploadedAt: new Date(universeOverride.at).toISOString() }
+    : null;
+}
+
+
 export interface TossDatasetOptions {
   /** 함께 스크리닝할 ETF 수 (거래대금 상위) */
   etfCount?: number;
