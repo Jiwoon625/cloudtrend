@@ -81,6 +81,23 @@ export interface InstrumentDetailPayload {
   history: ReturnType<typeof scoreHistory>;
 }
 
+export const getServerEgressIp = createServerFn({ method: "GET" }).handler(async (): Promise<string> => {
+  try {
+    const res = await fetch("https://api.ipify.org?format=json", { cache: "no-store" });
+    if (!res.ok) throw new Error(`ipify HTTP ${res.status}`);
+    const { ip } = (await res.json()) as { ip: string };
+    return ip ?? "알 수 없음";
+  } catch {
+    try {
+      const res = await fetch("https://checkip.amazonaws.com/", { cache: "no-store" });
+      const text = await res.text();
+      return text.trim() || "알 수 없음";
+    } catch {
+      return "알 수 없음";
+    }
+  }
+});
+
 export const getInstrumentDetail = createServerFn({ method: "GET" })
   .inputValidator((input: { symbol: string }) => ({ symbol: String(input.symbol).slice(0, 20) }))
   .handler(async ({ data }): Promise<InstrumentDetailPayload> => {
