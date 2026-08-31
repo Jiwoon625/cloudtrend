@@ -79,7 +79,12 @@ async function api<T>(path: string, params: Record<string, string | number | boo
     const text = await res.text().catch(() => "");
     throw new Error(`토스증권 API 오류 ${path} (HTTP ${res.status}): ${text.slice(0, 200)}`);
   }
-  return (await res.json()) as T;
+  // 토스 Open API는 모든 성공 응답을 { result: ... } 로 감싸서 반환한다.
+  const json = (await res.json()) as { result?: T } | T;
+  if (json && typeof json === "object" && "result" in (json as Record<string, unknown>)) {
+    return (json as { result: T }).result;
+  }
+  return json as T;
 }
 
 async function mapLimited<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>) {
