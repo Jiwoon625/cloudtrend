@@ -103,7 +103,7 @@ function InstrumentDetail() {
     },
     failedRules: row.failedRules,
     warnings: row.warnings,
-    timestamps: { calculatedAt: analysis.calculatedAt },
+    timestamps: { calculatedAt: new Date().toISOString() },
   };
 
   const explanation = (() => {
