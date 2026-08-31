@@ -5,7 +5,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { GradeBadge, ScreenerTable } from "@/components/ScreenerTable";
 import { Badge } from "@/components/ui/badge";
-import { analysisQueryOptions } from "@/lib/analysisQuery";
+import { analysisQueryOptions, ipQueryOptions } from "@/lib/analysisQuery";
 import { WARNING_LABELS } from "@/lib/engine/scoring";
 import { formatCount, formatNumber, formatPercent, formatWon } from "@/lib/format";
 
