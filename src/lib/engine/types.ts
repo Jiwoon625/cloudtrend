@@ -18,7 +18,7 @@ export interface Instrument {
   isInverse: boolean;
   isActive: boolean;
   indexMemberships: string[]; // KOSPI200 / KOSDAQ150 / KRX300 / KOREA_VALUEUP
-  etfTag?: string;
+  etfTag?: string | undefined;
 }
 
 export interface DailyPrice {
