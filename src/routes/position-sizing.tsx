@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { TriangleAlert } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useSuspenseQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { calculatePositionSizing } from "@/lib/engine/scoring";
-import { runAnalysis } from "@/lib/engine/pipeline";
+import { analysisQueryOptions } from "@/lib/analysisQuery";
 import { formatNumber, formatPrice, formatWon } from "@/lib/format";
 
 export const Route = createFileRoute("/position-sizing")({
@@ -25,11 +26,13 @@ export const Route = createFileRoute("/position-sizing")({
       },
     ],
   }),
+  loader: ({ context }) => context.queryClient.ensureQueryData(analysisQueryOptions),
   component: PositionSizingPage,
 });
 
 function PositionSizingPage() {
-  const analysis = useMemo(() => runAnalysis(), []);
+  const { data } = useSuspenseQuery(analysisQueryOptions);
+  const analysis = data.analysis;
   const first = analysis.rows[0]!;
   const [totalCapital, setTotalCapital] = useState(100_000_000);
   const [riskPercent, setRiskPercent] = useState(1);

@@ -1,11 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Activity, ArrowDown, ArrowUp, ShieldAlert, TrendingUp } from "lucide-react";
-import { useMemo } from "react";
+import { useSuspenseQuery } from "@tanstack/react-query";
 
 import { AppShell } from "@/components/AppShell";
 import { GradeBadge, ScreenerTable } from "@/components/ScreenerTable";
 import { Badge } from "@/components/ui/badge";
-import { runAnalysis } from "@/lib/engine/pipeline";
+import { analysisQueryOptions } from "@/lib/analysisQuery";
 import { WARNING_LABELS } from "@/lib/engine/scoring";
 import { formatCount, formatNumber, formatPercent, formatWon } from "@/lib/format";
 
@@ -25,6 +25,7 @@ export const Route = createFileRoute("/")({
       },
     ],
   }),
+  loader: ({ context }) => context.queryClient.ensureQueryData(analysisQueryOptions),
   component: Dashboard,
 });
 
@@ -61,7 +62,8 @@ function KeyValue({ label, value, hint }: { label: string; value: React.ReactNod
 }
 
 function Dashboard() {
-  const analysis = useMemo(() => runAnalysis(), []);
+  const { data } = useSuspenseQuery(analysisQueryOptions);
+  const analysis = data.analysis;
   const { marketGate: gate, rows, sectors } = analysis;
 
   const passed = rows.filter((r) => r.hardFilterPassed);

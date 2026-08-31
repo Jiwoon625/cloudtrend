@@ -38,6 +38,17 @@ export const DEFAULT_UNIVERSE: UniverseParams = {
   excludeLeveragedInverse: true,
 };
 
+/**
+ * 공급자가 제공하지 않는 항목의 필터 처리 방식.
+ * 데이터가 없는 규칙은 "미달"로 오판하지 않고 평가에서 제외하며, 제외 사실을 별도로 알린다.
+ */
+export interface UniverseAvailability {
+  marketCap: boolean;
+  etfFacts: boolean;
+}
+
+export const ALL_AVAILABLE: UniverseAvailability = { marketCap: true, etfFacts: true };
+
 export interface MarketGate {
   benchmarkAboveMa60: boolean | null;
   benchmarkAboveCloud: boolean | null;
@@ -78,18 +89,22 @@ export function evaluateMarketGate(input: {
 export interface UniverseResult {
   passed: boolean;
   failedRules: string[];
+  /** 데이터가 없어 평가하지 못한 규칙 (미달로 처리하지 않음) */
+  skippedRules: string[];
 }
 
 export function evaluateUniverse(
   inst: Instrument,
   snap: IndicatorSnapshot,
-  marketCap: number,
+  marketCap: number | null,
   tradingValue: number,
   barCount: number,
   etf: EtfFacts | undefined,
   params: UniverseParams,
+  availability: UniverseAvailability = ALL_AVAILABLE,
 ): UniverseResult {
   const failed: string[] = [];
+  const skipped: string[] = [];
   if (!inst.isActive) failed.push("거래정지 또는 비활성 종목");
   if (barCount < 120) failed.push("최근 120거래일 데이터 부족");
 
@@ -99,12 +114,14 @@ export function evaluateUniverse(
     if (inst.isInvestmentWarning) failed.push("투자경고종목 제외");
     if (snap.close < params.minPrice) failed.push(`주가 ${params.minPrice.toLocaleString()}원 미만`);
     if (snap.close > params.maxPrice) failed.push(`주가 ${params.maxPrice.toLocaleString()}원 초과`);
-    if (marketCap < params.minMarketCap) failed.push("시가총액 기준 미달");
+    if (!availability.marketCap || marketCap === null) skipped.push("시가총액 기준 (데이터 없음)");
+    else if (marketCap < params.minMarketCap) failed.push("시가총액 기준 미달");
     if (tradingValue < params.minTradingValue) failed.push("당일 거래대금 기준 미달");
   } else {
     if (params.excludeLeveragedInverse && (inst.isLeveraged || inst.isInverse))
       failed.push("레버리지·인버스 기본 제외");
-    if (!etf) failed.push("ETF 메타데이터 없음");
+    if (!availability.etfFacts) skipped.push("ETF 상품 메타데이터 기준 (데이터 없음)");
+    else if (!etf) failed.push("ETF 메타데이터 없음");
     else {
       if (etf.assetsUnderManagement < params.etfMinAum) failed.push("순자산 기준 미달");
       if (etf.averageTradingValue20d < params.etfMinTradingValue20d)
@@ -113,7 +130,7 @@ export function evaluateUniverse(
         failed.push("괴리율 기준 초과");
     }
   }
-  return { passed: failed.length === 0, failedRules: failed };
+  return { passed: failed.length === 0, failedRules: failed, skippedRules: skipped };
 }
 
 export interface ScoreBlock {
@@ -269,7 +286,7 @@ export function priorityScore(
   inst: Instrument,
   snap: IndicatorSnapshot,
   facts: FinancialFacts | undefined,
-  marketCap: number,
+  marketCap: number | null,
   benchmarkDayReturn: number | null,
 ): ScoreBlock {
   const rows: RuleRow[] = [];
@@ -330,13 +347,14 @@ export function priorityScore(
     maxPoints: 1,
   });
 
-  const capOk = marketCap >= 300_000_000_000;
+  const capOk = marketCap !== null && marketCap >= 300_000_000_000;
   rows.push({
     group: "규모",
     rule: "시가총액 3,000억 원 이상",
-    actual: `${(marketCap / 1_000_000_000_000).toFixed(2)}조 원`,
+    actual:
+      marketCap === null ? "데이터 없음" : `${(marketCap / 1_000_000_000_000).toFixed(2)}조 원`,
     threshold: "충족 시 +1",
-    status: capOk ? "PASS" : "FAIL",
+    status: marketCap === null ? "NO_DATA" : capOk ? "PASS" : "FAIL",
     points: capOk ? 1 : 0,
     maxPoints: 1,
   });

@@ -29,9 +29,10 @@ export interface DailyPrice {
   close: number;
   volume: number;
   tradingValue: number;
-  marketCap: number;
-  foreignNetBuyValue: number;
-  institutionNetBuyValue: number;
+  /** null = 공급자가 제공하지 않음 */
+  marketCap: number | null;
+  foreignNetBuyValue: number | null;
+  institutionNetBuyValue: number | null;
 }
 
 export interface FinancialFacts {

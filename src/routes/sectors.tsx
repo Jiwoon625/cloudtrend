@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useSuspenseQuery } from "@tanstack/react-query";
 
 import { AppShell } from "@/components/AppShell";
 import { Delta } from "@/components/ScreenerTable";
-import { runAnalysis } from "@/lib/engine/pipeline";
+import { analysisQueryOptions } from "@/lib/analysisQuery";
 import { formatNumber } from "@/lib/format";
 
 export const Route = createFileRoute("/sectors")({
@@ -22,6 +22,7 @@ export const Route = createFileRoute("/sectors")({
       },
     ],
   }),
+  loader: ({ context }) => context.queryClient.ensureQueryData(analysisQueryOptions),
   component: SectorsPage,
 });
 
@@ -35,7 +36,8 @@ function TrendCell({ value, label }: { value: boolean | null; label: string }) {
 }
 
 function SectorsPage() {
-  const analysis = useMemo(() => runAnalysis(), []);
+  const { data } = useSuspenseQuery(analysisQueryOptions);
+  const analysis = data.analysis;
   return (
     <AppShell>
       <h1 className="text-xl font-bold tracking-tight">섹터 상대강도</h1>

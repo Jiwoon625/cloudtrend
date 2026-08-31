@@ -1,6 +1,14 @@
-// 스크리닝 파이프라인: mock provider → 지표 → 실격 필터 → 시장 게이트 → 점수
-import { computeIndicators, percentile, periodReturn, sma, type IndicatorSnapshot } from "./indicators";
+// 스크리닝 파이프라인: MarketDataset → 지표 → 실격 필터 → 시장 게이트 → 점수
+// 데이터 공급자(mock / 토스증권 Open API)에 의존하지 않고 주입된 dataset만 사용한다.
 import {
+  computeIndicators,
+  percentile,
+  periodReturn,
+  sma,
+  type IndicatorSnapshot,
+} from "./indicators";
+import {
+  ALL_AVAILABLE,
   DEFAULT_UNIVERSE,
   ETF_WEIGHTS,
   STOCK_WEIGHTS,
@@ -20,20 +28,8 @@ import {
   type ScoreBlock,
   type TechnicalGrade,
 } from "./scoring";
-import {
-  AS_OF_DATE,
-  DATA_PROVIDER,
-  DATA_VERSION,
-  INSTRUMENTS,
-  SECTORS,
-  TRADE_DATES,
-  VKOSPI_SERIES,
-  getBars,
-  getEtfFacts,
-  getFinancials,
-  getIndexSeries,
-} from "./mockProvider";
-import type { EtfFacts, FinancialFacts, Instrument } from "./types";
+import type { DatasetCapabilities, MarketDataset } from "./dataset";
+import type { EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
 
 export interface SectorScore {
   sectorCode: string;
@@ -71,10 +67,11 @@ export interface ScreeningRow {
   actionLabelText: string;
   warnings: string[];
   failedRules: string[];
+  skippedRules: string[];
   hardFilterPassed: boolean;
   financials: FinancialFacts | undefined;
   etf: EtfFacts | undefined;
-  marketCap: number;
+  marketCap: number | null;
   benchmarkCode: string;
   benchmarkFallback: boolean;
   rs20: number | null;
@@ -86,6 +83,9 @@ export interface AnalysisResult {
   strategyVersion: string;
   dataVersion: string;
   dataProvider: string;
+  isLive: boolean;
+  capabilities: DatasetCapabilities;
+  notes: string[];
   marketGate: MarketGate;
   vkospi: number | null;
   kospi: IndicatorSnapshot;
@@ -93,25 +93,31 @@ export interface AnalysisResult {
   marketForeignNet5d: number | null;
   rows: ScreeningRow[];
   sectors: SectorScore[];
+  tradeDates: string[];
   calculatedAt: string;
 }
 
-function indexSnapshot(code: string, offset = 0): IndicatorSnapshot | null {
-  const series = getIndexSeries(code);
+function indexOf(ds: MarketDataset, code: string): IndexSeries | undefined {
+  return ds.indexSeries.find((s) => s.indexCode === code);
+}
+
+function indexSnapshot(ds: MarketDataset, code: string, offset = 0): IndicatorSnapshot | null {
+  const series = indexOf(ds, code);
   if (!series) return null;
   return computeIndicators(series.bars, series.bars.length - 1 - offset);
 }
 
-function sectorSnapshotScores(rows: Array<{ row: ScreeningRow }>): SectorScore[] {
-  const kospi = getIndexSeries("KOSPI")!;
+function sectorSnapshotScores(ds: MarketDataset, rows: ScreeningRow[]): SectorScore[] {
+  const kospi = indexOf(ds, "KOSPI");
+  if (!kospi) return [];
   const kospiCloses = kospi.bars.map((b) => b.close);
   const lastIndex = kospi.bars.length - 1;
   const marketReturn20 = periodReturn(kospiCloses, lastIndex, 20) ?? 0;
   const marketReturn60 = periodReturn(kospiCloses, lastIndex, 60) ?? 0;
   const marketReturn20Prev = periodReturn(kospiCloses, lastIndex - 5, 20) ?? 0;
 
-  const raw = SECTORS.map((s) => {
-    const series = getIndexSeries(`KRX_${s.code}`);
+  const raw = ds.sectors.map((s) => {
+    const series = indexOf(ds, `KRX_${s.code}`);
     const isSynthetic = !series;
     const closes = series ? series.bars.map((b) => b.close) : [];
     const li = closes.length - 1;
@@ -120,12 +126,10 @@ function sectorSnapshotScores(rows: Array<{ row: ScreeningRow }>): SectorScore[]
     const r20prev = series ? (periodReturn(closes, li - 5, 20) ?? 0) : 0;
     const snap = series ? computeIndicators(series.bars, li) : null;
 
-    const members = rows.filter((r) => r.row.instrument.sectorCode === s.code);
-    const aligned = members.filter((m) => m.row.snapshot.maAligned === true).length;
-    const nearHigh = members.filter(
-      (m) => (m.row.snapshot.distanceFrom52wHigh ?? -100) >= -10,
-    ).length;
-    const advancing = members.filter((m) => (m.row.snapshot.dayReturn ?? 0) > 0).length;
+    const members = rows.filter((r) => r.instrument.sectorCode === s.code);
+    const aligned = members.filter((m) => m.snapshot.maAligned === true).length;
+    const nearHigh = members.filter((m) => (m.snapshot.distanceFrom52wHigh ?? -100) >= -10).length;
+    const advancing = members.filter((m) => (m.snapshot.dayReturn ?? 0) > 0).length;
     const total = Math.max(1, members.length);
 
     return {
@@ -142,10 +146,10 @@ function sectorSnapshotScores(rows: Array<{ row: ScreeningRow }>): SectorScore[]
       breadthNearHigh: (nearHigh / total) * 100,
       breadthAdvancing: (advancing / total) * 100,
       isSynthetic,
-      gradeACount: members.filter((m) => m.row.grade === "A").length,
-      gradeBCount: members.filter((m) => m.row.grade === "B").length,
+      gradeACount: members.filter((m) => m.grade === "A").length,
+      gradeBCount: members.filter((m) => m.grade === "B").length,
       representativeEtf:
-        members.find((m) => m.row.instrument.instrumentType === "ETF")?.row.instrument.name ?? null,
+        members.find((m) => m.instrument.instrumentType === "ETF")?.instrument.name ?? null,
     };
   });
 
@@ -189,46 +193,56 @@ function sectorSnapshotScores(rows: Array<{ row: ScreeningRow }>): SectorScore[]
   }));
 }
 
-let cached: AnalysisResult | null = null;
+export function runAnalysis(ds: MarketDataset): AnalysisResult {
+  const kospi = indexSnapshot(ds, "KOSPI");
+  const kosdaq = indexSnapshot(ds, "KOSDAQ") ?? kospi;
+  if (!kospi || !kosdaq) throw new Error("시장 지수(KOSPI/KOSDAQ) 시계열이 없어 분석할 수 없습니다.");
 
-export function runAnalysis(): AnalysisResult {
-  if (cached) return cached;
+  const vkospi = ds.capabilities.volatilityIndex
+    ? (ds.vkospiSeries[ds.vkospiSeries.length - 1] ?? null)
+    : null;
 
-  const kospi = indexSnapshot("KOSPI")!;
-  const kosdaq = indexSnapshot("KOSDAQ")!;
-  const vkospi = VKOSPI_SERIES[VKOSPI_SERIES.length - 1] ?? null;
-  const kospiBars = getIndexSeries("KOSPI")!.bars;
-  const marketForeignNet5d = kospiBars
-    .slice(-5)
-    .reduce((a, b) => a + b.foreignNetBuyValue, 0);
+  const kospiBars = indexOf(ds, "KOSPI")!.bars;
+  const last5 = kospiBars.slice(-5);
+  const marketForeignNet5d = ds.capabilities.investorFlow
+    ? last5.every((b) => b.foreignNetBuyValue !== null)
+      ? last5.reduce((a, b) => a + (b.foreignNetBuyValue ?? 0), 0)
+      : null
+    : null;
 
   const gate = evaluateMarketGate({ benchmark: kospi, vkospi, marketForeignNet5d });
 
+  const availability = {
+    marketCap: ds.capabilities.marketCap,
+    etfFacts: ds.capabilities.etfFacts,
+  };
+
   // 거래대금 백분위는 시장/유형별로 따로 계산
   const groups = new Map<string, number[]>();
-  const prepared = INSTRUMENTS.map((inst) => {
-    const bars = getBars(inst.symbol);
-    const snap = computeIndicators(bars, bars.length - 1);
-    const key = inst.market;
-    const arr = groups.get(key) ?? [];
-    arr.push(bars[bars.length - 1]!.tradingValue);
-    groups.set(key, arr);
-    return { inst, bars, snap };
-  });
+  const prepared = ds.instruments
+    .map((inst) => {
+      const bars = ds.bars[inst.symbol] ?? [];
+      if (bars.length === 0) return null;
+      const snap = computeIndicators(bars, bars.length - 1);
+      const arr = groups.get(inst.market) ?? [];
+      arr.push(bars[bars.length - 1]!.tradingValue);
+      groups.set(inst.market, arr);
+      return { inst, bars, snap };
+    })
+    .filter((p): p is { inst: Instrument; bars: typeof kospiBars; snap: IndicatorSnapshot } => !!p);
   for (const [k, v] of groups) groups.set(k, v.sort((a, b) => a - b));
 
   const rows: ScreeningRow[] = prepared.map(({ inst, bars, snap }) => {
     const last = bars[bars.length - 1]!;
-    const financials = getFinancials(inst.symbol);
-    const etf = getEtfFacts(inst.symbol);
+    const financials = ds.financials[inst.symbol];
+    const etf = ds.etfFacts[inst.symbol];
     const valuePct = percentile(groups.get(inst.market) ?? [], last.tradingValue);
 
-    const benchmarkCode =
-      inst.market === "KOSDAQ" ? "KOSDAQ" : etf?.underlyingIndex ? "KOSPI" : "KOSPI";
+    const benchmarkCode = inst.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI";
     const benchmarkFallback = inst.instrumentType === "ETF" && !etf?.underlyingIndex;
     const bench = benchmarkCode === "KOSDAQ" ? kosdaq : kospi;
 
-    const benchSeries = getIndexSeries(benchmarkCode)!;
+    const benchSeries = indexOf(ds, benchmarkCode) ?? indexOf(ds, "KOSPI")!;
     const benchCloses = benchSeries.bars.map((b) => b.close);
     const bli = benchCloses.length - 1;
     const benchR20 = periodReturn(benchCloses, bli, 20);
@@ -237,7 +251,9 @@ export function runAnalysis(): AnalysisResult {
     const tech = technicalScore(snap, valuePct);
     const prio = priorityScore(inst, snap, financials, last.marketCap, bench.dayReturn);
     const quality =
-      inst.instrumentType === "STOCK" ? fundamentalScore(financials) : etfHealthScore(inst, etf);
+      inst.instrumentType === "STOCK"
+        ? fundamentalScore(financials)
+        : etfHealthScore(inst, ds.capabilities.etfFacts ? etf : undefined);
 
     const universe = evaluateUniverse(
       inst,
@@ -247,14 +263,13 @@ export function runAnalysis(): AnalysisResult {
       bars.length,
       etf,
       DEFAULT_UNIVERSE,
+      ds.isLive ? availability : ALL_AVAILABLE,
     );
 
     const technicalNormalized = normalize(tech);
     const priorityNormalized = normalize(prio);
     const qualityScore =
-      quality.availableMaxPoints === 0
-        ? null
-        : (quality.points / quality.availableMaxPoints) * 100;
+      quality.availableMaxPoints === 0 ? null : (quality.points / quality.availableMaxPoints) * 100;
 
     return {
       instrument: inst,
@@ -272,25 +287,24 @@ export function runAnalysis(): AnalysisResult {
       actionLabelText: actionLabel(technicalGrade(tech.points), gate.status),
       warnings: [],
       failedRules: universe.failedRules,
+      skippedRules: universe.skippedRules,
       hardFilterPassed: universe.passed,
       financials,
       etf,
       marketCap: last.marketCap,
       benchmarkCode,
       benchmarkFallback,
-      rs20:
-        snap.return20 !== null && benchR20 !== null ? (snap.return20 - benchR20) * 100 : null,
-      rs60:
-        snap.return60 !== null && benchR60 !== null ? (snap.return60 - benchR60) * 100 : null,
+      rs20: snap.return20 !== null && benchR20 !== null ? (snap.return20 - benchR20) * 100 : null,
+      rs60: snap.return60 !== null && benchR60 !== null ? (snap.return60 - benchR60) * 100 : null,
     };
   });
 
-  const sectors = sectorSnapshotScores(rows.map((row) => ({ row })));
+  const sectors = sectorSnapshotScores(ds, rows);
   const sectorByCode = new Map(sectors.map((s) => [s.sectorCode, s]));
 
   for (const row of rows) {
     const sector = sectorByCode.get(row.instrument.sectorCode);
-    row.marketSectorScore = sector ? sector.score : null;
+    row.marketSectorScore = ds.capabilities.sectors && sector ? sector.score : null;
     const weights = row.instrument.instrumentType === "STOCK" ? STOCK_WEIGHTS : ETF_WEIGHTS;
     const { total, dataCompletenessRatio } = totalScore({
       technicalNormalized: row.technicalNormalized,
@@ -311,11 +325,14 @@ export function runAnalysis(): AnalysisResult {
     });
   }
 
-  cached = {
-    asOfDate: AS_OF_DATE,
+  return {
+    asOfDate: ds.asOfDate,
     strategyVersion: STRATEGY_VERSION,
-    dataVersion: DATA_VERSION,
-    dataProvider: DATA_PROVIDER,
+    dataVersion: ds.version,
+    dataProvider: ds.provider,
+    isLive: ds.isLive,
+    capabilities: ds.capabilities,
+    notes: ds.notes,
     marketGate: gate,
     vkospi,
     kospi,
@@ -323,33 +340,37 @@ export function runAnalysis(): AnalysisResult {
     marketForeignNet5d,
     rows,
     sectors,
-    calculatedAt: new Date(`${AS_OF_DATE}T09:00:00Z`).toISOString(),
+    tradeDates: ds.tradeDates,
+    calculatedAt: new Date().toISOString(),
   };
-  return cached;
 }
 
-export function getRow(symbol: string): ScreeningRow | undefined {
-  return runAnalysis().rows.find((r) => r.instrument.symbol === symbol);
+export function getRow(ds: MarketDataset, symbol: string): ScreeningRow | undefined {
+  return runAnalysis(ds).rows.find((r) => r.instrument.symbol === symbol);
 }
 
-export function scoreHistory(symbol: string, days = 60) {
-  const bars = getBars(symbol);
-  const inst = INSTRUMENTS.find((i) => i.symbol === symbol);
+export function scoreHistory(ds: MarketDataset, symbol: string, days = 60) {
+  const bars = ds.bars[symbol] ?? [];
+  const inst = ds.instruments.find((i) => i.symbol === symbol);
   if (!inst || bars.length === 0) return [];
   const out: Array<{ tradeDate: string; technicalPoints: number; grade: TechnicalGrade }> = [];
   for (let i = Math.max(120, bars.length - days); i < bars.length; i++) {
     const snap = computeIndicators(bars, i);
     const t = technicalScore(snap, 75);
-    out.push({ tradeDate: bars[i]!.tradeDate, technicalPoints: t.points, grade: technicalGrade(t.points) });
+    out.push({
+      tradeDate: bars[i]!.tradeDate,
+      technicalPoints: t.points,
+      grade: technicalGrade(t.points),
+    });
   }
   return out;
 }
 
-export function chartSeries(symbol: string, days = 160) {
-  const bars = getBars(symbol);
+export function chartSeries(ds: MarketDataset, symbol: string, days = 160) {
+  const bars = ds.bars[symbol] ?? [];
+  const closes = bars.map((b) => b.close);
   const out = [];
   for (let i = Math.max(120, bars.length - days); i < bars.length; i++) {
-    const closes = bars.map((b) => b.close);
     const snap = computeIndicators(bars, i);
     out.push({
       tradeDate: bars[i]!.tradeDate,
@@ -369,5 +390,3 @@ export function chartSeries(symbol: string, days = 160) {
   }
   return out;
 }
-
-export const ALL_TRADE_DATES = TRADE_DATES;

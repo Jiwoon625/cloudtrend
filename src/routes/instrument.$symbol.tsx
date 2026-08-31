@@ -1,5 +1,6 @@
+import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   Area,
   Bar,
@@ -17,15 +18,17 @@ import { BreakdownTable } from "@/components/BreakdownTable";
 import { Delta, GradeBadge } from "@/components/ScreenerTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { chartSeries, getRow, runAnalysis, scoreHistory } from "@/lib/engine/pipeline";
+import { instrumentQueryOptions } from "@/lib/analysisQuery";
 import { WARNING_LABELS } from "@/lib/engine/scoring";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
 
 export const Route = createFileRoute("/instrument/$symbol")({
-  loader: ({ params }) => {
-    const row = getRow(params.symbol);
-    if (!row) throw notFound();
-    return { name: row.instrument.name, symbol: row.instrument.symbol };
+  loader: async ({ params, context }) => {
+    const detail = await context.queryClient.ensureQueryData(
+      instrumentQueryOptions(params.symbol),
+    );
+    if (!detail.row) throw notFound();
+    return { name: detail.row.instrument.name, symbol: detail.row.instrument.symbol };
   },
   head: ({ loaderData }) => {
     if (!loaderData)
@@ -60,10 +63,11 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
 
 function InstrumentDetail() {
   const { symbol } = Route.useParams();
-  const analysis = useMemo(() => runAnalysis(), []);
-  const row = useMemo(() => getRow(symbol)!, [symbol]);
-  const chart = useMemo(() => chartSeries(symbol), [symbol]);
-  const history = useMemo(() => scoreHistory(symbol), [symbol]);
+  const { data: detail } = useSuspenseQuery(instrumentQueryOptions(symbol));
+  const analysis = detail;
+  const row = detail.row!;
+  const chart = detail.chart;
+  const history = detail.history;
   const [showLog, setShowLog] = useState(false);
   const [watched, setWatched] = useState(false);
   const [visible, setVisible] = useState({ ma: true, bb: true, cloud: true });
@@ -99,7 +103,7 @@ function InstrumentDetail() {
     },
     failedRules: row.failedRules,
     warnings: row.warnings,
-    timestamps: { calculatedAt: analysis.calculatedAt },
+    timestamps: { calculatedAt: new Date().toISOString() },
   };
 
   const explanation = (() => {
@@ -165,7 +169,10 @@ function InstrumentDetail() {
         <Stat label="종합점수" value={formatNumber(row.totalScoreNormalized, 1)} />
         <Stat label="기술등급" value={<GradeBadge grade={row.grade} />} />
         <Stat label="상태 라벨" value={row.actionLabelText} />
-        <Stat label="시가총액" value={formatWon(row.marketCap)} />
+        <Stat
+          label="시가총액"
+          value={row.marketCap === null ? "데이터 없음" : formatWon(row.marketCap)}
+        />
         <Stat label="52주 고점 거리" value={<Delta value={snap.distanceFrom52wHigh} />} />
       </div>
 

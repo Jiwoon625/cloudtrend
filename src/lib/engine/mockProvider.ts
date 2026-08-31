@@ -1,5 +1,6 @@
 // Mock data provider — 화면 테스트용 합성 데이터. 실제 시세/재무가 아닙니다.
 // 시드 기반 결정론적 생성: 같은 시드 = 같은 데이터 = 같은 점수.
+import { FULL_CAPABILITIES, type MarketDataset } from "./dataset";
 import type {
   DailyPrice,
   EtfFacts,
@@ -341,4 +342,38 @@ export function getEtfFacts(symbol: string): EtfFacts | undefined {
 
 export function getIndexSeries(code: string): IndexSeries | undefined {
   return INDEX_SERIES.find((s) => s.indexCode === code);
+}
+
+// ---------------------------------------------------------------------------
+// MarketDataset 어댑터 (합성 데이터: 모든 항목 제공)
+// ---------------------------------------------------------------------------
+export function getMockDataset(): MarketDataset {
+  const bars: Record<string, DailyPrice[]> = {};
+  const financials: Record<string, FinancialFacts> = {};
+  const etfFacts: Record<string, EtfFacts> = {};
+  for (const inst of INSTRUMENTS) {
+    bars[inst.symbol] = getBars(inst.symbol);
+    const f = getFinancials(inst.symbol);
+    if (f) financials[inst.symbol] = f;
+    const e = getEtfFacts(inst.symbol);
+    if (e) etfFacts[inst.symbol] = e;
+  }
+  return {
+    provider: DATA_PROVIDER,
+    version: DATA_VERSION,
+    asOfDate: AS_OF_DATE,
+    isLive: false,
+    capabilities: FULL_CAPABILITIES,
+    notes: [
+      "합성(mock) 데이터입니다. 실제 시세·재무가 아니며 화면 및 계산 검증 목적으로만 사용합니다.",
+    ],
+    sectors: SECTORS,
+    tradeDates: TRADE_DATES,
+    instruments: INSTRUMENTS,
+    bars,
+    indexSeries: INDEX_SERIES,
+    financials,
+    etfFacts,
+    vkospiSeries: VKOSPI_SERIES,
+  };
 }

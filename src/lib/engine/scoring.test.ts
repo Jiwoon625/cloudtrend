@@ -13,7 +13,7 @@ import {
   totalScore,
   STOCK_WEIGHTS,
 } from "./scoring";
-import { getBars, getFinancials, INSTRUMENTS } from "./mockProvider";
+import { getBars, getFinancials, getMockDataset, INSTRUMENTS } from "./mockProvider";
 import { runAnalysis } from "./pipeline";
 import type { FinancialFacts, Instrument } from "./types";
 
@@ -241,8 +241,8 @@ describe("포지션 사이징", () => {
 
 describe("결정론 및 미래 데이터 미사용", () => {
   it("동일 기준일·파라미터 재실행 시 같은 점수", () => {
-    const a = runAnalysis().rows.map((r) => r.totalScoreNormalized.toFixed(6));
-    const b = runAnalysis().rows.map((r) => r.totalScoreNormalized.toFixed(6));
+    const a = runAnalysis(getMockDataset()).rows.map((r) => r.totalScoreNormalized.toFixed(6));
+    const b = runAnalysis(getMockDataset()).rows.map((r) => r.totalScoreNormalized.toFixed(6));
     expect(a).toEqual(b);
   });
 
@@ -257,7 +257,7 @@ describe("결정론 및 미래 데이터 미사용", () => {
   });
 
   it("주식과 ETF는 서로 다른 규칙으로 평가된다", () => {
-    const analysis = runAnalysis();
+    const analysis = runAnalysis(getMockDataset());
     const stock = analysis.rows.find((r) => r.instrument.instrumentType === "STOCK")!;
     const etf = analysis.rows.find((r) => r.instrument.instrumentType === "ETF")!;
     expect(stock.quality.rows.some((r) => r.group === "수익성")).toBe(true);
