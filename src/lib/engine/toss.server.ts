@@ -226,6 +226,26 @@ async function fetchCandles(symbol: string): Promise<DailyPrice[]> {
   }
 }
 
+/** 종목 상세(발행주식수 포함)를 200건 단위로 조회. 시가총액 = 발행주식수 × 종가 */
+async function fetchStockInfos(symbols: string[]): Promise<Map<string, StockInfo>> {
+  const out = new Map<string, StockInfo>();
+  for (let i = 0; i < symbols.length; i += 200) {
+    const chunk = symbols.slice(i, i + 200);
+    try {
+      const res = await api<StockInfo[] | { stocks: StockInfo[] }>("/api/v1/stocks", {
+        symbols: chunk.join(","),
+      });
+      const list = Array.isArray(res) ? res : (res.stocks ?? []);
+      for (const s of list) out.set(s.symbol, s);
+    } catch {
+      // 상세 조회 실패 시 해당 청크는 시가총액 없음으로 남긴다.
+    }
+  }
+  return out;
+}
+
+
+
 async function fetchIndex(symbol: string, name: string): Promise<IndexSeries | null> {
   try {
     const res = await api<{ candles: Candle[] }>(
