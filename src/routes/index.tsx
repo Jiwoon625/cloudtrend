@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Activity, ArrowDown, ArrowUp, ShieldAlert, TrendingUp } from "lucide-react";
+import { Activity, ArrowDown, ArrowUp, ShieldAlert, TrendingUp, Upload } from "lucide-react";
 import { useSuspenseQuery } from "@tanstack/react-query";
 
 import { AppShell } from "@/components/AppShell";
 import { GradeBadge, ScreenerTable } from "@/components/ScreenerTable";
+import { UniverseUpload } from "@/components/UniverseUpload";
 import { Badge } from "@/components/ui/badge";
 import { analysisQueryOptions, ipQueryOptions } from "@/lib/analysisQuery";
 import { WARNING_LABELS } from "@/lib/engine/scoring";
