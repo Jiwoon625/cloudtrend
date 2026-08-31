@@ -315,6 +315,15 @@ export function runAnalysis(ds: MarketDataset): AnalysisResult {
       ds.isLive ? availability : ALL_AVAILABLE,
     );
 
+    // 초저유동성(직전 20거래일 중 거래일이 절반 미만) 종목은 지표 왜곡이 커 실격 처리한다.
+    const prior20 = bars.slice(Math.max(0, bars.length - 21), bars.length - 1);
+    const tradedDays = prior20.filter((b) => b.volume > 0).length;
+    if (prior20.length >= 20 && tradedDays < 10) {
+      universe.failedRules.push(`직전 20거래일 중 거래일 ${tradedDays}일 (유동성 부족)`);
+      universe.passed = false;
+    }
+
+
     const technicalNormalized = normalize(tech);
     const priorityNormalized = normalize(prio);
     const qualityScore =
