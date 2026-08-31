@@ -1,7 +1,7 @@
 // 토스증권 Open API 어댑터 (서버 전용).
 // https://openapi.tossinvest.com — OAuth2 client_credentials 로 토큰 발급 후 시세 조회.
 // 이 파일은 절대 클라이언트로 반입되지 않습니다(*.server.ts 는 클라이언트 번들에서 차단).
-import { FULL_CAPABILITIES, NO_CAPABILITIES, type MarketDataset } from "./dataset";
+import { NO_CAPABILITIES, type MarketDataset } from "./dataset";
 import type { DailyPrice, EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
 
 const BASE = "https://openapi.tossinvest.com";
@@ -252,7 +252,6 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
   for (const s of listOf(kosdaqList)) meta.set(s.symbol, { listed: s, market: "KOSDAQ" });
 
   const ranked = (ranking.rankings ?? []).filter((r) => meta.has(r.symbol));
-  const rankBySymbol = new Map(ranked.map((r) => [r.symbol, r]));
 
   const [kospiIdx, kosdaqIdx] = await Promise.all([
     fetchIndex("KOSPI", "코스피"),
@@ -278,6 +277,7 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
     if (amount > 0) lastBar.tradingValue = amount;
 
     instruments.push({
+      id: r.symbol,
       symbol: r.symbol,
       name: m.listed.name,
       market: isEtf ? "ETF" : m.market,
@@ -291,9 +291,7 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
       isLeveraged: isEtf && isLeveragedName(m.listed.name),
       isInverse: isEtf && isInverseName(m.listed.name),
       isActive: true,
-      listedDate: null,
-      etfBrand: null,
-    } as Instrument);
+    });
     bars[r.symbol] = b;
   });
 
@@ -334,8 +332,6 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
     vkospiSeries: [],
   };
 
-  void FULL_CAPABILITIES;
-  void rankBySymbol;
   cache = { dataset, at: Date.now() };
   return dataset;
 }
