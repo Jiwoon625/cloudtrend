@@ -84,8 +84,8 @@ let gate: Promise<void> = Promise.resolve();
 function throttle<T>(fn: () => Promise<T>): Promise<T> {
   const run = gate.then(fn);
   gate = run.then(
-    () => sleep(MIN_REQUEST_GAP_MS),
-    () => sleep(MIN_REQUEST_GAP_MS),
+    () => sleep(MIN_REQUEST_GAP_MS).then(() => undefined),
+    () => sleep(MIN_REQUEST_GAP_MS).then(() => undefined),
   );
   return run;
 }
