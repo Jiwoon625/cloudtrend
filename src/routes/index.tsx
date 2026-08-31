@@ -1,9 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Activity, ArrowDown, ArrowUp, ShieldAlert, TrendingUp } from "lucide-react";
+import { Activity, ArrowDown, ArrowUp, ShieldAlert, TrendingUp, Upload } from "lucide-react";
 import { useSuspenseQuery } from "@tanstack/react-query";
 
 import { AppShell } from "@/components/AppShell";
 import { GradeBadge, ScreenerTable } from "@/components/ScreenerTable";
+import { UniverseUpload } from "@/components/UniverseUpload";
 import { Badge } from "@/components/ui/badge";
 import { analysisQueryOptions, ipQueryOptions } from "@/lib/analysisQuery";
 import { WARNING_LABELS } from "@/lib/engine/scoring";
@@ -104,6 +105,13 @@ function Dashboard() {
           {analysis.calculatedAt.slice(0, 16).replace("T", " ")} (미래 데이터 미사용)
         </p>
       </div>
+
+      <div className="mb-4">
+        <Card title="코스피200 종목 CSV 업로드" icon={<Upload className="size-4 text-primary" />}>
+          <UniverseUpload />
+        </Card>
+      </div>
+
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title="시장 상태" icon={<Activity className="size-4 text-primary" />}>

@@ -236,3 +236,28 @@ export const getDataStatus = createServerFn({ method: "GET" }).handler(
     };
   },
 );
+
+export interface UniverseUploadPayload {
+  count: number;
+  uploadedAt: string | null;
+}
+
+/** 홈 화면에서 업로드한 코스피200 CSV로 스크리닝 유니버스를 교체한다. */
+export const setUniverse = createServerFn({ method: "POST" })
+  .inputValidator((input: { symbols: string[] }) => ({
+    symbols: (input.symbols ?? []).map((s) => String(s).trim()).filter(Boolean).slice(0, 500),
+  }))
+  .handler(async ({ data }): Promise<UniverseUploadPayload> => {
+    const { setUniverseOverride, getUniverseOverride } = await import("@/lib/engine/toss.server");
+    setUniverseOverride(data.symbols);
+    const cur = getUniverseOverride();
+    return { count: cur?.count ?? 0, uploadedAt: cur?.uploadedAt ?? null };
+  });
+
+export const getUniverse = createServerFn({ method: "GET" }).handler(
+  async (): Promise<UniverseUploadPayload> => {
+    const { getUniverseOverride } = await import("@/lib/engine/toss.server");
+    const cur = getUniverseOverride();
+    return { count: cur?.count ?? 0, uploadedAt: cur?.uploadedAt ?? null };
+  },
+);
