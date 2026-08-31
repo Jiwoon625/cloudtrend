@@ -161,16 +161,36 @@ function sectorSnapshotScores(ds: MarketDataset, rows: ScreeningRow[]): SectorSc
     const advancing = members.filter((m) => (m.snapshot.dayReturn ?? 0) > 0).length;
     const total = Math.max(1, members.length);
 
+    // 섹터지수가 없으면 구성종목 과반 기준으로 추세 판정
+    const majority = (pred: (m: ScreeningRow) => boolean | null): boolean | null => {
+      const valid = members.map(pred).filter((v): v is boolean => v !== null);
+      if (valid.length === 0) return null;
+      return valid.filter(Boolean).length / valid.length > 0.5;
+    };
+
     return {
       sectorCode: s.code,
       sectorName: s.name,
       rs20: (r20 - marketReturn20) * 100,
       rs60: (r60 - marketReturn60) * 100,
       rs20prev: (r20prev - marketReturn20Prev) * 100,
-      aboveMa20: snap && snap.ma20 !== null ? snap.close > snap.ma20 : null,
-      aboveMa60: snap && snap.ma60 !== null ? snap.close > snap.ma60 : null,
+      aboveMa20:
+        snap && snap.ma20 !== null
+          ? snap.close > snap.ma20
+          : majority((m) => (m.snapshot.ma20 !== null ? m.snapshot.close > m.snapshot.ma20 : null)),
+      aboveMa60:
+        snap && snap.ma60 !== null
+          ? snap.close > snap.ma60
+          : majority((m) => (m.snapshot.ma60 !== null ? m.snapshot.close > m.snapshot.ma60 : null)),
       aboveCloud:
-        snap && snap.ichimoku.cloudTop !== null ? snap.close > snap.ichimoku.cloudTop : null,
+        snap && snap.ichimoku.cloudTop !== null
+          ? snap.close > snap.ichimoku.cloudTop
+          : majority((m) =>
+              m.snapshot.ichimoku.cloudTop !== null
+                ? m.snapshot.close > m.snapshot.ichimoku.cloudTop
+                : null,
+            ),
+
       breadthMaAligned: (aligned / total) * 100,
       breadthNearHigh: (nearHigh / total) * 100,
       breadthAdvancing: (advancing / total) * 100,
