@@ -69,11 +69,18 @@ export function AppShell({
             <ThemeToggle />
           </nav>
         </div>
-        <div className="flex items-center gap-2 border-t border-border bg-warn-soft px-4 py-1.5 text-[11px] text-foreground">
-          <TriangleAlert className="size-3.5 shrink-0 text-warn" />
+        <div
+          className={`flex items-start gap-2 border-t border-border px-4 py-1.5 text-[11px] text-foreground ${live ? "bg-surface-strong" : "bg-warn-soft"}`}
+        >
+          {live ? (
+            <Info className="mt-0.5 size-3.5 shrink-0 text-primary" />
+          ) : (
+            <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warn" />
+          )}
           <span>
-            합성 데이터 모드 ({DATA_PROVIDER}) — 화면 검증용 mock 데이터이며 실제 시세·재무가
-            아닙니다. 투자 판단 및 자동 주문 기능은 제공하지 않습니다.
+            {live
+              ? `실데이터 모드 (${source?.provider ?? "-"}) — 일봉 기준 계산이며 투자 판단 및 자동 주문 기능은 제공하지 않습니다.`
+              : `합성 데이터 모드 (${source?.provider ?? "mock"}) — 화면 검증용 mock 데이터이며 실제 시세·재무가 아닙니다.${source?.fallbackReason ? ` 폴백 사유: ${source.fallbackReason}` : ""}`}
           </span>
         </div>
       </header>
