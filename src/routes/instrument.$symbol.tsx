@@ -18,15 +18,17 @@ import { BreakdownTable } from "@/components/BreakdownTable";
 import { Delta, GradeBadge } from "@/components/ScreenerTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { chartSeries, getRow, runAnalysis, scoreHistory } from "@/lib/engine/pipeline";
+import { instrumentQueryOptions } from "@/lib/analysisQuery";
 import { WARNING_LABELS } from "@/lib/engine/scoring";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
 
 export const Route = createFileRoute("/instrument/$symbol")({
-  loader: ({ params }) => {
-    const row = getRow(params.symbol);
-    if (!row) throw notFound();
-    return { name: row.instrument.name, symbol: row.instrument.symbol };
+  loader: async ({ params, context }) => {
+    const detail = await context.queryClient.ensureQueryData(
+      instrumentQueryOptions(params.symbol),
+    );
+    if (!detail.row) throw notFound();
+    return { name: detail.row.instrument.name, symbol: detail.row.instrument.symbol };
   },
   head: ({ loaderData }) => {
     if (!loaderData)
