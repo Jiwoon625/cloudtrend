@@ -105,6 +105,13 @@ function Dashboard() {
         </p>
       </div>
 
+      <div className="mb-4">
+        <Card title="코스피200 종목 CSV 업로드" icon={<Upload className="size-4 text-primary" />}>
+          <UniverseUpload />
+        </Card>
+      </div>
+
+
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title="시장 상태" icon={<Activity className="size-4 text-primary" />}>
           <div className={`mb-2 flex items-center gap-2 text-lg font-bold ${gateColor}`}>
