@@ -89,6 +89,8 @@ export function evaluateMarketGate(input: {
 export interface UniverseResult {
   passed: boolean;
   failedRules: string[];
+  /** 데이터가 없어 평가하지 못한 규칙 (미달로 처리하지 않음) */
+  skippedRules: string[];
 }
 
 export function evaluateUniverse(
