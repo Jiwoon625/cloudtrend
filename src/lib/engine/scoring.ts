@@ -347,13 +347,14 @@ export function priorityScore(
     maxPoints: 1,
   });
 
-  const capOk = marketCap >= 300_000_000_000;
+  const capOk = marketCap !== null && marketCap >= 300_000_000_000;
   rows.push({
     group: "규모",
     rule: "시가총액 3,000억 원 이상",
-    actual: `${(marketCap / 1_000_000_000_000).toFixed(2)}조 원`,
+    actual:
+      marketCap === null ? "데이터 없음" : `${(marketCap / 1_000_000_000_000).toFixed(2)}조 원`,
     threshold: "충족 시 +1",
-    status: capOk ? "PASS" : "FAIL",
+    status: marketCap === null ? "NO_DATA" : capOk ? "PASS" : "FAIL",
     points: capOk ? 1 : 0,
     maxPoints: 1,
   });
