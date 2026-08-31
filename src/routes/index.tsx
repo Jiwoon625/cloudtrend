@@ -1,10 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Activity, ArrowDown, ArrowUp, ShieldAlert, TrendingUp, Upload } from "lucide-react";
+import { Activity, ArrowDown, ArrowUp, ListPlus, ShieldAlert, TrendingUp, Upload } from "lucide-react";
 import { useSuspenseQuery } from "@tanstack/react-query";
 
 import { AppShell } from "@/components/AppShell";
 import { GradeBadge, ScreenerTable } from "@/components/ScreenerTable";
+import { EtfUniverseInput } from "@/components/EtfUniverseInput";
 import { UniverseUpload } from "@/components/UniverseUpload";
+
 import { Badge } from "@/components/ui/badge";
 import { analysisQueryOptions, ipQueryOptions } from "@/lib/analysisQuery";
 import { WARNING_LABELS } from "@/lib/engine/scoring";
@@ -106,11 +108,15 @@ function Dashboard() {
         </p>
       </div>
 
-      <div className="mb-4">
+      <div className="mb-4 grid gap-4 lg:grid-cols-2">
         <Card title="코스피200 종목 CSV 업로드" icon={<Upload className="size-4 text-primary" />}>
           <UniverseUpload />
         </Card>
+        <Card title="ETF 스크리닝 종목코드" icon={<ListPlus className="size-4 text-primary" />}>
+          <EtfUniverseInput />
+        </Card>
       </div>
+
 
 
       <div className="grid gap-4 lg:grid-cols-3">
