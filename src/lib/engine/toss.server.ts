@@ -397,13 +397,16 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
   const baseSymbols = universeOverride?.symbols ?? KOSPI200_SYMBOLS;
   const kospi200 = baseSymbols.filter((s) => meta.has(s));
 
-  const etfSymbols = rankings
-    .filter((r) => {
-      const m = meta.get(r.symbol);
-      return m ? ETF_TYPES.has(m.listed.securityType) : false;
-    })
-    .slice(0, etfCount)
-    .map((r) => r.symbol);
+  const etfSymbols = etfOverride
+    ? etfOverride.symbols.filter((s) => meta.has(s))
+    : rankings
+        .filter((r) => {
+          const m = meta.get(r.symbol);
+          return m ? ETF_TYPES.has(m.listed.securityType) : false;
+        })
+        .slice(0, etfCount)
+        .map((r) => r.symbol);
+
   const universe = [...kospi200, ...etfSymbols];
 
   // 지수 시계열(캐시)
