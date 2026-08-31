@@ -38,6 +38,17 @@ export const DEFAULT_UNIVERSE: UniverseParams = {
   excludeLeveragedInverse: true,
 };
 
+/**
+ * 공급자가 제공하지 않는 항목의 필터 처리 방식.
+ * 데이터가 없는 규칙은 "미달"로 오판하지 않고 평가에서 제외하며, 제외 사실을 별도로 알린다.
+ */
+export interface UniverseAvailability {
+  marketCap: boolean;
+  etfFacts: boolean;
+}
+
+export const ALL_AVAILABLE: UniverseAvailability = { marketCap: true, etfFacts: true };
+
 export interface MarketGate {
   benchmarkAboveMa60: boolean | null;
   benchmarkAboveCloud: boolean | null;
