@@ -63,10 +63,11 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
 
 function InstrumentDetail() {
   const { symbol } = Route.useParams();
-  const analysis = useMemo(() => runAnalysis(), []);
-  const row = useMemo(() => getRow(symbol)!, [symbol]);
-  const chart = useMemo(() => chartSeries(symbol), [symbol]);
-  const history = useMemo(() => scoreHistory(symbol), [symbol]);
+  const { data: detail } = useSuspenseQuery(instrumentQueryOptions(symbol));
+  const analysis = detail;
+  const row = detail.row!;
+  const chart = detail.chart;
+  const history = detail.history;
   const [showLog, setShowLog] = useState(false);
   const [watched, setWatched] = useState(false);
   const [visible, setVisible] = useState({ ma: true, bb: true, cloud: true });
