@@ -129,7 +129,7 @@ interface SnapshotSourceRow {
   instrument: { symbol: string; name: string; instrumentType: "STOCK" | "ETF" };
   grade: string;
   totalScoreNormalized: number;
-  technicalPoints?: number;
+  technical: { points: number };
   hardFilterPassed: boolean;
 }
 
@@ -146,7 +146,7 @@ export function buildSnapshot(analysis: {
     instrumentType: r.instrument.instrumentType,
     grade: r.grade,
     totalScore: r.totalScoreNormalized,
-    technicalPoints: r.technicalPoints ?? 0,
+    technicalPoints: r.technical.points,
     hardFilterPassed: r.hardFilterPassed,
   }));
   const passed = entries.filter((e) => e.hardFilterPassed);
