@@ -202,6 +202,22 @@ export interface MarketFlowState {
   outflowSectorCount: number;
 }
 
+/** 섹터 점수 시계열 한 시점 */
+export interface SectorTimelinePoint {
+  /** 기준일 (해당 시점 마지막 거래일) */
+  date: string;
+  priceLeadership: number | null;
+  moneyFlow: number | null;
+  /** 5일 평균 거래대금 점유율 (%) */
+  turnoverShare5d: number | null;
+}
+
+export interface SectorTimeline {
+  sectorCode: string;
+  sectorName: string;
+  points: SectorTimelinePoint[];
+}
+
 export interface SectorRotationResult {
   asOfDate: string;
   sectors: SectorRotationRow[];
@@ -211,7 +227,10 @@ export interface SectorRotationResult {
   excludedItems: string[];
   weights: RotationWeights;
   overallCompleteness: number;
+  /** 최근 약 5주간 5거래일 간격 점수 추이 (과거 → 현재) */
+  timeline: SectorTimeline[];
 }
+
 
 // ───────────────────────── helpers ─────────────────────────
 
