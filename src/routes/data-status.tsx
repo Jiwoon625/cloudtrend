@@ -1,4 +1,4 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 
 import { AppShell } from "@/components/AppShell";
@@ -24,7 +24,6 @@ export const Route = createFileRoute("/data-status")({
       },
     ],
   }),
-  loader: ({ context }) => context.queryClient.ensureQueryData(dataStatusQueryOptions),
   errorComponent: ({ error, reset }) => <DataError error={error} reset={reset} />,
   component: DataStatusPage,
 });
@@ -40,7 +39,18 @@ const CAPABILITY_LABELS: Record<string, string> = {
 };
 
 function DataStatusPage() {
-  const { data } = useSuspenseQuery(dataStatusQueryOptions);
+  const { data, error, refetch } = useQuery(dataStatusQueryOptions);
+
+  if (error) return <DataError error={error} reset={() => void refetch()} />;
+  if (!data)
+    return (
+      <AppShell>
+        <p className="py-10 text-center text-sm text-muted-foreground">
+          데이터 상태를 확인하는 중입니다…
+        </p>
+      </AppShell>
+    );
+
   const validations = [
     { label: "OHLC 논리 오류", value: data.checks.ohlcErrors },
     { label: "음수 거래량", value: data.checks.negativeVolume },
