@@ -17,7 +17,7 @@ import { getMarketAnalysis } from "@/lib/market.functions";
 
 const SCREENING_STARTED_KEY = "trendscore:screening-started";
 import { WARNING_LABELS } from "@/lib/engine/scoring";
-import { formatCount, formatNumber, formatPercent, formatWon } from "@/lib/format";
+import { formatCount, formatKstDateTime, formatNumber, formatPercent, formatWon } from "@/lib/format";
 
 export const Route = createFileRoute("/")({
   // 외부 시세 API 실패 시 SSR 500(빈 화면) 대신 클라이언트 에러 화면을 보여준다.
@@ -171,7 +171,7 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
           기준일 {analysis.asOfDate} · 전략 v{analysis.strategyVersion} · 데이터 {analysis.dataVersion}
         </p>
         <p className="text-[11px] text-muted-foreground">
-          계산 시각 {analysis.calculatedAt.slice(0, 16).replace("T", " ")} (미래 데이터 미사용)
+          계산 시각 {formatKstDateTime(analysis.calculatedAt)} (KST·미래 데이터 미사용)
         </p>
       </div>
 
