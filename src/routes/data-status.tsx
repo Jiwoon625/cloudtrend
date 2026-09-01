@@ -39,7 +39,18 @@ const CAPABILITY_LABELS: Record<string, string> = {
 };
 
 function DataStatusPage() {
-  const { data } = useSuspenseQuery(dataStatusQueryOptions);
+  const { data, error, refetch } = useQuery(dataStatusQueryOptions);
+
+  if (error) return <DataError error={error} reset={() => void refetch()} />;
+  if (!data)
+    return (
+      <AppShell>
+        <p className="py-10 text-center text-sm text-muted-foreground">
+          데이터 상태를 확인하는 중입니다…
+        </p>
+      </AppShell>
+    );
+
   const validations = [
     { label: "OHLC 논리 오류", value: data.checks.ohlcErrors },
     { label: "음수 거래량", value: data.checks.negativeVolume },
