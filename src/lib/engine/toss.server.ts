@@ -30,17 +30,23 @@ export function hasTossCredentials(): boolean {
   return Boolean(process.env["TOSS_CLIENT_ID"] && process.env["TOSS_CLIENT_SECRET"]);
 }
 
-// 토스 Open API는 클라이언트당 "가장 최근에 발급된 토큰 1개"만 유효하며, 사실상 호출 1건 단위로
-// 무효화되는 동작을 보인다. 따라서 호출마다 새 토큰을 발급하고, 토큰 발급 자체를 직렬 큐로 묶어
-// 발급 레이트리밋(429)을 피한다.
+// 동일 클라이언트로 새 토큰을 발급하면 기존 토큰이 무효화될 수 있다. 병렬 API 요청마다 토큰을
+// 새로 발급하면 요청들이 서로의 토큰을 폐기하므로, 만료 전까지 하나를 공유하고 발급도 single-flight로 묶는다.
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** 토큰 발급 간 최소 간격(ms) */
-const TOKEN_GAP_MS = 130;
-let tokenGate: Promise<unknown> = Promise.resolve();
+interface CachedToken {
+  value: string;
+  expiresAt: number;
+}
+
+let tokenCache: CachedToken | null = null;
+let tokenInflight: Promise<string | null> | null = null;
 
 function issueToken(): Promise<string | null> {
-  const run = tokenGate.then(async () => {
+  if (tokenCache && Date.now() < tokenCache.expiresAt) return Promise.resolve(tokenCache.value);
+  if (tokenInflight) return tokenInflight;
+
+  tokenInflight = (async () => {
     const { clientId, clientSecret } = credentials();
     const res = await fetch(`${BASE}/oauth2/token`, {
       method: "POST",
@@ -66,14 +72,14 @@ function issueToken(): Promise<string | null> {
       }
       throw new Error(`토스증권 토큰 발급 실패 (HTTP ${res.status}): ${text.slice(0, 200)}`);
     }
-    const json = (await res.json()) as { access_token: string };
+    const json = (await res.json()) as { access_token: string; expires_in?: number };
+    const ttlMs = Math.max(60_000, (json.expires_in ?? 3600) * 1000 - 60_000);
+    tokenCache = { value: json.access_token, expiresAt: Date.now() + ttlMs };
     return json.access_token;
+  })().finally(() => {
+    tokenInflight = null;
   });
-  tokenGate = run.then(
-    () => sleep(TOKEN_GAP_MS),
-    () => sleep(TOKEN_GAP_MS * 5),
-  );
-  return run;
+  return tokenInflight;
 }
 
 export class TossIpError extends Error {}
@@ -97,6 +103,8 @@ async function api<T>(
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
   });
   if (res.status === 401 || res.status === 429) {
+    // 늦게 도착한 구토큰의 401이 이미 갱신된 새 토큰까지 지우지 않도록 값이 같을 때만 폐기한다.
+    if (res.status === 401 && tokenCache?.value === token) tokenCache = null;
     if (attempt < MAX_ATTEMPTS) {
       await sleep(250 * (attempt + 1));
       return api<T>(path, params, attempt + 1);
