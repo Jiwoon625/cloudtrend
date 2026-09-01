@@ -205,7 +205,7 @@ function SectorsPage() {
       "RS20","RS60","RS120","외국인1일","외국인5일","외국인20일","외국인60일","기관1일","기관5일","기관20일","기관60일",
       "외국인5일/시총(%)","기관5일/시총(%)","거래대금점유율5일(%)","점유율변화5일(%p)","상대거래대금",
       "MA20상회비율","MA60상회비율","정배열비율","신고가근접비율","외국인매수확산도","기관매수확산도","동시매수확산도",
-      "종목수","수급집중도(%)","시총집중도(%)","데이터완전성(%)","신뢰도","전주대비순위","대표ETF","경고",
+      "종목수","수급집중도(%)","시총집중도(%)","데이터완전성(%)","신뢰도","전주대비순위","대표ETF/대표주","경고",
     ];
     const lines = rot.sectors.map((r) =>
       [
@@ -281,9 +281,14 @@ function SectorsPage() {
             {(rot.weights.rotationMomentum * 100).toFixed(0)}%
           </p>
         </div>
-        <Button size="sm" variant="outline" onClick={downloadCsv}>
-          CSV 내보내기
-        </Button>
+        <div className="flex gap-2 print:hidden">
+          <Button size="sm" variant="outline" onClick={downloadCsv}>
+            CSV 내보내기
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => window.print()}>
+            PDF로 내보내기
+          </Button>
+        </div>
       </div>
 
       {/* 시장 전체 자금 상태 */}
@@ -440,7 +445,7 @@ function SectorsPage() {
                   [null, "전주 대비"],
                   ["reliability", "신뢰도"],
                   [null, "완전성"],
-                  [null, "대표 ETF"],
+                  [null, "대표 ETF/대표주"],
                 ] as Array<[SortKey | null, string]>
               ).map(([key, label]) => (
                 <th
@@ -537,7 +542,7 @@ function SectorsPage() {
                     </span>
                   </td>
                   <td className="num px-2 py-1.5">{s.dataCompleteness.toFixed(0)}%</td>
-                  <td className="px-2 py-1.5">{s.representativeEtf ?? "매핑 없음"}</td>
+                  <td className="px-2 py-1.5">{s.representativeEtf ?? "데이터 없음"}</td>
                 </tr>
                 {expanded === s.sectorCode ? (
                   <tr key={`${s.sectorCode}-detail`} className="border-t border-border bg-surface">
@@ -702,7 +707,7 @@ function SectorsPage() {
               <th className="px-2 py-2 text-right">신고가 근접</th>
               <th className="px-2 py-2 text-right">상승 종목</th>
               <th className="px-2 py-2 text-right">A / B등급</th>
-              <th className="px-2 py-2 text-left">대표 ETF</th>
+              <th className="px-2 py-2 text-left">대표 ETF/대표주</th>
             </tr>
           </thead>
           <tbody>

@@ -35,7 +35,7 @@ import type { DatasetCapabilities, MarketDataset } from "./dataset";
 import type { EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
 
 /**
- * 섹터별 대표 ETF 매핑.
+ * 섹터별 대표 종목 매핑 (대표 ETF 우선, 없으면 해당 섹터 시가총액 1위 종목).
  * 레버리지·인버스·채권·CD금리·해외자산·시장대표 ETF는 국내 산업 섹터 자금흐름 분석에서 제외한다.
  */
 const NON_SECTOR_ETF = /채권|국고채|CD\s?금리|단기자금|머니마켓|MMF|금현물|달러|원유|커버드콜|미국|나스닥|S&P|필라델피아|글로벌|차이나|중국|일본|인도|베트남|유로|선진국|신흥국|리츠|TDF|배당성장|밸류업|레버리지|인버스|200TR|코스피|코스닥/i;
@@ -43,25 +43,43 @@ const NON_SECTOR_ETF = /채권|국고채|CD\s?금리|단기자금|머니마켓|M
 function buildRepresentativeEtf(
   ds: MarketDataset,
 ): Map<string, { symbol: string; name: string }> {
-  const best = new Map<string, { symbol: string; name: string; value: number }>();
+  const bestEtf = new Map<string, { symbol: string; name: string; value: number }>();
+  const bestStock = new Map<string, { symbol: string; name: string; value: number }>();
   for (const inst of ds.instruments) {
-    if (inst.instrumentType !== "ETF") continue;
-    if (inst.isLeveraged || inst.isInverse) continue;
-    if (inst.sectorCode === "MARKET_IDX" || inst.sectorCode === "ETC") continue;
-    if (NON_SECTOR_ETF.test(inst.name)) continue;
     const bars = ds.bars[inst.symbol] ?? [];
     if (bars.length === 0) continue;
-    const recent = bars.slice(-20);
-    const value = recent.reduce((a, b) => a + b.tradingValue, 0) / Math.max(1, recent.length);
-    const cur = best.get(inst.sectorCode);
+    if (inst.sectorCode === "MARKET_IDX" || inst.sectorCode === "ETC") continue;
+
+    if (inst.instrumentType === "ETF") {
+      if (inst.isLeveraged || inst.isInverse) continue;
+      if (NON_SECTOR_ETF.test(inst.name)) continue;
+      const recent = bars.slice(-20);
+      const value = recent.reduce((a, b) => a + b.tradingValue, 0) / Math.max(1, recent.length);
+      const cur = bestEtf.get(inst.sectorCode);
+      if (!cur || value > cur.value) {
+        bestEtf.set(inst.sectorCode, { symbol: inst.symbol, name: inst.name, value });
+      }
+      continue;
+    }
+
+    // 개별 주식: 시가총액(없으면 최근 거래대금) 최대 종목을 대표주로 사용
+    if (inst.isPreferredStock) continue;
+    const last = bars[bars.length - 1]!;
+    const cap = last.marketCap;
+    const value = cap !== null && Number.isFinite(cap) ? cap : last.tradingValue;
+    if (!Number.isFinite(value)) continue;
+    const cur = bestStock.get(inst.sectorCode);
     if (!cur || value > cur.value) {
-      best.set(inst.sectorCode, { symbol: inst.symbol, name: inst.name, value });
+      bestStock.set(inst.sectorCode, { symbol: inst.symbol, name: inst.name, value });
     }
   }
-  return new Map(
-    [...best.entries()].map(([code, v]) => [code, { symbol: v.symbol, name: v.name }]),
-  );
+
+  const out = new Map<string, { symbol: string; name: string }>();
+  for (const [code, v] of bestStock) out.set(code, { symbol: v.symbol, name: v.name });
+  for (const [code, v] of bestEtf) out.set(code, { symbol: v.symbol, name: v.name });
+  return out;
 }
+
 
 export interface SectorScore {
   sectorCode: string;
