@@ -281,7 +281,7 @@ export function actionLabel(grade: TechnicalGrade, gate: MarketGate["status"]): 
   return "관망";
 }
 
-/** Priority Quality Score, 10점 만점 */
+/** Priority Quality Score, 8점 만점 */
 export function priorityScore(
   inst: Instrument,
   snap: IndicatorSnapshot,
@@ -371,7 +371,7 @@ export function priorityScore(
     (a, r) => a + (r.status === "NO_DATA" ? 0 : r.maxPoints),
     0,
   );
-  return { points, maxPoints: 10, availableMaxPoints, rows };
+  return { points, maxPoints: 8, availableMaxPoints, rows };
 }
 
 /** Fundamental Score, 100점 환산 (주식 전용) */
