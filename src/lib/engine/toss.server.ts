@@ -181,6 +181,13 @@ interface InvestorTradingRecord {
   foreigner: { buyAmount: string; sellAmount: string };
   institution: { buyAmount: string; sellAmount: string };
 }
+/** GET /api/v1/stocks/{symbol}/investor-trading — 종목별 투자자 매매는 "수량"만 제공된다. */
+interface StockInvestorRecord {
+  date: string;
+  foreigner: { buyVolume: string; sellVolume: string; netBuyVolume: string } | null;
+  institution: { buyVolume: string; sellVolume: string; netBuyVolume: string } | null;
+}
+
 
 const num = (v: string | null | undefined) => (v === null || v === undefined ? 0 : Number(v));
 /** ISO 타임스탬프 → KST 거래일(YYYY-MM-DD) */
