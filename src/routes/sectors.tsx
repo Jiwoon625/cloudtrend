@@ -635,7 +635,18 @@ function SectorsPage() {
         </p>
       </section>
 
+      {/* 시계열 추이 */}
+      <section className="mb-4 rounded-lg border border-border bg-card p-3">
+        <h2 className="text-sm font-semibold">섹터 점수 시계열 추이</h2>
+        <p className="mb-2 text-[11px] text-muted-foreground">
+          5거래일 간격으로 과거 시점의 프레임을 재계산한 값입니다. 섹터 이름을 눌러 표시 여부를
+          바꿀 수 있습니다.
+        </p>
+        <TimelineChart timeline={rot.timeline} sectors={rot.sectors} />
+      </section>
+
       {/* 11.4 섹터 간 자금 이동 */}
+
       <section className="mb-4 rounded-lg border border-border bg-card p-3">
         <h2 className="text-sm font-semibold">섹터 간 자금 이동 추정</h2>
         <p className="mb-2 text-[11px] text-muted-foreground">
