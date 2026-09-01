@@ -43,19 +43,22 @@ export const Route = createFileRoute("/")({
 
 function Card({
   title,
+  subtitle,
   icon,
   children,
 }: {
   title: string;
+  subtitle?: string;
   icon?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="rounded-lg border border-border bg-card p-4">
-      <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
+      <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
         {icon}
         {title}
       </h2>
+      {subtitle ? <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">{subtitle}</p> : null}
       {children}
     </section>
   );
