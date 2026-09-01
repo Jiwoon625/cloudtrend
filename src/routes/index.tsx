@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Activity, ArrowDown, ArrowUp, Hash, ListPlus, Loader2, Play, RefreshCw, ShieldAlert, TrendingUp } from "lucide-react";
 import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
@@ -18,6 +18,7 @@ import { getMarketAnalysis } from "@/lib/market.functions";
 const SCREENING_STARTED_KEY = "trendscore:screening-started";
 import { WARNING_LABELS } from "@/lib/engine/scoring";
 import { formatCount, formatKstDateTime, formatNumber, formatPercent, formatWon } from "@/lib/format";
+import { buildSnapshot, diffSnapshots, saveSnapshot, type GradeDiff } from "@/lib/screeningHistory";
 
 export const Route = createFileRoute("/")({
   // 외부 시세 API 실패 시 SSR 500(빈 화면) 대신 클라이언트 에러 화면을 보여준다.
@@ -166,6 +167,14 @@ type AnalysisResult = Awaited<ReturnType<typeof getMarketAnalysis>>["analysis"];
 function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
   const { marketGate: gate, rows, sectors } = analysis;
 
+  // 그날의 마지막 스크리닝 결과를 저장하고, 이전 날짜 스냅샷과 등급 변화를 비교한다.
+  const snapshot = useMemo(() => buildSnapshot(analysis), [analysis]);
+  const [diff, setDiff] = useState<GradeDiff | null>(null);
+  useEffect(() => {
+    setDiff(diffSnapshots(snapshot));
+    saveSnapshot(snapshot);
+  }, [snapshot]);
+
   const passed = rows.filter((r) => r.hardFilterPassed);
   const gradeA = passed.filter((r) => r.grade === "A");
   const gradeB = passed.filter((r) => r.grade === "B");
@@ -240,9 +249,21 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
           <KeyValue label="Universe Filter 통과" value={formatCount(passed.length)} />
           <KeyValue label="A등급" value={formatCount(gradeA.length)} />
           <KeyValue label="B등급" value={formatCount(gradeB.length)} />
-          <KeyValue label="신규 A등급 진입" value="미집계" hint="전일 스냅샷 필요" />
-          <KeyValue label="A→B 하락" value="미집계" hint="전일 스냅샷 필요" />
+          <KeyValue
+            label="신규 A등급 진입"
+            value={diff?.previous ? formatCount(diff.newGradeA.length) : "미집계"}
+            hint={diff?.previous ? `${diff.previous.date} 대비` : "이전 날짜 스냅샷 없음"}
+          />
+          <KeyValue
+            label="A→B 하락"
+            value={diff?.previous ? formatCount(diff.droppedAtoB.length) : "미집계"}
+            hint={diff?.previous ? `${diff.previous.date} 대비` : "이전 날짜 스냅샷 없음"}
+          />
           <KeyValue label="데이터 미완전 종목" value={formatCount(incomplete.length)} />
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            결과는 <Link to="/history" className="text-primary hover:underline">스크리닝 이력</Link> 탭에
+            날짜별(그날의 마지막 결과)로 저장됩니다.
+          </p>
         </Card>
 
         <Card title="강한 섹터" icon={<TrendingUp className="size-4 text-primary" />}>
