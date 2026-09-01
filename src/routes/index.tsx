@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Activity, ArrowDown, ArrowUp, Hash, ListPlus, Loader2, Play, ShieldAlert, TrendingUp } from "lucide-react";
+import { Activity, ArrowDown, ArrowUp, Hash, ListPlus, Loader2, Play, RefreshCw, ShieldAlert, TrendingUp } from "lucide-react";
 import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -111,7 +111,15 @@ function Dashboard() {
             스크리닝은 버튼을 눌렀을 때만 데이터 수집·계산을 시작합니다.
           </p>
         </div>
-        <p className="text-[11px] text-muted-foreground">서버 출구 IP {ip ?? "알 수 없음"}</p>
+        <div className="flex items-center gap-3">
+          {started && !analysisQuery.isPending ? (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={rescreen}>
+              <RefreshCw className="size-3.5" />
+              다시 스크리닝
+            </Button>
+          ) : null}
+          <p className="text-[11px] text-muted-foreground">서버 출구 IP {ip ?? "알 수 없음"}</p>
+        </div>
       </div>
 
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
