@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
+import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import {
   getDataStatus,
   getInstrumentDetail,
@@ -10,7 +11,7 @@ import {
 
 export const analysisQueryOptions = queryOptions({
   queryKey: ["market-analysis"],
-  queryFn: () => getMarketAnalysis(),
+  queryFn: () => getMarketAnalysis({ data: { config: getActiveScoringConfig() } }),
   staleTime: 5 * 60 * 1000,
   retry: false,
 });
@@ -25,7 +26,8 @@ export const dataStatusQueryOptions = queryOptions({
 export const instrumentQueryOptions = (symbol: string) =>
   queryOptions({
     queryKey: ["instrument", symbol],
-    queryFn: () => getInstrumentDetail({ data: { symbol } }),
+    queryFn: () =>
+      getInstrumentDetail({ data: { symbol, config: getActiveScoringConfig() } }),
     staleTime: 5 * 60 * 1000,
     retry: false,
   });
