@@ -80,6 +80,7 @@ function KeyValue({ label, value, hint }: { label: string; value: React.ReactNod
 
 function Dashboard() {
   const { data: ip } = useSuspenseQuery(ipQueryOptions);
+  const queryClient = useQueryClient();
   const [started, setStarted] = useState(
     () => typeof window !== "undefined" && window.sessionStorage.getItem(SCREENING_STARTED_KEY) === "1",
   );
@@ -88,6 +89,17 @@ function Dashboard() {
   const startScreening = () => {
     window.sessionStorage.setItem(SCREENING_STARTED_KEY, "1");
     setStarted(true);
+  };
+
+  /** 종목을 바꿔 다시 스크리닝: 캐시된 분석 결과를 제거해 로딩·진행률 화면으로 전환한다. */
+  const rescreen = () => {
+    queryClient.removeQueries({ queryKey: analysisQueryOptions.queryKey });
+    setStarted(false);
+    // removeQueries 반영 후 재시작해야 isPending 상태로 진입한다.
+    setTimeout(() => {
+      window.sessionStorage.setItem(SCREENING_STARTED_KEY, "1");
+      setStarted(true);
+    }, 0);
   };
 
   return (
