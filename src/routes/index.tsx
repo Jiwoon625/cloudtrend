@@ -43,19 +43,22 @@ export const Route = createFileRoute("/")({
 
 function Card({
   title,
+  subtitle,
   icon,
   children,
 }: {
   title: string;
+  subtitle?: string;
   icon?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="rounded-lg border border-border bg-card p-4">
-      <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold">
+      <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
         {icon}
         {title}
       </h2>
+      {subtitle ? <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">{subtitle}</p> : null}
       {children}
     </section>
   );
@@ -205,27 +208,38 @@ function Dashboard() {
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-4">
-        {warningBuckets.map((b) => (
-          <Card key={b.code} title={b.code === "LOW_LIQUIDITY" ? "실격 종목" : WARNING_LABELS[b.code]!} icon={<ShieldAlert className="size-4 text-warn" />}>
-            <p className="num mb-2 text-2xl font-bold">{b.rows.length}</p>
-            <div className="flex flex-wrap gap-1">
-              {b.rows.slice(0, 4).map((r) => (
-                <Link
-                  key={r.instrument.symbol}
-                  to="/instrument/$symbol"
-                  params={{ symbol: r.instrument.symbol }}
-                >
-                  <Badge variant="outline" className="text-[10px]">
-                    {r.instrument.name}
-                  </Badge>
-                </Link>
-              ))}
-              {b.rows.length === 0 ? (
-                <span className="text-[11px] text-muted-foreground">해당 종목 없음</span>
-              ) : null}
-            </div>
-          </Card>
-        ))}
+        {warningBuckets.map((b) => {
+          const title = b.code === "LOW_LIQUIDITY" ? "실격 종목" : WARNING_LABELS[b.code]!;
+          const subtitle =
+            b.code === "HEAD_FAKE"
+              ? "가격 돌파는 보이지만 거래량·구름대·선행스팬이 뒷받침하지 않아 되돌림 가능성이 큰 상태입니다. 진입 전 추가 확인이 필요합니다."
+              : b.code === "PRICE_INSIDE_CLOUD"
+                ? "종가가 일목균형표 구름(선행스팬 1, 2) 사이에 있어 추세 방향이 불분명합니다. 구름 상단/하단 이탈 후 방향을 판단합니다."
+                : b.code === "EXIT_TRIGGER"
+                  ? "추세 전환·하락 신호가 감지되어 보유 포지션의 청산 또는 손절을 검토해야 하는 상태입니다."
+                  : "거래대금·유동성·데이터 완전성 조건을 충족하지 못해 Universe Filter에서 제외된 종목입니다.";
+          return (
+            <Card key={b.code} title={title} subtitle={subtitle} icon={<ShieldAlert className="size-4 text-warn" />}>
+              <p className="num mb-2 text-2xl font-bold">{b.rows.length}</p>
+              <div className="flex flex-wrap gap-1">
+                {b.rows.slice(0, 4).map((r) => (
+                  <Link
+                    key={r.instrument.symbol}
+                    to="/instrument/$symbol"
+                    params={{ symbol: r.instrument.symbol }}
+                  >
+                    <Badge variant="outline" className="text-[10px]">
+                      {r.instrument.name}
+                    </Badge>
+                  </Link>
+                ))}
+                {b.rows.length === 0 ? (
+                  <span className="text-[11px] text-muted-foreground">해당 종목 없음</span>
+                ) : null}
+              </div>
+            </Card>
+          );
+        })}
       </div>
 
       <section className="mt-6">
