@@ -577,13 +577,16 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
   const bars: Record<string, DailyPrice[]> = {};
   const usedSectors = new Set<string>();
   let marketCapCount = 0;
+  let flowCount = 0;
 
   for (const symbol of universe) {
     const hit = barStore.get(symbol);
     if (!hit || hit.bars.length === 0) continue;
+    if (hit.flow) flowCount++;
     const m = meta.get(symbol)!;
     const isEtf = ETF_TYPES.has(m.listed.securityType);
     const b = hit.bars.map((bar) => ({ ...bar }));
+
 
     // 최신 봉의 거래대금은 랭킹 실측값으로 교체
     const amount = amountBySymbol.get(symbol) ?? 0;
