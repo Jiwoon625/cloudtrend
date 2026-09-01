@@ -11,7 +11,10 @@ import { StockUniverseInput } from "@/components/StockUniverseInput";
 import { CollectionProgress } from "@/components/CollectionProgress";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { analysisQueryOptions, ipQueryOptions } from "@/lib/analysisQuery";
+
+const SCREENING_STARTED_KEY = "trendscore:screening-started";
 import { WARNING_LABELS } from "@/lib/engine/scoring";
 import { formatCount, formatNumber, formatPercent, formatWon } from "@/lib/format";
 
