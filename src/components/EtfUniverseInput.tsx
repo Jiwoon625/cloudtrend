@@ -46,7 +46,7 @@ export function EtfUniverseInput() {
       setStatus(
         res.symbols.length > 0
           ? `ETF ${res.symbols.length}종목으로 지정했습니다. 일봉 수집 후 스크리너에 반영됩니다.`
-          : "지정을 해제했습니다. 거래대금 상위 ETF가 자동으로 선정됩니다.",
+          : "지정을 해제했습니다. 거래대금 상위 50개 ETF가 자동으로 선정됩니다.",
       );
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "저장에 실패했습니다.");
