@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BacktestRouteImport } from './routes/backtest'
 import { Route as DataStatusRouteImport } from './routes/data-status'
 import { Route as PositionSizingRouteImport } from './routes/position-sizing'
 import { Route as ScoringRouteImport } from './routes/scoring'
@@ -21,6 +22,11 @@ import { Route as ScreenerStocksRouteImport } from './routes/screener.stocks'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BacktestRoute = BacktestRouteImport.update({
+  id: '/backtest',
+  path: '/backtest',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DataStatusRoute = DataStatusRouteImport.update({
@@ -61,6 +67,7 @@ const ScreenerStocksRoute = ScreenerStocksRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/backtest': typeof BacktestRoute
   '/data-status': typeof DataStatusRoute
   '/position-sizing': typeof PositionSizingRoute
   '/scoring': typeof ScoringRoute
@@ -71,6 +78,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/backtest': typeof BacktestRoute
   '/data-status': typeof DataStatusRoute
   '/position-sizing': typeof PositionSizingRoute
   '/scoring': typeof ScoringRoute
@@ -82,6 +90,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/backtest': typeof BacktestRoute
   '/data-status': typeof DataStatusRoute
   '/position-sizing': typeof PositionSizingRoute
   '/scoring': typeof ScoringRoute
@@ -94,6 +103,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/backtest'
     | '/data-status'
     | '/position-sizing'
     | '/scoring'
@@ -104,6 +114,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/backtest'
     | '/data-status'
     | '/position-sizing'
     | '/scoring'
@@ -114,6 +125,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/backtest'
     | '/data-status'
     | '/position-sizing'
     | '/scoring'
@@ -125,6 +137,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  BacktestRoute: typeof BacktestRoute
   DataStatusRoute: typeof DataStatusRoute
   PositionSizingRoute: typeof PositionSizingRoute
   ScoringRoute: typeof ScoringRoute
@@ -141,6 +154,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/backtest': {
+      id: '/backtest'
+      path: '/backtest'
+      fullPath: '/backtest'
+      preLoaderRoute: typeof BacktestRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/data-status': {
@@ -197,6 +217,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  BacktestRoute: BacktestRoute,
   DataStatusRoute: DataStatusRoute,
   PositionSizingRoute: PositionSizingRoute,
   ScoringRoute: ScoringRoute,
