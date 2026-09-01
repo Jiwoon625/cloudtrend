@@ -438,15 +438,55 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
   const baseSymbols = universeOverride?.symbols ?? KOSPI200_SYMBOLS;
   const kospi200 = baseSymbols.filter((s) => meta.has(s));
 
+  const isEtfSymbol = (s: string) => {
+    const m = meta.get(s);
+    return m ? ETF_TYPES.has(m.listed.securityType) : false;
+  };
+
+  // 토스 랭킹 API는 1회 최대 100건(주식+ETF 혼합)이라 거래대금 1일 랭킹만으로는 ETF가 30개도
+  // 안 잡힌다. 여러 랭킹(거래대금/거래량 × 1일/1주)을 합쳐 후보 풀을 만들고 관측된 최대
+  // 거래대금 순으로 상위 etfCount개를 고른다.
+  const autoEtfSymbols = async (): Promise<string[]> => {
+    const pool = new Map<string, number>();
+    const addAll = (items: RankingItem[]) => {
+      for (const r of items) {
+        if (!isEtfSymbol(r.symbol)) continue;
+        const amount = num(r.tradingAmount);
+        pool.set(r.symbol, Math.max(pool.get(r.symbol) ?? 0, amount));
+        if (amount > (amountBySymbol.get(r.symbol) ?? 0)) amountBySymbol.set(r.symbol, amount);
+      }
+    };
+    addAll(rankings);
+    const combos: Array<{ type: string; duration: string }> = [
+      { type: "MARKET_TRADING_VOLUME", duration: "1d" },
+      { type: "MARKET_TRADING_VOLUME", duration: "1w" },
+      { type: "MARKET_TRADING_AMOUNT", duration: "1w" },
+      { type: "TOSS_SECURITIES_TRADING_AMOUNT", duration: "1d" },
+    ];
+    for (const c of combos) {
+      if (pool.size >= etfCount * 2) break;
+      try {
+        const res = await api<{ rankings: RankingItem[] }>("/api/v1/rankings", {
+          type: c.type,
+          marketCountry: "KR",
+          duration: c.duration,
+          count: 100,
+          excludeInvestmentCaution: true,
+        });
+        addAll(res.rankings ?? []);
+      } catch {
+        // 특정 랭킹 조회 실패는 무시하고 다음 후보로 진행
+      }
+    }
+    return [...pool.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, etfCount)
+      .map(([symbol]) => symbol);
+  };
+
   const etfSymbols = etfOverride
     ? etfOverride.symbols.filter((s) => meta.has(s))
-    : rankings
-        .filter((r) => {
-          const m = meta.get(r.symbol);
-          return m ? ETF_TYPES.has(m.listed.securityType) : false;
-        })
-        .slice(0, etfCount)
-        .map((r) => r.symbol);
+    : await autoEtfSymbols();
 
   const universe = [...kospi200, ...etfSymbols];
 
