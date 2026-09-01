@@ -126,6 +126,8 @@ export interface AnalysisResult {
   marketForeignNet5d: number | null;
   rows: ScreeningRow[];
   sectors: SectorScore[];
+  /** 섹터 로테이션 엔진 결과 (가격 리더십 / 자금흐름 분리) */
+  sectorRotation: SectorRotationResult | null;
   tradeDates: string[];
   calculatedAt: string;
 }
