@@ -294,6 +294,6 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
         </div>
         <ScreenerTable rows={top} />
       </section>
-    </AppShell>
+    </>
   );
 }
