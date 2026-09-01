@@ -325,6 +325,35 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
         })}
       </div>
 
+      {failReasons.length > 0 ? (
+        <section className="mt-4 overflow-hidden rounded-lg border border-border bg-card">
+          <h2 className="border-b border-border bg-surface-strong px-3 py-2 text-sm font-semibold">
+            실격 사유 분포 (총 {formatCount(rows.length - passed.length)}종목 실격)
+          </h2>
+          <table className="w-full text-[12px]">
+            <tbody>
+              {failReasons.map(([reason, count]) => (
+                <tr key={reason} className="border-b border-border last:border-0">
+                  <td className="px-3 py-2">{reason}</td>
+                  <td className="num px-3 py-2 text-right font-semibold text-warn">
+                    {formatCount(count)}건
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="px-3 py-2 text-[11px] text-muted-foreground">
+            사유별 기준값은{" "}
+            <Link to="/scoring" className="text-primary hover:underline">
+              점수 산식
+            </Link>{" "}
+            탭의 Universe Filter에서 직접 조정할 수 있습니다.
+          </p>
+        </section>
+      ) : null}
+
+
+
       <section className="mt-6">
         <div className="mb-2 flex items-center gap-2">
           <h2 className="text-sm font-semibold">상위 후보 (Universe 통과 · 종합점수 순)</h2>
