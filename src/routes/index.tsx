@@ -13,6 +13,7 @@ import { CollectionProgress } from "@/components/CollectionProgress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { analysisQueryOptions, ipQueryOptions } from "@/lib/analysisQuery";
+import { getMarketAnalysis } from "@/lib/market.functions";
 
 const SCREENING_STARTED_KEY = "trendscore:screening-started";
 import { WARNING_LABELS } from "@/lib/engine/scoring";
@@ -140,9 +141,9 @@ function Dashboard() {
   );
 }
 
-type AnalysisResult = Awaited<ReturnType<typeof analysisQueryOptions.queryFn>>["analysis"];
+type AnalysisResult = Awaited<ReturnType<typeof getMarketAnalysis>>["analysis"];
 
-function DashboardContent({ analysis }: { analysis: NonNullable<AnalysisResult> }) {
+function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
   const { marketGate: gate, rows, sectors } = analysis;
 
   const passed = rows.filter((r) => r.hardFilterPassed);
