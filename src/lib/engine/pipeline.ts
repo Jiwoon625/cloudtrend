@@ -438,6 +438,10 @@ export function runAnalysis(
     marketForeignNet5d,
     rows,
     sectors,
+    sectorRotation: computeSectorRotation(ds, {
+      representativeEtf: buildRepresentativeEtf(ds),
+      weights: cfg.rotation,
+    }),
     tradeDates: ds.tradeDates,
     calculatedAt: new Date().toISOString(),
   };
