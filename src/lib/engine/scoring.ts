@@ -293,26 +293,28 @@ export function actionLabel(grade: TechnicalGrade, gate: MarketGate["status"]): 
   return "관망";
 }
 
-/** Priority Quality Score, 8점 만점 */
+/** Priority Quality Score. 항목 배점·임계값은 ScoringConfig로 조정된다(기본 8점). */
 export function priorityScore(
   inst: Instrument,
   snap: IndicatorSnapshot,
   facts: FinancialFacts | undefined,
   marketCap: number | null,
   benchmarkDayReturn: number | null,
+  cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
 ): ScoreBlock {
   const rows: RuleRow[] = [];
-  const inIndex = ["KOSPI200", "KOSDAQ150", "KRX300"].some((c) =>
-    inst.indexMemberships.includes(c),
+  const c = cfg.priority;
+  const inIndex = ["KOSPI200", "KOSDAQ150", "KRX300"].some((code) =>
+    inst.indexMemberships.includes(code),
   );
   rows.push({
     group: "지수 편입",
     rule: "KOSPI200 / KOSDAQ150 / KRX300 편입 (중복 1회)",
     actual: inst.indexMemberships.length ? inst.indexMemberships.join(", ") : "미편입",
-    threshold: "편입 시 +2",
+    threshold: `편입 시 +${c.indexPoints}`,
     status: inIndex ? "PASS" : "FAIL",
-    points: inIndex ? 2 : 0,
-    maxPoints: 2,
+    points: inIndex ? c.indexPoints : 0,
+    maxPoints: c.indexPoints,
   });
 
   const f60 = snap.foreignNet60d;
@@ -320,10 +322,10 @@ export function priorityScore(
     group: "외국인 수급",
     rule: "최근 3개월(60일) 외국인 누적 순매수 > 0",
     actual: f60 === null ? "데이터 없음" : `${(f60 / 100_000_000).toFixed(1)}억 원`,
-    threshold: "양수 시 +2",
+    threshold: `양수 시 +${c.foreignPoints}`,
     status: f60 === null ? "NO_DATA" : f60 > 0 ? "PASS" : "FAIL",
-    points: f60 !== null && f60 > 0 ? 2 : 0,
-    maxPoints: 2,
+    points: f60 !== null && f60 > 0 ? c.foreignPoints : 0,
+    maxPoints: c.foreignPoints,
   });
 
   const valueUp = inst.indexMemberships.includes("KOREA_VALUEUP");
@@ -331,51 +333,51 @@ export function priorityScore(
     group: "밸류업",
     rule: "코리아 밸류업 지수 편입",
     actual: valueUp ? "편입" : "미편입",
-    threshold: "편입 시 +1",
+    threshold: `편입 시 +${c.valueUpPoints}`,
     status: valueUp ? "PASS" : "FAIL",
-    points: valueUp ? 1 : 0,
-    maxPoints: 1,
+    points: valueUp ? c.valueUpPoints : 0,
+    maxPoints: c.valueUpPoints,
   });
 
   // 실적 모멘텀(영업이익 YoY)은 토스 Open API가 재무제표를 제공하지 않아 항목에서 제외했다.
-  // Priority Quality Score 만점은 8점.
-
 
   const d = snap.distanceFrom52wHigh;
+  const nearOk = d !== null && d >= c.nearHighThresholdPercent;
   rows.push({
     group: "신고가",
-    rule: "52주 신고가 대비 10% 이내",
+    rule: `52주 신고가 대비 ${Math.abs(c.nearHighThresholdPercent)}% 이내`,
     actual: d === null ? "데이터 없음" : fmtPct(d),
-    threshold: "-10% 이내 시 +1",
-    status: d === null ? "NO_DATA" : d >= -10 ? "PASS" : "FAIL",
-    points: d !== null && d >= -10 ? 1 : 0,
-    maxPoints: 1,
+    threshold: `${c.nearHighThresholdPercent}% 이내 시 +${c.nearHighPoints}`,
+    status: d === null ? "NO_DATA" : nearOk ? "PASS" : "FAIL",
+    points: nearOk ? c.nearHighPoints : 0,
+    maxPoints: c.nearHighPoints,
   });
 
-  const capOk = marketCap !== null && marketCap >= 300_000_000_000;
+  const capOk = marketCap !== null && marketCap >= c.minMarketCap;
   rows.push({
     group: "규모",
-    rule: "시가총액 3,000억 원 이상",
+    rule: `시가총액 ${(c.minMarketCap / 100_000_000).toLocaleString("ko-KR")}억 원 이상`,
     actual:
       marketCap === null ? "데이터 없음" : `${(marketCap / 1_000_000_000_000).toFixed(2)}조 원`,
-    threshold: "충족 시 +1",
+    threshold: `충족 시 +${c.sizePoints}`,
     status: marketCap === null ? "NO_DATA" : capOk ? "PASS" : "FAIL",
-    points: capOk ? 1 : 0,
-    maxPoints: 1,
+    points: capOk ? c.sizePoints : 0,
+    maxPoints: c.sizePoints,
   });
 
   const excess =
     snap.dayReturn !== null && benchmarkDayReturn !== null
       ? (snap.dayReturn - benchmarkDayReturn) * 100
       : null;
+  const excessOk = excess !== null && excess >= c.excessReturnThresholdPp;
   rows.push({
     group: "상대 성과",
-    rule: "당일 벤치마크 대비 초과수익률 2%p 이상",
+    rule: `당일 벤치마크 대비 초과수익률 ${c.excessReturnThresholdPp}%p 이상`,
     actual: excess === null ? "데이터 없음" : `${excess.toFixed(2)}%p`,
-    threshold: "2%p 이상 시 +1",
-    status: excess === null ? "NO_DATA" : excess >= 2 ? "PASS" : "FAIL",
-    points: excess !== null && excess >= 2 ? 1 : 0,
-    maxPoints: 1,
+    threshold: `${c.excessReturnThresholdPp}%p 이상 시 +${c.relativePoints}`,
+    status: excess === null ? "NO_DATA" : excessOk ? "PASS" : "FAIL",
+    points: excessOk ? c.relativePoints : 0,
+    maxPoints: c.relativePoints,
   });
 
   const points = rows.reduce((a, r) => a + r.points, 0);
@@ -383,8 +385,9 @@ export function priorityScore(
     (a, r) => a + (r.status === "NO_DATA" ? 0 : r.maxPoints),
     0,
   );
-  return { points, maxPoints: 8, availableMaxPoints, rows };
+  return { points, maxPoints: priorityMaxPoints(cfg), availableMaxPoints, rows };
 }
+
 
 /** Fundamental Score, 100점 환산 (주식 전용) */
 export function fundamentalScore(facts: FinancialFacts | undefined): ScoreBlock {
