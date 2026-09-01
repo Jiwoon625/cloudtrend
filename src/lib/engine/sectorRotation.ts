@@ -1003,6 +1003,35 @@ export function computeSectorRotation(
   const overallCompleteness =
     ranked.length === 0 ? 0 : mean(ranked.map((r) => r.dataCompleteness))!;
 
+  // 시계열 추이: 5거래일 간격으로 과거 프레임을 재계산해 점수 변화를 추적한다.
+  const kospiBars = ds.indexSeries.find((s) => s.indexCode === "KOSPI")?.bars ?? [];
+  const offsets = [25, 20, 15, 10, 5, 0].filter((o) => kospiBars.length - 1 - o >= 1);
+  const frameCache = new Map<number, Frame | null>([
+    [0, now],
+    [5, prev],
+    [20, prev20],
+  ]);
+  const timelineByCode = new Map<string, SectorTimeline>(
+    ranked.map((r) => [r.sectorCode, { sectorCode: r.sectorCode, sectorName: r.sectorName, points: [] }]),
+  );
+  for (const offset of offsets) {
+    const frame = frameCache.get(offset) ?? buildFrame(ds, offset);
+    frameCache.set(offset, frame);
+    if (!frame) continue;
+    const scores = scoreFrame(frame);
+    const date = kospiBars[kospiBars.length - 1 - offset]?.date ?? ds.asOfDate;
+    for (const timeline of timelineByCode.values()) {
+      const sector = frame.sectors.find((s) => s.sectorCode === timeline.sectorCode);
+      const score = scores.get(timeline.sectorCode);
+      timeline.points.push({
+        date,
+        priceLeadership: score?.price.score ?? null,
+        moneyFlow: score?.flow.score ?? null,
+        turnoverShare5d: sector?.turnoverShare5d ?? null,
+      });
+    }
+  }
+
   return {
     asOfDate: ds.asOfDate,
     sectors: ranked,
@@ -1012,7 +1041,9 @@ export function computeSectorRotation(
     excludedItems: EXCLUDED_FLOW_ITEMS,
     weights,
     overallCompleteness,
+    timeline: [...timelineByCode.values()],
   };
+
 }
 
 const eok = (v: number | null): string =>
