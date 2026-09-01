@@ -45,13 +45,18 @@ export function AppShell({
   children,
   source,
   dataUnavailable = false,
+  loadAnalysis = true,
 }: {
   children: ReactNode;
   source?: AppShellSource;
   dataUnavailable?: boolean;
+  loadAnalysis?: boolean;
 }) {
   // 오류 경계 안에서는 실패한 분석 API를 다시 호출하지 않는다.
-  const { data } = useQuery({ ...analysisQueryOptions, enabled: !source && !dataUnavailable });
+  const { data } = useQuery({
+    ...analysisQueryOptions,
+    enabled: loadAnalysis && !source && !dataUnavailable,
+  });
   const resolved: AppShellSource | undefined =
     source ??
     (data
