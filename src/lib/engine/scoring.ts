@@ -281,7 +281,7 @@ export function actionLabel(grade: TechnicalGrade, gate: MarketGate["status"]): 
   return "관망";
 }
 
-/** Priority Quality Score, 10점 만점 */
+/** Priority Quality Score, 8점 만점 */
 export function priorityScore(
   inst: Instrument,
   snap: IndicatorSnapshot,
@@ -325,16 +325,9 @@ export function priorityScore(
     maxPoints: 1,
   });
 
-  const yoy = facts?.quarterlyOpProfitYoY ?? null;
-  rows.push({
-    group: "실적 모멘텀",
-    rule: "최근 분기 영업이익 흑자전환 또는 YoY +30% 이상",
-    actual: yoy === null ? "데이터 없음" : fmtPct(yoy * 100),
-    threshold: "충족 시 +2",
-    status: yoy === null ? "NO_DATA" : yoy >= 0.3 ? "PASS" : "FAIL",
-    points: yoy !== null && yoy >= 0.3 ? 2 : 0,
-    maxPoints: 2,
-  });
+  // 실적 모멘텀(영업이익 YoY)은 토스 Open API가 재무제표를 제공하지 않아 항목에서 제외했다.
+  // Priority Quality Score 만점은 8점.
+
 
   const d = snap.distanceFrom52wHigh;
   rows.push({
@@ -378,7 +371,7 @@ export function priorityScore(
     (a, r) => a + (r.status === "NO_DATA" ? 0 : r.maxPoints),
     0,
   );
-  return { points, maxPoints: 10, availableMaxPoints, rows };
+  return { points, maxPoints: 8, availableMaxPoints, rows };
 }
 
 /** Fundamental Score, 100점 환산 (주식 전용) */

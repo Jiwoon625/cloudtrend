@@ -160,9 +160,9 @@ describe("Priority Quality Score", () => {
 
   it("당일 초과수익률은 종목 등락률이 아닌 벤치마크 차이로 계산", () => {
     const block = priorityScore(inst, snapshot({ dayReturn: 0.03 }), undefined, 5e12, 0.02);
-    expect(block.rows[6]!.points).toBe(0); // 1%p 차이 → 미충족
+    expect(block.rows[5]!.points).toBe(0); // 1%p 차이 → 미충족
     const block2 = priorityScore(inst, snapshot({ dayReturn: 0.05 }), undefined, 5e12, 0.02);
-    expect(block2.rows[6]!.points).toBe(1);
+    expect(block2.rows[5]!.points).toBe(1);
   });
 
   it("외국인 데이터 없으면 산정 불가 처리", () => {
