@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { DEFAULT_SCORING_CONFIG, mergeScoringConfig, type ScoringConfig } from "@/lib/engine/scoring";
 
-const KEY = "trendscore.scoringConfig.v1";
+const KEY = "trendscore.scoringConfig.v2";
 
 let active: ScoringConfig = DEFAULT_SCORING_CONFIG;
 let hydrated = false;
