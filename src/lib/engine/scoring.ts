@@ -1,4 +1,5 @@
 // 점수 산정 엔진: 실격 필터 / 시장 게이트 / 점수를 분리한다. 전부 순수 함수.
+import { DEFAULT_ROTATION_WEIGHTS, type RotationWeights } from "./sectorRotation";
 import type { IndicatorSnapshot } from "./indicators";
 import type { EtfFacts, FinancialFacts, Instrument } from "./types";
 
