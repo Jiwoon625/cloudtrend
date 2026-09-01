@@ -339,10 +339,38 @@ export function setUniverseOverride(symbols: string[]): number {
   return unique.length;
 }
 
-export function getUniverseOverride(): { count: number; uploadedAt: string } | null {
+export function getUniverseOverride(): {
+  count: number;
+  symbols: string[];
+  uploadedAt: string;
+} | null {
   return universeOverride
-    ? { count: universeOverride.symbols.length, uploadedAt: new Date(universeOverride.at).toISOString() }
+    ? {
+        count: universeOverride.symbols.length,
+        symbols: universeOverride.symbols,
+        uploadedAt: new Date(universeOverride.at).toISOString(),
+      }
     : null;
+}
+
+/** 기본(내장) 유니버스 종목코드 — 사용자가 지정하지 않았을 때 사용된다. */
+export function getDefaultUniverseSymbols(): string[] {
+  return KOSPI200_SYMBOLS;
+}
+
+/** 일봉 수집 진행 상황 — 대시보드 진행률 표시에 사용한다. */
+export function getCollectionStatus(): {
+  done: number;
+  total: number;
+  running: boolean;
+  cached: number;
+} {
+  return {
+    done: Math.min(collectProgress.done, collectProgress.total),
+    total: collectProgress.total,
+    running: collecting !== null,
+    cached: barStore.size,
+  };
 }
 
 // 사용자가 직접 입력한 ETF 종목코드 목록. 설정되면 거래대금 상위 ETF 대신 사용한다.
