@@ -59,6 +59,11 @@ function issueToken(): Promise<string | null> {
         );
       }
       if (res.status === 429) return null; // 발급 한도 → 호출측에서 재시도
+      if (res.status === 401) {
+        throw new TossIpError(
+          "토스증권 API가 클라이언트를 식별하지 못했습니다(401 unidentified-client). 1) TOSS_CLIENT_ID / TOSS_CLIENT_SECRET 값이 유효한지, 2) 현재 서버 출구 IP가 토스증권 개발자센터 허용 IP에 등록되어 있는지 확인해 주세요.",
+        );
+      }
       throw new Error(`토스증권 토큰 발급 실패 (HTTP ${res.status}): ${text.slice(0, 200)}`);
     }
     const json = (await res.json()) as { access_token: string };

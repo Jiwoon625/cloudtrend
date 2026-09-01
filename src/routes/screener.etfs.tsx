@@ -23,6 +23,7 @@ export const Route = createFileRoute("/screener/etfs")({
     ],
   }),
   loader: ({ context }) => context.queryClient.ensureQueryData(analysisQueryOptions),
+  errorComponent: ({ error, reset }) => <DataError error={error} reset={reset} />,
   component: () => (
     <AppShell>
       <ScreenerView mode="ETF" />
