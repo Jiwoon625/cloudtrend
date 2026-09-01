@@ -1,12 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Activity, ArrowDown, ArrowUp, ListPlus, ShieldAlert, TrendingUp, Upload } from "lucide-react";
+import { Activity, ArrowDown, ArrowUp, Hash, ListPlus, Loader2, ShieldAlert, TrendingUp } from "lucide-react";
 import { useSuspenseQuery } from "@tanstack/react-query";
 
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
 import { GradeBadge, ScreenerTable } from "@/components/ScreenerTable";
 import { EtfUniverseInput } from "@/components/EtfUniverseInput";
-import { UniverseUpload } from "@/components/UniverseUpload";
+import { StockUniverseInput } from "@/components/StockUniverseInput";
+import { CollectionProgress } from "@/components/CollectionProgress";
 
 import { Badge } from "@/components/ui/badge";
 import { analysisQueryOptions, ipQueryOptions } from "@/lib/analysisQuery";
@@ -113,11 +114,17 @@ function Dashboard() {
       </div>
 
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
-        <Card title="종목 CSV 업로드 (코스피200 / 코스닥)" icon={<Upload className="size-4 text-primary" />}>
-          <UniverseUpload />
+        <Card title="주식 스크리닝 종목코드 (코스피/코스닥)" icon={<Hash className="size-4 text-primary" />}>
+          <StockUniverseInput />
         </Card>
         <Card title="ETF 스크리닝 종목코드" icon={<ListPlus className="size-4 text-primary" />}>
           <EtfUniverseInput />
+        </Card>
+      </div>
+
+      <div className="mb-4">
+        <Card title="데이터 수집 진행률" icon={<Loader2 className="size-4 text-primary" />}>
+          <CollectionProgress />
         </Card>
       </div>
 
