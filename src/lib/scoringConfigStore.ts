@@ -52,7 +52,10 @@ export function useScoringConfig(): [ScoringConfig, (next: ScoringConfig) => voi
     setCfg(getActiveScoringConfig());
     const l = () => setCfg(getActiveScoringConfig());
     listeners.add(l);
-    return () => listeners.delete(l);
+    return () => {
+      listeners.delete(l);
+    };
+
   }, []);
   const update = useCallback((next: ScoringConfig) => setActiveScoringConfig(next), []);
   return [cfg, update];
