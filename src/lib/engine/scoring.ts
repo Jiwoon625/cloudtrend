@@ -147,12 +147,19 @@ function fmtNum(v: number | null, digits = 0) {
   return v === null ? "데이터 없음" : v.toLocaleString("ko-KR", { maximumFractionDigits: digits });
 }
 
-/** Technical Signal Score, 7점 만점 */
-export function technicalScore(snap: IndicatorSnapshot, valuePercentile: number | null): ScoreBlock {
+const half = (max: number) => Math.round((max / 2) * 10) / 10;
+
+/** Technical Signal Score. 만점과 임계값은 ScoringConfig로 조정된다(기본 7점). */
+export function technicalScore(
+  snap: IndicatorSnapshot,
+  valuePercentile: number | null,
+  cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
+): ScoreBlock {
   const rows: RuleRow[] = [];
+  const t = cfg.technical;
   const ich = snap.ichimoku;
 
-  // 7.1 일목 추세 (2)
+  // 7.1 일목 추세
   let ichPoints = 0;
   let ichStatus: RuleStatus = "NO_DATA";
   let ichActual = "데이터 없음";
@@ -162,7 +169,7 @@ export function technicalScore(snap: IndicatorSnapshot, valuePercentile: number 
     ichActual = above ? "구름 상단 위" : inside ? "구름 내부" : "구름 아래";
     if (above) {
       const extra = ich.tenkanAboveKijun === true && ich.chikouAbovePast26Close === true;
-      ichPoints = extra ? 2 : 1;
+      ichPoints = extra ? t.ichimokuMax : half(t.ichimokuMax);
       ichStatus = "PASS";
       ichActual += extra ? " + 전환선>기준선 + 후행스팬 양전" : " (보조조건 일부 미충족)";
     } else {
@@ -173,13 +180,13 @@ export function technicalScore(snap: IndicatorSnapshot, valuePercentile: number 
     group: "일목 추세",
     rule: "구름 상단 위 + 전환선>기준선 + 종가>26일전 종가",
     actual: ichActual,
-    threshold: "3개 모두 충족 시 +2",
+    threshold: `3개 모두 충족 시 +${t.ichimokuMax} (구름 위만 +${half(t.ichimokuMax)})`,
     status: ichStatus,
     points: ichPoints,
-    maxPoints: 2,
+    maxPoints: t.ichimokuMax,
   });
 
-  // 7.2 볼린저 모멘텀 (2)
+  // 7.2 볼린저 모멘텀
   const b = snap.bollinger;
   let bbPoints = 0;
   let bbStatus: RuleStatus = "NO_DATA";
@@ -189,10 +196,10 @@ export function technicalScore(snap: IndicatorSnapshot, valuePercentile: number 
     const squeeze = b.bbSqueezePrior === true || b.bbSqueezeAbsolute === true;
     const expanding = b.bbWidthExpanding === true;
     if (breakout && squeeze && expanding) {
-      bbPoints = 2;
+      bbPoints = t.bollingerMax;
       bbActual = "사전 스퀴즈 후 상단 돌파 + 밴드폭 확장";
     } else if (breakout || squeeze) {
-      bbPoints = 1;
+      bbPoints = half(t.bollingerMax);
       bbActual = breakout ? "상단 돌파만 발생" : "스퀴즈 진행 중";
     } else {
       bbActual = `밴드폭 ${b.bb.width.toFixed(2)}%, 돌파 없음`;
@@ -207,39 +214,40 @@ export function technicalScore(snap: IndicatorSnapshot, valuePercentile: number 
     group: "볼린저 모멘텀",
     rule: "스퀴즈 후 상단 돌파 + 밴드폭 확장",
     actual: bbActual,
-    threshold: "동시 충족 시 +2",
+    threshold: `동시 충족 시 +${t.bollingerMax} (일부 +${half(t.bollingerMax)})`,
     status: bbStatus,
     points: bbPoints,
-    maxPoints: 2,
+    maxPoints: t.bollingerMax,
   });
 
-  // 7.3 거래량 수급 (2)
+  // 7.3 거래량 수급
   let volPoints = 0;
   let volStatus: RuleStatus = "NO_DATA";
   if (snap.volumeRatio20 !== null) {
-    const top30 = valuePercentile !== null ? valuePercentile >= 70 : false;
-    if (snap.volumeRatio20 >= 200 && top30) volPoints = 2;
-    else if (snap.volumeRatio20 >= 130) volPoints = 1;
+    const topPct =
+      valuePercentile !== null ? valuePercentile >= t.volumeStrongPercentile : false;
+    if (snap.volumeRatio20 >= t.volumeStrongRatio && topPct) volPoints = t.volumeMax;
+    else if (snap.volumeRatio20 >= t.volumeWeakRatio) volPoints = half(t.volumeMax);
     volStatus = volPoints > 0 ? "PASS" : "FAIL";
   }
   rows.push({
     group: "거래량 수급",
-    rule: "20일 평균 거래량 대비 비율 + 거래대금 상위 30%",
+    rule: `20일 평균 거래량 대비 비율 + 거래대금 백분위 ${t.volumeStrongPercentile} 이상`,
     actual:
       snap.volumeRatio20 === null
         ? "데이터 없음"
         : `${snap.volumeRatio20.toFixed(1)}% / 거래대금 백분위 ${valuePercentile === null ? "-" : valuePercentile.toFixed(0)}`,
-    threshold: "200% 이상 + 상위 30% → +2, 130% 이상 → +1",
+    threshold: `${t.volumeStrongRatio}% 이상 + 상위 → +${t.volumeMax}, ${t.volumeWeakRatio}% 이상 → +${half(t.volumeMax)}`,
     status: volStatus,
     points: volPoints,
-    maxPoints: 2,
+    maxPoints: t.volumeMax,
   });
 
-  // 7.4 이동평균 배열 (1)
+  // 7.4 이동평균 배열
   let maPoints = 0;
   let maStatus: RuleStatus = "NO_DATA";
   if (snap.maAligned !== null && snap.ma20Slope !== null) {
-    maPoints = snap.maAligned && snap.ma20Slope > 0 ? 1 : 0;
+    maPoints = snap.maAligned && snap.ma20Slope > 0 ? t.maMax : 0;
     maStatus = maPoints > 0 ? "PASS" : "FAIL";
   }
   rows.push({
@@ -249,10 +257,10 @@ export function technicalScore(snap: IndicatorSnapshot, valuePercentile: number 
       snap.ma20 === null
         ? "데이터 없음"
         : `MA20 ${fmtNum(snap.ma20)} / MA60 ${fmtNum(snap.ma60)} / MA120 ${fmtNum(snap.ma120)} / 기울기 ${fmtNum(snap.ma20Slope, 1)}`,
-    threshold: "정배열 + 기울기 > 0 → +1",
+    threshold: `정배열 + 기울기 > 0 → +${t.maMax}`,
     status: maStatus,
     points: maPoints,
-    maxPoints: 1,
+    maxPoints: t.maMax,
   });
 
   const points = rows.reduce((a, r) => a + r.points, 0);
@@ -260,16 +268,20 @@ export function technicalScore(snap: IndicatorSnapshot, valuePercentile: number 
     (a, r) => a + (r.status === "NO_DATA" ? 0 : r.maxPoints),
     0,
   );
-  return { points, maxPoints: 7, availableMaxPoints, rows };
+  return { points, maxPoints: technicalMaxPoints(cfg), availableMaxPoints, rows };
 }
 
 export type TechnicalGrade = "A" | "B" | "C";
 
-export function technicalGrade(points: number): TechnicalGrade {
-  if (points >= 6) return "A";
-  if (points >= 4) return "B";
+export function technicalGrade(
+  points: number,
+  cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
+): TechnicalGrade {
+  if (points >= cfg.grade.aMin) return "A";
+  if (points >= cfg.grade.bMin) return "B";
   return "C";
 }
+
 
 export function actionLabel(grade: TechnicalGrade, gate: MarketGate["status"]): string {
   if (grade === "A") {
