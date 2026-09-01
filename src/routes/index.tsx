@@ -6,7 +6,8 @@ import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
 import { GradeBadge, ScreenerTable } from "@/components/ScreenerTable";
 import { EtfUniverseInput } from "@/components/EtfUniverseInput";
-import { UniverseUpload } from "@/components/UniverseUpload";
+import { StockUniverseInput } from "@/components/StockUniverseInput";
+import { CollectionProgress } from "@/components/CollectionProgress";
 
 import { Badge } from "@/components/ui/badge";
 import { analysisQueryOptions, ipQueryOptions } from "@/lib/analysisQuery";
