@@ -124,3 +124,41 @@ export function useSnapshots(): {
     clear: useCallback(() => clearSnapshots(), []),
   };
 }
+
+interface SnapshotSourceRow {
+  instrument: { symbol: string; name: string; instrumentType: "STOCK" | "ETF" };
+  grade: string;
+  totalScoreNormalized: number;
+  technicalPoints?: number;
+  hardFilterPassed: boolean;
+}
+
+/** 분석 결과를 저장용 스냅샷으로 변환한다. */
+export function buildSnapshot(analysis: {
+  asOfDate: string;
+  calculatedAt: string;
+  marketGate: { status: string };
+  rows: SnapshotSourceRow[];
+}): ScreeningSnapshot {
+  const entries: SnapshotEntry[] = analysis.rows.map((r) => ({
+    symbol: r.instrument.symbol,
+    name: r.instrument.name,
+    instrumentType: r.instrument.instrumentType,
+    grade: r.grade,
+    totalScore: r.totalScoreNormalized,
+    technicalPoints: r.technicalPoints ?? 0,
+    hardFilterPassed: r.hardFilterPassed,
+  }));
+  const passed = entries.filter((e) => e.hardFilterPassed);
+  return {
+    date: kstDateKey(new Date(analysis.calculatedAt)),
+    savedAt: analysis.calculatedAt,
+    asOfDate: analysis.asOfDate,
+    marketGateStatus: analysis.marketGate.status,
+    totalCount: entries.length,
+    passedCount: passed.length,
+    gradeACount: passed.filter((e) => e.grade === "A").length,
+    gradeBCount: passed.filter((e) => e.grade === "B").length,
+    entries,
+  };
+}
