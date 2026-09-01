@@ -644,7 +644,7 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
     capabilities: {
       ...NO_CAPABILITIES,
       exactTradingValue: false,
-      investorFlow: marketFlowOk,
+      investorFlow: marketFlowOk || flowCount > 0,
       marketCap: marketCapCount > 0,
       sectors: true,
     },
