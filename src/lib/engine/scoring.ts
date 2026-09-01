@@ -830,6 +830,8 @@ export interface ScoringConfig {
   };
   grade: { aMin: number; bMin: number };
   universe: UniverseParams;
+  /** 섹터 로테이션 최종 점수 가중치 (합이 1이 아니어도 가용 항목 기준으로 재조정됨) */
+  rotation: RotationWeights;
 }
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
@@ -856,6 +858,7 @@ export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   },
   grade: { aMin: 6, bMin: 4 },
   universe: { ...DEFAULT_UNIVERSE },
+  rotation: { ...DEFAULT_ROTATION_WEIGHTS },
 };
 
 const clampNum = (v: unknown, fallback: number, min: number, max: number): number => {
@@ -882,6 +885,7 @@ export function mergeScoringConfig(input: unknown): ScoringConfig {
   const g = at(raw, "grade");
   const u = at(raw, "universe");
   const lev = at(u, "excludeLeveragedInverse");
+  const rot = at(raw, "rotation");
   return {
     weights: {
       stock: weightBlock(at(w, "stock"), d.weights.stock),
@@ -951,6 +955,11 @@ export function mergeScoringConfig(input: unknown): ScoringConfig {
       ),
       excludeLeveragedInverse:
         typeof lev === "boolean" ? lev : d.universe.excludeLeveragedInverse,
+    },
+    rotation: {
+      priceLeadership: clampNum(at(rot, "priceLeadership"), d.rotation.priceLeadership, 0, 1),
+      moneyFlow: clampNum(at(rot, "moneyFlow"), d.rotation.moneyFlow, 0, 1),
+      rotationMomentum: clampNum(at(rot, "rotationMomentum"), d.rotation.rotationMomentum, 0, 1),
     },
   };
 }
