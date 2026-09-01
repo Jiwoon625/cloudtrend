@@ -62,21 +62,34 @@ export interface InstrumentDetailPayload {
   history: ReturnType<typeof scoreHistory>;
 }
 
+const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
+
+async function fetchIpv4(url: string): Promise<string> {
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = (await res.text()).trim();
+  // IPv4 전용 엔드포인트여도 응답 형식을 한 번 더 검증한다.
+  if (IPV4_RE.test(text)) return text;
+  const m = text.match(IPV4_RE);
+  if (m) return m[0];
+  throw new Error(`not IPv4: ${text.slice(0, 64)}`);
+}
+
+/** 서버 출구 IP(IPv4) 조회. 토스증권 허용 IP 등록용이므로 IPv4만 반환한다. */
 export const getServerEgressIp = createServerFn({ method: "GET" }).handler(async (): Promise<string> => {
-  try {
-    const res = await fetch("https://api.ipify.org?format=json", { cache: "no-store" });
-    if (!res.ok) throw new Error(`ipify HTTP ${res.status}`);
-    const { ip } = (await res.json()) as { ip: string };
-    return ip ?? "알 수 없음";
-  } catch {
+  const endpoints = [
+    "https://api4.ipify.org",
+    "https://ipv4.icanhazip.com",
+    "https://checkip.amazonaws.com",
+  ];
+  for (const url of endpoints) {
     try {
-      const res = await fetch("https://checkip.amazonaws.com/", { cache: "no-store" });
-      const text = await res.text();
-      return text.trim() || "알 수 없음";
+      return await fetchIpv4(url);
     } catch {
-      return "알 수 없음";
+      // 다음 엔드포인트 시도
     }
   }
+  return "알 수 없음";
 });
 
 export const getInstrumentDetail = createServerFn({ method: "GET" })
