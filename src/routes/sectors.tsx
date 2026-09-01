@@ -10,12 +10,23 @@ import { Input } from "@/components/ui/input";
 import { analysisQueryOptions } from "@/lib/analysisQuery";
 import { formatKstDateTime, formatNumber } from "@/lib/format";
 import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+
+import {
   CONFIDENCE_LABEL,
   FLOW_STATUS_LABEL,
   QUADRANT_LABEL,
   type FlowStatus,
   type RotationLink,
   type SectorRotationRow,
+  type SectorTimeline,
 } from "@/lib/engine/sectorRotation";
 
 export const Route = createFileRoute("/sectors")({
