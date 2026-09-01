@@ -41,11 +41,14 @@ function ThemeToggle() {
 export function AppShell({
   children,
   source,
+  dataUnavailable = false,
 }: {
   children: ReactNode;
   source?: AppShellSource;
+  dataUnavailable?: boolean;
 }) {
-  const { data } = useQuery({ ...analysisQueryOptions, enabled: !source });
+  // 오류 경계 안에서는 실패한 분석 API를 다시 호출하지 않는다.
+  const { data } = useQuery({ ...analysisQueryOptions, enabled: !source && !dataUnavailable });
   const resolved: AppShellSource | undefined =
     source ??
     (data
@@ -92,7 +95,9 @@ export function AppShell({
             <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warn" />
           )}
           <span>
-            {live
+            {dataUnavailable
+              ? "실데이터 연결 오류 — 아래 안내에 따라 토스증권 API 접속 설정을 확인해 주세요."
+              : live
               ? `실데이터 모드 (${resolved?.provider ?? "-"}) — 일봉 기준 계산이며 투자 판단 및 자동 주문 기능은 제공하지 않습니다.`
               : `합성 데이터 모드 (${resolved?.provider ?? "mock"}) — 화면 검증용 mock 데이터이며 실제 시세·재무가 아닙니다.${resolved?.fallbackReason ? ` 폴백 사유: ${resolved.fallbackReason}` : ""}`}
           </span>

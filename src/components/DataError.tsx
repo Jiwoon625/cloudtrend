@@ -14,7 +14,7 @@ export function DataError({ error, reset }: { error: unknown; reset?: () => void
   const isIp = /IP|403/.test(message);
 
   return (
-    <AppShell>
+    <AppShell dataUnavailable>
       <div className="mx-auto max-w-2xl space-y-4 py-10">
         <div className="flex items-center gap-2">
           <AlertTriangle className="size-5 text-warn" />
