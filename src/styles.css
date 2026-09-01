@@ -169,3 +169,35 @@
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
 }
+
+/* PDF 내보내기(브라우저 인쇄) 최적화 */
+@media print {
+  header {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+  main,
+  main * {
+    color: #111 !important;
+  }
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+  .overflow-x-auto,
+  .overflow-auto {
+    overflow: visible !important;
+  }
+  table {
+    font-size: 9px !important;
+    min-width: 0 !important;
+    width: 100% !important;
+    page-break-inside: auto;
+  }
+  tr,
+  .rounded-lg {
+    page-break-inside: avoid;
+  }
+}
