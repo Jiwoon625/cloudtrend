@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Activity, ArrowDown, ArrowUp, Hash, ListPlus, Loader2, ShieldAlert, TrendingUp } from "lucide-react";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { Activity, ArrowDown, ArrowUp, Hash, ListPlus, Loader2, Play, ShieldAlert, TrendingUp } from "lucide-react";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
@@ -10,7 +11,11 @@ import { StockUniverseInput } from "@/components/StockUniverseInput";
 import { CollectionProgress } from "@/components/CollectionProgress";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { analysisQueryOptions, ipQueryOptions } from "@/lib/analysisQuery";
+import { getMarketAnalysis } from "@/lib/market.functions";
+
+const SCREENING_STARTED_KEY = "trendscore:screening-started";
 import { WARNING_LABELS } from "@/lib/engine/scoring";
 import { formatCount, formatNumber, formatPercent, formatWon } from "@/lib/format";
 
@@ -32,11 +37,8 @@ export const Route = createFileRoute("/")({
       },
     ],
   }),
-  loader: ({ context }) =>
-    Promise.all([
-      context.queryClient.ensureQueryData(analysisQueryOptions),
-      context.queryClient.ensureQueryData(ipQueryOptions),
-    ]),
+  // 스크리닝(데이터 수집)은 사용자가 버튼을 눌렀을 때만 시작한다.
+  loader: ({ context }) => context.queryClient.ensureQueryData(ipQueryOptions),
   errorComponent: ({ error, reset }) => <DataError error={error} reset={reset} />,
   component: Dashboard,
 });
@@ -77,10 +79,71 @@ function KeyValue({ label, value, hint }: { label: string; value: React.ReactNod
 }
 
 function Dashboard() {
-  const { data } = useSuspenseQuery(analysisQueryOptions);
   const { data: ip } = useSuspenseQuery(ipQueryOptions);
-  const analysis = data.analysis;
+  const [started, setStarted] = useState(
+    () => typeof window !== "undefined" && window.sessionStorage.getItem(SCREENING_STARTED_KEY) === "1",
+  );
+  const analysisQuery = useQuery({ ...analysisQueryOptions, enabled: started });
 
+  const startScreening = () => {
+    window.sessionStorage.setItem(SCREENING_STARTED_KEY, "1");
+    setStarted(true);
+  };
+
+  return (
+    <AppShell>
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">대시보드</h1>
+          <p className="text-[12px] text-muted-foreground">
+            스크리닝은 버튼을 눌렀을 때만 데이터 수집·계산을 시작합니다.
+          </p>
+        </div>
+        <p className="text-[11px] text-muted-foreground">서버 출구 IP {ip ?? "알 수 없음"}</p>
+      </div>
+
+      <div className="mb-4 grid gap-4 lg:grid-cols-2">
+        <Card title="주식 스크리닝 종목코드 (코스피/코스닥)" icon={<Hash className="size-4 text-primary" />}>
+          <StockUniverseInput />
+        </Card>
+        <Card title="ETF 스크리닝 종목코드" icon={<ListPlus className="size-4 text-primary" />}>
+          <EtfUniverseInput />
+        </Card>
+      </div>
+
+      {!started ? (
+        <section className="rounded-lg border border-dashed border-primary/50 bg-card p-8 text-center">
+          <Play className="mx-auto mb-3 size-8 text-primary" />
+          <h2 className="mb-1 text-base font-semibold">스크리닝 시작</h2>
+          <p className="mx-auto mb-4 max-w-md text-[12px] leading-relaxed text-muted-foreground">
+            버튼을 누르면 토스증권 API에서 종목 시세를 수집하고 Universe Filter → Market Gate →
+            Scoring을 계산합니다. 수집에는 수 분이 걸릴 수 있습니다.
+          </p>
+          <Button onClick={startScreening} size="lg" className="gap-2">
+            <Play className="size-4" />
+            스크리닝 시작
+          </Button>
+        </section>
+      ) : analysisQuery.isPending ? (
+        <section className="rounded-lg border border-border bg-card p-8">
+          <div className="mb-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            시세 데이터를 수집·분석하는 중입니다…
+          </div>
+          <CollectionProgress />
+        </section>
+      ) : analysisQuery.isError ? (
+        <DataError error={analysisQuery.error} reset={() => analysisQuery.refetch()} />
+      ) : (
+        <DashboardContent analysis={analysisQuery.data.analysis} />
+      )}
+    </AppShell>
+  );
+}
+
+type AnalysisResult = Awaited<ReturnType<typeof getMarketAnalysis>>["analysis"];
+
+function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
   const { marketGate: gate, rows, sectors } = analysis;
 
   const passed = rows.filter((r) => r.hardFilterPassed);
@@ -102,36 +165,15 @@ function Dashboard() {
   ];
 
   return (
-    <AppShell>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">대시보드</h1>
-          <p className="text-[12px] text-muted-foreground">
-            기준일 {analysis.asOfDate} · 전략 v{analysis.strategyVersion} · 데이터 {analysis.dataVersion}
-          </p>
-        </div>
+    <>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[12px] text-muted-foreground">
+          기준일 {analysis.asOfDate} · 전략 v{analysis.strategyVersion} · 데이터 {analysis.dataVersion}
+        </p>
         <p className="text-[11px] text-muted-foreground">
-          서버 출구 IP {ip ?? "알 수 없음"} · 계산 시각{" "}
-          {analysis.calculatedAt.slice(0, 16).replace("T", " ")} (미래 데이터 미사용)
+          계산 시각 {analysis.calculatedAt.slice(0, 16).replace("T", " ")} (미래 데이터 미사용)
         </p>
       </div>
-
-      <div className="mb-4 grid gap-4 lg:grid-cols-2">
-        <Card title="주식 스크리닝 종목코드 (코스피/코스닥)" icon={<Hash className="size-4 text-primary" />}>
-          <StockUniverseInput />
-        </Card>
-        <Card title="ETF 스크리닝 종목코드" icon={<ListPlus className="size-4 text-primary" />}>
-          <EtfUniverseInput />
-        </Card>
-      </div>
-
-      <div className="mb-4">
-        <Card title="데이터 수집 진행률" icon={<Loader2 className="size-4 text-primary" />}>
-          <CollectionProgress />
-        </Card>
-      </div>
-
-
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title="시장 상태" icon={<Activity className="size-4 text-primary" />}>
@@ -252,6 +294,6 @@ function Dashboard() {
         </div>
         <ScreenerTable rows={top} />
       </section>
-    </AppShell>
+    </>
   );
 }
