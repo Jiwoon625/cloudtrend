@@ -8,6 +8,8 @@ import { analysisQueryOptions } from "@/lib/analysisQuery";
 import { formatNumber } from "@/lib/format";
 
 export const Route = createFileRoute("/sectors")({
+  // 외부 시세 API 실패 시 SSR 500(빈 화면) 대신 클라이언트 에러 화면을 보여준다.
+  ssr: false,
   head: () => ({
     meta: [
       { title: "섹터 상대강도 | TrendScore KR" },
