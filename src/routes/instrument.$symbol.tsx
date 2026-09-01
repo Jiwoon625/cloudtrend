@@ -296,7 +296,7 @@ function InstrumentDetail() {
         />
         <BreakdownTable
           block={row.priority}
-          title={`Priority Quality Score (10점 만점) · 정규화 ${row.priorityNormalized === null ? "산정 불가" : `${row.priorityNormalized.toFixed(1)}점`}`}
+          title={`Priority Quality Score (8점 만점) · 정규화 ${row.priorityNormalized === null ? "산정 불가" : `${row.priorityNormalized.toFixed(1)}점`}`}
           asOfDate={analysis.asOfDate}
           source={analysis.dataProvider}
         />
