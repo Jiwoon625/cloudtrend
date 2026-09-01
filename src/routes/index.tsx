@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Activity, ArrowDown, ArrowUp, ListPlus, ShieldAlert, TrendingUp, Upload } from "lucide-react";
+import { Activity, ArrowDown, ArrowUp, Hash, ListPlus, Loader2, ShieldAlert, TrendingUp } from "lucide-react";
 import { useSuspenseQuery } from "@tanstack/react-query";
 
 import { AppShell } from "@/components/AppShell";
