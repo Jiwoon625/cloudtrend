@@ -36,11 +36,8 @@ export const Route = createFileRoute("/")({
       },
     ],
   }),
-  loader: ({ context }) =>
-    Promise.all([
-      context.queryClient.ensureQueryData(analysisQueryOptions),
-      context.queryClient.ensureQueryData(ipQueryOptions),
-    ]),
+  // 스크리닝(데이터 수집)은 사용자가 버튼을 눌렀을 때만 시작한다.
+  loader: ({ context }) => context.queryClient.ensureQueryData(ipQueryOptions),
   errorComponent: ({ error, reset }) => <DataError error={error} reset={reset} />,
   component: Dashboard,
 });
