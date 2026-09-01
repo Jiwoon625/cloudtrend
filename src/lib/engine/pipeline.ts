@@ -27,8 +27,41 @@ import {
   type ScoringConfig,
   type TechnicalGrade,
 } from "./scoring";
+import {
+  computeSectorRotation,
+  type SectorRotationResult,
+} from "./sectorRotation";
 import type { DatasetCapabilities, MarketDataset } from "./dataset";
 import type { EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
+
+/**
+ * 섹터별 대표 ETF 매핑.
+ * 레버리지·인버스·채권·CD금리·해외자산·시장대표 ETF는 국내 산업 섹터 자금흐름 분석에서 제외한다.
+ */
+const NON_SECTOR_ETF = /채권|국고채|CD\s?금리|단기자금|머니마켓|MMF|금현물|달러|원유|커버드콜|미국|나스닥|S&P|필라델피아|글로벌|차이나|중국|일본|인도|베트남|유로|선진국|신흥국|리츠|TDF|배당성장|밸류업|레버리지|인버스|200TR|코스피|코스닥/i;
+
+function buildRepresentativeEtf(
+  ds: MarketDataset,
+): Map<string, { symbol: string; name: string }> {
+  const best = new Map<string, { symbol: string; name: string; value: number }>();
+  for (const inst of ds.instruments) {
+    if (inst.instrumentType !== "ETF") continue;
+    if (inst.isLeveraged || inst.isInverse) continue;
+    if (inst.sectorCode === "MARKET_IDX" || inst.sectorCode === "ETC") continue;
+    if (NON_SECTOR_ETF.test(inst.name)) continue;
+    const bars = ds.bars[inst.symbol] ?? [];
+    if (bars.length === 0) continue;
+    const recent = bars.slice(-20);
+    const value = recent.reduce((a, b) => a + b.tradingValue, 0) / Math.max(1, recent.length);
+    const cur = best.get(inst.sectorCode);
+    if (!cur || value > cur.value) {
+      best.set(inst.sectorCode, { symbol: inst.symbol, name: inst.name, value });
+    }
+  }
+  return new Map(
+    [...best.entries()].map(([code, v]) => [code, { symbol: v.symbol, name: v.name }]),
+  );
+}
 
 export interface SectorScore {
   sectorCode: string;
@@ -93,6 +126,8 @@ export interface AnalysisResult {
   marketForeignNet5d: number | null;
   rows: ScreeningRow[];
   sectors: SectorScore[];
+  /** 섹터 로테이션 엔진 결과 (가격 리더십 / 자금흐름 분리) */
+  sectorRotation: SectorRotationResult | null;
   tradeDates: string[];
   calculatedAt: string;
 }
@@ -403,6 +438,10 @@ export function runAnalysis(
     marketForeignNet5d,
     rows,
     sectors,
+    sectorRotation: computeSectorRotation(ds, {
+      representativeEtf: buildRepresentativeEtf(ds),
+      weights: cfg.rotation,
+    }),
     tradeDates: ds.tradeDates,
     calculatedAt: new Date().toISOString(),
   };

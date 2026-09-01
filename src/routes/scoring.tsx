@@ -411,6 +411,40 @@ function ScoringPage() {
             </Label>
           </div>
         </Section>
+
+        <Section
+          title="5. 섹터 로테이션 최종 점수 가중치"
+          desc="섹터 탭의 최종 로테이션 점수 = 가격 리더십 × w1 + 자금흐름 × w2 + 로테이션 모멘텀 × w3 (가용 항목 기준 재조정)"
+        >
+          <NumField
+            label="가격 리더십 점수 가중치"
+            hint="RS20/60/120·추세·가격 Breadth·신고가·상대 거래대금 (100점)"
+            value={draft.rotation.priceLeadership}
+            step={0.05}
+            onChange={(v) => patch((d) => void (d.rotation.priceLeadership = v))}
+          />
+          <NumField
+            label="자금흐름 점수 가중치"
+            hint="외국인·기관 수급 강도, 동시매수 Breadth, 거래대금 점유율 변화 (100점)"
+            value={draft.rotation.moneyFlow}
+            step={0.05}
+            onChange={(v) => patch((d) => void (d.rotation.moneyFlow = v))}
+          />
+          <NumField
+            label="로테이션 모멘텀 가중치"
+            hint="최근 5일 리더십·자금흐름·점유율·수급 Breadth 변화의 섹터 간 백분위"
+            value={draft.rotation.rotationMomentum}
+            step={0.05}
+            onChange={(v) => patch((d) => void (d.rotation.rotationMomentum = v))}
+          />
+          <p className="text-[11px] text-muted-foreground">
+            현재 합계 {(
+              draft.rotation.priceLeadership +
+              draft.rotation.moneyFlow +
+              draft.rotation.rotationMomentum
+            ).toFixed(2)}
+          </p>
+        </Section>
       </div>
 
       <div className="sticky bottom-0 mt-4 flex flex-wrap items-center gap-2 border-t border-border bg-surface/95 py-3 backdrop-blur">
