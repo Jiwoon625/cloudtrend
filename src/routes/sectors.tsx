@@ -10,12 +10,23 @@ import { Input } from "@/components/ui/input";
 import { analysisQueryOptions } from "@/lib/analysisQuery";
 import { formatKstDateTime, formatNumber } from "@/lib/format";
 import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+
+import {
   CONFIDENCE_LABEL,
   FLOW_STATUS_LABEL,
   QUADRANT_LABEL,
   type FlowStatus,
   type RotationLink,
   type SectorRotationRow,
+  type SectorTimeline,
 } from "@/lib/engine/sectorRotation";
 
 export const Route = createFileRoute("/sectors")({
@@ -635,7 +646,18 @@ function SectorsPage() {
         </p>
       </section>
 
+      {/* 시계열 추이 */}
+      <section className="mb-4 rounded-lg border border-border bg-card p-3">
+        <h2 className="text-sm font-semibold">섹터 점수 시계열 추이</h2>
+        <p className="mb-2 text-[11px] text-muted-foreground">
+          5거래일 간격으로 과거 시점의 프레임을 재계산한 값입니다. 섹터 이름을 눌러 표시 여부를
+          바꿀 수 있습니다.
+        </p>
+        <TimelineChart timeline={rot.timeline} sectors={rot.sectors} />
+      </section>
+
       {/* 11.4 섹터 간 자금 이동 */}
+
       <section className="mb-4 rounded-lg border border-border bg-card p-3">
         <h2 className="text-sm font-semibold">섹터 간 자금 이동 추정</h2>
         <p className="mb-2 text-[11px] text-muted-foreground">
@@ -887,6 +909,144 @@ function QuadrantChart({ rows }: { rows: SectorRotationRow[] }) {
           </marker>
         </defs>
       </svg>
+    </div>
+  );
+}
+
+const TIMELINE_METRICS = [
+  { key: "priceLeadership", label: "가격 리더십 점수", unit: "점" },
+  { key: "moneyFlow", label: "자금흐름 점수", unit: "점" },
+  { key: "turnoverShare5d", label: "거래대금 점유율", unit: "%" },
+] as const;
+
+const TIMELINE_COLORS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+  "var(--up)",
+  "var(--down)",
+];
+
+/** 섹터별 점수 시계열 추이 (5거래일 간격). 기본은 로테이션 점수 상위 5개 섹터. */
+function TimelineChart({
+  timeline,
+  sectors,
+}: {
+  timeline: SectorTimeline[];
+  sectors: SectorRotationRow[];
+}) {
+  const [metric, setMetric] = useState<(typeof TIMELINE_METRICS)[number]["key"]>("moneyFlow");
+  const ordered = useMemo(
+    () =>
+      sectors
+        .map((s) => timeline.find((t) => t.sectorCode === s.sectorCode))
+        .filter((t): t is SectorTimeline => Boolean(t)),
+    [sectors, timeline],
+  );
+  const [visible, setVisible] = useState<string[]>(() => ordered.slice(0, 5).map((t) => t.sectorCode));
+
+  const dates = ordered[0]?.points.map((p) => p.date) ?? [];
+  const data = useMemo(
+    () =>
+      dates.map((date, i) => {
+        const row: Record<string, string | number | null> = { date: date.slice(5) };
+        for (const t of ordered) {
+          row[t.sectorCode] = t.points[i]?.[metric] ?? null;
+        }
+        return row;
+      }),
+    [dates, ordered, metric],
+  );
+
+  const unit = TIMELINE_METRICS.find((m) => m.key === metric)!.unit;
+
+  if (dates.length < 2) {
+    return (
+      <p className="text-[12px] text-muted-foreground">
+        과거 데이터가 부족해 시계열 추이를 계산할 수 없습니다 (판단 보류).
+      </p>
+    );
+  }
+
+  return (
+    <div>
+      <div className="mb-2 flex flex-wrap gap-1">
+        {TIMELINE_METRICS.map((m) => (
+          <Button
+            key={m.key}
+            size="sm"
+            variant={metric === m.key ? "default" : "outline"}
+            className="h-7 text-[11px]"
+            onClick={() => setMetric(m.key)}
+          >
+            {m.label}
+          </Button>
+        ))}
+      </div>
+      <div className="h-[300px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 8, right: 12, bottom: 4, left: -8 }}>
+            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+            <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" />
+            <YAxis tick={{ fontSize: 11 }} stroke="var(--muted-foreground)" width={44} />
+            <Tooltip
+              contentStyle={{
+                background: "var(--card)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                fontSize: 12,
+              }}
+              formatter={(value: number | string, name: string) => [
+                `${typeof value === "number" ? value.toFixed(1) : value}${unit}`,
+                name,
+              ]}
+            />
+            {ordered
+              .filter((t) => visible.includes(t.sectorCode))
+              .map((t) => (
+                <Line
+                  key={t.sectorCode}
+                  type="monotone"
+                  dataKey={t.sectorCode}
+                  name={t.sectorName}
+                  stroke={TIMELINE_COLORS[ordered.indexOf(t) % TIMELINE_COLORS.length]}
+                  strokeWidth={2}
+                  dot={{ r: 2 }}
+                  connectNulls
+                />
+              ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1">
+        {ordered.map((t, i) => {
+          const on = visible.includes(t.sectorCode);
+          return (
+            <button
+              key={t.sectorCode}
+              type="button"
+              onClick={() =>
+                setVisible((prev) =>
+                  prev.includes(t.sectorCode)
+                    ? prev.filter((c) => c !== t.sectorCode)
+                    : [...prev, t.sectorCode],
+                )
+              }
+              className={`flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] ${
+                on ? "border-border bg-surface" : "border-border/60 text-muted-foreground opacity-60"
+              }`}
+            >
+              <span
+                className="inline-block size-2 rounded-full"
+                style={{ background: TIMELINE_COLORS[i % TIMELINE_COLORS.length] }}
+              />
+              {t.sectorName}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
