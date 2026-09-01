@@ -24,6 +24,8 @@ import { WARNING_LABELS } from "@/lib/engine/scoring";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
 
 export const Route = createFileRoute("/instrument/$symbol")({
+  // 외부 시세 API 실패 시 SSR 500(빈 화면) 대신 클라이언트 에러 화면을 보여준다.
+  ssr: false,
   loader: async ({ params, context }) => {
     const detail = await context.queryClient.ensureQueryData(
       instrumentQueryOptions(params.symbol),

@@ -14,6 +14,8 @@ import { analysisQueryOptions } from "@/lib/analysisQuery";
 import { formatNumber, formatPrice, formatWon } from "@/lib/format";
 
 export const Route = createFileRoute("/position-sizing")({
+  // 외부 시세 API 실패 시 SSR 500(빈 화면) 대신 클라이언트 에러 화면을 보여준다.
+  ssr: false,
   head: () => ({
     meta: [
       { title: "포지션 사이징 계산기 | TrendScore KR" },

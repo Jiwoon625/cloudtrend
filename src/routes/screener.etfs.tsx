@@ -7,6 +7,8 @@ import { DataError } from "@/components/DataError";
 import { ScreenerView } from "@/components/ScreenerView";
 
 export const Route = createFileRoute("/screener/etfs")({
+  // 외부 시세 API 실패 시 SSR 500(빈 화면) 대신 클라이언트 에러 화면을 보여준다.
+  ssr: false,
   head: () => ({
     meta: [
       { title: "ETF 스크리너 | TrendScore KR" },
