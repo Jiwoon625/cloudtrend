@@ -462,9 +462,15 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
       { type: "MARKET_TRADING_VOLUME", duration: "1w" },
       { type: "MARKET_TRADING_AMOUNT", duration: "1w" },
       { type: "TOSS_SECURITIES_TRADING_AMOUNT", duration: "1d" },
+      { type: "TOSS_SECURITIES_TRADING_VOLUME", duration: "1d" },
+      { type: "TOSS_SECURITIES_TRADING_AMOUNT", duration: "1w" },
+      { type: "TOP_GAINERS", duration: "1d" },
+      { type: "TOP_LOSERS", duration: "1d" },
+      { type: "TOP_GAINERS", duration: "1w" },
+      { type: "TOP_LOSERS", duration: "1w" },
     ];
     for (const c of combos) {
-      if (pool.size >= etfCount * 2) break;
+      if (pool.size >= Math.max(etfCount + 15, etfCount * 2)) break;
       try {
         const res = await api<{ rankings: RankingItem[] }>("/api/v1/rankings", {
           type: c.type,
