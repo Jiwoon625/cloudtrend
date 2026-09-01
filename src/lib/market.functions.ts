@@ -239,26 +239,59 @@ export const getDataStatus = createServerFn({ method: "GET" }).handler(
 
 export interface UniverseUploadPayload {
   count: number;
+  symbols: string[];
+  /** 사용자가 직접 지정했는지 여부 (false면 내장 코스피200 스냅샷) */
+  custom: boolean;
   uploadedAt: string | null;
 }
 
-/** 홈 화면에서 업로드한 코스피200 CSV로 스크리닝 유니버스를 교체한다. */
+/** 홈 화면에서 입력한 종목코드로 스크리닝 유니버스를 교체한다. 빈 목록이면 내장 코스피200으로 복귀. */
 export const setUniverse = createServerFn({ method: "POST" })
   .inputValidator((input: { symbols: string[] }) => ({
-    symbols: (input.symbols ?? []).map((s) => String(s).trim()).filter(Boolean).slice(0, 500),
+    symbols: (input.symbols ?? [])
+      .map((s) => String(s).trim().toUpperCase())
+      .filter((s) => /^[0-9A-Z]{6}$/.test(s))
+      .slice(0, 500),
   }))
   .handler(async ({ data }): Promise<UniverseUploadPayload> => {
-    const { setUniverseOverride, getUniverseOverride } = await import("@/lib/engine/toss.server");
+    const { setUniverseOverride, getUniverseOverride, getDefaultUniverseSymbols } = await import(
+      "@/lib/engine/toss.server"
+    );
     setUniverseOverride(data.symbols);
     const cur = getUniverseOverride();
-    return { count: cur?.count ?? 0, uploadedAt: cur?.uploadedAt ?? null };
+    if (!cur) {
+      const def = getDefaultUniverseSymbols();
+      return { count: def.length, symbols: def, custom: false, uploadedAt: null };
+    }
+    return { count: cur.count, symbols: cur.symbols, custom: true, uploadedAt: cur.uploadedAt };
   });
 
 export const getUniverse = createServerFn({ method: "GET" }).handler(
   async (): Promise<UniverseUploadPayload> => {
-    const { getUniverseOverride } = await import("@/lib/engine/toss.server");
+    const { getUniverseOverride, getDefaultUniverseSymbols } = await import(
+      "@/lib/engine/toss.server"
+    );
     const cur = getUniverseOverride();
-    return { count: cur?.count ?? 0, uploadedAt: cur?.uploadedAt ?? null };
+    if (!cur) {
+      const def = getDefaultUniverseSymbols();
+      return { count: def.length, symbols: def, custom: false, uploadedAt: null };
+    }
+    return { count: cur.count, symbols: cur.symbols, custom: true, uploadedAt: cur.uploadedAt };
+  },
+);
+
+export interface CollectionProgressPayload {
+  done: number;
+  total: number;
+  running: boolean;
+  cached: number;
+}
+
+/** 일봉 수집 진행률 조회 (대시보드 진행률 표시용) */
+export const getCollectionProgress = createServerFn({ method: "GET" }).handler(
+  async (): Promise<CollectionProgressPayload> => {
+    const { getCollectionStatus } = await import("@/lib/engine/toss.server");
+    return getCollectionStatus();
   },
 );
 
