@@ -1019,7 +1019,7 @@ export function computeSectorRotation(
     frameCache.set(offset, frame);
     if (!frame) continue;
     const scores = scoreFrame(frame);
-    const date = kospiBars[kospiBars.length - 1 - offset]?.date ?? ds.asOfDate;
+    const date = kospiBars[kospiBars.length - 1 - offset]?.tradeDate ?? ds.asOfDate;
     for (const timeline of timelineByCode.values()) {
       const sector = frame.sectors.find((s) => s.sectorCode === timeline.sectorCode);
       const score = scores.get(timeline.sectorCode);
