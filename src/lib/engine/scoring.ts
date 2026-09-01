@@ -864,87 +864,94 @@ const clampNum = (v: unknown, fallback: number, min: number, max: number): numbe
 /** 클라이언트에서 넘어온 부분 설정을 기본값과 병합하고 값 범위를 강제한다. */
 export function mergeScoringConfig(input: unknown): ScoringConfig {
   const d = DEFAULT_SCORING_CONFIG;
-  const raw = (input ?? {}) as Record<string, any>;
-  const w = (raw.weights ?? {}) as Record<string, any>;
-  const weightBlock = (src: any, def: Weights): Weights => ({
-    technical: clampNum(src?.technical, def.technical, 0, 1),
-    priority: clampNum(src?.priority, def.priority, 0, 1),
-    fundamental: clampNum(src?.fundamental, def.fundamental, 0, 1),
-    marketSector: clampNum(src?.marketSector, def.marketSector, 0, 1),
+  const at = (o: unknown, k: string): unknown =>
+    o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined;
+  const raw = input ?? {};
+  const w = at(raw, "weights");
+  const weightBlock = (src: unknown, def: Weights): Weights => ({
+    technical: clampNum(at(src, "technical"), def.technical, 0, 1),
+    priority: clampNum(at(src, "priority"), def.priority, 0, 1),
+    fundamental: clampNum(at(src, "fundamental"), def.fundamental, 0, 1),
+    marketSector: clampNum(at(src, "marketSector"), def.marketSector, 0, 1),
   });
-  const t = (raw.technical ?? {}) as Record<string, any>;
-  const p = (raw.priority ?? {}) as Record<string, any>;
-  const g = (raw.grade ?? {}) as Record<string, any>;
-  const u = (raw.universe ?? {}) as Record<string, any>;
+  const t = at(raw, "technical");
+  const p = at(raw, "priority");
+  const g = at(raw, "grade");
+  const u = at(raw, "universe");
+  const lev = at(u, "excludeLeveragedInverse");
   return {
     weights: {
-      stock: weightBlock(w.stock, d.weights.stock),
-      etf: weightBlock(w.etf, d.weights.etf),
+      stock: weightBlock(at(w, "stock"), d.weights.stock),
+      etf: weightBlock(at(w, "etf"), d.weights.etf),
     },
     technical: {
-      ichimokuMax: clampNum(t.ichimokuMax, d.technical.ichimokuMax, 0, 20),
-      bollingerMax: clampNum(t.bollingerMax, d.technical.bollingerMax, 0, 20),
-      volumeMax: clampNum(t.volumeMax, d.technical.volumeMax, 0, 20),
-      maMax: clampNum(t.maMax, d.technical.maMax, 0, 20),
-      volumeStrongRatio: clampNum(t.volumeStrongRatio, d.technical.volumeStrongRatio, 100, 2000),
+      ichimokuMax: clampNum(at(t, "ichimokuMax"), d.technical.ichimokuMax, 0, 20),
+      bollingerMax: clampNum(at(t, "bollingerMax"), d.technical.bollingerMax, 0, 20),
+      volumeMax: clampNum(at(t, "volumeMax"), d.technical.volumeMax, 0, 20),
+      maMax: clampNum(at(t, "maMax"), d.technical.maMax, 0, 20),
+      volumeStrongRatio: clampNum(
+        at(t, "volumeStrongRatio"),
+        d.technical.volumeStrongRatio,
+        100,
+        2000,
+      ),
       volumeStrongPercentile: clampNum(
-        t.volumeStrongPercentile,
+        at(t, "volumeStrongPercentile"),
         d.technical.volumeStrongPercentile,
         0,
         100,
       ),
-      volumeWeakRatio: clampNum(t.volumeWeakRatio, d.technical.volumeWeakRatio, 50, 2000),
+      volumeWeakRatio: clampNum(at(t, "volumeWeakRatio"), d.technical.volumeWeakRatio, 50, 2000),
     },
     priority: {
-      indexPoints: clampNum(p.indexPoints, d.priority.indexPoints, 0, 20),
-      foreignPoints: clampNum(p.foreignPoints, d.priority.foreignPoints, 0, 20),
-      valueUpPoints: clampNum(p.valueUpPoints, d.priority.valueUpPoints, 0, 20),
-      nearHighPoints: clampNum(p.nearHighPoints, d.priority.nearHighPoints, 0, 20),
-      sizePoints: clampNum(p.sizePoints, d.priority.sizePoints, 0, 20),
-      relativePoints: clampNum(p.relativePoints, d.priority.relativePoints, 0, 20),
+      indexPoints: clampNum(at(p, "indexPoints"), d.priority.indexPoints, 0, 20),
+      foreignPoints: clampNum(at(p, "foreignPoints"), d.priority.foreignPoints, 0, 20),
+      valueUpPoints: clampNum(at(p, "valueUpPoints"), d.priority.valueUpPoints, 0, 20),
+      nearHighPoints: clampNum(at(p, "nearHighPoints"), d.priority.nearHighPoints, 0, 20),
+      sizePoints: clampNum(at(p, "sizePoints"), d.priority.sizePoints, 0, 20),
+      relativePoints: clampNum(at(p, "relativePoints"), d.priority.relativePoints, 0, 20),
       nearHighThresholdPercent: clampNum(
-        p.nearHighThresholdPercent,
+        at(p, "nearHighThresholdPercent"),
         d.priority.nearHighThresholdPercent,
         -100,
         0,
       ),
-      minMarketCap: clampNum(p.minMarketCap, d.priority.minMarketCap, 0, 1e15),
+      minMarketCap: clampNum(at(p, "minMarketCap"), d.priority.minMarketCap, 0, 1e15),
       excessReturnThresholdPp: clampNum(
-        p.excessReturnThresholdPp,
+        at(p, "excessReturnThresholdPp"),
         d.priority.excessReturnThresholdPp,
         -20,
         20,
       ),
     },
     grade: {
-      aMin: clampNum(g.aMin, d.grade.aMin, 0, 100),
-      bMin: clampNum(g.bMin, d.grade.bMin, 0, 100),
+      aMin: clampNum(at(g, "aMin"), d.grade.aMin, 0, 100),
+      bMin: clampNum(at(g, "bMin"), d.grade.bMin, 0, 100),
     },
     universe: {
-      minPrice: clampNum(u.minPrice, d.universe.minPrice, 0, 1e7),
-      maxPrice: clampNum(u.maxPrice, d.universe.maxPrice, 1000, 1e9),
-      minMarketCap: clampNum(u.minMarketCap, d.universe.minMarketCap, 0, 1e15),
-      minTradingValue: clampNum(u.minTradingValue, d.universe.minTradingValue, 0, 1e15),
-      etfMinAum: clampNum(u.etfMinAum, d.universe.etfMinAum, 0, 1e15),
+      minPrice: clampNum(at(u, "minPrice"), d.universe.minPrice, 0, 1e7),
+      maxPrice: clampNum(at(u, "maxPrice"), d.universe.maxPrice, 1000, 1e9),
+      minMarketCap: clampNum(at(u, "minMarketCap"), d.universe.minMarketCap, 0, 1e15),
+      minTradingValue: clampNum(at(u, "minTradingValue"), d.universe.minTradingValue, 0, 1e15),
+      etfMinAum: clampNum(at(u, "etfMinAum"), d.universe.etfMinAum, 0, 1e15),
       etfMinTradingValue20d: clampNum(
-        u.etfMinTradingValue20d,
+        at(u, "etfMinTradingValue20d"),
         d.universe.etfMinTradingValue20d,
         0,
         1e15,
       ),
       etfMaxPremiumDiscount: clampNum(
-        u.etfMaxPremiumDiscount,
+        at(u, "etfMaxPremiumDiscount"),
         d.universe.etfMaxPremiumDiscount,
         0,
         50,
       ),
       excludeLeveragedInverse:
-        typeof u.excludeLeveragedInverse === "boolean"
-          ? u.excludeLeveragedInverse
-          : d.universe.excludeLeveragedInverse,
+        typeof lev === "boolean" ? lev : d.universe.excludeLeveragedInverse,
     },
   };
 }
+
 
 /** 기술점수 만점(설정 반영) */
 export function technicalMaxPoints(cfg: ScoringConfig = DEFAULT_SCORING_CONFIG): number {
