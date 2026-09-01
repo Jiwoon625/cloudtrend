@@ -193,6 +193,17 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
     { code: "LOW_LIQUIDITY", rows: rows.filter((r) => !r.hardFilterPassed) },
   ];
 
+  // 실격 사유별 건수 (한 종목이 여러 사유에 걸릴 수 있음)
+  const failReasons: Array<[string, number]> = (() => {
+    const map = new Map<string, number>();
+    for (const r of rows) {
+      if (r.hardFilterPassed) continue;
+      for (const f of r.failedRules) map.set(f, (map.get(f) ?? 0) + 1);
+    }
+    return [...map.entries()].sort((a, b) => b[1] - a[1]);
+  })();
+
+
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
