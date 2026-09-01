@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Activity, ArrowDown, ArrowUp, Hash, ListPlus, Loader2, ShieldAlert, TrendingUp } from "lucide-react";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { Activity, ArrowDown, ArrowUp, Hash, ListPlus, Loader2, Play, ShieldAlert, TrendingUp } from "lucide-react";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
