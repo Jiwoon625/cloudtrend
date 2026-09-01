@@ -24,7 +24,6 @@ export const Route = createFileRoute("/data-status")({
       },
     ],
   }),
-  loader: ({ context }) => context.queryClient.ensureQueryData(dataStatusQueryOptions),
   errorComponent: ({ error, reset }) => <DataError error={error} reset={reset} />,
   component: DataStatusPage,
 });
