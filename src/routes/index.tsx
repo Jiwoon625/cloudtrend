@@ -140,15 +140,9 @@ function Dashboard() {
   );
 }
 
-function DashboardContent({ analysis }: { analysis: ReturnType<typeof useAnalysisData> }) {
-  type _Unused = never;
-  return null;
-}
+type AnalysisResult = Awaited<ReturnType<typeof analysisQueryOptions.queryFn>>["analysis"];
 
-function useAnalysisData(): never {
-  throw new Error("unused");
-}
-
+function DashboardContent({ analysis }: { analysis: NonNullable<AnalysisResult> }) {
   const { marketGate: gate, rows, sectors } = analysis;
 
   const passed = rows.filter((r) => r.hardFilterPassed);
