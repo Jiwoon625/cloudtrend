@@ -29,7 +29,12 @@ export function DataError({ error, reset }: { error: unknown; reset?: () => void
               현재 서버 출구 IP: <span className="num font-medium text-foreground">{ip ?? "확인 중"}</span>
               {" — 토스증권 개발자센터 > 앱 설정의 허용 IP에 이 주소가 등록되어 있어야 합니다."}
             </li>
-            <li>클라우드 엣지 IP는 변경될 수 있으므로, 위 IP를 다시 등록한 뒤 재시도하세요.</li>
+            <li>
+              게시(배포)된 주소에서는 요청이 전 세계 엣지 서버로 분산되어 출구 IP가 매 요청마다
+              바뀌므로, IP 허용목록 방식으로는 고정할 수 없습니다. 실제 스크리닝은 미리보기 주소에서
+              실행해 주세요.
+            </li>
+
             <li>
               TOSS_CLIENT_ID / TOSS_CLIENT_SECRET 값이 유효한지(재발급·오탈자·앞뒤 공백) 확인하세요.
             </li>
