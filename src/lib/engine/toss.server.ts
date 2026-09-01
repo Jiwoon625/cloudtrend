@@ -233,6 +233,41 @@ async function fetchCandles(symbol: string): Promise<DailyPrice[]> {
 }
 
 /** 종목 상세(발행주식수 포함)를 200건 단위로 조회. 시가총액 = 발행주식수 × 종가 */
+/**
+ * 백테스트용 장기 일봉. 1회 최대 200봉이므로, 가장 오래된 봉 이전 구간을 한 번 더 요청해
+ * 최근 1년(약 245봉)까지 확장한다. 토스 API가 페이지 파라미터를 지원하지 않으면 200봉만 반환한다.
+ */
+export async function fetchLongHistory(symbol: string, target = 250): Promise<DailyPrice[]> {
+  const first = await fetchCandles(symbol);
+  if (first.length === 0 || first.length >= target) return first.slice(-target);
+  const oldest = first[0]!.tradeDate;
+  const variants: Array<Record<string, string | number | boolean>> = [
+    { to: `${oldest}T00:00:00+09:00` },
+    { endDateTime: `${oldest}T00:00:00+09:00` },
+    { endDate: oldest },
+    { before: `${oldest}T00:00:00+09:00` },
+  ];
+  for (const v of variants) {
+    try {
+      const res = await api<{ candles: Candle[] }>("/api/v1/candles", {
+        symbol,
+        interval: "1d",
+        count: CANDLE_COUNT,
+        adjusted: true,
+        ...v,
+      });
+      const older = candlesToBars(res.candles ?? []).filter((b) => b.tradeDate < oldest);
+      if (older.length > 0) {
+        const merged = [...older, ...first];
+        return merged.slice(-target);
+      }
+    } catch {
+      // 해당 파라미터 미지원 → 다음 후보 시도
+    }
+  }
+  return first;
+}
+
 async function fetchStockInfos(symbols: string[]): Promise<Map<string, StockInfo>> {
   const out = new Map<string, StockInfo>();
   for (let i = 0; i < symbols.length; i += 200) {

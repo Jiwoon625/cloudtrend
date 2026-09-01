@@ -19,6 +19,8 @@ const NAV = [
   { to: "/sectors", label: "섹터" },
   { to: "/position-sizing", label: "포지션 사이징" },
   { to: "/data-status", label: "데이터 상태" },
+  { to: "/scoring", label: "산식·가중치" },
+  { to: "/backtest", label: "백테스트" },
 ] as const;
 
 function ThemeToggle() {

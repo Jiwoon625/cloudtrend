@@ -9,9 +9,7 @@ import {
 } from "./indicators";
 import {
   ALL_AVAILABLE,
-  DEFAULT_UNIVERSE,
-  ETF_WEIGHTS,
-  STOCK_WEIGHTS,
+  DEFAULT_SCORING_CONFIG,
   STRATEGY_VERSION,
   actionLabel,
   collectWarnings,
@@ -26,6 +24,7 @@ import {
   totalScore,
   type MarketGate,
   type ScoreBlock,
+  type ScoringConfig,
   type TechnicalGrade,
 } from "./scoring";
 import type { DatasetCapabilities, MarketDataset } from "./dataset";
@@ -81,6 +80,7 @@ export interface ScreeningRow {
 export interface AnalysisResult {
   asOfDate: string;
   strategyVersion: string;
+  scoringConfig: ScoringConfig;
   dataVersion: string;
   dataProvider: string;
   isLive: boolean;
@@ -242,7 +242,10 @@ function sectorSnapshotScores(ds: MarketDataset, rows: ScreeningRow[]): SectorSc
   }));
 }
 
-export function runAnalysis(ds: MarketDataset): AnalysisResult {
+export function runAnalysis(
+  ds: MarketDataset,
+  cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
+): AnalysisResult {
   const kospi = indexSnapshot(ds, "KOSPI");
   const kosdaq = indexSnapshot(ds, "KOSDAQ") ?? kospi;
   if (!kospi || !kosdaq) throw new Error("시장 지수(KOSPI/KOSDAQ) 시계열이 없어 분석할 수 없습니다.");
@@ -297,8 +300,8 @@ export function runAnalysis(ds: MarketDataset): AnalysisResult {
     const benchR20 = periodReturn(benchCloses, bli, 20);
     const benchR60 = periodReturn(benchCloses, bli, 60);
 
-    const tech = technicalScore(snap, valuePct);
-    const prio = priorityScore(inst, snap, financials, last.marketCap, bench.dayReturn);
+    const tech = technicalScore(snap, valuePct, cfg);
+    const prio = priorityScore(inst, snap, financials, last.marketCap, bench.dayReturn, cfg);
     const quality =
       inst.instrumentType === "STOCK"
         ? fundamentalScore(financials)
@@ -311,7 +314,7 @@ export function runAnalysis(ds: MarketDataset): AnalysisResult {
       last.tradingValue,
       bars.length,
       etf,
-      DEFAULT_UNIVERSE,
+      cfg.universe,
       ds.isLive ? availability : ALL_AVAILABLE,
     );
 
@@ -341,8 +344,8 @@ export function runAnalysis(ds: MarketDataset): AnalysisResult {
       marketSectorScore: null,
       totalScoreNormalized: 0,
       dataCompletenessRatio: 0,
-      grade: technicalGrade(tech.points),
-      actionLabelText: actionLabel(technicalGrade(tech.points), gate.status),
+      grade: technicalGrade(tech.points, cfg),
+      actionLabelText: actionLabel(technicalGrade(tech.points, cfg), gate.status),
       warnings: [],
       failedRules: universe.failedRules,
       skippedRules: universe.skippedRules,
@@ -363,7 +366,8 @@ export function runAnalysis(ds: MarketDataset): AnalysisResult {
   for (const row of rows) {
     const sector = sectorByCode.get(row.instrument.sectorCode);
     row.marketSectorScore = ds.capabilities.sectors && sector ? sector.score : null;
-    const weights = row.instrument.instrumentType === "STOCK" ? STOCK_WEIGHTS : ETF_WEIGHTS;
+    const weights =
+      row.instrument.instrumentType === "STOCK" ? cfg.weights.stock : cfg.weights.etf;
     const { total, dataCompletenessRatio } = totalScore({
       technicalNormalized: row.technicalNormalized,
       priorityNormalized: row.priorityNormalized,
@@ -386,6 +390,7 @@ export function runAnalysis(ds: MarketDataset): AnalysisResult {
   return {
     asOfDate: ds.asOfDate,
     strategyVersion: STRATEGY_VERSION,
+    scoringConfig: cfg,
     dataVersion: ds.version,
     dataProvider: ds.provider,
     isLive: ds.isLive,
@@ -407,18 +412,23 @@ export function getRow(ds: MarketDataset, symbol: string): ScreeningRow | undefi
   return runAnalysis(ds).rows.find((r) => r.instrument.symbol === symbol);
 }
 
-export function scoreHistory(ds: MarketDataset, symbol: string, days = 60) {
+export function scoreHistory(
+  ds: MarketDataset,
+  symbol: string,
+  days = 60,
+  cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
+) {
   const bars = ds.bars[symbol] ?? [];
   const inst = ds.instruments.find((i) => i.symbol === symbol);
   if (!inst || bars.length === 0) return [];
   const out: Array<{ tradeDate: string; technicalPoints: number; grade: TechnicalGrade }> = [];
   for (let i = Math.max(120, bars.length - days); i < bars.length; i++) {
     const snap = computeIndicators(bars, i);
-    const t = technicalScore(snap, 75);
+    const t = technicalScore(snap, 75, cfg);
     out.push({
       tradeDate: bars[i]!.tradeDate,
       technicalPoints: t.points,
-      grade: technicalGrade(t.points),
+      grade: technicalGrade(t.points, cfg),
     });
   }
   return out;

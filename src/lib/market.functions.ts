@@ -5,6 +5,14 @@ import { createServerFn } from "@tanstack/react-start";
 
 import type { MarketDataset } from "@/lib/engine/dataset";
 import {
+  BACKTEST_FEATURES,
+  DEFAULT_BACKTEST_PARAMS,
+  runBacktest,
+  type BacktestParams,
+  type BacktestResult,
+} from "@/lib/engine/backtest";
+import { mergeScoringConfig, type ScoringConfig } from "@/lib/engine/scoring";
+import {
   chartSeries,
   runAnalysis,
   scoreHistory,
@@ -41,12 +49,120 @@ export interface AnalysisPayload {
   source: DataSourceStatus;
 }
 
-export const getMarketAnalysis = createServerFn({ method: "GET" }).handler(
-  async (): Promise<AnalysisPayload> => {
+export const getMarketAnalysis = createServerFn({ method: "GET" })
+  .inputValidator((input: { config?: unknown } | undefined) => ({
+    config: mergeScoringConfig(input?.config),
+  }))
+  .handler(async ({ data }): Promise<AnalysisPayload> => {
     const { dataset, status } = await loadDataset();
-    return { analysis: runAnalysis(dataset), source: status };
-  },
-);
+    return { analysis: runAnalysis(dataset, data.config), source: status };
+  });
+
+export interface BacktestPayload {
+  result: BacktestResult;
+  universe: Array<{ symbol: string; name: string; bars: number }>;
+  extended: boolean;
+  asOfDate: string;
+  notes: string[];
+}
+
+/**
+ * 선택한 종목(미지정 시 거래대금 상위 주식)에 대해 피처 영향도 백테스트를 실행한다.
+ * extendHistory=true면 종목당 2회 요청으로 최근 1년(약 250봉)까지 확장 시도한다.
+ */
+export const runFeatureBacktest = createServerFn({ method: "POST" })
+  .inputValidator(
+    (input: { symbols?: string[]; params?: unknown; extendHistory?: boolean; limit?: number }) => {
+      const num = (v: unknown, d: number, min: number, max: number) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : d;
+      };
+      const raw = (input.params ?? {}) as Record<string, unknown>;
+      const featureIds = BACKTEST_FEATURES.map((f) => f.id);
+      const rawFeatures = Array.isArray(raw["features"]) ? (raw["features"] as unknown[]) : null;
+      const rawWeights = (raw["weights"] ?? {}) as Record<string, unknown>;
+      const params: BacktestParams = {
+        horizonDays: num(raw["horizonDays"], DEFAULT_BACKTEST_PARAMS.horizonDays, 1, 120),
+        sampleEvery: num(raw["sampleEvery"], DEFAULT_BACKTEST_PARAMS.sampleEvery, 1, 20),
+        volumeSurgeRatio: num(
+          raw["volumeSurgeRatio"],
+          DEFAULT_BACKTEST_PARAMS.volumeSurgeRatio,
+          100,
+          2000,
+        ),
+        extensionLimit: num(raw["extensionLimit"], DEFAULT_BACKTEST_PARAMS.extensionLimit, 1, 100),
+        entryScore: num(raw["entryScore"], DEFAULT_BACKTEST_PARAMS.entryScore, 0, 100),
+        features: rawFeatures
+          ? featureIds.filter((id) => rawFeatures.map(String).includes(id))
+          : DEFAULT_BACKTEST_PARAMS.features,
+        weights: Object.fromEntries(
+          BACKTEST_FEATURES.map((f) => [
+            f.id,
+            num(rawWeights[f.id], f.defaultWeight, 0, 10),
+          ]),
+        ),
+      };
+      return {
+        symbols: (input.symbols ?? [])
+          .map((x) => String(x).trim().toUpperCase())
+          .filter((x) => /^[0-9A-Z]{6}$/.test(x))
+          .slice(0, 60),
+        params,
+        extendHistory: input.extendHistory === true,
+        limit: num(input.limit, 30, 1, 60),
+      };
+    },
+  )
+  .handler(async ({ data }): Promise<BacktestPayload> => {
+    const { dataset } = await loadDataset();
+    const { fetchLongHistory } = await import("@/lib/engine/toss.server");
+
+    const pool = data.symbols.length
+      ? dataset.instruments.filter((i) => data.symbols.includes(i.symbol))
+      : [...dataset.instruments]
+          .filter((i) => i.instrumentType === "STOCK")
+          .sort((a, b) => {
+            const av = dataset.bars[a.symbol]?.at(-1)?.tradingValue ?? 0;
+            const bv = dataset.bars[b.symbol]?.at(-1)?.tradingValue ?? 0;
+            return bv - av;
+          })
+          .slice(0, data.limit);
+
+    const series = [] as Array<{ symbol: string; name: string; bars: typeof dataset.bars[string] }>;
+    let extended = false;
+    for (const inst of pool) {
+      let bars = dataset.bars[inst.symbol] ?? [];
+      if (data.extendHistory) {
+        try {
+          const long = await fetchLongHistory(inst.symbol, 250);
+          if (long.length > bars.length) {
+            bars = long;
+            extended = true;
+          }
+        } catch {
+          // 확장 실패 시 캐시된 일봉(최대 200봉)으로 진행
+        }
+      }
+      if (bars.length > 0) series.push({ symbol: inst.symbol, name: inst.name, bars });
+    }
+
+    const result = runBacktest(series, data.params);
+    return {
+      result,
+      universe: series.map((s) => ({ symbol: s.symbol, name: s.name, bars: s.bars.length })),
+      extended,
+      asOfDate: dataset.asOfDate,
+      notes: [
+        data.extendHistory
+          ? extended
+            ? "최근 1년(최대 250봉)까지 일봉을 확장해 백테스트했습니다."
+            : "토스 Open API가 200봉 이전 구간 조회를 지원하지 않아 최대 200봉(약 9.5개월)으로 백테스트했습니다."
+          : "캐시된 일봉(종목당 최대 200봉, 약 9.5개월)으로 백테스트했습니다.",
+        "지표 계산에 120봉이 필요하므로 관측 구간은 121번째 봉부터 시작합니다. 표본이 겹치는 중첩 관측이므로 t값은 참고용입니다.",
+        "수수료·세금·슬리피지는 반영되지 않았습니다.",
+      ],
+    };
+  });
 
 export interface InstrumentDetailPayload {
   source: DataSourceStatus;
@@ -93,10 +209,13 @@ export const getServerEgressIp = createServerFn({ method: "GET" }).handler(async
 });
 
 export const getInstrumentDetail = createServerFn({ method: "GET" })
-  .inputValidator((input: { symbol: string }) => ({ symbol: String(input.symbol).slice(0, 20) }))
+  .inputValidator((input: { symbol: string; config?: unknown }) => ({
+    symbol: String(input.symbol).slice(0, 20),
+    config: mergeScoringConfig(input.config),
+  }))
   .handler(async ({ data }): Promise<InstrumentDetailPayload> => {
     const { dataset, status } = await loadDataset();
-    const analysis = runAnalysis(dataset);
+    const analysis = runAnalysis(dataset, data.config as ScoringConfig);
     const row = analysis.rows.find((r) => r.instrument.symbol === data.symbol) ?? null;
     return {
       source: status,
@@ -109,7 +228,7 @@ export const getInstrumentDetail = createServerFn({ method: "GET" })
       marketGateStatus: analysis.marketGate.status,
       row,
       chart: row ? chartSeries(dataset, data.symbol) : [],
-      history: row ? scoreHistory(dataset, data.symbol) : [],
+      history: row ? scoreHistory(dataset, data.symbol, 60, data.config) : [],
     };
   });
 

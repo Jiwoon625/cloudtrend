@@ -147,12 +147,19 @@ function fmtNum(v: number | null, digits = 0) {
   return v === null ? "데이터 없음" : v.toLocaleString("ko-KR", { maximumFractionDigits: digits });
 }
 
-/** Technical Signal Score, 7점 만점 */
-export function technicalScore(snap: IndicatorSnapshot, valuePercentile: number | null): ScoreBlock {
+const half = (max: number) => Math.round((max / 2) * 10) / 10;
+
+/** Technical Signal Score. 만점과 임계값은 ScoringConfig로 조정된다(기본 7점). */
+export function technicalScore(
+  snap: IndicatorSnapshot,
+  valuePercentile: number | null,
+  cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
+): ScoreBlock {
   const rows: RuleRow[] = [];
+  const t = cfg.technical;
   const ich = snap.ichimoku;
 
-  // 7.1 일목 추세 (2)
+  // 7.1 일목 추세
   let ichPoints = 0;
   let ichStatus: RuleStatus = "NO_DATA";
   let ichActual = "데이터 없음";
@@ -162,7 +169,7 @@ export function technicalScore(snap: IndicatorSnapshot, valuePercentile: number 
     ichActual = above ? "구름 상단 위" : inside ? "구름 내부" : "구름 아래";
     if (above) {
       const extra = ich.tenkanAboveKijun === true && ich.chikouAbovePast26Close === true;
-      ichPoints = extra ? 2 : 1;
+      ichPoints = extra ? t.ichimokuMax : half(t.ichimokuMax);
       ichStatus = "PASS";
       ichActual += extra ? " + 전환선>기준선 + 후행스팬 양전" : " (보조조건 일부 미충족)";
     } else {
@@ -173,13 +180,13 @@ export function technicalScore(snap: IndicatorSnapshot, valuePercentile: number 
     group: "일목 추세",
     rule: "구름 상단 위 + 전환선>기준선 + 종가>26일전 종가",
     actual: ichActual,
-    threshold: "3개 모두 충족 시 +2",
+    threshold: `3개 모두 충족 시 +${t.ichimokuMax} (구름 위만 +${half(t.ichimokuMax)})`,
     status: ichStatus,
     points: ichPoints,
-    maxPoints: 2,
+    maxPoints: t.ichimokuMax,
   });
 
-  // 7.2 볼린저 모멘텀 (2)
+  // 7.2 볼린저 모멘텀
   const b = snap.bollinger;
   let bbPoints = 0;
   let bbStatus: RuleStatus = "NO_DATA";
@@ -189,10 +196,10 @@ export function technicalScore(snap: IndicatorSnapshot, valuePercentile: number 
     const squeeze = b.bbSqueezePrior === true || b.bbSqueezeAbsolute === true;
     const expanding = b.bbWidthExpanding === true;
     if (breakout && squeeze && expanding) {
-      bbPoints = 2;
+      bbPoints = t.bollingerMax;
       bbActual = "사전 스퀴즈 후 상단 돌파 + 밴드폭 확장";
     } else if (breakout || squeeze) {
-      bbPoints = 1;
+      bbPoints = half(t.bollingerMax);
       bbActual = breakout ? "상단 돌파만 발생" : "스퀴즈 진행 중";
     } else {
       bbActual = `밴드폭 ${b.bb.width.toFixed(2)}%, 돌파 없음`;
@@ -207,39 +214,40 @@ export function technicalScore(snap: IndicatorSnapshot, valuePercentile: number 
     group: "볼린저 모멘텀",
     rule: "스퀴즈 후 상단 돌파 + 밴드폭 확장",
     actual: bbActual,
-    threshold: "동시 충족 시 +2",
+    threshold: `동시 충족 시 +${t.bollingerMax} (일부 +${half(t.bollingerMax)})`,
     status: bbStatus,
     points: bbPoints,
-    maxPoints: 2,
+    maxPoints: t.bollingerMax,
   });
 
-  // 7.3 거래량 수급 (2)
+  // 7.3 거래량 수급
   let volPoints = 0;
   let volStatus: RuleStatus = "NO_DATA";
   if (snap.volumeRatio20 !== null) {
-    const top30 = valuePercentile !== null ? valuePercentile >= 70 : false;
-    if (snap.volumeRatio20 >= 200 && top30) volPoints = 2;
-    else if (snap.volumeRatio20 >= 130) volPoints = 1;
+    const topPct =
+      valuePercentile !== null ? valuePercentile >= t.volumeStrongPercentile : false;
+    if (snap.volumeRatio20 >= t.volumeStrongRatio && topPct) volPoints = t.volumeMax;
+    else if (snap.volumeRatio20 >= t.volumeWeakRatio) volPoints = half(t.volumeMax);
     volStatus = volPoints > 0 ? "PASS" : "FAIL";
   }
   rows.push({
     group: "거래량 수급",
-    rule: "20일 평균 거래량 대비 비율 + 거래대금 상위 30%",
+    rule: `20일 평균 거래량 대비 비율 + 거래대금 백분위 ${t.volumeStrongPercentile} 이상`,
     actual:
       snap.volumeRatio20 === null
         ? "데이터 없음"
         : `${snap.volumeRatio20.toFixed(1)}% / 거래대금 백분위 ${valuePercentile === null ? "-" : valuePercentile.toFixed(0)}`,
-    threshold: "200% 이상 + 상위 30% → +2, 130% 이상 → +1",
+    threshold: `${t.volumeStrongRatio}% 이상 + 상위 → +${t.volumeMax}, ${t.volumeWeakRatio}% 이상 → +${half(t.volumeMax)}`,
     status: volStatus,
     points: volPoints,
-    maxPoints: 2,
+    maxPoints: t.volumeMax,
   });
 
-  // 7.4 이동평균 배열 (1)
+  // 7.4 이동평균 배열
   let maPoints = 0;
   let maStatus: RuleStatus = "NO_DATA";
   if (snap.maAligned !== null && snap.ma20Slope !== null) {
-    maPoints = snap.maAligned && snap.ma20Slope > 0 ? 1 : 0;
+    maPoints = snap.maAligned && snap.ma20Slope > 0 ? t.maMax : 0;
     maStatus = maPoints > 0 ? "PASS" : "FAIL";
   }
   rows.push({
@@ -249,10 +257,10 @@ export function technicalScore(snap: IndicatorSnapshot, valuePercentile: number 
       snap.ma20 === null
         ? "데이터 없음"
         : `MA20 ${fmtNum(snap.ma20)} / MA60 ${fmtNum(snap.ma60)} / MA120 ${fmtNum(snap.ma120)} / 기울기 ${fmtNum(snap.ma20Slope, 1)}`,
-    threshold: "정배열 + 기울기 > 0 → +1",
+    threshold: `정배열 + 기울기 > 0 → +${t.maMax}`,
     status: maStatus,
     points: maPoints,
-    maxPoints: 1,
+    maxPoints: t.maMax,
   });
 
   const points = rows.reduce((a, r) => a + r.points, 0);
@@ -260,16 +268,20 @@ export function technicalScore(snap: IndicatorSnapshot, valuePercentile: number 
     (a, r) => a + (r.status === "NO_DATA" ? 0 : r.maxPoints),
     0,
   );
-  return { points, maxPoints: 7, availableMaxPoints, rows };
+  return { points, maxPoints: technicalMaxPoints(cfg), availableMaxPoints, rows };
 }
 
 export type TechnicalGrade = "A" | "B" | "C";
 
-export function technicalGrade(points: number): TechnicalGrade {
-  if (points >= 6) return "A";
-  if (points >= 4) return "B";
+export function technicalGrade(
+  points: number,
+  cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
+): TechnicalGrade {
+  if (points >= cfg.grade.aMin) return "A";
+  if (points >= cfg.grade.bMin) return "B";
   return "C";
 }
+
 
 export function actionLabel(grade: TechnicalGrade, gate: MarketGate["status"]): string {
   if (grade === "A") {
@@ -281,26 +293,28 @@ export function actionLabel(grade: TechnicalGrade, gate: MarketGate["status"]): 
   return "관망";
 }
 
-/** Priority Quality Score, 8점 만점 */
+/** Priority Quality Score. 항목 배점·임계값은 ScoringConfig로 조정된다(기본 8점). */
 export function priorityScore(
   inst: Instrument,
   snap: IndicatorSnapshot,
   facts: FinancialFacts | undefined,
   marketCap: number | null,
   benchmarkDayReturn: number | null,
+  cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
 ): ScoreBlock {
   const rows: RuleRow[] = [];
-  const inIndex = ["KOSPI200", "KOSDAQ150", "KRX300"].some((c) =>
-    inst.indexMemberships.includes(c),
+  const c = cfg.priority;
+  const inIndex = ["KOSPI200", "KOSDAQ150", "KRX300"].some((code) =>
+    inst.indexMemberships.includes(code),
   );
   rows.push({
     group: "지수 편입",
     rule: "KOSPI200 / KOSDAQ150 / KRX300 편입 (중복 1회)",
     actual: inst.indexMemberships.length ? inst.indexMemberships.join(", ") : "미편입",
-    threshold: "편입 시 +2",
+    threshold: `편입 시 +${c.indexPoints}`,
     status: inIndex ? "PASS" : "FAIL",
-    points: inIndex ? 2 : 0,
-    maxPoints: 2,
+    points: inIndex ? c.indexPoints : 0,
+    maxPoints: c.indexPoints,
   });
 
   const f60 = snap.foreignNet60d;
@@ -308,10 +322,10 @@ export function priorityScore(
     group: "외국인 수급",
     rule: "최근 3개월(60일) 외국인 누적 순매수 > 0",
     actual: f60 === null ? "데이터 없음" : `${(f60 / 100_000_000).toFixed(1)}억 원`,
-    threshold: "양수 시 +2",
+    threshold: `양수 시 +${c.foreignPoints}`,
     status: f60 === null ? "NO_DATA" : f60 > 0 ? "PASS" : "FAIL",
-    points: f60 !== null && f60 > 0 ? 2 : 0,
-    maxPoints: 2,
+    points: f60 !== null && f60 > 0 ? c.foreignPoints : 0,
+    maxPoints: c.foreignPoints,
   });
 
   const valueUp = inst.indexMemberships.includes("KOREA_VALUEUP");
@@ -319,51 +333,51 @@ export function priorityScore(
     group: "밸류업",
     rule: "코리아 밸류업 지수 편입",
     actual: valueUp ? "편입" : "미편입",
-    threshold: "편입 시 +1",
+    threshold: `편입 시 +${c.valueUpPoints}`,
     status: valueUp ? "PASS" : "FAIL",
-    points: valueUp ? 1 : 0,
-    maxPoints: 1,
+    points: valueUp ? c.valueUpPoints : 0,
+    maxPoints: c.valueUpPoints,
   });
 
   // 실적 모멘텀(영업이익 YoY)은 토스 Open API가 재무제표를 제공하지 않아 항목에서 제외했다.
-  // Priority Quality Score 만점은 8점.
-
 
   const d = snap.distanceFrom52wHigh;
+  const nearOk = d !== null && d >= c.nearHighThresholdPercent;
   rows.push({
     group: "신고가",
-    rule: "52주 신고가 대비 10% 이내",
+    rule: `52주 신고가 대비 ${Math.abs(c.nearHighThresholdPercent)}% 이내`,
     actual: d === null ? "데이터 없음" : fmtPct(d),
-    threshold: "-10% 이내 시 +1",
-    status: d === null ? "NO_DATA" : d >= -10 ? "PASS" : "FAIL",
-    points: d !== null && d >= -10 ? 1 : 0,
-    maxPoints: 1,
+    threshold: `${c.nearHighThresholdPercent}% 이내 시 +${c.nearHighPoints}`,
+    status: d === null ? "NO_DATA" : nearOk ? "PASS" : "FAIL",
+    points: nearOk ? c.nearHighPoints : 0,
+    maxPoints: c.nearHighPoints,
   });
 
-  const capOk = marketCap !== null && marketCap >= 300_000_000_000;
+  const capOk = marketCap !== null && marketCap >= c.minMarketCap;
   rows.push({
     group: "규모",
-    rule: "시가총액 3,000억 원 이상",
+    rule: `시가총액 ${(c.minMarketCap / 100_000_000).toLocaleString("ko-KR")}억 원 이상`,
     actual:
       marketCap === null ? "데이터 없음" : `${(marketCap / 1_000_000_000_000).toFixed(2)}조 원`,
-    threshold: "충족 시 +1",
+    threshold: `충족 시 +${c.sizePoints}`,
     status: marketCap === null ? "NO_DATA" : capOk ? "PASS" : "FAIL",
-    points: capOk ? 1 : 0,
-    maxPoints: 1,
+    points: capOk ? c.sizePoints : 0,
+    maxPoints: c.sizePoints,
   });
 
   const excess =
     snap.dayReturn !== null && benchmarkDayReturn !== null
       ? (snap.dayReturn - benchmarkDayReturn) * 100
       : null;
+  const excessOk = excess !== null && excess >= c.excessReturnThresholdPp;
   rows.push({
     group: "상대 성과",
-    rule: "당일 벤치마크 대비 초과수익률 2%p 이상",
+    rule: `당일 벤치마크 대비 초과수익률 ${c.excessReturnThresholdPp}%p 이상`,
     actual: excess === null ? "데이터 없음" : `${excess.toFixed(2)}%p`,
-    threshold: "2%p 이상 시 +1",
-    status: excess === null ? "NO_DATA" : excess >= 2 ? "PASS" : "FAIL",
-    points: excess !== null && excess >= 2 ? 1 : 0,
-    maxPoints: 1,
+    threshold: `${c.excessReturnThresholdPp}%p 이상 시 +${c.relativePoints}`,
+    status: excess === null ? "NO_DATA" : excessOk ? "PASS" : "FAIL",
+    points: excessOk ? c.relativePoints : 0,
+    maxPoints: c.relativePoints,
   });
 
   const points = rows.reduce((a, r) => a + r.points, 0);
@@ -371,8 +385,9 @@ export function priorityScore(
     (a, r) => a + (r.status === "NO_DATA" ? 0 : r.maxPoints),
     0,
   );
-  return { points, maxPoints: 8, availableMaxPoints, rows };
+  return { points, maxPoints: priorityMaxPoints(cfg), availableMaxPoints, rows };
 }
+
 
 /** Fundamental Score, 100점 환산 (주식 전용) */
 export function fundamentalScore(facts: FinancialFacts | undefined): ScoreBlock {
@@ -779,4 +794,183 @@ export function calculatePositionSizing(input: PositionSizingInput): PositionSiz
     openRiskExceeded: openRiskAfter > 6,
     errors,
   };
+}
+
+// ---------------------------------------------------------------------------
+// 사용자 편집 가능한 산식 설정 (데이터 상태 > 산식·가중치 탭)
+// ---------------------------------------------------------------------------
+
+export interface ScoringConfig {
+  weights: { stock: Weights; etf: Weights };
+  technical: {
+    ichimokuMax: number;
+    bollingerMax: number;
+    volumeMax: number;
+    maMax: number;
+    /** 거래량 비율(20일 평균 대비, %) 강한 신호 기준 */
+    volumeStrongRatio: number;
+    /** 거래대금 백분위 기준 (강한 신호 동시 조건) */
+    volumeStrongPercentile: number;
+    /** 거래량 비율 약한 신호 기준 */
+    volumeWeakRatio: number;
+  };
+  priority: {
+    indexPoints: number;
+    foreignPoints: number;
+    valueUpPoints: number;
+    nearHighPoints: number;
+    sizePoints: number;
+    relativePoints: number;
+    /** 52주 신고가 대비 허용 낙폭 (%, 음수) */
+    nearHighThresholdPercent: number;
+    /** 규모 항목 통과 시가총액 (원) */
+    minMarketCap: number;
+    /** 벤치마크 대비 초과수익률 기준 (%p) */
+    excessReturnThresholdPp: number;
+  };
+  grade: { aMin: number; bMin: number };
+  universe: UniverseParams;
+}
+
+export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
+  weights: { stock: { ...STOCK_WEIGHTS }, etf: { ...ETF_WEIGHTS } },
+  technical: {
+    ichimokuMax: 2,
+    bollingerMax: 2,
+    volumeMax: 2,
+    maMax: 1,
+    volumeStrongRatio: 200,
+    volumeStrongPercentile: 70,
+    volumeWeakRatio: 130,
+  },
+  priority: {
+    indexPoints: 2,
+    foreignPoints: 2,
+    valueUpPoints: 1,
+    nearHighPoints: 1,
+    sizePoints: 1,
+    relativePoints: 1,
+    nearHighThresholdPercent: -10,
+    minMarketCap: 300_000_000_000,
+    excessReturnThresholdPp: 2,
+  },
+  grade: { aMin: 6, bMin: 4 },
+  universe: { ...DEFAULT_UNIVERSE },
+};
+
+const clampNum = (v: unknown, fallback: number, min: number, max: number): number => {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+};
+
+/** 클라이언트에서 넘어온 부분 설정을 기본값과 병합하고 값 범위를 강제한다. */
+export function mergeScoringConfig(input: unknown): ScoringConfig {
+  const d = DEFAULT_SCORING_CONFIG;
+  const at = (o: unknown, k: string): unknown =>
+    o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined;
+  const raw = input ?? {};
+  const w = at(raw, "weights");
+  const weightBlock = (src: unknown, def: Weights): Weights => ({
+    technical: clampNum(at(src, "technical"), def.technical, 0, 1),
+    priority: clampNum(at(src, "priority"), def.priority, 0, 1),
+    fundamental: clampNum(at(src, "fundamental"), def.fundamental, 0, 1),
+    marketSector: clampNum(at(src, "marketSector"), def.marketSector, 0, 1),
+  });
+  const t = at(raw, "technical");
+  const p = at(raw, "priority");
+  const g = at(raw, "grade");
+  const u = at(raw, "universe");
+  const lev = at(u, "excludeLeveragedInverse");
+  return {
+    weights: {
+      stock: weightBlock(at(w, "stock"), d.weights.stock),
+      etf: weightBlock(at(w, "etf"), d.weights.etf),
+    },
+    technical: {
+      ichimokuMax: clampNum(at(t, "ichimokuMax"), d.technical.ichimokuMax, 0, 20),
+      bollingerMax: clampNum(at(t, "bollingerMax"), d.technical.bollingerMax, 0, 20),
+      volumeMax: clampNum(at(t, "volumeMax"), d.technical.volumeMax, 0, 20),
+      maMax: clampNum(at(t, "maMax"), d.technical.maMax, 0, 20),
+      volumeStrongRatio: clampNum(
+        at(t, "volumeStrongRatio"),
+        d.technical.volumeStrongRatio,
+        100,
+        2000,
+      ),
+      volumeStrongPercentile: clampNum(
+        at(t, "volumeStrongPercentile"),
+        d.technical.volumeStrongPercentile,
+        0,
+        100,
+      ),
+      volumeWeakRatio: clampNum(at(t, "volumeWeakRatio"), d.technical.volumeWeakRatio, 50, 2000),
+    },
+    priority: {
+      indexPoints: clampNum(at(p, "indexPoints"), d.priority.indexPoints, 0, 20),
+      foreignPoints: clampNum(at(p, "foreignPoints"), d.priority.foreignPoints, 0, 20),
+      valueUpPoints: clampNum(at(p, "valueUpPoints"), d.priority.valueUpPoints, 0, 20),
+      nearHighPoints: clampNum(at(p, "nearHighPoints"), d.priority.nearHighPoints, 0, 20),
+      sizePoints: clampNum(at(p, "sizePoints"), d.priority.sizePoints, 0, 20),
+      relativePoints: clampNum(at(p, "relativePoints"), d.priority.relativePoints, 0, 20),
+      nearHighThresholdPercent: clampNum(
+        at(p, "nearHighThresholdPercent"),
+        d.priority.nearHighThresholdPercent,
+        -100,
+        0,
+      ),
+      minMarketCap: clampNum(at(p, "minMarketCap"), d.priority.minMarketCap, 0, 1e15),
+      excessReturnThresholdPp: clampNum(
+        at(p, "excessReturnThresholdPp"),
+        d.priority.excessReturnThresholdPp,
+        -20,
+        20,
+      ),
+    },
+    grade: {
+      aMin: clampNum(at(g, "aMin"), d.grade.aMin, 0, 100),
+      bMin: clampNum(at(g, "bMin"), d.grade.bMin, 0, 100),
+    },
+    universe: {
+      minPrice: clampNum(at(u, "minPrice"), d.universe.minPrice, 0, 1e7),
+      maxPrice: clampNum(at(u, "maxPrice"), d.universe.maxPrice, 1000, 1e9),
+      minMarketCap: clampNum(at(u, "minMarketCap"), d.universe.minMarketCap, 0, 1e15),
+      minTradingValue: clampNum(at(u, "minTradingValue"), d.universe.minTradingValue, 0, 1e15),
+      etfMinAum: clampNum(at(u, "etfMinAum"), d.universe.etfMinAum, 0, 1e15),
+      etfMinTradingValue20d: clampNum(
+        at(u, "etfMinTradingValue20d"),
+        d.universe.etfMinTradingValue20d,
+        0,
+        1e15,
+      ),
+      etfMaxPremiumDiscount: clampNum(
+        at(u, "etfMaxPremiumDiscount"),
+        d.universe.etfMaxPremiumDiscount,
+        0,
+        50,
+      ),
+      excludeLeveragedInverse:
+        typeof lev === "boolean" ? lev : d.universe.excludeLeveragedInverse,
+    },
+  };
+}
+
+
+/** 기술점수 만점(설정 반영) */
+export function technicalMaxPoints(cfg: ScoringConfig = DEFAULT_SCORING_CONFIG): number {
+  const t = cfg.technical;
+  return t.ichimokuMax + t.bollingerMax + t.volumeMax + t.maMax;
+}
+
+/** 우선순위 점수 만점(설정 반영) */
+export function priorityMaxPoints(cfg: ScoringConfig = DEFAULT_SCORING_CONFIG): number {
+  const p = cfg.priority;
+  return (
+    p.indexPoints +
+    p.foreignPoints +
+    p.valueUpPoints +
+    p.nearHighPoints +
+    p.sizePoints +
+    p.relativePoints
+  );
 }
