@@ -61,7 +61,7 @@ export function EtfUniverseInput() {
     <div className="space-y-2">
       <p className="text-[12px] text-muted-foreground">
         스크리닝할 ETF 종목코드를 직접 입력하세요. 쉼표·공백·줄바꿈으로 구분합니다 (예: 069500,
-        360750, 133690). 비워두고 저장하면 거래대금 상위 ETF가 자동 선정됩니다.
+        360750, 133690). 비워두고 저장하면 거래대금 상위 50개 ETF가 자동 선정됩니다.
       </p>
       <textarea
         value={value}
