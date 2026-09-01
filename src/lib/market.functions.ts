@@ -178,35 +178,57 @@ export interface InstrumentDetailPayload {
   history: ReturnType<typeof scoreHistory>;
 }
 
-const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
+const IPV4_RE = /(\d{1,3}\.){3}\d{1,3}/;
+const IPV6_RE = /\b(?=[0-9a-f:]*:)[0-9a-f:]{6,}\b/i;
 
-async function fetchIpv4(url: string): Promise<string> {
-  const res = await fetch(url, { cache: "no-store" });
+async function fetchText(url: string): Promise<string> {
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: { accept: "text/plain, application/json;q=0.9, */*;q=0.5" },
+    signal: AbortSignal.timeout(4000),
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const text = (await res.text()).trim();
-  // IPv4 전용 엔드포인트여도 응답 형식을 한 번 더 검증한다.
-  if (IPV4_RE.test(text)) return text;
-  const m = text.match(IPV4_RE);
-  if (m) return m[0];
-  throw new Error(`not IPv4: ${text.slice(0, 64)}`);
+  return (await res.text()).trim();
 }
 
-/** 서버 출구 IP(IPv4) 조회. 토스증권 허용 IP 등록용이므로 IPv4만 반환한다. */
+/**
+ * 서버 출구 IP 조회.
+ * 토스증권 허용 IP 등록용이므로 IPv4를 우선하고, IPv4를 못 얻으면 IPv6라도 반환한다.
+ * 여러 조회처를 순차 시도하며 모든 실패 시 원인을 문자열에 담아 사용자에게 노출한다.
+ */
 export const getServerEgressIp = createServerFn({ method: "GET" }).handler(async (): Promise<string> => {
+  // IPv4 전용 조회처를 먼저, 그다음 일반 조회처(IPv6 가능)를 시도한다.
   const endpoints = [
     "https://api4.ipify.org",
     "https://ipv4.icanhazip.com",
     "https://checkip.amazonaws.com",
+    "https://api.ipify.org?format=json",
+    "https://ipinfo.io/ip",
+    "https://api.myip.com",
+    "https://www.cloudflare.com/cdn-cgi/trace",
+    "https://icanhazip.com",
   ];
+  const errors: string[] = [];
+  let ipv6: string | null = null;
+
   for (const url of endpoints) {
     try {
-      return await fetchIpv4(url);
-    } catch {
-      // 다음 엔드포인트 시도
+      const text = await fetchText(url);
+      const v4 = text.match(IPV4_RE);
+      if (v4) return v4[0];
+      const v6 = text.match(IPV6_RE);
+      if (v6 && !ipv6) ipv6 = v6[0];
+      errors.push(`${new URL(url).hostname}: IPv4 없음`);
+    } catch (error) {
+      errors.push(`${new URL(url).hostname}: ${error instanceof Error ? error.message : "실패"}`);
     }
   }
-  return "알 수 없음";
+
+  if (ipv6) return ipv6;
+  console.error("egress IP lookup failed", errors);
+  return `조회 실패 (${errors.slice(0, 3).join(" / ")})`;
 });
+
 
 export const getInstrumentDetail = createServerFn({ method: "GET" })
   .inputValidator((input: { symbol: string; config?: unknown }) => ({
