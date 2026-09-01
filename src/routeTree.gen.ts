@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DataStatusRouteImport } from './routes/data-status'
 import { Route as PositionSizingRouteImport } from './routes/position-sizing'
+import { Route as ScoringRouteImport } from './routes/scoring'
 import { Route as SectorsRouteImport } from './routes/sectors'
 import { Route as InstrumentSymbolRouteImport } from './routes/instrument.$symbol'
 import { Route as ScreenerEtfsRouteImport } from './routes/screener.etfs'
@@ -30,6 +31,11 @@ const DataStatusRoute = DataStatusRouteImport.update({
 const PositionSizingRoute = PositionSizingRouteImport.update({
   id: '/position-sizing',
   path: '/position-sizing',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScoringRoute = ScoringRouteImport.update({
+  id: '/scoring',
+  path: '/scoring',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SectorsRoute = SectorsRouteImport.update({
@@ -57,6 +63,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/data-status': typeof DataStatusRoute
   '/position-sizing': typeof PositionSizingRoute
+  '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
@@ -66,6 +73,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/data-status': typeof DataStatusRoute
   '/position-sizing': typeof PositionSizingRoute
+  '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
@@ -76,6 +84,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/data-status': typeof DataStatusRoute
   '/position-sizing': typeof PositionSizingRoute
+  '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
@@ -87,6 +96,7 @@ export interface FileRouteTypes {
     | '/'
     | '/data-status'
     | '/position-sizing'
+    | '/scoring'
     | '/sectors'
     | '/instrument/$symbol'
     | '/screener/etfs'
@@ -96,6 +106,7 @@ export interface FileRouteTypes {
     | '/'
     | '/data-status'
     | '/position-sizing'
+    | '/scoring'
     | '/sectors'
     | '/instrument/$symbol'
     | '/screener/etfs'
@@ -105,6 +116,7 @@ export interface FileRouteTypes {
     | '/'
     | '/data-status'
     | '/position-sizing'
+    | '/scoring'
     | '/sectors'
     | '/instrument/$symbol'
     | '/screener/etfs'
@@ -115,6 +127,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DataStatusRoute: typeof DataStatusRoute
   PositionSizingRoute: typeof PositionSizingRoute
+  ScoringRoute: typeof ScoringRoute
   SectorsRoute: typeof SectorsRoute
   InstrumentSymbolRoute: typeof InstrumentSymbolRoute
   ScreenerEtfsRoute: typeof ScreenerEtfsRoute
@@ -142,6 +155,13 @@ declare module '@tanstack/react-router' {
       path: '/position-sizing'
       fullPath: '/position-sizing'
       preLoaderRoute: typeof PositionSizingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scoring': {
+      id: '/scoring'
+      path: '/scoring'
+      fullPath: '/scoring'
+      preLoaderRoute: typeof ScoringRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sectors': {
@@ -179,6 +199,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DataStatusRoute: DataStatusRoute,
   PositionSizingRoute: PositionSizingRoute,
+  ScoringRoute: ScoringRoute,
   SectorsRoute: SectorsRoute,
   InstrumentSymbolRoute: InstrumentSymbolRoute,
   ScreenerEtfsRoute: ScreenerEtfsRoute,
