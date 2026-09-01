@@ -4,6 +4,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
+import { DataError } from "@/components/DataError";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -29,6 +30,7 @@ export const Route = createFileRoute("/position-sizing")({
     ],
   }),
   loader: ({ context }) => context.queryClient.ensureQueryData(analysisQueryOptions),
+  errorComponent: ({ error, reset }) => <DataError error={error} reset={reset} />,
   component: PositionSizingPage,
 });
 
