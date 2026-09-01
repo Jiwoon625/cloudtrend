@@ -154,7 +154,11 @@ function Dashboard() {
           <CollectionProgress />
         </section>
       ) : analysisQuery.isError ? (
-        <DataError error={analysisQuery.error} reset={() => analysisQuery.refetch()} />
+        <DataError
+          error={analysisQuery.error}
+          reset={() => analysisQuery.refetch()}
+          embedded
+        />
       ) : (
         <DashboardContent analysis={analysisQuery.data.analysis} />
       )}

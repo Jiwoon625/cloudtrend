@@ -6,16 +6,23 @@ import { Button } from "@/components/ui/button";
 import { ipQueryOptions } from "@/lib/analysisQuery";
 
 /** 데이터 조회(토스 API) 실패 시 빈 화면 대신 원인과 대응 방법을 보여준다. */
-export function DataError({ error, reset }: { error: unknown; reset?: () => void }) {
+export function DataError({
+  error,
+  reset,
+  embedded = false,
+}: {
+  error: unknown;
+  reset?: () => void;
+  embedded?: boolean;
+}) {
   const message =
     error instanceof Error ? error.message : typeof error === "string" ? error : "알 수 없는 오류";
   const { data: ip } = useQuery({ ...ipQueryOptions, retry: false });
   const isAuth = /401|unidentified-client|인증/.test(message);
   const isIp = /IP|403/.test(message);
 
-  return (
-    <AppShell dataUnavailable>
-      <div className="mx-auto max-w-2xl space-y-4 py-10">
+  const content = (
+    <div className="mx-auto max-w-2xl space-y-4 py-10">
         <div className="flex items-center gap-2">
           <AlertTriangle className="size-5 text-warn" />
           <h1 className="text-lg font-bold">시세 데이터를 불러오지 못했습니다</h1>
@@ -48,7 +55,8 @@ export function DataError({ error, reset }: { error: unknown; reset?: () => void
           <RefreshCw className="size-4" />
           다시 시도
         </Button>
-      </div>
-    </AppShell>
+    </div>
   );
+
+  return embedded ? content : <AppShell dataUnavailable>{content}</AppShell>;
 }
