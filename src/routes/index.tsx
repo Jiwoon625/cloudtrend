@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Activity, ArrowDown, ArrowUp, Hash, ListPlus, Loader2, Play, ShieldAlert, TrendingUp } from "lucide-react";
-import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
+import { Activity, ArrowDown, ArrowUp, Hash, ListPlus, Loader2, Play, RefreshCw, ShieldAlert, TrendingUp } from "lucide-react";
+import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
@@ -80,6 +80,7 @@ function KeyValue({ label, value, hint }: { label: string; value: React.ReactNod
 
 function Dashboard() {
   const { data: ip } = useSuspenseQuery(ipQueryOptions);
+  const queryClient = useQueryClient();
   const [started, setStarted] = useState(
     () => typeof window !== "undefined" && window.sessionStorage.getItem(SCREENING_STARTED_KEY) === "1",
   );
@@ -88,6 +89,17 @@ function Dashboard() {
   const startScreening = () => {
     window.sessionStorage.setItem(SCREENING_STARTED_KEY, "1");
     setStarted(true);
+  };
+
+  /** 종목을 바꿔 다시 스크리닝: 캐시된 분석 결과를 제거해 로딩·진행률 화면으로 전환한다. */
+  const rescreen = () => {
+    queryClient.removeQueries({ queryKey: analysisQueryOptions.queryKey });
+    setStarted(false);
+    // removeQueries 반영 후 재시작해야 isPending 상태로 진입한다.
+    setTimeout(() => {
+      window.sessionStorage.setItem(SCREENING_STARTED_KEY, "1");
+      setStarted(true);
+    }, 0);
   };
 
   return (
@@ -99,7 +111,15 @@ function Dashboard() {
             스크리닝은 버튼을 눌렀을 때만 데이터 수집·계산을 시작합니다.
           </p>
         </div>
-        <p className="text-[11px] text-muted-foreground">서버 출구 IP {ip ?? "알 수 없음"}</p>
+        <div className="flex items-center gap-3">
+          {started && !analysisQuery.isPending ? (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={rescreen}>
+              <RefreshCw className="size-3.5" />
+              다시 스크리닝
+            </Button>
+          ) : null}
+          <p className="text-[11px] text-muted-foreground">서버 출구 IP {ip ?? "알 수 없음"}</p>
+        </div>
       </div>
 
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
