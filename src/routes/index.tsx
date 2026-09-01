@@ -104,7 +104,7 @@ function Dashboard() {
   };
 
   return (
-    <AppShell>
+    <AppShell loadAnalysis={false}>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
         <div>
           <h1 className="text-xl font-bold tracking-tight">대시보드</h1>

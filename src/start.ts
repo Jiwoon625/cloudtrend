@@ -6,6 +6,12 @@ const errorMiddleware = createMiddleware().server(async ({ next }) => {
   try {
     return await next();
   } catch (error) {
+    // Server functions must keep TanStack's RPC error envelope. Returning an
+    // HTML error page here makes React Query unable to receive the rejection,
+    // so a recoverable Toss API error escapes as a blank-screen runtime error.
+    // Let the server-function layer serialize it for the caller's error state.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    if ((error as { __handledByServerFn?: boolean }).__handledByServerFn) throw error;
     if (error != null && typeof error === "object" && "statusCode" in error) {
       throw error;
     }
