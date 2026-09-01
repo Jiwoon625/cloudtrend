@@ -2,16 +2,16 @@ import { createStart, createCsrfMiddleware, createMiddleware } from "@tanstack/r
 
 import { renderErrorPage } from "./lib/error-page";
 
-const errorMiddleware = createMiddleware().server(async ({ next }) => {
+const errorMiddleware = createMiddleware().server(async ({ next, handlerType }) => {
+  // Server functions have their own typed RPC error serializer. If this
+  // middleware replaces a rejected server-function call with an HTML 500,
+  // React Query cannot receive the error and the browser reports a fatal
+  // runtime error instead of rendering the route's DataError state.
+  if (handlerType === "serverFn") return next();
+
   try {
     return await next();
   } catch (error) {
-    // Server functions must keep TanStack's RPC error envelope. Returning an
-    // HTML error page here makes React Query unable to receive the rejection,
-    // so a recoverable Toss API error escapes as a blank-screen runtime error.
-    // Let the server-function layer serialize it for the caller's error state.
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    if ((error as { __handledByServerFn?: boolean }).__handledByServerFn) throw error;
     if (error != null && typeof error === "object" && "statusCode" in error) {
       throw error;
     }
