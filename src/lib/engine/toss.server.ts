@@ -403,7 +403,7 @@ export interface TossDatasetOptions {
  * 토스 Open API가 제공하지 않는 항목(재무·ETF NAV)은 capabilities에서 false로 선언한다.
  */
 export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<MarketDataset> {
-  const etfCount = Math.min(60, Math.max(0, opts.etfCount ?? 20));
+  const etfCount = Math.min(60, Math.max(0, opts.etfCount ?? 50));
   if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.dataset;
   credentials();
 

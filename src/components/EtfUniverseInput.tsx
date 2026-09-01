@@ -46,7 +46,7 @@ export function EtfUniverseInput() {
       setStatus(
         res.symbols.length > 0
           ? `ETF ${res.symbols.length}종목으로 지정했습니다. 일봉 수집 후 스크리너에 반영됩니다.`
-          : "지정을 해제했습니다. 거래대금 상위 ETF가 자동으로 선정됩니다.",
+          : "지정을 해제했습니다. 거래대금 상위 50개 ETF가 자동으로 선정됩니다.",
       );
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "저장에 실패했습니다.");
@@ -61,7 +61,7 @@ export function EtfUniverseInput() {
     <div className="space-y-2">
       <p className="text-[12px] text-muted-foreground">
         스크리닝할 ETF 종목코드를 직접 입력하세요. 쉼표·공백·줄바꿈으로 구분합니다 (예: 069500,
-        360750, 133690). 비워두고 저장하면 거래대금 상위 ETF가 자동 선정됩니다.
+        360750, 133690). 비워두고 저장하면 거래대금 상위 50개 ETF가 자동 선정됩니다.
       </p>
       <textarea
         value={value}
