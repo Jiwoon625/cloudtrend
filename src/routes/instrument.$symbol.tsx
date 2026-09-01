@@ -14,6 +14,7 @@ import {
 } from "recharts";
 
 import { AppShell } from "@/components/AppShell";
+import { DataError } from "@/components/DataError";
 import { BreakdownTable } from "@/components/BreakdownTable";
 import { Delta, GradeBadge } from "@/components/ScreenerTable";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,7 @@ export const Route = createFileRoute("/instrument/$symbol")({
       ],
     };
   },
+  errorComponent: ({ error, reset }) => <DataError error={error} reset={reset} />,
   component: InstrumentDetail,
 });
 

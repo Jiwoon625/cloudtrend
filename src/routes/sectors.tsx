@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useSuspenseQuery } from "@tanstack/react-query";
 
 import { AppShell } from "@/components/AppShell";
+import { DataError } from "@/components/DataError";
 import { Delta } from "@/components/ScreenerTable";
 import { analysisQueryOptions } from "@/lib/analysisQuery";
 import { formatNumber } from "@/lib/format";
@@ -23,6 +24,7 @@ export const Route = createFileRoute("/sectors")({
     ],
   }),
   loader: ({ context }) => context.queryClient.ensureQueryData(analysisQueryOptions),
+  errorComponent: ({ error, reset }) => <DataError error={error} reset={reset} />,
   component: SectorsPage,
 });
 

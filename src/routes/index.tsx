@@ -3,6 +3,7 @@ import { Activity, ArrowDown, ArrowUp, ListPlus, ShieldAlert, TrendingUp, Upload
 import { useSuspenseQuery } from "@tanstack/react-query";
 
 import { AppShell } from "@/components/AppShell";
+import { DataError } from "@/components/DataError";
 import { GradeBadge, ScreenerTable } from "@/components/ScreenerTable";
 import { EtfUniverseInput } from "@/components/EtfUniverseInput";
 import { UniverseUpload } from "@/components/UniverseUpload";
@@ -33,6 +34,7 @@ export const Route = createFileRoute("/")({
       context.queryClient.ensureQueryData(analysisQueryOptions),
       context.queryClient.ensureQueryData(ipQueryOptions),
     ]),
+  errorComponent: ({ error, reset }) => <DataError error={error} reset={reset} />,
   component: Dashboard,
 });
 

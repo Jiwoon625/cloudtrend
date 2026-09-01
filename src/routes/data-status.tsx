@@ -2,6 +2,7 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 
 import { AppShell } from "@/components/AppShell";
+import { DataError } from "@/components/DataError";
 import { dataStatusQueryOptions } from "@/lib/analysisQuery";
 import { formatCount } from "@/lib/format";
 
@@ -22,6 +23,7 @@ export const Route = createFileRoute("/data-status")({
     ],
   }),
   loader: ({ context }) => context.queryClient.ensureQueryData(dataStatusQueryOptions),
+  errorComponent: ({ error, reset }) => <DataError error={error} reset={reset} />,
   component: DataStatusPage,
 });
 

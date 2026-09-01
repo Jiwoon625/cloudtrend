@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { analysisQueryOptions } from "@/lib/analysisQuery";
 
 import { AppShell } from "@/components/AppShell";
+import { DataError } from "@/components/DataError";
 import { ScreenerView } from "@/components/ScreenerView";
 
 export const Route = createFileRoute("/screener/etfs")({
