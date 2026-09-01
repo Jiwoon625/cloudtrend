@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BacktestRouteImport } from './routes/backtest'
 import { Route as DataStatusRouteImport } from './routes/data-status'
+import { Route as HistoryRouteImport } from './routes/history'
 import { Route as PositionSizingRouteImport } from './routes/position-sizing'
 import { Route as ScoringRouteImport } from './routes/scoring'
 import { Route as SectorsRouteImport } from './routes/sectors'
@@ -32,6 +33,11 @@ const BacktestRoute = BacktestRouteImport.update({
 const DataStatusRoute = DataStatusRouteImport.update({
   id: '/data-status',
   path: '/data-status',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HistoryRoute = HistoryRouteImport.update({
+  id: '/history',
+  path: '/history',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PositionSizingRoute = PositionSizingRouteImport.update({
@@ -69,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/backtest': typeof BacktestRoute
   '/data-status': typeof DataStatusRoute
+  '/history': typeof HistoryRoute
   '/position-sizing': typeof PositionSizingRoute
   '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
@@ -80,6 +87,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/backtest': typeof BacktestRoute
   '/data-status': typeof DataStatusRoute
+  '/history': typeof HistoryRoute
   '/position-sizing': typeof PositionSizingRoute
   '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
@@ -92,6 +100,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/backtest': typeof BacktestRoute
   '/data-status': typeof DataStatusRoute
+  '/history': typeof HistoryRoute
   '/position-sizing': typeof PositionSizingRoute
   '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
     | '/'
     | '/backtest'
     | '/data-status'
+    | '/history'
     | '/position-sizing'
     | '/scoring'
     | '/sectors'
@@ -116,6 +126,7 @@ export interface FileRouteTypes {
     | '/'
     | '/backtest'
     | '/data-status'
+    | '/history'
     | '/position-sizing'
     | '/scoring'
     | '/sectors'
@@ -127,6 +138,7 @@ export interface FileRouteTypes {
     | '/'
     | '/backtest'
     | '/data-status'
+    | '/history'
     | '/position-sizing'
     | '/scoring'
     | '/sectors'
@@ -139,6 +151,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BacktestRoute: typeof BacktestRoute
   DataStatusRoute: typeof DataStatusRoute
+  HistoryRoute: typeof HistoryRoute
   PositionSizingRoute: typeof PositionSizingRoute
   ScoringRoute: typeof ScoringRoute
   SectorsRoute: typeof SectorsRoute
@@ -168,6 +181,13 @@ declare module '@tanstack/react-router' {
       path: '/data-status'
       fullPath: '/data-status'
       preLoaderRoute: typeof DataStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/history': {
+      id: '/history'
+      path: '/history'
+      fullPath: '/history'
+      preLoaderRoute: typeof HistoryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/position-sizing': {
@@ -219,6 +239,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BacktestRoute: BacktestRoute,
   DataStatusRoute: DataStatusRoute,
+  HistoryRoute: HistoryRoute,
   PositionSizingRoute: PositionSizingRoute,
   ScoringRoute: ScoringRoute,
   SectorsRoute: SectorsRoute,

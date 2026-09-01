@@ -18,6 +18,7 @@ const NAV = [
   { to: "/screener/etfs", label: "ETF 스크리너" },
   { to: "/sectors", label: "섹터" },
   { to: "/position-sizing", label: "포지션 사이징" },
+  { to: "/history", label: "스크리닝 이력" },
   { to: "/data-status", label: "데이터 상태" },
   { to: "/scoring", label: "산식·가중치" },
   { to: "/backtest", label: "백테스트" },
