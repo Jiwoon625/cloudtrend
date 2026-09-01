@@ -193,6 +193,17 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
     { code: "LOW_LIQUIDITY", rows: rows.filter((r) => !r.hardFilterPassed) },
   ];
 
+  // 실격 사유별 건수 (한 종목이 여러 사유에 걸릴 수 있음)
+  const failReasons: Array<[string, number]> = (() => {
+    const map = new Map<string, number>();
+    for (const r of rows) {
+      if (r.hardFilterPassed) continue;
+      for (const f of r.failedRules) map.set(f, (map.get(f) ?? 0) + 1);
+    }
+    return [...map.entries()].sort((a, b) => b[1] - a[1]);
+  })();
+
+
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -324,6 +335,35 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
           );
         })}
       </div>
+
+      {failReasons.length > 0 ? (
+        <section className="mt-4 overflow-hidden rounded-lg border border-border bg-card">
+          <h2 className="border-b border-border bg-surface-strong px-3 py-2 text-sm font-semibold">
+            실격 사유 분포 (총 {formatCount(rows.length - passed.length)}종목 실격)
+          </h2>
+          <table className="w-full text-[12px]">
+            <tbody>
+              {failReasons.map(([reason, count]) => (
+                <tr key={reason} className="border-b border-border last:border-0">
+                  <td className="px-3 py-2">{reason}</td>
+                  <td className="num px-3 py-2 text-right font-semibold text-warn">
+                    {formatCount(count)}건
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="px-3 py-2 text-[11px] text-muted-foreground">
+            사유별 기준값은{" "}
+            <Link to="/scoring" className="text-primary hover:underline">
+              점수 산식
+            </Link>{" "}
+            탭의 Universe Filter에서 직접 조정할 수 있습니다.
+          </p>
+        </section>
+      ) : null}
+
+
 
       <section className="mt-6">
         <div className="mb-2 flex items-center gap-2">
