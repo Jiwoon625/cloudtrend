@@ -55,8 +55,8 @@ export function ScreenerView({ mode }: { mode: Mode }) {
   const [minTotal, setMinTotal] = useState(0);
   const [minVolumeRatio, setMinVolumeRatio] = useState(0);
   const [sector, setSector] = useState("ALL");
-  const [showDisqualified, setShowDisqualified] = useState(false);
-  const [includeLeveraged, setIncludeLeveraged] = useState(false);
+  const [showDisqualified, setShowDisqualified] = useState(true);
+  const [includeLeveraged, setIncludeLeveraged] = useState(true);
   const [preset, setPreset] = useState<PresetId | null>(null);
   const [savedPresets, setSavedPresets] = useState<
     Array<{
@@ -131,6 +131,11 @@ export function ScreenerView({ mode }: { mode: Mode }) {
                 ? "Neutral"
                 : "Risk-Off"}{" "}
             ({analysis.marketGate.metCount}/4)
+          </p>
+          <p className="text-[12px] text-muted-foreground">
+            분석 종목 {base.length}건 중 <span className="text-foreground">{filtered.length}건</span>{" "}
+            표시 · 통과 {base.filter((r) => r.hardFilterPassed).length}건 / 실격{" "}
+            {base.filter((r) => !r.hardFilterPassed).length}건
           </p>
         </div>
       </header>
