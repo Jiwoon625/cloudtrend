@@ -438,15 +438,61 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
   const baseSymbols = universeOverride?.symbols ?? KOSPI200_SYMBOLS;
   const kospi200 = baseSymbols.filter((s) => meta.has(s));
 
+  const isEtfSymbol = (s: string) => {
+    const m = meta.get(s);
+    return m ? ETF_TYPES.has(m.listed.securityType) : false;
+  };
+
+  // 토스 랭킹 API는 1회 최대 100건(주식+ETF 혼합)이라 거래대금 1일 랭킹만으로는 ETF가 30개도
+  // 안 잡힌다. 여러 랭킹(거래대금/거래량 × 1일/1주)을 합쳐 후보 풀을 만들고 관측된 최대
+  // 거래대금 순으로 상위 etfCount개를 고른다.
+  const autoEtfSymbols = async (): Promise<string[]> => {
+    const pool = new Map<string, number>();
+    const addAll = (items: RankingItem[]) => {
+      for (const r of items) {
+        if (!isEtfSymbol(r.symbol)) continue;
+        const amount = num(r.tradingAmount);
+        pool.set(r.symbol, Math.max(pool.get(r.symbol) ?? 0, amount));
+        if (amount > (amountBySymbol.get(r.symbol) ?? 0)) amountBySymbol.set(r.symbol, amount);
+      }
+    };
+    addAll(rankings);
+    const combos: Array<{ type: string; duration: string }> = [
+      { type: "MARKET_TRADING_VOLUME", duration: "1d" },
+      { type: "MARKET_TRADING_VOLUME", duration: "1w" },
+      { type: "MARKET_TRADING_AMOUNT", duration: "1w" },
+      { type: "TOSS_SECURITIES_TRADING_AMOUNT", duration: "1d" },
+      { type: "TOSS_SECURITIES_TRADING_VOLUME", duration: "1d" },
+      { type: "TOSS_SECURITIES_TRADING_AMOUNT", duration: "1w" },
+      { type: "TOP_GAINERS", duration: "1d" },
+      { type: "TOP_LOSERS", duration: "1d" },
+      { type: "TOP_GAINERS", duration: "1w" },
+      { type: "TOP_LOSERS", duration: "1w" },
+    ];
+    for (const c of combos) {
+      if (pool.size >= Math.max(etfCount + 15, etfCount * 2)) break;
+      try {
+        const res = await api<{ rankings: RankingItem[] }>("/api/v1/rankings", {
+          type: c.type,
+          marketCountry: "KR",
+          duration: c.duration,
+          count: 100,
+          excludeInvestmentCaution: true,
+        });
+        addAll(res.rankings ?? []);
+      } catch {
+        // 특정 랭킹 조회 실패는 무시하고 다음 후보로 진행
+      }
+    }
+    return [...pool.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, etfCount)
+      .map(([symbol]) => symbol);
+  };
+
   const etfSymbols = etfOverride
     ? etfOverride.symbols.filter((s) => meta.has(s))
-    : rankings
-        .filter((r) => {
-          const m = meta.get(r.symbol);
-          return m ? ETF_TYPES.has(m.listed.securityType) : false;
-        })
-        .slice(0, etfCount)
-        .map((r) => r.symbol);
+    : await autoEtfSymbols();
 
   const universe = [...kospi200, ...etfSymbols];
 
@@ -563,6 +609,9 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
       pending > 0
         ? `일봉 수집이 진행 중입니다(${instruments.length}/${universe.length}종목 완료). 잠시 후 새로고침하면 남은 ${pending}종목이 추가된 결과를 볼 수 있습니다.`
         : `유니버스 ${universe.length}종목 전체의 일봉 수집이 완료되었습니다.`,
+      etfOverride
+        ? `ETF는 직접 입력한 ${etfSymbols.length}종목을 사용합니다.`
+        : `ETF 자동 선정: 토스 랭킹 API가 1회 최대 100건(주식·ETF 혼합)만 제공하므로 거래대금·거래량 랭킹(1일/1주)을 합친 후보 풀에서 거래대금 상위 ${etfSymbols.length}종목(목표 ${etfCount})을 사용합니다.`,
       "유니버스를 직접 업로드하지 않으면(코스피/코스닥 CSV), 토스 Open API가 지수 구성종목을 제공하지 않아, 코스피 보통주를 발행주식수×종가 시가총액으로 정렬한 상위 200종목 스냅샷을 사용합니다(실제 KRX 정기변경과 소수 종목이 다를 수 있습니다).",
       marketCapCount > 0
         ? `시가총액은 발행주식수(종목 상세) × 해당일 종가로 계산합니다(${marketCapCount}/${instruments.length}종목). 발행주식수는 최신 스냅샷이라 과거 봉의 시가총액은 근사치입니다.`
