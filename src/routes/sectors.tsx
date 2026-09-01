@@ -86,8 +86,8 @@ function Card({
 }: {
   title: string;
   value: string;
-  sub?: string;
-  tone?: "up" | "down" | "warn";
+  sub?: string | undefined;
+  tone?: "up" | "down" | "warn" | undefined;
 }) {
   return (
     <div className="rounded-lg border border-border bg-card p-3">
