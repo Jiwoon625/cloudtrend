@@ -165,36 +165,15 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
   ];
 
   return (
-    <AppShell>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">대시보드</h1>
-          <p className="text-[12px] text-muted-foreground">
-            기준일 {analysis.asOfDate} · 전략 v{analysis.strategyVersion} · 데이터 {analysis.dataVersion}
-          </p>
-        </div>
+    <>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[12px] text-muted-foreground">
+          기준일 {analysis.asOfDate} · 전략 v{analysis.strategyVersion} · 데이터 {analysis.dataVersion}
+        </p>
         <p className="text-[11px] text-muted-foreground">
-          서버 출구 IP {ip ?? "알 수 없음"} · 계산 시각{" "}
-          {analysis.calculatedAt.slice(0, 16).replace("T", " ")} (미래 데이터 미사용)
+          계산 시각 {analysis.calculatedAt.slice(0, 16).replace("T", " ")} (미래 데이터 미사용)
         </p>
       </div>
-
-      <div className="mb-4 grid gap-4 lg:grid-cols-2">
-        <Card title="주식 스크리닝 종목코드 (코스피/코스닥)" icon={<Hash className="size-4 text-primary" />}>
-          <StockUniverseInput />
-        </Card>
-        <Card title="ETF 스크리닝 종목코드" icon={<ListPlus className="size-4 text-primary" />}>
-          <EtfUniverseInput />
-        </Card>
-      </div>
-
-      <div className="mb-4">
-        <Card title="데이터 수집 진행률" icon={<Loader2 className="size-4 text-primary" />}>
-          <CollectionProgress />
-        </Card>
-      </div>
-
-
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title="시장 상태" icon={<Activity className="size-4 text-primary" />}>
