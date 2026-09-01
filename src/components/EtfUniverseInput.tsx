@@ -42,6 +42,8 @@ export function EtfUniverseInput() {
     setStatus(null);
     try {
       const res = await setEtfUniverse({ data: { symbols: codes } });
+      // 이전 분석 캐시를 제거해 대시보드가 진행률 화면으로 전환되도록 한다.
+      queryClient.removeQueries({ queryKey: ["market-analysis"] });
       await queryClient.invalidateQueries();
       setStatus(
         res.symbols.length > 0
