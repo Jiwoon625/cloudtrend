@@ -295,9 +295,32 @@ async function attachMarketInvestorFlow(series: IndexSeries, symbol: string) {
   }
 }
 
+/** 종목별 투자자 매매(수량) 조회. 1회 최대 100영업일. */
+const INVESTOR_COUNT = 100;
+async function fetchStockInvestorFlow(
+  symbol: string,
+): Promise<Map<string, { foreignVolume: number; instVolume: number }>> {
+  const out = new Map<string, { foreignVolume: number; instVolume: number }>();
+  try {
+    const res = await api<{ records: StockInvestorRecord[] }>(
+      `/api/v1/stocks/${encodeURIComponent(symbol)}/investor-trading`,
+      { interval: "1d", count: INVESTOR_COUNT },
+    );
+    for (const r of res.records ?? []) {
+      out.set(r.date, {
+        foreignVolume: num(r.foreigner?.netBuyVolume),
+        instVolume: num(r.institution?.netBuyVolume),
+      });
+    }
+  } catch {
+    // 종목별 투자자 매매 조회 실패는 "데이터 없음"으로 남긴다.
+  }
+  return out;
+}
+
 /** 일봉 캐시 — 종목당 1회 수집 후 유지(장중에는 최신 봉만 갱신되므로 TTL을 길게 둔다). */
 const BAR_TTL_MS = 60 * 60 * 1000;
-const barStore = new Map<string, { bars: DailyPrice[]; at: number }>();
+const barStore = new Map<string, { bars: DailyPrice[]; at: number; flow: boolean }>();
 const sharesStore = new Map<string, { shares: number; leverageFactor: number | null }>();
 /** 수집 대기 상한 — 이 시간 안에 모인 종목으로 먼저 화면을 그리고, 남은 종목은 계속 수집한다. */
 const COLLECT_WAIT_MS = 25_000;
@@ -307,7 +330,7 @@ const MIN_READY = 30;
 let collecting: Promise<void> | null = null;
 let collectProgress = { done: 0, total: 0 };
 
-/** 유니버스 전체의 일봉을 백그라운드에서 순차 수집한다(중복 실행 방지). */
+/** 유니버스 전체의 일봉 + 외국인/기관 순매수를 백그라운드에서 수집한다(중복 실행 방지). */
 function startCollection(symbols: string[]): Promise<void> {
   if (collecting) return collecting;
   const stale = symbols.filter((s) => {
@@ -317,7 +340,17 @@ function startCollection(symbols: string[]): Promise<void> {
   collectProgress = { done: symbols.length - stale.length, total: symbols.length };
   collecting = mapLimited(stale, CONCURRENCY, async (symbol) => {
     const bars = await fetchCandles(symbol);
-    if (bars.length > 0) barStore.set(symbol, { bars, at: Date.now() });
+    if (bars.length > 0) {
+      // 종목별 투자자 매매는 순매수 "수량"만 오므로 해당일 종가를 곱해 순매수 금액(원)으로 환산한다.
+      const flow = await fetchStockInvestorFlow(symbol);
+      for (const bar of bars) {
+        const rec = flow.get(bar.tradeDate);
+        if (!rec) continue;
+        bar.foreignNetBuyValue = rec.foreignVolume * bar.close;
+        bar.institutionNetBuyValue = rec.instVolume * bar.close;
+      }
+      barStore.set(symbol, { bars, at: Date.now(), flow: flow.size > 0 });
+    }
     collectProgress.done++;
   })
     .then(() => undefined)
@@ -327,6 +360,7 @@ function startCollection(symbols: string[]): Promise<void> {
     });
   return collecting;
 }
+
 
 const ETF_TYPES = new Set(["ETF", "FOREIGN_ETF", "ETN"]);
 const isLeveragedName = (n: string) => /레버리지|2X|2배|곱버스/i.test(n);
