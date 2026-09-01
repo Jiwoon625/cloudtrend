@@ -780,3 +780,175 @@ export function calculatePositionSizing(input: PositionSizingInput): PositionSiz
     errors,
   };
 }
+
+// ---------------------------------------------------------------------------
+// 사용자 편집 가능한 산식 설정 (데이터 상태 > 산식·가중치 탭)
+// ---------------------------------------------------------------------------
+
+export interface ScoringConfig {
+  weights: { stock: Weights; etf: Weights };
+  technical: {
+    ichimokuMax: number;
+    bollingerMax: number;
+    volumeMax: number;
+    maMax: number;
+    /** 거래량 비율(20일 평균 대비, %) 강한 신호 기준 */
+    volumeStrongRatio: number;
+    /** 거래대금 백분위 기준 (강한 신호 동시 조건) */
+    volumeStrongPercentile: number;
+    /** 거래량 비율 약한 신호 기준 */
+    volumeWeakRatio: number;
+  };
+  priority: {
+    indexPoints: number;
+    foreignPoints: number;
+    valueUpPoints: number;
+    nearHighPoints: number;
+    sizePoints: number;
+    relativePoints: number;
+    /** 52주 신고가 대비 허용 낙폭 (%, 음수) */
+    nearHighThresholdPercent: number;
+    /** 규모 항목 통과 시가총액 (원) */
+    minMarketCap: number;
+    /** 벤치마크 대비 초과수익률 기준 (%p) */
+    excessReturnThresholdPp: number;
+  };
+  grade: { aMin: number; bMin: number };
+  universe: UniverseParams;
+}
+
+export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
+  weights: { stock: { ...STOCK_WEIGHTS }, etf: { ...ETF_WEIGHTS } },
+  technical: {
+    ichimokuMax: 2,
+    bollingerMax: 2,
+    volumeMax: 2,
+    maMax: 1,
+    volumeStrongRatio: 200,
+    volumeStrongPercentile: 70,
+    volumeWeakRatio: 130,
+  },
+  priority: {
+    indexPoints: 2,
+    foreignPoints: 2,
+    valueUpPoints: 1,
+    nearHighPoints: 1,
+    sizePoints: 1,
+    relativePoints: 1,
+    nearHighThresholdPercent: -10,
+    minMarketCap: 300_000_000_000,
+    excessReturnThresholdPp: 2,
+  },
+  grade: { aMin: 6, bMin: 4 },
+  universe: { ...DEFAULT_UNIVERSE },
+};
+
+const clampNum = (v: unknown, fallback: number, min: number, max: number): number => {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+};
+
+/** 클라이언트에서 넘어온 부분 설정을 기본값과 병합하고 값 범위를 강제한다. */
+export function mergeScoringConfig(input: unknown): ScoringConfig {
+  const d = DEFAULT_SCORING_CONFIG;
+  const raw = (input ?? {}) as Record<string, any>;
+  const w = (raw.weights ?? {}) as Record<string, any>;
+  const weightBlock = (src: any, def: Weights): Weights => ({
+    technical: clampNum(src?.technical, def.technical, 0, 1),
+    priority: clampNum(src?.priority, def.priority, 0, 1),
+    fundamental: clampNum(src?.fundamental, def.fundamental, 0, 1),
+    marketSector: clampNum(src?.marketSector, def.marketSector, 0, 1),
+  });
+  const t = (raw.technical ?? {}) as Record<string, any>;
+  const p = (raw.priority ?? {}) as Record<string, any>;
+  const g = (raw.grade ?? {}) as Record<string, any>;
+  const u = (raw.universe ?? {}) as Record<string, any>;
+  return {
+    weights: {
+      stock: weightBlock(w.stock, d.weights.stock),
+      etf: weightBlock(w.etf, d.weights.etf),
+    },
+    technical: {
+      ichimokuMax: clampNum(t.ichimokuMax, d.technical.ichimokuMax, 0, 20),
+      bollingerMax: clampNum(t.bollingerMax, d.technical.bollingerMax, 0, 20),
+      volumeMax: clampNum(t.volumeMax, d.technical.volumeMax, 0, 20),
+      maMax: clampNum(t.maMax, d.technical.maMax, 0, 20),
+      volumeStrongRatio: clampNum(t.volumeStrongRatio, d.technical.volumeStrongRatio, 100, 2000),
+      volumeStrongPercentile: clampNum(
+        t.volumeStrongPercentile,
+        d.technical.volumeStrongPercentile,
+        0,
+        100,
+      ),
+      volumeWeakRatio: clampNum(t.volumeWeakRatio, d.technical.volumeWeakRatio, 50, 2000),
+    },
+    priority: {
+      indexPoints: clampNum(p.indexPoints, d.priority.indexPoints, 0, 20),
+      foreignPoints: clampNum(p.foreignPoints, d.priority.foreignPoints, 0, 20),
+      valueUpPoints: clampNum(p.valueUpPoints, d.priority.valueUpPoints, 0, 20),
+      nearHighPoints: clampNum(p.nearHighPoints, d.priority.nearHighPoints, 0, 20),
+      sizePoints: clampNum(p.sizePoints, d.priority.sizePoints, 0, 20),
+      relativePoints: clampNum(p.relativePoints, d.priority.relativePoints, 0, 20),
+      nearHighThresholdPercent: clampNum(
+        p.nearHighThresholdPercent,
+        d.priority.nearHighThresholdPercent,
+        -100,
+        0,
+      ),
+      minMarketCap: clampNum(p.minMarketCap, d.priority.minMarketCap, 0, 1e15),
+      excessReturnThresholdPp: clampNum(
+        p.excessReturnThresholdPp,
+        d.priority.excessReturnThresholdPp,
+        -20,
+        20,
+      ),
+    },
+    grade: {
+      aMin: clampNum(g.aMin, d.grade.aMin, 0, 100),
+      bMin: clampNum(g.bMin, d.grade.bMin, 0, 100),
+    },
+    universe: {
+      minPrice: clampNum(u.minPrice, d.universe.minPrice, 0, 1e7),
+      maxPrice: clampNum(u.maxPrice, d.universe.maxPrice, 1000, 1e9),
+      minMarketCap: clampNum(u.minMarketCap, d.universe.minMarketCap, 0, 1e15),
+      minTradingValue: clampNum(u.minTradingValue, d.universe.minTradingValue, 0, 1e15),
+      etfMinAum: clampNum(u.etfMinAum, d.universe.etfMinAum, 0, 1e15),
+      etfMinTradingValue20d: clampNum(
+        u.etfMinTradingValue20d,
+        d.universe.etfMinTradingValue20d,
+        0,
+        1e15,
+      ),
+      etfMaxPremiumDiscount: clampNum(
+        u.etfMaxPremiumDiscount,
+        d.universe.etfMaxPremiumDiscount,
+        0,
+        50,
+      ),
+      excludeLeveragedInverse:
+        typeof u.excludeLeveragedInverse === "boolean"
+          ? u.excludeLeveragedInverse
+          : d.universe.excludeLeveragedInverse,
+    },
+  };
+}
+
+/** 기술점수 만점(설정 반영) */
+export function technicalMaxPoints(cfg: ScoringConfig = DEFAULT_SCORING_CONFIG): number {
+  const t = cfg.technical;
+  return t.ichimokuMax + t.bollingerMax + t.volumeMax + t.maMax;
+}
+
+/** 우선순위 점수 만점(설정 반영) */
+export function priorityMaxPoints(cfg: ScoringConfig = DEFAULT_SCORING_CONFIG): number {
+  const p = cfg.priority;
+  return (
+    p.indexPoints +
+    p.foreignPoints +
+    p.valueUpPoints +
+    p.nearHighPoints +
+    p.sizePoints +
+    p.relativePoints
+  );
+}
