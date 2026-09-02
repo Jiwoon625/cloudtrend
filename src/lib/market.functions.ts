@@ -58,6 +58,13 @@ export const getMarketAnalysis = createServerFn({ method: "GET" })
     return { analysis: runAnalysis(dataset, data.config), source: status };
   });
 
+/** Toss 허용 IP를 갱신한 뒤 재시도할 때 서버의 이전 인증 상태를 비운다. */
+export const resetTossConnection = createServerFn({ method: "POST" }).handler(async () => {
+  const { resetTossConnectionState } = await import("@/lib/engine/toss.server");
+  resetTossConnectionState();
+  return { resetAt: new Date().toISOString() };
+});
+
 export interface BacktestPayload {
   result: BacktestResult;
   universe: Array<{ symbol: string; name: string; bars: number }>;

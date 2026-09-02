@@ -42,6 +42,14 @@ interface CachedToken {
 let tokenCache: CachedToken | null = null;
 let tokenInflight: Promise<string | null> | null = null;
 
+/** 허용 IP 변경 후 사용자가 재연결할 때 기존 인증·데이터 캐시를 폐기한다. */
+export function resetTossConnectionState(): void {
+  tokenCache = null;
+  tokenInflight = null;
+  cache = null;
+  indexCache = null;
+}
+
 function issueToken(): Promise<string | null> {
   if (tokenCache && Date.now() < tokenCache.expiresAt) return Promise.resolve(tokenCache.value);
   if (tokenInflight) return tokenInflight;
