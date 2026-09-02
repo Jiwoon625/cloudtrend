@@ -1,9 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { AlertTriangle, RefreshCw } from "lucide-react";
+import { useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { ipQueryOptions } from "@/lib/analysisQuery";
+import { resetTossConnection } from "@/lib/market.functions";
 
 /** 데이터 조회(토스 API) 실패 시 빈 화면 대신 원인과 대응 방법을 보여준다. */
 export function DataError({
@@ -12,14 +15,39 @@ export function DataError({
   embedded = false,
 }: {
   error: unknown;
-  reset?: () => void;
+  reset?: () => void | Promise<unknown>;
   embedded?: boolean;
 }) {
   const message =
     error instanceof Error ? error.message : typeof error === "string" ? error : "알 수 없는 오류";
   const { data: ip } = useQuery({ ...ipQueryOptions, retry: false });
+  const queryClient = useQueryClient();
+  const resetConnection = useServerFn(resetTossConnection);
+  const [retrying, setRetrying] = useState(false);
+  const [retryMessage, setRetryMessage] = useState<string | null>(null);
   const isAuth = /401|unidentified-client|인증/.test(message);
   const isIp = /IP|403/.test(message);
+
+  const retry = async () => {
+    if (retrying) return;
+    setRetrying(true);
+    setRetryMessage("서버 인증 상태와 출구 IP를 새로 확인하고 있습니다…");
+    try {
+      await resetConnection();
+      await queryClient.invalidateQueries({ queryKey: ipQueryOptions.queryKey });
+      if (reset) await reset();
+      else window.location.reload();
+      setRetryMessage("재연결 요청을 완료했습니다.");
+    } catch (retryError) {
+      setRetryMessage(
+        retryError instanceof Error
+          ? `재연결 실패: ${retryError.message}`
+          : "재연결에 실패했습니다. 새로 표시된 출구 IP를 확인해 주세요.",
+      );
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   const content = (
     <div className="mx-auto max-w-2xl space-y-4 py-10">
@@ -51,9 +79,14 @@ export function DataError({
             잠시 후 다시 시도해 주세요. 반복되면 토스증권 API 상태와 호출 한도를 확인하세요.
           </p>
         )}
-        <Button onClick={() => (reset ? reset() : window.location.reload())} className="gap-2">
-          <RefreshCw className="size-4" />
-          다시 시도
+        {retryMessage ? (
+          <p role="status" className="text-[12px] text-muted-foreground">
+            {retryMessage}
+          </p>
+        ) : null}
+        <Button onClick={() => void retry()} disabled={retrying} className="gap-2">
+          <RefreshCw className={`size-4 ${retrying ? "animate-spin" : ""}`} />
+          {retrying ? "재연결 중…" : "연결 상태 초기화 후 다시 시도"}
         </Button>
     </div>
   );
