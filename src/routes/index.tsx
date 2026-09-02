@@ -15,7 +15,6 @@ import { Button } from "@/components/ui/button";
 import { analysisQueryOptions, ipQueryOptions } from "@/lib/analysisQuery";
 import { getMarketAnalysis } from "@/lib/market.functions";
 
-const SCREENING_STARTED_KEY = "trendscore:screening-started";
 import { WARNING_LABELS } from "@/lib/engine/scoring";
 import { formatCount, formatKstDateTime, formatNumber, formatPercent, formatWon } from "@/lib/format";
 import { buildSnapshot, diffSnapshots, saveSnapshot, type GradeDiff } from "@/lib/screeningHistory";
@@ -82,13 +81,12 @@ function KeyValue({ label, value, hint }: { label: string; value: React.ReactNod
 function Dashboard() {
   const { data: ip } = useSuspenseQuery(ipQueryOptions);
   const queryClient = useQueryClient();
-  const [started, setStarted] = useState(
-    () => typeof window !== "undefined" && window.sessionStorage.getItem(SCREENING_STARTED_KEY) === "1",
-  );
+  // 실행 여부를 브라우저에 저장하지 않는다. 새로 열거나 새로고침하면 반드시 사용자가
+  // 스크리닝 시작 버튼을 눌러야 외부 시세 API를 호출한다.
+  const [started, setStarted] = useState(false);
   const analysisQuery = useQuery({ ...analysisQueryOptions, enabled: started });
 
   const startScreening = () => {
-    window.sessionStorage.setItem(SCREENING_STARTED_KEY, "1");
     setStarted(true);
   };
 
@@ -98,7 +96,6 @@ function Dashboard() {
     setStarted(false);
     // removeQueries 반영 후 재시작해야 isPending 상태로 진입한다.
     setTimeout(() => {
-      window.sessionStorage.setItem(SCREENING_STARTED_KEY, "1");
       setStarted(true);
     }, 0);
   };

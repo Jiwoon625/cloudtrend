@@ -45,14 +45,15 @@ export function AppShell({
   children,
   source,
   dataUnavailable = false,
-  loadAnalysis = true,
+  loadAnalysis = false,
 }: {
   children: ReactNode;
   source?: AppShellSource;
   dataUnavailable?: boolean;
   loadAnalysis?: boolean;
 }) {
-  // 오류 경계 안에서는 실패한 분석 API를 다시 호출하지 않는다.
+  // 셸 자체는 외부 시세 API를 호출하지 않는다. 데이터가 필요한 화면의 명시적인
+  // 쿼리만 실행해 정적 화면 진입이나 오류 화면에서 인증 요청이 반복되지 않게 한다.
   const { data } = useQuery({
     ...analysisQueryOptions,
     enabled: loadAnalysis && !source && !dataUnavailable,
