@@ -1,13 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
-import { DataError } from "@/components/DataError";
+import { AnalysisRequired } from "@/components/AnalysisRequired";
 import { Delta } from "@/components/ScreenerTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { analysisQueryOptions } from "@/lib/analysisQuery";
+import type { AnalysisPayload } from "@/lib/market.functions";
+import type { AnalysisResult } from "@/lib/engine/pipeline";
 import { formatKstDateTime, formatNumber } from "@/lib/format";
 import {
   CartesianGrid,
@@ -49,9 +51,7 @@ export const Route = createFileRoute("/sectors")({
       { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
-  loader: ({ context }) => context.queryClient.ensureQueryData(analysisQueryOptions),
-  errorComponent: ({ error, reset }) => <DataError error={error} reset={reset} />,
-  component: SectorsPage,
+  component: SectorsRoute,
 });
 
 // ───────── 표시 유틸 ─────────
@@ -139,9 +139,14 @@ type SortKey =
   | "shareChange"
   | "reliability";
 
-function SectorsPage() {
-  const { data } = useSuspenseQuery(analysisQueryOptions);
-  const analysis = data.analysis;
+function SectorsRoute() {
+  const queryClient = useQueryClient();
+  const data = queryClient.getQueryData<AnalysisPayload>(analysisQueryOptions.queryKey);
+  if (!data) return <AnalysisRequired />;
+  return <SectorsPage analysis={data.analysis} />;
+}
+
+function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
   const rot = analysis.sectorRotation;
 
   const [query, setQuery] = useState("");
