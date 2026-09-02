@@ -152,7 +152,10 @@ function Dashboard() {
         </section>
       ) : analysisQuery.isError || isAnalysisFailurePayload(analysisQuery.data) ? (
         <DataError
-          error={analysisQuery.error ?? analysisQuery.data?.error}
+          error={
+            analysisQuery.error ??
+            (isAnalysisFailurePayload(analysisQuery.data) ? analysisQuery.data.error : "분석 요청 실패")
+          }
           reset={() => analysisQuery.refetch()}
           embedded
         />
