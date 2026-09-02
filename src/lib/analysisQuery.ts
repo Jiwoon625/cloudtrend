@@ -7,6 +7,7 @@ import {
   getMarketAnalysis,
   getServerEgressIp,
   type AnalysisPayload,
+  type AnalysisFailurePayload,
 } from "@/lib/market.functions";
 
 /** HMR 이전 요청이나 실패한 RPC가 남긴 불완전 캐시를 분석 결과로 사용하지 않는다. */
@@ -15,6 +16,12 @@ export function isAnalysisPayload(value: unknown): value is AnalysisPayload {
   const analysis = (value as { analysis?: unknown }).analysis;
   if (analysis === null || typeof analysis !== "object") return false;
   return Array.isArray((analysis as { rows?: unknown }).rows);
+}
+
+export function isAnalysisFailurePayload(value: unknown): value is AnalysisFailurePayload {
+  if (value === null || typeof value !== "object") return false;
+  return (value as { analysis?: unknown }).analysis === null &&
+    typeof (value as { error?: unknown }).error === "string";
 }
 
 export const analysisQueryOptions = queryOptions({

@@ -12,8 +12,8 @@ import { CollectionProgress } from "@/components/CollectionProgress";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { analysisQueryOptions, ipQueryOptions } from "@/lib/analysisQuery";
-import { getMarketAnalysis } from "@/lib/market.functions";
+import { analysisQueryOptions, ipQueryOptions, isAnalysisFailurePayload, isAnalysisPayload } from "@/lib/analysisQuery";
+import type { AnalysisPayload } from "@/lib/market.functions";
 
 import { WARNING_LABELS } from "@/lib/engine/scoring";
 import { formatCount, formatKstDateTime, formatNumber, formatPercent, formatWon } from "@/lib/format";
@@ -150,12 +150,17 @@ function Dashboard() {
           </div>
           <CollectionProgress />
         </section>
-      ) : analysisQuery.isError ? (
+      ) : analysisQuery.isError || isAnalysisFailurePayload(analysisQuery.data) ? (
         <DataError
-          error={analysisQuery.error}
+          error={
+            analysisQuery.error ??
+            (isAnalysisFailurePayload(analysisQuery.data) ? analysisQuery.data.error : "분석 요청 실패")
+          }
           reset={() => analysisQuery.refetch()}
           embedded
         />
+      ) : !isAnalysisPayload(analysisQuery.data) ? (
+        <DataError error="분석 응답 형식을 확인할 수 없습니다." reset={() => analysisQuery.refetch()} embedded />
       ) : (
         <DashboardContent analysis={analysisQuery.data.analysis} />
       )}
@@ -163,7 +168,7 @@ function Dashboard() {
   );
 }
 
-type AnalysisResult = Awaited<ReturnType<typeof getMarketAnalysis>>["analysis"];
+type AnalysisResult = AnalysisPayload["analysis"];
 
 function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
   const { marketGate: gate, rows, sectors } = analysis;
