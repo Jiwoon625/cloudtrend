@@ -49,13 +49,32 @@ export interface AnalysisPayload {
   source: DataSourceStatus;
 }
 
+export interface AnalysisFailurePayload {
+  analysis: null;
+  source: null;
+  error: string;
+}
+
+export type MarketAnalysisPayload = AnalysisPayload | AnalysisFailurePayload;
+
 export const getMarketAnalysis = createServerFn({ method: "GET" })
   .inputValidator((input: { config?: unknown } | undefined) => ({
     config: mergeScoringConfig(input?.config),
   }))
-  .handler(async ({ data }): Promise<AnalysisPayload> => {
-    const { dataset, status } = await loadDataset();
-    return { analysis: runAnalysis(dataset, data.config), source: status };
+  .handler(async ({ data }): Promise<MarketAnalysisPayload> => {
+    try {
+      const { dataset, status } = await loadDataset();
+      return { analysis: runAnalysis(dataset, data.config), source: status };
+    } catch (error) {
+      // IP 허용목록·인증 오류는 사용자가 조치할 수 있는 정상적인 연결 실패다.
+      // server function 밖으로 reject하면 브라우저 런타임 오류로 수집되므로,
+      // 직렬화 가능한 결과로 반환해 화면 안의 DataError가 처리하게 한다.
+      return {
+        analysis: null,
+        source: null,
+        error: error instanceof Error ? error.message : "토스증권 시세 연결에 실패했습니다.",
+      };
+    }
   });
 
 /** Toss 허용 IP를 갱신한 뒤 재시도할 때 서버의 이전 인증 상태를 비운다. */

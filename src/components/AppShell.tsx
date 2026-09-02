@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { Info, Moon, Sun, TriangleAlert } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
-import { analysisQueryOptions } from "@/lib/analysisQuery";
+import { analysisQueryOptions, isAnalysisPayload } from "@/lib/analysisQuery";
 
 export interface AppShellSource {
   isLive: boolean;
@@ -60,7 +60,7 @@ export function AppShell({
   });
   const resolved: AppShellSource | undefined =
     source ??
-    (data
+    (isAnalysisPayload(data)
       ? {
           isLive: data.analysis.isLive,
           provider: data.analysis.dataProvider,
