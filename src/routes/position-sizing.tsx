@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { calculatePositionSizing } from "@/lib/engine/scoring";
-import { analysisQueryOptions } from "@/lib/analysisQuery";
+import { analysisQueryOptions, isAnalysisPayload } from "@/lib/analysisQuery";
 import type { AnalysisPayload } from "@/lib/market.functions";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
 import { formatNumber, formatPrice, formatWon } from "@/lib/format";
@@ -46,9 +46,9 @@ function FormulaBox({ children }: { children: React.ReactNode }) {
 
 function PositionSizingRoute() {
   const queryClient = useQueryClient();
-  const data = queryClient.getQueryData<AnalysisPayload>(analysisQueryOptions.queryKey);
-  if (!data) return <AnalysisRequired />;
-  return <PositionSizingPage analysis={data.analysis} />;
+  const cached = queryClient.getQueryData<AnalysisPayload>(analysisQueryOptions.queryKey);
+  if (!isAnalysisPayload(cached)) return <AnalysisRequired />;
+  return <PositionSizingPage analysis={cached.analysis} />;
 }
 
 function PositionSizingPage({ analysis }: { analysis: AnalysisResult }) {
