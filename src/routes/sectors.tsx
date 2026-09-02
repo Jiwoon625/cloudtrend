@@ -7,7 +7,7 @@ import { AnalysisRequired } from "@/components/AnalysisRequired";
 import { Delta } from "@/components/ScreenerTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { analysisQueryOptions } from "@/lib/analysisQuery";
+import { analysisQueryOptions, isAnalysisPayload } from "@/lib/analysisQuery";
 import type { AnalysisPayload } from "@/lib/market.functions";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
 import { formatKstDateTime, formatNumber } from "@/lib/format";
@@ -141,9 +141,9 @@ type SortKey =
 
 function SectorsRoute() {
   const queryClient = useQueryClient();
-  const data = queryClient.getQueryData<AnalysisPayload>(analysisQueryOptions.queryKey);
-  if (!data) return <AnalysisRequired />;
-  return <SectorsPage analysis={data.analysis} />;
+  const cached = queryClient.getQueryData<AnalysisPayload>(analysisQueryOptions.queryKey);
+  if (!isAnalysisPayload(cached)) return <AnalysisRequired />;
+  return <SectorsPage analysis={cached.analysis} />;
 }
 
 function SectorsPage({ analysis }: { analysis: AnalysisResult }) {

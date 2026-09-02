@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { analysisQueryOptions } from "@/lib/analysisQuery";
+import { analysisQueryOptions, isAnalysisPayload } from "@/lib/analysisQuery";
 
 import { AnalysisRequired } from "@/components/AnalysisRequired";
 import { AppShell } from "@/components/AppShell";
@@ -31,11 +31,11 @@ export const Route = createFileRoute("/screener/etfs")({
 
 function EtfScreenerPage() {
   const queryClient = useQueryClient();
-  const data = queryClient.getQueryData<AnalysisPayload>(analysisQueryOptions.queryKey);
-  if (!data) return <AnalysisRequired />;
+  const cached = queryClient.getQueryData<AnalysisPayload>(analysisQueryOptions.queryKey);
+  if (!isAnalysisPayload(cached)) return <AnalysisRequired />;
   return (
     <AppShell>
-      <ScreenerView mode="ETF" analysis={data.analysis} />
+      <ScreenerView mode="ETF" analysis={cached.analysis} />
     </AppShell>
   );
 }
