@@ -1,10 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { analysisQueryOptions } from "@/lib/analysisQuery";
 
+import { AnalysisRequired } from "@/components/AnalysisRequired";
 import { AppShell } from "@/components/AppShell";
-import { DataError } from "@/components/DataError";
 import { ScreenerView } from "@/components/ScreenerView";
+import type { AnalysisPayload } from "@/lib/market.functions";
 
 export const Route = createFileRoute("/screener/stocks")({
   // 외부 시세 API 실패 시 SSR 500(빈 화면) 대신 클라이언트 에러 화면을 보여준다.
@@ -24,11 +26,16 @@ export const Route = createFileRoute("/screener/stocks")({
       },
     ],
   }),
-  loader: ({ context }) => context.queryClient.ensureQueryData(analysisQueryOptions),
-  errorComponent: ({ error, reset }) => <DataError error={error} reset={reset} />,
-  component: () => (
-    <AppShell>
-      <ScreenerView mode="STOCK" />
-    </AppShell>
-  ),
+  component: StockScreenerPage,
 });
+
+function StockScreenerPage() {
+  const queryClient = useQueryClient();
+  const data = queryClient.getQueryData<AnalysisPayload>(analysisQueryOptions.queryKey);
+  if (!data) return <AnalysisRequired />;
+  return (
+    <AppShell>
+      <ScreenerView mode="STOCK" analysis={data.analysis} />
+    </AppShell>
+  );
+}

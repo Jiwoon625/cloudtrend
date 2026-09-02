@@ -1,16 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { TriangleAlert, Calculator, TrendingUp, Shield, Info } from "lucide-react";
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
-import { DataError } from "@/components/DataError";
+import { AnalysisRequired } from "@/components/AnalysisRequired";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { calculatePositionSizing } from "@/lib/engine/scoring";
 import { analysisQueryOptions } from "@/lib/analysisQuery";
+import type { AnalysisPayload } from "@/lib/market.functions";
+import type { AnalysisResult } from "@/lib/engine/pipeline";
 import { formatNumber, formatPrice, formatWon } from "@/lib/format";
 
 export const Route = createFileRoute("/position-sizing")({
@@ -31,9 +33,7 @@ export const Route = createFileRoute("/position-sizing")({
       },
     ],
   }),
-  loader: ({ context }) => context.queryClient.ensureQueryData(analysisQueryOptions),
-  errorComponent: ({ error, reset }) => <DataError error={error} reset={reset} />,
-  component: PositionSizingPage,
+  component: PositionSizingRoute,
 });
 
 function FormulaBox({ children }: { children: React.ReactNode }) {
@@ -44,10 +44,16 @@ function FormulaBox({ children }: { children: React.ReactNode }) {
   );
 }
 
-function PositionSizingPage() {
-  const { data } = useSuspenseQuery(analysisQueryOptions);
-  const analysis = data.analysis;
-  const first = analysis.rows[0]!;
+function PositionSizingRoute() {
+  const queryClient = useQueryClient();
+  const data = queryClient.getQueryData<AnalysisPayload>(analysisQueryOptions.queryKey);
+  if (!data) return <AnalysisRequired />;
+  return <PositionSizingPage analysis={data.analysis} />;
+}
+
+function PositionSizingPage({ analysis }: { analysis: AnalysisResult }) {
+  const first = analysis.rows[0];
+  if (!first) return <AnalysisRequired />;
   const [totalCapital, setTotalCapital] = useState(100_000_000);
   const [riskPercent, setRiskPercent] = useState(1);
   const [entryPrice, setEntryPrice] = useState(Math.round(first.snapshot.close));

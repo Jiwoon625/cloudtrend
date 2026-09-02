@@ -5,10 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { useSuspenseQuery } from "@tanstack/react-query";
-
-import { analysisQueryOptions } from "@/lib/analysisQuery";
-import type { ScreeningRow } from "@/lib/engine/pipeline";
+import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
 
 type Mode = "STOCK" | "ETF";
 
@@ -47,9 +44,7 @@ const PRESETS: Array<{ id: PresetId; label: string; test: (r: ScreeningRow) => b
   { id: "EXIT", label: "청산 점검", test: (r) => r.warnings.includes("EXIT_TRIGGER") },
 ];
 
-export function ScreenerView({ mode }: { mode: Mode }) {
-  const { data } = useSuspenseQuery(analysisQueryOptions);
-  const analysis = data.analysis;
+export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: AnalysisResult }) {
   const [query, setQuery] = useState("");
   const [minTechnical, setMinTechnical] = useState(0);
   const [minTotal, setMinTotal] = useState(0);
