@@ -93,9 +93,14 @@ export function ManualDataInput({ onChanged }: Props) {
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={() => apply(text, fileName)} disabled={text.trim().length === 0}>
-          데이터 적용
+        <Button
+          size="sm"
+          onClick={() => void apply(text, fileName)}
+          disabled={busy || text.trim().length === 0}
+        >
+          {busy ? "저장 중…" : "데이터 적용"}
         </Button>
+
         <input
           ref={fileRef}
           type="file"
