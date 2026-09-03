@@ -45,13 +45,13 @@ export const Route = createFileRoute("/")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "대시보드 | TrendScore KR 추세추종 스크리너" },
+      { title: "대시보드 | CloudTrend 주식/ETF 스크리너" },
       {
         name: "description",
         content:
-          "한국 주식·국내 상장 ETF의 시장 게이트, 섹터 상대강도, 기술·우선순위 점수를 한 화면에서 확인하는 규칙 기반 스크리닝 대시보드입니다.",
+          "국내·미국 주식과 ETF의 시장 게이트, 섹터 상대강도, 기술·우선순위 점수를 한 화면에서 확인하는 규칙 기반 스크리닝 대시보드입니다.",
       },
-      { property: "og:title", content: "대시보드 | TrendScore KR" },
+      { property: "og:title", content: "대시보드 | CloudTrend" },
       {
         property: "og:description",
         content: "시장 상태, 스크리닝 요약, 상위 후보와 경고 신호를 계산 근거와 함께 제공합니다.",
