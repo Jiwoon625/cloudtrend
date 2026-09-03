@@ -402,9 +402,7 @@ function ScoringPage() {
             <Switch
               id="lev-ex"
               checked={draft.universe.excludeLeveragedInverse}
-              onCheckedChange={(v) =>
-                patch((d) => void (d.universe.excludeLeveragedInverse = v))
-              }
+              onCheckedChange={(v) => patch((d) => void (d.universe.excludeLeveragedInverse = v))}
             />
             <Label htmlFor="lev-ex" className="text-[12px]">
               레버리지·인버스 ETF 실격 처리
@@ -438,7 +436,8 @@ function ScoringPage() {
             onChange={(v) => patch((d) => void (d.rotation.rotationMomentum = v))}
           />
           <p className="text-[11px] text-muted-foreground">
-            현재 합계 {(
+            현재 합계{" "}
+            {(
               draft.rotation.priceLeadership +
               draft.rotation.moneyFlow +
               draft.rotation.rotationMomentum
@@ -454,11 +453,7 @@ function ScoringPage() {
         <Button size="sm" variant="outline" onClick={() => setDraft(saved)} disabled={!dirty}>
           편집 취소
         </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setDraft(DEFAULT_SCORING_CONFIG)}
-        >
+        <Button size="sm" variant="outline" onClick={() => setDraft(DEFAULT_SCORING_CONFIG)}>
           기본값 불러오기
         </Button>
         <span className="text-[11px] text-muted-foreground">

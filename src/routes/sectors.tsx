@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
@@ -105,7 +105,13 @@ function Card({
       <p className="text-[11px] text-muted-foreground">{title}</p>
       <p
         className={`mt-0.5 text-[13px] font-semibold ${
-          tone === "up" ? "text-up" : tone === "down" ? "text-down" : tone === "warn" ? "text-warn" : ""
+          tone === "up"
+            ? "text-up"
+            : tone === "down"
+              ? "text-down"
+              : tone === "warn"
+                ? "text-warn"
+                : ""
         }`}
       >
         {value}
@@ -140,8 +146,9 @@ type SortKey =
   | "reliability";
 
 function SectorsRoute() {
-  const queryClient = useQueryClient();
-  const cached = queryClient.getQueryData<AnalysisPayload>(analysisQueryOptions.queryKey);
+  // 저장된 입력 데이터로 이 화면에서도 직접 계산한다(외부 API 호출 없음).
+  const { data: cached, isPending } = useQuery(analysisQueryOptions);
+  if (isPending) return <AnalysisRequired loading />;
   if (!isAnalysisPayload(cached)) return <AnalysisRequired />;
   return <SectorsPage analysis={cached.analysis} />;
 }
@@ -166,7 +173,9 @@ function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
         return false;
       if (r.reliability < minReliability) return false;
       if (statusFilter === "INFLOW")
-        return ["STRONG_INFLOW", "EARLY_INFLOW", "SUSTAINED_INFLOW", "OVERHEATED"].includes(r.status);
+        return ["STRONG_INFLOW", "EARLY_INFLOW", "SUSTAINED_INFLOW", "OVERHEATED"].includes(
+          r.status,
+        );
       if (statusFilter === "OUTFLOW")
         return ["EARLY_OUTFLOW", "SUSTAINED_OUTFLOW", "CAPITULATION"].includes(r.status);
       if (statusFilter === "NEUTRAL")
@@ -201,33 +210,96 @@ function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
   }, [rot, query, statusFilter, minReliability, sort]);
 
   const toggleSort = (key: SortKey) =>
-    setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "desc" }));
+    setSort((s) =>
+      s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "desc" },
+    );
 
   const downloadCsv = () => {
     if (!rot) return;
     const header = [
-      "기준일","순위","섹터코드","섹터","최종로테이션점수","가격리더십","자금흐름","로테이션모멘텀","상태",
-      "RS20","RS60","RS120","외국인1일","외국인5일","외국인20일","외국인60일","기관1일","기관5일","기관20일","기관60일",
-      "외국인5일/시총(%)","기관5일/시총(%)","거래대금점유율5일(%)","점유율변화5일(%p)","상대거래대금",
-      "MA20상회비율","MA60상회비율","정배열비율","신고가근접비율","외국인매수확산도","기관매수확산도","동시매수확산도",
-      "종목수","수급집중도(%)","시총집중도(%)","데이터완전성(%)","신뢰도","전주대비순위","대표ETF/대표주","경고",
+      "기준일",
+      "순위",
+      "섹터코드",
+      "섹터",
+      "최종로테이션점수",
+      "가격리더십",
+      "자금흐름",
+      "로테이션모멘텀",
+      "상태",
+      "RS20",
+      "RS60",
+      "RS120",
+      "외국인1일",
+      "외국인5일",
+      "외국인20일",
+      "외국인60일",
+      "기관1일",
+      "기관5일",
+      "기관20일",
+      "기관60일",
+      "외국인5일/시총(%)",
+      "기관5일/시총(%)",
+      "거래대금점유율5일(%)",
+      "점유율변화5일(%p)",
+      "상대거래대금",
+      "MA20상회비율",
+      "MA60상회비율",
+      "정배열비율",
+      "신고가근접비율",
+      "외국인매수확산도",
+      "기관매수확산도",
+      "동시매수확산도",
+      "종목수",
+      "수급집중도(%)",
+      "시총집중도(%)",
+      "데이터완전성(%)",
+      "신뢰도",
+      "전주대비순위",
+      "대표ETF/대표주",
+      "경고",
     ];
     const lines = rot.sectors.map((r) =>
       [
-        rot.asOfDate, r.rank, r.sectorCode, r.sectorName,
-        r.rotationScore.toFixed(2), r.priceLeadership.score?.toFixed(2) ?? "", r.moneyFlow.score?.toFixed(2) ?? "",
-        r.rotationMomentum?.toFixed(2) ?? "", FLOW_STATUS_LABEL[r.status],
-        r.rs20?.toFixed(2) ?? "", r.rs60?.toFixed(2) ?? "", r.rs120?.toFixed(2) ?? "",
-        r.foreignNet1d ?? "", r.foreignNet5d ?? "", r.foreignNet20d ?? "", r.foreignNet60d ?? "",
-        r.institutionNet1d ?? "", r.institutionNet5d ?? "", r.institutionNet20d ?? "", r.institutionNet60d ?? "",
-        r.foreignNet5dPerCap?.toFixed(4) ?? "", r.institutionNet5dPerCap?.toFixed(4) ?? "",
-        r.turnoverShare5d.toFixed(3), r.turnoverShareChange5d.toFixed(3), r.relativeTurnover?.toFixed(3) ?? "",
-        r.breadth.aboveMa20?.toFixed(1) ?? "", r.breadth.aboveMa60?.toFixed(1) ?? "", r.breadth.maAligned?.toFixed(1) ?? "",
-        r.breadth.nearHigh52w?.toFixed(1) ?? "", r.breadth.foreignBuy5d?.toFixed(1) ?? "",
-        r.breadth.institutionBuy5d?.toFixed(1) ?? "", r.breadth.bothBuy5d?.toFixed(1) ?? "",
-        r.memberCount, r.supplyConcentration?.toFixed(1) ?? "", r.capConcentration?.toFixed(1) ?? "",
-        r.dataCompleteness.toFixed(1), r.reliability.toFixed(1), r.prevRank,
-        r.representativeEtf ?? "", r.anomalies.join(" / "),
+        rot.asOfDate,
+        r.rank,
+        r.sectorCode,
+        r.sectorName,
+        r.rotationScore.toFixed(2),
+        r.priceLeadership.score?.toFixed(2) ?? "",
+        r.moneyFlow.score?.toFixed(2) ?? "",
+        r.rotationMomentum?.toFixed(2) ?? "",
+        FLOW_STATUS_LABEL[r.status],
+        r.rs20?.toFixed(2) ?? "",
+        r.rs60?.toFixed(2) ?? "",
+        r.rs120?.toFixed(2) ?? "",
+        r.foreignNet1d ?? "",
+        r.foreignNet5d ?? "",
+        r.foreignNet20d ?? "",
+        r.foreignNet60d ?? "",
+        r.institutionNet1d ?? "",
+        r.institutionNet5d ?? "",
+        r.institutionNet20d ?? "",
+        r.institutionNet60d ?? "",
+        r.foreignNet5dPerCap?.toFixed(4) ?? "",
+        r.institutionNet5dPerCap?.toFixed(4) ?? "",
+        r.turnoverShare5d.toFixed(3),
+        r.turnoverShareChange5d.toFixed(3),
+        r.relativeTurnover?.toFixed(3) ?? "",
+        r.breadth.aboveMa20?.toFixed(1) ?? "",
+        r.breadth.aboveMa60?.toFixed(1) ?? "",
+        r.breadth.maAligned?.toFixed(1) ?? "",
+        r.breadth.nearHigh52w?.toFixed(1) ?? "",
+        r.breadth.foreignBuy5d?.toFixed(1) ?? "",
+        r.breadth.institutionBuy5d?.toFixed(1) ?? "",
+        r.breadth.bothBuy5d?.toFixed(1) ?? "",
+        r.memberCount,
+        r.supplyConcentration?.toFixed(1) ?? "",
+        r.capConcentration?.toFixed(1) ?? "",
+        r.dataCompleteness.toFixed(1),
+        r.reliability.toFixed(1),
+        r.prevRank,
+        r.representativeEtf ?? "",
+        r.anomalies.join(" / "),
       ]
         .map((v) => `"${String(v).replaceAll('"', '""')}"`)
         .join(","),
@@ -262,7 +334,9 @@ function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
     (a, b) => (a.moneyFlow.score ?? 101) - (b.moneyFlow.score ?? 101),
   )[0];
   const nextLeader = rot.sectors.find((r) => r.isNextLeaderCandidate);
-  const foreignTop = [...rot.sectors].sort((a, b) => (b.foreignNet5d ?? 0) - (a.foreignNet5d ?? 0))[0];
+  const foreignTop = [...rot.sectors].sort(
+    (a, b) => (b.foreignNet5d ?? 0) - (a.foreignNet5d ?? 0),
+  )[0];
   const instTop = [...rot.sectors].sort(
     (a, b) => (b.institutionNet5d ?? 0) - (a.institutionNet5d ?? 0),
   )[0];
@@ -299,14 +373,16 @@ function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
       {/* 시장 전체 자금 상태 */}
       <div className="mb-3 rounded-lg border border-border bg-surface p-3">
         <p className="text-[13px] font-semibold">{rot.market.label}</p>
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
-          {rot.market.reasons.join(" · ")}
-        </p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground">{rot.market.reasons.join(" · ")}</p>
       </div>
 
       {/* 11.1 상단 요약 카드 */}
       <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-        <Card title="시장 자금 상태" value={rot.market.label} sub={`유입 ${rot.market.inflowSectorCount} / 유출 ${rot.market.outflowSectorCount} 섹터`} />
+        <Card
+          title="시장 자금 상태"
+          value={rot.market.label}
+          sub={`유입 ${rot.market.inflowSectorCount} / 유출 ${rot.market.outflowSectorCount} 섹터`}
+        />
         <Card
           title="최강 유입 섹터"
           value={bestInflow ? bestInflow.sectorName : "판단 보류"}
@@ -344,7 +420,11 @@ function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
           value={shareTop ? shareTop.sectorName : "판단 보류"}
           sub={shareTop ? pp(shareTop.turnoverShareChange5d) : undefined}
         />
-        <Card title="데이터 기준일" value={rot.asOfDate} sub={`분석 섹터 ${rot.sectors.length}개`} />
+        <Card
+          title="데이터 기준일"
+          value={rot.asOfDate}
+          sub={`분석 섹터 ${rot.sectors.length}개`}
+        />
         <Card
           title="전체 데이터 완전성"
           value={`${rot.overallCompleteness.toFixed(0)}%`}
@@ -506,16 +586,24 @@ function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
                   <td className="num px-2 py-1.5">
                     <Delta value={s.rs120} digits={2} />
                   </td>
-                  <td className={`num px-2 py-1.5 ${(s.foreignNet5d ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+                  <td
+                    className={`num px-2 py-1.5 ${(s.foreignNet5d ?? 0) >= 0 ? "text-up" : "text-down"}`}
+                  >
                     {eok(s.foreignNet5d)}
                   </td>
-                  <td className={`num px-2 py-1.5 ${(s.foreignNet20d ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+                  <td
+                    className={`num px-2 py-1.5 ${(s.foreignNet20d ?? 0) >= 0 ? "text-up" : "text-down"}`}
+                  >
                     {eok(s.foreignNet20d)}
                   </td>
-                  <td className={`num px-2 py-1.5 ${(s.institutionNet5d ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+                  <td
+                    className={`num px-2 py-1.5 ${(s.institutionNet5d ?? 0) >= 0 ? "text-up" : "text-down"}`}
+                  >
                     {eok(s.institutionNet5d)}
                   </td>
-                  <td className={`num px-2 py-1.5 ${(s.institutionNet20d ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+                  <td
+                    className={`num px-2 py-1.5 ${(s.institutionNet20d ?? 0) >= 0 ? "text-up" : "text-down"}`}
+                  >
                     {eok(s.institutionNet20d)}
                   </td>
                   <td className="num px-2 py-1.5">{pct(s.breadth.bothBuy5d)}</td>
@@ -660,8 +748,8 @@ function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
       <section className="mb-4 rounded-lg border border-border bg-card p-3">
         <h2 className="text-sm font-semibold">섹터 점수 시계열 추이</h2>
         <p className="mb-2 text-[11px] text-muted-foreground">
-          5거래일 간격으로 과거 시점의 프레임을 재계산한 값입니다. 섹터 이름을 눌러 표시 여부를
-          바꿀 수 있습니다.
+          5거래일 간격으로 과거 시점의 프레임을 재계산한 값입니다. 섹터 이름을 눌러 표시 여부를 바꿀
+          수 있습니다.
         </p>
         <TimelineChart timeline={rot.timeline} sectors={rot.sectors} />
       </section>
@@ -676,7 +764,8 @@ function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
         </p>
         {rot.links.length === 0 ? (
           <p className="text-[12px] text-muted-foreground">
-            유출·유입이 동시에 확인되는 섹터 쌍이 없어 로테이션 연결을 표시하지 않습니다 (판단 보류).
+            유출·유입이 동시에 확인되는 섹터 쌍이 없어 로테이션 연결을 표시하지 않습니다 (판단
+            보류).
           </p>
         ) : (
           <div className="space-y-2">
@@ -860,17 +949,32 @@ function QuadrantChart({ rows }: { rows: SectorRotationRow[] }) {
 
   return (
     <div className="overflow-x-auto">
-      <svg viewBox={`0 0 ${W} ${H}`} className="min-w-[720px]" role="img" aria-label="섹터 로테이션 4분면">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="min-w-[720px]"
+        role="img"
+        aria-label="섹터 로테이션 4분면"
+      >
         <rect x={pad} y={pad} width={W - pad * 2} height={H - pad * 2} className="fill-surface" />
         <line x1={x(50)} y1={pad} x2={x(50)} y2={H - pad} className="stroke-border" />
         <line x1={pad} y1={y(50)} x2={W - pad} y2={y(50)} className="stroke-border" />
-        <text x={W - pad - 6} y={pad + 14} textAnchor="end" className="fill-muted-foreground text-[11px]">
+        <text
+          x={W - pad - 6}
+          y={pad + 14}
+          textAnchor="end"
+          className="fill-muted-foreground text-[11px]"
+        >
           주도
         </text>
         <text x={pad + 6} y={pad + 14} className="fill-muted-foreground text-[11px]">
           개선
         </text>
-        <text x={W - pad - 6} y={H - pad - 6} textAnchor="end" className="fill-muted-foreground text-[11px]">
+        <text
+          x={W - pad - 6}
+          y={H - pad - 6}
+          textAnchor="end"
+          className="fill-muted-foreground text-[11px]"
+        >
           약화
         </text>
         <text x={pad + 6} y={H - pad - 6} className="fill-muted-foreground text-[11px]">
@@ -879,7 +983,13 @@ function QuadrantChart({ rows }: { rows: SectorRotationRow[] }) {
         <text x={W / 2} y={H - 8} textAnchor="middle" className="fill-muted-foreground text-[11px]">
           가격 리더십 점수
         </text>
-        <text x={12} y={H / 2} transform={`rotate(-90 12 ${H / 2})`} textAnchor="middle" className="fill-muted-foreground text-[11px]">
+        <text
+          x={12}
+          y={H / 2}
+          transform={`rotate(-90 12 ${H / 2})`}
+          textAnchor="middle"
+          className="fill-muted-foreground text-[11px]"
+        >
           자금흐름 점수
         </text>
         {rows.map((r) => {
@@ -907,7 +1017,12 @@ function QuadrantChart({ rows }: { rows: SectorRotationRow[] }) {
               <circle cx={x(px)} cy={y(py)} r={rad} className={`${fill} opacity-60`}>
                 <title>{`${r.sectorName}\n가격 리더십 ${px.toFixed(1)} / 자금흐름 ${py.toFixed(1)}\n거래대금 점유율 ${r.turnoverShare5d.toFixed(1)}%\n5일 자금흐름 변화 ${change.toFixed(1)}점`}</title>
               </circle>
-              <text x={x(px)} y={y(py) - rad - 3} textAnchor="middle" className="fill-foreground text-[10px]">
+              <text
+                x={x(px)}
+                y={y(py) - rad - 3}
+                textAnchor="middle"
+                className="fill-foreground text-[10px]"
+              >
                 {r.sectorName}
               </text>
             </g>
@@ -955,7 +1070,9 @@ function TimelineChart({
         .filter((t): t is SectorTimeline => Boolean(t)),
     [sectors, timeline],
   );
-  const [visible, setVisible] = useState<string[]>(() => ordered.slice(0, 5).map((t) => t.sectorCode));
+  const [visible, setVisible] = useState<string[]>(() =>
+    ordered.slice(0, 5).map((t) => t.sectorCode),
+  );
 
   const dates = ordered[0]?.points.map((p) => p.date) ?? [];
   const data = useMemo(
@@ -1045,7 +1162,9 @@ function TimelineChart({
                 )
               }
               className={`flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] ${
-                on ? "border-border bg-surface" : "border-border/60 text-muted-foreground opacity-60"
+                on
+                  ? "border-border bg-surface"
+                  : "border-border/60 text-muted-foreground opacity-60"
               }`}
             >
               <span

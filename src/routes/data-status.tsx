@@ -61,11 +61,18 @@ function DataStatusPage() {
   ];
 
   return (
-    <AppShell source={{ isLive: data.isLive, provider: data.dataProvider, notes: data.notes, fallbackReason: data.source.fallbackReason }}>
+    <AppShell
+      source={{
+        isLive: data.isLive,
+        provider: data.dataProvider,
+        notes: data.notes,
+        fallbackReason: data.source.fallbackReason,
+      }}
+    >
       <h1 className="text-xl font-bold tracking-tight">데이터 상태 및 계산 로그</h1>
       <p className="mb-4 text-[12px] text-muted-foreground">
-        공급자 {data.dataProvider} · 기준일 {data.asOfDate} · 데이터 버전 {data.dataVersion} · 전략 v
-        {data.strategyVersion} · {data.isLive ? "실데이터" : "합성 데이터"}
+        공급자 {data.dataProvider} · 기준일 {data.asOfDate} · 데이터 버전 {data.dataVersion} · 전략
+        v{data.strategyVersion} · {data.isLive ? "실데이터" : "합성 데이터"}
       </p>
 
       {data.notes.length > 0 ? (
@@ -174,9 +181,7 @@ function DataStatusPage() {
                 <tr key={b.symbol} className="border-t border-border">
                   <td className="px-2 py-1.5">{b.name}</td>
                   <td className="num px-2 py-1.5">{b.symbol}</td>
-                  <td
-                    className={`num px-2 py-1.5 text-right ${b.bars < 120 ? "text-warn" : ""}`}
-                  >
+                  <td className={`num px-2 py-1.5 text-right ${b.bars < 120 ? "text-warn" : ""}`}>
                     {formatCount(b.bars)}
                   </td>
                   <td className="num px-2 py-1.5">{b.first}</td>

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { TriangleAlert, Calculator, TrendingUp, Shield, Info } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
@@ -45,15 +45,17 @@ function FormulaBox({ children }: { children: React.ReactNode }) {
 }
 
 function PositionSizingRoute() {
-  const queryClient = useQueryClient();
-  const cached = queryClient.getQueryData<AnalysisPayload>(analysisQueryOptions.queryKey);
+  // 저장된 입력 데이터로 이 화면에서도 직접 계산한다(외부 API 호출 없음).
+  const { data: cached, isPending } = useQuery(analysisQueryOptions);
+  if (isPending) return <AnalysisRequired loading />;
   if (!isAnalysisPayload(cached)) return <AnalysisRequired />;
+  if (!cached.analysis.rows[0]) return <AnalysisRequired />;
   return <PositionSizingPage analysis={cached.analysis} />;
 }
 
 function PositionSizingPage({ analysis }: { analysis: AnalysisResult }) {
-  const first = analysis.rows[0];
-  if (!first) return <AnalysisRequired />;
+  const first = analysis.rows[0]!;
+
   const [totalCapital, setTotalCapital] = useState(100_000_000);
   const [riskPercent, setRiskPercent] = useState(1);
   const [entryPrice, setEntryPrice] = useState(Math.round(first.snapshot.close));
@@ -73,9 +75,10 @@ function PositionSizingPage({ analysis }: { analysis: AnalysisResult }) {
   });
 
   const gateAdjust = analysis.marketGate.status === "NEUTRAL" ? 0.5 : 1;
-  const gateLabel = analysis.marketGate.status === "NEUTRAL"
-    ? "Neutral → 계획 리스크 50% 축소 권고"
-    : analysis.marketGate.status;
+  const gateLabel =
+    analysis.marketGate.status === "NEUTRAL"
+      ? "Neutral → 계획 리스크 50% 축소 권고"
+      : analysis.marketGate.status;
 
   const field = (
     label: string,
@@ -105,9 +108,13 @@ function PositionSizingPage({ analysis }: { analysis: AnalysisResult }) {
           <h1 className="text-xl font-bold tracking-tight">포지션 사이징 계산기</h1>
         </div>
         <p className="max-w-3xl text-[13px] leading-relaxed text-muted-foreground">
-          이 도구는 <strong className="text-foreground">"한 번의 거래에서 얼마나 많은 주식을 사야 리스크가 통제되는가"</strong>를
-          계산합니다. 진입가와 ATR 기반 손절가를 정하면, 총 자산 대비 허용 리스크와 단일 종목 최대 비중
-          두 기준 중 <strong className="text-foreground">더 작은 쪽</strong>을 자동으로 선택합니다.
+          이 도구는{" "}
+          <strong className="text-foreground">
+            "한 번의 거래에서 얼마나 많은 주식을 사야 리스크가 통제되는가"
+          </strong>
+          를 계산합니다. 진입가와 ATR 기반 손절가를 정하면, 총 자산 대비 허용 리스크와 단일 종목
+          최대 비중 두 기준 중 <strong className="text-foreground">더 작은 쪽</strong>을 자동으로
+          선택합니다.
         </p>
       </div>
 
@@ -216,11 +223,15 @@ function PositionSizingPage({ analysis }: { analysis: AnalysisResult }) {
               <div className="grid gap-2 sm:grid-cols-2">
                 <div className="space-y-1">
                   <span className="text-[12px] text-muted-foreground">리스크 기준 수량</span>
-                  <p className="num text-lg font-bold">{formatNumber(result.riskBasedQuantity, 0)}주</p>
+                  <p className="num text-lg font-bold">
+                    {formatNumber(result.riskBasedQuantity, 0)}주
+                  </p>
                 </div>
                 <div className="space-y-1">
                   <span className="text-[12px] text-muted-foreground">비중 제한 수량</span>
-                  <p className="num text-lg font-bold">{formatNumber(result.weightCappedQuantity, 0)}주</p>
+                  <p className="num text-lg font-bold">
+                    {formatNumber(result.weightCappedQuantity, 0)}주
+                  </p>
                 </div>
               </div>
               <div className="mt-3 flex items-center gap-2 text-[12px] text-muted-foreground">
@@ -279,7 +290,8 @@ function PositionSizingPage({ analysis }: { analysis: AnalysisResult }) {
             {result.openRiskExceeded ? (
               <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-down-soft p-3 text-[12px] font-medium text-down">
                 <TriangleAlert className="size-4" />
-                전체 오픈 리스크 6% 한도를 초과합니다. 신규 진입을 축소하거나 보유 포지션을 먼저 정리하세요.
+                전체 오픈 리스크 6% 한도를 초과합니다. 신규 진입을 축소하거나 보유 포지션을 먼저
+                정리하세요.
               </div>
             ) : (
               <div className="flex items-center gap-2 rounded-md border border-emerald-500/20 bg-emerald-500/10 p-3 text-[12px] font-medium text-emerald-400">
@@ -302,24 +314,37 @@ function PositionSizingPage({ analysis }: { analysis: AnalysisResult }) {
           </div>
           <div>
             <strong className="text-foreground">리스크 기준 수량</strong>
-            <p>"이 거래에서 잃어도 좋은 돈"을 주당 리스크로 나눈 값. 리스크를 먼저 정하고 수량을 도출합니다.</p>
+            <p>
+              "이 거래에서 잃어도 좋은 돈"을 주당 리스크로 나눈 값. 리스크를 먼저 정하고 수량을
+              도출합니다.
+            </p>
           </div>
           <div>
             <strong className="text-foreground">비중 제한 수량</strong>
-            <p>단일 종목에 투입할 최대 자산 비중을 진입가로 환산한 수량. 분산 투자 기준을 반영합니다.</p>
+            <p>
+              단일 종목에 투입할 최대 자산 비중을 진입가로 환산한 수량. 분산 투자 기준을 반영합니다.
+            </p>
           </div>
           <div>
             <strong className="text-foreground">오픈 리스크</strong>
-            <p>현재 보유 포지션의 손절가 기준 잠재 손실 비중. 6% 이상이면 신규 진입에 제약이 생깁니다.</p>
+            <p>
+              현재 보유 포지션의 손절가 기준 잠재 손실 비중. 6% 이상이면 신규 진입에 제약이
+              생깁니다.
+            </p>
           </div>
           <div>
             <strong className="text-foreground">R(Reward)</strong>
-            <p>주당 리스크를 1단위로 볼 때의 예상 수익 지점. 2R은 손절 폭의 2배만큼 이익이 난 가격입니다.</p>
+            <p>
+              주당 리스크를 1단위로 볼 때의 예상 수익 지점. 2R은 손절 폭의 2배만큼 이익이 난
+              가격입니다.
+            </p>
           </div>
           <div>
             <strong className="text-foreground">시장 게이트</strong>
-            <p>코스피 추세·VKOSPI·외국인 수급을 종합해 RISK_ON/NEUTRAL/RISK_OFF로 판단합니다. NEUTRAL일 때는
-              리스크를 절반으로 줄이는 것을 권고합니다.</p>
+            <p>
+              코스피 추세·VKOSPI·외국인 수급을 종합해 RISK_ON/NEUTRAL/RISK_OFF로 판단합니다.
+              NEUTRAL일 때는 리스크를 절반으로 줄이는 것을 권고합니다.
+            </p>
           </div>
         </CardContent>
       </Card>

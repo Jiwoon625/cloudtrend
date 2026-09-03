@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
 import { analysisQueryOptions, isAnalysisPayload } from "@/lib/analysisQuery";
 
@@ -30,8 +30,9 @@ export const Route = createFileRoute("/screener/etfs")({
 });
 
 function EtfScreenerPage() {
-  const queryClient = useQueryClient();
-  const cached = queryClient.getQueryData<AnalysisPayload>(analysisQueryOptions.queryKey);
+  // 저장된 입력 데이터로 이 화면에서도 직접 계산한다(외부 API 호출 없음).
+  const { data: cached, isPending } = useQuery(analysisQueryOptions);
+  if (isPending) return <AnalysisRequired loading />;
   if (!isAnalysisPayload(cached)) return <AnalysisRequired />;
   return (
     <AppShell>

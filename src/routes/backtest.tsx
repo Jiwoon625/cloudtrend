@@ -1,13 +1,11 @@
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
   BACKTEST_FEATURES,
@@ -15,7 +13,7 @@ import {
   type BacktestParams,
 } from "@/lib/engine/backtest";
 import { formatNumber } from "@/lib/format";
-import { runFeatureBacktest } from "@/lib/market.functions";
+import { computeLocalBacktest } from "@/lib/localAnalysis";
 
 export const Route = createFileRoute("/backtest")({
   ssr: false,
@@ -43,34 +41,27 @@ const pct = (v: number | null | undefined) =>
   v === null || v === undefined ? "-" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
 
 function BacktestPage() {
-  const run = useServerFn(runFeatureBacktest);
   const [symbolText, setSymbolText] = useState("");
   const [limit, setLimit] = useState(30);
-  const [extendHistory, setExtendHistory] = useState(true);
   const [params, setParams] = useState<BacktestParams>(DEFAULT_BACKTEST_PARAMS);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      run({
-        data: {
-          symbols: symbolText
-            .split(/[\s,;\n\t]+/)
-            .map((s) => s.trim())
-            .filter(Boolean),
-          params,
-          extendHistory,
-          limit,
-        },
-      }),
+    mutationFn: async () =>
+      computeLocalBacktest(
+        symbolText
+          .split(/[\s,;\n\t]+/)
+          .map((s) => s.trim())
+          .filter(Boolean),
+        params,
+        limit,
+      ),
   });
 
   const result = mutation.data?.result;
   const toggleFeature = (id: string) =>
     setParams((p) => ({
       ...p,
-      features: p.features.includes(id)
-        ? p.features.filter((x) => x !== id)
-        : [...p.features, id],
+      features: p.features.includes(id) ? p.features.filter((x) => x !== id) : [...p.features, id],
     }));
 
   return (
@@ -89,7 +80,7 @@ function BacktestPage() {
             <h2 className="text-sm font-semibold">테스트 대상</h2>
             <div className="space-y-1">
               <Label className="text-[11px] text-muted-foreground">
-                종목코드 (미입력 시 거래대금 상위 주식 자동 선정)
+                종목코드 (미입력 시 입력 데이터 중 거래대금 상위 주식 자동 선정)
               </Label>
               <Textarea
                 value={symbolText}
@@ -165,12 +156,10 @@ function BacktestPage() {
                 />
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Switch id="ext" checked={extendHistory} onCheckedChange={setExtendHistory} />
-              <Label htmlFor="ext" className="text-[12px]">
-                최근 1년까지 일봉 확장 (종목당 추가 요청)
-              </Label>
-            </div>
+            <p className="text-[11px] text-muted-foreground">
+              대시보드에 입력한 일봉을 그대로 사용합니다. 더 긴 기간을 보려면 주피터에서 일봉
+              개수(COUNT)를 늘려 다시 붙여넣어 주세요.
+            </p>
             <Button
               size="sm"
               className="w-full"
@@ -192,11 +181,7 @@ function BacktestPage() {
               return (
                 <div key={f.id} className="rounded-md border border-border p-2">
                   <div className="flex items-start justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => toggleFeature(f.id)}
-                      className="text-left"
-                    >
+                    <button type="button" onClick={() => toggleFeature(f.id)} className="text-left">
                       <span
                         className={`text-[12px] font-medium ${on ? "" : "text-muted-foreground line-through"}`}
                       >

@@ -27,19 +27,14 @@ export const Route = createFileRoute("/instrument/$symbol")({
   // 외부 시세 API 실패 시 SSR 500(빈 화면) 대신 클라이언트 에러 화면을 보여준다.
   ssr: false,
   loader: async ({ params, context }) => {
-    const detail = await context.queryClient.ensureQueryData(
-      instrumentQueryOptions(params.symbol),
-    );
+    const detail = await context.queryClient.ensureQueryData(instrumentQueryOptions(params.symbol));
     if (!detail.row) throw notFound();
     return { name: detail.row.instrument.name, symbol: detail.row.instrument.symbol };
   },
   head: ({ loaderData }) => {
     if (!loaderData)
       return {
-        meta: [
-          { title: "종목 정보 없음 | TrendScore KR" },
-          { name: "robots", content: "noindex" },
-        ],
+        meta: [{ title: "종목 정보 없음 | TrendScore KR" }, { name: "robots", content: "noindex" }],
       };
     const title = `${loaderData.name}(${loaderData.symbol}) 점수 근거 | TrendScore KR`;
     const description = `${loaderData.name} 종목의 일목균형표·볼린저밴드·이동평균·거래량 조건별 획득점수와 산정 가능 점수, 경고 신호, 계산 근거를 확인합니다.`;
@@ -83,8 +78,16 @@ function InstrumentDetail() {
     strategyVersion: analysis.strategyVersion,
     dataVersion: analysis.dataVersion,
     asOfDate: analysis.asOfDate,
-    parameters: { bollinger: { period: 20, mult: 2 }, ichimoku: { 9: 9, 26: 26, 52: 52, shift: 26 }, atr: { period: 14, method: "wilder" } },
-    rawInputs: { close: snap.close, volumeRatio20: snap.volumeRatio20, tradingValueRatio20: snap.tradingValueRatio20 },
+    parameters: {
+      bollinger: { period: 20, mult: 2 },
+      ichimoku: { 9: 9, 26: 26, 52: 52, shift: 26 },
+      atr: { period: 14, method: "wilder" },
+    },
+    rawInputs: {
+      close: snap.close,
+      volumeRatio20: snap.volumeRatio20,
+      tradingValueRatio20: snap.tradingValueRatio20,
+    },
     calculatedIndicators: {
       ma20: snap.ma20,
       ma60: snap.ma60,
@@ -159,7 +162,11 @@ function InstrumentDetail() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant={watched ? "secondary" : "default"} onClick={() => setWatched((w) => !w)}>
+          <Button
+            size="sm"
+            variant={watched ? "secondary" : "default"}
+            onClick={() => setWatched((w) => !w)}
+          >
             {watched ? "관심종목에 추가됨" : "관심종목 추가"}
           </Button>
           <Button size="sm" variant="outline" onClick={() => setShowLog((s) => !s)}>
@@ -183,7 +190,11 @@ function InstrumentDetail() {
       {row.warnings.length > 0 ? (
         <div className="mt-3 flex flex-wrap gap-1">
           {row.warnings.map((w) => (
-            <Badge key={w} variant="outline" className="border-warn/30 bg-warn-soft text-[11px] text-warn">
+            <Badge
+              key={w}
+              variant="outline"
+              className="border-warn/30 bg-warn-soft text-[11px] text-warn"
+            >
               {WARNING_LABELS[w] ?? w}
             </Badge>
           ))}
@@ -264,18 +275,62 @@ function InstrumentDetail() {
                 </>
               ) : null}
               <Bar yAxisId="volume" dataKey="volume" fill="var(--color-grid)" name="거래량" />
-              <Line yAxisId="price" dataKey="close" stroke="var(--color-foreground)" dot={false} strokeWidth={1.6} name="종가" />
+              <Line
+                yAxisId="price"
+                dataKey="close"
+                stroke="var(--color-foreground)"
+                dot={false}
+                strokeWidth={1.6}
+                name="종가"
+              />
               {visible.ma ? (
                 <>
-                  <Line yAxisId="price" dataKey="ma20" stroke="var(--color-chart-3)" dot={false} strokeWidth={1} name="MA20" />
-                  <Line yAxisId="price" dataKey="ma60" stroke="var(--color-chart-1)" dot={false} strokeWidth={1} name="MA60" />
-                  <Line yAxisId="price" dataKey="ma120" stroke="var(--color-chart-5)" dot={false} strokeWidth={1} name="MA120" />
+                  <Line
+                    yAxisId="price"
+                    dataKey="ma20"
+                    stroke="var(--color-chart-3)"
+                    dot={false}
+                    strokeWidth={1}
+                    name="MA20"
+                  />
+                  <Line
+                    yAxisId="price"
+                    dataKey="ma60"
+                    stroke="var(--color-chart-1)"
+                    dot={false}
+                    strokeWidth={1}
+                    name="MA60"
+                  />
+                  <Line
+                    yAxisId="price"
+                    dataKey="ma120"
+                    stroke="var(--color-chart-5)"
+                    dot={false}
+                    strokeWidth={1}
+                    name="MA120"
+                  />
                 </>
               ) : null}
               {visible.bb ? (
                 <>
-                  <Line yAxisId="price" dataKey="bbUpper" stroke="var(--color-chart-4)" dot={false} strokeDasharray="4 3" strokeWidth={1} name="BB 상단" />
-                  <Line yAxisId="price" dataKey="bbLower" stroke="var(--color-chart-4)" dot={false} strokeDasharray="4 3" strokeWidth={1} name="BB 하단" />
+                  <Line
+                    yAxisId="price"
+                    dataKey="bbUpper"
+                    stroke="var(--color-chart-4)"
+                    dot={false}
+                    strokeDasharray="4 3"
+                    strokeWidth={1}
+                    name="BB 상단"
+                  />
+                  <Line
+                    yAxisId="price"
+                    dataKey="bbLower"
+                    stroke="var(--color-chart-4)"
+                    dot={false}
+                    strokeDasharray="4 3"
+                    strokeWidth={1}
+                    name="BB 하단"
+                  />
                 </>
               ) : null}
             </ComposedChart>
@@ -328,7 +383,12 @@ function InstrumentDetail() {
                     fontSize: 11,
                   }}
                 />
-                <Line dataKey="technicalPoints" stroke="var(--color-chart-1)" dot={false} name="기술점수" />
+                <Line
+                  dataKey="technicalPoints"
+                  stroke="var(--color-chart-1)"
+                  dot={false}
+                  name="기술점수"
+                />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -341,10 +401,31 @@ function InstrumentDetail() {
             <Stat label="외국인 20일 누적" value={formatWon(snap.foreignNet20d)} />
             <Stat label="외국인 60일 누적" value={formatWon(snap.foreignNet60d)} />
             <Stat label="기관 20일 누적" value={formatWon(snap.institutionNet20d)} />
-            <Stat label="거래량 비율(20일)" value={snap.volumeRatio20 === null ? "데이터 없음" : `${formatNumber(snap.volumeRatio20, 1)}%`} />
-            <Stat label="거래대금 비율(20일)" value={snap.tradingValueRatio20 === null ? "데이터 없음" : `${formatNumber(snap.tradingValueRatio20, 1)}%`} />
+            <Stat
+              label="거래량 비율(20일)"
+              value={
+                snap.volumeRatio20 === null
+                  ? "데이터 없음"
+                  : `${formatNumber(snap.volumeRatio20, 1)}%`
+              }
+            />
+            <Stat
+              label="거래대금 비율(20일)"
+              value={
+                snap.tradingValueRatio20 === null
+                  ? "데이터 없음"
+                  : `${formatNumber(snap.tradingValueRatio20, 1)}%`
+              }
+            />
             <Stat label="MA20 이격" value={formatPercent(snap.extensionFromMa20)} />
-            <Stat label="ATR 이격" value={snap.atrExtension === null ? "데이터 없음" : `${formatNumber(snap.atrExtension, 2)} ATR`} />
+            <Stat
+              label="ATR 이격"
+              value={
+                snap.atrExtension === null
+                  ? "데이터 없음"
+                  : `${formatNumber(snap.atrExtension, 2)} ATR`
+              }
+            />
             <Stat label="RS20" value={<Delta value={row.rs20} digits={2} />} />
             <Stat label="RS60" value={<Delta value={row.rs60} digits={2} />} />
           </div>
