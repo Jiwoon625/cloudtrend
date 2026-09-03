@@ -51,6 +51,8 @@ export const instrumentQueryOptions = (symbol: string) =>
 export const ipQueryOptions = queryOptions({
   queryKey: ["server-egress-ip"],
   queryFn: () => getServerEgressIp(),
-  staleTime: 60 * 1000,
+  // 실행 환경의 출구 IP는 언제든 바뀔 수 있으므로 항상 최신값을 다시 조회한다.
+  staleTime: 0,
+  gcTime: 0,
 });
 

@@ -86,6 +86,15 @@ function Dashboard() {
   const [started, setStarted] = useState(false);
   const analysisQuery = useQuery({ ...analysisQueryOptions, enabled: started });
 
+  // 시세 API가 실패(예: IP 허용목록 거부)하면 그 시점의 실제 서버 출구 IP를 즉시 다시 조회해
+  // 화면에 최신 IP가 표시되도록 한다.
+  const analysisFailed =
+    analysisQuery.isError || isAnalysisFailurePayload(analysisQuery.data);
+  useEffect(() => {
+    if (!analysisFailed) return;
+    void queryClient.refetchQueries({ queryKey: ipQueryOptions.queryKey });
+  }, [analysisFailed, analysisQuery.dataUpdatedAt, analysisQuery.errorUpdatedAt, queryClient]);
+
   const startScreening = () => {
     setStarted(true);
   };
