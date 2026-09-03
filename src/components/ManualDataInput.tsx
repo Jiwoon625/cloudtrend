@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, Trash2, Upload } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,9 +8,13 @@ import {
   clearManualData,
   getManualDataMeta,
   getManualDataText,
+  hydrateManualData,
   saveManualDataText,
 } from "@/lib/manualDataStore";
 import { formatCount } from "@/lib/format";
+
+/** 텍스트 영역에 그대로 담기에 너무 큰 입력은 미리보기만 보여준다. */
+const TEXTAREA_LIMIT = 400_000;
 
 interface Props {
   /** 데이터가 바뀌었을 때 상위(대시보드)에서 분석 캐시를 비우도록 알린다. */
@@ -18,39 +22,54 @@ interface Props {
 }
 
 export function ManualDataInput({ onChanged }: Props) {
-  const [text, setText] = useState(() => getManualDataText() ?? "");
+  const [text, setText] = useState("");
   const [meta, setMeta] = useState(() => getManualDataMeta());
   const [stats, setStats] = useState<ManualParseStats | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const apply = (raw: string, name: string | null) => {
+  useEffect(() => {
+    void hydrateManualData().then(() => {
+      const saved = getManualDataText();
+      if (saved && saved.length <= TEXTAREA_LIMIT) setText(saved);
+      setMeta(getManualDataMeta());
+      onChanged((saved ?? "").trim().length > 0);
+    });
+    // 최초 1회만 복원한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const apply = async (raw: string, name: string | null) => {
     setError(null);
+    setBusy(true);
     try {
       const parsed = parseManualMarketData(raw);
       setStats(parsed.stats);
       setWarnings(parsed.warnings);
-      setMeta(saveManualDataText(raw, name));
+      setMeta(await saveManualDataText(raw, name));
       onChanged(true);
     } catch (e) {
       setStats(null);
       setWarnings([]);
       setError(e instanceof Error ? e.message : "데이터를 해석할 수 없습니다.");
       onChanged(false);
+    } finally {
+      setBusy(false);
     }
   };
 
   const onFile = async (file: File) => {
     const raw = await file.text();
-    setText(raw.length > 400_000 ? "" : raw);
+    setText(raw.length > TEXTAREA_LIMIT ? "" : raw);
     setFileName(file.name);
-    apply(raw, file.name);
+    await apply(raw, file.name);
   };
 
   const reset = () => {
-    clearManualData();
+    void clearManualData();
     setText("");
     setStats(null);
     setWarnings([]);
@@ -59,6 +78,7 @@ export function ManualDataInput({ onChanged }: Props) {
     setFileName(null);
     onChanged(false);
   };
+
 
   return (
     <div className="space-y-3">
@@ -73,9 +93,14 @@ export function ManualDataInput({ onChanged }: Props) {
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={() => apply(text, fileName)} disabled={text.trim().length === 0}>
-          데이터 적용
+        <Button
+          size="sm"
+          onClick={() => void apply(text, fileName)}
+          disabled={busy || text.trim().length === 0}
+        >
+          {busy ? "저장 중…" : "데이터 적용"}
         </Button>
+
         <input
           ref={fileRef}
           type="file"

@@ -1,46 +1,68 @@
 import { AlertTriangle, CheckCircle2, Trash2, Upload } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { parseUsMarketData, type UsParseStats } from "@/lib/engine/usDataset";
-import { clearUsData, getUsDataMeta, getUsDataText, saveUsDataText } from "@/lib/usDataStore";
+import {
+  clearUsData,
+  getUsDataMeta,
+  getUsDataText,
+  hydrateUsData,
+  saveUsDataText,
+} from "@/lib/usDataStore";
 import { formatCount } from "@/lib/format";
 
+const TEXTAREA_LIMIT = 400_000;
+
 export function UsDataInput({ onChanged }: { onChanged: (hasData: boolean) => void }) {
-  const [text, setText] = useState(() => getUsDataText() ?? "");
+  const [text, setText] = useState("");
   const [meta, setMeta] = useState(() => getUsDataMeta());
   const [stats, setStats] = useState<UsParseStats | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const apply = (raw: string, name: string | null) => {
+  useEffect(() => {
+    void hydrateUsData().then(() => {
+      const saved = getUsDataText();
+      if (saved && saved.length <= TEXTAREA_LIMIT) setText(saved);
+      setMeta(getUsDataMeta());
+      onChanged((saved ?? "").trim().length > 0);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const apply = async (raw: string, name: string | null) => {
     setError(null);
+    setBusy(true);
     try {
       const parsed = parseUsMarketData(raw);
       setStats(parsed.stats);
       setWarnings(parsed.warnings);
-      setMeta(saveUsDataText(raw, name));
+      setMeta(await saveUsDataText(raw, name));
       onChanged(true);
     } catch (e) {
       setStats(null);
       setWarnings([]);
       setError(e instanceof Error ? e.message : "데이터를 해석할 수 없습니다.");
       onChanged(false);
+    } finally {
+      setBusy(false);
     }
   };
 
   const onFile = async (file: File) => {
     const raw = await file.text();
-    setText(raw.length > 400_000 ? "" : raw);
+    setText(raw.length > TEXTAREA_LIMIT ? "" : raw);
     setFileName(file.name);
-    apply(raw, file.name);
+    await apply(raw, file.name);
   };
 
   const reset = () => {
-    clearUsData();
+    void clearUsData();
     setText("");
     setStats(null);
     setWarnings([]);
@@ -63,9 +85,14 @@ export function UsDataInput({ onChanged }: { onChanged: (hasData: boolean) => vo
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={() => apply(text, fileName)} disabled={text.trim().length === 0}>
-          데이터 적용
+        <Button
+          size="sm"
+          onClick={() => void apply(text, fileName)}
+          disabled={busy || text.trim().length === 0}
+        >
+          {busy ? "저장 중…" : "데이터 적용"}
         </Button>
+
         <input
           ref={fileRef}
           type="file"
