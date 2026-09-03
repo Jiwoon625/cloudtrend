@@ -814,7 +814,7 @@ export function runUsAnalysis(ds: UsDataset): UsAnalysisResult {
   const eligibleStocks = ds.instruments.filter(
     (i) => i.assetType === "STOCK" && eligibility.get(i.symbol)?.scoreEligible,
   );
-  const breadthValues = eligibleStocks
+  const breadthValues: number[] = eligibleStocks
     .map((i) => snapshots.get(i.symbol))
     .filter((s): s is UsSnapshot => !!s && s.ma50 !== null)
     .map((s) => (s.close > (s.ma50 as number) ? 1 : 0));
