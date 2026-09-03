@@ -1,27 +1,47 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Activity, ArrowDown, ArrowUp, Hash, ListPlus, Loader2, Play, RefreshCw, ShieldAlert, TrendingUp } from "lucide-react";
-import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Activity,
+  ArrowDown,
+  ArrowUp,
+  Database,
+  FileCode2,
+  Loader2,
+  Play,
+  RefreshCw,
+  ShieldAlert,
+  TrendingUp,
+} from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
 import { GradeBadge, ScreenerTable } from "@/components/ScreenerTable";
-import { EtfUniverseInput } from "@/components/EtfUniverseInput";
-import { StockUniverseInput } from "@/components/StockUniverseInput";
-import { CollectionProgress } from "@/components/CollectionProgress";
+import { ManualDataInput } from "@/components/ManualDataInput";
+import { TossFetchGuide } from "@/components/TossFetchGuide";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { analysisQueryOptions, ipQueryOptions, isAnalysisFailurePayload, isAnalysisPayload } from "@/lib/analysisQuery";
-import { resetTossConnection, type AnalysisPayload } from "@/lib/market.functions";
+import {
+  analysisQueryOptions,
+  isAnalysisFailurePayload,
+  isAnalysisPayload,
+} from "@/lib/analysisQuery";
+import { getManualDataText } from "@/lib/manualDataStore";
+import type { AnalysisPayload } from "@/lib/market.functions";
 
 import { WARNING_LABELS } from "@/lib/engine/scoring";
-import { formatCount, formatKstDateTime, formatNumber, formatPercent, formatWon } from "@/lib/format";
+import {
+  formatCount,
+  formatKstDateTime,
+  formatNumber,
+  formatPercent,
+  formatWon,
+} from "@/lib/format";
 import { buildSnapshot, diffSnapshots, saveSnapshot, type GradeDiff } from "@/lib/screeningHistory";
 
 export const Route = createFileRoute("/")({
-  // 외부 시세 API 실패 시 SSR 500(빈 화면) 대신 클라이언트 에러 화면을 보여준다.
+  // 입력 데이터는 브라우저 localStorage에 있으므로 클라이언트에서만 렌더링한다.
   ssr: false,
   head: () => ({
     meta: [
@@ -38,8 +58,6 @@ export const Route = createFileRoute("/")({
       },
     ],
   }),
-  // 스크리닝(데이터 수집)은 사용자가 버튼을 눌렀을 때만 시작한다.
-  loader: ({ context }) => context.queryClient.ensureQueryData(ipQueryOptions),
   errorComponent: ({ error, reset }) => <DataError error={error} reset={reset} />,
   component: Dashboard,
 });
@@ -61,13 +79,23 @@ function Card({
         {icon}
         {title}
       </h2>
-      {subtitle ? <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">{subtitle}</p> : null}
+      {subtitle ? (
+        <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">{subtitle}</p>
+      ) : null}
       {children}
     </section>
   );
 }
 
-function KeyValue({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
+function KeyValue({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: string;
+}) {
   return (
     <div className="flex items-baseline justify-between gap-2 border-b border-border py-1.5 last:border-0">
       <span className="text-[12px] text-muted-foreground">{label}</span>
@@ -80,59 +108,30 @@ function KeyValue({ label, value, hint }: { label: string; value: React.ReactNod
 }
 
 function Dashboard() {
-  const { data: ip } = useSuspenseQuery(ipQueryOptions);
   const queryClient = useQueryClient();
-  const resetConnection = useServerFn(resetTossConnection);
-  // 실행 여부를 브라우저에 저장하지 않는다. 새로 열거나 새로고침하면 반드시 사용자가
-  // 스크리닝 시작 버튼을 눌러야 외부 시세 API를 호출한다.
+  // 실행 여부를 저장하지 않는다. 새로 열거나 새로고침하면 반드시 사용자가
+  // 스크리닝 시작 버튼을 눌러야 입력 데이터로 계산을 시작한다.
   const [started, setStarted] = useState(false);
-  const [autoRecovering, setAutoRecovering] = useState(false);
-  const autoRecoveryAttempted = useRef(false);
+  const [hasData, setHasData] = useState(() => (getManualDataText() ?? "").trim().length > 0);
   const analysisQuery = useQuery({ ...analysisQueryOptions, enabled: started });
 
-  // 시세 API가 실패(예: IP 허용목록 거부)하면 그 시점의 실제 서버 출구 IP를 즉시 다시 조회해
-  // 화면에 최신 IP가 표시되도록 한다.
-  const analysisFailed =
-    analysisQuery.isError || isAnalysisFailurePayload(analysisQuery.data);
-  useEffect(() => {
-    if (!analysisFailed) return;
-    if (autoRecoveryAttempted.current) {
-      void queryClient.refetchQueries({ queryKey: ipQueryOptions.queryKey });
-      return;
-    }
+  const startScreening = () => setStarted(true);
 
-    autoRecoveryAttempted.current = true;
-    let cancelled = false;
-    const recover = async () => {
-      setAutoRecovering(true);
-      try {
-        await resetConnection();
-        await queryClient.refetchQueries({ queryKey: ipQueryOptions.queryKey });
-        if (!cancelled) await analysisQuery.refetch();
-      } finally {
-        if (!cancelled) setAutoRecovering(false);
-      }
-    };
-    void recover();
-    return () => {
-      cancelled = true;
-    };
-  }, [analysisFailed, queryClient, resetConnection]);
-
-  const startScreening = () => {
-    autoRecoveryAttempted.current = false;
-    setStarted(true);
+  /** 입력 데이터를 바꿔 다시 스크리닝: 캐시된 분석 결과를 제거해 시작 화면으로 되돌린다. */
+  const rescreen = () => {
+    queryClient.removeQueries({ queryKey: analysisQueryOptions.queryKey });
+    queryClient.removeQueries({ queryKey: ["data-status", "manual-v3"] });
+    queryClient.removeQueries({ queryKey: ["instrument", "manual-v3"] });
+    setStarted(false);
+    setTimeout(() => setStarted(true), 0);
   };
 
-  /** 종목을 바꿔 다시 스크리닝: 캐시된 분석 결과를 제거해 로딩·진행률 화면으로 전환한다. */
-  const rescreen = () => {
-    autoRecoveryAttempted.current = false;
+  const onDataChanged = (ok: boolean) => {
+    setHasData(ok);
     queryClient.removeQueries({ queryKey: analysisQueryOptions.queryKey });
+    queryClient.removeQueries({ queryKey: ["data-status", "manual-v3"] });
+    queryClient.removeQueries({ queryKey: ["instrument", "manual-v3"] });
     setStarted(false);
-    // removeQueries 반영 후 재시작해야 isPending 상태로 진입한다.
-    setTimeout(() => {
-      setStarted(true);
-    }, 0);
   };
 
   return (
@@ -141,7 +140,8 @@ function Dashboard() {
         <div>
           <h1 className="text-xl font-bold tracking-tight">대시보드</h1>
           <p className="text-[12px] text-muted-foreground">
-            스크리닝은 버튼을 눌렀을 때만 데이터 수집·계산을 시작합니다.
+            주피터노트북에서 토스증권 Open API로 받은 데이터를 붙여넣거나 업로드한 뒤 스크리닝을
+            시작합니다.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -151,64 +151,66 @@ function Dashboard() {
               다시 스크리닝
             </Button>
           ) : null}
-          <p className="text-[11px] text-muted-foreground">서버 출구 IP {ip ?? "알 수 없음"}</p>
         </div>
       </div>
 
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
-        <Card title="주식 스크리닝 종목코드 (코스피/코스닥)" icon={<Hash className="size-4 text-primary" />}>
-          <StockUniverseInput />
+        <Card
+          title="1. 이용할 데이터 & 토스증권 API 조회 코드"
+          subtitle="주피터노트북에서 아래 코드를 실행해 CSV(trendscore_input.csv)를 만들어 주세요."
+          icon={<FileCode2 className="size-4 text-primary" />}
+        >
+          <TossFetchGuide />
         </Card>
-        <Card title="ETF 스크리닝 종목코드" icon={<ListPlus className="size-4 text-primary" />}>
-          <EtfUniverseInput />
+        <Card
+          title="2. 받은 데이터 입력 (붙여넣기 또는 CSV/JSON 업로드)"
+          subtitle="입력한 데이터는 이 브라우저에만 저장되며, 서버로 시세를 조회하지 않습니다."
+          icon={<Database className="size-4 text-primary" />}
+        >
+          <ManualDataInput onChanged={onDataChanged} />
         </Card>
       </div>
 
       {!started ? (
         <section className="rounded-lg border border-dashed border-primary/50 bg-card p-8 text-center">
           <Play className="mx-auto mb-3 size-8 text-primary" />
-          <h2 className="mb-1 text-base font-semibold">스크리닝 시작</h2>
+          <h2 className="mb-1 text-base font-semibold">3. 스크리닝 시작</h2>
           <p className="mx-auto mb-4 max-w-md text-[12px] leading-relaxed text-muted-foreground">
-            버튼을 누르면 토스증권 API에서 종목 시세를 수집하고 Universe Filter → Market Gate →
-            Scoring을 계산합니다. 수집에는 수 분이 걸릴 수 있습니다.
+            버튼을 누르면 입력한 시세로 Universe Filter → Market Gate → Scoring을 계산하고, 주식·ETF
+            스크리너·섹터·백테스트 등 모든 탭이 이 데이터로 동작합니다.
           </p>
-          <Button onClick={startScreening} size="lg" className="gap-2">
+          <Button onClick={startScreening} size="lg" className="gap-2" disabled={!hasData}>
             <Play className="size-4" />
             스크리닝 시작
           </Button>
+          {!hasData ? (
+            <p className="mt-2 text-[11px] text-warn">
+              먼저 위 2번 칸에 데이터를 입력·적용해 주세요.
+            </p>
+          ) : null}
         </section>
       ) : analysisQuery.isPending ? (
         <section className="rounded-lg border border-border bg-card p-8">
           <div className="mb-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
-            시세 데이터를 수집·분석하는 중입니다…
+            입력한 시세로 지표와 점수를 계산하는 중입니다…
           </div>
-          <CollectionProgress />
         </section>
       ) : analysisQuery.isError || isAnalysisFailurePayload(analysisQuery.data) ? (
-        autoRecovering ? (
-          <section className="rounded-lg border border-border bg-card p-8 text-center">
-            <Loader2 className="mx-auto mb-3 size-6 animate-spin text-primary" />
-            <h2 className="text-sm font-semibold">연결을 자동 복구하고 있습니다</h2>
-            <p className="mt-1 text-[12px] text-muted-foreground">
-              인증 상태와 서버 출구 IP를 새로 확인한 뒤 스크리닝을 한 번 다시 시도합니다.
-            </p>
-          </section>
-        ) : (
-          <DataError
-            error={
-              analysisQuery.error ??
-              (isAnalysisFailurePayload(analysisQuery.data) ? analysisQuery.data.error : "분석 요청 실패")
-            }
-            reset={() => {
-              autoRecoveryAttempted.current = false;
-              return analysisQuery.refetch();
-            }}
-            embedded
-          />
-        )
+        <DataError
+          error={
+            analysisQuery.error ??
+            (isAnalysisFailurePayload(analysisQuery.data) ? analysisQuery.data.error : "분석 실패")
+          }
+          reset={() => analysisQuery.refetch()}
+          embedded
+        />
       ) : !isAnalysisPayload(analysisQuery.data) ? (
-        <DataError error="분석 응답 형식을 확인할 수 없습니다." reset={() => analysisQuery.refetch()} embedded />
+        <DataError
+          error="분석 응답 형식을 확인할 수 없습니다."
+          reset={() => analysisQuery.refetch()}
+          embedded
+        />
       ) : (
         <DashboardContent analysis={analysisQuery.data.analysis} />
       )}
@@ -233,7 +235,9 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
   const gradeA = passed.filter((r) => r.grade === "A");
   const gradeB = passed.filter((r) => r.grade === "B");
   const incomplete = rows.filter((r) => r.dataCompletenessRatio < 0.7);
-  const top = [...passed].sort((a, b) => b.totalScoreNormalized - a.totalScoreNormalized).slice(0, 10);
+  const top = [...passed]
+    .sort((a, b) => b.totalScoreNormalized - a.totalScoreNormalized)
+    .slice(0, 10);
 
   const gateColor =
     gate.status === "RISK_ON" ? "text-up" : gate.status === "NEUTRAL" ? "text-warn" : "text-down";
@@ -242,7 +246,10 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
 
   const warningBuckets = [
     { code: "HEAD_FAKE", rows: rows.filter((r) => r.warnings.includes("HEAD_FAKE")) },
-    { code: "PRICE_INSIDE_CLOUD", rows: rows.filter((r) => r.warnings.includes("PRICE_INSIDE_CLOUD")) },
+    {
+      code: "PRICE_INSIDE_CLOUD",
+      rows: rows.filter((r) => r.warnings.includes("PRICE_INSIDE_CLOUD")),
+    },
     { code: "EXIT_TRIGGER", rows: rows.filter((r) => r.warnings.includes("EXIT_TRIGGER")) },
     { code: "LOW_LIQUIDITY", rows: rows.filter((r) => !r.hardFilterPassed) },
   ];
@@ -257,12 +264,12 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
   })();
 
-
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] text-muted-foreground">
-          기준일 {analysis.asOfDate} · 전략 v{analysis.strategyVersion} · 데이터 {analysis.dataVersion}
+          기준일 {analysis.asOfDate} · 전략 v{analysis.strategyVersion} · 데이터{" "}
+          {analysis.dataVersion}
         </p>
         <p className="text-[11px] text-muted-foreground">
           계산 시각 {formatKstDateTime(analysis.calculatedAt)} (KST·미래 데이터 미사용)
@@ -291,7 +298,13 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
           />
           <KeyValue
             label="KOSPI 구름 상단 위"
-            value={gate.benchmarkAboveCloud === null ? "데이터 없음" : gate.benchmarkAboveCloud ? "충족" : "미충족"}
+            value={
+              gate.benchmarkAboveCloud === null
+                ? "데이터 없음"
+                : gate.benchmarkAboveCloud
+                  ? "충족"
+                  : "미충족"
+            }
           />
           <KeyValue label="KOSDAQ 종가" value={formatNumber(analysis.kosdaq.close, 2)} />
           <KeyValue label="VKOSPI" value={formatNumber(analysis.vkospi, 2)} hint="< 30" />
@@ -326,15 +339,21 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
           />
           <KeyValue label="데이터 미완전 종목" value={formatCount(incomplete.length)} />
           <p className="mt-2 text-[11px] text-muted-foreground">
-            결과는 <Link to="/history" className="text-primary hover:underline">스크리닝 이력</Link> 탭에
-            날짜별(그날의 마지막 결과)로 저장됩니다.
+            결과는{" "}
+            <Link to="/history" className="text-primary hover:underline">
+              스크리닝 이력
+            </Link>{" "}
+            탭에 날짜별(그날의 마지막 결과)로 저장됩니다.
           </p>
         </Card>
 
         <Card title="강한 섹터" icon={<TrendingUp className="size-4 text-primary" />}>
           <div className="space-y-1.5">
             {sectors.slice(0, 5).map((s) => (
-              <div key={s.sectorCode} className="flex items-center justify-between gap-2 text-[12px]">
+              <div
+                key={s.sectorCode}
+                className="flex items-center justify-between gap-2 text-[12px]"
+              >
                 <Link to="/sectors" className="font-medium hover:underline">
                   {s.rank}. {s.sectorName}
                   {s.isSynthetic ? (
@@ -346,7 +365,11 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
                     {formatPercent(s.rs20, 2)}
                   </span>
                   <span className="text-muted-foreground">
-                    {s.prevRank > s.rank ? `▲${s.prevRank - s.rank}` : s.prevRank < s.rank ? `▼${s.rank - s.prevRank}` : "-"}
+                    {s.prevRank > s.rank
+                      ? `▲${s.prevRank - s.rank}`
+                      : s.prevRank < s.rank
+                        ? `▼${s.rank - s.prevRank}`
+                        : "-"}
                   </span>
                 </span>
               </div>
@@ -367,7 +390,12 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
                   ? "추세 전환·하락 신호가 감지되어 보유 포지션의 청산 또는 손절을 검토해야 하는 상태입니다."
                   : "거래대금·유동성·데이터 완전성 조건을 충족하지 못해 Universe Filter에서 제외된 종목입니다.";
           return (
-            <Card key={b.code} title={title} subtitle={subtitle} icon={<ShieldAlert className="size-4 text-warn" />}>
+            <Card
+              key={b.code}
+              title={title}
+              subtitle={subtitle}
+              icon={<ShieldAlert className="size-4 text-warn" />}
+            >
               <p className="num mb-2 text-2xl font-bold">{b.rows.length}</p>
               <div className="flex flex-wrap gap-1">
                 {b.rows.slice(0, 4).map((r) => (
@@ -416,8 +444,6 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
           </p>
         </section>
       ) : null}
-
-
 
       <section className="mt-6">
         <div className="mb-2 flex items-center gap-2">

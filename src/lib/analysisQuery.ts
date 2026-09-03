@@ -1,10 +1,11 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import {
-  getDataStatus,
-  getInstrumentDetail,
-  getMarketAnalysis,
+  computeLocalAnalysis,
+  computeLocalDataStatus,
+  computeLocalInstrumentDetail,
+} from "@/lib/localAnalysis";
+import {
   getServerEgressIp,
   type AnalysisPayload,
   type AnalysisFailurePayload,
@@ -20,30 +21,31 @@ export function isAnalysisPayload(value: unknown): value is AnalysisPayload {
 
 export function isAnalysisFailurePayload(value: unknown): value is AnalysisFailurePayload {
   if (value === null || typeof value !== "object") return false;
-  return (value as { analysis?: unknown }).analysis === null &&
-    typeof (value as { error?: unknown }).error === "string";
+  return (
+    (value as { analysis?: unknown }).analysis === null &&
+    typeof (value as { error?: unknown }).error === "string"
+  );
 }
 
 export const analysisQueryOptions = queryOptions({
-  // 실패한 자동 호출 캐시와 분리한다. 이 키는 대시보드의 명시적 실행에서만 채워진다.
-  queryKey: ["market-analysis", "manual-v2"],
-  queryFn: () => getMarketAnalysis({ data: { config: getActiveScoringConfig() } }),
+  // 직접 입력한 데이터로 브라우저에서 계산한다. 이 키는 대시보드의 명시적 실행에서만 채워진다.
+  queryKey: ["market-analysis", "manual-v3"],
+  queryFn: async () => computeLocalAnalysis(),
   staleTime: 5 * 60 * 1000,
   retry: false,
 });
 
 export const dataStatusQueryOptions = queryOptions({
-  queryKey: ["data-status"],
-  queryFn: () => getDataStatus(),
+  queryKey: ["data-status", "manual-v3"],
+  queryFn: async () => computeLocalDataStatus(),
   staleTime: 5 * 60 * 1000,
   retry: false,
 });
 
 export const instrumentQueryOptions = (symbol: string) =>
   queryOptions({
-    queryKey: ["instrument", symbol],
-    queryFn: () =>
-      getInstrumentDetail({ data: { symbol, config: getActiveScoringConfig() } }),
+    queryKey: ["instrument", "manual-v3", symbol],
+    queryFn: async () => computeLocalInstrumentDetail(symbol),
     staleTime: 5 * 60 * 1000,
     retry: false,
   });
@@ -55,4 +57,3 @@ export const ipQueryOptions = queryOptions({
   staleTime: 0,
   gcTime: 0,
 });
-

@@ -50,7 +50,10 @@ function HistoryPage() {
     () => snapshots.find((s) => s.date === selectedDate) ?? snapshots[0] ?? null,
     [snapshots, selectedDate],
   );
-  const diff = useMemo(() => (selected ? diffSnapshots(selected, snapshots) : null), [selected, snapshots]);
+  const diff = useMemo(
+    () => (selected ? diffSnapshots(selected, snapshots) : null),
+    [selected, snapshots],
+  );
 
   const sortedEntries = useMemo(
     () =>
@@ -69,7 +72,8 @@ function HistoryPage() {
             스크리닝 이력
           </h1>
           <p className="text-[12px] text-muted-foreground">
-            하루에 여러 번 스크리닝하면 그날의 마지막 결과만 저장됩니다. (브라우저 로컬 저장, 최근 90일)
+            하루에 여러 번 스크리닝하면 그날의 마지막 결과만 저장됩니다. (브라우저 로컬 저장, 최근
+            90일)
           </p>
         </div>
         {snapshots.length > 0 ? (
@@ -199,13 +203,17 @@ function HistoryPage() {
                               className="hover:underline"
                             >
                               {e.name}
-                              <span className="num ml-1 text-[10px] text-muted-foreground">{e.symbol}</span>
+                              <span className="num ml-1 text-[10px] text-muted-foreground">
+                                {e.symbol}
+                              </span>
                             </Link>
                           </td>
                           <td className="py-1.5 pr-2 text-muted-foreground">
                             {e.instrumentType === "ETF" ? "ETF" : "주식"}
                           </td>
-                          <td className="num py-1.5 pr-2 text-right">{formatNumber(e.totalScore, 1)}</td>
+                          <td className="num py-1.5 pr-2 text-right">
+                            {formatNumber(e.totalScore, 1)}
+                          </td>
                           <td className="num py-1.5 pr-2 text-right">{e.technicalPoints}</td>
                           <td className="py-1.5 pr-2 font-semibold">{e.grade}</td>
                           <td className="py-1.5 text-muted-foreground">
