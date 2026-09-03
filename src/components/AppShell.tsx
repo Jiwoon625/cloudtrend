@@ -24,6 +24,13 @@ const NAV = [
   { to: "/backtest", label: "백테스트" },
 ] as const;
 
+/** 미국 시장은 데이터·규칙이 다르므로 탭을 분리한다. */
+const US_NAV = [
+  { to: "/us", label: "US 시장·데이터" },
+  { to: "/us/screener", label: "US 스크리너" },
+] as const;
+
+
 function ThemeToggle() {
   const [dark, setDark] = useState(false);
   useEffect(() => {
