@@ -20,6 +20,7 @@ import { Route as InstrumentSymbolRouteImport } from './routes/instrument.$symbo
 import { Route as ScreenerEtfsRouteImport } from './routes/screener.etfs'
 import { Route as ScreenerStocksRouteImport } from './routes/screener.stocks'
 import { Route as UsIndexRouteImport } from './routes/us.index'
+import { Route as UsScreenerRouteImport } from './routes/us.screener'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -76,6 +77,11 @@ const UsIndexRoute = UsIndexRouteImport.update({
   path: '/us/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UsScreenerRoute = UsScreenerRouteImport.update({
+  id: '/us/screener',
+  path: '/us/screener',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -88,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
   '/screener/stocks': typeof ScreenerStocksRoute
+  '/us/screener': typeof UsScreenerRoute
   '/us/': typeof UsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -101,6 +108,7 @@ export interface FileRoutesByTo {
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
   '/screener/stocks': typeof ScreenerStocksRoute
+  '/us/screener': typeof UsScreenerRoute
   '/us': typeof UsIndexRoute
 }
 export interface FileRoutesById {
@@ -115,6 +123,7 @@ export interface FileRoutesById {
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
   '/screener/stocks': typeof ScreenerStocksRoute
+  '/us/screener': typeof UsScreenerRoute
   '/us/': typeof UsIndexRoute
 }
 export interface FileRouteTypes {
@@ -130,6 +139,7 @@ export interface FileRouteTypes {
     | '/instrument/$symbol'
     | '/screener/etfs'
     | '/screener/stocks'
+    | '/us/screener'
     | '/us/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -143,6 +153,7 @@ export interface FileRouteTypes {
     | '/instrument/$symbol'
     | '/screener/etfs'
     | '/screener/stocks'
+    | '/us/screener'
     | '/us'
   id:
     | '__root__'
@@ -156,6 +167,7 @@ export interface FileRouteTypes {
     | '/instrument/$symbol'
     | '/screener/etfs'
     | '/screener/stocks'
+    | '/us/screener'
     | '/us/'
   fileRoutesById: FileRoutesById
 }
@@ -170,6 +182,7 @@ export interface RootRouteChildren {
   InstrumentSymbolRoute: typeof InstrumentSymbolRoute
   ScreenerEtfsRoute: typeof ScreenerEtfsRoute
   ScreenerStocksRoute: typeof ScreenerStocksRoute
+  UsScreenerRoute: typeof UsScreenerRoute
   UsIndexRoute: typeof UsIndexRoute
 }
 
@@ -252,6 +265,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/us/screener': {
+      id: '/us/screener'
+      path: '/us/screener'
+      fullPath: '/us/screener'
+      preLoaderRoute: typeof UsScreenerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -266,6 +286,7 @@ const rootRouteChildren: RootRouteChildren = {
   InstrumentSymbolRoute: InstrumentSymbolRoute,
   ScreenerEtfsRoute: ScreenerEtfsRoute,
   ScreenerStocksRoute: ScreenerStocksRoute,
+  UsScreenerRoute: UsScreenerRoute,
   UsIndexRoute: UsIndexRoute,
 }
 export const routeTree = rootRouteImport
