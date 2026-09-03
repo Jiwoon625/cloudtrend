@@ -33,13 +33,13 @@ export const Route = createFileRoute("/us/")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "US 시장 브리핑 | TrendScore US 미국 주식·ETF 스크리너" },
+      { title: "US 시장 브리핑 | CloudTrend 미국 주식·ETF 스크리너" },
       {
         name: "description",
         content:
           "SPY·QQQ·IWM 추세와 breadth로 미국 시장 상태를 판정하고, 11개 GICS 섹터 게이트와 Technical·Priority 점수를 근거와 함께 제공하는 리서치 워크스페이스입니다.",
       },
-      { property: "og:title", content: "US 시장 브리핑 | TrendScore US" },
+      { property: "og:title", content: "US 시장 브리핑 | CloudTrend" },
       {
         property: "og:description",
         content: "미국 주식·ETF의 시장 게이트, 섹터 강도, 점수 coverage를 한 화면에서 확인합니다.",

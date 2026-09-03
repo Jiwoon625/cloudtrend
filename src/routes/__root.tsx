@@ -77,16 +77,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "TrendScore KR — 한국 주식·ETF 중기 추세추종 스크리너" },
+      { title: "CloudTrend — 주식/ETF 종가 기술적 분석 스크리너" },
       {
         name: "description",
         content:
-          "한국 주식과 국내 상장 ETF를 규칙 기반으로 스크리닝하고 모든 점수의 계산 근거를 공개하는 리서치 도구입니다.",
+          "국내·미국 주식과 ETF를 종가 기술 지표로 스크리닝하고 모든 점수의 계산 근거를 공개하는 리서치 도구입니다.",
       },
-      { property: "og:title", content: "TrendScore KR" },
+      { property: "og:title", content: "CloudTrend" },
       {
         property: "og:description",
-        content: "한국 주식·ETF 중기 추세추종 스크리너 — 투명한 점수 산정 근거 제공",
+        content: "주식/ETF 종가 기술적 분석 스크리너 — 투명한 점수 산정 근거 제공",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

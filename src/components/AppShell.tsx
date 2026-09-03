@@ -82,9 +82,9 @@ export function AppShell({
         <div className="mx-auto flex max-w-[1500px] flex-col gap-2 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <Link to="/" className="flex flex-col leading-tight">
-              <span className="text-base font-bold tracking-tight">TrendScore KR</span>
+              <span className="text-base font-bold tracking-tight">CloudTrend</span>
               <span className="text-[11px] text-muted-foreground">
-                한국 주식·ETF 중기 추세추종 스크리너
+                주식/ETF 종가 기술적 분석 스크리너
               </span>
             </Link>
           </div>
