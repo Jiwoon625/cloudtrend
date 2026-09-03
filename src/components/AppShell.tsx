@@ -24,6 +24,13 @@ const NAV = [
   { to: "/backtest", label: "백테스트" },
 ] as const;
 
+/** 미국 시장은 데이터·규칙이 다르므로 탭을 분리한다. */
+const US_NAV = [
+  { to: "/us", label: "US 시장·데이터" },
+  { to: "/us/screener", label: "US 스크리너" },
+] as const;
+
+
 function ThemeToggle() {
   const [dark, setDark] = useState(false);
   useEffect(() => {
@@ -92,8 +99,20 @@ export function AppShell({
                 {item.label}
               </Link>
             ))}
+            <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+            {US_NAV.map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                activeOptions={{ exact: item.to === "/us" }}
+                className="rounded-md border border-border px-2.5 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[status=active]:border-primary data-[status=active]:bg-primary data-[status=active]:text-primary-foreground"
+              >
+                {item.label}
+              </Link>
+            ))}
             <ThemeToggle />
           </nav>
+
         </div>
         <div
           className={`flex items-start gap-2 border-t border-border px-4 py-1.5 text-[11px] text-foreground ${live ? "bg-surface-strong" : "bg-warn-soft"}`}
