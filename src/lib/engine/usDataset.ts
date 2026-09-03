@@ -246,7 +246,8 @@ function toRecords(text: string): RawRecord[] {
     const flat: RawRecord[] = [];
     const push = (head: RawRecord, bars: unknown): void => {
       if (!Array.isArray(bars)) return;
-      for (const b of bars) if (b && typeof b === "object") flat.push({ ...head, ...(b as RawRecord) });
+      for (const b of bars)
+        if (b && typeof b === "object") flat.push({ ...head, ...(b as RawRecord) });
     };
     const consume = (arr: unknown): void => {
       if (!Array.isArray(arr)) return;
@@ -355,24 +356,31 @@ export function parseUsMarketData(text: string): UsParseResult {
     }
 
     const name = String(pick(rec, "name") ?? symbol).trim() || symbol;
-    const rawType = String(pick(rec, "type") ?? "").trim().toUpperCase();
-    const rawSecurity = String(pick(rec, "securityType") ?? "").trim().toUpperCase();
+    const rawType = String(pick(rec, "type") ?? "")
+      .trim()
+      .toUpperCase();
+    const rawSecurity = String(pick(rec, "securityType") ?? "")
+      .trim()
+      .toUpperCase();
     const isEtfLike =
       rawType === "ETF" ||
       rawSecurity === "ETF" ||
       rawSecurity === "ETN" ||
       rawSecurity === "CEF" ||
       (rawType === "" && rawSecurity === "" && US_SECTOR_ETFS.some((s) => s.etf === symbol)) ||
-      (rawType === "" && rawSecurity === "" && (US_BENCHMARKS as readonly string[]).includes(symbol));
-    const securityType: UsSecurityType = ETN_RE.test(name) || rawSecurity === "ETN"
-      ? "ETN"
-      : rawSecurity === "CEF"
-        ? "CEF"
-        : rawSecurity === "REIT" || rawType === "REIT"
-          ? "REIT"
-          : isEtfLike
-            ? "ETF"
-            : "STOCK";
+      (rawType === "" &&
+        rawSecurity === "" &&
+        (US_BENCHMARKS as readonly string[]).includes(symbol));
+    const securityType: UsSecurityType =
+      ETN_RE.test(name) || rawSecurity === "ETN"
+        ? "ETN"
+        : rawSecurity === "CEF"
+          ? "CEF"
+          : rawSecurity === "REIT" || rawType === "REIT"
+            ? "REIT"
+            : isEtfLike
+              ? "ETF"
+              : "STOCK";
     const leverageFactor = num(pick(rec, "leverageFactor"));
     const inverseFlag = bool(pick(rec, "inverse"));
 
@@ -380,13 +388,17 @@ export function parseUsMarketData(text: string): UsParseResult {
       symbol,
       meta: {
         name,
-        nameKo: (String(pick(rec, "nameKo") ?? "").trim() || null),
+        nameKo: String(pick(rec, "nameKo") ?? "").trim() || null,
         assetType: securityType === "STOCK" || securityType === "REIT" ? "STOCK" : "ETF",
         securityType,
         sector: normalizeUsSector(String(pick(rec, "sector") ?? "").trim() || null),
         issuer: String(pick(rec, "issuer") ?? "").trim() || null,
-        leveraged: LEVERAGE_RE.test(name) || (leverageFactor !== null && Math.abs(leverageFactor) > 1),
-        inverse: INVERSE_RE.test(name) || inverseFlag === true || (leverageFactor !== null && leverageFactor < 0),
+        leveraged:
+          LEVERAGE_RE.test(name) || (leverageFactor !== null && Math.abs(leverageFactor) > 1),
+        inverse:
+          INVERSE_RE.test(name) ||
+          inverseFlag === true ||
+          (leverageFactor !== null && leverageFactor < 0),
         marketCap: bar.marketCap,
         aum: num(pick(rec, "aum")),
         expenseRatio: num(pick(rec, "expenseRatio")),
@@ -448,7 +460,9 @@ export function parseUsMarketData(text: string): UsParseResult {
     );
   if (skipped > 0) warnings.push(`티커·일자·종가가 없는 ${skipped}개 행을 건너뛰었습니다.`);
   if (sectorCount === 0)
-    warnings.push("sector 열이 없어 섹터 게이트·섹터 상대강도 항목은 “데이터 없음”으로 처리합니다.");
+    warnings.push(
+      "sector 열이 없어 섹터 게이트·섹터 상대강도 항목은 “데이터 없음”으로 처리합니다.",
+    );
 
   const dataset: UsDataset = {
     provider: "MANUAL_INPUT_US",

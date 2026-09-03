@@ -24,8 +24,15 @@ export function UsGradeBadge({ grade, size = "sm" }: { grade: UsGrade; size?: "s
   );
 }
 
-export function CoverageBadge({ coverage, status }: { coverage: number; status: UsRow["dataStatus"] }) {
-  const label = status === "COMPLETE" ? "COMPLETE" : status === "PARTIAL" ? "PARTIAL" : "UNAVAILABLE";
+export function CoverageBadge({
+  coverage,
+  status,
+}: {
+  coverage: number;
+  status: UsRow["dataStatus"];
+}) {
+  const label =
+    status === "COMPLETE" ? "COMPLETE" : status === "PARTIAL" ? "PARTIAL" : "UNAVAILABLE";
   return (
     <Badge
       variant="outline"
@@ -109,7 +116,9 @@ export function UsScreenerTable({ rows }: { rows: UsRow[] }) {
                 </Link>
               </td>
               <td className="max-w-[220px] truncate px-2 py-1.5" title={r.instrument.name}>
-                {r.instrument.nameKo ? `${r.instrument.nameKo} (${r.instrument.name})` : r.instrument.name}
+                {r.instrument.nameKo
+                  ? `${r.instrument.nameKo} (${r.instrument.name})`
+                  : r.instrument.name}
               </td>
               <td className="px-2 py-1.5 text-muted-foreground">
                 {usSectorLabel(r.instrument.sector)}

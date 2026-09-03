@@ -94,7 +94,11 @@ print(df.groupby("symbol").size().describe())
 const COLUMNS: Array<[string, string, string]> = [
   ["symbol", "필수", "미국 티커(대문자). SPY는 200봉 이상 필수."],
   ["date", "필수", "거래일(YYYY-MM-DD 또는 YYYYMMDD)."],
-  ["open/high/low/close", "필수(close)", "수정주가 기준. close만 있어도 계산되지만 정확도가 낮아집니다."],
+  [
+    "open/high/low/close",
+    "필수(close)",
+    "수정주가 기준. close만 있어도 계산되지만 정확도가 낮아집니다.",
+  ],
   ["volume", "필수", "정규장 거래량. 거래대금은 close×volume으로 계산합니다."],
   ["type", "권장", "STOCK 또는 ETF. 없으면 티커로 추정합니다."],
   ["sector", "권장", "GICS 섹터명(영문/국문). 없으면 섹터 게이트는 판단 보류."],
@@ -136,14 +140,28 @@ export function UsFetchGuide() {
       </div>
 
       <ul className="list-inside list-disc space-y-0.5 text-[11px] text-muted-foreground">
-        <li>벤치마크 SPY·QQQ·IWM과 11개 섹터 프록시 ETF(XLK…XLB)를 함께 넣어야 시장·섹터 게이트가 판정됩니다.</li>
-        <li>토스증권 일봉은 호출당 최대 200봉이므로 페이지네이션으로 320봉 이상 적재하는 것을 권장합니다(MA200 필요).</li>
-        <li>점수는 미국 정규장 종료 후 확정 일봉(EOD)만 사용합니다. 현재가·호가는 표시용이며 점수와 섞지 않습니다.</li>
+        <li>
+          벤치마크 SPY·QQQ·IWM과 11개 섹터 프록시 ETF(XLK…XLB)를 함께 넣어야 시장·섹터 게이트가
+          판정됩니다.
+        </li>
+        <li>
+          토스증권 일봉은 호출당 최대 200봉이므로 페이지네이션으로 320봉 이상 적재하는 것을
+          권장합니다(MA200 필요).
+        </li>
+        <li>
+          점수는 미국 정규장 종료 후 확정 일봉(EOD)만 사용합니다. 현재가·호가는 표시용이며 점수와
+          섞지 않습니다.
+        </li>
         <li>제공되지 않은 값은 비워 두세요. 임의값을 넣으면 coverage가 왜곡됩니다.</li>
       </ul>
 
       <div className="relative">
-        <Button size="sm" variant="outline" className="absolute right-2 top-2 gap-1.5" onClick={copy}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="absolute right-2 top-2 gap-1.5"
+          onClick={copy}
+        >
           {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
           {copied ? "복사됨" : "코드 복사"}
         </Button>

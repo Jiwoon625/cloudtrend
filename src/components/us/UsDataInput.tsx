@@ -114,8 +114,8 @@ export function UsDataInput({ onChanged }: { onChanged: (hasData: boolean) => vo
             {formatCount(stats.bars)}건
           </p>
           <p className="mt-0.5 text-muted-foreground">
-            기간 {stats.firstDate} ~ {stats.lastDate} · 벤치마크 {stats.benchmarks.join(", ") || "없음"} ·
-            섹터 프록시 {stats.sectorEtfs.length}/11
+            기간 {stats.firstDate} ~ {stats.lastDate} · 벤치마크{" "}
+            {stats.benchmarks.join(", ") || "없음"} · 섹터 프록시 {stats.sectorEtfs.length}/11
           </p>
           {warnings.length > 0 ? (
             <ul className="mt-1 list-inside list-disc text-[11px] text-warn">

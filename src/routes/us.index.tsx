@@ -206,7 +206,10 @@ function UsBriefing({ analysis }: { analysis: UsAnalysisResult }) {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card title="시장 상태 (Market Policy v1)" icon={<Activity className="size-4 text-primary" />}>
+        <Card
+          title="시장 상태 (Market Policy v1)"
+          icon={<Activity className="size-4 text-primary" />}
+        >
           <p className={`mb-1 text-lg font-bold ${stateColor}`}>{stateLabel}</p>
           <p className="mb-2 text-[11px] text-muted-foreground">
             researchPosture {postureLabel} · 표시등급 상한 {market.displayGradeCap}
@@ -254,7 +257,10 @@ function UsBriefing({ analysis }: { analysis: UsAnalysisResult }) {
                 `${rows.filter((r) => r.eligibility.status === "NEW_LISTING").length}종목`,
               ],
             ].map(([k, v]) => (
-              <div key={k} className="flex justify-between border-b border-border py-1 last:border-0">
+              <div
+                key={k}
+                className="flex justify-between border-b border-border py-1 last:border-0"
+              >
                 <dt className="text-muted-foreground">{k}</dt>
                 <dd className="num font-medium">{v}</dd>
               </div>
@@ -269,10 +275,16 @@ function UsBriefing({ analysis }: { analysis: UsAnalysisResult }) {
           </p>
         </Card>
 
-        <Card title="상위 우선도 후보 (매수 지시 아님)" icon={<Activity className="size-4 text-primary" />}>
+        <Card
+          title="상위 우선도 후보 (매수 지시 아님)"
+          icon={<Activity className="size-4 text-primary" />}
+        >
           <ul className="space-y-1">
             {top.map((r) => (
-              <li key={r.instrument.symbol} className="flex items-center justify-between gap-2 text-[12px]">
+              <li
+                key={r.instrument.symbol}
+                className="flex items-center justify-between gap-2 text-[12px]"
+              >
                 <Link
                   to="/us/instrument/$symbol"
                   params={{ symbol: r.instrument.symbol }}
@@ -288,7 +300,9 @@ function UsBriefing({ analysis }: { analysis: UsAnalysisResult }) {
               </li>
             ))}
             {top.length === 0 ? (
-              <li className="text-[11px] text-muted-foreground">평가 자격을 통과한 종목이 없습니다.</li>
+              <li className="text-[11px] text-muted-foreground">
+                평가 자격을 통과한 종목이 없습니다.
+              </li>
             ) : null}
           </ul>
         </Card>
@@ -326,7 +340,10 @@ function UsBriefing({ analysis }: { analysis: UsAnalysisResult }) {
               </p>
               <ul className="mt-1 space-y-0.5">
                 {s.conditions.map((c) => (
-                  <li key={c.key} className="flex items-start gap-1 text-[10.5px] text-muted-foreground">
+                  <li
+                    key={c.key}
+                    className="flex items-start gap-1 text-[10.5px] text-muted-foreground"
+                  >
                     <StatusIcon status={c.status} />
                     <span>
                       {c.label} — {c.observed}

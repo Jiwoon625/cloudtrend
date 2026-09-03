@@ -66,7 +66,9 @@ function ReasonList({ reasons }: { reasons: ScoreReason[] }) {
                   <StatusIcon status={r.status} />
                   {r.label}
                 </span>
-                <span className="block pl-5 text-[10.5px] text-muted-foreground">{r.definition}</span>
+                <span className="block pl-5 text-[10.5px] text-muted-foreground">
+                  {r.definition}
+                </span>
               </td>
               <td className="px-2 py-1.5 text-muted-foreground">{r.observed}</td>
               <td className="px-2 py-1.5 text-muted-foreground">{r.threshold}</td>
@@ -95,7 +97,10 @@ function UsInstrumentPage() {
 
   return (
     <AppShell loadAnalysis={false}>
-      <Link to="/us/screener" className="mb-3 inline-flex items-center gap-1 text-[12px] text-primary hover:underline">
+      <Link
+        to="/us/screener"
+        className="mb-3 inline-flex items-center gap-1 text-[12px] text-primary hover:underline"
+      >
         <ArrowLeft className="size-3.5" />
         US 스크리너로 돌아가기
       </Link>
@@ -130,14 +135,20 @@ function Detail({ row, analysis }: { row: UsRow; analysis: UsAnalysisResult }) {
     (s.return126 ?? -1) > 0 ? "6개월 절대수익 양수" : null,
     (s.distanceFrom252High ?? -100) >= -5 ? "52주 고가 5% 이내" : null,
     row.sectorState === "STRONG" ? "소속 섹터 게이트 Strong" : null,
-  ].filter((x): x is string => x !== null).slice(0, 3);
+  ]
+    .filter((x): x is string => x !== null)
+    .slice(0, 3);
 
   const cautions = [
-    row.dataStatus !== "COMPLETE" ? `데이터 coverage ${(row.coverage * 100).toFixed(0)}% (부분 계산)` : null,
+    row.dataStatus !== "COMPLETE"
+      ? `데이터 coverage ${(row.coverage * 100).toFixed(0)}% (부분 계산)`
+      : null,
     row.eligibility.status !== "ELIGIBLE" ? `자격 상태 ${row.eligibility.status}` : null,
     analysis.market.state === "RISK_OFF" ? "시장 Risk-Off — 표시등급 상한 B" : null,
     row.sectorState === "WEAK" ? "소속 섹터 Weak — 표시등급 상한 A" : null,
-  ].filter((x): x is string => x !== null).slice(0, 3);
+  ]
+    .filter((x): x is string => x !== null)
+    .slice(0, 3);
 
   return (
     <div className="space-y-4">
@@ -262,7 +273,8 @@ function Detail({ row, analysis }: { row: UsRow; analysis: UsAnalysisResult }) {
               : `$${(s.dollarVolume60Median / 1e6).toFixed(1)}M`}
           </p>
           <p className="text-muted-foreground">
-            자격 판정 사유: {row.eligibility.reasons.length ? row.eligibility.reasons.join(" · ") : "없음"}
+            자격 판정 사유:{" "}
+            {row.eligibility.reasons.length ? row.eligibility.reasons.join(" · ") : "없음"}
           </p>
           <ul className="list-inside list-disc text-[11px] text-muted-foreground">
             {analysis.notes.map((n) => (

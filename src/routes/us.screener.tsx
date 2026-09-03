@@ -39,12 +39,24 @@ export const Route = createFileRoute("/us/screener")({
 type Tab = "STOCK" | "ETF";
 
 const PRESETS: Array<{ id: string; label: string; test: (r: UsRow) => boolean }> = [
-  { id: "CORE", label: "핵심 후보 (표시등급 S·A)", test: (r) => r.displayGrade === "S" || r.displayGrade === "A" },
+  {
+    id: "CORE",
+    label: "핵심 후보 (표시등급 S·A)",
+    test: (r) => r.displayGrade === "S" || r.displayGrade === "A",
+  },
   { id: "TECH6", label: "Technical 6점 이상", test: (r) => r.technical.points >= 6 },
-  { id: "NEAR_HIGH", label: "52주 고가 5% 이내", test: (r) => (r.snapshot.distanceFrom252High ?? -100) >= -5 },
+  {
+    id: "NEAR_HIGH",
+    label: "52주 고가 5% 이내",
+    test: (r) => (r.snapshot.distanceFrom252High ?? -100) >= -5,
+  },
   { id: "RS", label: "6M SPY 초과수익 양수", test: (r) => (r.snapshot.return126 ?? -1) > 0 },
   { id: "COMPLETE", label: "coverage 90% 이상", test: (r) => r.dataStatus === "COMPLETE" },
-  { id: "TACTICAL", label: "레버리지·인버스만", test: (r) => r.eligibility.status === "TACTICAL_ONLY" },
+  {
+    id: "TACTICAL",
+    label: "레버리지·인버스만",
+    test: (r) => r.eligibility.status === "TACTICAL_ONLY",
+  },
 ];
 
 function UsScreenerPage() {
@@ -100,7 +112,17 @@ function ScreenerBody({ analysis }: { analysis: UsAnalysisResult }) {
       }
       return true;
     });
-  }, [base, query, sector, minComposite, minTechnical, minCoverage, onlyEligible, includeTactical, preset]);
+  }, [
+    base,
+    query,
+    sector,
+    minComposite,
+    minTechnical,
+    minCoverage,
+    onlyEligible,
+    includeTactical,
+    preset,
+  ]);
 
   const download = () => {
     const blob = new Blob([toCsv(rows)], { type: "text/csv;charset=utf-8" });

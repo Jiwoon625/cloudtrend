@@ -192,9 +192,7 @@ export function computeUsSnapshot(bars: DailyPrice[]): UsSnapshot {
   const avgVol20 = sma(volumes, 20, i - 1);
   const window252 = bars.slice(Math.max(0, bars.length - 252));
   const high252 = window252.length >= 60 ? Math.max(...window252.map((b) => b.high)) : null;
-  const dollar60 = bars
-    .slice(Math.max(0, bars.length - 60))
-    .map((b) => b.close * b.volume);
+  const dollar60 = bars.slice(Math.max(0, bars.length - 60)).map((b) => b.close * b.volume);
 
   // OBV 20일 기울기
   let obv = 0;
@@ -554,7 +552,7 @@ function usEtfHealth(inst: UsInstrument, s: UsSnapshot, ctx: PeerContext): UsSco
       s.dollarVolume60Median === null
         ? null
         : s.dollarVolume60Median >= 5e6 &&
-          topPercentile(peerVol, s.dollarVolume60Median, 0.5) === true,
+            topPercentile(peerVol, s.dollarVolume60Median, 0.5) === true,
       usd(s.dollarVolume60Median),
       "≥ $5M & 동종군 상위 50%",
       10,
@@ -658,7 +656,8 @@ function composite(
         quality && quality.availableMaxPoints > 0
           ? (quality.points / quality.availableMaxPoints) * 100
           : null,
-      coverage: quality && quality.maxPoints > 0 ? quality.availableMaxPoints / quality.maxPoints : 0,
+      coverage:
+        quality && quality.maxPoints > 0 ? quality.availableMaxPoints / quality.maxPoints : 0,
     },
     { weight: 0.1, value: sectorScore, coverage: sectorScore === null ? 0 : 1 },
   ];
@@ -731,10 +730,12 @@ function evaluateMarketGate(
     {
       key: "BREADTH_MA50",
       label: "분석대상 주식 중 MA50 상회 비율",
-      observed: breadth.ratio === null ? "데이터 없음" : `${breadth.ratio.toFixed(1)}% (${breadth.sample}종목)`,
+      observed:
+        breadth.ratio === null
+          ? "데이터 없음"
+          : `${breadth.ratio.toFixed(1)}% (${breadth.sample}종목)`,
       threshold: "Risk-On ≥ 55% / Risk-Off < 40%",
-      status:
-        breadth.ratio === null ? "UNAVAILABLE" : breadth.ratio >= 55 ? "PASS" : "FAIL",
+      status: breadth.ratio === null ? "UNAVAILABLE" : breadth.ratio >= 55 ? "PASS" : "FAIL",
     },
   ];
 
@@ -782,11 +783,20 @@ export function runUsAnalysis(ds: UsDataset): UsAnalysisResult {
     const s = snapshots.get(inst.symbol);
     const reasons: string[] = [];
     if (!s) {
-      eligibility.set(inst.symbol, { status: "EXCLUDED", scoreEligible: false, reasons: ["일봉 없음"] });
+      eligibility.set(inst.symbol, {
+        status: "EXCLUDED",
+        scoreEligible: false,
+        reasons: ["일봉 없음"],
+      });
       continue;
     }
     if (s.close < 5) reasons.push(`종가 $${s.close.toFixed(2)} < $5`);
-    if (inst.assetType === "STOCK" && ds.capabilities.marketCap && inst.marketCap !== null && inst.marketCap < 3e8)
+    if (
+      inst.assetType === "STOCK" &&
+      ds.capabilities.marketCap &&
+      inst.marketCap !== null &&
+      inst.marketCap < 3e8
+    )
       reasons.push(`시가총액 ${usd(inst.marketCap)} < $300M`);
     if (s.dollarVolume60Median !== null && s.dollarVolume60Median < 5e6)
       reasons.push(`60일 median dollar volume ${usd(s.dollarVolume60Median)} < $5M`);
@@ -903,7 +913,8 @@ export function runUsAnalysis(ds: UsDataset): UsAnalysisResult {
   const sectors: UsSectorGate[] = US_SECTOR_ETFS.map(({ etf, sector, label }) => {
     const snap = snapshots.get(etf);
     const members = ds.instruments.filter(
-      (i) => i.assetType === "STOCK" && i.sector === sector && eligibility.get(i.symbol)?.scoreEligible,
+      (i) =>
+        i.assetType === "STOCK" && i.sector === sector && eligibility.get(i.symbol)?.scoreEligible,
     );
     const memberFlags = members
       .map((i) => snapshots.get(i.symbol))
@@ -989,10 +1000,7 @@ export function runUsAnalysis(ds: UsDataset): UsAnalysisResult {
     const etfHealth = inst.assetType === "ETF" ? usEtfHealth(inst, s, ctx) : null;
     const quality = inst.assetType === "STOCK" ? null : etfHealth;
     const sector = inst.sector ? sectorByName.get(inst.sector) : undefined;
-    const sectorScore =
-      sector && sector.availableConditions > 0
-        ? (sector.score / 4) * 100
-        : null;
+    const sectorScore = sector && sector.availableConditions > 0 ? (sector.score / 4) * 100 : null;
     const { rawComposite, coverage } = composite(technical, priority, quality, sectorScore);
     const rawGrade = gradeOf(rawComposite, technical.points, coverage, market.state);
     const displayGrade = capGrade(
