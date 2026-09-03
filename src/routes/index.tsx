@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Activity, ArrowDown, ArrowUp, Hash, ListPlus, Loader2, Play, RefreshCw, ShieldAlert, TrendingUp } from "lucide-react";
 import { useQuery, useQueryClient, useSuspenseQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
@@ -13,7 +14,7 @@ import { CollectionProgress } from "@/components/CollectionProgress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { analysisQueryOptions, ipQueryOptions, isAnalysisFailurePayload, isAnalysisPayload } from "@/lib/analysisQuery";
-import type { AnalysisPayload } from "@/lib/market.functions";
+import { resetTossConnection, type AnalysisPayload } from "@/lib/market.functions";
 
 import { WARNING_LABELS } from "@/lib/engine/scoring";
 import { formatCount, formatKstDateTime, formatNumber, formatPercent, formatWon } from "@/lib/format";
@@ -81,9 +82,12 @@ function KeyValue({ label, value, hint }: { label: string; value: React.ReactNod
 function Dashboard() {
   const { data: ip } = useSuspenseQuery(ipQueryOptions);
   const queryClient = useQueryClient();
+  const resetConnection = useServerFn(resetTossConnection);
   // 실행 여부를 브라우저에 저장하지 않는다. 새로 열거나 새로고침하면 반드시 사용자가
   // 스크리닝 시작 버튼을 눌러야 외부 시세 API를 호출한다.
   const [started, setStarted] = useState(false);
+  const [autoRecovering, setAutoRecovering] = useState(false);
+  const autoRecoveryAttempted = useRef(false);
   const analysisQuery = useQuery({ ...analysisQueryOptions, enabled: started });
 
   // 시세 API가 실패(예: IP 허용목록 거부)하면 그 시점의 실제 서버 출구 IP를 즉시 다시 조회해
@@ -92,15 +96,37 @@ function Dashboard() {
     analysisQuery.isError || isAnalysisFailurePayload(analysisQuery.data);
   useEffect(() => {
     if (!analysisFailed) return;
-    void queryClient.refetchQueries({ queryKey: ipQueryOptions.queryKey });
-  }, [analysisFailed, analysisQuery.dataUpdatedAt, analysisQuery.errorUpdatedAt, queryClient]);
+    if (autoRecoveryAttempted.current) {
+      void queryClient.refetchQueries({ queryKey: ipQueryOptions.queryKey });
+      return;
+    }
+
+    autoRecoveryAttempted.current = true;
+    let cancelled = false;
+    const recover = async () => {
+      setAutoRecovering(true);
+      try {
+        await resetConnection();
+        await queryClient.refetchQueries({ queryKey: ipQueryOptions.queryKey });
+        if (!cancelled) await analysisQuery.refetch();
+      } finally {
+        if (!cancelled) setAutoRecovering(false);
+      }
+    };
+    void recover();
+    return () => {
+      cancelled = true;
+    };
+  }, [analysisFailed, queryClient, resetConnection]);
 
   const startScreening = () => {
+    autoRecoveryAttempted.current = false;
     setStarted(true);
   };
 
   /** 종목을 바꿔 다시 스크리닝: 캐시된 분석 결과를 제거해 로딩·진행률 화면으로 전환한다. */
   const rescreen = () => {
+    autoRecoveryAttempted.current = false;
     queryClient.removeQueries({ queryKey: analysisQueryOptions.queryKey });
     setStarted(false);
     // removeQueries 반영 후 재시작해야 isPending 상태로 진입한다.
@@ -160,14 +186,27 @@ function Dashboard() {
           <CollectionProgress />
         </section>
       ) : analysisQuery.isError || isAnalysisFailurePayload(analysisQuery.data) ? (
-        <DataError
-          error={
-            analysisQuery.error ??
-            (isAnalysisFailurePayload(analysisQuery.data) ? analysisQuery.data.error : "분석 요청 실패")
-          }
-          reset={() => analysisQuery.refetch()}
-          embedded
-        />
+        autoRecovering ? (
+          <section className="rounded-lg border border-border bg-card p-8 text-center">
+            <Loader2 className="mx-auto mb-3 size-6 animate-spin text-primary" />
+            <h2 className="text-sm font-semibold">연결을 자동 복구하고 있습니다</h2>
+            <p className="mt-1 text-[12px] text-muted-foreground">
+              인증 상태와 서버 출구 IP를 새로 확인한 뒤 스크리닝을 한 번 다시 시도합니다.
+            </p>
+          </section>
+        ) : (
+          <DataError
+            error={
+              analysisQuery.error ??
+              (isAnalysisFailurePayload(analysisQuery.data) ? analysisQuery.data.error : "분석 요청 실패")
+            }
+            reset={() => {
+              autoRecoveryAttempted.current = false;
+              return analysisQuery.refetch();
+            }}
+            embedded
+          />
+        )
       ) : !isAnalysisPayload(analysisQuery.data) ? (
         <DataError error="분석 응답 형식을 확인할 수 없습니다." reset={() => analysisQuery.refetch()} embedded />
       ) : (
