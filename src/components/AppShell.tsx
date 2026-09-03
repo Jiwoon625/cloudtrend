@@ -99,8 +99,20 @@ export function AppShell({
                 {item.label}
               </Link>
             ))}
+            <span className="mx-1 h-4 w-px bg-border" aria-hidden />
+            {US_NAV.map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                activeOptions={{ exact: item.to === "/us" }}
+                className="rounded-md border border-border px-2.5 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[status=active]:border-primary data-[status=active]:bg-primary data-[status=active]:text-primary-foreground"
+              >
+                {item.label}
+              </Link>
+            ))}
             <ThemeToggle />
           </nav>
+
         </div>
         <div
           className={`flex items-start gap-2 border-t border-border px-4 py-1.5 text-[11px] text-foreground ${live ? "bg-surface-strong" : "bg-warn-soft"}`}
