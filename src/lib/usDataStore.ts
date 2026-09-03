@@ -1,6 +1,7 @@
-// TrendScore US — 이용자가 직접 입력한 미국 시장 데이터 보관소(브라우저 localStorage).
-// 한국 시장 입력(trendscore.manualMarketData.v1)과 완전히 분리해 서로 영향을 주지 않는다.
+// CloudTrend US — 이용자가 직접 입력한 미국 시장 데이터 보관소.
+// 한국 시장 입력과 완전히 분리된 키를 쓰며, 원문은 IndexedDB에 저장한다(대용량 지원).
 import { parseUsMarketData, type UsParseResult } from "@/lib/engine/usDataset";
+import { idbDel, idbGet, idbSet } from "@/lib/idbStore";
 
 const KEY = "trendscore.usMarketData.v1";
 const META_KEY = "trendscore.usMarketData.meta.v1";
@@ -11,38 +12,72 @@ export interface UsDataMeta {
   chars: number;
 }
 
+let memText: string | null = null;
+let memMeta: UsDataMeta | null = null;
+let hydrated = false;
+let hydrating: Promise<void> | null = null;
+
+export function hydrateUsData(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  if (hydrated) return Promise.resolve();
+  if (!hydrating) {
+    hydrating = (async () => {
+      const [text, meta] = await Promise.all([idbGet<string>(KEY), idbGet<UsDataMeta>(META_KEY)]);
+      if (text) {
+        memText = text;
+        memMeta = meta ?? null;
+      } else {
+        const legacy = window.localStorage.getItem(KEY);
+        if (legacy) {
+          const rawMeta = window.localStorage.getItem(META_KEY);
+          memText = legacy;
+          memMeta = rawMeta ? (JSON.parse(rawMeta) as UsDataMeta) : null;
+          await idbSet(KEY, legacy);
+          if (memMeta) await idbSet(META_KEY, memMeta);
+          window.localStorage.removeItem(KEY);
+          window.localStorage.removeItem(META_KEY);
+        }
+      }
+      hydrated = true;
+    })();
+  }
+  return hydrating;
+}
+
 export function getUsDataText(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(KEY);
+  return memText;
 }
 
 export function getUsDataMeta(): UsDataMeta | null {
-  if (typeof window === "undefined") return null;
-  const raw = window.localStorage.getItem(META_KEY);
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw) as UsDataMeta;
-  } catch {
-    return null;
-  }
+  return memMeta;
 }
 
-export function saveUsDataText(text: string, fileName?: string | null): UsDataMeta {
+export async function saveUsDataText(
+  text: string,
+  fileName?: string | null,
+): Promise<UsDataMeta> {
   const meta: UsDataMeta = {
     savedAt: new Date().toISOString(),
     fileName: fileName ?? null,
     chars: text.length,
   };
-  window.localStorage.setItem(KEY, text);
-  window.localStorage.setItem(META_KEY, JSON.stringify(meta));
+  memText = text;
+  memMeta = meta;
   cache = null;
+  hydrated = true;
+  await idbSet(KEY, text);
+  await idbSet(META_KEY, meta);
   return meta;
 }
 
-export function clearUsData(): void {
+export async function clearUsData(): Promise<void> {
+  memText = null;
+  memMeta = null;
+  cache = null;
+  hydrated = true;
   window.localStorage.removeItem(KEY);
   window.localStorage.removeItem(META_KEY);
-  cache = null;
+  await Promise.all([idbDel(KEY), idbDel(META_KEY)]);
 }
 
 let cache: { text: string; result: UsParseResult } | null = null;
