@@ -24,13 +24,11 @@ const NAV = [
   { to: "/backtest", label: "백테스트" },
 ] as const;
 
-
 /** 미국 시장은 데이터·규칙이 다르므로 탭을 분리한다. */
 const US_NAV = [
   { to: "/us", label: "US 시장·데이터" },
   { to: "/us/screener", label: "US 스크리너" },
 ] as const;
-
 
 function ThemeToggle() {
   const [dark, setDark] = useState(false);
@@ -113,7 +111,6 @@ export function AppShell({
             ))}
             <ThemeToggle />
           </nav>
-
         </div>
         <div
           className={`flex items-start gap-2 border-t border-border px-4 py-1.5 text-[11px] text-foreground ${live ? "bg-surface-strong" : "bg-warn-soft"}`}
@@ -127,8 +124,8 @@ export function AppShell({
             {dataUnavailable
               ? "실데이터 연결 오류 — 아래 안내에 따라 토스증권 API 접속 설정을 확인해 주세요."
               : live
-              ? `실데이터 모드 (${resolved?.provider ?? "-"}) — 일봉 기준 계산이며 투자 판단 및 자동 주문 기능은 제공하지 않습니다.`
-              : `합성 데이터 모드 (${resolved?.provider ?? "mock"}) — 화면 검증용 mock 데이터이며 실제 시세·재무가 아닙니다.${resolved?.fallbackReason ? ` 폴백 사유: ${resolved.fallbackReason}` : ""}`}
+                ? `실데이터 모드 (${resolved?.provider ?? "-"}) — 일봉 기준 계산이며 투자 판단 및 자동 주문 기능은 제공하지 않습니다.`
+                : `합성 데이터 모드 (${resolved?.provider ?? "mock"}) — 화면 검증용 mock 데이터이며 실제 시세·재무가 아닙니다.${resolved?.fallbackReason ? ` 폴백 사유: ${resolved.fallbackReason}` : ""}`}
           </span>
         </div>
       </header>

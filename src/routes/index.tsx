@@ -37,7 +37,6 @@ import {
 } from "@/lib/format";
 import { buildSnapshot, diffSnapshots, saveSnapshot, type GradeDiff } from "@/lib/screeningHistory";
 
-
 export const Route = createFileRoute("/")({
   // 입력 데이터는 브라우저 localStorage에 있으므로 클라이언트에서만 렌더링한다.
   ssr: false,
@@ -186,7 +185,6 @@ function Dashboard() {
       )}
     </AppShell>
   );
-
 }
 
 type AnalysisResult = AnalysisPayload["analysis"];

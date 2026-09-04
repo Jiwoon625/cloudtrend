@@ -42,7 +42,6 @@ export const Route = createFileRoute("/scoring")({
   component: ScoringPage,
 });
 
-
 function Section({
   title,
   desc,
@@ -187,7 +186,6 @@ function ScoringPage() {
           </div>
         </div>
       </section>
-
 
       <div className="mb-4 rounded-lg border border-border bg-surface p-3 text-[12px] leading-relaxed">
         <p className="mb-1 font-semibold">종합점수 계산식</p>
