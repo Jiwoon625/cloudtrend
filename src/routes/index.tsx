@@ -3,12 +3,10 @@ import {
   Activity,
   ArrowDown,
   ArrowUp,
-  Database,
-  FileCode2,
   Loader2,
-  Play,
   RefreshCw,
   ShieldAlert,
+  SlidersHorizontal,
   TrendingUp,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,8 +15,6 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
 import { GradeBadge, ScreenerTable } from "@/components/ScreenerTable";
-import { ManualDataInput } from "@/components/ManualDataInput";
-import { TossFetchGuide } from "@/components/TossFetchGuide";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,7 +23,8 @@ import {
   isAnalysisFailurePayload,
   isAnalysisPayload,
 } from "@/lib/analysisQuery";
-import { getManualDataText } from "@/lib/manualDataStore";
+import { hydrateManualData } from "@/lib/manualDataStore";
+import { isScreeningStarted } from "@/lib/screeningRun";
 import type { AnalysisPayload } from "@/lib/market.functions";
 
 import { WARNING_LABELS } from "@/lib/engine/scoring";
@@ -109,15 +106,16 @@ function KeyValue({
 
 function Dashboard() {
   const queryClient = useQueryClient();
-  // 실행 여부를 저장하지 않는다. 새로 열거나 새로고침하면 반드시 사용자가
-  // 스크리닝 시작 버튼을 눌러야 입력 데이터로 계산을 시작한다.
-  const [started, setStarted] = useState(false);
-  const [hasData, setHasData] = useState(() => (getManualDataText() ?? "").trim().length > 0);
-  const analysisQuery = useQuery({ ...analysisQueryOptions, enabled: started });
+  // 데이터 입력과 "스크리닝 시작"은 “데이터·산식” 탭에서 수행한다. 대시보드는 이미 시작된
+  // 스크리닝 결과만 보여주며, 다른 탭을 다녀와도 결과가 유지된다.
+  const [started, setStarted] = useState(() => isScreeningStarted());
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => {
+    void hydrateManualData().then(() => setHydrated(true));
+  }, []);
+  const analysisQuery = useQuery({ ...analysisQueryOptions, enabled: started && hydrated });
 
-  const startScreening = () => setStarted(true);
-
-  /** 입력 데이터를 바꿔 다시 스크리닝: 캐시된 분석 결과를 제거해 시작 화면으로 되돌린다. */
+  /** 같은 입력으로 점수를 다시 계산한다. */
   const rescreen = () => {
     queryClient.removeQueries({ queryKey: analysisQueryOptions.queryKey });
     queryClient.removeQueries({ queryKey: ["data-status", "manual-v3"] });
@@ -126,22 +124,13 @@ function Dashboard() {
     setTimeout(() => setStarted(true), 0);
   };
 
-  const onDataChanged = (ok: boolean) => {
-    setHasData(ok);
-    queryClient.removeQueries({ queryKey: analysisQueryOptions.queryKey });
-    queryClient.removeQueries({ queryKey: ["data-status", "manual-v3"] });
-    queryClient.removeQueries({ queryKey: ["instrument", "manual-v3"] });
-    setStarted(false);
-  };
-
   return (
     <AppShell loadAnalysis={false}>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
         <div>
           <h1 className="text-xl font-bold tracking-tight">대시보드</h1>
           <p className="text-[12px] text-muted-foreground">
-            주피터노트북에서 토스증권 Open API로 받은 데이터를 붙여넣거나 업로드한 뒤 스크리닝을
-            시작합니다.
+            시장 게이트, 스크리닝 요약, 강한 섹터, 상위 후보 순위를 한 화면에 정리합니다.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -154,40 +143,20 @@ function Dashboard() {
         </div>
       </div>
 
-      <div className="mb-4 grid gap-4 lg:grid-cols-2">
-        <Card
-          title="1. 이용할 데이터 & 토스증권 API 조회 코드"
-          subtitle="주피터노트북에서 아래 코드를 실행해 CSV(trendscore_input.csv)를 만들어 주세요."
-          icon={<FileCode2 className="size-4 text-primary" />}
-        >
-          <TossFetchGuide />
-        </Card>
-        <Card
-          title="2. 받은 데이터 입력 (붙여넣기 또는 CSV/JSON 업로드)"
-          subtitle="입력한 데이터는 이 브라우저에만 저장되며, 서버로 시세를 조회하지 않습니다."
-          icon={<Database className="size-4 text-primary" />}
-        >
-          <ManualDataInput onChanged={onDataChanged} />
-        </Card>
-      </div>
-
       {!started ? (
         <section className="rounded-lg border border-dashed border-primary/50 bg-card p-8 text-center">
-          <Play className="mx-auto mb-3 size-8 text-primary" />
-          <h2 className="mb-1 text-base font-semibold">3. 스크리닝 시작</h2>
+          <SlidersHorizontal className="mx-auto mb-3 size-8 text-primary" />
+          <h2 className="mb-1 text-base font-semibold">아직 스크리닝을 시작하지 않았습니다</h2>
           <p className="mx-auto mb-4 max-w-md text-[12px] leading-relaxed text-muted-foreground">
-            버튼을 누르면 입력한 시세로 Universe Filter → Market Gate → Scoring을 계산하고, 주식·ETF
-            스크리너·섹터·백테스트 등 모든 탭이 이 데이터로 동작합니다.
+            “데이터·산식” 탭에서 시세 데이터를 붙여넣거나 CSV/JSON으로 업로드한 뒤 “스크리닝 시작”을
+            누르면, 이 대시보드와 모든 탭이 해당 데이터로 계산됩니다.
           </p>
-          <Button onClick={startScreening} size="lg" className="gap-2" disabled={!hasData}>
-            <Play className="size-4" />
-            스크리닝 시작
+          <Button asChild size="lg" className="gap-2">
+            <Link to="/scoring">
+              <SlidersHorizontal className="size-4" />
+              데이터·산식 탭으로 이동
+            </Link>
           </Button>
-          {!hasData ? (
-            <p className="mt-2 text-[11px] text-warn">
-              먼저 위 2번 칸에 데이터를 입력·적용해 주세요.
-            </p>
-          ) : null}
         </section>
       ) : analysisQuery.isPending ? (
         <section className="rounded-lg border border-border bg-card p-8">

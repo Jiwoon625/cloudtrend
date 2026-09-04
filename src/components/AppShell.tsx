@@ -13,6 +13,7 @@ export interface AppShellSource {
 }
 
 const NAV = [
+  { to: "/scoring", label: "데이터·산식" },
   { to: "/", label: "대시보드" },
   { to: "/screener/stocks", label: "주식 스크리너" },
   { to: "/screener/etfs", label: "ETF 스크리너" },
@@ -20,7 +21,6 @@ const NAV = [
   { to: "/position-sizing", label: "포지션 사이징" },
   { to: "/history", label: "스크리닝 이력" },
   { to: "/data-status", label: "데이터 상태" },
-  { to: "/scoring", label: "산식·가중치" },
   { to: "/backtest", label: "백테스트" },
 ] as const;
 
@@ -29,7 +29,6 @@ const US_NAV = [
   { to: "/us", label: "US 시장·데이터" },
   { to: "/us/screener", label: "US 스크리너" },
 ] as const;
-
 
 function ThemeToggle() {
   const [dark, setDark] = useState(false);
@@ -112,7 +111,6 @@ export function AppShell({
             ))}
             <ThemeToggle />
           </nav>
-
         </div>
         <div
           className={`flex items-start gap-2 border-t border-border px-4 py-1.5 text-[11px] text-foreground ${live ? "bg-surface-strong" : "bg-warn-soft"}`}
@@ -126,8 +124,8 @@ export function AppShell({
             {dataUnavailable
               ? "실데이터 연결 오류 — 아래 안내에 따라 토스증권 API 접속 설정을 확인해 주세요."
               : live
-              ? `실데이터 모드 (${resolved?.provider ?? "-"}) — 일봉 기준 계산이며 투자 판단 및 자동 주문 기능은 제공하지 않습니다.`
-              : `합성 데이터 모드 (${resolved?.provider ?? "mock"}) — 화면 검증용 mock 데이터이며 실제 시세·재무가 아닙니다.${resolved?.fallbackReason ? ` 폴백 사유: ${resolved.fallbackReason}` : ""}`}
+                ? `실데이터 모드 (${resolved?.provider ?? "-"}) — 일봉 기준 계산이며 투자 판단 및 자동 주문 기능은 제공하지 않습니다.`
+                : `합성 데이터 모드 (${resolved?.provider ?? "mock"}) — 화면 검증용 mock 데이터이며 실제 시세·재무가 아닙니다.${resolved?.fallbackReason ? ` 폴백 사유: ${resolved.fallbackReason}` : ""}`}
           </span>
         </div>
       </header>

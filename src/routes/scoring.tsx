@@ -1,8 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Database, Play } from "lucide-react";
 import { useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
+import { ManualDataInput } from "@/components/ManualDataInput";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,22 +16,24 @@ import {
   type ScoringConfig,
 } from "@/lib/engine/scoring";
 import { formatWon } from "@/lib/format";
+import { getManualDataText } from "@/lib/manualDataStore";
+import { setScreeningStarted } from "@/lib/screeningRun";
 import { useScoringConfig } from "@/lib/scoringConfigStore";
 
 export const Route = createFileRoute("/scoring")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "점수 산식 및 가중치 편집 | TrendScore KR" },
+      { title: "데이터 입력 및 산식·가중치 | CloudTrend" },
       {
         name: "description",
         content:
-          "기술 신호·우선순위·펀더멘털·섹터 가중치와 각 항목 배점·임계값을 직접 수정하고, 수정한 산식으로 주식·ETF 스크리너를 즉시 다시 계산합니다.",
+          "시세 데이터를 붙여넣거나 CSV로 업로드해 스크리닝을 시작하고, 기술 신호·우선순위·섹터 가중치와 임계값을 직접 조정합니다.",
       },
-      { property: "og:title", content: "점수 산식 및 가중치 편집 | TrendScore KR" },
+      { property: "og:title", content: "데이터 입력 및 산식·가중치 | CloudTrend" },
       {
         property: "og:description",
-        content: "종합점수 계산식을 화면에서 확인하고 가중치와 임계값을 직접 조정합니다.",
+        content: "입력한 시세로 스크리닝을 실행하고 종합점수 계산식을 화면에서 조정합니다.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -98,6 +102,8 @@ function ScoringPage() {
   const [draft, setDraft] = useState<ScoringConfig>(saved);
   const [syncedFrom, setSyncedFrom] = useState(saved);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [hasData, setHasData] = useState(() => (getManualDataText() ?? "").trim().length > 0);
 
   // 저장된 설정이 (다른 탭 등에서) 바뀌면 편집 중이 아닐 때 반영한다.
   if (saved !== syncedFrom && JSON.stringify(saved) !== JSON.stringify(syncedFrom)) {
@@ -122,6 +128,20 @@ function ScoringPage() {
     void queryClient.invalidateQueries({ queryKey: ["instrument"] });
   };
 
+  /** 입력 데이터가 바뀌면 이전 분석 결과를 버리고 스크리닝 시작 전 상태로 되돌린다. */
+  const onDataChanged = (ok: boolean) => {
+    setHasData(ok);
+    setScreeningStarted(false);
+    queryClient.removeQueries({ queryKey: ["market-analysis", "manual-v3"] });
+    queryClient.removeQueries({ queryKey: ["data-status", "manual-v3"] });
+    queryClient.removeQueries({ queryKey: ["instrument", "manual-v3"] });
+  };
+
+  const startScreening = () => {
+    setScreeningStarted(true);
+    void navigate({ to: "/" });
+  };
+
   const weightSum = (k: "stock" | "etf") => {
     const w = draft.weights[k];
     return w.technical + w.priority + w.fundamental + w.marketSector;
@@ -130,12 +150,42 @@ function ScoringPage() {
   return (
     <AppShell>
       <div className="mb-4">
-        <h1 className="text-xl font-bold tracking-tight">점수 산식 및 가중치</h1>
+        <h1 className="text-xl font-bold tracking-tight">데이터 입력 및 산식·가중치</h1>
         <p className="text-[12px] text-muted-foreground">
-          아래 값은 주식·ETF 스크리너와 종목 상세의 점수 계산에 그대로 사용됩니다. 값을 바꾸고
-          “적용하고 다시 계산”을 누르면 같은 데이터로 점수만 재산출합니다.
+          시세 데이터를 입력해 스크리닝을 시작하고, 아래 산식·가중치로 주식·ETF 스크리너와 종목
+          상세의 점수를 조정합니다.
         </p>
       </div>
+
+      <section className="mb-4 overflow-hidden rounded-lg border border-border bg-card">
+        <header className="flex items-center gap-1.5 border-b border-border bg-surface-strong px-3 py-2">
+          <Database className="size-4 text-primary" />
+          <div>
+            <h2 className="text-sm font-semibold">
+              1. 시세 데이터 입력 (붙여넣기 또는 CSV/JSON 업로드)
+            </h2>
+            <p className="text-[11px] text-muted-foreground">
+              입력한 데이터는 이 브라우저에만 저장되며, 서버로 시세를 조회하지 않습니다. 필수 열:
+              symbol, name, market, date, open, high, low, close, volume · 지수 행(symbol=KOSPI,
+              market=INDEX) 60거래일 이상 권장.
+            </p>
+          </div>
+        </header>
+        <div className="space-y-3 p-3">
+          <ManualDataInput onChanged={onDataChanged} />
+          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+            <Button size="sm" className="gap-1.5" onClick={startScreening} disabled={!hasData}>
+              <Play className="size-3.5" />
+              스크리닝 시작
+            </Button>
+            <span className="text-[11px] text-muted-foreground">
+              {hasData
+                ? "누르면 대시보드로 이동해 Universe Filter → Market Gate → Scoring을 계산합니다."
+                : "먼저 데이터를 입력하고 “데이터 적용”을 눌러 주세요."}
+            </span>
+          </div>
+        </div>
+      </section>
 
       <div className="mb-4 rounded-lg border border-border bg-surface p-3 text-[12px] leading-relaxed">
         <p className="mb-1 font-semibold">종합점수 계산식</p>
