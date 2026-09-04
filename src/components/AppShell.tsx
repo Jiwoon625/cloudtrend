@@ -13,6 +13,7 @@ export interface AppShellSource {
 }
 
 const NAV = [
+  { to: "/scoring", label: "데이터·산식" },
   { to: "/", label: "대시보드" },
   { to: "/screener/stocks", label: "주식 스크리너" },
   { to: "/screener/etfs", label: "ETF 스크리너" },
@@ -20,9 +21,9 @@ const NAV = [
   { to: "/position-sizing", label: "포지션 사이징" },
   { to: "/history", label: "스크리닝 이력" },
   { to: "/data-status", label: "데이터 상태" },
-  { to: "/scoring", label: "산식·가중치" },
   { to: "/backtest", label: "백테스트" },
 ] as const;
+
 
 /** 미국 시장은 데이터·규칙이 다르므로 탭을 분리한다. */
 const US_NAV = [
