@@ -3,12 +3,10 @@ import {
   Activity,
   ArrowDown,
   ArrowUp,
-  Database,
-  FileCode2,
   Loader2,
-  Play,
   RefreshCw,
   ShieldAlert,
+  SlidersHorizontal,
   TrendingUp,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,8 +15,6 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
 import { GradeBadge, ScreenerTable } from "@/components/ScreenerTable";
-import { ManualDataInput } from "@/components/ManualDataInput";
-import { TossFetchGuide } from "@/components/TossFetchGuide";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,7 +23,8 @@ import {
   isAnalysisFailurePayload,
   isAnalysisPayload,
 } from "@/lib/analysisQuery";
-import { getManualDataText } from "@/lib/manualDataStore";
+import { hydrateManualData } from "@/lib/manualDataStore";
+import { isScreeningStarted } from "@/lib/screeningRun";
 import type { AnalysisPayload } from "@/lib/market.functions";
 
 import { WARNING_LABELS } from "@/lib/engine/scoring";
@@ -39,6 +36,7 @@ import {
   formatWon,
 } from "@/lib/format";
 import { buildSnapshot, diffSnapshots, saveSnapshot, type GradeDiff } from "@/lib/screeningHistory";
+
 
 export const Route = createFileRoute("/")({
   // 입력 데이터는 브라우저 localStorage에 있으므로 클라이언트에서만 렌더링한다.
