@@ -1,8 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Database, Play } from "lucide-react";
 import { useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
+import { ManualDataInput } from "@/components/ManualDataInput";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,22 +16,24 @@ import {
   type ScoringConfig,
 } from "@/lib/engine/scoring";
 import { formatWon } from "@/lib/format";
+import { getManualDataText } from "@/lib/manualDataStore";
+import { setScreeningStarted } from "@/lib/screeningRun";
 import { useScoringConfig } from "@/lib/scoringConfigStore";
 
 export const Route = createFileRoute("/scoring")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "점수 산식 및 가중치 편집 | TrendScore KR" },
+      { title: "데이터 입력 및 산식·가중치 | CloudTrend" },
       {
         name: "description",
         content:
-          "기술 신호·우선순위·펀더멘털·섹터 가중치와 각 항목 배점·임계값을 직접 수정하고, 수정한 산식으로 주식·ETF 스크리너를 즉시 다시 계산합니다.",
+          "시세 데이터를 붙여넣거나 CSV로 업로드해 스크리닝을 시작하고, 기술 신호·우선순위·섹터 가중치와 임계값을 직접 조정합니다.",
       },
-      { property: "og:title", content: "점수 산식 및 가중치 편집 | TrendScore KR" },
+      { property: "og:title", content: "데이터 입력 및 산식·가중치 | CloudTrend" },
       {
         property: "og:description",
-        content: "종합점수 계산식을 화면에서 확인하고 가중치와 임계값을 직접 조정합니다.",
+        content: "입력한 시세로 스크리닝을 실행하고 종합점수 계산식을 화면에서 조정합니다.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -37,6 +41,7 @@ export const Route = createFileRoute("/scoring")({
   }),
   component: ScoringPage,
 });
+
 
 function Section({
   title,
