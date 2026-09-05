@@ -260,8 +260,8 @@ function BacktestPage() {
 
           {!result ? (
             <div className="rounded-lg border border-border bg-card p-6 text-[12px] text-muted-foreground">
-              좌측에서 대상과 조건을 정한 뒤 “백테스트 실행”을 누르면 결과가 표시됩니다. 실행 전에
-              대시보드에서 스크리닝을 먼저 시작해 종목 데이터를 수집해 두세요.
+              좌측에서 대상과 조건을 정한 뒤 “백테스트 실행”을 누르면 결과가 표시됩니다. “데이터·산식”
+              탭에서 업로드하거나 붙여넣은 일봉 데이터를 그대로 사용합니다.
             </div>
           ) : (
             <>
