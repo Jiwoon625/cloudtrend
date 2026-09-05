@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -12,20 +12,21 @@ import {
   DEFAULT_BACKTEST_PARAMS,
   type BacktestParams,
 } from "@/lib/engine/backtest";
-import { formatNumber } from "@/lib/format";
+import { formatCount, formatNumber } from "@/lib/format";
 import { computeLocalBacktest } from "@/lib/localAnalysis";
+import { getManualDataMeta, hydrateManualData, type ManualDataMeta } from "@/lib/manualDataStore";
 
 export const Route = createFileRoute("/backtest")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "피처 영향도 백테스트 | TrendScore KR" },
+      { title: "피처 영향도 백테스트 | CloudTrend" },
       {
         name: "description",
         content:
-          "일목 구름, 볼린저 돌파, 거래량 급증, 외국인 순매수 등 토스증권 API로 계산 가능한 피처가 이후 수익률에 미친 영향을 종목·보유기간별로 검증합니다.",
+          "직접 업로드한 일봉 데이터로 일목 구름, 볼린저 돌파, 거래량 급증, 외국인 순매수 등 피처가 이후 수익률에 미친 영향을 종목·보유기간별로 검증합니다.",
       },
-      { property: "og:title", content: "피처 영향도 백테스트 | TrendScore KR" },
+      { property: "og:title", content: "피처 영향도 백테스트 | CloudTrend" },
       {
         property: "og:description",
         content: "피처별 평균 수익률 차이(edge), 승률, 복합 점수 구간별 성과를 계산합니다.",
@@ -43,18 +44,31 @@ const pct = (v: number | null | undefined) =>
 function BacktestPage() {
   const [symbolText, setSymbolText] = useState("");
   const [limit, setLimit] = useState(30);
+  const [includeEtf, setIncludeEtf] = useState(false);
   const [params, setParams] = useState<BacktestParams>(DEFAULT_BACKTEST_PARAMS);
+  const [meta, setMeta] = useState<ManualDataMeta | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    void hydrateManualData().then(() => {
+      setMeta(getManualDataMeta());
+      setReady(true);
+    });
+  }, []);
 
   const mutation = useMutation({
-    mutationFn: async () =>
-      computeLocalBacktest(
+    mutationFn: async () => {
+      await hydrateManualData();
+      return computeLocalBacktest(
         symbolText
           .split(/[\s,;\n\t]+/)
           .map((s) => s.trim())
           .filter(Boolean),
         params,
         limit,
-      ),
+        includeEtf,
+      );
+    },
   });
 
   const result = mutation.data?.result;
