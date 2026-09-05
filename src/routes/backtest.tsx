@@ -90,11 +90,31 @@ function BacktestPage() {
 
       <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
         <div className="space-y-4">
+          <section className="space-y-2 rounded-lg border border-border bg-card p-3">
+            <h2 className="text-sm font-semibold">사용 데이터</h2>
+            {!ready ? (
+              <p className="text-[11px] text-muted-foreground">저장된 데이터 확인 중…</p>
+            ) : meta ? (
+              <p className="text-[11px] text-muted-foreground">
+                “데이터·산식” 탭에서 저장한 데이터 · {meta.fileName ?? "붙여넣기"} ·{" "}
+                {formatCount(meta.chars)}자
+              </p>
+            ) : (
+              <p className="text-[11px] text-warn">
+                저장된 데이터가 없습니다.{" "}
+                <Link to="/scoring" className="underline">
+                  데이터·산식 탭
+                </Link>
+                에서 CSV를 업로드하거나 붙여넣어 주세요.
+              </p>
+            )}
+          </section>
+
           <section className="space-y-3 rounded-lg border border-border bg-card p-3">
             <h2 className="text-sm font-semibold">테스트 대상</h2>
             <div className="space-y-1">
               <Label className="text-[11px] text-muted-foreground">
-                종목코드 (미입력 시 입력 데이터 중 거래대금 상위 주식 자동 선정)
+                종목코드 (미입력 시 업로드한 데이터 중 거래대금 상위 종목 자동 선정)
               </Label>
               <Textarea
                 value={symbolText}
