@@ -190,15 +190,23 @@ function BacktestPage() {
                 />
               </div>
             </div>
+            <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={includeEtf}
+                onChange={(e) => setIncludeEtf(e.target.checked)}
+              />
+              자동 선정에 ETF도 포함
+            </label>
             <p className="text-[11px] text-muted-foreground">
-              대시보드에 입력한 일봉을 그대로 사용합니다. 더 긴 기간을 보려면 주피터에서 일봉
-              개수(COUNT)를 늘려 다시 붙여넣어 주세요.
+              업로드하거나 붙여넣은 일봉을 그대로 사용합니다. 더 긴 기간을 보려면 일봉 개수를 늘려
+              다시 업로드해 주세요.
             </p>
             <Button
               size="sm"
               className="w-full"
               onClick={() => mutation.mutate()}
-              disabled={mutation.isPending}
+              disabled={mutation.isPending || (ready && !meta)}
             >
               {mutation.isPending ? "백테스트 실행 중…" : "백테스트 실행"}
             </Button>
