@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -12,20 +12,21 @@ import {
   DEFAULT_BACKTEST_PARAMS,
   type BacktestParams,
 } from "@/lib/engine/backtest";
-import { formatNumber } from "@/lib/format";
+import { formatCount, formatNumber } from "@/lib/format";
 import { computeLocalBacktest } from "@/lib/localAnalysis";
+import { getManualDataMeta, hydrateManualData, type ManualDataMeta } from "@/lib/manualDataStore";
 
 export const Route = createFileRoute("/backtest")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "피처 영향도 백테스트 | TrendScore KR" },
+      { title: "피처 영향도 백테스트 | CloudTrend" },
       {
         name: "description",
         content:
-          "일목 구름, 볼린저 돌파, 거래량 급증, 외국인 순매수 등 토스증권 API로 계산 가능한 피처가 이후 수익률에 미친 영향을 종목·보유기간별로 검증합니다.",
+          "직접 업로드한 일봉 데이터로 일목 구름, 볼린저 돌파, 거래량 급증, 외국인 순매수 등 피처가 이후 수익률에 미친 영향을 종목·보유기간별로 검증합니다.",
       },
-      { property: "og:title", content: "피처 영향도 백테스트 | TrendScore KR" },
+      { property: "og:title", content: "피처 영향도 백테스트 | CloudTrend" },
       {
         property: "og:description",
         content: "피처별 평균 수익률 차이(edge), 승률, 복합 점수 구간별 성과를 계산합니다.",
@@ -43,18 +44,31 @@ const pct = (v: number | null | undefined) =>
 function BacktestPage() {
   const [symbolText, setSymbolText] = useState("");
   const [limit, setLimit] = useState(30);
+  const [includeEtf, setIncludeEtf] = useState(false);
   const [params, setParams] = useState<BacktestParams>(DEFAULT_BACKTEST_PARAMS);
+  const [meta, setMeta] = useState<ManualDataMeta | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    void hydrateManualData().then(() => {
+      setMeta(getManualDataMeta());
+      setReady(true);
+    });
+  }, []);
 
   const mutation = useMutation({
-    mutationFn: async () =>
-      computeLocalBacktest(
+    mutationFn: async () => {
+      await hydrateManualData();
+      return computeLocalBacktest(
         symbolText
           .split(/[\s,;\n\t]+/)
           .map((s) => s.trim())
           .filter(Boolean),
         params,
         limit,
-      ),
+        includeEtf,
+      );
+    },
   });
 
   const result = mutation.data?.result;
@@ -76,11 +90,31 @@ function BacktestPage() {
 
       <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
         <div className="space-y-4">
+          <section className="space-y-2 rounded-lg border border-border bg-card p-3">
+            <h2 className="text-sm font-semibold">사용 데이터</h2>
+            {!ready ? (
+              <p className="text-[11px] text-muted-foreground">저장된 데이터 확인 중…</p>
+            ) : meta ? (
+              <p className="text-[11px] text-muted-foreground">
+                “데이터·산식” 탭에서 저장한 데이터 · {meta.fileName ?? "붙여넣기"} ·{" "}
+                {formatCount(meta.chars)}자
+              </p>
+            ) : (
+              <p className="text-[11px] text-warn">
+                저장된 데이터가 없습니다.{" "}
+                <Link to="/scoring" className="underline">
+                  데이터·산식 탭
+                </Link>
+                에서 CSV를 업로드하거나 붙여넣어 주세요.
+              </p>
+            )}
+          </section>
+
           <section className="space-y-3 rounded-lg border border-border bg-card p-3">
             <h2 className="text-sm font-semibold">테스트 대상</h2>
             <div className="space-y-1">
               <Label className="text-[11px] text-muted-foreground">
-                종목코드 (미입력 시 입력 데이터 중 거래대금 상위 주식 자동 선정)
+                종목코드 (미입력 시 업로드한 데이터 중 거래대금 상위 종목 자동 선정)
               </Label>
               <Textarea
                 value={symbolText}
@@ -156,15 +190,23 @@ function BacktestPage() {
                 />
               </div>
             </div>
+            <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={includeEtf}
+                onChange={(e) => setIncludeEtf(e.target.checked)}
+              />
+              자동 선정에 ETF도 포함
+            </label>
             <p className="text-[11px] text-muted-foreground">
-              대시보드에 입력한 일봉을 그대로 사용합니다. 더 긴 기간을 보려면 주피터에서 일봉
-              개수(COUNT)를 늘려 다시 붙여넣어 주세요.
+              업로드하거나 붙여넣은 일봉을 그대로 사용합니다. 더 긴 기간을 보려면 일봉 개수를 늘려
+              다시 업로드해 주세요.
             </p>
             <Button
               size="sm"
               className="w-full"
               onClick={() => mutation.mutate()}
-              disabled={mutation.isPending}
+              disabled={mutation.isPending || (ready && !meta)}
             >
               {mutation.isPending ? "백테스트 실행 중…" : "백테스트 실행"}
             </Button>
@@ -218,8 +260,8 @@ function BacktestPage() {
 
           {!result ? (
             <div className="rounded-lg border border-border bg-card p-6 text-[12px] text-muted-foreground">
-              좌측에서 대상과 조건을 정한 뒤 “백테스트 실행”을 누르면 결과가 표시됩니다. 실행 전에
-              대시보드에서 스크리닝을 먼저 시작해 종목 데이터를 수집해 두세요.
+              좌측에서 대상과 조건을 정한 뒤 “백테스트 실행”을 누르면 결과가 표시됩니다.
+              “데이터·산식” 탭에서 업로드하거나 붙여넣은 일봉 데이터를 그대로 사용합니다.
             </div>
           ) : (
             <>
