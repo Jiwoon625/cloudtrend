@@ -163,6 +163,7 @@ export function computeLocalBacktest(
   symbols: string[],
   params: BacktestParams,
   limit: number,
+  includeEtf = false,
 ): BacktestPayload {
   const parsed = getManualDataset();
   if (!parsed) throw new Error(MANUAL_DATA_MISSING_MESSAGE);
@@ -171,7 +172,7 @@ export function computeLocalBacktest(
   const pool = upper.length
     ? dataset.instruments.filter((i) => upper.includes(i.symbol))
     : [...dataset.instruments]
-        .filter((i) => i.instrumentType === "STOCK")
+        .filter((i) => includeEtf || i.instrumentType === "STOCK")
         .sort(
           (a, b) =>
             (dataset.bars[b.symbol]?.at(-1)?.tradingValue ?? 0) -
