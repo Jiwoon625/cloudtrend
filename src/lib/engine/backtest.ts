@@ -72,12 +72,6 @@ export const BACKTEST_FEATURES: FeatureDef[] = [
     description: "최근 20거래일 외국인 누적 순매수가 양수 (Priority 2점)",
     defaultWeight: 2,
   },
-  {
-    id: "NOT_OVEREXTENDED",
-    label: "과열 이격 아님 (참고지표, V3 점수 미반영)",
-    description: "20일선 이격도가 설정값 미만 — V3 composite score에는 포함하지 않는다",
-    defaultWeight: 0,
-  },
 ];
 
 /** 거래량 급증 피처의 판정 방식 */
