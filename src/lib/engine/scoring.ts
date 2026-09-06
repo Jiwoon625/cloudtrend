@@ -359,27 +359,17 @@ export function priorityScore(
     maxPoints: c.indexPoints,
   });
 
-  const f60 = snap.foreignNet60d;
+  const f20 = snap.foreignNet20d;
   rows.push({
     group: "외국인 수급",
-    rule: "최근 3개월(60일) 외국인 누적 순매수 > 0",
-    actual: f60 === null ? "데이터 없음" : `${(f60 / 100_000_000).toFixed(1)}억 원`,
+    rule: "최근 20거래일 외국인 누적 순매수 > 0",
+    actual: f20 === null ? "데이터 없음" : `${(f20 / 100_000_000).toFixed(1)}억 원`,
     threshold: `양수 시 +${c.foreignPoints}`,
-    status: f60 === null ? "NO_DATA" : f60 > 0 ? "PASS" : "FAIL",
-    points: f60 !== null && f60 > 0 ? c.foreignPoints : 0,
+    status: f20 === null ? "NO_DATA" : f20 > 0 ? "PASS" : "FAIL",
+    points: f20 !== null && f20 > 0 ? c.foreignPoints : 0,
     maxPoints: c.foreignPoints,
   });
 
-  const valueUp = inst.indexMemberships.includes("KOREA_VALUEUP");
-  rows.push({
-    group: "밸류업",
-    rule: "코리아 밸류업 지수 편입",
-    actual: valueUp ? "편입" : "미편입",
-    threshold: `편입 시 +${c.valueUpPoints}`,
-    status: valueUp ? "PASS" : "FAIL",
-    points: valueUp ? c.valueUpPoints : 0,
-    maxPoints: c.valueUpPoints,
-  });
 
   // 실적 모멘텀(영업이익 YoY)은 토스 Open API가 재무제표를 제공하지 않아 항목에서 제외했다.
 
