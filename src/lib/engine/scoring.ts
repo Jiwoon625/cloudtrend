@@ -150,9 +150,64 @@ function fmtNum(v: number | null, digits = 0) {
   return v === null ? "데이터 없음" : v.toLocaleString("ko-KR", { maximumFractionDigits: digits });
 }
 
-const half = (max: number) => Math.round((max / 2) * 10) / 10;
+/** V3 기술 신호 플래그 — Screener / 상세 / 백테스트가 공유하는 단일 진실원(source of truth) */
+export interface TechnicalFlagsV3 {
+  /** 종가 > 일목 구름 상단 */
+  cloudAbove: boolean | null;
+  /** MA20 > MA60 > MA120 (MA20 기울기 조건 없음) */
+  maAligned: boolean | null;
+  /** Momentum Confirmation ①: 전환선 > 기준선 */
+  tenkanAboveKijun: boolean | null;
+  /** Momentum Confirmation ②: MA20 기울기 > 0 */
+  ma20SlopeUp: boolean | null;
+  /** Momentum Confirmation ③: 20일 수익률 > 0 */
+  return20Positive: boolean | null;
+  /** 볼린저 상단 돌파 (Head Fake 경고 시 false) */
+  bbBreakout: boolean | null;
+  /** 고가 마감 거래량: 거래량 비율 ≥ 기준 AND CLV ≥ 기준 */
+  highCloseVolume: boolean | null;
+}
 
-/** Technical Signal Score. 만점과 임계값은 ScoringConfig로 조정된다(기본 7점). */
+/** 관측 시점 스냅샷 → V3 기술 신호 플래그 */
+export function technicalFlagsV3(
+  snap: IndicatorSnapshot,
+  cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
+): TechnicalFlagsV3 {
+  const t = cfg.technical;
+  const ich = snap.ichimoku;
+  const b = snap.bollinger;
+  const clv = snap.closeLocationValue;
+  return {
+    cloudAbove: ich.cloudTop === null ? null : snap.close > ich.cloudTop,
+    maAligned: snap.maAligned,
+    tenkanAboveKijun: ich.tenkanAboveKijun,
+    ma20SlopeUp: snap.ma20Slope === null ? null : snap.ma20Slope > 0,
+    return20Positive: snap.return20 === null ? null : snap.return20 > 0,
+    bbBreakout: b.bb === null ? null : b.headFakeWarning === true ? false : b.bbBreakout === true,
+    highCloseVolume:
+      snap.volumeRatio20 === null || clv === null
+        ? null
+        : snap.volumeRatio20 >= t.volumeStrongRatio && clv >= t.clvThreshold,
+  };
+}
+
+/** Momentum Confirmation: 충족 개수에 따라 0 / 1/3 / 2/3 / 3/3 × 만점 */
+export function momentumPoints(
+  flags: TechnicalFlagsV3,
+  cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
+): { points: number; met: number; evaluated: number } {
+  const list = [flags.tenkanAboveKijun, flags.ma20SlopeUp, flags.return20Positive];
+  const evaluated = list.filter((v) => v !== null).length;
+  const met = list.filter((v) => v === true).length;
+  const step = cfg.technical.momentumMax / 3;
+  return { points: Math.round(met * step * 100) / 100, met, evaluated };
+}
+
+/**
+ * V3 Technical Signal Score (기본 7점).
+ * 구름 상단 2.0 / 정배열 2.0 / Momentum Confirmation 1.5 / 볼린저 상단 돌파 1.0 / 고가마감 거래량 0.5
+ * valuePercentile은 참고 정보로만 표시하며 점수에 반영하지 않는다.
+ */
 export function technicalScore(
   snap: IndicatorSnapshot,
   valuePercentile: number | null,
@@ -161,118 +216,102 @@ export function technicalScore(
   const rows: RuleRow[] = [];
   const t = cfg.technical;
   const ich = snap.ichimoku;
+  const flags = technicalFlagsV3(snap, cfg);
 
-  // 7.1 일목 추세
-  let ichPoints = 0;
-  let ichStatus: RuleStatus = "NO_DATA";
-  let ichActual = "데이터 없음";
-  if (ich.cloudTop !== null && ich.cloudBottom !== null) {
-    const above = snap.close > ich.cloudTop;
-    const inside = snap.close >= ich.cloudBottom && snap.close <= ich.cloudTop;
-    ichActual = above ? "구름 상단 위" : inside ? "구름 내부" : "구름 아래";
-    if (above) {
-      const extra = ich.tenkanAboveKijun === true && ich.chikouAbovePast26Close === true;
-      ichPoints = extra ? t.ichimokuMax : half(t.ichimokuMax);
-      ichStatus = "PASS";
-      ichActual += extra ? " + 전환선>기준선 + 후행스팬 양전" : " (보조조건 일부 미충족)";
-    } else {
-      ichStatus = "FAIL";
-    }
-  }
+  // [1] Trend Core — 일목 구름 상단 위 (단독 평가)
+  const cloudActual =
+    ich.cloudTop === null
+      ? "데이터 없음"
+      : flags.cloudAbove
+        ? `구름 상단 위 (종가 ${fmtNum(snap.close)} > 상단 ${fmtNum(ich.cloudTop)})`
+        : ich.cloudBottom !== null && snap.close >= ich.cloudBottom
+          ? "구름 내부"
+          : "구름 아래";
   rows.push({
-    group: "일목 추세",
-    rule: "구름 상단 위 + 전환선>기준선 + 종가>26일전 종가",
-    actual: ichActual,
-    threshold: `3개 모두 충족 시 +${t.ichimokuMax} (구름 위만 +${half(t.ichimokuMax)})`,
-    status: ichStatus,
-    points: ichPoints,
-    maxPoints: t.ichimokuMax,
+    group: "Trend Core",
+    rule: "일목 구름 상단 위 (종가 > 선행스팬 상단)",
+    actual: cloudActual,
+    threshold: `충족 시 +${t.cloudAboveMax}`,
+    status: flags.cloudAbove === null ? "NO_DATA" : flags.cloudAbove ? "PASS" : "FAIL",
+    points: flags.cloudAbove === true ? t.cloudAboveMax : 0,
+    maxPoints: t.cloudAboveMax,
   });
 
-  // 7.2 볼린저 모멘텀
-  const b = snap.bollinger;
-  let bbPoints = 0;
-  let bbStatus: RuleStatus = "NO_DATA";
-  let bbActual = "데이터 없음";
-  if (b.bb) {
-    const breakout = b.bbBreakout === true;
-    const squeeze = b.bbSqueezePrior === true || b.bbSqueezeAbsolute === true;
-    const expanding = b.bbWidthExpanding === true;
-    if (breakout && squeeze && expanding) {
-      bbPoints = t.bollingerMax;
-      bbActual = "사전 스퀴즈 후 상단 돌파 + 밴드폭 확장";
-    } else if (breakout || squeeze) {
-      bbPoints = half(t.bollingerMax);
-      bbActual = breakout ? "상단 돌파만 발생" : "스퀴즈 진행 중";
-    } else {
-      bbActual = `밴드폭 ${b.bb.width.toFixed(2)}%, 돌파 없음`;
-    }
-    if (b.headFakeWarning === true) {
-      bbPoints = 0;
-      bbActual = "상단 재진입 + 밴드폭 미확장 (Head Fake)";
-    }
-    bbStatus = bbPoints > 0 ? "PASS" : "FAIL";
-  }
+  // [1] Trend Core — 이동평균 정배열 (MA20 기울기 요구하지 않음)
   rows.push({
-    group: "볼린저 모멘텀",
-    rule: "스퀴즈 후 상단 돌파 + 밴드폭 확장",
-    actual: bbActual,
-    threshold: `동시 충족 시 +${t.bollingerMax} (일부 +${half(t.bollingerMax)})`,
-    status: bbStatus,
-    points: bbPoints,
-    maxPoints: t.bollingerMax,
-  });
-
-  // 7.3 거래량 수급
-  let volPoints = 0;
-  let volStatus: RuleStatus = "NO_DATA";
-  if (snap.volumeRatio20 !== null) {
-    const topPct =
-      valuePercentile !== null ? valuePercentile >= t.volumeStrongPercentile : false;
-    if (snap.volumeRatio20 >= t.volumeStrongRatio && topPct) volPoints = t.volumeMax;
-    else if (snap.volumeRatio20 >= t.volumeWeakRatio) volPoints = half(t.volumeMax);
-    volStatus = volPoints > 0 ? "PASS" : "FAIL";
-  }
-  rows.push({
-    group: "거래량 수급",
-    rule: `20일 평균 거래량 대비 비율 + 거래대금 백분위 ${t.volumeStrongPercentile} 이상`,
-    actual:
-      snap.volumeRatio20 === null
-        ? "데이터 없음"
-        : `${snap.volumeRatio20.toFixed(1)}% / 거래대금 백분위 ${valuePercentile === null ? "-" : valuePercentile.toFixed(0)}`,
-    threshold: `${t.volumeStrongRatio}% 이상 + 상위 → +${t.volumeMax}, ${t.volumeWeakRatio}% 이상 → +${half(t.volumeMax)}`,
-    status: volStatus,
-    points: volPoints,
-    maxPoints: t.volumeMax,
-  });
-
-  // 7.4 이동평균 배열
-  let maPoints = 0;
-  let maStatus: RuleStatus = "NO_DATA";
-  if (snap.maAligned !== null && snap.ma20Slope !== null) {
-    maPoints = snap.maAligned && snap.ma20Slope > 0 ? t.maMax : 0;
-    maStatus = maPoints > 0 ? "PASS" : "FAIL";
-  }
-  rows.push({
-    group: "이동평균 배열",
-    rule: "MA20 > MA60 > MA120 + MA20 상승",
+    group: "Trend Core",
+    rule: "이동평균 정배열 (MA20 > MA60 > MA120)",
     actual:
       snap.ma20 === null
         ? "데이터 없음"
-        : `MA20 ${fmtNum(snap.ma20)} / MA60 ${fmtNum(snap.ma60)} / MA120 ${fmtNum(snap.ma120)} / 기울기 ${fmtNum(snap.ma20Slope, 1)}`,
-    threshold: `정배열 + 기울기 > 0 → +${t.maMax}`,
-    status: maStatus,
-    points: maPoints,
-    maxPoints: t.maMax,
+        : `MA20 ${fmtNum(snap.ma20)} / MA60 ${fmtNum(snap.ma60)} / MA120 ${fmtNum(snap.ma120)}`,
+    threshold: `정배열 시 +${t.maAlignedMax} (기울기 조건 없음)`,
+    status: flags.maAligned === null ? "NO_DATA" : flags.maAligned ? "PASS" : "FAIL",
+    points: flags.maAligned === true ? t.maAlignedMax : 0,
+    maxPoints: t.maAlignedMax,
   });
 
-  const points = rows.reduce((a, r) => a + r.points, 0);
+  // [2] Momentum Confirmation — 3개 조건 충족 개수
+  const mom = momentumPoints(flags, cfg);
+  const yn = (v: boolean | null) => (v === null ? "데이터 없음" : v ? "충족" : "미충족");
+  rows.push({
+    group: "Momentum Confirmation",
+    rule: "전환선>기준선 (Primary) · MA20 상승 · 20일 수익률 양수",
+    actual: `전환선>기준선 ${yn(flags.tenkanAboveKijun)} / MA20 상승 ${yn(
+      flags.ma20SlopeUp,
+    )} / 20일 수익률 ${yn(flags.return20Positive)} → ${mom.met}개 충족`,
+    threshold: `0개 0 / 1개 ${(t.momentumMax / 3).toFixed(2)} / 2개 ${((t.momentumMax * 2) / 3).toFixed(2)} / 3개 ${t.momentumMax}`,
+    status: mom.evaluated === 0 ? "NO_DATA" : mom.met > 0 ? "PASS" : "FAIL",
+    points: mom.points,
+    maxPoints: t.momentumMax,
+  });
+
+  // [3] Bollinger Breakout — 상단 돌파만 평가 (스퀴즈는 점수 미반영)
+  const b = snap.bollinger;
+  rows.push({
+    group: "Breakout",
+    rule: "볼린저 상단 돌파 (Head Fake 시 0점, 스퀴즈는 점수 미반영)",
+    actual:
+      b.bb === null
+        ? "데이터 없음"
+        : b.headFakeWarning === true
+          ? "상단 재진입 + 밴드폭 미확장 (Head Fake)"
+          : b.bbBreakout === true
+            ? "상단 돌파"
+            : `밴드폭 ${b.bb.width.toFixed(2)}%, 돌파 없음`,
+    threshold: `돌파 시 +${t.breakoutMax}`,
+    status: flags.bbBreakout === null ? "NO_DATA" : flags.bbBreakout ? "PASS" : "FAIL",
+    points: flags.bbBreakout === true ? t.breakoutMax : 0,
+    maxPoints: t.breakoutMax,
+  });
+
+  // [4] Volume Confirmation — 고가 마감 거래량
+  const clv = snap.closeLocationValue;
+  rows.push({
+    group: "Volume",
+    rule: `고가 마감 거래량 (거래량 ≥ ${t.volumeStrongRatio}% AND CLV ≥ ${t.clvThreshold})`,
+    actual:
+      flags.highCloseVolume === null
+        ? "데이터 없음"
+        : `거래량 ${snap.volumeRatio20!.toFixed(0)}% / CLV ${clv!.toFixed(2)}${
+            valuePercentile === null
+              ? ""
+              : ` (참고: 거래대금 백분위 ${valuePercentile.toFixed(0)}, 점수 미반영)`
+          }`,
+    threshold: `동시 충족 시 +${t.volumeMax}`,
+    status: flags.highCloseVolume === null ? "NO_DATA" : flags.highCloseVolume ? "PASS" : "FAIL",
+    points: flags.highCloseVolume === true ? t.volumeMax : 0,
+    maxPoints: t.volumeMax,
+  });
+
+  const points = Math.round(rows.reduce((a, r) => a + r.points, 0) * 100) / 100;
   const availableMaxPoints = rows.reduce(
     (a, r) => a + (r.status === "NO_DATA" ? 0 : r.maxPoints),
     0,
   );
   return { points, maxPoints: technicalMaxPoints(cfg), availableMaxPoints, rows };
 }
+
 
 export type TechnicalGrade = "A" | "B" | "C";
 
