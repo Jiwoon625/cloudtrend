@@ -33,11 +33,13 @@ export const DEFAULT_UNIVERSE: UniverseParams = {
   // 고가주(삼성바이오로직스·LG생활건강 등)는 중기 추세추종에서 제외 이유가 없어 상한을 실질 비활성화
   maxPrice: 10_000_000,
   minMarketCap: 300_000_000_000,
-  minTradingValue: 1_000_000_000,
+  // V3: 유동성 하한 강화 (당일 거래대금 30억원)
+  minTradingValue: 3_000_000_000,
   etfMinAum: 50_000_000_000,
   etfMinTradingValue20d: 1_000_000_000,
   etfMaxPremiumDiscount: 1,
-  excludeLeveragedInverse: false,
+  // V3: 레버리지·인버스 ETF 기본 실격
+  excludeLeveragedInverse: true,
 };
 
 

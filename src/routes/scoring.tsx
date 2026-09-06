@@ -121,6 +121,16 @@ function ScoringPage() {
     setDraft(next);
   };
 
+  /** V3 기본값 전체(배점·임계값·유니버스·가중치·로테이션)를 즉시 복원하고 다시 계산한다. */
+  const restoreV3Defaults = () => {
+    const next: ScoringConfig = JSON.parse(JSON.stringify(DEFAULT_SCORING_CONFIG));
+    setDraft(next);
+    setSaved(next);
+    setSyncedFrom(next);
+    void queryClient.invalidateQueries({ queryKey: ["market-analysis"] });
+    void queryClient.invalidateQueries({ queryKey: ["instrument"] });
+  };
+
   const apply = () => {
     setSaved(draft);
     setSyncedFrom(draft);
@@ -506,6 +516,9 @@ function ScoringPage() {
         </Button>
         <Button size="sm" variant="outline" onClick={() => setDraft(DEFAULT_SCORING_CONFIG)}>
           기본값 불러오기
+        </Button>
+        <Button size="sm" variant="outline" onClick={restoreV3Defaults}>
+          V3 기본값으로 복원
         </Button>
         <span className="text-[11px] text-muted-foreground">
           {dirty ? "저장되지 않은 변경이 있습니다." : "현재 설정이 스크리너에 적용되어 있습니다."}
