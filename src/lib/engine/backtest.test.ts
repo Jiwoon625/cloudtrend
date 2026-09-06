@@ -52,9 +52,9 @@ describe("multi horizon backtest", () => {
   const result = runBacktest([uptrend, choppy], params);
 
   it("computes every requested forward horizon", () => {
-    expect(result.horizons).toEqual([5, 10, 20, 40, 60]);
+    expect(result.horizons).toEqual([5, 10, 20, 30, 40, 60]);
     for (const fh of result.featureHorizons) {
-      expect(fh.metrics.map((m) => m.horizon)).toEqual([5, 10, 20, 40, 60]);
+      expect(fh.metrics.map((m) => m.horizon)).toEqual([5, 10, 20, 30, 40, 60]);
     }
   });
 
@@ -65,7 +65,7 @@ describe("multi horizon backtest", () => {
       sampleEvery: 20,
       intervalCandidates: [20],
     });
-    for (const n of [5, 10, 20, 40, 60]) {
+    for (const n of [5, 10, 20, 30, 40, 60]) {
       const xs: number[] = [];
       for (let i = 120; i < bars.length; i += 20) {
         const exit = bars[i + n];
@@ -176,8 +176,8 @@ describe("sensitivity and sampling", () => {
 
   it("computes a full correlation matrix for active features", () => {
     const r = runBacktest([uptrend, choppy], params);
-    expect(r.correlation.ids.length).toBe(BACKTEST_FEATURES.length);
-    expect(r.correlation.matrix.length).toBe(BACKTEST_FEATURES.length);
+    expect(r.correlation.ids.length).toBe(params.features.length);
+    expect(r.correlation.matrix.length).toBe(params.features.length);
     expect(r.correlation.matrix[0]![0]).toBe(1);
   });
 });
@@ -188,8 +188,8 @@ describe("regression: legacy single-horizon output", () => {
   it("keeps original fields intact", () => {
     expect(r.symbolCount).toBe(2);
     expect(r.observations).toBeGreaterThan(0);
-    expect(r.horizonDays).toBe(20);
-    expect(r.features.length).toBe(BACKTEST_FEATURES.length);
+    expect(r.horizonDays).toBe(30);
+    expect(r.features.length).toBe(params.features.length);
     expect(r.buckets.map((b) => b.label)).toEqual([
       "0~20점",
       "20~40점",
@@ -204,7 +204,7 @@ describe("regression: legacy single-horizon output", () => {
   it("legacy feature stats equal the 20d horizon metrics", () => {
     for (const f of r.features) {
       const fh = r.featureHorizons.find((x) => x.featureKey === f.id)!;
-      const m = fh.metrics.find((x) => x.horizon === 20)!;
+      const m = fh.metrics.find((x) => x.horizon === r.horizonDays)!;
       expect(f.edge).toBe(m.edge);
       expect(f.avgReturnOn).toBe(m.signalAvgReturn);
       expect(f.signalCount).toBe(m.signalCount);

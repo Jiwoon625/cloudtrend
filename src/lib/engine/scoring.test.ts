@@ -6,8 +6,13 @@ import {
   calculatePositionSizing,
   evaluateMarketGate,
   fundamentalScore,
+  DEFAULT_SCORING_CONFIG,
+  mergeScoringConfig,
   normalize,
+  priorityMaxPoints,
   priorityScore,
+  SCORING_CONFIG_VERSION,
+  technicalMaxPoints,
   technicalGrade,
   technicalScore,
   totalScore,
@@ -62,30 +67,96 @@ function snapshot(overrides: Partial<IndicatorSnapshot> = {}): IndicatorSnapshot
     institutionNet20d: 1e8,
     extensionFromMa20: 5.2,
     atrExtension: 2.5,
+    closeLocationValue: 0.85,
   };
   return { ...base, ...overrides };
 }
 
-describe("Technical Signal Score", () => {
-  it("모든 조건 충족 시 7점, A등급", () => {
+describe("V3 Technical Signal Score", () => {
+  it("모든 조건 충족 시 만점 7점, A등급", () => {
     const block = technicalScore(snapshot(), 85);
+    expect(block.maxPoints).toBe(7);
     expect(block.points).toBe(7);
     expect(technicalGrade(block.points)).toBe("A");
   });
 
-  it("거래대금 상위 30% 미달이면 거래량 2점 대신 1점", () => {
-    const block = technicalScore(snapshot(), 40);
-    expect(block.points).toBe(6);
+  it("일목 구름 상단 위는 전환선·후행스팬 없이도 단독 2점", () => {
+    const block = technicalScore(
+      snapshot({
+        ichimoku: {
+          ...snapshot().ichimoku,
+          tenkanAboveKijun: false,
+          chikouAbovePast26Close: false,
+        },
+      }),
+      85,
+    );
+    const row = block.rows.find((r) => r.rule.startsWith("일목 구름 상단 위"))!;
+    expect(row.points).toBe(2);
+    expect(row.status).toBe("PASS");
   });
 
-  it("거래량 130% 경계값은 1점", () => {
-    const block = technicalScore(snapshot({ volumeRatio20: 130 }), 40);
-    expect(block.rows[2]!.points).toBe(1);
-    const below = technicalScore(snapshot({ volumeRatio20: 129.9 }), 40);
-    expect(below.rows[2]!.points).toBe(0);
+  it("이동평균 정배열은 MA20 기울기를 요구하지 않고 단독 2점", () => {
+    const block = technicalScore(snapshot({ ma20Slope: -3 }), 85);
+    const row = block.rows.find((r) => r.rule.startsWith("이동평균 정배열"))!;
+    expect(row.points).toBe(2);
+    const notAligned = technicalScore(snapshot({ maAligned: false }), 85).rows.find((r) =>
+      r.rule.startsWith("이동평균 정배열"),
+    )!;
+    expect(notAligned.points).toBe(0);
   });
 
-  it("구름 내부면 일목 0점", () => {
+  it("Momentum Confirmation: 0개 0 / 1개 0.5 / 2개 1.0 / 3개 1.5", () => {
+    const base = snapshot();
+    const withFlags = (tk: boolean, slope: number, ret: number) =>
+      technicalScore(
+        snapshot({
+          ichimoku: { ...base.ichimoku, tenkanAboveKijun: tk },
+          ma20Slope: slope,
+          return20: ret,
+        }),
+        85,
+      ).rows.find((r) => r.group === "Momentum Confirmation")!.points;
+    expect(withFlags(false, -1, -0.1)).toBe(0);
+    expect(withFlags(true, -1, -0.1)).toBe(0.5);
+    expect(withFlags(true, 1, -0.1)).toBe(1);
+    expect(withFlags(true, 1, 0.1)).toBe(1.5);
+  });
+
+  it("볼린저 스퀴즈 단독으로는 점수가 없고, 상단 돌파는 1점", () => {
+    const base = snapshot();
+    const squeezeOnly = technicalScore(
+      snapshot({ bollinger: { ...base.bollinger, bbBreakout: false } }),
+      85,
+    );
+    const row = squeezeOnly.rows.find((r) => r.group === "Breakout")!;
+    expect(row.points).toBe(0);
+    expect(technicalScore(snapshot(), 85).rows.find((r) => r.group === "Breakout")!.points).toBe(1);
+  });
+
+  it("고가마감 거래량: 거래량 150% 이상 AND CLV 0.7 이상일 때만 0.5점", () => {
+    const vol = (ratio: number | null, clv: number | null) =>
+      technicalScore(snapshot({ volumeRatio20: ratio, closeLocationValue: clv }), null).rows.find(
+        (r) => r.group === "Volume",
+      )!;
+    expect(vol(150, 0.7).points).toBe(0.5);
+    expect(vol(149, 0.9).points).toBe(0);
+    expect(vol(200, 0.69).points).toBe(0);
+    expect(vol(null, 0.9).status).toBe("NO_DATA");
+    expect(vol(200, null).status).toBe("NO_DATA");
+  });
+
+  it("거래대금 백분위는 점수에 영향을 주지 않는다 (참고 정보)", () => {
+    expect(technicalScore(snapshot(), 85).points).toBe(technicalScore(snapshot(), 10).points);
+  });
+
+  it("20일선 과열 이격률은 기술점수를 바꾸지 않는다", () => {
+    const a = technicalScore(snapshot({ extensionFromMa20: 2 }), 85).points;
+    const b = technicalScore(snapshot({ extensionFromMa20: 45, atrExtension: 9 }), 85).points;
+    expect(a).toBe(b);
+  });
+
+  it("구름 내부면 구름 항목 0점", () => {
     const block = technicalScore(snapshot({ close: 90 }), 85);
     expect(block.rows[0]!.points).toBe(0);
     expect(block.rows[0]!.status).toBe("FAIL");
@@ -107,9 +178,18 @@ describe("Technical Signal Score", () => {
       }),
       null,
     );
-    expect(block.availableMaxPoints).toBe(3);
-    expect(block.rows[2]!.status).toBe("NO_DATA");
-    expect(normalize(block)).toBeCloseTo((block.points / 3) * 100);
+    expect(block.availableMaxPoints).toBe(5.5);
+    expect(block.rows.find((r) => r.group === "Volume")!.status).toBe("NO_DATA");
+    expect(normalize(block)).toBeCloseTo((block.points / 5.5) * 100);
+  });
+
+  it("Head Fake 경고 시 돌파 점수는 0", () => {
+    const base = snapshot();
+    const block = technicalScore(
+      snapshot({ bollinger: { ...base.bollinger, headFakeWarning: true } }),
+      85,
+    );
+    expect(block.rows.find((r) => r.group === "Breakout")!.points).toBe(0);
   });
 
   it("등급 경계값", () => {
@@ -147,28 +227,103 @@ describe("시장 게이트", () => {
   });
 });
 
-describe("Priority Quality Score", () => {
+describe("V3 Priority Quality Score", () => {
   const inst: Instrument = {
     ...INSTRUMENTS[0]!,
     indexMemberships: ["KOSPI200", "KRX300"],
   };
+
+  it("만점 8점 = 지수 2 + 외국인 2 + 신고가 2 + 규모 1 + 상대성과 1", () => {
+    const block = priorityScore(inst, snapshot({ dayReturn: 0.05 }), undefined, 5e12, 0.02);
+    expect(block.maxPoints).toBe(8);
+    expect(block.points).toBe(8);
+  });
 
   it("중복 지수 편입에도 +2점만 부여", () => {
     const block = priorityScore(inst, snapshot(), getFinancials("005930"), 5e12, 0.001);
     expect(block.rows[0]!.points).toBe(2);
   });
 
-  it("당일 초과수익률은 종목 등락률이 아닌 벤치마크 차이로 계산", () => {
-    const block = priorityScore(inst, snapshot({ dayReturn: 0.03 }), undefined, 5e12, 0.02);
-    expect(block.rows[5]!.points).toBe(0); // 1%p 차이 → 미충족
-    const block2 = priorityScore(inst, snapshot({ dayReturn: 0.05 }), undefined, 5e12, 0.02);
-    expect(block2.rows[5]!.points).toBe(1);
+  it("외국인 수급은 20일 누적을 사용하고 60일은 사용하지 않는다", () => {
+    const only20Negative = priorityScore(
+      inst,
+      snapshot({ foreignNet20d: -1e9, foreignNet60d: 5e9 }),
+      undefined,
+      5e12,
+      0,
+    );
+    expect(only20Negative.rows[1]!.points).toBe(0);
+    const only20Positive = priorityScore(
+      inst,
+      snapshot({ foreignNet20d: 1e9, foreignNet60d: -5e9 }),
+      undefined,
+      5e12,
+      0,
+    );
+    expect(only20Positive.rows[1]!.points).toBe(2);
   });
 
-  it("외국인 데이터 없으면 산정 불가 처리", () => {
-    const block = priorityScore(inst, snapshot({ foreignNet60d: null }), undefined, 5e12, 0);
+  it("외국인 20일 데이터 없으면 산정 불가 처리", () => {
+    const block = priorityScore(inst, snapshot({ foreignNet20d: null }), undefined, 5e12, 0);
     expect(block.rows[1]!.status).toBe("NO_DATA");
     expect(block.availableMaxPoints).toBeLessThan(block.maxPoints);
+  });
+
+  it("52주 신고가 근접은 -10% 이내에서 2점", () => {
+    const near = priorityScore(inst, snapshot({ distanceFrom52wHigh: -9.9 }), undefined, 5e12, 0);
+    expect(near.rows[2]!.points).toBe(2);
+    const far = priorityScore(inst, snapshot({ distanceFrom52wHigh: -10.1 }), undefined, 5e12, 0);
+    expect(far.rows[2]!.points).toBe(0);
+  });
+
+  it("밸류업 편입 여부는 점수를 바꾸지 않고 참고지표로만 남는다", () => {
+    const withValueUp: Instrument = {
+      ...inst,
+      indexMemberships: [...inst.indexMemberships, "KOREA_VALUEUP"],
+    };
+    const a = priorityScore(inst, snapshot(), undefined, 5e12, 0.001);
+    const b = priorityScore(withValueUp, snapshot(), undefined, 5e12, 0.001);
+    expect(b.points).toBe(a.points);
+    expect(b.maxPoints).toBe(a.maxPoints);
+    const info = b.rows.find((r) => r.rule === "코리아 밸류업 지수 편입")!;
+    expect(info.maxPoints).toBe(0);
+    expect(info.group).toContain("점수 미반영");
+  });
+
+  it("당일 초과수익률은 종목 등락률이 아닌 벤치마크 차이로 계산", () => {
+    const block = priorityScore(inst, snapshot({ dayReturn: 0.03 }), undefined, 5e12, 0.02);
+    expect(block.rows[4]!.points).toBe(0); // 1%p 차이 → 미충족
+    const block2 = priorityScore(inst, snapshot({ dayReturn: 0.05 }), undefined, 5e12, 0.02);
+    expect(block2.rows[4]!.points).toBe(1);
+  });
+});
+
+describe("V3 설정 버전 마이그레이션", () => {
+  it("V2 저장 설정(configVersion 없음)은 V3 기본값으로 대체된다", () => {
+    const v2 = {
+      technical: { ichimokuMax: 2, bollingerMax: 2, volumeMax: 2, maMax: 1, volumeWeakRatio: 130 },
+      priority: { valueUpPoints: 1, nearHighPoints: 1, foreignPoints: 2 },
+      universe: { minTradingValue: 1_000_000_000, excludeLeveragedInverse: false },
+    };
+    const merged = mergeScoringConfig(v2);
+    expect(merged.configVersion).toBe(SCORING_CONFIG_VERSION);
+    expect(merged.technical.cloudAboveMax).toBe(2);
+    expect(merged.technical.momentumMax).toBe(1.5);
+    expect(merged.priority.nearHighPoints).toBe(2);
+    expect(merged.universe.minTradingValue).toBe(3_000_000_000);
+    expect(merged.universe.excludeLeveragedInverse).toBe(true);
+    expect(technicalMaxPoints(merged)).toBe(7);
+    expect(priorityMaxPoints(merged)).toBe(8);
+  });
+
+  it("V3 사용자 수정값은 그대로 보존된다", () => {
+    const custom = {
+      ...DEFAULT_SCORING_CONFIG,
+      technical: { ...DEFAULT_SCORING_CONFIG.technical, volumeStrongRatio: 180 },
+    };
+    const merged = mergeScoringConfig(custom);
+    expect(merged.technical.volumeStrongRatio).toBe(180);
+    expect(merged.configVersion).toBe(SCORING_CONFIG_VERSION);
   });
 });
 
