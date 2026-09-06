@@ -29,6 +29,8 @@ import {
 } from "@/lib/engine/backtest";
 import { formatCount, formatNumber } from "@/lib/format";
 import { BacktestDataInput } from "@/components/BacktestDataInput";
+import { PdfExportButton } from "@/components/PdfExportButton";
+
 import { loadBacktestDataset } from "@/lib/backtestDataStore";
 import { computeLocalBacktest } from "@/lib/localAnalysis";
 import { getManualDataMeta, hydrateManualData, type ManualDataMeta } from "@/lib/manualDataStore";
