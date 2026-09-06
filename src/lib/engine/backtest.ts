@@ -362,8 +362,7 @@ export function evaluateFeatures(
         : snap.distanceFrom52wHigh >= cfg.priority.nearHighThresholdPercent,
     RS_POSITIVE: v3.return20Positive,
     FOREIGN_NET_POSITIVE: snap.foreignNet20d === null ? null : snap.foreignNet20d > 0,
-    NOT_OVEREXTENDED:
-      snap.extensionFromMa20 === null ? null : snap.extensionFromMa20 < params.extensionLimit,
+  };
   };
 }
 
