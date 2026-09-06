@@ -30,16 +30,27 @@ const US_NAV = [
   { to: "/us/screener", label: "US 스크리너" },
 ] as const;
 
+const THEME_STORAGE_KEY = "cloudtrend-theme";
+
+function getStoredDarkMode(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(THEME_STORAGE_KEY) === "dark";
+}
+
 function ThemeToggle() {
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(getStoredDarkMode);
+
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
+    window.localStorage.setItem(THEME_STORAGE_KEY, dark ? "dark" : "light");
   }, [dark]);
+
   return (
     <button
       type="button"
       onClick={() => setDark((d) => !d)}
-      aria-label="다크 모드 전환"
+      aria-label={dark ? "라이트 모드로 전환" : "다크 모드로 전환"}
+      aria-pressed={dark}
       className="inline-flex size-8 items-center justify-center rounded-md border border-border bg-surface text-muted-foreground transition-colors hover:text-foreground"
     >
       {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
