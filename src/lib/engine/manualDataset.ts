@@ -417,7 +417,7 @@ export function parseManualMarketData(text: string): ManualParseResult {
       sectors: true,
       marketCap: marketCapCount > 0,
       investorFlow: flowCount > 0,
-      volatilityIndex: !!vkospi,
+      volatilityIndex: volatilitySeries.length > 0,
       exactTradingValue: exactValueCount > 0,
     },
     notes: [
@@ -440,7 +440,7 @@ export function parseManualMarketData(text: string): ManualParseResult {
     indexSeries,
     financials: {} as Record<string, FinancialFacts>,
     etfFacts: {} as Record<string, EtfFacts>,
-    vkospiSeries: vkospi ? vkospi.bars.map((b) => b.close) : [],
+    vkospiSeries: volatilitySeries,
   };
 
   return {
@@ -448,7 +448,9 @@ export function parseManualMarketData(text: string): ManualParseResult {
     stats: {
       stocks: stockCount,
       etfs: instruments.length - stockCount,
-      indexes: indexSeries.map((s) => s.indexCode).concat(vkospi ? ["VKOSPI"] : []),
+      indexes: indexSeries
+        .map((s) => s.indexCode)
+        .concat(vkospi ? ["VKOSPI"] : volatilityIsProxy ? ["실현변동성(대체)"] : []),
       bars: barCount,
       firstDate: tradeDates[0]!,
       lastDate: asOfDate,
