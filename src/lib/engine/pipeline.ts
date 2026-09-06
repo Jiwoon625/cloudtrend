@@ -152,6 +152,40 @@ export interface AnalysisResult {
   calculatedAt: string;
 }
 
+/**
+ * 시장 전체 외국인 5일 순매수.
+ * 1순위: 지수 시계열에 외국인 순매수 컬럼이 있으면 그대로 사용.
+ * 2순위: 업로드된 개별 종목 수급을 최근 5거래일 기준으로 합산한다.
+ *        (지수 데이터에는 보통 수급 컬럼이 없으므로 이 경로가 실사용 기본값이다.)
+ */
+export function computeMarketForeignNet5d(
+  ds: MarketDataset,
+  benchmarkBars: DailyPrice[],
+): number | null {
+  const last5 = benchmarkBars.slice(-5);
+  if (last5.length > 0 && last5.every((b) => b.foreignNetBuyValue !== null)) {
+    return last5.reduce((a, b) => a + (b.foreignNetBuyValue ?? 0), 0);
+  }
+
+  // 개별 종목 합산: 데이터가 있는 종목만 사용하고, 최근 5거래일에 해당하는 값만 더한다.
+  const dates = last5.map((b) => b.tradeDate);
+  const dateSet = new Set(dates);
+  let sum = 0;
+  let contributing = 0;
+  for (const inst of ds.instruments) {
+    const bars = ds.bars[inst.symbol] ?? [];
+    if (bars.length === 0) continue;
+    const window = dateSet.size > 0 ? bars.filter((b) => dateSet.has(b.tradeDate)) : bars.slice(-5);
+    const flows = window
+      .map((b) => b.foreignNetBuyValue)
+      .filter((v): v is number => v !== null && Number.isFinite(v));
+    if (flows.length === 0) continue;
+    sum += flows.reduce((a, v) => a + v, 0);
+    contributing++;
+  }
+  return contributing > 0 ? sum : null;
+}
+
 function indexOf(ds: MarketDataset, code: string): IndexSeries | undefined {
   return ds.indexSeries.find((s) => s.indexCode === code);
 }
@@ -310,12 +344,7 @@ export function runAnalysis(
     : null;
 
   const kospiBars = indexOf(ds, "KOSPI")!.bars;
-  const last5 = kospiBars.slice(-5);
-  const marketForeignNet5d = ds.capabilities.investorFlow
-    ? last5.every((b) => b.foreignNetBuyValue !== null)
-      ? last5.reduce((a, b) => a + (b.foreignNetBuyValue ?? 0), 0)
-      : null
-    : null;
+  const marketForeignNet5d = computeMarketForeignNet5d(ds, kospiBars);
 
   const gate = evaluateMarketGate({ benchmark: kospi, vkospi, marketForeignNet5d });
 
