@@ -846,23 +846,28 @@ export function calculatePositionSizing(input: PositionSizingInput): PositionSiz
 // ---------------------------------------------------------------------------
 
 export interface ScoringConfig {
+  /** 저장된 설정의 모델 버전. 현재 V3 = 3 */
+  configVersion: number;
   weights: { stock: Weights; etf: Weights };
   technical: {
-    ichimokuMax: number;
-    bollingerMax: number;
+    /** 일목 구름 상단 위 배점 (단독 조건) */
+    cloudAboveMax: number;
+    /** 이동평균 정배열(MA20>MA60>MA120) 배점 */
+    maAlignedMax: number;
+    /** Momentum Confirmation 만점 (3개 조건, 충족 개수 비례) */
+    momentumMax: number;
+    /** 볼린저 상단 돌파 배점 */
+    breakoutMax: number;
+    /** 고가 마감 거래량 배점 */
     volumeMax: number;
-    maMax: number;
-    /** 거래량 비율(20일 평균 대비, %) 강한 신호 기준 */
+    /** 거래량 비율(20일 평균 대비, %) 기준 */
     volumeStrongRatio: number;
-    /** 거래대금 백분위 기준 (강한 신호 동시 조건) */
-    volumeStrongPercentile: number;
-    /** 거래량 비율 약한 신호 기준 */
-    volumeWeakRatio: number;
+    /** 고가 마감 판정 CLV 기준 */
+    clvThreshold: number;
   };
   priority: {
     indexPoints: number;
     foreignPoints: number;
-    valueUpPoints: number;
     nearHighPoints: number;
     sizePoints: number;
     relativePoints: number;
@@ -879,22 +884,25 @@ export interface ScoringConfig {
   rotation: RotationWeights;
 }
 
+/** 현재 scoring 모델 버전 (V3) */
+export const SCORING_CONFIG_VERSION = 3;
+
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
+  configVersion: SCORING_CONFIG_VERSION,
   weights: { stock: { ...STOCK_WEIGHTS }, etf: { ...ETF_WEIGHTS } },
   technical: {
-    ichimokuMax: 2,
-    bollingerMax: 2,
-    volumeMax: 2,
-    maMax: 1,
-    volumeStrongRatio: 200,
-    volumeStrongPercentile: 70,
-    volumeWeakRatio: 130,
+    cloudAboveMax: 2,
+    maAlignedMax: 2,
+    momentumMax: 1.5,
+    breakoutMax: 1,
+    volumeMax: 0.5,
+    volumeStrongRatio: 150,
+    clvThreshold: 0.7,
   },
   priority: {
     indexPoints: 2,
     foreignPoints: 2,
-    valueUpPoints: 1,
-    nearHighPoints: 1,
+    nearHighPoints: 2,
     sizePoints: 1,
     relativePoints: 1,
     nearHighThresholdPercent: -10,
@@ -918,6 +926,11 @@ export function mergeScoringConfig(input: unknown): ScoringConfig {
   const at = (o: unknown, k: string): unknown =>
     o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined;
   const raw = input ?? {};
+  // 구버전(V2 이전) 설정은 항목 구조 자체가 달라 값을 이어받지 않고 V3 기본값으로 1회 마이그레이션한다.
+  const rawVersion = Number(at(raw, "configVersion"));
+  if (!Number.isFinite(rawVersion) || rawVersion < SCORING_CONFIG_VERSION) {
+    return JSON.parse(JSON.stringify(d)) as ScoringConfig;
+  }
   const w = at(raw, "weights");
   const weightBlock = (src: unknown, def: Weights): Weights => ({
     technical: clampNum(at(src, "technical"), def.technical, 0, 1),
@@ -932,33 +945,28 @@ export function mergeScoringConfig(input: unknown): ScoringConfig {
   const lev = at(u, "excludeLeveragedInverse");
   const rot = at(raw, "rotation");
   return {
+    configVersion: SCORING_CONFIG_VERSION,
     weights: {
       stock: weightBlock(at(w, "stock"), d.weights.stock),
       etf: weightBlock(at(w, "etf"), d.weights.etf),
     },
     technical: {
-      ichimokuMax: clampNum(at(t, "ichimokuMax"), d.technical.ichimokuMax, 0, 20),
-      bollingerMax: clampNum(at(t, "bollingerMax"), d.technical.bollingerMax, 0, 20),
+      cloudAboveMax: clampNum(at(t, "cloudAboveMax"), d.technical.cloudAboveMax, 0, 20),
+      maAlignedMax: clampNum(at(t, "maAlignedMax"), d.technical.maAlignedMax, 0, 20),
+      momentumMax: clampNum(at(t, "momentumMax"), d.technical.momentumMax, 0, 20),
+      breakoutMax: clampNum(at(t, "breakoutMax"), d.technical.breakoutMax, 0, 20),
       volumeMax: clampNum(at(t, "volumeMax"), d.technical.volumeMax, 0, 20),
-      maMax: clampNum(at(t, "maMax"), d.technical.maMax, 0, 20),
       volumeStrongRatio: clampNum(
         at(t, "volumeStrongRatio"),
         d.technical.volumeStrongRatio,
         100,
         2000,
       ),
-      volumeStrongPercentile: clampNum(
-        at(t, "volumeStrongPercentile"),
-        d.technical.volumeStrongPercentile,
-        0,
-        100,
-      ),
-      volumeWeakRatio: clampNum(at(t, "volumeWeakRatio"), d.technical.volumeWeakRatio, 50, 2000),
+      clvThreshold: clampNum(at(t, "clvThreshold"), d.technical.clvThreshold, 0, 1),
     },
     priority: {
       indexPoints: clampNum(at(p, "indexPoints"), d.priority.indexPoints, 0, 20),
       foreignPoints: clampNum(at(p, "foreignPoints"), d.priority.foreignPoints, 0, 20),
-      valueUpPoints: clampNum(at(p, "valueUpPoints"), d.priority.valueUpPoints, 0, 20),
       nearHighPoints: clampNum(at(p, "nearHighPoints"), d.priority.nearHighPoints, 0, 20),
       sizePoints: clampNum(at(p, "sizePoints"), d.priority.sizePoints, 0, 20),
       relativePoints: clampNum(at(p, "relativePoints"), d.priority.relativePoints, 0, 20),
@@ -1013,7 +1021,11 @@ export function mergeScoringConfig(input: unknown): ScoringConfig {
 /** 기술점수 만점(설정 반영) */
 export function technicalMaxPoints(cfg: ScoringConfig = DEFAULT_SCORING_CONFIG): number {
   const t = cfg.technical;
-  return t.ichimokuMax + t.bollingerMax + t.volumeMax + t.maMax;
+  return (
+    Math.round(
+      (t.cloudAboveMax + t.maAlignedMax + t.momentumMax + t.breakoutMax + t.volumeMax) * 100,
+    ) / 100
+  );
 }
 
 /** 우선순위 점수 만점(설정 반영) */
@@ -1022,7 +1034,6 @@ export function priorityMaxPoints(cfg: ScoringConfig = DEFAULT_SCORING_CONFIG): 
   return (
     p.indexPoints +
     p.foreignPoints +
-    p.valueUpPoints +
     p.nearHighPoints +
     p.sizePoints +
     p.relativePoints
