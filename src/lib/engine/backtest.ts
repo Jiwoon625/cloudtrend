@@ -342,7 +342,6 @@ export function evaluateFeatures(
   cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
 ): Record<string, boolean | null> {
   const v3 = technicalFlagsV3(snap, cfg);
-  const v3 = technicalFlagsV3(snap, cfg);
   return {
     ICH_ABOVE_CLOUD: v3.cloudAbove,
     ICH_TENKAN_KIJUN: v3.tenkanAboveKijun,
