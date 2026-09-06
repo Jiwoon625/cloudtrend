@@ -122,18 +122,13 @@ export interface BacktestParams {
   volumeThresholds?: number[];
 }
 
-/** V3 composite score에 포함되지 않는 참고지표 피처 (분석용으로만 유지) */
-export const INFORMATION_ONLY_FEATURES = ["BB_SQUEEZE", "NOT_OVEREXTENDED"];
-
 export const DEFAULT_BACKTEST_PARAMS: BacktestParams = {
   horizonDays: 30,
   sampleEvery: 5,
   volumeSurgeRatio: 150,
   extensionLimit: 15,
   entryScore: 60,
-  features: BACKTEST_FEATURES.filter((f) => !INFORMATION_ONLY_FEATURES.includes(f.id)).map(
-    (f) => f.id,
-  ),
+  features: BACKTEST_FEATURES.map((f) => f.id),
   weights: Object.fromEntries(BACKTEST_FEATURES.map((f) => [f.id, f.defaultWeight])),
   horizons: DEFAULT_HORIZONS,
   volumeMode: "HIGH_CLOSE",
