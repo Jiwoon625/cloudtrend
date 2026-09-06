@@ -1,6 +1,8 @@
 import { useState } from "react";
 
+import { PdfExportButton } from "@/components/PdfExportButton";
 import { ScreenerTable } from "@/components/ScreenerTable";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -133,7 +135,11 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
             {base.filter((r) => !r.hardFilterPassed).length}건
           </p>
         </div>
+        <PdfExportButton
+          documentTitle={`CloudTrend ${mode === "STOCK" ? "주식" : "ETF"} 스크리너 ${analysis.asOfDate}`}
+        />
       </header>
+
 
       <div className="flex flex-wrap gap-1">
         {PRESETS.map((p) => (

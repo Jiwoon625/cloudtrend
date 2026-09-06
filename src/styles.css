@@ -172,12 +172,17 @@
 
 /* PDF 내보내기(브라우저 인쇄) 최적화 */
 @media print {
-  header {
+  header,
+  nav,
+  [data-no-print] {
     display: none !important;
   }
   body {
     background: #fff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
+
   main,
   main * {
     color: #111 !important;
