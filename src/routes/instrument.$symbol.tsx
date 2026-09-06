@@ -259,46 +259,28 @@ function InstrumentDetail() {
               />
               <Legend wrapperStyle={{ fontSize: 10 }} />
               {visible.cloud ? (
-                <>
-                  <Area
-                    yAxisId="price"
-                    dataKey="bullCloud"
-                    stroke="none"
-                    fill="var(--color-down)"
-                    fillOpacity={0.2}
-                    connectNulls={false}
-                    isAnimationActive={false}
-                    name="양운"
-                  />
-                  <Area
-                    yAxisId="price"
-                    dataKey="bearCloud"
-                    stroke="none"
-                    fill="var(--color-info)"
-                    fillOpacity={0.2}
-                    connectNulls={false}
-                    isAnimationActive={false}
-                    name="음운"
-                  />
-                  <Line
-                    yAxisId="price"
-                    dataKey="tenkan"
-                    stroke="var(--color-chart-3)"
-                    dot={false}
-                    strokeWidth={1}
-                    isAnimationActive={false}
-                    name="전환선(9)"
-                  />
-                  <Line
-                    yAxisId="price"
-                    dataKey="kijun"
-                    stroke="var(--color-chart-1)"
-                    dot={false}
-                    strokeWidth={1}
-                    isAnimationActive={false}
-                    name="기준선(26)"
-                  />
-                </>
+                <Area
+                  yAxisId="price"
+                  dataKey="bullCloud"
+                  stroke="none"
+                  fill="var(--color-down)"
+                  fillOpacity={0.2}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                  name="양운"
+                />
+              ) : null}
+              {visible.cloud ? (
+                <Area
+                  yAxisId="price"
+                  dataKey="bearCloud"
+                  stroke="none"
+                  fill="var(--color-info)"
+                  fillOpacity={0.2}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                  name="음운"
+                />
               ) : null}
               {visible.bb ? (
                 <Area
@@ -310,6 +292,28 @@ function InstrumentDetail() {
                   connectNulls={false}
                   isAnimationActive={false}
                   name="볼린저(20, 2σ)"
+                />
+              ) : null}
+              {visible.cloud ? (
+                <Line
+                  yAxisId="price"
+                  dataKey="tenkan"
+                  stroke="var(--color-chart-3)"
+                  dot={false}
+                  strokeWidth={1}
+                  isAnimationActive={false}
+                  name="전환선(9)"
+                />
+              ) : null}
+              {visible.cloud ? (
+                <Line
+                  yAxisId="price"
+                  dataKey="kijun"
+                  stroke="var(--color-chart-1)"
+                  dot={false}
+                  strokeWidth={1}
+                  isAnimationActive={false}
+                  name="기준선(26)"
                 />
               ) : null}
               <Bar
@@ -329,69 +333,74 @@ function InstrumentDetail() {
                 name="종가"
               />
               {visible.ma ? (
-                <>
-                  <Line
-                    yAxisId="price"
-                    dataKey="ma5"
-                    stroke="var(--color-chart-4)"
-                    dot={false}
-                    strokeWidth={1}
-                    isAnimationActive={false}
-                    name="MA5"
-                  />
-                  <Line
-                    yAxisId="price"
-                    dataKey="ma20"
-                    stroke="var(--color-chart-3)"
-                    dot={false}
-                    strokeWidth={1}
-                    isAnimationActive={false}
-                    name="MA20"
-                  />
-                  <Line
-                    yAxisId="price"
-                    dataKey="ma60"
-                    stroke="var(--color-chart-1)"
-                    dot={false}
-                    strokeWidth={1}
-                    isAnimationActive={false}
-                    name="MA60"
-                  />
-                  <Line
-                    yAxisId="price"
-                    dataKey="ma120"
-                    stroke="var(--color-chart-5)"
-                    dot={false}
-                    strokeWidth={1}
-                    isAnimationActive={false}
-                    name="MA120"
-                  />
-                </>
+                <Line
+                  yAxisId="price"
+                  dataKey="ma5"
+                  stroke="var(--color-chart-4)"
+                  dot={false}
+                  strokeWidth={1}
+                  isAnimationActive={false}
+                  name="MA5"
+                />
+              ) : null}
+              {visible.ma ? (
+                <Line
+                  yAxisId="price"
+                  dataKey="ma20"
+                  stroke="var(--color-chart-3)"
+                  dot={false}
+                  strokeWidth={1}
+                  isAnimationActive={false}
+                  name="MA20"
+                />
+              ) : null}
+              {visible.ma ? (
+                <Line
+                  yAxisId="price"
+                  dataKey="ma60"
+                  stroke="var(--color-chart-1)"
+                  dot={false}
+                  strokeWidth={1}
+                  isAnimationActive={false}
+                  name="MA60"
+                />
+              ) : null}
+              {visible.ma ? (
+                <Line
+                  yAxisId="price"
+                  dataKey="ma120"
+                  stroke="var(--color-chart-5)"
+                  dot={false}
+                  strokeWidth={1}
+                  isAnimationActive={false}
+                  name="MA120"
+                />
               ) : null}
               {visible.bb ? (
-                <>
-                  <Line
-                    yAxisId="price"
-                    dataKey="bbUpper"
-                    stroke="var(--color-chart-2)"
-                    dot={false}
-                    strokeDasharray="4 3"
-                    strokeWidth={1}
-                    isAnimationActive={false}
-                    name="BB 상단"
-                  />
-                  <Line
-                    yAxisId="price"
-                    dataKey="bbLower"
-                    stroke="var(--color-chart-2)"
-                    dot={false}
-                    strokeDasharray="4 3"
-                    strokeWidth={1}
-                    isAnimationActive={false}
-                    name="BB 하단"
-                  />
-                </>
+                <Line
+                  yAxisId="price"
+                  dataKey="bbUpper"
+                  stroke="var(--color-chart-2)"
+                  dot={false}
+                  strokeDasharray="4 3"
+                  strokeWidth={1}
+                  isAnimationActive={false}
+                  name="BB 상단"
+                />
               ) : null}
+              {visible.bb ? (
+                <Line
+                  yAxisId="price"
+                  dataKey="bbLower"
+                  stroke="var(--color-chart-2)"
+                  dot={false}
+                  strokeDasharray="4 3"
+                  strokeWidth={1}
+                  isAnimationActive={false}
+                  name="BB 하단"
+                />
+              ) : null}
+
               <Brush
                 dataKey="tradeDate"
                 height={22}
