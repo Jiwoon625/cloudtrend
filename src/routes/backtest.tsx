@@ -109,8 +109,8 @@ function BacktestPage() {
   const [hasBacktestData, setHasBacktestData] = useState(false);
   const [decayFeatures, setDecayFeatures] = useState<string[]>(["MA_ALIGNED"]);
   const [bucketHorizon, setBucketHorizon] = useState(20);
-  const [distFeature, setDistFeature] = useState("MA_ALIGNED");
-  const [distHorizon, setDistHorizon] = useState(20);
+  const [distSide, setDistSide] = useState<"signal" | "nonSignal">("signal");
+
 
   useEffect(() => {
     void hydrateManualData().then(() => {
@@ -173,9 +173,20 @@ function BacktestPage() {
     });
   }, [result, horizons, decayFeatures]);
 
-  const dist = result?.distributions.find(
-    (d) => d.featureKey === distFeature && d.horizon === distHorizon,
-  );
+  const distRows = useMemo(() => {
+    if (!result) return [];
+    return result.featureHorizons.map((fh) => ({
+      key: fh.featureKey,
+      label: fh.featureLabel,
+      cells: horizons.map((h) => {
+        const d = result.distributions.find(
+          (x) => x.featureKey === fh.featureKey && x.horizon === h,
+        );
+        return { horizon: h, stat: d ? d[distSide] : undefined };
+      }),
+    }));
+  }, [result, horizons, distSide]);
+
 
   return (
     <AppShell>
@@ -195,8 +206,8 @@ function BacktestPage() {
               // PDF에는 가장 기본이 되는 그래프(기본 피처·20일 보유기간)를 담는다.
               setDecayFeatures(["MA_ALIGNED"]);
               setBucketHorizon(20);
-              setDistFeature("MA_ALIGNED");
-              setDistHorizon(20);
+              setDistSide("signal");
+
             }}
           />
         ) : null}
@@ -1013,67 +1024,74 @@ function BacktestPage() {
                 title="Return Distribution (극단값 점검)"
                 note="평균 edge가 소수의 급등 종목 때문인지 분위수로 확인합니다."
               >
-                <div className="flex flex-wrap gap-2 border-b border-border px-3 py-2">
-                  <select
-                    value={distFeature}
-                    onChange={(e) => setDistFeature(e.target.value)}
-                    className="h-8 rounded-md border border-border bg-background px-2 text-[12px]"
-                  >
-                    {result.featureHorizons.map((fh) => (
-                      <option key={fh.featureKey} value={fh.featureKey}>
-                        {fh.featureLabel}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={distHorizon}
-                    onChange={(e) => setDistHorizon(Number(e.target.value))}
-                    className="h-8 rounded-md border border-border bg-background px-2 text-[12px]"
-                  >
-                    {horizons.map((h) => (
-                      <option key={h} value={h}>
-                        {h}일 보유
-                      </option>
-                    ))}
-                  </select>
+                <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+                  {(
+                    [
+                      ["signal", "신호 발생"],
+                      ["nonSignal", "미신호"],
+                    ] as const
+                  ).map(([side, label]) => (
+                    <button
+                      key={side}
+                      type="button"
+                      onClick={() => setDistSide(side)}
+                      className={`h-7 rounded-md border px-2 text-[12px] ${
+                        distSide === side
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <span className="text-[11px] text-muted-foreground">
+                    모든 피처 × 5~60일 보유 분위수
+                  </span>
                 </div>
-                <table className="w-full text-[12px]">
-                  <thead className="text-[11px] text-muted-foreground">
-                    <tr>
-                      <th className="px-2 py-1.5 text-left">구분</th>
-                      <th className="px-2 py-1.5 text-right">표본</th>
-                      <th className="px-2 py-1.5 text-right">평균</th>
-                      <th className="px-2 py-1.5 text-right">5%</th>
-                      <th className="px-2 py-1.5 text-right">25%</th>
-                      <th className="px-2 py-1.5 text-right">중앙</th>
-                      <th className="px-2 py-1.5 text-right">75%</th>
-                      <th className="px-2 py-1.5 text-right">95%</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(
-                      [
-                        ["신호", dist?.signal],
-                        ["미신호", dist?.nonSignal],
-                      ] as const
-                    ).map(([label, d]) => (
-                      <tr key={label} className="border-t border-border">
-                        <td className="px-2 py-1.5">{label}</td>
-                        <td className="num px-2 py-1.5 text-right">
-                          {(d?.count ?? 0).toLocaleString("ko-KR")}
-                        </td>
-                        <td className="num px-2 py-1.5 text-right font-semibold">
-                          {pct(d?.mean)}
-                        </td>
-                        <td className="num px-2 py-1.5 text-right">{pct(d?.p5)}</td>
-                        <td className="num px-2 py-1.5 text-right">{pct(d?.p25)}</td>
-                        <td className="num px-2 py-1.5 text-right">{pct(d?.median)}</td>
-                        <td className="num px-2 py-1.5 text-right">{pct(d?.p75)}</td>
-                        <td className="num px-2 py-1.5 text-right">{pct(d?.p95)}</td>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[820px] text-[12px]">
+                    <thead className="text-[11px] text-muted-foreground">
+                      <tr>
+                        <th className="px-2 py-1.5 text-left">피처</th>
+                        <th className="px-2 py-1.5 text-right">보유</th>
+                        <th className="px-2 py-1.5 text-right">표본</th>
+                        <th className="px-2 py-1.5 text-right">평균</th>
+                        <th className="px-2 py-1.5 text-right">5%</th>
+                        <th className="px-2 py-1.5 text-right">25%</th>
+                        <th className="px-2 py-1.5 text-right">중앙</th>
+                        <th className="px-2 py-1.5 text-right">75%</th>
+                        <th className="px-2 py-1.5 text-right">95%</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {distRows.map((row) =>
+                        row.cells.map((c, idx) => (
+                          <tr
+                            key={`${row.key}-${c.horizon}`}
+                            className={idx === 0 ? "border-t-2 border-border" : "border-t border-border/50"}
+                          >
+                            <td className="px-2 py-1.5">
+                              {idx === 0 ? <span className="font-medium">{row.label}</span> : null}
+                            </td>
+                            <td className="num px-2 py-1.5 text-right">{c.horizon}일</td>
+                            <td className="num px-2 py-1.5 text-right">
+                              {(c.stat?.count ?? 0).toLocaleString("ko-KR")}
+                            </td>
+                            <td className="num px-2 py-1.5 text-right font-semibold">
+                              {pct(c.stat?.mean)}
+                            </td>
+                            <td className="num px-2 py-1.5 text-right">{pct(c.stat?.p5)}</td>
+                            <td className="num px-2 py-1.5 text-right">{pct(c.stat?.p25)}</td>
+                            <td className="num px-2 py-1.5 text-right">{pct(c.stat?.median)}</td>
+                            <td className="num px-2 py-1.5 text-right">{pct(c.stat?.p75)}</td>
+                            <td className="num px-2 py-1.5 text-right">{pct(c.stat?.p95)}</td>
+                          </tr>
+                        )),
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
               </Card>
 
               {/* 12. 해석 시 주의사항 */}
