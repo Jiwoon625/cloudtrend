@@ -108,7 +108,7 @@ function BacktestPage() {
   const [ready, setReady] = useState(false);
   const [hasBacktestData, setHasBacktestData] = useState(false);
   const [decayFeatures, setDecayFeatures] = useState<string[]>(["MA_ALIGNED"]);
-  const [bucketHorizon, setBucketHorizon] = useState(20);
+  const [bucketHorizon, setBucketHorizon] = useState(DEFAULT_BACKTEST_PARAMS.horizonDays);
   const [distSide, setDistSide] = useState<"signal" | "nonSignal">("signal");
 
 
@@ -360,7 +360,7 @@ function BacktestPage() {
             <div className="space-y-1">
               <Label className="text-[11px] text-muted-foreground">거래량 급증 판정 방식</Label>
               <select
-                value={params.volumeMode ?? "SIMPLE"}
+                value={params.volumeMode ?? "HIGH_CLOSE"}
                 onChange={(e) =>
                   setParams((p) => ({ ...p, volumeMode: e.target.value as VolumeSurgeMode }))
                 }

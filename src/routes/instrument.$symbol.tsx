@@ -135,14 +135,16 @@ function InstrumentDetail() {
       );
     if (snap.volumeRatio20 !== null)
       parts.push(`거래량은 직전 20일 평균의 ${snap.volumeRatio20.toFixed(1)}%입니다.`);
-    const bb = row.technical.rows[1]!;
-    parts.push(`볼린저 조건 판정: ${bb.actual} (획득 ${bb.points}점).`);
+    const momentum = row.technical.rows.find((r) => r.group === "Momentum Confirmation");
+    if (momentum) parts.push(`Momentum Confirmation: ${momentum.actual} → ${momentum.points}점.`);
+    const bb = row.technical.rows.find((r) => r.group === "Breakout");
+    if (bb) parts.push(`볼린저 상단 돌파 판정: ${bb.actual} (획득 ${bb.points}점).`);
     parts.push(
       `기술점수는 ${row.technical.maxPoints}점 중 ${row.technical.points}점, 산정 가능 점수는 ${row.technical.availableMaxPoints}점입니다.`,
     );
     const foreign = row.priority.rows[1]!;
     if (foreign.status === "FAIL")
-      parts.push("최근 3개월 외국인 누적 순매수가 음수이므로 우선점수에서 2점을 받지 못했습니다.");
+      parts.push("최근 20거래일 외국인 누적 순매수가 음수이므로 우선점수를 받지 못했습니다.");
     if (foreign.status === "NO_DATA")
       parts.push("외국인 수급 데이터가 없어 해당 항목은 0점이 아니라 산정 불가로 처리했습니다.");
     return parts.join(" ");
