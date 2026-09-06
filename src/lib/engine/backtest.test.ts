@@ -59,19 +59,25 @@ describe("multi horizon backtest", () => {
   });
 
   it("forwardReturn matches (close[t+N]/close[t]-1)*100", () => {
-    // 단일 종목·단일 관측으로 직접 검증
     const bars = uptrend.bars;
-    const t = 120;
+    const single = runBacktest([{ symbol: "X", name: "X", bars }], {
+      ...params,
+      sampleEvery: 20,
+      intervalCandidates: [20],
+    });
     for (const n of [5, 10, 20, 40, 60]) {
-      const expected = (bars[t + n]!.close / bars[t]!.close - 1) * 100;
-      const single = runBacktest(
-        [{ symbol: "X", name: "X", bars: bars.slice(0, t + n + 1) }],
-        { ...params, sampleEvery: 20, horizonDays: n, features: ["MA_ALIGNED"] },
-      );
+      const xs: number[] = [];
+      for (let i = 120; i < bars.length; i += 20) {
+        const exit = bars[i + n];
+        if (!exit) continue;
+        xs.push((exit.close / bars[i]!.close - 1) * 100);
+      }
       const base = single.baselineByHorizon.find((b) => b.horizon === n)!;
-      expect(base.avgReturn).toBeCloseTo(expected, 6);
+      expect(base.count).toBe(xs.length);
+      expect(base.avgReturn).toBeCloseTo(xs.reduce((a, b) => a + b, 0) / xs.length, 6);
     }
   });
+
 
   it("drops only the horizons whose future bar is missing", () => {
     const short = runBacktest(
