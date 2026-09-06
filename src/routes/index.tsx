@@ -15,6 +15,8 @@ import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
 import { GradeBadge, ScreenerTable } from "@/components/ScreenerTable";
+import { PdfExportButton } from "@/components/PdfExportButton";
+
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
