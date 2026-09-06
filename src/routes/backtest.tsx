@@ -173,9 +173,20 @@ function BacktestPage() {
     });
   }, [result, horizons, decayFeatures]);
 
-  const dist = result?.distributions.find(
-    (d) => d.featureKey === distFeature && d.horizon === distHorizon,
-  );
+  const distRows = useMemo(() => {
+    if (!result) return [];
+    return result.featureHorizons.map((fh) => ({
+      key: fh.featureKey,
+      label: fh.featureLabel,
+      cells: horizons.map((h) => {
+        const d = result.distributions.find(
+          (x) => x.featureKey === fh.featureKey && x.horizon === h,
+        );
+        return { horizon: h, stat: d ? d[distSide] : undefined };
+      }),
+    }));
+  }, [result, horizons, distSide]);
+
 
   return (
     <AppShell>
