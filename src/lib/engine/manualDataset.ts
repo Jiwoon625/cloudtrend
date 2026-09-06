@@ -4,6 +4,30 @@ import { NO_CAPABILITIES, type MarketDataset } from "./dataset";
 import { resolveSectorCode, THEME_SECTORS } from "./sectors";
 import type { DailyPrice, EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
 
+/** 실현변동성(연환산 %) 시계열. VKOSPI가 없을 때 대체 지표로 쓴다. */
+export function realizedVolatilitySeries(closes: number[], window = 20): number[] {
+  const rets: number[] = [];
+  for (let i = 1; i < closes.length; i++) {
+    const p0 = closes[i - 1]!;
+    const p1 = closes[i]!;
+    rets.push(p0 > 0 && p1 > 0 ? Math.log(p1 / p0) : 0);
+  }
+  const out: number[] = [];
+  for (let i = 0; i < closes.length; i++) {
+    // i번째 종가까지의 과거 수익률만 사용한다(미래 데이터 미사용).
+    const end = i; // rets[0..i-1]
+    if (end < window) {
+      out.push(Number.NaN);
+      continue;
+    }
+    const slice = rets.slice(end - window, end);
+    const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
+    const variance = slice.reduce((a, b) => a + (b - mean) ** 2, 0) / (slice.length - 1);
+    out.push(Math.sqrt(variance * 252) * 100);
+  }
+  return out;
+}
+
 export interface ManualParseStats {
   stocks: number;
   etfs: number;
