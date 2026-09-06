@@ -3,6 +3,11 @@
 // 관측 시점 t의 피처는 t까지의 데이터만으로 계산하고(look-ahead 없음),
 // 미래 종가는 forward return 계산에만 사용한다.
 import { computeIndicators, periodReturn, type IndicatorSnapshot } from "./indicators";
+import {
+  DEFAULT_SCORING_CONFIG,
+  technicalFlagsV3,
+  type ScoringConfig,
+} from "./scoring";
 import type { DailyPrice } from "./types";
 
 export interface FeatureDef {
@@ -22,20 +27,20 @@ export const BACKTEST_FEATURES: FeatureDef[] = [
   {
     id: "ICH_TENKAN_KIJUN",
     label: "전환선 > 기준선",
-    description: "단기 전환선이 기준선 위 (일목 보조 조건)",
-    defaultWeight: 1,
+    description: "Momentum Confirmation ① (Primary) — 1.5점 ÷ 3",
+    defaultWeight: 0.5,
   },
   {
     id: "BB_BREAKOUT",
     label: "볼린저 상단 돌파",
-    description: "종가가 20일 볼린저 상단을 돌파",
-    defaultWeight: 2,
+    description: "종가가 20일 볼린저 상단을 돌파 (Head Fake 시 미충족)",
+    defaultWeight: 1,
   },
   {
     id: "BB_SQUEEZE",
-    label: "볼린저 스퀴즈",
-    description: "밴드폭이 직전 구간 대비 축소(에너지 응축)",
-    defaultWeight: 1,
+    label: "볼린저 스퀴즈 (참고지표, V3 점수 미반영)",
+    description: "밴드폭이 직전 구간 대비 축소 — V3 composite score에는 포함하지 않는다",
+    defaultWeight: 0,
   },
   {
     id: "MA_ALIGNED",
@@ -46,38 +51,38 @@ export const BACKTEST_FEATURES: FeatureDef[] = [
   {
     id: "MA20_SLOPE_UP",
     label: "MA20 상승",
-    description: "20일선 기울기가 양수",
-    defaultWeight: 1,
+    description: "Momentum Confirmation ② — 1.5점 ÷ 3",
+    defaultWeight: 0.5,
   },
   {
     id: "VOLUME_SURGE",
-    label: "거래량 급증",
-    description: "20일 평균 거래량 대비 설정 비율 이상",
-    defaultWeight: 1,
+    label: "고가 마감 거래량",
+    description: "거래량 비율 기준 + 판정 방식(기본 고가 마감, CLV ≥ 0.7)",
+    defaultWeight: 0.5,
   },
   {
     id: "NEAR_52W_HIGH",
     label: "52주 신고가 근접",
-    description: "52주 최고가 대비 -10% 이내",
-    defaultWeight: 1,
+    description: "52주 최고가 대비 -10% 이내 (Priority 2점)",
+    defaultWeight: 2,
   },
   {
     id: "RS_POSITIVE",
     label: "20일 수익률 양수",
-    description: "최근 20거래일 수익률이 0보다 큼",
-    defaultWeight: 1,
+    description: "Momentum Confirmation ③ — 1.5점 ÷ 3",
+    defaultWeight: 0.5,
   },
   {
     id: "FOREIGN_NET_POSITIVE",
     label: "외국인 20일 순매수",
-    description: "최근 20거래일 외국인 누적 순매수가 양수 (데이터 있는 종목만)",
-    defaultWeight: 1,
+    description: "최근 20거래일 외국인 누적 순매수가 양수 (Priority 2점)",
+    defaultWeight: 2,
   },
   {
     id: "NOT_OVEREXTENDED",
-    label: "과열 이격 아님",
-    description: "20일선 이격도가 설정값 미만",
-    defaultWeight: 1,
+    label: "과열 이격 아님 (참고지표, V3 점수 미반영)",
+    description: "20일선 이격도가 설정값 미만 — V3 composite score에는 포함하지 않는다",
+    defaultWeight: 0,
   },
 ];
 
@@ -94,7 +99,7 @@ export const VOLUME_SURGE_MODES: Array<{ id: VolumeSurgeMode; label: string; not
   },
 ];
 
-export const DEFAULT_HORIZONS = [5, 10, 20, 40, 60];
+export const DEFAULT_HORIZONS = [5, 10, 20, 30, 40, 60];
 export const DEFAULT_INTERVAL_CANDIDATES = [1, 3, 5, 10, 20];
 export const DEFAULT_ENTRY_THRESHOLDS = [40, 50, 60, 70, 80];
 export const DEFAULT_EXTENSION_THRESHOLDS = [5, 10, 15, 20, 25, 30];
@@ -129,16 +134,21 @@ export interface BacktestParams {
   volumeThresholds?: number[];
 }
 
+/** V3 composite score에 포함되지 않는 참고지표 피처 (분석용으로만 유지) */
+export const INFORMATION_ONLY_FEATURES = ["BB_SQUEEZE", "NOT_OVEREXTENDED"];
+
 export const DEFAULT_BACKTEST_PARAMS: BacktestParams = {
-  horizonDays: 20,
-  sampleEvery: 3,
+  horizonDays: 30,
+  sampleEvery: 5,
   volumeSurgeRatio: 150,
   extensionLimit: 15,
   entryScore: 60,
-  features: BACKTEST_FEATURES.map((f) => f.id),
+  features: BACKTEST_FEATURES.filter((f) => !INFORMATION_ONLY_FEATURES.includes(f.id)).map(
+    (f) => f.id,
+  ),
   weights: Object.fromEntries(BACKTEST_FEATURES.map((f) => [f.id, f.defaultWeight])),
   horizons: DEFAULT_HORIZONS,
-  volumeMode: "SIMPLE",
+  volumeMode: "HIGH_CLOSE",
   intervalCandidates: DEFAULT_INTERVAL_CANDIDATES,
   entryThresholds: DEFAULT_ENTRY_THRESHOLDS,
   extensionThresholds: DEFAULT_EXTENSION_THRESHOLDS,
@@ -333,31 +343,38 @@ export function volumeSurgeFlag(
   return base && clv >= 0.7;
 }
 
-function evaluateFeatures(
+/**
+ * 관측 시점 피처 판정. Technical 피처는 live screener와 동일한 technicalFlagsV3를 사용하므로
+ * 백테스트 composite score와 스크리너 기술점수는 같은 산식(source of truth)을 공유한다.
+ */
+export function evaluateFeatures(
   snap: IndicatorSnapshot,
   params: BacktestParams,
   bar: DailyPrice,
+  cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
 ): Record<string, boolean | null> {
-  const ich = snap.ichimoku;
   const bb = snap.bollinger;
+  const v3 = technicalFlagsV3(snap, cfg);
   return {
-    ICH_ABOVE_CLOUD: ich.cloudTop === null ? null : snap.close > ich.cloudTop,
-    ICH_TENKAN_KIJUN: ich.tenkanAboveKijun,
-    BB_BREAKOUT: bb.bb === null ? null : bb.bbBreakout === true,
+    ICH_ABOVE_CLOUD: v3.cloudAbove,
+    ICH_TENKAN_KIJUN: v3.tenkanAboveKijun,
+    BB_BREAKOUT: v3.bbBreakout,
     BB_SQUEEZE:
       bb.bb === null ? null : bb.bbSqueezePrior === true || bb.bbSqueezeAbsolute === true,
-    MA_ALIGNED: snap.maAligned,
-    MA20_SLOPE_UP: snap.ma20Slope === null ? null : snap.ma20Slope > 0,
+    MA_ALIGNED: v3.maAligned,
+    MA20_SLOPE_UP: v3.ma20SlopeUp,
     VOLUME_SURGE: volumeSurgeFlag(
       snap.volumeRatio20,
       params.volumeSurgeRatio,
-      params.volumeMode ?? "SIMPLE",
+      params.volumeMode ?? "HIGH_CLOSE",
       snap.dayReturn,
-      closeLocationValue(bar),
+      snap.closeLocationValue ?? closeLocationValue(bar),
     ),
     NEAR_52W_HIGH:
-      snap.distanceFrom52wHigh === null ? null : snap.distanceFrom52wHigh >= -10,
-    RS_POSITIVE: snap.return20 === null ? null : snap.return20 > 0,
+      snap.distanceFrom52wHigh === null
+        ? null
+        : snap.distanceFrom52wHigh >= cfg.priority.nearHighThresholdPercent,
+    RS_POSITIVE: v3.return20Positive,
     FOREIGN_NET_POSITIVE: snap.foreignNet20d === null ? null : snap.foreignNet20d > 0,
     NOT_OVEREXTENDED:
       snap.extensionFromMa20 === null ? null : snap.extensionFromMa20 < params.extensionLimit,
@@ -507,7 +524,7 @@ export function runBacktest(
     horizonDays: Math.max(1, Math.min(120, Math.round(paramsInput.horizonDays))),
     sampleEvery: Math.max(1, Math.min(20, Math.round(paramsInput.sampleEvery))),
   };
-  const volumeMode = params.volumeMode ?? "SIMPLE";
+  const volumeMode = params.volumeMode ?? "HIGH_CLOSE";
   const active = BACKTEST_FEATURES.filter((f) => params.features.includes(f.id));
   const intervals = normalizeList(params.intervalCandidates, DEFAULT_INTERVAL_CANDIDATES);
   const entryThresholds = normalizeList(params.entryThresholds, DEFAULT_ENTRY_THRESHOLDS);
