@@ -362,7 +362,6 @@ export function evaluateFeatures(
     RS_POSITIVE: v3.return20Positive,
     FOREIGN_NET_POSITIVE: snap.foreignNet20d === null ? null : snap.foreignNet20d > 0,
   };
-  };
 }
 
 const mean = (xs: number[]): number | null =>
