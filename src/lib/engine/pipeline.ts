@@ -34,7 +34,7 @@ import {
   type SectorRotationResult,
 } from "./sectorRotation";
 import type { DatasetCapabilities, MarketDataset } from "./dataset";
-import type { EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
+import type { DailyPrice, EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
 
 /**
  * 섹터별 대표 종목 매핑 (대표 ETF 우선, 없으면 해당 섹터 시가총액 1위 종목).
