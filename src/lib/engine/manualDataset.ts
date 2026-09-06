@@ -314,6 +314,27 @@ export function parseManualMarketData(text: string): ManualParseResult {
     indexSeries.push({ indexCode: "KOSDAQ", indexName: "코스닥", bars: kosdaq.bars });
   const vkospi = map.get("VKOSPI");
 
+  // VKOSPI가 없으면 KOSPI(및 KOSDAQ) 종가의 20일 실현변동성(연환산 %)으로 대체한다.
+  let volatilitySeries: number[] = [];
+  let volatilityIsProxy = false;
+  if (vkospi && vkospi.bars.length > 0) {
+    volatilitySeries = vkospi.bars.map((b) => b.close);
+  } else {
+    const kospiVol = realizedVolatilitySeries(kospi.bars.map((b) => b.close));
+    const kosdaqCloses = kosdaq && kosdaq.bars.length >= 21 ? kosdaq.bars.map((b) => b.close) : null;
+    const kosdaqVol = kosdaqCloses ? realizedVolatilitySeries(kosdaqCloses) : null;
+    const offset = kosdaqVol ? kosdaqVol.length - kospiVol.length : 0;
+    volatilitySeries = kospiVol
+      .map((v, i) => {
+        const kq = kosdaqVol?.[i + offset];
+        if (!Number.isFinite(v)) return Number.NaN;
+        return kq !== undefined && Number.isFinite(kq) ? 0.7 * v + 0.3 * kq : v;
+      })
+      .filter((v) => Number.isFinite(v));
+    volatilityIsProxy = volatilitySeries.length > 0;
+  }
+
+
   const instruments: Instrument[] = [];
   const bars: Record<string, DailyPrice[]> = {};
   const usedSectors = new Set<string>();
