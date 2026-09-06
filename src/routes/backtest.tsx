@@ -206,8 +206,8 @@ function BacktestPage() {
               // PDF에는 가장 기본이 되는 그래프(기본 피처·20일 보유기간)를 담는다.
               setDecayFeatures(["MA_ALIGNED"]);
               setBucketHorizon(20);
-              setDistFeature("MA_ALIGNED");
-              setDistHorizon(20);
+              setDistSide("signal");
+
             }}
           />
         ) : null}
