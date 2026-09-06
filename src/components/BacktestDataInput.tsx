@@ -145,8 +145,7 @@ export function BacktestDataInput({ onChanged }: Props) {
 
       {quota ? (
         <p className="text-[11px] text-muted-foreground">
-          이 브라우저 저장 여유 · 사용 {formatBytes(quota.usage)} / 한도{" "}
-          {formatBytes(quota.quota)}
+          이 브라우저 저장 여유 · 사용 {formatBytes(quota.usage)} / 한도 {formatBytes(quota.quota)}
         </p>
       ) : null}
 

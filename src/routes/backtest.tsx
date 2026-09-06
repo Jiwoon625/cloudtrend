@@ -13,6 +13,8 @@ import {
   type BacktestParams,
 } from "@/lib/engine/backtest";
 import { formatCount, formatNumber } from "@/lib/format";
+import { BacktestDataInput } from "@/components/BacktestDataInput";
+import { loadBacktestDataset } from "@/lib/backtestDataStore";
 import { computeLocalBacktest } from "@/lib/localAnalysis";
 import { getManualDataMeta, hydrateManualData, type ManualDataMeta } from "@/lib/manualDataStore";
 
@@ -48,6 +50,7 @@ function BacktestPage() {
   const [params, setParams] = useState<BacktestParams>(DEFAULT_BACKTEST_PARAMS);
   const [meta, setMeta] = useState<ManualDataMeta | null>(null);
   const [ready, setReady] = useState(false);
+  const [hasBacktestData, setHasBacktestData] = useState(false);
 
   useEffect(() => {
     void hydrateManualData().then(() => {
@@ -59,6 +62,7 @@ function BacktestPage() {
   const mutation = useMutation({
     mutationFn: async () => {
       await hydrateManualData();
+      const dedicated = await loadBacktestDataset();
       return computeLocalBacktest(
         symbolText
           .split(/[\s,;\n\t]+/)
@@ -67,6 +71,7 @@ function BacktestPage() {
         params,
         limit,
         includeEtf,
+        dedicated?.dataset ?? null,
       );
     },
   });
@@ -90,8 +95,10 @@ function BacktestPage() {
 
       <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
         <div className="space-y-4">
+          <BacktestDataInput onChanged={setHasBacktestData} />
+
           <section className="space-y-2 rounded-lg border border-border bg-card p-3">
-            <h2 className="text-sm font-semibold">사용 데이터</h2>
+            <h2 className="text-sm font-semibold">스크리닝 데이터(대체용)</h2>
             {!ready ? (
               <p className="text-[11px] text-muted-foreground">저장된 데이터 확인 중…</p>
             ) : meta ? (
@@ -206,7 +213,7 @@ function BacktestPage() {
               size="sm"
               className="w-full"
               onClick={() => mutation.mutate()}
-              disabled={mutation.isPending || (ready && !meta)}
+              disabled={mutation.isPending || (ready && !meta && !hasBacktestData)}
             >
               {mutation.isPending ? "백테스트 실행 중…" : "백테스트 실행"}
             </Button>
