@@ -347,8 +347,6 @@ export function evaluateFeatures(
     ICH_ABOVE_CLOUD: v3.cloudAbove,
     ICH_TENKAN_KIJUN: v3.tenkanAboveKijun,
     BB_BREAKOUT: v3.bbBreakout,
-    BB_SQUEEZE:
-      bb.bb === null ? null : bb.bbSqueezePrior === true || bb.bbSqueezeAbsolute === true,
     MA_ALIGNED: v3.maAligned,
     MA20_SLOPE_UP: v3.ma20SlopeUp,
     VOLUME_SURGE: volumeSurgeFlag(
