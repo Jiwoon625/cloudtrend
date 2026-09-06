@@ -133,7 +133,11 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
             {base.filter((r) => !r.hardFilterPassed).length}건
           </p>
         </div>
+        <PdfExportButton
+          documentTitle={`CloudTrend ${mode === "STOCK" ? "주식" : "ETF"} 스크리너 ${analysis.asOfDate}`}
+        />
       </header>
+
 
       <div className="flex flex-wrap gap-1">
         {PRESETS.map((p) => (
