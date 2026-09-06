@@ -1,5 +1,6 @@
 // 직접 입력한 데이터로 브라우저에서 분석을 실행한다(외부 시세 API 호출 없음).
 import { runBacktest, type BacktestParams } from "@/lib/engine/backtest";
+import type { MarketDataset } from "@/lib/engine/dataset";
 import { chartSeries, runAnalysis, scoreHistory } from "@/lib/engine/pipeline";
 import { getManualDataset, MANUAL_DATA_MISSING_MESSAGE } from "@/lib/manualDataStore";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
@@ -164,10 +165,16 @@ export function computeLocalBacktest(
   params: BacktestParams,
   limit: number,
   includeEtf = false,
+  override?: MarketDataset | null,
 ): BacktestPayload {
-  const parsed = getManualDataset();
-  if (!parsed) throw new Error(MANUAL_DATA_MISSING_MESSAGE);
-  const dataset = parsed.dataset;
+  let dataset: MarketDataset;
+  if (override) {
+    dataset = override;
+  } else {
+    const parsed = getManualDataset();
+    if (!parsed) throw new Error(MANUAL_DATA_MISSING_MESSAGE);
+    dataset = parsed.dataset;
+  }
   const upper = symbols.map((s) => s.trim().toUpperCase()).filter(Boolean);
   const pool = upper.length
     ? dataset.instruments.filter((i) => upper.includes(i.symbol))
