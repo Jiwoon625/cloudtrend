@@ -244,43 +244,52 @@ function ScoringPage() {
         </Section>
 
         <Section
-          title={`2. 기술 신호 배점 (현재 만점 ${techMax}점)`}
-          desc="항목별 만점과 거래량 판정 임계값. 부분 충족 시 만점의 절반이 부여됩니다."
+          title={`2. 기술 신호 배점 — V3 (현재 만점 ${techMax}점)`}
+          desc="Trend Core 4.0 + Momentum Confirmation 1.5 + Breakout 1.0 + Volume 0.5. 각 항목은 독립 평가되며 중복 가점(double counting)은 없습니다."
         >
           <NumField
-            label="일목 추세 만점"
-            hint="구름 상단 위 + 전환선>기준선 + 후행스팬 양전"
-            value={draft.technical.ichimokuMax}
+            label="1. 일목 구름 상단 위"
+            hint="종가 > 선행스팬 상단 (전환선·후행스팬 조건 없음)"
+            value={draft.technical.cloudAboveMax}
             step={0.5}
             suffix="점"
-            onChange={(v) => patch((d) => void (d.technical.ichimokuMax = v))}
+            onChange={(v) => patch((d) => void (d.technical.cloudAboveMax = v))}
           />
           <NumField
-            label="볼린저 모멘텀 만점"
-            hint="스퀴즈 후 상단 돌파 + 밴드폭 확장 (Head Fake 시 0점)"
-            value={draft.technical.bollingerMax}
+            label="2. 이동평균 정배열"
+            hint="MA20 > MA60 > MA120 (MA20 기울기 조건 없음)"
+            value={draft.technical.maAlignedMax}
             step={0.5}
             suffix="점"
-            onChange={(v) => patch((d) => void (d.technical.bollingerMax = v))}
+            onChange={(v) => patch((d) => void (d.technical.maAlignedMax = v))}
           />
           <NumField
-            label="거래량 수급 만점"
+            label="3. Momentum Confirmation"
+            hint={`Primary: 전환선 > 기준선 · Confirmations: MA20 상승 / 20일 수익률 양수 → 0개 0점, 1개 ${(draft.technical.momentumMax / 3).toFixed(2)}점, 2개 ${((draft.technical.momentumMax * 2) / 3).toFixed(2)}점, 3개 ${draft.technical.momentumMax}점`}
+            value={draft.technical.momentumMax}
+            step={0.5}
+            suffix="점"
+            onChange={(v) => patch((d) => void (d.technical.momentumMax = v))}
+          />
+          <NumField
+            label="4. 볼린저 상단 돌파"
+            hint="종가의 볼린저 상단 돌파 (Head Fake 경고 시 0점, 스퀴즈는 점수 미반영)"
+            value={draft.technical.breakoutMax}
+            step={0.5}
+            suffix="점"
+            onChange={(v) => patch((d) => void (d.technical.breakoutMax = v))}
+          />
+          <NumField
+            label="5. 고가마감 거래량"
+            hint="거래량 비율 기준 AND CLV = (종가-저가)/(고가-저가) 기준 동시 충족"
             value={draft.technical.volumeMax}
             step={0.5}
             suffix="점"
             onChange={(v) => patch((d) => void (d.technical.volumeMax = v))}
           />
-          <NumField
-            label="이동평균 배열 만점"
-            hint="MA20 > MA60 > MA120 + MA20 기울기 > 0"
-            value={draft.technical.maMax}
-            step={0.5}
-            suffix="점"
-            onChange={(v) => patch((d) => void (d.technical.maMax = v))}
-          />
           <div className="border-t border-border pt-3" />
           <NumField
-            label="거래량 강한 신호 기준"
+            label="거래량 비율 기준"
             hint="20일 평균 거래량 대비"
             value={draft.technical.volumeStrongRatio}
             step={10}
@@ -288,19 +297,16 @@ function ScoringPage() {
             onChange={(v) => patch((d) => void (d.technical.volumeStrongRatio = v))}
           />
           <NumField
-            label="거래대금 백분위 기준"
-            hint="강한 신호 동시 조건 (70 = 상위 30%)"
-            value={draft.technical.volumeStrongPercentile}
-            step={5}
-            onChange={(v) => patch((d) => void (d.technical.volumeStrongPercentile = v))}
+            label="고가마감 CLV 기준"
+            hint="(종가 - 저가) / (고가 - 저가), 고가=저가면 데이터 없음"
+            value={draft.technical.clvThreshold}
+            step={0.05}
+            onChange={(v) => patch((d) => void (d.technical.clvThreshold = v))}
           />
-          <NumField
-            label="거래량 약한 신호 기준"
-            value={draft.technical.volumeWeakRatio}
-            step={10}
-            suffix="%"
-            onChange={(v) => patch((d) => void (d.technical.volumeWeakRatio = v))}
-          />
+          <p className="rounded-md border border-border bg-surface p-2 text-[11px] text-muted-foreground">
+            참고지표 (점수 미반영): 볼린저 스퀴즈 · 밴드폭 · MA20 이격률 · 밸류업 편입 · Head Fake
+            경고. 화면에는 계속 표시되지만 종합점수에는 반영되지 않습니다.
+          </p>
           <div className="border-t border-border pt-3" />
           <NumField
             label="A등급 최소 기술점수"
@@ -331,21 +337,16 @@ function ScoringPage() {
             onChange={(v) => patch((d) => void (d.priority.indexPoints = v))}
           />
           <NumField
-            label="외국인 60일 순매수 배점"
+            label="외국인 20일 순매수 배점"
+            hint="최근 20거래일 외국인 누적 순매수 > 0"
             value={draft.priority.foreignPoints}
             step={0.5}
             suffix="점"
             onChange={(v) => patch((d) => void (d.priority.foreignPoints = v))}
           />
           <NumField
-            label="밸류업 편입 배점"
-            value={draft.priority.valueUpPoints}
-            step={0.5}
-            suffix="점"
-            onChange={(v) => patch((d) => void (d.priority.valueUpPoints = v))}
-          />
-          <NumField
             label="52주 신고가 근접 배점"
+            hint="52주 고점 대비 허용 낙폭 이내"
             value={draft.priority.nearHighPoints}
             step={0.5}
             suffix="점"
