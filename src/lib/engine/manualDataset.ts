@@ -398,7 +398,12 @@ export function parseManualMarketData(text: string): ManualParseResult {
   if (skipped > 0) warnings.push(`종목코드·기준일·종가가 없는 ${skipped}개 행을 건너뛰었습니다.`);
   if (!kosdaq)
     warnings.push("코스닥 지수(symbol=KOSDAQ)가 없어 코스닥 벤치마크는 코스피로 대체합니다.");
-  if (!vkospi) warnings.push("VKOSPI 행이 없어 변동성 게이트는 “데이터 없음”으로 처리됩니다.");
+  if (!vkospi)
+    warnings.push(
+      volatilityIsProxy
+        ? "VKOSPI 행이 없어 KOSPI·KOSDAQ 종가의 20일 실현변동성(연환산 %)을 대체 지표로 사용합니다."
+        : "VKOSPI 행이 없고 지수 일봉도 21개 미만이라 변동성 게이트는 “데이터 없음”으로 처리됩니다.",
+    );
 
   const stockCount = instruments.filter((i) => i.instrumentType === "STOCK").length;
 
