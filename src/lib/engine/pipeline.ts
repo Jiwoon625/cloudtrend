@@ -2,11 +2,13 @@
 // 데이터 공급자(mock / 토스증권 Open API)에 의존하지 않고 주입된 dataset만 사용한다.
 import {
   computeIndicators,
+  ichimoku,
   percentile,
   periodReturn,
   sma,
   type IndicatorSnapshot,
 } from "./indicators";
+
 import {
   ALL_AVAILABLE,
   DEFAULT_SCORING_CONFIG,
@@ -491,12 +493,25 @@ export function scoreHistory(
   return out;
 }
 
-export function chartSeries(ds: MarketDataset, symbol: string, days = 160) {
+export function chartSeries(ds: MarketDataset, symbol: string, days = 1200) {
   const bars = ds.bars[symbol] ?? [];
   const closes = bars.map((b) => b.close);
   const out = [];
-  for (let i = Math.max(120, bars.length - days); i < bars.length; i++) {
+  for (let i = Math.max(0, bars.length - days); i < bars.length; i++) {
     const snap = computeIndicators(bars, i);
+    const ich = snap.ichimoku;
+    const top = ich.cloudTop;
+    const bottom = ich.cloudBottom;
+    // 표시 구름의 선행스팬1(=(전환+기준)/2, 26일 전 산출)이 선행스팬2 위면 양운
+    const srcIndex = i - 26;
+    let bullish: boolean | null = null;
+    if (srcIndex >= 0) {
+      const src = ichimoku(bars, srcIndex);
+      if (src.tenkan !== null && src.kijun !== null && src.futureSenkouB !== null) {
+        bullish = (src.tenkan + src.kijun) / 2 >= src.futureSenkouB;
+      }
+    }
+    const band: [number, number] | null = top !== null && bottom !== null ? [bottom, top] : null;
     out.push({
       tradeDate: bars[i]!.tradeDate,
       close: bars[i]!.close,
@@ -504,14 +519,22 @@ export function chartSeries(ds: MarketDataset, symbol: string, days = 160) {
       low: bars[i]!.low,
       open: bars[i]!.open,
       volume: bars[i]!.volume,
+      ma5: sma(closes, 5, i),
       ma20: sma(closes, 20, i),
       ma60: sma(closes, 60, i),
       ma120: sma(closes, 120, i),
       bbUpper: snap.bollinger.bb?.upper ?? null,
       bbLower: snap.bollinger.bb?.lower ?? null,
-      cloudTop: snap.ichimoku.cloudTop,
-      cloudBottom: snap.ichimoku.cloudBottom,
+      bbBand:
+        snap.bollinger.bb ? ([snap.bollinger.bb.lower, snap.bollinger.bb.upper] as [number, number]) : null,
+      cloudTop: top,
+      cloudBottom: bottom,
+      tenkan: ich.tenkan,
+      kijun: ich.kijun,
+      bullCloud: bullish === true ? band : null,
+      bearCloud: bullish === false ? band : null,
     });
   }
   return out;
 }
+

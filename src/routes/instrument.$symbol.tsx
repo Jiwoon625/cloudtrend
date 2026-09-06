@@ -4,14 +4,17 @@ import { useState } from "react";
 import {
   Area,
   Bar,
+  Brush,
   CartesianGrid,
   ComposedChart,
+  Legend,
   Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+
 
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
@@ -233,7 +236,7 @@ function InstrumentDetail() {
             ))}
           </div>
         </div>
-        <div className="h-[360px]">
+        <div className="h-[420px]">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chart}>
               <CartesianGrid stroke="var(--color-grid)" vertical={false} />
@@ -254,43 +257,95 @@ function InstrumentDetail() {
                 }}
                 formatter={(v) => (typeof v === "number" ? v.toLocaleString("ko-KR") : v)}
               />
+              <Legend wrapperStyle={{ fontSize: 10 }} />
               {visible.cloud ? (
                 <>
                   <Area
                     yAxisId="price"
-                    dataKey="cloudTop"
+                    dataKey="bullCloud"
                     stroke="none"
-                    fill="var(--color-chart-2)"
-                    fillOpacity={0.16}
-                    name="구름 상단"
+                    fill="var(--color-down)"
+                    fillOpacity={0.2}
+                    connectNulls={false}
+                    isAnimationActive={false}
+                    name="양운"
                   />
                   <Area
                     yAxisId="price"
-                    dataKey="cloudBottom"
+                    dataKey="bearCloud"
                     stroke="none"
-                    fill="var(--color-background)"
-                    fillOpacity={1}
-                    name="구름 하단"
+                    fill="var(--color-info)"
+                    fillOpacity={0.2}
+                    connectNulls={false}
+                    isAnimationActive={false}
+                    name="음운"
+                  />
+                  <Line
+                    yAxisId="price"
+                    dataKey="tenkan"
+                    stroke="var(--color-chart-3)"
+                    dot={false}
+                    strokeWidth={1}
+                    isAnimationActive={false}
+                    name="전환선(9)"
+                  />
+                  <Line
+                    yAxisId="price"
+                    dataKey="kijun"
+                    stroke="var(--color-chart-1)"
+                    dot={false}
+                    strokeWidth={1}
+                    isAnimationActive={false}
+                    name="기준선(26)"
                   />
                 </>
               ) : null}
-              <Bar yAxisId="volume" dataKey="volume" fill="var(--color-grid)" name="거래량" />
+              {visible.bb ? (
+                <Area
+                  yAxisId="price"
+                  dataKey="bbBand"
+                  stroke="none"
+                  fill="var(--color-chart-2)"
+                  fillOpacity={0.14}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                  name="볼린저(20, 2σ)"
+                />
+              ) : null}
+              <Bar
+                yAxisId="volume"
+                dataKey="volume"
+                fill="var(--color-grid)"
+                isAnimationActive={false}
+                name="거래량"
+              />
               <Line
                 yAxisId="price"
                 dataKey="close"
                 stroke="var(--color-foreground)"
                 dot={false}
                 strokeWidth={1.6}
+                isAnimationActive={false}
                 name="종가"
               />
               {visible.ma ? (
                 <>
                   <Line
                     yAxisId="price"
+                    dataKey="ma5"
+                    stroke="var(--color-chart-4)"
+                    dot={false}
+                    strokeWidth={1}
+                    isAnimationActive={false}
+                    name="MA5"
+                  />
+                  <Line
+                    yAxisId="price"
                     dataKey="ma20"
                     stroke="var(--color-chart-3)"
                     dot={false}
                     strokeWidth={1}
+                    isAnimationActive={false}
                     name="MA20"
                   />
                   <Line
@@ -299,6 +354,7 @@ function InstrumentDetail() {
                     stroke="var(--color-chart-1)"
                     dot={false}
                     strokeWidth={1}
+                    isAnimationActive={false}
                     name="MA60"
                   />
                   <Line
@@ -307,6 +363,7 @@ function InstrumentDetail() {
                     stroke="var(--color-chart-5)"
                     dot={false}
                     strokeWidth={1}
+                    isAnimationActive={false}
                     name="MA120"
                   />
                 </>
@@ -316,26 +373,40 @@ function InstrumentDetail() {
                   <Line
                     yAxisId="price"
                     dataKey="bbUpper"
-                    stroke="var(--color-chart-4)"
+                    stroke="var(--color-chart-2)"
                     dot={false}
                     strokeDasharray="4 3"
                     strokeWidth={1}
+                    isAnimationActive={false}
                     name="BB 상단"
                   />
                   <Line
                     yAxisId="price"
                     dataKey="bbLower"
-                    stroke="var(--color-chart-4)"
+                    stroke="var(--color-chart-2)"
                     dot={false}
                     strokeDasharray="4 3"
                     strokeWidth={1}
+                    isAnimationActive={false}
                     name="BB 하단"
                   />
                 </>
               ) : null}
+              <Brush
+                dataKey="tradeDate"
+                height={22}
+                travellerWidth={8}
+                stroke="var(--color-border)"
+                fill="var(--color-surface)"
+              />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          하단 막대를 좌우로 끌면 과거 구간까지 확인할 수 있습니다. 이동평균 5·20·60·120일,
+          볼린저밴드 20일·2σ, 일목균형표 9·26·52(선행 26) 기준 · 양운 붉은색 / 음운 파랑색.
+        </p>
+
         <p className="mt-1 text-[11px] text-muted-foreground">
           ATR 손절선 참고: {formatPrice(snap.close - 1.8 * (snap.atr14 ?? 0))} (진입가 기준 1.8 ATR)
           · 52주 신고가 {formatPrice(snap.high52w)}
