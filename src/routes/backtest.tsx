@@ -177,18 +177,33 @@ function BacktestPage() {
 
   return (
     <AppShell>
-      <div className="mb-4">
-        <h1 className="text-xl font-bold tracking-tight">피처 영향도 백테스트</h1>
-        <p className="text-[12px] text-muted-foreground">
-          각 거래일을 관측 시점으로 삼아 피처 신호 유무를 기록하고(미래 데이터 미사용), 보유기간
-          5·10·20·40·60일 후 수익률을 동시에 비교합니다. 신호가 있을 때와 없을 때의 평균 수익률
-          차이(edge)가 클수록 그 피처의 설명력이 높습니다.
-        </p>
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">피처 영향도 백테스트</h1>
+          <p className="text-[12px] text-muted-foreground">
+            각 거래일을 관측 시점으로 삼아 피처 신호 유무를 기록하고(미래 데이터 미사용), 보유기간
+            5·10·20·40·60일 후 수익률을 동시에 비교합니다. 신호가 있을 때와 없을 때의 평균 수익률
+            차이(edge)가 클수록 그 피처의 설명력이 높습니다.
+          </p>
+        </div>
+        {result ? (
+          <PdfExportButton
+            documentTitle="CloudTrend 백테스트 결과"
+            onBeforePrint={() => {
+              // PDF에는 가장 기본이 되는 그래프(기본 피처·20일 보유기간)를 담는다.
+              setDecayFeatures(["MA_ALIGNED"]);
+              setBucketHorizon(20);
+              setDistFeature("MA_ALIGNED");
+              setDistHorizon(20);
+            }}
+          />
+        ) : null}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-        <div className="space-y-4">
+        <div className="space-y-4" data-no-print>
           <BacktestDataInput onChanged={setHasBacktestData} />
+
 
           <section className="space-y-2 rounded-lg border border-border bg-card p-3">
             <h2 className="text-sm font-semibold">스크리닝 데이터(대체용)</h2>
