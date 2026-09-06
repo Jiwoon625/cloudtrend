@@ -43,7 +43,7 @@ export const Route = createFileRoute("/backtest")({
       {
         name: "description",
         content:
-          "직접 업로드한 일봉 데이터로 일목 구름, 볼린저 돌파, 거래량 급증, 외국인 순매수 등 피처가 이후 수익률에 미친 영향을 보유기간(5·10·20·40·60일)별로 검증합니다.",
+          "직접 업로드한 일봉 데이터로 일목 구름, 볼린저 돌파, 거래량 급증, 외국인 순매수 등 피처가 이후 수익률에 미친 영향을 보유기간(5·10·20·30·40·60일)별로 검증합니다.",
       },
       { property: "og:title", content: "피처 영향도 백테스트 | CloudTrend" },
       {
@@ -195,7 +195,7 @@ function BacktestPage() {
           <h1 className="text-xl font-bold tracking-tight">피처 영향도 백테스트</h1>
           <p className="text-[12px] text-muted-foreground">
             각 거래일을 관측 시점으로 삼아 피처 신호 유무를 기록하고(미래 데이터 미사용), 보유기간
-            5·10·20·40·60일 후 수익률을 동시에 비교합니다. 신호가 있을 때와 없을 때의 평균 수익률
+            5·10·20·30·40·60일 후 수익률을 동시에 비교합니다. 신호가 있을 때와 없을 때의 평균 수익률
             차이(edge)가 클수록 그 피처의 설명력이 높습니다.
           </p>
         </div>
