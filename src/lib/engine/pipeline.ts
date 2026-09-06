@@ -2,11 +2,13 @@
 // 데이터 공급자(mock / 토스증권 Open API)에 의존하지 않고 주입된 dataset만 사용한다.
 import {
   computeIndicators,
+  ichimoku,
   percentile,
   periodReturn,
   sma,
   type IndicatorSnapshot,
 } from "./indicators";
+
 import {
   ALL_AVAILABLE,
   DEFAULT_SCORING_CONFIG,
