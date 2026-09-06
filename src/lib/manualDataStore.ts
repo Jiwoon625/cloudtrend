@@ -2,7 +2,7 @@
 // 원문 텍스트는 IndexedDB에 저장한다(localStorage 5MB 제한 회피). 메모리 미러를 두어
 // 기존의 동기 API(getManualDataText/getManualDataset)를 그대로 유지한다.
 import { parseManualMarketData, type ManualParseResult } from "@/lib/engine/manualDataset";
-import { idbDel, idbGet, idbSet } from "@/lib/idbStore";
+import { idbDel, idbGet, idbSet, requestPersistentStorage } from "@/lib/idbStore";
 
 const KEY = "trendscore.manualMarketData.v1";
 const META_KEY = "trendscore.manualMarketData.meta.v1";
@@ -67,6 +67,7 @@ export async function saveManualDataText(
     fileName: fileName ?? null,
     chars: text.length,
   };
+  await requestPersistentStorage();
   memText = text;
   memMeta = meta;
   cache = null;
