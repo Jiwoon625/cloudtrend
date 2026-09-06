@@ -341,7 +341,7 @@ export function evaluateFeatures(
   bar: DailyPrice,
   cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
 ): Record<string, boolean | null> {
-  void bar;
+  const v3 = technicalFlagsV3(snap, cfg);
   const v3 = technicalFlagsV3(snap, cfg);
   return {
     ICH_ABOVE_CLOUD: v3.cloudAbove,
