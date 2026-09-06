@@ -270,6 +270,19 @@ export interface IndicatorSnapshot {
   institutionNet20d: number | null;
   extensionFromMa20: number | null; // %
   atrExtension: number | null; // ATR 배수
+  /** 종가 위치 (close - low) / (high - low). high === low이면 null */
+  closeLocationValue: number | null;
+}
+
+/** 종가 위치값 (Close Location Value). high === low이면 null */
+export function barCloseLocationValue(bar: {
+  high: number;
+  low: number;
+  close: number;
+}): number | null {
+  const range = bar.high - bar.low;
+  if (!Number.isFinite(range) || range <= 0) return null;
+  return (bar.close - bar.low) / range;
 }
 
 /** 구간 중 하나라도 데이터가 없으면(null) 합계를 만들지 않고 null을 반환한다. */
@@ -331,5 +344,6 @@ export function computeIndicators(bars: DailyPrice[], endIndex: number): Indicat
     institutionNet20d: sumLast(inst, endIndex, 20),
     extensionFromMa20: ma20 !== null && ma20 !== 0 ? (close / ma20 - 1) * 100 : null,
     atrExtension: ma20 !== null && atr14 ? (close - ma20) / atr14 : null,
+    closeLocationValue: barCloseLocationValue(bars[endIndex]!),
   };
 }
