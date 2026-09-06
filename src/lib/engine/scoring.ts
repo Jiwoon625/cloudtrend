@@ -412,7 +412,20 @@ export function priorityScore(
     maxPoints: c.relativePoints,
   });
 
+  // 참고지표 (점수 미반영): 코리아 밸류업 지수 편입 여부
+  const valueUp = inst.indexMemberships.includes("KOREA_VALUEUP");
+  rows.push({
+    group: "참고지표 (점수 미반영)",
+    rule: "코리아 밸류업 지수 편입",
+    actual: valueUp ? "편입" : "미편입",
+    threshold: "점수 미반영 (참고 정보)",
+    status: valueUp ? "PASS" : "FAIL",
+    points: 0,
+    maxPoints: 0,
+  });
+
   const points = rows.reduce((a, r) => a + r.points, 0);
+
   const availableMaxPoints = rows.reduce(
     (a, r) => a + (r.status === "NO_DATA" ? 0 : r.maxPoints),
     0,
