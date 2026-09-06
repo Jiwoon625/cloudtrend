@@ -37,12 +37,6 @@ export const BACKTEST_FEATURES: FeatureDef[] = [
     defaultWeight: 1,
   },
   {
-    id: "BB_SQUEEZE",
-    label: "볼린저 스퀴즈 (참고지표, V3 점수 미반영)",
-    description: "밴드폭이 직전 구간 대비 축소 — V3 composite score에는 포함하지 않는다",
-    defaultWeight: 0,
-  },
-  {
     id: "MA_ALIGNED",
     label: "이동평균 정배열",
     description: "MA20 > MA60 > MA120",
