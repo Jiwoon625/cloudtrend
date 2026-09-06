@@ -4,6 +4,30 @@ import { NO_CAPABILITIES, type MarketDataset } from "./dataset";
 import { resolveSectorCode, THEME_SECTORS } from "./sectors";
 import type { DailyPrice, EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
 
+/** 실현변동성(연환산 %) 시계열. VKOSPI가 없을 때 대체 지표로 쓴다. */
+export function realizedVolatilitySeries(closes: number[], window = 20): number[] {
+  const rets: number[] = [];
+  for (let i = 1; i < closes.length; i++) {
+    const p0 = closes[i - 1]!;
+    const p1 = closes[i]!;
+    rets.push(p0 > 0 && p1 > 0 ? Math.log(p1 / p0) : 0);
+  }
+  const out: number[] = [];
+  for (let i = 0; i < closes.length; i++) {
+    // i번째 종가까지의 과거 수익률만 사용한다(미래 데이터 미사용).
+    const end = i; // rets[0..i-1]
+    if (end < window) {
+      out.push(Number.NaN);
+      continue;
+    }
+    const slice = rets.slice(end - window, end);
+    const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
+    const variance = slice.reduce((a, b) => a + (b - mean) ** 2, 0) / (slice.length - 1);
+    out.push(Math.sqrt(variance * 252) * 100);
+  }
+  return out;
+}
+
 export interface ManualParseStats {
   stocks: number;
   etfs: number;
@@ -290,6 +314,27 @@ export function parseManualMarketData(text: string): ManualParseResult {
     indexSeries.push({ indexCode: "KOSDAQ", indexName: "코스닥", bars: kosdaq.bars });
   const vkospi = map.get("VKOSPI");
 
+  // VKOSPI가 없으면 KOSPI(및 KOSDAQ) 종가의 20일 실현변동성(연환산 %)으로 대체한다.
+  let volatilitySeries: number[] = [];
+  let volatilityIsProxy = false;
+  if (vkospi && vkospi.bars.length > 0) {
+    volatilitySeries = vkospi.bars.map((b) => b.close);
+  } else {
+    const kospiVol = realizedVolatilitySeries(kospi.bars.map((b) => b.close));
+    const kosdaqCloses = kosdaq && kosdaq.bars.length >= 21 ? kosdaq.bars.map((b) => b.close) : null;
+    const kosdaqVol = kosdaqCloses ? realizedVolatilitySeries(kosdaqCloses) : null;
+    const offset = kosdaqVol ? kosdaqVol.length - kospiVol.length : 0;
+    volatilitySeries = kospiVol
+      .map((v, i) => {
+        const kq = kosdaqVol?.[i + offset];
+        if (!Number.isFinite(v)) return Number.NaN;
+        return kq !== undefined && Number.isFinite(kq) ? 0.7 * v + 0.3 * kq : v;
+      })
+      .filter((v) => Number.isFinite(v));
+    volatilityIsProxy = volatilitySeries.length > 0;
+  }
+
+
   const instruments: Instrument[] = [];
   const bars: Record<string, DailyPrice[]> = {};
   const usedSectors = new Set<string>();
@@ -353,7 +398,12 @@ export function parseManualMarketData(text: string): ManualParseResult {
   if (skipped > 0) warnings.push(`종목코드·기준일·종가가 없는 ${skipped}개 행을 건너뛰었습니다.`);
   if (!kosdaq)
     warnings.push("코스닥 지수(symbol=KOSDAQ)가 없어 코스닥 벤치마크는 코스피로 대체합니다.");
-  if (!vkospi) warnings.push("VKOSPI 행이 없어 변동성 게이트는 “데이터 없음”으로 처리됩니다.");
+  if (!vkospi)
+    warnings.push(
+      volatilityIsProxy
+        ? "VKOSPI 행이 없어 KOSPI·KOSDAQ 종가의 20일 실현변동성(연환산 %)을 대체 지표로 사용합니다."
+        : "VKOSPI 행이 없고 지수 일봉도 21개 미만이라 변동성 게이트는 “데이터 없음”으로 처리됩니다.",
+    );
 
   const stockCount = instruments.filter((i) => i.instrumentType === "STOCK").length;
 
@@ -367,7 +417,7 @@ export function parseManualMarketData(text: string): ManualParseResult {
       sectors: true,
       marketCap: marketCapCount > 0,
       investorFlow: flowCount > 0,
-      volatilityIndex: !!vkospi,
+      volatilityIndex: volatilitySeries.length > 0,
       exactTradingValue: exactValueCount > 0,
     },
     notes: [
@@ -390,7 +440,7 @@ export function parseManualMarketData(text: string): ManualParseResult {
     indexSeries,
     financials: {} as Record<string, FinancialFacts>,
     etfFacts: {} as Record<string, EtfFacts>,
-    vkospiSeries: vkospi ? vkospi.bars.map((b) => b.close) : [],
+    vkospiSeries: volatilitySeries,
   };
 
   return {
@@ -398,7 +448,9 @@ export function parseManualMarketData(text: string): ManualParseResult {
     stats: {
       stocks: stockCount,
       etfs: instruments.length - stockCount,
-      indexes: indexSeries.map((s) => s.indexCode).concat(vkospi ? ["VKOSPI"] : []),
+      indexes: indexSeries
+        .map((s) => s.indexCode)
+        .concat(vkospi ? ["VKOSPI"] : volatilityIsProxy ? ["실현변동성(대체)"] : []),
       bars: barCount,
       firstDate: tradeDates[0]!,
       lastDate: asOfDate,
