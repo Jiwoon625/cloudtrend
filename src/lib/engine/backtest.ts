@@ -37,12 +37,6 @@ export const BACKTEST_FEATURES: FeatureDef[] = [
     defaultWeight: 1,
   },
   {
-    id: "BB_SQUEEZE",
-    label: "볼린저 스퀴즈 (참고지표, V3 점수 미반영)",
-    description: "밴드폭이 직전 구간 대비 축소 — V3 composite score에는 포함하지 않는다",
-    defaultWeight: 0,
-  },
-  {
     id: "MA_ALIGNED",
     label: "이동평균 정배열",
     description: "MA20 > MA60 > MA120",
@@ -77,12 +71,6 @@ export const BACKTEST_FEATURES: FeatureDef[] = [
     label: "외국인 20일 순매수",
     description: "최근 20거래일 외국인 누적 순매수가 양수 (Priority 2점)",
     defaultWeight: 2,
-  },
-  {
-    id: "NOT_OVEREXTENDED",
-    label: "과열 이격 아님 (참고지표, V3 점수 미반영)",
-    description: "20일선 이격도가 설정값 미만 — V3 composite score에는 포함하지 않는다",
-    defaultWeight: 0,
   },
 ];
 
@@ -134,18 +122,13 @@ export interface BacktestParams {
   volumeThresholds?: number[];
 }
 
-/** V3 composite score에 포함되지 않는 참고지표 피처 (분석용으로만 유지) */
-export const INFORMATION_ONLY_FEATURES = ["BB_SQUEEZE", "NOT_OVEREXTENDED"];
-
 export const DEFAULT_BACKTEST_PARAMS: BacktestParams = {
   horizonDays: 30,
   sampleEvery: 5,
   volumeSurgeRatio: 150,
   extensionLimit: 15,
   entryScore: 60,
-  features: BACKTEST_FEATURES.filter((f) => !INFORMATION_ONLY_FEATURES.includes(f.id)).map(
-    (f) => f.id,
-  ),
+  features: BACKTEST_FEATURES.map((f) => f.id),
   weights: Object.fromEntries(BACKTEST_FEATURES.map((f) => [f.id, f.defaultWeight])),
   horizons: DEFAULT_HORIZONS,
   volumeMode: "HIGH_CLOSE",
@@ -353,14 +336,11 @@ export function evaluateFeatures(
   bar: DailyPrice,
   cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
 ): Record<string, boolean | null> {
-  const bb = snap.bollinger;
   const v3 = technicalFlagsV3(snap, cfg);
   return {
     ICH_ABOVE_CLOUD: v3.cloudAbove,
     ICH_TENKAN_KIJUN: v3.tenkanAboveKijun,
     BB_BREAKOUT: v3.bbBreakout,
-    BB_SQUEEZE:
-      bb.bb === null ? null : bb.bbSqueezePrior === true || bb.bbSqueezeAbsolute === true,
     MA_ALIGNED: v3.maAligned,
     MA20_SLOPE_UP: v3.ma20SlopeUp,
     VOLUME_SURGE: volumeSurgeFlag(
@@ -376,8 +356,6 @@ export function evaluateFeatures(
         : snap.distanceFrom52wHigh >= cfg.priority.nearHighThresholdPercent,
     RS_POSITIVE: v3.return20Positive,
     FOREIGN_NET_POSITIVE: snap.foreignNet20d === null ? null : snap.foreignNet20d > 0,
-    NOT_OVEREXTENDED:
-      snap.extensionFromMa20 === null ? null : snap.extensionFromMa20 < params.extensionLimit,
   };
 }
 
