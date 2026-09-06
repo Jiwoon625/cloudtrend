@@ -56,7 +56,19 @@ export async function idbDel(key: string): Promise<void> {
   }
 }
 
+/** 브라우저에 영구 저장 권한을 요청한다(할당량 축소·자동 정리 방지). */
+export async function requestPersistentStorage(): Promise<boolean> {
+  if (typeof navigator === "undefined" || !navigator.storage?.persist) return false;
+  try {
+    if (await navigator.storage.persisted?.()) return true;
+    return await navigator.storage.persist();
+  } catch {
+    return false;
+  }
+}
+
 /** 브라우저가 알려주는 저장 용량(사용량/할당량). 지원하지 않으면 null. */
+
 export async function storageEstimate(): Promise<{ usage: number; quota: number } | null> {
   if (typeof navigator === "undefined" || !navigator.storage?.estimate) return null;
   try {
