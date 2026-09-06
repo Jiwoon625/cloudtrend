@@ -282,7 +282,11 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
             }
           />
           <KeyValue label="KOSDAQ 종가" value={formatNumber(analysis.kosdaq.close, 2)} />
-          <KeyValue label="VKOSPI" value={formatNumber(analysis.vkospi, 2)} hint="< 30" />
+          <KeyValue
+            label="변동성지수(VKOSPI 또는 실현변동성)"
+            value={formatNumber(analysis.vkospi, 2)}
+            hint="< 30"
+          />
           <KeyValue label="외국인 최근 5일 누적" value={formatWon(analysis.marketForeignNet5d)} />
           {gate.status === "NEUTRAL" ? (
             <p className="mt-2 text-[11px] text-warn">
