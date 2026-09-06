@@ -109,8 +109,8 @@ function BacktestPage() {
   const [hasBacktestData, setHasBacktestData] = useState(false);
   const [decayFeatures, setDecayFeatures] = useState<string[]>(["MA_ALIGNED"]);
   const [bucketHorizon, setBucketHorizon] = useState(20);
-  const [distFeature, setDistFeature] = useState("MA_ALIGNED");
-  const [distHorizon, setDistHorizon] = useState(20);
+  const [distSide, setDistSide] = useState<"signal" | "nonSignal">("signal");
+
 
   useEffect(() => {
     void hydrateManualData().then(() => {
