@@ -4,14 +4,17 @@ import { useState } from "react";
 import {
   Area,
   Bar,
+  Brush,
   CartesianGrid,
   ComposedChart,
+  Legend,
   Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+
 
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
