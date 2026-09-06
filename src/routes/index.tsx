@@ -133,14 +133,18 @@ function Dashboard() {
             시장 게이트, 스크리닝 요약, 강한 섹터, 상위 후보 순위를 한 화면에 정리합니다.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2" data-no-print>
           {started && !analysisQuery.isPending ? (
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={rescreen}>
-              <RefreshCw className="size-3.5" />
-              다시 스크리닝
-            </Button>
+            <>
+              <PdfExportButton documentTitle="CloudTrend 대시보드" />
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={rescreen}>
+                <RefreshCw className="size-3.5" />
+                다시 스크리닝
+              </Button>
+            </>
           ) : null}
         </div>
+
       </div>
 
       {!started ? (
