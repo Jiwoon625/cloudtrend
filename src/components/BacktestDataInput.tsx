@@ -1,16 +1,18 @@
-import { AlertTriangle, CheckCircle2, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { ManualParseStats } from "@/lib/engine/manualDataset";
 import {
+  addBacktestFile,
   clearBacktestData,
-  getBacktestDataMeta,
+  getBacktestFiles,
+  getBacktestTotalBytes,
   hydrateBacktestData,
   loadBacktestDataset,
-  saveBacktestData,
-  type BacktestDataMeta,
+  removeBacktestFile,
+  type BacktestFileEntry,
 } from "@/lib/backtestDataStore";
 import { formatCount } from "@/lib/format";
 
@@ -22,85 +24,110 @@ function formatBytes(bytes: number): string {
 }
 
 interface Props {
-  /** 저장 데이터가 바뀌었을 때 알린다(있으면 true). */
+  /** 저장 데이터가 바뀌었을 때 알린다(1개 이상이면 true). */
   onChanged: (hasData: boolean) => void;
 }
 
 export function BacktestDataInput({ onChanged }: Props) {
-  const [meta, setMeta] = useState<BacktestDataMeta | null>(null);
+  const [files, setFiles] = useState<BacktestFileEntry[]>([]);
   const [text, setText] = useState("");
   const [stats, setStats] = useState<ManualParseStats | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const sync = () => {
+    const list = getBacktestFiles();
+    setFiles([...list]);
+    onChanged(list.length > 0);
+  };
 
   useEffect(() => {
     void hydrateBacktestData()
-      .then(() => {
-        const m = getBacktestDataMeta();
-        setMeta(m);
-        onChanged(!!m);
-      })
+      .then(sync)
       .catch((e: Error) => setError(e.message));
     // 최초 1회만 복원한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const apply = async (source: Blob | string, name: string | null) => {
+  const add = async (sources: Array<{ source: Blob | string; name: string | null }>) => {
     setError(null);
-    setBusy(true);
+    for (const { source, name } of sources) {
+      setBusy(`${name ?? "데이터"} 저장 중…`);
+      try {
+        await addBacktestFile(source, name);
+      } catch (e) {
+        setError(
+          `${name ?? "데이터"}: ${e instanceof Error ? e.message : "저장하지 못했습니다."}`,
+        );
+      }
+    }
+    sync();
+    setBusy("데이터 확인 중…");
     try {
-      setMeta(await saveBacktestData(source, name));
       const parsed = await loadBacktestDataset();
       setStats(parsed?.stats ?? null);
       setWarnings(parsed?.warnings ?? []);
-      onChanged(true);
     } catch (e) {
       setStats(null);
       setWarnings([]);
       setError(e instanceof Error ? e.message : "데이터를 해석할 수 없습니다.");
-      onChanged(false);
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  };
+
+  const removeOne = async (entry: BacktestFileEntry) => {
+    if (busy) return;
+    setBusy("삭제 중…");
+    try {
+      await removeBacktestFile(entry.id);
+      setStats(null);
+      setWarnings([]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "삭제 실패");
+    } finally {
+      setBusy(null);
+      sync();
     }
   };
 
   const reset = async () => {
-    if (busy || !window.confirm("모든 기기에서 공유하는 이 CSV를 삭제할까요?")) return;
-    setBusy(true);
+    if (busy || !window.confirm("업로드한 모든 백테스트용 데이터를 삭제할까요?")) return;
+    setBusy("삭제 중…");
     try {
       await clearBacktestData();
+      setText("");
+      setStats(null);
+      setWarnings([]);
+      setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "삭제 실패");
-      setBusy(false);
-      return;
+    } finally {
+      setBusy(null);
+      sync();
     }
-    setBusy(false);
-    setMeta(null);
-    setText("");
-    setStats(null);
-    setWarnings([]);
-    setError(null);
-    onChanged(false);
   };
 
   return (
     <section className="space-y-2 rounded-lg border border-border bg-card p-3">
       <h2 className="text-sm font-semibold">백테스트용 장기 데이터</h2>
       <p className="text-[11px] text-muted-foreground">
-        스크리닝 데이터와 별도로 Supabase에 보관됩니다. 최신 파일 1개, 저장 크기 45MB까지
-        지원합니다.
+        스크리닝 데이터와 별도로 Supabase에 보관됩니다. 파일 1개는 45MB 이하, 개수 제한은 없으며
+        백테스트 실행 시 여기 있는 모든 파일을 합쳐서 사용합니다.
       </p>
 
       <input
         ref={fileRef}
         type="file"
+        multiple
         accept=".csv,.txt,.json"
         className="hidden"
         onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void apply(f, f.name);
+          const picked = Array.from(e.target.files ?? []);
+          if (picked.length)
+            void add(picked.map((f) => ({ source: f as Blob, name: f.name })));
           e.target.value = "";
         }}
       />
@@ -108,15 +135,21 @@ export function BacktestDataInput({ onChanged }: Props) {
         <Button
           size="sm"
           className="gap-1.5"
-          disabled={busy}
+          disabled={!!busy}
           onClick={() => fileRef.current?.click()}
         >
           <Upload className="size-3.5" />
-          {busy ? "저장 중…" : "CSV/JSON 업로드"}
+          {busy ?? "CSV/JSON 추가 업로드"}
         </Button>
-        <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground" onClick={reset}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="gap-1.5 text-muted-foreground"
+          disabled={!!busy || files.length === 0}
+          onClick={() => void reset()}
+        >
           <Trash2 className="size-3.5" />
-          삭제
+          전체 삭제
         </Button>
       </div>
 
@@ -133,17 +166,44 @@ export function BacktestDataInput({ onChanged }: Props) {
           size="sm"
           variant="outline"
           className="mt-2"
-          disabled={busy || text.trim().length === 0}
-          onClick={() => void apply(text, "붙여넣기")}
+          disabled={!!busy || text.trim().length === 0}
+          onClick={() => {
+            const value = text;
+            setText("");
+            void add([{ source: value, name: "붙여넣기" }]);
+          }}
         >
-          붙여넣은 데이터 적용
+          붙여넣은 데이터 추가
         </Button>
       </details>
 
-      {meta ? (
-        <p className="text-[11px] text-muted-foreground">
-          Supabase 저장됨 · {meta.fileName ?? "붙여넣기"} · {formatBytes(meta.bytes)}
-        </p>
+      {files.length > 0 ? (
+        <div className="space-y-1">
+          <p className="text-[11px] text-muted-foreground">
+            저장된 파일 {files.length}개 · 합계 {formatBytes(getBacktestTotalBytes())}
+          </p>
+          <ul className="space-y-1">
+            {files.map((f) => (
+              <li
+                key={f.id}
+                className="flex items-center justify-between gap-2 rounded-md border border-border px-2 py-1 text-[11px]"
+              >
+                <span className="truncate">
+                  {f.fileName ?? "붙여넣기"} · {formatBytes(f.bytes)}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`${f.fileName ?? "붙여넣기"} 삭제`}
+                  className="text-muted-foreground hover:text-down"
+                  disabled={!!busy}
+                  onClick={() => void removeOne(f)}
+                >
+                  <X className="size-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : (
         <p className="text-[11px] text-muted-foreground">
           백테스트 전용 데이터가 없으면 “데이터·산식” 탭의 스크리닝 데이터를 사용합니다.
