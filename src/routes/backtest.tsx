@@ -341,7 +341,12 @@ function BacktestPage() {
           </section>
 
           <section className="space-y-3 rounded-lg border border-border bg-card p-3">
-            <h2 className="text-sm font-semibold">테스트 설정</h2>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">테스트 설정</h2>
+              <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={resetSettings}>
+                기본값 복원
+              </Button>
+            </div>
             <div className="space-y-1">
               <Label className="text-[11px] text-muted-foreground">
                 종목코드 (미입력 시 업로드 데이터에서 선택)
