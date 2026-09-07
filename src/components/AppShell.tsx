@@ -88,7 +88,7 @@ export function AppShell({
   const live = resolved?.isLive ?? false;
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-40 border-b border-border bg-surface/95 backdrop-blur">
+      <header className="border-b border-border bg-surface/95 backdrop-blur">
         <div className="mx-auto flex max-w-[1500px] flex-col gap-2 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <Link to="/" className="flex flex-col leading-tight">
