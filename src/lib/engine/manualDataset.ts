@@ -222,9 +222,12 @@ interface Series {
   bars: DailyPrice[];
 }
 
-/** 붙여넣기/업로드한 텍스트를 MarketDataset으로 변환한다. 형식 오류는 Error로 던진다. */
-export function parseManualMarketData(text: string): ManualParseResult {
-  const records = toRecords(text);
+/**
+ * 붙여넣기/업로드한 텍스트를 MarketDataset으로 변환한다. 형식 오류는 Error로 던진다.
+ * 여러 파일을 배열로 넘기면 하나의 데이터셋으로 합쳐서 해석한다(같은 종목·같은 날짜는 1건만 사용).
+ */
+export function parseManualMarketData(input: string | string[]): ManualParseResult {
+  const records = (Array.isArray(input) ? input : [input]).flatMap(toRecords);
   if (records.length === 0) {
     throw new Error("데이터를 인식하지 못했습니다. 헤더가 포함된 CSV 또는 JSON을 붙여넣어 주세요.");
   }
