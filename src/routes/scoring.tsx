@@ -175,9 +175,9 @@ function ScoringPage() {
               1. 시세 데이터 입력 (붙여넣기 또는 CSV/JSON 업로드)
             </h2>
             <p className="text-[11px] text-muted-foreground">
-              입력한 데이터는 이 브라우저에만 저장되며, 서버로 시세를 조회하지 않습니다. 필수 열:
-              symbol, name, market, date, open, high, low, close, volume · 지수 행(symbol=KOSPI,
-              market=INDEX) 60거래일 이상 권장.
+              입력한 CSV는 Supabase에 비공개 저장됩니다. 같은 계정으로 로그인하면 다른 기기에서도
+              불러올 수 있습니다. 필수 열: symbol, name, market, date, open, high, low, close,
+              volume · 지수 행(symbol=KOSPI, market=INDEX) 60거래일 이상 권장.
             </p>
           </div>
         </header>

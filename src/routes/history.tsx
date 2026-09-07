@@ -72,8 +72,8 @@ function HistoryPage() {
             스크리닝 이력
           </h1>
           <p className="text-[12px] text-muted-foreground">
-            하루에 여러 번 스크리닝하면 그날의 마지막 결과만 저장됩니다. (브라우저 로컬 저장, 최근
-            90일)
+            하루에 여러 번 스크리닝하면 그날의 마지막 결과만 Supabase에 저장됩니다. 최근 90개 날짜를
+            모든 기기에서 공유합니다.
           </p>
         </div>
         {snapshots.length > 0 ? (

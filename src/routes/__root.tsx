@@ -10,6 +10,8 @@ import {
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
+import { CloudAccount } from "@/components/CloudAccount";
+import { Toaster } from "sonner";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
 function NotFoundComponent() {
@@ -129,7 +131,10 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <CloudAccount>
+        <Outlet />
+      </CloudAccount>
+      <Toaster richColors />
     </QueryClientProvider>
   );
 }

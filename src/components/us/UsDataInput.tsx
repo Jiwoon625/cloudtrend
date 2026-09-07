@@ -61,8 +61,17 @@ export function UsDataInput({ onChanged }: { onChanged: (hasData: boolean) => vo
     await apply(raw, file.name);
   };
 
-  const reset = () => {
-    void clearUsData();
+  const reset = async () => {
+    if (busy || !window.confirm("모든 기기에서 공유하는 이 CSV를 삭제할까요?")) return;
+    setBusy(true);
+    try {
+      await clearUsData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "삭제 실패");
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
     setText("");
     setStats(null);
     setWarnings([]);
@@ -119,7 +128,7 @@ export function UsDataInput({ onChanged }: { onChanged: (hasData: boolean) => vo
         </Button>
         {meta ? (
           <span className="text-[11px] text-muted-foreground">
-            저장됨 · {meta.fileName ?? "붙여넣기"} · {formatCount(meta.chars)}자
+            Supabase 저장됨 · {meta.fileName ?? "붙여넣기"} · {formatCount(meta.chars)}자
           </span>
         ) : (
           <span className="text-[11px] text-muted-foreground">저장된 데이터 없음</span>

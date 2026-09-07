@@ -11,12 +11,12 @@ import {
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
 import { GradeBadge, ScreenerTable } from "@/components/ScreenerTable";
 import { PdfExportButton } from "@/components/PdfExportButton";
-
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -146,7 +146,6 @@ function Dashboard() {
             </>
           ) : null}
         </div>
-
       </div>
 
       {!started ? (
@@ -203,7 +202,19 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
   const [diff, setDiff] = useState<GradeDiff | null>(null);
   useEffect(() => {
     setDiff(diffSnapshots(snapshot));
-    saveSnapshot(snapshot);
+    void saveSnapshot(snapshot).catch((e: Error) =>
+      toast.error(`이력 저장 실패: ${e.message}`, {
+        duration: Infinity,
+        action: {
+          label: "재시도",
+          onClick: () => {
+            void saveSnapshot(snapshot)
+              .then(() => toast.success("이력 저장 완료"))
+              .catch((err: Error) => toast.error(err.message));
+          },
+        },
+      }),
+    );
   }, [snapshot]);
 
   const passed = rows.filter((r) => r.hardFilterPassed);

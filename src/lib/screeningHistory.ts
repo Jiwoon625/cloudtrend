@@ -1,8 +1,19 @@
-// 스크리닝 결과 스냅샷을 브라우저(localStorage)에 하루 1건(그날의 마지막 결과)씩 보관한다.
+// 계정별 일별 스냅샷. Supabase에서 최근 90개 날짜를 보관한다.
 import { useCallback, useEffect, useState } from "react";
 
-const KEY = "trendscore.screeningHistory.v1";
-const MAX_DAYS = 90;
+import { supabase, userId } from "@/lib/cloud";
+import { toast } from "sonner";
+let snapshots: ScreeningSnapshot[] = [];
+export async function hydrateSnapshots() {
+  const { data, error } = await supabase
+    .from("screening_history")
+    .select("snapshot")
+    .order("date", { ascending: false })
+    .limit(90);
+  if (error) throw error;
+  snapshots = (data ?? []).map((r) => r.snapshot as ScreeningSnapshot);
+  for (const listener of listeners) listener();
+}
 
 export interface SnapshotEntry {
   symbol: string;
@@ -46,42 +57,35 @@ export function kstDateKey(d: Date = new Date()): string {
 }
 
 export function loadSnapshots(): ScreeningSnapshot[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as ScreeningSnapshot[];
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((s) => s && typeof s.date === "string" && Array.isArray(s.entries))
-      .sort((a, b) => (a.date < b.date ? 1 : -1));
-  } catch {
-    return [];
-  }
+  return snapshots;
 }
 
-function persist(list: ScreeningSnapshot[]) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(KEY, JSON.stringify(list.slice(0, MAX_DAYS)));
-  } catch {
-    // 저장 실패(용량 초과 등)는 무시
-  }
-  for (const l of listeners) l();
+export async function saveSnapshot(snapshot: ScreeningSnapshot) {
+  const { error } = await supabase
+    .from("screening_history")
+    .upsert(
+      { user_id: await userId(), date: snapshot.date, snapshot },
+      { onConflict: "user_id,date" },
+    );
+  if (error) throw error;
+  await hydrateSnapshots();
 }
-
-/** 같은 날짜의 기존 스냅샷은 최신 결과로 교체한다. */
-export function saveSnapshot(snapshot: ScreeningSnapshot) {
-  const rest = loadSnapshots().filter((s) => s.date !== snapshot.date);
-  persist([snapshot, ...rest].sort((a, b) => (a.date < b.date ? 1 : -1)));
+export async function deleteSnapshot(date: string) {
+  const { error } = await supabase
+    .from("screening_history")
+    .delete()
+    .eq("user_id", await userId())
+    .eq("date", date);
+  if (error) throw error;
+  await hydrateSnapshots();
 }
-
-export function deleteSnapshot(date: string) {
-  persist(loadSnapshots().filter((s) => s.date !== date));
-}
-
-export function clearSnapshots() {
-  persist([]);
+export async function clearSnapshots() {
+  const { error } = await supabase
+    .from("screening_history")
+    .delete()
+    .eq("user_id", await userId());
+  if (error) throw error;
+  await hydrateSnapshots();
 }
 
 /** 기준 스냅샷과 그 이전 영업일 스냅샷을 비교해 신규 A / A→B 하락을 구한다. */
@@ -89,7 +93,8 @@ export function diffSnapshots(
   current: ScreeningSnapshot,
   all: ScreeningSnapshot[] = loadSnapshots(),
 ): GradeDiff {
-  const previous = all.filter((s) => s.date < current.date).sort((a, b) => (a.date < b.date ? 1 : -1))[0] ?? null;
+  const previous =
+    all.filter((s) => s.date < current.date).sort((a, b) => (a.date < b.date ? 1 : -1))[0] ?? null;
   if (!previous) return { previous: null, newGradeA: [], droppedAtoB: [] };
 
   const prevMap = new Map(previous.entries.map((e) => [e.symbol, e]));
@@ -119,9 +124,17 @@ export function useSnapshots(): {
   }, []);
   return {
     snapshots,
-    refresh: useCallback(() => setSnapshots(loadSnapshots()), []),
-    remove: useCallback((date: string) => deleteSnapshot(date), []),
-    clear: useCallback(() => clearSnapshots(), []),
+    refresh: useCallback(() => {
+      void hydrateSnapshots().catch((e: Error) => toast.error(e.message));
+    }, []),
+    remove: useCallback((date: string) => {
+      if (window.confirm("이 날짜의 클라우드 이력을 삭제할까요?"))
+        void deleteSnapshot(date).catch((e: Error) => toast.error(e.message));
+    }, []),
+    clear: useCallback(() => {
+      if (window.confirm("모든 기기에서 공유하는 이력을 전체 삭제할까요?"))
+        void clearSnapshots().catch((e: Error) => toast.error(e.message));
+    }, []),
   };
 }
 

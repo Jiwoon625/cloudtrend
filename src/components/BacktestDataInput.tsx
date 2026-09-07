@@ -13,7 +13,6 @@ import {
   type BacktestDataMeta,
 } from "@/lib/backtestDataStore";
 import { formatCount } from "@/lib/format";
-import { storageEstimate } from "@/lib/idbStore";
 
 const MB = 1024 * 1024;
 
@@ -34,16 +33,16 @@ export function BacktestDataInput({ onChanged }: Props) {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [quota, setQuota] = useState<{ usage: number; quota: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    void hydrateBacktestData().then(() => {
-      const m = getBacktestDataMeta();
-      setMeta(m);
-      onChanged(!!m);
-    });
-    void storageEstimate().then(setQuota);
+    void hydrateBacktestData()
+      .then(() => {
+        const m = getBacktestDataMeta();
+        setMeta(m);
+        onChanged(!!m);
+      })
+      .catch((e: Error) => setError(e.message));
     // 최초 1회만 복원한다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -57,7 +56,6 @@ export function BacktestDataInput({ onChanged }: Props) {
       setStats(parsed?.stats ?? null);
       setWarnings(parsed?.warnings ?? []);
       onChanged(true);
-      void storageEstimate().then(setQuota);
     } catch (e) {
       setStats(null);
       setWarnings([]);
@@ -68,8 +66,17 @@ export function BacktestDataInput({ onChanged }: Props) {
     }
   };
 
-  const reset = () => {
-    void clearBacktestData();
+  const reset = async () => {
+    if (busy || !window.confirm("모든 기기에서 공유하는 이 CSV를 삭제할까요?")) return;
+    setBusy(true);
+    try {
+      await clearBacktestData();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "삭제 실패");
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
     setMeta(null);
     setText("");
     setStats(null);
@@ -82,8 +89,8 @@ export function BacktestDataInput({ onChanged }: Props) {
     <section className="space-y-2 rounded-lg border border-border bg-card p-3">
       <h2 className="text-sm font-semibold">백테스트용 장기 데이터</h2>
       <p className="text-[11px] text-muted-foreground">
-        스크리닝 데이터와 별도로 보관됩니다. 3~5년치처럼 큰 파일은 붙여넣기보다 파일 업로드를
-        권장합니다(브라우저가 파일을 통째로 문자열로 만들지 않아 훨씬 가볍습니다).
+        스크리닝 데이터와 별도로 Supabase에 보관됩니다. 최신 파일 1개, 저장 크기 45MB까지
+        지원합니다.
       </p>
 
       <input
@@ -135,19 +142,13 @@ export function BacktestDataInput({ onChanged }: Props) {
 
       {meta ? (
         <p className="text-[11px] text-muted-foreground">
-          저장됨 · {meta.fileName ?? "붙여넣기"} · {formatBytes(meta.bytes)}
+          Supabase 저장됨 · {meta.fileName ?? "붙여넣기"} · {formatBytes(meta.bytes)}
         </p>
       ) : (
         <p className="text-[11px] text-muted-foreground">
           백테스트 전용 데이터가 없으면 “데이터·산식” 탭의 스크리닝 데이터를 사용합니다.
         </p>
       )}
-
-      {quota ? (
-        <p className="text-[11px] text-muted-foreground">
-          이 브라우저 저장 여유 · 사용 {formatBytes(quota.usage)} / 한도 {formatBytes(quota.quota)}
-        </p>
-      ) : null}
 
       {error ? (
         <p className="flex items-start gap-1.5 rounded-md border border-down/40 bg-down/10 p-2 text-[12px] text-down">
