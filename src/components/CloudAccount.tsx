@@ -61,7 +61,7 @@ export function CloudAccount({ children }: { children: ReactNode }) {
   if (!ready && !message)
     return (
       <div
-        className="flex min-h-screen items-center justify-center bg-background bg-cover bg-center"
+        className="flex min-h-screen items-center justify-center bg-background bg-cover bg-center max-sm:bg-[70%_center]"
         style={{ backgroundImage: `url(${loginBgAsset.url})` }}
       >
         <div className="absolute inset-0 bg-background/70" />
