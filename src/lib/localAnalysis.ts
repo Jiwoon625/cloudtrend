@@ -1,11 +1,14 @@
 // 직접 입력한 데이터로 브라우저에서 분석을 실행한다(외부 시세 API 호출 없음).
-import { runBacktest, type BacktestParams } from "@/lib/engine/backtest";
+import {
+  runBacktest,
+  type BacktestParams,
+  type BacktestResult,
+} from "@/lib/engine/backtestV4";
 import type { MarketDataset } from "@/lib/engine/dataset";
 import { chartSeries, runAnalysis, scoreHistory } from "@/lib/engine/pipeline";
 import { getManualDataset, MANUAL_DATA_MISSING_MESSAGE } from "@/lib/manualDataStore";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import type {
-  BacktestPayload,
   DataStatusPayload,
   DataSourceStatus,
   InstrumentDetailPayload,
@@ -159,14 +162,22 @@ export function computeLocalDataStatus(): DataStatusPayload {
   };
 }
 
-/** 입력 데이터의 일봉으로 피처 영향도 백테스트를 실행한다. */
+export interface LocalBacktestPayload {
+  result: BacktestResult;
+  universe: Array<{ symbol: string; name: string; bars: number; market: string }>;
+  extended: boolean;
+  asOfDate: string;
+  notes: string[];
+}
+
+/** 입력 데이터의 일봉으로 V4 피처 영향도 백테스트를 실행한다. */
 export function computeLocalBacktest(
   symbols: string[],
   params: BacktestParams,
   limit: number,
   includeEtf = false,
   override?: MarketDataset | null,
-): BacktestPayload {
+): LocalBacktestPayload {
   let dataset: MarketDataset;
   if (override) {
     dataset = override;
@@ -188,18 +199,29 @@ export function computeLocalBacktest(
         .slice(0, Math.max(1, limit));
 
   const series = pool
-    .map((i) => ({ symbol: i.symbol, name: i.name, bars: dataset.bars[i.symbol] ?? [] }))
+    .map((i) => ({
+      symbol: i.symbol,
+      name: i.name,
+      market: i.market === "KOSDAQ" ? ("KOSDAQ" as const) : ("KOSPI" as const),
+      bars: dataset.bars[i.symbol] ?? [],
+    }))
     .filter((s) => s.bars.length > 0);
 
   const maxBars = series.reduce((m, s) => Math.max(m, s.bars.length), 0);
   return {
-    result: runBacktest(series, params),
-    universe: series.map((s) => ({ symbol: s.symbol, name: s.name, bars: s.bars.length })),
+    result: runBacktest(series, params, { indexSeries: dataset.indexSeries }),
+    universe: series.map((s) => ({
+      symbol: s.symbol,
+      name: s.name,
+      bars: s.bars.length,
+      market: s.market,
+    })),
     extended: maxBars > 200,
     asOfDate: dataset.asOfDate,
     notes: [
-      `직접 입력한 일봉(종목당 최대 ${maxBars}봉)으로 백테스트했습니다. 더 긴 기간을 원하면 주피터에서 더 많은 일봉을 조회해 붙여넣어 주세요.`,
-      "지표 계산에 120봉이 필요하므로 관측 구간은 121번째 봉부터 시작합니다. 표본이 겹치는 중첩 관측이므로 t값은 참고용입니다.",
+      `CloudTrend Backtest V4 · 직접 입력 일봉(종목당 최대 ${maxBars}봉)으로 계산했습니다.`,
+      "KOSPI 종목은 KOSPI, KOSDAQ 종목은 KOSDAQ 지수를 같은 날짜의 벤치마크로 사용합니다.",
+      "지표 계산에 120봉이 필요하므로 관측 구간은 121번째 봉부터 시작합니다.",
       "수수료·세금·슬리피지는 반영되지 않았습니다.",
     ],
   };
