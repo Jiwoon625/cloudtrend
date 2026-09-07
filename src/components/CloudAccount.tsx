@@ -3,7 +3,13 @@ import { supabase } from "@/lib/cloud";
 import { hydrateManualData } from "@/lib/manualDataStore";
 import { hydrateUsData } from "@/lib/usDataStore";
 import { hydrateSnapshots } from "@/lib/screeningHistory";
-import loginBgAsset from "@/assets/login-bg.png.asset.json";
+import loginBgAsset from "@/assets/login-bg.webp.asset.json";
+
+const LOGIN_BG_PLACEHOLDER =
+  "data:image/webp;base64,UklGRggBAABXRUJQVlA4IPwAAAAwBwCdASogABIAPtFWpU2oJCOiMBgIAQAaCWIAnTMy6T2BBkP+ZiQ+6Ogd+63/nCTx0ob9BcFxV+u+tLzhqjO4e0AA/vB85gZ4RX7rmhh3hnbAL5soAYYEChpse1wEeaNYIQn12N5uZK4Lhriv1LypA2f4UR3CGKfteQ+c3DJ0to3KL4o7fecQVb3234n09slTOvUHf7NZzoYqK3QxiebKr/rwfIo3l1/vZ/buVeQhYWgxOpeKhwttwinJxXqNpuwngPLtnRQQ3ytvpAvo0yNc6CeckWbbHIVlkgSl1czoKGHyTXN+TBNa1K2ZJ6al6UANRqiwSr3+8s7AAAA=";
+const LOGIN_BG_STYLE = {
+  backgroundImage: `url(${loginBgAsset.url}), url(${LOGIN_BG_PLACEHOLDER})`,
+} as const;
 
 export function CloudAccount({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState("");
@@ -62,7 +68,7 @@ export function CloudAccount({ children }: { children: ReactNode }) {
     return (
       <div
         className="flex min-h-screen items-center justify-center bg-background bg-cover bg-[80%_80%]"
-        style={{ backgroundImage: `url(${loginBgAsset.url})` }}
+        style={LOGIN_BG_STYLE}
       >
         <div className="absolute inset-0 bg-background/70" />
         <p className="relative z-10 p-8">클라우드 데이터 불러오는 중…</p>
@@ -94,7 +100,7 @@ export function CloudAccount({ children }: { children: ReactNode }) {
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-6">
       <div
         className="absolute inset-0 bg-cover bg-[80%_80%]"
-        style={{ backgroundImage: `url(${loginBgAsset.url})` }}
+        style={LOGIN_BG_STYLE}
       />
       <div className="absolute inset-0 bg-gradient-to-br from-background/80 via-background/60 to-background/80 max-sm:from-background/50 max-sm:via-background/30 max-sm:to-background/50" />
       <main className="relative z-10 w-full max-w-md space-y-5 rounded-2xl border border-border/60 bg-surface/80 p-8 shadow-2xl backdrop-blur-md">
