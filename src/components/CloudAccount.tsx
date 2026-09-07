@@ -3,6 +3,7 @@ import { supabase } from "@/lib/cloud";
 import { hydrateManualData } from "@/lib/manualDataStore";
 import { hydrateUsData } from "@/lib/usDataStore";
 import { hydrateSnapshots } from "@/lib/screeningHistory";
+import loginBgAsset from "@/assets/login-bg.png.asset.json";
 
 export function CloudAccount({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState("");
@@ -56,7 +57,18 @@ export function CloudAccount({ children }: { children: ReactNode }) {
       setBusy(false);
     }
   }
-  if (!ready && !message) return <p className="p-8">클라우드 데이터 불러오는 중…</p>;
+
+  if (!ready && !message)
+    return (
+      <div
+        className="flex min-h-screen items-center justify-center bg-background bg-cover bg-center"
+        style={{ backgroundImage: `url(${loginBgAsset.url})` }}
+      >
+        <div className="absolute inset-0 bg-background/70" />
+        <p className="relative z-10 p-8">클라우드 데이터 불러오는 중…</p>
+      </div>
+    );
+
   if (account && ready)
     return (
       <>
@@ -77,58 +89,79 @@ export function CloudAccount({ children }: { children: ReactNode }) {
         {children}
       </>
     );
+
   return (
-    <main className="mx-auto max-w-md space-y-4 p-8">
-      <h1 className="text-xl font-bold">CloudTrend 로그인</h1>
-      <p>같은 계정으로 로그인하면 어느 기기에서든 CSV와 스크리닝 이력을 불러옵니다.</p>
-      <form
-        className="space-y-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void authenticate(false);
-        }}
-      >
-        <label className="block">
-          이메일
-          <input
-            className="w-full rounded border bg-background p-2"
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-        </label>
-        <label className="block">
-          비밀번호
-          <input
-            className="w-full rounded border bg-background p-2"
-            type="password"
-            minLength={8}
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </label>
-        <button className="rounded border p-2" disabled={busy} type="submit">
-          로그인
-        </button>{" "}
-        <button
-          className="rounded border p-2"
-          disabled={busy || !email || password.length < 8}
-          type="button"
-          onClick={() => void authenticate(true)}
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-6">
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: `url(${loginBgAsset.url})` }}
+      />
+      <div className="absolute inset-0 bg-gradient-to-br from-background/80 via-background/60 to-background/80" />
+      <main className="relative z-10 w-full max-w-md space-y-5 rounded-2xl border border-border/60 bg-surface/80 p-8 shadow-2xl backdrop-blur-md">
+        <div className="space-y-1 text-center">
+          <h1 className="text-2xl font-bold tracking-tight">CloudTrend</h1>
+          <p className="text-sm text-muted-foreground">
+            같은 계정으로 로그인하면 어느 기기에서든 CSV와 스크리닝 이력을 불러옵니다.
+          </p>
+        </div>
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void authenticate(false);
+          }}
         >
-          처음 사용 · 회원가입
-        </button>
-      </form>
-      {message && <p role="alert">{message}</p>}
-      {account && <button onClick={() => window.location.reload()}>불러오기 재시도</button>}
-      <p className="text-xs text-muted-foreground">
-        무료 플랜 · CSV 종류별 최신 파일 1개(저장 크기 45MB 이하), 이력 최근 90개 날짜. 기존 기기
-        파일은 로그인 후 다시 업로드해 주세요.
-      </p>
-    </main>
+          <label className="block text-sm font-medium">
+            이메일
+            <input
+              className="mt-1.5 w-full rounded-lg border border-input bg-background/70 px-3 py-2.5 outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </label>
+          <label className="block text-sm font-medium">
+            비밀번호
+            <input
+              className="mt-1.5 w-full rounded-lg border border-input bg-background/70 px-3 py-2.5 outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring"
+              type="password"
+              minLength={8}
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
+          <div className="flex gap-3 pt-1">
+            <button
+              className="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+              disabled={busy}
+              type="submit"
+            >
+              로그인
+            </button>
+            <button
+              className="flex-1 rounded-lg border border-input bg-background/70 px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+              disabled={busy || !email || password.length < 8}
+              type="button"
+              onClick={() => void authenticate(true)}
+            >
+              회원가입
+            </button>
+          </div>
+        </form>
+        {message && (
+          <p role="alert" className="rounded-lg bg-warn-soft p-3 text-sm text-foreground">
+            {message}
+          </p>
+        )}
+        <p className="text-center text-xs text-muted-foreground">
+          무료 플랜 · CSV 종류별 최신 파일 1개(저장 크기 45MB 이하), 이력 최근 90개 날짜. 기존 기기
+          파일은 로그인 후 다시 업로드해 주세요.
+        </p>
+      </main>
+    </div>
   );
 }
