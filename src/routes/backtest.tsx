@@ -164,6 +164,46 @@ function BreakdownTable({
   );
 }
 
+/**
+ * 숫자 입력칸. 입력 중에는 빈 문자열을 그대로 유지해서 마지막 자리를 지웠을 때
+ * 강제로 1이나 0으로 바뀌지 않게 한다. 유효한 숫자일 때만 상위 상태를 갱신한다.
+ */
+function NumberField({
+  value,
+  onChange,
+  step,
+  className = "h-8 text-right text-[12px]",
+  disabled,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  step?: number;
+  className?: string;
+  disabled?: boolean;
+}) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => {
+    setText((cur) => (Number(cur) === value ? cur : String(value)));
+  }, [value]);
+  return (
+    <Input
+      type="number"
+      step={step}
+      value={text}
+      disabled={disabled}
+      onChange={(e) => {
+        const next = e.target.value;
+        setText(next);
+        if (next !== "" && Number.isFinite(Number(next))) onChange(Number(next));
+      }}
+      onBlur={() => {
+        if (text === "" || !Number.isFinite(Number(text))) setText(String(value));
+      }}
+      className={className}
+    />
+  );
+}
+
 function BacktestPage() {
   const [symbolText, setSymbolText] = useState("");
   const [limit, setLimit] = useState(613);
