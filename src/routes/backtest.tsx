@@ -493,15 +493,11 @@ function BacktestPage() {
                       </span>
                       <p className="text-[10px] text-muted-foreground">{f.description}</p>
                     </button>
-                    <Input
-                      type="number"
+                    <NumberField
                       step={0.5}
                       value={params.weights[f.id] ?? f.defaultWeight}
-                      onChange={(e) =>
-                        setParams((p) => ({
-                          ...p,
-                          weights: { ...p.weights, [f.id]: Number(e.target.value) || 0 },
-                        }))
+                      onChange={(n) =>
+                        setParams((p) => ({ ...p, weights: { ...p.weights, [f.id]: n } }))
                       }
                       className="h-7 w-16 text-right text-[12px]"
                       disabled={!on}
