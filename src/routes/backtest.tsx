@@ -274,6 +274,14 @@ function BacktestPage() {
       cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id].slice(-5),
     );
 
+  /** 종목 수·보유기간·가중치 등 테스트 설정을 기본값으로 되돌린다. */
+  const resetSettings = () => {
+    setSymbolText("");
+    setLimit(613);
+    setIncludeEtf(false);
+    setParams({ ...DEFAULT_BACKTEST_PARAMS, horizons: DEFAULT_HORIZONS });
+  };
+
   const decayData = useMemo(() => {
     if (!result) return [];
     return horizons.map((h) => {
