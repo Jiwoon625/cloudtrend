@@ -96,8 +96,8 @@ export function CloudAccount({ children }: { children: ReactNode }) {
         className="absolute inset-0 bg-cover bg-center max-sm:bg-[70%_center]"
         style={{ backgroundImage: `url(${loginBgAsset.url})` }}
       />
-      <div className="absolute inset-0 bg-gradient-to-br from-background/80 via-background/60 to-background/80" />
-      <main className="relative z-10 w-full max-w-md space-y-5 rounded-2xl border border-border/60 bg-surface/80 p-8 shadow-2xl backdrop-blur-md">
+      <div className="absolute inset-0 bg-gradient-to-br from-background/80 via-background/60 to-background/80 max-sm:from-background/50 max-sm:via-background/30 max-sm:to-background/50" />
+      <main className="relative z-10 w-full max-w-md space-y-5 rounded-2xl border border-border/60 bg-surface/80 p-8 shadow-2xl backdrop-blur-md max-sm:bg-surface/50">
         <div className="space-y-1 text-center">
           <h1 className="text-2xl font-bold tracking-tight">CloudTrend</h1>
         </div>
@@ -111,7 +111,7 @@ export function CloudAccount({ children }: { children: ReactNode }) {
           <label className="block text-sm font-medium">
             이메일
             <input
-              className="mt-1.5 w-full rounded-lg border border-input bg-background/40 px-3 py-2.5 outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring"
+              className="mt-1.5 w-full rounded-lg border border-input bg-background/30 px-3 py-2.5 outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring"
               type="email"
               autoComplete="email"
               required
@@ -122,7 +122,7 @@ export function CloudAccount({ children }: { children: ReactNode }) {
           <label className="block text-sm font-medium">
             비밀번호
             <input
-              className="mt-1.5 w-full rounded-lg border border-input bg-background/40 px-3 py-2.5 outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring"
+              className="mt-1.5 w-full rounded-lg border border-input bg-background/30 px-3 py-2.5 outline-none transition-colors focus:border-ring focus:ring-1 focus:ring-ring"
               type="password"
               minLength={8}
               autoComplete="current-password"
@@ -140,7 +140,7 @@ export function CloudAccount({ children }: { children: ReactNode }) {
               로그인
             </button>
             <button
-              className="flex-1 rounded-lg border border-input bg-background/40 px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+              className="flex-1 rounded-lg border border-input bg-background/30 px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-accent disabled:opacity-50"
               disabled={busy || !email || password.length < 8}
               type="button"
               onClick={() => void authenticate(true)}
