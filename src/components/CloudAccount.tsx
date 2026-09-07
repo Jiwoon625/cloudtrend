@@ -3,7 +3,13 @@ import { supabase } from "@/lib/cloud";
 import { hydrateManualData } from "@/lib/manualDataStore";
 import { hydrateUsData } from "@/lib/usDataStore";
 import { hydrateSnapshots } from "@/lib/screeningHistory";
-import loginBgAsset from "@/assets/login-bg.png.asset.json";
+import loginBgAsset from "@/assets/login-bg.webp.asset.json";
+
+const LOGIN_BG_PLACEHOLDER =
+  "data:image/webp;base64,UklGRggBAABXRUJQVlA4IPwAAAAwBwCdASogABIAPtFWpU2oJCOiMBgIAQAaCWIAnTMy6T2BBkP+ZiQ+6Ogd+63/nCTx0ob9BcFxV+u+tLzhqjO4e0AA/vB85gZ4RX7rmhh3hnbAL5soAYYEChpse1wEeaNYIQn12N5uZK4Lhriv1LypA2f4UR3CGKfteQ+c3DJ0to3KL4o7fecQVb3234n09slTOvUHf7NZzoYqK3QxiebKr/rwfIo3l1/vZ/buVeQhYWgxOpeKhwttwinJxXqNpuwngPLtnRQQ3ytvpAvo0yNc6CeckWbbHIVlkgSl1czoKGHyTXN+TBNa1K2ZJ6al6UANRqiwSr3+8s7AAAA=";
+const LOGIN_BG_STYLE = {
+  backgroundImage: `url(${loginBgAsset.url}), url(${LOGIN_BG_PLACEHOLDER})`,
+} as const;
 
 export function CloudAccount({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState("");
