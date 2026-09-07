@@ -361,68 +361,43 @@ function BacktestPage() {
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">Universe 종목 수</Label>
-                <Input
-                  type="number"
-                  value={limit}
-                  onChange={(e) => setLimit(Math.max(1, Number(e.target.value) || 1))}
-                  className="h-8 text-right text-[12px]"
-                />
+                <NumberField value={limit} onChange={(n) => setLimit(Math.max(1, n))} />
                 <p className="text-[10px] text-muted-foreground">30억원 기준 Universe는 613 권장</p>
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">기준 보유기간</Label>
-                <Input
-                  type="number"
+                <NumberField
                   value={params.horizonDays}
-                  onChange={(e) =>
-                    setParams((p) => ({ ...p, horizonDays: Number(e.target.value) || 1 }))
-                  }
-                  className="h-8 text-right text-[12px]"
+                  onChange={(n) => setParams((p) => ({ ...p, horizonDays: n }))}
                 />
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">관측 간격</Label>
-                <Input
-                  type="number"
+                <NumberField
                   value={params.sampleEvery}
-                  onChange={(e) =>
-                    setParams((p) => ({ ...p, sampleEvery: Number(e.target.value) || 1 }))
-                  }
-                  className="h-8 text-right text-[12px]"
+                  onChange={(n) => setParams((p) => ({ ...p, sampleEvery: n }))}
                 />
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">진입 기준 점수</Label>
-                <Input
-                  type="number"
+                <NumberField
                   value={params.entryScore}
-                  onChange={(e) =>
-                    setParams((p) => ({ ...p, entryScore: Number(e.target.value) || 0 }))
-                  }
-                  className="h-8 text-right text-[12px]"
+                  onChange={(n) => setParams((p) => ({ ...p, entryScore: n }))}
                 />
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">거래량 급증 기준(%)</Label>
-                <Input
-                  type="number"
+                <NumberField
                   step={10}
                   value={params.volumeSurgeRatio}
-                  onChange={(e) =>
-                    setParams((p) => ({ ...p, volumeSurgeRatio: Number(e.target.value) || 100 }))
-                  }
-                  className="h-8 text-right text-[12px]"
+                  onChange={(n) => setParams((p) => ({ ...p, volumeSurgeRatio: n }))}
                 />
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">과열 이격 기준(%)</Label>
-                <Input
-                  type="number"
+                <NumberField
                   value={params.extensionLimit}
-                  onChange={(e) =>
-                    setParams((p) => ({ ...p, extensionLimit: Number(e.target.value) || 1 }))
-                  }
-                  className="h-8 text-right text-[12px]"
+                  onChange={(n) => setParams((p) => ({ ...p, extensionLimit: n }))}
                 />
               </div>
             </div>
