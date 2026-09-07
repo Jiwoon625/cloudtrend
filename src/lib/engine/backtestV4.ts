@@ -589,7 +589,7 @@ export function runBacktest(
       });
       const excessRets = rets.map((r, idx) => {
         const b = benchmarkRets[idx];
-        return r !== null && b !== null ? r - b : null;
+        return r !== null && b !== null && b !== undefined ? r - b : null;
       });
       obs.push({
         symbol: s.symbol,

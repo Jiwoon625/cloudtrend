@@ -164,6 +164,46 @@ function BreakdownTable({
   );
 }
 
+/**
+ * 숫자 입력칸. 입력 중에는 빈 문자열을 그대로 유지해서 마지막 자리를 지웠을 때
+ * 강제로 1이나 0으로 바뀌지 않게 한다. 유효한 숫자일 때만 상위 상태를 갱신한다.
+ */
+function NumberField({
+  value,
+  onChange,
+  step,
+  className = "h-8 text-right text-[12px]",
+  disabled,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  step?: number;
+  className?: string;
+  disabled?: boolean;
+}) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => {
+    setText((cur) => (Number(cur) === value ? cur : String(value)));
+  }, [value]);
+  return (
+    <Input
+      type="number"
+      step={step}
+      value={text}
+      disabled={disabled}
+      onChange={(e) => {
+        const next = e.target.value;
+        setText(next);
+        if (next !== "" && Number.isFinite(Number(next))) onChange(Number(next));
+      }}
+      onBlur={() => {
+        if (text === "" || !Number.isFinite(Number(text))) setText(String(value));
+      }}
+      className={className}
+    />
+  );
+}
+
 function BacktestPage() {
   const [symbolText, setSymbolText] = useState("");
   const [limit, setLimit] = useState(613);
@@ -234,6 +274,14 @@ function BacktestPage() {
       cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id].slice(-5),
     );
 
+  /** 종목 수·보유기간·가중치 등 테스트 설정을 기본값으로 되돌린다. */
+  const resetSettings = () => {
+    setSymbolText("");
+    setLimit(613);
+    setIncludeEtf(false);
+    setParams({ ...DEFAULT_BACKTEST_PARAMS, horizons: DEFAULT_HORIZONS });
+  };
+
   const decayData = useMemo(() => {
     if (!result) return [];
     return horizons.map((h) => {
@@ -301,7 +349,12 @@ function BacktestPage() {
           </section>
 
           <section className="space-y-3 rounded-lg border border-border bg-card p-3">
-            <h2 className="text-sm font-semibold">테스트 설정</h2>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold">테스트 설정</h2>
+              <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={resetSettings}>
+                기본값 복원
+              </Button>
+            </div>
             <div className="space-y-1">
               <Label className="text-[11px] text-muted-foreground">
                 종목코드 (미입력 시 업로드 데이터에서 선택)
@@ -316,68 +369,43 @@ function BacktestPage() {
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">Universe 종목 수</Label>
-                <Input
-                  type="number"
-                  value={limit}
-                  onChange={(e) => setLimit(Math.max(1, Number(e.target.value) || 1))}
-                  className="h-8 text-right text-[12px]"
-                />
+                <NumberField value={limit} onChange={(n) => setLimit(Math.max(1, n))} />
                 <p className="text-[10px] text-muted-foreground">30억원 기준 Universe는 613 권장</p>
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">기준 보유기간</Label>
-                <Input
-                  type="number"
+                <NumberField
                   value={params.horizonDays}
-                  onChange={(e) =>
-                    setParams((p) => ({ ...p, horizonDays: Number(e.target.value) || 1 }))
-                  }
-                  className="h-8 text-right text-[12px]"
+                  onChange={(n) => setParams((p) => ({ ...p, horizonDays: n }))}
                 />
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">관측 간격</Label>
-                <Input
-                  type="number"
+                <NumberField
                   value={params.sampleEvery}
-                  onChange={(e) =>
-                    setParams((p) => ({ ...p, sampleEvery: Number(e.target.value) || 1 }))
-                  }
-                  className="h-8 text-right text-[12px]"
+                  onChange={(n) => setParams((p) => ({ ...p, sampleEvery: n }))}
                 />
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">진입 기준 점수</Label>
-                <Input
-                  type="number"
+                <NumberField
                   value={params.entryScore}
-                  onChange={(e) =>
-                    setParams((p) => ({ ...p, entryScore: Number(e.target.value) || 0 }))
-                  }
-                  className="h-8 text-right text-[12px]"
+                  onChange={(n) => setParams((p) => ({ ...p, entryScore: n }))}
                 />
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">거래량 급증 기준(%)</Label>
-                <Input
-                  type="number"
+                <NumberField
                   step={10}
                   value={params.volumeSurgeRatio}
-                  onChange={(e) =>
-                    setParams((p) => ({ ...p, volumeSurgeRatio: Number(e.target.value) || 100 }))
-                  }
-                  className="h-8 text-right text-[12px]"
+                  onChange={(n) => setParams((p) => ({ ...p, volumeSurgeRatio: n }))}
                 />
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">과열 이격 기준(%)</Label>
-                <Input
-                  type="number"
+                <NumberField
                   value={params.extensionLimit}
-                  onChange={(e) =>
-                    setParams((p) => ({ ...p, extensionLimit: Number(e.target.value) || 1 }))
-                  }
-                  className="h-8 text-right text-[12px]"
+                  onChange={(n) => setParams((p) => ({ ...p, extensionLimit: n }))}
                 />
               </div>
             </div>
@@ -465,15 +493,11 @@ function BacktestPage() {
                       </span>
                       <p className="text-[10px] text-muted-foreground">{f.description}</p>
                     </button>
-                    <Input
-                      type="number"
+                    <NumberField
                       step={0.5}
                       value={params.weights[f.id] ?? f.defaultWeight}
-                      onChange={(e) =>
-                        setParams((p) => ({
-                          ...p,
-                          weights: { ...p.weights, [f.id]: Number(e.target.value) || 0 },
-                        }))
+                      onChange={(n) =>
+                        setParams((p) => ({ ...p, weights: { ...p.weights, [f.id]: n } }))
                       }
                       className="h-7 w-16 text-right text-[12px]"
                       disabled={!on}
