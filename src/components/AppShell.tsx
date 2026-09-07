@@ -123,22 +123,22 @@ export function AppShell({
             <ThemeToggle />
           </nav>
         </div>
-        <div
-          className={`flex items-start gap-2 border-t border-border px-4 py-1.5 text-[11px] text-foreground ${live ? "bg-surface-strong" : "bg-warn-soft"}`}
-        >
-          {live ? (
-            <Info className="mt-0.5 size-3.5 shrink-0 text-primary" />
-          ) : (
-            <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warn" />
-          )}
-          <span>
-            {dataUnavailable
-              ? "실데이터 연결 오류 — 아래 안내에 따라 토스증권 API 접속 설정을 확인해 주세요."
-              : live
-                ? `실데이터 모드 (${resolved?.provider ?? "-"}) — 일봉 기준 계산이며 투자 판단 및 자동 주문 기능은 제공하지 않습니다.`
-                : `합성 데이터 모드 (${resolved?.provider ?? "mock"}) — 화면 검증용 mock 데이터이며 실제 시세·재무가 아닙니다.${resolved?.fallbackReason ? ` 폴백 사유: ${resolved.fallbackReason}` : ""}`}
-          </span>
-        </div>
+        {dataUnavailable || live ? (
+          <div
+            className={`flex items-start gap-2 border-t border-border px-4 py-1.5 text-[11px] text-foreground ${live && !dataUnavailable ? "bg-surface-strong" : "bg-warn-soft"}`}
+          >
+            {live && !dataUnavailable ? (
+              <Info className="mt-0.5 size-3.5 shrink-0 text-primary" />
+            ) : (
+              <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warn" />
+            )}
+            <span>
+              {dataUnavailable
+                ? "실데이터 연결 오류 — 아래 안내에 따라 토스증권 API 접속 설정을 확인해 주세요."
+                : `실데이터 모드 (${resolved?.provider ?? "-"}) — 일봉 기준 계산이며 투자 판단 및 자동 주문 기능은 제공하지 않습니다.`}
+            </span>
+          </div>
+        ) : null}
       </header>
       <main className="mx-auto max-w-[1500px] px-4 py-6">{children}</main>
       <footer className="mx-auto max-w-[1500px] px-4 pb-10 text-[11px] leading-relaxed text-muted-foreground">
