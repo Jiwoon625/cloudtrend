@@ -4,6 +4,7 @@ import {
   type BacktestParams,
   type BacktestResult,
 } from "@/lib/engine/backtestV4";
+import { buildAlignedRankingAnalysis } from "@/lib/engine/backtestRankingV5";
 import type { MarketDataset } from "@/lib/engine/dataset";
 import { chartSeries, runAnalysis, scoreHistory } from "@/lib/engine/pipeline";
 import { getManualDataset, MANUAL_DATA_MISSING_MESSAGE } from "@/lib/manualDataStore";
@@ -170,7 +171,7 @@ export interface LocalBacktestPayload {
   notes: string[];
 }
 
-/** 입력 데이터의 일봉으로 V4 피처 영향도 백테스트를 실행한다. */
+/** 입력 데이터의 일봉으로 V5 피처·랭킹 백테스트를 실행한다. */
 export function computeLocalBacktest(
   symbols: string[],
   params: BacktestParams,
@@ -208,8 +209,18 @@ export function computeLocalBacktest(
     .filter((s) => s.bars.length > 0);
 
   const maxBars = series.reduce((m, s) => Math.max(m, s.bars.length), 0);
+  const marketContext = { indexSeries: dataset.indexSeries };
+  const result = runBacktest(series, params, marketContext);
+
+  // Rank IC / Top 5 / Quantile은 모든 종목이 같은 공통 5D 관측일에서 비교되도록 별도로 재계산한다.
+  const alignedRanking = buildAlignedRankingAnalysis(series, params, marketContext);
+  result.rankIcByDate = alignedRanking.rankIcByDate;
+  result.rankIcSummary = alignedRanking.rankIcSummary;
+  result.topSelection = alignedRanking.topSelection;
+  result.quantileSpreads = alignedRanking.quantileSpreads;
+
   return {
-    result: runBacktest(series, params, { indexSeries: dataset.indexSeries }),
+    result,
     universe: series.map((s) => ({
       symbol: s.symbol,
       name: s.name,
@@ -219,10 +230,12 @@ export function computeLocalBacktest(
     extended: maxBars > 200,
     asOfDate: dataset.asOfDate,
     notes: [
-      `CloudTrend Backtest V4 · 직접 입력 일봉(종목당 최대 ${maxBars}봉)으로 계산했습니다.`,
+      `CloudTrend Backtest V5 · 직접 입력 일봉(종목당 최대 ${maxBars}봉)으로 계산했습니다.`,
       "KOSPI 종목은 KOSPI, KOSDAQ 종목은 KOSDAQ 지수를 같은 날짜의 벤치마크로 사용합니다.",
       "기본 지표는 120봉 이후부터 관측하며, 52주 신고가 피처는 현재 봉 포함 252거래일이 확보된 시점부터만 계산합니다.",
       "피처별 Edge는 메인 관측 그리드에서 false→true로 전환된 Signal Onset만 신호로 집계하고, 복합점수는 기존 상태값을 그대로 사용합니다.",
+      "Rank IC·Top 5·5/10분위는 KOSPI 거래일을 anchor로 한 공통 관측일에서, 활성 피처가 모두 계산 가능한 종목만 비교합니다.",
+      "Top 5는 실제 비교 가능 종목이 5개 미만인 날짜를 집계하지 않으며, Ranking은 최소 50종목 이상인 날짜만 사용합니다.",
       "수수료·세금·슬리피지는 반영되지 않았습니다.",
     ],
   };
