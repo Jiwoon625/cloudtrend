@@ -209,7 +209,7 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
         </div>
       </Panel>
 
-      <section className="print-only rounded-lg border border-border bg-card p-3">
+      <section className="hidden rounded-lg border border-border bg-card p-3 print:block">
         <h2 className="mb-2 text-sm font-semibold">V5 실행 설정</h2>
         <table className="mb-4 w-full text-[10px]">
           <tbody>
@@ -241,7 +241,7 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
         <p className="mb-2 text-[9px] text-muted-foreground">
           화면의 선택형 표에서 숨겨질 수 있는 horizon/분포/민감도 값을 포함해 BacktestResult 전체를 PDF 부록에 남깁니다.
         </p>
-        <pre className="print-json text-[7px] leading-tight">{JSON.stringify(result, null, 2)}</pre>
+        <pre className="whitespace-pre-wrap break-all text-[7px] leading-tight">{JSON.stringify(result, null, 2)}</pre>
       </section>
     </>
   );
