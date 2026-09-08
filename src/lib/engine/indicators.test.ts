@@ -4,6 +4,8 @@ import {
   atr,
   bollinger,
   bollingerState,
+  computeIndicators,
+  HIGH_52W_WINDOW,
   ichimoku,
   periodReturn,
   ratioToPriorAverage,
@@ -44,6 +46,24 @@ describe("이동평균", () => {
     const ma120 = sma(up, 120, 129)!;
     expect(ma20 > ma60 && ma60 > ma120).toBe(true);
     expect(ma20 - sma(up, 20, 124)!).toBeGreaterThan(0);
+  });
+});
+
+describe("52주 신고가", () => {
+  it("252거래일이 모이기 전에는 52주 신고가를 계산하지 않는다", () => {
+    const bars = Array.from({ length: HIGH_52W_WINDOW - 1 }, (_, i) => bar(100 + i * 0.1, i));
+    const snap = computeIndicators(bars, bars.length - 1);
+    expect(snap.high52w).toBeNull();
+    expect(snap.distanceFrom52wHigh).toBeNull();
+  });
+
+  it("252거래일이 확보되면 정확히 252봉 범위의 최고가를 사용한다", () => {
+    const bars = Array.from({ length: HIGH_52W_WINDOW + 1 }, (_, i) => bar(100, i, 101, 99));
+    bars[0] = bar(100, 0, 999, 99); // 현재 252봉 창 밖의 극단값
+    bars[1] = bar(100, 1, 150, 99); // 현재 252봉 창 안의 최고가
+    const snap = computeIndicators(bars, HIGH_52W_WINDOW);
+    expect(snap.high52w).toBe(150);
+    expect(snap.distanceFrom52wHigh).toBeCloseTo((100 / 150 - 1) * 100);
   });
 });
 
