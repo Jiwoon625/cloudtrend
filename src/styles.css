@@ -171,14 +171,23 @@
 }
 
 /* PDF 내보내기(브라우저 인쇄) 최적화 */
+@page {
+  size: A4 portrait;
+  margin: 8mm 7mm;
+}
+
 @media print {
-  header,
-  nav,
+  /* 앱 셸/조작 UI만 숨기고, 결과 카드의 <header>는 반드시 남긴다. */
   [data-no-print] {
     display: none !important;
   }
+
+  html,
   body {
-    background: #fff;
+    background: #fff !important;
+  }
+
+  body {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
@@ -187,22 +196,85 @@
   main * {
     color: #111 !important;
   }
+
   main {
     max-width: none !important;
+    width: 100% !important;
+    margin: 0 !important;
     padding: 0 !important;
   }
+
+  /* 긴 표/카드가 페이지 경계에서 잘리거나 빈 페이지만 만드는 현상을 방지한다. */
   .overflow-x-auto,
-  .overflow-auto {
+  .overflow-auto,
+  .overflow-hidden {
     overflow: visible !important;
+    max-height: none !important;
   }
-  table {
-    font-size: 9px !important;
-    min-width: 0 !important;
-    width: 100% !important;
-    page-break-inside: auto;
-  }
-  tr,
+
+  section,
   .rounded-lg {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  /* 결과 카드 제목/설명은 다음 표·그래프와 분리되지 않게 한다. */
+  section > header {
+    display: block !important;
+    break-after: avoid-page;
+    page-break-after: avoid;
+  }
+
+  h1,
+  h2,
+  h3 {
+    break-after: avoid-page;
+    page-break-after: avoid;
+  }
+
+  /* 작은 요약 카드만 한 덩어리로 유지한다. 긴 결과 section 전체에는 적용하지 않는다. */
+  .grid > .rounded-lg,
+  .grid > .rounded-md {
+    break-inside: avoid-page !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* 그래프는 제목과 함께 한 페이지 안에 유지한다. */
+  section:has(.recharts-wrapper) {
+    break-inside: avoid-page !important;
+    page-break-inside: avoid !important;
+  }
+
+  table {
+    width: 100% !important;
+    min-width: 0 !important;
+    font-size: 8.5px !important;
+    page-break-inside: auto;
+    border-collapse: collapse;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tbody {
+    display: table-row-group;
+  }
+
+  tr {
+    break-inside: avoid-page;
+    page-break-inside: avoid;
+  }
+
+  th,
+  td {
+    padding-top: 3px !important;
+    padding-bottom: 3px !important;
+  }
+
+  svg,
+  canvas {
+    break-inside: avoid-page;
     page-break-inside: avoid;
   }
 }
