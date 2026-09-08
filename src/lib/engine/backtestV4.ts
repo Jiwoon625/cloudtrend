@@ -1,6 +1,6 @@
-// CloudTrend Backtest V4
-// 고정 Universe의 장기 일봉을 대상으로 시장조정 수익률, 날짜별 cross-sectional edge,
-// 시장국면/시장/연도/OOS 분해와 중첩 보정 통계를 계산한다.
+// CloudTrend Backtest V5
+// V4의 장기 시장조정/Signal Onset 검증 구조를 유지하면서,
+// Score Threshold Onset과 score ranking 성능을 추가로 검증한다.
 import { computeIndicators } from "./indicators";
 import {
   BACKTEST_FEATURES as LEGACY_BACKTEST_FEATURES,
@@ -35,7 +35,7 @@ export {
 export type { BacktestParams, VolumeSurgeMode };
 
 /**
- * MA20 상승/20일 수익률 양수는 V4 피처에서 완전히 제외한다.
+ * MA20 상승/20일 수익률 양수는 V4부터 독립 피처에서 제외한다.
  * 과거 저장 설정이나 업로드 데이터에 관련 값이 있어도 active feature로 사용하지 않는다.
  */
 const REMOVED_BACKTEST_FEATURE_IDS = new Set(["MA20_SLOPE_UP", "RS_POSITIVE"]);
@@ -43,12 +43,12 @@ export const BACKTEST_FEATURES = LEGACY_BACKTEST_FEATURES.filter(
   (f) => !REMOVED_BACKTEST_FEATURE_IDS.has(f.id),
 );
 
-/**
- * V4 장기 백테스트 기본값.
- * 613×1,250봉 수준에서 1·3일 전체 그리드는 브라우저 계산량이 지나치게 커지므로
- * 기본 민감도는 메인 관측간격(5일) 이상의 5·10·20일로 둔다.
- */
+/** V5 고정 검증 기준. */
 export const DEFAULT_INTERVAL_CANDIDATES = [5, 10, 20];
+export const DEFAULT_SCORE_ONSET_THRESHOLDS = [40, 50, 60, 70, 80];
+export const RANKING_HORIZON = 30;
+export const TOP_SELECTION_COUNT = 5;
+export const RANKING_QUANTILE_BUCKETS = [5, 10];
 
 export const DEFAULT_BACKTEST_PARAMS: BacktestParams = {
   ...LEGACY_DEFAULT_BACKTEST_PARAMS,
@@ -74,16 +74,11 @@ export interface BacktestMarketContext {
 }
 
 export interface HorizonMetric extends LegacyHorizonMetric {
-  /** 신호/미신호 각각의 시장대비 초과수익률 평균 */
   marketAdjustedSignalAvgReturn: number | null;
   marketAdjustedNonSignalAvgReturn: number | null;
-  /** pooled 시장조정 edge */
   marketAdjustedEdge: number | null;
-  /** 날짜별 신호 평균 - 미신호 평균을 먼저 만든 뒤 날짜 평균 */
   crossSectionalEdge: number | null;
-  /** 날짜별 시장조정 cross-sectional edge */
   marketAdjustedCrossSectionalEdge: number | null;
-  /** 날짜 단위 edge에 Newey-West(HAC) 보정을 적용한 통계 */
   robustTStat: number | null;
   ci95Low: number | null;
   ci95High: number | null;
@@ -143,6 +138,8 @@ export interface EntryThresholdStat {
   marketAdjustedAvgReturn: number | null;
 }
 
+export interface ScoreOnsetStat extends EntryThresholdStat {}
+
 export interface IntervalSensitivityStat {
   interval: number;
   horizon: number;
@@ -179,6 +176,80 @@ export interface BreakdownStat {
   ci95High: number | null;
 }
 
+export interface RankIcDateStat {
+  date: string;
+  observations: number;
+  rawRankIc: number | null;
+  marketAdjustedRankIc: number | null;
+}
+
+export interface RankIcSummary {
+  horizon: number;
+  dates: number;
+  avgRawRankIc: number | null;
+  medianRawRankIc: number | null;
+  rawPositiveRate: number | null;
+  avgMarketAdjustedRankIc: number | null;
+  medianMarketAdjustedRankIc: number | null;
+  marketAdjustedPositiveRate: number | null;
+}
+
+export interface TopSelectionDateStat {
+  date: string;
+  symbols: string[];
+  count: number;
+  avgScore: number | null;
+  avgReturn: number | null;
+  benchmarkAvgReturn: number | null;
+  marketAdjustedAvgReturn: number | null;
+}
+
+export interface TopSelectionSummary {
+  horizon: number;
+  topN: number;
+  dates: number;
+  avgReturn: number | null;
+  medianReturn: number | null;
+  winRate: number | null;
+  marketAdjustedAvgReturn: number | null;
+  dateReturns: TopSelectionDateStat[];
+}
+
+export interface QuantileSpreadStat {
+  horizon: number;
+  bucketCount: number;
+  dates: number;
+  topAvgReturn: number | null;
+  bottomAvgReturn: number | null;
+  rawSpread: number | null;
+  topMarketAdjustedAvgReturn: number | null;
+  bottomMarketAdjustedAvgReturn: number | null;
+  marketAdjustedSpread: number | null;
+  robustTStat: number | null;
+  ci95Low: number | null;
+  ci95High: number | null;
+}
+
+export interface BacktestConfigSnapshot {
+  features: string[];
+  weights: Record<string, number>;
+  horizonDays: number;
+  horizons: number[];
+  sampleEvery: number;
+  entryScore: number;
+  entryThresholds: number[];
+  intervalCandidates: number[];
+  extensionLimit: number;
+  extensionThresholds: number[];
+  volumeSurgeRatio: number;
+  volumeThresholds: number[];
+  volumeMode: VolumeSurgeMode;
+  scoreOnsetThresholds: number[];
+  rankingHorizon: number;
+  topSelectionCount: number;
+  rankingQuantileBuckets: number[];
+}
+
 export interface BacktestSummary {
   strongestByHorizon: Array<{ horizon: number; featureKey: string; label: string; edge: number }>;
   strongestAdjustedByHorizon: Array<{
@@ -204,6 +275,7 @@ export interface BacktestResult {
   baselineAvgReturn: number | null;
   baselineMarketReturn: number | null;
   baselineMarketAdjustedReturn: number | null;
+  config: BacktestConfigSnapshot;
   features: FeatureStat[];
   buckets: BucketStat[];
   strategy: {
@@ -230,6 +302,11 @@ export interface BacktestResult {
   featureHorizons: FeatureHorizonResult[];
   bucketHorizons: BucketHorizonStat[];
   entryThresholds: EntryThresholdStat[];
+  scoreOnsets: ScoreOnsetStat[];
+  rankIcByDate: RankIcDateStat[];
+  rankIcSummary: RankIcSummary;
+  topSelection: TopSelectionSummary;
+  quantileSpreads: QuantileSpreadStat[];
   intervalSensitivity: IntervalSensitivityStat[];
   extensionSensitivity: ThresholdSensitivityRow[];
   volumeSensitivity: ThresholdSensitivityRow[];
@@ -258,9 +335,7 @@ interface Observation {
   year: string;
   regime: MarketRegime;
   split: SampleSplit;
-  /** 피처 영향도는 false→true 전환(onset)만 신호로 집계한다. */
   flags: Record<string, boolean | null>;
-  /** 복합점수와 피처 상관관계는 기존의 현재 상태(state)를 사용한다. */
   stateFlags: Record<string, boolean | null>;
   score: number | null;
   rets: Array<number | null>;
@@ -413,7 +488,6 @@ function groupByDate(rows: Observation[]): Map<string, Observation[]> {
   return out;
 }
 
-/** 날짜별 cross-sectional edge의 평균에 Newey-West 보정을 적용한다. */
 function hacMeanStats(xs: number[], lag: number): {
   mean: number | null;
   t: number | null;
@@ -531,10 +605,6 @@ function breakdownFor(
   });
 }
 
-/**
- * 메인 관측 그리드에서 지속 상태를 반복 신호로 세지 않고 false→true 전환만 onset으로 만든다.
- * 이전 상태가 null이면 실제 전환 여부를 알 수 없으므로 현재 true도 null로 둔다.
- */
 export function signalOnsetFlags(
   current: Record<string, boolean | null>,
   previous: Record<string, boolean | null> | null,
@@ -553,6 +623,298 @@ export function signalOnsetFlags(
     out[id] = prior === false ? true : prior === true ? false : null;
   }
   return out;
+}
+
+/** score[t-1] < threshold && score[t] >= threshold */
+export function scoreThresholdOnset(
+  previousScore: number | null | undefined,
+  currentScore: number | null | undefined,
+  threshold: number,
+): boolean | null {
+  if (previousScore === null || previousScore === undefined) return null;
+  if (currentScore === null || currentScore === undefined) return null;
+  return previousScore < threshold && currentScore >= threshold;
+}
+
+function averageRanks(values: number[]): number[] {
+  const order = values.map((value, index) => ({ value, index })).sort((a, b) => a.value - b.value);
+  const ranks = new Array<number>(values.length);
+  let start = 0;
+  while (start < order.length) {
+    let end = start;
+    while (end + 1 < order.length && order[end + 1]!.value === order[start]!.value) end++;
+    const avgRank = (start + end + 2) / 2;
+    for (let i = start; i <= end; i++) ranks[order[i]!.index] = avgRank;
+    start = end + 1;
+  }
+  return ranks;
+}
+
+/** tie에는 평균 rank를 부여하는 Spearman correlation. */
+export function spearmanRankCorrelation(xs: number[], ys: number[]): number | null {
+  if (xs.length !== ys.length || xs.length < 3) return null;
+  return pearson(averageRanks(xs), averageRanks(ys));
+}
+
+function buildScoreOnsets(
+  perSymbol: Observation[][],
+  main: Observation[],
+  horizons: number[],
+  retsAt: (rows: Observation[], hIdx: number) => number[],
+  excessAt: (rows: Observation[], hIdx: number) => number[],
+): ScoreOnsetStat[] {
+  const byThreshold = new Map<number, Observation[]>();
+  for (const threshold of DEFAULT_SCORE_ONSET_THRESHOLDS) byThreshold.set(threshold, []);
+  for (const rows of perSymbol) {
+    for (let i = 1; i < rows.length; i++) {
+      const previous = rows[i - 1]!;
+      const current = rows[i]!;
+      for (const threshold of DEFAULT_SCORE_ONSET_THRESHOLDS) {
+        if (scoreThresholdOnset(previous.score, current.score, threshold) === true)
+          byThreshold.get(threshold)!.push(current);
+      }
+    }
+  }
+
+  const out: ScoreOnsetStat[] = [];
+  for (const threshold of DEFAULT_SCORE_ONSET_THRESHOLDS) {
+    const rows = byThreshold.get(threshold)!;
+    horizons.forEach((horizon, hIdx) => {
+      const xs = retsAt(rows, hIdx);
+      const all = retsAt(main, hIdx);
+      const wins = xs.filter((r) => r > 0);
+      const losses = xs.filter((r) => r <= 0);
+      const avg = mean(xs);
+      const base = mean(all);
+      out.push({
+        threshold,
+        horizon,
+        count: xs.length,
+        avgReturn: avg,
+        medianReturn: median(xs),
+        winRate: winRate(xs),
+        avgWin: mean(wins),
+        avgLoss: mean(losses),
+        edgeVsAll: avg !== null && base !== null ? avg - base : null,
+        marketAdjustedAvgReturn: mean(excessAt(rows, hIdx)),
+      });
+    });
+  }
+  return out;
+}
+
+function buildRankingAnalysis(
+  groups: Map<string, Observation[]>,
+  horizons: number[],
+  baseInterval: number,
+): {
+  rankIcByDate: RankIcDateStat[];
+  rankIcSummary: RankIcSummary;
+  topSelection: TopSelectionSummary;
+  quantileSpreads: QuantileSpreadStat[];
+} {
+  const hIdx = horizons.indexOf(RANKING_HORIZON);
+  if (hIdx < 0) {
+    return {
+      rankIcByDate: [],
+      rankIcSummary: {
+        horizon: RANKING_HORIZON,
+        dates: 0,
+        avgRawRankIc: null,
+        medianRawRankIc: null,
+        rawPositiveRate: null,
+        avgMarketAdjustedRankIc: null,
+        medianMarketAdjustedRankIc: null,
+        marketAdjustedPositiveRate: null,
+      },
+      topSelection: {
+        horizon: RANKING_HORIZON,
+        topN: TOP_SELECTION_COUNT,
+        dates: 0,
+        avgReturn: null,
+        medianReturn: null,
+        winRate: null,
+        marketAdjustedAvgReturn: null,
+        dateReturns: [],
+      },
+      quantileSpreads: RANKING_QUANTILE_BUCKETS.map((bucketCount) => ({
+        horizon: RANKING_HORIZON,
+        bucketCount,
+        dates: 0,
+        topAvgReturn: null,
+        bottomAvgReturn: null,
+        rawSpread: null,
+        topMarketAdjustedAvgReturn: null,
+        bottomMarketAdjustedAvgReturn: null,
+        marketAdjustedSpread: null,
+        robustTStat: null,
+        ci95Low: null,
+        ci95High: null,
+      })),
+    };
+  }
+
+  const rankIcByDate: RankIcDateStat[] = [];
+  const topDateReturns: TopSelectionDateStat[] = [];
+  const quantileDaily = new Map<
+    number,
+    Array<{
+      topRaw: number;
+      bottomRaw: number;
+      rawSpread: number;
+      topAdjusted: number | null;
+      bottomAdjusted: number | null;
+      adjustedSpread: number | null;
+    }>
+  >();
+  for (const buckets of RANKING_QUANTILE_BUCKETS) quantileDaily.set(buckets, []);
+
+  for (const [date, rows] of [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    const rawPairs = rows.filter(
+      (o) => o.score !== null && o.rets[hIdx] !== null && o.rets[hIdx] !== undefined,
+    );
+    const adjustedPairs = rows.filter(
+      (o) => o.score !== null && o.excessRets[hIdx] !== null && o.excessRets[hIdx] !== undefined,
+    );
+    const rawRankIc = spearmanRankCorrelation(
+      rawPairs.map((o) => o.score!),
+      rawPairs.map((o) => o.rets[hIdx]!),
+    );
+    const marketAdjustedRankIc = spearmanRankCorrelation(
+      adjustedPairs.map((o) => o.score!),
+      adjustedPairs.map((o) => o.excessRets[hIdx]!),
+    );
+    if (rawRankIc !== null || marketAdjustedRankIc !== null) {
+      rankIcByDate.push({
+        date,
+        observations: rawPairs.length,
+        rawRankIc,
+        marketAdjustedRankIc,
+      });
+    }
+
+    const ranked = [...rawPairs].sort(
+      (a, b) => (b.score ?? -Infinity) - (a.score ?? -Infinity) || a.symbol.localeCompare(b.symbol),
+    );
+    const selected = ranked.slice(0, TOP_SELECTION_COUNT);
+    if (selected.length) {
+      topDateReturns.push({
+        date,
+        symbols: selected.map((o) => o.symbol),
+        count: selected.length,
+        avgScore: mean(selected.map((o) => o.score!).filter(Number.isFinite)),
+        avgReturn: mean(selected.map((o) => o.rets[hIdx]!).filter(Number.isFinite)),
+        benchmarkAvgReturn: mean(
+          selected
+            .map((o) => o.benchmarkRets[hIdx])
+            .filter((r): r is number => r !== null && r !== undefined),
+        ),
+        marketAdjustedAvgReturn: mean(
+          selected
+            .map((o) => o.excessRets[hIdx])
+            .filter((r): r is number => r !== null && r !== undefined),
+        ),
+      });
+    }
+
+    for (const bucketCount of RANKING_QUANTILE_BUCKETS) {
+      const bucketSize = Math.floor(ranked.length / bucketCount);
+      if (bucketSize < 1) continue;
+      const top = ranked.slice(0, bucketSize);
+      const bottom = ranked.slice(-bucketSize);
+      const topRaw = mean(top.map((o) => o.rets[hIdx]!).filter(Number.isFinite));
+      const bottomRaw = mean(bottom.map((o) => o.rets[hIdx]!).filter(Number.isFinite));
+      if (topRaw === null || bottomRaw === null) continue;
+      const topAdjusted = mean(
+        top.map((o) => o.excessRets[hIdx]).filter((r): r is number => r !== null && r !== undefined),
+      );
+      const bottomAdjusted = mean(
+        bottom
+          .map((o) => o.excessRets[hIdx])
+          .filter((r): r is number => r !== null && r !== undefined),
+      );
+      quantileDaily.get(bucketCount)!.push({
+        topRaw,
+        bottomRaw,
+        rawSpread: topRaw - bottomRaw,
+        topAdjusted,
+        bottomAdjusted,
+        adjustedSpread:
+          topAdjusted !== null && bottomAdjusted !== null ? topAdjusted - bottomAdjusted : null,
+      });
+    }
+  }
+
+  const rawIcs = rankIcByDate
+    .map((r) => r.rawRankIc)
+    .filter((r): r is number => r !== null && r !== undefined);
+  const adjustedIcs = rankIcByDate
+    .map((r) => r.marketAdjustedRankIc)
+    .filter((r): r is number => r !== null && r !== undefined);
+  const dailyTopRaw = topDateReturns
+    .map((r) => r.avgReturn)
+    .filter((r): r is number => r !== null && r !== undefined);
+  const dailyTopAdjusted = topDateReturns
+    .map((r) => r.marketAdjustedAvgReturn)
+    .filter((r): r is number => r !== null && r !== undefined);
+
+  const rankIcSummary: RankIcSummary = {
+    horizon: RANKING_HORIZON,
+    dates: rankIcByDate.length,
+    avgRawRankIc: mean(rawIcs),
+    medianRawRankIc: median(rawIcs),
+    rawPositiveRate: winRate(rawIcs),
+    avgMarketAdjustedRankIc: mean(adjustedIcs),
+    medianMarketAdjustedRankIc: median(adjustedIcs),
+    marketAdjustedPositiveRate: winRate(adjustedIcs),
+  };
+
+  const topSelection: TopSelectionSummary = {
+    horizon: RANKING_HORIZON,
+    topN: TOP_SELECTION_COUNT,
+    dates: topDateReturns.length,
+    avgReturn: mean(dailyTopRaw),
+    medianReturn: median(dailyTopRaw),
+    winRate: winRate(dailyTopRaw),
+    marketAdjustedAvgReturn: mean(dailyTopAdjusted),
+    dateReturns: topDateReturns,
+  };
+
+  const quantileSpreads: QuantileSpreadStat[] = RANKING_QUANTILE_BUCKETS.map((bucketCount) => {
+    const rows = quantileDaily.get(bucketCount)!;
+    const topRaw = rows.map((r) => r.topRaw);
+    const bottomRaw = rows.map((r) => r.bottomRaw);
+    const rawSpreads = rows.map((r) => r.rawSpread);
+    const topAdjusted = rows
+      .map((r) => r.topAdjusted)
+      .filter((r): r is number => r !== null && r !== undefined);
+    const bottomAdjusted = rows
+      .map((r) => r.bottomAdjusted)
+      .filter((r): r is number => r !== null && r !== undefined);
+    const adjustedSpreads = rows
+      .map((r) => r.adjustedSpread)
+      .filter((r): r is number => r !== null && r !== undefined);
+    const robust = hacMeanStats(
+      adjustedSpreads,
+      Math.max(1, Math.ceil(RANKING_HORIZON / baseInterval) - 1),
+    );
+    return {
+      horizon: RANKING_HORIZON,
+      bucketCount,
+      dates: rows.length,
+      topAvgReturn: mean(topRaw),
+      bottomAvgReturn: mean(bottomRaw),
+      rawSpread: mean(rawSpreads),
+      topMarketAdjustedAvgReturn: mean(topAdjusted),
+      bottomMarketAdjustedAvgReturn: mean(bottomAdjusted),
+      marketAdjustedSpread: robust.mean,
+      robustTStat: robust.t,
+      ci95Low: robust.low,
+      ci95High: robust.high,
+    };
+  });
+
+  return { rankIcByDate, rankIcSummary, topSelection, quantileSpreads };
 }
 
 export function runBacktest(
@@ -576,13 +938,8 @@ export function runBacktest(
   const minHorizon = horizons[0]!;
   const maxHorizon = horizons[horizons.length - 1]!;
   const baseInterval = params.sampleEvery;
-  const requestedIntervals = normalizeList(
-    params.intervalCandidates,
-    DEFAULT_INTERVAL_CANDIDATES,
-  );
-  const intervals = requestedIntervals.filter(
-    (v) => v >= baseInterval && v % baseInterval === 0,
-  );
+  const requestedIntervals = normalizeList(params.intervalCandidates, DEFAULT_INTERVAL_CANDIDATES);
+  const intervals = requestedIntervals.filter((v) => v >= baseInterval && v % baseInterval === 0);
   const benchmarks = buildBenchmarks(marketContext);
 
   const perSymbol: Observation[][] = [];
@@ -789,6 +1146,9 @@ export function runBacktest(
     });
   }
 
+  const scoreOnsets = buildScoreOnsets(perSymbol, main, horizons, retsAt, excessAt);
+  const ranking = buildRankingAnalysis(groups, horizons, baseInterval);
+
   const entryRows = main.filter((o) => o.score !== null && o.score >= params.entryScore);
   const trades = retsAt(entryRows, pIdx);
   const wins = trades.filter((r) => r > 0);
@@ -931,7 +1291,10 @@ export function runBacktest(
   const strongestByHorizon = horizons.map((h, hIdx) => {
     const ranked = featureHorizons
       .map((fh) => ({ fh, edge: fh.metrics[hIdx]?.edge }))
-      .filter((x): x is { fh: FeatureHorizonResult; edge: number } => x.edge !== null && x.edge !== undefined)
+      .filter(
+        (x): x is { fh: FeatureHorizonResult; edge: number } =>
+          x.edge !== null && x.edge !== undefined,
+      )
       .sort((a, b) => b.edge - a.edge);
     return {
       horizon: h,
@@ -943,7 +1306,10 @@ export function runBacktest(
   const strongestAdjustedByHorizon = horizons.map((h, hIdx) => {
     const ranked = featureHorizons
       .map((fh) => ({ fh, edge: fh.metrics[hIdx]?.marketAdjustedCrossSectionalEdge }))
-      .filter((x): x is { fh: FeatureHorizonResult; edge: number } => x.edge !== null && x.edge !== undefined)
+      .filter(
+        (x): x is { fh: FeatureHorizonResult; edge: number } =>
+          x.edge !== null && x.edge !== undefined,
+      )
       .sort((a, b) => b.edge - a.edge);
     return {
       horizon: h,
@@ -1007,16 +1373,40 @@ export function runBacktest(
   };
   for (const o of main) regimeCounts[o.regime]++;
 
+  const config: BacktestConfigSnapshot = {
+    features: active.map((f) => f.id),
+    weights: Object.fromEntries(active.map((f) => [f.id, Math.max(0, params.weights[f.id] ?? f.defaultWeight)])),
+    horizonDays: params.horizonDays,
+    horizons,
+    sampleEvery: baseInterval,
+    entryScore: params.entryScore,
+    entryThresholds: thresholdList,
+    intervalCandidates: intervals,
+    extensionLimit: params.extensionLimit,
+    extensionThresholds: extThresholds,
+    volumeSurgeRatio: params.volumeSurgeRatio,
+    volumeThresholds: volThresholds,
+    volumeMode,
+    scoreOnsetThresholds: DEFAULT_SCORE_ONSET_THRESHOLDS,
+    rankingHorizon: RANKING_HORIZON,
+    topSelectionCount: TOP_SELECTION_COUNT,
+    rankingQuantileBuckets: RANKING_QUANTILE_BUCKETS,
+  };
+
   const notes: string[] = [
-    "V4는 60,000건 자동 표본축소를 사용하지 않습니다. 메인 관측간격의 모든 관측치를 그대로 계산합니다.",
-    "MA20 상승과 20일 수익률 양수는 피처에서 제외되며, 과거 설정이나 입력 자료에 관련 값이 있어도 백테스트 점수·Edge에 사용하지 않습니다.",
-    "피처별 Edge는 직전 관측에서 미충족(false)이었다가 현재 충족(true)된 Signal Onset만 신호로 집계합니다. 지속 상태는 반복 신호로 세지 않으며, 복합점수는 기존 상태 피처를 그대로 사용합니다.",
-    "52주 신고가 피처는 현재 봉을 포함한 정확히 252거래일이 확보된 시점부터만 계산합니다. 그 이전 구간은 데이터 없음(null)입니다.",
+    "V5는 V4의 전체 관측치/시장조정/Signal Onset/HAC 검증 구조를 그대로 유지합니다.",
+    "Score Threshold Onset은 직전 관측 점수가 threshold 미만이고 현재 점수가 threshold 이상인 최초 상향 돌파만 집계합니다.",
+    "Rank IC와 Top 5/5분위/10분위 분석은 30D forward return을 사용하며, 같은 점수 tie의 Top 5 정렬은 종목코드 순으로 고정합니다.",
+    "MA20 상승과 20일 수익률 양수는 피처에서 제외되며 백테스트 점수·Edge에 사용하지 않습니다.",
+    "피처별 Edge는 직전 관측에서 미충족(false)이었다가 현재 충족(true)된 Signal Onset만 신호로 집계합니다. 복합점수는 상태 피처를 사용합니다.",
+    "52주 신고가 피처는 현재 봉을 포함한 정확히 252거래일이 확보된 시점부터만 계산합니다.",
     "시장대비 초과수익률은 종목이 KOSPI면 KOSPI, KOSDAQ이면 KOSDAQ의 같은 진입일·청산일 수익률을 차감합니다.",
     "시장국면은 해당 시장 지수의 MA60·일목 구름·60일 수익률과 KOSPI 70%+KOSDAQ 30% 20일 실현변동성(<30)을 관측시점 데이터만으로 평가합니다.",
     "Robust t/95% CI는 날짜별 시장조정 cross-sectional edge에 Newey-West(HAC) 보정을 적용합니다.",
     "OOS는 관측일을 시간순 60% Development / 20% Validation / 20% OOS로 자동 분리합니다.",
   ];
+  if (!horizons.includes(RANKING_HORIZON))
+    notes.push(`Rank IC/Top 5/Quantile 분석을 표시하려면 Forward horizon에 ${RANKING_HORIZON}D를 포함하세요.`);
   if (requestedIntervals.some((v) => !intervals.includes(v)))
     notes.push(
       `장기 데이터 계산량 보호를 위해 메인 관측간격(${baseInterval}일)보다 짧거나 배수가 아닌 관측간격 민감도는 제외했습니다.`,
@@ -1025,7 +1415,7 @@ export function runBacktest(
     notes.push("KOSPI/KOSDAQ 지수 시계열을 찾지 못해 시장조정 수익률과 시장국면 일부가 데이터 없음으로 처리됩니다.");
   if (maxHorizon > baseInterval)
     notes.push(
-      `최대 보유기간 ${maxHorizon}일 / 관측간격 ${baseInterval}일로 가격구간 중첩이 존재합니다. naive t 대신 V4 Robust t/95% CI를 우선 해석하세요.`,
+      `최대 보유기간 ${maxHorizon}일 / 관측간격 ${baseInterval}일로 가격구간 중첩이 존재합니다. naive t 대신 Robust t/95% CI를 우선 해석하세요.`,
     );
 
   const primaryBaseline = baselineByHorizon[pIdx];
@@ -1039,6 +1429,7 @@ export function runBacktest(
     baselineAvgReturn: primaryBaseline?.avgReturn ?? null,
     baselineMarketReturn: primaryBaseline?.marketAvgReturn ?? null,
     baselineMarketAdjustedReturn: primaryBaseline?.marketAdjustedAvgReturn ?? null,
+    config,
     features,
     buckets,
     strategy: {
@@ -1061,6 +1452,11 @@ export function runBacktest(
     featureHorizons,
     bucketHorizons,
     entryThresholds,
+    scoreOnsets,
+    rankIcByDate: ranking.rankIcByDate,
+    rankIcSummary: ranking.rankIcSummary,
+    topSelection: ranking.topSelection,
+    quantileSpreads: ranking.quantileSpreads,
     intervalSensitivity,
     extensionSensitivity,
     volumeSensitivity,
