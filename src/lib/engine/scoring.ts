@@ -3,7 +3,7 @@ import { DEFAULT_ROTATION_WEIGHTS, type RotationWeights } from "./sectorRotation
 import type { IndicatorSnapshot } from "./indicators";
 import type { EtfFacts, FinancialFacts, Instrument } from "./types";
 
-export const STRATEGY_VERSION = "1.0.0";
+export const STRATEGY_VERSION = "1.0.1";
 
 export type RuleStatus = "PASS" | "FAIL" | "NO_DATA";
 
@@ -156,13 +156,13 @@ function fmtNum(v: number | null, digits = 0) {
 export interface TechnicalFlagsV3 {
   /** 종가 > 일목 구름 상단 */
   cloudAbove: boolean | null;
-  /** MA20 > MA60 > MA120 (MA20 기울기 조건 없음) */
+  /** MA20 > MA60 > MA120 */
   maAligned: boolean | null;
-  /** Momentum Confirmation ①: 전환선 > 기준선 */
+  /** Momentum Confirmation: 전환선 > 기준선 */
   tenkanAboveKijun: boolean | null;
-  /** Momentum Confirmation ②: MA20 기울기 > 0 */
+  /** 레거시 내부 계산값. 점수/백테스트 피처에서는 사용하지 않는다. */
   ma20SlopeUp: boolean | null;
-  /** Momentum Confirmation ③: 20일 수익률 > 0 */
+  /** 레거시 내부 계산값. 점수/백테스트 피처에서는 사용하지 않는다. */
   return20Positive: boolean | null;
   /** 볼린저 상단 돌파 (Head Fake 경고 시 false) */
   bbBreakout: boolean | null;
@@ -193,21 +193,20 @@ export function technicalFlagsV3(
   };
 }
 
-/** Momentum Confirmation: 충족 개수에 따라 0 / 1/3 / 2/3 / 3/3 × 만점 */
+/** Momentum Confirmation은 전환선 > 기준선 단일 조건만 사용한다. */
 export function momentumPoints(
   flags: TechnicalFlagsV3,
   cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
 ): { points: number; met: number; evaluated: number } {
-  const list = [flags.tenkanAboveKijun, flags.ma20SlopeUp, flags.return20Positive];
-  const evaluated = list.filter((v) => v !== null).length;
-  const met = list.filter((v) => v === true).length;
-  const step = cfg.technical.momentumMax / 3;
-  return { points: Math.round(met * step * 100) / 100, met, evaluated };
+  const evaluated = flags.tenkanAboveKijun === null ? 0 : 1;
+  const met = flags.tenkanAboveKijun === true ? 1 : 0;
+  return { points: met ? cfg.technical.momentumMax : 0, met, evaluated };
 }
 
 /**
- * V3 Technical Signal Score (기본 7점).
- * 구름 상단 2.0 / 정배열 2.0 / Momentum Confirmation 1.5 / 볼린저 상단 돌파 1.0 / 고가마감 거래량 0.5
+ * V4 Technical Signal Score.
+ * 구름 상단 / 정배열 / 전환선>기준선 / 볼린저 상단 돌파 / 고가마감 거래량을 사용한다.
+ * MA20 상승과 20일 수익률 양수는 피처에서 제거되어 점수에 반영하지 않는다.
  * valuePercentile은 참고 정보로만 표시하며 점수에 반영하지 않는다.
  */
 export function technicalScore(
@@ -239,7 +238,7 @@ export function technicalScore(
     maxPoints: t.cloudAboveMax,
   });
 
-  // [1] Trend Core — 이동평균 정배열 (MA20 기울기 요구하지 않음)
+  // [1] Trend Core — 이동평균 정배열
   rows.push({
     group: "Trend Core",
     rule: "이동평균 정배열 (MA20 > MA60 > MA120)",
@@ -247,22 +246,20 @@ export function technicalScore(
       snap.ma20 === null
         ? "데이터 없음"
         : `MA20 ${fmtNum(snap.ma20)} / MA60 ${fmtNum(snap.ma60)} / MA120 ${fmtNum(snap.ma120)}`,
-    threshold: `정배열 시 +${t.maAlignedMax} (기울기 조건 없음)`,
+    threshold: `정배열 시 +${t.maAlignedMax}`,
     status: flags.maAligned === null ? "NO_DATA" : flags.maAligned ? "PASS" : "FAIL",
     points: flags.maAligned === true ? t.maAlignedMax : 0,
     maxPoints: t.maAlignedMax,
   });
 
-  // [2] Momentum Confirmation — 3개 조건 충족 개수
+  // [2] Momentum Confirmation — 전환선 > 기준선만 사용
   const mom = momentumPoints(flags, cfg);
   const yn = (v: boolean | null) => (v === null ? "데이터 없음" : v ? "충족" : "미충족");
   rows.push({
     group: "Momentum Confirmation",
-    rule: "전환선>기준선 (Primary) · MA20 상승 · 20일 수익률 양수",
-    actual: `전환선>기준선 ${yn(flags.tenkanAboveKijun)} / MA20 상승 ${yn(
-      flags.ma20SlopeUp,
-    )} / 20일 수익률 ${yn(flags.return20Positive)} → ${mom.met}개 충족`,
-    threshold: `0개 0 / 1개 ${(t.momentumMax / 3).toFixed(2)} / 2개 ${((t.momentumMax * 2) / 3).toFixed(2)} / 3개 ${t.momentumMax}`,
+    rule: "전환선 > 기준선",
+    actual: `전환선 > 기준선 ${yn(flags.tenkanAboveKijun)}`,
+    threshold: `충족 시 +${t.momentumMax}`,
     status: mom.evaluated === 0 ? "NO_DATA" : mom.met > 0 ? "PASS" : "FAIL",
     points: mom.points,
     maxPoints: t.momentumMax,
@@ -848,7 +845,7 @@ export function calculatePositionSizing(input: PositionSizingInput): PositionSiz
 // ---------------------------------------------------------------------------
 
 export interface ScoringConfig {
-  /** 저장된 설정의 모델 버전. 현재 V3 = 3 */
+  /** 저장된 설정의 모델 버전. 현재 V4 = 4 */
   configVersion: number;
   weights: { stock: Weights; etf: Weights };
   technical: {
@@ -856,7 +853,7 @@ export interface ScoringConfig {
     cloudAboveMax: number;
     /** 이동평균 정배열(MA20>MA60>MA120) 배점 */
     maAlignedMax: number;
-    /** Momentum Confirmation 만점 (3개 조건, 충족 개수 비례) */
+    /** Momentum Confirmation 만점 (전환선 > 기준선 단일 조건) */
     momentumMax: number;
     /** 볼린저 상단 돌파 배점 */
     breakoutMax: number;
@@ -886,8 +883,8 @@ export interface ScoringConfig {
   rotation: RotationWeights;
 }
 
-/** 현재 scoring 모델 버전 (V3) */
-export const SCORING_CONFIG_VERSION = 3;
+/** 현재 scoring 모델 버전 (V4) */
+export const SCORING_CONFIG_VERSION = 4;
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   configVersion: SCORING_CONFIG_VERSION,
@@ -928,7 +925,7 @@ export function mergeScoringConfig(input: unknown): ScoringConfig {
   const at = (o: unknown, k: string): unknown =>
     o && typeof o === "object" ? (o as Record<string, unknown>)[k] : undefined;
   const raw = input ?? {};
-  // 구버전(V2 이전) 설정은 항목 구조 자체가 달라 값을 이어받지 않고 V3 기본값으로 1회 마이그레이션한다.
+  // 구버전 설정은 항목 의미가 달라 값을 이어받지 않고 V4 기본값으로 1회 마이그레이션한다.
   const rawVersion = Number(at(raw, "configVersion"));
   if (!Number.isFinite(rawVersion) || rawVersion < SCORING_CONFIG_VERSION) {
     return JSON.parse(JSON.stringify(d)) as ScoringConfig;

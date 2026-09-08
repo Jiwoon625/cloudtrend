@@ -3,7 +3,7 @@
 // 시장국면/시장/연도/OOS 분해와 중첩 보정 통계를 계산한다.
 import { computeIndicators } from "./indicators";
 import {
-  BACKTEST_FEATURES,
+  BACKTEST_FEATURES as LEGACY_BACKTEST_FEATURES,
   DEFAULT_BACKTEST_PARAMS as LEGACY_DEFAULT_BACKTEST_PARAMS,
   DEFAULT_ENTRY_THRESHOLDS,
   DEFAULT_EXTENSION_THRESHOLDS,
@@ -26,7 +26,6 @@ import {
 import type { DailyPrice, IndexSeries } from "./types";
 
 export {
-  BACKTEST_FEATURES,
   DEFAULT_ENTRY_THRESHOLDS,
   DEFAULT_EXTENSION_THRESHOLDS,
   DEFAULT_HORIZONS,
@@ -34,6 +33,15 @@ export {
   VOLUME_SURGE_MODES,
 };
 export type { BacktestParams, VolumeSurgeMode };
+
+/**
+ * MA20 상승/20일 수익률 양수는 V4 피처에서 완전히 제외한다.
+ * 과거 저장 설정이나 업로드 데이터에 관련 값이 있어도 active feature로 사용하지 않는다.
+ */
+const REMOVED_BACKTEST_FEATURE_IDS = new Set(["MA20_SLOPE_UP", "RS_POSITIVE"]);
+export const BACKTEST_FEATURES = LEGACY_BACKTEST_FEATURES.filter(
+  (f) => !REMOVED_BACKTEST_FEATURE_IDS.has(f.id),
+);
 
 /**
  * V4 장기 백테스트 기본값.
@@ -44,6 +52,8 @@ export const DEFAULT_INTERVAL_CANDIDATES = [5, 10, 20];
 
 export const DEFAULT_BACKTEST_PARAMS: BacktestParams = {
   ...LEGACY_DEFAULT_BACKTEST_PARAMS,
+  features: BACKTEST_FEATURES.map((f) => f.id),
+  weights: Object.fromEntries(BACKTEST_FEATURES.map((f) => [f.id, f.defaultWeight])),
   sampleEvery: 5,
   intervalCandidates: DEFAULT_INTERVAL_CANDIDATES,
 };
@@ -552,6 +562,7 @@ export function runBacktest(
 ): BacktestResult {
   const params: BacktestParams = {
     ...paramsInput,
+    features: paramsInput.features.filter((id) => !REMOVED_BACKTEST_FEATURE_IDS.has(id)),
     horizonDays: Math.max(1, Math.min(120, Math.round(paramsInput.horizonDays))),
     sampleEvery: Math.max(1, Math.min(20, Math.round(paramsInput.sampleEvery))),
   };
@@ -998,6 +1009,7 @@ export function runBacktest(
 
   const notes: string[] = [
     "V4는 60,000건 자동 표본축소를 사용하지 않습니다. 메인 관측간격의 모든 관측치를 그대로 계산합니다.",
+    "MA20 상승과 20일 수익률 양수는 피처에서 제외되며, 과거 설정이나 입력 자료에 관련 값이 있어도 백테스트 점수·Edge에 사용하지 않습니다.",
     "피처별 Edge는 직전 관측에서 미충족(false)이었다가 현재 충족(true)된 Signal Onset만 신호로 집계합니다. 지속 상태는 반복 신호로 세지 않으며, 복합점수는 기존 상태 피처를 그대로 사용합니다.",
     "52주 신고가 피처는 현재 봉을 포함한 정확히 252거래일이 확보된 시점부터만 계산합니다. 그 이전 구간은 데이터 없음(null)입니다.",
     "시장대비 초과수익률은 종목이 KOSPI면 KOSPI, KOSDAQ이면 KOSDAQ의 같은 진입일·청산일 수익률을 차감합니다.",

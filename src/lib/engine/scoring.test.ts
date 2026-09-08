@@ -72,7 +72,7 @@ function snapshot(overrides: Partial<IndicatorSnapshot> = {}): IndicatorSnapshot
   return { ...base, ...overrides };
 }
 
-describe("V3 Technical Signal Score", () => {
+describe("V4 Technical Signal Score", () => {
   it("모든 조건 충족 시 만점 7점, A등급", () => {
     const block = technicalScore(snapshot(), 85);
     expect(block.maxPoints).toBe(7);
@@ -106,9 +106,9 @@ describe("V3 Technical Signal Score", () => {
     expect(notAligned.points).toBe(0);
   });
 
-  it("Momentum Confirmation: 0개 0 / 1개 0.5 / 2개 1.0 / 3개 1.5", () => {
+  it("Momentum Confirmation은 전환선 > 기준선 단일 조건만 사용한다", () => {
     const base = snapshot();
-    const withFlags = (tk: boolean, slope: number, ret: number) =>
+    const points = (tk: boolean, slope: number, ret: number) =>
       technicalScore(
         snapshot({
           ichimoku: { ...base.ichimoku, tenkanAboveKijun: tk },
@@ -117,10 +117,23 @@ describe("V3 Technical Signal Score", () => {
         }),
         85,
       ).rows.find((r) => r.group === "Momentum Confirmation")!.points;
-    expect(withFlags(false, -1, -0.1)).toBe(0);
-    expect(withFlags(true, -1, -0.1)).toBe(0.5);
-    expect(withFlags(true, 1, -0.1)).toBe(1);
-    expect(withFlags(true, 1, 0.1)).toBe(1.5);
+
+    expect(points(false, -1, -0.1)).toBe(0);
+    expect(points(false, 1, 0.1)).toBe(0);
+    expect(points(true, -1, -0.1)).toBe(1.5);
+    expect(points(true, 1, 0.1)).toBe(1.5);
+  });
+
+  it("MA20 상승과 20일 수익률 양수는 기술점수를 바꾸지 않는다", () => {
+    const base = snapshot();
+    const a = technicalScore(snapshot({ ma20Slope: -5, return20: -0.2 }), 85).points;
+    const b = technicalScore(snapshot({ ma20Slope: 5, return20: 0.2 }), 85).points;
+    expect(a).toBe(b);
+    expect(
+      technicalScore(base, 85).rows.some(
+        (r) => r.rule.includes("MA20 상승") || r.rule.includes("20일 수익률 양수"),
+      ),
+    ).toBe(false);
   });
 
   it("볼린저 스퀴즈 단독으로는 점수가 없고, 상단 돌파는 1점", () => {
@@ -227,7 +240,7 @@ describe("시장 게이트", () => {
   });
 });
 
-describe("V3 Priority Quality Score", () => {
+describe("V4 Priority Quality Score", () => {
   const inst: Instrument = {
     ...INSTRUMENTS[0]!,
     indexMemberships: ["KOSPI200", "KRX300"],
@@ -298,14 +311,14 @@ describe("V3 Priority Quality Score", () => {
   });
 });
 
-describe("V3 설정 버전 마이그레이션", () => {
-  it("V2 저장 설정(configVersion 없음)은 V3 기본값으로 대체된다", () => {
-    const v2 = {
-      technical: { ichimokuMax: 2, bollingerMax: 2, volumeMax: 2, maMax: 1, volumeWeakRatio: 130 },
-      priority: { valueUpPoints: 1, nearHighPoints: 1, foreignPoints: 2 },
-      universe: { minTradingValue: 1_000_000_000, excludeLeveragedInverse: false },
+describe("V4 설정 버전 마이그레이션", () => {
+  it("구버전 저장 설정은 V4 기본값으로 대체된다", () => {
+    const v3 = {
+      ...DEFAULT_SCORING_CONFIG,
+      configVersion: 3,
+      technical: { ...DEFAULT_SCORING_CONFIG.technical, momentumMax: 9 },
     };
-    const merged = mergeScoringConfig(v2);
+    const merged = mergeScoringConfig(v3);
     expect(merged.configVersion).toBe(SCORING_CONFIG_VERSION);
     expect(merged.technical.cloudAboveMax).toBe(2);
     expect(merged.technical.momentumMax).toBe(1.5);
@@ -316,7 +329,7 @@ describe("V3 설정 버전 마이그레이션", () => {
     expect(priorityMaxPoints(merged)).toBe(8);
   });
 
-  it("V3 사용자 수정값은 그대로 보존된다", () => {
+  it("V4 사용자 수정값은 그대로 보존된다", () => {
     const custom = {
       ...DEFAULT_SCORING_CONFIG,
       technical: { ...DEFAULT_SCORING_CONFIG.technical, volumeStrongRatio: 180 },

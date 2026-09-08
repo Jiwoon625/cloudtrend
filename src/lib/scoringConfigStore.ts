@@ -8,9 +8,9 @@ import {
   type ScoringConfig,
 } from "@/lib/engine/scoring";
 
-const KEY = "cloudtrend.scoringConfig.v3";
-/** 구버전 저장 키 — 읽은 뒤 V3 기본값으로 마이그레이션하고 제거한다. */
-const LEGACY_KEYS = ["trendscore.scoringConfig.v2"];
+const KEY = "cloudtrend.scoringConfig.v4";
+/** 구버전 저장 키 — 값 의미가 달라 이어받지 않고 V4 기본값으로 마이그레이션한다. */
+const LEGACY_KEYS = ["cloudtrend.scoringConfig.v3", "trendscore.scoringConfig.v2"];
 
 let active: ScoringConfig = DEFAULT_SCORING_CONFIG;
 let hydrated = false;
@@ -22,12 +22,12 @@ function hydrate() {
   try {
     const raw = window.localStorage.getItem(KEY);
     if (raw) {
-      // configVersion < 3 이면 mergeScoringConfig가 V3 기본값을 반환한다.
+      // configVersion < 현재 버전이면 mergeScoringConfig가 V4 기본값을 반환한다.
       active = mergeScoringConfig(JSON.parse(raw));
       if (active.configVersion !== SCORING_CONFIG_VERSION) active = DEFAULT_SCORING_CONFIG;
       window.localStorage.setItem(KEY, JSON.stringify(active));
     } else {
-      // V2 이전 키가 남아 있으면 값을 이어받지 않고 V3 기본값으로 1회 마이그레이션한다.
+      // V3 이하 키가 남아 있으면 제거된 피처 설정을 이어받지 않고 V4 기본값으로 1회 마이그레이션한다.
       const legacy = LEGACY_KEYS.map((k) => window.localStorage.getItem(k)).find(Boolean);
       active = DEFAULT_SCORING_CONFIG;
       if (legacy) {
@@ -58,7 +58,7 @@ export function setActiveScoringConfig(next: ScoringConfig) {
   for (const l of listeners) l();
 }
 
-/** V3 기본값 전체로 복원 */
+/** V4 기본값 전체로 복원 */
 export function resetScoringConfig() {
   setActiveScoringConfig(DEFAULT_SCORING_CONFIG);
 }

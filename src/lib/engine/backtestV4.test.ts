@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BACKTEST_FEATURES,
   DEFAULT_BACKTEST_PARAMS,
   runBacktest,
   signalOnsetFlags,
@@ -105,5 +106,37 @@ describe("Backtest V4", () => {
 
   it("does not invent an onset when the first observed state is already true", () => {
     expect(signalOnsetFlags({ MA_ALIGNED: true }, null).MA_ALIGNED).toBeNull();
+  });
+
+  it("removes MA20 slope and 20-day positive return from the V4 feature universe", () => {
+    const ids = BACKTEST_FEATURES.map((f) => f.id);
+    expect(ids).not.toContain("MA20_SLOPE_UP");
+    expect(ids).not.toContain("RS_POSITIVE");
+    expect(DEFAULT_BACKTEST_PARAMS.features).not.toContain("MA20_SLOPE_UP");
+    expect(DEFAULT_BACKTEST_PARAMS.features).not.toContain("RS_POSITIVE");
+  });
+
+  it("ignores removed feature ids even when legacy saved params still contain them", () => {
+    const legacyResult = runBacktest(
+      series,
+      {
+        ...DEFAULT_BACKTEST_PARAMS,
+        features: [...DEFAULT_BACKTEST_PARAMS.features, "MA20_SLOPE_UP", "RS_POSITIVE"],
+        weights: {
+          ...DEFAULT_BACKTEST_PARAMS.weights,
+          MA20_SLOPE_UP: 99,
+          RS_POSITIVE: 99,
+        },
+        horizonDays: 20,
+        sampleEvery: 5,
+        intervalCandidates: [5, 10, 20],
+      },
+      { indexSeries: indexes },
+    );
+    const ids = legacyResult.featureHorizons.map((f) => f.featureKey);
+    expect(ids).not.toContain("MA20_SLOPE_UP");
+    expect(ids).not.toContain("RS_POSITIVE");
+    expect(legacyResult.correlation.ids).not.toContain("MA20_SLOPE_UP");
+    expect(legacyResult.correlation.ids).not.toContain("RS_POSITIVE");
   });
 });
