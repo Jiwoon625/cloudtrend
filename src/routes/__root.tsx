@@ -107,7 +107,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "preload",
         as: "image",
         type: "image/webp",
-        href: "/__l5e/assets-v1/f20c1ad7-71ed-4175-931c-618e55a2e908/login-bg.webp",
+        href: "/__l5e/assets-v1/3e241d12-3df0-4242-9713-123a16a9259d/login-bg.webp",
       },
     ],
   }),
