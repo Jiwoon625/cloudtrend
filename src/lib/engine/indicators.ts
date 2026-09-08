@@ -1,6 +1,8 @@
 // 지표 계산: 전부 순수 함수. 데이터 부족 시 null(계산 불가)을 반환한다.
 import type { DailyPrice } from "./types";
 
+export const HIGH_52W_WINDOW = 252;
+
 export function sma(values: number[], period: number, endIndex: number): number | null {
   if (endIndex < period - 1 || endIndex >= values.length) return null;
   let sum = 0;
@@ -164,7 +166,6 @@ export function ratioToPriorAverage(
   return Math.min((values[endIndex]! / avg) * 100, RATIO_CAP);
 }
 
-
 export function periodReturn(closes: number[], endIndex: number, lookback: number): number | null {
   const past = closes[endIndex - lookback];
   if (past === undefined || past === 0) return null;
@@ -310,9 +311,12 @@ export function computeIndicators(bars: DailyPrice[], endIndex: number): Indicat
   const ma120 = sma(closes, 120, endIndex);
   const atr14 = atr(bars, endIndex, 14);
 
+  // 52주 신고가는 현재 봉을 포함한 정확히 252거래일 범위만 사용한다.
+  // 과거 코드처럼 60봉 이상이면 가변 길이 신고가를 허용하면 초기 관측치가
+  // 사실상 3~12개월 신고가가 되어 피처가 과대평가될 수 있다.
   let high52w: number | null = null;
-  const start = Math.max(0, endIndex - 251);
-  if (endIndex - start >= 59) {
+  if (endIndex >= HIGH_52W_WINDOW - 1) {
+    const start = endIndex - HIGH_52W_WINDOW + 1;
     high52w = -Infinity;
     for (let i = start; i <= endIndex; i++) high52w = Math.max(high52w, bars[i]!.high);
   }
