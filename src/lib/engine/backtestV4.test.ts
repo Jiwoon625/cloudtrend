@@ -97,7 +97,7 @@ describe("Backtest V4", () => {
     let previous: Record<string, boolean | null> | null = null;
     const onset = sequence.map((value) => {
       const current = { MA_ALIGNED: value };
-      const flag = signalOnsetFlags(current, previous).MA_ALIGNED;
+      const flag = signalOnsetFlags(current, previous)["MA_ALIGNED"];
       previous = current;
       return flag;
     });
@@ -105,7 +105,7 @@ describe("Backtest V4", () => {
   });
 
   it("does not invent an onset when the first observed state is already true", () => {
-    expect(signalOnsetFlags({ MA_ALIGNED: true }, null).MA_ALIGNED).toBeNull();
+    expect(signalOnsetFlags({ MA_ALIGNED: true }, null)["MA_ALIGNED"]).toBeNull();
   });
 
   it("removes MA20 slope and 20-day positive return from the V4 feature universe", () => {
