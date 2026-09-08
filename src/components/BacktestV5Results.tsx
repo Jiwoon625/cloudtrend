@@ -1,3 +1,15 @@
+import { useMemo, useState } from "react";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+
 import { formatNumber } from "@/lib/format";
 import type { BacktestResult } from "@/lib/engine/backtestV4";
 
@@ -11,6 +23,14 @@ const rate = (v: number | null | undefined) =>
 
 const ic = (v: number | null | undefined) =>
   v === null || v === undefined || !Number.isFinite(v) ? "-" : v.toFixed(3);
+
+const CHART_COLORS = [
+  "var(--color-up)",
+  "var(--color-info)",
+  "var(--color-down)",
+  "var(--color-warn)",
+  "var(--color-accent, #8b5cf6)",
+];
 
 function Panel({
   title,
@@ -33,10 +53,131 @@ function Panel({
 }
 
 export function BacktestV5Results({ result }: { result: BacktestResult }) {
-  const featureLabel = new Map(result.features.map((f) => [f.id, f.label]));
+  const defaultDecay = ["NEAR_52W_HIGH", "BOLLINGER_BREAKOUT", "MA_ALIGNMENT"].filter((id) =>
+    result.featureHorizons.some((f) => f.featureKey === id),
+  );
+  const [decayFeatures, setDecayFeatures] = useState<string[]>(defaultDecay);
+
+  const toggleDecay = (id: string) =>
+    setDecayFeatures((cur) =>
+      cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id].slice(-5),
+    );
+
+  const decayData = useMemo(
+    () =>
+      result.horizons.map((h) => {
+        const row: Record<string, string | number | null> = { horizon: `${h}D` };
+        for (const key of decayFeatures) {
+          const feature = result.featureHorizons.find((f) => f.featureKey === key);
+          row[key] =
+            feature?.metrics.find((m) => m.horizon === h)?.marketAdjustedCrossSectionalEdge ?? null;
+        }
+        return row;
+      }),
+    [result, decayFeatures],
+  );
+
+  const thresholdChartData = useMemo(() => {
+    const horizon = result.rankIcSummary.horizon;
+    const thresholds = [...new Set(result.scoreOnsets.map((r) => r.threshold))].sort((a, b) => a - b);
+    return thresholds.map((threshold) => ({
+      threshold: `${threshold}점`,
+      onset:
+        result.scoreOnsets.find((r) => r.threshold === threshold && r.horizon === horizon)
+          ?.marketAdjustedAvgReturn ?? null,
+      state:
+        result.entryThresholds.find((r) => r.threshold === threshold && r.horizon === horizon)
+          ?.marketAdjustedAvgReturn ?? null,
+    }));
+  }, [result]);
 
   return (
     <>
+      <Panel
+        title="Feature Edge Decay"
+        note="V4에서 사용하던 그래프를 복구했습니다. 시장조정 Cross-sectional Edge가 보유기간에 따라 유지·확대·소멸되는지 확인합니다."
+      >
+        <div className="space-y-2 p-3">
+          <div className="flex flex-wrap gap-2" data-no-print>
+            {result.featureHorizons.map((fh) => {
+              const on = decayFeatures.includes(fh.featureKey);
+              return (
+                <button
+                  key={fh.featureKey}
+                  type="button"
+                  onClick={() => toggleDecay(fh.featureKey)}
+                  className={`rounded-md border px-2 py-1 text-[11px] ${
+                    on
+                      ? "border-primary bg-primary/10"
+                      : "border-border text-muted-foreground"
+                  }`}
+                >
+                  {fh.featureLabel}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ height: 280 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={decayData}>
+                <CartesianGrid strokeDasharray="2 4" stroke="var(--color-border)" />
+                <XAxis dataKey="horizon" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} unit="%" />
+                <Tooltip />
+                <ReferenceLine y={0} stroke="var(--color-border)" />
+                {decayFeatures.map((key, i) => (
+                  <Line
+                    key={key}
+                    type="monotone"
+                    dataKey={key}
+                    name={result.featureHorizons.find((f) => f.featureKey === key)?.featureLabel ?? key}
+                    stroke={CHART_COLORS[i % CHART_COLORS.length]}
+                    strokeWidth={2}
+                    dot
+                    connectNulls
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel
+        title={`Score Threshold · ${result.rankIcSummary.horizon}D`}
+        note="점수가 이미 threshold 이상인 상태(State)와 아래에서 처음 상향 돌파한 Onset의 시장초과수익률을 비교합니다."
+      >
+        <div className="p-3" style={{ height: 280 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={thresholdChartData}>
+              <CartesianGrid strokeDasharray="2 4" stroke="var(--color-border)" />
+              <XAxis dataKey="threshold" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} unit="%" />
+              <Tooltip />
+              <ReferenceLine y={0} stroke="var(--color-border)" />
+              <Line
+                type="monotone"
+                dataKey="state"
+                name="State 시장초과"
+                stroke="var(--color-info)"
+                strokeWidth={2}
+                dot
+                connectNulls
+              />
+              <Line
+                type="monotone"
+                dataKey="onset"
+                name="Onset 시장초과"
+                stroke="var(--color-up)"
+                strokeWidth={2}
+                dot
+                connectNulls
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </Panel>
+
       <Panel
         title="Score Threshold Onset"
         note="score[t-1] < threshold && score[t] >= threshold. 점수가 이미 높은 상태를 반복 집계하지 않고 최초 상향 돌파 이벤트만 비교합니다."
@@ -129,7 +270,11 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
               {result.quantileSpreads.map((q) => (
                 <tr key={q.bucketCount} className="border-t border-border">
                   <td className="px-2 py-1.5 font-medium">
-                    {q.bucketCount === 5 ? "5분위" : q.bucketCount === 10 ? "10분위" : `${q.bucketCount}분위`}
+                    {q.bucketCount === 5
+                      ? "5분위"
+                      : q.bucketCount === 10
+                        ? "10분위"
+                        : `${q.bucketCount}분위`}
                   </td>
                   <td className="num px-2 py-1.5 text-right">{q.dates.toLocaleString("ko-KR")}</td>
                   <td className="num px-2 py-1.5 text-right">{pct(q.topAvgReturn)}</td>
@@ -149,100 +294,69 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
         </div>
       </Panel>
 
-      <Panel
-        title={`날짜별 Top ${result.topSelection.topN} 종목 성과`}
-        note={`${result.topSelection.horizon}D forward return. 각 관측일에 score 상위 종목을 동일가중으로 선택한 결과이며 NAV 복리수익률이 아닙니다.`}
-      >
-        <div className="max-h-[420px] overflow-auto print:max-h-none print:overflow-visible">
-          <table className="w-full min-w-[820px] text-[11px]">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="px-2 py-1.5 text-left">날짜</th>
-                <th className="px-2 py-1.5 text-left">종목</th>
-                <th className="px-2 py-1.5 text-right">평균점수</th>
-                <th className="px-2 py-1.5 text-right">평균수익</th>
-                <th className="px-2 py-1.5 text-right">시장수익</th>
-                <th className="px-2 py-1.5 text-right">시장초과</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.topSelection.dateReturns.map((r) => (
-                <tr key={r.date} className="border-t border-border/60">
-                  <td className="px-2 py-1.5">{r.date}</td>
-                  <td className="px-2 py-1.5">{r.symbols.join(", ")}</td>
-                  <td className="num px-2 py-1.5 text-right">{formatNumber(r.avgScore, 1)}</td>
-                  <td className="num px-2 py-1.5 text-right">{pct(r.avgReturn)}</td>
-                  <td className="num px-2 py-1.5 text-right">{pct(r.benchmarkAvgReturn)}</td>
-                  <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.marketAdjustedAvgReturn)}</td>
+      <div data-no-print>
+        <Panel
+          title={`날짜별 Top ${result.topSelection.topN} 종목 성과`}
+          note={`${result.topSelection.horizon}D forward return. 화면에서는 상세 확인용으로 유지하고 PDF에는 포함하지 않습니다.`}
+        >
+          <div className="max-h-[420px] overflow-auto">
+            <table className="w-full min-w-[820px] text-[11px]">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="px-2 py-1.5 text-left">날짜</th>
+                  <th className="px-2 py-1.5 text-left">종목</th>
+                  <th className="px-2 py-1.5 text-right">평균점수</th>
+                  <th className="px-2 py-1.5 text-right">평균수익</th>
+                  <th className="px-2 py-1.5 text-right">시장수익</th>
+                  <th className="px-2 py-1.5 text-right">시장초과</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
+              </thead>
+              <tbody>
+                {result.topSelection.dateReturns.map((r) => (
+                  <tr key={r.date} className="border-t border-border/60">
+                    <td className="px-2 py-1.5">{r.date}</td>
+                    <td className="px-2 py-1.5">{r.symbols.join(", ")}</td>
+                    <td className="num px-2 py-1.5 text-right">{formatNumber(r.avgScore, 1)}</td>
+                    <td className="num px-2 py-1.5 text-right">{pct(r.avgReturn)}</td>
+                    <td className="num px-2 py-1.5 text-right">{pct(r.benchmarkAvgReturn)}</td>
+                    <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.marketAdjustedAvgReturn)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      </div>
 
-      <Panel
-        title="날짜별 Rank IC"
-        note="PDF 저장 시에도 모든 날짜가 출력됩니다. 화면에서는 스크롤 영역으로 표시합니다."
-      >
-        <div className="max-h-[360px] overflow-auto print:max-h-none print:overflow-visible">
-          <table className="w-full text-[11px]">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th className="px-2 py-1.5 text-left">날짜</th>
-                <th className="px-2 py-1.5 text-right">종목수</th>
-                <th className="px-2 py-1.5 text-right">Raw Rank IC</th>
-                <th className="px-2 py-1.5 text-right">시장조정 Rank IC</th>
-              </tr>
-            </thead>
-            <tbody>
-              {result.rankIcByDate.map((r) => (
-                <tr key={r.date} className="border-t border-border/60">
-                  <td className="px-2 py-1.5">{r.date}</td>
-                  <td className="num px-2 py-1.5 text-right">{r.observations.toLocaleString("ko-KR")}</td>
-                  <td className="num px-2 py-1.5 text-right">{ic(r.rawRankIc)}</td>
-                  <td className="num px-2 py-1.5 text-right font-semibold">{ic(r.marketAdjustedRankIc)}</td>
+      <div data-no-print>
+        <Panel
+          title="날짜별 Rank IC"
+          note="화면 상세 확인용입니다. 313페이지 수준의 PDF 팽창을 막기 위해 날짜별 원시 행은 PDF에서 제외합니다."
+        >
+          <div className="max-h-[360px] overflow-auto">
+            <table className="w-full text-[11px]">
+              <thead className="text-muted-foreground">
+                <tr>
+                  <th className="px-2 py-1.5 text-left">날짜</th>
+                  <th className="px-2 py-1.5 text-right">종목수</th>
+                  <th className="px-2 py-1.5 text-right">Raw Rank IC</th>
+                  <th className="px-2 py-1.5 text-right">시장조정 Rank IC</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
-
-      <section className="hidden rounded-lg border border-border bg-card p-3 print:block">
-        <h2 className="mb-2 text-sm font-semibold">V5 실행 설정</h2>
-        <table className="mb-4 w-full text-[10px]">
-          <tbody>
-            <tr className="border-b border-border">
-              <td className="px-2 py-1">기준 보유기간 / 관측간격</td>
-              <td className="px-2 py-1 text-right">{result.config.horizonDays}D / {result.config.sampleEvery}D</td>
-            </tr>
-            <tr className="border-b border-border">
-              <td className="px-2 py-1">Forward horizons</td>
-              <td className="px-2 py-1 text-right">{result.config.horizons.join(", ")}D</td>
-            </tr>
-            <tr className="border-b border-border">
-              <td className="px-2 py-1">진입 기준 / Score Onset</td>
-              <td className="px-2 py-1 text-right">{result.config.entryScore}점 / {result.config.scoreOnsetThresholds.join(", ")}점</td>
-            </tr>
-            <tr className="border-b border-border">
-              <td className="px-2 py-1">Ranking</td>
-              <td className="px-2 py-1 text-right">{result.config.rankingHorizon}D · Top {result.config.topSelectionCount} · {result.config.rankingQuantileBuckets.join("/")}분위</td>
-            </tr>
-            {result.config.features.map((id) => (
-              <tr key={id} className="border-b border-border/60">
-                <td className="px-2 py-1">{featureLabel.get(id) ?? id}</td>
-                <td className="num px-2 py-1 text-right">weight {result.config.weights[id] ?? 0}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <h2 className="mb-1 text-sm font-semibold">전체 결과 원본</h2>
-        <p className="mb-2 text-[9px] text-muted-foreground">
-          화면의 선택형 표에서 숨겨질 수 있는 horizon/분포/민감도 값을 포함해 BacktestResult 전체를 PDF 부록에 남깁니다.
-        </p>
-        <pre className="whitespace-pre-wrap break-all text-[7px] leading-tight">{JSON.stringify(result, null, 2)}</pre>
-      </section>
+              </thead>
+              <tbody>
+                {result.rankIcByDate.map((r) => (
+                  <tr key={r.date} className="border-t border-border/60">
+                    <td className="px-2 py-1.5">{r.date}</td>
+                    <td className="num px-2 py-1.5 text-right">{r.observations.toLocaleString("ko-KR")}</td>
+                    <td className="num px-2 py-1.5 text-right">{ic(r.rawRankIc)}</td>
+                    <td className="num px-2 py-1.5 text-right font-semibold">{ic(r.marketAdjustedRankIc)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      </div>
     </>
   );
 }
