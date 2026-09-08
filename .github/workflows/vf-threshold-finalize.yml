@@ -1,0 +1,53 @@
+name: Vf threshold UI finalize
+
+on:
+  push:
+    branches:
+      - chatgpt/vf-finalization
+    paths:
+      - .github/workflows/vf-threshold-finalize.yml
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: chatgpt/vf-finalization
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply threshold UI placement fix
+        run: python3 scripts/fix-vf-threshold-ui.py
+
+      - name: Install dependencies
+        run: npm install --package-lock=false --no-audit --no-fund
+
+      - name: Run Vf regression tests
+        run: npx vitest run src/lib/engine/vf.test.ts
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit final UI change
+        shell: bash
+        run: |
+          rm -f scripts/fix-vf-threshold-ui.py .github/workflows/vf-threshold-finalize.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Finalize Vf threshold controls"
+          git push origin HEAD:chatgpt/vf-finalization
