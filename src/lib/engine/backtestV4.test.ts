@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_BACKTEST_PARAMS,
   runBacktest,
+  signalOnsetFlags,
   type BacktestInputSeries,
 } from "./backtestV4";
 import type { DailyPrice, IndexSeries } from "./types";
@@ -88,5 +89,21 @@ describe("Backtest V4", () => {
 
   it("removes synthetic cumulativeReturn from strategy summary", () => {
     expect("cumulativeReturn" in result.strategy).toBe(false);
+  });
+
+  it("counts a persistent feature only once until it turns off and on again", () => {
+    const sequence = [false, true, true, true, false, true];
+    let previous: Record<string, boolean | null> | null = null;
+    const onset = sequence.map((value) => {
+      const current = { MA_ALIGNED: value };
+      const flag = signalOnsetFlags(current, previous).MA_ALIGNED;
+      previous = current;
+      return flag;
+    });
+    expect(onset).toEqual([false, true, false, false, false, true]);
+  });
+
+  it("does not invent an onset when the first observed state is already true", () => {
+    expect(signalOnsetFlags({ MA_ALIGNED: true }, null).MA_ALIGNED).toBeNull();
   });
 });

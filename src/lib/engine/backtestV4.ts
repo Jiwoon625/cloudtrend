@@ -248,7 +248,10 @@ interface Observation {
   year: string;
   regime: MarketRegime;
   split: SampleSplit;
+  /** 피처 영향도는 false→true 전환(onset)만 신호로 집계한다. */
   flags: Record<string, boolean | null>;
+  /** 복합점수와 피처 상관관계는 기존의 현재 상태(state)를 사용한다. */
+  stateFlags: Record<string, boolean | null>;
   score: number | null;
   rets: Array<number | null>;
   benchmarkRets: Array<number | null>;
@@ -518,6 +521,30 @@ function breakdownFor(
   });
 }
 
+/**
+ * 메인 관측 그리드에서 지속 상태를 반복 신호로 세지 않고 false→true 전환만 onset으로 만든다.
+ * 이전 상태가 null이면 실제 전환 여부를 알 수 없으므로 현재 true도 null로 둔다.
+ */
+export function signalOnsetFlags(
+  current: Record<string, boolean | null>,
+  previous: Record<string, boolean | null> | null,
+): Record<string, boolean | null> {
+  const out: Record<string, boolean | null> = {};
+  for (const [id, value] of Object.entries(current)) {
+    if (value === null || value === undefined) {
+      out[id] = null;
+      continue;
+    }
+    if (!value) {
+      out[id] = false;
+      continue;
+    }
+    const prior = previous?.[id] ?? null;
+    out[id] = prior === false ? true : prior === true ? false : null;
+  }
+  return out;
+}
+
 export function runBacktest(
   series: BacktestInputSeries[],
   paramsInput: BacktestParams,
@@ -565,15 +592,18 @@ export function runBacktest(
     if (lastDate > to) to = lastDate;
 
     const obs: Observation[] = [];
+    let previousStateFlags: Record<string, boolean | null> | null = null;
     for (let i = 120; i + minHorizon < bars.length; i += baseInterval) {
       const entry = bars[i]!.close;
       if (!(entry > 0)) continue;
       const snap = computeIndicators(bars, i);
-      const flags = evaluateFeatures(snap, params, bars[i]!);
+      const stateFlags = evaluateFeatures(snap, params, bars[i]!);
+      const flags = signalOnsetFlags(stateFlags, previousStateFlags);
+      previousStateFlags = stateFlags;
       let weighted = 0;
       let available = 0;
       for (const f of active) {
-        const v = flags[f.id];
+        const v = stateFlags[f.id];
         if (v === null || v === undefined) continue;
         const w = Math.max(0, params.weights[f.id] ?? f.defaultWeight);
         available += w;
@@ -599,6 +629,7 @@ export function runBacktest(
         regime: bench?.regimeByDate.get(bars[i]!.tradeDate) ?? "UNKNOWN",
         split: "DEVELOPMENT",
         flags,
+        stateFlags,
         score: available > 0 ? (weighted / available) * 100 : null,
         rets,
         benchmarkRets,
@@ -665,6 +696,15 @@ export function runBacktest(
       ),
     };
   });
+
+  const stateSignalRates = new Map<string, number | null>(
+    active.map((f) => {
+      const valid = main
+        .map((o) => o.stateFlags[f.id])
+        .filter((v): v is boolean => v !== null && v !== undefined);
+      return [f.id, valid.length ? (valid.filter(Boolean).length / valid.length) * 100 : null];
+    }),
+  );
 
   const features: FeatureStat[] = active.map((f) => {
     const m = featureHorizons.find((x) => x.featureKey === f.id)!.metrics[pIdx]!;
@@ -808,7 +848,7 @@ export function runBacktest(
 
   const columns = active.map((f) =>
     main.map((o) => {
-      const v = o.flags[f.id];
+      const v = o.stateFlags[f.id];
       return v === null || v === undefined ? null : v ? 1 : 0;
     }),
   );
@@ -937,9 +977,12 @@ export function runBacktest(
         ),
       )
       .map((fh) => ({ featureKey: fh.featureKey, label: fh.featureLabel })),
-    lowDiscriminationFeatures: featureHorizons
-      .filter((fh) => fh.signalRate !== null && (fh.signalRate >= 95 || fh.signalRate <= 5))
-      .map((fh) => ({ featureKey: fh.featureKey, label: fh.featureLabel, signalRate: fh.signalRate! })),
+    lowDiscriminationFeatures: active
+      .map((f) => ({ featureKey: f.id, label: f.label, signalRate: stateSignalRates.get(f.id) ?? null }))
+      .filter(
+        (f): f is { featureKey: string; label: string; signalRate: number } =>
+          f.signalRate !== null && (f.signalRate >= 95 || f.signalRate <= 5),
+      ),
     oosStableFeatures: active
       .filter((f) => (oosByFeature.get(f.id)?.marketAdjustedCrossSectionalEdge ?? -Infinity) > 0)
       .map((f) => ({ featureKey: f.id, label: f.label })),
@@ -955,6 +998,8 @@ export function runBacktest(
 
   const notes: string[] = [
     "V4는 60,000건 자동 표본축소를 사용하지 않습니다. 메인 관측간격의 모든 관측치를 그대로 계산합니다.",
+    "피처별 Edge는 직전 관측에서 미충족(false)이었다가 현재 충족(true)된 Signal Onset만 신호로 집계합니다. 지속 상태는 반복 신호로 세지 않으며, 복합점수는 기존 상태 피처를 그대로 사용합니다.",
+    "52주 신고가 피처는 현재 봉을 포함한 정확히 252거래일이 확보된 시점부터만 계산합니다. 그 이전 구간은 데이터 없음(null)입니다.",
     "시장대비 초과수익률은 종목이 KOSPI면 KOSPI, KOSDAQ이면 KOSDAQ의 같은 진입일·청산일 수익률을 차감합니다.",
     "시장국면은 해당 시장 지수의 MA60·일목 구름·60일 수익률과 KOSPI 70%+KOSDAQ 30% 20일 실현변동성(<30)을 관측시점 데이터만으로 평가합니다.",
     "Robust t/95% CI는 날짜별 시장조정 cross-sectional edge에 Newey-West(HAC) 보정을 적용합니다.",
