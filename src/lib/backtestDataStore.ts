@@ -146,11 +146,28 @@ export async function loadBacktestDataset(): Promise<ManualParseResult | null> {
   if (entries.length === 0) return null;
   const key = entries.map((f) => `${f.id}:${f.bytes}`).join("|");
   if (cache?.key === key) return cache.parsed;
-  const loaded = (await Promise.all(entries.map((f) => fileText(f.id)))).filter(
-    (t): t is string => !!t && t.trim().length > 0,
+
+  // 인덱스에 등록된 파일이 하나라도 실제 저장소에서 누락되면 부분 데이터로
+  // 백테스트를 계속하지 않는다. 과거에는 null 파일을 filter로 조용히 버려
+  // 같은 설정에서도 Universe/평균 봉수가 달라질 수 있었다.
+  const loaded = await Promise.all(
+    entries.map(async (entry) => ({ entry, text: await fileText(entry.id) })),
   );
-  if (loaded.length === 0) return null;
-  const parsed = parseManualMarketData(loaded);
+  const missing = loaded.filter(({ text }) => !text || text.trim().length === 0);
+  if (missing.length > 0) {
+    cache = null;
+    const names = missing
+      .slice(0, 5)
+      .map(({ entry }) => entry.fileName ?? entry.id)
+      .join(", ");
+    const suffix = missing.length > 5 ? ` 외 ${missing.length - 5}개` : "";
+    throw new Error(
+      `백테스트 장기 데이터 ${missing.length}개를 불러오지 못했습니다: ${names}${suffix}. ` +
+        "부분 데이터로 계산하지 않았습니다. 파일 목록을 새로고침한 뒤 누락 파일을 다시 업로드해 주세요.",
+    );
+  }
+
+  const parsed = parseManualMarketData(loaded.map(({ text }) => text!));
   cache = { key, parsed };
   return parsed;
 }
