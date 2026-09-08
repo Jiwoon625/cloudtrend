@@ -114,6 +114,7 @@ function ScoringPage() {
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
   const techMax = technicalMaxPoints(draft);
   const prioMax = priorityMaxPoints(draft);
+  const vfMax = techMax + draft.priority.nearHighPoints + draft.priority.foreignPoints;
 
   const patch = (fn: (d: ScoringConfig) => void) => {
     const next: ScoringConfig = JSON.parse(JSON.stringify(draft));
@@ -121,8 +122,8 @@ function ScoringPage() {
     setDraft(next);
   };
 
-  /** V4 기본값 전체(배점·임계값·유니버스·가중치·로테이션)를 즉시 복원하고 다시 계산한다. */
-  const restoreV4Defaults = () => {
+  /** Vf 기본값 전체(배점·임계값·유니버스·가중치·로테이션)를 즉시 복원하고 다시 계산한다. */
+  const restoreVfDefaults = () => {
     const next: ScoringConfig = JSON.parse(JSON.stringify(DEFAULT_SCORING_CONFIG));
     setDraft(next);
     setSaved(next);
@@ -162,8 +163,8 @@ function ScoringPage() {
       <div className="mb-4">
         <h1 className="text-xl font-bold tracking-tight">데이터 입력 및 산식·가중치</h1>
         <p className="text-[12px] text-muted-foreground">
-          시세 데이터를 입력해 스크리닝을 시작하고, 아래 산식·가중치로 주식·ETF 스크리너와 종목
-          상세의 점수를 조정합니다.
+          시세 데이터를 입력해 스크리닝을 시작합니다. 주식은 검증 완료된 CloudTrend Vf 7개 피처
+          점수를 사용하고, ETF는 별도 기존 종합점수 구조를 유지합니다.
         </p>
       </div>
 
@@ -200,25 +201,30 @@ function ScoringPage() {
       <div className="mb-4 rounded-lg border border-border bg-surface p-3 text-[12px] leading-relaxed">
         <p className="mb-1 font-semibold">종합점수 계산식</p>
         <code className="block whitespace-pre-wrap text-[11px] text-muted-foreground">
-          {`기술점수(%) = 획득 / 산정가능 만점 × 100   (만점 ${techMax}점)
-우선순위(%) = 획득 / 산정가능 만점 × 100   (만점 ${prioMax}점)
-품질(%)     = 주식: 펀더멘털 100점 환산 / ETF: 상품건전성 100점 환산
-섹터(%)     = 섹터 상대강도·추세·breadth 종합 점수
+          {`주식 CloudTrend Vf 점수 = Σ(충족한 피처 가중치) / Σ(산정 가능한 7개 피처 가중치) × 100
+기본 원점수 만점 = ${vfMax}점
 
-종합점수 = Σ(항목% × 가중치) / Σ(데이터가 있는 항목의 가중치)`}
+피처 = 일목 구름 상단 위 + 전환선>기준선 + 볼린저 상단 돌파 + 이동평균 정배열
+      + 고가마감 거래량 + 52주 신고가 근접 + 외국인 20일 순매수
+
+데이터가 없는 피처는 0점 처리하지 않고 분모에서도 제외합니다.
+MA20 상승·20일 수익률 양수·펀더멘털·시장/섹터·지수편입·규모·당일 상대수익은 주식 Vf 점수에 미반영됩니다.
+
+ETF 종합점수 = Σ(항목% × ETF 가중치) / Σ(데이터가 있는 항목의 가중치)`}
         </code>
         <p className="mt-1 text-[11px] text-muted-foreground">
-          데이터가 없는 항목(예: 토스 API 미제공 재무)은 0점이 아니라 분모에서 제외됩니다. 따라서
-          가중치 합이 1이 아니어도 결과는 정규화됩니다.
+          주식 Vf는 백테스트와 동일하게 피처별 NO_DATA를 분모에서 제외합니다. 52주 신고가 피처는
+          정확히 252거래일이 확보된 시점부터만 계산됩니다.
         </p>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Section
-          title="1. 종합점수 가중치"
-          desc="주식과 ETF에 각각 다른 가중치를 적용합니다. 합계가 1이 아니어도 자동 정규화됩니다."
+          title="1. ETF 종합점수 가중치"
+          desc="주식 Vf는 아래 7개 피처 구조를 사용합니다. 이 블록 가중치는 ETF에만 적용됩니다."
         >
-          {(["stock", "etf"] as const).map((k) => (
+          <p className="rounded-md border border-border bg-surface p-2 text-[11px] text-muted-foreground">주식 점수는 블록 가중치가 아니라 Vf 7개 피처 원점수를 직접 정규화합니다.</p>
+          {(["stock", "etf"] as Array<"stock" | "etf">).filter((k) => k === "etf").map((k) => (
             <div key={k} className="rounded-md border border-border p-2">
               <p className="mb-2 text-[12px] font-semibold">
                 {k === "stock" ? "주식" : "ETF"} · 가중치 합계 {weightSum(k).toFixed(2)}
@@ -254,8 +260,8 @@ function ScoringPage() {
         </Section>
 
         <Section
-          title={`2. 기술 신호 배점 — V4 (현재 만점 ${techMax}점)`}
-          desc="Trend Core 4.0 + 전환선>기준선 1.5 + Breakout 1.0 + Volume 0.5. MA20 상승과 20일 수익률 양수는 피처에서 제거했습니다."
+          title={`2. CloudTrend Vf 7개 피처 배점 — 현재 만점 ${vfMax}점`}
+          desc="백테스트와 종목스크리너가 같은 7개 상태 피처와 같은 가중치를 사용합니다. 기본 만점은 9.5점입니다."
         >
           <NumField
             label="1. 일목 구름 상단 위"
@@ -297,6 +303,30 @@ function ScoringPage() {
             suffix="점"
             onChange={(v) => patch((d) => void (d.technical.volumeMax = v))}
           />
+          <NumField
+            label="6. 52주 신고가 근접"
+            hint="정확히 252거래일 기준 최고가 대비 허용 낙폭 이내"
+            value={draft.priority.nearHighPoints}
+            step={0.5}
+            suffix="점"
+            onChange={(v) => patch((d) => void (d.priority.nearHighPoints = v))}
+          />
+          <NumField
+            label="신고가 근접 기준"
+            hint="52주 최고가 대비 허용 낙폭 (음수)"
+            value={draft.priority.nearHighThresholdPercent}
+            step={1}
+            suffix="%"
+            onChange={(v) => patch((d) => void (d.priority.nearHighThresholdPercent = v))}
+          />
+          <NumField
+            label="7. 외국인 20일 순매수"
+            hint="최근 20거래일 외국인 누적 순매수 > 0"
+            value={draft.priority.foreignPoints}
+            step={0.5}
+            suffix="점"
+            onChange={(v) => patch((d) => void (d.priority.foreignPoints = v))}
+          />
           <div className="border-t border-border pt-3" />
           <NumField
             label="거래량 비율 기준"
@@ -314,19 +344,19 @@ function ScoringPage() {
             onChange={(v) => patch((d) => void (d.technical.clvThreshold = v))}
           />
           <p className="rounded-md border border-border bg-surface p-2 text-[11px] text-muted-foreground">
-            참고지표 (점수 미반영): 볼린저 스퀴즈 · 밴드폭 · MA20 이격률 · 밸류업 편입 · Head Fake
-            경고. 화면에는 계속 표시되지만 종합점수에는 반영되지 않습니다.
+            참고지표 (Vf 점수 미반영): 볼린저 스퀴즈 · 밴드폭 · MA20 이격률 · 밸류업 편입 · Head Fake
+            경고. 화면에는 계속 표시되지만 주식 Vf 점수에는 반영되지 않습니다.
           </p>
           <div className="border-t border-border pt-3" />
           <NumField
-            label="A등급 최소 기술점수"
+            label="ETF A등급 최소 기술점수"
             value={draft.grade.aMin}
             step={0.5}
             suffix="점"
             onChange={(v) => patch((d) => void (d.grade.aMin = v))}
           />
           <NumField
-            label="B등급 최소 기술점수"
+            label="ETF B등급 최소 기술점수"
             value={draft.grade.bMin}
             step={0.5}
             suffix="점"
@@ -335,8 +365,8 @@ function ScoringPage() {
         </Section>
 
         <Section
-          title={`3. 우선순위 배점 (현재 만점 ${prioMax}점)`}
-          desc="지수 편입·외국인 수급 등 항목별 배점과 임계값."
+          title={`3. 보조 우선순위 배점 (Vf 주식점수 미반영 · 현재 만점 ${prioMax}점)`}
+          desc="지수 편입·규모·당일 상대성과는 진단/ETF용 보조 항목이며 주식 Vf 점수에는 들어가지 않습니다."
         >
           <NumField
             label="지수 편입 배점"
@@ -345,30 +375,6 @@ function ScoringPage() {
             step={0.5}
             suffix="점"
             onChange={(v) => patch((d) => void (d.priority.indexPoints = v))}
-          />
-          <NumField
-            label="외국인 20일 순매수 배점"
-            hint="최근 20거래일 외국인 누적 순매수 > 0"
-            value={draft.priority.foreignPoints}
-            step={0.5}
-            suffix="점"
-            onChange={(v) => patch((d) => void (d.priority.foreignPoints = v))}
-          />
-          <NumField
-            label="52주 신고가 근접 배점"
-            hint="52주 고점 대비 허용 낙폭 이내"
-            value={draft.priority.nearHighPoints}
-            step={0.5}
-            suffix="점"
-            onChange={(v) => patch((d) => void (d.priority.nearHighPoints = v))}
-          />
-          <NumField
-            label="신고가 근접 기준"
-            hint="52주 최고가 대비 허용 낙폭 (음수)"
-            value={draft.priority.nearHighThresholdPercent}
-            step={1}
-            suffix="%"
-            onChange={(v) => patch((d) => void (d.priority.nearHighThresholdPercent = v))}
           />
           <NumField
             label="규모 배점"
@@ -517,8 +523,8 @@ function ScoringPage() {
         <Button size="sm" variant="outline" onClick={() => setDraft(DEFAULT_SCORING_CONFIG)}>
           기본값 불러오기
         </Button>
-        <Button size="sm" variant="outline" onClick={restoreV4Defaults}>
-          V4 기본값으로 복원
+        <Button size="sm" variant="outline" onClick={restoreVfDefaults}>
+          Vf 기본값으로 복원
         </Button>
         <span className="text-[11px] text-muted-foreground">
           {dirty ? "저장되지 않은 변경이 있습니다." : "현재 설정이 스크리너에 적용되어 있습니다."}

@@ -1,9 +1,10 @@
 // 점수 산정 엔진: 실격 필터 / 시장 게이트 / 점수를 분리한다. 전부 순수 함수.
 import { DEFAULT_ROTATION_WEIGHTS, type RotationWeights } from "./sectorRotation";
+import { VF_FEATURE_WEIGHTS, VF_MODEL_VERSION } from "./vfConfig";
 import type { IndicatorSnapshot } from "./indicators";
 import type { EtfFacts, FinancialFacts, Instrument } from "./types";
 
-export const STRATEGY_VERSION = "1.0.1";
+export const STRATEGY_VERSION = "Vf";
 
 export type RuleStatus = "PASS" | "FAIL" | "NO_DATA";
 
@@ -311,6 +312,119 @@ export function technicalScore(
   return { points, maxPoints: technicalMaxPoints(cfg), availableMaxPoints, rows };
 }
 
+
+/**
+ * CloudTrend Vf stock score.
+ * Identical to the V5 backtest composite-score definition:
+ * seven state features, weighted sum, missing-aware denominator.
+ * MA20 slope and positive 20D return remain diagnostics only.
+ */
+export function vfStockScore(
+  snap: IndicatorSnapshot,
+  cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
+): ScoreBlock {
+  const rows: RuleRow[] = [];
+  const t = cfg.technical;
+  const p = cfg.priority;
+  const flags = technicalFlagsV3(snap, cfg);
+
+  const add = (
+    group: string,
+    rule: string,
+    actual: string,
+    flag: boolean | null,
+    maxPoints: number,
+  ) =>
+    rows.push({
+      group,
+      rule,
+      actual,
+      threshold: `충족 시 +${maxPoints}`,
+      status: flag === null ? "NO_DATA" : flag ? "PASS" : "FAIL",
+      points: flag === true ? maxPoints : 0,
+      maxPoints,
+    });
+
+  add(
+    "Vf Trend",
+    "일목 구름 상단 위",
+    flags.cloudAbove === null
+      ? "데이터 없음"
+      : flags.cloudAbove
+        ? `종가 ${fmtNum(snap.close)} > 구름 상단 ${fmtNum(snap.ichimoku.cloudTop)}`
+        : "미충족",
+    flags.cloudAbove,
+    t.cloudAboveMax,
+  );
+  add(
+    "Vf Momentum",
+    "전환선 > 기준선",
+    flags.tenkanAboveKijun === null ? "데이터 없음" : flags.tenkanAboveKijun ? "충족" : "미충족",
+    flags.tenkanAboveKijun,
+    t.momentumMax,
+  );
+  add(
+    "Vf Breakout",
+    "볼린저 상단 돌파 (Head Fake 시 미충족)",
+    flags.bbBreakout === null ? "데이터 없음" : flags.bbBreakout ? "상단 돌파" : "미돌파",
+    flags.bbBreakout,
+    t.breakoutMax,
+  );
+  add(
+    "Vf Trend",
+    "이동평균 정배열 (MA20 > MA60 > MA120)",
+    flags.maAligned === null ? "데이터 없음" : flags.maAligned ? "정배열" : "미충족",
+    flags.maAligned,
+    t.maAlignedMax,
+  );
+  add(
+    "Vf Volume",
+    `고가 마감 거래량 (거래량 ≥ ${t.volumeStrongRatio}% AND CLV ≥ ${t.clvThreshold})`,
+    flags.highCloseVolume === null
+      ? "데이터 없음"
+      : `거래량 ${snap.volumeRatio20!.toFixed(0)}% / CLV ${snap.closeLocationValue!.toFixed(2)}`,
+    flags.highCloseVolume,
+    t.volumeMax,
+  );
+
+  const nearHigh =
+    snap.distanceFrom52wHigh === null
+      ? null
+      : snap.distanceFrom52wHigh >= p.nearHighThresholdPercent;
+  add(
+    "Vf Leadership",
+    `52주 신고가 대비 ${Math.abs(p.nearHighThresholdPercent)}% 이내`,
+    snap.distanceFrom52wHigh === null ? "데이터 없음" : fmtPct(snap.distanceFrom52wHigh),
+    nearHigh,
+    p.nearHighPoints,
+  );
+
+  const foreignPositive = snap.foreignNet20d === null ? null : snap.foreignNet20d > 0;
+  add(
+    "Vf Flow",
+    "최근 20거래일 외국인 누적 순매수 > 0",
+    snap.foreignNet20d === null
+      ? "데이터 없음"
+      : `${(snap.foreignNet20d / 100_000_000).toFixed(1)}억 원`,
+    foreignPositive,
+    p.foreignPoints,
+  );
+
+  const points = Math.round(rows.reduce((sum, row) => sum + row.points, 0) * 100) / 100;
+  const maxPoints = Math.round(rows.reduce((sum, row) => sum + row.maxPoints, 0) * 100) / 100;
+  const availableMaxPoints =
+    Math.round(
+      rows.reduce((sum, row) => sum + (row.status === "NO_DATA" ? 0 : row.maxPoints), 0) * 100,
+    ) / 100;
+  return { points, maxPoints, availableMaxPoints, rows };
+}
+
+/** Vf score grade: 80+ A, 60+ B, otherwise C. */
+export function vfGrade(score: number | null): TechnicalGrade {
+  if (score !== null && score >= 80) return "A";
+  if (score !== null && score >= 60) return "B";
+  return "C";
+}
 
 export type TechnicalGrade = "A" | "B" | "C";
 
@@ -677,10 +791,11 @@ export interface Weights {
 }
 
 export const STOCK_WEIGHTS: Weights = {
-  technical: 0.45,
-  priority: 0.2,
-  fundamental: 0.25,
-  marketSector: 0.1,
+  // Vf stock ranking bypasses the legacy block-composite path; kept explicit for config/UI clarity.
+  technical: 1,
+  priority: 0,
+  fundamental: 0,
+  marketSector: 0,
 };
 export const ETF_WEIGHTS: Weights = {
   technical: 0.55,
@@ -845,7 +960,7 @@ export function calculatePositionSizing(input: PositionSizingInput): PositionSiz
 // ---------------------------------------------------------------------------
 
 export interface ScoringConfig {
-  /** 저장된 설정의 모델 버전. 현재 V4 = 4 */
+  /** 저장된 설정의 모델 버전. 현재 Vf = 5 */
   configVersion: number;
   weights: { stock: Weights; etf: Weights };
   technical: {
@@ -883,32 +998,32 @@ export interface ScoringConfig {
   rotation: RotationWeights;
 }
 
-/** 현재 scoring 모델 버전 (V4) */
-export const SCORING_CONFIG_VERSION = 4;
+/** 현재 scoring 모델 버전 (Vf) */
+export const SCORING_CONFIG_VERSION = VF_MODEL_VERSION;
 
 export const DEFAULT_SCORING_CONFIG: ScoringConfig = {
   configVersion: SCORING_CONFIG_VERSION,
   weights: { stock: { ...STOCK_WEIGHTS }, etf: { ...ETF_WEIGHTS } },
   technical: {
-    cloudAboveMax: 2,
-    maAlignedMax: 2,
-    momentumMax: 1.5,
-    breakoutMax: 1,
-    volumeMax: 0.5,
+    cloudAboveMax: VF_FEATURE_WEIGHTS.ICH_ABOVE_CLOUD,
+    maAlignedMax: VF_FEATURE_WEIGHTS.MA_ALIGNED,
+    momentumMax: VF_FEATURE_WEIGHTS.ICH_TENKAN_KIJUN,
+    breakoutMax: VF_FEATURE_WEIGHTS.BB_BREAKOUT,
+    volumeMax: VF_FEATURE_WEIGHTS.VOLUME_SURGE,
     volumeStrongRatio: 150,
     clvThreshold: 0.7,
   },
   priority: {
     indexPoints: 2,
-    foreignPoints: 2,
-    nearHighPoints: 2,
+    foreignPoints: VF_FEATURE_WEIGHTS.FOREIGN_NET_POSITIVE,
+    nearHighPoints: VF_FEATURE_WEIGHTS.NEAR_52W_HIGH,
     sizePoints: 1,
     relativePoints: 1,
     nearHighThresholdPercent: -10,
     minMarketCap: 300_000_000_000,
     excessReturnThresholdPp: 2,
   },
-  grade: { aMin: 6, bMin: 4 },
+  grade: { aMin: 4, bMin: 3 },
   universe: { ...DEFAULT_UNIVERSE },
   rotation: { ...DEFAULT_ROTATION_WEIGHTS },
 };
