@@ -221,7 +221,8 @@ export function computeLocalBacktest(
     notes: [
       `CloudTrend Backtest V4 · 직접 입력 일봉(종목당 최대 ${maxBars}봉)으로 계산했습니다.`,
       "KOSPI 종목은 KOSPI, KOSDAQ 종목은 KOSDAQ 지수를 같은 날짜의 벤치마크로 사용합니다.",
-      "지표 계산에 120봉이 필요하므로 관측 구간은 121번째 봉부터 시작합니다.",
+      "기본 지표는 120봉 이후부터 관측하며, 52주 신고가 피처는 현재 봉 포함 252거래일이 확보된 시점부터만 계산합니다.",
+      "피처별 Edge는 메인 관측 그리드에서 false→true로 전환된 Signal Onset만 신호로 집계하고, 복합점수는 기존 상태값을 그대로 사용합니다.",
       "수수료·세금·슬리피지는 반영되지 않았습니다.",
     ],
   };
