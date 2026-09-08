@@ -32,7 +32,7 @@ jobs:
         run: python3 scripts/apply-vf-finalization.py
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --package-lock=false --no-audit --no-fund
 
       - name: Run Vf regression tests
         run: npx vitest run src/lib/engine/vf.test.ts
