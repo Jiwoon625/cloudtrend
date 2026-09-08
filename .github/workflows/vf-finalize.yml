@@ -31,6 +31,11 @@ jobs:
       - name: Apply finalized Vf model
         run: python3 scripts/apply-vf-finalization.py
 
+      - name: Align regression test with removed features
+        run: |
+          sed -i 's/expect(DEFAULT_BACKTEST_PARAMS.weights.MA20_SLOPE_UP).toBe(0);/expect(DEFAULT_BACKTEST_PARAMS.weights.MA20_SLOPE_UP).toBeUndefined();/' src/lib/engine/vf.test.ts
+          sed -i 's/expect(DEFAULT_BACKTEST_PARAMS.weights.RS_POSITIVE).toBe(0);/expect(DEFAULT_BACKTEST_PARAMS.weights.RS_POSITIVE).toBeUndefined();/' src/lib/engine/vf.test.ts
+
       - name: Install dependencies
         run: npm install --package-lock=false --no-audit --no-fund
 
