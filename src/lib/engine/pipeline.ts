@@ -24,6 +24,8 @@ import {
   technicalGrade,
   technicalScore,
   totalScore,
+  vfGrade,
+  vfStockScore,
   type MarketGate,
   type ScoreBlock,
   type ScoringConfig,
@@ -108,6 +110,8 @@ export interface ScreeningRow {
   snapshot: IndicatorSnapshot;
   technical: ScoreBlock;
   priority: ScoreBlock;
+  /** Finalized seven-feature Vf score (stocks only). */
+  vf: ScoreBlock | null;
   quality: ScoreBlock; // 주식: 펀더멘털 / ETF: 상품건전성
   technicalNormalized: number | null;
   priorityNormalized: number | null;
@@ -386,6 +390,10 @@ export function runAnalysis(
 
     const tech = technicalScore(snap, valuePct, cfg);
     const prio = priorityScore(inst, snap, financials, last.marketCap, bench.dayReturn, cfg);
+    const vf = inst.instrumentType === "STOCK" ? vfStockScore(snap, cfg) : null;
+    const vfNormalized = vf ? normalize(vf) : null;
+    const modelGrade =
+      inst.instrumentType === "STOCK" ? vfGrade(vfNormalized) : technicalGrade(tech.points, cfg);
     const quality =
       inst.instrumentType === "STOCK"
         ? fundamentalScore(financials)
@@ -421,15 +429,19 @@ export function runAnalysis(
       snapshot: snap,
       technical: tech,
       priority: prio,
+      vf,
       quality,
       technicalNormalized,
       priorityNormalized,
       qualityScore,
       marketSectorScore: null,
-      totalScoreNormalized: 0,
-      dataCompletenessRatio: 0,
-      grade: technicalGrade(tech.points, cfg),
-      actionLabelText: actionLabel(technicalGrade(tech.points, cfg), gate.status),
+      totalScoreNormalized: inst.instrumentType === "STOCK" ? (vfNormalized ?? 0) : 0,
+      dataCompletenessRatio:
+        inst.instrumentType === "STOCK" && vf && vf.maxPoints > 0
+          ? vf.availableMaxPoints / vf.maxPoints
+          : 0,
+      grade: modelGrade,
+      actionLabelText: actionLabel(modelGrade, gate.status),
       warnings: [],
       failedRules: universe.failedRules,
       skippedRules: universe.skippedRules,
@@ -450,16 +462,22 @@ export function runAnalysis(
   for (const row of rows) {
     const sector = sectorByCode.get(row.instrument.sectorCode);
     row.marketSectorScore = ds.capabilities.sectors && sector ? sector.score : null;
-    const weights =
-      row.instrument.instrumentType === "STOCK" ? cfg.weights.stock : cfg.weights.etf;
-    const { total, dataCompletenessRatio } = totalScore({
-      technicalNormalized: row.technicalNormalized,
-      priorityNormalized: row.priorityNormalized,
-      qualityScore: row.qualityScore,
-      marketSectorScore: row.marketSectorScore,
-      weights,
-    });
-    row.totalScoreNormalized = total;
+    let dataCompletenessRatio: number;
+    if (row.instrument.instrumentType === "STOCK" && row.vf) {
+      row.totalScoreNormalized = normalize(row.vf) ?? 0;
+      dataCompletenessRatio =
+        row.vf.maxPoints > 0 ? row.vf.availableMaxPoints / row.vf.maxPoints : 0;
+    } else {
+      const { total, dataCompletenessRatio: legacyCompleteness } = totalScore({
+        technicalNormalized: row.technicalNormalized,
+        priorityNormalized: row.priorityNormalized,
+        qualityScore: row.qualityScore,
+        marketSectorScore: row.marketSectorScore,
+        weights: cfg.weights.etf,
+      });
+      row.totalScoreNormalized = total;
+      dataCompletenessRatio = legacyCompleteness;
+    }
     row.dataCompletenessRatio = dataCompletenessRatio;
     row.warnings = collectWarnings({
       snap: row.snapshot,

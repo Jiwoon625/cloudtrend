@@ -3,6 +3,7 @@
 // 관측 시점 t의 피처는 t까지의 데이터만으로 계산하고(look-ahead 없음),
 // 미래 종가는 forward return 계산에만 사용한다.
 import { computeIndicators, periodReturn, type IndicatorSnapshot } from "./indicators";
+import { VF_FEATURE_WEIGHTS } from "./vfConfig";
 import {
   DEFAULT_SCORING_CONFIG,
   technicalFlagsV3,
@@ -22,55 +23,55 @@ export const BACKTEST_FEATURES: FeatureDef[] = [
     id: "ICH_ABOVE_CLOUD",
     label: "일목 구름 상단 위",
     description: "종가가 선행스팬(구름) 상단보다 높은 상태",
-    defaultWeight: 2,
+    defaultWeight: VF_FEATURE_WEIGHTS.ICH_ABOVE_CLOUD,
   },
   {
     id: "ICH_TENKAN_KIJUN",
     label: "전환선 > 기준선",
-    description: "Momentum Confirmation ① (Primary) — 1.5점 ÷ 3",
-    defaultWeight: 0.5,
+    description: "Momentum Confirmation — Vf 1.0점",
+    defaultWeight: VF_FEATURE_WEIGHTS.ICH_TENKAN_KIJUN,
   },
   {
     id: "BB_BREAKOUT",
     label: "볼린저 상단 돌파",
     description: "종가가 20일 볼린저 상단을 돌파 (Head Fake 시 미충족)",
-    defaultWeight: 1,
+    defaultWeight: VF_FEATURE_WEIGHTS.BB_BREAKOUT,
   },
   {
     id: "MA_ALIGNED",
     label: "이동평균 정배열",
     description: "MA20 > MA60 > MA120",
-    defaultWeight: 2,
+    defaultWeight: VF_FEATURE_WEIGHTS.MA_ALIGNED,
   },
   {
     id: "MA20_SLOPE_UP",
     label: "MA20 상승",
     description: "Momentum Confirmation ② — 1.5점 ÷ 3",
-    defaultWeight: 0.5,
+    defaultWeight: 0,
   },
   {
     id: "VOLUME_SURGE",
     label: "고가 마감 거래량",
     description: "거래량 비율 기준 + 판정 방식(기본 고가 마감, CLV ≥ 0.7)",
-    defaultWeight: 0.5,
+    defaultWeight: VF_FEATURE_WEIGHTS.VOLUME_SURGE,
   },
   {
     id: "NEAR_52W_HIGH",
     label: "52주 신고가 근접",
-    description: "52주 최고가 대비 -10% 이내 (Priority 2점)",
-    defaultWeight: 2,
+    description: "52주 최고가 대비 -10% 이내 (Vf 2.5점)",
+    defaultWeight: VF_FEATURE_WEIGHTS.NEAR_52W_HIGH,
   },
   {
     id: "RS_POSITIVE",
     label: "20일 수익률 양수",
     description: "Momentum Confirmation ③ — 1.5점 ÷ 3",
-    defaultWeight: 0.5,
+    defaultWeight: 0,
   },
   {
     id: "FOREIGN_NET_POSITIVE",
     label: "외국인 20일 순매수",
-    description: "최근 20거래일 외국인 누적 순매수가 양수 (Priority 2점)",
-    defaultWeight: 2,
+    description: "최근 20거래일 외국인 누적 순매수가 양수 (Vf 2.0점)",
+    defaultWeight: VF_FEATURE_WEIGHTS.FOREIGN_NET_POSITIVE,
   },
 ];
 

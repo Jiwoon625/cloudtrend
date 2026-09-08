@@ -103,8 +103,9 @@ function InstrumentDetail() {
       kijun: ich.kijun,
       chikouDefinitionUsed: "현재 종가 > 26거래일 전 종가",
     },
-    ruleEvaluations: [...row.technical.rows, ...row.priority.rows, ...row.quality.rows],
+    ruleEvaluations: [...(row.vf?.rows ?? []), ...row.technical.rows, ...row.priority.rows, ...row.quality.rows],
     finalScores: {
+      vf: row.vf ? `${row.vf.points}/${row.vf.availableMaxPoints}` : null,
       technical: `${row.technical.points}/${row.technical.availableMaxPoints}`,
       priority: `${row.priority.points}/${row.priority.availableMaxPoints}`,
       quality: row.qualityScore,
@@ -182,7 +183,7 @@ function InstrumentDetail() {
 
       <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label="현재가" value={formatPrice(snap.close)} />
-        <Stat label="종합점수" value={formatNumber(row.totalScoreNormalized, 1)} />
+        <Stat label="Vf 점수" value={formatNumber(row.totalScoreNormalized, 1)} />
         <Stat label="기술등급" value={<GradeBadge grade={row.grade} />} />
         <Stat label="상태 라벨" value={row.actionLabelText} />
         <Stat
