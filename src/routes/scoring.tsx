@@ -121,8 +121,8 @@ function ScoringPage() {
     setDraft(next);
   };
 
-  /** V3 기본값 전체(배점·임계값·유니버스·가중치·로테이션)를 즉시 복원하고 다시 계산한다. */
-  const restoreV3Defaults = () => {
+  /** V4 기본값 전체(배점·임계값·유니버스·가중치·로테이션)를 즉시 복원하고 다시 계산한다. */
+  const restoreV4Defaults = () => {
     const next: ScoringConfig = JSON.parse(JSON.stringify(DEFAULT_SCORING_CONFIG));
     setDraft(next);
     setSaved(next);
@@ -254,12 +254,12 @@ function ScoringPage() {
         </Section>
 
         <Section
-          title={`2. 기술 신호 배점 — V3 (현재 만점 ${techMax}점)`}
-          desc="Trend Core 4.0 + Momentum Confirmation 1.5 + Breakout 1.0 + Volume 0.5. 각 항목은 독립 평가되며 중복 가점(double counting)은 없습니다."
+          title={`2. 기술 신호 배점 — V4 (현재 만점 ${techMax}점)`}
+          desc="Trend Core 4.0 + 전환선>기준선 1.5 + Breakout 1.0 + Volume 0.5. MA20 상승과 20일 수익률 양수는 피처에서 제거했습니다."
         >
           <NumField
             label="1. 일목 구름 상단 위"
-            hint="종가 > 선행스팬 상단 (전환선·후행스팬 조건 없음)"
+            hint="종가 > 선행스팬 상단"
             value={draft.technical.cloudAboveMax}
             step={0.5}
             suffix="점"
@@ -267,15 +267,15 @@ function ScoringPage() {
           />
           <NumField
             label="2. 이동평균 정배열"
-            hint="MA20 > MA60 > MA120 (MA20 기울기 조건 없음)"
+            hint="MA20 > MA60 > MA120"
             value={draft.technical.maAlignedMax}
             step={0.5}
             suffix="점"
             onChange={(v) => patch((d) => void (d.technical.maAlignedMax = v))}
           />
           <NumField
-            label="3. Momentum Confirmation"
-            hint={`Primary: 전환선 > 기준선 · Confirmations: MA20 상승 / 20일 수익률 양수 → 0개 0점, 1개 ${(draft.technical.momentumMax / 3).toFixed(2)}점, 2개 ${((draft.technical.momentumMax * 2) / 3).toFixed(2)}점, 3개 ${draft.technical.momentumMax}점`}
+            label="3. 전환선 > 기준선"
+            hint="중기 Momentum Confirmation 단일 조건"
             value={draft.technical.momentumMax}
             step={0.5}
             suffix="점"
@@ -517,8 +517,8 @@ function ScoringPage() {
         <Button size="sm" variant="outline" onClick={() => setDraft(DEFAULT_SCORING_CONFIG)}>
           기본값 불러오기
         </Button>
-        <Button size="sm" variant="outline" onClick={restoreV3Defaults}>
-          V3 기본값으로 복원
+        <Button size="sm" variant="outline" onClick={restoreV4Defaults}>
+          V4 기본값으로 복원
         </Button>
         <span className="text-[11px] text-muted-foreground">
           {dirty ? "저장되지 않은 변경이 있습니다." : "현재 설정이 스크리너에 적용되어 있습니다."}
