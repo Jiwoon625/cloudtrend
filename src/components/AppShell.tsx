@@ -88,7 +88,7 @@ export function AppShell({
   const live = resolved?.isLive ?? false;
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-surface/95 backdrop-blur">
+      <header data-no-print className="border-b border-border bg-surface/95 backdrop-blur">
         <div className="mx-auto flex max-w-[1500px] flex-col gap-2 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <Link to="/" className="flex flex-col leading-tight">
@@ -141,7 +141,7 @@ export function AppShell({
         ) : null}
       </header>
       <main className="mx-auto max-w-[1500px] px-4 py-6">{children}</main>
-      <footer className="mx-auto max-w-[1500px] px-4 pb-10 text-[11px] leading-relaxed text-muted-foreground">
+      <footer data-no-print className="mx-auto max-w-[1500px] px-4 pb-10 text-[11px] leading-relaxed text-muted-foreground">
         본 서비스는 규칙 기반 스크리닝 결과와 계산 근거만 제공합니다. “관심 후보”, “리테스트 대기”,
         “관망”, “청산 점검” 등의 라벨은 매수·매도 권유가 아니며, 최종 판단과 책임은 이용자에게
         있습니다.
