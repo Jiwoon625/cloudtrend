@@ -312,6 +312,14 @@ ETF 종합점수 = Σ(항목% × ETF 가중치) / Σ(데이터가 있는 항목�
             onChange={(v) => patch((d) => void (d.priority.nearHighPoints = v))}
           />
           <NumField
+            label="신고가 근접 기준"
+            hint="52주 최고가 대비 허용 낙폭 (음수)"
+            value={draft.priority.nearHighThresholdPercent}
+            step={1}
+            suffix="%"
+            onChange={(v) => patch((d) => void (d.priority.nearHighThresholdPercent = v))}
+          />
+          <NumField
             label="7. 외국인 20일 순매수"
             hint="최근 20거래일 외국인 누적 순매수 > 0"
             value={draft.priority.foreignPoints}
@@ -367,14 +375,6 @@ ETF 종합점수 = Σ(항목% × ETF 가중치) / Σ(데이터가 있는 항목�
             step={0.5}
             suffix="점"
             onChange={(v) => patch((d) => void (d.priority.indexPoints = v))}
-          />
-          <NumField
-            label="신고가 근접 기준"
-            hint="52주 최고가 대비 허용 낙폭 (음수)"
-            value={draft.priority.nearHighThresholdPercent}
-            step={1}
-            suffix="%"
-            onChange={(v) => patch((d) => void (d.priority.nearHighThresholdPercent = v))}
           />
           <NumField
             label="규모 배점"
