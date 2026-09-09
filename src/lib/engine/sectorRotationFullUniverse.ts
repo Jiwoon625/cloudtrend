@@ -2,8 +2,9 @@
 //
 // 핵심 원칙
 // 1) 스크리닝 hard filter 통과 여부와 무관하게 MarketDataset에 존재하는 모든 주식을 섹터 유니버스로 본다.
-// 2) 사용자 검토 완료 613종목 섹터 마스터를 최우선으로 다시 적용해 오래된 캐시/CSV 포맷 때문에 ETC가 남지 않게 한다.
-// 3) 기존 sectorRotation 엔진이 계산 가능한 데이터가 부족해 제외한 단기 시계열 종목도 memberCount에는 포함하고,
+// 2) 사용자 검토 완료 613종목 마스터 + 이후 수동 확정 추가 종목을 최우선으로 적용한다.
+// 3) CSV에 섹터명이 한글("기타", "반도체" 등)로 들어와도 내부 섹터 코드로 정규화한다.
+// 4) 기존 sectorRotation 엔진이 계산 가능한 데이터가 부족해 제외한 단기 시계열 종목도 memberCount에는 포함하고,
 //    실제 산출 가능 종목 비율만큼 신뢰도/완전성을 낮춰 데이터 부족을 숨기지 않는다.
 
 import type { MarketDataset } from "./dataset";
@@ -18,8 +19,24 @@ import {
   normalizeReviewedStockSymbol,
   resolveReviewedStockSectorCode,
 } from "./stockSectorMaster";
+import { resolveAdditionalStockSectorCode } from "./additionalStockSectorMaster";
 
 export type { SectorRotationResult } from "./sectorRotation";
+
+const UNMAPPED_CODES = new Set(["", "ETC", "기타", "OTHER", "UNKNOWN", "N/A", "NA"]);
+
+function normalizeCurrentSector(currentCode: string, currentName: string) {
+  const code = String(currentCode ?? "").trim();
+  const name = String(currentName ?? "").trim();
+  if (SECTOR_NAME_BY_CODE[code]) return { code, name: SECTOR_NAME_BY_CODE[code]! };
+
+  const byCodeAsName = THEME_SECTORS.find((s) => s.name === code);
+  if (byCodeAsName) return byCodeAsName;
+  const byName = THEME_SECTORS.find((s) => s.name === name);
+  if (byName) return byName;
+
+  return null;
+}
 
 function canonicalSector(symbol: string, name: string, currentCode: string, currentName: string) {
   const normalized = normalizeReviewedStockSymbol(symbol);
@@ -28,23 +45,30 @@ function canonicalSector(symbol: string, name: string, currentCode: string, curr
     return {
       code: reviewed,
       name: SECTOR_NAME_BY_CODE[reviewed] ?? currentName,
-      reviewed: true,
+      source: "REVIEWED" as const,
     };
   }
 
-  // 사용자 마스터 밖 종목은 기존 명시 섹터를 존중하고, ETC일 때만 규칙 기반으로 다시 시도한다.
-  if (currentCode && currentCode !== "ETC") {
+  const additional = resolveAdditionalStockSectorCode(normalized);
+  if (additional) {
     return {
-      code: currentCode,
-      name: SECTOR_NAME_BY_CODE[currentCode] ?? currentName,
-      reviewed: false,
+      code: additional,
+      name: SECTOR_NAME_BY_CODE[additional] ?? currentName,
+      source: "ADDITIONAL" as const,
     };
   }
+
+  const current = normalizeCurrentSector(currentCode, currentName);
+  if (current && !UNMAPPED_CODES.has(current.code)) {
+    return { ...current, source: "INPUT" as const };
+  }
+
+  // ETC/기타/알 수 없는 값은 그대로 믿지 않고 종목코드·종목명 규칙으로 한 번 더 해석한다.
   const fallback = resolveSectorCode(normalized, name, false);
-  return { code: fallback.code, name: fallback.name, reviewed: false };
+  return { code: fallback.code, name: fallback.name, source: "FALLBACK" as const };
 }
 
-/** 섹터 분석 직전에 종목별 섹터를 최종 검토 마스터 기준으로 정규화한 데이터셋 복사본을 만든다. */
+/** 섹터 분석 직전에 종목별 섹터를 고정 마스터 기준으로 정규화한 데이터셋 복사본을 만든다. */
 export function buildFullUniverseSectorDataset(ds: MarketDataset): MarketDataset {
   const instruments = ds.instruments.map((inst) => {
     if (inst.instrumentType !== "STOCK") return inst;
@@ -149,12 +173,17 @@ export function computeFullUniverseSectorRotation(
   const fullStockCount = stocks.length;
   const includedCount = [...fullBySector.values()].reduce((a, x) => a + x.length, 0);
   const reviewedCount = stocks.filter((i) => resolveReviewedStockSectorCode(i.symbol) !== undefined).length;
-  const unmapped = stocks.filter((i) => i.sectorCode === "ETC");
+  const additionalCount = stocks.filter((i) => resolveAdditionalStockSectorCode(i.symbol) !== undefined).length;
+  const curatedCount = reviewedCount + additionalCount;
+  const unmapped = stocks.filter(
+    (i) => i.sectorCode === "ETC" || !SECTOR_NAME_BY_CODE[i.sectorCode],
+  );
   const indexCodes = canonical.indexSeries.map((s) => s.indexCode);
   const benchmarkText = ["KOSPI", "KOSDAQ"].filter((x) => indexCodes.includes(x)).join("/") || "없음";
   const coverageComment =
     `섹터 유니버스: 데이터 내 주식 ${fullStockCount}종목 중 ${includedCount}종목을 구성원으로 집계` +
-    ` · 최종 검토 마스터 일치 ${reviewedCount}종목 · 기준지수 ${benchmarkText}` +
+    ` · 고정 섹터 마스터 일치 ${curatedCount}종목(엑셀 ${reviewedCount} + 추가수동 ${additionalCount})` +
+    ` · 기준지수 ${benchmarkText}` +
     (unmapped.length === 0
       ? " · 기타(ETC) 0종목"
       : ` · 미매핑 ${unmapped.length}종목(${unmapped.slice(0, 8).map((i) => `${i.name}/${i.symbol}`).join(", ")}${unmapped.length > 8 ? " 외" : ""})`);

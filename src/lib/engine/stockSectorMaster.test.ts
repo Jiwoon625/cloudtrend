@@ -9,12 +9,79 @@ import {
   normalizeReviewedStockSymbol,
   resolveReviewedStockSectorCode,
 } from "./stockSectorMaster";
+import {
+  ADDITIONAL_STOCK_SECTOR_BY_SYMBOL,
+  ADDITIONAL_STOCK_SECTOR_COUNT,
+  resolveAdditionalStockSectorCode,
+} from "./additionalStockSectorMaster";
 import { resolveSectorCode } from "./sectors";
+
+function singleStockDataset(input: {
+  symbol: string;
+  name: string;
+  sectorCode: string;
+  sectorName: string;
+}): MarketDataset {
+  return {
+    provider: "TEST",
+    version: "test",
+    asOfDate: "2026-09-09",
+    isLive: true,
+    capabilities: {
+      marketCap: false,
+      fundamentals: false,
+      etfFacts: false,
+      sectors: true,
+      investorFlow: false,
+      volatilityIndex: false,
+      exactTradingValue: false,
+    },
+    notes: [],
+    sectors: [{ code: input.sectorCode, name: input.sectorName }],
+    tradeDates: [],
+    instruments: [
+      {
+        id: input.symbol,
+        symbol: input.symbol,
+        name: input.name,
+        market: "KOSPI",
+        instrumentType: "STOCK",
+        sectorCode: input.sectorCode,
+        sectorName: input.sectorName,
+        indexMemberships: [],
+        isPreferredStock: false,
+        isManagementIssue: false,
+        isInvestmentWarning: false,
+        isLeveraged: false,
+        isInverse: false,
+        isActive: true,
+      },
+    ],
+    bars: {},
+    indexSeries: [],
+    financials: {},
+    etfFacts: {},
+    vkospiSeries: [],
+  };
+}
 
 describe("reviewed stock sector master", () => {
   it("contains exactly 613 unique stock symbols", () => {
     expect(REVIEWED_STOCK_SECTOR_COUNT).toBe(613);
     expect(Object.keys(REVIEWED_STOCK_SECTOR_BY_SYMBOL)).toHaveLength(613);
+  });
+
+  it("contains the 14 newly curated symbols outside the original 613 master", () => {
+    expect(ADDITIONAL_STOCK_SECTOR_COUNT).toBe(14);
+    expect(Object.keys(ADDITIONAL_STOCK_SECTOR_BY_SYMBOL)).toHaveLength(14);
+    expect(resolveAdditionalStockSectorCode("000670")).toBe("CHEM_STEEL");
+    expect(resolveAdditionalStockSectorCode("002030")).toBe("FINANCE");
+    expect(resolveAdditionalStockSectorCode("005300")).toBe("CONSUMER");
+    expect(resolveAdditionalStockSectorCode("032190")).toBe("SOFTWARE");
+    expect(resolveAdditionalStockSectorCode("060280")).toBe("HEALTH_SVC");
+    expect(resolveAdditionalStockSectorCode("069080")).toBe("TELCO_MEDIA");
+    expect(resolveAdditionalStockSectorCode("194480")).toBe("TELCO_MEDIA");
+    expect(resolveAdditionalStockSectorCode("394800")).toBe("BIO");
   });
 
   it("applies the user's final-sector overrides before legacy/name rules", () => {
@@ -49,51 +116,35 @@ describe("reviewed stock sector master", () => {
   });
 
   it("replaces stale ETC sectors with the reviewed master before sector analysis", () => {
-    const ds: MarketDataset = {
-      provider: "TEST",
-      version: "test",
-      asOfDate: "2026-09-09",
-      isLive: true,
-      capabilities: {
-        marketCap: false,
-        fundamentals: false,
-        etfFacts: false,
-        sectors: true,
-        investorFlow: false,
-        volatilityIndex: false,
-        exactTradingValue: false,
-      },
-      notes: [],
-      sectors: [{ code: "ETC", name: "기타" }],
-      tradeDates: [],
-      instruments: [
-        {
-          id: "005930",
-          symbol: "005930",
-          name: "삼성전자",
-          market: "KOSPI",
-          instrumentType: "STOCK",
-          sectorCode: "ETC",
-          sectorName: "기타",
-          indexMemberships: [],
-          isPreferredStock: false,
-          isManagementIssue: false,
-          isInvestmentWarning: false,
-          isLeveraged: false,
-          isInverse: false,
-          isActive: true,
-        },
-      ],
-      bars: {},
-      indexSeries: [],
-      financials: {},
-      etfFacts: {},
-      vkospiSeries: [],
-    };
-
-    const canonical = buildFullUniverseSectorDataset(ds);
+    const canonical = buildFullUniverseSectorDataset(
+      singleStockDataset({
+        symbol: "005930",
+        name: "삼성전자",
+        sectorCode: "ETC",
+        sectorName: "기타",
+      }),
+    );
     expect(canonical.instruments[0]?.sectorCode).toBe("SEMI");
     expect(canonical.instruments[0]?.sectorName).toBe("반도체");
     expect(canonical.sectors.some((s) => s.code === "ETC")).toBe(false);
+  });
+
+  it("replaces Korean '기타' and ETC with the additional curated master", () => {
+    for (const [sectorCode, sectorName] of [
+      ["ETC", "기타"],
+      ["기타", "기타"],
+    ] as const) {
+      const canonical = buildFullUniverseSectorDataset(
+        singleStockDataset({
+          symbol: "032190",
+          name: "다우데이타",
+          sectorCode,
+          sectorName,
+        }),
+      );
+      expect(canonical.instruments[0]?.sectorCode).toBe("SOFTWARE");
+      expect(canonical.instruments[0]?.sectorName).toBe("인터넷·소프트웨어");
+      expect(canonical.sectors.some((s) => s.code === "ETC" || s.code === "기타")).toBe(false);
+    }
   });
 });
