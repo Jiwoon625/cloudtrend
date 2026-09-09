@@ -337,22 +337,24 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
           </p>
         </Card>
 
-        <Card title="강한 섹터" icon={<TrendingUp className="size-4 text-primary" />}>
+        <Card
+          title="강한 섹터"
+          subtitle="섹터 탭과 동일한 로테이션 점수 순위입니다."
+          icon={<TrendingUp className="size-4 text-primary" />}
+        >
           <div className="space-y-1.5">
-            {sectors.slice(0, 5).map((s) => (
+            {strongSectors.map((s) => (
               <div
                 key={s.sectorCode}
                 className="flex items-center justify-between gap-2 text-[12px]"
               >
                 <Link to="/sectors" className="font-medium hover:underline">
                   {s.rank}. {s.sectorName}
-                  {s.isSynthetic ? (
-                    <span className="ml-1 text-[10px] text-warn">합성 섹터지수</span>
-                  ) : null}
                 </Link>
                 <span className="num flex gap-3">
-                  <span className={s.rs20 >= 0 ? "text-up" : "text-down"}>
-                    {formatPercent(s.rs20, 2)}
+                  <span className="font-semibold">{formatNumber(s.score, 1)}</span>
+                  <span className={(s.rs20 ?? 0) >= 0 ? "text-up" : "text-down"}>
+                    {s.rs20 === null ? "-" : formatPercent(s.rs20, 2)}
                   </span>
                   <span className="text-muted-foreground">
                     {s.prevRank > s.rank
@@ -364,6 +366,9 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
                 </span>
               </div>
             ))}
+            {strongSectors.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground">섹터 순위 데이터가 없습니다.</p>
+            ) : null}
           </div>
         </Card>
       </div>
