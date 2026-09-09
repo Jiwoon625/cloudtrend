@@ -7,6 +7,10 @@ import {
 import { buildAlignedRankingAnalysis } from "@/lib/engine/backtestRankingV5";
 import type { MarketDataset } from "@/lib/engine/dataset";
 import { chartSeries, runAnalysis, scoreHistory } from "@/lib/engine/pipeline";
+import {
+  buildFullUniverseSectorDataset,
+  computeFullUniverseSectorRotation,
+} from "@/lib/engine/sectorRotationFullUniverse";
 import { getManualDataset, MANUAL_DATA_MISSING_MESSAGE } from "@/lib/manualDataStore";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import type {
@@ -22,12 +26,41 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : "입력한 시세 데이터를 분석할 수 없습니다.";
 }
 
+/**
+ * 섹터 탭은 스크리닝 실격 여부와 독립적으로 원본 데이터의 모든 주식을 사용한다.
+ * runAnalysis 자체도 정규화된 데이터셋으로 실행해 스크리너/기존 RS 표/로테이션 표의 섹터가 서로 어긋나지 않게 한다.
+ */
+function runLocalMarketAnalysis(
+  rawDataset: MarketDataset,
+  config: ReturnType<typeof getActiveScoringConfig>,
+) {
+  const dataset = buildFullUniverseSectorDataset(rawDataset);
+  const analysis = runAnalysis(dataset, config);
+
+  const representativeEtf = new Map<string, { symbol: string; name: string }>();
+  for (const sector of analysis.sectorRotation?.sectors ?? []) {
+    if (sector.representativeEtfSymbol && sector.representativeEtf) {
+      representativeEtf.set(sector.sectorCode, {
+        symbol: sector.representativeEtfSymbol,
+        name: sector.representativeEtf,
+      });
+    }
+  }
+
+  analysis.sectorRotation = computeFullUniverseSectorRotation(dataset, {
+    representativeEtf,
+    weights: config.rotation,
+  });
+  return { analysis, dataset };
+}
+
 export function computeLocalAnalysis(): MarketAnalysisPayload {
   try {
     const parsed = getManualDataset();
     if (!parsed) return { analysis: null, source: null, error: MANUAL_DATA_MISSING_MESSAGE };
+    const { analysis } = runLocalMarketAnalysis(parsed.dataset, getActiveScoringConfig());
     return {
-      analysis: runAnalysis(parsed.dataset, getActiveScoringConfig()),
+      analysis,
       source: SOURCE,
     };
   } catch (error) {
@@ -39,7 +72,7 @@ export function computeLocalInstrumentDetail(symbol: string): InstrumentDetailPa
   const parsed = getManualDataset();
   if (!parsed) throw new Error(MANUAL_DATA_MISSING_MESSAGE);
   const config = getActiveScoringConfig();
-  const analysis = runAnalysis(parsed.dataset, config);
+  const { analysis, dataset } = runLocalMarketAnalysis(parsed.dataset, config);
   const row = analysis.rows.find((r) => r.instrument.symbol === symbol) ?? null;
   return {
     source: SOURCE,
@@ -51,15 +84,15 @@ export function computeLocalInstrumentDetail(symbol: string): InstrumentDetailPa
     isLive: analysis.isLive,
     marketGateStatus: analysis.marketGate.status,
     row,
-    chart: row ? chartSeries(parsed.dataset, symbol) : [],
-    history: row ? scoreHistory(parsed.dataset, symbol, 60, config) : [],
+    chart: row ? chartSeries(dataset, symbol) : [],
+    history: row ? scoreHistory(dataset, symbol, 60, config) : [],
   };
 }
 
 export function computeLocalDataStatus(): DataStatusPayload {
   const parsed = getManualDataset();
   if (!parsed) throw new Error(MANUAL_DATA_MISSING_MESSAGE);
-  const dataset = parsed.dataset;
+  const dataset = buildFullUniverseSectorDataset(parsed.dataset);
   const today = dataset.asOfDate;
 
   let ohlcErrors = 0;
