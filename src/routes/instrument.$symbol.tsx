@@ -137,9 +137,9 @@ function InstrumentDetail() {
       );
     if (snap.volumeRatio20 !== null)
       parts.push(`거래량은 직전 20일 평균의 ${snap.volumeRatio20.toFixed(1)}%입니다.`);
-    const momentum = row.technical.rows.find((r) => r.group === "Momentum Confirmation");
+    const momentum = row.technical.rows.find((r) => r.group === "Momentum Confirmation" || r.group === "Vf Momentum");
     if (momentum) parts.push(`Momentum Confirmation: ${momentum.actual} → ${momentum.points}점.`);
-    const bb = row.technical.rows.find((r) => r.group === "Breakout");
+    const bb = row.technical.rows.find((r) => r.group === "Breakout" || r.group === "Vf Breakout");
     if (bb) parts.push(`볼린저 상단 돌파 판정: ${bb.actual} (획득 ${bb.points}점).`);
     parts.push(
       `모델점수는 ${score.maxPoints}점 중 ${score.points}점, 산정 가능 점수는 ${score.availableMaxPoints}점입니다.`,
@@ -427,28 +427,21 @@ function InstrumentDetail() {
       </section>
 
       <div className="mt-5 space-y-4">
-        {row.vf ? (
-          <>
-            <BreakdownTable
-              block={row.vf}
-              title={`Vf 종목 스크리닝 점수 (${row.vf.maxPoints}점 만점) · 정규화 ${formatNumber(row.totalScoreNormalized, 1)}점`}
-              asOfDate={analysis.asOfDate}
-              source={analysis.dataProvider}
-            />
-            <p className="text-xs text-muted-foreground">
-              백테스트 기본 7개 피처와 같은 기준입니다. 아래 기술·우선점수는 참고용이며 추가 합산하지 않습니다.
-              산정 가능 {row.vf.availableMaxPoints}/{row.vf.maxPoints}점 · 정규화 점수는 산정 가능한 항목만으로 계산합니다.
-              {snap.high52w === null ? " 52주 신고가 계산에는 기준일 포함 252거래일의 일봉이 필요합니다. 300거래일 수집을 권장합니다." : ""}
-              {snap.foreignNet20d === null ? " 외국인 수급은 최근 20거래일 순매수 금액이 모두 필요합니다." : ""}
-            </p>
-          </>
-        ) : null}
         <BreakdownTable
           block={row.technical}
-          title={`기술점수 · 참고 (${row.technical.maxPoints}점 만점)`}
+          title={`기술점수 (${row.technical.maxPoints}점 만점)${row.vf ? " · 백테스트 동일 7개 피처" : ""}`}
           asOfDate={analysis.asOfDate}
           source={analysis.dataProvider}
         />
+        {row.vf ? (
+          <p className="text-xs text-muted-foreground">
+            기술점수를 산정 가능한 배점으로 나눈 값이 정규화 점수이며 주식 순위와 등급에 적용됩니다.
+            아래 우선점수와 펀더멘털은 참고용으로 추가 합산하지 않습니다.
+            산정 가능 {row.vf.availableMaxPoints}/{row.vf.maxPoints}점.
+            {snap.high52w === null ? " 52주 신고가에는 기준일 포함 252거래일 일봉이 필요합니다. 300거래일 수집을 권장합니다." : ""}
+            {snap.foreignNet20d === null ? " 외국인 수급은 최근 20거래일 순매수 금액이 모두 필요합니다." : ""}
+          </p>
+        ) : null}
         <BreakdownTable
           block={row.priority}
           title={`우선점수 · 참고 (${row.priority.maxPoints}점 만점) · 정규화 ${row.priorityNormalized === null ? "산정 불가" : `${row.priorityNormalized.toFixed(1)}점`}`}

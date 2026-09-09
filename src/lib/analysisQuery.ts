@@ -29,14 +29,14 @@ export function isAnalysisFailurePayload(value: unknown): value is AnalysisFailu
 
 export const analysisQueryOptions = queryOptions({
   // 직접 입력한 데이터로 브라우저에서 계산한다. 이 키는 대시보드의 명시적 실행에서만 채워진다.
-  queryKey: ["market-analysis", "manual-v3"],
+  queryKey: ["market-analysis", "manual-vf-9.5-intraday"],
   queryFn: async () => computeLocalAnalysis(),
   staleTime: 5 * 60 * 1000,
   retry: false,
 });
 
 export const dataStatusQueryOptions = queryOptions({
-  queryKey: ["data-status", "manual-v3"],
+  queryKey: ["data-status", "manual-vf-9.5-intraday"],
   queryFn: async () => computeLocalDataStatus(),
   staleTime: 5 * 60 * 1000,
   retry: false,
@@ -44,7 +44,7 @@ export const dataStatusQueryOptions = queryOptions({
 
 export const instrumentQueryOptions = (symbol: string) =>
   queryOptions({
-    queryKey: ["instrument", "manual-v3", symbol],
+    queryKey: ["instrument", "manual-vf-9.5-intraday", symbol],
     queryFn: async () => computeLocalInstrumentDetail(symbol),
     staleTime: 5 * 60 * 1000,
     retry: false,

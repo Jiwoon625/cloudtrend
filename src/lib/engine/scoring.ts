@@ -22,7 +22,7 @@ export interface UniverseParams {
   minPrice: number;
   maxPrice: number;
   minMarketCap: number; // 원
-  minTradingValue: number; // 원
+  minTradingValue: number; // 이전 저장 설정 호환용. 당일 거래대금 실격 판정에는 사용하지 않음
   etfMinAum: number;
   etfMinTradingValue20d: number;
   etfMaxPremiumDiscount: number; // %
@@ -34,8 +34,8 @@ export const DEFAULT_UNIVERSE: UniverseParams = {
   // 고가주(삼성바이오로직스·LG생활건강 등)는 중기 추세추종에서 제외 이유가 없어 상한을 실질 비활성화
   maxPrice: 10_000_000,
   minMarketCap: 300_000_000_000,
-  // V3: 유동성 하한 강화 (당일 거래대금 30억원)
-  minTradingValue: 3_000_000_000,
+  // 장중 수집을 지원하므로 당일 거래대금 하한은 사용하지 않는다.
+  minTradingValue: 0,
   etfMinAum: 50_000_000_000,
   etfMinTradingValue20d: 1_000_000_000,
   etfMaxPremiumDiscount: 1,
@@ -122,7 +122,6 @@ export function evaluateUniverse(
     if (snap.close > params.maxPrice) failed.push(`주가 ${params.maxPrice.toLocaleString()}원 초과`);
     if (!availability.marketCap || marketCap === null) skipped.push("시가총액 기준 (데이터 없음)");
     else if (marketCap < params.minMarketCap) failed.push("시가총액 기준 미달");
-    if (tradingValue < params.minTradingValue) failed.push("당일 거래대금 기준 미달");
   } else {
     if (params.excludeLeveragedInverse && (inst.isLeveraged || inst.isInverse))
       failed.push("레버리지·인버스 기본 제외");

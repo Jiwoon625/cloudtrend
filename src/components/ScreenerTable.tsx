@@ -53,7 +53,7 @@ const COLUMNS: Array<{ key: SortKey | "static"; label: string; id: string }> = [
   { key: "close", label: "종가", id: "close" },
   { key: "total", label: "정규화 점수", id: "total" },
   { key: "static", label: "모델등급", id: "grade" },
-  { key: "technical", label: "모델 원점수", id: "technical" },
+  { key: "technical", label: "기술점수", id: "technical" },
   { key: "priority", label: "우선점수", id: "priority" },
   { key: "volumeRatio", label: "거래량 비율", id: "volumeRatio" },
   { key: "rs20", label: "RS20", id: "rs20" },

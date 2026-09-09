@@ -179,7 +179,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
             ))}
           </select>
         </div>
-        {numberField("모델점수 최소", minTechnical, setMinTechnical, 0.5)}
+        {numberField("기술점수 최소", minTechnical, setMinTechnical, 0.5)}
         {numberField("종합점수 최소", minTotal, setMinTotal, 5)}
         {numberField("거래량 비율 최소(%)", minVolumeRatio, setMinVolumeRatio, 10)}
         <div className="flex items-center gap-2 lg:col-span-2">

@@ -5,6 +5,9 @@ import { computeIndicators, type IndicatorSnapshot } from "./indicators";
 import { evaluateFeatures, DEFAULT_BACKTEST_PARAMS as LEGACY_PARAMS } from "./backtest";
 import type { DailyPrice } from "./types";
 import { DEFAULT_SCORING_CONFIG, normalize, vfStockScore } from "./scoring";
+import { getMockDataset } from "./mockProvider";
+import { runAnalysis, scoreHistory } from "./pipeline";
+import { evaluateUniverse, technicalScore, vfGrade } from "./scoring";
 import { VF_FEATURE_WEIGHTS, VF_FEATURE_WEIGHT_TOTAL } from "./vfConfig";
 
 function snapshot(overrides: Partial<IndicatorSnapshot> = {}): IndicatorSnapshot {
@@ -125,5 +128,38 @@ describe("screening data completeness and backtest parity", () => {
     expect(block.availableMaxPoints).toBe(7);
     expect(block.maxPoints).toBe(9.5);
     expect(normalize(block)).toBeCloseTo(92.857);
+  });
+});
+
+
+describe("stock screening uses the complete backtest score", () => {
+  it("uses the same seven-feature block for technical score, ranking, grade and history", () => {
+    const dataset = getMockDataset();
+    const analysis = runAnalysis(dataset);
+    for (const row of analysis.rows.filter(r => r.instrument.instrumentType === "STOCK")) {
+      const expected = vfStockScore(row.snapshot);
+      expect(row.technical).toEqual(expected);
+      expect(row.technical.maxPoints).toBe(9.5);
+      expect(row.totalScoreNormalized).toBe(normalize(expected) ?? 0);
+      expect(row.grade).toBe(vfGrade(normalize(expected)));
+      const history = scoreHistory(dataset, row.instrument.symbol, 1);
+      expect(history[0]?.technicalPoints).toBe(expected.points);
+      expect(history[0]?.grade).toBe(row.grade);
+    }
+    const etf = analysis.rows.find(r => r.instrument.instrumentType === "ETF")!;
+    expect(etf.technical.points).toBe(technicalScore(etf.snapshot, null).points);
+    expect(etf.technical.maxPoints).toBe(5);
+  });
+
+  it("does not disqualify low intraday turnover even with an old saved threshold", () => {
+    const inst = getMockDataset().instruments.find(i => i.instrumentType === "STOCK")!;
+    const eligible = { ...inst, isActive: true, isPreferredStock: false, isManagementIssue: false, isInvestmentWarning: false };
+    const params = { ...DEFAULT_SCORING_CONFIG.universe, minTradingValue: 3000000000 };
+    const snap = snapshot({ close: 10000 });
+    const result = evaluateUniverse(eligible, snap, 1e12, 0, 300, undefined, params);
+    expect(result.passed).toBe(true);
+    expect(result.failedRules).toEqual([]);
+    expect(evaluateUniverse(eligible, snap, 1, 0, 300, undefined, params).failedRules).toContain("시가총액 기준 미달");
+    expect(evaluateUniverse(eligible, snap, 1e12, 0, 119, undefined, params).failedRules).toContain("최근 120거래일 데이터 부족");
   });
 });
