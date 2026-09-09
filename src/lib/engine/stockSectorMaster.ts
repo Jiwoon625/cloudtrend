@@ -35,8 +35,33 @@ export const REVIEWED_STOCK_SECTOR_BY_SYMBOL: Readonly<Record<string, string>> =
   ),
 );
 
+/** CSV/Excel에서 앞자리 0, A-prefix, .0 등이 섞여도 동일한 6자리 국내 주식코드로 정규화한다. */
+export function normalizeReviewedStockSymbol(value: string): string {
+  let symbol = String(value ?? "").trim().toUpperCase();
+  symbol = symbol.replace(/^['\"]+/, "");
+  if (/^A\d{1,6}$/.test(symbol)) symbol = symbol.slice(1);
+  if (/^\d+\.0$/.test(symbol)) symbol = symbol.slice(0, -2);
+  if (/^\d{1,6}$/.test(symbol)) symbol = symbol.padStart(6, "0");
+  return symbol;
+}
+
+/** 사용자 최종 검토 마스터에서만 조회한다. 없으면 undefined. */
+export function resolveReviewedStockSectorCode(symbol: string): string | undefined {
+  return REVIEWED_STOCK_SECTOR_BY_SYMBOL[normalizeReviewedStockSymbol(symbol)];
+}
+
 // 기존 SECTOR_SYMBOLS 및 종목명 규칙보다 사용자 최종 검토값을 우선한다.
-Object.assign(SYMBOL_SECTOR, REVIEWED_STOCK_SECTOR_BY_SYMBOL);
+// 입력 CSV에서 코드 포맷이 변형된 경우에도 resolveSectorCode가 같은 값을 찾도록 별칭도 등록한다.
+const REVIEWED_STOCK_SECTOR_ALIASES: Record<string, string> = {};
+for (const [symbol, sectorCode] of Object.entries(REVIEWED_STOCK_SECTOR_BY_SYMBOL)) {
+  REVIEWED_STOCK_SECTOR_ALIASES[symbol] = sectorCode;
+  REVIEWED_STOCK_SECTOR_ALIASES[String(Number(symbol))] = sectorCode;
+  REVIEWED_STOCK_SECTOR_ALIASES[`${Number(symbol)}.0`] = sectorCode;
+  REVIEWED_STOCK_SECTOR_ALIASES[`${symbol}.0`] = sectorCode;
+  REVIEWED_STOCK_SECTOR_ALIASES[`A${symbol}`] = sectorCode;
+  REVIEWED_STOCK_SECTOR_ALIASES[`'${symbol}`] = sectorCode;
+}
+Object.assign(SYMBOL_SECTOR, REVIEWED_STOCK_SECTOR_ALIASES);
 
 export const REVIEWED_STOCK_SECTOR_COUNT = Object.keys(
   REVIEWED_STOCK_SECTOR_BY_SYMBOL,
