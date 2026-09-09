@@ -143,9 +143,9 @@ function ScoringPage() {
   const onDataChanged = (ok: boolean) => {
     setHasData(ok);
     setScreeningStarted(false);
-    queryClient.removeQueries({ queryKey: ["market-analysis", "manual-v3"] });
-    queryClient.removeQueries({ queryKey: ["data-status", "manual-v3"] });
-    queryClient.removeQueries({ queryKey: ["instrument", "manual-v3"] });
+    queryClient.removeQueries({ queryKey: ["market-analysis", "manual-vf-9.5-intraday"] });
+    queryClient.removeQueries({ queryKey: ["data-status", "manual-vf-9.5-intraday"] });
+    queryClient.removeQueries({ queryKey: ["instrument", "manual-vf-9.5-intraday"] });
   };
 
   const startScreening = () => {
@@ -227,7 +227,7 @@ ETF 종합점수 = Σ(항목% × ETF 가중치) / Σ(데이터가 있는 항목�
           {(["stock", "etf"] as Array<"stock" | "etf">).filter((k) => k === "etf").map((k) => (
             <div key={k} className="rounded-md border border-border p-2">
               <p className="mb-2 text-[12px] font-semibold">
-                {k === "stock" ? "주식" : "ETF"} · 가중치 합계 {weightSum(k).toFixed(2)}
+                ETF · 가중치 합계 {weightSum(k).toFixed(2)}
               </p>
               <div className="space-y-2">
                 <NumField
@@ -243,7 +243,7 @@ ETF 종합점수 = Σ(항목% × ETF 가중치) / Σ(데이터가 있는 항목�
                   onChange={(v) => patch((d) => void (d.weights[k].priority = v))}
                 />
                 <NumField
-                  label={k === "stock" ? "펀더멘털" : "ETF 상품건전성"}
+                  label="ETF 상품건전성"
                   value={draft.weights[k].fundamental}
                   step={0.05}
                   onChange={(v) => patch((d) => void (d.weights[k].fundamental = v))}
@@ -433,14 +433,9 @@ ETF 종합점수 = Σ(항목% × ETF 가중치) / Σ(데이터가 있는 항목�
             suffix="억"
             onChange={(v) => patch((d) => void (d.universe.minMarketCap = v * 100_000_000))}
           />
-          <NumField
-            label="최소 당일 거래대금"
-            hint={`현재 ${formatWon(draft.universe.minTradingValue)}`}
-            value={draft.universe.minTradingValue / 100_000_000}
-            step={5}
-            suffix="억"
-            onChange={(v) => patch((d) => void (d.universe.minTradingValue = v * 100_000_000))}
-          />
+          <p className="text-xs text-muted-foreground">
+            장중 스크리닝을 위해 당일 거래대금 하한은 실격 조건에서 제외합니다.
+          </p>
           <NumField
             label="ETF 최소 순자산"
             hint={`현재 ${formatWon(draft.universe.etfMinAum)} · 토스 API 미제공이면 평가 제외`}

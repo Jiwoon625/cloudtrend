@@ -388,9 +388,10 @@ export function runAnalysis(
     const benchR20 = periodReturn(benchCloses, bli, 20);
     const benchR60 = periodReturn(benchCloses, bli, 60);
 
-    const tech = technicalScore(snap, valuePct, cfg);
-    const prio = priorityScore(inst, snap, financials, last.marketCap, bench.dayReturn, cfg);
     const vf = inst.instrumentType === "STOCK" ? vfStockScore(snap, cfg) : null;
+    // 주식 기술점수·상세·등급·순위는 백테스트와 같은 7개 피처를 사용한다.
+    const tech = vf ?? technicalScore(snap, valuePct, cfg);
+    const prio = priorityScore(inst, snap, financials, last.marketCap, bench.dayReturn, cfg);
     const vfNormalized = vf ? normalize(vf) : null;
     const modelGrade =
       inst.instrumentType === "STOCK" ? vfGrade(vfNormalized) : technicalGrade(tech.points, cfg);
@@ -530,11 +531,15 @@ export function scoreHistory(
   const out: Array<{ tradeDate: string; technicalPoints: number; grade: TechnicalGrade }> = [];
   for (let i = Math.max(120, bars.length - days); i < bars.length; i++) {
     const snap = computeIndicators(bars, i);
-    const t = technicalScore(snap, 75, cfg);
+    const t = inst.instrumentType === "STOCK"
+      ? vfStockScore(snap, cfg)
+      : technicalScore(snap, 75, cfg);
     out.push({
       tradeDate: bars[i]!.tradeDate,
       technicalPoints: t.points,
-      grade: technicalGrade(t.points, cfg),
+      grade: inst.instrumentType === "STOCK"
+        ? vfGrade(normalize(t))
+        : technicalGrade(t.points, cfg),
     });
   }
   return out;

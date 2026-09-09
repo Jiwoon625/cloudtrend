@@ -51,7 +51,7 @@ const COLUMNS: Array<{ key: SortKey | "static"; label: string; id: string }> = [
   { key: "static", label: "시장", id: "market" },
   { key: "static", label: "섹터", id: "sector" },
   { key: "close", label: "종가", id: "close" },
-  { key: "total", label: "모델점수", id: "total" },
+  { key: "total", label: "정규화 점수", id: "total" },
   { key: "static", label: "모델등급", id: "grade" },
   { key: "technical", label: "기술점수", id: "technical" },
   { key: "priority", label: "우선점수", id: "priority" },
@@ -68,7 +68,7 @@ function sortValue(row: ScreeningRow, key: SortKey): number {
     case "total":
       return row.totalScoreNormalized;
     case "technical":
-      return row.technical.points;
+      return (row.vf ?? row.technical).points;
     case "priority":
       return row.priority.points;
     case "volumeRatio":
@@ -111,7 +111,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
         r.snapshot.close,
         r.totalScoreNormalized.toFixed(1),
         r.grade,
-        `${r.technical.points}/${r.technical.availableMaxPoints}`,
+        `${(r.vf ?? r.technical).points}/${(r.vf ?? r.technical).maxPoints} (산정 가능 ${(r.vf ?? r.technical).availableMaxPoints})`,
         `${r.priority.points}/${r.priority.availableMaxPoints}`,
         r.snapshot.volumeRatio20?.toFixed(1) ?? "",
         r.rs20?.toFixed(2) ?? "",
@@ -232,7 +232,10 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
                 grade: <GradeBadge grade={r.grade} />,
                 technical: (
                   <span className="num">
-                    {r.technical.points}/{r.technical.availableMaxPoints}
+                    {(r.vf ?? r.technical).points}/{(r.vf ?? r.technical).maxPoints}
+                    <span className="block text-[10px] text-muted-foreground">
+                      산정 가능 {(r.vf ?? r.technical).availableMaxPoints}
+                    </span>
                   </span>
                 ),
                 priority: (

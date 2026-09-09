@@ -120,8 +120,8 @@ function Dashboard() {
   /** 같은 입력으로 점수를 다시 계산한다. */
   const rescreen = () => {
     queryClient.removeQueries({ queryKey: analysisQueryOptions.queryKey });
-    queryClient.removeQueries({ queryKey: ["data-status", "manual-v3"] });
-    queryClient.removeQueries({ queryKey: ["instrument", "manual-v3"] });
+    queryClient.removeQueries({ queryKey: ["data-status", "manual-vf-9.5-intraday"] });
+    queryClient.removeQueries({ queryKey: ["instrument", "manual-vf-9.5-intraday"] });
     setStarted(false);
     setTimeout(() => setStarted(true), 0);
   };
@@ -378,7 +378,7 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
                 ? "종가가 일목균형표 구름(선행스팬 1, 2) 사이에 있어 추세 방향이 불분명합니다. 구름 상단/하단 이탈 후 방향을 판단합니다."
                 : b.code === "EXIT_TRIGGER"
                   ? "추세 전환·하락 신호가 감지되어 보유 포지션의 청산 또는 손절을 검토해야 하는 상태입니다."
-                  : "거래대금·유동성·데이터 완전성 조건을 충족하지 못해 Universe Filter에서 제외된 종목입니다.";
+                  : "가격·시가총액·유동성·데이터 기간 등 조건을 충족하지 못해 Universe Filter에서 제외된 종목입니다.";
           return (
             <Card
               key={b.code}
@@ -440,7 +440,7 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
           <h2 className="text-sm font-semibold">상위 후보 (Universe 통과 · 종합점수 순)</h2>
           <GradeBadge grade="A" />
           <span className="text-[11px] text-muted-foreground">
-            총점과 기술등급은 별개 지표입니다.
+            주식 기술점수는 기본 9.5점 만점이며, 정규화 점수로 순위와 등급을 산정합니다.
           </span>
         </div>
         <ScreenerTable rows={top} />

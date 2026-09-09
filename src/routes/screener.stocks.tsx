@@ -17,7 +17,7 @@ export const Route = createFileRoute("/screener/stocks")({
       {
         name: "description",
         content:
-          "KOSPI·KOSDAQ 종목을 실격 필터, 시장 게이트, 기술 7점·우선 10점·펀더멘털 100점 체계로 스크리닝하고 프리셋과 CSV로 관리합니다.",
+          "KOSPI·KOSDAQ 종목을 실격 필터, 시장 게이트, 백테스트와 동일한 7개 피처의 Vf 9.5점 체계로 스크리닝하고 프리셋과 CSV로 관리합니다.",
       },
       { property: "og:title", content: "주식 스크리너 | TrendScore KR" },
       {

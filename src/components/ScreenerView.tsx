@@ -35,7 +35,7 @@ const PRESETS: Array<{ id: PresetId; label: string; test: (r: ScreeningRow) => b
   {
     id: "FOREIGN",
     label: "외국인 수급 우수",
-    test: (r) => (r.snapshot.foreignNet60d ?? -1) > 0,
+    test: (r) => (r.snapshot.foreignNet20d ?? -1) > 0,
   },
   {
     id: "VALUEUP",
@@ -85,7 +85,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         return false;
     }
     if (sector !== "ALL" && r.instrument.sectorName !== sector) return false;
-    if (r.technical.points < minTechnical) return false;
+    if ((r.vf ?? r.technical).points < minTechnical) return false;
     if (r.totalScoreNormalized < minTotal) return false;
     if ((r.snapshot.volumeRatio20 ?? 0) < minVolumeRatio) return false;
     if (preset) {
@@ -179,7 +179,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
             ))}
           </select>
         </div>
-        {numberField("기술점수 최소 (0~7)", minTechnical, setMinTechnical)}
+        {numberField("기술점수 최소", minTechnical, setMinTechnical, 0.5)}
         {numberField("종합점수 최소", minTotal, setMinTotal, 5)}
         {numberField("거래량 비율 최소(%)", minVolumeRatio, setMinVolumeRatio, 10)}
         <div className="flex items-center gap-2 lg:col-span-2">
