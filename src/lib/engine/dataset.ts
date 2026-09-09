@@ -1,6 +1,8 @@
 // 엔진이 소비하는 데이터셋 계약.
 // mock provider와 실제 시세 provider(토스증권 Open API)가 같은 형태를 만들어 주고,
 // provider가 제공하지 못하는 항목은 capabilities에서 false로 선언한다(0으로 위장하지 않는다).
+// 사용자 검토 완료 종목코드→섹터 마스터를 legacy SYMBOL_SECTOR에 우선 반영한다.
+import "./stockSectorMaster";
 import type { DailyPrice, EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
 
 export interface DatasetCapabilities {
