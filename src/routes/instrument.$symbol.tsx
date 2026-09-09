@@ -74,6 +74,7 @@ function InstrumentDetail() {
   const [watched, setWatched] = useState(false);
   const [visible, setVisible] = useState({ ma: true, bb: true, cloud: true });
 
+  const score = row.vf ?? row.technical;
   const snap = row.snapshot;
   const ich = snap.ichimoku;
 
@@ -141,11 +142,11 @@ function InstrumentDetail() {
     const bb = row.technical.rows.find((r) => r.group === "Breakout");
     if (bb) parts.push(`볼린저 상단 돌파 판정: ${bb.actual} (획득 ${bb.points}점).`);
     parts.push(
-      `기술점수는 ${row.technical.maxPoints}점 중 ${row.technical.points}점, 산정 가능 점수는 ${row.technical.availableMaxPoints}점입니다.`,
+      `모델점수는 ${score.maxPoints}점 중 ${score.points}점, 산정 가능 점수는 ${score.availableMaxPoints}점입니다.`,
     );
     const foreign = row.priority.rows[1]!;
     if (foreign.status === "FAIL")
-      parts.push("최근 20거래일 외국인 누적 순매수가 음수이므로 우선점수를 받지 못했습니다.");
+      parts.push("최근 20거래일 외국인 누적 순매수가 0 이하이므로 외국인 수급 점수를 받지 못했습니다.");
     if (foreign.status === "NO_DATA")
       parts.push("외국인 수급 데이터가 없어 해당 항목은 0점이 아니라 산정 불가로 처리했습니다.");
     return parts.join(" ");
@@ -184,7 +185,7 @@ function InstrumentDetail() {
       <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label="현재가" value={formatPrice(snap.close)} />
         <Stat label="Vf 점수" value={formatNumber(row.totalScoreNormalized, 1)} />
-        <Stat label="기술등급" value={<GradeBadge grade={row.grade} />} />
+        <Stat label="모델등급" value={<GradeBadge grade={row.grade} />} />
         <Stat label="상태 라벨" value={row.actionLabelText} />
         <Stat
           label="시가총액"
@@ -426,15 +427,31 @@ function InstrumentDetail() {
       </section>
 
       <div className="mt-5 space-y-4">
+        {row.vf ? (
+          <>
+            <BreakdownTable
+              block={row.vf}
+              title={`Vf 종목 스크리닝 점수 (${row.vf.maxPoints}점 만점) · 정규화 ${formatNumber(row.totalScoreNormalized, 1)}점`}
+              asOfDate={analysis.asOfDate}
+              source={analysis.dataProvider}
+            />
+            <p className="text-xs text-muted-foreground">
+              백테스트 기본 7개 피처와 같은 기준입니다. 아래 기술·우선점수는 참고용이며 추가 합산하지 않습니다.
+              산정 가능 {row.vf.availableMaxPoints}/{row.vf.maxPoints}점 · 정규화 점수는 산정 가능한 항목만으로 계산합니다.
+              {snap.high52w === null ? " 52주 신고가 계산에는 기준일 포함 252거래일의 일봉이 필요합니다. 300거래일 수집을 권장합니다." : ""}
+              {snap.foreignNet20d === null ? " 외국인 수급은 최근 20거래일 순매수 금액이 모두 필요합니다." : ""}
+            </p>
+          </>
+        ) : null}
         <BreakdownTable
           block={row.technical}
-          title="Technical Signal Score (7점 만점)"
+          title={`기술점수 · 참고 (${row.technical.maxPoints}점 만점)`}
           asOfDate={analysis.asOfDate}
           source={analysis.dataProvider}
         />
         <BreakdownTable
           block={row.priority}
-          title={`Priority Quality Score (8점 만점) · 정규화 ${row.priorityNormalized === null ? "산정 불가" : `${row.priorityNormalized.toFixed(1)}점`}`}
+          title={`우선점수 · 참고 (${row.priority.maxPoints}점 만점) · 정규화 ${row.priorityNormalized === null ? "산정 불가" : `${row.priorityNormalized.toFixed(1)}점`}`}
           asOfDate={analysis.asOfDate}
           source={analysis.dataProvider}
         />
@@ -458,7 +475,7 @@ function InstrumentDetail() {
               <ComposedChart data={history}>
                 <CartesianGrid stroke="var(--color-grid)" vertical={false} />
                 <XAxis dataKey="tradeDate" tick={{ fontSize: 10 }} minTickGap={40} />
-                <YAxis domain={[0, 7]} tick={{ fontSize: 10 }} width={30} />
+                <YAxis domain={[0, row.technical.maxPoints]} tick={{ fontSize: 10 }} width={30} />
                 <Tooltip
                   contentStyle={{
                     background: "var(--color-card)",

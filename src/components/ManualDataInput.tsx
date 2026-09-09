@@ -90,6 +90,12 @@ export function ManualDataInput({ onChanged }: Props) {
 
   return (
     <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        주식 9.5점 전체 항목 산정을 위해 종목별 기준일 포함 252거래일 이상(권장 300거래일)의
+        일봉과 최근 20거래일 외국인 순매수 금액을 입력하세요.
+        외국인 순매수 열: foreignNetBuyValue 또는 외국인순매수 (원 단위, 순매도는 음수).
+        데이터가 부족한 항목은 산정 불가로 표시합니다.
+      </p>
       <Textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
