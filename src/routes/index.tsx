@@ -197,6 +197,32 @@ type AnalysisResult = AnalysisPayload["analysis"];
 function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
   const { marketGate: gate, rows, sectors } = analysis;
 
+  // 섹터 탭(로테이션 점수)과 동일한 순위를 그대로 사용한다. 없으면 스냅샷 섹터 점수로 대체.
+  const strongSectors = useMemo(() => {
+    const rot = analysis.sectorRotation?.sectors ?? [];
+    if (rot.length > 0) {
+      return [...rot]
+        .sort((a, b) => a.rank - b.rank)
+        .slice(0, 5)
+        .map((s) => ({
+          sectorCode: s.sectorCode,
+          sectorName: s.sectorName,
+          rank: s.rank,
+          prevRank: s.prevRank,
+          rs20: s.rs20,
+          score: s.rotationScore,
+        }));
+    }
+    return sectors.slice(0, 5).map((s) => ({
+      sectorCode: s.sectorCode,
+      sectorName: s.sectorName,
+      rank: s.rank,
+      prevRank: s.prevRank,
+      rs20: s.rs20 as number | null,
+      score: s.score,
+    }));
+  }, [analysis.sectorRotation, sectors]);
+
   // 그날의 마지막 스크리닝 결과를 저장하고, 이전 날짜 스냅샷과 등급 변화를 비교한다.
   const snapshot = useMemo(() => buildSnapshot(analysis), [analysis]);
   const [diff, setDiff] = useState<GradeDiff | null>(null);
