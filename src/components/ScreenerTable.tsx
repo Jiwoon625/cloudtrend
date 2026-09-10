@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
 import { WARNING_LABELS } from "@/lib/engine/scoring";
+import type { V6ScoreMomentum } from "@/lib/engine/v6Momentum";
 
 export function GradeBadge({ grade }: { grade: "A" | "B" | "C" }) {
   const cls =
@@ -35,9 +36,27 @@ export function Delta({ value, digits = 1 }: { value: number | null; digits?: nu
   );
 }
 
+function ScoreDelta({ value }: { value: number | null | undefined }) {
+  if (value === null || value === undefined)
+    return <span className="text-muted-foreground">—</span>;
+  const Icon = value > 0 ? ArrowUp : value < 0 ? ArrowDown : Minus;
+  const cls = value > 0 ? "text-up" : value < 0 ? "text-down" : "text-muted-foreground";
+  return (
+    <span className={`num inline-flex items-center justify-end gap-0.5 font-medium ${cls}`}>
+      <Icon className="size-3" aria-hidden />
+      {value > 0 ? "+" : ""}{formatNumber(value, 1)}p
+    </span>
+  );
+}
+
+type ScoreMomentumRow = ScreeningRow & Partial<V6ScoreMomentum>;
+
 type SortKey =
   | "total"
   | "technical"
+  | "scoreDelta1d"
+  | "scoreDelta5d"
+  | "scoreDelta10d"
   | "priority"
   | "volumeRatio"
   | "rs20"
@@ -54,6 +73,9 @@ const COLUMNS: Array<{ key: SortKey | "static"; label: string; id: string }> = [
   { key: "total", label: "정규화 점수", id: "total" },
   { key: "static", label: "모델등급", id: "grade" },
   { key: "technical", label: "기술점수", id: "technical" },
+  { key: "scoreDelta1d", label: "Δ1D 점수", id: "scoreDelta1d" },
+  { key: "scoreDelta5d", label: "Δ5D 점수", id: "scoreDelta5d" },
+  { key: "scoreDelta10d", label: "Δ10D 점수", id: "scoreDelta10d" },
   { key: "priority", label: "우선점수", id: "priority" },
   { key: "volumeRatio", label: "거래량 비율", id: "volumeRatio" },
   { key: "rs20", label: "RS20", id: "rs20" },
@@ -63,22 +85,28 @@ const COLUMNS: Array<{ key: SortKey | "static"; label: string; id: string }> = [
   { key: "static", label: "경고", id: "warnings" },
 ];
 
-function sortValue(row: ScreeningRow, key: SortKey): number {
+function sortValue(row: ScoreMomentumRow, key: SortKey): number | null {
   switch (key) {
     case "total":
       return row.totalScoreNormalized;
     case "technical":
       return (row.vf ?? row.technical).points;
+    case "scoreDelta1d":
+      return row.scoreChange1d ?? null;
+    case "scoreDelta5d":
+      return row.scoreChange5d ?? null;
+    case "scoreDelta10d":
+      return row.scoreChange10d ?? null;
     case "priority":
       return row.priority.points;
     case "volumeRatio":
-      return row.snapshot.volumeRatio20 ?? -1;
+      return row.snapshot.volumeRatio20;
     case "rs20":
-      return row.rs20 ?? -999;
+      return row.rs20;
     case "distanceHigh":
-      return row.snapshot.distanceFrom52wHigh ?? -999;
+      return row.snapshot.distanceFrom52wHigh;
     case "marketCap":
-      return row.marketCap ?? -1;
+      return row.marketCap;
     case "close":
       return row.snapshot.close;
   }
@@ -90,9 +118,15 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
   const [hidden, setHidden] = useState<string[]>([]);
 
   const sorted = useMemo(() => {
-    const copy = [...rows];
+    const copy = [...rows] as ScoreMomentumRow[];
     copy.sort((a, b) => {
-      const diff = sortValue(a, sortKey) - sortValue(b, sortKey);
+      const av = sortValue(a, sortKey);
+      const bv = sortValue(b, sortKey);
+      // 계산 불가 값은 오름/내림차순 모두 표 하단에 둔다.
+      if (av === null && bv === null) return 0;
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      const diff = av - bv;
       return dir === "desc" ? -diff : diff;
     });
     return copy;
@@ -112,6 +146,9 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
         r.totalScoreNormalized.toFixed(1),
         r.grade,
         `${(r.vf ?? r.technical).points}/${(r.vf ?? r.technical).maxPoints} (산정 가능 ${(r.vf ?? r.technical).availableMaxPoints})`,
+        r.scoreChange1d?.toFixed(1) ?? "",
+        r.scoreChange5d?.toFixed(1) ?? "",
+        r.scoreChange10d?.toFixed(1) ?? "",
         `${r.priority.points}/${r.priority.availableMaxPoints}`,
         r.snapshot.volumeRatio20?.toFixed(1) ?? "",
         r.rs20?.toFixed(2) ?? "",
@@ -201,7 +238,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
       </div>
 
       <div className="max-h-[70vh] overflow-auto rounded-lg border border-border bg-card">
-        <table className="w-full min-w-[1100px] text-[12px]">
+        <table className="w-full min-w-[1350px] text-[12px]">
           <thead>
             <tr>{visible.map((c) => th(c))}</tr>
           </thead>
@@ -238,6 +275,9 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
                     </span>
                   </span>
                 ),
+                scoreDelta1d: <ScoreDelta value={r.scoreChange1d} />,
+                scoreDelta5d: <ScoreDelta value={r.scoreChange5d} />,
+                scoreDelta10d: <ScoreDelta value={r.scoreChange10d} />,
                 priority: (
                   <span className="num">
                     {r.priority.points}/{r.priority.availableMaxPoints}
