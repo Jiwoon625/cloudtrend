@@ -119,6 +119,8 @@ export interface ScreeningRow {
   qualityScore: number | null;
   marketSectorScore: number | null;
   totalScoreNormalized: number;
+  /** V6 0~100 정규화 점수의 전 거래일 대비 증감(points). */
+  scoreDelta1d: number | null;
   dataCompletenessRatio: number;
   grade: TechnicalGrade;
   actionLabelText: string;
@@ -438,6 +440,7 @@ export function runAnalysis(
       qualityScore,
       marketSectorScore: null,
       totalScoreNormalized: inst.instrumentType === "STOCK" ? (vfNormalized ?? 0) : 0,
+      scoreDelta1d: null,
       dataCompletenessRatio:
         inst.instrumentType === "STOCK" && vf && vf.maxPoints > 0
           ? vf.availableMaxPoints / vf.maxPoints
@@ -593,4 +596,3 @@ export function chartSeries(
   }
   return out;
 }
-

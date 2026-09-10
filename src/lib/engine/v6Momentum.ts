@@ -18,6 +18,7 @@ export interface V6MomentumSignal {
   status: V6MomentumStatus;
   currentScore: number | null;
   previousScore: number | null;
+  scoreDelta1d: number | null;
   onset60: boolean;
   onset70: boolean;
   momentumRisk: boolean;
@@ -41,6 +42,10 @@ export function classifyV6Momentum(scores: Array<number | null>): V6MomentumSign
   const last = scores.length - 1;
   const currentScore = last >= 0 ? scores[last] ?? null : null;
   const previousScore = last > 0 ? scores[last - 1] ?? null : null;
+  const scoreDelta1d =
+    currentScore !== null && previousScore !== null
+      ? Math.round((currentScore - previousScore) * 100) / 100
+      : null;
   const onset60 =
     currentScore !== null && previousScore !== null && previousScore < 60 && currentScore >= 60;
   const onset70 =
@@ -87,6 +92,7 @@ export function classifyV6Momentum(scores: Array<number | null>): V6MomentumSign
     status,
     currentScore,
     previousScore,
+    scoreDelta1d,
     onset60,
     onset70,
     momentumRisk,
@@ -115,6 +121,7 @@ export function applyV6MomentumStatuses(
   for (const row of analysis.rows) {
     if (row.instrument.instrumentType !== "STOCK") continue;
     const signal = classifyV6Momentum(fullScoreHistory(ds, row.instrument.symbol, cfg));
+    row.scoreDelta1d = signal.scoreDelta1d;
     if (signal.status === "MOMENTUM_RISK") row.actionLabelText = "모멘텀 위험";
     else if (signal.status === "ENTRY_70") row.actionLabelText = "우선진입후보";
     else if (signal.status === "ENTRY_60") row.actionLabelText = "진입후보";

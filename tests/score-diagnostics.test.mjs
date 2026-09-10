@@ -175,4 +175,6 @@ test("momentum risk means the latest 60+ episode reached 80 before falling below
   assert.equal(classifyV6Momentum([55,82,58,62,58]).status,null); // new 60+ episode never reached 80
   assert.equal(classifyV6Momentum([55,62]).status,"ENTRY_60");
   assert.equal(classifyV6Momentum([55,75]).status,"ENTRY_70");
+  assert.equal(classifyV6Momentum([55,75]).scoreDelta1d,20);
+  assert.equal(classifyV6Momentum([55,null]).scoreDelta1d,null);
 });

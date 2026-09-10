@@ -35,8 +35,25 @@ export function Delta({ value, digits = 1 }: { value: number | null; digits?: nu
   );
 }
 
+function ScoreDelta({ value }: { value: number | null }) {
+  if (value === null) return <span className="text-muted-foreground">-</span>;
+  const Icon = value > 0 ? ArrowUp : value < 0 ? ArrowDown : Minus;
+  const cls = value > 0 ? "text-up" : value < 0 ? "text-down" : "text-muted-foreground";
+  const signed = value > 0 ? `+${formatNumber(value, 1)}` : formatNumber(value, 1);
+  return (
+    <span
+      className={`inline-flex items-center justify-end gap-0.5 font-semibold ${cls}`}
+      aria-label={`전 거래일 대비 ${signed}점`}
+    >
+      <Icon className="size-3" aria-hidden />
+      {signed}p
+    </span>
+  );
+}
+
 type SortKey =
   | "total"
+  | "scoreDelta1d"
   | "technical"
   | "priority"
   | "volumeRatio"
@@ -52,6 +69,7 @@ const COLUMNS: Array<{ key: SortKey | "static"; label: string; id: string }> = [
   { key: "static", label: "섹터", id: "sector" },
   { key: "close", label: "종가", id: "close" },
   { key: "total", label: "정규화 점수", id: "total" },
+  { key: "scoreDelta1d", label: "점수 변동(1D)", id: "scoreDelta1d" },
   { key: "static", label: "모델등급", id: "grade" },
   { key: "technical", label: "기술점수", id: "technical" },
   { key: "priority", label: "우선점수", id: "priority" },
@@ -63,22 +81,24 @@ const COLUMNS: Array<{ key: SortKey | "static"; label: string; id: string }> = [
   { key: "static", label: "경고", id: "warnings" },
 ];
 
-function sortValue(row: ScreeningRow, key: SortKey): number {
+function sortValue(row: ScreeningRow, key: SortKey): number | null {
   switch (key) {
     case "total":
       return row.totalScoreNormalized;
+    case "scoreDelta1d":
+      return row.scoreDelta1d;
     case "technical":
       return (row.vf ?? row.technical).points;
     case "priority":
       return row.priority.points;
     case "volumeRatio":
-      return row.snapshot.volumeRatio20 ?? -1;
+      return row.snapshot.volumeRatio20;
     case "rs20":
-      return row.rs20 ?? -999;
+      return row.rs20;
     case "distanceHigh":
-      return row.snapshot.distanceFrom52wHigh ?? -999;
+      return row.snapshot.distanceFrom52wHigh;
     case "marketCap":
-      return row.marketCap ?? -1;
+      return row.marketCap;
     case "close":
       return row.snapshot.close;
   }
@@ -92,7 +112,13 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
   const sorted = useMemo(() => {
     const copy = [...rows];
     copy.sort((a, b) => {
-      const diff = sortValue(a, sortKey) - sortValue(b, sortKey);
+      const av = sortValue(a, sortKey);
+      const bv = sortValue(b, sortKey);
+      if (av === null && bv === null) return a.instrument.symbol.localeCompare(b.instrument.symbol);
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      const diff = av - bv;
+      if (diff === 0) return a.instrument.symbol.localeCompare(b.instrument.symbol);
       return dir === "desc" ? -diff : diff;
     });
     return copy;
@@ -110,6 +136,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
         r.instrument.sectorName,
         r.snapshot.close,
         r.totalScoreNormalized.toFixed(1),
+        r.scoreDelta1d?.toFixed(1) ?? "",
         r.grade,
         `${(r.vf ?? r.technical).points}/${(r.vf ?? r.technical).maxPoints} (산정 가능 ${(r.vf ?? r.technical).availableMaxPoints})`,
         `${r.priority.points}/${r.priority.availableMaxPoints}`,
@@ -201,7 +228,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
       </div>
 
       <div className="max-h-[70vh] overflow-auto rounded-lg border border-border bg-card">
-        <table className="w-full min-w-[1100px] text-[12px]">
+        <table className="w-full min-w-[1200px] text-[12px]">
           <thead>
             <tr>{visible.map((c) => th(c))}</tr>
           </thead>
@@ -227,6 +254,11 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
                 total: (
                   <span className="num font-semibold">
                     {formatNumber(r.totalScoreNormalized, 1)}
+                  </span>
+                ),
+                scoreDelta1d: (
+                  <span className="num">
+                    <ScoreDelta value={r.scoreDelta1d} />
                   </span>
                 ),
                 grade: <GradeBadge grade={r.grade} />,
