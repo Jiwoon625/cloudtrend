@@ -25,12 +25,33 @@ export interface V6MomentumSignal {
 }
 
 /**
+ * 스크리너/대시보드에 노출하는 기술점수 변화폭.
+ * 값은 9.5점 원점수가 아니라 V6 진입·청산 임계값과 동일한 0~100 정규화 점수의 변화(p)다.
+ */
+export interface V6ScoreMomentum {
+  scoreChange1d: number | null;
+  scoreChange5d: number | null;
+  scoreChange10d: number | null;
+}
+
+/**
  * Full 9.5-point score -> 0~100 display scale.
  * Missing component data stays null; V6 never rescales a partial score.
  */
 export function normalizedFullScore(rawScore: number | null | undefined): number | null {
   if (rawScore === null || rawScore === undefined || !Number.isFinite(rawScore)) return null;
   return (rawScore / HISTORICAL_TECHNICAL_MAX) * 100;
+}
+
+/** 현재 점수와 lag 거래일 전 점수의 차이. 두 시점 중 하나라도 계산 불가면 null. */
+export function scoreChange(scores: Array<number | null>, lag: number): number | null {
+  if (!Number.isInteger(lag) || lag <= 0) return null;
+  const last = scores.length - 1;
+  const priorIndex = last - lag;
+  if (last < 0 || priorIndex < 0) return null;
+  const current = scores[last];
+  const prior = scores[priorIndex];
+  return current !== null && prior !== null ? current - prior : null;
 }
 
 /**
@@ -106,7 +127,7 @@ function fullScoreHistory(
   });
 }
 
-/** Apply V6 operational labels without changing the underlying score or ranking. */
+/** Apply V6 operational labels and score momentum without changing the underlying score or ranking. */
 export function applyV6MomentumStatuses(
   analysis: AnalysisResult,
   ds: MarketDataset,
@@ -114,7 +135,16 @@ export function applyV6MomentumStatuses(
 ): AnalysisResult {
   for (const row of analysis.rows) {
     if (row.instrument.instrumentType !== "STOCK") continue;
-    const signal = classifyV6Momentum(fullScoreHistory(ds, row.instrument.symbol, cfg));
+    const scores = fullScoreHistory(ds, row.instrument.symbol, cfg);
+    const signal = classifyV6Momentum(scores);
+
+    // 백테스트의 scoreRise와 같은 0~100 점수 단위(p)로 1D/5D/10D 변화폭을 붙인다.
+    Object.assign(row, {
+      scoreChange1d: scoreChange(scores, 1),
+      scoreChange5d: scoreChange(scores, 5),
+      scoreChange10d: scoreChange(scores, 10),
+    } satisfies V6ScoreMomentum);
+
     if (signal.status === "MOMENTUM_RISK") row.actionLabelText = "모멘텀 위험";
     else if (signal.status === "ENTRY_70") row.actionLabelText = "우선진입후보";
     else if (signal.status === "ENTRY_60") row.actionLabelText = "진입후보";
