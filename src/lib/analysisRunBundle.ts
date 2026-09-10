@@ -48,7 +48,7 @@ export interface ScreeningCandidateSummary {
 
 function candidate(row: ScreeningRow, rank: number): ScreeningCandidateSummary {
   return {
-    rank,
+    rank: rank + 1,
     symbol: row.instrument.symbol,
     name: row.instrument.name,
     market: row.instrument.market,
@@ -111,6 +111,16 @@ export function buildScreeningSummary(
   );
 
   const rotation = analysis.sectorRotation?.sectors ?? [];
+  const sectorCounts = new Map<string, { sectorCode: string; sectorName: string; count: number }>();
+  for (const row of analysis.rows) {
+    const key = `${row.instrument.sectorCode}\u0000${row.instrument.sectorName}`;
+    const current = sectorCounts.get(key);
+    sectorCounts.set(key, {
+      sectorCode: row.instrument.sectorCode,
+      sectorName: row.instrument.sectorName,
+      count: (current?.count ?? 0) + 1,
+    });
+  }
   const topSectors = [...rotation]
     .sort((a, b) => a.rank - b.rank)
     .slice(0, 15)
@@ -157,6 +167,13 @@ export function buildScreeningSummary(
       momentumRisk: momentumRisk.length,
       incomplete: analysis.rows.filter((row) => row.dataCompletenessRatio < 0.7).length,
     },
+    sectorCoverage: {
+      mapped: analysis.rows.filter((row) => row.instrument.sectorCode !== "ETC").length,
+      unmapped: analysis.rows.filter((row) => row.instrument.sectorCode === "ETC").length,
+      sectors: [...sectorCounts.values()].sort(
+        (a, b) => b.count - a.count || a.sectorCode.localeCompare(b.sectorCode),
+      ),
+    },
     previousSnapshotDate: previous?.date ?? null,
     newGradeA,
     droppedAtoB,
@@ -175,20 +192,34 @@ export function buildScreeningSummary(
 
 export function buildBacktestSummary(bundle: BacktestRunBundle) {
   const result = bundle.result;
+  const mapped = bundle.data.universe.filter((item) => item.sectorCode !== "ETC");
   return {
     asOfDate: bundle.data.asOfDate,
     period: { from: result.from, to: result.to, oosStart: result.splitBoundaries.oosStart },
     universe: {
       symbolCount: result.symbolCount,
-      mappedSectorCount: new Set(bundle.data.universe.map((item) => item.sectorCode)).size,
+      mappedSymbols: mapped.length,
+      unmappedSymbols: bundle.data.universe.length - mapped.length,
+      sectorCount: new Set(mapped.map((item) => item.sectorCode)).size,
       sectorCounts: Object.entries(
-        bundle.data.universe.reduce<Record<string, number>>((counts, item) => {
-          counts[item.sectorCode] = (counts[item.sectorCode] ?? 0) + 1;
-          return counts;
-        }, {}),
+        bundle.data.universe.reduce<Record<string, { sectorName: string; count: number }>>(
+          (counts, item) => {
+            const current = counts[item.sectorCode];
+            counts[item.sectorCode] = {
+              sectorName: item.sectorName,
+              count: (current?.count ?? 0) + 1,
+            };
+            return counts;
+          },
+          {},
+        ),
       )
-        .map(([sectorCode, count]) => ({ sectorCode, count }))
-        .sort((a, b) => b.count - a.count),
+        .map(([sectorCode, value]) => ({
+          sectorCode,
+          sectorName: value.sectorName,
+          count: value.count,
+        }))
+        .sort((a, b) => b.count - a.count || a.sectorCode.localeCompare(b.sectorCode)),
     },
     config: bundle.config,
     baselineByHorizon: result.baselineByHorizon,
