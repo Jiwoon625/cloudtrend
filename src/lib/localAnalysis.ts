@@ -11,6 +11,7 @@ import {
   buildFullUniverseSectorDataset,
   computeFullUniverseSectorRotation,
 } from "@/lib/engine/sectorRotationFullUniverse";
+import { applyV6MomentumStatuses } from "@/lib/engine/v6Momentum";
 import { getManualDataset, MANUAL_DATA_MISSING_MESSAGE } from "@/lib/manualDataStore";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import type {
@@ -36,6 +37,7 @@ function runLocalMarketAnalysis(
 ) {
   const dataset = buildFullUniverseSectorDataset(rawDataset);
   const analysis = runAnalysis(dataset, config);
+  applyV6MomentumStatuses(analysis, dataset, config);
 
   const representativeEtf = new Map<string, { symbol: string; name: string }>();
   for (const sector of analysis.sectorRotation?.sectors ?? []) {
@@ -204,7 +206,7 @@ export interface LocalBacktestPayload {
   notes: string[];
 }
 
-/** 입력 데이터의 일봉으로 V5 피처·랭킹 백테스트를 실행한다. */
+/** 입력 데이터의 일봉으로 V6 진입·청산 전략과 V5 피처 진단을 함께 실행한다. */
 export function computeLocalBacktest(
   symbols: string[],
   params: BacktestParams,
@@ -263,7 +265,8 @@ export function computeLocalBacktest(
     extended: maxBars > 200,
     asOfDate: dataset.asOfDate,
     notes: [
-      `CloudTrend Backtest V5 · 직접 입력 일봉(종목당 최대 ${maxBars}봉)으로 계산했습니다.`,
+      `CloudTrend Backtest V6 · 직접 입력 일봉(종목당 최대 ${maxBars}봉)으로 계산했습니다.`,
+      "V6 매매전략은 60/70점 Onset 진입과 20/30/40/50일 최대 보유, 80/90점 상승 청산, 60/50/40/30점 하락 청산 조합을 비교합니다.",
       "KOSPI 종목은 KOSPI, KOSDAQ 종목은 KOSDAQ 지수를 같은 날짜의 벤치마크로 사용합니다.",
       "기본 지표는 120봉 이후부터 관측하며, 52주 신고가 피처는 현재 봉 포함 252거래일이 확보된 시점부터만 계산합니다.",
       "피처별 Edge는 메인 관측 그리드에서 false→true로 전환된 Signal Onset만 신호로 집계하고, 복합점수는 기존 상태값을 그대로 사용합니다.",
