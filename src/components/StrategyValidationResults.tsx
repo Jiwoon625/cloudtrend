@@ -1,310 +1,338 @@
 import { useMemo, useState } from "react";
-import type { StrategyValidation } from "@/lib/engine/strategyValidation";
 
-const pct = (v: number | null) =>
-  v === null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(2)}%`;
-const num = (v: number | null) => (v === null ? "—" : v.toFixed(2));
-const points = (v: number | null) =>
-  v === null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}p`;
+import type {
+  ExitOverlayComparisonRow,
+  PortfolioMetricRow,
+  SegmentPerformanceRow,
+  StrategyValidation,
+  StrategyValidationRow,
+} from "@/lib/engine/strategyValidation";
 
-function SelectField({
-  label,
-  value,
-  values,
-  onChange,
-  suffix = "",
+const pct = (v: number | null | undefined, digits = 2) =>
+  v === null || v === undefined || !Number.isFinite(v)
+    ? "—"
+    : `${v > 0 ? "+" : ""}${v.toFixed(digits)}%`;
+const num = (v: number | null | undefined, digits = 2) =>
+  v === null || v === undefined || !Number.isFinite(v) ? "—" : v.toFixed(digits);
+const days = (v: number | null | undefined) =>
+  v === null || v === undefined || !Number.isFinite(v) ? "—" : `${v.toFixed(1)}D`;
+
+function Panel({
+  title,
+  note,
+  children,
 }: {
-  label: string;
-  value: number;
-  values: number[];
-  onChange: (value: number) => void;
-  suffix?: string;
+  title: string;
+  note?: string;
+  children: React.ReactNode;
 }) {
   return (
-    <label className="space-y-1">
-      <span className="block text-[10px] text-muted-foreground">{label}</span>
-      <select
-        className="h-8 w-full rounded border border-border bg-card px-2 text-[12px]"
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-      >
-        {values.map((option) => (
-          <option key={option} value={option}>
-            {option}{suffix}
-          </option>
+    <section className="overflow-hidden rounded-lg border border-border bg-card">
+      <header className="border-b border-border bg-surface-strong px-3 py-2">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {note ? <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">{note}</p> : null}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function StrategyName({ row }: { row: { upsideExitThreshold?: number; strategyLabel?: string; label?: string } }) {
+  const up = row.upsideExitThreshold;
+  return (
+    <span className="whitespace-nowrap font-medium">
+      {up === 90 ? "기본 추천 · ↑90" : up === 80 ? "안정성 우선 · ↑80" : row.strategyLabel ?? row.label ?? "전략"}
+    </span>
+  );
+}
+
+function CoreSummary({ row }: { row: StrategyValidationRow }) {
+  return (
+    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <StrategyName row={row} />
+        <span className="rounded border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground">
+          70 / 40D / ↑{row.upsideExitThreshold} / ↓30
+        </span>
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-[11px] sm:grid-cols-6">
+        {[
+          ["거래", row.trades.toLocaleString("ko-KR")],
+          ["평균", pct(row.avgReturn)],
+          ["중앙", pct(row.medianReturn)],
+          ["승률", pct(row.winRate)],
+          ["손익비", num(row.payoff)],
+          ["평균보유", days(row.averageHoldingDays)],
+        ].map(([label, value]) => (
+          <div key={label}>
+            <p className="text-[9px] text-muted-foreground">{label}</p>
+            <p className="num font-semibold">{value}</p>
+          </div>
         ))}
-      </select>
-    </label>
+      </div>
+    </div>
+  );
+}
+
+function SegmentTable({ rows, kind }: { rows: SegmentPerformanceRow[]; kind: "year" | "regime" }) {
+  const ordered = [...rows].sort((a, b) => {
+    if (a.segment !== b.segment) return a.segment.localeCompare(b.segment);
+    return a.strategyLabel.localeCompare(b.strategyLabel);
+  });
+  const regimeLabel: Record<string, string> = {
+    RISK_ON: "상승",
+    NEUTRAL: "중립",
+    RISK_OFF: "하락",
+    UNKNOWN: "판정불가",
+  };
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[980px] text-[11px]">
+        <thead className="text-muted-foreground">
+          <tr>
+            <th className="px-2 py-1.5 text-left">{kind === "year" ? "연도" : "시장국면"}</th>
+            <th className="px-2 py-1.5 text-left">전략</th>
+            <th className="px-2 py-1.5 text-right">거래</th>
+            <th className="px-2 py-1.5 text-right">평균</th>
+            <th className="px-2 py-1.5 text-right">중앙</th>
+            <th className="px-2 py-1.5 text-right">승률</th>
+            <th className="px-2 py-1.5 text-right">평균손실</th>
+            <th className="px-2 py-1.5 text-right">최악거래</th>
+            <th className="px-2 py-1.5 text-right">손익비</th>
+            <th className="px-2 py-1.5 text-right">평균보유</th>
+            <th className="px-2 py-1.5 text-right">평균 MAE</th>
+            {kind === "year" ? <th className="px-2 py-1.5 text-right">연간 포트폴리오</th> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {ordered.map((r) => (
+            <tr key={`${r.segment}-${r.strategy}`} className="border-t border-border/60">
+              <td className="px-2 py-1.5 font-medium">{kind === "regime" ? regimeLabel[r.segment] ?? r.segment : r.segment}</td>
+              <td className="px-2 py-1.5"><StrategyName row={{ strategyLabel: r.strategyLabel, upsideExitThreshold: r.strategy.includes("u90") ? 90 : 80 }} /></td>
+              <td className="num px-2 py-1.5 text-right">{r.trades.toLocaleString("ko-KR")}</td>
+              <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.avgReturn)}</td>
+              <td className="num px-2 py-1.5 text-right">{pct(r.medianReturn)}</td>
+              <td className="num px-2 py-1.5 text-right">{pct(r.winRate)}</td>
+              <td className="num px-2 py-1.5 text-right">{pct(r.avgLoss)}</td>
+              <td className="num px-2 py-1.5 text-right">{pct(r.worstReturn)}</td>
+              <td className="num px-2 py-1.5 text-right">{num(r.payoff)}</td>
+              <td className="num px-2 py-1.5 text-right">{days(r.averageHoldingDays)}</td>
+              <td className="num px-2 py-1.5 text-right">{pct(r.avgMae)}</td>
+              {kind === "year" ? <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.portfolioReturn)}</td> : null}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PortfolioTable({ rows }: { rows: PortfolioMetricRow[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[900px] text-[11px]">
+        <thead className="text-muted-foreground">
+          <tr>
+            <th className="px-2 py-1.5 text-left">상승청산</th>
+            <th className="px-2 py-1.5 text-right">최대보유</th>
+            <th className="px-2 py-1.5 text-right">거래</th>
+            <th className="px-2 py-1.5 text-right">CAGR</th>
+            <th className="px-2 py-1.5 text-right">MDD</th>
+            <th className="px-2 py-1.5 text-right">Sharpe</th>
+            <th className="px-2 py-1.5 text-right">총수익</th>
+            <th className="px-2 py-1.5 text-right">평균보유</th>
+            <th className="px-2 py-1.5 text-right">자금점유일</th>
+            <th className="px-2 py-1.5 text-right">평균 동시포지션</th>
+            <th className="px-2 py-1.5 text-right">최대 동시포지션</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[...rows]
+            .sort((a, b) => a.upsideExitThreshold - b.upsideExitThreshold || a.maxHoldingDays - b.maxHoldingDays)
+            .map((r) => (
+              <tr
+                key={`${r.strategy}-${r.maxHoldingDays}`}
+                className={`border-t border-border/60 ${r.maxHoldingDays === 40 ? "bg-primary/5" : ""}`}
+              >
+                <td className="px-2 py-1.5 font-medium">↑{r.upsideExitThreshold}</td>
+                <td className="num px-2 py-1.5 text-right font-semibold">{r.maxHoldingDays}D</td>
+                <td className="num px-2 py-1.5 text-right">{r.trades.toLocaleString("ko-KR")}</td>
+                <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.cagr)}</td>
+                <td className="num px-2 py-1.5 text-right">{pct(r.mdd)}</td>
+                <td className="num px-2 py-1.5 text-right">{num(r.sharpe)}</td>
+                <td className="num px-2 py-1.5 text-right">{pct(r.totalReturn)}</td>
+                <td className="num px-2 py-1.5 text-right">{days(r.averageHoldingDays)}</td>
+                <td className="num px-2 py-1.5 text-right">{pct(r.activeDayRate, 1)}</td>
+                <td className="num px-2 py-1.5 text-right">{num(r.avgActivePositions, 1)}</td>
+                <td className="num px-2 py-1.5 text-right">{r.peakActivePositions}</td>
+              </tr>
+            ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function OverlayTable({ rows, title }: { rows: ExitOverlayComparisonRow[]; title: "fixed" | "atr" }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[1120px] text-[11px]">
+        <thead className="text-muted-foreground">
+          <tr>
+            <th className="px-2 py-1.5 text-left">전략</th>
+            <th className="px-2 py-1.5 text-left">추가 청산</th>
+            <th className="px-2 py-1.5 text-right">거래</th>
+            <th className="px-2 py-1.5 text-right">평균</th>
+            <th className="px-2 py-1.5 text-right">중앙</th>
+            <th className="px-2 py-1.5 text-right">승률</th>
+            <th className="px-2 py-1.5 text-right">평균손실</th>
+            <th className="px-2 py-1.5 text-right">최악거래</th>
+            <th className="px-2 py-1.5 text-right">손익비</th>
+            <th className="px-2 py-1.5 text-right">손절비율</th>
+            <th className="px-2 py-1.5 text-right">CAGR</th>
+            <th className="px-2 py-1.5 text-right">MDD</th>
+            <th className="px-2 py-1.5 text-right">Sharpe</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={`${r.scenario}-${r.overlayId}`} className={`border-t border-border/60 ${r.overlayId === "none" ? "bg-muted/20" : ""}`}>
+              <td className="px-2 py-1.5"><StrategyName row={r} /></td>
+              <td className="whitespace-nowrap px-2 py-1.5 font-medium">{r.overlayLabel}</td>
+              <td className="num px-2 py-1.5 text-right">{r.trades.toLocaleString("ko-KR")}</td>
+              <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.avgReturn)}</td>
+              <td className="num px-2 py-1.5 text-right">{pct(r.medianReturn)}</td>
+              <td className="num px-2 py-1.5 text-right">{pct(r.winRate)}</td>
+              <td className="num px-2 py-1.5 text-right">{pct(r.avgLoss)}</td>
+              <td className="num px-2 py-1.5 text-right">{pct(r.worstReturn)}</td>
+              <td className="num px-2 py-1.5 text-right">{num(r.payoff)}</td>
+              <td className="num px-2 py-1.5 text-right">{pct(title === "fixed" ? r.priceStopRate : r.atrStopRate)}</td>
+              <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.portfolioCagr)}</td>
+              <td className="num px-2 py-1.5 text-right">{pct(r.portfolioMdd)}</td>
+              <td className="num px-2 py-1.5 text-right">{num(r.portfolioSharpe)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
 export function StrategyValidationResults({
   validation,
-  horizons,
+  horizons: _horizons,
 }: {
   validation: StrategyValidation;
   horizons: number[];
 }) {
   const [split, setSplit] = useState<"ALL" | "OOS">("ALL");
-  const [market, setMarket] = useState<"ALL" | "KOSPI" | "KOSDAQ">("ALL");
-  const [entryThreshold, setEntryThreshold] = useState(60);
-  const [maxHoldingDays, setMaxHoldingDays] = useState(30);
-  const [upsideExitThreshold, setUpsideExitThreshold] = useState(80);
-  const [downsideExitThreshold, setDownsideExitThreshold] = useState(60);
 
-  const selected = useMemo(
-    () =>
-      validation.rows.find(
-        (row) =>
-          row.split === split &&
-          row.market === market &&
-          row.entryThreshold === entryThreshold &&
-          row.maxHoldingDays === maxHoldingDays &&
-          row.upsideExitThreshold === upsideExitThreshold &&
-          row.downsideExitThreshold === downsideExitThreshold,
-      ) ?? null,
-    [
-      validation.rows,
-      split,
-      market,
-      entryThreshold,
-      maxHoldingDays,
-      upsideExitThreshold,
-      downsideExitThreshold,
-    ],
-  );
-
-  const comparableRows = useMemo(
+  const coreRows = useMemo(
     () =>
       validation.rows
-        .filter((row) => row.split === split && row.market === market)
-        .sort((a, b) => {
-          const ar = a.avgReturn ?? -Infinity;
-          const br = b.avgReturn ?? -Infinity;
-          return br - ar;
-        }),
-    [validation.rows, split, market],
+        .filter((r) => r.split === split && r.market === "ALL" && r.maxHoldingDays === 40)
+        .sort((a, b) => b.upsideExitThreshold - a.upsideExitThreshold),
+    [validation.rows, split],
   );
+  const yearly = validation.yearlyRows.filter((r) => r.split === split);
+  const regimes = validation.regimeRows.filter((r) => r.split === split);
+  const risks = validation.riskRows.filter((r) => r.split === split);
+  const portfolios = validation.portfolioRows.filter((r) => r.split === split);
+  const fixedStops = validation.fixedStopRows.filter((r) => r.split === split);
+  const atrStops = validation.atrStopRows.filter((r) => r.split === split);
 
   return (
-    <section className="overflow-hidden rounded-lg border border-primary/30 bg-card">
-      <header className="space-y-3 border-b border-border bg-primary/5 p-3">
+    <section className="space-y-4 rounded-lg border border-primary/30 bg-card p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold">V6 매수·매도 전략 백테스트</h2>
-            <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
-              TRADE RULES
-            </span>
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-semibold">V6 대표전략 강건성 검증</h2>
+            <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">FINAL CANDIDATES</span>
           </div>
-          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
-            점수 배점은 기존 9.5점 원점수 체계를 그대로 사용하고 화면의 매매 기준만 0~100으로
-            표시합니다. 60/70점 최초 상향 돌파를 종가에서 확인한 뒤 다음 거래일 시가에 진입합니다.
-            상승·하락 점수 청산도 종가에서 확인하므로 다음 거래일 시가에 체결합니다.
+          <p className="mt-1 max-w-4xl text-[11px] leading-relaxed text-muted-foreground">
+            기술점수 배점은 1 / 1 / 1.5 / 1 / 0.5 / 2.5 / 2로 고정합니다. 매수는 70점 Onset,
+            하락 청산은 30점 이탈, 최대 보유는 40D를 대표 규칙으로 두고 ↑90과 ↑80 두 전략만 핵심 비교합니다.
+            20/30/50D는 40D 강건성 확인용으로만 남깁니다.
           </p>
         </div>
+        <label className="text-[11px]" data-no-print>
+          검증 구간{" "}
+          <select
+            className="rounded border border-border bg-card p-1"
+            value={split}
+            onChange={(e) => setSplit(e.target.value as "ALL" | "OOS")}
+          >
+            <option value="ALL">전체</option>
+            <option value="OOS">OOS</option>
+          </select>
+        </label>
+      </div>
 
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" data-no-print>
-          <SelectField
-            label="매수 · Onset"
-            value={entryThreshold}
-            values={[60, 70]}
-            suffix="점"
-            onChange={setEntryThreshold}
-          />
-          <SelectField
-            label="자동매도 · 최대 보유"
-            value={maxHoldingDays}
-            values={[20, 30, 40, 50]}
-            suffix="거래일"
-            onChange={setMaxHoldingDays}
-          />
-          <SelectField
-            label="상승 매도 · 점수 상향 돌파"
-            value={upsideExitThreshold}
-            values={[80, 90]}
-            suffix="점"
-            onChange={setUpsideExitThreshold}
-          />
-          <SelectField
-            label="하락 매도 · 점수 하향 이탈"
-            value={downsideExitThreshold}
-            values={[60, 50, 40, 30]}
-            suffix="점"
-            onChange={setDownsideExitThreshold}
-          />
-        </div>
+      <div className="grid gap-2 lg:grid-cols-2">
+        {coreRows.map((row) => <CoreSummary key={row.scenario} row={row} />)}
+      </div>
 
-        <div className="flex flex-wrap gap-3 text-[12px]" data-no-print>
-          <label>
-            검증 구간{" "}
-            <select
-              className="rounded border border-border bg-card p-1"
-              value={split}
-              onChange={(e) => setSplit(e.target.value as "ALL" | "OOS")}
-            >
-              <option value="ALL">전체</option>
-              <option value="OOS">OOS</option>
-            </select>
-          </label>
-          <label>
-            시장{" "}
-            <select
-              className="rounded border border-border bg-card p-1"
-              value={market}
-              onChange={(e) => setMarket(e.target.value as "ALL" | "KOSPI" | "KOSDAQ")}
-            >
-              <option value="ALL">전체 시장</option>
-              <option value="KOSPI">KOSPI</option>
-              <option value="KOSDAQ">KOSDAQ</option>
-            </select>
-          </label>
-        </div>
+      <Panel title="1. 연도별 성과" note="신호 발생 연도 기준입니다. 특정 연도에만 ↓30 청산이 작동하는지 평균·중앙·승률·꼬리손실과 연간 동일가중 포트폴리오 수익을 함께 봅니다.">
+        <SegmentTable rows={yearly} kind="year" />
+      </Panel>
 
-        <p className="text-[10px] text-muted-foreground">
-          슬래시로 요청한 2 × 4 × 2 × 4 = 64개 매매 조합을 모두 사전 계산합니다. 위 선택값을 바꾸면
-          해당 조합 결과를 즉시 비교할 수 있습니다. 기존 V5 forward horizon({horizons.join("/")}D)은
-          아래 피처 진단용이며 V6 최대 보유기간과는 별도입니다. 왕복 비용 {validation.roundTripCostBps}bps.
-        </p>
-      </header>
+      <Panel title="2. 시장국면별 성과" note="진입 신호일의 시장국면(RISK_ON / NEUTRAL / RISK_OFF) 기준입니다. 상승·중립·하락장에서 대표 전략의 일관성을 확인합니다.">
+        <SegmentTable rows={regimes} kind="regime" />
+      </Panel>
 
-      {selected ? (
-        <div className="space-y-4 p-3">
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              ["거래 수", selected.trades.toLocaleString("ko-KR")],
-              ["평균 수익률", pct(selected.avgReturn)],
-              ["중앙 수익률", pct(selected.medianReturn)],
-              ["승률", pct(selected.winRate)],
-              ["평균 이익", pct(selected.avgWin)],
-              ["평균 손실", pct(selected.avgLoss)],
-              ["손익비", num(selected.payoff)],
-              ["Profit Factor", num(selected.profitFactor)],
-              ["평균 보유기간", selected.averageHoldingDays === null ? "—" : `${selected.averageHoldingDays.toFixed(1)}일`],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-md border border-border p-2">
-                <p className="text-[10px] text-muted-foreground">{label}</p>
-                <p className="num text-[13px] font-semibold">{value}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="grid gap-2 md:grid-cols-2">
-            <div className="rounded-md border border-border p-3">
-              <h3 className="mb-2 text-[12px] font-semibold">진입 시 기술점수 상승 속도</h3>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <p className="text-[10px] text-muted-foreground">최근 5거래일 점수 변화</p>
-                  <p className="num text-base font-semibold">{points(selected.avgScoreRise5d)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground">최근 10거래일 점수 변화</p>
-                  <p className="num text-base font-semibold">{points(selected.avgScoreRise10d)}</p>
-                </div>
-              </div>
-              <p className="mt-2 text-[10px] text-muted-foreground">
-                진입 신호일 현재 0~100 기술점수에서 5/10거래일 전 점수를 뺀 평균 변화폭입니다.
-              </p>
-            </div>
-
-            <div className="rounded-md border border-border p-3">
-              <h3 className="mb-2 text-[12px] font-semibold">매도 사유 구성</h3>
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <p className="text-[10px] text-muted-foreground">기간 만료</p>
-                  <p className="num font-semibold">{pct(selected.timeExitRate)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground">상승 목표</p>
-                  <p className="num font-semibold">{pct(selected.upsideExitRate)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground">모멘텀 하락</p>
-                  <p className="num font-semibold">{pct(selected.downsideExitRate)}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-[11px]">
-              <thead className="text-muted-foreground">
-                <tr>
-                  <th className="px-2 py-1.5 text-left">선택 전략</th>
-                  <th className="px-2 py-1.5 text-right">거래</th>
-                  <th className="px-2 py-1.5 text-right">평균</th>
-                  <th className="px-2 py-1.5 text-right">중앙</th>
-                  <th className="px-2 py-1.5 text-right">승률</th>
-                  <th className="px-2 py-1.5 text-right">손익비</th>
-                  <th className="px-2 py-1.5 text-right">평균 보유</th>
-                  <th className="px-2 py-1.5 text-right">5D 상승</th>
-                  <th className="px-2 py-1.5 text-right">10D 상승</th>
-                  <th className="px-2 py-1.5 text-right">기간/상승/하락 매도</th>
+      <Panel title="3. MDD · 평균 손실 · 손실 꼬리" note="↓30이 손실 거래를 너무 오래 방치하는지 확인합니다. MAE는 보유 중 진입가 대비 최대 불리한 가격 변동이며, P5 MAE는 하위 5% 꼬리입니다.">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] text-[11px]">
+            <thead className="text-muted-foreground">
+              <tr>
+                <th className="px-2 py-1.5 text-left">전략</th>
+                <th className="px-2 py-1.5 text-right">거래</th>
+                <th className="px-2 py-1.5 text-right">평균손실</th>
+                <th className="px-2 py-1.5 text-right">최악거래</th>
+                <th className="px-2 py-1.5 text-right">평균 MAE</th>
+                <th className="px-2 py-1.5 text-right">P5 MAE</th>
+                <th className="px-2 py-1.5 text-right">평균 MFE</th>
+                <th className="px-2 py-1.5 text-right">포트폴리오 MDD</th>
+              </tr>
+            </thead>
+            <tbody>
+              {risks.map((r) => (
+                <tr key={r.strategy} className="border-t border-border/60">
+                  <td className="px-2 py-1.5"><StrategyName row={{ strategyLabel: r.strategyLabel, upsideExitThreshold: r.strategy.includes("u90") ? 90 : 80 }} /></td>
+                  <td className="num px-2 py-1.5 text-right">{r.trades.toLocaleString("ko-KR")}</td>
+                  <td className="num px-2 py-1.5 text-right">{pct(r.avgLoss)}</td>
+                  <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.worstReturn)}</td>
+                  <td className="num px-2 py-1.5 text-right">{pct(r.avgMae)}</td>
+                  <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.tailMaeP5)}</td>
+                  <td className="num px-2 py-1.5 text-right">{pct(r.avgMfe)}</td>
+                  <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.portfolioMdd)}</td>
                 </tr>
-              </thead>
-              <tbody>
-                <tr className="border-t border-border">
-                  <td className="whitespace-nowrap px-2 py-2 font-medium">{selected.label}</td>
-                  <td className="num px-2 py-2 text-right">{selected.trades.toLocaleString("ko-KR")}</td>
-                  <td className="num px-2 py-2 text-right font-semibold">{pct(selected.avgReturn)}</td>
-                  <td className="num px-2 py-2 text-right">{pct(selected.medianReturn)}</td>
-                  <td className="num px-2 py-2 text-right">{pct(selected.winRate)}</td>
-                  <td className="num px-2 py-2 text-right">{num(selected.payoff)}</td>
-                  <td className="num px-2 py-2 text-right">
-                    {selected.averageHoldingDays === null ? "—" : `${selected.averageHoldingDays.toFixed(1)}D`}
-                  </td>
-                  <td className="num px-2 py-2 text-right">{points(selected.avgScoreRise5d)}</td>
-                  <td className="num px-2 py-2 text-right">{points(selected.avgScoreRise10d)}</td>
-                  <td className="num whitespace-nowrap px-2 py-2 text-right">
-                    {pct(selected.timeExitRate)} / {pct(selected.upsideExitRate)} / {pct(selected.downsideExitRate)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <details data-no-print>
-            <summary className="cursor-pointer text-[11px] font-medium text-primary">
-              같은 구간·시장의 64개 전략 수익률 순위 보기
-            </summary>
-            <div className="mt-2 max-h-[360px] overflow-auto rounded border border-border">
-              <table className="w-full min-w-[760px] text-[10px]">
-                <thead className="sticky top-0 bg-surface-strong text-muted-foreground">
-                  <tr>
-                    <th className="px-2 py-1 text-left">전략</th>
-                    <th className="px-2 py-1 text-right">거래</th>
-                    <th className="px-2 py-1 text-right">평균</th>
-                    <th className="px-2 py-1 text-right">중앙</th>
-                    <th className="px-2 py-1 text-right">승률</th>
-                    <th className="px-2 py-1 text-right">손익비</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {comparableRows.map((row) => (
-                    <tr key={`${row.split}-${row.market}-${row.scenario}`} className="border-t border-border/50">
-                      <td className="whitespace-nowrap px-2 py-1">{row.label}</td>
-                      <td className="num px-2 py-1 text-right">{row.trades.toLocaleString("ko-KR")}</td>
-                      <td className="num px-2 py-1 text-right">{pct(row.avgReturn)}</td>
-                      <td className="num px-2 py-1 text-right">{pct(row.medianReturn)}</td>
-                      <td className="num px-2 py-1 text-right">{pct(row.winRate)}</td>
-                      <td className="num px-2 py-1 text-right">{num(row.payoff)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </details>
+              ))}
+            </tbody>
+          </table>
         </div>
-      ) : (
-        <p className="p-4 text-[12px] text-muted-foreground">선택 조합의 결과가 없습니다.</p>
-      )}
+      </Panel>
 
-      <p className="border-t border-border p-3 text-[11px] leading-relaxed text-muted-foreground">
-        동일 종목은 한 번에 한 포지션만 보유합니다. 최대 보유일까지 점수 기반 매도 사건이 없으면 해당
-        거래일 종가로 자동매도합니다. 80/90점 상승 매도는 상향 돌파, 60/50/40/30점 하락 매도는
-        하향 이탈일 때만 발생합니다. 신호일에 이미 선택한 상승 매도 점수를 넘은 종목은 신규 진입하지
-        않습니다. 데이터 끝까지 최대 보유기간이 확보되지 않았고 조기 청산도 없었던 거래는 미완결로
-        제외합니다. 이 결과는 종목별 거래 규칙 검증이며 계좌 전체 자금배분 시뮬레이션은 아닙니다.
-      </p>
+      <Panel title="4. 포트폴리오 성과 · 40D 검증" note="70 Onset / ↓30을 고정하고 최대 보유 20·30·40·50D를 비교합니다. 매 거래일 활성 종목을 동일가중하며 신호가 없는 날은 현금으로 둡니다. 40D 행을 강조합니다.">
+        <PortfolioTable rows={portfolios} />
+      </Panel>
+
+      <Panel title="5. 진입가 기준 고정 손절" note="대표 40D 전략 각각에 추가 가격 손절 -10% / -20% / -30% / -40%를 적용합니다. 갭 하락 시 손절선이 아니라 당일 시가 체결로 계산합니다.">
+        <OverlayTable rows={fixedStops} title="fixed" />
+      </Panel>
+
+      <Panel title="6. ATR trailing stop" note="Wilder ATR14 × 2 / 3 / 4를 비교합니다. trailing stop은 당일 종가까지 확인된 고가·ATR로 갱신하여 다음 거래일에만 적용하므로 장중 고가/저가 순서를 미리 아는 look-ahead를 사용하지 않습니다.">
+        <OverlayTable rows={atrStops} title="atr" />
+      </Panel>
+
+      <details data-no-print className="rounded border border-border p-3 text-[10px] text-muted-foreground">
+        <summary className="cursor-pointer font-medium text-foreground">계산 가정 보기</summary>
+        <ul className="mt-2 list-disc space-y-1 pl-4">
+          {validation.assumptions.map((a) => <li key={a}>{a}</li>)}
+          <li>왕복 비용: {validation.roundTripCostBps}bps</li>
+          <li>OOS 시작: {validation.oosStart ?? "없음"}</li>
+        </ul>
+      </details>
     </section>
   );
 }
