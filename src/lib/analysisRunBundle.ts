@@ -111,6 +111,10 @@ export function buildScreeningSummary(
   );
 
   const rotation = analysis.sectorRotation?.sectors ?? [];
+  const stockRows = analysis.rows.filter((row) => row.instrument.instrumentType === "STOCK");
+  const etfRows = analysis.rows.filter((row) => row.instrument.instrumentType === "ETF");
+  const mappedRows = analysis.rows.filter((row) => row.instrument.sectorCode !== "ETC");
+  const unmappedRows = analysis.rows.filter((row) => row.instrument.sectorCode === "ETC");
   const sectorCounts = new Map<string, { sectorCode: string; sectorName: string; count: number }>();
   for (const row of analysis.rows) {
     const key = `${row.instrument.sectorCode}\u0000${row.instrument.sectorName}`;
@@ -168,8 +172,24 @@ export function buildScreeningSummary(
       incomplete: analysis.rows.filter((row) => row.dataCompletenessRatio < 0.7).length,
     },
     sectorCoverage: {
-      mapped: analysis.rows.filter((row) => row.instrument.sectorCode !== "ETC").length,
-      unmapped: analysis.rows.filter((row) => row.instrument.sectorCode === "ETC").length,
+      total: analysis.rows.length,
+      mapped: mappedRows.length,
+      unmapped: unmappedRows.length,
+      stocks: {
+        total: stockRows.length,
+        mapped: stockRows.filter((row) => row.instrument.sectorCode !== "ETC").length,
+        unmapped: stockRows.filter((row) => row.instrument.sectorCode === "ETC").length,
+      },
+      etfs: {
+        total: etfRows.length,
+        mapped: etfRows.filter((row) => row.instrument.sectorCode !== "ETC").length,
+        unmapped: etfRows.filter((row) => row.instrument.sectorCode === "ETC").length,
+      },
+      unmappedSymbols: unmappedRows.map((row) => ({
+        symbol: row.instrument.symbol,
+        name: row.instrument.name,
+        instrumentType: row.instrument.instrumentType,
+      })),
       sectors: [...sectorCounts.values()].sort(
         (a, b) => b.count - a.count || a.sectorCode.localeCompare(b.sectorCode),
       ),
