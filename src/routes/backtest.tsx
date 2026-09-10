@@ -130,6 +130,7 @@ function BacktestPage() {
           datasetVersion: dedicated?.dataset.version ?? `manual-${payload.asOfDate}`,
           asOfDate: payload.asOfDate,
           files,
+          universe: payload.universe,
         },
         execution,
         import.meta.env["VITE_CLOUDTREND_CODE_VERSION"] || "dev",

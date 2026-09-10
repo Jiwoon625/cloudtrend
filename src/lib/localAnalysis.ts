@@ -1,17 +1,10 @@
 // 직접 입력한 데이터로 브라우저에서 분석을 실행한다(외부 시세 API 호출 없음).
-import {
-  runBacktest,
-  type BacktestParams,
-  type BacktestResult,
-} from "@/lib/engine/backtestV4";
+import { runBacktest, type BacktestParams, type BacktestResult } from "@/lib/engine/backtestV4";
 import { buildAlignedRankingAnalysis } from "@/lib/engine/backtestRankingV5";
 import type { MarketDataset } from "@/lib/engine/dataset";
 import { chartSeries, runAnalysis, scoreHistory } from "@/lib/engine/pipeline";
-import {
-  buildFullUniverseSectorDataset,
-  computeFullUniverseSectorRotation,
-} from "@/lib/engine/sectorRotationFullUniverse";
-import { applyV6MomentumStatuses } from "@/lib/engine/v6Momentum";
+import { runFullMarketAnalysis } from "@/lib/engine/fullMarketAnalysis";
+import { buildFullUniverseSectorDataset } from "@/lib/engine/sectorRotationFullUniverse";
 import { getManualDataset, MANUAL_DATA_MISSING_MESSAGE } from "@/lib/manualDataStore";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import type {
@@ -35,25 +28,7 @@ function runLocalMarketAnalysis(
   rawDataset: MarketDataset,
   config: ReturnType<typeof getActiveScoringConfig>,
 ) {
-  const dataset = buildFullUniverseSectorDataset(rawDataset);
-  const analysis = runAnalysis(dataset, config);
-  applyV6MomentumStatuses(analysis, dataset, config);
-
-  const representativeEtf = new Map<string, { symbol: string; name: string }>();
-  for (const sector of analysis.sectorRotation?.sectors ?? []) {
-    if (sector.representativeEtfSymbol && sector.representativeEtf) {
-      representativeEtf.set(sector.sectorCode, {
-        symbol: sector.representativeEtfSymbol,
-        name: sector.representativeEtf,
-      });
-    }
-  }
-
-  analysis.sectorRotation = computeFullUniverseSectorRotation(dataset, {
-    representativeEtf,
-    weights: config.rotation,
-  });
-  return { analysis, dataset };
+  return runFullMarketAnalysis(rawDataset, config);
 }
 
 export function computeLocalAnalysis(): MarketAnalysisPayload {
@@ -200,7 +175,14 @@ export function computeLocalDataStatus(): DataStatusPayload {
 
 export interface LocalBacktestPayload {
   result: BacktestResult;
-  universe: Array<{ symbol: string; name: string; bars: number; market: string }>;
+  universe: Array<{
+    symbol: string;
+    name: string;
+    bars: number;
+    market: string;
+    sectorCode: string;
+    sectorName: string;
+  }>;
   extended: boolean;
   asOfDate: string;
   notes: string[];
@@ -239,6 +221,8 @@ export function computeLocalBacktest(
       symbol: i.symbol,
       name: i.name,
       market: i.market === "KOSDAQ" ? ("KOSDAQ" as const) : ("KOSPI" as const),
+      sectorCode: i.sectorCode,
+      sectorName: i.sectorName,
       bars: dataset.bars[i.symbol] ?? [],
     }))
     .filter((s) => s.bars.length > 0);
@@ -261,6 +245,8 @@ export function computeLocalBacktest(
       name: s.name,
       bars: s.bars.length,
       market: s.market,
+      sectorCode: s.sectorCode ?? "ETC",
+      sectorName: s.sectorName ?? "기타",
     })),
     extended: maxBars > 200,
     asOfDate: dataset.asOfDate,

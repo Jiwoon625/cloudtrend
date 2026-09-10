@@ -1,0 +1,125 @@
+name: CloudTrend analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 실행 대상
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - screening
+          - backtest
+      force:
+        description: 동일 실행 결과가 있어도 다시 계산
+        required: true
+        default: false
+        type: boolean
+      round_trip_cost_bps:
+        description: 백테스트 왕복 비용(bps)
+        required: true
+        default: "0"
+        type: string
+      limit:
+        description: 백테스트 Universe 종목 수
+        required: true
+        default: "613"
+        type: string
+      include_etf:
+        description: 백테스트 Universe에 ETF 포함
+        required: true
+        default: false
+        type: boolean
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudtrend-analysis-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  parameters:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.pull_request == null &&
+       github.actor == github.repository_owner &&
+       startsWith(github.event.comment.body, '/cloudtrend run'))
+    runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.parse.outputs.mode }}
+      force: ${{ steps.parse.outputs.force }}
+      cost: ${{ steps.parse.outputs.cost }}
+      limit: ${{ steps.parse.outputs.limit }}
+      include_etf: ${{ steps.parse.outputs.include_etf }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: parse
+        name: Validate execution parameters
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_FORCE: ${{ inputs.force }}
+          INPUT_COST: ${{ inputs.round_trip_cost_bps }}
+          INPUT_LIMIT: ${{ inputs.limit }}
+          INPUT_INCLUDE_ETF: ${{ inputs.include_etf }}
+        run: node scripts/parse-cloudtrend-command.mjs >> "$GITHUB_OUTPUT"
+
+  analyze:
+    needs: parameters
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate server configuration
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_USER_ID"
+      - name: Run screening and dashboard snapshot
+        if: needs.parameters.outputs.mode == 'all' || needs.parameters.outputs.mode == 'screening'
+        run: |
+          args=(--supabase-user-id "$SUPABASE_USER_ID" --upload)
+          if [[ "${{ needs.parameters.outputs.force }}" == "true" ]]; then args+=(--force); fi
+          npm run screening:run -- "${args[@]}"
+      - name: Run backtest
+        if: needs.parameters.outputs.mode == 'all' || needs.parameters.outputs.mode == 'backtest'
+        run: |
+          args=(
+            --supabase-user-id "$SUPABASE_USER_ID"
+            --upload
+            --limit "${{ needs.parameters.outputs.limit }}"
+            --round-trip-cost-bps "${{ needs.parameters.outputs.cost }}"
+          )
+          if [[ "${{ needs.parameters.outputs.include_etf }}" == "true" ]]; then
+            args+=(--include-etf)
+          else
+            args+=(--exclude-etf)
+          fi
+          if [[ "${{ needs.parameters.outputs.force }}" == "true" ]]; then args+=(--force); fi
+          npm run backtest:run -- "${args[@]}"
+      - name: Upload execution artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudtrend-analysis-${{ github.run_id }}
+          path: |
+            analysis-runs/
+            backtest-runs/
+          if-no-files-found: warn
+          retention-days: 14

@@ -214,6 +214,15 @@ npm run backtest:run -- --supabase-user-id <USER_UUID> --upload
 기본 설정은 `config/backtest.score-change.json`, 로컬 산출물은
 `backtest-runs/<실행 ID>/bundle.json`과 `score-change-summary.json`입니다.
 
+## GPT·GitHub Actions 자동 분석
+
+`CloudTrend analysis` Actions 워크플로는 Supabase의 비공개 입력을 사용해 백테스트뿐 아니라
+웹 스크리너 및 대시보드와 동일한 최신 점수 스냅샷을 계산합니다. 핵심 결과는 사용자별 RLS가
+적용된 `analysis_runs`에, 상세 결과는 private Storage에 저장합니다. 종목별 섹터는 CSV의 명시값을
+우선하고, 값이 없으면 저장소의 검토 완료 613종목 및 추가 매핑을 적용합니다.
+
+수동 실행과 GPT 댓글 명령 형식은 [`docs/automation.md`](docs/automation.md)를 참고하세요.
+
 ## 환경변수와 API 키
 
 일반적인 수동 데이터 입력·브라우저 분석에는 API 키가 필요하지 않습니다.
