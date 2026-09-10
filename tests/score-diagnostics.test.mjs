@@ -137,6 +137,38 @@ test("V6 records score acceleration and prevents overlapping positions", () => {
   for(let i=1;i<trades.length;i++) assert.ok(trades[i].entryIndex>trades[i-1].exitIndex);
 });
 
+test("fixed price stop fills at the stop intraday and at the open after a gap", () => {
+  const base=scenario({upsideExitThreshold:90,downsideExitThreshold:30});
+  const s=strategySeries();
+  s.bars[2]={...s.bars[2],open:100,high:101,low:89,close:95};
+  const intraday=simulateTrade(s,1,base,0,{kind:"FIXED_STOP",id:"fixed-10",label:"-10%",stopPercent:10});
+  assert.equal(intraday.reason,"PRICE_STOP");
+  assert.equal(intraday.exitIndex,2);
+  assert.equal(intraday.exitPrice,90);
+  assert.ok(Math.abs(intraday.ret+10)<1e-10);
+
+  const g=strategySeries();
+  g.bars[3]={...g.bars[3],open:85,high:88,low:84,close:86};
+  const gap=simulateTrade(g,1,base,0,{kind:"FIXED_STOP",id:"fixed-10",label:"-10%",stopPercent:10});
+  assert.equal(gap.reason,"PRICE_STOP");
+  assert.equal(gap.exitIndex,3);
+  assert.equal(gap.exitPrice,85);
+  assert.ok(Math.abs(gap.ret+15)<1e-10);
+});
+
+test("ATR trailing stop only uses a trailing level known before the session", () => {
+  const s=strategySeries(40);
+  const base=scenario({maxHoldingDays:30,upsideExitThreshold:90,downsideExitThreshold:30});
+  s.bars[15]={...s.bars[15],open:100,low:100,high:110,close:109};
+  s.bars[16]={...s.bars[16],open:109,low:103,high:110,close:104};
+  const trade=simulateTrade(s,1,base,0,{kind:"ATR_TRAILING",id:"atr-2",label:"ATR14 x2",multiplier:2,period:14});
+  assert.equal(trade.reason,"ATR_TRAIL");
+  assert.equal(trade.exitIndex,16);
+  assert.equal(trade.exitTiming,"STOP");
+  assert.ok(trade.exitPrice>103 && trade.exitPrice<109);
+  assert.ok(trade.ret>0);
+});
+
 test("momentum risk means the latest 60+ episode reached 80 before falling below 60", () => {
   assert.equal(classifyV6Momentum([55,62,72,83,74,58,55]).status,"MOMENTUM_RISK");
   assert.equal(classifyV6Momentum([55,62,72,58,55]).status,null);
