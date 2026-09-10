@@ -250,6 +250,17 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
   const top = [...passed]
     .sort((a, b) => b.totalScoreNormalized - a.totalScoreNormalized)
     .slice(0, 10);
+  const onsetTop = [...passed]
+    .filter(
+      (r) => r.actionLabelText === "진입후보" || r.actionLabelText === "우선진입후보",
+    )
+    .sort((a, b) => b.totalScoreNormalized - a.totalScoreNormalized)
+    .slice(0, 10);
+  const priorityOnsets = onsetTop.filter((r) => r.actionLabelText === "우선진입후보");
+  const entryOnsets = onsetTop.filter((r) => r.actionLabelText === "진입후보");
+  const momentumRiskRows = [...rows]
+    .filter((r) => r.actionLabelText === "모멘텀 위험")
+    .sort((a, b) => b.totalScoreNormalized - a.totalScoreNormalized);
 
   const gateColor =
     gate.status === "RISK_ON" ? "text-up" : gate.status === "NEUTRAL" ? "text-warn" : "text-down";
@@ -341,6 +352,9 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
         <Card title="오늘의 스크리닝 요약" icon={<TrendingUp className="size-4 text-primary" />}>
           <KeyValue label="전체 분석 종목 수" value={formatCount(rows.length)} />
           <KeyValue label="Universe Filter 통과" value={formatCount(passed.length)} />
+          <KeyValue label="60점 Onset · 진입후보" value={formatCount(entryOnsets.length)} />
+          <KeyValue label="70점 Onset · 우선진입후보" value={formatCount(priorityOnsets.length)} />
+          <KeyValue label="모멘텀 위험" value={formatCount(momentumRiskRows.length)} />
           <KeyValue label="A등급" value={formatCount(gradeA.length)} />
           <KeyValue label="B등급" value={formatCount(gradeB.length)} />
           <KeyValue
@@ -465,6 +479,42 @@ function DashboardContent({ analysis }: { analysis: AnalysisResult }) {
           </p>
         </section>
       ) : null}
+
+      <section className="mt-6">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <h2 className="text-sm font-semibold">V6 Onset 상위 10</h2>
+          <Badge variant="outline" className="border-primary/30 bg-primary/5 text-[10px] text-primary">
+            60점 진입후보 / 70점 우선진입후보
+          </Badge>
+          <span className="text-[11px] text-muted-foreground">
+            오늘 최초 상향 돌파한 Universe 통과 종목만 종합점수 순으로 표시합니다.
+          </span>
+        </div>
+        {onsetTop.length > 0 ? (
+          <ScreenerTable rows={onsetTop} />
+        ) : (
+          <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">
+            오늘 60점 또는 70점을 새로 상향 돌파한 종목이 없습니다.
+          </div>
+        )}
+      </section>
+
+      <section className="mt-6">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <h2 className="text-sm font-semibold text-warn">모멘텀 위험</h2>
+          <span className="text-[11px] text-muted-foreground">
+            직전 60점+ 모멘텀 구간에서 80점 이상을 기록한 뒤 현재 60점 미만으로 내려온 종목입니다.
+            60점 이상으로 다시 회복하면 이전 위험 상태는 해제됩니다.
+          </span>
+        </div>
+        {momentumRiskRows.length > 0 ? (
+          <ScreenerTable rows={momentumRiskRows} />
+        ) : (
+          <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">
+            현재 모멘텀 위험 조건에 해당하는 종목이 없습니다.
+          </div>
+        )}
+      </section>
 
       <section className="mt-6">
         <div className="mb-2 flex items-center gap-2">

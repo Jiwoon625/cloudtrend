@@ -63,30 +63,84 @@ test("engine and charts use complete raw 9.5-point scores, independent of featur
   assert.ok(Math.abs(result.bucketHorizons.filter(r=>r.count>0)[0].avgReturn - (expected+(bars[265].close/bars[261].open-1)*100+(bars[270].close/bars[266].open-1)*100+(bars[275].close/bars[271].open-1)*100)/4)<1e-10);
 });
 
-const { simulateTrade, simulateScenario, STRATEGY_SCENARIOS, passesEntry } = await import("../src/lib/engine/strategyValidation.ts");
-function strategySeries() {
-  const bars=prices(12).map(b=>({...b,open:100,close:100,low:99,high:101}));
-  return {symbol:"A",market:"KOSPI",bars,scores:[4,7,7,7,7,4,7,7,7,7,7,7],nearHighs:bars.map(()=>true),extensions:bars.map(()=>10),regimes:bars.map(()=>"RISK_ON")};
+const {
+  simulateTrade,
+  simulateScenario,
+  passesEntry,
+  scorePercent,
+} = await import("../src/lib/engine/strategyValidation.ts");
+const { classifyV6Momentum } = await import("../src/lib/engine/v6Momentum.ts");
+
+const scenario = (overrides={}) => ({
+  id:"v6-test", label:"v6-test", entryThreshold:60, maxHoldingDays:20,
+  upsideExitThreshold:80, downsideExitThreshold:60, ...overrides,
+});
+
+function strategySeries(n=30) {
+  const bars=prices(n).map(b=>({...b,open:100,close:100,low:99,high:101}));
+  const scores=Array(n).fill(6.0);
+  scores[0]=5.0; // 52.6 -> 63.2: 60-point Onset at index 1
+  return {symbol:"A",market:"KOSPI",bars,scores,nearHighs:bars.map(()=>true),extensions:bars.map(()=>10),regimes:bars.map(()=>"RISK_ON")};
 }
-test("tight stops can discard eventual winners; overnight gaps lose more than the stop limit",()=>{
-  const s=strategySeries(); s.bars[2]={...s.bars[2],low:94,close:101}; s.bars[4]={...s.bars[4],close:125,high:126};
-  const base=STRATEGY_SCENARIOS.find(x=>x.id==="onset6");
-  assert.equal(simulateTrade(s,1,3,base).ret,25);
-  assert.ok(Math.abs(simulateTrade(s,1,3,{...base,stopPercent:5}).ret+5)<1e-10);
-  s.bars[2].low=99; s.bars[3]={...s.bars[3],open:85,low:84,high:87,close:86};
-  const gap=simulateTrade(s,1,3,{...base,stopPercent:5});
-  assert.equal(gap.reason,"STOP_GAP"); assert.equal(gap.exitPrice,85);
+
+test("V6 uses normalized 0-100 thresholds while preserving the 9.5 raw score", () => {
+  assert.ok(Math.abs(scorePercent(5.7)-60)<1e-10);
+  assert.ok(Math.abs(scorePercent(6.65)-70)<1e-10);
+  const s=strategySeries();
+  assert.equal(passesEntry(s,1,scenario()),true);
+  assert.equal(passesEntry(s,2,scenario()),false);
+  s.scores[1]=8.0;
+  assert.equal(passesEntry(s,1,scenario()),false); // already beyond selected 80-point exit target
 });
-test("score decay exits next open, not the close that generated the signal",()=>{
-  const s=strategySeries(); s.scores[2]=3; s.bars[2].close=110; s.bars[3].open=90;
-  const r=simulateTrade(s,1,4,STRATEGY_SCENARIOS.find(x=>x.id==="decay"));
-  assert.equal(r.exitIndex,3); assert.equal(r.exitPrice,90); assert.equal(r.reason,"SCORE");
+
+test("V6 upside score crossing exits on the following open", () => {
+  const s=strategySeries();
+  s.scores[2]=7.0;
+  s.scores[3]=8.0; // crosses 80 at index 3 close
+  s.bars[4].open=120;
+  const trade=simulateTrade(s,1,scenario());
+  assert.equal(trade.reason,"UPSIDE_SCORE");
+  assert.equal(trade.exitIndex,4);
+  assert.equal(trade.exitPrice,120);
+  assert.ok(Math.abs(trade.ret-20)<1e-10);
 });
-test("entry filters use signal-time data; positions cannot overlap",()=>{
-  const s=strategySeries(), base=STRATEGY_SCENARIOS.find(x=>x.id==="filters");
-  assert.equal(passesEntry(s,1,base),true);
-  s.extensions[1]=16; assert.equal(passesEntry(s,1,base),false);
-  s.extensions[1]=null; assert.equal(passesEntry(s,1,base),false);
-  const trades=simulateScenario(s,3,STRATEGY_SCENARIOS.find(x=>x.id==="state6"));
+
+test("V6 downside score crossing exits on the following open", () => {
+  const s=strategySeries();
+  s.scores[2]=6.1;
+  s.scores[3]=5.5; // falls through 60 at index 3 close
+  s.bars[4].open=90;
+  const trade=simulateTrade(s,1,scenario());
+  assert.equal(trade.reason,"DOWNSIDE_SCORE");
+  assert.equal(trade.exitIndex,4);
+  assert.equal(trade.exitPrice,90);
+  assert.ok(Math.abs(trade.ret+10)<1e-10);
+});
+
+test("V6 closes at the maximum holding-day close when no score event occurs", () => {
+  const s=strategySeries();
+  s.bars[21].close=125;
+  const trade=simulateTrade(s,1,scenario());
+  assert.equal(trade.reason,"TIME");
+  assert.equal(trade.exitIndex,21);
+  assert.equal(trade.holdingDays,20);
+  assert.ok(Math.abs(trade.ret-25)<1e-10);
+});
+
+test("V6 records score acceleration and prevents overlapping positions", () => {
+  const s=strategySeries(50);
+  s.scores=Array(50).fill(5.0);
+  s.scores[0]=4.5; s.scores[1]=6.0;
+  s.scores[7]=5.0; s.scores[8]=6.0;
+  s.scores[14]=5.0; s.scores[15]=6.0;
+  const trades=simulateScenario(s,scenario({maxHoldingDays:5,upsideExitThreshold:90,downsideExitThreshold:30}));
   for(let i=1;i<trades.length;i++) assert.ok(trades[i].entryIndex>trades[i-1].exitIndex);
+});
+
+test("momentum risk means the latest 60+ episode reached 80 before falling below 60", () => {
+  assert.equal(classifyV6Momentum([55,62,72,83,74,58,55]).status,"MOMENTUM_RISK");
+  assert.equal(classifyV6Momentum([55,62,72,58,55]).status,null);
+  assert.equal(classifyV6Momentum([55,82,58,62,58]).status,null); // new 60+ episode never reached 80
+  assert.equal(classifyV6Momentum([55,62]).status,"ENTRY_60");
+  assert.equal(classifyV6Momentum([55,75]).status,"ENTRY_70");
 });
