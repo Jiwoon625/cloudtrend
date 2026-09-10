@@ -1,9 +1,5 @@
 import { computeIndicators } from "./indicators";
-import {
-  HISTORICAL_TECHNICAL_MAX,
-  historicalTechnicalScore,
-  type ScoringConfig,
-} from "./scoring";
+import { HISTORICAL_TECHNICAL_MAX, historicalTechnicalScore, type ScoringConfig } from "./scoring";
 import type { MarketDataset } from "./dataset";
 import type { AnalysisResult } from "./pipeline";
 
@@ -40,8 +36,8 @@ export function normalizedFullScore(rawScore: number | null | undefined): number
  */
 export function classifyV6Momentum(scores: Array<number | null>): V6MomentumSignal {
   const last = scores.length - 1;
-  const currentScore = last >= 0 ? scores[last] ?? null : null;
-  const previousScore = last > 0 ? scores[last - 1] ?? null : null;
+  const currentScore = last >= 0 ? (scores[last] ?? null) : null;
+  const previousScore = last > 0 ? (scores[last - 1] ?? null) : null;
   const scoreDelta1d =
     currentScore !== null && previousScore !== null
       ? Math.round((currentScore - previousScore) * 100) / 100
@@ -56,8 +52,8 @@ export function classifyV6Momentum(scores: Array<number | null>): V6MomentumSign
   if (currentScore !== null && currentScore < V6_MOMENTUM_BREAK) {
     let dropIndex = -1;
     for (let i = last; i >= 1; i--) {
-      const cur = scores[i];
-      const prev = scores[i - 1];
+      const cur = scores[i] ?? null;
+      const prev = scores[i - 1] ?? null;
       if (cur === null || prev === null) continue;
       if (cur < V6_MOMENTUM_BREAK && prev >= V6_MOMENTUM_BREAK) {
         dropIndex = i;
@@ -69,7 +65,7 @@ export function classifyV6Momentum(scores: Array<number | null>): V6MomentumSign
       let peak = -Infinity;
       let sawKnown = false;
       for (let j = dropIndex - 1; j >= 0; j--) {
-        const score = scores[j];
+        const score = scores[j] ?? null;
         if (score === null) break;
         if (score < V6_MOMENTUM_BREAK) break;
         sawKnown = true;

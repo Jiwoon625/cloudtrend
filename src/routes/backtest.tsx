@@ -10,7 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { loadBacktestDataset } from "@/lib/backtestDataStore";
+import { getBacktestDataVersionFiles, loadBacktestDataset } from "@/lib/backtestDataStore";
+import { createBacktestRunBundle, type BacktestRunIndexEntry } from "@/lib/backtestRunBundle";
+import { saveBacktestRun } from "@/lib/backtestRunStore";
 import {
   BACKTEST_FEATURES,
   DEFAULT_BACKTEST_PARAMS,
@@ -21,6 +23,7 @@ import {
 import { computeLocalBacktest } from "@/lib/localAnalysis";
 import {
   getManualDataMeta,
+  getManualDataText,
   hydrateManualData,
   type ManualDataMeta,
 } from "@/lib/manualDataStore";
@@ -93,16 +96,52 @@ function BacktestPage() {
         horizons: DEFAULT_HORIZONS,
         roundTripCostBps: Math.max(0, roundTripCostBps),
       };
-      return computeLocalBacktest(
-        symbolText
-          .split(/[\s,;\n\t]+/)
-          .map((s) => s.trim())
-          .filter(Boolean),
+      const symbols = symbolText
+        .split(/[\s,;\n\t]+/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const execution = {
+        symbols,
+        limit: Math.max(1, limit),
+        includeEtf,
+        roundTripCostBps: Math.max(0, roundTripCostBps),
+      };
+      const payload = computeLocalBacktest(
+        symbols,
         params,
-        Math.max(1, limit),
+        execution.limit,
         includeEtf,
         dedicated?.dataset ?? null,
       );
+      const files = dedicated
+        ? getBacktestDataVersionFiles()
+        : [
+            {
+              id: "kr.json",
+              fileName: getManualDataMeta()?.fileName ?? null,
+              bytes: new Blob([getManualDataText() ?? ""]).size,
+              savedAt: getManualDataMeta()?.savedAt ?? new Date(0).toISOString(),
+            },
+          ];
+      const bundle = await createBacktestRunBundle(
+        payload.result,
+        {
+          source: dedicated ? "SUPABASE_BACKTEST" : "SUPABASE_KR",
+          datasetVersion: dedicated?.dataset.version ?? `manual-${payload.asOfDate}`,
+          asOfDate: payload.asOfDate,
+          files,
+        },
+        execution,
+        import.meta.env["VITE_CLOUDTREND_CODE_VERSION"] || "dev",
+      );
+      let savedRun: BacktestRunIndexEntry | null = null;
+      let saveError: string | null = null;
+      try {
+        savedRun = await saveBacktestRun(bundle);
+      } catch (error) {
+        saveError = error instanceof Error ? error.message : "실행 기록을 저장하지 못했습니다.";
+      }
+      return { ...payload, savedRun, saveError };
     },
   });
 
@@ -134,7 +173,8 @@ function BacktestPage() {
             <div>
               <h2 className="text-sm font-semibold">고정 검증 설정</h2>
               <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
-                전략 파라미터 탐색은 종료했습니다. 아래 항목만 데이터 범위·거래비용 확인용으로 조정합니다.
+                전략 파라미터 탐색은 종료했습니다. 아래 항목만 데이터 범위·거래비용 확인용으로
+                조정합니다.
               </p>
             </div>
 
@@ -145,13 +185,23 @@ function BacktestPage() {
 
             <div className="space-y-1">
               <Label className="text-[11px] text-muted-foreground">Universe 종목 수</Label>
-              <NumberField value={limit} min={1} onChange={(n) => setLimit(Math.max(1, Math.round(n)))} />
-              <p className="text-[10px] text-muted-foreground">기본 613개. 종목코드 직접 입력 시 이 값은 무시됩니다.</p>
+              <NumberField
+                value={limit}
+                min={1}
+                onChange={(n) => setLimit(Math.max(1, Math.round(n)))}
+              />
+              <p className="text-[10px] text-muted-foreground">
+                기본 613개. 종목코드 직접 입력 시 이 값은 무시됩니다.
+              </p>
             </div>
 
             <div className="space-y-1">
               <Label className="text-[11px] text-muted-foreground">왕복 비용 (bps, 100 = 1%)</Label>
-              <NumberField value={roundTripCostBps} min={0} onChange={(n) => setRoundTripCostBps(Math.max(0, n))} />
+              <NumberField
+                value={roundTripCostBps}
+                min={0}
+                onChange={(n) => setRoundTripCostBps(Math.max(0, n))}
+              />
             </div>
 
             <div className="space-y-1">
@@ -165,17 +215,27 @@ function BacktestPage() {
             </div>
 
             <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
-              <input type="checkbox" checked={includeEtf} onChange={(e) => setIncludeEtf(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={includeEtf}
+                onChange={(e) => setIncludeEtf(e.target.checked)}
+              />
               자동 선정에 ETF 포함
             </label>
 
             {!hasBacktestData && ready ? (
               meta ? (
                 <p className="text-[10px] text-muted-foreground">
-                  백테스트 전용 파일이 없으면 <Link to="/scoring" className="underline">데이터·산식</Link>의 저장 데이터를 사용합니다.
+                  백테스트 전용 파일이 없으면{" "}
+                  <Link to="/scoring" className="underline">
+                    데이터·산식
+                  </Link>
+                  의 저장 데이터를 사용합니다.
                 </p>
               ) : (
-                <p className="text-[10px] text-warn">백테스트용 장기 데이터를 먼저 업로드해 주세요.</p>
+                <p className="text-[10px] text-warn">
+                  백테스트용 장기 데이터를 먼저 업로드해 주세요.
+                </p>
               )
             ) : null}
 
@@ -210,6 +270,37 @@ function BacktestPage() {
             </section>
           ) : (
             <>
+              <section className="rounded-lg border border-border bg-card p-3 text-[11px]">
+                {mutation.data?.savedRun ? (
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    <div>
+                      <p className="text-muted-foreground">실행 ID</p>
+                      <p className="font-semibold">{mutation.data.savedRun.id}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">데이터 버전</p>
+                      <p className="break-all font-mono text-[10px]">
+                        {mutation.data.savedRun.dataVersion}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">코드 버전</p>
+                      <p className="break-all font-mono text-[10px]">
+                        {mutation.data.savedRun.codeVersion}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground">저장 상태</p>
+                      <p className="font-semibold text-primary">Supabase 저장 완료</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-warn">
+                    백테스트 계산은 완료했지만 실행 기록 저장에 실패했습니다:{" "}
+                    {mutation.data?.saveError ?? "원인 불명"}
+                  </p>
+                )}
+              </section>
               <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {[
                   ["대상 종목", `${result.symbolCount.toLocaleString("ko-KR")}개`],
@@ -229,12 +320,15 @@ function BacktestPage() {
                   {BACKTEST_FEATURES.map((f) => (
                     <div key={f.id} className="rounded-md border border-border p-2">
                       <p className="text-[10px] text-muted-foreground">{f.label}</p>
-                      <p className="num text-[12px] font-semibold">{result.config.scoreWeights[f.id] ?? f.defaultWeight}점</p>
+                      <p className="num text-[12px] font-semibold">
+                        {result.config.scoreWeights[f.id] ?? f.defaultWeight}점
+                      </p>
                     </div>
                   ))}
                 </div>
                 <p className="mt-2 text-[10px] text-muted-foreground">
-                  기술점수 합계 {result.config.scoreMaxPoints}점 · 대표 진입 70점 Onset · 하락 청산 30점 · 대표 최대보유 40D
+                  기술점수 합계 {result.config.scoreMaxPoints}점 · 대표 진입 70점 Onset · 하락 청산
+                  30점 · 대표 최대보유 40D
                 </p>
               </section>
 
@@ -246,12 +340,14 @@ function BacktestPage() {
 
               <section className="rounded-lg border border-border bg-card p-3 text-[10px] leading-relaxed text-muted-foreground">
                 <p>
-                  포트폴리오 지표는 개별 거래 평균과 별개입니다. 각 거래일의 활성 포지션을 동일가중하고,
-                  신호가 없는 날은 현금으로 처리합니다. Sharpe는 무위험수익률 0을 가정하며 거래일 기준 연율화합니다.
+                  포트폴리오 지표는 개별 거래 평균과 별개입니다. 각 거래일의 활성 포지션을
+                  동일가중하고, 신호가 없는 날은 현금으로 처리합니다. Sharpe는 무위험수익률 0을
+                  가정하며 거래일 기준 연율화합니다.
                 </p>
                 <p className="mt-1">
-                  ATR 및 고정 손절은 OHLC 일봉으로 검증하므로 손절선 터치 여부는 확인할 수 있지만 실제 장중 체결 슬리피지는 반영하지 않습니다.
-                  갭 하락은 손절선 가격이 아니라 당일 시가로 처리합니다.
+                  ATR 및 고정 손절은 OHLC 일봉으로 검증하므로 손절선 터치 여부는 확인할 수 있지만
+                  실제 장중 체결 슬리피지는 반영하지 않습니다. 갭 하락은 손절선 가격이 아니라 당일
+                  시가로 처리합니다.
                 </p>
               </section>
             </>

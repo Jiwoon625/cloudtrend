@@ -36,25 +36,21 @@ function scenarioId(
   return `e${entryThreshold}-h${maxHoldingDays}-u${upsideExitThreshold}-d${downsideExitThreshold}`;
 }
 
-export const STRATEGY_SCENARIOS: StrategyScenario[] = V6_MAX_HOLDING_DAYS.flatMap((maxHoldingDays) =>
-  V6_UPSIDE_EXIT_THRESHOLDS.map((upsideExitThreshold) => ({
-    id: scenarioId(70, maxHoldingDays, upsideExitThreshold, 30),
-    label: `70점 Onset · 최대 ${maxHoldingDays}D · ↑${upsideExitThreshold} / ↓30`,
-    entryThreshold: 70,
-    maxHoldingDays,
-    upsideExitThreshold,
-    downsideExitThreshold: 30,
-  })),
+export const STRATEGY_SCENARIOS: StrategyScenario[] = V6_MAX_HOLDING_DAYS.flatMap(
+  (maxHoldingDays) =>
+    V6_UPSIDE_EXIT_THRESHOLDS.map((upsideExitThreshold) => ({
+      id: scenarioId(70, maxHoldingDays, upsideExitThreshold, 30),
+      label: `70점 Onset · 최대 ${maxHoldingDays}D · ↑${upsideExitThreshold} / ↓30`,
+      entryThreshold: 70,
+      maxHoldingDays,
+      upsideExitThreshold,
+      downsideExitThreshold: 30,
+    })),
 );
 
 export const CORE_STRATEGIES = STRATEGY_SCENARIOS.filter((s) => s.maxHoldingDays === 40);
 
-export type V6ExitReason =
-  | "TIME"
-  | "UPSIDE_SCORE"
-  | "DOWNSIDE_SCORE"
-  | "PRICE_STOP"
-  | "ATR_TRAIL";
+export type V6ExitReason = "TIME" | "UPSIDE_SCORE" | "DOWNSIDE_SCORE" | "PRICE_STOP" | "ATR_TRAIL";
 
 export type ExitOverlay =
   | { kind: "NONE"; id: "none"; label: "추가 손절 없음" }
@@ -97,6 +93,8 @@ export interface SimulatedTrade {
   reason: V6ExitReason;
   exitTiming: "OPEN" | "CLOSE" | "STOP";
   signalScore: number;
+  /** 70점 Onset 당일 점수 - 직전 거래일 점수(100점 환산, p). */
+  scoreChange1d: number | null;
   scoreRise5d: number | null;
   scoreRise10d: number | null;
   signalRegime: string;
@@ -195,7 +193,7 @@ function makeTrade(
   const ex = excursion(s, entryIndex, exitIndex, entryPrice, exitPrice, exitTiming);
   return {
     symbol: s.symbol,
-    name: s.name,
+    ...(s.name !== undefined ? { name: s.name } : {}),
     market: s.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI",
     signalDate: s.bars[signalIndex]!.tradeDate,
     entryDate: s.bars[entryIndex]!.tradeDate,
@@ -210,6 +208,7 @@ function makeTrade(
     reason,
     exitTiming,
     signalScore,
+    scoreChange1d: scoreRise(s, signalIndex, 1),
     scoreRise5d: scoreRise(s, signalIndex, 5),
     scoreRise10d: scoreRise(s, signalIndex, 10),
     signalRegime: s.regimes[signalIndex] ?? "UNKNOWN",
@@ -251,11 +250,7 @@ export function simulateTrade(
     if (j > entryIndex) {
       const scoreIndex = j - 1;
       if (
-        crossedDown(
-          s.scores[scoreIndex - 1],
-          s.scores[scoreIndex],
-          scenario.downsideExitThreshold,
-        )
+        crossedDown(s.scores[scoreIndex - 1], s.scores[scoreIndex], scenario.downsideExitThreshold)
       ) {
         return makeTrade(
           s,
@@ -270,13 +265,7 @@ export function simulateTrade(
           costBps,
         );
       }
-      if (
-        crossedUp(
-          s.scores[scoreIndex - 1],
-          s.scores[scoreIndex],
-          scenario.upsideExitThreshold,
-        )
-      ) {
+      if (crossedUp(s.scores[scoreIndex - 1], s.scores[scoreIndex], scenario.upsideExitThreshold)) {
         return makeTrade(
           s,
           signalIndex,
@@ -516,6 +505,49 @@ export interface PositionCapComparisonRow {
   peakActivePositions: number;
 }
 
+export const SCORE_CHANGE_BUCKETS = [
+  { id: "0-5", label: "0~5p", minInclusive: 0, maxExclusive: 5 },
+  { id: "5-10", label: "5~10p", minInclusive: 5, maxExclusive: 10 },
+  { id: "10-20", label: "10~20p", minInclusive: 10, maxExclusive: 20 },
+  { id: "20+", label: "20p 이상", minInclusive: 20, maxExclusive: null },
+] as const;
+
+export type ScoreChangeBucketId = (typeof SCORE_CHANGE_BUCKETS)[number]["id"];
+
+export interface ScoreChangeBucketRow {
+  strategy: string;
+  strategyLabel: string;
+  split: "ALL" | "OOS";
+  bucket: ScoreChangeBucketId;
+  bucketLabel: string;
+  minInclusive: number;
+  maxExclusive: number | null;
+  trades: number;
+  avgScoreChange1d: number | null;
+  avgReturn: number | null;
+  medianReturn: number | null;
+  winRate: number | null;
+  avgWin: number | null;
+  avgLoss: number | null;
+  payoff: number | null;
+  profitFactor: number | null;
+  averageHoldingDays: number | null;
+  worstReturn: number | null;
+  avgMae: number | null;
+  avgMfe: number | null;
+}
+
+export function scoreChangeBucket(value: number | null | undefined): ScoreChangeBucketId | null {
+  if (value === null || value === undefined || !Number.isFinite(value) || value < 0) return null;
+  return (
+    SCORE_CHANGE_BUCKETS.find(
+      (bucket) =>
+        value >= bucket.minInclusive &&
+        (bucket.maxExclusive === null || value < bucket.maxExclusive),
+    )?.id ?? null
+  );
+}
+
 export interface StrategyValidation {
   rows: StrategyValidationRow[];
   yearlyRows: SegmentPerformanceRow[];
@@ -527,6 +559,7 @@ export interface StrategyValidation {
   regimeGateRows: RegimeGateComparisonRow[];
   crashStopTrades: CrashStopTradeRow[];
   positionCapRows: PositionCapComparisonRow[];
+  scoreChangeRows: ScoreChangeBucketRow[];
   oosStart: string | null;
   roundTripCostBps: number;
   fixedWeights: readonly [number, number, number, number, number, number, number];
@@ -573,12 +606,8 @@ function summarizeTrades(
   const avgLoss = mean(losses);
   const winSum = wins.reduce((a, b) => a + b, 0);
   const lossSum = losses.reduce((a, b) => a + b, 0);
-  const scoreRises5 = group
-    .map((t) => t.scoreRise5d)
-    .filter((v): v is number => v !== null);
-  const scoreRises10 = group
-    .map((t) => t.scoreRise10d)
-    .filter((v): v is number => v !== null);
+  const scoreRises5 = group.map((t) => t.scoreRise5d).filter((v): v is number => v !== null);
+  const scoreRises10 = group.map((t) => t.scoreRise10d).filter((v): v is number => v !== null);
   const maes = group.map((t) => t.mae).filter((v): v is number => v !== null);
   const mfes = group.map((t) => t.mfe).filter((v): v is number => v !== null);
   const upsideExitRate = reasonRate(group, "UPSIDE_SCORE");
@@ -615,8 +644,7 @@ function summarizeTrades(
     tailMaeP5: quantile(maes, 0.05),
     avgMfe: mean(mfes),
     horizon: meta.maxHoldingDays,
-    stopRate:
-      priceStopRate !== null && atrStopRate !== null ? priceStopRate + atrStopRate : null,
+    stopRate: priceStopRate !== null && atrStopRate !== null ? priceStopRate + atrStopRate : null,
     scoreExitRate:
       upsideExitRate !== null && downsideExitRate !== null
         ? upsideExitRate + downsideExitRate
@@ -706,9 +734,7 @@ function portfolioMetric(
   const returns = daily.map((d) => d.ret);
   const avg = returns.reduce((a, b) => a + b, 0) / returns.length;
   const variance =
-    returns.length > 1
-      ? returns.reduce((a, b) => a + (b - avg) ** 2, 0) / (returns.length - 1)
-      : 0;
+    returns.length > 1 ? returns.reduce((a, b) => a + (b - avg) ** 2, 0) / (returns.length - 1) : 0;
   const sd = Math.sqrt(Math.max(0, variance));
   const activeDays = daily.filter((d) => d.active > 0).length;
   return {
@@ -793,7 +819,14 @@ function simulateWithPositionCap(
   costBps: number,
   cap: number,
 ): CapacitySimulation {
-  const candidates: Array<{ s: StrategySeries; signalIndex: number; entryDate: string; score: number; rise5: number; rise10: number }> = [];
+  const candidates: Array<{
+    s: StrategySeries;
+    signalIndex: number;
+    entryDate: string;
+    score: number;
+    rise5: number;
+    rise10: number;
+  }> = [];
   for (const s of series) {
     for (let i = 1; i + 1 < s.bars.length; i++) {
       if (!passesEntry(s, i, scenario)) continue;
@@ -866,6 +899,7 @@ export function buildStrategyValidation(
   const regimeGateRows: RegimeGateComparisonRow[] = [];
   const crashStopTrades: CrashStopTradeRow[] = [];
   const positionCapRows: PositionCapComparisonRow[] = [];
+  const scoreChangeRows: ScoreChangeBucketRow[] = [];
   const normalizedCost = Math.max(0, costBps);
   const allDates = [...new Set(series.flatMap((s) => s.bars.map((b) => b.tradeDate)))].sort();
 
@@ -885,8 +919,50 @@ export function buildStrategyValidation(
     }
   }
 
+  for (const scenario of CORE_STRATEGIES) {
+    const trades = baseTrades.get(scenario.id) ?? [];
+    for (const split of ["ALL", "OOS"] as const) {
+      const splitTrades = filterSplit(trades, split, oosStart);
+      for (const bucket of SCORE_CHANGE_BUCKETS) {
+        const group = splitTrades.filter(
+          (trade) => scoreChangeBucket(trade.scoreChange1d) === bucket.id,
+        );
+        const summary = summarizeTrades(group, scenario, split, "ALL");
+        scoreChangeRows.push({
+          strategy: scenario.id,
+          strategyLabel: scenario.label,
+          split,
+          bucket: bucket.id,
+          bucketLabel: bucket.label,
+          minInclusive: bucket.minInclusive,
+          maxExclusive: bucket.maxExclusive,
+          trades: summary.trades,
+          avgScoreChange1d: mean(
+            group
+              .map((trade) => trade.scoreChange1d)
+              .filter((value): value is number => value !== null),
+          ),
+          avgReturn: summary.avgReturn,
+          medianReturn: summary.medianReturn,
+          winRate: summary.winRate,
+          avgWin: summary.avgWin,
+          avgLoss: summary.avgLoss,
+          payoff: summary.payoff,
+          profitFactor: summary.profitFactor,
+          averageHoldingDays: summary.averageHoldingDays,
+          worstReturn: summary.worstReturn,
+          avgMae: summary.avgMae,
+          avgMfe: summary.avgMfe,
+        });
+      }
+    }
+  }
+
   const commonStart =
-    [...baseTrades.values()].flat().map((t) => t.entryDate).sort()[0] ?? null;
+    [...baseTrades.values()]
+      .flat()
+      .map((t) => t.entryDate)
+      .sort()[0] ?? null;
 
   for (const scenario of STRATEGY_SCENARIOS) {
     const all = baseTrades.get(scenario.id) ?? [];
@@ -957,7 +1033,7 @@ export function buildStrategyValidation(
       for (const overlay of [NO_EXIT_OVERLAY, ...overlays]) {
         const trades =
           overlay.kind === "NONE"
-            ? baseTrades.get(strategy.id) ?? []
+            ? (baseTrades.get(strategy.id) ?? [])
             : series.flatMap((s) => simulateScenario(s, strategy, normalizedCost, overlay));
         for (const split of ["ALL", "OOS"] as const) {
           const group = filterSplit(trades, split, oosStart);
@@ -1058,7 +1134,7 @@ export function buildStrategyValidation(
             strategyLabel: strategy.label,
             upsideExitThreshold: strategy.upsideExitThreshold,
             symbol: trade.symbol,
-            name: trade.name,
+            ...(trade.name !== undefined ? { name: trade.name } : {}),
             market: trade.market,
             signalDate: trade.signalDate,
             entryDate: trade.entryDate,
@@ -1074,8 +1150,7 @@ export function buildStrategyValidation(
             exitOpenGapPct: gapPct,
             maxAbsCloseMovePct: maxMove,
             suspiciousPriceBreak:
-              (gapPct !== null && Math.abs(gapPct) >= 25) ||
-              (maxMove !== null && maxMove >= 25),
+              (gapPct !== null && Math.abs(gapPct) >= 25) || (maxMove !== null && maxMove >= 25),
             inOos: oosStart !== null && trade.signalDate >= oosStart,
           });
         }
@@ -1139,6 +1214,7 @@ export function buildStrategyValidation(
     regimeGateRows,
     crashStopTrades,
     positionCapRows,
+    scoreChangeRows,
     oosStart,
     roundTripCostBps: normalizedCost,
     fixedWeights: [1, 1, 1.5, 1, 0.5, 2.5, 2],

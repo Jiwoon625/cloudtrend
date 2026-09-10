@@ -85,6 +85,11 @@ export function getBacktestTotalBytes(): number {
   return entries.reduce((sum, f) => sum + f.bytes, 0);
 }
 
+/** 재현성 번들에 기록할 입력 파일 목록. 원문이나 인증정보는 포함하지 않는다. */
+export function getBacktestDataVersionFiles(): BacktestFileEntry[] {
+  return entries.map((entry) => ({ ...entry }));
+}
+
 export async function addBacktestFile(
   source: Blob | string,
   fileName?: string | null,

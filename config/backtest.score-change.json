@@ -1,0 +1,9 @@
+{
+  "symbols": [],
+  "limit": 613,
+  "includeEtf": false,
+  "roundTripCostBps": 0,
+  "horizons": [5, 10, 20, 30, 40],
+  "horizonDays": 20,
+  "sampleEvery": 5
+}

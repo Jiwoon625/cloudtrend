@@ -6,6 +6,7 @@ import type {
   PortfolioMetricRow,
   PositionCapComparisonRow,
   RegimeGateComparisonRow,
+  ScoreChangeBucketRow,
   SegmentPerformanceRow,
   StrategyValidation,
   StrategyValidationRow,
@@ -58,7 +59,7 @@ function StrategyName({
         ? "기본 추천 · ↑90"
         : up === 80
           ? "안정성 우선 · ↑80"
-          : row.strategyLabel ?? row.label ?? "전략"}
+          : (row.strategyLabel ?? row.label ?? "전략")}
     </span>
   );
 }
@@ -95,13 +96,66 @@ function CoreSummary({ row }: { row: StrategyValidationRow }) {
   );
 }
 
-function SegmentTable({
-  rows,
-  kind,
-}: {
-  rows: SegmentPerformanceRow[];
-  kind: "year" | "regime";
-}) {
+function ScoreChangeTable({ rows }: { rows: ScoreChangeBucketRow[] }) {
+  const order = new Map(["0-5", "5-10", "10-20", "20+"].map((id, index) => [id, index]));
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[1050px] text-[11px]">
+        <thead className="text-muted-foreground">
+          <tr>
+            <th className="px-2 py-1.5 text-left">점수 변동(1D)</th>
+            <th className="px-2 py-1.5 text-left">전략</th>
+            <th className="px-2 py-1.5 text-right">거래</th>
+            <th className="px-2 py-1.5 text-right">평균 변동</th>
+            <th className="px-2 py-1.5 text-right">평균</th>
+            <th className="px-2 py-1.5 text-right">중앙</th>
+            <th className="px-2 py-1.5 text-right">승률</th>
+            <th className="px-2 py-1.5 text-right">평균이익</th>
+            <th className="px-2 py-1.5 text-right">평균손실</th>
+            <th className="px-2 py-1.5 text-right">손익비</th>
+            <th className="px-2 py-1.5 text-right">Profit factor</th>
+            <th className="px-2 py-1.5 text-right">최악거래</th>
+            <th className="px-2 py-1.5 text-right">평균보유</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[...rows]
+            .sort(
+              (a, b) =>
+                (order.get(a.bucket) ?? 99) - (order.get(b.bucket) ?? 99) ||
+                strategyUp(b.strategy) - strategyUp(a.strategy),
+            )
+            .map((r) => (
+              <tr key={`${r.bucket}-${r.strategy}`} className="border-t border-border/60">
+                <td className="whitespace-nowrap px-2 py-1.5 font-semibold">{r.bucketLabel}</td>
+                <td className="px-2 py-1.5">
+                  <StrategyName
+                    row={{
+                      strategyLabel: r.strategyLabel,
+                      upsideExitThreshold: strategyUp(r.strategy),
+                    }}
+                  />
+                </td>
+                <td className="num px-2 py-1.5 text-right">{r.trades.toLocaleString("ko-KR")}</td>
+                <td className="num px-2 py-1.5 text-right">{pct(r.avgScoreChange1d)}</td>
+                <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.avgReturn)}</td>
+                <td className="num px-2 py-1.5 text-right">{pct(r.medianReturn)}</td>
+                <td className="num px-2 py-1.5 text-right">{pct(r.winRate)}</td>
+                <td className="num px-2 py-1.5 text-right">{pct(r.avgWin)}</td>
+                <td className="num px-2 py-1.5 text-right">{pct(r.avgLoss)}</td>
+                <td className="num px-2 py-1.5 text-right">{num(r.payoff)}</td>
+                <td className="num px-2 py-1.5 text-right">{num(r.profitFactor)}</td>
+                <td className="num px-2 py-1.5 text-right">{pct(r.worstReturn)}</td>
+                <td className="num px-2 py-1.5 text-right">{days(r.averageHoldingDays)}</td>
+              </tr>
+            ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SegmentTable({ rows, kind }: { rows: SegmentPerformanceRow[]; kind: "year" | "regime" }) {
   const ordered = [...rows].sort((a, b) => {
     if (a.segment !== b.segment) return a.segment.localeCompare(b.segment);
     return a.strategyLabel.localeCompare(b.strategyLabel);
@@ -128,20 +182,21 @@ function SegmentTable({
             <th className="px-2 py-1.5 text-right">손익비</th>
             <th className="px-2 py-1.5 text-right">평균보유</th>
             <th className="px-2 py-1.5 text-right">평균 MAE</th>
-            {kind === "year" ? (
-              <th className="px-2 py-1.5 text-right">연간 포트폴리오</th>
-            ) : null}
+            {kind === "year" ? <th className="px-2 py-1.5 text-right">연간 포트폴리오</th> : null}
           </tr>
         </thead>
         <tbody>
           {ordered.map((r) => (
             <tr key={`${r.segment}-${r.strategy}`} className="border-t border-border/60">
               <td className="px-2 py-1.5 font-medium">
-                {kind === "regime" ? regimeLabel[r.segment] ?? r.segment : r.segment}
+                {kind === "regime" ? (regimeLabel[r.segment] ?? r.segment) : r.segment}
               </td>
               <td className="px-2 py-1.5">
                 <StrategyName
-                  row={{ strategyLabel: r.strategyLabel, upsideExitThreshold: strategyUp(r.strategy) }}
+                  row={{
+                    strategyLabel: r.strategyLabel,
+                    upsideExitThreshold: strategyUp(r.strategy),
+                  }}
                 />
               </td>
               <td className="num px-2 py-1.5 text-right">{r.trades.toLocaleString("ko-KR")}</td>
@@ -154,7 +209,9 @@ function SegmentTable({
               <td className="num px-2 py-1.5 text-right">{days(r.averageHoldingDays)}</td>
               <td className="num px-2 py-1.5 text-right">{pct(r.avgMae)}</td>
               {kind === "year" ? (
-                <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.portfolioReturn)}</td>
+                <td className="num px-2 py-1.5 text-right font-semibold">
+                  {pct(r.portfolioReturn)}
+                </td>
               ) : null}
             </tr>
           ))}
@@ -247,7 +304,9 @@ function OverlayTable({
               key={`${r.scenario}-${r.overlayId}`}
               className={`border-t border-border/60 ${r.overlayId === "none" ? "bg-muted/20" : ""}`}
             >
-              <td className="px-2 py-1.5"><StrategyName row={r} /></td>
+              <td className="px-2 py-1.5">
+                <StrategyName row={r} />
+              </td>
               <td className="whitespace-nowrap px-2 py-1.5 font-medium">{r.overlayLabel}</td>
               <td className="num px-2 py-1.5 text-right">{r.trades.toLocaleString("ko-KR")}</td>
               <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.avgReturn)}</td>
@@ -291,10 +350,23 @@ function RegimeGateTable({ rows }: { rows: RegimeGateComparisonRow[] }) {
         <tbody>
           {rows
             .slice()
-            .sort((a, b) => strategyUp(a.strategy) - strategyUp(b.strategy) || a.gate.localeCompare(b.gate))
+            .sort(
+              (a, b) =>
+                strategyUp(a.strategy) - strategyUp(b.strategy) || a.gate.localeCompare(b.gate),
+            )
             .map((r) => (
-              <tr key={`${r.strategy}-${r.gate}`} className={`border-t border-border/60 ${r.gate === "NO_RISK_OFF" ? "bg-primary/5" : ""}`}>
-                <td className="px-2 py-1.5"><StrategyName row={{ strategyLabel: r.strategyLabel, upsideExitThreshold: strategyUp(r.strategy) }} /></td>
+              <tr
+                key={`${r.strategy}-${r.gate}`}
+                className={`border-t border-border/60 ${r.gate === "NO_RISK_OFF" ? "bg-primary/5" : ""}`}
+              >
+                <td className="px-2 py-1.5">
+                  <StrategyName
+                    row={{
+                      strategyLabel: r.strategyLabel,
+                      upsideExitThreshold: strategyUp(r.strategy),
+                    }}
+                  />
+                </td>
                 <td className="px-2 py-1.5 font-medium">{r.gateLabel}</td>
                 <td className="num px-2 py-1.5 text-right">{r.trades.toLocaleString("ko-KR")}</td>
                 <td className="num px-2 py-1.5 text-right">{pct(r.avgReturn)}</td>
@@ -339,21 +411,38 @@ function CrashStopTable({ rows }: { rows: CrashStopTradeRow[] }) {
         </thead>
         <tbody>
           {ordered.map((r, i) => (
-            <tr key={`${r.strategy}-${r.symbol}-${r.signalDate}-${i}`} className="border-t border-border/60">
-              <td className="px-2 py-1.5"><StrategyName row={{ strategyLabel: r.strategyLabel, upsideExitThreshold: r.upsideExitThreshold }} /></td>
-              <td className="whitespace-nowrap px-2 py-1.5 font-medium">{r.name ? `${r.name} (${r.symbol})` : r.symbol}</td>
+            <tr
+              key={`${r.strategy}-${r.symbol}-${r.signalDate}-${i}`}
+              className="border-t border-border/60"
+            >
+              <td className="px-2 py-1.5">
+                <StrategyName
+                  row={{
+                    strategyLabel: r.strategyLabel,
+                    upsideExitThreshold: r.upsideExitThreshold,
+                  }}
+                />
+              </td>
+              <td className="whitespace-nowrap px-2 py-1.5 font-medium">
+                {r.name ? `${r.name} (${r.symbol})` : r.symbol}
+              </td>
               <td className="px-2 py-1.5">{r.market}</td>
               <td className="px-2 py-1.5">{r.signalDate}</td>
               <td className="px-2 py-1.5">{r.entryDate}</td>
               <td className="px-2 py-1.5">{r.exitDate}</td>
               <td className="num px-2 py-1.5 text-right">{price(r.entryPrice)}</td>
               <td className="num px-2 py-1.5 text-right">{price(r.stopPrice)}</td>
-              <td className="num px-2 py-1.5 text-right">{price(r.exitPrice)}{r.exitWasGap ? " · GAP" : ""}</td>
+              <td className="num px-2 py-1.5 text-right">
+                {price(r.exitPrice)}
+                {r.exitWasGap ? " · GAP" : ""}
+              </td>
               <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.stopReturn)}</td>
               <td className="num px-2 py-1.5 text-right">{pct(r.baselineReturn)}</td>
               <td className="num px-2 py-1.5 text-right">{pct(r.exitOpenGapPct)}</td>
               <td className="num px-2 py-1.5 text-right">{pct(r.maxAbsCloseMovePct)}</td>
-              <td className={`px-2 py-1.5 ${r.suspiciousPriceBreak ? "font-semibold text-warn" : "text-muted-foreground"}`}>
+              <td
+                className={`px-2 py-1.5 ${r.suspiciousPriceBreak ? "font-semibold text-warn" : "text-muted-foreground"}`}
+              >
                 {r.suspiciousPriceBreak ? "25%+ 가격단절 · 확인 필요" : "뚜렷한 가격단절 없음"}
               </td>
             </tr>
@@ -388,15 +477,26 @@ function PositionCapTable({ rows }: { rows: PositionCapComparisonRow[] }) {
             .slice()
             .sort(
               (a, b) =>
-                strategyUp(a.strategy) - strategyUp(b.strategy) ||
-                (a.cap ?? 999) - (b.cap ?? 999),
+                strategyUp(a.strategy) - strategyUp(b.strategy) || (a.cap ?? 999) - (b.cap ?? 999),
             )
             .map((r) => (
-              <tr key={`${r.strategy}-${r.capLabel}`} className={`border-t border-border/60 ${r.cap === 20 ? "bg-primary/5" : ""}`}>
-                <td className="px-2 py-1.5"><StrategyName row={{ strategyLabel: r.strategyLabel, upsideExitThreshold: strategyUp(r.strategy) }} /></td>
+              <tr
+                key={`${r.strategy}-${r.capLabel}`}
+                className={`border-t border-border/60 ${r.cap === 20 ? "bg-primary/5" : ""}`}
+              >
+                <td className="px-2 py-1.5">
+                  <StrategyName
+                    row={{
+                      strategyLabel: r.strategyLabel,
+                      upsideExitThreshold: strategyUp(r.strategy),
+                    }}
+                  />
+                </td>
                 <td className="px-2 py-1.5 font-medium">{r.capLabel}</td>
                 <td className="num px-2 py-1.5 text-right">{r.trades.toLocaleString("ko-KR")}</td>
-                <td className="num px-2 py-1.5 text-right">{r.skippedForCapacity.toLocaleString("ko-KR")}</td>
+                <td className="num px-2 py-1.5 text-right">
+                  {r.skippedForCapacity.toLocaleString("ko-KR")}
+                </td>
                 <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.cagr)}</td>
                 <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.mdd)}</td>
                 <td className="num px-2 py-1.5 text-right font-semibold">{num(r.sharpe)}</td>
@@ -437,6 +537,7 @@ export function StrategyValidationResults({
   const regimeGates = validation.regimeGateRows.filter((r) => r.split === split);
   const crashStops = validation.crashStopTrades.filter((r) => split === "ALL" || r.inOos);
   const positionCaps = validation.positionCapRows.filter((r) => r.split === split);
+  const scoreChanges = validation.scoreChangeRows.filter((r) => r.split === split);
 
   return (
     <section className="space-y-4 rounded-lg border border-primary/30 bg-card p-3">
@@ -449,8 +550,8 @@ export function StrategyValidationResults({
             </span>
           </div>
           <p className="mt-1 max-w-4xl text-[11px] leading-relaxed text-muted-foreground">
-            기술점수 배점은 1 / 1 / 1.5 / 1 / 0.5 / 2.5 / 2로 고정합니다. 매수는 70점 Onset,
-            하락 청산은 30점 이탈, 최대 보유는 40D를 대표 규칙으로 두고 ↑90과 ↑80 두 전략을 비교합니다.
+            기술점수 배점은 1 / 1 / 1.5 / 1 / 0.5 / 2.5 / 2로 고정합니다. 매수는 70점 Onset, 하락
+            청산은 30점 이탈, 최대 보유는 40D를 대표 규칙으로 두고 ↑90과 ↑80 두 전략을 비교합니다.
           </p>
         </div>
         <label className="text-[11px]" data-no-print>
@@ -467,25 +568,43 @@ export function StrategyValidationResults({
       </div>
 
       <div className="rounded-md border border-info/30 bg-info/5 p-3 text-[10px] leading-relaxed text-muted-foreground">
-        <b className="text-foreground">↑90 전략의 거래 수가 ↑80보다 많을 수 있는 이유:</b>{" "}
-        현재 V6 정의는 70점 Onset 당일 점수가 이미 선택한 상승청산선 이상이면 진입하지 않습니다.
-        예를 들어 점수가 65→85로 뛰면 ↑80 전략은 신규진입을 건너뛰지만 ↑90 전략은 진입합니다.
-        따라서 표의 “거래”는 80/90 도달 횟수가 아니라 각 규칙으로 실제 생성된 총 매매 횟수입니다.
+        <b className="text-foreground">↑90 전략의 거래 수가 ↑80보다 많을 수 있는 이유:</b> 현재 V6
+        정의는 70점 Onset 당일 점수가 이미 선택한 상승청산선 이상이면 진입하지 않습니다. 예를 들어
+        점수가 65→85로 뛰면 ↑80 전략은 신규진입을 건너뛰지만 ↑90 전략은 진입합니다. 따라서 표의
+        “거래”는 80/90 도달 횟수가 아니라 각 규칙으로 실제 생성된 총 매매 횟수입니다.
       </div>
 
       <div className="grid gap-2 lg:grid-cols-2">
-        {coreRows.map((row) => <CoreSummary key={row.scenario} row={row} />)}
+        {coreRows.map((row) => (
+          <CoreSummary key={row.scenario} row={row} />
+        ))}
       </div>
 
-      <Panel title="1. 연도별 성과" note="신호 발생 연도 기준입니다. 특정 연도에만 ↓30 청산이 작동하는지 평균·중앙·승률·꼬리손실과 연간 동일가중 포트폴리오 수익을 함께 봅니다.">
+      <Panel
+        title="1. 70점 Onset 점수 변동폭별 성과"
+        note="점수 변동은 신호일 점수에서 직전 거래일 점수를 뺀 100점 환산 p입니다. 구간은 [0,5), [5,10), [10,20), [20,∞)로 중복 없이 나누며, 다음 거래일 시가 진입 후 대표 40D 청산 규칙의 실제 거래성과를 비교합니다."
+      >
+        <ScoreChangeTable rows={scoreChanges} />
+      </Panel>
+
+      <Panel
+        title="2. 연도별 성과"
+        note="신호 발생 연도 기준입니다. 특정 연도에만 ↓30 청산이 작동하는지 평균·중앙·승률·꼬리손실과 연간 동일가중 포트폴리오 수익을 함께 봅니다."
+      >
         <SegmentTable rows={yearly} kind="year" />
       </Panel>
 
-      <Panel title="2. 시장국면별 성과" note="진입 신호일의 시장국면(RISK_ON / NEUTRAL / RISK_OFF) 기준입니다. 상승·중립·하락장에서 대표 전략의 일관성을 확인합니다.">
+      <Panel
+        title="3. 시장국면별 성과"
+        note="진입 신호일의 시장국면(RISK_ON / NEUTRAL / RISK_OFF) 기준입니다. 상승·중립·하락장에서 대표 전략의 일관성을 확인합니다."
+      >
         <SegmentTable rows={regimes} kind="regime" />
       </Panel>
 
-      <Panel title="3. MDD · 평균 손실 · 손실 꼬리" note="MDD는 포트폴리오 고점에서 이후 저점까지의 최대 낙폭입니다. MAE는 개별 거래 보유 중 진입가 대비 최대 불리한 가격 변동이며 P5 MAE는 하위 5% 꼬리입니다.">
+      <Panel
+        title="4. MDD · 평균 손실 · 손실 꼬리"
+        note="MDD는 포트폴리오 고점에서 이후 저점까지의 최대 낙폭입니다. MAE는 개별 거래 보유 중 진입가 대비 최대 불리한 가격 변동이며 P5 MAE는 하위 5% 꼬리입니다."
+      >
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] text-[11px]">
             <thead className="text-muted-foreground">
@@ -503,14 +622,23 @@ export function StrategyValidationResults({
             <tbody>
               {risks.map((r) => (
                 <tr key={r.strategy} className="border-t border-border/60">
-                  <td className="px-2 py-1.5"><StrategyName row={{ strategyLabel: r.strategyLabel, upsideExitThreshold: strategyUp(r.strategy) }} /></td>
+                  <td className="px-2 py-1.5">
+                    <StrategyName
+                      row={{
+                        strategyLabel: r.strategyLabel,
+                        upsideExitThreshold: strategyUp(r.strategy),
+                      }}
+                    />
+                  </td>
                   <td className="num px-2 py-1.5 text-right">{r.trades.toLocaleString("ko-KR")}</td>
                   <td className="num px-2 py-1.5 text-right">{pct(r.avgLoss)}</td>
                   <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.worstReturn)}</td>
                   <td className="num px-2 py-1.5 text-right">{pct(r.avgMae)}</td>
                   <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.tailMaeP5)}</td>
                   <td className="num px-2 py-1.5 text-right">{pct(r.avgMfe)}</td>
-                  <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.portfolioMdd)}</td>
+                  <td className="num px-2 py-1.5 text-right font-semibold">
+                    {pct(r.portfolioMdd)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -518,38 +646,63 @@ export function StrategyValidationResults({
         </div>
       </Panel>
 
-      <Panel title="4. 포트폴리오 성과 · 40D 검증" note="70 Onset / ↓30을 고정하고 최대 보유 20·30·40·50D를 비교합니다. 매 거래일 활성 종목을 동일가중하며 신호가 없는 날은 현금으로 둡니다.">
+      <Panel
+        title="5. 포트폴리오 성과 · 40D 검증"
+        note="70 Onset / ↓30을 고정하고 최대 보유 20·30·40·50D를 비교합니다. 매 거래일 활성 종목을 동일가중하며 신호가 없는 날은 현금으로 둡니다."
+      >
         <PortfolioTable rows={portfolios} />
       </Panel>
 
-      <Panel title="5. 진입가 기준 고정 손절" note="대표 40D 전략 각각에 추가 가격 손절 -10% / -20% / -30% / -40%를 적용합니다. 갭 하락 시 손절선이 아니라 당일 시가 체결로 계산합니다.">
+      <Panel
+        title="6. 진입가 기준 고정 손절"
+        note="대표 40D 전략 각각에 추가 가격 손절 -10% / -20% / -30% / -40%를 적용합니다. 갭 하락 시 손절선이 아니라 당일 시가 체결로 계산합니다."
+      >
         <OverlayTable rows={fixedStops} title="fixed" />
       </Panel>
 
-      <Panel title="6. ATR trailing stop" note="ATR은 최근 변동폭을 가격 단위로 측정합니다. Wilder ATR14 × 2 / 3 / 4를 사용하며, 고점이 올라가면 stop도 올라가되 다시 낮아지지는 않습니다. 당일 종가까지 확인된 정보는 다음 거래일부터 적용합니다.">
+      <Panel
+        title="7. ATR trailing stop"
+        note="ATR은 최근 변동폭을 가격 단위로 측정합니다. Wilder ATR14 × 2 / 3 / 4를 사용하며, 고점이 올라가면 stop도 올라가되 다시 낮아지지는 않습니다. 당일 종가까지 확인된 정보는 다음 거래일부터 적용합니다."
+      >
         <OverlayTable rows={atrStops} title="atr" />
       </Panel>
 
-      <Panel title="7. RISK_OFF 신규진입 금지 검증" note="기존 포지션은 그대로 관리하고, 진입 신호일 시장국면이 RISK_OFF인 신규매수만 건너뜁니다. 제한 없음과 CAGR/MDD/Sharpe를 직접 비교합니다.">
+      <Panel
+        title="8. RISK_OFF 신규진입 금지 검증"
+        note="기존 포지션은 그대로 관리하고, 진입 신호일 시장국면이 RISK_OFF인 신규매수만 건너뜁니다. 제한 없음과 CAGR/MDD/Sharpe를 직접 비교합니다."
+      >
         <RegimeGateTable rows={regimeGates} />
       </Panel>
 
-      <Panel title="8. -40% catastrophe stop 실제 거래 점검" note="-40% 손절이 실제로 발생한 종목·날짜·가격을 표시합니다. 손절 없는 동일 신호의 최종수익도 함께 보여 줍니다. 25% 이상 일간 가격단절은 액면분할·권리락·조정주가 오류 등 원자료 확인 후보로 표시하며, 오류라고 단정하지 않습니다.">
+      <Panel
+        title="9. -40% catastrophe stop 실제 거래 점검"
+        note="-40% 손절이 실제로 발생한 종목·날짜·가격을 표시합니다. 손절 없는 동일 신호의 최종수익도 함께 보여 줍니다. 25% 이상 일간 가격단절은 액면분할·권리락·조정주가 오류 등 원자료 확인 후보로 표시하며, 오류라고 단정하지 않습니다."
+      >
         {crashStops.length ? (
           <CrashStopTable rows={crashStops} />
         ) : (
-          <p className="p-3 text-[11px] text-muted-foreground">선택 구간에서 -40% 손절 체결이 없습니다.</p>
+          <p className="p-3 text-[11px] text-muted-foreground">
+            선택 구간에서 -40% 손절 체결이 없습니다.
+          </p>
         )}
       </Panel>
 
-      <Panel title="9. 실전 동시보유 10 / 20 / 30종목 제한" note="동시에 보유할 수 있는 종목 수를 제한합니다. 같은 날 슬롯보다 후보가 많으면 신호점수 → 최근 5D 점수상승 → 10D 점수상승 → 종목코드 순으로 우선 선택하며, 탈락 신호는 다음 날로 이월하지 않습니다. 제한 없음 행이 비교 기준입니다.">
+      <Panel
+        title="10. 실전 동시보유 10 / 20 / 30종목 제한"
+        note="동시에 보유할 수 있는 종목 수를 제한합니다. 같은 날 슬롯보다 후보가 많으면 신호점수 → 최근 5D 점수상승 → 10D 점수상승 → 종목코드 순으로 우선 선택하며, 탈락 신호는 다음 날로 이월하지 않습니다. 제한 없음 행이 비교 기준입니다."
+      >
         <PositionCapTable rows={positionCaps} />
       </Panel>
 
-      <details data-no-print className="rounded border border-border p-3 text-[10px] text-muted-foreground">
+      <details
+        data-no-print
+        className="rounded border border-border p-3 text-[10px] text-muted-foreground"
+      >
         <summary className="cursor-pointer font-medium text-foreground">계산 가정 보기</summary>
         <ul className="mt-2 list-disc space-y-1 pl-4">
-          {validation.assumptions.map((a) => <li key={a}>{a}</li>)}
+          {validation.assumptions.map((a) => (
+            <li key={a}>{a}</li>
+          ))}
           <li>왕복 비용: {validation.roundTripCostBps}bps</li>
           <li>OOS 시작: {validation.oosStart ?? "없음"}</li>
           <li>동시보유 표의 슬롯부족 제외 건수는 전체 시뮬레이션 경로에서 발생한 수치입니다.</li>

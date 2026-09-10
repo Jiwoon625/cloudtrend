@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
+    "backtest:run": "vite-node scripts/run-backtest.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
