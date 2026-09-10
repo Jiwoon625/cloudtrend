@@ -238,16 +238,14 @@ function InstrumentDetail() {
                 {label}
               </button>
             ))}
-            {row.vf ? (
-              <button
+            <button
                 type="button"
                 aria-pressed={visible.technical}
                 onClick={() => setVisible((v) => ({ ...v, technical: !v.technical }))}
                 className={`rounded border px-2 py-0.5 text-[11px] ${visible.technical ? "border-primary/40 bg-info-soft text-info" : "border-border text-muted-foreground"}`}
               >
-                기술점수 (7점)
-              </button>
-            ) : null}
+                기술점수 (9.5점)
+            </button>
           </div>
         </div>
         <div className="h-[420px]">
@@ -263,12 +261,12 @@ function InstrumentDetail() {
                 tickFormatter={(v: number) => v.toLocaleString("ko-KR")}
               />
               <YAxis yAxisId="volume" orientation="right" hide />
-              {row.vf && visible.technical ? (
+              {visible.technical ? (
                 <YAxis
                   yAxisId="technical"
                   orientation="right"
                   domain={[0, HISTORICAL_TECHNICAL_MAX]}
-                  ticks={[0, 1, 2, 3, 4, 5, 6, 7]}
+                  ticks={[0, 2, 4, 6, 8, 9.5]}
                   width={48}
                   tick={{ fontSize: 10, fill: "#f97316" }}
                   tickFormatter={(v: number) => `${v}점`}
@@ -442,11 +440,11 @@ function InstrumentDetail() {
                 />
               ) : null}
 
-              {row.vf && visible.technical ? (
+              {visible.technical ? (
                 <Line
                   yAxisId="technical"
                   dataKey="historicalTechnicalPoints"
-                  name="기술점수 (52주 제외 · 7점)"
+                  name="기술점수 (52주 포함 · 9.5점)"
                   type="linear"
                   stroke="#f97316"
                   strokeWidth={2.5}
@@ -471,14 +469,11 @@ function InstrumentDetail() {
           볼린저밴드 20일·2σ, 일목균형표 9·26·52(선행 26) 기준 · 양운 붉은색 / 음운 파랑색.
         </p>
 
-        {row.vf ? (
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            오른쪽 축: 해당 날짜까지의 데이터로 계산한 기술점수입니다. 전 기간에서 52주 신고가를 제외하고
-            나머지 항목의 원점수를 환산 없이 합산합니다(7점 만점).
-            외국인 20일 순매수는 포함합니다. 초기 지표·수급 자료 부족 시 가능한 항목만 합산하며,
-            툴팁에 산정 가능 배점을 표시합니다. 모든 항목이 산정 불가인 구간은 선을 표시하지 않습니다.
-          </p>
-        ) : null}
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          오른쪽 축: 52주 신고가와 외국인 20일 순매수를 포함한 전체 기술점수(9.5점 만점).
+          해당 날짜까지 252거래일 및 모든 점수 항목의 자료가 갖춰진 시점부터 표시합니다.
+          자료 부족 구간은 0점으로 처리하거나 환산하지 않고 선을 비워 둡니다. 주식·ETF에 같은 기준을 적용합니다.
+        </p>
         <p className="mt-1 text-[11px] text-muted-foreground">
           ATR 손절선 참고: {formatPrice(snap.close - 1.8 * (snap.atr14 ?? 0))} (진입가 기준 1.8 ATR)
           · 52주 신고가 {formatPrice(snap.high52w)}
@@ -521,13 +516,13 @@ function InstrumentDetail() {
 
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
         <section className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-2 text-sm font-semibold">최근 60거래일 기술점수 추이</h2>
+          <h2 className="mb-2 text-sm font-semibold">최근 60거래일 기술점수 추이 (9.5점)</h2>
           <div className="h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={history}>
                 <CartesianGrid stroke="var(--color-grid)" vertical={false} />
                 <XAxis dataKey="tradeDate" tick={{ fontSize: 10 }} minTickGap={40} />
-                <YAxis domain={[0, row.technical.maxPoints]} tick={{ fontSize: 10 }} width={30} />
+                <YAxis domain={[0, HISTORICAL_TECHNICAL_MAX]} tick={{ fontSize: 10 }} width={30} />
                 <Tooltip
                   contentStyle={{
                     background: "var(--color-card)",

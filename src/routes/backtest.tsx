@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { BacktestDataInput } from "@/components/BacktestDataInput";
+import { StrategyValidationResults } from "@/components/StrategyValidationResults";
+import { ScoreDiagnosticsResults } from "@/components/ScoreDiagnosticsResults";
 import { BacktestV5Results } from "@/components/BacktestV5Results";
 import { PdfExportButton } from "@/components/PdfExportButton";
 import { Button } from "@/components/ui/button";
@@ -322,8 +324,12 @@ function BacktestPage() {
                 <NumberField value={params.sampleEvery} onChange={(n) => setParams((p) => ({ ...p, sampleEvery: n }))} />
               </div>
               <div className="space-y-1">
-                <Label className="text-[11px] text-muted-foreground">진입 기준 점수</Label>
-                <NumberField value={params.entryScore} onChange={(n) => setParams((p) => ({ ...p, entryScore: n }))} />
+                <Label className="text-[11px] text-muted-foreground">진입 기준 점수 (9.5점 만점)</Label>
+                <NumberField step={0.5} value={params.entryScore} onChange={(n) => setParams((p) => ({ ...p, entryScore: Math.max(0, Math.min(9.5, n)) }))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">왕복 비용(bps, 100=1%)</Label>
+                <NumberField value={params.roundTripCostBps ?? 0} onChange={(n) => setParams((p) => ({ ...p, roundTripCostBps: Math.max(0, n) }))} />
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">거래량 급증 기준(%)</Label>
@@ -398,9 +404,9 @@ function BacktestPage() {
           </section>
 
           <section className="space-y-2 rounded-lg border border-border bg-card p-3">
-            <h2 className="text-sm font-semibold">피처 선택 및 가중치</h2>
+            <h2 className="text-sm font-semibold">피처별 영향도 설정</h2>
             <p className="text-[11px] text-muted-foreground">
-              체크 해제는 Leave-One-Feature-Out 테스트에, 가중치 변경은 Weight Sensitivity에 사용할 수 있습니다.
+              피처별 영향도·민감도 실험 설정입니다. 기술점수·구간·진입·랭킹 분석은 전체 7개 기본 배점(9.5점)으로 고정하며 이 설정으로 바뀌지 않습니다.
             </p>
             {BACKTEST_FEATURES.map((f) => {
               const on = params.features.includes(f.id);
@@ -411,13 +417,7 @@ function BacktestPage() {
                       <span className={`text-[12px] font-medium ${on ? "" : "text-muted-foreground line-through"}`}>{f.label}</span>
                       <p className="text-[10px] text-muted-foreground">{f.description}</p>
                     </button>
-                    <NumberField
-                      step={0.5}
-                      value={params.weights[f.id] ?? f.defaultWeight}
-                      onChange={(n) => setParams((p) => ({ ...p, weights: { ...p.weights, [f.id]: n } }))}
-                      className="h-7 w-16 text-right text-[12px]"
-                      disabled={!on}
-                    />
+                    <span className="num text-[12px]">기본 {f.defaultWeight}점</span>
                   </div>
                 </div>
               );
@@ -459,13 +459,13 @@ function BacktestPage() {
 
               <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-[11px] leading-relaxed">
                 <b>V5:</b> V4의 피처별 Signal Onset과 시장조정 X-sec/HAC 구조를 유지합니다. 복합점수는 상태값을 사용하며,
-                별도로 Score Threshold Onset과 30D ranking 성능을 검증합니다.
+                전체 9.5점 기준으로 일별 신규/지속 진입 및 급락 위험과 30D ranking 성능을 검증합니다.
               </div>
 
               <Card title="실행 설정" note="PDF에도 동일한 설정 스냅샷이 저장됩니다.">
                 <div className="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-3">
                   <div className="rounded-md border border-border p-2 text-[11px]">
-                    기준 {result.config.horizonDays}D · 관측 {result.config.sampleEvery}D · 진입 {result.config.entryScore}점
+                    전체 {result.config.scoreMaxPoints}점 · 기준 {result.config.horizonDays}D · 관측 {result.config.sampleEvery}D · 진입 {result.config.entryScore}점
                   </div>
                   <div className="rounded-md border border-border p-2 text-[11px]">
                     Onset {result.config.scoreOnsetThresholds.join("/")}점
@@ -473,9 +473,9 @@ function BacktestPage() {
                   <div className="rounded-md border border-border p-2 text-[11px]">
                     Rank {result.config.rankingHorizon}D · Top {result.config.topSelectionCount} · {result.config.rankingQuantileBuckets.join("/")}분위
                   </div>
-                  {result.config.features.map((id) => (
+                  {Object.keys(result.config.scoreWeights).map((id) => (
                     <div key={id} className="rounded-md border border-border p-2 text-[11px]">
-                      {BACKTEST_FEATURES.find((f) => f.id === id)?.label ?? id} · weight {result.config.weights[id] ?? 0}
+                      {BACKTEST_FEATURES.find((f) => f.id === id)?.label ?? id} · 점수 배점 {result.config.scoreWeights[id] ?? 0}
                     </div>
                   ))}
                 </div>
@@ -537,7 +537,7 @@ function BacktestPage() {
                 </div>
               </Card>
 
-              <Card title="피처별 영향도" note="피처 자체 설명력은 5D 관측 그리드의 false→true Signal Onset 기준입니다.">
+              <Card title="피처별 영향도" note="피처 자체 설명력은 선택한 관측 그리드의 false→true Signal Onset 기준입니다.">
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[1180px] text-[12px]">
                     <thead className="text-[11px] text-muted-foreground">
@@ -647,7 +647,7 @@ function BacktestPage() {
                 </div>
               </Card>
 
-              <Card title={`진입 ${params.entryScore}점 이상 요약`} note="현재 점수 상태 기준. Score Onset과 구분해서 해석합니다.">
+              <Card title={`진입 ${result.config.entryScore}점 이상 요약`} note="전체 9.5점 상태 기준, 다음 거래일 시가 진입. 일별 신규/지속 분석과 구분해서 해석합니다.">
                 <table className="w-full text-[12px]">
                   <tbody>
                     {[
@@ -707,6 +707,8 @@ function BacktestPage() {
                 </div>
               </Card>
 
+              <ScoreDiagnosticsResults key={mutation.submittedAt} diagnostics={result.scoreDiagnostics} horizons={result.horizons} />
+              <StrategyValidationResults key={mutation.submittedAt} validation={result.strategyValidation} horizons={result.horizons} />
               <BacktestV5Results result={result} />
 
               <Card title="관측간격 Sensitivity" note="대표 보유기간에 대해 5·10·20D 관측간격 강건성을 비교합니다.">
@@ -845,7 +847,7 @@ function BacktestPage() {
                 <ul className="space-y-1 text-[11px] leading-relaxed text-muted-foreground">
                   {[...(mutation.data?.notes ?? []), ...result.notes].map((n) => <li key={n}>· {n}</li>)}
                   <li>· cumulativeReturn은 사용하지 않습니다. forward-return 기반 설명력/랭킹 검증입니다.</li>
-                  <li>· 사용자가 정한 가정에 따라 수수료·세금·슬리피지는 반영하지 않습니다.</li>
+                  <li>· 왕복 비용 {result.scoreDiagnostics.roundTripCostBps}bps 반영. 지정하지 않은 체결 제약은 반영하지 않습니다.</li>
                   <li>· 표본 종목: {mutation.data?.universe.length ?? 0}개</li>
                 </ul>
               </section>

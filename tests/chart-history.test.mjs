@@ -48,29 +48,28 @@ test("full chart covers all 1,250 supplied dates, including warm-up", () => {
   assert.equal(chart.at(-1).tradeDate, bars.at(-1).tradeDate);
   for (const point of chart) {
     assert.ok(point.historicalTechnicalPoints === null ||
-      (point.historicalTechnicalPoints >= 0 && point.historicalTechnicalPoints <= 7));
+      (point.historicalTechnicalPoints >= 0 && point.historicalTechnicalPoints <= 9.5));
   }
 });
 
-test("raw maximum is seven; latest nine-and-a-half-point score is unchanged", () => {
+test("full score includes the 52-week feature and requires complete data", () => {
   const snap = allPassing();
   assert.equal(vfStockScore(snap).points, 9.5);
-  assert.equal(historicalTechnicalScore(snap).points, 7);
-  assert.equal(historicalTechnicalScore(snap).rawMaxPoints, 7);
-  for (const distanceFrom52wHigh of [null, -50, 0]) {
-    assert.equal(historicalTechnicalScore({ ...snap, distanceFrom52wHigh }).points, 7);
-  }
+  assert.equal(historicalTechnicalScore(snap).points, 9.5);
+  assert.equal(historicalTechnicalScore(snap).rawMaxPoints, 9.5);
+  assert.equal(historicalTechnicalScore({ ...snap, distanceFrom52wHigh: null }).points, null);
+  assert.equal(historicalTechnicalScore({ ...snap, distanceFrom52wHigh: -50 }).points, 7);
 });
 
 test("foreign flow contributes two points; missing flow never rescales the score", () => {
   const snap = allPassing();
   const missing = historicalTechnicalScore({ ...snap, foreignNet20d: null });
   const negative = historicalTechnicalScore({ ...snap, foreignNet20d: -1 });
-  assert.equal(missing.points, 5);
-  assert.equal(missing.availableMaxPoints, 5);
+  assert.equal(missing.points, null);
+  assert.equal(missing.availableMaxPoints, 7.5);
   assert.equal(missing.missingRules.length, 1);
-  assert.equal(negative.points, 5);
-  assert.equal(negative.availableMaxPoints, 7);
+  assert.equal(negative.points, 7.5);
+  assert.equal(negative.availableMaxPoints, 9.5);
 });
 
 test("historical values are identical when later prices and flows are absent", () => {
@@ -79,10 +78,9 @@ test("historical values are identical when later prices and flows are absent", (
     const prefix = chartSeries(dataset(bars.slice(0, end + 1)), "TEST");
     assert.deepEqual(complete[end], prefix.at(-1));
     const raw = vfStockScore(computeIndicators(bars, end));
-    const high = raw.rows.find((r) => r.group === "Vf Leadership");
     const score = complete[end].historicalTechnical;
-    assert.equal(score.rawPoints, raw.points - high.points);
-    assert.equal(score.rawMaxPoints, 7);
+    assert.equal(score.rawPoints, raw.points);
+    assert.equal(score.rawMaxPoints, 9.5);
   }
 });
 
@@ -98,9 +96,10 @@ test("selected chart window uses preceding history and honors active settings", 
     historicalTechnicalScore(computeIndicators(bars, 149), cfg).points);
 });
 
-test("empty symbols and ETFs do not acquire the stock score overlay", () => {
+test("empty symbols stay empty; ETFs use the same full score overlay", () => {
   assert.deepEqual(chartSeries(dataset([]), "TEST"), []);
   assert.deepEqual(chartSeries(dataset(bars), "MISSING"), []);
-  assert.ok(chartSeries(dataset(bars.slice(0, 30), "ETF"), "TEST")
-    .every((p) => p.historicalTechnicalPoints === null));
+  const etf = chartSeries(dataset(bars.slice(0, 300), "ETF"), "TEST");
+  assert.ok(etf.slice(0, 251).every((p) => p.historicalTechnicalPoints === null));
+  assert.equal(etf[251].historicalTechnicalPoints, vfStockScore(computeIndicators(bars, 251)).points);
 });

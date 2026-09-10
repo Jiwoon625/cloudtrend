@@ -267,9 +267,9 @@ export function computeLocalBacktest(
       "KOSPI 종목은 KOSPI, KOSDAQ 종목은 KOSDAQ 지수를 같은 날짜의 벤치마크로 사용합니다.",
       "기본 지표는 120봉 이후부터 관측하며, 52주 신고가 피처는 현재 봉 포함 252거래일이 확보된 시점부터만 계산합니다.",
       "피처별 Edge는 메인 관측 그리드에서 false→true로 전환된 Signal Onset만 신호로 집계하고, 복합점수는 기존 상태값을 그대로 사용합니다.",
-      "Rank IC·Top 5·5/10분위는 KOSPI 거래일을 anchor로 한 공통 관측일에서, 활성 피처가 모두 계산 가능한 종목만 비교합니다.",
+      "Rank IC·Top 5·5/10분위는 KOSPI 거래일을 anchor로 한 공통 관측일에서, 전체 9.5점의 모든 항목이 계산 가능한 종목만 비교합니다.",
       "Top 5는 실제 비교 가능 종목이 5개 미만인 날짜를 집계하지 않으며, Ranking은 최소 50종목 이상인 날짜만 사용합니다.",
-      "수수료·세금·슬리피지는 반영되지 않았습니다.",
+      `왕복 비용 ${Math.max(0, params.roundTripCostBps ?? 0)}bps를 수익률에서 차감합니다.`,
     ],
   };
 }

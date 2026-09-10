@@ -315,7 +315,7 @@ export function technicalScore(
 /**
  * CloudTrend Vf stock score.
  * Identical to the V5 backtest composite-score definition:
- * seven state features, weighted sum, missing-aware denominator.
+ * seven state features and raw weighted sum. Historical/backtest scores require all rules.
  * MA20 slope and positive 20D return remain diagnostics only.
  */
 export function vfStockScore(
@@ -419,28 +419,22 @@ export function vfStockScore(
   return { points, maxPoints, availableMaxPoints, rows };
 }
 
-export const HISTORICAL_TECHNICAL_MAX = VF_FEATURE_WEIGHTS.ICH_ABOVE_CLOUD
-  + VF_FEATURE_WEIGHTS.ICH_TENKAN_KIJUN + VF_FEATURE_WEIGHTS.BB_BREAKOUT
-  + VF_FEATURE_WEIGHTS.MA_ALIGNED + VF_FEATURE_WEIGHTS.VOLUME_SURGE
-  + VF_FEATURE_WEIGHTS.FOREIGN_NET_POSITIVE;
+export const HISTORICAL_TECHNICAL_MAX = 9.5;
 
-/** Same Vf rules, excluding 52W leadership throughout the series.
- * Raw points only: default remaining weight is 7 (9.5 - 2.5).
- * Missing signals never trigger rescaling or denominator normalization.
- */
+/** Full Vf raw score only when every rule is calculable. Never rescale missing data. */
 export function historicalTechnicalScore(
   snap: IndicatorSnapshot,
   cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
 ) {
-  const score = vfStockScore(snap, cfg, { exclude52wHigh: true });
+  const score = vfStockScore(snap, cfg);
+  const missingRules = score.rows.filter((r) => r.status === "NO_DATA").map((r) => r.rule);
   return {
-    points: score.availableMaxPoints > 0 && score.maxPoints > 0
-      ? score.points
-      : null,
+    points: missingRules.length === 0 && Number.isFinite(score.points)
+      ? score.points : null,
     rawPoints: score.points,
     rawMaxPoints: score.maxPoints,
     availableMaxPoints: score.availableMaxPoints,
-    missingRules: score.rows.filter((r) => r.status === "NO_DATA").map((r) => r.rule),
+    missingRules,
   };
 }
 

@@ -2,10 +2,12 @@
 // V4의 장기 시장조정/Signal Onset 검증 구조를 유지하면서,
 // Score Threshold Onset과 score ranking 성능을 추가로 검증한다.
 import { computeIndicators } from "./indicators";
+import { buildStrategyValidation, type StrategySeries, type StrategyValidation } from "./strategyValidation";
+import { historicalTechnicalScore } from "./scoring";
+import { buildScoreDiagnostics, SCORE_BANDS, SCORE_THRESHOLDS, type ScoreDiagnostics } from "./scoreDiagnostics";
 import {
   BACKTEST_FEATURES as LEGACY_BACKTEST_FEATURES,
   DEFAULT_BACKTEST_PARAMS as LEGACY_DEFAULT_BACKTEST_PARAMS,
-  DEFAULT_ENTRY_THRESHOLDS,
   DEFAULT_EXTENSION_THRESHOLDS,
   DEFAULT_HORIZONS,
   DEFAULT_VOLUME_THRESHOLDS,
@@ -26,7 +28,6 @@ import {
 import type { DailyPrice, IndexSeries } from "./types";
 
 export {
-  DEFAULT_ENTRY_THRESHOLDS,
   DEFAULT_EXTENSION_THRESHOLDS,
   DEFAULT_HORIZONS,
   DEFAULT_VOLUME_THRESHOLDS,
@@ -45,7 +46,8 @@ export const BACKTEST_FEATURES = LEGACY_BACKTEST_FEATURES.filter(
 
 /** V5 고정 검증 기준. */
 export const DEFAULT_INTERVAL_CANDIDATES = [5, 10, 20];
-export const DEFAULT_SCORE_ONSET_THRESHOLDS = [40, 50, 60, 70, 80];
+export const DEFAULT_SCORE_ONSET_THRESHOLDS = SCORE_THRESHOLDS;
+export const DEFAULT_ENTRY_THRESHOLDS = SCORE_THRESHOLDS;
 export const RANKING_HORIZON = 30;
 export const TOP_SELECTION_COUNT = 5;
 export const RANKING_QUANTILE_BUCKETS = [5, 10];
@@ -54,6 +56,9 @@ export const DEFAULT_BACKTEST_PARAMS: BacktestParams = {
   ...LEGACY_DEFAULT_BACKTEST_PARAMS,
   features: BACKTEST_FEATURES.map((f) => f.id),
   weights: Object.fromEntries(BACKTEST_FEATURES.map((f) => [f.id, f.defaultWeight])),
+  entryScore: 6,
+  entryThresholds: DEFAULT_ENTRY_THRESHOLDS,
+  roundTripCostBps: 0,
   sampleEvery: 5,
   intervalCandidates: DEFAULT_INTERVAL_CANDIDATES,
 };
@@ -231,6 +236,9 @@ export interface QuantileSpreadStat {
 }
 
 export interface BacktestConfigSnapshot {
+  scoreMaxPoints: number;
+  scoreWeights: Record<string, number>;
+  roundTripCostBps: number;
   features: string[];
   weights: Record<string, number>;
   horizonDays: number;
@@ -266,6 +274,8 @@ export interface BacktestSummary {
 }
 
 export interface BacktestResult {
+  scoreDiagnostics: ScoreDiagnostics;
+  strategyValidation: StrategyValidation;
   observations: number;
   symbolCount: number;
   from: string;
@@ -338,6 +348,7 @@ interface Observation {
   flags: Record<string, boolean | null>;
   stateFlags: Record<string, boolean | null>;
   score: number | null;
+  previousDailyScore: number | null;
   rets: Array<number | null>;
   benchmarkRets: Array<number | null>;
   excessRets: Array<number | null>;
@@ -349,16 +360,11 @@ interface Observation {
 
 interface BenchmarkData {
   closeByDate: Map<string, number>;
+  openByDate: Map<string, number>;
   regimeByDate: Map<string, MarketRegime>;
 }
 
-const SCORE_EDGES: Array<[number, number, string]> = [
-  [0, 20, "0~20점"],
-  [20, 40, "20~40점"],
-  [40, 60, "40~60점"],
-  [60, 80, "60~80점"],
-  [80, 100.001, "80~100점"],
-];
+const SCORE_EDGES = SCORE_BANDS;
 
 const mean = (xs: number[]): number | null =>
   xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
@@ -403,7 +409,7 @@ function realizedVolAt(bars: DailyPrice[], endIndex: number, window = 20): numbe
   return Math.sqrt(v * 252) * 100;
 }
 
-function buildBenchmarks(ctx?: BacktestMarketContext): Record<BacktestMarket, BenchmarkData> | null {
+function buildBenchmarks(ctx?: BacktestMarketContext): Partial<Record<BacktestMarket, BenchmarkData>> | null {
   if (!ctx?.indexSeries?.length) return null;
   const kospi = ctx.indexSeries.find((s) => s.indexCode.toUpperCase() === "KOSPI");
   const kosdaq = ctx.indexSeries.find((s) => s.indexCode.toUpperCase() === "KOSDAQ");
@@ -437,9 +443,11 @@ function buildBenchmarks(ctx?: BacktestMarketContext): Record<BacktestMarket, Be
 
   const build = (series: IndexSeries): BenchmarkData => {
     const closeByDate = new Map<string, number>();
+    const openByDate = new Map<string, number>();
     const regimeByDate = new Map<string, MarketRegime>();
     series.bars.forEach((bar, i) => {
       closeByDate.set(bar.tradeDate, bar.close);
+      openByDate.set(bar.tradeDate, bar.open);
       if (i < 120) {
         regimeByDate.set(bar.tradeDate, "UNKNOWN");
         return;
@@ -457,12 +465,12 @@ function buildBenchmarks(ctx?: BacktestMarketContext): Record<BacktestMarket, Be
         evaluated < 3 ? "UNKNOWN" : met >= 3 ? "RISK_ON" : met <= 1 ? "RISK_OFF" : "NEUTRAL";
       regimeByDate.set(bar.tradeDate, regime);
     });
-    return { closeByDate, regimeByDate };
+    return { closeByDate, openByDate, regimeByDate };
   };
 
   return {
     KOSPI: build(kospi),
-    KOSDAQ: build(kosdaq ?? kospi),
+    ...(kosdaq ? { KOSDAQ: build(kosdaq) } : {}),
   };
 }
 
@@ -472,7 +480,7 @@ function benchmarkReturn(
   exitDate: string,
 ): number | null {
   if (!bench) return null;
-  const a = bench.closeByDate.get(entryDate);
+  const a = bench.openByDate.get(entryDate);
   const b = bench.closeByDate.get(exitDate);
   if (!(a && b && a > 0 && b > 0)) return null;
   return (b / a - 1) * 100;
@@ -666,11 +674,10 @@ function buildScoreOnsets(
   const byThreshold = new Map<number, Observation[]>();
   for (const threshold of DEFAULT_SCORE_ONSET_THRESHOLDS) byThreshold.set(threshold, []);
   for (const rows of perSymbol) {
-    for (let i = 1; i < rows.length; i++) {
-      const previous = rows[i - 1]!;
+    for (let i = 0; i < rows.length; i++) {
       const current = rows[i]!;
       for (const threshold of DEFAULT_SCORE_ONSET_THRESHOLDS) {
-        if (scoreThresholdOnset(previous.score, current.score, threshold) === true)
+        if (scoreThresholdOnset(current.previousDailyScore, current.score, threshold) === true)
           byThreshold.get(threshold)!.push(current);
       }
     }
@@ -924,6 +931,7 @@ export function runBacktest(
 ): BacktestResult {
   const params: BacktestParams = {
     ...paramsInput,
+    entryScore: Math.max(0, Math.min(9.5, paramsInput.entryScore)),
     features: paramsInput.features.filter((id) => !REMOVED_BACKTEST_FEATURE_IDS.has(id)),
     horizonDays: Math.max(1, Math.min(120, Math.round(paramsInput.horizonDays))),
     sampleEvery: Math.max(1, Math.min(20, Math.round(paramsInput.sampleEvery))),
@@ -943,6 +951,7 @@ export function runBacktest(
   const benchmarks = buildBenchmarks(marketContext);
 
   const perSymbol: Observation[][] = [];
+  const scoredSeries: StrategySeries[] = [];
   let from = "";
   let to = "";
   let barTotal = 0;
@@ -959,31 +968,31 @@ export function runBacktest(
     const lastDate = bars[bars.length - 1]!.tradeDate;
     if (lastDate > to) to = lastDate;
 
+    const scores: Array<number | null> = new Array(bars.length).fill(null);
+    const nearHighs: Array<boolean | null> = new Array(bars.length).fill(null);
+    const extensions: Array<number | null> = new Array(bars.length).fill(null);
+    const regimes = bars.map(b => bench?.regimeByDate.get(b.tradeDate) ?? "UNKNOWN");
+    scoredSeries.push({ ...s, scores, nearHighs, extensions, regimes });
     const obs: Observation[] = [];
     let previousStateFlags: Record<string, boolean | null> | null = null;
-    for (let i = 120; i + minHorizon < bars.length; i += baseInterval) {
-      const entry = bars[i]!.close;
-      if (!(entry > 0)) continue;
+    for (let i = 120; i < bars.length; i++) {
       const snap = computeIndicators(bars, i);
+      scores[i] = historicalTechnicalScore(snap).points;
+      nearHighs[i] = snap.distanceFrom52wHigh === null ? null : snap.distanceFrom52wHigh >= -10;
+      extensions[i] = snap.extensionFromMa20;
+      if (i + minHorizon >= bars.length || (i - 120) % baseInterval !== 0) continue;
+      const entry = bars[i + 1]?.open;
+      if (!Number.isFinite(entry) || !(entry! > 0)) continue;
       const stateFlags = evaluateFeatures(snap, params, bars[i]!);
       const flags = signalOnsetFlags(stateFlags, previousStateFlags);
       previousStateFlags = stateFlags;
-      let weighted = 0;
-      let available = 0;
-      for (const f of active) {
-        const v = stateFlags[f.id];
-        if (v === null || v === undefined) continue;
-        const w = Math.max(0, params.weights[f.id] ?? f.defaultWeight);
-        available += w;
-        if (v) weighted += w;
-      }
       const rets = horizons.map((h) => {
         const exit = bars[i + h]?.close;
-        return exit !== undefined && exit > 0 ? (exit / entry - 1) * 100 : null;
+        return exit !== undefined && exit > 0 ? (exit / entry! - 1) * 100 - Math.max(0, params.roundTripCostBps ?? 0) / 100 : null;
       });
       const benchmarkRets = horizons.map((h) => {
         const exitDate = bars[i + h]?.tradeDate;
-        return exitDate ? benchmarkReturn(bench, bars[i]!.tradeDate, exitDate) : null;
+        return exitDate ? benchmarkReturn(bench, bars[i + 1]!.tradeDate, exitDate) : null;
       });
       const excessRets = rets.map((r, idx) => {
         const b = benchmarkRets[idx];
@@ -998,7 +1007,8 @@ export function runBacktest(
         split: "DEVELOPMENT",
         flags,
         stateFlags,
-        score: available > 0 ? (weighted / available) * 100 : null,
+        score: scores[i]!,
+        previousDailyScore: scores[i - 1] ?? null,
         rets,
         benchmarkRets,
         excessRets,
@@ -1117,8 +1127,8 @@ export function runBacktest(
 
   const thresholdList = [
     ...new Set([
-      ...normalizeList(params.entryThresholds, DEFAULT_ENTRY_THRESHOLDS),
-      Math.round(params.entryScore),
+      ...DEFAULT_ENTRY_THRESHOLDS,
+      params.entryScore,
     ]),
   ].sort((a, b) => a - b);
   const entryThresholds: EntryThresholdStat[] = [];
@@ -1374,6 +1384,9 @@ export function runBacktest(
   for (const o of main) regimeCounts[o.regime]++;
 
   const config: BacktestConfigSnapshot = {
+    scoreMaxPoints: 9.5,
+    scoreWeights: Object.fromEntries(BACKTEST_FEATURES.map(f => [f.id, f.defaultWeight])),
+    roundTripCostBps: Math.max(0, params.roundTripCostBps ?? 0),
     features: active.map((f) => f.id),
     weights: Object.fromEntries(active.map((f) => [f.id, Math.max(0, params.weights[f.id] ?? f.defaultWeight)])),
     horizonDays: params.horizonDays,
@@ -1395,7 +1408,10 @@ export function runBacktest(
 
   const notes: string[] = [
     "V5는 V4의 전체 관측치/시장조정/Signal Onset/HAC 검증 구조를 그대로 유지합니다.",
-    "Score Threshold Onset은 직전 관측 점수가 threshold 미만이고 현재 점수가 threshold 이상인 최초 상향 돌파만 집계합니다.",
+    "기술점수는 스크리닝 기본 배점의 전체 9.5점 원점수입니다. 252봉·모든 항목이 계산 가능한 경우만 집계하며, 피처 민감도 설정과 별개로 고정합니다.",
+    "모든 수익률은 신호 다음 거래일 시가 진입, h번째 거래일 종가 청산 기준입니다. 신호 당일 상승과 다음 날 시가 갭은 수익에 포함하지 않습니다.",
+    "기존 Onset 표는 관측 그리드에서 직전 거래일 대비 돌파를 판정합니다. 신규 일별 진입 분석은 모든 거래일에서 돌파와 지속일수를 추적합니다.",
+    "일별 점수 분석의 ALL과 OOS는 중첩된 전방수익률의 기술통계입니다. 독립 거래수나 실제 포트폴리오 수익률이 아닙니다. OOS 결과를 보고 규칙을 변경하면 미사용 검증구간이 아닙니다.",
     "Rank IC와 Top 5/5분위/10분위 분석은 30D forward return을 사용하며, 같은 점수 tie의 Top 5 정렬은 종목코드 순으로 고정합니다.",
     "MA20 상승과 20일 수익률 양수는 피처에서 제외되며 백테스트 점수·Edge에 사용하지 않습니다.",
     "피처별 Edge는 직전 관측에서 미충족(false)이었다가 현재 충족(true)된 Signal Onset만 신호로 집계합니다. 복합점수는 상태 피처를 사용합니다.",
@@ -1420,6 +1436,8 @@ export function runBacktest(
 
   const primaryBaseline = baselineByHorizon[pIdx];
   return {
+    strategyValidation: buildStrategyValidation(scoredSeries, horizons, oosStart, Math.max(0, params.roundTripCostBps ?? 0)),
+    scoreDiagnostics: buildScoreDiagnostics(scoredSeries, horizons, marketContext?.indexSeries, oosStart, Math.max(0, params.roundTripCostBps ?? 0)),
     observations: retsAt(main, pIdx).length,
     symbolCount: usedSymbols,
     from: from || "-",

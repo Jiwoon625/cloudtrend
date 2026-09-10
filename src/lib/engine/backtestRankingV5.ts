@@ -1,7 +1,7 @@
 import { computeIndicators } from "./indicators";
-import { evaluateFeatures, type BacktestParams } from "./backtest";
+import { historicalTechnicalScore } from "./scoring";
+import { type BacktestParams } from "./backtest";
 import {
-  BACKTEST_FEATURES,
   RANKING_HORIZON,
   RANKING_QUANTILE_BUCKETS,
   TOP_SELECTION_COUNT,
@@ -161,14 +161,11 @@ export function buildAlignedRankingAnalysis(
   if (!kospi?.bars.length) return emptyResult();
 
   const sampleEvery = Math.max(1, Math.min(20, Math.round(params.sampleEvery)));
-  const active = BACKTEST_FEATURES.filter((f) => params.features.includes(f.id));
-  if (!active.length) return emptyResult();
 
-  const marketIndex = new Map<BacktestMarket, Map<string, number>>();
+  const marketIndex = new Map<BacktestMarket, Map<string, { open: number; close: number }>>();
   for (const market of ["KOSPI", "KOSDAQ"] as BacktestMarket[]) {
-    const idx =
-      marketContext?.indexSeries.find((s) => s.indexCode.toUpperCase() === market) ?? kospi;
-    marketIndex.set(market, new Map(idx.bars.map((b) => [b.tradeDate, b.close])));
+    const idx = marketContext?.indexSeries.find((s) => s.indexCode.toUpperCase() === market);
+    marketIndex.set(market, new Map((idx?.bars ?? []).map((b) => [b.tradeDate, { open: b.open, close: b.close }])));
   }
 
   const commonDates = new Set<string>();
@@ -187,24 +184,16 @@ export function buildAlignedRankingAnalysis(
       if (!commonDates.has(bar.tradeDate) || !(bar.close > 0)) continue;
 
       const snap = computeIndicators(bars, i);
-      const flags = evaluateFeatures(snap, params, bar);
-      // Score ranking은 종목 간 비교이므로 모든 활성 피처가 같은 정보량으로 계산되는 행만 사용한다.
-      if (active.some((f) => flags[f.id] === null || flags[f.id] === undefined)) continue;
-
-      let weighted = 0;
-      let totalWeight = 0;
-      for (const f of active) {
-        const w = Math.max(0, params.weights[f.id] ?? f.defaultWeight);
-        totalWeight += w;
-        if (flags[f.id] === true) weighted += w;
-      }
-      if (!(totalWeight > 0)) continue;
+      const score = historicalTechnicalScore(snap).points;
+      if (score === null) continue;
+      const entry = bars[i + 1]!;
+      if (!Number.isFinite(entry.open) || entry.open <= 0) continue;
 
       const exit = bars[i + RANKING_HORIZON]!;
       if (!(exit.close > 0)) continue;
-      const ret = (exit.close / bar.close - 1) * 100;
-      const benchEntry = benchmark.get(bar.tradeDate);
-      const benchExit = benchmark.get(exit.tradeDate);
+      const ret = (exit.close / entry.open - 1) * 100 - Math.max(0, params.roundTripCostBps ?? 0) / 100;
+      const benchEntry = benchmark.get(entry.tradeDate)?.open;
+      const benchExit = benchmark.get(exit.tradeDate)?.close;
       const benchmarkRet =
         benchEntry && benchExit && benchEntry > 0 && benchExit > 0
           ? (benchExit / benchEntry - 1) * 100
@@ -213,7 +202,7 @@ export function buildAlignedRankingAnalysis(
         symbol: s.symbol,
         market,
         date: bar.tradeDate,
-        score: (weighted / totalWeight) * 100,
+        score,
         ret,
         benchmarkRet,
         excessRet: benchmarkRet === null ? null : ret - benchmarkRet,

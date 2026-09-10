@@ -44,7 +44,7 @@ export const dataStatusQueryOptions = queryOptions({
 
 export const instrumentQueryOptions = (symbol: string) =>
   queryOptions({
-    queryKey: ["instrument", "manual-vf-9.5-intraday", symbol],
+    queryKey: ["instrument", "full-vf-9.5-history", symbol],
     queryFn: async () => computeLocalInstrumentDetail(symbol),
     staleTime: 5 * 60 * 1000,
     retry: false,

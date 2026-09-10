@@ -103,8 +103,10 @@ export interface BacktestParams {
   volumeSurgeRatio: number;
   /** 과열 이격 판정 기준 (%) */
   extensionLimit: number;
-  /** 복합 점수 진입 기준 (0~100) */
+  /** V5 전체 기술점수 진입 기준 (0~9.5); legacy engine uses 0~100. */
   entryScore: number;
+  /** 왕복 비용(bps), 기본 0. 100bps = 1%. */
+  roundTripCostBps?: number;
   /** 사용할 피처 id 목록 */
   features: string[];
   /** 피처별 가중치 */

@@ -145,7 +145,7 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
 
       <Panel
         title={`Score Threshold · ${result.rankIcSummary.horizon}D`}
-        note="점수가 이미 threshold 이상인 상태(State)와 아래에서 처음 상향 돌파한 Onset의 시장초과수익률을 비교합니다."
+        note="9.5점 기준. State는 신규 돌파를 포함한 모든 고득점 관측입니다. Onset은 관측일에 직전 거래일 대비 돌파한 부분집합입니다. 순수 지속 상태는 일별 분석 표에서 확인하세요."
       >
         <div className="p-3" style={{ height: 280 }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -180,7 +180,7 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
 
       <Panel
         title="Score Threshold Onset"
-        note="score[t-1] < threshold && score[t] >= threshold. 점수가 이미 높은 상태를 반복 집계하지 않고 최초 상향 돌파 이벤트만 비교합니다."
+        note="직전 거래일 점수 < 기준 ≤ 현재 점수. 관측 그리드에 해당하는 돌파만 집계합니다. 모든 거래일의 신규/지속 비교는 일별 분석 표를 사용하세요."
       >
         <div className="overflow-x-auto">
           <table className="w-full min-w-[920px] text-[12px]">

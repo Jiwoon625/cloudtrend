@@ -529,18 +529,13 @@ export function scoreHistory(
   const bars = ds.bars[symbol] ?? [];
   const inst = ds.instruments.find((i) => i.symbol === symbol);
   if (!inst || bars.length === 0) return [];
-  const out: Array<{ tradeDate: string; technicalPoints: number; grade: TechnicalGrade }> = [];
-  for (let i = Math.max(120, bars.length - days); i < bars.length; i++) {
-    const snap = computeIndicators(bars, i);
-    const t = inst.instrumentType === "STOCK"
-      ? vfStockScore(snap, cfg)
-      : technicalScore(snap, 75, cfg);
+  const out: Array<{ tradeDate: string; technicalPoints: number | null; grade: TechnicalGrade }> = [];
+  for (let i = Math.max(0, bars.length - days); i < bars.length; i++) {
+    const score = historicalTechnicalScore(computeIndicators(bars, i), cfg);
     out.push({
       tradeDate: bars[i]!.tradeDate,
-      technicalPoints: t.points,
-      grade: inst.instrumentType === "STOCK"
-        ? vfGrade(normalize(t))
-        : technicalGrade(t.points, cfg),
+      technicalPoints: score.points,
+      grade: vfGrade(score.points === null ? null : score.points / score.rawMaxPoints * 100),
     });
   }
   return out;
@@ -553,13 +548,12 @@ export function chartSeries(
   cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
 ) {
   const bars = ds.bars[symbol] ?? [];
-  const isStock = ds.instruments.some((inst) => inst.symbol === symbol && inst.instrumentType === "STOCK");
   const closes = bars.map((b) => b.close);
   const out = [];
   for (let i = Math.max(0, bars.length - days); i < bars.length; i++) {
     const snap = computeIndicators(bars, i);
     const ich = snap.ichimoku;
-    const technical = isStock ? historicalTechnicalScore(snap, cfg) : null;
+    const technical = historicalTechnicalScore(snap, cfg);
     const top = ich.cloudTop;
     const bottom = ich.cloudBottom;
     // 표시 구름의 선행스팬1(=(전환+기준)/2, 26일 전 산출)이 선행스팬2 위면 양운
