@@ -16,6 +16,10 @@ const pct = (v: number | null | undefined, digits = 2) =>
   v === null || v === undefined || !Number.isFinite(v)
     ? "—"
     : `${v > 0 ? "+" : ""}${v.toFixed(digits)}%`;
+const points = (v: number | null | undefined, digits = 2) =>
+  v === null || v === undefined || !Number.isFinite(v)
+    ? "—"
+    : `${v > 0 ? "+" : ""}${v.toFixed(digits)}p`;
 const num = (v: number | null | undefined, digits = 2) =>
   v === null || v === undefined || !Number.isFinite(v) ? "—" : v.toFixed(digits);
 const days = (v: number | null | undefined) =>
@@ -137,7 +141,7 @@ function ScoreChangeTable({ rows }: { rows: ScoreChangeBucketRow[] }) {
                   />
                 </td>
                 <td className="num px-2 py-1.5 text-right">{r.trades.toLocaleString("ko-KR")}</td>
-                <td className="num px-2 py-1.5 text-right">{pct(r.avgScoreChange1d)}</td>
+                <td className="num px-2 py-1.5 text-right">{points(r.avgScoreChange1d)}</td>
                 <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.avgReturn)}</td>
                 <td className="num px-2 py-1.5 text-right">{pct(r.medianReturn)}</td>
                 <td className="num px-2 py-1.5 text-right">{pct(r.winRate)}</td>
