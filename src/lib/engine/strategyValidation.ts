@@ -3,6 +3,7 @@ import { HISTORICAL_TECHNICAL_MAX } from "./scoring";
 import type { ScoredSeries } from "./scoreDiagnostics";
 
 export interface StrategySeries extends ScoredSeries {
+  name?: string;
   nearHighs: Array<boolean | null>;
   extensions: Array<number | null>;
   regimes: Array<string>;
@@ -15,6 +16,7 @@ export const V6_DOWNSIDE_EXIT_THRESHOLDS = [30] as const;
 export const V6_FIXED_STOP_PCTS = [10, 20, 30, 40] as const;
 export const V6_ATR_MULTIPLIERS = [2, 3, 4] as const;
 export const V6_ATR_PERIOD = 14;
+export const V6_POSITION_CAPS = [10, 20, 30] as const;
 
 export interface StrategyScenario {
   id: string;
@@ -59,7 +61,11 @@ export type ExitOverlay =
   | { kind: "FIXED_STOP"; id: string; label: string; stopPercent: number }
   | { kind: "ATR_TRAILING"; id: string; label: string; multiplier: number; period: number };
 
-export const NO_EXIT_OVERLAY: ExitOverlay = { kind: "NONE", id: "none", label: "추가 손절 없음" };
+export const NO_EXIT_OVERLAY: ExitOverlay = {
+  kind: "NONE",
+  id: "none",
+  label: "추가 손절 없음",
+};
 export const FIXED_STOP_OVERLAYS: ExitOverlay[] = V6_FIXED_STOP_PCTS.map((stopPercent) => ({
   kind: "FIXED_STOP" as const,
   id: `fixed-${stopPercent}`,
@@ -76,6 +82,7 @@ export const ATR_STOP_OVERLAYS: ExitOverlay[] = V6_ATR_MULTIPLIERS.map((multipli
 
 export interface SimulatedTrade {
   symbol: string;
+  name?: string;
   market: "KOSPI" | "KOSDAQ";
   signalDate: string;
   entryDate: string;
@@ -128,6 +135,11 @@ function scoreRise(s: StrategySeries, i: number, lag: number): number | null {
   return current !== null && prior !== null ? current - prior : null;
 }
 
+/**
+ * 진입은 70점 Onset이며, 기존 V6 결과와의 연속성을 위해 신호일 점수가 선택한 상승청산선보다
+ * 이미 높으면 해당 시나리오에서는 진입하지 않는다. 따라서 ↑80/↑90 시나리오의 총 거래 수는
+ * 동일하지 않을 수 있다. UI에서 이 차이를 별도로 설명한다.
+ */
 export function passesEntry(s: StrategySeries, i: number, scenario: StrategyScenario): boolean {
   if (!crossedUp(s.scores[i - 1], s.scores[i], scenario.entryThreshold)) return false;
   const current = scorePercent(s.scores[i]);
@@ -183,6 +195,7 @@ function makeTrade(
   const ex = excursion(s, entryIndex, exitIndex, entryPrice, exitPrice, exitTiming);
   return {
     symbol: s.symbol,
+    name: s.name,
     market: s.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI",
     signalDate: s.bars[signalIndex]!.tradeDate,
     entryDate: s.bars[entryIndex]!.tradeDate,
@@ -220,29 +233,71 @@ export function simulateTrade(
   const signalScore = scorePercent(s.scores[signalIndex]);
   if (signalScore === null) return null;
   const lastAvailable = Math.min(plannedExit, s.bars.length - 1);
-  const fixedStop = overlay.kind === "FIXED_STOP" ? entry.open * (1 - overlay.stopPercent / 100) : null;
+  const fixedStop =
+    overlay.kind === "FIXED_STOP" ? entry.open * (1 - overlay.stopPercent / 100) : null;
   let trailHigh = entry.open;
   let trailStop: number | null = null;
   if (overlay.kind === "ATR_TRAILING") {
     const initialAtr = atr(s.bars, signalIndex, overlay.period);
-    if (initialAtr !== null && initialAtr > 0) trailStop = entry.open - overlay.multiplier * initialAtr;
+    if (initialAtr !== null && initialAtr > 0)
+      trailStop = entry.open - overlay.multiplier * initialAtr;
   }
 
   for (let j = entryIndex; j <= lastAvailable; j++) {
     const bar = s.bars[j]!;
-    if (![bar.open, bar.close, bar.low, bar.high].every((v) => Number.isFinite(v) && v > 0)) return null;
+    if (![bar.open, bar.close, bar.low, bar.high].every((v) => Number.isFinite(v) && v > 0))
+      return null;
 
     if (j > entryIndex) {
       const scoreIndex = j - 1;
-      if (crossedDown(s.scores[scoreIndex - 1], s.scores[scoreIndex], scenario.downsideExitThreshold)) {
-        return makeTrade(s, signalIndex, entryIndex, j, entry.open, bar.open, "DOWNSIDE_SCORE", "OPEN", signalScore, costBps);
+      if (
+        crossedDown(
+          s.scores[scoreIndex - 1],
+          s.scores[scoreIndex],
+          scenario.downsideExitThreshold,
+        )
+      ) {
+        return makeTrade(
+          s,
+          signalIndex,
+          entryIndex,
+          j,
+          entry.open,
+          bar.open,
+          "DOWNSIDE_SCORE",
+          "OPEN",
+          signalScore,
+          costBps,
+        );
       }
-      if (crossedUp(s.scores[scoreIndex - 1], s.scores[scoreIndex], scenario.upsideExitThreshold)) {
-        return makeTrade(s, signalIndex, entryIndex, j, entry.open, bar.open, "UPSIDE_SCORE", "OPEN", signalScore, costBps);
+      if (
+        crossedUp(
+          s.scores[scoreIndex - 1],
+          s.scores[scoreIndex],
+          scenario.upsideExitThreshold,
+        )
+      ) {
+        return makeTrade(
+          s,
+          signalIndex,
+          entryIndex,
+          j,
+          entry.open,
+          bar.open,
+          "UPSIDE_SCORE",
+          "OPEN",
+          signalScore,
+          costBps,
+        );
       }
     }
 
-    const stop = overlay.kind === "FIXED_STOP" ? fixedStop : overlay.kind === "ATR_TRAILING" ? trailStop : null;
+    const stop =
+      overlay.kind === "FIXED_STOP"
+        ? fixedStop
+        : overlay.kind === "ATR_TRAILING"
+          ? trailStop
+          : null;
     if (stop !== null) {
       const fill = stopFill(bar.open, bar.low, stop);
       if (fill !== null) {
@@ -262,7 +317,18 @@ export function simulateTrade(
     }
 
     if (j === plannedExit) {
-      return makeTrade(s, signalIndex, entryIndex, j, entry.open, bar.close, "TIME", "CLOSE", signalScore, costBps);
+      return makeTrade(
+        s,
+        signalIndex,
+        entryIndex,
+        j,
+        entry.open,
+        bar.close,
+        "TIME",
+        "CLOSE",
+        signalScore,
+        costBps,
+      );
     }
 
     if (overlay.kind === "ATR_TRAILING") {
@@ -277,16 +343,20 @@ export function simulateTrade(
   return null;
 }
 
+type EntryFilter = (series: StrategySeries, signalIndex: number) => boolean;
+
 export function simulateScenario(
   s: StrategySeries,
   scenario: StrategyScenario,
   costBps = 0,
   overlay: ExitOverlay = NO_EXIT_OVERLAY,
+  entryFilter?: EntryFilter,
 ): SimulatedTrade[] {
   const trades: SimulatedTrade[] = [];
   let nextSignalIndex = 0;
   for (let i = 1; i + 1 < s.bars.length; i++) {
     if (i < nextSignalIndex || !passesEntry(s, i, scenario)) continue;
+    if (entryFilter && !entryFilter(s, i)) continue;
     const trade = simulateTrade(s, i, scenario, costBps, overlay);
     if (trade) {
       trades.push(trade);
@@ -389,6 +459,63 @@ export interface ExitOverlayComparisonRow extends StrategyValidationRow {
   portfolioSharpe: number | null;
 }
 
+export interface RegimeGateComparisonRow {
+  strategy: string;
+  strategyLabel: string;
+  split: "ALL" | "OOS";
+  gate: "ALL" | "NO_RISK_OFF";
+  gateLabel: string;
+  trades: number;
+  avgReturn: number | null;
+  medianReturn: number | null;
+  winRate: number | null;
+  cagr: number | null;
+  mdd: number | null;
+  sharpe: number | null;
+  avgActivePositions: number | null;
+}
+
+export interface CrashStopTradeRow {
+  strategy: string;
+  strategyLabel: string;
+  upsideExitThreshold: number;
+  symbol: string;
+  name?: string;
+  market: "KOSPI" | "KOSDAQ";
+  signalDate: string;
+  entryDate: string;
+  exitDate: string;
+  entryPrice: number;
+  stopPrice: number;
+  exitPrice: number;
+  stopReturn: number;
+  baselineReturn: number | null;
+  baselineExitDate: string | null;
+  signalRegime: string;
+  exitWasGap: boolean;
+  exitOpenGapPct: number | null;
+  maxAbsCloseMovePct: number | null;
+  suspiciousPriceBreak: boolean;
+  inOos: boolean;
+}
+
+export interface PositionCapComparisonRow {
+  strategy: string;
+  strategyLabel: string;
+  split: "ALL" | "OOS";
+  cap: number | null;
+  capLabel: string;
+  trades: number;
+  skippedForCapacity: number;
+  cagr: number | null;
+  mdd: number | null;
+  sharpe: number | null;
+  totalReturn: number | null;
+  activeDayRate: number | null;
+  avgActivePositions: number | null;
+  peakActivePositions: number;
+}
+
 export interface StrategyValidation {
   rows: StrategyValidationRow[];
   yearlyRows: SegmentPerformanceRow[];
@@ -397,13 +524,17 @@ export interface StrategyValidation {
   portfolioRows: PortfolioMetricRow[];
   fixedStopRows: ExitOverlayComparisonRow[];
   atrStopRows: ExitOverlayComparisonRow[];
+  regimeGateRows: RegimeGateComparisonRow[];
+  crashStopTrades: CrashStopTradeRow[];
+  positionCapRows: PositionCapComparisonRow[];
   oosStart: string | null;
   roundTripCostBps: number;
   fixedWeights: readonly [number, number, number, number, number, number, number];
   assumptions: string[];
 }
 
-const mean = (xs: number[]): number | null => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+const mean = (xs: number[]): number | null =>
+  xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 
 function median(xs: number[]): number | null {
   if (!xs.length) return null;
@@ -424,7 +555,9 @@ function quantile(xs: number[], p: number): number | null {
 }
 
 function reasonRate(group: SimulatedTrade[], reason: V6ExitReason): number | null {
-  return group.length ? (group.filter((trade) => trade.reason === reason).length / group.length) * 100 : null;
+  return group.length
+    ? (group.filter((trade) => trade.reason === reason).length / group.length) * 100
+    : null;
 }
 
 function summarizeTrades(
@@ -440,8 +573,12 @@ function summarizeTrades(
   const avgLoss = mean(losses);
   const winSum = wins.reduce((a, b) => a + b, 0);
   const lossSum = losses.reduce((a, b) => a + b, 0);
-  const scoreRises5 = group.map((t) => t.scoreRise5d).filter((v): v is number => v !== null);
-  const scoreRises10 = group.map((t) => t.scoreRise10d).filter((v): v is number => v !== null);
+  const scoreRises5 = group
+    .map((t) => t.scoreRise5d)
+    .filter((v): v is number => v !== null);
+  const scoreRises10 = group
+    .map((t) => t.scoreRise10d)
+    .filter((v): v is number => v !== null);
   const maes = group.map((t) => t.mae).filter((v): v is number => v !== null);
   const mfes = group.map((t) => t.mfe).filter((v): v is number => v !== null);
   const upsideExitRate = reasonRate(group, "UPSIDE_SCORE");
@@ -478,8 +615,12 @@ function summarizeTrades(
     tailMaeP5: quantile(maes, 0.05),
     avgMfe: mean(mfes),
     horizon: meta.maxHoldingDays,
-    stopRate: priceStopRate !== null && atrStopRate !== null ? priceStopRate + atrStopRate : null,
-    scoreExitRate: upsideExitRate !== null && downsideExitRate !== null ? upsideExitRate + downsideExitRate : null,
+    stopRate:
+      priceStopRate !== null && atrStopRate !== null ? priceStopRate + atrStopRate : null,
+    scoreExitRate:
+      upsideExitRate !== null && downsideExitRate !== null
+        ? upsideExitRate + downsideExitRate
+        : null,
   };
 }
 
@@ -500,7 +641,9 @@ function portfolioDaily(
   startDate: string | null,
   costBps: number,
 ): DailyPortfolioRow[] {
-  const bySeries = new Map(series.map((s) => [seriesKey(s.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI", s.symbol), s]));
+  const bySeries = new Map(
+    series.map((s) => [seriesKey(s.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI", s.symbol), s]),
+  );
   const contributions = new Map<string, number[]>();
   for (const trade of trades) {
     const s = bySeries.get(seriesKey(trade.market, trade.symbol));
@@ -522,7 +665,11 @@ function portfolioDaily(
     .filter((date) => startDate === null || date >= startDate)
     .map((date) => {
       const xs = contributions.get(date) ?? [];
-      return { date, ret: xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0, active: xs.length };
+      return {
+        date,
+        ret: xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0,
+        active: xs.length,
+      };
     });
 }
 
@@ -535,7 +682,18 @@ function portfolioMetric(
 ) {
   const daily = portfolioDaily(trades, series, dates, startDate, costBps);
   if (!daily.length) {
-    return { trades: trades.length, totalReturn: null, cagr: null, mdd: null, sharpe: null, activeDayRate: null, avgActivePositions: null, peakActivePositions: 0, averageHoldingDays: mean(trades.map((t) => t.holdingDays)), daily };
+    return {
+      trades: trades.length,
+      totalReturn: null,
+      cagr: null,
+      mdd: null,
+      sharpe: null,
+      activeDayRate: null,
+      avgActivePositions: null,
+      peakActivePositions: 0,
+      averageHoldingDays: mean(trades.map((t) => t.holdingDays)),
+      daily,
+    };
   }
   let equity = 1;
   let peak = 1;
@@ -547,7 +705,10 @@ function portfolioMetric(
   }
   const returns = daily.map((d) => d.ret);
   const avg = returns.reduce((a, b) => a + b, 0) / returns.length;
-  const variance = returns.length > 1 ? returns.reduce((a, b) => a + (b - avg) ** 2, 0) / (returns.length - 1) : 0;
+  const variance =
+    returns.length > 1
+      ? returns.reduce((a, b) => a + (b - avg) ** 2, 0) / (returns.length - 1)
+      : 0;
   const sd = Math.sqrt(Math.max(0, variance));
   const activeDays = daily.filter((d) => d.active > 0).length;
   return {
@@ -565,7 +726,9 @@ function portfolioMetric(
 }
 
 function filterSplit(trades: SimulatedTrade[], split: "ALL" | "OOS", oosStart: string | null) {
-  return split === "ALL" ? trades : trades.filter((t) => oosStart !== null && t.signalDate >= oosStart);
+  return split === "ALL"
+    ? trades
+    : trades.filter((t) => oosStart !== null && t.signalDate >= oosStart);
 }
 
 function segmentSummary(
@@ -596,6 +759,97 @@ function segmentSummary(
   };
 }
 
+function maxAbsCloseMovePct(s: StrategySeries, fromIndex: number, toIndex: number): number | null {
+  let maxMove: number | null = null;
+  for (let i = Math.max(1, fromIndex); i <= toIndex; i++) {
+    const prev = s.bars[i - 1]?.close;
+    const current = s.bars[i]?.close;
+    if (!(prev && current && prev > 0 && current > 0)) continue;
+    const move = Math.abs(current / prev - 1) * 100;
+    maxMove = maxMove === null ? move : Math.max(maxMove, move);
+  }
+  return maxMove;
+}
+
+interface CapacitySimulation {
+  trades: SimulatedTrade[];
+  skippedForCapacity: number;
+}
+
+function occupiesSlotAtOpen(trade: SimulatedTrade, date: string) {
+  if (trade.exitDate > date) return true;
+  if (trade.exitDate < date) return false;
+  return trade.exitTiming !== "OPEN";
+}
+
+/**
+ * 포트폴리오 동시보유 제한. 같은 진입일 후보가 슬롯보다 많으면
+ * ① 신호점수, ② 최근 5D 점수상승, ③ 10D 점수상승, ④ 종목코드 순으로 선택한다.
+ * 선택되지 않은 신호는 대기 주문으로 넘기지 않고 그 Onset은 소멸한 것으로 처리한다.
+ */
+function simulateWithPositionCap(
+  series: StrategySeries[],
+  scenario: StrategyScenario,
+  costBps: number,
+  cap: number,
+): CapacitySimulation {
+  const candidates: Array<{ s: StrategySeries; signalIndex: number; entryDate: string; score: number; rise5: number; rise10: number }> = [];
+  for (const s of series) {
+    for (let i = 1; i + 1 < s.bars.length; i++) {
+      if (!passesEntry(s, i, scenario)) continue;
+      const entryDate = s.bars[i + 1]?.tradeDate;
+      const score = scorePercent(s.scores[i]);
+      if (!entryDate || score === null) continue;
+      candidates.push({
+        s,
+        signalIndex: i,
+        entryDate,
+        score,
+        rise5: scoreRise(s, i, 5) ?? -Infinity,
+        rise10: scoreRise(s, i, 10) ?? -Infinity,
+      });
+    }
+  }
+  candidates.sort(
+    (a, b) =>
+      a.entryDate.localeCompare(b.entryDate) ||
+      b.score - a.score ||
+      b.rise5 - a.rise5 ||
+      b.rise10 - a.rise10 ||
+      a.s.symbol.localeCompare(b.s.symbol),
+  );
+
+  const selected: SimulatedTrade[] = [];
+  let skippedForCapacity = 0;
+  let cursor = 0;
+  while (cursor < candidates.length) {
+    const date = candidates[cursor]!.entryDate;
+    const day: typeof candidates = [];
+    while (cursor < candidates.length && candidates[cursor]!.entryDate === date) {
+      day.push(candidates[cursor]!);
+      cursor++;
+    }
+    const active = selected.filter((t) => occupiesSlotAtOpen(t, date));
+    const activeSymbols = new Set(active.map((t) => seriesKey(t.market, t.symbol)));
+    let slots = Math.max(0, cap - active.length);
+    for (const candidate of day) {
+      const market = candidate.s.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI";
+      const key = seriesKey(market, candidate.s.symbol);
+      if (activeSymbols.has(key)) continue;
+      if (slots <= 0) {
+        skippedForCapacity++;
+        continue;
+      }
+      const trade = simulateTrade(candidate.s, candidate.signalIndex, scenario, costBps);
+      if (!trade) continue;
+      selected.push(trade);
+      activeSymbols.add(key);
+      slots--;
+    }
+  }
+  return { trades: selected, skippedForCapacity };
+}
+
 export function buildStrategyValidation(
   series: StrategySeries[],
   _horizons: number[],
@@ -609,6 +863,9 @@ export function buildStrategyValidation(
   const portfolioRows: PortfolioMetricRow[] = [];
   const fixedStopRows: ExitOverlayComparisonRow[] = [];
   const atrStopRows: ExitOverlayComparisonRow[] = [];
+  const regimeGateRows: RegimeGateComparisonRow[] = [];
+  const crashStopTrades: CrashStopTradeRow[] = [];
+  const positionCapRows: PositionCapComparisonRow[] = [];
   const normalizedCost = Math.max(0, costBps);
   const allDates = [...new Set(series.flatMap((s) => s.bars.map((b) => b.tradeDate)))].sort();
 
@@ -618,15 +875,18 @@ export function buildStrategyValidation(
     baseTrades.set(scenario.id, trades);
     for (const split of ["ALL", "OOS"] as const) {
       for (const market of ["ALL", "KOSPI", "KOSDAQ"] as const) {
-        const group = trades.filter((trade) =>
-          (split === "ALL" || (oosStart !== null && trade.signalDate >= oosStart)) &&
-          (market === "ALL" || trade.market === market));
+        const group = trades.filter(
+          (trade) =>
+            (split === "ALL" || (oosStart !== null && trade.signalDate >= oosStart)) &&
+            (market === "ALL" || trade.market === market),
+        );
         rows.push(summarizeTrades(group, scenario, split, market));
       }
     }
   }
 
-  const commonStart = [...baseTrades.values()].flat().map((t) => t.entryDate).sort()[0] ?? null;
+  const commonStart =
+    [...baseTrades.values()].flat().map((t) => t.entryDate).sort()[0] ?? null;
 
   for (const scenario of STRATEGY_SCENARIOS) {
     const all = baseTrades.get(scenario.id) ?? [];
@@ -662,13 +922,26 @@ export function buildStrategyValidation(
       const start = split === "OOS" ? oosStart : commonStart;
       const portfolio = portfolioMetric(splitTrades, series, allDates, start, normalizedCost);
       const summary = summarizeTrades(splitTrades, strategy, split, "ALL");
-      riskRows.push({ strategy: strategy.id, strategyLabel: strategy.label, split, trades: summary.trades, avgLoss: summary.avgLoss, worstReturn: summary.worstReturn, avgMae: summary.avgMae, tailMaeP5: summary.tailMaeP5, avgMfe: summary.avgMfe, portfolioMdd: portfolio.mdd });
+      riskRows.push({
+        strategy: strategy.id,
+        strategyLabel: strategy.label,
+        split,
+        trades: summary.trades,
+        avgLoss: summary.avgLoss,
+        worstReturn: summary.worstReturn,
+        avgMae: summary.avgMae,
+        tailMaeP5: summary.tailMaeP5,
+        avgMfe: summary.avgMfe,
+        portfolioMdd: portfolio.mdd,
+      });
 
       const years = [...new Set(splitTrades.map((t) => t.signalDate.slice(0, 4)))].sort();
       for (const year of years) {
         const group = splitTrades.filter((t) => t.signalDate.startsWith(year));
         const yearDaily = portfolio.daily.filter((d) => d.date.startsWith(year));
-        const yearReturn = yearDaily.length ? (yearDaily.reduce((eq, d) => eq * (1 + d.ret), 1) - 1) * 100 : null;
+        const yearReturn = yearDaily.length
+          ? (yearDaily.reduce((eq, d) => eq * (1 + d.ret), 1) - 1) * 100
+          : null;
         yearlyRows.push(segmentSummary(strategy, split, year, group, yearReturn));
       }
 
@@ -682,13 +955,23 @@ export function buildStrategyValidation(
   const buildOverlayRows = (overlays: ExitOverlay[], target: ExitOverlayComparisonRow[]) => {
     for (const strategy of CORE_STRATEGIES) {
       for (const overlay of [NO_EXIT_OVERLAY, ...overlays]) {
-        const trades = overlay.kind === "NONE" ? baseTrades.get(strategy.id) ?? [] : series.flatMap((s) => simulateScenario(s, strategy, normalizedCost, overlay));
+        const trades =
+          overlay.kind === "NONE"
+            ? baseTrades.get(strategy.id) ?? []
+            : series.flatMap((s) => simulateScenario(s, strategy, normalizedCost, overlay));
         for (const split of ["ALL", "OOS"] as const) {
           const group = filterSplit(trades, split, oosStart);
           const start = split === "OOS" ? oosStart : commonStart;
           const summary = summarizeTrades(group, strategy, split, "ALL");
           const p = portfolioMetric(group, series, allDates, start, normalizedCost);
-          target.push({ ...summary, overlayId: overlay.id, overlayLabel: overlay.label, portfolioCagr: p.cagr, portfolioMdd: p.mdd, portfolioSharpe: p.sharpe });
+          target.push({
+            ...summary,
+            overlayId: overlay.id,
+            overlayLabel: overlay.label,
+            portfolioCagr: p.cagr,
+            portfolioMdd: p.mdd,
+            portfolioSharpe: p.sharpe,
+          });
         }
       }
     }
@@ -696,6 +979,154 @@ export function buildStrategyValidation(
 
   buildOverlayRows(FIXED_STOP_OVERLAYS, fixedStopRows);
   buildOverlayRows(ATR_STOP_OVERLAYS, atrStopRows);
+
+  // ① RISK_OFF 신규진입 금지. 기존 보유 포지션의 청산규칙은 그대로 둔다.
+  for (const strategy of CORE_STRATEGIES) {
+    const variants = [
+      {
+        gate: "ALL" as const,
+        gateLabel: "시장국면 제한 없음",
+        trades: baseTrades.get(strategy.id) ?? [],
+      },
+      {
+        gate: "NO_RISK_OFF" as const,
+        gateLabel: "RISK_OFF 신규진입 금지",
+        trades: series.flatMap((s) =>
+          simulateScenario(
+            s,
+            strategy,
+            normalizedCost,
+            NO_EXIT_OVERLAY,
+            (candidate, i) => candidate.regimes[i] !== "RISK_OFF",
+          ),
+        ),
+      },
+    ];
+    for (const variant of variants) {
+      for (const split of ["ALL", "OOS"] as const) {
+        const group = filterSplit(variant.trades, split, oosStart);
+        const start = split === "OOS" ? oosStart : commonStart;
+        const summary = summarizeTrades(group, strategy, split, "ALL");
+        const p = portfolioMetric(group, series, allDates, start, normalizedCost);
+        regimeGateRows.push({
+          strategy: strategy.id,
+          strategyLabel: strategy.label,
+          split,
+          gate: variant.gate,
+          gateLabel: variant.gateLabel,
+          trades: group.length,
+          avgReturn: summary.avgReturn,
+          medianReturn: summary.medianReturn,
+          winRate: summary.winRate,
+          cagr: p.cagr,
+          mdd: p.mdd,
+          sharpe: p.sharpe,
+          avgActivePositions: p.avgActivePositions,
+        });
+      }
+    }
+  }
+
+  // ② -40% catastrophe stop 실제 체결 목록과 가격단절 진단.
+  const fixed40 = FIXED_STOP_OVERLAYS.find(
+    (o): o is Extract<ExitOverlay, { kind: "FIXED_STOP" }> =>
+      o.kind === "FIXED_STOP" && o.stopPercent === 40,
+  );
+  if (fixed40) {
+    for (const strategy of CORE_STRATEGIES) {
+      for (const s of series) {
+        const stopped = simulateScenario(s, strategy, normalizedCost, fixed40).filter(
+          (t) => t.reason === "PRICE_STOP",
+        );
+        for (const trade of stopped) {
+          const previousClose = s.bars[trade.exitIndex - 1]?.close;
+          const exitOpen = s.bars[trade.exitIndex]?.open;
+          const gapPct =
+            previousClose && exitOpen && previousClose > 0 && exitOpen > 0
+              ? (exitOpen / previousClose - 1) * 100
+              : null;
+          const maxMove = maxAbsCloseMovePct(s, trade.entryIndex, trade.exitIndex);
+          const baseline = simulateTrade(
+            s,
+            trade.signalIndex,
+            strategy,
+            normalizedCost,
+            NO_EXIT_OVERLAY,
+          );
+          crashStopTrades.push({
+            strategy: strategy.id,
+            strategyLabel: strategy.label,
+            upsideExitThreshold: strategy.upsideExitThreshold,
+            symbol: trade.symbol,
+            name: trade.name,
+            market: trade.market,
+            signalDate: trade.signalDate,
+            entryDate: trade.entryDate,
+            exitDate: trade.exitDate,
+            entryPrice: trade.entryPrice,
+            stopPrice: trade.entryPrice * 0.6,
+            exitPrice: trade.exitPrice,
+            stopReturn: trade.ret,
+            baselineReturn: baseline?.ret ?? null,
+            baselineExitDate: baseline?.exitDate ?? null,
+            signalRegime: trade.signalRegime,
+            exitWasGap: trade.exitTiming === "OPEN" && trade.exitPrice < trade.entryPrice * 0.6,
+            exitOpenGapPct: gapPct,
+            maxAbsCloseMovePct: maxMove,
+            suspiciousPriceBreak:
+              (gapPct !== null && Math.abs(gapPct) >= 25) ||
+              (maxMove !== null && maxMove >= 25),
+            inOos: oosStart !== null && trade.signalDate >= oosStart,
+          });
+        }
+      }
+    }
+  }
+
+  // ③ 실전 동시보유 10/20/30종목 제한. 무제한 행도 기준선으로 함께 제공한다.
+  for (const strategy of CORE_STRATEGIES) {
+    const unlimited = baseTrades.get(strategy.id) ?? [];
+    const variants: Array<{
+      cap: number | null;
+      capLabel: string;
+      trades: SimulatedTrade[];
+      skippedForCapacity: number;
+    }> = [
+      { cap: null, capLabel: "제한 없음", trades: unlimited, skippedForCapacity: 0 },
+      ...V6_POSITION_CAPS.map((cap) => {
+        const sim = simulateWithPositionCap(series, strategy, normalizedCost, cap);
+        return {
+          cap,
+          capLabel: `최대 ${cap}종목`,
+          trades: sim.trades,
+          skippedForCapacity: sim.skippedForCapacity,
+        };
+      }),
+    ];
+    for (const variant of variants) {
+      for (const split of ["ALL", "OOS"] as const) {
+        const group = filterSplit(variant.trades, split, oosStart);
+        const start = split === "OOS" ? oosStart : commonStart;
+        const p = portfolioMetric(group, series, allDates, start, normalizedCost);
+        positionCapRows.push({
+          strategy: strategy.id,
+          strategyLabel: strategy.label,
+          split,
+          cap: variant.cap,
+          capLabel: variant.capLabel,
+          trades: group.length,
+          skippedForCapacity: variant.skippedForCapacity,
+          cagr: p.cagr,
+          mdd: p.mdd,
+          sharpe: p.sharpe,
+          totalReturn: p.totalReturn,
+          activeDayRate: p.activeDayRate,
+          avgActivePositions: p.avgActivePositions,
+          peakActivePositions: p.peakActivePositions,
+        });
+      }
+    }
+  }
 
   return {
     rows,
@@ -705,15 +1136,22 @@ export function buildStrategyValidation(
     portfolioRows,
     fixedStopRows,
     atrStopRows,
+    regimeGateRows,
+    crashStopTrades,
+    positionCapRows,
     oosStart,
     roundTripCostBps: normalizedCost,
     fixedWeights: [1, 1, 1.5, 1, 0.5, 2.5, 2],
     assumptions: [
       "진입: 70점 최초 상향 돌파를 종가에서 확인하고 다음 거래일 시가 체결",
+      "↑80/↑90 비교는 기존 정의를 유지해 신호일 점수가 해당 상승청산선 이상이면 그 시나리오에서는 진입하지 않으므로 총 거래 수가 서로 다를 수 있음",
       "점수 청산: 상승 80/90 또는 하락 30 돌파/이탈을 종가에서 확인하고 다음 거래일 시가 체결",
       "가격 손절: 시가가 손절선 아래면 시가, 장중 저가가 손절선을 터치하면 손절선 가격 체결",
       "ATR trailing: Wilder ATR14, 직전 종가까지의 정보로 다음 세션 stop을 설정",
+      "RISK_OFF 필터: 신규진입만 금지하고 기존 포지션은 원래 청산규칙을 유지",
+      "동시보유 제한: 같은 날 후보가 넘치면 신호점수 → 5D 점수상승 → 10D 점수상승 → 종목코드 순으로 선택하며 탈락 신호는 다음 날로 이월하지 않음",
       "포트폴리오: 신호 보유 종목을 거래일별 동일가중, 신호가 없는 날은 현금(수익률 0), 무위험수익률 0 가정",
+      "-40% 손절 거래의 가격단절 경고는 일중 갭 또는 일간 종가 변동이 25% 이상인 경우로, 데이터 오류를 확정하는 판정이 아니라 원자료 확인이 필요한 후보 표시",
     ],
   };
 }
