@@ -2,9 +2,18 @@
 // V4의 장기 시장조정/Signal Onset 검증 구조를 유지하면서,
 // Score Threshold Onset과 score ranking 성능을 추가로 검증한다.
 import { computeIndicators } from "./indicators";
-import { buildStrategyValidation, type StrategySeries, type StrategyValidation } from "./strategyValidation";
+import {
+  buildStrategyValidation,
+  type StrategySeries,
+  type StrategyValidation,
+} from "./strategyValidation";
 import { historicalTechnicalScore } from "./scoring";
-import { buildScoreDiagnostics, SCORE_BANDS, SCORE_THRESHOLDS, type ScoreDiagnostics } from "./scoreDiagnostics";
+import {
+  buildScoreDiagnostics,
+  SCORE_BANDS,
+  SCORE_THRESHOLDS,
+  type ScoreDiagnostics,
+} from "./scoreDiagnostics";
 import {
   BACKTEST_FEATURES as LEGACY_BACKTEST_FEATURES,
   DEFAULT_BACKTEST_PARAMS as LEGACY_DEFAULT_BACKTEST_PARAMS,
@@ -71,6 +80,9 @@ export interface BacktestInputSeries {
   symbol: string;
   name: string;
   market?: BacktestMarket;
+  /** 다음 섹터 성과 백테스트를 위해 입력 Universe의 확정 매핑을 보존한다. */
+  sectorCode?: string;
+  sectorName?: string;
   bars: DailyPrice[];
 }
 
@@ -409,7 +421,9 @@ function realizedVolAt(bars: DailyPrice[], endIndex: number, window = 20): numbe
   return Math.sqrt(v * 252) * 100;
 }
 
-function buildBenchmarks(ctx?: BacktestMarketContext): Partial<Record<BacktestMarket, BenchmarkData>> | null {
+function buildBenchmarks(
+  ctx?: BacktestMarketContext,
+): Partial<Record<BacktestMarket, BenchmarkData>> | null {
   if (!ctx?.indexSeries?.length) return null;
   const kospi = ctx.indexSeries.find((s) => s.indexCode.toUpperCase() === "KOSPI");
   const kosdaq = ctx.indexSeries.find((s) => s.indexCode.toUpperCase() === "KOSDAQ");
@@ -496,7 +510,10 @@ function groupByDate(rows: Observation[]): Map<string, Observation[]> {
   return out;
 }
 
-function hacMeanStats(xs: number[], lag: number): {
+function hacMeanStats(
+  xs: number[],
+  lag: number,
+): {
   mean: number | null;
   t: number | null;
   low: number | null;
@@ -545,7 +562,9 @@ function dailyEdges(
   adjusted = false,
 ): number[] {
   const out: number[] = [];
-  for (const rows of [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, r]) => r)) {
+  for (const rows of [...groups.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, r]) => r)) {
     const { on, off } = splitReturns(rows, hIdx, pick, adjusted);
     const a = mean(on);
     const b = mean(off);
@@ -594,7 +613,14 @@ function breakdownFor(
 ): BreakdownStat[] {
   const groups = groupByDate(rows);
   return active.map((f) => {
-    const m = enhancedMetric(rows, groups, hIdx, horizon, sampleEvery, (o) => o.flags[f.id] ?? null);
+    const m = enhancedMetric(
+      rows,
+      groups,
+      hIdx,
+      horizon,
+      sampleEvery,
+      (o) => o.flags[f.id] ?? null,
+    );
     return {
       segment,
       featureKey: f.id,
@@ -833,7 +859,9 @@ function buildRankingAnalysis(
       const bottomRaw = mean(bottom.map((o) => o.rets[hIdx]!).filter(Number.isFinite));
       if (topRaw === null || bottomRaw === null) continue;
       const topAdjusted = mean(
-        top.map((o) => o.excessRets[hIdx]).filter((r): r is number => r !== null && r !== undefined),
+        top
+          .map((o) => o.excessRets[hIdx])
+          .filter((r): r is number => r !== null && r !== undefined),
       );
       const bottomAdjusted = mean(
         bottom
@@ -971,7 +999,7 @@ export function runBacktest(
     const scores: Array<number | null> = new Array(bars.length).fill(null);
     const nearHighs: Array<boolean | null> = new Array(bars.length).fill(null);
     const extensions: Array<number | null> = new Array(bars.length).fill(null);
-    const regimes = bars.map(b => bench?.regimeByDate.get(b.tradeDate) ?? "UNKNOWN");
+    const regimes = bars.map((b) => bench?.regimeByDate.get(b.tradeDate) ?? "UNKNOWN");
     scoredSeries.push({ ...s, scores, nearHighs, extensions, regimes });
     const obs: Observation[] = [];
     let previousStateFlags: Record<string, boolean | null> | null = null;
@@ -988,7 +1016,9 @@ export function runBacktest(
       previousStateFlags = stateFlags;
       const rets = horizons.map((h) => {
         const exit = bars[i + h]?.close;
-        return exit !== undefined && exit > 0 ? (exit / entry! - 1) * 100 - Math.max(0, params.roundTripCostBps ?? 0) / 100 : null;
+        return exit !== undefined && exit > 0
+          ? (exit / entry! - 1) * 100 - Math.max(0, params.roundTripCostBps ?? 0) / 100
+          : null;
       });
       const benchmarkRets = horizons.map((h) => {
         const exitDate = bars[i + h]?.tradeDate;
@@ -1125,12 +1155,9 @@ export function runBacktest(
   }
   const buckets = bucketHorizons.filter((b) => b.horizon === horizons[pIdx]);
 
-  const thresholdList = [
-    ...new Set([
-      ...DEFAULT_ENTRY_THRESHOLDS,
-      params.entryScore,
-    ]),
-  ].sort((a, b) => a - b);
+  const thresholdList = [...new Set([...DEFAULT_ENTRY_THRESHOLDS, params.entryScore])].sort(
+    (a, b) => a - b,
+  );
   const entryThresholds: EntryThresholdStat[] = [];
   for (const th of thresholdList) {
     const rows = main.filter((o) => o.score !== null && o.score >= th);
@@ -1263,18 +1290,16 @@ export function runBacktest(
       segment,
     ),
   );
-  const yearlyBreakdown = [...new Set(main.map((o) => o.year))]
-    .sort()
-    .flatMap((segment) =>
-      breakdownFor(
-        main.filter((o) => o.year === segment),
-        active,
-        pIdx,
-        horizons[pIdx]!,
-        baseInterval,
-        segment,
-      ),
-    );
+  const yearlyBreakdown = [...new Set(main.map((o) => o.year))].sort().flatMap((segment) =>
+    breakdownFor(
+      main.filter((o) => o.year === segment),
+      active,
+      pIdx,
+      horizons[pIdx]!,
+      baseInterval,
+      segment,
+    ),
+  );
   const regimeBreakdown = (["RISK_ON", "NEUTRAL", "RISK_OFF"] as MarketRegime[]).flatMap(
     (segment) =>
       breakdownFor(
@@ -1335,7 +1360,12 @@ export function runBacktest(
     for (const m of fh.metrics) {
       const e = m.marketAdjustedCrossSectionalEdge;
       if (e !== null && (worstFeature === null || e < worstFeature.edge))
-        worstFeature = { featureKey: fh.featureKey, label: fh.featureLabel, edge: e, horizon: m.horizon };
+        worstFeature = {
+          featureKey: fh.featureKey,
+          label: fh.featureLabel,
+          edge: e,
+          horizon: m.horizon,
+        };
       if (
         m.robustTStat !== null &&
         (highestTStat === null || Math.abs(m.robustTStat) > Math.abs(highestTStat.tStat))
@@ -1360,12 +1390,17 @@ export function runBacktest(
     stableFeatures: featureHorizons
       .filter((fh) =>
         fh.metrics.every(
-          (m) => m.marketAdjustedCrossSectionalEdge !== null && m.marketAdjustedCrossSectionalEdge > 0,
+          (m) =>
+            m.marketAdjustedCrossSectionalEdge !== null && m.marketAdjustedCrossSectionalEdge > 0,
         ),
       )
       .map((fh) => ({ featureKey: fh.featureKey, label: fh.featureLabel })),
     lowDiscriminationFeatures: active
-      .map((f) => ({ featureKey: f.id, label: f.label, signalRate: stateSignalRates.get(f.id) ?? null }))
+      .map((f) => ({
+        featureKey: f.id,
+        label: f.label,
+        signalRate: stateSignalRates.get(f.id) ?? null,
+      }))
       .filter(
         (f): f is { featureKey: string; label: string; signalRate: number } =>
           f.signalRate !== null && (f.signalRate >= 95 || f.signalRate <= 5),
@@ -1385,10 +1420,12 @@ export function runBacktest(
 
   const config: BacktestConfigSnapshot = {
     scoreMaxPoints: 9.5,
-    scoreWeights: Object.fromEntries(BACKTEST_FEATURES.map(f => [f.id, f.defaultWeight])),
+    scoreWeights: Object.fromEntries(BACKTEST_FEATURES.map((f) => [f.id, f.defaultWeight])),
     roundTripCostBps: Math.max(0, params.roundTripCostBps ?? 0),
     features: active.map((f) => f.id),
-    weights: Object.fromEntries(active.map((f) => [f.id, Math.max(0, params.weights[f.id] ?? f.defaultWeight)])),
+    weights: Object.fromEntries(
+      active.map((f) => [f.id, Math.max(0, params.weights[f.id] ?? f.defaultWeight)]),
+    ),
     horizonDays: params.horizonDays,
     horizons,
     sampleEvery: baseInterval,
@@ -1422,13 +1459,17 @@ export function runBacktest(
     "OOS는 관측일을 시간순 60% Development / 20% Validation / 20% OOS로 자동 분리합니다.",
   ];
   if (!horizons.includes(RANKING_HORIZON))
-    notes.push(`Rank IC/Top 5/Quantile 분석을 표시하려면 Forward horizon에 ${RANKING_HORIZON}D를 포함하세요.`);
+    notes.push(
+      `Rank IC/Top 5/Quantile 분석을 표시하려면 Forward horizon에 ${RANKING_HORIZON}D를 포함하세요.`,
+    );
   if (requestedIntervals.some((v) => !intervals.includes(v)))
     notes.push(
       `장기 데이터 계산량 보호를 위해 메인 관측간격(${baseInterval}일)보다 짧거나 배수가 아닌 관측간격 민감도는 제외했습니다.`,
     );
   if (!benchmarks)
-    notes.push("KOSPI/KOSDAQ 지수 시계열을 찾지 못해 시장조정 수익률과 시장국면 일부가 데이터 없음으로 처리됩니다.");
+    notes.push(
+      "KOSPI/KOSDAQ 지수 시계열을 찾지 못해 시장조정 수익률과 시장국면 일부가 데이터 없음으로 처리됩니다.",
+    );
   if (maxHorizon > baseInterval)
     notes.push(
       `최대 보유기간 ${maxHorizon}일 / 관측간격 ${baseInterval}일로 가격구간 중첩이 존재합니다. naive t 대신 Robust t/95% CI를 우선 해석하세요.`,
@@ -1436,8 +1477,19 @@ export function runBacktest(
 
   const primaryBaseline = baselineByHorizon[pIdx];
   return {
-    strategyValidation: buildStrategyValidation(scoredSeries, horizons, oosStart, Math.max(0, params.roundTripCostBps ?? 0)),
-    scoreDiagnostics: buildScoreDiagnostics(scoredSeries, horizons, marketContext?.indexSeries, oosStart, Math.max(0, params.roundTripCostBps ?? 0)),
+    strategyValidation: buildStrategyValidation(
+      scoredSeries,
+      horizons,
+      oosStart,
+      Math.max(0, params.roundTripCostBps ?? 0),
+    ),
+    scoreDiagnostics: buildScoreDiagnostics(
+      scoredSeries,
+      horizons,
+      marketContext?.indexSeries,
+      oosStart,
+      Math.max(0, params.roundTripCostBps ?? 0),
+    ),
     observations: retsAt(main, pIdx).length,
     symbolCount: usedSymbols,
     from: from || "-",

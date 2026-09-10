@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "backtest:run": "vite-node scripts/run-backtest.ts",
+    "screening:run": "vite-node scripts/run-screening.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },

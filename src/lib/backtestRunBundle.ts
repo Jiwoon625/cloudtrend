@@ -13,6 +13,14 @@ export interface BacktestDataVersionInput {
   datasetVersion: string;
   asOfDate: string;
   files: BacktestDataFileVersion[];
+  universe: Array<{
+    symbol: string;
+    name: string;
+    market: string;
+    sectorCode: string;
+    sectorName: string;
+    bars: number;
+  }>;
 }
 
 export interface BacktestExecutionConfig {
@@ -66,6 +74,15 @@ function canonicalDataManifest(input: BacktestDataVersionInput) {
         savedAt: file.savedAt,
       }))
       .sort((a, b) => a.id.localeCompare(b.id)),
+    universe: [...input.universe]
+      .map(({ symbol, market, sectorCode, sectorName, bars }) => ({
+        symbol,
+        market,
+        sectorCode,
+        sectorName,
+        bars,
+      }))
+      .sort((a, b) => a.symbol.localeCompare(b.symbol)),
   });
 }
 
@@ -75,6 +92,10 @@ async function sha256(value: string) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+export async function createBacktestDataVersion(data: BacktestDataVersionInput) {
+  return `sha256:${await sha256(canonicalDataManifest(data))}`;
+}
+
 export async function createBacktestRunBundle(
   result: BacktestResult,
   data: BacktestDataVersionInput,
@@ -82,7 +103,7 @@ export async function createBacktestRunBundle(
   codeVersion: string,
 ): Promise<BacktestRunBundle> {
   const createdAt = new Date().toISOString();
-  const dataVersion = `sha256:${await sha256(canonicalDataManifest(data))}`;
+  const dataVersion = await createBacktestDataVersion(data);
   const id = `${createdAt.replace(/[-:.TZ]/g, "").slice(0, 14)}-${dataVersion.slice(7, 15)}`;
   return {
     schemaVersion: 1,
