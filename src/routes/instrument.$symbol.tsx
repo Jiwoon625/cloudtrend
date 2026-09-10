@@ -23,7 +23,7 @@ import { Delta, GradeBadge } from "@/components/ScreenerTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { instrumentQueryOptions } from "@/lib/analysisQuery";
-import { WARNING_LABELS } from "@/lib/engine/scoring";
+import { HISTORICAL_TECHNICAL_MAX, WARNING_LABELS } from "@/lib/engine/scoring";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
 
 export const Route = createFileRoute("/instrument/$symbol")({
@@ -72,7 +72,7 @@ function InstrumentDetail() {
   const history = detail.history;
   const [showLog, setShowLog] = useState(false);
   const [watched, setWatched] = useState(false);
-  const [visible, setVisible] = useState({ ma: true, bb: true, cloud: true });
+  const [visible, setVisible] = useState({ ma: true, bb: true, cloud: true, technical: true });
 
   const score = row.vf ?? row.technical;
   const snap = row.snapshot;
@@ -221,7 +221,7 @@ function InstrumentDetail() {
       <section className="mt-5 rounded-lg border border-border bg-card p-4">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold">가격 · 지표 차트 (일봉)</h2>
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1">
             {(
               [
                 ["ma", "이동평균"],
@@ -238,6 +238,16 @@ function InstrumentDetail() {
                 {label}
               </button>
             ))}
+            {row.vf ? (
+              <button
+                type="button"
+                aria-pressed={visible.technical}
+                onClick={() => setVisible((v) => ({ ...v, technical: !v.technical }))}
+                className={`rounded border px-2 py-0.5 text-[11px] ${visible.technical ? "border-primary/40 bg-info-soft text-info" : "border-border text-muted-foreground"}`}
+              >
+                기술점수 (7점)
+              </button>
+            ) : null}
           </div>
         </div>
         <div className="h-[420px]">
@@ -253,13 +263,40 @@ function InstrumentDetail() {
                 tickFormatter={(v: number) => v.toLocaleString("ko-KR")}
               />
               <YAxis yAxisId="volume" orientation="right" hide />
+              {row.vf && visible.technical ? (
+                <YAxis
+                  yAxisId="technical"
+                  orientation="right"
+                  domain={[0, HISTORICAL_TECHNICAL_MAX]}
+                  ticks={[0, 1, 2, 3, 4, 5, 6, 7]}
+                  width={48}
+                  tick={{ fontSize: 10, fill: "#f97316" }}
+                  tickFormatter={(v: number) => `${v}점`}
+                />
+              ) : null}
               <Tooltip
                 contentStyle={{
                   background: "var(--color-card)",
                   border: "1px solid var(--color-border)",
                   fontSize: 11,
                 }}
-                formatter={(v) => (typeof v === "number" ? v.toLocaleString("ko-KR") : v)}
+                formatter={(v, name, item) => {
+                  if (item.dataKey === "historicalTechnicalPoints") {
+                    const s = item.payload.historicalTechnical;
+                    return [
+                      <span>
+                        {Number(v).toFixed(1)} / {s.rawMaxPoints}점
+                        <br />
+                        산정 가능 배점 {s.availableMaxPoints} / {s.rawMaxPoints}점
+                        {s.missingRules.length > 0 ? (
+                          <><br />자료 부족: {s.missingRules.join(", ")}</>
+                        ) : null}
+                      </span>,
+                      name,
+                    ];
+                  }
+                  return typeof v === "number" ? v.toLocaleString("ko-KR") : v;
+                }}
               />
               <Legend wrapperStyle={{ fontSize: 10 }} />
               {visible.cloud ? (
@@ -405,6 +442,20 @@ function InstrumentDetail() {
                 />
               ) : null}
 
+              {row.vf && visible.technical ? (
+                <Line
+                  yAxisId="technical"
+                  dataKey="historicalTechnicalPoints"
+                  name="기술점수 (52주 제외 · 7점)"
+                  type="linear"
+                  stroke="#f97316"
+                  strokeWidth={2.5}
+                  strokeDasharray="6 3"
+                  dot={false}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                />
+              ) : null}
               <Brush
                 dataKey="tradeDate"
                 height={22}
@@ -420,6 +471,14 @@ function InstrumentDetail() {
           볼린저밴드 20일·2σ, 일목균형표 9·26·52(선행 26) 기준 · 양운 붉은색 / 음운 파랑색.
         </p>
 
+        {row.vf ? (
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            오른쪽 축: 해당 날짜까지의 데이터로 계산한 기술점수입니다. 전 기간에서 52주 신고가를 제외하고
+            나머지 항목의 원점수를 환산 없이 합산합니다(7점 만점).
+            외국인 20일 순매수는 포함합니다. 초기 지표·수급 자료 부족 시 가능한 항목만 합산하며,
+            툴팁에 산정 가능 배점을 표시합니다. 모든 항목이 산정 불가인 구간은 선을 표시하지 않습니다.
+          </p>
+        ) : null}
         <p className="mt-1 text-[11px] text-muted-foreground">
           ATR 손절선 참고: {formatPrice(snap.close - 1.8 * (snap.atr14 ?? 0))} (진입가 기준 1.8 ATR)
           · 52주 신고가 {formatPrice(snap.high52w)}

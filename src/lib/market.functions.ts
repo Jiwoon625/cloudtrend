@@ -275,7 +275,7 @@ export const getInstrumentDetail = createServerFn({ method: "GET" })
       isLive: analysis.isLive,
       marketGateStatus: analysis.marketGate.status,
       row,
-      chart: row ? chartSeries(dataset, data.symbol) : [],
+      chart: row ? chartSeries(dataset, data.symbol, Infinity, data.config) : [],
       history: row ? scoreHistory(dataset, data.symbol, 60, data.config) : [],
     };
   });

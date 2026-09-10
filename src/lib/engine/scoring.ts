@@ -321,6 +321,7 @@ export function technicalScore(
 export function vfStockScore(
   snap: IndicatorSnapshot,
   cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
+  options: { exclude52wHigh?: boolean } = {},
 ): ScoreBlock {
   const rows: RuleRow[] = [];
   const t = cfg.technical;
@@ -390,7 +391,7 @@ export function vfStockScore(
     snap.distanceFrom52wHigh === null
       ? null
       : snap.distanceFrom52wHigh >= p.nearHighThresholdPercent;
-  add(
+  if (!options.exclude52wHigh) add(
     "Vf Leadership",
     `52주 신고가 대비 ${Math.abs(p.nearHighThresholdPercent)}% 이내`,
     snap.distanceFrom52wHigh === null ? "데이터 없음" : fmtPct(snap.distanceFrom52wHigh),
@@ -416,6 +417,31 @@ export function vfStockScore(
       rows.reduce((sum, row) => sum + (row.status === "NO_DATA" ? 0 : row.maxPoints), 0) * 100,
     ) / 100;
   return { points, maxPoints, availableMaxPoints, rows };
+}
+
+export const HISTORICAL_TECHNICAL_MAX = VF_FEATURE_WEIGHTS.ICH_ABOVE_CLOUD
+  + VF_FEATURE_WEIGHTS.ICH_TENKAN_KIJUN + VF_FEATURE_WEIGHTS.BB_BREAKOUT
+  + VF_FEATURE_WEIGHTS.MA_ALIGNED + VF_FEATURE_WEIGHTS.VOLUME_SURGE
+  + VF_FEATURE_WEIGHTS.FOREIGN_NET_POSITIVE;
+
+/** Same Vf rules, excluding 52W leadership throughout the series.
+ * Raw points only: default remaining weight is 7 (9.5 - 2.5).
+ * Missing signals never trigger rescaling or denominator normalization.
+ */
+export function historicalTechnicalScore(
+  snap: IndicatorSnapshot,
+  cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
+) {
+  const score = vfStockScore(snap, cfg, { exclude52wHigh: true });
+  return {
+    points: score.availableMaxPoints > 0 && score.maxPoints > 0
+      ? score.points
+      : null,
+    rawPoints: score.points,
+    rawMaxPoints: score.maxPoints,
+    availableMaxPoints: score.availableMaxPoints,
+    missingRules: score.rows.filter((r) => r.status === "NO_DATA").map((r) => r.rule),
+  };
 }
 
 /** Vf score grade: 80+ A, 60+ B, otherwise C. */

@@ -84,7 +84,7 @@ export function computeLocalInstrumentDetail(symbol: string): InstrumentDetailPa
     isLive: analysis.isLive,
     marketGateStatus: analysis.marketGate.status,
     row,
-    chart: row ? chartSeries(dataset, symbol) : [],
+    chart: row ? chartSeries(dataset, symbol, Infinity, config) : [],
     history: row ? scoreHistory(dataset, symbol, 60, config) : [],
   };
 }

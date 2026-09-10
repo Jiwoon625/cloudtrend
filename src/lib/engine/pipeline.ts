@@ -19,6 +19,7 @@ import {
   evaluateMarketGate,
   evaluateUniverse,
   fundamentalScore,
+  historicalTechnicalScore,
   normalize,
   priorityScore,
   technicalGrade,
@@ -545,13 +546,20 @@ export function scoreHistory(
   return out;
 }
 
-export function chartSeries(ds: MarketDataset, symbol: string, days = 1200) {
+export function chartSeries(
+  ds: MarketDataset,
+  symbol: string,
+  days = Infinity,
+  cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
+) {
   const bars = ds.bars[symbol] ?? [];
+  const isStock = ds.instruments.some((inst) => inst.symbol === symbol && inst.instrumentType === "STOCK");
   const closes = bars.map((b) => b.close);
   const out = [];
   for (let i = Math.max(0, bars.length - days); i < bars.length; i++) {
     const snap = computeIndicators(bars, i);
     const ich = snap.ichimoku;
+    const technical = isStock ? historicalTechnicalScore(snap, cfg) : null;
     const top = ich.cloudTop;
     const bottom = ich.cloudBottom;
     // 표시 구름의 선행스팬1(=(전환+기준)/2, 26일 전 산출)이 선행스팬2 위면 양운
@@ -571,6 +579,8 @@ export function chartSeries(ds: MarketDataset, symbol: string, days = 1200) {
       low: bars[i]!.low,
       open: bars[i]!.open,
       volume: bars[i]!.volume,
+      historicalTechnicalPoints: technical?.points ?? null,
+      historicalTechnical: technical,
       ma5: sma(closes, 5, i),
       ma20: sma(closes, 20, i),
       ma60: sma(closes, 60, i),
