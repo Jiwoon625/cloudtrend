@@ -186,7 +186,8 @@ export async function uploadPortfolioRuntimeCache(
   const raw = Buffer.from(JSON.stringify(cache), "utf8");
   const compressed = gzipSync(raw, { level: 6 });
   const { error } = await client.storage.from(ANALYSIS_BUCKET).upload(objectPath, compressed, {
-    contentType: "application/gzip",
+    // cloudtrend-data bucket explicitly allows application/octet-stream.
+    contentType: "application/octet-stream",
     upsert: true,
   });
   if (error) throw new Error(`Supabase runtime cache 업로드 실패 (${objectPath}): ${error.message}`);
