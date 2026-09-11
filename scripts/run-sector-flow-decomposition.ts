@@ -52,16 +52,16 @@ async function main() {
   const inputs = await loadAnalysisSourceInputs(client, options.supabaseUserId!, "backtest");
   const parsed = parseManualMarketData(inputs.map((input) => input.text));
   const result = runSectorRotationDecompositionBacktest(parsed.dataset);
-  if (!result) throw new Error("V7 섹터 분해 백테스트 결과를 계산하지 못했습니다.");
+  if (!result) throw new Error("V7.2 섹터 점수대 백테스트 결과를 계산하지 못했습니다.");
 
   const createdAt = new Date().toISOString();
   const runId = createdAt.replace(/[-:.TZ]/g, "").slice(0, 14);
   const payload = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     run: {
       id: runId,
       createdAt,
-      engineVersion: "CloudTrend V7 Sector Flow Decomposition",
+      engineVersion: "CloudTrend V7.2 Sector Score Band Decomposition",
       codeVersion: codeVersion(),
       datasetVersion: parsed.dataset.version,
       asOfDate: parsed.dataset.asOfDate,
