@@ -14,6 +14,12 @@ const ret = (value: number | null) =>
     ? "—"
     : `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 
+const point = (value: number | null) =>
+  value === null || !Number.isFinite(value) ? "—" : `${value.toFixed(2)}점`;
+
+const corr = (value: number | null) =>
+  value === null || !Number.isFinite(value) ? "—" : value.toFixed(3);
+
 const groupLabel: Record<SectorRankGroup, string> = {
   TOP: "상위권",
   MID: "중위권",
@@ -26,6 +32,10 @@ export function SectorRotationBacktestResults({
   result: SectorRotationBacktestResult;
 }) {
   const transition5 = result.transitions.find((row) => row.horizon === 5) ?? result.transitions[0];
+  const scoreResidency = result.scoreResidencyComparison ?? [];
+  const scoreSurvival = result.scoreSurvivalComparison ?? [];
+  const rankCorrelations = result.rankCorrelations ?? [];
+  const rankGap = result.rankGapAnalysis;
 
   return (
     <section className="space-y-4 rounded-lg border border-border bg-card p-4">
@@ -61,6 +71,167 @@ export function SectorRotationBacktestResults({
           </div>
         ))}
       </div>
+
+      {scoreResidency.length ? (
+        <div className="space-y-2">
+          <div>
+            <h3 className="text-[12px] font-semibold">점수별 Top4 체류기간 비교</h3>
+            <p className="mt-0.5 text-[10px] text-muted-foreground">
+              Rotation Score를 Price Leadership, Money Flow, Rotation Momentum으로 분해해 각각 독립적으로 Top4를 다시 구성합니다.
+            </p>
+          </div>
+          <div className="overflow-x-auto rounded-md border border-border">
+            <table className="w-full min-w-[760px] text-[10px]">
+              <thead className="bg-muted/50 text-muted-foreground">
+                <tr>
+                  <th className="px-2 py-2 text-left">점수 기준</th>
+                  <th className="px-2 py-2 text-right">에피소드</th>
+                  <th className="px-2 py-2 text-right">평균</th>
+                  <th className="px-2 py-2 text-right">중앙값</th>
+                  <th className="px-2 py-2 text-right">75%</th>
+                  <th className="px-2 py-2 text-right">최대</th>
+                  <th className="px-2 py-2 text-right">5D 생존</th>
+                  <th className="px-2 py-2 text-right">20D 생존</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scoreResidency.map((row) => (
+                  <tr key={row.scoreKey} className="border-t border-border">
+                    <td className="px-2 py-2 font-medium">{row.label}</td>
+                    <td className="num px-2 py-2 text-right">{row.episodes}</td>
+                    <td className="num px-2 py-2 text-right">{days(row.avgDays)}</td>
+                    <td className="num px-2 py-2 text-right">{days(row.medianDays)}</td>
+                    <td className="num px-2 py-2 text-right">{days(row.p75Days)}</td>
+                    <td className="num px-2 py-2 text-right">{days(row.maxDays)}</td>
+                    <td className="num px-2 py-2 text-right">{pct(row.survival5dRate)}</td>
+                    <td className="num px-2 py-2 text-right">{pct(row.survival20dRate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      {scoreSurvival.length ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          <div className="space-y-2">
+            <div>
+              <h3 className="text-[12px] font-semibold">점수별 Top4 생존율</h3>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">
+                각 하위점수 기준 Top4 신규진입 후 연속으로 Top4를 유지한 비율입니다.
+              </p>
+            </div>
+            <div className="overflow-x-auto rounded-md border border-border">
+              <table className="w-full min-w-[560px] text-[10px]">
+                <thead className="bg-muted/50 text-muted-foreground">
+                  <tr>
+                    <th className="px-2 py-2 text-left">경과</th>
+                    <th className="px-2 py-2 text-right">Rotation</th>
+                    <th className="px-2 py-2 text-right">Price</th>
+                    <th className="px-2 py-2 text-right">Money Flow</th>
+                    <th className="px-2 py-2 text-right">Momentum</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scoreSurvival.map((row) => (
+                    <tr key={row.horizon} className="border-t border-border">
+                      <td className="px-2 py-2 font-medium">{row.horizon}거래일</td>
+                      <td className="num px-2 py-2 text-right">{pct(row.rotationScore)}</td>
+                      <td className="num px-2 py-2 text-right">{pct(row.price)}</td>
+                      <td className="num px-2 py-2 text-right">{pct(row.flow)}</td>
+                      <td className="num px-2 py-2 text-right">{pct(row.rotationMomentum)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <div>
+              <h3 className="text-[12px] font-semibold">점수별 순위 상관계수</h3>
+              <p className="mt-0.5 text-[10px] text-muted-foreground">
+                매 거래일 14개 섹터 순위 간 Spearman 상관계수입니다. Rotation Score가 실제로 어느 하위점수와 가까운지 확인합니다.
+              </p>
+            </div>
+            <div className="overflow-x-auto rounded-md border border-border">
+              <table className="w-full min-w-[520px] text-[10px]">
+                <thead className="bg-muted/50 text-muted-foreground">
+                  <tr>
+                    <th className="px-2 py-2 text-left">비교</th>
+                    <th className="px-2 py-2 text-right">평균</th>
+                    <th className="px-2 py-2 text-right">중앙값</th>
+                    <th className="px-2 py-2 text-right">표본일</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rankCorrelations.map((row) => (
+                    <tr key={row.pair} className="border-t border-border">
+                      <td className="px-2 py-2 font-medium">{row.pair}</td>
+                      <td className="num px-2 py-2 text-right">{corr(row.avgSpearman)}</td>
+                      <td className="num px-2 py-2 text-right">{corr(row.medianSpearman)}</td>
+                      <td className="num px-2 py-2 text-right">{row.observations}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {rankGap ? (
+        <div className="space-y-2">
+          <div>
+            <h3 className="text-[12px] font-semibold">Rotation Score 4위-5위 Gap별 Top4 유지율</h3>
+            <p className="mt-0.5 text-[10px] text-muted-foreground">
+              Gap이 작으면 경계 노이즈로 순위가 자주 바뀔 수 있습니다. 유지율은 현재 Top4 중 미래에도 Top4에 남은 섹터 비율입니다.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-4">
+            {[
+              ["Gap 평균", point(rankGap.avgGap)],
+              ["Gap 중앙값", point(rankGap.medianGap)],
+              ["Gap 25%", point(rankGap.p25Gap)],
+              ["Gap 75%", point(rankGap.p75Gap)],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-md border border-border p-2">
+                <p className="text-[10px] text-muted-foreground">{label}</p>
+                <p className="num text-[12px] font-semibold">{value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="overflow-x-auto rounded-md border border-border">
+            <table className="w-full min-w-[720px] text-[10px]">
+              <thead className="bg-muted/50 text-muted-foreground">
+                <tr>
+                  <th className="px-2 py-2 text-left">Gap 구간</th>
+                  <th className="px-2 py-2 text-right">관측일</th>
+                  <th className="px-2 py-2 text-right">평균 Gap</th>
+                  <th className="px-2 py-2 text-right">중앙 Gap</th>
+                  <th className="px-2 py-2 text-right">1D 유지</th>
+                  <th className="px-2 py-2 text-right">5D 유지</th>
+                  <th className="px-2 py-2 text-right">10D 유지</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rankGap.buckets.map((row) => (
+                  <tr key={row.bucket} className="border-t border-border">
+                    <td className="px-2 py-2 font-medium">{row.bucket}</td>
+                    <td className="num px-2 py-2 text-right">{row.observations}</td>
+                    <td className="num px-2 py-2 text-right">{point(row.avgGap)}</td>
+                    <td className="num px-2 py-2 text-right">{point(row.medianGap)}</td>
+                    <td className="num px-2 py-2 text-right">{pct(row.nextDayTop4Retention)}</td>
+                    <td className="num px-2 py-2 text-right">{pct(row.day5Top4Retention)}</td>
+                    <td className="num px-2 py-2 text-right">{pct(row.day10Top4Retention)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="space-y-2">
