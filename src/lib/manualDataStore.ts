@@ -1,5 +1,14 @@
 import { parseManualMarketData, type ManualParseResult } from "@/lib/engine/manualDataset";
-import { readFile, writeFile, removeFile, type CloudFile } from "@/lib/cloud";
+import {
+  ownerPath,
+  readFile,
+  readTextObject,
+  removeFile,
+  removeObjects,
+  type CloudFile,
+  writeFile,
+  writeTextObject,
+} from "@/lib/cloud";
 import {
   listRegisteredSources,
   registerSourceBlob,
@@ -7,46 +16,102 @@ import {
   type SourceRegistrationResult,
 } from "@/lib/sourceRegistry";
 import { validateSourceBlob } from "@/lib/sourceData";
+
 export interface ManualDataMeta {
   savedAt: string;
   fileName: string | null;
   chars: number;
+  rawPath?: string | null;
+  dataHash?: string | null;
+  schemaHash?: string | null;
+  normalizedBytes?: number | null;
 }
+
+const RAW_SCREENING_RELATIVE_PATH = "raw/screening/latest.csv";
 let file: CloudFile<ManualDataMeta> | null = null;
-let hydration: Promise<void> | null = null;
+let metaHydration: Promise<void> | null = null;
+let rawHydration: Promise<void> | null = null;
+let rawText: string | null = null;
 let cache: ManualParseResult | null = null;
-export function hydrateManualData(): Promise<void> {
-  return (hydration ??= readFile<ManualDataMeta>("kr")
+
+async function hydrateMeta(): Promise<void> {
+  if (file) return;
+  return (metaHydration ??= readFile<ManualDataMeta>("kr")
     .then((v) => {
       file = v;
+      if (v?.text?.trim()) rawText = v.text;
     })
     .catch((e) => {
-      hydration = null;
+      metaHydration = null;
       throw e;
     }));
 }
+
+/**
+ * 기본값은 기존 호출과 호환되도록 raw 본문까지 복원한다.
+ * 대시보드/스크리너는 loadRaw=false로 메타데이터만 읽고 결과 cache를 사용한다.
+ */
+export async function hydrateManualData(loadRaw = true): Promise<void> {
+  await hydrateMeta();
+  if (loadRaw) await ensureManualDataText();
+}
+
+export async function ensureManualDataText(): Promise<string | null> {
+  await hydrateMeta();
+  if (rawText?.trim()) return rawText;
+  const rawPath = file?.meta.rawPath;
+  if (!rawPath) return null;
+  return (rawHydration ??= readTextObject(rawPath)
+    .then((text) => {
+      rawText = text;
+    })
+    .catch((e) => {
+      rawHydration = null;
+      throw e;
+    })).then(() => rawText);
+}
+
 export function getManualDataText() {
-  return file?.text ?? null;
+  return rawText ?? file?.text ?? null;
 }
 export function getManualDataMeta() {
   return file?.meta ?? null;
 }
+export function hasManualData() {
+  return Boolean(file?.meta || rawText?.trim() || file?.text?.trim());
+}
+
+export async function ensureManualDataset(): Promise<ManualParseResult | null> {
+  if (cache) return cache;
+  const text = await ensureManualDataText();
+  if (!text?.trim()) return null;
+  return (cache = parseManualMarketData(text));
+}
+
 export async function saveManualDataText(
   text: string,
   fileName?: string | null,
 ): Promise<ManualDataMeta> {
-  const next = {
-    text,
-    meta: { savedAt: new Date().toISOString(), fileName: fileName ?? null, chars: text.length },
+  const rawPath = await ownerPath(RAW_SCREENING_RELATIVE_PATH);
+  await writeTextObject(rawPath, text);
+  const meta: ManualDataMeta = {
+    savedAt: new Date().toISOString(),
+    fileName: fileName ?? null,
+    chars: text.length,
+    rawPath,
+    normalizedBytes: new TextEncoder().encode(text).byteLength,
   };
+  const next: CloudFile<ManualDataMeta> = { text: "", meta };
   await writeFile("kr", next);
   file = next;
+  rawText = text;
   cache = null;
-  hydration = Promise.resolve();
-  return next.meta;
+  metaHydration = Promise.resolve();
+  rawHydration = Promise.resolve();
+  return meta;
 }
 
-/** 원본 파일을 검증·등록하고 기존 웹용 kr.json도 같은 정규화 CSV로 갱신한다. */
+/** 원본 파일을 검증·등록하고 canonical CSV는 raw/screening/latest.csv에 별도 저장한다. */
 export async function saveManualDataSource(
   source: Blob | string,
   fileName?: string | null,
@@ -66,46 +131,53 @@ export async function saveManualDataSource(
         .join(" / ")}`,
     );
   const parsed = parseManualMarketData(validation.canonicalCsv);
-  const previous = file;
-  const next: CloudFile<ManualDataMeta> = {
-    text: validation.canonicalCsv,
-    meta: {
-      savedAt: new Date().toISOString(),
-      fileName: fileName ?? null,
-      chars: validation.canonicalCsv.length,
-    },
+  const registration = await registerSourceBlob({
+    blob,
+    filename,
+    sourceType: "screening",
+    mode: "replace",
+    origin: "web",
+  });
+
+  const rawPath = await ownerPath(RAW_SCREENING_RELATIVE_PATH);
+  await writeTextObject(rawPath, validation.canonicalCsv);
+  const meta: ManualDataMeta = {
+    savedAt: new Date().toISOString(),
+    fileName: fileName ?? null,
+    chars: validation.canonicalCsv.length,
+    rawPath,
+    dataHash: registration.source.data_hash,
+    schemaHash: registration.source.schema_hash,
+    normalizedBytes: validation.normalizedSizeBytes,
   };
+  const next: CloudFile<ManualDataMeta> = { text: "", meta };
   await writeFile("kr", next);
-  let registration: SourceRegistrationResult;
-  try {
-    registration = await registerSourceBlob({
-      blob,
-      filename,
-      sourceType: "screening",
-      mode: "replace",
-      origin: "web",
-    });
-  } catch (error) {
-    if (previous) await writeFile("kr", previous);
-    else await removeFile("kr");
-    throw error;
-  }
   file = next;
+  rawText = validation.canonicalCsv;
   cache = parsed;
-  hydration = Promise.resolve();
-  return { meta: next.meta, parsed, registration };
+  metaHydration = Promise.resolve();
+  rawHydration = Promise.resolve();
+  return { meta, parsed, registration };
 }
 
 export async function clearManualData() {
   const sources = await listRegisteredSources("screening", ["active"]);
   await Promise.all(sources.map((source) => removeRegisteredSource(source.id)));
-  await removeFile("kr");
+  const rawPath = file?.meta.rawPath ?? (await ownerPath(RAW_SCREENING_RELATIVE_PATH));
+  await Promise.allSettled([removeFile("kr"), removeObjects([rawPath])]);
   file = null;
+  rawText = null;
   cache = null;
+  metaHydration = null;
+  rawHydration = null;
 }
+
 export function getManualDataset(): ManualParseResult | null {
-  if (!file?.text.trim()) return null;
-  return (cache ??= parseManualMarketData(file.text));
+  if (cache) return cache;
+  const text = getManualDataText();
+  if (!text?.trim()) return null;
+  return (cache = parseManualMarketData(text));
 }
+
 export const MANUAL_DATA_MISSING_MESSAGE =
   "저장된 시세 데이터가 없습니다. 데이터 탭에서 CSV를 업로드하고 스크리닝을 시작해 주세요.";
