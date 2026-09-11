@@ -32,13 +32,13 @@ export function SectorRotationBacktestResults({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold">섹터 로테이션 주기 백테스트</h2>
+            <h2 className="text-sm font-semibold">V7 · 섹터 로테이션 주기 백테스트</h2>
             <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
-              ROTATION CYCLE
+              SECTOR ROTATION V7
             </span>
           </div>
           <p className="mt-1 max-w-4xl text-[10px] leading-relaxed text-muted-foreground">
-            매 거래일 로테이션 점수를 다시 계산해 {result.sectorCount}개 섹터를 상위 1~4위,
+            CloudTrend V7 섹터 분석입니다. 매 거래일 로테이션 점수를 다시 계산해 {result.sectorCount}개 섹터를 상위 1~4위,
             중위 5~10위, 하위 11~14위로 나누고 체류기간·생존율·그룹 전이·신규 Top4 이후
             성과를 측정합니다.
           </p>
