@@ -5,6 +5,7 @@ import { THEME_SECTORS } from "./sectors";
 import type { DailyPrice, Instrument } from "./types";
 
 export type SectorRankGroup = "TOP" | "MID" | "BOTTOM";
+export type SectorScoreKey = "rotationScore" | "price" | "flow" | "rotationMomentum";
 
 export interface EpisodeStats {
   episodes: number;
@@ -66,6 +67,54 @@ export interface TopEntryPerformanceStat {
   excessWinRate: number | null;
 }
 
+export interface ScoreResidencyComparison extends EpisodeStats {
+  scoreKey: SectorScoreKey;
+  label: string;
+  survival5dRate: number | null;
+  survival10dRate: number | null;
+  survival20dRate: number | null;
+  survival40dRate: number | null;
+}
+
+export interface ScoreSurvivalComparison {
+  horizon: number;
+  rotationScore: number | null;
+  price: number | null;
+  flow: number | null;
+  rotationMomentum: number | null;
+}
+
+export interface RankCorrelationStat {
+  pair: string;
+  left: SectorScoreKey;
+  right: SectorScoreKey;
+  observations: number;
+  avgSpearman: number | null;
+  medianSpearman: number | null;
+}
+
+export interface RankGapBucketStat {
+  bucket: string;
+  observations: number;
+  avgGap: number | null;
+  medianGap: number | null;
+  nextDayEligible: number;
+  nextDayTop4Retention: number | null;
+  day5Eligible: number;
+  day5Top4Retention: number | null;
+  day10Eligible: number;
+  day10Top4Retention: number | null;
+}
+
+export interface RankGapAnalysis {
+  observations: number;
+  avgGap: number | null;
+  medianGap: number | null;
+  p25Gap: number | null;
+  p75Gap: number | null;
+  buckets: RankGapBucketStat[];
+}
+
 export interface SectorRotationBacktestResult {
   from: string;
   to: string;
@@ -84,6 +133,10 @@ export interface SectorRotationBacktestResult {
   sectorResidency: SectorResidencyStat[];
   topEntryCount: number;
   topEntryPerformance: TopEntryPerformanceStat[];
+  scoreResidencyComparison: ScoreResidencyComparison[];
+  scoreSurvivalComparison: ScoreSurvivalComparison[];
+  rankCorrelations: RankCorrelationStat[];
+  rankGapAnalysis: RankGapAnalysis;
   notes: string[];
 }
 
@@ -212,6 +265,12 @@ const MID_MAX_RANK = 10;
 const BUFFERED_TOP_EXIT_RANK = 6;
 const SURVIVAL_HORIZONS = [5, 10, 20, 40];
 const TRANSITION_HORIZONS = [1, 5];
+const SCORE_CONFIGS: Array<{ key: SectorScoreKey; label: string }> = [
+  { key: "rotationScore", label: "Rotation Score" },
+  { key: "price", label: "Price Leadership" },
+  { key: "flow", label: "Money Flow" },
+  { key: "rotationMomentum", label: "Rotation Momentum" },
+];
 
 const finite = (value: number | null | undefined): value is number =>
   value !== null && value !== undefined && Number.isFinite(value);
@@ -601,6 +660,31 @@ function groupOf(rank: number): SectorRankGroup {
   return "BOTTOM";
 }
 
+function scoreValue(row: DailyRankRow, key: SectorScoreKey): number | null {
+  if (key === "rotationScore") return row.rotationScore;
+  if (key === "price") return row.price;
+  if (key === "flow") return row.flow;
+  return row.rotationMomentum;
+}
+
+function rankRowsByScore(day: DailyRanking, key: SectorScoreKey): DailyRanking {
+  const rows = [...day.rows]
+    .sort((a, b) => {
+      const av = scoreValue(a, key);
+      const bv = scoreValue(b, key);
+      if (finite(av) && finite(bv) && bv !== av) return bv - av;
+      if (finite(av) && !finite(bv)) return -1;
+      if (!finite(av) && finite(bv)) return 1;
+      return a.sectorCode.localeCompare(b.sectorCode);
+    })
+    .map((row, index) => ({ ...row, rank: index + 1, group: groupOf(index + 1) }));
+  return { ...day, rows };
+}
+
+function rankHistoryByScore(history: DailyRanking[], key: SectorScoreKey): DailyRanking[] {
+  return history.map((day) => rankRowsByScore(day, key));
+}
+
 function buildRankHistory(
   dataset: MarketDataset,
   prepared: PreparedInstrument[],
@@ -883,6 +967,181 @@ function topReentryGap(strictTopEpisodes: Episode[], sectorDefs: Array<{ code: s
   return statsFromDurations(gaps);
 }
 
+function scoreResidencyComparison(
+  history: DailyRanking[],
+  sectorDefs: Array<{ code: string; name: string }>,
+): ScoreResidencyComparison[] {
+  return SCORE_CONFIGS.map((config) => {
+    const ranked = rankHistoryByScore(history, config.key);
+    const topEpisodes = strictEpisodes(ranked, sectorDefs).filter((episode) => episode.group === "TOP");
+    const stats = episodeStats(topEpisodes);
+    const survivalByHorizon = new Map(
+      SURVIVAL_HORIZONS.map((horizon) => [horizon, survival(topEpisodes, horizon).rate]),
+    );
+    return {
+      scoreKey: config.key,
+      label: config.label,
+      ...stats,
+      survival5dRate: survivalByHorizon.get(5) ?? null,
+      survival10dRate: survivalByHorizon.get(10) ?? null,
+      survival20dRate: survivalByHorizon.get(20) ?? null,
+      survival40dRate: survivalByHorizon.get(40) ?? null,
+    };
+  });
+}
+
+function scoreSurvivalComparison(
+  history: DailyRanking[],
+  sectorDefs: Array<{ code: string; name: string }>,
+): ScoreSurvivalComparison[] {
+  const episodesByKey = new Map(
+    SCORE_CONFIGS.map((config) => [
+      config.key,
+      strictEpisodes(rankHistoryByScore(history, config.key), sectorDefs).filter(
+        (episode) => episode.group === "TOP",
+      ),
+    ]),
+  );
+  return SURVIVAL_HORIZONS.map((horizon) => ({
+    horizon,
+    rotationScore: survival(episodesByKey.get("rotationScore") ?? [], horizon).rate,
+    price: survival(episodesByKey.get("price") ?? [], horizon).rate,
+    flow: survival(episodesByKey.get("flow") ?? [], horizon).rate,
+    rotationMomentum: survival(episodesByKey.get("rotationMomentum") ?? [], horizon).rate,
+  }));
+}
+
+function rankMap(day: DailyRanking, key: SectorScoreKey): Map<string, number> {
+  return new Map(rankRowsByScore(day, key).rows.map((row) => [row.sectorCode, row.rank]));
+}
+
+function pearson(left: number[], right: number[]): number | null {
+  if (left.length < 2 || left.length !== right.length) return null;
+  const leftMean = mean(left);
+  const rightMean = mean(right);
+  if (!finite(leftMean) || !finite(rightMean)) return null;
+  let covariance = 0;
+  let leftVar = 0;
+  let rightVar = 0;
+  for (let i = 0; i < left.length; i++) {
+    const lx = left[i]! - leftMean;
+    const rx = right[i]! - rightMean;
+    covariance += lx * rx;
+    leftVar += lx * lx;
+    rightVar += rx * rx;
+  }
+  const denom = Math.sqrt(leftVar * rightVar);
+  return denom === 0 ? null : covariance / denom;
+}
+
+function dailySpearman(day: DailyRanking, left: SectorScoreKey, right: SectorScoreKey): number | null {
+  const leftMap = rankMap(day, left);
+  const rightMap = rankMap(day, right);
+  const leftRanks: number[] = [];
+  const rightRanks: number[] = [];
+  for (const row of day.rows) {
+    const l = leftMap.get(row.sectorCode);
+    const r = rightMap.get(row.sectorCode);
+    if (finite(l) && finite(r)) {
+      leftRanks.push(l);
+      rightRanks.push(r);
+    }
+  }
+  return pearson(leftRanks, rightRanks);
+}
+
+function rankCorrelations(history: DailyRanking[]): RankCorrelationStat[] {
+  const pairs: Array<[SectorScoreKey, SectorScoreKey, string]> = [
+    ["rotationScore", "price", "Rotation vs Price"],
+    ["rotationScore", "flow", "Rotation vs Flow"],
+    ["rotationScore", "rotationMomentum", "Rotation vs Momentum"],
+    ["price", "flow", "Price vs Flow"],
+    ["price", "rotationMomentum", "Price vs Momentum"],
+    ["flow", "rotationMomentum", "Flow vs Momentum"],
+  ];
+  return pairs.map(([left, right, pair]) => {
+    const values = history.map((day) => dailySpearman(day, left, right)).filter(finite);
+    return {
+      pair,
+      left,
+      right,
+      observations: values.length,
+      avgSpearman: mean(values),
+      medianSpearman: median(values),
+    };
+  });
+}
+
+function rankGapBucket(gap: number): string {
+  if (gap < 1) return "Gap < 1점";
+  if (gap < 3) return "Gap 1~3점";
+  return "Gap ≥ 3점";
+}
+
+function top4Set(day: DailyRanking): Set<string> {
+  return new Set(day.rows.filter((row) => row.rank <= TOP_MAX_RANK).map((row) => row.sectorCode));
+}
+
+function top4Retention(current: DailyRanking, future: DailyRanking): number {
+  const currentTop = top4Set(current);
+  const futureTop = top4Set(future);
+  let retained = 0;
+  for (const code of currentTop) if (futureTop.has(code)) retained++;
+  return (retained / TOP_MAX_RANK) * 100;
+}
+
+function rankGapAnalysis(history: DailyRanking[]): RankGapAnalysis {
+  const ranked = rankHistoryByScore(history, "rotationScore");
+  const byIndex = new Map(ranked.map((day) => [day.marketIndex, day]));
+  const observations = ranked
+    .map((day) => {
+      const fourth = day.rows[TOP_MAX_RANK - 1];
+      const fifth = day.rows[TOP_MAX_RANK];
+      if (!fourth || !fifth) return null;
+      const gap = fourth.rotationScore - fifth.rotationScore;
+      if (!finite(gap)) return null;
+      return { day, gap, bucket: rankGapBucket(gap) };
+    })
+    .filter((x): x is { day: DailyRanking; gap: number; bucket: string } => x !== null);
+  const gaps = observations.map((x) => x.gap);
+  const buckets = ["Gap < 1점", "Gap 1~3점", "Gap ≥ 3점"].map((bucket) => {
+    const rows = observations.filter((x) => x.bucket === bucket);
+    const retention = (horizon: number) => {
+      const rates = rows
+        .map((row) => {
+          const future = byIndex.get(row.day.marketIndex + horizon);
+          return future ? top4Retention(row.day, future) : null;
+        })
+        .filter(finite);
+      return { eligible: rates.length, rate: mean(rates) };
+    };
+    const next = retention(1);
+    const day5 = retention(5);
+    const day10 = retention(10);
+    const bucketGaps = rows.map((x) => x.gap);
+    return {
+      bucket,
+      observations: rows.length,
+      avgGap: mean(bucketGaps),
+      medianGap: median(bucketGaps),
+      nextDayEligible: next.eligible,
+      nextDayTop4Retention: next.rate,
+      day5Eligible: day5.eligible,
+      day5Top4Retention: day5.rate,
+      day10Eligible: day10.eligible,
+      day10Top4Retention: day10.rate,
+    };
+  });
+  return {
+    observations: observations.length,
+    avgGap: mean(gaps),
+    medianGap: median(gaps),
+    p25Gap: quantile(gaps, 25),
+    p75Gap: quantile(gaps, 75),
+    buckets,
+  };
+}
+
 export function runSectorRotationBacktest(input: MarketDataset): SectorRotationBacktestResult | null {
   const dataset = buildFullUniverseSectorDataset(input);
   const kospi = dataset.indexSeries.find((s) => s.indexCode === "KOSPI");
@@ -972,10 +1231,17 @@ export function runSectorRotationBacktest(input: MarketDataset): SectorRotationB
     sectorResidency,
     topEntryCount: strictTop.filter((e) => !e.leftCensored).length,
     topEntryPerformance: performanceStats(strictTop, preparedBySector, kospi.bars),
+    scoreResidencyComparison: scoreResidencyComparison(history, sectorDefs),
+    scoreSurvivalComparison: scoreSurvivalComparison(history, sectorDefs),
+    rankCorrelations: rankCorrelations(history),
+    rankGapAnalysis: rankGapAnalysis(history),
     notes: [
       `매 거래일 ${sectorDefs.length}개 섹터의 로테이션 점수를 재계산하고 1~4위/5~10위/11~14위로 구분했습니다.`,
       "Strict 상위권은 5위가 되는 즉시 체류 종료, Buffered 상위권은 4위 이내 진입 후 5위까지 유지하고 6위 이하에서 종료합니다.",
       "체류기간 평균·중앙값은 시작 또는 종료가 데이터 경계에 걸린 검열(censored) 에피소드를 제외해 경계 편향을 줄였습니다.",
+      "Price Leadership, Money Flow, Rotation Momentum도 각각 독립적으로 다시 순위화해 Top4 체류기간과 생존율을 비교합니다.",
+      "Rank correlation은 매 거래일 14개 섹터의 점수별 순위 간 Spearman 상관계수로, 최종 Rotation Score가 어떤 하위점수에 가까운지 보여줍니다.",
+      "4위-5위 Gap은 Rotation Score 기준이며, Gap이 작을수록 Top4 교체가 실제 자금 이동보다 경계 노이즈일 가능성이 큽니다.",
       "Top4 신규진입 성과의 섹터 수익률은 해당 섹터 구성 종목의 중앙값 수익률이며, 초과수익은 같은 기간 KOSPI 수익률을 차감했습니다.",
       "현재 확정 섹터 매핑을 과거에도 동일하게 적용하므로 과거 시점의 실제 편입·산업분류 변경을 완전히 재현하지는 못합니다.",
       "가격리더십 40% + 자금흐름 45% + 로테이션 모멘텀 15%의 현재 CloudTrend 기본 가중치를 사용합니다.",
