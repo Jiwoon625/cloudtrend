@@ -5,7 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { SectorPenaltyPortfolioBacktestResult } from "../src/lib/engine/sectorPenaltyPortfolioBacktest";
 import { ANALYSIS_BUCKET, sha256 } from "./analysis-run-store";
 
-export const PORTFOLIO_RESULT_STORAGE_VERSION = "sector-v8-result-storage-v2" as const;
+export const PORTFOLIO_RESULT_STORAGE_VERSION = "sector-v8-result-storage-v3" as const;
 
 export const PORTFOLIO_DETAIL_FIELDS = [
   "yearlyReturns",
@@ -81,21 +81,30 @@ export async function uploadCompactJson(
   return { path: objectPath, bytes: body.byteLength, sha256: sha256(body) };
 }
 
+/**
+ * 호출부는 run-specific 경로를 넘기지만 Supabase에는 details-latest 한 개만 유지한다.
+ * 전체 역사본은 GitHub Actions Artifact가 보존하므로 무료 Storage에 매 실행 2MB씩
+ * 누적시키지 않는다. 반환 path 역시 실제 latest sidecar 경로를 사용한다.
+ */
 export async function uploadGzipJson(
   client: SupabaseClient,
   objectPath: string,
   value: unknown,
 ): Promise<StoredCompressedJson> {
+  const storagePath = objectPath.replace(
+    /\/runs\/[^/]+\/details\.json\.gz$/,
+    "/details-latest.json.gz",
+  );
   const raw = Buffer.from(JSON.stringify(value), "utf8");
   const compressed = gzipSync(raw, { level: 9 });
-  const { error } = await client.storage.from(ANALYSIS_BUCKET).upload(objectPath, compressed, {
+  const { error } = await client.storage.from(ANALYSIS_BUCKET).upload(storagePath, compressed, {
     // cloudtrend-data bucket에서 허용되는 일반 바이너리 MIME을 사용한다.
     contentType: "application/octet-stream",
-    upsert: false,
+    upsert: true,
   });
-  if (error) throw new Error(`Supabase gzip JSON 업로드 실패 (${objectPath}): ${error.message}`);
+  if (error) throw new Error(`Supabase gzip JSON 업로드 실패 (${storagePath}): ${error.message}`);
   return {
-    path: objectPath,
+    path: storagePath,
     sha256: sha256(raw),
     uncompressedBytes: raw.byteLength,
     compressedBytes: compressed.byteLength,
