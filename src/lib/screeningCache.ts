@@ -5,6 +5,7 @@ import {
   writeBinaryObject,
   writeObject,
 } from "@/lib/cloud";
+import { compactDashboardRow } from "@/lib/dashboardRow";
 import { chartSeries, scoreHistory, type AnalysisResult, type ScreeningRow } from "@/lib/engine/pipeline";
 import { parseManualMarketData } from "@/lib/engine/manualDataset";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
@@ -230,7 +231,7 @@ async function buildDashboardSummary(
       code === "LOW_LIQUIDITY"
         ? rows.filter((r) => !r.hardFilterPassed)
         : rows.filter((r) => r.warnings.includes(code));
-    return { code, count: matches.length, rows: matches.slice(0, 4) };
+    return { code, count: matches.length, rows: matches.slice(0, 4).map(compactDashboardRow) };
   });
 
   const failMap = new Map<string, number>();
@@ -285,9 +286,9 @@ async function buildDashboardSummary(
     },
     warningBuckets,
     failReasons: [...failMap.entries()].sort((a, b) => b[1] - a[1]),
-    onsetTop,
-    momentumRiskRows,
-    top,
+    onsetTop: onsetTop.map(compactDashboardRow),
+    momentumRiskRows: momentumRiskRows.map(compactDashboardRow),
+    top: top.map(compactDashboardRow),
   };
 }
 
