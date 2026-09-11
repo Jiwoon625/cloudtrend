@@ -26,10 +26,8 @@ export interface PortfolioSeries {
   sectorName: string;
   bars: DailyPrice[];
   dateIndex: Map<string, number>;
-  scores: Array<number | null>;
   baseScores: Array<number | null>;
   sectorPriceLeadership: Array<number | null>;
-  sectorOverheated: Array<boolean | null>;
 }
 
 export interface PortfolioCandidateTrade {
@@ -61,12 +59,31 @@ export interface PortfolioCandidateTrade {
   mfe: number | null;
 }
 
+export const PORTFOLIO_FEATURE_CACHE_VERSION = "sector-v8-features-v1" as const;
+
+export interface PortfolioFeatureCache {
+  version: typeof PORTFOLIO_FEATURE_CACHE_VERSION;
+  limit: number;
+  datasetVersion: string;
+  asOfDate: string;
+  series: Array<{
+    symbol: string;
+    barCount: number;
+    firstDate: string;
+    lastDate: string;
+    baseScores: Array<number | null>;
+  }>;
+  sectorPriceLeadership: Array<[string, number]>;
+}
+
 export interface PortfolioSignalContext {
-  seriesByThreshold: Map<number | null, PortfolioSeries[]>;
+  series: PortfolioSeries[];
   sectorPriceLeadershipByDate: Map<string, number>;
   allDates: string[];
   symbolCount: number;
   sectorCount: number;
+  featureCacheUsed: boolean;
+  featureCacheVersion: typeof PORTFOLIO_FEATURE_CACHE_VERSION;
 }
 
 const SCORE_MAX = 10;
@@ -99,7 +116,6 @@ function combine(parts: Array<{ weight: number; ratio: number | null }>) { const
 function percent(score: number | null | undefined) { return finite(score) ? score / SCORE_MAX * 100 : null; }
 function crossedUp(prev: number | null | undefined, cur: number | null | undefined, threshold: number) { const p = percent(prev); const c = percent(cur); return p !== null && c !== null && p < threshold && c >= threshold; }
 function crossedDown(prev: number | null | undefined, cur: number | null | undefined, threshold: number) { const p = percent(prev); const c = percent(cur); return p !== null && c !== null && p >= threshold && c < threshold; }
-function scoreRise(scores: Array<number | null>, i: number, lag: number) { const cur = percent(scores[i]); const prev = percent(scores[i - lag]); return cur !== null && prev !== null ? cur - prev : null; }
 
 function rollingHigh(bars: DailyPrice[], window = 250, minimum = 60) {
   const out = new Array<number>(bars.length).fill(Number.NaN); const deque: number[] = []; let head = 0;
@@ -147,20 +163,62 @@ function buildSectorPriceLeadershipMap(dataset: MarketDataset) {
   return out;
 }
 
+function selectInstruments(dataset: MarketDataset, limit: number) {
+  return [...dataset.instruments]
+    .filter((inst) => inst.instrumentType === "STOCK")
+    .sort((a, b) => (dataset.bars[b.symbol]?.at(-1)?.tradingValue ?? 0) - (dataset.bars[a.symbol]?.at(-1)?.tradingValue ?? 0))
+    .slice(0, limit);
+}
+
+function makeSeries(inst: Instrument, bars: DailyPrice[], baseScores: Array<number | null>): PortfolioSeries {
+  return { symbol: inst.symbol, name: inst.name, market: inst.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI", sectorCode: inst.sectorCode, sectorName: inst.sectorName, bars, dateIndex: new Map(bars.map((b, i) => [b.tradeDate, i])), baseScores, sectorPriceLeadership: new Array<number | null>(bars.length).fill(null) };
+}
+
 function buildBaseSeries(dataset: MarketDataset, limit: number) {
-  return [...dataset.instruments].filter((inst) => inst.instrumentType === "STOCK").sort((a, b) => (dataset.bars[b.symbol]?.at(-1)?.tradingValue ?? 0) - (dataset.bars[a.symbol]?.at(-1)?.tradingValue ?? 0)).slice(0, limit).map((inst): PortfolioSeries | null => {
-    const bars = dataset.bars[inst.symbol] ?? []; if (bars.length < 130) return null; const scores = new Array<number | null>(bars.length).fill(null); const baseScores = new Array<number | null>(bars.length).fill(null);
-    for (let i = 120; i < bars.length; i++) { const score = historicalTechnicalScore(computeIndicators(bars, i)).points; scores[i] = score; baseScores[i] = score; }
-    return { symbol: inst.symbol, name: inst.name, market: inst.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI", sectorCode: inst.sectorCode, sectorName: inst.sectorName, bars, dateIndex: new Map(bars.map((b, i) => [b.tradeDate, i])), scores, baseScores, sectorPriceLeadership: new Array<number | null>(bars.length).fill(null), sectorOverheated: new Array<boolean | null>(bars.length).fill(null) };
+  return selectInstruments(dataset, limit).map((inst): PortfolioSeries | null => {
+    const bars = dataset.bars[inst.symbol] ?? []; if (bars.length < 130) return null; const baseScores = new Array<number | null>(bars.length).fill(null);
+    for (let i = 120; i < bars.length; i++) baseScores[i] = historicalTechnicalScore(computeIndicators(bars, i)).points;
+    return makeSeries(inst, bars, baseScores);
   }).filter((x): x is PortfolioSeries => x !== null);
 }
 
-function applyModel(source: PortfolioSeries[], sectorPrice: Map<string, number>, threshold: number | null) {
-  return source.map((s): PortfolioSeries => {
-    const scores = new Array<number | null>(s.bars.length).fill(null), pl = new Array<number | null>(s.bars.length).fill(null), hot = new Array<boolean | null>(s.bars.length).fill(null);
-    for (let i = 0; i < s.bars.length; i++) { const base = s.baseScores[i]; if (!finite(base)) continue; const sectorPl = sectorPrice.get(`${s.bars[i]!.tradeDate}|${s.sectorCode}`) ?? null; const overheated = threshold === null ? false : sectorPl !== null && sectorPl >= threshold; scores[i] = Math.min(10, Math.max(0, Math.round((base + SECTOR_SLOT - (overheated ? SECTOR_PENALTY : 0)) * 100) / 100)); pl[i] = sectorPl; hot[i] = threshold === null ? false : sectorPl === null ? null : overheated; }
-    return { ...s, scores, sectorPriceLeadership: pl, sectorOverheated: hot };
-  });
+function restoreBaseSeriesFromCache(dataset: MarketDataset, limit: number, cache: PortfolioFeatureCache) {
+  if (cache.version !== PORTFOLIO_FEATURE_CACHE_VERSION || cache.limit !== limit || cache.datasetVersion !== dataset.version || cache.asOfDate !== dataset.asOfDate) return null;
+  const cached = new Map(cache.series.map((item) => [item.symbol, item])); const restored: PortfolioSeries[] = [];
+  for (const inst of selectInstruments(dataset, limit)) {
+    const bars = dataset.bars[inst.symbol] ?? []; if (bars.length < 130) continue; const item = cached.get(inst.symbol);
+    if (!item || item.barCount !== bars.length || item.baseScores.length !== bars.length || item.firstDate !== bars[0]?.tradeDate || item.lastDate !== bars.at(-1)?.tradeDate) return null;
+    restored.push(makeSeries(inst, bars, item.baseScores));
+  }
+  return restored.length ? restored : null;
+}
+
+function attachSectorPriceLeadership(source: PortfolioSeries[], sectorPrice: Map<string, number>) {
+  for (const s of source) for (let i = 0; i < s.bars.length; i++) s.sectorPriceLeadership[i] = sectorPrice.get(`${s.bars[i]!.tradeDate}|${s.sectorCode}`) ?? null;
+  return source;
+}
+
+export function createPortfolioFeatureCache(context: PortfolioSignalContext, dataset: MarketDataset, limit: number): PortfolioFeatureCache {
+  return {
+    version: PORTFOLIO_FEATURE_CACHE_VERSION,
+    limit,
+    datasetVersion: dataset.version,
+    asOfDate: dataset.asOfDate,
+    series: context.series.map((s) => ({ symbol: s.symbol, barCount: s.bars.length, firstDate: s.bars[0]?.tradeDate ?? "", lastDate: s.bars.at(-1)?.tradeDate ?? "", baseScores: s.baseScores })),
+    sectorPriceLeadership: [...context.sectorPriceLeadershipByDate.entries()],
+  };
+}
+
+function adjustedScoreAt(s: PortfolioSeries, index: number, threshold: number | null) {
+  const base = s.baseScores[index]; if (!finite(base)) return null; const sectorPl = s.sectorPriceLeadership[index] ?? null; const overheated = threshold !== null && sectorPl !== null && sectorPl >= threshold; return Math.min(10, Math.max(0, Math.round((base + SECTOR_SLOT - (overheated ? SECTOR_PENALTY : 0)) * 100) / 100));
+}
+
+function sectorOverheatedAt(s: PortfolioSeries, index: number, threshold: number | null) {
+  if (threshold === null) return false; const pl = s.sectorPriceLeadership[index] ?? null; return pl === null ? null : pl >= threshold;
+}
+
+function scoreRise(s: PortfolioSeries, index: number, lag: number, threshold: number | null) {
+  const cur = percent(adjustedScoreAt(s, index, threshold)); const prev = percent(adjustedScoreAt(s, index - lag, threshold)); return cur !== null && prev !== null ? cur - prev : null;
 }
 
 function excursion(s: PortfolioSeries, entryIndex: number, exitIndex: number, entryPrice: number, exitPrice: number, timing: PortfolioExitTiming) {
@@ -171,17 +229,28 @@ function excursion(s: PortfolioSeries, entryIndex: number, exitIndex: number, en
 function candidateFromSignal(s: PortfolioSeries, signalIndex: number, strategy: PortfolioStrategyDefinition): PortfolioCandidateTrade | null {
   const entryIndex = signalIndex + 1, plannedExit = signalIndex + strategy.maxHoldingDays, entry = s.bars[entryIndex]; if (!entry || !finite(entry.open) || entry.open <= 0) return null;
   let exitIndex = -1, exitPrice = 0; let exitReason: PortfolioExitReason = "TIME"; let exitTiming: PortfolioExitTiming = "CLOSE";
-  for (let j = entryIndex; j <= Math.min(plannedExit, s.bars.length - 1); j++) { const bar = s.bars[j]!; if (![bar.open, bar.close, bar.low, bar.high].every((v) => finite(v) && v > 0)) return null; if (j > entryIndex) { const si = j - 1; if (crossedDown(s.scores[si - 1], s.scores[si], strategy.downsideExitThreshold)) { exitIndex = j; exitPrice = bar.open; exitReason = "DOWNSIDE_SCORE"; exitTiming = "OPEN"; break; } if (crossedUp(s.scores[si - 1], s.scores[si], strategy.upsideExitThreshold)) { exitIndex = j; exitPrice = bar.open; exitReason = "UPSIDE_SCORE"; exitTiming = "OPEN"; break; } } if (j === plannedExit) { exitIndex = j; exitPrice = bar.close; break; } }
-  if (exitIndex < 0 || exitPrice <= 0) return null; const ex = excursion(s, entryIndex, exitIndex, entry.open, exitPrice, exitTiming);
-  return { scenarioId: strategy.id, symbol: s.symbol, name: s.name, market: s.market, sectorCode: s.sectorCode, sectorName: s.sectorName, signalDate: s.bars[signalIndex]!.tradeDate, entryDate: entry.tradeDate, exitDate: s.bars[exitIndex]!.tradeDate, signalIndex, entryIndex, exitIndex, entryPrice: entry.open, exitPrice, exitReason, exitTiming, holdingDays: exitIndex - entryIndex + 1, adjustedScore10: s.scores[signalIndex]!, baseScore9p5: s.baseScores[signalIndex] ?? null, scoreRise5d: scoreRise(s.scores, signalIndex, 5), sectorPriceLeadership: s.sectorPriceLeadership[signalIndex] ?? null, sectorOverheated: s.sectorOverheated[signalIndex] ?? null, signalTradingValue: s.bars[signalIndex]?.tradingValue ?? 0, grossReturn: (exitPrice / entry.open - 1) * 100, mae: ex.mae, mfe: ex.mfe };
+  for (let j = entryIndex; j <= Math.min(plannedExit, s.bars.length - 1); j++) {
+    const bar = s.bars[j]!; if (![bar.open, bar.close, bar.low, bar.high].every((v) => finite(v) && v > 0)) return null;
+    if (j > entryIndex) {
+      const si = j - 1, prev = adjustedScoreAt(s, si - 1, strategy.priceLeadershipOverheatThreshold), cur = adjustedScoreAt(s, si, strategy.priceLeadershipOverheatThreshold);
+      if (crossedDown(prev, cur, strategy.downsideExitThreshold)) { exitIndex = j; exitPrice = bar.open; exitReason = "DOWNSIDE_SCORE"; exitTiming = "OPEN"; break; }
+      if (crossedUp(prev, cur, strategy.upsideExitThreshold)) { exitIndex = j; exitPrice = bar.open; exitReason = "UPSIDE_SCORE"; exitTiming = "OPEN"; break; }
+    }
+    if (j === plannedExit) { exitIndex = j; exitPrice = bar.close; break; }
+  }
+  if (exitIndex < 0 || exitPrice <= 0) return null; const ex = excursion(s, entryIndex, exitIndex, entry.open, exitPrice, exitTiming); const adjustedScore10 = adjustedScoreAt(s, signalIndex, strategy.priceLeadershipOverheatThreshold); if (!finite(adjustedScore10)) return null;
+  return { scenarioId: strategy.id, symbol: s.symbol, name: s.name, market: s.market, sectorCode: s.sectorCode, sectorName: s.sectorName, signalDate: s.bars[signalIndex]!.tradeDate, entryDate: entry.tradeDate, exitDate: s.bars[exitIndex]!.tradeDate, signalIndex, entryIndex, exitIndex, entryPrice: entry.open, exitPrice, exitReason, exitTiming, holdingDays: exitIndex - entryIndex + 1, adjustedScore10, baseScore9p5: s.baseScores[signalIndex] ?? null, scoreRise5d: scoreRise(s, signalIndex, 5, strategy.priceLeadershipOverheatThreshold), sectorPriceLeadership: s.sectorPriceLeadership[signalIndex] ?? null, sectorOverheated: sectorOverheatedAt(s, signalIndex, strategy.priceLeadershipOverheatThreshold), signalTradingValue: s.bars[signalIndex]?.tradingValue ?? 0, grossReturn: (exitPrice / entry.open - 1) * 100, mae: ex.mae, mfe: ex.mfe };
 }
 
 export function buildPortfolioCandidates(series: PortfolioSeries[], strategy: PortfolioStrategyDefinition) {
   const out: PortfolioCandidateTrade[] = [];
-  for (const s of series) for (let i = 1; i + 1 < s.bars.length; i++) { if (!crossedUp(s.scores[i - 1], s.scores[i], strategy.entryThreshold)) continue; const cur = percent(s.scores[i]); if (cur === null || cur >= strategy.upsideExitThreshold) continue; const trade = candidateFromSignal(s, i, strategy); if (trade) out.push(trade); }
+  for (const s of series) for (let i = 1; i + 1 < s.bars.length; i++) {
+    const prev = adjustedScoreAt(s, i - 1, strategy.priceLeadershipOverheatThreshold), curScore = adjustedScoreAt(s, i, strategy.priceLeadershipOverheatThreshold); if (!crossedUp(prev, curScore, strategy.entryThreshold)) continue; const cur = percent(curScore); if (cur === null || cur >= strategy.upsideExitThreshold) continue; const trade = candidateFromSignal(s, i, strategy); if (trade) out.push(trade);
+  }
   return out;
 }
 
-export function buildPortfolioSignalContext(dataset: MarketDataset, limit = 613): PortfolioSignalContext {
-  const source = buildBaseSeries(dataset, Math.max(1, Math.round(limit))); const sectorPrice = buildSectorPriceLeadershipMap(dataset); const thresholds = [...new Set(PORTFOLIO_STRATEGIES.map((s) => s.priceLeadershipOverheatThreshold))]; const seriesByThreshold = new Map<number | null, PortfolioSeries[]>(); for (const threshold of thresholds) seriesByThreshold.set(threshold, applyModel(source, sectorPrice, threshold)); const allDates = [...new Set(source.flatMap((s) => s.bars.map((b) => b.tradeDate)))].sort(); return { seriesByThreshold, sectorPriceLeadershipByDate: sectorPrice, allDates, symbolCount: source.length, sectorCount: new Set(source.map((s) => s.sectorCode)).size };
+export function buildPortfolioSignalContext(dataset: MarketDataset, limit = 613, cache?: PortfolioFeatureCache | null): PortfolioSignalContext {
+  const normalizedLimit = Math.max(1, Math.round(limit)); const restored = cache ? restoreBaseSeriesFromCache(dataset, normalizedLimit, cache) : null; const source = restored ?? buildBaseSeries(dataset, normalizedLimit); const sectorPrice = restored && cache ? new Map(cache.sectorPriceLeadership) : buildSectorPriceLeadershipMap(dataset); attachSectorPriceLeadership(source, sectorPrice); const allDates = [...new Set(source.flatMap((s) => s.bars.map((b) => b.tradeDate)))].sort();
+  return { series: source, sectorPriceLeadershipByDate: sectorPrice, allDates, symbolCount: source.length, sectorCount: new Set(source.map((s) => s.sectorCode)).size, featureCacheUsed: restored !== null, featureCacheVersion: PORTFOLIO_FEATURE_CACHE_VERSION };
 }
