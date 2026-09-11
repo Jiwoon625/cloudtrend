@@ -9,7 +9,7 @@ export interface BacktestDataFileVersion {
 }
 
 export interface BacktestDataVersionInput {
-  source: "SUPABASE_BACKTEST" | "SUPABASE_KR" | "LOCAL_FILES";
+  source: "SUPABASE_BACKTEST" | "SUPABASE_KR" | "SUPABASE_SOURCE_REGISTRY" | "LOCAL_FILES";
   datasetVersion: string;
   asOfDate: string;
   files: BacktestDataFileVersion[];

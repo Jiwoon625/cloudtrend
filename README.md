@@ -22,7 +22,7 @@ CloudTrend는 사용자가 직접 준비한 일봉 데이터를 브라우저에�
 
 ### 한국 시장
 
-- CSV·JSON 업로드 또는 텍스트 붙여넣기를 통한 분석 데이터 입력
+- CSV·XLSX·JSON 업로드 또는 텍스트 붙여넣기를 통한 분석 데이터 입력
 - KOSPI·KOSDAQ 시장 게이트와 Risk-On / Neutral / Risk-Off 판정
 - 국내 주식 및 ETF 분리 스크리닝
 - 종목별 Technical, Priority, Fundamental 또는 ETF Health 점수
@@ -64,6 +64,11 @@ CloudTrend는 사용자가 직접 준비한 일봉 데이터를 브라우저에�
 6. 미국 시장은 **US 시장·데이터** 화면에서 데이터를 별도로 입력해 실행합니다.
 
 입력 CSV는 Supabase의 비공개 Storage에 계정별로 저장됩니다. 국내·미국 데이터는 각각 최신 파일을 유지하고, 백테스트 데이터는 파일당 45MB 이하로 여러 개를 저장해 실행 시 합칩니다. 같은 계정으로 로그인하면 다른 기기에서도 불러옵니다. 이미 열린 화면은 상단의 최신 데이터 불러오기 버튼으로 갱신합니다. 계산은 브라우저에서 수행합니다.
+
+웹과 GPT/ChatGPT Work 업로드는 같은 검증·정규화 모듈과 `analysis_source_files` 등록부를 사용합니다.
+원본 파일은 비공개 `source` 경로, 실행 결과는 `results` 경로에 분리하며 파일·데이터·스키마
+SHA-256과 중복·충돌 결과를 기록합니다. 자연어 요청별 `replace`·`append`·`merge`·`add`·
+`replace_all`·`validate_only` 동작과 CLI는 [`docs/data-ingestion.md`](docs/data-ingestion.md)를 참고하세요.
 
 국내 스크리닝 이력은 Supabase `screening_history` 테이블에 날짜별 마지막 결과로 저장됩니다. 최근 90개 날짜를 유지하며 날짜당 1MB를 넘는 결과는 오류로 표시합니다. RLS로 본인 계정의 파일과 이력만 접근할 수 있습니다. 기존 브라우저 데이터는 자동 이전하지 않으므로 원본 CSV를 다시 업로드해야 합니다.
 
@@ -222,6 +227,10 @@ npm run backtest:run -- --supabase-user-id <USER_UUID> --upload
 우선하고, 값이 없으면 저장소의 검토 완료 613종목 및 추가 매핑을 적용합니다.
 
 수동 실행과 GPT 댓글 명령 형식은 [`docs/automation.md`](docs/automation.md)를 참고하세요.
+
+GPT에 첨부한 CSV를 검증·등록한 뒤 같은 원천으로 Actions를 실행하는 절차는
+[`docs/data-ingestion.md`](docs/data-ingestion.md)를 참고하세요. `validate_only`는 저장하지 않으며,
+등록 CLI의 응답은 자동화용 JSON입니다.
 
 ## 환경변수와 API 키
 

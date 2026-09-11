@@ -16,7 +16,6 @@ import { buildSnapshot, type ScreeningSnapshot } from "../src/lib/screeningSnaps
 import {
   analysisRunKey,
   codeVersion,
-  downloadJson,
   findReusableRun,
   requestedBy,
   saveRunRecord,
@@ -24,6 +23,7 @@ import {
   trustedSupabaseClient,
   uploadJson,
 } from "./analysis-run-store";
+import { loadAnalysisSourceInputs } from "./source-registry-store";
 
 interface Options {
   supabaseUserId: string;
@@ -31,11 +31,6 @@ interface Options {
   outputRoot: string;
   upload: boolean;
   force: boolean;
-}
-
-interface StoredMarketData {
-  text: string;
-  meta?: { savedAt?: string; fileName?: string | null; chars?: number };
 }
 
 function usage(): never {
@@ -97,15 +92,18 @@ async function loadPreviousSnapshot(
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const client = trustedSupabaseClient();
-  const objectPath = `${options.supabaseUserId}/kr.json`;
-  const [stored, config] = await Promise.all([
-    downloadJson<StoredMarketData>(client, objectPath),
+  const [inputs, config] = await Promise.all([
+    loadAnalysisSourceInputs(client, options.supabaseUserId, "screening"),
     loadConfig(options.configPath),
   ]);
-  if (!stored.text?.trim()) throw new Error("Supabase kr.json의 데이터 본문이 비어 있습니다.");
 
   const currentCodeVersion = codeVersion();
-  const dataVersion = `sha256:${sha256(stored.text)}`;
+  const dataVersion = `sha256:${sha256(
+    inputs
+      .map((input) => input.dataHash)
+      .sort()
+      .join("\n"),
+  )}`;
   const runKey = analysisRunKey({
     kind: "SCREENING",
     codeVersion: currentCodeVersion,
@@ -120,14 +118,14 @@ async function main() {
     }
   }
 
-  const parsed = parseManualMarketData(stored.text);
+  const parsed = parseManualMarketData(inputs.map((input) => input.text));
   const { analysis } = runFullMarketAnalysis(parsed.dataset, config);
   const snapshot = buildSnapshot(analysis);
   const previous = await loadPreviousSnapshot(client, options.supabaseUserId, snapshot.date);
   const summary = buildScreeningSummary(analysis, snapshot, previous);
   const createdAt = new Date().toISOString();
   const runId = `${createdAt.replace(/[-:.TZ]/g, "").slice(0, 14)}-${dataVersion.slice(7, 15)}`;
-  const resultPath = `${options.supabaseUserId}/analysis/runs/screening-${runId}.json`;
+  const resultPath = `${options.supabaseUserId}/results/screening/${runId}.json`;
   const run = {
     id: runId,
     kind: "SCREENING" as const,
@@ -141,11 +139,22 @@ async function main() {
     schemaVersion: 1 as const,
     run,
     data: {
-      source: "SUPABASE_KR" as const,
-      objectPath,
-      fileName: stored.meta?.fileName ?? null,
-      savedAt: stored.meta?.savedAt ?? null,
-      bytes: Buffer.byteLength(stored.text),
+      source: inputs.some((input) => input.sourceRecord)
+        ? ("SUPABASE_SOURCE_REGISTRY" as const)
+        : ("SUPABASE_KR" as const),
+      sources: inputs.map((input) => ({
+        id: input.id,
+        objectPath: input.sourceRecord?.storage_path ?? `${options.supabaseUserId}/kr.json`,
+        fileName: input.fileName,
+        savedAt: input.savedAt,
+        bytes: input.bytes,
+        fileHash: input.fileHash,
+        dataHash: input.dataHash,
+        schemaHash: input.schemaHash,
+      })),
+      fileName: inputs.at(-1)?.fileName ?? null,
+      savedAt: inputs.at(-1)?.savedAt ?? null,
+      bytes: inputs.reduce((sum, input) => sum + input.bytes, 0),
       asOfDate: analysis.asOfDate,
       stats: parsed.stats,
       sectorMapping: {
@@ -176,7 +185,7 @@ async function main() {
     if (historyError) throw new Error(`스크리닝 이력 저장 실패: ${historyError.message}`);
     await Promise.all([
       uploadJson(client, resultPath, bundle),
-      uploadJson(client, `${options.supabaseUserId}/analysis/latest-screening.json`, {
+      uploadJson(client, `${options.supabaseUserId}/results/screening/latest.json`, {
         run,
         resultPath,
         summary,
