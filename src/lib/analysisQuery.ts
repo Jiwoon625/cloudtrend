@@ -1,8 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import {
-  computeLocalDataStatus,
-} from "@/lib/localAnalysis";
+import { computeLocalDataStatus } from "@/lib/localAnalysis";
 import { ensureManualDataset } from "@/lib/manualDataStore";
 import {
   getCachedInstrumentDetail,
@@ -32,15 +30,16 @@ export function isAnalysisFailurePayload(value: unknown): value is AnalysisFailu
 }
 
 export const analysisQueryOptions = queryOptions({
-  // Dashboard/Stock/ETF가 동일한 Supabase screening result cache를 공유한다.
-  queryKey: ["market-analysis", "screening-cache-v1"],
+  // 기존 invalidation prefix를 유지하면서 Dashboard/Stock/ETF가 동일한 결과 cache를 공유한다.
+  queryKey: ["market-analysis", "manual-vf-9.5-intraday", "screening-cache-v1"],
   queryFn: () => getOrBuildScreeningPayload(),
   staleTime: 5 * 60 * 1000,
   retry: false,
 });
 
 export const dashboardQueryOptions = queryOptions({
-  queryKey: ["dashboard-summary", "dashboard-cache-v1"],
+  // scoring 화면의 기존 market-analysis invalidation으로 summary도 함께 무효화된다.
+  queryKey: ["market-analysis", "manual-vf-9.5-intraday", "dashboard-cache-v1"],
   queryFn: () => getOrBuildDashboardSummary(),
   staleTime: 5 * 60 * 1000,
   retry: false,
@@ -58,7 +57,8 @@ export const dataStatusQueryOptions = queryOptions({
 
 export const instrumentQueryOptions = (symbol: string) =>
   queryOptions({
-    queryKey: ["instrument", "lazy-cache-v1", symbol],
+    // 기존 scoring invalidation prefix와 호환된다.
+    queryKey: ["instrument", "manual-vf-9.5-intraday", "lazy-cache-v1", symbol],
     queryFn: () => getCachedInstrumentDetail(symbol),
     staleTime: 5 * 60 * 1000,
     retry: false,
