@@ -135,6 +135,7 @@ function BacktestPage() {
         },
         execution,
         import.meta.env["VITE_CLOUDTREND_CODE_VERSION"] || "dev",
+        payload.sectorRotationBacktest,
       );
       let savedRun: BacktestRunIndexEntry | null = null;
       let saveError: string | null = null;
