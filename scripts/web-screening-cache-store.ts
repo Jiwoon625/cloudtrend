@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { compactDashboardRow } from "../src/lib/dashboardRow";
 import type { AnalysisResult } from "../src/lib/engine/pipeline";
 import type { ScoringConfig } from "../src/lib/engine/scoring";
 import type { ScreeningSnapshot } from "../src/lib/screeningSnapshot";
@@ -122,7 +123,7 @@ function buildDashboardSummary(
     const matches = code === "LOW_LIQUIDITY"
       ? rows.filter((row) => !row.hardFilterPassed)
       : rows.filter((row) => row.warnings.includes(code));
-    return { code, count: matches.length, rows: matches.slice(0, 4) };
+    return { code, count: matches.length, rows: matches.slice(0, 4).map(compactDashboardRow) };
   });
   const failMap = new Map<string, number>();
   for (const row of rows) {
@@ -161,9 +162,9 @@ function buildDashboardSummary(
     },
     warningBuckets,
     failReasons: [...failMap.entries()].sort((a, b) => b[1] - a[1]),
-    onsetTop,
-    momentumRiskRows,
-    top,
+    onsetTop: onsetTop.map(compactDashboardRow),
+    momentumRiskRows: momentumRiskRows.map(compactDashboardRow),
+    top: top.map(compactDashboardRow),
   };
 }
 
