@@ -1,4 +1,4 @@
-name: CloudTrend V7 sector flow decomposition
+name: CloudTrend V7.2 sector score bands
 
 on:
   workflow_dispatch:
@@ -38,12 +38,12 @@ jobs:
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
           test -n "$SUPABASE_USER_ID"
-      - name: Run V7 sector flow decomposition
+      - name: Run V7.2 sector score band decomposition
         run: |
           npx vite-node scripts/run-sector-flow-decomposition.ts \
             --supabase-user-id "$SUPABASE_USER_ID" \
             --upload
-      - name: Upload V7 diagnostic artifact
+      - name: Upload V7.2 diagnostic artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
