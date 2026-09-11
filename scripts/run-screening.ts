@@ -24,6 +24,7 @@ import {
   uploadJson,
 } from "./analysis-run-store";
 import { loadAnalysisSourceInputs } from "./source-registry-store";
+import { persistWebScreeningCaches } from "./web-screening-cache-store";
 
 interface Options {
   supabaseUserId: string;
@@ -175,6 +176,7 @@ async function main() {
     writeFile(path.join(outputDir, "screening-summary.json"), JSON.stringify(summary, null, 2)),
   ]);
 
+  let webCache: Awaited<ReturnType<typeof persistWebScreeningCaches>> | null = null;
   if (options.upload) {
     const { error: historyError } = await client
       .from("screening_history")
@@ -183,6 +185,17 @@ async function main() {
         { onConflict: "user_id,date" },
       );
     if (historyError) throw new Error(`스크리닝 이력 저장 실패: ${historyError.message}`);
+
+    webCache = await persistWebScreeningCaches({
+      client,
+      userId: options.supabaseUserId,
+      inputs,
+      config,
+      analysis,
+      snapshot,
+      previous,
+    });
+
     await Promise.all([
       uploadJson(client, resultPath, bundle),
       uploadJson(client, `${options.supabaseUserId}/results/screening/latest.json`, {
@@ -211,7 +224,7 @@ async function main() {
   }
 
   process.stdout.write(
-    `${JSON.stringify({ reused: false, run, outputDir, resultPath: options.upload ? resultPath : null, summary }, null, 2)}\n`,
+    `${JSON.stringify({ reused: false, run, outputDir, resultPath: options.upload ? resultPath : null, webCache, summary }, null, 2)}\n`,
   );
 }
 
