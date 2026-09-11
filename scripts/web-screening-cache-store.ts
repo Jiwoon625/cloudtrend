@@ -1,15 +1,28 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { AnalysisResult, ScreeningRow } from "../src/lib/engine/pipeline";
+import type { AnalysisResult } from "../src/lib/engine/pipeline";
 import type { ScoringConfig } from "../src/lib/engine/scoring";
 import type { ScreeningSnapshot } from "../src/lib/screeningSnapshot";
 import { sourceRowKey, toCanonicalCsv } from "../src/lib/sourceData";
 import type { AnalysisPayload } from "../src/lib/market.functions";
-import { ANALYSIS_BUCKET, sha256, stableJson, uploadJson } from "./analysis-run-store";
+import {
+  ANALYSIS_BUCKET,
+  downloadJson,
+  sha256,
+  stableJson,
+  uploadJson,
+} from "./analysis-run-store";
 import type { LoadedSourceInput } from "./source-registry-store";
 
 const SCREENING_CACHE_VERSION = "screening-cache-v1";
 const DASHBOARD_CACHE_VERSION = "dashboard-cache-v1";
+
+interface ExistingScreeningCache {
+  version?: string;
+  inputFingerprint?: string;
+  resultDigest?: string;
+  payload?: AnalysisPayload;
+}
 
 function deterministicAnalysis(analysis: AnalysisResult) {
   return { ...analysis, calculatedAt: "" };
@@ -163,6 +176,15 @@ async function uploadText(client: SupabaseClient, objectPath: string, text: stri
   return Buffer.byteLength(text);
 }
 
+async function maybeDownloadJson<T>(client: SupabaseClient, objectPath: string): Promise<T | null> {
+  try {
+    return await downloadJson<T>(client, objectPath);
+  } catch (error) {
+    if (error instanceof Error && /Object not found|not_found|404/i.test(error.message)) return null;
+    throw error;
+  }
+}
+
 function canonicalMergedCsv(inputs: LoadedSourceInput[]) {
   const rows = new Map<string, LoadedSourceInput["validation"]["rows"][number]>();
   for (const input of inputs) {
@@ -182,6 +204,19 @@ export async function persistWebScreeningCaches(input: {
 }) {
   const fingerprint = inputFingerprint(input.inputs, input.config);
   const digest = resultDigest(input.analysis);
+  const screeningPath = `${input.userId}/cache/screening/latest.json`;
+  const existing = await maybeDownloadJson<ExistingScreeningCache>(input.client, screeningPath);
+  if (
+    existing?.version === SCREENING_CACHE_VERSION &&
+    existing.inputFingerprint === fingerprint &&
+    existing.resultDigest &&
+    existing.resultDigest !== digest
+  ) {
+    throw new Error(
+      `스크리닝 regression guard 실패: 동일 원천·동일 산식인데 결과 digest가 변경되었습니다. expected=${existing.resultDigest}, actual=${digest}`,
+    );
+  }
+
   const source = { live: true, credentialsConfigured: true, fallbackReason: null };
   const payload: AnalysisPayload = { analysis: input.analysis, source };
   const screening = {
@@ -200,7 +235,6 @@ export async function persistWebScreeningCaches(input: {
   );
   const canonicalCsv = canonicalMergedCsv(input.inputs);
   const rawPath = `${input.userId}/raw/screening/latest.csv`;
-  const screeningPath = `${input.userId}/cache/screening/latest.json`;
   const dashboardPath = `${input.userId}/cache/dashboard/latest.json`;
   const latestInput = input.inputs.at(-1);
   const meta = {
@@ -223,9 +257,20 @@ export async function persistWebScreeningCaches(input: {
     uploadJson(input.client, `${input.userId}/kr.json`, meta),
   ]);
 
+  const roundTrip = await downloadJson<ExistingScreeningCache>(input.client, screeningPath);
+  const roundTripDigest = roundTrip.payload?.analysis ? resultDigest(roundTrip.payload.analysis) : null;
+  if (roundTrip.resultDigest !== digest || roundTripDigest !== digest) {
+    throw new Error(
+      `스크리닝 cache 저장 후 digest 검증 실패: stored=${roundTrip.resultDigest ?? "null"}, recalculated=${roundTripDigest ?? "null"}, expected=${digest}`,
+    );
+  }
+
   return {
     inputFingerprint: fingerprint,
     resultDigest: digest,
+    regressionBaseline: existing?.resultDigest ?? null,
+    regressionMatched: !existing?.resultDigest || existing.resultDigest === digest,
+    roundTripVerified: true,
     paths: { rawPath, screeningPath, dashboardPath, krPath: `${input.userId}/kr.json` },
     bytes: {
       raw: rawBytes,
