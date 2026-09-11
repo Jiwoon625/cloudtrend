@@ -1,4 +1,5 @@
 import type { BacktestResult } from "@/lib/engine/backtestV4";
+import type { SectorRotationBacktestResult } from "@/lib/engine/sectorRotationBacktest";
 import { SCORE_CHANGE_BUCKETS } from "@/lib/engine/strategyValidation";
 
 export interface BacktestDataFileVersion {
@@ -46,6 +47,8 @@ export interface BacktestRunBundle {
     scoreChangeBuckets: typeof SCORE_CHANGE_BUCKETS;
   };
   result: BacktestResult;
+  /** V6.1 추가 필드. 구버전 bundle 소비자와의 호환을 위해 optional로 유지한다. */
+  sectorRotationBacktest?: SectorRotationBacktestResult | null;
 }
 
 export interface BacktestRunIndexEntry {
@@ -101,6 +104,7 @@ export async function createBacktestRunBundle(
   data: BacktestDataVersionInput,
   execution: BacktestExecutionConfig,
   codeVersion: string,
+  sectorRotationBacktest: SectorRotationBacktestResult | null = null,
 ): Promise<BacktestRunBundle> {
   const createdAt = new Date().toISOString();
   const dataVersion = await createBacktestDataVersion(data);
@@ -111,5 +115,6 @@ export async function createBacktestRunBundle(
     data,
     config: { execution, engine: result.config, scoreChangeBuckets: SCORE_CHANGE_BUCKETS },
     result,
+    sectorRotationBacktest,
   };
 }
