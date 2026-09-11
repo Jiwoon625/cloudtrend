@@ -17,7 +17,8 @@ export interface CloudFile<M> {
   text: string;
   meta: M;
 }
-const BUCKET = "cloudtrend-data";
+export const CLOUD_DATA_BUCKET = "cloudtrend-data";
+const BUCKET = CLOUD_DATA_BUCKET;
 /** 파일 1개 크기 상한(무료 플랜의 파일당 50MB 제한 보호). 전체 개수는 제한하지 않는다. */
 export const MAX_FILE_BYTES = 45 * 1024 * 1024;
 
@@ -48,6 +49,52 @@ export async function writeObject(path: string, value: unknown) {
     contentType: "application/json",
   });
   if (error) throw new Error(`클라우드 저장 실패: ${error.message}`);
+}
+
+export async function readTextObject(path: string): Promise<string | null> {
+  const { data, error } = await supabase.storage.from(BUCKET).download(path);
+  if (error) {
+    if (isMissing(error as { statusCode?: string; message: string })) return null;
+    throw new Error(`클라우드 텍스트를 불러오지 못했습니다: ${error.message}`);
+  }
+  return data.text();
+}
+
+export async function writeTextObject(path: string, text: string, contentType = "text/csv") {
+  const body = new Blob([text], { type: contentType });
+  if (body.size > MAX_FILE_BYTES)
+    throw new Error("파일 1개 크기는 45MB 이하여야 합니다. 파일을 나눠 여러 개로 올려 주세요.");
+  const { error } = await supabase.storage.from(BUCKET).upload(path, body, {
+    upsert: true,
+    contentType,
+  });
+  if (error) throw new Error(`클라우드 저장 실패: ${error.message}`);
+  return body.size;
+}
+
+export async function readBinaryObject(path: string): Promise<Uint8Array | null> {
+  const { data, error } = await supabase.storage.from(BUCKET).download(path);
+  if (error) {
+    if (isMissing(error as { statusCode?: string; message: string })) return null;
+    throw new Error(`클라우드 바이너리를 불러오지 못했습니다: ${error.message}`);
+  }
+  return new Uint8Array(await data.arrayBuffer());
+}
+
+export async function writeBinaryObject(
+  path: string,
+  bytes: Uint8Array,
+  contentType = "application/octet-stream",
+) {
+  if (bytes.byteLength > MAX_FILE_BYTES)
+    throw new Error("파일 1개 크기는 45MB 이하여야 합니다. 파일을 나눠 여러 개로 올려 주세요.");
+  const body = new Blob([bytes as BlobPart], { type: contentType });
+  const { error } = await supabase.storage.from(BUCKET).upload(path, body, {
+    upsert: true,
+    contentType,
+  });
+  if (error) throw new Error(`클라우드 저장 실패: ${error.message}`);
+  return bytes.byteLength;
 }
 
 export async function removeObjects(paths: string[]) {
