@@ -124,6 +124,23 @@ export function runtimeSourceFiles(inputs: LoadedSourceInput[]): RuntimeSourceFi
   }));
 }
 
+/**
+ * V8 포트폴리오 엔진에서 실제로 쓰는 시장 구조만 유지한다.
+ * 재무/ETF/VKOSPI payload는 제거하여 압축 전 메모리와 Storage 용량을 줄인다.
+ */
+function compactPortfolioDataset(dataset: MarketDataset): MarketDataset {
+  const instruments = dataset.instruments.filter((instrument) => instrument.instrumentType === "STOCK");
+  const symbols = new Set(instruments.map((instrument) => instrument.symbol));
+  return {
+    ...dataset,
+    instruments,
+    bars: Object.fromEntries(Object.entries(dataset.bars).filter(([symbol]) => symbols.has(symbol))),
+    financials: {},
+    etfFacts: {},
+    vkospiSeries: [],
+  };
+}
+
 export function createPortfolioRuntimeCache(input: {
   manifestFingerprint: string;
   limit: number;
@@ -136,7 +153,7 @@ export function createPortfolioRuntimeCache(input: {
     manifestFingerprint: input.manifestFingerprint,
     limit: input.limit,
     sourceFiles: input.sourceFiles,
-    dataset: input.dataset,
+    dataset: compactPortfolioDataset(input.dataset),
   };
 }
 
