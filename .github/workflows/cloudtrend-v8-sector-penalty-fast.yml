@@ -1,0 +1,54 @@
+name: CloudTrend V8 sector penalty fast backtest
+
+on:
+  workflow_dispatch:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudtrend-v8-sector-penalty-fast-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.pull_request == null &&
+       github.actor == github.repository_owner &&
+       startsWith(github.event.comment.body, '/cloudtrend v8-sector-penalty-fast'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate server configuration
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_USER_ID"
+      - name: Run V8 sector penalty backtest fast
+        run: |
+          npx vite-node scripts/run-sector-penalty-backtest.ts \
+            --supabase-user-id "$SUPABASE_USER_ID" \
+            --limit 613 \
+            --upload
+      - name: Upload V8 sector penalty fast artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudtrend-v8-sector-penalty-fast-${{ github.run_id }}
+          path: v8-sector-penalty-runs/
+          if-no-files-found: warn
+          retention-days: 14
