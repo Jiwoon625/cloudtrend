@@ -47,9 +47,25 @@ async function hydrateMeta(): Promise<void> {
     }));
 }
 
+async function migrateLegacyKrJsonIfNeeded() {
+  if (!file?.text?.trim() || file.meta.rawPath) return;
+  const rawPath = await ownerPath(RAW_SCREENING_RELATIVE_PATH);
+  await writeTextObject(rawPath, file.text);
+  const next: CloudFile<ManualDataMeta> = {
+    text: "",
+    meta: {
+      ...file.meta,
+      rawPath,
+      normalizedBytes: new TextEncoder().encode(file.text).byteLength,
+    },
+  };
+  await writeFile("kr", next);
+  file = next;
+}
+
 /**
  * 기본값은 기존 호출과 호환되도록 raw 본문까지 복원한다.
- * 대시보드/스크리너는 loadRaw=false로 메타데이터만 읽고 결과 cache를 사용한다.
+ * 대시보드/스크리너는 결과 cache를 직접 사용하므로 원천 본문을 읽을 필요가 없다.
  */
 export async function hydrateManualData(loadRaw = true): Promise<void> {
   await hydrateMeta();
@@ -58,7 +74,10 @@ export async function hydrateManualData(loadRaw = true): Promise<void> {
 
 export async function ensureManualDataText(): Promise<string | null> {
   await hydrateMeta();
-  if (rawText?.trim()) return rawText;
+  if (rawText?.trim()) {
+    await migrateLegacyKrJsonIfNeeded();
+    return rawText;
+  }
   const rawPath = file?.meta.rawPath;
   if (!rawPath) return null;
   return (rawHydration ??= readTextObject(rawPath)
