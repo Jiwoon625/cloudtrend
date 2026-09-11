@@ -1,10 +1,12 @@
 import { queryOptions } from "@tanstack/react-query";
 
+import { computeLocalDataStatus } from "@/lib/localAnalysis";
+import { ensureManualDataset } from "@/lib/manualDataStore";
 import {
-  computeLocalAnalysis,
-  computeLocalDataStatus,
-  computeLocalInstrumentDetail,
-} from "@/lib/localAnalysis";
+  getCachedInstrumentDetail,
+  getOrBuildDashboardSummary,
+  getOrBuildScreeningPayload,
+} from "@/lib/screeningCache";
 import {
   getServerEgressIp,
   type AnalysisPayload,
@@ -28,24 +30,36 @@ export function isAnalysisFailurePayload(value: unknown): value is AnalysisFailu
 }
 
 export const analysisQueryOptions = queryOptions({
-  // 직접 입력한 데이터로 브라우저에서 계산한다. 이 키는 대시보드의 명시적 실행에서만 채워진다.
-  queryKey: ["market-analysis", "manual-vf-9.5-intraday"],
-  queryFn: async () => computeLocalAnalysis(),
+  // 기존 invalidation prefix를 유지하면서 Dashboard/Stock/ETF가 동일한 결과 cache를 공유한다.
+  queryKey: ["market-analysis", "manual-vf-9.5-intraday", "screening-cache-v1"],
+  queryFn: () => getOrBuildScreeningPayload(),
+  staleTime: 5 * 60 * 1000,
+  retry: false,
+});
+
+export const dashboardQueryOptions = queryOptions({
+  // scoring 화면의 기존 market-analysis invalidation으로 summary도 함께 무효화된다.
+  queryKey: ["market-analysis", "manual-vf-9.5-intraday", "dashboard-cache-v1"],
+  queryFn: () => getOrBuildDashboardSummary(),
   staleTime: 5 * 60 * 1000,
   retry: false,
 });
 
 export const dataStatusQueryOptions = queryOptions({
   queryKey: ["data-status", "manual-vf-9.5-intraday"],
-  queryFn: async () => computeLocalDataStatus(),
+  queryFn: async () => {
+    await ensureManualDataset();
+    return computeLocalDataStatus();
+  },
   staleTime: 5 * 60 * 1000,
   retry: false,
 });
 
 export const instrumentQueryOptions = (symbol: string) =>
   queryOptions({
-    queryKey: ["instrument", "full-vf-9.5-history", symbol],
-    queryFn: async () => computeLocalInstrumentDetail(symbol),
+    // 기존 scoring invalidation prefix와 호환된다.
+    queryKey: ["instrument", "manual-vf-9.5-intraday", "lazy-cache-v1", symbol],
+    queryFn: () => getCachedInstrumentDetail(symbol),
     staleTime: 5 * 60 * 1000,
     retry: false,
   });
