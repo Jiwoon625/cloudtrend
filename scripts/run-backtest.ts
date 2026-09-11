@@ -21,6 +21,7 @@ import {
 } from "../src/lib/engine/backtestV4";
 import { buildAlignedRankingAnalysis } from "../src/lib/engine/backtestRankingV5";
 import { parseManualMarketData } from "../src/lib/engine/manualDataset";
+import { validateSourceBytes } from "../src/lib/sourceData";
 import {
   analysisRunKey,
   codeVersion,
@@ -28,10 +29,10 @@ import {
   findReusableRun,
   requestedBy,
   saveRunRecord,
-  sha256,
   trustedSupabaseClient,
   uploadJson,
 } from "./analysis-run-store";
+import { loadAnalysisSourceInputs, type LoadedSourceInput } from "./source-registry-store";
 
 interface RunConfig {
   symbols?: string[];
@@ -53,14 +54,6 @@ interface Options {
   limit: number | null;
   roundTripCostBps: number | null;
   includeEtf: boolean | null;
-}
-
-interface SupabaseInput {
-  id: string;
-  fileName: string | null;
-  bytes: number;
-  savedAt: string;
-  text: string;
 }
 
 function usage(): never {
@@ -113,46 +106,29 @@ function parseArgs(argv: string[]): Options {
   return options;
 }
 
-async function loadSupabaseInputs(
-  client: SupabaseClient,
-  userId: string,
-): Promise<SupabaseInput[]> {
-  const index = await downloadJson<Record<string, unknown>>(
-    client,
-    `${userId}/backtest/index.json`,
-  );
-  const files = Array.isArray(index["files"]) ? index["files"] : [];
-  if (files.length === 0) throw new Error("Supabase backtest/index.json에 입력 파일이 없습니다.");
-  return Promise.all(
-    files.map(async (raw) => {
-      const entry = raw as Record<string, unknown>;
-      const id = String(entry["id"] ?? "");
-      const objectPath =
-        id === "__legacy__" ? `${userId}/backtest.json` : `${userId}/backtest/${id}.json`;
-      const stored = await downloadJson<Record<string, unknown>>(client, objectPath);
-      const text = typeof stored["text"] === "string" ? stored["text"] : "";
-      if (!text) throw new Error(`Supabase 입력 본문이 비어 있습니다: ${objectPath}`);
-      return {
-        id,
-        fileName: typeof entry["fileName"] === "string" ? entry["fileName"] : null,
-        bytes: Number(entry["bytes"] ?? Buffer.byteLength(text)),
-        savedAt: String(entry["savedAt"] ?? new Date(0).toISOString()),
-        text,
-      };
-    }),
-  );
-}
-
-async function loadLocalInputs(files: string[]): Promise<SupabaseInput[]> {
+async function loadLocalInputs(files: string[]): Promise<LoadedSourceInput[]> {
   return Promise.all(
     files.map(async (file) => {
       const [text, info] = await Promise.all([readFile(file, "utf8"), stat(file)]);
+      const validation = await validateSourceBytes({
+        bytes: new TextEncoder().encode(text),
+        filename: path.basename(file),
+      });
+      if (!validation.valid)
+        throw new Error(
+          `입력 검증 실패 (${path.basename(file)}): ${validation.errors[0]?.message ?? "형식 오류"}`,
+        );
       return {
-        id: `sha256:${sha256(text)}`,
+        id: validation.fileHash,
         fileName: path.basename(file),
         bytes: Buffer.byteLength(text),
         savedAt: info.mtime.toISOString(),
-        text,
+        text: validation.canonicalCsv,
+        fileHash: validation.fileHash,
+        dataHash: validation.dataHash,
+        schemaHash: validation.schemaHash,
+        sourceRecord: null,
+        validation,
       };
     }),
   );
@@ -164,7 +140,7 @@ async function uploadBundle(
   bundleText: string,
   runId: string,
 ) {
-  const objectPath = `${userId}/backtest/runs/${runId}.json`;
+  const objectPath = `${userId}/results/backtest/${runId}.json`;
   const { error } = await client.storage.from("cloudtrend-data").upload(objectPath, bundleText, {
     contentType: "application/json",
     upsert: true,
@@ -178,7 +154,7 @@ async function updateBacktestRunIndex(
   userId: string,
   entry: BacktestRunIndexEntry,
 ) {
-  const indexPath = `${userId}/backtest/runs/index.json`;
+  const indexPath = `${userId}/results/backtest/index.json`;
   let current: BacktestRunIndexEntry[] = [];
   try {
     current =
@@ -229,7 +205,7 @@ async function main() {
   };
   const client = options.supabaseUserId ? trustedSupabaseClient() : null;
   const inputs = options.supabaseUserId
-    ? await loadSupabaseInputs(client!, options.supabaseUserId)
+    ? await loadAnalysisSourceInputs(client!, options.supabaseUserId, "backtest")
     : await loadLocalInputs(options.inputs);
   const parsed = parseManualMarketData(inputs.map((input) => input.text));
   const series = buildSeries(parsed.dataset, execution);
@@ -247,7 +223,11 @@ async function main() {
     savedAt,
   }));
   const data: BacktestDataVersionInput = {
-    source: options.supabaseUserId ? "SUPABASE_BACKTEST" : "LOCAL_FILES",
+    source: options.supabaseUserId
+      ? inputs.some((input) => input.sourceRecord)
+        ? "SUPABASE_SOURCE_REGISTRY"
+        : "SUPABASE_BACKTEST"
+      : "LOCAL_FILES",
     datasetVersion: parsed.dataset.version,
     asOfDate: parsed.dataset.asOfDate,
     files,
@@ -312,9 +292,9 @@ async function main() {
         symbolCount: bundle.result.symbolCount,
         from: bundle.result.from,
         to: bundle.result.to,
-        path: `backtest/runs/${bundle.run.id}.json`,
+        path: `results/backtest/${bundle.run.id}.json`,
       }),
-      uploadJson(client, `${options.supabaseUserId}/analysis/latest-backtest.json`, {
+      uploadJson(client, `${options.supabaseUserId}/results/backtest/latest.json`, {
         run: bundle.run,
         resultPath: remotePath,
         summary,

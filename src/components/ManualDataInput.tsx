@@ -3,13 +3,13 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { parseManualMarketData, type ManualParseStats } from "@/lib/engine/manualDataset";
+import type { ManualParseStats } from "@/lib/engine/manualDataset";
 import {
   clearManualData,
   getManualDataMeta,
   getManualDataText,
   hydrateManualData,
-  saveManualDataText,
+  saveManualDataSource,
 } from "@/lib/manualDataStore";
 import { formatCount } from "@/lib/format";
 
@@ -42,14 +42,14 @@ export function ManualDataInput({ onChanged }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const apply = async (raw: string, name: string | null) => {
+  const apply = async (source: Blob | string, name: string | null) => {
     setError(null);
     setBusy(true);
     try {
-      const parsed = parseManualMarketData(raw);
-      setStats(parsed.stats);
-      setWarnings(parsed.warnings);
-      setMeta(await saveManualDataText(raw, name));
+      const saved = await saveManualDataSource(source, name);
+      setStats(saved.parsed.stats);
+      setWarnings(saved.parsed.warnings);
+      setMeta(saved.meta);
       onChanged(true);
     } catch (e) {
       setStats(null);
@@ -62,10 +62,11 @@ export function ManualDataInput({ onChanged }: Props) {
   };
 
   const onFile = async (file: File) => {
-    const raw = await file.text();
+    const isSpreadsheet = file.name.toLowerCase().endsWith(".xlsx");
+    const raw = isSpreadsheet ? "" : await file.text();
     setText(raw.length > TEXTAREA_LIMIT ? "" : raw);
     setFileName(file.name);
-    await apply(raw, file.name);
+    await apply(file, file.name);
   };
 
   const reset = async () => {
@@ -91,10 +92,9 @@ export function ManualDataInput({ onChanged }: Props) {
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        주식 9.5점 전체 항목 산정을 위해 종목별 기준일 포함 252거래일 이상(권장 300거래일)의
-        일봉과 최근 20거래일 외국인 순매수 금액을 입력하세요.
-        외국인 순매수 열: foreignNetBuyValue 또는 외국인순매수 (원 단위, 순매도는 음수).
-        데이터가 부족한 항목은 산정 불가로 표시합니다.
+        주식 9.5점 전체 항목 산정을 위해 종목별 기준일 포함 252거래일 이상(권장 300거래일)의 일봉과
+        최근 20거래일 외국인 순매수 금액을 입력하세요. 외국인 순매수 열: foreignNetBuyValue 또는
+        외국인순매수 (원 단위, 순매도는 음수). 데이터가 부족한 항목은 산정 불가로 표시합니다.
       </p>
       <Textarea
         value={text}
@@ -118,7 +118,7 @@ export function ManualDataInput({ onChanged }: Props) {
         <input
           ref={fileRef}
           type="file"
-          accept=".csv,.txt,.json"
+          accept=".csv,.txt,.json,.xlsx"
           className="hidden"
           onChange={(e) => {
             const f = e.target.files?.[0];
@@ -133,7 +133,7 @@ export function ManualDataInput({ onChanged }: Props) {
           onClick={() => fileRef.current?.click()}
         >
           <Upload className="size-3.5" />
-          CSV/JSON 업로드
+          CSV/XLSX/JSON 업로드
         </Button>
         <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground" onClick={reset}>
           <Trash2 className="size-3.5" />

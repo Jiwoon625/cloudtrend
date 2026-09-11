@@ -58,9 +58,7 @@ export function BacktestDataInput({ onChanged }: Props) {
       try {
         await addBacktestFile(source, name);
       } catch (e) {
-        setError(
-          `${name ?? "데이터"}: ${e instanceof Error ? e.message : "저장하지 못했습니다."}`,
-        );
+        setError(`${name ?? "데이터"}: ${e instanceof Error ? e.message : "저장하지 못했습니다."}`);
       }
     }
     sync();
@@ -122,12 +120,11 @@ export function BacktestDataInput({ onChanged }: Props) {
         ref={fileRef}
         type="file"
         multiple
-        accept=".csv,.txt,.json"
+        accept=".csv,.txt,.json,.xlsx"
         className="hidden"
         onChange={(e) => {
           const picked = Array.from(e.target.files ?? []);
-          if (picked.length)
-            void add(picked.map((f) => ({ source: f as Blob, name: f.name })));
+          if (picked.length) void add(picked.map((f) => ({ source: f as Blob, name: f.name })));
           e.target.value = "";
         }}
       />
@@ -139,7 +136,7 @@ export function BacktestDataInput({ onChanged }: Props) {
           onClick={() => fileRef.current?.click()}
         >
           <Upload className="size-3.5" />
-          {busy ?? "CSV/JSON 추가 업로드"}
+          {busy ?? "CSV/XLSX/JSON 추가 업로드"}
         </Button>
         <Button
           size="sm"

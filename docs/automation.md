@@ -6,7 +6,11 @@ GitHub Actions의 `CloudTrend analysis` 워크플로는 Supabase에 저장된 �
 - `backtest`: 웹 백테스트와 같은 V6 엔진 실행
 - `all`: 두 실행을 순서대로 수행
 
-상세 번들은 Supabase private Storage에 저장되고, GPT가 빠르게 질의할 핵심 결과는
+입력은 `analysis_source_files`의 활성 원천데이터를 우선 사용합니다. 등록부 도입 전에 웹에서 올린
+`kr.json`과 `backtest/index.json`은 자동 호환되며, 장기자료는 데이터 해시로 중복을 제거합니다.
+파일 검증·등록·교체 명령은 [`data-ingestion.md`](data-ingestion.md)를 참고하세요.
+
+상세 번들은 Supabase private Storage의 `<uid>/results/screening|backtest`에 저장되고, GPT가 빠르게 질의할 핵심 결과는
 `public.analysis_runs`에 사용자별 RLS가 적용된 JSON 요약으로 저장됩니다. 실행마다 Git SHA,
 데이터 SHA-256, 설정과 종목별 섹터 매핑을 기록합니다.
 

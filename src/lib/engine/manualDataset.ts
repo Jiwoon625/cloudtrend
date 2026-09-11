@@ -3,6 +3,7 @@
 import { NO_CAPABILITIES, type MarketDataset } from "./dataset";
 import { resolveSectorCode, THEME_SECTORS } from "./sectors";
 import type { DailyPrice, EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
+import { parseDelimitedRows } from "../sourceData";
 
 /** 실현변동성(연환산 %) 시계열. VKOSPI가 없을 때 대체 지표로 쓴다. */
 export function realizedVolatilitySeries(closes: number[], window = 20): number[] {
@@ -89,31 +90,6 @@ const FIELD_ALIASES: Record<string, string> = {
 
 const INDEX_SYMBOLS = new Set(["KOSPI", "KOSDAQ", "VKOSPI"]);
 
-function splitCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let cur = "";
-  let quoted = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i]!;
-    if (quoted) {
-      if (ch === '"') {
-        if (line[i + 1] === '"') {
-          cur += '"';
-          i++;
-        } else quoted = false;
-      } else cur += ch;
-      continue;
-    }
-    if (ch === '"') quoted = true;
-    else if (ch === "," || ch === "\t" || ch === ";") {
-      out.push(cur);
-      cur = "";
-    } else cur += ch;
-  }
-  out.push(cur);
-  return out.map((s) => s.trim());
-}
-
 function num(v: unknown): number | null {
   if (v === null || v === undefined) return null;
   const s = String(v)
@@ -183,18 +159,15 @@ function toRecords(text: string): RawRecord[] {
     return flat;
   }
 
-  const lines = trimmed
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-  if (lines.length < 2) return [];
-  const header = splitCsvLine(lines[0]!).map((h) => {
+  const table = parseDelimitedRows(trimmed);
+  if (table.length < 2) return [];
+  const header = table[0]!.map((h) => {
     const key = h.replace(/\s|_/g, "").toLowerCase();
     return FIELD_ALIASES[key] ?? FIELD_ALIASES[h.trim()] ?? key;
   });
   const records: RawRecord[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cells = splitCsvLine(lines[i]!);
+  for (let i = 1; i < table.length; i++) {
+    const cells = table[i]!;
     const rec: RawRecord = {};
     header.forEach((key, idx) => {
       rec[key] = cells[idx];
@@ -324,7 +297,8 @@ export function parseManualMarketData(input: string | string[]): ManualParseResu
     volatilitySeries = vkospi.bars.map((b) => b.close);
   } else {
     const kospiVol = realizedVolatilitySeries(kospi.bars.map((b) => b.close));
-    const kosdaqCloses = kosdaq && kosdaq.bars.length >= 21 ? kosdaq.bars.map((b) => b.close) : null;
+    const kosdaqCloses =
+      kosdaq && kosdaq.bars.length >= 21 ? kosdaq.bars.map((b) => b.close) : null;
     const kosdaqVol = kosdaqCloses ? realizedVolatilitySeries(kosdaqCloses) : null;
     const offset = kosdaqVol ? kosdaqVol.length - kospiVol.length : 0;
     volatilitySeries = kospiVol
@@ -336,7 +310,6 @@ export function parseManualMarketData(input: string | string[]): ManualParseResu
       .filter((v) => Number.isFinite(v));
     volatilityIsProxy = volatilitySeries.length > 0;
   }
-
 
   const instruments: Instrument[] = [];
   const bars: Record<string, DailyPrice[]> = {};

@@ -8,6 +8,12 @@ import {
   writeObject,
   type CloudFile,
 } from "@/lib/cloud";
+import {
+  listRegisteredSources,
+  registerSourceBlob,
+  removeRegisteredSource,
+} from "@/lib/sourceRegistry";
+import { compareSourceRows, validateSourceBlob, validateSourceText } from "@/lib/sourceData";
 
 export interface BacktestDataMeta {
   savedAt: string;
@@ -17,6 +23,9 @@ export interface BacktestDataMeta {
 export interface BacktestFileEntry extends BacktestDataMeta {
   /** 저장 경로의 파일 이름(확장자 제외). 삭제·조회 키로 쓴다. */
   id: string;
+  /** 신규 원천데이터 registry ID. 기존 파일에는 없을 수 있다. */
+  sourceId?: string;
+  dataHash?: string;
 }
 interface BacktestIndex {
   files: BacktestFileEntry[];
@@ -94,31 +103,89 @@ export async function addBacktestFile(
   source: Blob | string,
   fileName?: string | null,
 ): Promise<BacktestFileEntry> {
-  const text = typeof source === "string" ? source : await source.text();
-  const bytes = new Blob([text]).size;
+  const filename = fileName ?? "붙여넣기.csv";
+  const blob = typeof source === "string" ? new Blob([source], { type: "text/csv" }) : source;
+  const bytes = blob.size;
   if (bytes > MAX_FILE_BYTES)
     throw new Error("파일 1개 크기는 45MB 이하여야 합니다. 파일을 나눠 여러 개로 올려 주세요.");
+  const validation = await validateSourceBlob(blob, filename);
+  if (!validation.valid)
+    throw new Error(
+      `원천데이터 검증 실패: ${validation.errors
+        .slice(0, 5)
+        .map((item) => item.message)
+        .join(" / ")}`,
+    );
   await hydrateBacktestData();
+  const existingValidated = await Promise.all(
+    entries.map(async (entry) => {
+      const currentText = await fileText(entry.id);
+      if (!currentText?.trim())
+        throw new Error(`기존 백테스트 파일을 불러오지 못했습니다: ${entry.fileName ?? entry.id}`);
+      const current = await validateSourceText(currentText, entry.fileName ?? `${entry.id}.csv`);
+      if (!current.valid)
+        throw new Error(`기존 백테스트 파일 검증 실패: ${entry.fileName ?? entry.id}`);
+      return { sourceId: entry.sourceId ?? `legacy:${entry.id}`, rows: current.rows };
+    }),
+  );
+  const overlap = compareSourceRows(validation.rows, existingValidated);
+  if (overlap.conflictingRows > 0) {
+    const examples = overlap.examples
+      .filter((value) => value.kind === "conflict")
+      .slice(0, 3)
+      .map((value) => value.key)
+      .join(", ");
+    throw new Error(
+      `기존 장기자료와 값이 다른 종목·거래일이 ${overlap.conflictingRows}건 있습니다` +
+        `${examples ? ` (${examples})` : ""}. 전체 교체 후 다시 올려 주세요.`,
+    );
+  }
+  const registration = await registerSourceBlob({
+    blob,
+    filename,
+    sourceType: "backtest",
+    mode: "add",
+    origin: "web",
+  });
+  const alreadyIndexed = entries.find((value) => value.id === registration.source.id);
+  if (alreadyIndexed) return alreadyIndexed;
   const entry: BacktestFileEntry = {
-    id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    id: registration.source.id,
     savedAt: new Date().toISOString(),
     fileName: fileName ?? null,
-    bytes,
+    bytes: validation.normalizedSizeBytes,
+    sourceId: registration.source.id,
+    dataHash: validation.dataHash,
   };
   const value: CloudFile<BacktestDataMeta> = {
-    text,
+    text: validation.canonicalCsv,
     meta: { savedAt: entry.savedAt, fileName: entry.fileName, bytes: entry.bytes },
   };
-  await writeObject(await ownerPath(filePath(entry.id)), value);
+  try {
+    await writeObject(await ownerPath(filePath(entry.id)), value);
+  } catch (error) {
+    if (!registration.reused) await removeRegisteredSource(registration.source.id);
+    throw error;
+  }
+  const previousEntries = entries;
   entries = sortEntries([...entries, entry]);
-  await saveIndex();
-  texts.set(entry.id, text);
+  try {
+    await saveIndex();
+  } catch (error) {
+    entries = previousEntries;
+    await removeObjects([await ownerPath(filePath(entry.id))]);
+    if (!registration.reused) await removeRegisteredSource(registration.source.id);
+    throw error;
+  }
+  texts.set(entry.id, validation.canonicalCsv);
   cache = null;
   return entry;
 }
 
 export async function removeBacktestFile(id: string) {
   await hydrateBacktestData();
+  const entry = entries.find((value) => value.id === id);
+  if (entry?.sourceId) await removeRegisteredSource(entry.sourceId);
   await removeObjects([await ownerPath(filePath(id))]);
   entries = entries.filter((f) => f.id !== id);
   texts.delete(id);
@@ -128,6 +195,8 @@ export async function removeBacktestFile(id: string) {
 
 export async function clearBacktestData() {
   await hydrateBacktestData();
+  const registered = await listRegisteredSources("backtest", ["active"]);
+  await Promise.all(registered.map((source) => removeRegisteredSource(source.id)));
   const paths = await Promise.all(entries.map((f) => ownerPath(filePath(f.id))));
   await removeObjects(paths);
   entries = [];
