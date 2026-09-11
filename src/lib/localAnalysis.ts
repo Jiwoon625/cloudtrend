@@ -4,6 +4,10 @@ import { buildAlignedRankingAnalysis } from "@/lib/engine/backtestRankingV5";
 import type { MarketDataset } from "@/lib/engine/dataset";
 import { chartSeries, runAnalysis, scoreHistory } from "@/lib/engine/pipeline";
 import { runFullMarketAnalysis } from "@/lib/engine/fullMarketAnalysis";
+import {
+  runSectorRotationBacktest,
+  type SectorRotationBacktestResult,
+} from "@/lib/engine/sectorRotationBacktest";
 import { buildFullUniverseSectorDataset } from "@/lib/engine/sectorRotationFullUniverse";
 import { getManualDataset, MANUAL_DATA_MISSING_MESSAGE } from "@/lib/manualDataStore";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
@@ -175,6 +179,7 @@ export function computeLocalDataStatus(): DataStatusPayload {
 
 export interface LocalBacktestPayload {
   result: BacktestResult;
+  sectorRotationBacktest: SectorRotationBacktestResult | null;
   universe: Array<{
     symbol: string;
     name: string;
@@ -238,8 +243,12 @@ export function computeLocalBacktest(
   result.topSelection = alignedRanking.topSelection;
   result.quantileSpreads = alignedRanking.quantileSpreads;
 
+  // 섹터 로테이션 주기 검증은 종목 선택/limit과 독립적으로 업로드된 전체 주식 유니버스를 사용한다.
+  const sectorRotationBacktest = runSectorRotationBacktest(dataset);
+
   return {
     result,
+    sectorRotationBacktest,
     universe: series.map((s) => ({
       symbol: s.symbol,
       name: s.name,
@@ -259,6 +268,7 @@ export function computeLocalBacktest(
       "Rank IC·Top 5·5/10분위는 KOSPI 거래일을 anchor로 한 공통 관측일에서, 전체 9.5점의 모든 항목이 계산 가능한 종목만 비교합니다.",
       "Top 5는 실제 비교 가능 종목이 5개 미만인 날짜를 집계하지 않으며, Ranking은 최소 50종목 이상인 날짜만 사용합니다.",
       `왕복 비용 ${Math.max(0, params.roundTripCostBps ?? 0)}bps를 수익률에서 차감합니다.`,
+      "섹터 로테이션 주기 백테스트는 전체 14개 테마 섹터를 대상으로 별도 계산하며 종목 Universe limit의 영향을 받지 않습니다.",
     ],
   };
 }

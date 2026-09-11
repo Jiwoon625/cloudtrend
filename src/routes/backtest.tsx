@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { BacktestDataInput } from "@/components/BacktestDataInput";
 import { PdfExportButton } from "@/components/PdfExportButton";
+import { SectorRotationBacktestResults } from "@/components/SectorRotationBacktestResults";
 import { StrategyValidationResults } from "@/components/StrategyValidationResults";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,7 +37,7 @@ export const Route = createFileRoute("/backtest")({
       {
         name: "description",
         content:
-          "CloudTrend V6 최종 후보 전략의 연도·시장국면·손실위험·포트폴리오 성과와 가격/ATR 손절을 검증합니다.",
+          "CloudTrend V6 최종 후보 전략과 14개 섹터 로테이션의 체류주기·전이·신규 Top4 성과를 검증합니다.",
       },
     ],
   }),
@@ -134,6 +135,7 @@ function BacktestPage() {
         },
         execution,
         import.meta.env["VITE_CLOUDTREND_CODE_VERSION"] || "dev",
+        payload.sectorRotationBacktest,
       );
       let savedRun: BacktestRunIndexEntry | null = null;
       let saveError: string | null = null;
@@ -159,8 +161,8 @@ function BacktestPage() {
             </span>
           </div>
           <p className="mt-1 max-w-4xl text-[12px] leading-relaxed text-muted-foreground">
-            피처 배점과 진입 규칙은 고정하고, 70점 Onset 이후 ↑90/↓30과 ↑80/↓30 두 대표전략의
-            시간·시장국면 강건성, 손실 위험, 포트폴리오 성과, 가격 및 ATR 기반 손절을 검증합니다.
+            피처 배점과 진입 규칙은 고정하고 대표 매매전략의 강건성과 함께, 14개 섹터의
+            로테이션 체류주기·그룹 전이·신규 Top4 이후 성과를 같은 장기 데이터로 검증합니다.
           </p>
         </div>
         {result ? <PdfExportButton documentTitle="CloudTrend Backtest V6" /> : null}
@@ -175,7 +177,7 @@ function BacktestPage() {
               <h2 className="text-sm font-semibold">고정 검증 설정</h2>
               <p className="mt-1 text-[10px] leading-relaxed text-muted-foreground">
                 전략 파라미터 탐색은 종료했습니다. 아래 항목만 데이터 범위·거래비용 확인용으로
-                조정합니다.
+                조정합니다. 섹터 로테이션 백테스트는 업로드된 전체 주식 유니버스를 별도로 사용합니다.
               </p>
             </div>
 
@@ -246,7 +248,7 @@ function BacktestPage() {
               onClick={() => mutation.mutate()}
               disabled={mutation.isPending || (ready && !meta && !hasBacktestData)}
             >
-              {mutation.isPending ? "V6 전략 검증 계산 중…" : "Backtest V6 실행"}
+              {mutation.isPending ? "V6 전략·섹터 검증 계산 중…" : "Backtest V6 실행"}
             </Button>
           </section>
         </aside>
@@ -267,6 +269,7 @@ function BacktestPage() {
                 <li>MDD·평균손실·MAE 꼬리 — 느슨한 ↓30 청산의 손실 위험</li>
                 <li>CAGR·MDD·Sharpe·평균 보유/자금점유 — 40D 보유기간의 포트폴리오 효율</li>
                 <li>진입가 -10/-20/-30/-40% 고정 손절 및 ATR14 trailing stop 비교</li>
+                <li>섹터 Top4 체류기간·생존율·5D 전이확률·신규 Top4 이후 5/10/20/40D 성과</li>
               </ol>
             </section>
           ) : (
@@ -338,6 +341,15 @@ function BacktestPage() {
                 validation={result.strategyValidation}
                 horizons={result.horizons}
               />
+
+              {mutation.data?.sectorRotationBacktest ? (
+                <SectorRotationBacktestResults result={mutation.data.sectorRotationBacktest} />
+              ) : (
+                <section className="rounded-lg border border-warn/30 bg-card p-3 text-[11px] text-muted-foreground">
+                  섹터 로테이션 백테스트를 계산하지 못했습니다. KOSPI 지수와 120거래일 이상의
+                  섹터별 장기 데이터가 포함되어 있는지 확인해 주세요.
+                </section>
+              )}
 
               <section className="rounded-lg border border-border bg-card p-3 text-[10px] leading-relaxed text-muted-foreground">
                 <p>

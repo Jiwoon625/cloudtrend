@@ -21,6 +21,7 @@ import {
 } from "../src/lib/engine/backtestV4";
 import { buildAlignedRankingAnalysis } from "../src/lib/engine/backtestRankingV5";
 import { parseManualMarketData } from "../src/lib/engine/manualDataset";
+import { runSectorRotationBacktest } from "../src/lib/engine/sectorRotationBacktest";
 import { validateSourceBytes } from "../src/lib/sourceData";
 import {
   analysisRunKey,
@@ -262,8 +263,15 @@ async function main() {
   result.rankIcSummary = ranking.rankIcSummary;
   result.topSelection = ranking.topSelection;
   result.quantileSpreads = ranking.quantileSpreads;
+  const sectorRotationBacktest = runSectorRotationBacktest(parsed.dataset);
 
-  const bundle = await createBacktestRunBundle(result, data, execution, currentCodeVersion);
+  const bundle = await createBacktestRunBundle(
+    result,
+    data,
+    execution,
+    currentCodeVersion,
+    sectorRotationBacktest,
+  );
   const outputDir = path.resolve(options.outputRoot, bundle.run.id);
   await mkdir(outputDir, { recursive: true });
   const bundleText = JSON.stringify(bundle, null, 2);
@@ -273,6 +281,10 @@ async function main() {
     writeFile(
       path.join(outputDir, "score-change-summary.json"),
       JSON.stringify(scoreChangeRows, null, 2),
+    ),
+    writeFile(
+      path.join(outputDir, "sector-rotation-backtest.json"),
+      JSON.stringify(sectorRotationBacktest, null, 2),
     ),
   ]);
   let remotePath: string | null = null;
@@ -298,6 +310,7 @@ async function main() {
         run: bundle.run,
         resultPath: remotePath,
         summary,
+        sectorRotationBacktest,
       }),
       saveRunRecord(client, {
         id: `backtest-${bundle.run.id}`,
@@ -319,7 +332,27 @@ async function main() {
     ]);
   }
   process.stdout.write(
-    `${JSON.stringify({ run: bundle.run, outputDir, remotePath, scoreChangeRows }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        run: bundle.run,
+        outputDir,
+        remotePath,
+        scoreChangeRows,
+        sectorRotationBacktest: sectorRotationBacktest
+          ? {
+              from: sectorRotationBacktest.from,
+              to: sectorRotationBacktest.to,
+              tradingDays: sectorRotationBacktest.tradingDays,
+              strictTop: sectorRotationBacktest.strictTop,
+              bufferedTop: sectorRotationBacktest.bufferedTop,
+              topEntryCount: sectorRotationBacktest.topEntryCount,
+              topEntryPerformance: sectorRotationBacktest.topEntryPerformance,
+            }
+          : null,
+      },
+      null,
+      2,
+    )}\n`,
   );
 }
 
