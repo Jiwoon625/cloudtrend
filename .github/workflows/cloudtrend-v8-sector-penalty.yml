@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: cloudtrend-v8-sector-penalty-${{ github.repository }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   analyze:
