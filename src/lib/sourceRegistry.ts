@@ -246,7 +246,7 @@ export async function registerSourceBlob(input: {
     }
     for (const row of validation.rows) effective.set(sourceRowKey(row), row);
     parseManualMarketData(toCanonicalCsv([...effective.values()]));
-  } else if (input.mode === "replace_all" || compareExisting.length === 0) {
+  } else if (input.mode === "replace_all") {
     parseManualMarketData(validation.canonicalCsv);
   }
 

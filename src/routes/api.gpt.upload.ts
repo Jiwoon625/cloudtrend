@@ -175,7 +175,8 @@ async function finalizeUpload(body: FinalizeRequest) {
         format: result.validation.format,
         columns: result.validation.columns,
         stats: result.validation.stats,
-        warnings: result.validation.warnings,
+        warningCount: result.validation.warnings.length,
+        warnings: result.validation.warnings.slice(0, 100),
       },
     };
   } finally {

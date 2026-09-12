@@ -152,8 +152,10 @@ function validationJson(validation: Awaited<ReturnType<typeof validateSourceByte
       data: validation.dataHash,
       schema: validation.schemaHash,
     },
-    errors: validation.errors,
-    warnings: validation.warnings,
+    errorCount: validation.errors.length,
+    warningCount: validation.warnings.length,
+    errors: validation.errors.slice(0, 100),
+    warnings: validation.warnings.slice(0, 100),
   };
 }
 

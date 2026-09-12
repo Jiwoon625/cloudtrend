@@ -415,6 +415,7 @@ function normalizeRecords(recordSet: RecordSet) {
   const errors: SourceValidationIssue[] = [];
   const warnings: SourceValidationIssue[] = [];
   const unique = new Map<string, CanonicalSourceRow>();
+  const inferredMarketSymbols = new Set<string>();
   let duplicates = 0;
 
   for (const required of ["symbol", "date", "close"] as CanonicalSourceColumn[]) {
@@ -475,15 +476,16 @@ function normalizeRecords(recordSet: RecordSet) {
     let resolvedMarket = market;
     if (!resolvedMarket) {
       resolvedMarket = type === "INDEX" ? "INDEX" : type === "ETF" ? "ETF" : "KOSPI";
-      warnings.push(
-        issue(
-          "INFERRED_MARKET",
-          `${symbol}의 market이 없어 ${resolvedMarket}(으)로 추정했습니다.`,
-          {
-            row: rowNumber,
-          },
-        ),
-      );
+      if (!inferredMarketSymbols.has(symbol)) {
+        inferredMarketSymbols.add(symbol);
+        warnings.push(
+          issue(
+            "INFERRED_MARKET",
+            `${symbol}의 market이 없어 ${resolvedMarket}(으)로 추정했습니다.`,
+            { row: rowNumber },
+          ),
+        );
+      }
     }
     const explicitSector = String(record["sector"] ?? "").trim();
     const resolvedSector = explicitSector
@@ -656,8 +658,11 @@ export async function validateSourceBytes(input: {
     }
   }
   const normalized = normalizeRecords(recordSet);
-  errors.push(...normalized.errors);
-  warnings.push(...normalized.warnings);
+  // Large market-history files can contain hundreds of thousands of rows and
+  // therefore as many row-level warnings. Spreading those arrays into push()
+  // exceeds V8's argument limit and raises "Maximum call stack size exceeded".
+  for (const error of normalized.errors) errors.push(error);
+  for (const warning of normalized.warnings) warnings.push(warning);
   if (normalized.rows.length === 0 && errors.every((item) => item.code !== "EMPTY_FILE"))
     errors.push(issue("NO_DATA_ROWS", "유효한 데이터 행이 없습니다."));
 
