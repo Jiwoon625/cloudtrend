@@ -162,3 +162,5 @@ main().catch((error: unknown) => {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 });
+
+// Workflow trigger marker for V8-2 long monotonicity validation.
