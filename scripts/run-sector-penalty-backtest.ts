@@ -5,6 +5,7 @@ import process from "node:process";
 import { parseManualMarketData } from "../src/lib/engine/manualDataset";
 import { runSectorPenaltyBacktest } from "../src/lib/engine/sectorPenaltyBacktest";
 import { buildV8InputQualityReport } from "../src/lib/engine/v8InputQuality";
+import { buildV8ScoreAvailabilityReport } from "../src/lib/engine/v8ScoreAvailability";
 import { buildBacktestDataQuality } from "../src/lib/engine/backtestDataQuality";
 import { codeVersion, trustedSupabaseClient, uploadJson } from "./analysis-run-store";
 import { loadAnalysisSourceInputs } from "./source-registry-store";
@@ -61,6 +62,12 @@ function parseArgs(argv: string[]): Options {
   return options;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const client = trustedSupabaseClient();
@@ -75,17 +82,26 @@ async function main() {
     );
   }
   const fullDataQuality = buildBacktestDataQuality(inputs, parsed.dataset, options.limit);
+  const scoreAvailability = buildV8ScoreAvailabilityReport(parsed.dataset, options.limit);
+
   for (const input of inputs) {
     if (!input.sourceRecord) continue;
     const own = fullDataQuality.fileQuality.find((file) => file.sourceId === input.id) ?? null;
     const { symbols, ...universeSummary } = fullDataQuality.universeCoverage;
+    const previousValidation = asRecord(input.sourceRecord.validation_result);
+    const previousDataQuality = asRecord(previousValidation.dataQuality);
+    const previousDataset = asRecord(previousDataQuality.dataset);
+    const previousFeatureAudit = asRecord(previousDataset.featureAvailabilityAudit);
+    const previousFeaturePolicy = asRecord(previousFeatureAudit.policy);
     const validationResult = {
-      ...input.sourceRecord.validation_result,
+      ...previousValidation,
       dataQuality: {
+        ...previousDataQuality,
         version: fullDataQuality.version,
         generatedAt: fullDataQuality.generatedAt,
         file: own,
         dataset: {
+          ...previousDataset,
           sourceFileCount: fullDataQuality.sourceFileCount,
           totalRows: fullDataQuality.totalRows,
           from: fullDataQuality.from,
@@ -95,6 +111,19 @@ async function main() {
           indexContinuity: fullDataQuality.indexContinuity,
           universeCoverage: universeSummary,
           symbolCoverage: symbols,
+          featureAvailabilityAudit: {
+            ...previousFeatureAudit,
+            version: scoreAvailability.version,
+            generatedAt: fullDataQuality.generatedAt,
+            currentRun: scoreAvailability,
+            policy: {
+              ...previousFeaturePolicy,
+              foreignNetBuyValueMissing:
+                "외국인 20거래일 창에 null이 하나라도 있으면 Vf 전체 점수를 null로 유지한다.",
+              sectorPriceLeadershipMissing:
+                "PL이 없으면 섹터 슬롯 +0.5를 부여하지 않고 Vf 9.5점 base를 그대로 사용한다.",
+            },
+          },
         },
       },
     };
@@ -106,6 +135,7 @@ async function main() {
     if (error)
       throw new Error(`validation_result QA 저장 실패 (${input.fileName}): ${error.message}`);
   }
+
   const result = runSectorPenaltyBacktest(parsed.dataset, {
     limit: options.limit,
     roundTripCostBps: options.roundTripCostBps,
@@ -138,7 +168,11 @@ async function main() {
       bytes: input.bytes,
       savedAt: input.savedAt,
     })),
-    dataQuality: { inputContract: dataQuality, full: fullDataQuality },
+    dataQuality: {
+      inputContract: dataQuality,
+      full: fullDataQuality,
+      scoreAvailability,
+    },
     result,
   };
 
@@ -166,6 +200,7 @@ async function main() {
           to: result.to,
           symbolCount: result.symbolCount,
           sectorCount: result.sectorCount,
+          scoreAvailability,
           defaultRows: result.defaultRows,
           bestRows: result.bestRows,
           scoreModels: result.scoreModels,
