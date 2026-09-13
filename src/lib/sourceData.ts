@@ -21,6 +21,28 @@ export const CANONICAL_SOURCE_COLUMNS = [
   "foreignNetBuyValue",
   "institutionNetBuyValue",
   "sector",
+  "listedShares", "krxVolume", "krxTradingValue", "krxMarketCap", "krxListedShares",
+  "individualNetBuyValue", "otherCorporationNetBuyValue", "registeredForeignNetBuyValue", "otherForeignNetBuyValue",
+  "financialInvestmentNetBuyValue", "insuranceNetBuyValue", "trustNetBuyValue", "privateEquityFundNetBuyValue",
+  "bankNetBuyValue", "otherFinancialInstitutionNetBuyValue", "pensionFundNetBuyValue",
+  "individualBuyVolume", "individualSellVolume", "individualNetBuyVolume",
+  "foreignBuyVolume", "foreignSellVolume", "foreignNetBuyVolume",
+  "institutionBuyVolume", "institutionSellVolume", "institutionNetBuyVolume",
+  "otherCorporationBuyVolume", "otherCorporationSellVolume", "otherCorporationNetBuyVolume",
+  "financialInvestmentNetBuyVolume", "insuranceNetBuyVolume", "trustNetBuyVolume", "privateEquityFundNetBuyVolume",
+  "bankNetBuyVolume", "otherFinancialInstitutionNetBuyVolume", "pensionFundNetBuyVolume",
+  "foreignHoldingQuantity", "foreignHoldingLimitQuantity", "foreignHoldingRate", "foreignHoldingRatePct",
+  "cfdBuyBalanceQuantity", "cfdBuyBalanceRate", "cfdSellBalanceQuantity", "cfdSellBalanceRate", "investorUpdatedAt",
+  "programArbitrageBuyVolume", "programArbitrageSellVolume", "programArbitrageNetBuyVolume",
+  "programNonArbitrageBuyVolume", "programNonArbitrageSellVolume", "programNonArbitrageNetBuyVolume", "programNetBuyVolume",
+  "shortSellingVolume", "shortSellingAmount", "shortSellingVolumeRate", "shortSellingAmountRate", "shortUpdatedAt",
+  "marginLoanNewQuantity", "marginLoanReturnQuantity", "marginLoanBalanceQuantity", "marginLoanBalanceRate", "marginLoanTradingRate",
+  "stockLoanNewQuantity", "stockLoanReturnQuantity", "stockLoanBalanceQuantity", "stockLoanBalanceRate", "stockLoanTradingRate", "creditUpdatedAt",
+  "lendingExecutionQuantity", "lendingRepaymentQuantity", "lendingBalanceQuantity", "lendingBalanceAmount", "lendingUpdatedAt",
+  "etfNav", "etfTradingValue", "etfMarketCap", "etfNetAssetTotalAmount", "etfListedUnits",
+  "etfUnderlyingIndexName", "etfUnderlyingIndexClose", "etfPremiumDiscountRate", "etfTrackingErrorRate",
+  "priceSource", "tradingValueSource", "marketCapSource", "investorValueSource", "investorVolumeSource",
+  "programTradeSource", "marketFlowUpdatedAt",
 ] as const;
 
 export type CanonicalSourceColumn = (typeof CANONICAL_SOURCE_COLUMNS)[number];
@@ -43,6 +65,7 @@ export interface CanonicalSourceRow {
   foreignNetBuyValue: string;
   institutionNetBuyValue: string;
   sector: string;
+  [key: string]: string;
 }
 
 export interface SourceValidationIssue {
@@ -66,6 +89,9 @@ export interface SourceValidationStats {
   sectorMappedCount: number;
   sectorUnmappedCount: number;
   duplicateRowCount: number;
+  populatedColumnCount: number;
+  completelyEmptyColumns: string[];
+  columnNonEmptyRates: Record<string, number>;
 }
 
 export interface SourceValidationResult {
@@ -154,6 +180,13 @@ const FIELD_ALIASES: Record<string, CanonicalSourceColumn> = {
   섹터: "sector",
   업종: "sector",
 };
+
+// 수집기 v3의 camelCase 102-column 계약은 대소문자/underscore 차이를 허용하되
+// 이름을 바꾸지 않고 그대로 보존한다. 위 별칭은 구형 파일만 canonical field로 연결한다.
+for (const column of CANONICAL_SOURCE_COLUMNS) {
+  const compact = column.replace(/[\s_()\-/]/g, "").toLowerCase();
+  FIELD_ALIASES[compact] = column;
+}
 
 const RECOMMENDED_COLUMNS: CanonicalSourceColumn[] = [
   "name",
@@ -383,13 +416,13 @@ export function sourceRowKey(row: CanonicalSourceRow) {
 }
 
 export function sourceRowFingerprint(row: CanonicalSourceRow) {
-  return CANONICAL_SOURCE_COLUMNS.map((column) => row[column]).join("\u001f");
+  return CANONICAL_SOURCE_COLUMNS.map((column) => row[column] ?? "").join("\u001f");
 }
 
 export function toCanonicalCsv(rows: CanonicalSourceRow[]) {
   const lines = [CANONICAL_SOURCE_COLUMNS.join(",")];
   for (const row of rows) {
-    lines.push(CANONICAL_SOURCE_COLUMNS.map((column) => csvCell(row[column])).join(","));
+    lines.push(CANONICAL_SOURCE_COLUMNS.map((column) => csvCell(row[column] ?? "")).join(","));
   }
   return `${lines.join("\n")}\n`;
 }
@@ -514,6 +547,10 @@ function normalizeRecords(recordSet: RecordSet) {
       institutionNetBuyValue: numeric.institutionNetBuyValue.value,
       sector: resolvedSector,
     };
+    for (const column of CANONICAL_SOURCE_COLUMNS) {
+      if (column in row) continue;
+      row[column] = String(record[column] ?? "").trim();
+    }
     const key = sourceRowKey(row);
     const previous = unique.get(key);
     if (!previous) unique.set(key, row);
@@ -552,6 +589,9 @@ function emptyStats(): SourceValidationStats {
     sectorMappedCount: 0,
     sectorUnmappedCount: 0,
     duplicateRowCount: 0,
+    populatedColumnCount: 0,
+    completelyEmptyColumns: [...CANONICAL_SOURCE_COLUMNS],
+    columnNonEmptyRates: {},
   };
 }
 
@@ -561,6 +601,15 @@ function statsFor(rows: CanonicalSourceRow[], duplicateRowCount: number): Source
   const instruments = [...bySymbol.values()];
   const nonIndexes = instruments.filter((row) => row.type !== "INDEX");
   const dates = rows.map((row) => row.date).sort();
+  const columnNonEmptyRates = Object.fromEntries(
+    CANONICAL_SOURCE_COLUMNS.map((column) => [
+      column,
+      rows.length ? rows.filter((row) => (row[column] ?? "").trim() !== "").length / rows.length : 0,
+    ]),
+  );
+  const completelyEmptyColumns = CANONICAL_SOURCE_COLUMNS.filter(
+    (column) => (columnNonEmptyRates[column] ?? 0) === 0,
+  );
   return {
     rowCount: rows.length,
     symbolCount: instruments.length,
@@ -577,6 +626,9 @@ function statsFor(rows: CanonicalSourceRow[], duplicateRowCount: number): Source
     sectorUnmappedCount: nonIndexes.filter((row) => row.sector === "ETC" || row.sector === "기타")
       .length,
     duplicateRowCount,
+    populatedColumnCount: CANONICAL_SOURCE_COLUMNS.length - completelyEmptyColumns.length,
+    completelyEmptyColumns,
+    columnNonEmptyRates,
   };
 }
 
