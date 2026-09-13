@@ -1,5 +1,10 @@
 import { computeIndicators } from "./indicators";
 import { historicalTechnicalScore } from "./scoring";
+import {
+  adjustSectorPenaltyScore,
+  SECTOR_PENALTY_POINTS,
+  SECTOR_SLOT_POINTS,
+} from "./sectorScoreAdjustment";
 import type { MarketDataset } from "./dataset";
 import type { SimulatedTrade, StrategySeries, V6ExitReason } from "./strategyValidationLegacy";
 import type { DailyPrice, Instrument } from "./types";
@@ -7,8 +12,8 @@ import type { DailyPrice, Instrument } from "./types";
 export const SECTOR_PENALTY_BACKTEST_VERSION = "CloudTrend V8 Sector Penalty Backtest";
 
 const SCORE_MAX = 10;
-const SECTOR_SLOT = 0.5;
-const SECTOR_PENALTY = 0.5;
+const SECTOR_SLOT = SECTOR_SLOT_POINTS;
+const SECTOR_PENALTY = SECTOR_PENALTY_POINTS;
 
 export interface SectorPenaltyBacktestOptions {
   limit?: number;
@@ -706,12 +711,12 @@ function applyModel(source: Series[], sectorPriceByDate: Map<string, number>, th
       if (base === null || base === undefined) continue;
       const date = s.bars[i]?.tradeDate;
       const pl = date ? sectorPriceByDate.get(`${date}|${s.sectorCode}`) ?? null : null;
-      const overheated = threshold === null ? false : pl === null ? false : pl >= threshold;
-      scores[i] = Math.min(10, Math.max(0, Math.round((base + SECTOR_SLOT - (overheated ? SECTOR_PENALTY : 0)) * 100) / 100));
+      const sectorAdjusted = adjustSectorPenaltyScore(base, pl, threshold);
+      scores[i] = sectorAdjusted.score;
       sectorPriceLeadership[i] = pl;
-      sectorOverheated[i] = threshold === null ? false : pl === null ? null : overheated;
+      sectorOverheated[i] = sectorAdjusted.overheated;
       scoredDays++;
-      if (overheated) penaltyAppliedDays++;
+      if (sectorAdjusted.penaltyApplied) penaltyAppliedDays++;
       bases.push(base);
       adjusted.push(scores[i]!);
       if (pl !== null) sectorScores.push(pl);
@@ -909,10 +914,10 @@ export function runSectorPenaltyBacktest(
       oosBySharpe: best(rows, "OOS", "portfolioSharpe"),
     },
     notes: [
-      "V8은 기존 Vf 9.5점에 섹터 기본 슬롯 0.5점을 더해 10점 만점으로 전환하고, 같은 날짜의 섹터 Price Leadership이 과열 기준 이상이면 0.5점을 제거한다.",
+      "V8은 기존 Vf 9.5점에 섹터 Price Leadership이 존재하는 날에만 기본 슬롯 0.5점을 더해 10점 만점으로 전환하고, 같은 날짜의 섹터 Price Leadership이 과열 기준 이상이면 그 0.5점을 제거한다. 섹터 Price Leadership이 없으면 Vf 9.5점 base를 그대로 사용한다.",
       "기본 전략은 75 Onset 진입, 상승청산 90, 하락청산 30, 최대보유 30영업일, 가격손절 없음이다.",
       "비교 조합은 65/75 Onset, 상승청산 95/90/85, 하락청산 35/30/25, 최대보유 20/30/40영업일이다.",
-      "섹터 과열 기준은 Price Leadership 70/75/80/85를 모두 비교하고, 페널티 없는 10점 baseline도 함께 계산한다.",
+      "섹터 과열 기준은 Price Leadership 70/75/80/85를 모두 비교하고, 페널티 없는 10점 baseline도 함께 계산한다. baseline 역시 PL이 없는 날에는 0.5점 슬롯을 부여하지 않는다.",
       "진입/청산은 기존 V6 방식과 동일하게 신호일 종가 기준 점수 교차를 확인하고 다음 거래일 시가에 진입/점수청산한다. 최대보유 청산은 계획 만기일 종가 기준이다.",
       "전략 조합 비교 속도를 위해 이번 V8 산출물의 포트폴리오 복리 지표는 null로 두고, 거래별 수익률·초과수익률·손익비·보유기간·청산사유 중심으로 비교한다.",
     ],
