@@ -5,6 +5,7 @@ import process from "node:process";
 import { parseManualMarketData } from "../src/lib/engine/manualDataset";
 import { runSectorPenaltyBacktest } from "../src/lib/engine/sectorPenaltyBacktest";
 import { buildV8InputQualityReport } from "../src/lib/engine/v8InputQuality";
+import { buildBacktestDataQuality } from "../src/lib/engine/backtestDataQuality";
 import {
   codeVersion,
   trustedSupabaseClient,
@@ -74,6 +75,36 @@ async function main() {
       `V8 필수 입력열이 없는 파일이 있습니다: ${JSON.stringify(dataQuality.filesMissingRequiredColumns)}`,
     );
   }
+  const fullDataQuality = buildBacktestDataQuality(inputs, parsed.dataset, options.limit);
+  for (const input of inputs) {
+    if (!input.sourceRecord) continue;
+    const own = fullDataQuality.fileQuality.find((file) => file.sourceId === input.id) ?? null;
+    const { symbols, ...universeSummary } = fullDataQuality.universeCoverage;
+    const validationResult = {
+      ...input.sourceRecord.validation_result,
+      dataQuality: {
+        version: fullDataQuality.version,
+        generatedAt: fullDataQuality.generatedAt,
+        file: own,
+        dataset: {
+          sourceFileCount: fullDataQuality.sourceFileCount,
+          totalRows: fullDataQuality.totalRows,
+          from: fullDataQuality.from,
+          to: fullDataQuality.to,
+          fieldCompleteness: fullDataQuality.fieldCompleteness,
+          sourceDistribution: fullDataQuality.sourceDistribution,
+          indexContinuity: fullDataQuality.indexContinuity,
+          universeCoverage: universeSummary,
+          symbolCoverage: symbols,
+        },
+      },
+    };
+    const { error } = await client.from("analysis_source_files")
+      .update({ validation_result: validationResult, updated_at: new Date().toISOString() })
+      .eq("id", input.id)
+      .eq("user_id", options.supabaseUserId!);
+    if (error) throw new Error(`validation_result QA 저장 실패 (${input.fileName}): ${error.message}`);
+  }
   const result = runSectorPenaltyBacktest(parsed.dataset, {
     limit: options.limit,
     roundTripCostBps: options.roundTripCostBps,
@@ -106,7 +137,7 @@ async function main() {
       bytes: input.bytes,
       savedAt: input.savedAt,
     })),
-    dataQuality,
+    dataQuality: { inputContract: dataQuality, full: fullDataQuality },
     result,
   };
 
