@@ -5,8 +5,8 @@ import { analysisQueryOptions, isAnalysisPayload } from "@/lib/analysisQuery";
 
 import { AnalysisRequired } from "@/components/AnalysisRequired";
 import { AppShell } from "@/components/AppShell";
+import { DataError } from "@/components/DataError";
 import { ScreenerView } from "@/components/ScreenerView";
-import type { AnalysisPayload } from "@/lib/market.functions";
 
 export const Route = createFileRoute("/screener/etfs")({
   // 외부 시세 API 실패 시 SSR 500(빈 화면) 대신 클라이언트 에러 화면을 보여준다.
@@ -31,9 +31,12 @@ export const Route = createFileRoute("/screener/etfs")({
 
 function EtfScreenerPage() {
   // 저장된 입력 데이터로 이 화면에서도 직접 계산한다(외부 API 호출 없음).
-  const { data: cached, isPending } = useQuery(analysisQueryOptions);
+  const { data: cached, error, isError, isPending, refetch } = useQuery(analysisQueryOptions);
   if (isPending) return <AnalysisRequired loading />;
-  if (!isAnalysisPayload(cached)) return <AnalysisRequired />;
+  if (isError) return <DataError error={error} reset={refetch} />;
+  if (!isAnalysisPayload(cached)) {
+    return <DataError error="분석 결과 형식이 올바르지 않습니다. 캐시를 다시 생성해 주세요." reset={refetch} />;
+  }
   return (
     <AppShell>
       <ScreenerView mode="ETF" analysis={cached.analysis} />
