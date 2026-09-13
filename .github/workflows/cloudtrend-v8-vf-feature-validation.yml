@@ -1,0 +1,52 @@
+name: CloudTrend V8 Vf feature validation
+
+on:
+  push:
+    branches:
+      - feat/v8-vf-feature-revalidation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudtrend-v8-vf-feature-validation-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run V8 feature validation unit tests
+        run: npx vitest run src/lib/engine/v8VfFeatureValidation.test.ts
+      - name: Validate server configuration
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_USER_ID"
+      - name: Run long-horizon V8 Vf feature validation
+        run: |
+          npx vite-node scripts/run-v8-vf-feature-validation.ts \
+            --supabase-user-id "$SUPABASE_USER_ID" \
+            --limit 613 \
+            --upload
+      - name: Upload V8 Vf feature validation artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudtrend-v8-vf-feature-validation-${{ github.run_id }}
+          path: v8-vf-feature-validation-runs/
+          if-no-files-found: warn
+          retention-days: 14
