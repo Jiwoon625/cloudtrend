@@ -2,12 +2,6 @@ name: CloudTrend V8 entry onset threshold
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - feat/v8-vf-feature-revalidation
-    paths:
-      - scripts/run-v8-entry-onset-threshold.ts
-      - .github/workflows/cloudtrend-v8-entry-onset-threshold.yml
 
 permissions:
   contents: read
