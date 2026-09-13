@@ -42,7 +42,8 @@ export function buildV8InputQualityReport(
   const allEmpty = [...new Set(files.flatMap((file) => file.completelyEmptySuppliedColumns))].sort();
   return {
     contractVersion: V8_INPUT_CONTRACT_VERSION,
-    canonicalColumnCount: CANONICAL_SOURCE_COLUMNS.length,
+    sourceContractColumnCount: 102,
+    normalizedColumnCount: CANONICAL_SOURCE_COLUMNS.length, // 102 source fields + derived sector
     sourceFileCount: files.length,
     totalRows: files.reduce((sum, file) => sum + file.rows, 0),
     validForV8: missingRequired.length === 0,
@@ -60,4 +61,3 @@ export function buildV8InputQualityReport(
     },
   };
 }
-
