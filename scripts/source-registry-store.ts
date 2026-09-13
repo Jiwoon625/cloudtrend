@@ -1,4 +1,5 @@
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -184,6 +185,93 @@ async function downloadBytes(client: SupabaseClient, bucket: string, objectPath:
   return new Uint8Array(await data.arrayBuffer());
 }
 
+function decodeSourceBytes(bytes: Uint8Array) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder("euc-kr").decode(bytes);
+  }
+}
+
+function lightweightValidation(
+  record: SourceRecord,
+  text: string,
+  fileHash: string,
+): SourceValidationResult {
+  const stored = record.validation_result as Partial<SourceValidationResult>;
+  const stats = (stored.stats ?? {}) as Partial<SourceValidationResult["stats"]>;
+  return {
+    valid: true,
+    format: record.original_filename.toLowerCase().endsWith(".json") ? "json" : "csv",
+    originalFilename: record.original_filename,
+    contentType: record.content_type,
+    originalSizeBytes: record.file_size_bytes,
+    normalizedSizeBytes: record.normalized_size_bytes,
+    fileHash,
+    dataHash: record.data_hash,
+    schemaHash: record.schema_hash,
+    canonicalCsv: text,
+    columns: Array.isArray(stored.columns) ? stored.columns : [],
+    rows: [],
+    stats: {
+      rowCount: record.row_count,
+      symbolCount: record.symbol_count,
+      minDate: record.min_date,
+      maxDate: record.max_date,
+      marketCount: record.market_count,
+      kospiCount: record.kospi_count,
+      kosdaqCount: record.kosdaq_count,
+      stockCount: record.stock_count,
+      etfCount: record.etf_count,
+      indexCount: stats.indexCount ?? 0,
+      sectorMappedCount: record.sector_mapped_count,
+      sectorUnmappedCount: record.sector_unmapped_count,
+      duplicateRowCount: stats.duplicateRowCount ?? 0,
+      populatedColumnCount: stats.populatedColumnCount ?? 0,
+      completelyEmptyColumns: stats.completelyEmptyColumns ?? [],
+      columnNonEmptyRates: stats.columnNonEmptyRates ?? {},
+    },
+    errors: [],
+    warnings: [],
+  };
+}
+
+/**
+ * 대용량 분석 실행용 로더다. 등록 시 완료된 행 단위 검증을 반복하지 않고 원본 파일
+ * SHA-256만 다시 확인한다. 파일을 순차 다운로드해 102열 객체의 동시 생성을 피한다.
+ */
+async function loadRegistryInputsLightweight(
+  client: SupabaseClient,
+  userId: string,
+  sourceType: SourceType,
+) {
+  const records = await listSourceRecords(client, userId, sourceType);
+  const loaded: LoadedSourceInput[] = [];
+  for (const record of records) {
+    if (/\.xlsx$/i.test(record.original_filename)) {
+      throw new Error(`대용량 실행 경량 로더는 CSV/JSON만 지원합니다: ${record.original_filename}`);
+    }
+    const bytes = await downloadBytes(client, record.storage_bucket, record.storage_path);
+    const fileHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+    if (fileHash !== record.file_hash)
+      throw new Error(`등록 원천데이터 원본 해시 불일치: ${record.original_filename}`);
+    const text = decodeSourceBytes(bytes);
+    loaded.push({
+      id: record.id,
+      fileName: record.original_filename,
+      bytes: record.file_size_bytes,
+      savedAt: record.activated_at ?? record.created_at,
+      text,
+      fileHash,
+      dataHash: record.data_hash,
+      schemaHash: record.schema_hash,
+      sourceRecord: record,
+      validation: lightweightValidation(record, text, fileHash),
+    });
+  }
+  return loaded;
+}
+
 async function loadRegistryInputs(client: SupabaseClient, userId: string, sourceType: SourceType) {
   const records = await listSourceRecords(client, userId, sourceType);
   return Promise.all(
@@ -297,8 +385,11 @@ export async function loadAnalysisSourceInputs(
   client: SupabaseClient,
   userId: string,
   sourceType: SourceType,
+  options: { lightweight?: boolean } = {},
 ) {
-  const registered = await loadRegistryInputs(client, userId, sourceType);
+  const registered = options.lightweight
+    ? await loadRegistryInputsLightweight(client, userId, sourceType)
+    : await loadRegistryInputs(client, userId, sourceType);
   if (sourceType === "screening") {
     // parseManualMarketData는 같은 종목·거래일의 첫 행을 유지한다. merge에서
     // 나중에 활성화한 원천이 기존 값을 덮어쓰도록 최신 파일부터 넘긴다.
@@ -307,6 +398,9 @@ export async function loadAnalysisSourceInputs(
     if (!legacy) throw new Error("Supabase에 활성 스크리닝 원천데이터 또는 kr.json이 없습니다.");
     return [legacy];
   }
+  // Registry가 있는 대용량 실행에서는 이미 등록·활성화된 파일만이 권위 입력이다.
+  // legacy JSON을 재검증하면 같은 데이터를 다시 메모리에 올리므로 전환기 병합을 생략한다.
+  if (options.lightweight && registered.length > 0) return registered;
   const legacy = await loadLegacyBacktestInputs(client, userId);
   const seen = new Set(registered.map((input) => input.dataHash));
   const uniqueLegacy = legacy.filter((input) => {

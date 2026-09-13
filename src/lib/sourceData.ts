@@ -21,28 +21,94 @@ export const CANONICAL_SOURCE_COLUMNS = [
   "foreignNetBuyValue",
   "institutionNetBuyValue",
   "sector",
-  "listedShares", "krxVolume", "krxTradingValue", "krxMarketCap", "krxListedShares",
-  "individualNetBuyValue", "otherCorporationNetBuyValue", "registeredForeignNetBuyValue", "otherForeignNetBuyValue",
-  "financialInvestmentNetBuyValue", "insuranceNetBuyValue", "trustNetBuyValue", "privateEquityFundNetBuyValue",
-  "bankNetBuyValue", "otherFinancialInstitutionNetBuyValue", "pensionFundNetBuyValue",
-  "individualBuyVolume", "individualSellVolume", "individualNetBuyVolume",
-  "foreignBuyVolume", "foreignSellVolume", "foreignNetBuyVolume",
-  "institutionBuyVolume", "institutionSellVolume", "institutionNetBuyVolume",
-  "otherCorporationBuyVolume", "otherCorporationSellVolume", "otherCorporationNetBuyVolume",
-  "financialInvestmentNetBuyVolume", "insuranceNetBuyVolume", "trustNetBuyVolume", "privateEquityFundNetBuyVolume",
-  "bankNetBuyVolume", "otherFinancialInstitutionNetBuyVolume", "pensionFundNetBuyVolume",
-  "foreignHoldingQuantity", "foreignHoldingLimitQuantity", "foreignHoldingRate", "foreignHoldingRatePct",
-  "cfdBuyBalanceQuantity", "cfdBuyBalanceRate", "cfdSellBalanceQuantity", "cfdSellBalanceRate", "investorUpdatedAt",
-  "programArbitrageBuyVolume", "programArbitrageSellVolume", "programArbitrageNetBuyVolume",
-  "programNonArbitrageBuyVolume", "programNonArbitrageSellVolume", "programNonArbitrageNetBuyVolume", "programNetBuyVolume",
-  "shortSellingVolume", "shortSellingAmount", "shortSellingVolumeRate", "shortSellingAmountRate", "shortUpdatedAt",
-  "marginLoanNewQuantity", "marginLoanReturnQuantity", "marginLoanBalanceQuantity", "marginLoanBalanceRate", "marginLoanTradingRate",
-  "stockLoanNewQuantity", "stockLoanReturnQuantity", "stockLoanBalanceQuantity", "stockLoanBalanceRate", "stockLoanTradingRate", "creditUpdatedAt",
-  "lendingExecutionQuantity", "lendingRepaymentQuantity", "lendingBalanceQuantity", "lendingBalanceAmount", "lendingUpdatedAt",
-  "etfNav", "etfTradingValue", "etfMarketCap", "etfNetAssetTotalAmount", "etfListedUnits",
-  "etfUnderlyingIndexName", "etfUnderlyingIndexClose", "etfPremiumDiscountRate", "etfTrackingErrorRate",
-  "priceSource", "tradingValueSource", "marketCapSource", "investorValueSource", "investorVolumeSource",
-  "programTradeSource", "marketFlowUpdatedAt",
+  "listedShares",
+  "krxVolume",
+  "krxTradingValue",
+  "krxMarketCap",
+  "krxListedShares",
+  "individualNetBuyValue",
+  "otherCorporationNetBuyValue",
+  "registeredForeignNetBuyValue",
+  "otherForeignNetBuyValue",
+  "financialInvestmentNetBuyValue",
+  "insuranceNetBuyValue",
+  "trustNetBuyValue",
+  "privateEquityFundNetBuyValue",
+  "bankNetBuyValue",
+  "otherFinancialInstitutionNetBuyValue",
+  "pensionFundNetBuyValue",
+  "individualBuyVolume",
+  "individualSellVolume",
+  "individualNetBuyVolume",
+  "foreignBuyVolume",
+  "foreignSellVolume",
+  "foreignNetBuyVolume",
+  "institutionBuyVolume",
+  "institutionSellVolume",
+  "institutionNetBuyVolume",
+  "otherCorporationBuyVolume",
+  "otherCorporationSellVolume",
+  "otherCorporationNetBuyVolume",
+  "financialInvestmentNetBuyVolume",
+  "insuranceNetBuyVolume",
+  "trustNetBuyVolume",
+  "privateEquityFundNetBuyVolume",
+  "bankNetBuyVolume",
+  "otherFinancialInstitutionNetBuyVolume",
+  "pensionFundNetBuyVolume",
+  "foreignHoldingQuantity",
+  "foreignHoldingLimitQuantity",
+  "foreignHoldingRate",
+  "foreignHoldingRatePct",
+  "cfdBuyBalanceQuantity",
+  "cfdBuyBalanceRate",
+  "cfdSellBalanceQuantity",
+  "cfdSellBalanceRate",
+  "investorUpdatedAt",
+  "programArbitrageBuyVolume",
+  "programArbitrageSellVolume",
+  "programArbitrageNetBuyVolume",
+  "programNonArbitrageBuyVolume",
+  "programNonArbitrageSellVolume",
+  "programNonArbitrageNetBuyVolume",
+  "programNetBuyVolume",
+  "shortSellingVolume",
+  "shortSellingAmount",
+  "shortSellingVolumeRate",
+  "shortSellingAmountRate",
+  "shortUpdatedAt",
+  "marginLoanNewQuantity",
+  "marginLoanReturnQuantity",
+  "marginLoanBalanceQuantity",
+  "marginLoanBalanceRate",
+  "marginLoanTradingRate",
+  "stockLoanNewQuantity",
+  "stockLoanReturnQuantity",
+  "stockLoanBalanceQuantity",
+  "stockLoanBalanceRate",
+  "stockLoanTradingRate",
+  "creditUpdatedAt",
+  "lendingExecutionQuantity",
+  "lendingRepaymentQuantity",
+  "lendingBalanceQuantity",
+  "lendingBalanceAmount",
+  "lendingUpdatedAt",
+  "etfNav",
+  "etfTradingValue",
+  "etfMarketCap",
+  "etfNetAssetTotalAmount",
+  "etfListedUnits",
+  "etfUnderlyingIndexName",
+  "etfUnderlyingIndexClose",
+  "etfPremiumDiscountRate",
+  "etfTrackingErrorRate",
+  "priceSource",
+  "tradingValueSource",
+  "marketCapSource",
+  "investorValueSource",
+  "investorVolumeSource",
+  "programTradeSource",
+  "marketFlowUpdatedAt",
 ] as const;
 
 export type CanonicalSourceColumn = (typeof CANONICAL_SOURCE_COLUMNS)[number];
@@ -239,14 +305,20 @@ function firstLogicalLine(text: string) {
   return line;
 }
 
-/** RFC 4180에 맞춰 따옴표 안 줄바꿈과 이중 따옴표를 보존한다. */
-export function parseDelimitedRows(text: string): string[][] {
+/** RFC 4180에 맞춰 따옴표 안 줄바꿈과 이중 따옴표를 보존하며 행을 순차 방문한다. */
+export function visitDelimitedRows(text: string, visitor: (row: string[], index: number) => void) {
   const clean = text.replace(/^\uFEFF/, "");
   const delimiter = delimiterFor(firstLogicalLine(clean));
-  const rows: string[][] = [];
   let row: string[] = [];
   let cell = "";
   let quoted = false;
+  let rowIndex = 0;
+  const emit = () => {
+    row.push(cell.trim());
+    cell = "";
+    if (row.some((value) => value.length > 0)) visitor(row, rowIndex++);
+    row = [];
+  };
   for (let i = 0; i < clean.length; i++) {
     const ch = clean[i]!;
     if (quoted) {
@@ -264,15 +336,17 @@ export function parseDelimitedRows(text: string): string[][] {
       cell = "";
     } else if (ch === "\n" || ch === "\r") {
       if (ch === "\r" && clean[i + 1] === "\n") i++;
-      row.push(cell.trim());
-      cell = "";
-      if (row.some((value) => value.length > 0)) rows.push(row);
-      row = [];
+      emit();
     } else cell += ch;
   }
   if (quoted) throw new Error("CSV 따옴표가 닫히지 않았습니다.");
-  row.push(cell.trim());
-  if (row.some((value) => value.length > 0)) rows.push(row);
+  if (cell.length > 0 || row.length > 0) emit();
+}
+
+/** 작은 파일과 업로드 검증에서 사용할 배열 반환 호환 API다. */
+export function parseDelimitedRows(text: string): string[][] {
+  const rows: string[][] = [];
+  visitDelimitedRows(text, (row) => rows.push(row));
   return rows;
 }
 
@@ -604,7 +678,9 @@ function statsFor(rows: CanonicalSourceRow[], duplicateRowCount: number): Source
   const columnNonEmptyRates = Object.fromEntries(
     CANONICAL_SOURCE_COLUMNS.map((column) => [
       column,
-      rows.length ? rows.filter((row) => (row[column] ?? "").trim() !== "").length / rows.length : 0,
+      rows.length
+        ? rows.filter((row) => (row[column] ?? "").trim() !== "").length / rows.length
+        : 0,
     ]),
   );
   const completelyEmptyColumns = CANONICAL_SOURCE_COLUMNS.filter(

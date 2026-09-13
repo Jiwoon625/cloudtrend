@@ -3,7 +3,7 @@
 import { NO_CAPABILITIES, type MarketDataset } from "./dataset";
 import { resolveSectorCode, THEME_SECTORS } from "./sectors";
 import type { DailyPrice, EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
-import { parseDelimitedRows } from "../sourceData";
+import { visitDelimitedRows } from "../sourceData";
 
 /** 실현변동성(연환산 %) 시계열. VKOSPI가 없을 때 대체 지표로 쓴다. */
 export function realizedVolatilitySeries(closes: number[], window = 20): number[] {
@@ -119,9 +119,14 @@ interface RawRecord {
 }
 
 /** CSV(쉼표/탭/세미콜론) 또는 JSON 텍스트를 레코드 배열로 만든다. */
-function toRecords(text: string): RawRecord[] {
+function visitRecords(text: string, visitor: (record: RawRecord) => void): number {
   const trimmed = text.trim();
-  if (!trimmed) return [];
+  if (!trimmed) return 0;
+  let count = 0;
+  const emit = (record: RawRecord) => {
+    count++;
+    visitor(record);
+  };
 
   if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
     const parsed: unknown = JSON.parse(trimmed);
@@ -141,7 +146,8 @@ function toRecords(text: string): RawRecord[] {
           pushSeries(head, bars);
         } else flat.push(rec);
       }
-      return flat;
+      flat.forEach(emit);
+      return count;
     }
     const obj = parsed as RawRecord;
     for (const key of ["instruments", "stocks", "etfs", "indexes", "indices", "rows", "data"]) {
@@ -157,25 +163,28 @@ function toRecords(text: string): RawRecord[] {
         } else flat.push({ ...rec, ...(isIndex ? { type: "INDEX" } : {}) });
       }
     }
-    return flat;
+    flat.forEach(emit);
+    return count;
   }
 
-  const table = parseDelimitedRows(trimmed);
-  if (table.length < 2) return [];
-  const header = table[0]!.map((h) => {
-    const key = h.replace(/\s|_/g, "").toLowerCase();
-    return FIELD_ALIASES[key] ?? FIELD_ALIASES[h.trim()] ?? key;
-  });
-  const records: RawRecord[] = [];
-  for (let i = 1; i < table.length; i++) {
-    const cells = table[i]!;
+  let header: Array<string | null> | null = null;
+  const needed = new Set(Object.values(FIELD_ALIASES));
+  visitDelimitedRows(trimmed, (cells, rowIndex) => {
+    if (rowIndex === 0) {
+      header = cells.map((h) => {
+        const key = h.replace(/\s|_/g, "").toLowerCase();
+        const canonical = FIELD_ALIASES[key] ?? FIELD_ALIASES[h.trim()];
+        return canonical && needed.has(canonical) ? canonical : null;
+      });
+      return;
+    }
     const rec: RawRecord = {};
-    header.forEach((key, idx) => {
-      rec[key] = cells[idx];
+    header!.forEach((key, idx) => {
+      if (key) rec[key] = cells[idx];
     });
-    records.push(rec);
-  }
-  return records;
+    emit(rec);
+  });
+  return count;
 }
 
 function pick(rec: RawRecord, key: string): unknown {
@@ -194,6 +203,7 @@ interface Series {
   market: "KOSPI" | "KOSDAQ" | "ETF";
   sector?: string;
   bars: DailyPrice[];
+  dates: Set<string>;
 }
 
 /**
@@ -201,16 +211,11 @@ interface Series {
  * 여러 파일을 배열로 넘기면 하나의 데이터셋으로 합쳐서 해석한다(같은 종목·같은 날짜는 1건만 사용).
  */
 export function parseManualMarketData(input: string | string[]): ManualParseResult {
-  const records = (Array.isArray(input) ? input : [input]).flatMap(toRecords);
-  if (records.length === 0) {
-    throw new Error("데이터를 인식하지 못했습니다. 헤더가 포함된 CSV 또는 JSON을 붙여넣어 주세요.");
-  }
-
   const map = new Map<string, Series>();
   const warnings: string[] = [];
   let skipped = 0;
-
-  for (const rec of records) {
+  let recordCount = 0;
+  const consume = (rec: RawRecord) => {
     const symbol = String(pick(rec, "symbol") ?? "")
       .trim()
       .toUpperCase();
@@ -218,7 +223,7 @@ export function parseManualMarketData(input: string | string[]): ManualParseResu
     const close = num(pick(rec, "close"));
     if (!symbol || !date || close === null || close <= 0) {
       skipped++;
-      continue;
+      return;
     }
     const rawType = String(pick(rec, "type") ?? "")
       .trim()
@@ -260,8 +265,11 @@ export function parseManualMarketData(input: string | string[]): ManualParseResu
 
     const existing = map.get(symbol);
     if (existing) {
-      if (!existing.bars.some((b) => b.tradeDate === date)) existing.bars.push(bar);
-      continue;
+      if (!existing.dates.has(date)) {
+        existing.dates.add(date);
+        existing.bars.push(bar);
+      }
+      return;
     }
     const sector = String(pick(rec, "sector") ?? "").trim();
     map.set(symbol, {
@@ -271,7 +279,14 @@ export function parseManualMarketData(input: string | string[]): ManualParseResu
       market,
       ...(sector ? { sector } : {}),
       bars: [bar],
+      dates: new Set([date]),
     });
+  };
+  for (const text of Array.isArray(input) ? input : [input]) {
+    recordCount += visitRecords(text, consume);
+  }
+  if (recordCount === 0) {
+    throw new Error("데이터를 인식하지 못했습니다. 헤더가 포함된 CSV 또는 JSON을 붙여넣어 주세요.");
   }
 
   for (const s of map.values()) s.bars.sort((a, b) => a.tradeDate.localeCompare(b.tradeDate));
