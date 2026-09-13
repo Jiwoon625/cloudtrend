@@ -1,5 +1,9 @@
 import { parseManualMarketData, type ManualParseResult } from "@/lib/engine/manualDataset";
 import {
+  buildV8InputQualityReport,
+  V8_INPUT_CONTRACT_VERSION,
+} from "@/lib/engine/v8InputQuality";
+import {
   ownerPath,
   readFile,
   readTextObject,
@@ -25,6 +29,7 @@ export interface ManualDataMeta {
   dataHash?: string | null;
   schemaHash?: string | null;
   normalizedBytes?: number | null;
+  sourceContractVersion?: string | null;
 }
 
 const RAW_SCREENING_RELATIVE_PATH = "raw/screening/latest.csv";
@@ -130,6 +135,20 @@ export async function saveManualDataText(
   return meta;
 }
 
+function formatInputContractFailure(report: ReturnType<typeof buildV8InputQualityReport>) {
+  const invalid = report.filesInvalidRequiredColumns[0];
+  if (!invalid) return "현재 Toss+KRX 입력 계약을 충족하지 않습니다.";
+  const details = [
+    ...(invalid.missingColumns.length
+      ? [`누락 열: ${invalid.missingColumns.join(", ")}`]
+      : []),
+    ...(invalid.emptyColumns.length
+      ? [`전체 공란 필수 열: ${invalid.emptyColumns.join(", ")}`]
+      : []),
+  ];
+  return `현재 Toss+KRX 입력 계약(${report.contractVersion}) 불충족 — ${details.join(" / ")}`;
+}
+
 /** 원본 파일을 검증·등록하고 canonical CSV는 raw/screening/latest.csv에 별도 저장한다. */
 export async function saveManualDataSource(
   source: Blob | string,
@@ -149,6 +168,13 @@ export async function saveManualDataSource(
         .map((item) => item.message)
         .join(" / ")}`,
     );
+
+  // 메인 데이터/산식 업로드도 장기 백테스트와 동일한 toss-krx-102 입력 계약을 적용한다.
+  // STOCK이 들어 있는 파일은 market과 foreignNetBuyValue를 반드시 포함해야 하며,
+  // 개별 행의 외국인 결측은 0으로 치환하지 않고 parser에서 null로 유지한다.
+  const inputQuality = buildV8InputQualityReport([{ fileName: filename, validation }]);
+  if (!inputQuality.validForV8) throw new Error(formatInputContractFailure(inputQuality));
+
   const parsed = parseManualMarketData(validation.canonicalCsv);
   const registration = await registerSourceBlob({
     blob,
@@ -168,6 +194,7 @@ export async function saveManualDataSource(
     dataHash: registration.source.data_hash,
     schemaHash: registration.source.schema_hash,
     normalizedBytes: validation.normalizedSizeBytes,
+    sourceContractVersion: V8_INPUT_CONTRACT_VERSION,
   };
   const next: CloudFile<ManualDataMeta> = { text: "", meta };
   await writeFile("kr", next);
