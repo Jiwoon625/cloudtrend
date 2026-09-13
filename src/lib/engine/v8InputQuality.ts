@@ -24,6 +24,7 @@ export interface V8InputQualityFile {
   populatedColumnCount: number;
   completelyEmptySuppliedColumns: string[];
   missingRequiredColumns: string[];
+  emptyRequiredColumns: string[];
   sectorUnmappedCount: number;
 }
 
@@ -44,10 +45,15 @@ export function buildV8InputQualityReport(
       populatedColumnCount: validation.stats.populatedColumnCount,
       completelyEmptySuppliedColumns,
       missingRequiredColumns: V8_REQUIRED_COLUMNS.filter((column) => !supplied.has(column)),
+      emptyRequiredColumns: V8_REQUIRED_COLUMNS.filter((column) =>
+        completelyEmptySuppliedColumns.includes(column),
+      ),
       sectorUnmappedCount: validation.stats.sectorUnmappedCount,
     };
   });
-  const missingRequired = files.filter((file) => file.missingRequiredColumns.length > 0);
+  const invalidRequired = files.filter(
+    (file) => file.missingRequiredColumns.length > 0 || file.emptyRequiredColumns.length > 0,
+  );
   const allEmpty = [...new Set(files.flatMap((file) => file.completelyEmptySuppliedColumns))].sort();
   return {
     contractVersion: V8_INPUT_CONTRACT_VERSION,
@@ -55,20 +61,29 @@ export function buildV8InputQualityReport(
     normalizedColumnCount: CANONICAL_SOURCE_COLUMNS.length, // 102 source fields + derived sector
     sourceFileCount: files.length,
     totalRows: files.reduce((sum, file) => sum + file.rows, 0),
-    validForV8: missingRequired.length === 0,
+    validForV8: invalidRequired.length === 0,
     requiredColumns: [...V8_REQUIRED_COLUMNS],
     scoreCriticalColumns: ["market", "foreignNetBuyValue"],
-    filesMissingRequiredColumns: missingRequired.map((file) => ({
+    filesInvalidRequiredColumns: invalidRequired.map((file) => ({
       fileName: file.fileName,
-      columns: file.missingRequiredColumns,
+      missingColumns: file.missingRequiredColumns,
+      emptyColumns: file.emptyRequiredColumns,
     })),
+    filesMissingRequiredColumns: files
+      .filter((file) => file.missingRequiredColumns.length > 0)
+      .map((file) => ({ fileName: file.fileName, columns: file.missingRequiredColumns })),
+    filesEmptyRequiredColumns: files
+      .filter((file) => file.emptyRequiredColumns.length > 0)
+      .map((file) => ({ fileName: file.fileName, columns: file.emptyRequiredColumns })),
     completelyEmptySuppliedColumns: allEmpty,
     files,
     policy: {
       emptyOptionalColumnsAreWarnings: true,
+      completelyEmptyRequiredColumnsAreErrors: true,
       emptyValuesAreNeverCoercedToZero: true,
-      foreignNetBuyValueMissing: "20D foreign flow becomes null; full Vf score stays null for that date",
-      marketRequired: "KOSPI/KOSDAQ benchmark selection must not fall back from a missing market value",
+      foreignNetBuyValueMissing:
+        "row-level nulls are allowed; the rolling 20D foreign flow and full Vf score become null for affected dates",
+      marketRequired: "KOSPI/KOSDAQ benchmark selection must not fall back from a missing market column",
       sectorFallback: "sector/sectorCode → reviewed symbol mapping → ETC",
       tradingValueFallback: "only close × volume when the input value is absent",
     },
