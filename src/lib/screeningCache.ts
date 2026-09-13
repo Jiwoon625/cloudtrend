@@ -7,7 +7,7 @@ import {
 } from "@/lib/cloud";
 import { compactDashboardRow } from "@/lib/dashboardRow";
 import { chartSeries, scoreHistory, type AnalysisResult, type ScreeningRow } from "@/lib/engine/pipeline";
-import { parseManualMarketData } from "@/lib/engine/manualDataset";
+import { buildInstrumentDetailDataset } from "@/lib/engine/instrumentDetailDataset";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import { ensureManualDataText, ensureManualDataset, getManualDataMeta } from "@/lib/manualDataStore";
 import { computeLocalAnalysis } from "@/lib/localAnalysis";
@@ -18,12 +18,6 @@ import {
   hydrateSnapshots,
   saveSnapshot,
 } from "@/lib/screeningHistory";
-import {
-  CANONICAL_SOURCE_COLUMNS,
-  parseDelimitedRows,
-  toCanonicalCsv,
-  type CanonicalSourceRow,
-} from "@/lib/sourceData";
 import { listRegisteredSources } from "@/lib/sourceRegistry";
 
 export const SCREENING_CACHE_VERSION = "screening-cache-v1" as const;
@@ -365,21 +359,6 @@ export async function getOrBuildDashboardSummary(): Promise<DashboardSummary> {
   return (await buildAndPersistScreeningCaches()).dashboard;
 }
 
-function canonicalRowsForSymbol(text: string, symbol: string): CanonicalSourceRow[] {
-  const table = parseDelimitedRows(text);
-  if (table.length < 2) return [];
-  const header = table[0]!;
-  const indexes = Object.fromEntries(header.map((column, index) => [column, index])) as Record<string, number>;
-  const target = symbol.trim().toUpperCase();
-  return table.slice(1).flatMap((cells) => {
-    const rawSymbol = String(cells[indexes["symbol"] ?? -1] ?? "").trim().toUpperCase();
-    if (rawSymbol !== target) return [];
-    const row = {} as CanonicalSourceRow;
-    for (const column of CANONICAL_SOURCE_COLUMNS) row[column] = String(cells[indexes[column] ?? -1] ?? "");
-    return [row];
-  });
-}
-
 export async function getCachedInstrumentDetail(symbol: string): Promise<InstrumentDetailPayload> {
   const normalized = symbol.trim().toUpperCase();
   const screening = await readScreeningCache();
@@ -419,9 +398,7 @@ export async function getCachedInstrumentDetail(symbol: string): Promise<Instrum
 
   const raw = await ensureManualDataText();
   if (!raw) throw new Error("종목 상세 차트를 만들 원천 시세가 없습니다.");
-  const targetRows = canonicalRowsForSymbol(raw, normalized);
-  if (targetRows.length === 0) throw new Error(`${normalized}의 원천 일봉을 찾지 못했습니다.`);
-  const targetDataset = parseManualMarketData(toCanonicalCsv(targetRows)).dataset;
+  const targetDataset = buildInstrumentDetailDataset(raw, normalized);
   const config = getActiveScoringConfig();
   const analysis = shared.payload.analysis;
   const detail: InstrumentDetailPayload = {
