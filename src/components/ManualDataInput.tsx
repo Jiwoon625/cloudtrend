@@ -92,15 +92,17 @@ export function ManualDataInput({ onChanged }: Props) {
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">
-        주식 9.5점 전체 항목 산정을 위해 종목별 기준일 포함 252거래일 이상(권장 300거래일)의 일봉과
-        최근 20거래일 외국인 순매수 금액을 입력하세요. 외국인 순매수 열: foreignNetBuyValue 또는
-        외국인순매수 (원 단위, 순매도는 음수). 데이터가 부족한 항목은 산정 불가로 표시합니다.
+        이제 장기 백테스트와 동일한 Toss+KRX 확장 자료형을 그대로 업로드할 수 있습니다. 102컬럼
+        파일의 추가 필드는 canonical 형식으로 보존되며, 현재 Vf 점수는 검증된 기존 7개 피처만
+        사용합니다. 주식 행이 있는 파일은 symbol, market, date, open, high, low, close, volume,
+        tradingValue와 foreignNetBuyValue 열이 필요합니다. 외국인 순매수의 개별 결측값은 0으로
+        바꾸지 않으며, 영향을 받는 20거래일 수급 피처는 “데이터 없음”으로 처리됩니다.
       </p>
       <Textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
         placeholder={
-          "symbol,name,market,date,open,high,low,close,volume,tradingValue\n005930,삼성전자,KOSPI,2026-08-29,71000,72000,70800,71800,12345678,886...\nKOSPI,코스피,INDEX,2026-08-29,2650.1,2662.3,2644.0,2658.7,0,0"
+          "symbol,name,market,type,date,open,high,low,close,volume,tradingValue,marketCap,foreignNetBuyValue,institutionNetBuyValue\n005930,삼성전자,KOSPI,STOCK,2026-08-29,71000,72000,70800,71800,12345678,886000000000,420000000000000,12500000000,8100000000\nKOSPI,코스피,INDEX,INDEX,2026-08-29,2650.1,2662.3,2644.0,2658.7,0,0,,,"
         }
         className="h-40 font-mono text-[11px]"
         spellCheck={false}
@@ -142,6 +144,7 @@ export function ManualDataInput({ onChanged }: Props) {
         {meta ? (
           <span className="text-[11px] text-muted-foreground">
             Supabase 저장됨 · {meta.fileName ?? "붙여넣기"} · {formatCount(meta.chars)}자
+            {meta.sourceContractVersion ? ` · ${meta.sourceContractVersion}` : ""}
           </span>
         ) : (
           <span className="text-[11px] text-muted-foreground">저장된 데이터 없음</span>
@@ -164,7 +167,7 @@ export function ManualDataInput({ onChanged }: Props) {
           </p>
           <p className="mt-0.5 text-muted-foreground">
             기간 {stats.firstDate} ~ {stats.lastDate} · 아래 “스크리닝 시작”을 누르면 이 데이터로
-            모든 탭이 계산됩니다.
+            대시보드·주식 스크리너·상세화면이 동일한 parser와 점수 엔진을 사용해 계산됩니다.
           </p>
           {warnings.length > 0 ? (
             <ul className="mt-1 list-inside list-disc text-[11px] text-warn">
