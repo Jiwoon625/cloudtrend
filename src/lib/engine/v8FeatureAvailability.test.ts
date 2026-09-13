@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { NO_CAPABILITIES, type MarketDataset } from "./dataset";
 import { adjustSectorPenaltyScore } from "./sectorScoreAdjustment";
-import { V8_REQUIRED_COLUMNS } from "./v8InputQuality";
+import { V8_REQUIRED_COLUMNS, v8RequiredColumnsForFile } from "./v8InputQuality";
 import { buildV8ScoreAvailabilityReport } from "./v8ScoreAvailability";
 import type { DailyPrice, Instrument } from "./types";
 
@@ -47,9 +47,12 @@ function stock(): Instrument {
 }
 
 describe("V8 feature availability policies", () => {
-  it("requires market and foreignNetBuyValue in the V8 input contract", () => {
+  it("requires market and foreignNetBuyValue for stock-bearing V8 inputs", () => {
     expect(V8_REQUIRED_COLUMNS).toContain("market");
     expect(V8_REQUIRED_COLUMNS).toContain("foreignNetBuyValue");
+    expect(v8RequiredColumnsForFile(1)).toContain("foreignNetBuyValue");
+    expect(v8RequiredColumnsForFile(0)).not.toContain("foreignNetBuyValue");
+    expect(v8RequiredColumnsForFile(0)).toContain("market");
   });
 
   it("keeps the 9.5-point base unchanged when sector PL is missing", () => {
