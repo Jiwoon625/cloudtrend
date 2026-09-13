@@ -1,0 +1,49 @@
+name: CloudTrend V8-1 3-FOS branch trigger
+
+on:
+  push:
+    branches:
+      - feat/v8-3fos-vf-feature-validation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudtrend-v8-1-3fos-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Test V8-1 engines
+        run: >-
+          npx vitest run
+          src/lib/engine/v8VfFeatureValidation.test.ts
+          src/lib/engine/v8VfFeatureConditional.test.ts
+      - name: Run V8-1 with 3-FOS
+        run: |
+          npx vite-node scripts/run-v8-vf-feature-validation-3fos.ts \
+            --supabase-user-id "$SUPABASE_USER_ID" \
+            --limit 613 \
+            --upload
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudtrend-v8-1-3fos-${{ github.run_id }}
+          path: v8-vf-feature-validation-3fos-runs/
+          if-no-files-found: warn
+          retention-days: 14
