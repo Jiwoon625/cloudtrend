@@ -114,6 +114,17 @@ function normalizeDate(v: unknown): string | null {
   return null;
 }
 
+/** KRX 주식 단축코드는 6자리로 통일한다. 지수·문자형 심볼은 변경하지 않는다. */
+export function normalizeKrxSymbol(v: unknown): string {
+  let symbol = String(v ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/^A(?=\d{6}$)/, "")
+    .replace(/\.0$/, "");
+  if (/^\d{1,6}$/.test(symbol)) symbol = symbol.padStart(6, "0");
+  return symbol;
+}
+
 interface RawRecord {
   [key: string]: unknown;
 }
@@ -216,9 +227,7 @@ export function parseManualMarketData(input: string | string[]): ManualParseResu
   let skipped = 0;
   let recordCount = 0;
   const consume = (rec: RawRecord) => {
-    const symbol = String(pick(rec, "symbol") ?? "")
-      .trim()
-      .toUpperCase();
+    const symbol = normalizeKrxSymbol(pick(rec, "symbol"));
     const date = normalizeDate(pick(rec, "date"));
     const close = num(pick(rec, "close"));
     if (!symbol || !date || close === null || close <= 0) {
