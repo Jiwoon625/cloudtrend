@@ -6,10 +6,19 @@ import {
   writeObject,
 } from "@/lib/cloud";
 import { compactDashboardRow } from "@/lib/dashboardRow";
-import { chartSeries, scoreHistory, type AnalysisResult, type ScreeningRow } from "@/lib/engine/pipeline";
+import {
+  chartSeries,
+  scoreHistory,
+  type AnalysisResult,
+  type ScreeningRow,
+} from "@/lib/engine/pipeline";
 import { buildInstrumentDetailDataset } from "@/lib/engine/instrumentDetailDataset";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
-import { ensureManualDataText, ensureManualDataset, getManualDataMeta } from "@/lib/manualDataStore";
+import {
+  ensureManualDataText,
+  ensureManualDataset,
+  getManualDataMeta,
+} from "@/lib/manualDataStore";
 import { computeLocalAnalysis } from "@/lib/localAnalysis";
 import type { AnalysisPayload, InstrumentDetailPayload } from "@/lib/market.functions";
 import {
@@ -167,7 +176,9 @@ async function gzipJson(value: unknown): Promise<Uint8Array> {
 async function gunzipJson<T>(bytes: Uint8Array): Promise<T> {
   if (typeof DecompressionStream === "undefined")
     throw new Error("이 브라우저는 gzip 캐시 해제를 지원하지 않습니다.");
-  const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"));
+  const stream = new Blob([bytes as BlobPart])
+    .stream()
+    .pipeThrough(new DecompressionStream("gzip"));
   return JSON.parse(await new Response(stream).text()) as T;
 }
 
@@ -363,7 +374,8 @@ export async function getCachedInstrumentDetail(symbol: string): Promise<Instrum
   const normalized = symbol.trim().toUpperCase();
   const screening = await readScreeningCache();
   const shared = screening ?? (await buildAndPersistScreeningCaches()).screening;
-  const row = shared.payload.analysis.rows.find((item) => item.instrument.symbol === normalized) ?? null;
+  const row =
+    shared.payload.analysis.rows.find((item) => item.instrument.symbol === normalized) ?? null;
   if (!row) {
     return {
       source: shared.payload.source,
@@ -390,7 +402,8 @@ export async function getCachedInstrumentDetail(symbol: string): Promise<Instrum
         cached.inputFingerprint === shared.inputFingerprint &&
         cached.resultDigest === shared.resultDigest &&
         cached.symbol === normalized
-      ) return cached.detail;
+      )
+        return cached.detail;
     } catch {
       // 손상/구버전 cache는 아래에서 재생성한다.
     }
