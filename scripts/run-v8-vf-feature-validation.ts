@@ -5,9 +5,12 @@ import process from "node:process";
 import { parseManualMarketData } from "../src/lib/engine/manualDataset";
 import { buildV8InputQualityReport } from "../src/lib/engine/v8InputQuality";
 import { buildV8ScoreAvailabilityReport } from "../src/lib/engine/v8ScoreAvailability";
+import { buildV8VfConditionalValidation } from "../src/lib/engine/v8VfFeatureConditional";
 import {
   V8_VF_FEATURE_HORIZONS,
-  runV8VfFeatureValidation,
+  buildV8VfFeatureValidationFromSeries,
+  prepareV8VfFeatureSeries,
+  type V8VfFeatureValidationResult,
 } from "../src/lib/engine/v8VfFeatureValidation";
 import { codeVersion, trustedSupabaseClient, uploadJson } from "./analysis-run-store";
 import { loadAnalysisSourceInputs } from "./source-registry-store";
@@ -64,7 +67,7 @@ function parseArgs(argv: string[]): Options {
   return options;
 }
 
-function compactRows(result: NonNullable<ReturnType<typeof runV8VfFeatureValidation>>) {
+function compactRows(result: V8VfFeatureValidationResult) {
   return result.rows.filter(
     (row) =>
       row.scope === "SPLIT" &&
@@ -87,22 +90,30 @@ async function main() {
     );
   }
   const scoreAvailability = buildV8ScoreAvailabilityReport(parsed.dataset, options.limit);
-  const result = runV8VfFeatureValidation(parsed.dataset, {
+  const series = prepareV8VfFeatureSeries(parsed.dataset, options.limit, 120);
+  const result = buildV8VfFeatureValidationFromSeries(series, parsed.dataset.indexSeries, {
     limit: options.limit,
     horizons: [...V8_VF_FEATURE_HORIZONS],
     warmupDays: 120,
     roundTripCostBps: options.roundTripCostBps,
   });
   if (!result) throw new Error("V8 Vf 피처 재검증 결과를 계산하지 못했습니다.");
+  const conditional = buildV8VfConditionalValidation(series, parsed.dataset.indexSeries, {
+    horizons: [...V8_VF_FEATURE_HORIZONS],
+    warmupDays: 120,
+    roundTripCostBps: options.roundTripCostBps,
+    minCrossSectionN: 30,
+  });
 
   const createdAt = new Date().toISOString();
   const runId = createdAt.replace(/[-:.TZ]/g, "").slice(0, 14);
   const payload = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     run: {
       id: runId,
       createdAt,
       engineVersion: result.version,
+      conditionalEngineVersion: conditional.version,
       codeVersion: codeVersion(),
       datasetVersion: parsed.dataset.version,
       asOfDate: parsed.dataset.asOfDate,
@@ -121,6 +132,7 @@ async function main() {
       scoreAvailability,
     },
     result,
+    conditional,
   };
 
   const outputDir = path.resolve(options.outputRoot, runId);
@@ -136,6 +148,12 @@ async function main() {
     await uploadJson(client, remotePath, payload);
   }
 
+  const conditionalKeyRows = conditional.rows.filter(
+    (row) =>
+      row.scope === "SPLIT" &&
+      (row.split === "ALL" || row.split === "OOS") &&
+      row.market === "ALL",
+  );
   process.stdout.write(
     `${JSON.stringify(
       {
@@ -145,7 +163,9 @@ async function main() {
         splitPolicy: result.splitPolicy,
         availability: result.availability,
         robustness: result.robustness,
+        conditionalRobustness: conditional.robustness,
         keyRows: compactRows(result),
+        conditionalKeyRows,
       },
       null,
       2,
