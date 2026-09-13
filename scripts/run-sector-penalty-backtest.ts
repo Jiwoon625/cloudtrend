@@ -78,7 +78,7 @@ async function main() {
   const dataQuality = buildV8InputQualityReport(inputs);
   if (!dataQuality.validForV8) {
     throw new Error(
-      `V8 필수 입력열이 없는 파일이 있습니다: ${JSON.stringify(dataQuality.filesMissingRequiredColumns)}`,
+      `V8 필수 입력열이 없거나 전부 비어 있는 파일이 있습니다: ${JSON.stringify(dataQuality.filesInvalidRequiredColumns)}`,
     );
   }
   const fullDataQuality = buildBacktestDataQuality(inputs, parsed.dataset, options.limit);
