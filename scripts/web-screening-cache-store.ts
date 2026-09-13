@@ -17,6 +17,7 @@ import type { LoadedSourceInput } from "./source-registry-store";
 
 const SCREENING_CACHE_VERSION = "screening-cache-v1";
 const DASHBOARD_CACHE_VERSION = "dashboard-cache-v1";
+const MAX_RAW_CACHE_BYTES = 45 * 1024 * 1024;
 
 interface ExistingScreeningCache {
   version?: string;
@@ -236,6 +237,8 @@ export async function persistWebScreeningCaches(input: {
   );
   const canonicalCsv = canonicalMergedCsv(input.inputs);
   const rawPath = `${input.userId}/raw/screening/latest.csv`;
+  const rawCacheBytes = Buffer.byteLength(canonicalCsv);
+  const shouldUploadRawCache = rawCacheBytes <= MAX_RAW_CACHE_BYTES;
   const dashboardPath = `${input.userId}/cache/dashboard/latest.json`;
   const latestInput = input.inputs.at(-1);
   const meta = {
@@ -244,15 +247,17 @@ export async function persistWebScreeningCaches(input: {
       savedAt: latestInput?.savedAt ?? new Date().toISOString(),
       fileName: latestInput?.fileName ?? null,
       chars: canonicalCsv.length,
-      rawPath,
+      rawPath: shouldUploadRawCache ? rawPath : null,
       dataHash: latestInput?.dataHash ?? null,
       schemaHash: latestInput?.schemaHash ?? null,
-      normalizedBytes: Buffer.byteLength(canonicalCsv),
+      normalizedBytes: rawCacheBytes,
     },
   };
 
   const [rawBytes, screeningUpload, dashboardUpload, metaUpload] = await Promise.all([
-    uploadText(input.client, rawPath, canonicalCsv, "text/csv"),
+    shouldUploadRawCache
+      ? uploadText(input.client, rawPath, canonicalCsv, "text/csv")
+      : Promise.resolve(0),
     uploadJson(input.client, screeningPath, screening),
     uploadJson(input.client, dashboardPath, dashboard),
     uploadJson(input.client, `${input.userId}/kr.json`, meta),
@@ -272,7 +277,7 @@ export async function persistWebScreeningCaches(input: {
     regressionBaseline: existing?.resultDigest ?? null,
     regressionMatched: !existing?.resultDigest || existing.resultDigest === digest,
     roundTripVerified: true,
-    paths: { rawPath, screeningPath, dashboardPath, krPath: `${input.userId}/kr.json` },
+    paths: { rawPath: shouldUploadRawCache ? rawPath : null, screeningPath, dashboardPath, krPath: `${input.userId}/kr.json` },
     bytes: {
       raw: rawBytes,
       screening: Buffer.byteLength(screeningUpload.body),
