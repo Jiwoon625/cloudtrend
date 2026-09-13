@@ -84,6 +84,7 @@ const FIELD_ALIASES: Record<string, string> = {
   institutionnet: "institutionNetBuyValue",
   기관순매수: "institutionNetBuyValue",
   sector: "sector",
+  sectorcode: "sector",
   섹터: "sector",
   업종: "sector",
 };

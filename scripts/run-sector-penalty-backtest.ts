@@ -4,6 +4,7 @@ import process from "node:process";
 
 import { parseManualMarketData } from "../src/lib/engine/manualDataset";
 import { runSectorPenaltyBacktest } from "../src/lib/engine/sectorPenaltyBacktest";
+import { buildV8InputQualityReport } from "../src/lib/engine/v8InputQuality";
 import {
   codeVersion,
   trustedSupabaseClient,
@@ -67,6 +68,12 @@ async function main() {
   const client = trustedSupabaseClient();
   const inputs = await loadAnalysisSourceInputs(client, options.supabaseUserId!, "backtest");
   const parsed = parseManualMarketData(inputs.map((input) => input.text));
+  const dataQuality = buildV8InputQualityReport(inputs);
+  if (!dataQuality.validForV8) {
+    throw new Error(
+      `V8 필수 입력열이 없는 파일이 있습니다: ${JSON.stringify(dataQuality.filesMissingRequiredColumns)}`,
+    );
+  }
   const result = runSectorPenaltyBacktest(parsed.dataset, {
     limit: options.limit,
     roundTripCostBps: options.roundTripCostBps,
@@ -99,6 +106,7 @@ async function main() {
       bytes: input.bytes,
       savedAt: input.savedAt,
     })),
+    dataQuality,
     result,
   };
 

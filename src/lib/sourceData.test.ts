@@ -93,6 +93,27 @@ describe("CloudTrend source validation", () => {
     expect(result.rows[0]?.symbol).toBe("005930");
   });
 
+  it("preserves the Toss+KRX extended contract and reports header-only columns", async () => {
+    const result = await validateSourceText(
+      `symbol,name,market,securityType,date,open,high,low,close,volume,tradingValue,sectorCode,listedShares,shortSellingVolume,lendingBalanceQuantity,priceSource
+005930,삼성전자,KOSPI,STOCK,2026-09-09,10,12,9,11,2,22,SEMI,1000,,,TOSS
+`,
+      "extended.csv",
+    );
+    expect(result.valid).toBe(true);
+    expect(result.rows[0]).toMatchObject({
+      type: "STOCK",
+      sector: "SEMI",
+      listedShares: "1000",
+      priceSource: "TOSS",
+    });
+    expect(result.canonicalCsv).toContain("shortSellingVolume");
+    expect(result.stats.completelyEmptyColumns).toEqual(
+      expect.arrayContaining(["shortSellingVolume", "lendingBalanceQuantity"]),
+    );
+    expect(result.stats.columnNonEmptyRates["listedShares"]).toBe(1);
+  });
+
   it("reports identical and conflicting overlap separately", async () => {
     const existing = await validateSourceText(CSV);
     const incoming = await validateSourceText(
