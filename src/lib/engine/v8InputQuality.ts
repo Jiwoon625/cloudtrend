@@ -2,7 +2,7 @@ import { CANONICAL_SOURCE_COLUMNS, type SourceValidationResult } from "../source
 
 export const V8_INPUT_CONTRACT_VERSION = "toss-krx-102-v2" as const;
 
-const REQUIRED_FOR_V8 = [
+export const V8_REQUIRED_COLUMNS = [
   "symbol",
   "date",
   "market",
@@ -43,7 +43,7 @@ export function buildV8InputQualityReport(
       suppliedColumnCount: supplied.size,
       populatedColumnCount: validation.stats.populatedColumnCount,
       completelyEmptySuppliedColumns,
-      missingRequiredColumns: REQUIRED_FOR_V8.filter((column) => !supplied.has(column)),
+      missingRequiredColumns: V8_REQUIRED_COLUMNS.filter((column) => !supplied.has(column)),
       sectorUnmappedCount: validation.stats.sectorUnmappedCount,
     };
   });
@@ -56,7 +56,7 @@ export function buildV8InputQualityReport(
     sourceFileCount: files.length,
     totalRows: files.reduce((sum, file) => sum + file.rows, 0),
     validForV8: missingRequired.length === 0,
-    requiredColumns: [...REQUIRED_FOR_V8],
+    requiredColumns: [...V8_REQUIRED_COLUMNS],
     scoreCriticalColumns: ["market", "foreignNetBuyValue"],
     filesMissingRequiredColumns: missingRequired.map((file) => ({
       fileName: file.fileName,
