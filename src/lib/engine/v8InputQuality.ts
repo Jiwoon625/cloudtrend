@@ -1,9 +1,18 @@
 import { CANONICAL_SOURCE_COLUMNS, type SourceValidationResult } from "../sourceData";
 
-export const V8_INPUT_CONTRACT_VERSION = "toss-krx-102-v1" as const;
+export const V8_INPUT_CONTRACT_VERSION = "toss-krx-102-v2" as const;
 
 const REQUIRED_FOR_V8 = [
-  "symbol", "date", "open", "high", "low", "close", "volume", "tradingValue",
+  "symbol",
+  "date",
+  "market",
+  "open",
+  "high",
+  "low",
+  "close",
+  "volume",
+  "tradingValue",
+  "foreignNetBuyValue",
 ] as const;
 
 export interface V8InputQualityFile {
@@ -47,6 +56,8 @@ export function buildV8InputQualityReport(
     sourceFileCount: files.length,
     totalRows: files.reduce((sum, file) => sum + file.rows, 0),
     validForV8: missingRequired.length === 0,
+    requiredColumns: [...REQUIRED_FOR_V8],
+    scoreCriticalColumns: ["market", "foreignNetBuyValue"],
     filesMissingRequiredColumns: missingRequired.map((file) => ({
       fileName: file.fileName,
       columns: file.missingRequiredColumns,
@@ -56,6 +67,8 @@ export function buildV8InputQualityReport(
     policy: {
       emptyOptionalColumnsAreWarnings: true,
       emptyValuesAreNeverCoercedToZero: true,
+      foreignNetBuyValueMissing: "20D foreign flow becomes null; full Vf score stays null for that date",
+      marketRequired: "KOSPI/KOSDAQ benchmark selection must not fall back from a missing market value",
       sectorFallback: "sector/sectorCode → reviewed symbol mapping → ETC",
       tradingValueFallback: "only close × volume when the input value is absent",
     },
