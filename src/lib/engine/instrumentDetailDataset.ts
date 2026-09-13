@@ -31,9 +31,10 @@ export function buildInstrumentDetailDataset(text: string, symbol: string): Mark
 
   visitDelimitedRows(text, (cells, rowIndex) => {
     if (rowIndex === 0) {
-      indexes = Object.fromEntries(
-        cells.map((column, index) => [column, index]),
-      ) as Record<string, number>;
+      indexes = Object.fromEntries(cells.map((column, index) => [column, index])) as Record<
+        string,
+        number
+      >;
       return;
     }
     if (!indexes) return;
