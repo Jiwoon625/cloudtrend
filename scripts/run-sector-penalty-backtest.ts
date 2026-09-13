@@ -6,11 +6,7 @@ import { parseManualMarketData } from "../src/lib/engine/manualDataset";
 import { runSectorPenaltyBacktest } from "../src/lib/engine/sectorPenaltyBacktest";
 import { buildV8InputQualityReport } from "../src/lib/engine/v8InputQuality";
 import { buildBacktestDataQuality } from "../src/lib/engine/backtestDataQuality";
-import {
-  codeVersion,
-  trustedSupabaseClient,
-  uploadJson,
-} from "./analysis-run-store";
+import { codeVersion, trustedSupabaseClient, uploadJson } from "./analysis-run-store";
 import { loadAnalysisSourceInputs } from "./source-registry-store";
 
 interface Options {
@@ -49,7 +45,8 @@ function parseArgs(argv: string[]): Options {
     else if (arg === "--output") options.outputRoot = argv[++i] ?? usage();
     else if (arg === "--upload") options.upload = true;
     else if (arg === "--limit") options.limit = Number(argv[++i] ?? usage());
-    else if (arg === "--round-trip-cost-bps") options.roundTripCostBps = Number(argv[++i] ?? usage());
+    else if (arg === "--round-trip-cost-bps")
+      options.roundTripCostBps = Number(argv[++i] ?? usage());
     else usage();
   }
   if (!options.supabaseUserId) usage();
@@ -67,7 +64,9 @@ function parseArgs(argv: string[]): Options {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const client = trustedSupabaseClient();
-  const inputs = await loadAnalysisSourceInputs(client, options.supabaseUserId!, "backtest");
+  const inputs = await loadAnalysisSourceInputs(client, options.supabaseUserId!, "backtest", {
+    lightweight: true,
+  });
   const parsed = parseManualMarketData(inputs.map((input) => input.text));
   const dataQuality = buildV8InputQualityReport(inputs);
   if (!dataQuality.validForV8) {
@@ -99,11 +98,13 @@ async function main() {
         },
       },
     };
-    const { error } = await client.from("analysis_source_files")
+    const { error } = await client
+      .from("analysis_source_files")
       .update({ validation_result: validationResult, updated_at: new Date().toISOString() })
       .eq("id", input.id)
       .eq("user_id", options.supabaseUserId!);
-    if (error) throw new Error(`validation_result QA 저장 실패 (${input.fileName}): ${error.message}`);
+    if (error)
+      throw new Error(`validation_result QA 저장 실패 (${input.fileName}): ${error.message}`);
   }
   const result = runSectorPenaltyBacktest(parsed.dataset, {
     limit: options.limit,
@@ -143,7 +144,10 @@ async function main() {
 
   const outputDir = path.resolve(options.outputRoot, runId);
   await mkdir(outputDir, { recursive: true });
-  await writeFile(path.join(outputDir, "sector-penalty-backtest.json"), JSON.stringify(payload, null, 2));
+  await writeFile(
+    path.join(outputDir, "sector-penalty-backtest.json"),
+    JSON.stringify(payload, null, 2),
+  );
 
   let remotePath: string | null = null;
   if (options.upload) {
