@@ -5,7 +5,7 @@ import {
   type SourceValidationResult,
 } from "../sourceData";
 
-export const BACKTEST_DATA_QUALITY_VERSION = "backtest-data-quality-v1" as const;
+export const BACKTEST_DATA_QUALITY_VERSION = "backtest-data-quality-v2" as const;
 
 type QualityInput = {
   id: string;
@@ -17,6 +17,8 @@ type QualityInput = {
 const SOURCE_COLUMNS = CANONICAL_SOURCE_COLUMNS.filter((column) =>
   column.toLowerCase().endsWith("source"),
 );
+const INDEX_CODES = ["KOSPI", "KOSDAQ"] as const;
+type IndexCode = (typeof INDEX_CODES)[number];
 
 const rate = (count: number, total: number) =>
   total ? Math.round((count / total) * 1_000_000) / 10_000 : 0;
@@ -48,12 +50,52 @@ function hasActualValue(value: string | undefined) {
   return Boolean(trimmed) && trimmed !== "-" && !/^(null|none|nan|na)$/i.test(trimmed);
 }
 
+function qaDate(value: string | undefined) {
+  const digits = (value ?? "").replace(/[^\d]/g, "");
+  if (digits.length < 8) return null;
+  return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+}
+
+function hasPositiveNumber(value: string | undefined) {
+  if (!hasActualValue(value)) return false;
+  const parsed = Number((value ?? "").replace(/[, ₩원%]/g, "").trim());
+  return Number.isFinite(parsed) && parsed > 0;
+}
+
+type FileIndexBucket = {
+  rawRows: number;
+  validCloseRows: number;
+  rawDates: Set<string>;
+  validDates: Set<string>;
+};
+
+function emptyIndexBucket(): FileIndexBucket {
+  return { rawRows: 0, validCloseRows: 0, rawDates: new Set(), validDates: new Set() };
+}
+
 function scanFieldQuality(inputs: QualityInput[]) {
   const years = new Map<string, { rows: number; counts: Record<string, number> }>();
   const overall = Object.fromEntries(CANONICAL_SOURCE_COLUMNS.map((column) => [column, 0]));
   const sourceCounts = new Map<string, Map<string, number>>();
   const fileQuality: Array<Record<string, unknown>> = [];
+  const fileIndexDiagnostics: Array<Record<string, unknown>> = [];
+  const stockDates = new Set<string>();
+  const stockFieldStats = Object.fromEntries(
+    CANONICAL_SOURCE_COLUMNS.map((column) => [
+      column,
+      {
+        nonEmpty: 0,
+        firstObservedDate: null as string | null,
+        lastMissingDate: null as string | null,
+      },
+    ]),
+  ) as Record<
+    string,
+    { nonEmpty: number; firstObservedDate: string | null; lastMissingDate: string | null }
+  >;
+  let stockRowsWithDate = 0;
   let totalRows = 0;
+
   for (const input of inputs) {
     if (/^\s*(?:\[|\{)/.test(input.text))
       throw new Error(
@@ -61,18 +103,46 @@ function scanFieldQuality(inputs: QualityInput[]) {
       );
     let header: string[] = [];
     let suppliedColumnCount = 0;
+    let dateIndex = -1;
+    let symbolIndex = -1;
+    let typeIndex = -1;
+    let marketIndex = -1;
+    let closeIndex = -1;
     const fileCounts = Object.fromEntries(CANONICAL_SOURCE_COLUMNS.map((column) => [column, 0]));
+    const fileIndexes: Record<IndexCode, FileIndexBucket> = {
+      KOSPI: emptyIndexBucket(),
+      KOSDAQ: emptyIndexBucket(),
+    };
     let fileRows = 0;
+
     visitDelimitedRows(input.text, (cells, rowIndex) => {
       if (rowIndex === 0) {
         suppliedColumnCount = cells.length;
         header = cells.map((cell) => qaHeader(cell) ?? "");
+        dateIndex = header.indexOf("date");
+        symbolIndex = header.indexOf("symbol");
+        typeIndex = header.indexOf("type");
+        marketIndex = header.indexOf("market");
+        closeIndex = header.indexOf("close");
         return;
       }
       totalRows++;
       fileRows++;
-      const dateIndex = header.indexOf("date");
-      const year = (cells[dateIndex] ?? "").replace(/[^\d]/g, "").slice(0, 4);
+      const date = dateIndex >= 0 ? qaDate(cells[dateIndex]) : null;
+      const year = date?.slice(0, 4) ?? "UNKNOWN";
+      const symbol = (symbolIndex >= 0 ? cells[symbolIndex] ?? "" : "").trim().toUpperCase();
+      const rawType = (typeIndex >= 0 ? cells[typeIndex] ?? "" : "").trim().toUpperCase();
+      const rawMarket = (marketIndex >= 0 ? cells[marketIndex] ?? "" : "").trim().toUpperCase();
+      const isIndex =
+        symbol === "KOSPI" ||
+        symbol === "KOSDAQ" ||
+        symbol === "VKOSPI" ||
+        rawType === "INDEX" ||
+        rawMarket === "INDEX" ||
+        rawMarket === "지수";
+      const isEtf = !isIndex && (rawType === "ETF" || rawMarket === "ETF");
+      const isStock = !isIndex && !isEtf;
+
       const bucket = years.get(year) ?? {
         rows: 0,
         counts: Object.fromEntries(CANONICAL_SOURCE_COLUMNS.map((column) => [column, 0])),
@@ -92,8 +162,60 @@ function scanFieldQuality(inputs: QualityInput[]) {
         sourceCounts.set(column, counts);
       }
       years.set(year, bucket);
+
+      if ((symbol === "KOSPI" || symbol === "KOSDAQ") && date) {
+        const indexBucket = fileIndexes[symbol];
+        indexBucket.rawRows++;
+        indexBucket.rawDates.add(date);
+        if (closeIndex >= 0 && hasPositiveNumber(cells[closeIndex])) {
+          indexBucket.validCloseRows++;
+          indexBucket.validDates.add(date);
+        }
+      } else if (symbol === "KOSPI" || symbol === "KOSDAQ") {
+        fileIndexes[symbol].rawRows++;
+      }
+
+      if (isStock && date) {
+        stockRowsWithDate++;
+        stockDates.add(date);
+        for (const column of CANONICAL_SOURCE_COLUMNS) {
+          const index = header.indexOf(column);
+          const present = index >= 0 && hasActualValue(cells[index]);
+          const stats = stockFieldStats[column]!;
+          if (present) {
+            stats.nonEmpty++;
+            if (!stats.firstObservedDate || date < stats.firstObservedDate) stats.firstObservedDate = date;
+          } else if (!stats.lastMissingDate || date > stats.lastMissingDate) {
+            stats.lastMissingDate = date;
+          }
+        }
+      }
     });
+
     const supplied = new Set(header.filter(Boolean));
+    const summarizeIndex = (code: IndexCode) => {
+      const rawDates = [...fileIndexes[code].rawDates].sort();
+      const validDates = [...fileIndexes[code].validDates].sort();
+      return {
+        rawRows: fileIndexes[code].rawRows,
+        validCloseRows: fileIndexes[code].validCloseRows,
+        uniqueRawDates: rawDates.length,
+        uniqueValidDates: validDates.length,
+        firstRawDate: rawDates[0] ?? null,
+        lastRawDate: rawDates.at(-1) ?? null,
+        firstValidDate: validDates[0] ?? null,
+        lastValidDate: validDates.at(-1) ?? null,
+      };
+    };
+    const kospiRawDates = fileIndexes.KOSPI.rawDates;
+    const kospiValidDates = fileIndexes.KOSPI.validDates;
+    const kosdaqValidDates = [...fileIndexes.KOSDAQ.validDates].sort();
+    const kospiMissingWhereKosdaqValid = kosdaqValidDates.filter((date) => !kospiValidDates.has(date));
+    const kospiRawRowAbsentWhereKosdaqValid = kosdaqValidDates.filter((date) => !kospiRawDates.has(date));
+    const kospiRawPresentButInvalidCloseWhereKosdaqValid = kosdaqValidDates.filter(
+      (date) => kospiRawDates.has(date) && !kospiValidDates.has(date),
+    );
+
     fileQuality.push({
       sourceId: input.id,
       fileName: input.fileName,
@@ -106,8 +228,29 @@ function scanFieldQuality(inputs: QualityInput[]) {
         (column) => (fileCounts[column] ?? 0) === 0,
       ),
       sectorUnmappedCount: input.validation.stats.sectorUnmappedCount,
+      registeredIndexCount: input.validation.stats.indexCount,
+      indexRows: {
+        KOSPI: summarizeIndex("KOSPI"),
+        KOSDAQ: summarizeIndex("KOSDAQ"),
+      },
+    });
+    fileIndexDiagnostics.push({
+      sourceId: input.id,
+      fileName: input.fileName,
+      from: input.validation.stats.minDate,
+      to: input.validation.stats.maxDate,
+      KOSPI: summarizeIndex("KOSPI"),
+      KOSDAQ: summarizeIndex("KOSDAQ"),
+      kospiMissingWhereKosdaqValidCount: kospiMissingWhereKosdaqValid.length,
+      kospiMissingWhereKosdaqValid,
+      kospiRawRowAbsentWhereKosdaqValidCount: kospiRawRowAbsentWhereKosdaqValid.length,
+      kospiRawRowAbsentWhereKosdaqValid,
+      kospiRawPresentButInvalidCloseWhereKosdaqValidCount:
+        kospiRawPresentButInvalidCloseWhereKosdaqValid.length,
+      kospiRawPresentButInvalidCloseWhereKosdaqValid,
     });
   }
+
   const summarize = (counts: Record<string, number>, rows: number) =>
     Object.fromEntries(
       CANONICAL_SOURCE_COLUMNS.map((column) => [
@@ -119,6 +262,50 @@ function scanFieldQuality(inputs: QualityInput[]) {
         },
       ]),
     );
+
+  const orderedStockDates = [...stockDates].sort();
+  const firstStockDate = orderedStockDates[0] ?? null;
+  const lastStockDate = orderedStockDates.at(-1) ?? null;
+  const fieldAvailability = Object.fromEntries(
+    CANONICAL_SOURCE_COLUMNS.map((column) => {
+      const stats = stockFieldStats[column]!;
+      let completeFromDate: string | null = null;
+      if (stats.nonEmpty > 0) {
+        if (!stats.lastMissingDate) completeFromDate = firstStockDate;
+        else completeFromDate = orderedStockDates.find((date) => date > stats.lastMissingDate!) ?? null;
+      }
+      return [
+        column,
+        {
+          nonEmpty: stats.nonEmpty,
+          completenessPct: rate(stats.nonEmpty, stockRowsWithDate),
+          firstObservedDate: stats.firstObservedDate,
+          lastMissingDate: stats.lastMissingDate,
+          completeFromDate,
+          excludedFromAllFieldsGate: column === "sector",
+        },
+      ];
+    }),
+  ) as Record<
+    string,
+    {
+      nonEmpty: number;
+      completenessPct: number;
+      firstObservedDate: string | null;
+      lastMissingDate: string | null;
+      completeFromDate: string | null;
+      excludedFromAllFieldsGate: boolean;
+    }
+  >;
+  const gatedColumns = CANONICAL_SOURCE_COLUMNS.filter((column) => column !== "sector");
+  const allFieldsComplete = gatedColumns.every((column) => Boolean(fieldAvailability[column]?.completeFromDate));
+  const allFieldsCompleteFromDate = allFieldsComplete
+    ? gatedColumns
+        .map((column) => fieldAvailability[column]!.completeFromDate!)
+        .sort()
+        .at(-1) ?? null
+    : null;
+
   const fields = {
     totalRows,
     overall: summarize(overall, totalRows),
@@ -131,6 +318,14 @@ function scanFieldQuality(inputs: QualityInput[]) {
         },
       ]),
     ),
+    stockRows: {
+      basis: "STOCK rows with valid dates; sector excluded from all-fields gate because sector mapping is external",
+      rows: stockRowsWithDate,
+      from: firstStockDate,
+      to: lastStockDate,
+      allFieldsCompleteFromDate,
+      fields: fieldAvailability,
+    },
   };
   const sourceDistribution = Object.fromEntries(
     [...sourceCounts.entries()].map(([column, bucket]) => {
@@ -145,7 +340,27 @@ function scanFieldQuality(inputs: QualityInput[]) {
       ];
     }),
   );
-  return { fields, sourceDistribution, fileQuality };
+  return { fields, sourceDistribution, fileQuality, fileIndexDiagnostics };
+}
+
+function groupMissingTradingDates(expected: string[], missingDates: string[]) {
+  const missing = new Set(missingDates);
+  const runs: Array<{ from: string; to: string; tradingDays: number }> = [];
+  let current: { from: string; to: string; tradingDays: number } | null = null;
+  for (const date of expected) {
+    if (!missing.has(date)) {
+      if (current) runs.push(current);
+      current = null;
+      continue;
+    }
+    if (!current) current = { from: date, to: date, tradingDays: 1 };
+    else {
+      current.to = date;
+      current.tradingDays++;
+    }
+  }
+  if (current) runs.push(current);
+  return runs;
 }
 
 function indexContinuity(dataset: MarketDataset) {
@@ -154,14 +369,30 @@ function indexContinuity(dataset: MarketDataset) {
       .filter((instrument) => instrument.instrumentType === "STOCK")
       .flatMap((instrument) => (dataset.bars[instrument.symbol] ?? []).map((bar) => bar.tradeDate)),
   );
+  const expected = [...stockDates]
+    .filter((date) => date >= (dataset.tradeDates[0] ?? "") && date <= dataset.asOfDate)
+    .sort();
+  const indexDateSets = Object.fromEntries(
+    INDEX_CODES.map((code) => [
+      code,
+      new Set(
+        dataset.indexSeries.find((item) => item.indexCode === code)?.bars.map((bar) => bar.tradeDate) ?? [],
+      ),
+    ]),
+  ) as Record<IndexCode, Set<string>>;
   const indexes = Object.fromEntries(
-    ["KOSPI", "KOSDAQ"].map((code) => {
+    INDEX_CODES.map((code) => {
       const series = dataset.indexSeries.find((item) => item.indexCode === code);
-      const dates = new Set(series?.bars.map((bar) => bar.tradeDate) ?? []);
-      const expected = [...stockDates]
-        .filter((date) => date >= (dataset.tradeDates[0] ?? "") && date <= dataset.asOfDate)
-        .sort();
+      const dates = indexDateSets[code];
       const missingDates = expected.filter((date) => !dates.has(date));
+      const otherCode: IndexCode = code === "KOSPI" ? "KOSDAQ" : "KOSPI";
+      const missingWhereOtherIndexPresent = missingDates.filter((date) => indexDateSets[otherCode].has(date));
+      const missingByYear = Object.fromEntries(
+        [...new Set(missingDates.map((date) => date.slice(0, 4)))].sort().map((year) => [
+          year,
+          missingDates.filter((date) => date.startsWith(year)).length,
+        ]),
+      );
       return [
         code,
         {
@@ -172,13 +403,18 @@ function indexContinuity(dataset: MarketDataset) {
           expectedTradingDays: expected.length,
           coveragePct: rate(expected.length - missingDates.length, expected.length),
           missingTradingDayCount: missingDates.length,
-          missingTradingDates: missingDates.slice(0, 200),
-          missingDatesTruncated: missingDates.length > 200,
+          missingTradingDates: missingDates,
+          missingDatesTruncated: false,
+          missingByYear,
+          missingTradingDateRuns: groupMissingTradingDates(expected, missingDates),
+          comparisonIndex: otherCode,
+          missingWhereOtherIndexPresentCount: missingWhereOtherIndexPresent.length,
+          missingWhereOtherIndexPresent,
         },
       ];
     }),
   );
-  return { expectedCalendar: "union of observed STOCK dates", indexes };
+  return { expectedCalendar: "union of observed STOCK dates", expectedTradingDays: expected.length, indexes };
 }
 
 function universeCoverage(dataset: MarketDataset, limit: number) {
@@ -191,7 +427,7 @@ function universeCoverage(dataset: MarketDataset, limit: number) {
     )
     .slice(0, limit);
   const calendars = Object.fromEntries(
-    ["KOSPI", "KOSDAQ"].map((code) => [
+    INDEX_CODES.map((code) => [
       code,
       dataset.indexSeries
         .find((item) => item.indexCode === code)
@@ -263,7 +499,10 @@ export function buildBacktestDataQuality(
     to: dataset.asOfDate,
     fieldCompleteness: fields,
     sourceDistribution: scan.sourceDistribution,
-    indexContinuity: indexContinuity(dataset),
+    indexContinuity: {
+      ...indexContinuity(dataset),
+      fileDiagnostics: scan.fileIndexDiagnostics,
+    },
     universeCoverage: universeCoverage(dataset, limit),
     fileQuality: scan.fileQuality,
   };
