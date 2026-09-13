@@ -75,7 +75,31 @@ describe("main screening source contract", () => {
     expect(report.filesMissingRequiredColumns[0]?.columns).toContain("foreignNetBuyValue");
   });
 
-  it("rejects an all-empty foreignNetBuyValue column but permits row-level nulls in mixed stock data", async () => {
+  it("rejects a stock file whose foreignNetBuyValue column is entirely empty", async () => {
+    const header = [...structuralHeader, "foreignNetBuyValue"];
+    const row = [
+      "005930",
+      "삼성전자",
+      "KOSPI",
+      "STOCK",
+      "2026-09-11",
+      "70000",
+      "71000",
+      "69000",
+      "70500",
+      "1000",
+      "70500000",
+      "",
+    ];
+    const validation = await validateCsv(`${header.join(",")}\n${row.join(",")}\n`);
+    const report = buildV8InputQualityReport([{ fileName: "screening.csv", validation }]);
+
+    expect(validation.valid).toBe(true);
+    expect(report.validForV8).toBe(false);
+    expect(report.filesEmptyRequiredColumns[0]?.columns).toContain("foreignNetBuyValue");
+  });
+
+  it("permits row-level foreignNetBuyValue nulls when the stock file has real values elsewhere", async () => {
     const header = [...structuralHeader, "foreignNetBuyValue"];
     const base = ["005930", "삼성전자", "KOSPI", "STOCK"];
     const rows = [
