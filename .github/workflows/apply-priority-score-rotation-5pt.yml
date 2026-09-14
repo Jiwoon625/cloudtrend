@@ -39,6 +39,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/lib/engine/priorityScoreV8.ts src/lib/engine/priorityScoreV8.test.ts src/lib/engine/pipeline.ts src/routes/scoring.tsx src/components/ScreenerTable.tsx
-          git rm .github/workflows/apply-priority-score-rotation-5pt.yml scripts/apply-priority-score-rotation-5pt.mjs scripts/fix-priority-patcher.mjs
+          git rm -f .github/workflows/apply-priority-score-rotation-5pt.yml scripts/apply-priority-score-rotation-5pt.mjs scripts/fix-priority-patcher.mjs
           git commit -m "feat: make priority score 5 points with sector rotation"
           git push origin HEAD:feat/priority-score-rotation-5pt
