@@ -1,0 +1,51 @@
+name: CloudTrend V8-9b 3-FOS penalty structure validation
+
+on:
+  push:
+    branches:
+      - feat/v8-9b-penalty-structure-work
+    paths:
+      - scripts/run-v8-penalty-structure-validation-3fos.ts
+      - .github/workflows/cloudtrend-v8-penalty-structure-3fos.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudtrend-v8-9b-penalty-structure-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate server configuration
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_USER_ID"
+      - name: Run V8-9b penalty structure validation
+        run: |
+          npx vite-node scripts/run-v8-penalty-structure-validation-3fos.ts \
+            --supabase-user-id "$SUPABASE_USER_ID" \
+            --upload
+      - name: Upload V8-9b artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudtrend-v8-penalty-structure-3fos-${{ github.run_id }}
+          path: v8-penalty-structure-3fos-runs/
+          if-no-files-found: warn
+          retention-days: 14
