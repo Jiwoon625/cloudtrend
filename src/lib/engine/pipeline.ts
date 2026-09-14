@@ -36,6 +36,7 @@ import {
   computeSectorRotation,
   type SectorRotationResult,
 } from "./sectorRotation";
+import { buildPriorityScoreV8 } from "./priorityScoreV8";
 import type { DatasetCapabilities, MarketDataset } from "./dataset";
 import type { DailyPrice, EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
 
@@ -360,6 +361,16 @@ export function runAnalysis(
     etfFacts: ds.capabilities.etfFacts,
   };
 
+  // V8 우선점수에서 섹터 로테이션을 0~1점으로 반영한다.
+  // 기존 우선점수의 외국인 수급/52주 신고가는 Vf 기술점수와 중복되므로 후처리에서 제거한다.
+  const sectorRotation = computeSectorRotation(ds, {
+    representativeEtf: buildRepresentativeEtf(ds),
+    weights: cfg.rotation,
+  });
+  const rotationScoreBySector = new Map(
+    (sectorRotation?.sectors ?? []).map((sector) => [sector.sectorCode, sector.rotationScore] as const),
+  );
+
   // 거래대금 백분위는 시장/유형별로 따로 계산
   const groups = new Map<string, number[]>();
   const prepared = ds.instruments
@@ -394,7 +405,11 @@ export function runAnalysis(
     const vf = inst.instrumentType === "STOCK" ? vfStockScore(snap, cfg) : null;
     // 주식 기술점수·상세·등급·순위는 백테스트와 같은 7개 피처를 사용한다.
     const tech = vf ?? technicalScore(snap, valuePct, cfg);
-    const prio = priorityScore(inst, snap, financials, last.marketCap, bench.dayReturn, cfg);
+    const legacyPrio = priorityScore(inst, snap, financials, last.marketCap, bench.dayReturn, cfg);
+    const prio = buildPriorityScoreV8(
+      legacyPrio,
+      rotationScoreBySector.get(inst.sectorCode) ?? null,
+    );
     const vfNormalized = vf ? normalize(vf) : null;
     const modelGrade =
       inst.instrumentType === "STOCK" ? vfGrade(vfNormalized) : technicalGrade(tech.points, cfg);
@@ -510,10 +525,7 @@ export function runAnalysis(
     marketForeignNet5d,
     rows,
     sectors,
-    sectorRotation: computeSectorRotation(ds, {
-      representativeEtf: buildRepresentativeEtf(ds),
-      weights: cfg.rotation,
-    }),
+    sectorRotation,
     tradeDates: ds.tradeDates,
     calculatedAt: new Date().toISOString(),
   };

@@ -139,7 +139,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
         r.scoreDelta1d?.toFixed(1) ?? "",
         r.grade,
         `${(r.vf ?? r.technical).points}/${(r.vf ?? r.technical).maxPoints} (산정 가능 ${(r.vf ?? r.technical).availableMaxPoints})`,
-        `${r.priority.points}/${r.priority.availableMaxPoints}`,
+        `${r.priority.points.toFixed(2)}/${r.priority.maxPoints.toFixed(1)} (산정 가능 ${r.priority.availableMaxPoints.toFixed(1)})`,
         r.snapshot.volumeRatio20?.toFixed(1) ?? "",
         r.rs20?.toFixed(2) ?? "",
         r.snapshot.distanceFrom52wHigh?.toFixed(2) ?? "",
@@ -272,7 +272,12 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
                 ),
                 priority: (
                   <span className="num">
-                    {r.priority.points}/{r.priority.availableMaxPoints}
+                    {formatNumber(r.priority.points, 2)}/{formatNumber(r.priority.maxPoints, 1)}
+                    {r.priority.availableMaxPoints < r.priority.maxPoints ? (
+                      <span className="block text-[10px] text-muted-foreground">
+                        산정 가능 {formatNumber(r.priority.availableMaxPoints, 1)}
+                      </span>
+                    ) : null}
                   </span>
                 ),
                 volumeRatio: (
