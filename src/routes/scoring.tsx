@@ -11,7 +11,6 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
   DEFAULT_SCORING_CONFIG,
-  priorityMaxPoints,
   technicalMaxPoints,
   type ScoringConfig,
 } from "@/lib/engine/scoring";
@@ -113,7 +112,8 @@ function ScoringPage() {
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved);
   const techMax = technicalMaxPoints(draft);
-  const prioMax = priorityMaxPoints(draft);
+  const prioMax =
+    draft.priority.indexPoints + draft.priority.sizePoints + draft.priority.relativePoints + 1;
   const vfMax = techMax + draft.priority.nearHighPoints + draft.priority.foreignPoints;
 
   const patch = (fn: (d: ScoringConfig) => void) => {
@@ -237,7 +237,7 @@ ETF 종합점수 = Σ(항목% × ETF 가중치) / Σ(데이터가 있는 항목�
                   onChange={(v) => patch((d) => void (d.weights[k].technical = v))}
                 />
                 <NumField
-                  label="우선순위(수급·지수·신고가)"
+                  label="우선순위(지수·규모·상대성과·섹터)"
                   value={draft.weights[k].priority}
                   step={0.05}
                   onChange={(v) => patch((d) => void (d.weights[k].priority = v))}
@@ -365,8 +365,8 @@ ETF 종합점수 = Σ(항목% × ETF 가중치) / Σ(데이터가 있는 항목�
         </Section>
 
         <Section
-          title={`3. 보조 우선순위 배점 (Vf 주식점수 미반영 · 현재 만점 ${prioMax}점)`}
-          desc="지수 편입·규모·당일 상대성과는 진단/ETF용 보조 항목이며 주식 Vf 점수에는 들어가지 않습니다."
+          title={`3. 우선점수 배점 (기술점수와 분리 · 현재 만점 ${prioMax}점)`}
+          desc="지수 편입 2점 + 규모 1점 + 당일 상대성과 1점 + 섹터 Rotation Score 1점. 외국인 수급·52주 신고가는 기술점수와 중복되어 우선점수에서 제외합니다."
         >
           <NumField
             label="지수 편입 배점"
@@ -376,6 +376,13 @@ ETF 종합점수 = Σ(항목% × ETF 가중치) / Σ(데이터가 있는 항목�
             suffix="점"
             onChange={(v) => patch((d) => void (d.priority.indexPoints = v))}
           />
+          <div className="grid grid-cols-[1fr_120px] items-center gap-2 rounded-md border border-border bg-surface p-2">
+            <div>
+              <Label className="text-[12px]">섹터 로테이션 배점</Label>
+              <p className="text-[11px] text-muted-foreground">Rotation Score 0~100을 0~1점으로 선형 환산</p>
+            </div>
+            <div className="text-right text-[12px] font-medium">1점 만점</div>
+          </div>
           <NumField
             label="규모 배점"
             value={draft.priority.sizePoints}
