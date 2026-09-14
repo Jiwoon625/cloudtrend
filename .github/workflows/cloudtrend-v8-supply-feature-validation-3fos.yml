@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: cloudtrend-v8-9-supply-feature-3fos-${{ github.repository }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   analyze:
