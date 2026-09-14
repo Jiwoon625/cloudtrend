@@ -1,0 +1,56 @@
+name: CloudTrend V8-8 3-FOS sector rotation validation
+
+on:
+  push:
+    branches:
+      - feat/v8-8-3fos-sector-rotation
+    paths:
+      - src/lib/engine/v8SectorRotationValidation.ts
+      - src/lib/engine/v8SectorRotationValidation.test.ts
+      - scripts/run-v8-sector-rotation-validation-3fos.ts
+      - .github/workflows/cloudtrend-v8-sector-rotation-validation-3fos.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudtrend-v8-8-sector-rotation-3fos-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run V8-8 sector rotation unit tests
+        run: npx vitest run src/lib/engine/v8SectorRotationValidation.test.ts
+      - name: Validate server configuration
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_USER_ID"
+      - name: Run long-horizon V8-8 strict 3-FOS sector rotation validation
+        run: |
+          npx vite-node scripts/run-v8-sector-rotation-validation-3fos.ts \
+            --supabase-user-id "$SUPABASE_USER_ID" \
+            --limit 613 \
+            --upload
+      - name: Upload V8-8 3-FOS artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudtrend-v8-sector-rotation-validation-3fos-${{ github.run_id }}
+          path: v8-sector-rotation-3fos-runs/
+          if-no-files-found: warn
+          retention-days: 14
