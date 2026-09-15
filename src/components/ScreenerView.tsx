@@ -85,7 +85,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
     if (sector !== "ALL" && r.instrument.sectorName !== sector) return false;
     const technicalScore =
       r.instrument.instrumentType === "STOCK" ? r.operatingScore10 : (r.vf ?? r.technical).points;
-    if (technicalScore === null || technicalScore < minTechnical) return false;
+    if (minTechnical > 0 && (technicalScore === null || technicalScore < minTechnical)) return false;
     if ((r.snapshot.volumeRatio20 ?? 0) < minVolumeRatio) return false;
     if (preset) {
       const p = PRESETS.find((x) => x.id === preset)!;
