@@ -1,0 +1,137 @@
+name: V8-10b MA BB Shrink 3-FOS
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/v8-ma-bb-shrink-3fos.yml
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/v8-ma-bb-shrink-3fos.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v8-10b-ma-bb-shrink-3fos-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Prepare shrink-weight runner and lint
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/run-v8-ma-bb-ablation-3fos.ts')
+          s = p.read_text()
+          needle = '  { id: "NO_MA_BB", label: "MA+BB 제거 · MA 0 · BB 0", maWeight: 0, bbWeight: 0 },\n];'
+          extra = [
+              '  { id: "NO_MA_BB", label: "MA+BB 제거 · MA 0 · BB 0", maWeight: 0, bbWeight: 0 },',
+              '  { id: "MA_HALF", label: "MA 축소 · MA 0.5 · BB 1.5", maWeight: 0.5, bbWeight: 1.5 },',
+              '  { id: "BB_ONE", label: "BB 축소 · MA 1.0 · BB 1.0", maWeight: 1, bbWeight: 1 },',
+              '  { id: "MA_HALF_BB_ONE", label: "MA+BB 축소 · MA 0.5 · BB 1.0", maWeight: 0.5, bbWeight: 1 },',
+              '];',
+          ]
+          if needle not in s:
+              raise SystemExit('variant block not found')
+          s = s.replace(needle, '\n'.join(extra))
+          s = s.replace('CloudTrend V8-10 MA/BB Ablation 3-FOS', 'CloudTrend V8-10b MA/BB Shrink 3-FOS')
+          s = s.replace('v8-10-ma-bb-ablation-3fos', 'v8-10b-ma-bb-shrink-3fos')
+          p.write_text(s)
+          PY
+          npx prettier --write scripts/run-v8-ma-bb-ablation-3fos.ts
+          npx eslint scripts/run-v8-ma-bb-ablation-3fos.ts
+
+  study:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      BACKTEST_SOURCE_MANIFEST: .cache/cloudtrend-backtest-manifest.json
+      BACKTEST_SOURCE_CACHE_DIR: .cache/cloudtrend-backtest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate server configuration
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_USER_ID"
+      - id: backtest-source
+        name: Compute backtest source cache key
+        run: |
+          npm run backtest:cache -- manifest \
+            --supabase-user-id "$SUPABASE_USER_ID" \
+            --manifest "$BACKTEST_SOURCE_MANIFEST"
+      - id: backtest-cache
+        name: Restore backtest source cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.BACKTEST_SOURCE_CACHE_DIR }}
+          key: cloudtrend-backtest-raw-v1-${{ steps.backtest-source.outputs.cache_key }}
+      - name: Download backtest sources on cache miss
+        if: steps.backtest-cache.outputs.cache-hit != 'true'
+        run: |
+          npm run backtest:cache -- materialize \
+            --manifest "$BACKTEST_SOURCE_MANIFEST" \
+            --cache-dir "$BACKTEST_SOURCE_CACHE_DIR"
+      - name: Report source cache status
+        run: |
+          echo "Backtest source files: ${{ steps.backtest-source.outputs.file_count }}"
+          echo "Backtest source bytes: ${{ steps.backtest-source.outputs.source_bytes }}"
+          echo "GitHub cache hit: ${{ steps.backtest-cache.outputs.cache-hit }}"
+      - name: Prepare shrink-weight research runner
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/run-v8-ma-bb-ablation-3fos.ts')
+          s = p.read_text()
+          needle = '  { id: "NO_MA_BB", label: "MA+BB 제거 · MA 0 · BB 0", maWeight: 0, bbWeight: 0 },\n];'
+          extra = [
+              '  { id: "NO_MA_BB", label: "MA+BB 제거 · MA 0 · BB 0", maWeight: 0, bbWeight: 0 },',
+              '  { id: "MA_HALF", label: "MA 축소 · MA 0.5 · BB 1.5", maWeight: 0.5, bbWeight: 1.5 },',
+              '  { id: "BB_ONE", label: "BB 축소 · MA 1.0 · BB 1.0", maWeight: 1, bbWeight: 1 },',
+              '  { id: "MA_HALF_BB_ONE", label: "MA+BB 축소 · MA 0.5 · BB 1.0", maWeight: 0.5, bbWeight: 1 },',
+              '];',
+          ]
+          if needle not in s:
+              raise SystemExit('variant block not found')
+          s = s.replace(needle, '\n'.join(extra))
+          s = s.replace('CloudTrend V8-10 MA/BB Ablation 3-FOS', 'CloudTrend V8-10b MA/BB Shrink 3-FOS')
+          s = s.replace('v8-10-ma-bb-ablation-3fos', 'v8-10b-ma-bb-shrink-3fos')
+          p.write_text(s)
+          PY
+      - name: Run V8-10b MA BB shrink 3-FOS
+        run: |
+          npx vite-node scripts/run-v8-ma-bb-ablation-3fos.ts \
+            --source-manifest "$BACKTEST_SOURCE_MANIFEST" \
+            --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR" \
+            --supabase-user-id "$SUPABASE_USER_ID" \
+            --upload
+      - name: Upload research artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v8-10b-ma-bb-shrink-3fos-${{ github.run_id }}
+          path: analysis-runs/v8-10b-ma-bb-shrink-3fos-*.json
+          if-no-files-found: warn
+          retention-days: 30
