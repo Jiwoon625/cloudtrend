@@ -23,15 +23,14 @@ import { computeLocalAnalysis } from "@/lib/localAnalysis";
 import type { AnalysisPayload, InstrumentDetailPayload } from "@/lib/market.functions";
 import {
   buildSnapshot,
-  diffSnapshots,
   hydrateSnapshots,
   saveSnapshot,
 } from "@/lib/screeningHistory";
 import { listRegisteredSources } from "@/lib/sourceRegistry";
 
-export const SCREENING_CACHE_VERSION = "screening-cache-v1" as const;
-export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v1" as const;
-export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v1" as const;
+export const SCREENING_CACHE_VERSION = "screening-cache-v8-final-v1" as const;
+export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-final-v1" as const;
+export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-final-v1" as const;
 
 interface CacheMeta {
   version: string;
@@ -59,36 +58,28 @@ export interface DashboardSummary {
   kosdaq: AnalysisResult["kosdaq"];
   vkospi: number | null;
   marketForeignNet5d: number | null;
-  strongSectors: Array<{
+  rotationSectors: Array<{
     sectorCode: string;
     sectorName: string;
     rank: number;
     prevRank: number;
     rs20: number | null;
     score: number;
+    priceLeadership: number | null;
+    moneyFlow: number | null;
   }>;
   counts: {
     total: number;
     passed: number;
     disqualified: number;
-    entryOnsets: number;
-    priorityOnsets: number;
-    momentumRisk: number;
-    gradeA: number;
-    gradeB: number;
+    kosdaq80Onsets: number;
+    upsideExits: number;
+    downsideExits: number;
     incomplete: number;
-    newGradeA: number | null;
-    droppedAtoB: number | null;
-    previousDate: string | null;
   };
-  warningBuckets: Array<{
-    code: "HEAD_FAKE" | "PRICE_INSIDE_CLOUD" | "EXIT_TRIGGER" | "LOW_LIQUIDITY";
-    count: number;
-    rows: ScreeningRow[];
-  }>;
   failReasons: Array<[string, number]>;
-  onsetTop: ScreeningRow[];
-  momentumRiskRows: ScreeningRow[];
+  onsetRows: ScreeningRow[];
+  exitRows: ScreeningRow[];
   top: ScreeningRow[];
 }
 
@@ -98,7 +89,6 @@ interface InstrumentCachePayload extends CacheMeta {
   detail: InstrumentDetailPayload;
 }
 
-/** Browser와 trusted Action이 동일한 deterministic digest를 만들도록 JSON 직렬화 규칙을 맞춘다. */
 function stable(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
   if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
@@ -113,7 +103,7 @@ function stable(value: unknown): string {
 async function sha256Text(text: string) {
   const bytes = new TextEncoder().encode(text);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return [...new Uint8Array(digest)].map((v) => v.toString(16).padStart(2, "0")).join("");
+  return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
 function deterministicAnalysis(analysis: AnalysisResult) {
@@ -182,29 +172,41 @@ async function gunzipJson<T>(bytes: Uint8Array): Promise<T> {
   return JSON.parse(await new Response(stream).text()) as T;
 }
 
-function buildStrongSectors(analysis: AnalysisResult): DashboardSummary["strongSectors"] {
-  const rot = analysis.sectorRotation?.sectors ?? [];
-  if (rot.length > 0) {
-    return [...rot]
+function buildRotationSectors(analysis: AnalysisResult): DashboardSummary["rotationSectors"] {
+  const rotation = analysis.sectorRotation?.sectors ?? [];
+  if (rotation.length > 0)
+    return [...rotation]
       .sort((a, b) => a.rank - b.rank)
-      .slice(0, 5)
-      .map((s) => ({
-        sectorCode: s.sectorCode,
-        sectorName: s.sectorName,
-        rank: s.rank,
-        prevRank: s.prevRank,
-        rs20: s.rs20,
-        score: s.rotationScore,
+      .map((sector) => ({
+        sectorCode: sector.sectorCode,
+        sectorName: sector.sectorName,
+        rank: sector.rank,
+        prevRank: sector.prevRank,
+        rs20: sector.rs20,
+        score: sector.rotationScore,
+        priceLeadership: sector.priceLeadership.score,
+        moneyFlow: sector.moneyFlow.score,
       }));
-  }
-  return analysis.sectors.slice(0, 5).map((s) => ({
-    sectorCode: s.sectorCode,
-    sectorName: s.sectorName,
-    rank: s.rank,
-    prevRank: s.prevRank,
-    rs20: s.rs20,
-    score: s.score,
-  }));
+  return [...analysis.sectors]
+    .sort((a, b) => a.rank - b.rank)
+    .map((sector) => ({
+      sectorCode: sector.sectorCode,
+      sectorName: sector.sectorName,
+      rank: sector.rank,
+      prevRank: sector.prevRank,
+      rs20: sector.rs20,
+      score: sector.score,
+      priceLeadership: null,
+      moneyFlow: null,
+    }));
+}
+
+function signalPriority(a: ScreeningRow, b: ScreeningRow) {
+  const priority = b.priority.points - a.priority.points;
+  if (priority !== 0) return priority;
+  const rotation = (b.sectorRotationScore ?? -Infinity) - (a.sectorRotationScore ?? -Infinity);
+  if (rotation !== 0) return rotation;
+  return (b.operatingScore10 ?? -Infinity) - (a.operatingScore10 ?? -Infinity);
 }
 
 async function buildDashboardSummary(
@@ -213,31 +215,24 @@ async function buildDashboardSummary(
   resultDigest: string,
 ): Promise<DashboardSummary> {
   const rows = analysis.rows;
-  const passed = rows.filter((r) => r.hardFilterPassed);
-  const onsetTop = [...passed]
-    .filter((r) => r.actionLabelText === "진입후보" || r.actionLabelText === "우선진입후보")
-    .sort((a, b) => b.totalScoreNormalized - a.totalScoreNormalized)
-    .slice(0, 10);
-  const momentumRiskRows = [...rows]
-    .filter((r) => r.actionLabelText === "모멘텀 위험")
-    .sort((a, b) => b.totalScoreNormalized - a.totalScoreNormalized);
+  const passed = rows.filter((row) => row.hardFilterPassed);
+  const onsetRows = [...rows]
+    .filter((row) => row.kosdaq80Onset)
+    .sort(signalPriority)
+    .slice(0, 30);
+  const exitRows = [...rows]
+    .filter(
+      (row) =>
+        row.instrument.instrumentType === "STOCK" &&
+        row.instrument.market === "KOSDAQ" &&
+        row.exitSignal !== null,
+    )
+    .sort((a, b) => (b.operatingScore10 ?? -Infinity) - (a.operatingScore10 ?? -Infinity))
+    .slice(0, 30);
   const top = [...passed]
+    .filter((row) => row.instrument.instrumentType === "STOCK")
     .sort((a, b) => b.totalScoreNormalized - a.totalScoreNormalized)
     .slice(0, 10);
-
-  const warningDefinitions: Array<DashboardSummary["warningBuckets"][number]["code"]> = [
-    "HEAD_FAKE",
-    "PRICE_INSIDE_CLOUD",
-    "EXIT_TRIGGER",
-    "LOW_LIQUIDITY",
-  ];
-  const warningBuckets = warningDefinitions.map((code) => {
-    const matches =
-      code === "LOW_LIQUIDITY"
-        ? rows.filter((r) => !r.hardFilterPassed)
-        : rows.filter((r) => r.warnings.includes(code));
-    return { code, count: matches.length, rows: matches.slice(0, 4).map(compactDashboardRow) };
-  });
 
   const failMap = new Map<string, number>();
   for (const row of rows) {
@@ -245,19 +240,11 @@ async function buildDashboardSummary(
     for (const reason of row.failedRules) failMap.set(reason, (failMap.get(reason) ?? 0) + 1);
   }
 
-  let previousDate: string | null = null;
-  let newGradeA: number | null = null;
-  let droppedAtoB: number | null = null;
-  const snapshot = buildSnapshot(analysis);
   try {
     await hydrateSnapshots();
-    const diff = diffSnapshots(snapshot);
-    previousDate = diff.previous?.date ?? null;
-    newGradeA = diff.previous ? diff.newGradeA.length : null;
-    droppedAtoB = diff.previous ? diff.droppedAtoB.length : null;
-    await saveSnapshot(snapshot);
+    await saveSnapshot(buildSnapshot(analysis));
   } catch {
-    // 이력 저장 실패가 스크리닝 결과 생성 자체를 막지 않게 한다.
+    // 이력 저장 실패가 V8 스크리닝 결과 생성을 막지 않게 한다.
   }
 
   return {
@@ -274,25 +261,25 @@ async function buildDashboardSummary(
     kosdaq: analysis.kosdaq,
     vkospi: analysis.vkospi,
     marketForeignNet5d: analysis.marketForeignNet5d,
-    strongSectors: buildStrongSectors(analysis),
+    rotationSectors: buildRotationSectors(analysis),
     counts: {
       total: rows.length,
       passed: passed.length,
       disqualified: rows.length - passed.length,
-      entryOnsets: onsetTop.filter((r) => r.actionLabelText === "진입후보").length,
-      priorityOnsets: onsetTop.filter((r) => r.actionLabelText === "우선진입후보").length,
-      momentumRisk: momentumRiskRows.length,
-      gradeA: passed.filter((r) => r.grade === "A").length,
-      gradeB: passed.filter((r) => r.grade === "B").length,
-      incomplete: rows.filter((r) => r.dataCompletenessRatio < 0.7).length,
-      newGradeA,
-      droppedAtoB,
-      previousDate,
+      kosdaq80Onsets: rows.filter((row) => row.kosdaq80Onset).length,
+      upsideExits: rows.filter(
+        (row) => row.instrument.market === "KOSDAQ" && row.exitSignal === "UP95",
+      ).length,
+      downsideExits: rows.filter(
+        (row) => row.instrument.market === "KOSDAQ" && row.exitSignal === "DOWN25",
+      ).length,
+      incomplete: rows.filter(
+        (row) => row.instrument.instrumentType === "STOCK" && row.operatingScore10 === null,
+      ).length,
     },
-    warningBuckets,
     failReasons: [...failMap.entries()].sort((a, b) => b[1] - a[1]),
-    onsetTop: onsetTop.map(compactDashboardRow),
-    momentumRiskRows: momentumRiskRows.map(compactDashboardRow),
+    onsetRows: onsetRows.map(compactDashboardRow),
+    exitRows: exitRows.map(compactDashboardRow),
     top: top.map(compactDashboardRow),
   };
 }
@@ -313,10 +300,6 @@ export async function readDashboardCache(): Promise<DashboardSummary | null> {
   return cached.inputFingerprint === expectedInput ? cached : null;
 }
 
-/**
- * 전체 분석을 정확히 한 번 계산하고 screening/dashboard cache를 함께 만든다.
- * 같은 입력 fingerprint의 이전 결과가 있으면 deterministic digest가 달라지는 순간 실패한다.
- */
 export async function buildAndPersistScreeningCaches(): Promise<{
   screening: ScreeningCachePayload;
   dashboard: DashboardSummary;
@@ -332,11 +315,10 @@ export async function buildAndPersistScreeningCaches(): Promise<{
     previous?.version === SCREENING_CACHE_VERSION &&
     previous.inputFingerprint === inputFingerprint &&
     previous.resultDigest !== resultDigest
-  ) {
+  )
     throw new Error(
       `스크리닝 regression guard 실패: 동일 원천·동일 산식인데 결과가 달라졌습니다. expected=${previous.resultDigest}, actual=${resultDigest}`,
     );
-  }
 
   const screening: ScreeningCachePayload = {
     version: SCREENING_CACHE_VERSION,
@@ -350,8 +332,6 @@ export async function buildAndPersistScreeningCaches(): Promise<{
     writeObject(await screeningPath(), screening),
     writeObject(await dashboardPath(), dashboard),
   ]);
-
-  // 저장/직렬화가 결과를 변형하지 않았는지 round-trip digest로 검증한다.
   const roundTrip = await readObject<ScreeningCachePayload>(await screeningPath());
   if (!roundTrip || (await analysisDigest(roundTrip.payload.analysis)) !== resultDigest)
     throw new Error("스크리닝 cache 저장 후 digest 검증에 실패했습니다.");
@@ -374,9 +354,8 @@ export async function getCachedInstrumentDetail(symbol: string): Promise<Instrum
   const normalized = symbol.trim().toUpperCase();
   const screening = await readScreeningCache();
   const shared = screening ?? (await buildAndPersistScreeningCaches()).screening;
-  const row =
-    shared.payload.analysis.rows.find((item) => item.instrument.symbol === normalized) ?? null;
-  if (!row) {
+  const row = shared.payload.analysis.rows.find((item) => item.instrument.symbol === normalized) ?? null;
+  if (!row)
     return {
       source: shared.payload.source,
       asOfDate: shared.payload.analysis.asOfDate,
@@ -390,7 +369,6 @@ export async function getCachedInstrumentDetail(symbol: string): Promise<Instrum
       chart: [],
       history: [],
     };
-  }
 
   const path = await instrumentPath(normalized);
   const compressed = await readBinaryObject(path);
@@ -402,8 +380,7 @@ export async function getCachedInstrumentDetail(symbol: string): Promise<Instrum
         cached.inputFingerprint === shared.inputFingerprint &&
         cached.resultDigest === shared.resultDigest &&
         cached.symbol === normalized
-      )
-        return cached.detail;
+      ) return cached.detail;
     } catch {
       // 손상/구버전 cache는 아래에서 재생성한다.
     }

@@ -1,10 +1,6 @@
 import type { ScreeningRow } from "@/lib/engine/pipeline";
 
-/**
- * 대시보드의 ScreenerTable이 실제로 읽는 필드만 남긴다.
- * ScreeningRow 전체(지표 snapshot/점수 breakdown/재무 payload)를 반복 저장하지 않아
- * dashboard/latest.json을 화면 표시용 projection으로 유지한다.
- */
+/** Dashboard projection: keep only fields read by the V8 Final dashboard table. */
 export function compactDashboardRow(row: ScreeningRow): ScreeningRow {
   const technical = row.technical;
   const priority = row.priority;
@@ -44,6 +40,11 @@ export function compactDashboardRow(row: ScreeningRow): ScreeningRow {
     dataCompletenessRatio: row.dataCompletenessRatio,
     grade: row.grade,
     actionLabelText: row.actionLabelText,
+    operatingScore10: row.operatingScore10,
+    kosdaq80Onset: row.kosdaq80Onset,
+    exitSignal: row.exitSignal,
+    sectorPriceLeadership: row.sectorPriceLeadership,
+    sectorRotationScore: row.sectorRotationScore,
     warnings: row.warnings,
     failedRules: row.failedRules,
     hardFilterPassed: row.hardFilterPassed,
