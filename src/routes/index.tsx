@@ -5,7 +5,7 @@ import {
   ArrowUp,
   Loader2,
   RefreshCw,
-  ShieldAlert,
+  ShieldCheck,
   SlidersHorizontal,
   TrendingUp,
 } from "lucide-react";
@@ -15,12 +15,11 @@ import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
-import { GradeBadge, ScreenerTable } from "@/components/ScreenerTable";
+import { ScreenerTable } from "@/components/ScreenerTable";
 import { PdfExportButton } from "@/components/PdfExportButton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { dashboardQueryOptions } from "@/lib/analysisQuery";
-import { WARNING_LABELS } from "@/lib/engine/scoring";
 import {
   formatCount,
   formatKstDateTime,
@@ -35,24 +34,26 @@ export const Route = createFileRoute("/")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "대시보드 | CloudTrend 주식/ETF 스크리너" },
+      { title: "대시보드 | CloudTrend V8 Final" },
       {
         name: "description",
         content:
-          "국내·미국 주식과 ETF의 시장 게이트, 섹터 상대강도, 기술·우선순위 점수를 한 화면에서 확인하는 규칙 기반 스크리닝 대시보드입니다.",
+          "CloudTrend V8 Final 10점 기술점수의 KOSDAQ80 Onset, 9.5·2.5 Exit, 섹터 로테이션과 시장 상태를 한 화면에서 확인합니다.",
       },
-      { property: "og:title", content: "대시보드 | CloudTrend" },
-      {
-        property: "og:description",
-        content: "시장 상태, 스크리닝 요약, 상위 후보와 경고 신호를 계산 근거와 함께 제공합니다.",
-      },
+      { property: "og:title", content: "대시보드 | CloudTrend V8 Final" },
+      { property: "og:description", content: "V8 Final KOSDAQ 운영신호와 전체 섹터 Rotation 대시보드." },
     ],
   }),
   errorComponent: ({ error, reset }) => <DataError error={error} reset={reset} />,
   component: Dashboard,
 });
 
-function Card({ title, subtitle, icon, children }: {
+function Card({
+  title,
+  subtitle,
+  icon,
+  children,
+}: {
   title: string;
   subtitle?: string;
   icon?: React.ReactNode;
@@ -60,7 +61,9 @@ function Card({ title, subtitle, icon, children }: {
 }) {
   return (
     <section className="rounded-lg border border-border bg-card p-4">
-      <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">{icon}{title}</h2>
+      <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
+        {icon}{title}
+      </h2>
       {subtitle ? <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">{subtitle}</p> : null}
       {children}
     </section>
@@ -93,7 +96,7 @@ function Dashboard() {
         queryClient.invalidateQueries({ queryKey: ["market-analysis"] }),
       ]);
       queryClient.removeQueries({ queryKey: ["instrument"] });
-      toast.success("스크리닝을 다시 계산했습니다.");
+      toast.success("V8 Final 스크리닝을 다시 계산했습니다.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "스크리닝 재계산에 실패했습니다.");
     } finally {
@@ -105,15 +108,15 @@ function Dashboard() {
     <AppShell loadAnalysis={false}>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">대시보드</h1>
+          <h1 className="text-xl font-bold tracking-tight">대시보드 · V8 Final</h1>
           <p className="text-[12px] text-muted-foreground">
-            시장 게이트, 스크리닝 요약, 강한 섹터, 상위 후보 순위를 한 화면에 정리합니다.
+            KOSDAQ80 Onset과 점수 Exit, 시장 상태, 전체 섹터 Rotation 순위를 확인합니다.
           </p>
         </div>
         <div className="flex items-center gap-2" data-no-print>
           {started && !summaryQuery.isPending ? (
             <>
-              <PdfExportButton documentTitle="CloudTrend 대시보드" />
+              <PdfExportButton documentTitle="CloudTrend V8 Final 대시보드" />
               <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void rescreen()} disabled={rescreening}>
                 {rescreening ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
                 다시 스크리닝
@@ -128,14 +131,16 @@ function Dashboard() {
           <SlidersHorizontal className="mx-auto mb-3 size-8 text-primary" />
           <h2 className="mb-1 text-base font-semibold">아직 스크리닝을 시작하지 않았습니다</h2>
           <p className="mx-auto mb-4 max-w-md text-[12px] leading-relaxed text-muted-foreground">
-            “데이터·산식” 탭에서 시세 데이터를 업로드한 뒤 “스크리닝 시작”을 누르면 결과 캐시가 생성됩니다.
+            데이터·산식 탭에서 시세 데이터를 입력한 뒤 스크리닝 시작을 누르면 V8 Final 캐시가 생성됩니다.
           </p>
-          <Button asChild size="lg" className="gap-2"><Link to="/scoring"><SlidersHorizontal className="size-4" />데이터·산식 탭으로 이동</Link></Button>
+          <Button asChild size="lg" className="gap-2">
+            <Link to="/scoring"><SlidersHorizontal className="size-4" />데이터·산식 탭으로 이동</Link>
+          </Button>
         </section>
       ) : summaryQuery.isPending ? (
         <section className="rounded-lg border border-border bg-card p-8">
-          <div className="mb-4 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />최신 대시보드 요약을 불러오는 중입니다…
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />V8 Final 대시보드를 불러오는 중입니다…
           </div>
         </section>
       ) : summaryQuery.isError || !summaryQuery.data ? (
@@ -157,114 +162,143 @@ function DashboardContent({ summary }: { summary: DashboardSummary }) {
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] text-muted-foreground">
-          기준일 {summary.asOfDate} · 전략 v{summary.strategyVersion} · 데이터 {summary.dataVersion}
+          기준일 {summary.asOfDate} · 모델 <strong className="text-foreground">{summary.strategyVersion}</strong> · 데이터 {summary.dataVersion}
         </p>
         <p className="text-[11px] text-muted-foreground">계산 시각 {formatKstDateTime(summary.calculatedAt)} (KST·미래 데이터 미사용)</p>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card title="시장 상태" icon={<Activity className="size-4 text-primary" />}>
+      <div className="grid gap-4 lg:grid-cols-4">
+        <Card title="오늘의 V8 신호" icon={<TrendingUp className="size-4 text-primary" />}>
+          <KeyValue label="KOSDAQ80 Onset" value={formatCount(counts.kosdaq80Onsets)} />
+          <KeyValue label="상승 Exit · 9.5점 이상" value={formatCount(counts.upsideExits)} />
+          <KeyValue label="하락 Exit · 2.5점 이하" value={formatCount(counts.downsideExits)} />
+          <KeyValue label="점수 산정 불가" value={formatCount(counts.incomplete)} />
+        </Card>
+
+        <Card title="운영 기준" subtitle="확정된 포트폴리오 기본값입니다." icon={<ShieldCheck className="size-4 text-primary" />}>
+          <KeyValue label="최대 동시보유" value="30종목" />
+          <KeyValue label="균등 슬롯" value="약 3.33%" />
+          <KeyValue label="왕복 거래비용 가정" value="0.30%" />
+          <KeyValue label="오늘 Onset / 최대 슬롯" value={`${counts.kosdaq80Onsets} / 30`} />
+          <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+            실제 보유 슬롯 사용량은 포지션 추적 기능 연결 전까지 표시하지 않습니다.
+          </p>
+        </Card>
+
+        <Card title="진입·Exit 규칙" icon={<TrendingUp className="size-4 text-primary" />}>
+          <KeyValue label="진입" value="KOSDAQ80 Onset" />
+          <KeyValue label="상승 Exit" value="점수 ≥ 9.5" />
+          <KeyValue label="하락 Exit" value="점수 ≤ 2.5" />
+          <KeyValue label="기술점수" value="Raw 0~10" />
+          <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+            핵심 피처 결측 시 남은 피처를 재정규화하지 않으며 Onset을 생성하지 않습니다.
+          </p>
+        </Card>
+
+        <Card title="시장 상태 · 참고" icon={<Activity className="size-4 text-primary" />}>
           <div className={`mb-2 flex items-center gap-2 text-lg font-bold ${gateColor}`}>
             {gate.status === "RISK_OFF" ? <ArrowDown className="size-5" /> : <ArrowUp className="size-5" />}
-            {gateLabel}<span className="num text-xs font-normal text-muted-foreground">게이트 {gate.metCount}/4 충족</span>
+            {gateLabel}
+            <span className="num text-xs font-normal text-muted-foreground">{gate.metCount}/4</span>
           </div>
-          {gate.incomplete ? <p className="mb-2 text-[11px] text-warn">판정 불완전 (일부 시장 데이터 없음)</p> : null}
-          <KeyValue label="KOSPI 종가 / MA60" value={`${formatNumber(summary.kospi.close, 2)} / ${formatNumber(summary.kospi.ma60, 2)}`} />
-          <KeyValue label="KOSPI 구름 상단 위" value={gate.benchmarkAboveCloud === null ? "데이터 없음" : gate.benchmarkAboveCloud ? "충족" : "미충족"} />
-          <KeyValue label="KOSDAQ 종가" value={formatNumber(summary.kosdaq.close, 2)} />
-          <KeyValue label="변동성지수(VKOSPI 또는 실현변동성)" value={formatNumber(summary.vkospi, 2)} hint="< 30" />
-          <KeyValue label="외국인 최근 5일 누적" value={formatWon(summary.marketForeignNet5d)} />
-          {gate.status === "NEUTRAL" ? <p className="mt-2 text-[11px] text-warn">Neutral: 신규 진입 후보의 권장 계획 리스크를 50%로 축소 표시합니다.</p> : null}
-          {gate.status === "RISK_OFF" ? <p className="mt-2 text-[11px] text-down">Risk-Off: 점수가 높아도 “관망” 또는 “리테스트 대기”로 표시합니다.</p> : null}
-        </Card>
-
-        <Card title="오늘의 스크리닝 요약" icon={<TrendingUp className="size-4 text-primary" />}>
-          <KeyValue label="전체 분석 종목 수" value={formatCount(counts.total)} />
-          <KeyValue label="Universe Filter 통과" value={formatCount(counts.passed)} />
-          <KeyValue label="60점 Onset · 진입후보" value={formatCount(counts.entryOnsets)} />
-          <KeyValue label="70점 Onset · 우선진입후보" value={formatCount(counts.priorityOnsets)} />
-          <KeyValue label="모멘텀 위험" value={formatCount(counts.momentumRisk)} />
-          <KeyValue label="A등급" value={formatCount(counts.gradeA)} />
-          <KeyValue label="B등급" value={formatCount(counts.gradeB)} />
-          <KeyValue label="신규 A등급 진입" value={counts.newGradeA === null ? "미집계" : formatCount(counts.newGradeA)} hint={counts.previousDate ? `${counts.previousDate} 대비` : "이전 날짜 스냅샷 없음"} />
-          <KeyValue label="A→B 하락" value={counts.droppedAtoB === null ? "미집계" : formatCount(counts.droppedAtoB)} hint={counts.previousDate ? `${counts.previousDate} 대비` : "이전 날짜 스냅샷 없음"} />
-          <KeyValue label="데이터 미완전 종목" value={formatCount(counts.incomplete)} />
-          <p className="mt-2 text-[11px] text-muted-foreground">결과는 <Link to="/history" className="text-primary hover:underline">스크리닝 이력</Link> 탭에 날짜별로 저장됩니다.</p>
-        </Card>
-
-        <Card title="강한 섹터" subtitle="섹터 탭과 동일한 로테이션 점수 순위입니다." icon={<TrendingUp className="size-4 text-primary" />}>
-          <div className="space-y-1.5">
-            {summary.strongSectors.map((s) => (
-              <div key={s.sectorCode} className="flex items-center justify-between gap-2 text-[12px]">
-                <Link to="/sectors" className="font-medium hover:underline">{s.rank}. {s.sectorName}</Link>
-                <span className="num flex gap-3">
-                  <span className="font-semibold">{formatNumber(s.score, 1)}</span>
-                  <span className={(s.rs20 ?? 0) >= 0 ? "text-up" : "text-down"}>{s.rs20 === null ? "-" : formatPercent(s.rs20, 2)}</span>
-                  <span className="text-muted-foreground">{s.prevRank > s.rank ? `▲${s.prevRank - s.rank}` : s.prevRank < s.rank ? `▼${s.rank - s.prevRank}` : "-"}</span>
-                </span>
-              </div>
-            ))}
-            {summary.strongSectors.length === 0 ? <p className="text-[11px] text-muted-foreground">섹터 순위 데이터가 없습니다.</p> : null}
-          </div>
+          {gate.incomplete ? <p className="mb-2 text-[11px] text-warn">일부 시장 데이터가 없어 판정이 불완전합니다.</p> : null}
+          <KeyValue label="KOSPI / MA60" value={`${formatNumber(summary.kospi.close, 2)} / ${formatNumber(summary.kospi.ma60, 2)}`} />
+          <KeyValue label="KOSDAQ" value={formatNumber(summary.kosdaq.close, 2)} />
+          <KeyValue label="변동성" value={formatNumber(summary.vkospi, 2)} />
+          <KeyValue label="외국인 최근 5일" value={formatWon(summary.marketForeignNet5d)} />
+          <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+            Market Gate는 참고정보이며 KOSDAQ80 Onset 또는 Exit를 차단하지 않습니다.
+          </p>
         </Card>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-4">
-        {summary.warningBuckets.map((bucket) => {
-          const title = bucket.code === "LOW_LIQUIDITY" ? "실격 종목" : WARNING_LABELS[bucket.code]!;
-          const subtitle = bucket.code === "HEAD_FAKE"
-            ? "가격 돌파는 보이지만 거래량·구름대·선행스팬이 뒷받침하지 않아 되돌림 가능성이 큰 상태입니다."
-            : bucket.code === "PRICE_INSIDE_CLOUD"
-              ? "종가가 일목균형표 구름 사이에 있어 추세 방향이 불분명합니다."
-              : bucket.code === "EXIT_TRIGGER"
-                ? "추세 전환·하락 신호가 감지되어 청산 또는 손절을 검토해야 하는 상태입니다."
-                : "Universe Filter 조건을 충족하지 못한 종목입니다.";
-          return (
-            <Card key={bucket.code} title={title} subtitle={subtitle} icon={<ShieldAlert className="size-4 text-warn" />}>
-              <p className="num mb-2 text-2xl font-bold">{bucket.count}</p>
-              <div className="flex flex-wrap gap-1">
-                {bucket.rows.map((row) => (
-                  <Link key={row.instrument.symbol} to="/instrument/$symbol" params={{ symbol: row.instrument.symbol }}>
-                    <Badge variant="outline" className="text-[10px]">{row.instrument.name}</Badge>
-                  </Link>
-                ))}
-                {bucket.count === 0 ? <span className="text-[11px] text-muted-foreground">해당 종목 없음</span> : null}
-              </div>
-            </Card>
-          );
-        })}
-      </div>
-
-      {summary.failReasons.length > 0 ? (
-        <section className="mt-4 overflow-hidden rounded-lg border border-border bg-card">
-          <h2 className="border-b border-border bg-surface-strong px-3 py-2 text-sm font-semibold">실격 사유 분포 (총 {formatCount(counts.disqualified)}종목 실격)</h2>
-          <table className="w-full text-[12px]"><tbody>
-            {summary.failReasons.map(([reason, count]) => (
-              <tr key={reason} className="border-b border-border last:border-0"><td className="px-3 py-2">{reason}</td><td className="num px-3 py-2 text-right font-semibold text-warn">{formatCount(count)}건</td></tr>
-            ))}
-          </tbody></table>
-          <p className="px-3 py-2 text-[11px] text-muted-foreground">사유별 기준값은 <Link to="/scoring" className="text-primary hover:underline">점수 산식</Link> 탭에서 조정할 수 있습니다.</p>
-        </section>
-      ) : null}
+      <section className="mt-4 overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-b border-border bg-surface-strong px-3 py-2">
+          <h2 className="text-sm font-semibold">Sector Rotation · 전체 섹터</h2>
+          <p className="text-[11px] text-muted-foreground">
+            Rotation Score는 기술점수와 분리되어 우선점수 0~1점으로 반영됩니다. 현재 계산된 모든 섹터를 표시합니다.
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-[12px]">
+            <thead>
+              <tr className="border-b border-border text-[11px] text-muted-foreground">
+                <th className="px-3 py-2 text-left">순위</th>
+                <th className="px-3 py-2 text-left">섹터</th>
+                <th className="px-3 py-2 text-right">Rotation</th>
+                <th className="px-3 py-2 text-right">Price Leadership</th>
+                <th className="px-3 py-2 text-right">Money Flow</th>
+                <th className="px-3 py-2 text-right">RS20</th>
+                <th className="px-3 py-2 text-right">순위 변화</th>
+              </tr>
+            </thead>
+            <tbody>
+              {summary.rotationSectors.map((sector) => {
+                const move = sector.prevRank > sector.rank
+                  ? `▲${sector.prevRank - sector.rank}`
+                  : sector.prevRank < sector.rank
+                    ? `▼${sector.rank - sector.prevRank}`
+                    : "-";
+                return (
+                  <tr key={sector.sectorCode} className="border-b border-border last:border-0">
+                    <td className="num px-3 py-2">{sector.rank}</td>
+                    <td className="px-3 py-2 font-medium"><Link to="/sectors" className="hover:underline">{sector.sectorName}</Link></td>
+                    <td className="num px-3 py-2 text-right font-semibold">{formatNumber(sector.score, 1)}</td>
+                    <td className="num px-3 py-2 text-right">{sector.priceLeadership === null ? "-" : formatNumber(sector.priceLeadership, 1)}</td>
+                    <td className="num px-3 py-2 text-right">{sector.moneyFlow === null ? "-" : formatNumber(sector.moneyFlow, 1)}</td>
+                    <td className={`num px-3 py-2 text-right ${(sector.rs20 ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+                      {sector.rs20 === null ? "-" : formatPercent(sector.rs20, 2)}
+                    </td>
+                    <td className="num px-3 py-2 text-right text-muted-foreground">{move}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <section className="mt-6">
         <div className="mb-2 flex flex-wrap items-center gap-2">
-          <h2 className="text-sm font-semibold">V6 Onset 상위 10</h2>
-          <Badge variant="outline" className="border-primary/30 bg-primary/5 text-[10px] text-primary">60점 진입후보 / 70점 우선진입후보</Badge>
-          <span className="text-[11px] text-muted-foreground">오늘 최초 상향 돌파한 Universe 통과 종목만 종합점수 순으로 표시합니다.</span>
+          <h2 className="text-sm font-semibold">오늘의 KOSDAQ80 Onset</h2>
+          <Badge variant="outline" className="border-primary/30 bg-primary/5 text-[10px] text-primary">전일 &lt;8.0 → 당일 ≥8.0</Badge>
+          <span className="text-[11px] text-muted-foreground">우선점수(Sector Rotation 포함)가 높은 순으로 최대 30개를 표시합니다.</span>
         </div>
-        {summary.onsetTop.length ? <ScreenerTable rows={summary.onsetTop} /> : <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">오늘 60점 또는 70점을 새로 상향 돌파한 종목이 없습니다.</div>}
+        {summary.onsetRows.length ? (
+          <ScreenerTable rows={summary.onsetRows} />
+        ) : (
+          <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">오늘 새로 발생한 KOSDAQ80 Onset이 없습니다.</div>
+        )}
       </section>
 
       <section className="mt-6">
-        <div className="mb-2 flex flex-wrap items-center gap-2"><h2 className="text-sm font-semibold text-warn">모멘텀 위험</h2><span className="text-[11px] text-muted-foreground">직전 60점+ 모멘텀 구간에서 80점 이상을 기록한 뒤 현재 60점 미만으로 내려온 종목입니다.</span></div>
-        {summary.momentumRiskRows.length ? <ScreenerTable rows={summary.momentumRiskRows} /> : <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">현재 모멘텀 위험 조건에 해당하는 종목이 없습니다.</div>}
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <h2 className="text-sm font-semibold text-warn">V8 Exit 조건</h2>
+          <Badge variant="outline" className="border-warn/30 bg-warn-soft text-[10px] text-warn">≥9.5 또는 ≤2.5</Badge>
+          <span className="text-[11px] text-muted-foreground">실제 매도 대상 여부는 보유 여부와 함께 확인해야 합니다.</span>
+        </div>
+        {summary.exitRows.length ? (
+          <ScreenerTable rows={summary.exitRows} />
+        ) : (
+          <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">현재 점수 Exit 조건에 해당하는 KOSDAQ 종목이 없습니다.</div>
+        )}
       </section>
 
-      <section className="mt-6">
-        <div className="mb-2 flex items-center gap-2"><h2 className="text-sm font-semibold">상위 후보 (Universe 통과 · 종합점수 순)</h2><GradeBadge grade="A" /><span className="text-[11px] text-muted-foreground">주식 기술점수는 기본 9.5점 만점이며, 정규화 점수로 순위와 등급을 산정합니다.</span></div>
-        <ScreenerTable rows={summary.top} />
-      </section>
+      {summary.failReasons.length > 0 ? (
+        <section className="mt-6 overflow-hidden rounded-lg border border-border bg-card">
+          <h2 className="border-b border-border bg-surface-strong px-3 py-2 text-sm font-semibold">
+            Universe 실격 사유 분포 · {formatCount(counts.disqualified)}종목
+          </h2>
+          <table className="w-full text-[12px]"><tbody>
+            {summary.failReasons.map(([reason, count]) => (
+              <tr key={reason} className="border-b border-border last:border-0">
+                <td className="px-3 py-2">{reason}</td>
+                <td className="num px-3 py-2 text-right font-semibold text-warn">{formatCount(count)}건</td>
+              </tr>
+            ))}
+          </tbody></table>
+        </section>
+      ) : null}
     </>
   );
 }
