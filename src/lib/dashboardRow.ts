@@ -1,6 +1,6 @@
 import type { ScreeningRow } from "@/lib/engine/pipeline";
 
-/** Dashboard projection: keep only fields read by the V8 Final dashboard table. */
+/** Dashboard projection: keep only structural fields read by the V8 Final dashboard table. */
 export function compactDashboardRow(row: ScreeningRow): ScreeningRow {
   const technical = row.technical;
   const priority = row.priority;
@@ -39,7 +39,6 @@ export function compactDashboardRow(row: ScreeningRow): ScreeningRow {
     scoreDelta1d: row.scoreDelta1d,
     dataCompletenessRatio: row.dataCompletenessRatio,
     grade: row.grade,
-    actionLabelText: row.actionLabelText,
     operatingScore10: row.operatingScore10,
     kosdaq80Onset: row.kosdaq80Onset,
     exitSignal: row.exitSignal,
