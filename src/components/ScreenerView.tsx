@@ -43,7 +43,7 @@ const PRESETS: Array<{ id: PresetId; label: string; test: (r: ScreeningRow) => b
     test: (r) => r.instrument.indexMemberships.includes("KOREA_VALUEUP"),
   },
   { id: "HEAD_FAKE", label: "Head Fake 경고", test: (r) => r.warnings.includes("HEAD_FAKE") },
-  { id: "EXIT", label: "청산 점검", test: (r) => r.warnings.includes("EXIT_TRIGGER") },
+  { id: "EXIT", label: "Exit 점검", test: (r) => r.exitSignal !== null },
 ];
 
 export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: AnalysisResult }) {

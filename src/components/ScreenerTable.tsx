@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
-import { WARNING_LABELS } from "@/lib/engine/scoring";
+import { getDisplayWarnings } from "@/lib/warningDisplay";
 
 export function GradeBadge({ grade }: { grade: "A" | "B" | "C" }) {
   const cls =
@@ -155,7 +155,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
         distanceHigh: r.snapshot.distanceFrom52wHigh?.toFixed(2) ?? "",
         marketCap: r.marketCap ?? "",
         status: r.actionLabelText,
-        warnings: r.warnings.join("|"),
+        warnings: getDisplayWarnings(r).join("|"),
       };
       return visible.map((c) => values[c.id] ?? "").join(",");
     });
@@ -245,6 +245,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
             {sorted.map((r, i) => {
               const tech = technicalValue(r);
               const techBlock = r.vf ?? r.technical;
+              const displayWarnings = getDisplayWarnings(r);
               const cells: Record<string, React.ReactNode> = {
                 rank: <span className="num">{i + 1}</span>,
                 name: (
@@ -338,18 +339,18 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
                 ),
                 warnings: (
                   <div className="flex max-w-[220px] flex-wrap gap-1">
-                    {r.warnings.slice(0, 3).map((w) => (
+                    {displayWarnings.slice(0, 3).map((warning) => (
                       <Badge
-                        key={w}
+                        key={warning}
                         variant="outline"
                         className="border-warn/30 bg-warn-soft text-[10px] text-warn"
                       >
-                        {WARNING_LABELS[w] ?? w}
+                        {warning}
                       </Badge>
                     ))}
-                    {r.warnings.length > 3 ? (
+                    {displayWarnings.length > 3 ? (
                       <span className="text-[10px] text-muted-foreground">
-                        +{r.warnings.length - 3}
+                        +{displayWarnings.length - 3}
                       </span>
                     ) : null}
                   </div>
