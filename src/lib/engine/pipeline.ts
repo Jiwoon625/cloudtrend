@@ -8,7 +8,6 @@ import {
   sma,
   type IndicatorSnapshot,
 } from "./indicators";
-
 import {
   ALL_AVAILABLE,
   DEFAULT_SCORING_CONFIG,
@@ -22,11 +21,12 @@ import {
   historicalTechnicalScore,
   normalize,
   priorityScore,
+  strictRawTechnicalScore,
   technicalGrade,
   technicalScore,
   totalScore,
+  v8FinalStockScore,
   vfGrade,
-  vfStockScore,
   type MarketGate,
   type ScoreBlock,
   type ScoringConfig,
@@ -37,13 +37,15 @@ import {
   type SectorRotationResult,
 } from "./sectorRotation";
 import { buildPriorityScoreV8 } from "./priorityScoreV8";
+import { computeV8SectorPriceLeadership } from "./v8SectorPriceLeadership";
+import {
+  VF_DOWNSIDE_EXIT_RAW_SCORE,
+  VF_ENTRY_RAW_SCORE,
+  VF_UPSIDE_EXIT_RAW_SCORE,
+} from "./vfConfig";
 import type { DatasetCapabilities, MarketDataset } from "./dataset";
 import type { DailyPrice, EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
 
-/**
- * 섹터별 대표 종목 매핑 (대표 ETF 우선, 없으면 해당 섹터 시가총액 1위 종목).
- * 레버리지·인버스·채권·CD금리·해외자산·시장대표 ETF는 국내 산업 섹터 자금흐름 분석에서 제외한다.
- */
 const NON_SECTOR_ETF = /채권|국고채|CD\s?금리|단기자금|머니마켓|MMF|금현물|달러|원유|커버드콜|미국|나스닥|S&P|필라델피아|글로벌|차이나|중국|일본|인도|베트남|유로|선진국|신흥국|리츠|TDF|배당성장|밸류업|레버리지|인버스|200TR|코스피|코스닥/i;
 
 function buildRepresentativeEtf(
@@ -55,37 +57,28 @@ function buildRepresentativeEtf(
     const bars = ds.bars[inst.symbol] ?? [];
     if (bars.length === 0) continue;
     if (inst.sectorCode === "MARKET_IDX" || inst.sectorCode === "ETC") continue;
-
     if (inst.instrumentType === "ETF") {
-      if (inst.isLeveraged || inst.isInverse) continue;
-      if (NON_SECTOR_ETF.test(inst.name)) continue;
+      if (inst.isLeveraged || inst.isInverse || NON_SECTOR_ETF.test(inst.name)) continue;
       const recent = bars.slice(-20);
-      const value = recent.reduce((a, b) => a + b.tradingValue, 0) / Math.max(1, recent.length);
-      const cur = bestEtf.get(inst.sectorCode);
-      if (!cur || value > cur.value) {
+      const value = recent.reduce((sum, bar) => sum + bar.tradingValue, 0) / Math.max(1, recent.length);
+      const current = bestEtf.get(inst.sectorCode);
+      if (!current || value > current.value)
         bestEtf.set(inst.sectorCode, { symbol: inst.symbol, name: inst.name, value });
-      }
       continue;
     }
-
-    // 개별 주식: 시가총액(없으면 최근 거래대금) 최대 종목을 대표주로 사용
     if (inst.isPreferredStock) continue;
     const last = bars[bars.length - 1]!;
-    const cap = last.marketCap;
-    const value = cap !== null && Number.isFinite(cap) ? cap : last.tradingValue;
+    const value = last.marketCap !== null && Number.isFinite(last.marketCap) ? last.marketCap : last.tradingValue;
     if (!Number.isFinite(value)) continue;
-    const cur = bestStock.get(inst.sectorCode);
-    if (!cur || value > cur.value) {
+    const current = bestStock.get(inst.sectorCode);
+    if (!current || value > current.value)
       bestStock.set(inst.sectorCode, { symbol: inst.symbol, name: inst.name, value });
-    }
   }
-
   const out = new Map<string, { symbol: string; name: string }>();
-  for (const [code, v] of bestStock) out.set(code, { symbol: v.symbol, name: v.name });
-  for (const [code, v] of bestEtf) out.set(code, { symbol: v.symbol, name: v.name });
+  for (const [code, value] of bestStock) out.set(code, { symbol: value.symbol, name: value.name });
+  for (const [code, value] of bestEtf) out.set(code, { symbol: value.symbol, name: value.name });
   return out;
 }
-
 
 export interface SectorScore {
   sectorCode: string;
@@ -107,24 +100,32 @@ export interface SectorScore {
   representativeEtf: string | null;
 }
 
+export type V8ExitSignal = "UP95" | "DOWN25" | null;
+
 export interface ScreeningRow {
   instrument: Instrument;
   snapshot: IndicatorSnapshot;
   technical: ScoreBlock;
   priority: ScoreBlock;
-  /** Finalized seven-feature Vf score (stocks only). */
+  /** V8 Final 10-point technical score for stocks. */
   vf: ScoreBlock | null;
-  quality: ScoreBlock; // 주식: 펀더멘털 / ETF: 상품건전성
+  quality: ScoreBlock;
   technicalNormalized: number | null;
   priorityNormalized: number | null;
   qualityScore: number | null;
   marketSectorScore: number | null;
   totalScoreNormalized: number;
-  /** V6 0~100 정규화 점수의 전 거래일 대비 증감(points). */
   scoreDelta1d: number | null;
   dataCompletenessRatio: number;
   grade: TechnicalGrade;
+  /** Display-only label. Trading logic uses kosdaq80Onset/exitSignal only. */
   actionLabelText: string;
+  /** Strict raw 0~10 score. null when any core feature is unavailable. */
+  operatingScore10: number | null;
+  kosdaq80Onset: boolean;
+  exitSignal: V8ExitSignal;
+  sectorPriceLeadership: number | null;
+  sectorRotationScore: number | null;
   warnings: string[];
   failedRules: string[];
   skippedRules: string[];
@@ -154,48 +155,37 @@ export interface AnalysisResult {
   marketForeignNet5d: number | null;
   rows: ScreeningRow[];
   sectors: SectorScore[];
-  /** 섹터 로테이션 엔진 결과 (가격 리더십 / 자금흐름 분리) */
   sectorRotation: SectorRotationResult | null;
   tradeDates: string[];
   calculatedAt: string;
 }
 
-/**
- * 시장 전체 외국인 5일 순매수.
- * 1순위: 지수 시계열에 외국인 순매수 컬럼이 있으면 그대로 사용.
- * 2순위: 업로드된 개별 종목 수급을 최근 5거래일 기준으로 합산한다.
- *        (지수 데이터에는 보통 수급 컬럼이 없으므로 이 경로가 실사용 기본값이다.)
- */
 export function computeMarketForeignNet5d(
   ds: MarketDataset,
   benchmarkBars: DailyPrice[],
 ): number | null {
   const last5 = benchmarkBars.slice(-5);
-  if (last5.length > 0 && last5.every((b) => b.foreignNetBuyValue !== null)) {
-    return last5.reduce((a, b) => a + (b.foreignNetBuyValue ?? 0), 0);
-  }
-
-  // 개별 종목 합산: 데이터가 있는 종목만 사용하고, 최근 5거래일에 해당하는 값만 더한다.
-  const dates = last5.map((b) => b.tradeDate);
-  const dateSet = new Set(dates);
+  if (last5.length > 0 && last5.every((bar) => bar.foreignNetBuyValue !== null))
+    return last5.reduce((sum, bar) => sum + (bar.foreignNetBuyValue ?? 0), 0);
+  const dates = new Set(last5.map((bar) => bar.tradeDate));
   let sum = 0;
   let contributing = 0;
   for (const inst of ds.instruments) {
     const bars = ds.bars[inst.symbol] ?? [];
     if (bars.length === 0) continue;
-    const window = dateSet.size > 0 ? bars.filter((b) => dateSet.has(b.tradeDate)) : bars.slice(-5);
+    const window = dates.size > 0 ? bars.filter((bar) => dates.has(bar.tradeDate)) : bars.slice(-5);
     const flows = window
-      .map((b) => b.foreignNetBuyValue)
-      .filter((v): v is number => v !== null && Number.isFinite(v));
+      .map((bar) => bar.foreignNetBuyValue)
+      .filter((value): value is number => value !== null && Number.isFinite(value));
     if (flows.length === 0) continue;
-    sum += flows.reduce((a, v) => a + v, 0);
+    sum += flows.reduce((total, value) => total + value, 0);
     contributing++;
   }
   return contributing > 0 ? sum : null;
 }
 
 function indexOf(ds: MarketDataset, code: string): IndexSeries | undefined {
-  return ds.indexSeries.find((s) => s.indexCode === code);
+  return ds.indexSeries.find((series) => series.indexCode === code);
 }
 
 function indexSnapshot(ds: MarketDataset, code: string, offset = 0): IndicatorSnapshot | null {
@@ -207,39 +197,37 @@ function indexSnapshot(ds: MarketDataset, code: string, offset = 0): IndicatorSn
 function sectorSnapshotScores(ds: MarketDataset, rows: ScreeningRow[]): SectorScore[] {
   const kospi = indexOf(ds, "KOSPI");
   if (!kospi) return [];
-  const kospiCloses = kospi.bars.map((b) => b.close);
+  const kospiCloses = kospi.bars.map((bar) => bar.close);
   const lastIndex = kospi.bars.length - 1;
   const marketReturn20 = periodReturn(kospiCloses, lastIndex, 20) ?? 0;
   const marketReturn60 = periodReturn(kospiCloses, lastIndex, 60) ?? 0;
   const marketReturn20Prev = periodReturn(kospiCloses, lastIndex - 5, 20) ?? 0;
-
-  // 섹터지수 시계열이 없는 경우(토스 Open API), 구성종목 일봉의 기간수익률 중위값으로 섹터 수익률을 합성한다.
-  const median = (xs: number[]): number | null => {
-    if (xs.length === 0) return null;
-    const s = [...xs].sort((a, b) => a - b);
-    const mid = Math.floor(s.length / 2);
-    return s.length % 2 === 1 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2;
+  const median = (values: number[]): number | null => {
+    if (!values.length) return null;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 1 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
   };
   const memberReturn = (symbols: string[], period: number, offset: number): number | null =>
     median(
       symbols
-        .map((sym) => {
-          const bars = ds.bars[sym] ?? [];
-          if (bars.length === 0) return null;
-          const closes = bars.map((b) => b.close);
+        .map((symbol) => {
+          const bars = ds.bars[symbol] ?? [];
+          if (!bars.length) return null;
+          const closes = bars.map((bar) => bar.close);
           return periodReturn(closes, closes.length - 1 - offset, period);
         })
-        .filter((v): v is number => v !== null),
+        .filter((value): value is number => value !== null),
     );
 
-  const raw = ds.sectors.map((s) => {
-    const series = indexOf(ds, `KRX_${s.code}`);
+  const raw = ds.sectors.map((sector) => {
+    const series = indexOf(ds, `KRX_${sector.code}`);
     const isSynthetic = !series;
-    const closes = series ? series.bars.map((b) => b.close) : [];
+    const closes = series ? series.bars.map((bar) => bar.close) : [];
     const li = closes.length - 1;
     const memberSymbols = rows
-      .filter((r) => r.instrument.sectorCode === s.code && r.instrument.instrumentType === "STOCK")
-      .map((r) => r.instrument.symbol);
+      .filter((row) => row.instrument.sectorCode === sector.code && row.instrument.instrumentType === "STOCK")
+      .map((row) => row.instrument.symbol);
     const r20 = series
       ? (periodReturn(closes, li, 20) ?? 0)
       : (memberReturn(memberSymbols, 20, 0) ?? marketReturn20);
@@ -250,93 +238,102 @@ function sectorSnapshotScores(ds: MarketDataset, rows: ScreeningRow[]): SectorSc
       ? (periodReturn(closes, li - 5, 20) ?? 0)
       : (memberReturn(memberSymbols, 20, 5) ?? marketReturn20Prev);
     const snap = series ? computeIndicators(series.bars, li) : null;
-
-
-    const members = rows.filter((r) => r.instrument.sectorCode === s.code);
-    const aligned = members.filter((m) => m.snapshot.maAligned === true).length;
-    const nearHigh = members.filter((m) => (m.snapshot.distanceFrom52wHigh ?? -100) >= -10).length;
-    const advancing = members.filter((m) => (m.snapshot.dayReturn ?? 0) > 0).length;
+    const members = rows.filter((row) => row.instrument.sectorCode === sector.code);
+    const aligned = members.filter((member) => member.snapshot.maAligned === true).length;
+    const nearHigh = members.filter((member) => (member.snapshot.distanceFrom52wHigh ?? -100) >= -10).length;
+    const advancing = members.filter((member) => (member.snapshot.dayReturn ?? 0) > 0).length;
     const total = Math.max(1, members.length);
-
-    // 섹터지수가 없으면 구성종목 과반 기준으로 추세 판정
-    const majority = (pred: (m: ScreeningRow) => boolean | null): boolean | null => {
-      const valid = members.map(pred).filter((v): v is boolean => v !== null);
-      if (valid.length === 0) return null;
+    const majority = (predicate: (member: ScreeningRow) => boolean | null): boolean | null => {
+      const valid = members.map(predicate).filter((value): value is boolean => value !== null);
+      if (!valid.length) return null;
       return valid.filter(Boolean).length / valid.length > 0.5;
     };
-
     return {
-      sectorCode: s.code,
-      sectorName: s.name,
+      sectorCode: sector.code,
+      sectorName: sector.name,
       rs20: (r20 - marketReturn20) * 100,
       rs60: (r60 - marketReturn60) * 100,
       rs20prev: (r20prev - marketReturn20Prev) * 100,
       aboveMa20:
         snap && snap.ma20 !== null
           ? snap.close > snap.ma20
-          : majority((m) => (m.snapshot.ma20 !== null ? m.snapshot.close > m.snapshot.ma20 : null)),
+          : majority((member) =>
+              member.snapshot.ma20 !== null ? member.snapshot.close > member.snapshot.ma20 : null,
+            ),
       aboveMa60:
         snap && snap.ma60 !== null
           ? snap.close > snap.ma60
-          : majority((m) => (m.snapshot.ma60 !== null ? m.snapshot.close > m.snapshot.ma60 : null)),
+          : majority((member) =>
+              member.snapshot.ma60 !== null ? member.snapshot.close > member.snapshot.ma60 : null,
+            ),
       aboveCloud:
         snap && snap.ichimoku.cloudTop !== null
           ? snap.close > snap.ichimoku.cloudTop
-          : majority((m) =>
-              m.snapshot.ichimoku.cloudTop !== null
-                ? m.snapshot.close > m.snapshot.ichimoku.cloudTop
+          : majority((member) =>
+              member.snapshot.ichimoku.cloudTop !== null
+                ? member.snapshot.close > member.snapshot.ichimoku.cloudTop
                 : null,
             ),
-
       breadthMaAligned: (aligned / total) * 100,
       breadthNearHigh: (nearHigh / total) * 100,
       breadthAdvancing: (advancing / total) * 100,
       isSynthetic,
-      gradeACount: members.filter((m) => m.grade === "A").length,
-      gradeBCount: members.filter((m) => m.grade === "B").length,
+      gradeACount: members.filter((member) => member.grade === "A").length,
+      gradeBCount: members.filter((member) => member.grade === "B").length,
       representativeEtf:
-        members.find((m) => m.instrument.instrumentType === "ETF")?.instrument.name ?? null,
+        members.find((member) => member.instrument.instrumentType === "ETF")?.instrument.name ?? null,
     };
   });
-
-  const rs20Sorted = [...raw.map((r) => r.rs20)].sort((a, b) => a - b);
-  const rs60Sorted = [...raw.map((r) => r.rs60)].sort((a, b) => a - b);
-
-  const scored = raw.map((r) => {
-    const trendFlags = [r.aboveMa20, r.aboveMa60, r.aboveCloud];
-    const trendMet = trendFlags.filter((f) => f === true).length;
+  const rs20Sorted = raw.map((row) => row.rs20).sort((a, b) => a - b);
+  const rs60Sorted = raw.map((row) => row.rs60).sort((a, b) => a - b);
+  const scored = raw.map((row) => {
+    const trendFlags = [row.aboveMa20, row.aboveMa60, row.aboveCloud];
+    const trendMet = trendFlags.filter((flag) => flag === true).length;
     const trendScore = (trendMet / 3) * 20;
-    const breadth = ((r.breadthMaAligned + r.breadthNearHigh + r.breadthAdvancing) / 300) * 20;
-    const score =
-      (percentile(rs20Sorted, r.rs20) / 100) * 35 +
-      (percentile(rs60Sorted, r.rs60) / 100) * 25 +
-      trendScore +
-      breadth;
-    return { ...r, score };
+    const breadth = ((row.breadthMaAligned + row.breadthNearHigh + row.breadthAdvancing) / 300) * 20;
+    return {
+      ...row,
+      score:
+        (percentile(rs20Sorted, row.rs20) / 100) * 35 +
+        (percentile(rs60Sorted, row.rs60) / 100) * 25 +
+        trendScore +
+        breadth,
+    };
   });
-
   const byScore = [...scored].sort((a, b) => b.score - a.score);
   const prevByRs = [...scored].sort((a, b) => b.rs20prev - a.rs20prev);
-
-  return byScore.map((r, i) => ({
-    sectorCode: r.sectorCode,
-    sectorName: r.sectorName,
-    rs20: r.rs20,
-    rs60: r.rs60,
-    aboveMa20: r.aboveMa20,
-    aboveMa60: r.aboveMa60,
-    aboveCloud: r.aboveCloud,
-    breadthMaAligned: r.breadthMaAligned,
-    breadthNearHigh: r.breadthNearHigh,
-    breadthAdvancing: r.breadthAdvancing,
-    score: r.score,
-    rank: i + 1,
-    prevRank: prevByRs.findIndex((p) => p.sectorCode === r.sectorCode) + 1,
-    isSynthetic: r.isSynthetic,
-    gradeACount: r.gradeACount,
-    gradeBCount: r.gradeBCount,
-    representativeEtf: r.representativeEtf,
+  return byScore.map((row, index) => ({
+    sectorCode: row.sectorCode,
+    sectorName: row.sectorName,
+    rs20: row.rs20,
+    rs60: row.rs60,
+    aboveMa20: row.aboveMa20,
+    aboveMa60: row.aboveMa60,
+    aboveCloud: row.aboveCloud,
+    breadthMaAligned: row.breadthMaAligned,
+    breadthNearHigh: row.breadthNearHigh,
+    breadthAdvancing: row.breadthAdvancing,
+    score: row.score,
+    rank: index + 1,
+    prevRank: prevByRs.findIndex((previous) => previous.sectorCode === row.sectorCode) + 1,
+    isSynthetic: row.isSynthetic,
+    gradeACount: row.gradeACount,
+    gradeBCount: row.gradeBCount,
+    representativeEtf: row.representativeEtf,
   }));
+}
+
+function displayActionLabel(
+  kosdaq80Onset: boolean,
+  exitSignal: V8ExitSignal,
+  grade: TechnicalGrade,
+  gate: MarketGate["status"],
+) {
+  if (kosdaq80Onset && exitSignal) return "KOSDAQ80 Onset · V8 Exit 조건";
+  if (kosdaq80Onset) return "KOSDAQ80 Onset";
+  if (exitSignal === "UP95") return "V8 Exit · 9.5점 이상";
+  if (exitSignal === "DOWN25") return "V8 Exit · 2.5점 이하";
+  return actionLabel(grade, gate);
 }
 
 export function runAnalysis(
@@ -350,19 +347,11 @@ export function runAnalysis(
   const vkospi = ds.capabilities.volatilityIndex
     ? (ds.vkospiSeries[ds.vkospiSeries.length - 1] ?? null)
     : null;
-
   const kospiBars = indexOf(ds, "KOSPI")!.bars;
   const marketForeignNet5d = computeMarketForeignNet5d(ds, kospiBars);
-
   const gate = evaluateMarketGate({ benchmark: kospi, vkospi, marketForeignNet5d });
+  const availability = { marketCap: ds.capabilities.marketCap, etfFacts: ds.capabilities.etfFacts };
 
-  const availability = {
-    marketCap: ds.capabilities.marketCap,
-    etfFacts: ds.capabilities.etfFacts,
-  };
-
-  // V8 우선점수에서 섹터 로테이션을 0~1점으로 반영한다.
-  // 기존 우선점수의 외국인 수급/52주 신고가는 Vf 기술점수와 중복되므로 후처리에서 제거한다.
   const sectorRotation = computeSectorRotation(ds, {
     representativeEtf: buildRepresentativeEtf(ds),
     weights: cfg.rotation,
@@ -370,49 +359,64 @@ export function runAnalysis(
   const rotationScoreBySector = new Map(
     (sectorRotation?.sectors ?? []).map((sector) => [sector.sectorCode, sector.rotationScore] as const),
   );
+  const sectorPriceLeadership = computeV8SectorPriceLeadership(ds, 0);
+  const previousSectorPriceLeadership = computeV8SectorPriceLeadership(ds, 1);
 
-  // 거래대금 백분위는 시장/유형별로 따로 계산
   const groups = new Map<string, number[]>();
   const prepared = ds.instruments
     .map((inst) => {
       const bars = ds.bars[inst.symbol] ?? [];
-      if (bars.length === 0) return null;
+      if (!bars.length) return null;
       const snap = computeIndicators(bars, bars.length - 1);
-      const arr = groups.get(inst.market) ?? [];
-      arr.push(bars[bars.length - 1]!.tradingValue);
-      groups.set(inst.market, arr);
-      return { inst, bars, snap };
+      const previousSnap = bars.length > 1 ? computeIndicators(bars, bars.length - 2) : null;
+      const values = groups.get(inst.market) ?? [];
+      values.push(bars[bars.length - 1]!.tradingValue);
+      groups.set(inst.market, values);
+      return { inst, bars, snap, previousSnap };
     })
-    .filter((p): p is { inst: Instrument; bars: typeof kospiBars; snap: IndicatorSnapshot } => !!p);
-  for (const [k, v] of groups) groups.set(k, v.sort((a, b) => a - b));
+    .filter(
+      (prepared): prepared is {
+        inst: Instrument;
+        bars: DailyPrice[];
+        snap: IndicatorSnapshot;
+        previousSnap: IndicatorSnapshot | null;
+      } => prepared !== null,
+    );
+  for (const [market, values] of groups) groups.set(market, values.sort((a, b) => a - b));
 
-  const rows: ScreeningRow[] = prepared.map(({ inst, bars, snap }) => {
+  const rows: ScreeningRow[] = prepared.map(({ inst, bars, snap, previousSnap }) => {
     const last = bars[bars.length - 1]!;
     const financials = ds.financials[inst.symbol];
     const etf = ds.etfFacts[inst.symbol];
     const valuePct = percentile(groups.get(inst.market) ?? [], last.tradingValue);
-
     const benchmarkCode = inst.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI";
     const benchmarkFallback = inst.instrumentType === "ETF" && !etf?.underlyingIndex;
-    const bench = benchmarkCode === "KOSDAQ" ? kosdaq : kospi;
+    const benchmark = benchmarkCode === "KOSDAQ" ? kosdaq : kospi;
+    const benchmarkSeries = indexOf(ds, benchmarkCode) ?? indexOf(ds, "KOSPI")!;
+    const benchmarkCloses = benchmarkSeries.bars.map((bar) => bar.close);
+    const benchmarkIndex = benchmarkCloses.length - 1;
+    const benchmarkR20 = periodReturn(benchmarkCloses, benchmarkIndex, 20);
+    const benchmarkR60 = periodReturn(benchmarkCloses, benchmarkIndex, 60);
+    const currentPl = sectorPriceLeadership.get(inst.sectorCode) ?? null;
+    const previousPl = previousSectorPriceLeadership.get(inst.sectorCode) ?? null;
 
-    const benchSeries = indexOf(ds, benchmarkCode) ?? indexOf(ds, "KOSPI")!;
-    const benchCloses = benchSeries.bars.map((b) => b.close);
-    const bli = benchCloses.length - 1;
-    const benchR20 = periodReturn(benchCloses, bli, 20);
-    const benchR60 = periodReturn(benchCloses, bli, 60);
-
-    const vf = inst.instrumentType === "STOCK" ? vfStockScore(snap, cfg) : null;
-    // 주식 기술점수·상세·등급·순위는 백테스트와 같은 7개 피처를 사용한다.
+    const vf =
+      inst.instrumentType === "STOCK"
+        ? v8FinalStockScore(snap, cfg, { sectorPriceLeadership: currentPl })
+        : null;
+    const previousVf =
+      inst.instrumentType === "STOCK" && previousSnap
+        ? v8FinalStockScore(previousSnap, cfg, { sectorPriceLeadership: previousPl })
+        : null;
+    const operatingScore10 = vf ? strictRawTechnicalScore(vf) : null;
+    const previousOperatingScore10 = previousVf ? strictRawTechnicalScore(previousVf) : null;
+    const stockPercent = operatingScore10 === null ? null : operatingScore10 * 10;
     const tech = vf ?? technicalScore(snap, valuePct, cfg);
-    const legacyPrio = priorityScore(inst, snap, financials, last.marketCap, bench.dayReturn, cfg);
-    const prio = buildPriorityScoreV8(
-      legacyPrio,
-      rotationScoreBySector.get(inst.sectorCode) ?? null,
-    );
-    const vfNormalized = vf ? normalize(vf) : null;
+    const legacyPriority = priorityScore(inst, snap, financials, last.marketCap, benchmark.dayReturn, cfg);
+    const rotationScore = rotationScoreBySector.get(inst.sectorCode) ?? null;
+    const priority = buildPriorityScoreV8(legacyPriority, rotationScore);
     const modelGrade =
-      inst.instrumentType === "STOCK" ? vfGrade(vfNormalized) : technicalGrade(tech.points, cfg);
+      inst.instrumentType === "STOCK" ? vfGrade(stockPercent) : technicalGrade(tech.points, cfg);
     const quality =
       inst.instrumentType === "STOCK"
         ? fundamentalScore(financials)
@@ -428,40 +432,62 @@ export function runAnalysis(
       cfg.universe,
       ds.isLive ? availability : ALL_AVAILABLE,
     );
-
-    // 초저유동성(직전 20거래일 중 거래일이 절반 미만) 종목은 지표 왜곡이 커 실격 처리한다.
     const prior20 = bars.slice(Math.max(0, bars.length - 21), bars.length - 1);
-    const tradedDays = prior20.filter((b) => b.volume > 0).length;
+    const tradedDays = prior20.filter((bar) => bar.volume > 0).length;
     if (prior20.length >= 20 && tradedDays < 10) {
       universe.failedRules.push(`직전 20거래일 중 거래일 ${tradedDays}일 (유동성 부족)`);
       universe.passed = false;
     }
 
-
-    const technicalNormalized = normalize(tech);
-    const priorityNormalized = normalize(prio);
+    const kosdaq80Onset =
+      inst.instrumentType === "STOCK" &&
+      inst.market === "KOSDAQ" &&
+      universe.passed &&
+      previousOperatingScore10 !== null &&
+      operatingScore10 !== null &&
+      previousOperatingScore10 < VF_ENTRY_RAW_SCORE &&
+      operatingScore10 >= VF_ENTRY_RAW_SCORE;
+    const exitSignal: V8ExitSignal =
+      operatingScore10 === null
+        ? null
+        : operatingScore10 >= VF_UPSIDE_EXIT_RAW_SCORE
+          ? "UP95"
+          : operatingScore10 <= VF_DOWNSIDE_EXIT_RAW_SCORE
+            ? "DOWN25"
+            : null;
+    const technicalNormalized = inst.instrumentType === "STOCK" ? stockPercent : normalize(tech);
+    const priorityNormalized = normalize(priority);
     const qualityScore =
       quality.availableMaxPoints === 0 ? null : (quality.points / quality.availableMaxPoints) * 100;
+    const dataCompletenessRatio =
+      inst.instrumentType === "STOCK" && vf && vf.maxPoints > 0
+        ? vf.availableMaxPoints / vf.maxPoints
+        : 0;
 
     return {
       instrument: inst,
       snapshot: snap,
       technical: tech,
-      priority: prio,
+      priority,
       vf,
       quality,
       technicalNormalized,
       priorityNormalized,
       qualityScore,
       marketSectorScore: null,
-      totalScoreNormalized: inst.instrumentType === "STOCK" ? (vfNormalized ?? 0) : 0,
-      scoreDelta1d: null,
-      dataCompletenessRatio:
-        inst.instrumentType === "STOCK" && vf && vf.maxPoints > 0
-          ? vf.availableMaxPoints / vf.maxPoints
-          : 0,
+      totalScoreNormalized: inst.instrumentType === "STOCK" ? (stockPercent ?? 0) : 0,
+      scoreDelta1d:
+        operatingScore10 !== null && previousOperatingScore10 !== null
+          ? Math.round((operatingScore10 - previousOperatingScore10) * 10_000) / 1_000
+          : null,
+      dataCompletenessRatio,
       grade: modelGrade,
-      actionLabelText: actionLabel(modelGrade, gate.status),
+      actionLabelText: displayActionLabel(kosdaq80Onset, exitSignal, modelGrade, gate.status),
+      operatingScore10,
+      kosdaq80Onset,
+      exitSignal,
+      sectorPriceLeadership: currentPl,
+      sectorRotationScore: rotationScore,
       warnings: [],
       failedRules: universe.failedRules,
       skippedRules: universe.skippedRules,
@@ -471,41 +497,44 @@ export function runAnalysis(
       marketCap: last.marketCap,
       benchmarkCode,
       benchmarkFallback,
-      rs20: snap.return20 !== null && benchR20 !== null ? (snap.return20 - benchR20) * 100 : null,
-      rs60: snap.return60 !== null && benchR60 !== null ? (snap.return60 - benchR60) * 100 : null,
+      rs20:
+        snap.return20 !== null && benchmarkR20 !== null
+          ? (snap.return20 - benchmarkR20) * 100
+          : null,
+      rs60:
+        snap.return60 !== null && benchmarkR60 !== null
+          ? (snap.return60 - benchmarkR60) * 100
+          : null,
     };
   });
 
   const sectors = sectorSnapshotScores(ds, rows);
-  const sectorByCode = new Map(sectors.map((s) => [s.sectorCode, s]));
-
+  const sectorByCode = new Map(sectors.map((sector) => [sector.sectorCode, sector]));
   for (const row of rows) {
     const sector = sectorByCode.get(row.instrument.sectorCode);
     row.marketSectorScore = ds.capabilities.sectors && sector ? sector.score : null;
-    let dataCompletenessRatio: number;
     if (row.instrument.instrumentType === "STOCK" && row.vf) {
-      row.totalScoreNormalized = normalize(row.vf) ?? 0;
-      dataCompletenessRatio =
-        row.vf.maxPoints > 0 ? row.vf.availableMaxPoints / row.vf.maxPoints : 0;
+      row.totalScoreNormalized = row.operatingScore10 === null ? 0 : row.operatingScore10 * 10;
+      row.dataCompletenessRatio = row.vf.maxPoints > 0 ? row.vf.availableMaxPoints / row.vf.maxPoints : 0;
     } else {
-      const { total, dataCompletenessRatio: legacyCompleteness } = totalScore({
+      const result = totalScore({
         technicalNormalized: row.technicalNormalized,
         priorityNormalized: row.priorityNormalized,
         qualityScore: row.qualityScore,
         marketSectorScore: row.marketSectorScore,
         weights: cfg.weights.etf,
       });
-      row.totalScoreNormalized = total;
-      dataCompletenessRatio = legacyCompleteness;
+      row.totalScoreNormalized = result.total;
+      row.dataCompletenessRatio = result.dataCompletenessRatio;
     }
-    row.dataCompletenessRatio = dataCompletenessRatio;
     row.warnings = collectWarnings({
       snap: row.snapshot,
       gate,
       etf: row.etf,
       inst: row.instrument,
-      dataCompletenessRatio,
+      dataCompletenessRatio: row.dataCompletenessRatio,
       vkospi,
+      exitSignal: row.exitSignal !== null,
     });
   }
 
@@ -532,7 +561,7 @@ export function runAnalysis(
 }
 
 export function getRow(ds: MarketDataset, symbol: string): ScreeningRow | undefined {
-  return runAnalysis(ds).rows.find((r) => r.instrument.symbol === symbol);
+  return runAnalysis(ds).rows.find((row) => row.instrument.symbol === symbol);
 }
 
 export function scoreHistory(
@@ -542,15 +571,15 @@ export function scoreHistory(
   cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
 ) {
   const bars = ds.bars[symbol] ?? [];
-  const inst = ds.instruments.find((i) => i.symbol === symbol);
-  if (!inst || bars.length === 0) return [];
+  const inst = ds.instruments.find((instrument) => instrument.symbol === symbol);
+  if (!inst || !bars.length) return [];
   const out: Array<{ tradeDate: string; technicalPoints: number | null; grade: TechnicalGrade }> = [];
   for (let i = Math.max(0, bars.length - days); i < bars.length; i++) {
     const score = historicalTechnicalScore(computeIndicators(bars, i), cfg);
     out.push({
       tradeDate: bars[i]!.tradeDate,
       technicalPoints: score.points,
-      grade: vfGrade(score.points === null ? null : score.points / score.rawMaxPoints * 100),
+      grade: vfGrade(score.points === null ? null : score.points * 10),
     });
   }
   return out;
@@ -563,7 +592,7 @@ export function chartSeries(
   cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
 ) {
   const bars = ds.bars[symbol] ?? [];
-  const closes = bars.map((b) => b.close);
+  const closes = bars.map((bar) => bar.close);
   const out = [];
   for (let i = Math.max(0, bars.length - days); i < bars.length; i++) {
     const snap = computeIndicators(bars, i);
@@ -571,16 +600,15 @@ export function chartSeries(
     const technical = historicalTechnicalScore(snap, cfg);
     const top = ich.cloudTop;
     const bottom = ich.cloudBottom;
-    // 표시 구름의 선행스팬1(=(전환+기준)/2, 26일 전 산출)이 선행스팬2 위면 양운
     const srcIndex = i - 26;
     let bullish: boolean | null = null;
     if (srcIndex >= 0) {
       const src = ichimoku(bars, srcIndex);
-      if (src.tenkan !== null && src.kijun !== null && src.futureSenkouB !== null) {
+      if (src.tenkan !== null && src.kijun !== null && src.futureSenkouB !== null)
         bullish = (src.tenkan + src.kijun) / 2 >= src.futureSenkouB;
-      }
     }
-    const band: [number, number] | null = top !== null && bottom !== null ? [bottom, top] : null;
+    const band: [number, number] | null =
+      top !== null && bottom !== null ? [bottom, top] : null;
     out.push({
       tradeDate: bars[i]!.tradeDate,
       close: bars[i]!.close,
@@ -588,7 +616,7 @@ export function chartSeries(
       low: bars[i]!.low,
       open: bars[i]!.open,
       volume: bars[i]!.volume,
-      historicalTechnicalPoints: technical?.points ?? null,
+      historicalTechnicalPoints: technical.points,
       historicalTechnical: technical,
       ma5: sma(closes, 5, i),
       ma20: sma(closes, 20, i),
@@ -597,7 +625,9 @@ export function chartSeries(
       bbUpper: snap.bollinger.bb?.upper ?? null,
       bbLower: snap.bollinger.bb?.lower ?? null,
       bbBand:
-        snap.bollinger.bb ? ([snap.bollinger.bb.lower, snap.bollinger.bb.upper] as [number, number]) : null,
+        snap.bollinger.bb
+          ? ([snap.bollinger.bb.lower, snap.bollinger.bb.upper] as [number, number])
+          : null,
       cloudTop: top,
       cloudBottom: bottom,
       tenkan: ich.tenkan,
