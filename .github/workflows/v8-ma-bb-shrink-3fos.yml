@@ -35,14 +35,16 @@ jobs:
           p = Path('scripts/run-v8-ma-bb-ablation-3fos.ts')
           s = p.read_text()
           needle = '  { id: "NO_MA_BB", label: "MA+BB 제거 · MA 0 · BB 0", maWeight: 0, bbWeight: 0 },\n];'
-          replacement = '''  { id: "NO_MA_BB", label: "MA+BB 제거 · MA 0 · BB 0", maWeight: 0, bbWeight: 0 },
-  { id: "MA_HALF", label: "MA 축소 · MA 0.5 · BB 1.5", maWeight: 0.5, bbWeight: 1.5 },
-  { id: "BB_ONE", label: "BB 축소 · MA 1.0 · BB 1.0", maWeight: 1, bbWeight: 1 },
-  { id: "MA_HALF_BB_ONE", label: "MA+BB 축소 · MA 0.5 · BB 1.0", maWeight: 0.5, bbWeight: 1 },
-];'''
+          extra = [
+              '  { id: "NO_MA_BB", label: "MA+BB 제거 · MA 0 · BB 0", maWeight: 0, bbWeight: 0 },',
+              '  { id: "MA_HALF", label: "MA 축소 · MA 0.5 · BB 1.5", maWeight: 0.5, bbWeight: 1.5 },',
+              '  { id: "BB_ONE", label: "BB 축소 · MA 1.0 · BB 1.0", maWeight: 1, bbWeight: 1 },',
+              '  { id: "MA_HALF_BB_ONE", label: "MA+BB 축소 · MA 0.5 · BB 1.0", maWeight: 0.5, bbWeight: 1 },',
+              '];',
+          ]
           if needle not in s:
               raise SystemExit('variant block not found')
-          s = s.replace(needle, replacement)
+          s = s.replace(needle, '\n'.join(extra))
           s = s.replace('CloudTrend V8-10 MA/BB Ablation 3-FOS', 'CloudTrend V8-10b MA/BB Shrink 3-FOS')
           s = s.replace('v8-10-ma-bb-ablation-3fos', 'v8-10b-ma-bb-shrink-3fos')
           p.write_text(s)
@@ -103,14 +105,16 @@ jobs:
           p = Path('scripts/run-v8-ma-bb-ablation-3fos.ts')
           s = p.read_text()
           needle = '  { id: "NO_MA_BB", label: "MA+BB 제거 · MA 0 · BB 0", maWeight: 0, bbWeight: 0 },\n];'
-          replacement = '''  { id: "NO_MA_BB", label: "MA+BB 제거 · MA 0 · BB 0", maWeight: 0, bbWeight: 0 },
-  { id: "MA_HALF", label: "MA 축소 · MA 0.5 · BB 1.5", maWeight: 0.5, bbWeight: 1.5 },
-  { id: "BB_ONE", label: "BB 축소 · MA 1.0 · BB 1.0", maWeight: 1, bbWeight: 1 },
-  { id: "MA_HALF_BB_ONE", label: "MA+BB 축소 · MA 0.5 · BB 1.0", maWeight: 0.5, bbWeight: 1 },
-];'''
+          extra = [
+              '  { id: "NO_MA_BB", label: "MA+BB 제거 · MA 0 · BB 0", maWeight: 0, bbWeight: 0 },',
+              '  { id: "MA_HALF", label: "MA 축소 · MA 0.5 · BB 1.5", maWeight: 0.5, bbWeight: 1.5 },',
+              '  { id: "BB_ONE", label: "BB 축소 · MA 1.0 · BB 1.0", maWeight: 1, bbWeight: 1 },',
+              '  { id: "MA_HALF_BB_ONE", label: "MA+BB 축소 · MA 0.5 · BB 1.0", maWeight: 0.5, bbWeight: 1 },',
+              '];',
+          ]
           if needle not in s:
               raise SystemExit('variant block not found')
-          s = s.replace(needle, replacement)
+          s = s.replace(needle, '\n'.join(extra))
           s = s.replace('CloudTrend V8-10 MA/BB Ablation 3-FOS', 'CloudTrend V8-10b MA/BB Shrink 3-FOS')
           s = s.replace('v8-10-ma-bb-ablation-3fos', 'v8-10b-ma-bb-shrink-3fos')
           p.write_text(s)
