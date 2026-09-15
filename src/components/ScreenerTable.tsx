@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
+import { getDisplayStatus } from "@/lib/statusDisplay";
 import { getDisplayWarnings } from "@/lib/warningDisplay";
 
 export function GradeBadge({ grade }: { grade: "A" | "B" | "C" }) {
@@ -154,7 +155,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
         rs20: r.rs20?.toFixed(2) ?? "",
         distanceHigh: r.snapshot.distanceFrom52wHigh?.toFixed(2) ?? "",
         marketCap: r.marketCap ?? "",
-        status: r.actionLabelText,
+        status: getDisplayStatus(r),
         warnings: getDisplayWarnings(r).join("|"),
       };
       return visible.map((c) => values[c.id] ?? "").join(",");
@@ -246,6 +247,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
               const tech = technicalValue(r);
               const techBlock = r.vf ?? r.technical;
               const displayWarnings = getDisplayWarnings(r);
+              const displayStatus = getDisplayStatus(r);
               const cells: Record<string, React.ReactNode> = {
                 rank: <span className="num">{i + 1}</span>,
                 name: (
@@ -328,7 +330,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
                 ),
                 status: (
                   <div className="flex flex-col items-start gap-0.5">
-                    <span className="text-[11px] font-medium">{r.actionLabelText}</span>
+                    <span className="text-[11px] font-medium">{displayStatus}</span>
                     {!r.hardFilterPassed ? (
                       <span className="text-[10px] text-down">실격: {r.failedRules[0]}</span>
                     ) : null}
