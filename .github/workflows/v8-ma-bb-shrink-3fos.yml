@@ -49,6 +49,7 @@ jobs:
           s = s.replace('v8-10-ma-bb-ablation-3fos', 'v8-10b-ma-bb-shrink-3fos')
           p.write_text(s)
           PY
+          npx prettier --write scripts/run-v8-ma-bb-ablation-3fos.ts
           npx eslint scripts/run-v8-ma-bb-ablation-3fos.ts
 
   study:
