@@ -30,8 +30,8 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Lint research runner
-        run: npx eslint scripts/run-v8-ma-bb-ablation-3fos.ts
+      - name: Lint and format research runner
+        run: npx eslint scripts/run-v8-ma-bb-ablation-3fos.ts --fix
       - name: Type check
         run: npx tsc --noEmit --pretty false
 
