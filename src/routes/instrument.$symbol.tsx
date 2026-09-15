@@ -22,8 +22,9 @@ import { Delta, GradeBadge } from "@/components/ScreenerTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { instrumentQueryOptions } from "@/lib/analysisQuery";
-import { HISTORICAL_TECHNICAL_MAX, WARNING_LABELS } from "@/lib/engine/scoring";
+import { HISTORICAL_TECHNICAL_MAX } from "@/lib/engine/scoring";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
+import { getDisplayWarnings } from "@/lib/warningDisplay";
 
 export const Route = createFileRoute("/instrument/$symbol")({
   ssr: false,
@@ -75,6 +76,7 @@ function InstrumentDetail() {
   const score = row.vf ?? row.technical;
   const snap = row.snapshot;
   const ich = snap.ichimoku;
+  const displayWarnings = getDisplayWarnings(row);
 
   const log = {
     strategyVersion: analysis.strategyVersion,
@@ -121,6 +123,7 @@ function InstrumentDetail() {
     },
     failedRules: row.failedRules,
     warnings: row.warnings,
+    displayWarnings,
     timestamps: { calculatedAt: new Date().toISOString() },
   };
 
@@ -203,15 +206,15 @@ function InstrumentDetail() {
         <Stat label="52주 고점 거리" value={<Delta value={snap.distanceFrom52wHigh} />} />
       </div>
 
-      {row.warnings.length > 0 ? (
+      {displayWarnings.length > 0 ? (
         <div className="mt-3 flex flex-wrap gap-1">
-          {row.warnings.map((w) => (
+          {displayWarnings.map((warning) => (
             <Badge
-              key={w}
+              key={warning}
               variant="outline"
               className="border-warn/30 bg-warn-soft text-[11px] text-warn"
             >
-              {WARNING_LABELS[w] ?? w}
+              {warning}
             </Badge>
           ))}
         </div>
