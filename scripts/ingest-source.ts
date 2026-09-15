@@ -245,7 +245,8 @@ async function main() {
     origin: options.origin,
     bytes,
     filename: path.basename(absolutePath),
-    syncLegacy: options.syncLegacy,
+    // screening은 현재 웹 호환 kr.json을 유지하지만, backtest는 registry 원본만 저장한다.
+    syncLegacy: options.sourceType === "screening" && options.syncLegacy,
   });
   const analysis = options.run === "none" ? null : runAnalysis(options);
   process.stdout.write(
