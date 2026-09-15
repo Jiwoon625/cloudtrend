@@ -49,7 +49,6 @@ const PRESETS: Array<{ id: PresetId; label: string; test: (r: ScreeningRow) => b
 export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: AnalysisResult }) {
   const [query, setQuery] = useState("");
   const [minTechnical, setMinTechnical] = useState(0);
-  const [minTotal, setMinTotal] = useState(0);
   const [minVolumeRatio, setMinVolumeRatio] = useState(0);
   const [sector, setSector] = useState("ALL");
   const [showDisqualified, setShowDisqualified] = useState(true);
@@ -61,7 +60,6 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
       state: {
         query: string;
         minTechnical: number;
-        minTotal: number;
         minVolumeRatio: number;
         sector: string;
         showDisqualified: boolean;
@@ -85,8 +83,9 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         return false;
     }
     if (sector !== "ALL" && r.instrument.sectorName !== sector) return false;
-    if ((r.vf ?? r.technical).points < minTechnical) return false;
-    if (r.totalScoreNormalized < minTotal) return false;
+    const technicalScore =
+      r.instrument.instrumentType === "STOCK" ? r.operatingScore10 : (r.vf ?? r.technical).points;
+    if (technicalScore === null || technicalScore < minTechnical) return false;
     if ((r.snapshot.volumeRatio20 ?? 0) < minVolumeRatio) return false;
     if (preset) {
       const p = PRESETS.find((x) => x.id === preset)!;
@@ -140,7 +139,6 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         />
       </header>
 
-
       <div className="flex flex-wrap gap-1">
         {PRESETS.map((p) => (
           <button
@@ -154,7 +152,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         ))}
       </div>
 
-      <div className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-6">
+      <div className="grid gap-3 rounded-lg border border-border bg-card p-4 sm:grid-cols-2 lg:grid-cols-5">
         <div className="space-y-1 lg:col-span-2">
           <Label className="text-[11px] text-muted-foreground">종목명 또는 코드</Label>
           <Input
@@ -180,7 +178,6 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
           </select>
         </div>
         {numberField("기술점수 최소", minTechnical, setMinTechnical, 0.5)}
-        {numberField("종합점수 최소", minTotal, setMinTotal, 5)}
         {numberField("거래량 비율 최소(%)", minVolumeRatio, setMinVolumeRatio, 10)}
         <div className="flex items-center gap-2 lg:col-span-2">
           <Switch
@@ -209,7 +206,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
                 ...prev,
                 {
                   name: `내 프리셋 ${prev.length + 1}`,
-                  state: { query, minTechnical, minTotal, minVolumeRatio, sector, showDisqualified },
+                  state: { query, minTechnical, minVolumeRatio, sector, showDisqualified },
                 },
               ])
             }
@@ -224,7 +221,6 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
               onClick={() => {
                 setQuery(p.state.query);
                 setMinTechnical(p.state.minTechnical);
-                setMinTotal(p.state.minTotal);
                 setMinVolumeRatio(p.state.minVolumeRatio);
                 setSector(p.state.sector);
                 setShowDisqualified(p.state.showDisqualified);
