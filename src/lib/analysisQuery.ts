@@ -13,7 +13,8 @@ import {
   type AnalysisFailurePayload,
 } from "@/lib/market.functions";
 
-/** HMR 이전 요청이나 실패한 RPC가 남긴 불완전 캐시를 분석 결과로 사용하지 않는다. */
+const V8_QUERY_VERSION = "manual-v8-final-10pt" as const;
+
 export function isAnalysisPayload(value: unknown): value is AnalysisPayload {
   if (value === null || typeof value !== "object") return false;
   const analysis = (value as { analysis?: unknown }).analysis;
@@ -30,23 +31,21 @@ export function isAnalysisFailurePayload(value: unknown): value is AnalysisFailu
 }
 
 export const analysisQueryOptions = queryOptions({
-  // 기존 invalidation prefix를 유지하면서 Dashboard/Stock/ETF가 동일한 결과 cache를 공유한다.
-  queryKey: ["market-analysis", "manual-vf-9.5-intraday", "screening-cache-v1"],
+  queryKey: ["market-analysis", V8_QUERY_VERSION, "screening-cache-v8-final-v1"],
   queryFn: () => getOrBuildScreeningPayload(),
   staleTime: 5 * 60 * 1000,
   retry: false,
 });
 
 export const dashboardQueryOptions = queryOptions({
-  // scoring 화면의 기존 market-analysis invalidation으로 summary도 함께 무효화된다.
-  queryKey: ["market-analysis", "manual-vf-9.5-intraday", "dashboard-cache-v1"],
+  queryKey: ["market-analysis", V8_QUERY_VERSION, "dashboard-cache-v8-final-v1"],
   queryFn: () => getOrBuildDashboardSummary(),
   staleTime: 5 * 60 * 1000,
   retry: false,
 });
 
 export const dataStatusQueryOptions = queryOptions({
-  queryKey: ["data-status", "manual-vf-9.5-intraday"],
+  queryKey: ["data-status", V8_QUERY_VERSION],
   queryFn: async () => {
     await ensureManualDataset();
     return computeLocalDataStatus();
@@ -57,8 +56,7 @@ export const dataStatusQueryOptions = queryOptions({
 
 export const instrumentQueryOptions = (symbol: string) =>
   queryOptions({
-    // 기존 scoring invalidation prefix와 호환된다.
-    queryKey: ["instrument", "manual-vf-9.5-intraday", "lazy-cache-v1", symbol],
+    queryKey: ["instrument", V8_QUERY_VERSION, "instrument-cache-v8-final-v1", symbol],
     queryFn: () => getCachedInstrumentDetail(symbol),
     staleTime: 5 * 60 * 1000,
     retry: false,
@@ -67,7 +65,6 @@ export const instrumentQueryOptions = (symbol: string) =>
 export const ipQueryOptions = queryOptions({
   queryKey: ["server-egress-ip"],
   queryFn: () => getServerEgressIp(),
-  // 실행 환경의 출구 IP는 언제든 바뀔 수 있으므로 항상 최신값을 다시 조회한다.
   staleTime: 0,
   gcTime: 0,
 });
