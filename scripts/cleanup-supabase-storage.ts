@@ -22,6 +22,25 @@ async function removePaths(paths: string[]) {
   return { objects: removed };
 }
 
+async function listFilesRecursively(prefix: string) {
+  const client = trustedSupabaseClient();
+  const queue = [prefix];
+  const paths: string[] = [];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const { data, error } = await client.storage
+      .from(ANALYSIS_BUCKET)
+      .list(current, { limit: 1000, sortBy: { column: "name", order: "asc" } });
+    if (error) throw new Error(`Storage 목록 조회 실패 (${current}): ${error.message}`);
+    for (const entry of data ?? []) {
+      const path = `${current}/${entry.name}`;
+      if (entry.id) paths.push(path);
+      else queue.push(path);
+    }
+  }
+  return paths;
+}
+
 async function main() {
   const userId = requiredUserId();
   const client = trustedSupabaseClient();
@@ -95,6 +114,11 @@ async function main() {
     const { error } = await client.from("analysis_runs").delete().in("id", oldScreeningIds);
     if (error) throw new Error(`구형 screening metadata 정리 실패: ${error.message}`);
   }
+
+  // 5) results/cache는 계산 중간 산출물이며 원천/최종 연구결과가 아니다.
+  // 필요 시 Actions가 재생성하므로 quota 회수를 위해 전부 비운다.
+  const cachePaths = await listFilesRecursively(`${userId}/results/cache`);
+  removed["rebuildableResultCache"] = (await removePaths(cachePaths)).objects;
 
   process.stdout.write(
     `${JSON.stringify(
