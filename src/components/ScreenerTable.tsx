@@ -52,7 +52,6 @@ function ScoreDelta({ value }: { value: number | null }) {
 }
 
 type SortKey =
-  | "total"
   | "scoreDelta1d"
   | "technical"
   | "priority"
@@ -68,11 +67,10 @@ const COLUMNS: Array<{ key: SortKey | "static"; label: string; id: string }> = [
   { key: "static", label: "시장", id: "market" },
   { key: "static", label: "섹터", id: "sector" },
   { key: "close", label: "종가", id: "close" },
-  { key: "total", label: "정규화 점수", id: "total" },
-  { key: "scoreDelta1d", label: "점수 변동(1D)", id: "scoreDelta1d" },
-  { key: "static", label: "모델등급", id: "grade" },
   { key: "technical", label: "기술점수", id: "technical" },
   { key: "priority", label: "우선점수", id: "priority" },
+  { key: "scoreDelta1d", label: "점수 변동(1D)", id: "scoreDelta1d" },
+  { key: "static", label: "모델등급", id: "grade" },
   { key: "volumeRatio", label: "거래량 비율", id: "volumeRatio" },
   { key: "rs20", label: "RS20", id: "rs20" },
   { key: "distanceHigh", label: "52주 고점 거리", id: "distanceHigh" },
@@ -81,14 +79,17 @@ const COLUMNS: Array<{ key: SortKey | "static"; label: string; id: string }> = [
   { key: "static", label: "경고", id: "warnings" },
 ];
 
+function technicalValue(row: ScreeningRow): number | null {
+  if (row.instrument.instrumentType === "STOCK") return row.operatingScore10;
+  return (row.vf ?? row.technical).points;
+}
+
 function sortValue(row: ScreeningRow, key: SortKey): number | null {
   switch (key) {
-    case "total":
-      return row.totalScoreNormalized;
     case "scoreDelta1d":
       return row.scoreDelta1d;
     case "technical":
-      return (row.vf ?? row.technical).points;
+      return technicalValue(row);
     case "priority":
       return row.priority.points;
     case "volumeRatio":
@@ -105,7 +106,7 @@ function sortValue(row: ScreeningRow, key: SortKey): number | null {
 }
 
 export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
-  const [sortKey, setSortKey] = useState<SortKey>("total");
+  const [sortKey, setSortKey] = useState<SortKey>("technical");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
   const [hidden, setHidden] = useState<string[]>([]);
 
@@ -118,7 +119,13 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
       if (av === null) return 1;
       if (bv === null) return -1;
       const diff = av - bv;
-      if (diff === 0) return a.instrument.symbol.localeCompare(b.instrument.symbol);
+      if (diff === 0) {
+        if (sortKey === "technical") {
+          const priorityDiff = b.priority.points - a.priority.points;
+          if (priorityDiff !== 0) return priorityDiff;
+        }
+        return a.instrument.symbol.localeCompare(b.instrument.symbol);
+      }
       return dir === "desc" ? -diff : diff;
     });
     return copy;
@@ -128,28 +135,30 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
 
   const downloadCsv = () => {
     const header = visible.map((c) => c.label).join(",");
-    const lines = sorted.map((r, i) =>
-      [
-        i + 1,
-        r.instrument.name,
-        r.instrument.market,
-        r.instrument.sectorName,
-        r.snapshot.close,
-        r.totalScoreNormalized.toFixed(1),
-        r.scoreDelta1d?.toFixed(1) ?? "",
-        r.grade,
-        `${(r.vf ?? r.technical).points}/${(r.vf ?? r.technical).maxPoints} (산정 가능 ${(r.vf ?? r.technical).availableMaxPoints})`,
-        `${r.priority.points.toFixed(2)}/${r.priority.maxPoints.toFixed(1)} (산정 가능 ${r.priority.availableMaxPoints.toFixed(1)})`,
-        r.snapshot.volumeRatio20?.toFixed(1) ?? "",
-        r.rs20?.toFixed(2) ?? "",
-        r.snapshot.distanceFrom52wHigh?.toFixed(2) ?? "",
-        r.marketCap ?? "",
-        r.actionLabelText,
-        r.warnings.join("|"),
-      ]
-        .filter((_, idx) => !hidden.includes(COLUMNS[idx]!.id))
-        .join(","),
-    );
+    const lines = sorted.map((r, i) => {
+      const tech = technicalValue(r);
+      const values: Record<string, string | number> = {
+        rank: i + 1,
+        name: r.instrument.name,
+        market: r.instrument.market,
+        sector: r.instrument.sectorName,
+        close: r.snapshot.close,
+        technical:
+          tech === null
+            ? "산정 불가"
+            : `${tech.toFixed(2)}/${r.instrument.instrumentType === "STOCK" ? "10" : (r.vf ?? r.technical).maxPoints}`,
+        priority: `${r.priority.points.toFixed(2)}/${r.priority.maxPoints.toFixed(1)}`,
+        scoreDelta1d: r.scoreDelta1d?.toFixed(1) ?? "",
+        grade: r.grade,
+        volumeRatio: r.snapshot.volumeRatio20?.toFixed(1) ?? "",
+        rs20: r.rs20?.toFixed(2) ?? "",
+        distanceHigh: r.snapshot.distanceFrom52wHigh?.toFixed(2) ?? "",
+        marketCap: r.marketCap ?? "",
+        status: r.actionLabelText,
+        warnings: r.warnings.join("|"),
+      };
+      return visible.map((c) => values[c.id] ?? "").join(",");
+    });
     const blob = new Blob([`\uFEFF${header}\n${lines.join("\n")}`], {
       type: "text/csv;charset=utf-8",
     });
@@ -228,12 +237,14 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
       </div>
 
       <div className="max-h-[70vh] overflow-auto rounded-lg border border-border bg-card">
-        <table className="w-full min-w-[1200px] text-[12px]">
+        <table className="w-full min-w-[1120px] text-[12px]">
           <thead>
             <tr>{visible.map((c) => th(c))}</tr>
           </thead>
           <tbody>
             {sorted.map((r, i) => {
+              const tech = technicalValue(r);
+              const techBlock = r.vf ?? r.technical;
               const cells: Record<string, React.ReactNode> = {
                 rank: <span className="num">{i + 1}</span>,
                 name: (
@@ -251,23 +262,25 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
                 market: <span>{r.instrument.market}</span>,
                 sector: <span>{r.instrument.sectorName}</span>,
                 close: <span className="num">{formatPrice(r.snapshot.close)}</span>,
-                total: (
-                  <span className="num font-semibold">
-                    {formatNumber(r.totalScoreNormalized, 1)}
-                  </span>
-                ),
-                scoreDelta1d: (
-                  <span className="num">
-                    <ScoreDelta value={r.scoreDelta1d} />
-                  </span>
-                ),
-                grade: <GradeBadge grade={r.grade} />,
                 technical: (
-                  <span className="num">
-                    {(r.vf ?? r.technical).points}/{(r.vf ?? r.technical).maxPoints}
-                    <span className="block text-[10px] text-muted-foreground">
-                      산정 가능 {(r.vf ?? r.technical).availableMaxPoints}
-                    </span>
+                  <span className="num font-semibold">
+                    {tech === null ? (
+                      <>
+                        <span className="text-warn">산정 불가</span>
+                        <span className="block text-[10px] font-normal text-muted-foreground">
+                          원점수 {formatNumber(techBlock.points, 1)}/{formatNumber(techBlock.maxPoints, 1)}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        {formatNumber(tech, 1)}/{r.instrument.instrumentType === "STOCK" ? "10" : formatNumber(techBlock.maxPoints, 1)}
+                        {techBlock.availableMaxPoints < techBlock.maxPoints ? (
+                          <span className="block text-[10px] font-normal text-muted-foreground">
+                            산정 가능 {formatNumber(techBlock.availableMaxPoints, 1)}
+                          </span>
+                        ) : null}
+                      </>
+                    )}
                   </span>
                 ),
                 priority: (
@@ -280,6 +293,12 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
                     ) : null}
                   </span>
                 ),
+                scoreDelta1d: (
+                  <span className="num">
+                    <ScoreDelta value={r.scoreDelta1d} />
+                  </span>
+                ),
+                grade: <GradeBadge grade={r.grade} />,
                 volumeRatio: (
                   <span className="num">
                     {r.snapshot.volumeRatio20 === null
@@ -312,8 +331,8 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
                     {!r.hardFilterPassed ? (
                       <span className="text-[10px] text-down">실격: {r.failedRules[0]}</span>
                     ) : null}
-                    {r.dataCompletenessRatio < 0.7 ? (
-                      <span className="text-[10px] text-warn">낮은 데이터 신뢰도</span>
+                    {r.dataCompletenessRatio < 1 ? (
+                      <span className="text-[10px] text-warn">기술점수 산정 불완전</span>
                     ) : null}
                   </div>
                 ),
