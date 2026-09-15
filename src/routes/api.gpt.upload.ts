@@ -48,7 +48,11 @@ function configuredUserId() {
 
 function authorize(request: Request) {
   const expected = process.env["CLOUDTREND_GPT_API_KEY"]?.trim();
-  if (!expected) return { ok: false as const, response: json({ ok: false, error: "GPT 업로드 API가 비활성화되어 있습니다." }, 503) };
+  if (!expected)
+    return {
+      ok: false as const,
+      response: json({ ok: false, error: "GPT 업로드 API가 비활성화되어 있습니다." }, 503),
+    };
   const header = request.headers.get("authorization") ?? "";
   const supplied = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
   if (!supplied || supplied !== expected)
@@ -147,7 +151,9 @@ async function finalizeUpload(body: FinalizeRequest) {
       bytes,
       filename,
       contentType: body.contentType,
-      syncLegacy: true,
+      // 웹 백테스트를 폐기했으므로 backtest는 registry 원본만 저장한다.
+      // screening의 kr.json 호환 사본은 현재 웹 스크리너를 위해 유지한다.
+      syncLegacy: sourceType === "screening",
     });
     return {
       ok: true,
@@ -212,7 +218,11 @@ export const Route = createFileRoute("/api/gpt/upload")({
           return json({ ok: false, error: "action은 init 또는 finalize여야 합니다." }, 400);
         } catch (error) {
           const message = error instanceof Error ? error.message : "알 수 없는 오류";
-          const status = /인증/.test(message) ? 401 : /필요|허용|형식|크기|모드|sourceType|sizeBytes/.test(message) ? 400 : 500;
+          const status = /인증/.test(message)
+            ? 401
+            : /필요|허용|형식|크기|모드|sourceType|sizeBytes/.test(message)
+              ? 400
+              : 500;
           return json({ ok: false, error: message }, status);
         }
       },
