@@ -15,7 +15,6 @@ import {
   YAxis,
 } from "recharts";
 
-
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
 import { BreakdownTable } from "@/components/BreakdownTable";
@@ -27,7 +26,6 @@ import { HISTORICAL_TECHNICAL_MAX, WARNING_LABELS } from "@/lib/engine/scoring";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
 
 export const Route = createFileRoute("/instrument/$symbol")({
-  // 외부 시세 API 실패 시 SSR 500(빈 화면) 대신 클라이언트 에러 화면을 보여준다.
   ssr: false,
   loader: async ({ params, context }) => {
     const detail = await context.queryClient.ensureQueryData(instrumentQueryOptions(params.symbol));
@@ -40,7 +38,7 @@ export const Route = createFileRoute("/instrument/$symbol")({
         meta: [{ title: "종목 정보 없음 | TrendScore KR" }, { name: "robots", content: "noindex" }],
       };
     const title = `${loaderData.name}(${loaderData.symbol}) 점수 근거 | TrendScore KR`;
-    const description = `${loaderData.name} 종목의 일목균형표·볼린저밴드·이동평균·거래량 조건별 획득점수와 산정 가능 점수, 경고 신호, 계산 근거를 확인합니다.`;
+    const description = `${loaderData.name} 종목의 V8 Final 기술점수·일목균형표·볼린저밴드·이동평균·거래량 조건과 경고 신호를 확인합니다.`;
     return {
       meta: [
         { title },
@@ -104,14 +102,22 @@ function InstrumentDetail() {
       kijun: ich.kijun,
       chikouDefinitionUsed: "현재 종가 > 26거래일 전 종가",
     },
-    ruleEvaluations: [...(row.vf?.rows ?? []), ...row.technical.rows, ...row.priority.rows, ...row.quality.rows],
+    ruleEvaluations: [
+      ...(row.vf?.rows ?? []),
+      ...row.technical.rows,
+      ...row.priority.rows,
+      ...row.quality.rows,
+    ],
     finalScores: {
-      vf: row.vf ? `${row.vf.points}/${row.vf.availableMaxPoints}` : null,
-      technical: `${row.technical.points}/${row.technical.availableMaxPoints}`,
-      priority: `${row.priority.points}/${row.priority.availableMaxPoints}`,
+      operatingScore10: row.operatingScore10,
+      technicalRaw: row.vf ? `${row.vf.points}/${row.vf.maxPoints}` : `${row.technical.points}/${row.technical.maxPoints}`,
+      priority: `${row.priority.points}/${row.priority.maxPoints}`,
       quality: row.qualityScore,
       marketSector: row.marketSectorScore,
-      totalNormalized: row.totalScoreNormalized,
+    },
+    signals: {
+      kosdaq80Onset: row.kosdaq80Onset,
+      exitSignal: row.exitSignal,
     },
     failedRules: row.failedRules,
     warnings: row.warnings,
@@ -126,7 +132,7 @@ function InstrumentDetail() {
         : snap.close > ich.cloudTop
           ? "종가가 일목 구름 상단 위에 있습니다"
           : snap.close >= (ich.cloudBottom ?? 0)
-            ? "종가가 일목 구름 내부에 있어 진입 적합으로 표시하지 않습니다"
+            ? "종가가 일목 구름 내부에 있습니다"
             : "종가가 일목 구름 아래에 있습니다";
     parts.push(`이 종목은 ${cloudState}.`);
     if (snap.maAligned !== null)
@@ -137,18 +143,17 @@ function InstrumentDetail() {
       );
     if (snap.volumeRatio20 !== null)
       parts.push(`거래량은 직전 20일 평균의 ${snap.volumeRatio20.toFixed(1)}%입니다.`);
-    const momentum = row.technical.rows.find((r) => r.group === "Momentum Confirmation" || r.group === "Vf Momentum");
+    const momentum = row.technical.rows.find(
+      (r) => r.group === "Momentum Confirmation" || r.group === "Vf Momentum",
+    );
     if (momentum) parts.push(`Momentum Confirmation: ${momentum.actual} → ${momentum.points}점.`);
     const bb = row.technical.rows.find((r) => r.group === "Breakout" || r.group === "Vf Breakout");
     if (bb) parts.push(`볼린저 상단 돌파 판정: ${bb.actual} (획득 ${bb.points}점).`);
     parts.push(
-      `모델점수는 ${score.maxPoints}점 중 ${score.points}점, 산정 가능 점수는 ${score.availableMaxPoints}점입니다.`,
+      row.operatingScore10 === null
+        ? `V8 Final 원점수는 ${score.points}/${score.maxPoints}점이지만 핵심 피처 결측 때문에 운영 기술점수는 산정 불가입니다.`
+        : `V8 Final 운영 기술점수는 ${row.operatingScore10.toFixed(1)}/10점입니다.`,
     );
-    const foreign = row.priority.rows[1]!;
-    if (foreign.status === "FAIL")
-      parts.push("최근 20거래일 외국인 누적 순매수가 0 이하이므로 외국인 수급 점수를 받지 못했습니다.");
-    if (foreign.status === "NO_DATA")
-      parts.push("외국인 수급 데이터가 없어 해당 항목은 0점이 아니라 산정 불가로 처리했습니다.");
     return parts.join(" ");
   })();
 
@@ -163,7 +168,7 @@ function InstrumentDetail() {
             </span>
           </h1>
           <p className="text-[12px] text-muted-foreground">
-            기준일 {analysis.asOfDate} · 벤치마크 {row.benchmarkCode}
+            기준일 {analysis.asOfDate} · 모델 {analysis.strategyVersion} · 벤치마크 {row.benchmarkCode}
             {row.benchmarkFallback ? " (대체 벤치마크 사용)" : ""} · 데이터 완전성{" "}
             {formatNumber(row.dataCompletenessRatio * 100, 0)}%
           </p>
@@ -184,13 +189,17 @@ function InstrumentDetail() {
 
       <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
         <Stat label="현재가" value={formatPrice(snap.close)} />
-        <Stat label="Vf 점수" value={formatNumber(row.totalScoreNormalized, 1)} />
-        <Stat label="모델등급" value={<GradeBadge grade={row.grade} />} />
-        <Stat label="상태 라벨" value={row.actionLabelText} />
         <Stat
-          label="시가총액"
-          value={row.marketCap === null ? "데이터 없음" : formatWon(row.marketCap)}
+          label="기술점수"
+          value={
+            row.operatingScore10 === null
+              ? "산정 불가"
+              : `${formatNumber(row.operatingScore10, 1)} / 10`
+          }
         />
+        <Stat label="우선점수" value={`${formatNumber(row.priority.points, 2)} / ${formatNumber(row.priority.maxPoints, 1)}`} />
+        <Stat label="모델등급" value={<GradeBadge grade={row.grade} />} />
+        <Stat label="상태" value={row.actionLabelText} />
         <Stat label="52주 고점 거리" value={<Delta value={snap.distanceFrom52wHigh} />} />
       </div>
 
@@ -239,12 +248,12 @@ function InstrumentDetail() {
               </button>
             ))}
             <button
-                type="button"
-                aria-pressed={visible.technical}
-                onClick={() => setVisible((v) => ({ ...v, technical: !v.technical }))}
-                className={`rounded border px-2 py-0.5 text-[11px] ${visible.technical ? "border-primary/40 bg-info-soft text-info" : "border-border text-muted-foreground"}`}
-              >
-                기술점수 (9.5점)
+              type="button"
+              aria-pressed={visible.technical}
+              onClick={() => setVisible((v) => ({ ...v, technical: !v.technical }))}
+              className={`rounded border px-2 py-0.5 text-[11px] ${visible.technical ? "border-primary/40 bg-info-soft text-info" : "border-border text-muted-foreground"}`}
+            >
+              기술점수 (10점)
             </button>
           </div>
         </div>
@@ -266,7 +275,7 @@ function InstrumentDetail() {
                   yAxisId="technical"
                   orientation="right"
                   domain={[0, HISTORICAL_TECHNICAL_MAX]}
-                  ticks={[0, 2, 4, 6, 8, 9.5]}
+                  ticks={[0, 2, 4, 6, 8, 10]}
                   width={48}
                   tick={{ fontSize: 10, fill: "#f97316" }}
                   tickFormatter={(v: number) => `${v}점`}
@@ -287,7 +296,9 @@ function InstrumentDetail() {
                         <br />
                         산정 가능 배점 {s.availableMaxPoints} / {s.rawMaxPoints}점
                         {s.missingRules.length > 0 ? (
-                          <><br />자료 부족: {s.missingRules.join(", ")}</>
+                          <>
+                            <br />자료 부족: {s.missingRules.join(", ")}
+                          </>
                         ) : null}
                       </span>,
                       name,
@@ -439,12 +450,11 @@ function InstrumentDetail() {
                   name="BB 하단"
                 />
               ) : null}
-
               {visible.technical ? (
                 <Line
                   yAxisId="technical"
                   dataKey="historicalTechnicalPoints"
-                  name="기술점수 (52주 포함 · 9.5점)"
+                  name="기술점수 (V8 Final · 10점)"
                   type="linear"
                   stroke="#f97316"
                   strokeWidth={2.5}
@@ -468,11 +478,10 @@ function InstrumentDetail() {
           하단 막대를 좌우로 끌면 과거 구간까지 확인할 수 있습니다. 이동평균 5·20·60·120일,
           볼린저밴드 20일·2σ, 일목균형표 9·26·52(선행 26) 기준 · 양운 붉은색 / 음운 파랑색.
         </p>
-
         <p className="mt-1 text-[11px] text-muted-foreground">
-          오른쪽 축: 52주 신고가와 외국인 20일 순매수를 포함한 전체 기술점수(9.5점 만점).
-          해당 날짜까지 252거래일 및 모든 점수 항목의 자료가 갖춰진 시점부터 표시합니다.
-          자료 부족 구간은 0점으로 처리하거나 환산하지 않고 선을 비워 둡니다. 주식·ETF에 같은 기준을 적용합니다.
+          오른쪽 축은 V8 Final 기술점수 0~10점입니다. 52주 신고가, 외국인 20일 순매수와
+          Sector Price Leadership 0.5점 슬롯을 포함하며, 핵심 피처가 결측인 날짜는 남은 항목으로
+          재정규화하지 않고 선을 비워 둡니다.
         </p>
         <p className="mt-1 text-[11px] text-muted-foreground">
           ATR 손절선 참고: {formatPrice(snap.close - 1.8 * (snap.atr14 ?? 0))} (진입가 기준 1.8 ATR)
@@ -483,22 +492,27 @@ function InstrumentDetail() {
       <div className="mt-5 space-y-4">
         <BreakdownTable
           block={row.technical}
-          title={`기술점수 (${row.technical.maxPoints}점 만점)${row.vf ? " · 백테스트 동일 7개 피처" : ""}`}
+          title={`기술점수 (${row.technical.maxPoints}점 만점)${row.vf ? " · V8 Final 8개 항목" : ""}`}
           asOfDate={analysis.asOfDate}
           source={analysis.dataProvider}
         />
         {row.vf ? (
           <p className="text-xs text-muted-foreground">
-            기술점수를 산정 가능한 배점으로 나눈 값이 정규화 점수이며 주식 순위와 등급에 적용됩니다.
-            아래 우선점수와 펀더멘털은 참고용으로 추가 합산하지 않습니다.
-            산정 가능 {row.vf.availableMaxPoints}/{row.vf.maxPoints}점.
-            {snap.high52w === null ? " 52주 신고가에는 기준일 포함 252거래일 일봉이 필요합니다. 300거래일 수집을 권장합니다." : ""}
-            {snap.foreignNet20d === null ? " 외국인 수급은 최근 20거래일 순매수 금액이 모두 필요합니다." : ""}
+            주식은 V8 Final raw 0~10 기술점수를 그대로 운영점수로 사용합니다. 핵심 피처가 하나라도
+            결측이면 남은 피처만으로 재정규화하지 않고 기술점수 산정 불가로 처리합니다. 우선점수와
+            펀더멘털 점수는 기술점수에 추가 합산하지 않습니다. 산정 가능 {row.vf.availableMaxPoints}/
+            {row.vf.maxPoints}점.
+            {snap.high52w === null
+              ? " 52주 신고가에는 기준일 포함 252거래일 일봉이 필요합니다."
+              : ""}
+            {snap.foreignNet20d === null
+              ? " 외국인 수급은 최근 20거래일 순매수 금액이 모두 필요합니다."
+              : ""}
           </p>
         ) : null}
         <BreakdownTable
           block={row.priority}
-          title={`우선점수 · 참고 (${row.priority.maxPoints}점 만점) · 정규화 ${row.priorityNormalized === null ? "산정 불가" : `${row.priorityNormalized.toFixed(1)}점`}`}
+          title={`우선점수 · 참고 (${row.priority.maxPoints}점 만점)`}
           asOfDate={analysis.asOfDate}
           source={analysis.dataProvider}
         />
@@ -516,13 +530,18 @@ function InstrumentDetail() {
 
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
         <section className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-2 text-sm font-semibold">최근 60거래일 기술점수 추이 (9.5점)</h2>
+          <h2 className="mb-2 text-sm font-semibold">최근 60거래일 기술점수 추이 (10점)</h2>
           <div className="h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={history}>
                 <CartesianGrid stroke="var(--color-grid)" vertical={false} />
                 <XAxis dataKey="tradeDate" tick={{ fontSize: 10 }} minTickGap={40} />
-                <YAxis domain={[0, HISTORICAL_TECHNICAL_MAX]} tick={{ fontSize: 10 }} width={30} />
+                <YAxis
+                  domain={[0, HISTORICAL_TECHNICAL_MAX]}
+                  ticks={[0, 2, 4, 6, 8, 10]}
+                  tick={{ fontSize: 10 }}
+                  width={30}
+                />
                 <Tooltip
                   contentStyle={{
                     background: "var(--color-card)",
