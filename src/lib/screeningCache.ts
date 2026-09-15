@@ -28,9 +28,9 @@ import {
 } from "@/lib/screeningHistory";
 import { listRegisteredSources } from "@/lib/sourceRegistry";
 
-export const SCREENING_CACHE_VERSION = "screening-cache-v8-final-v1" as const;
-export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-final-v1" as const;
-export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-final-v1" as const;
+export const SCREENING_CACHE_VERSION = "screening-cache-v8-final-v2" as const;
+export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-final-v2" as const;
+export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-final-v2" as const;
 
 interface CacheMeta {
   version: string;
