@@ -9,6 +9,7 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "data:ingest": "vite-node scripts/ingest-source.ts",
+    "backtest:cache": "vite-node scripts/backtest-source-cache.ts",
     "backtest:run": "vite-node scripts/run-backtest.ts",
     "screening:run": "vite-node scripts/run-screening.ts",
     "lint": "eslint .",

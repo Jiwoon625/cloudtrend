@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -47,6 +48,8 @@ interface RunConfig {
 
 interface Options {
   inputs: string[];
+  sourceManifest: string | null;
+  sourceCacheDir: string | null;
   configPath: string;
   outputRoot: string;
   supabaseUserId: string | null;
@@ -57,15 +60,41 @@ interface Options {
   includeEtf: boolean | null;
 }
 
+interface CachedSourceManifestFile {
+  id: string;
+  fileName: string;
+  bytes: number;
+  savedAt: string;
+  fileHash: string;
+  cacheFile: string;
+}
+
+interface CachedSourceManifest {
+  schemaVersion: 1;
+  sourceType: "backtest";
+  cacheKey: string;
+  fileCount: number;
+  totalBytes: number;
+  files: CachedSourceManifestFile[];
+}
+
+type RunSourceInput = Pick<
+  LoadedSourceInput,
+  "id" | "fileName" | "bytes" | "savedAt" | "text" | "sourceRecord"
+>;
+
 function usage(): never {
   throw new Error(
     [
       "Usage:",
       "  npm run backtest:run -- --input data-1.csv [--input data-2.csv]",
       "  npm run backtest:run -- --supabase-user-id <uuid> [--upload]",
+      "  npm run backtest:run -- --source-manifest <path> --source-cache-dir <dir> --supabase-user-id <uuid> --upload",
       "Options:",
       "  --config <path>   default: config/backtest.score-change.json",
       "  --output <dir>    default: backtest-runs",
+      "  --source-manifest <path>   Supabase source metadata manifest for cached raw files",
+      "  --source-cache-dir <dir>   local GitHub Actions cache directory",
       "  --limit <count>   override config Universe size",
       "  --round-trip-cost-bps <bps>   override config cost",
       "  --include-etf | --exclude-etf  override config ETF setting",
@@ -78,6 +107,8 @@ function usage(): never {
 function parseArgs(argv: string[]): Options {
   const options: Options = {
     inputs: [],
+    sourceManifest: null,
+    sourceCacheDir: null,
     configPath: "config/backtest.score-change.json",
     outputRoot: "backtest-runs",
     supabaseUserId: null,
@@ -90,6 +121,8 @@ function parseArgs(argv: string[]): Options {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--input") options.inputs.push(argv[++i] ?? usage());
+    else if (arg === "--source-manifest") options.sourceManifest = argv[++i] ?? usage();
+    else if (arg === "--source-cache-dir") options.sourceCacheDir = argv[++i] ?? usage();
     else if (arg === "--config") options.configPath = argv[++i] ?? usage();
     else if (arg === "--output") options.outputRoot = argv[++i] ?? usage();
     else if (arg === "--supabase-user-id") options.supabaseUserId = argv[++i] ?? usage();
@@ -102,12 +135,13 @@ function parseArgs(argv: string[]): Options {
     else if (arg === "--exclude-etf") options.includeEtf = false;
     else usage();
   }
-  if (options.inputs.length === 0 && !options.supabaseUserId) usage();
-  if (options.inputs.length > 0 && options.supabaseUserId) usage();
+  if (options.inputs.length === 0 && !options.sourceManifest && !options.supabaseUserId) usage();
+  if (options.inputs.length > 0 && options.sourceManifest) usage();
+  if (options.sourceManifest && !options.sourceCacheDir) usage();
   return options;
 }
 
-async function loadLocalInputs(files: string[]): Promise<LoadedSourceInput[]> {
+async function loadLocalInputs(files: string[]): Promise<RunSourceInput[]> {
   return Promise.all(
     files.map(async (file) => {
       const [text, info] = await Promise.all([readFile(file, "utf8"), stat(file)]);
@@ -125,14 +159,54 @@ async function loadLocalInputs(files: string[]): Promise<LoadedSourceInput[]> {
         bytes: Buffer.byteLength(text),
         savedAt: info.mtime.toISOString(),
         text: validation.canonicalCsv,
-        fileHash: validation.fileHash,
-        dataHash: validation.dataHash,
-        schemaHash: validation.schemaHash,
         sourceRecord: null,
-        validation,
       };
     }),
   );
+}
+
+function decodeSourceBytes(bytes: Uint8Array) {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return new TextDecoder("euc-kr").decode(bytes);
+  }
+}
+
+async function loadCachedInputs(manifestPath: string, cacheDir: string): Promise<RunSourceInput[]> {
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as CachedSourceManifest;
+  if (
+    manifest.schemaVersion !== 1 ||
+    manifest.sourceType !== "backtest" ||
+    !Array.isArray(manifest.files) ||
+    manifest.files.length !== manifest.fileCount
+  )
+    throw new Error("지원하지 않거나 손상된 백테스트 source cache manifest입니다.");
+  const inputs: RunSourceInput[] = [];
+  for (const file of manifest.files) {
+    const cachePath = path.join(cacheDir, file.cacheFile);
+    let bytes: Uint8Array;
+    try {
+      bytes = new Uint8Array(await readFile(cachePath));
+    } catch {
+      throw new Error(`백테스트 source cache 파일이 없습니다: ${file.fileName}`);
+    }
+    const fileHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+    if (bytes.byteLength !== file.bytes || fileHash !== file.fileHash)
+      throw new Error(`백테스트 source cache 무결성 검증 실패: ${file.fileName}`);
+    inputs.push({
+      id: file.id,
+      fileName: file.fileName,
+      bytes: file.bytes,
+      savedAt: file.savedAt,
+      text: decodeSourceBytes(bytes),
+      sourceRecord: null,
+    });
+  }
+  process.stderr.write(
+    `Backtest source cache verified: ${manifest.fileCount} files / ${(manifest.totalBytes / 1_000_000).toFixed(1)} MB\n`,
+  );
+  return inputs;
 }
 
 async function uploadBundle(
@@ -205,9 +279,22 @@ async function main() {
     roundTripCostBps: Math.max(0, options.roundTripCostBps ?? config.roundTripCostBps ?? 0),
   };
   const client = options.supabaseUserId ? trustedSupabaseClient() : null;
-  const inputs = options.supabaseUserId
-    ? await loadAnalysisSourceInputs(client!, options.supabaseUserId, "backtest")
-    : await loadLocalInputs(options.inputs);
+  let inputs: RunSourceInput[];
+  let dataSource: BacktestDataVersionInput["source"];
+  if (options.sourceManifest && options.sourceCacheDir) {
+    inputs = await loadCachedInputs(options.sourceManifest, options.sourceCacheDir);
+    dataSource = "SUPABASE_SOURCE_REGISTRY";
+  } else if (options.inputs.length > 0) {
+    inputs = await loadLocalInputs(options.inputs);
+    dataSource = "LOCAL_FILES";
+  } else {
+    inputs = await loadAnalysisSourceInputs(client!, options.supabaseUserId!, "backtest", {
+      lightweight: true,
+    });
+    dataSource = inputs.some((input) => input.sourceRecord)
+      ? "SUPABASE_SOURCE_REGISTRY"
+      : "SUPABASE_BACKTEST";
+  }
   const parsed = parseManualMarketData(inputs.map((input) => input.text));
   const series = buildSeries(parsed.dataset, execution);
   const params: BacktestParams = {
@@ -224,11 +311,7 @@ async function main() {
     savedAt,
   }));
   const data: BacktestDataVersionInput = {
-    source: options.supabaseUserId
-      ? inputs.some((input) => input.sourceRecord)
-        ? "SUPABASE_SOURCE_REGISTRY"
-        : "SUPABASE_BACKTEST"
-      : "LOCAL_FILES",
+    source: dataSource,
     datasetVersion: parsed.dataset.version,
     asOfDate: parsed.dataset.asOfDate,
     files,
