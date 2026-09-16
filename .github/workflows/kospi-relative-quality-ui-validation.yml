@@ -35,15 +35,23 @@ jobs:
         run: npm ci
       - name: Test Relative Quality status
         run: npx vitest run src/lib/statusDisplay.test.ts
-      - name: Lint changed implementation
-        run: >-
-          npx eslint
-          src/lib/kospiRelativeQuality.ts
-          src/lib/statusDisplay.ts
-          src/lib/statusDisplay.test.ts
-          src/lib/dashboardRow.ts
-          src/lib/screeningCache.ts
-          src/components/ScreenerTable.tsx
-          src/routes/index.tsx
+      - name: Format and lint changed implementation
+        run: |
+          npx prettier --write \
+            src/lib/kospiRelativeQuality.ts \
+            src/lib/statusDisplay.ts \
+            src/lib/statusDisplay.test.ts \
+            src/lib/dashboardRow.ts \
+            src/lib/screeningCache.ts \
+            src/components/ScreenerTable.tsx \
+            src/routes/index.tsx
+          npx eslint \
+            src/lib/kospiRelativeQuality.ts \
+            src/lib/statusDisplay.ts \
+            src/lib/statusDisplay.test.ts \
+            src/lib/dashboardRow.ts \
+            src/lib/screeningCache.ts \
+            src/components/ScreenerTable.tsx \
+            src/routes/index.tsx
       - name: Production build
         run: npm run build
