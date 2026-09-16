@@ -27,8 +27,9 @@ import {
   formatPercent,
   formatWon,
 } from "@/lib/format";
-import { buildAndPersistScreeningCaches, type DashboardSummary } from "@/lib/screeningCache";
+import type { DashboardSummary } from "@/lib/screeningCache";
 import { isScreeningStarted } from "@/lib/screeningRun";
+import { rebuildScreeningCachesServerFirst } from "@/lib/webScreeningClient";
 
 export const Route = createFileRoute("/")({
   ssr: false,
@@ -105,13 +106,10 @@ function Dashboard() {
   const rescreen = async () => {
     setRescreening(true);
     try {
-      await buildAndPersistScreeningCaches();
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["dashboard-summary"] }),
-        queryClient.invalidateQueries({ queryKey: ["market-analysis"] }),
-      ]);
+      await rebuildScreeningCachesServerFirst();
+      await queryClient.invalidateQueries({ queryKey: ["market-analysis"] });
       queryClient.removeQueries({ queryKey: ["instrument"] });
-      toast.success("V8 Final 스크리닝을 다시 계산했습니다.");
+      toast.success("V8 Final 스크리닝을 서버에서 다시 계산했습니다.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "스크리닝 재계산에 실패했습니다.");
     } finally {
