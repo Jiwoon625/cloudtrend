@@ -1,18 +1,31 @@
 import { describe, expect, it } from "vitest";
 
 import type { ScreeningRow } from "./engine/pipeline";
+import type { Instrument } from "./engine/types";
 import { getDisplayStatus } from "./statusDisplay";
+
+function instrument(market: "KOSPI" | "KOSDAQ"): Instrument {
+  return {
+    id: market === "KOSPI" ? "kospi-test" : "kosdaq-test",
+    symbol: market === "KOSPI" ? "000000" : "111111",
+    name: market === "KOSPI" ? "테스트" : "코스닥 테스트",
+    market,
+    instrumentType: "STOCK",
+    sectorCode: "ETC",
+    sectorName: "기타",
+    isPreferredStock: false,
+    isManagementIssue: false,
+    isInvestmentWarning: false,
+    isLeveraged: false,
+    isInverse: false,
+    isActive: true,
+    indexMemberships: [],
+  };
+}
 
 function row(overrides: Partial<ScreeningRow> = {}): ScreeningRow {
   return {
-    instrument: {
-      symbol: "000000",
-      name: "테스트",
-      market: "KOSPI",
-      instrumentType: "STOCK",
-      sectorCode: "ETC",
-      sectorName: "기타",
-    },
+    instrument: instrument("KOSPI"),
     kosdaq80Onset: false,
     kospiEightPointEntry: false,
     exitSignal: null,
@@ -49,14 +62,7 @@ describe("V8 display status", () => {
     expect(
       getDisplayStatus(
         row({
-          instrument: {
-            symbol: "111111",
-            name: "코스닥 테스트",
-            market: "KOSDAQ",
-            instrumentType: "STOCK",
-            sectorCode: "ETC",
-            sectorName: "기타",
-          },
+          instrument: instrument("KOSDAQ"),
           kosdaq80Onset: true,
           rs20: 6,
           rs60: 2,
