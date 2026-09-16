@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'chore: bootstrap supply risk priority patch'
+    if: github.event.head_commit.message == 'fix supply risk patch workflow'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -24,6 +24,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import base64
 
           def replace_once(path: str, old: str, new: str):
               p = Path(path)
@@ -34,14 +35,12 @@ jobs:
                   raise SystemExit(f"pattern not unique in {path}: {text.count(old)} matches")
               p.write_text(text.replace(old, new, 1))
 
-          # 1) Preserve the two source fields in the daily bar domain object.
           replace_once(
               "src/lib/engine/types.ts",
               "  foreignNetBuyValue: number | null;\n  institutionNetBuyValue: number | null;\n",
               "  foreignNetBuyValue: number | null;\n  institutionNetBuyValue: number | null;\n  /** 공매도 거래량 비중(%). 공급자가 제공하지 않으면 null/undefined */\n  shortSellingVolumeRate?: number | null;\n  /** 대차잔고 수량. 공급자가 제공하지 않으면 null/undefined */\n  lendingBalanceQuantity?: number | null;\n",
           )
 
-          # 2) Keep the fields when canonical CSV/JSON is converted into MarketDataset.
           replace_once(
               "src/lib/engine/manualDataset.ts",
               "  institutionnetbuyvalue: \"institutionNetBuyValue\",\n  institutionnet: \"institutionNetBuyValue\",\n  기관순매수: \"institutionNetBuyValue\",\n  sector: \"sector\",\n",
@@ -53,7 +52,6 @@ jobs:
               "      foreignNetBuyValue: num(pick(rec, \"foreignNetBuyValue\")),\n      institutionNetBuyValue: num(pick(rec, \"institutionNetBuyValue\")),\n      shortSellingVolumeRate: num(pick(rec, \"shortSellingVolumeRate\")),\n      lendingBalanceQuantity: num(pick(rec, \"lendingBalanceQuantity\")),\n    };\n",
           )
 
-          # 3) Compute 20-trading-day directional changes. Only the sign is used by scoring.
           replace_once(
               "src/lib/engine/indicators.ts",
               "  foreignNet60d: number | null;\n  institutionNet20d: number | null;\n  extensionFromMa20: number | null; // %\n",
@@ -75,200 +73,14 @@ jobs:
               "    foreignNet60d: sumLast(foreign, endIndex, 60),\n    institutionNet20d: sumLast(inst, endIndex, 20),\n    shortSellingVolumeRate20dChangePp: changeFromLookback(shortSellingVolumeRates, endIndex, 20),\n    lendingBalanceQuantity20dChange: changeFromLookback(lendingBalanceQuantities, endIndex, 20),\n    extensionFromMa20: ma20 !== null && ma20 !== 0 ? (close / ma20 - 1) * 100 : null,\n",
           )
 
-          # 4) V8 priority score: add a separate 1-point Supply Risk overlay for stocks.
-          Path("src/lib/engine/priorityScoreV8.ts").write_text(r'''import type { RuleRow, ScoreBlock } from "./scoring";
+          Path("src/lib/engine/priorityScoreV8.ts").write_text(base64.b64decode("aW1wb3J0IHR5cGUgeyBSdWxlUm93LCBTY29yZUJsb2NrIH0gZnJvbSAiLi9zY29yaW5nIjsKCmV4cG9ydCBjb25zdCBQUklPUklUWV9ST1RBVElPTl9NQVhfUE9JTlRTID0gMSBhcyBjb25zdDsKZXhwb3J0IGNvbnN0IFBSSU9SSVRZX1NVUFBMWV9SSVNLX01BWF9QRU5BTFRZID0gMSBhcyBjb25zdDsKY29uc3QgUFJJT1JJVFlfU1VQUExZX1JJU0tfQ09NUE9ORU5UX1BFTkFMVFkgPSBQUklPUklUWV9TVVBQTFlfUklTS19NQVhfUEVOQUxUWSAvIDI7CgpleHBvcnQgaW50ZXJmYWNlIFByaW9yaXR5U3VwcGx5Umlza1Y4IHsKICBzaG9ydFNlbGxpbmdWb2x1bWVSYXRlMjBkQ2hhbmdlUHA6IG51bWJlciB8IG51bGw7CiAgbGVuZGluZ0JhbGFuY2VRdWFudGl0eTIwZENoYW5nZTogbnVtYmVyIHwgbnVsbDsKfQoKZnVuY3Rpb24gZmluaXRlT3JOdWxsKHZhbHVlOiBudW1iZXIgfCBudWxsKTogbnVtYmVyIHwgbnVsbCB7CiAgcmV0dXJuIHZhbHVlICE9PSBudWxsICYmIE51bWJlci5pc0Zpbml0ZSh2YWx1ZSkgPyB2YWx1ZSA6IG51bGw7Cn0KCmZ1bmN0aW9uIHNpZ25lZCh2YWx1ZTogbnVtYmVyLCBkaWdpdHM6IG51bWJlcik6IHN0cmluZyB7CiAgY29uc3QgZm9ybWF0dGVkID0gTWF0aC5hYnModmFsdWUpLnRvTG9jYWxlU3RyaW5nKCJrby1LUiIsIHsKICAgIG1pbmltdW1GcmFjdGlvbkRpZ2l0czogZGlnaXRzLAogICAgbWF4aW11bUZyYWN0aW9uRGlnaXRzOiBkaWdpdHMsCiAgfSk7CiAgcmV0dXJuIGAke3ZhbHVlID4gMCA/ICIrIiA6IHZhbHVlIDwgMCA/ICItIiA6ICIifSR7Zm9ybWF0dGVkfWA7Cn0KCi8qKgogKiBWOCBwcmlvcml0eSBzY29yZSB1c2VkIGJ5IGRhc2hib2FyZC9zY3JlZW5lci4KICogRm9yZWlnbiAyMEQgZmxvdyBhbmQgNTItd2Vlay1oaWdoIHByb3hpbWl0eSBhcmUgcmVtb3ZlZCBoZXJlIGJlY2F1c2UKICogdGhleSBhbHJlYWR5IGxpdmUgaW4gdGhlIFZmIHRlY2huaWNhbCBzY29yZS4KICogU2VjdG9yIFJvdGF0aW9uIFNjb3JlICgwfjEwMCkgaXMgbWFwcGVkIGNvbnRpbnVvdXNseSB0byAwfjEgcG9pbnQuCiAqCiAqIFN1cHBseSBSaXNrIHJlbWFpbnMgb3V0c2lkZSB0aGUgMTAtcG9pbnQgVmYgc2NvcmUvT25zZXQgbG9naWMuCiAqIEZvciBzdG9ja3MsIHJpc2luZyBzaG9ydC1zZWxsaW5nIHZvbHVtZSBzaGFyZSBvciBsZW5kaW5nIGJhbGFuY2UgaXMgdHJlYXRlZAogKiBhcyBhbiBFbnRyeSBSaXNrIHBlbmFsdHk6IDAgLyAtMC41IC8gLTEuMCBwb2ludC4KICovCmV4cG9ydCBmdW5jdGlvbiBidWlsZFByaW9yaXR5U2NvcmVWOCgKICBsZWdhY3k6IFNjb3JlQmxvY2ssCiAgc2VjdG9yUm90YXRpb25TY29yZTogbnVtYmVyIHwgbnVsbCwKICBzdXBwbHlSaXNrOiBQcmlvcml0eVN1cHBseVJpc2tWOCB8IG51bGwgPSBudWxsLAopOiBTY29yZUJsb2NrIHsKICBjb25zdCBzY29yZWRSb3dzID0gbGVnYWN5LnJvd3MuZmlsdGVyKAogICAgKHJvdykgPT4gcm93Lmdyb3VwICE9PSAi7Jm46rWt7J24IOyImOq4iCIgJiYgcm93Lmdyb3VwICE9PSAi7Iug6rOg6rCAIiAmJiByb3cuZ3JvdXAgIT09ICLssLjqs6Dsp4DtkZwgKOygkOyImCDrr7jrsJjsmIEpIiwKICApOwogIGNvbnN0IHJlZmVyZW5jZVJvd3MgPSBsZWdhY3kucm93cy5maWx0ZXIoKHJvdykgPT4gcm93Lmdyb3VwID09PSAi7LC46rOg7KeA7ZGcICjspJDsiJgg66+467CY7JiBIOKAnSIpOwogIGNvbnN0IHJvdGF0aW9uID0KICAgIHNlY3RvclJvdGF0aW9uU2NvcmUgPT09IG51bGwgfHwgIU51bWJlci5pc0Zpbml0ZShzZWN0b3JSb3RhdGlvblNjb3JlKQogICAgICA/IG51bGwKICAgICAgOiBNYXRoLm1pbigxMDAsIE1hdGgubWF4KDAsIHNlY3RvclJvdGF0aW9uU2NvcmUpKTsKICBjb25zdCByb3RhdGlvblBvaW50cyA9CiAgICByb3RhdGlvbiA9PT0gbnVsbAogICAgICA/IDAKICAgICAgOiBNYXRoLnJvdW5kKChyb3RhdGlvbiAvIDEwMCkgKiBQUklPUklUWV9ST1RBVElPTl9NQVhfUE9JTlRTICogMTAwKSAvIDEwMDsKICBjb25zdCByb3RhdGlvblJvdzogUnVsZVJvdyA9IHsKICAgIGdyb3VwOiAi7ISN7YSwIOuhnO2FjOydtCIsCiAgICBydWxlOiAi7ISN7YSwIFJvdGF0aW9uIFNjb3JlICgwfjEwMCDruYTroYAg67CY7JiBKSIiwCiAgICBhY3R1YWw6IHJvdGF0aW9uID09PSBudWxsID8gIuuwsOydtO2EsCDsl4bsnYwiIDogYCR7cm90YXRpb24udG9GaXhlZCgxKX0vMTAwYCwKICAgIHRocmVzaG9sZDogYFJvdGF0aW9uIDB+MTAwIOKGkiAwfiR7UFJJT1JJVFlfUk9UQVRJT05fTUFYX1BPSU5UU30g7KCQYCwKICAgIHN0YXR1czogcm90YXRpb24gPT09IG51bGwgPyAiTk9fREFUQSIgOiAiUEFTUyIsCiAgICBwb2ludHM6IHJvdGF0aW9uUG9pbnRzLAogICAgbWF4UG9pbnRzOiBQUklPUklUWV9ST1RBVElPTl9NQVhfUE9JTlRTLAogIH07CgogIGNvbnN0IHN1cHBseVJvd3M6IFJ1bGVSb3dbXSA9IFtdOwogIGlmIChzdXBwbHlSaXNrICE9PSBudWxsKSB7CiAgICBjb25zdCBzaG9ydENoYW5nZSA9IGZpbml0ZU9yTnVsbChzdXBwbHlSaXNrLnNob3J0U2VsbGluZ1ZvbHVtZVJhdGUyMGRDaGFuZ2VQcCk7CiAgICBjb25zdCBsZW5kaW5nQ2hhbmdlID0gZmluaXRlT3JOdWxsKHN1cHBseVJpc2subGVuZGluZ0JhbGFuY2VRdWFudGl0eTIwZENoYW5nZSk7CiAgICBjb25zdCBzaG9ydFJpc2sgPSBzaG9ydENoYW5nZSAhPT0gbnVsbCAmJiBzaG9ydENoYW5nZSA+IDA7CiAgICBjb25zdCBsZW5kaW5nUmlzayA9IGxlbmRpbmdDaGFuZ2UgIT09IG51bGwgJiYgbGVuZGluZ0NoYW5nZSA+IDA7CgogICAgc3VwcGx5Um93cy5wdXNoKHsKICAgICAgZ3JvdXA6ICJTdXBwbHkgUmlzayIsCiAgICAgIHJ1bGU6ICLqs7Xrp6Trj4Qg6rGw656Y656JIOu5hOykkeydgCAyMEQg7Kad6rCAIiwKICAgICAgYWN0dWFsOiBzaG9ydENoYW5nZSA9PT0gbnVsbCA/ICLrjbDsnbTthLAg7JeG7J2MIiA6IGAke3NpZ25lZChzaG9ydENoYW5nZSwgMil9JXBgLAogICAgICB0aHJlc2hvbGQ6IGAyMOqxsOuemOydvCDsoIQg64yA67mEIOymneqwgCDsi5wgLSR7UFJJT1JJVFlfU1VQUExZX1JJU0tfQ09NUE9ORU5UX1BFTkFMVFl97KCQYCwKICAgICAgc3RhdHVzOiBzaG9ydENoYW5nZSA9PT0gbnVsbCA/ICJOT19EQVRBIiA6IHNob3J0UmlzayA/ICJGQUlMIiA6ICJQQVNTIiwKICAgICAgcG9pbnRzOiBzaG9ydFJpc2sgPyAtUFJJT1JJVFlfU1VQUExZX1JJU0tfQ09NUE9ORU5UX1BFTkFMVFkgOiAwLAogICAgICBtYXhQb2ludHM6IDAsCiAgICB9KTsKICAgIHN1cHBseVJvd3MucHVzaCh7CiAgICAgIGdyb3VwOiAiU3VwcGx5IFJpc2siLAogICAgICBydWxlOiAi64yA7LCo7J6U6rOgIDIwRCDspp3qsIAiLAogICAgICBhY3R1YWw6IGxlbmRpbmdDaGFuZ2UgPT09IG51bGwgPyAi642w7J207YSwIOyXhuydjCIgOiBgJHtz"aWduZWQobGVuZGluZ0NoYW5nZSwgMCl97KO8YCwKICAgICAgdGhyZXNob2xkOiBgMjDqsbDrnpjsnbwg7KCEIOuMgOu5hCDspp3qsIAg7IucIC0ke1BSSU9SSVRZX1NVUFBMWV9SSVNLX0NPTVBPTkVOVF9QRU5BTFRZfeygkGAsCiAgICAgIHN0YXR1czogbGVuZGluZ0NoYW5nZSA9PT0gbnVsbCA/ICJOT19EQVRBIiA6IGxlbmRpbmdSaXNrID8gIkZBSUwiIDogIlBBU1MiLAogICAgICBwb2ludHM6IGxlbmRpbmdSaXNrID8gLVBSSU9SSVRZX1NVUFBMWV9SSVNLX0NPTVBPTkVOVF9QRU5BTFRZIDogMCwKICAgICAgbWF4UG9pbnRzOiAwLAogICAgfSk7CiAgfQoKICBjb25zdCByb3dzID0gWy4uLnNjb3JlZFJvd3MsIHJvdGF0aW9uUm93LCAuLi5zdXBwbHlSb3dzLCAuLi5yZWZlcmVuY2VSb3dzXTsKICBjb25zdCBwb2ludHMgPSBNYXRoLnJvdW5kKHJvd3MucmVkdWNlKChzdW0sIHJvdykgPT4gc3VtICsgcm93LnBvaW50cywgMCkgKiAxMDApIC8gMTAwOwogIGNvbnN0IG1heFBvaW50cyA9IE1hdGgucm91bmQocm93cy5yZWR1Y2UoKHN1bSwgcm93KSA9PiBzdW0gKyByb3cubWF4UG9pbnRzLCAwKSAqIDEwMCkgLyAxMDA7CiAgY29uc3QgYXZhaWxhYmxlTWF4UG9pbnRzID0KICAgIE1hdGgucm91bmQoCiAgICAgIHJvd3MucmVkdWNlKChzdW0sIHJvdykgPT4gc3VtICsgKHJvdy5zdGF0dXMgPT09ICJOT19EQVRBIiA/IDAgOiByb3cubWF4UG9pbnRzKSwgMCkgKiAxMDAsCiAgICApIC8gMTAwOwogIHJldHVybiB7IHBvaW50cywgbWF4UG9pbnRzLCBhdmFpbGFibGVNYXhQb2ludHMsIHJvd3MgfTsKfQo=").decode())
+          Path("src/lib/engine/priorityScoreV8.test.ts").write_text(base64.b64decode("aW1wb3J0IHsgZGVzY3JpYmUsIGV4cGVjdCwgaXQgfSBmcm9tICJ2aXRlc3QiOwppbXBvcnQgdHlwZSB7IFJ1bGVSb3csIFNjb3JlQmxvY2sgfSBmcm9tICIuL3Njb3JpbmciOwppbXBvcnQgeyBidWlsZFByaW9yaXR5U2NvcmVWOCB9IGZyb20gIi4vcHJpb3JpdHlTY29yZVY4IjsKCmNvbnN0IHJvdyA9IChncm91cDogc3RyaW5nLCBwb2ludHM6IG51bWJlciwgbWF4UG9pbnRzOiBudW1iZXIsIHN0YXR1czogUnVsZVJvd1sic3RhdHVzIl0gPSAiUEFTUyIpOiBSdWxlUm93ID0+ICh7CiAgZ3JvdXAsCiAgcnVsZTogZ3JvdXAsCiAgYWN0dWFsOiAidGVzdCIsCiAgdGhyZXNob2xkOiAidGVzdCIsCiAgc3RhdHVzLAogIHBvaW50cywKICBtYXhQb2ludHMsCn0pOwoKZnVuY3Rpb24gbGVnYWN5UHJpb3JpdHkoKTogU2NvcmVCbG9jayB7CiAgY29uc3Qgcm93cyA9IFsKICAgIHJvdygi7KeA7IiYIO2OuOyehSIsIDIsIDIpLAogICAgcm93KCLsmbjqta3snbgg7IiY6riJIiwgMiwgMiksCiAgICByb3coIuyLoOqzoOqwgCIsIDIuNSwgMi41KSwKICAgIHJvdygi6rec66qoIiwgMSwgMSksCiAgICByb3coIuyDgeuMgCDshLHqs7wiLCAxLCAxKSwKICAgIHJvdygi7LC46rOg7KeA7ZGcICjspJDsiJgg66+467CY7JiBIOKAnSIsIDAsIDAsICJGQUlMIiksCiAgXTsKICByZXR1cm4geyBwb2ludHM6IDguNSwgbWF4UG9pbnRzOiA4LjUsIGF2YWlsYWJsZU1heFBvaW50czogOC41LCByb3dzIH07Cn0KCmRlc2NyaWJlKCJidWlsZFByaW9yaXR5U2NvcmVWOCIsICgpID0+IHsKICBpdCgia2VlcHMgdGhlIGV4aXN0aW5nIDUtcG9pbnQgYmFzZSBwcmlvcml0eSBzY29yZSIsICgpID0+IHsKICAgIGNvbnN0IHJlc3VsdCA9IGJ1aWxkUHJpb3JpdHlTY29yZVY4KGxlZ2FjeVByaW9yaXR5KCksIDgyKTsKICAgIGV4cGVjdChyZXN1bHQubWF4UG9pbnRzKS50b0JlKDUpOwogICAgZXhwZWN0KHJlc3VsdC5hdmFpbGFibGVNYXhQb2ludHMpLnRvQmUoNSk7CiAgICBleHBlY3QocmVzdWx0LnBvaW50cykudG9CZSg0LjgyKTsKICB9KTsKCiAgaXQoImFwcGxpZXMgLTAuNSBmb3IgZWFjaCB3b3JzZW5pbmcgU3VwcGx5IFJpc2sgY29tcG9uZW50IiwgKCkgPT4gewogICAgY29uc3QgcmVzdWx0ID0gYnVpbGRQcmlvcml0eVNjb3JlVjgobGVnYWN5UHJpb3JpdHkoKSwgODIsIHsKICAgICAgc2hvcnRTZWxsaW5nVm9sdW1lUmF0ZTIwZENoYW5nZVBwOiAwLjM1LAogICAgICBsZW5kaW5nQmFsYW5jZVF1YW50aXR5MjBkQ2hhbmdlOiAxMjBfMDAwLAogICAgfSk7CiAgICBleHBlY3QocmVzdWx0Lm1heFBvaW50cykudG9CZSg1KTsKICAgIGV4cGVjdChyZXN1bHQucG9pbnRzKS50b0JlKDMuODIpOwogICAgY29uc3Qgc3VwcGx5Um93cyA9IHJlc3VsdC5yb3dzLmZpbHRlcigocikgPT4gci5ncm91cCA9PT0gIlN1cHBseSBSaXNrIik7CiAgICBleHBlY3Qoc3VwcGx5Um93cy5tYXAoKHIpID0+IHIucG9pbnRzKSkudG9FcXVhbChbLTAuNSwgLTAuNV0pOwogICAgZXhwZWN0KHN1cHBseVJvd3MuZXZlcnkoKHIpID0+IHIuc3RhdHVzID09PSAiRkFJTCIpKS50b0JlKHRydWUpOwogIH0pOwoKICBpdCgidHJlYXRzIG5vbi1pbmNyZWFzaW5nIFN1cHBseSBSaXNrIGFzIG5ldXRyYWwgcmF0aGVyIHRoYW4gYSByZXdhcmQiLCAoKSA9PiB7CiAgICBjb25zdCByZXN1bHQgPSBidWlsZFByaW9yaXR5U2NvcmVWOChsZWdhY3lQcmlvcml0eSgpLCA1MCwgewogICAgICBzaG9ydFNlbGxpbmdWb2x1bWVSYXRlMjBkQ2hhbmdlUHA6IC0wLjIsCiAgICAgIGxlbmRpbmdCYWxhbmNlUXVhbnRpdHkyMGRDaGFuZ2U6IDAsCiAgICB9KTsKICAgIGV4cGVjdChyZXN1bHQubWF4UG9pbnRzKS50b0JlKDUpOwogICAgZXhwZWN0KHJlc3VsdC5wb2ludHMpLnRvQmUoNC41KTsKICAgIGNvbnN0IHN1cHBseVJvd3MgPSByZXN1bHQucm93cy5maWx0ZXIoKHIpID0+IHIuZ3JvdXAgPT09ICJTdXBwbHkgUmlzayIpOwogICAgZXhwZWN0KHN1cHBseVJvd3MubWFwKChyKSA9PiByLnBvaW50cykpLnRvRXF1YWwoWzAsIDBdKTsKICAgIGV4cGVjdChzdXBwbHlSb3dzLmV2ZXJ5KChyKSA9PiByLnN0YXR1cyA9PT0gIlBBU1MiKSkudG9CZSh0cnVlKTsKICB9KTsKCiAgaXQoImRvZXMgbm90IHBlbmFsaXplIG1pc3NpbmcgU3VwcGx5IFJpc2sgZGF0YSIsICgpID0+IHsKICAgIGNvbnN0IHJlc3VsdCA9IGJ1aWxkUHJpb3JpdHlTY29yZVY4KGxlZ2FjeVByaW9yaXR5KCksIDEwMCwgewogICAgICBzaG9ydFNlbGxpbmdWb2x1bWVSYXRlMjBkQ2hhbmdlUHA6IG51bGwsCiAgICAgIGxlbmRpbmdCYWxhbmNlUXVhbnRpdHkyMGRDaGFuZ2U6IG51bGwsCiAgICB9KTsKICAgIGV4cGVjdChyZXN1bHQubWF4UG9pbnRzKS50b0JlKDUpOwogICAgZXhwZWN0KHJlc3VsdC5hdmFpbGFibGVNYXhQb2ludHMpLnRvQmUoNSk7CiAgICBleHBlY3QocmVzdWx0LnBvaW50cykudG9CZSg1KTsKICAgIGV4cGVjdChyZXN1bHQucm93cy5maWx0ZXIoKHIpID0+IHIuZ3JvdXAgPT09ICJTdXBwbHkgUmlzayIpLmV2ZXJ5KChyKSA9PiByLnN0YXR1cyA9PT0gIk5PX0RBVEEiKSkudG9CZSh0cnVlKTsKICB9KTsKCiAgaXQoImtlZXBzIG1pc3Npbmcgcm90YXRpb24gb3V0IG9mIGF2YWlsYWJsZSBtYXgiLCAoKSA9PiB7CiAgICBjb25zdCByZXN1bHQgPSBidWlsZFByaW9yaXR5U2NvcmVWOChsZWdhY3lQcmlvcml0eSgpLCBudWxsKTsKICAgIGV4cGVjdChyZXN1bHQubWF4UG9pbnRzKS50b0JlKDUpOwogICAgZXhwZWN0KHJlc3VsdC5hdmFpbGFibGVNYXhQb2ludHMpLnRvQmUoNCk7CiAgICBleHBlY3QocmVzdWx0LnBvaW50cykudG9CZSg0KTsKICB9KTsKfSk7Cg==").decode())
 
-export const PRIORITY_ROTATION_MAX_POINTS = 1 as const;
-export const PRIORITY_SUPPLY_RISK_MAX_POINTS = 1 as const;
-const PRIORITY_SUPPLY_RISK_COMPONENT_POINTS = PRIORITY_SUPPLY_RISK_MAX_POINTS / 2;
-
-export interface PrioritySupplyRiskV8 {
-  shortSellingVolumeRate20dChangePp: number | null;
-  lendingBalanceQuantity20dChange: number | null;
-}
-
-function finiteOrNull(value: number | null): number | null {
-  return value !== null && Number.isFinite(value) ? value : null;
-}
-
-function signed(value: number, digits: number): string {
-  const formatted = Math.abs(value).toLocaleString("ko-KR", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  });
-  return `${value > 0 ? "+" : value < 0 ? "-" : ""}${formatted}`;
-}
-
-/**
- * V8 priority score used by dashboard/screener.
- * Foreign 20D flow and 52-week-high proximity are removed here because
- * they already live in the Vf technical score.
- * Sector Rotation Score (0~100) is mapped continuously to 0~1 point.
- * Supply Risk stays outside the 10-point Vf score/Onset logic and is used
- * only as a 1-point priority-score Entry Risk overlay for stocks.
- */
-export function buildPriorityScoreV8(
-  legacy: ScoreBlock,
-  sectorRotationScore: number | null,
-  supplyRisk: PrioritySupplyRiskV8 | null = null,
-): ScoreBlock {
-  const scoredRows = legacy.rows.filter(
-    (row) => row.group !== "외국인 수급" && row.group !== "신고가" && row.group !== "참고지표 (점수 미반영)",
-  );
-  const referenceRows = legacy.rows.filter((row) => row.group === "참고지표 (점수 미반영)");
-  const rotation =
-    sectorRotationScore === null || !Number.isFinite(sectorRotationScore)
-      ? null
-      : Math.min(100, Math.max(0, sectorRotationScore));
-  const rotationPoints =
-    rotation === null
-      ? 0
-      : Math.round((rotation / 100) * PRIORITY_ROTATION_MAX_POINTS * 100) / 100;
-  const rotationRow: RuleRow = {
-    group: "섹터 로테이션",
-    rule: "섹터 Rotation Score (0~100 비례 반영)",
-    actual: rotation === null ? "데이터 없음" : `${rotation.toFixed(1)}/100`,
-    threshold: `Rotation 0~100 → 0~${PRIORITY_ROTATION_MAX_POINTS}점`,
-    status: rotation === null ? "NO_DATA" : "PASS",
-    points: rotationPoints,
-    maxPoints: PRIORITY_ROTATION_MAX_POINTS,
-  };
-
-  const supplyRows: RuleRow[] = [];
-  if (supplyRisk !== null) {
-    const shortChange = finiteOrNull(supplyRisk.shortSellingVolumeRate20dChangePp);
-    const lendingChange = finiteOrNull(supplyRisk.lendingBalanceQuantity20dChange);
-    const shortRiskClear = shortChange !== null && shortChange <= 0;
-    const lendingRiskClear = lendingChange !== null && lendingChange <= 0;
-
-    supplyRows.push({
-      group: "Supply Risk",
-      rule: "공매도 거래량 비중 20D 변화 비증가",
-      actual: shortChange === null ? "데이터 없음" : `${signed(shortChange, 2)}%p`,
-      threshold: `20거래일 전 대비 ≤ 0%p 시 +${PRIORITY_SUPPLY_RISK_COMPONENT_POINTS}점`,
-      status: shortChange === null ? "NO_DATA" : shortRiskClear ? "PASS" : "FAIL",
-      points: shortRiskClear ? PRIORITY_SUPPLY_RISK_COMPONENT_POINTS : 0,
-      maxPoints: PRIORITY_SUPPLY_RISK_COMPONENT_POINTS,
-    });
-    supplyRows.push({
-      group: "Supply Risk",
-      rule: "대차잔고 20D 변화 비증가",
-      actual: lendingChange === null ? "데이터 없음" : `${signed(lendingChange, 0)}주`,
-      threshold: `20거래일 전 대비 ≤ 0주 시 +${PRIORITY_SUPPLY_RISK_COMPONENT_POINTS}점`,
-      status: lendingChange === null ? "NO_DATA" : lendingRiskClear ? "PASS" : "FAIL",
-      points: lendingRiskClear ? PRIORITY_SUPPLY_RISK_COMPONENT_POINTS : 0,
-      maxPoints: PRIORITY_SUPPLY_RISK_COMPONENT_POINTS,
-    });
-  }
-
-  const rows = [...scoredRows, rotationRow, ...supplyRows, ...referenceRows];
-  const points = Math.round(rows.reduce((sum, row) => sum + row.points, 0) * 100) / 100;
-  const maxPoints = Math.round(rows.reduce((sum, row) => sum + row.maxPoints, 0) * 100) / 100;
-  const availableMaxPoints =
-    Math.round(
-      rows.reduce((sum, row) => sum + (row.status === "NO_DATA" ? 0 : row.maxPoints), 0) * 100,
-    ) / 100;
-  return { points, maxPoints, availableMaxPoints, rows };
-}
-''')
-
-          # 5) Feed Supply Risk only for stocks. Onset still depends exclusively on operatingScore10.
           replace_once(
               "src/lib/engine/pipeline.ts",
               "    const rotationScore = rotationScoreBySector.get(inst.sectorCode) ?? null;\n    const priority = buildPriorityScoreV8(legacyPriority, rotationScore);\n",
               "    const rotationScore = rotationScoreBySector.get(inst.sectorCode) ?? null;\n    const priority = buildPriorityScoreV8(\n      legacyPriority,\n      rotationScore,\n      inst.instrumentType === \"STOCK\"\n        ? {\n            shortSellingVolumeRate20dChangePp: snap.shortSellingVolumeRate20dChangePp,\n            lendingBalanceQuantity20dChange: snap.lendingBalanceQuantity20dChange,\n          }\n        : null,\n    );\n",
           )
-
-          # 6) Focused unit tests for the 1-point overlay and NO_DATA behavior.
-          Path("src/lib/engine/priorityScoreV8.test.ts").write_text(r'''import { describe, expect, it } from "vitest";
-import type { RuleRow, ScoreBlock } from "./scoring";
-import { buildPriorityScoreV8 } from "./priorityScoreV8";
-
-const row = (group: string, points: number, maxPoints: number, status: RuleRow["status"] = "PASS"): RuleRow => ({
-  group,
-  rule: group,
-  actual: "test",
-  threshold: "test",
-  status,
-  points,
-  maxPoints,
-});
-
-function legacyPriority(): ScoreBlock {
-  const rows = [
-    row("지수 편입", 2, 2),
-    row("외국인 수급", 2, 2),
-    row("신고가", 2.5, 2.5),
-    row("규모", 1, 1),
-    row("상대 성과", 1, 1),
-    row("참고지표 (점수 미반영)", 0, 0, "FAIL"),
-  ];
-  return { points: 8.5, maxPoints: 8.5, availableMaxPoints: 8.5, rows };
-}
-
-describe("buildPriorityScoreV8", () => {
-  it("removes duplicated foreign/high factors and adds continuous rotation for the base 5-point score", () => {
-    const result = buildPriorityScoreV8(legacyPriority(), 82);
-    expect(result.maxPoints).toBe(5);
-    expect(result.availableMaxPoints).toBe(5);
-    expect(result.points).toBe(4.82);
-    expect(result.rows.some((r) => r.group === "외국인 수급")).toBe(false);
-    expect(result.rows.some((r) => r.group === "신고가")).toBe(false);
-    expect(result.rows.find((r) => r.group === "섹터 로테이션")?.points).toBe(0.82);
-  });
-
-  it("adds Supply Risk as a 1-point stock priority overlay", () => {
-    const result = buildPriorityScoreV8(legacyPriority(), 82, {
-      shortSellingVolumeRate20dChangePp: -0.35,
-      lendingBalanceQuantity20dChange: -120_000,
-    });
-    expect(result.maxPoints).toBe(6);
-    expect(result.availableMaxPoints).toBe(6);
-    expect(result.points).toBe(5.82);
-    const supplyRows = result.rows.filter((r) => r.group === "Supply Risk");
-    expect(supplyRows).toHaveLength(2);
-    expect(supplyRows.map((r) => r.points)).toEqual([0.5, 0.5]);
-  });
-
-  it("scores the two Supply Risk components independently", () => {
-    const result = buildPriorityScoreV8(legacyPriority(), 50, {
-      shortSellingVolumeRate20dChangePp: 0.2,
-      lendingBalanceQuantity20dChange: -1,
-    });
-    expect(result.maxPoints).toBe(6);
-    expect(result.points).toBe(5);
-    const supplyRows = result.rows.filter((r) => r.group === "Supply Risk");
-    expect(supplyRows[0]?.status).toBe("FAIL");
-    expect(supplyRows[0]?.points).toBe(0);
-    expect(supplyRows[1]?.status).toBe("PASS");
-    expect(supplyRows[1]?.points).toBe(0.5);
-  });
-
-  it("keeps missing Supply Risk in headline max but removes it from available max", () => {
-    const result = buildPriorityScoreV8(legacyPriority(), 100, {
-      shortSellingVolumeRate20dChangePp: null,
-      lendingBalanceQuantity20dChange: null,
-    });
-    expect(result.maxPoints).toBe(6);
-    expect(result.availableMaxPoints).toBe(5);
-    expect(result.points).toBe(5);
-    expect(result.rows.filter((r) => r.group === "Supply Risk").every((r) => r.status === "NO_DATA")).toBe(true);
-  });
-
-  it("keeps the 5-point headline max while excluding missing rotation from available max when no stock overlay is supplied", () => {
-    const result = buildPriorityScoreV8(legacyPriority(), null);
-    expect(result.maxPoints).toBe(5);
-    expect(result.availableMaxPoints).toBe(4);
-    expect(result.points).toBe(4);
-    expect(result.rows.find((r) => r.group === "섹터 로테이션")?.status).toBe("NO_DATA");
-  });
-
-  it("clamps rotation score to the supported 0~100 range", () => {
-    expect(buildPriorityScoreV8(legacyPriority(), 120).points).toBe(5);
-    expect(buildPriorityScoreV8(legacyPriority(), -20).points).toBe(4);
-  });
-});
-''')
           PY
 
       - name: Install dependencies
@@ -288,5 +100,5 @@ describe("buildPriorityScoreV8", () => {
           git config user.name "cloudtrend-bot"
           git config user.email "cloudtrend-bot@users.noreply.github.com"
           git add src/lib/engine/types.ts src/lib/engine/manualDataset.ts src/lib/engine/indicators.ts src/lib/engine/priorityScoreV8.ts src/lib/engine/priorityScoreV8.test.ts src/lib/engine/pipeline.ts
-          git commit -m "feat: add Supply Risk to V8 priority score"
+          git commit -m "feat: apply Supply Risk priority penalty"
           git push origin HEAD:feat/supply-risk-priority
