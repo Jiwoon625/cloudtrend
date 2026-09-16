@@ -1,0 +1,36 @@
+name: V8 Index Membership Probe
+
+on:
+  push:
+    branches:
+      - research/v8-12-priority-index-mcap
+    paths:
+      - scripts/probe-historical-index-membership.py
+      - .github/workflows/v8-index-membership-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/v8-12-priority-index-mcap
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pykrx
+        run: pip install pykrx
+      - name: Probe historical constituents
+        run: python scripts/probe-historical-index-membership.py
+      - name: Upload probe
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v8-index-membership-probe-${{ github.run_id }}
+          path: analysis-runs/v8-index-membership-probe.json
+          if-no-files-found: warn
+          retention-days: 30
