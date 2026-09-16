@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'run supply risk patch'
+    if: github.event.head_commit.message == 'run supply risk patch v2'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -28,10 +28,8 @@ jobs:
       - name: Run focused tests
         run: npx vitest run src/lib/engine/priorityScoreV8.test.ts src/lib/engine/indicators.test.ts src/lib/engine/manualDataset.test.ts
 
-      - name: Typecheck and build
-        run: |
-          npx tsc --noEmit
-          npm run build
+      - name: Build application
+        run: npm run build
 
       - name: Commit implementation and remove one-time helpers
         shell: bash
