@@ -1,0 +1,292 @@
+name: Apply Supply Risk priority patch
+
+on:
+  push:
+    branches:
+      - feat/supply-risk-priority
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'chore: bootstrap supply risk priority patch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/supply-risk-priority
+          fetch-depth: 0
+
+      - name: Patch Supply Risk into V8 priority score
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f"pattern not found in {path}: {old[:120]!r}")
+              if text.count(old) != 1:
+                  raise SystemExit(f"pattern not unique in {path}: {text.count(old)} matches")
+              p.write_text(text.replace(old, new, 1))
+
+          # 1) Preserve the two source fields in the daily bar domain object.
+          replace_once(
+              "src/lib/engine/types.ts",
+              "  foreignNetBuyValue: number | null;\n  institutionNetBuyValue: number | null;\n",
+              "  foreignNetBuyValue: number | null;\n  institutionNetBuyValue: number | null;\n  /** 공매도 거래량 비중(%). 공급자가 제공하지 않으면 null/undefined */\n  shortSellingVolumeRate?: number | null;\n  /** 대차잔고 수량. 공급자가 제공하지 않으면 null/undefined */\n  lendingBalanceQuantity?: number | null;\n",
+          )
+
+          # 2) Keep the fields when canonical CSV/JSON is converted into MarketDataset.
+          replace_once(
+              "src/lib/engine/manualDataset.ts",
+              "  institutionnetbuyvalue: \"institutionNetBuyValue\",\n  institutionnet: \"institutionNetBuyValue\",\n  기관순매수: \"institutionNetBuyValue\",\n  sector: \"sector\",\n",
+              "  institutionnetbuyvalue: \"institutionNetBuyValue\",\n  institutionnet: \"institutionNetBuyValue\",\n  기관순매수: \"institutionNetBuyValue\",\n  shortsellingvolumerate: \"shortSellingVolumeRate\",\n  공매도거래량비중: \"shortSellingVolumeRate\",\n  lendingbalancequantity: \"lendingBalanceQuantity\",\n  대차잔고수량: \"lendingBalanceQuantity\",\n  sector: \"sector\",\n",
+          )
+          replace_once(
+              "src/lib/engine/manualDataset.ts",
+              "      foreignNetBuyValue: num(pick(rec, \"foreignNetBuyValue\")),\n      institutionNetBuyValue: num(pick(rec, \"institutionNetBuyValue\")),\n    };\n",
+              "      foreignNetBuyValue: num(pick(rec, \"foreignNetBuyValue\")),\n      institutionNetBuyValue: num(pick(rec, \"institutionNetBuyValue\")),\n      shortSellingVolumeRate: num(pick(rec, \"shortSellingVolumeRate\")),\n      lendingBalanceQuantity: num(pick(rec, \"lendingBalanceQuantity\")),\n    };\n",
+          )
+
+          # 3) Compute 20-trading-day directional changes. Only the sign is used by scoring.
+          replace_once(
+              "src/lib/engine/indicators.ts",
+              "  foreignNet60d: number | null;\n  institutionNet20d: number | null;\n  extensionFromMa20: number | null; // %\n",
+              "  foreignNet60d: number | null;\n  institutionNet20d: number | null;\n  /** 현재 공매도 거래량 비중 - 20거래일 전 비중 (%p) */\n  shortSellingVolumeRate20dChangePp: number | null;\n  /** 현재 대차잔고 수량 - 20거래일 전 수량 */\n  lendingBalanceQuantity20dChange: number | null;\n  extensionFromMa20: number | null; // %\n",
+          )
+          replace_once(
+              "src/lib/engine/indicators.ts",
+              "function sumLast(values: Array<number | null>, endIndex: number, n: number): number | null {\n  if (endIndex - n + 1 < 0) return null;\n  let s = 0;\n  for (let i = endIndex - n + 1; i <= endIndex; i++) {\n    const v = values[i];\n    if (v === null || v === undefined) return null;\n    s += v;\n  }\n  return s;\n}\n\nexport function computeIndicators",
+              "function sumLast(values: Array<number | null>, endIndex: number, n: number): number | null {\n  if (endIndex - n + 1 < 0) return null;\n  let s = 0;\n  for (let i = endIndex - n + 1; i <= endIndex; i++) {\n    const v = values[i];\n    if (v === null || v === undefined) return null;\n    s += v;\n  }\n  return s;\n}\n\nfunction changeFromLookback(\n  values: Array<number | null>,\n  endIndex: number,\n  lookback: number,\n): number | null {\n  const current = values[endIndex];\n  const prior = values[endIndex - lookback];\n  if (current === null || current === undefined || prior === null || prior === undefined) return null;\n  if (!Number.isFinite(current) || !Number.isFinite(prior)) return null;\n  return current - prior;\n}\n\nexport function computeIndicators",
+          )
+          replace_once(
+              "src/lib/engine/indicators.ts",
+              "  const foreign = bars.map((b) => b.foreignNetBuyValue);\n  const inst = bars.map((b) => b.institutionNetBuyValue);\n",
+              "  const foreign = bars.map((b) => b.foreignNetBuyValue);\n  const inst = bars.map((b) => b.institutionNetBuyValue);\n  const shortSellingVolumeRates = bars.map((b) => b.shortSellingVolumeRate ?? null);\n  const lendingBalanceQuantities = bars.map((b) => b.lendingBalanceQuantity ?? null);\n",
+          )
+          replace_once(
+              "src/lib/engine/indicators.ts",
+              "    foreignNet60d: sumLast(foreign, endIndex, 60),\n    institutionNet20d: sumLast(inst, endIndex, 20),\n    extensionFromMa20: ma20 !== null && ma20 !== 0 ? (close / ma20 - 1) * 100 : null,\n",
+              "    foreignNet60d: sumLast(foreign, endIndex, 60),\n    institutionNet20d: sumLast(inst, endIndex, 20),\n    shortSellingVolumeRate20dChangePp: changeFromLookback(shortSellingVolumeRates, endIndex, 20),\n    lendingBalanceQuantity20dChange: changeFromLookback(lendingBalanceQuantities, endIndex, 20),\n    extensionFromMa20: ma20 !== null && ma20 !== 0 ? (close / ma20 - 1) * 100 : null,\n",
+          )
+
+          # 4) V8 priority score: add a separate 1-point Supply Risk overlay for stocks.
+          Path("src/lib/engine/priorityScoreV8.ts").write_text(r'''import type { RuleRow, ScoreBlock } from "./scoring";
+
+export const PRIORITY_ROTATION_MAX_POINTS = 1 as const;
+export const PRIORITY_SUPPLY_RISK_MAX_POINTS = 1 as const;
+const PRIORITY_SUPPLY_RISK_COMPONENT_POINTS = PRIORITY_SUPPLY_RISK_MAX_POINTS / 2;
+
+export interface PrioritySupplyRiskV8 {
+  shortSellingVolumeRate20dChangePp: number | null;
+  lendingBalanceQuantity20dChange: number | null;
+}
+
+function finiteOrNull(value: number | null): number | null {
+  return value !== null && Number.isFinite(value) ? value : null;
+}
+
+function signed(value: number, digits: number): string {
+  const formatted = Math.abs(value).toLocaleString("ko-KR", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+  return `${value > 0 ? "+" : value < 0 ? "-" : ""}${formatted}`;
+}
+
+/**
+ * V8 priority score used by dashboard/screener.
+ * Foreign 20D flow and 52-week-high proximity are removed here because
+ * they already live in the Vf technical score.
+ * Sector Rotation Score (0~100) is mapped continuously to 0~1 point.
+ * Supply Risk stays outside the 10-point Vf score/Onset logic and is used
+ * only as a 1-point priority-score Entry Risk overlay for stocks.
+ */
+export function buildPriorityScoreV8(
+  legacy: ScoreBlock,
+  sectorRotationScore: number | null,
+  supplyRisk: PrioritySupplyRiskV8 | null = null,
+): ScoreBlock {
+  const scoredRows = legacy.rows.filter(
+    (row) => row.group !== "외국인 수급" && row.group !== "신고가" && row.group !== "참고지표 (점수 미반영)",
+  );
+  const referenceRows = legacy.rows.filter((row) => row.group === "참고지표 (점수 미반영)");
+  const rotation =
+    sectorRotationScore === null || !Number.isFinite(sectorRotationScore)
+      ? null
+      : Math.min(100, Math.max(0, sectorRotationScore));
+  const rotationPoints =
+    rotation === null
+      ? 0
+      : Math.round((rotation / 100) * PRIORITY_ROTATION_MAX_POINTS * 100) / 100;
+  const rotationRow: RuleRow = {
+    group: "섹터 로테이션",
+    rule: "섹터 Rotation Score (0~100 비례 반영)",
+    actual: rotation === null ? "데이터 없음" : `${rotation.toFixed(1)}/100`,
+    threshold: `Rotation 0~100 → 0~${PRIORITY_ROTATION_MAX_POINTS}점`,
+    status: rotation === null ? "NO_DATA" : "PASS",
+    points: rotationPoints,
+    maxPoints: PRIORITY_ROTATION_MAX_POINTS,
+  };
+
+  const supplyRows: RuleRow[] = [];
+  if (supplyRisk !== null) {
+    const shortChange = finiteOrNull(supplyRisk.shortSellingVolumeRate20dChangePp);
+    const lendingChange = finiteOrNull(supplyRisk.lendingBalanceQuantity20dChange);
+    const shortRiskClear = shortChange !== null && shortChange <= 0;
+    const lendingRiskClear = lendingChange !== null && lendingChange <= 0;
+
+    supplyRows.push({
+      group: "Supply Risk",
+      rule: "공매도 거래량 비중 20D 변화 비증가",
+      actual: shortChange === null ? "데이터 없음" : `${signed(shortChange, 2)}%p`,
+      threshold: `20거래일 전 대비 ≤ 0%p 시 +${PRIORITY_SUPPLY_RISK_COMPONENT_POINTS}점`,
+      status: shortChange === null ? "NO_DATA" : shortRiskClear ? "PASS" : "FAIL",
+      points: shortRiskClear ? PRIORITY_SUPPLY_RISK_COMPONENT_POINTS : 0,
+      maxPoints: PRIORITY_SUPPLY_RISK_COMPONENT_POINTS,
+    });
+    supplyRows.push({
+      group: "Supply Risk",
+      rule: "대차잔고 20D 변화 비증가",
+      actual: lendingChange === null ? "데이터 없음" : `${signed(lendingChange, 0)}주`,
+      threshold: `20거래일 전 대비 ≤ 0주 시 +${PRIORITY_SUPPLY_RISK_COMPONENT_POINTS}점`,
+      status: lendingChange === null ? "NO_DATA" : lendingRiskClear ? "PASS" : "FAIL",
+      points: lendingRiskClear ? PRIORITY_SUPPLY_RISK_COMPONENT_POINTS : 0,
+      maxPoints: PRIORITY_SUPPLY_RISK_COMPONENT_POINTS,
+    });
+  }
+
+  const rows = [...scoredRows, rotationRow, ...supplyRows, ...referenceRows];
+  const points = Math.round(rows.reduce((sum, row) => sum + row.points, 0) * 100) / 100;
+  const maxPoints = Math.round(rows.reduce((sum, row) => sum + row.maxPoints, 0) * 100) / 100;
+  const availableMaxPoints =
+    Math.round(
+      rows.reduce((sum, row) => sum + (row.status === "NO_DATA" ? 0 : row.maxPoints), 0) * 100,
+    ) / 100;
+  return { points, maxPoints, availableMaxPoints, rows };
+}
+''')
+
+          # 5) Feed Supply Risk only for stocks. Onset still depends exclusively on operatingScore10.
+          replace_once(
+              "src/lib/engine/pipeline.ts",
+              "    const rotationScore = rotationScoreBySector.get(inst.sectorCode) ?? null;\n    const priority = buildPriorityScoreV8(legacyPriority, rotationScore);\n",
+              "    const rotationScore = rotationScoreBySector.get(inst.sectorCode) ?? null;\n    const priority = buildPriorityScoreV8(\n      legacyPriority,\n      rotationScore,\n      inst.instrumentType === \"STOCK\"\n        ? {\n            shortSellingVolumeRate20dChangePp: snap.shortSellingVolumeRate20dChangePp,\n            lendingBalanceQuantity20dChange: snap.lendingBalanceQuantity20dChange,\n          }\n        : null,\n    );\n",
+          )
+
+          # 6) Focused unit tests for the 1-point overlay and NO_DATA behavior.
+          Path("src/lib/engine/priorityScoreV8.test.ts").write_text(r'''import { describe, expect, it } from "vitest";
+import type { RuleRow, ScoreBlock } from "./scoring";
+import { buildPriorityScoreV8 } from "./priorityScoreV8";
+
+const row = (group: string, points: number, maxPoints: number, status: RuleRow["status"] = "PASS"): RuleRow => ({
+  group,
+  rule: group,
+  actual: "test",
+  threshold: "test",
+  status,
+  points,
+  maxPoints,
+});
+
+function legacyPriority(): ScoreBlock {
+  const rows = [
+    row("지수 편입", 2, 2),
+    row("외국인 수급", 2, 2),
+    row("신고가", 2.5, 2.5),
+    row("규모", 1, 1),
+    row("상대 성과", 1, 1),
+    row("참고지표 (점수 미반영)", 0, 0, "FAIL"),
+  ];
+  return { points: 8.5, maxPoints: 8.5, availableMaxPoints: 8.5, rows };
+}
+
+describe("buildPriorityScoreV8", () => {
+  it("removes duplicated foreign/high factors and adds continuous rotation for the base 5-point score", () => {
+    const result = buildPriorityScoreV8(legacyPriority(), 82);
+    expect(result.maxPoints).toBe(5);
+    expect(result.availableMaxPoints).toBe(5);
+    expect(result.points).toBe(4.82);
+    expect(result.rows.some((r) => r.group === "외국인 수급")).toBe(false);
+    expect(result.rows.some((r) => r.group === "신고가")).toBe(false);
+    expect(result.rows.find((r) => r.group === "섹터 로테이션")?.points).toBe(0.82);
+  });
+
+  it("adds Supply Risk as a 1-point stock priority overlay", () => {
+    const result = buildPriorityScoreV8(legacyPriority(), 82, {
+      shortSellingVolumeRate20dChangePp: -0.35,
+      lendingBalanceQuantity20dChange: -120_000,
+    });
+    expect(result.maxPoints).toBe(6);
+    expect(result.availableMaxPoints).toBe(6);
+    expect(result.points).toBe(5.82);
+    const supplyRows = result.rows.filter((r) => r.group === "Supply Risk");
+    expect(supplyRows).toHaveLength(2);
+    expect(supplyRows.map((r) => r.points)).toEqual([0.5, 0.5]);
+  });
+
+  it("scores the two Supply Risk components independently", () => {
+    const result = buildPriorityScoreV8(legacyPriority(), 50, {
+      shortSellingVolumeRate20dChangePp: 0.2,
+      lendingBalanceQuantity20dChange: -1,
+    });
+    expect(result.maxPoints).toBe(6);
+    expect(result.points).toBe(5);
+    const supplyRows = result.rows.filter((r) => r.group === "Supply Risk");
+    expect(supplyRows[0]?.status).toBe("FAIL");
+    expect(supplyRows[0]?.points).toBe(0);
+    expect(supplyRows[1]?.status).toBe("PASS");
+    expect(supplyRows[1]?.points).toBe(0.5);
+  });
+
+  it("keeps missing Supply Risk in headline max but removes it from available max", () => {
+    const result = buildPriorityScoreV8(legacyPriority(), 100, {
+      shortSellingVolumeRate20dChangePp: null,
+      lendingBalanceQuantity20dChange: null,
+    });
+    expect(result.maxPoints).toBe(6);
+    expect(result.availableMaxPoints).toBe(5);
+    expect(result.points).toBe(5);
+    expect(result.rows.filter((r) => r.group === "Supply Risk").every((r) => r.status === "NO_DATA")).toBe(true);
+  });
+
+  it("keeps the 5-point headline max while excluding missing rotation from available max when no stock overlay is supplied", () => {
+    const result = buildPriorityScoreV8(legacyPriority(), null);
+    expect(result.maxPoints).toBe(5);
+    expect(result.availableMaxPoints).toBe(4);
+    expect(result.points).toBe(4);
+    expect(result.rows.find((r) => r.group === "섹터 로테이션")?.status).toBe("NO_DATA");
+  });
+
+  it("clamps rotation score to the supported 0~100 range", () => {
+    expect(buildPriorityScoreV8(legacyPriority(), 120).points).toBe(5);
+    expect(buildPriorityScoreV8(legacyPriority(), -20).points).toBe(4);
+  });
+});
+''')
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run focused tests
+        run: npx vitest run src/lib/engine/priorityScoreV8.test.ts src/lib/engine/indicators.test.ts src/lib/engine/manualDataset.test.ts
+
+      - name: Typecheck and build
+        run: |
+          npx tsc --noEmit
+          npm run build
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name "cloudtrend-bot"
+          git config user.email "cloudtrend-bot@users.noreply.github.com"
+          git add src/lib/engine/types.ts src/lib/engine/manualDataset.ts src/lib/engine/indicators.ts src/lib/engine/priorityScoreV8.ts src/lib/engine/priorityScoreV8.test.ts src/lib/engine/pipeline.ts
+          git commit -m "feat: add Supply Risk to V8 priority score"
+          git push origin HEAD:feat/supply-risk-priority
