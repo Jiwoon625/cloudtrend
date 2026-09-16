@@ -112,13 +112,16 @@ function InstrumentDetail() {
     ],
     finalScores: {
       operatingScore10: row.operatingScore10,
-      technicalRaw: row.vf ? `${row.vf.points}/${row.vf.maxPoints}` : `${row.technical.points}/${row.technical.maxPoints}`,
+      technicalRaw: row.vf
+        ? `${row.vf.points}/${row.vf.maxPoints}`
+        : `${row.technical.points}/${row.technical.maxPoints}`,
       priority: `${row.priority.points}/${row.priority.maxPoints}`,
       quality: row.qualityScore,
       marketSector: row.marketSectorScore,
     },
     signals: {
       kosdaq80Onset: row.kosdaq80Onset,
+      kospiEightPointEntry: row.kospiEightPointEntry,
       exitSignal: row.exitSignal,
     },
     failedRules: row.failedRules,
@@ -171,7 +174,8 @@ function InstrumentDetail() {
             </span>
           </h1>
           <p className="text-[12px] text-muted-foreground">
-            기준일 {analysis.asOfDate} · 모델 {analysis.strategyVersion} · 벤치마크 {row.benchmarkCode}
+            기준일 {analysis.asOfDate} · 모델 {analysis.strategyVersion} · 벤치마크{" "}
+            {row.benchmarkCode}
             {row.benchmarkFallback ? " (대체 벤치마크 사용)" : ""} · 데이터 완전성{" "}
             {formatNumber(row.dataCompletenessRatio * 100, 0)}%
           </p>
@@ -200,7 +204,10 @@ function InstrumentDetail() {
               : `${formatNumber(row.operatingScore10, 1)} / 10`
           }
         />
-        <Stat label="우선점수" value={`${formatNumber(row.priority.points, 2)} / ${formatNumber(row.priority.maxPoints, 1)}`} />
+        <Stat
+          label="우선점수"
+          value={`${formatNumber(row.priority.points, 2)} / ${formatNumber(row.priority.maxPoints, 1)}`}
+        />
         <Stat label="모델등급" value={<GradeBadge grade={row.grade} />} />
         <Stat label="상태" value={row.actionLabelText} />
         <Stat label="52주 고점 거리" value={<Delta value={snap.distanceFrom52wHigh} />} />
@@ -300,7 +307,8 @@ function InstrumentDetail() {
                         산정 가능 배점 {s.availableMaxPoints} / {s.rawMaxPoints}점
                         {s.missingRules.length > 0 ? (
                           <>
-                            <br />자료 부족: {s.missingRules.join(", ")}
+                            <br />
+                            자료 부족: {s.missingRules.join(", ")}
                           </>
                         ) : null}
                       </span>,
@@ -482,9 +490,9 @@ function InstrumentDetail() {
           볼린저밴드 20일·2σ, 일목균형표 9·26·52(선행 26) 기준 · 양운 붉은색 / 음운 파랑색.
         </p>
         <p className="mt-1 text-[11px] text-muted-foreground">
-          오른쪽 축은 V8 Final 기술점수 0~10점입니다. 52주 신고가, 외국인 20일 순매수와
-          Sector Price Leadership 0.5점 슬롯을 포함하며, 핵심 피처가 결측인 날짜는 남은 항목으로
-          재정규화하지 않고 선을 비워 둡니다.
+          오른쪽 축은 V8 Final 기술점수 0~10점입니다. 52주 신고가, 외국인 20일 순매수와 Sector Price
+          Leadership 0.5점 슬롯을 포함하며, 핵심 피처가 결측인 날짜는 남은 항목으로 재정규화하지
+          않고 선을 비워 둡니다.
         </p>
         <p className="mt-1 text-[11px] text-muted-foreground">
           ATR 손절선 참고: {formatPrice(snap.close - 1.8 * (snap.atr14 ?? 0))} (진입가 기준 1.8 ATR)
@@ -503,8 +511,8 @@ function InstrumentDetail() {
           <p className="text-xs text-muted-foreground">
             주식은 V8 Final raw 0~10 기술점수를 그대로 운영점수로 사용합니다. 핵심 피처가 하나라도
             결측이면 남은 피처만으로 재정규화하지 않고 기술점수 산정 불가로 처리합니다. 우선점수와
-            펀더멘털 점수는 기술점수에 추가 합산하지 않습니다. 산정 가능 {row.vf.availableMaxPoints}/
-            {row.vf.maxPoints}점.
+            펀더멘털 점수는 기술점수에 추가 합산하지 않습니다. 산정 가능 {row.vf.availableMaxPoints}
+            /{row.vf.maxPoints}점.
             {snap.high52w === null
               ? " 52주 신고가에는 기준일 포함 252거래일 일봉이 필요합니다."
               : ""}
