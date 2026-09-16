@@ -7,7 +7,6 @@ const GENERATED = "scripts/.generated-v8-15-priority-index-bull-only-3fos.ts";
 
 const regimeHelper = String.raw`
 type MarketRegime = "BULL" | "SIDEWAYS" | "BEAR";
-type PriorityStrategy = "ZERO" | "BULL_ONLY_0_5";
 
 function buildMarketRegimeMap(bars: Array<{ tradeDate: string; close: number }>) {
   const lookback = 60;
