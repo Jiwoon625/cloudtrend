@@ -1,0 +1,91 @@
+name: V8 KOSPI Relative Quality Stage9
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/run-v8-kospi-relative-quality-stage9.ts
+      - .github/workflows/v8-kospi-relative-quality-stage9.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v8-kospi-relative-quality-stage9-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Format and lint research runner
+        run: |
+          npx prettier --write scripts/run-v8-kospi-relative-quality-stage9.ts
+          npx eslint scripts/run-v8-kospi-relative-quality-stage9.ts
+
+  study:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      BACKTEST_SOURCE_MANIFEST: .cache/cloudtrend-backtest-manifest.json
+      BACKTEST_SOURCE_CACHE_DIR: .cache/cloudtrend-backtest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate server configuration
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_USER_ID"
+      - id: backtest-source
+        name: Compute backtest source cache key
+        run: |
+          npm run backtest:cache -- manifest \
+            --supabase-user-id "$SUPABASE_USER_ID" \
+            --manifest "$BACKTEST_SOURCE_MANIFEST"
+      - id: backtest-cache
+        name: Restore backtest source cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.BACKTEST_SOURCE_CACHE_DIR }}
+          key: cloudtrend-backtest-raw-v1-${{ steps.backtest-source.outputs.cache_key }}
+      - name: Download backtest sources on cache miss
+        if: steps.backtest-cache.outputs.cache-hit != 'true'
+        run: |
+          npm run backtest:cache -- materialize \
+            --manifest "$BACKTEST_SOURCE_MANIFEST" \
+            --cache-dir "$BACKTEST_SOURCE_CACHE_DIR"
+      - name: Run KOSPI Relative Quality stage9
+        run: |
+          npx vite-node scripts/run-v8-kospi-relative-quality-stage9.ts \
+            --source-manifest "$BACKTEST_SOURCE_MANIFEST" \
+            --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR" \
+            --supabase-user-id "$SUPABASE_USER_ID" \
+            --upload
+      - name: Upload research artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v8-kospi-relative-quality-stage9-${{ github.run_id }}
+          path: analysis-runs/v8-kospi-relative-quality-stage9-*.json
+          if-no-files-found: warn
+          retention-days: 30
