@@ -31,7 +31,7 @@ replace_once(
 replace_once(
     "src/lib/engine/indicators.ts",
     "  foreignNet60d: number | null;\n  institutionNet20d: number | null;\n  extensionFromMa20: number | null; // %\n",
-    "  foreignNet60d: number | null;\n  institutionNet20d: number | null;\n  /** 현재 공매도 거래량 비중 - 20거래일 전 비중 (%p) */\n  shortSellingVolumeRate20dChangePp: number | null;\n  /** 현재 대차잔고 수량 - 20거래일 전 수량 */\n  lendingBalanceQuantity20dChange: number | null;\n  extensionFromMa20: number | null; // %\n",
+    "  foreignNet60d: number | null;\n  institutionNet20d: number | null;\n  /** 현재 공매도 거래량 비중 - 20거래일 전 비중 (%p) */\n  shortSellingVolumeRate20dChangePp?: number | null;\n  /** 현재 대차잔고 수량 - 20거래일 전 수량 */\n  lendingBalanceQuantity20dChange?: number | null;\n  extensionFromMa20: number | null; // %\n",
 )
 replace_once(
     "src/lib/engine/indicators.ts",
@@ -52,5 +52,5 @@ replace_once(
 replace_once(
     "src/lib/engine/pipeline.ts",
     "    const rotationScore = rotationScoreBySector.get(inst.sectorCode) ?? null;\n    const priority = buildPriorityScoreV8(legacyPriority, rotationScore);\n",
-    "    const rotationScore = rotationScoreBySector.get(inst.sectorCode) ?? null;\n    const priority = buildPriorityScoreV8(\n      legacyPriority,\n      rotationScore,\n      inst.instrumentType === \"STOCK\"\n        ? {\n            shortSellingVolumeRate20dChangePp: snap.shortSellingVolumeRate20dChangePp,\n            lendingBalanceQuantity20dChange: snap.lendingBalanceQuantity20dChange,\n          }\n        : null,\n    );\n",
+    "    const rotationScore = rotationScoreBySector.get(inst.sectorCode) ?? null;\n    const priority = buildPriorityScoreV8(\n      legacyPriority,\n      rotationScore,\n      inst.instrumentType === \"STOCK\"\n        ? {\n            shortSellingVolumeRate20dChangePp: snap.shortSellingVolumeRate20dChangePp ?? null,\n            lendingBalanceQuantity20dChange: snap.lendingBalanceQuantity20dChange ?? null,\n          }\n        : null,\n    );\n",
 )
