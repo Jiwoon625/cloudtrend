@@ -1,17 +1,25 @@
 import type { ScreeningRow } from "@/lib/engine/pipeline";
+import { isKospiRelativeMomentumConfirmed } from "@/lib/kospiRelativeQuality";
 
 /**
  * V8 Final status label derived from structural signal fields.
  * Presentation should use this instead of cached actionLabelText so wording changes
  * do not require cache rebuilds.
+ *
+ * KOSPI Relative Quality is display-only and never changes the V8 technical score.
  */
-export function getDisplayStatus(
-  row: Pick<ScreeningRow, "kosdaq80Onset" | "kospiEightPointEntry" | "exitSignal" | "grade">,
-): string {
+export function getDisplayStatus(row: ScreeningRow): string {
   if (row.kosdaq80Onset && row.exitSignal) return "KOSDAQ80 Onset · V8 Exit 조건";
   if (row.kosdaq80Onset) return "KOSDAQ80 Onset";
-  if (row.kospiEightPointEntry && row.exitSignal) return "8점 신규 진입 후보 · V8 Exit 조건";
-  if (row.kospiEightPointEntry) return "8점 신규 진입 후보";
+
+  const rsConfirmed = row.kospiEightPointEntry && isKospiRelativeMomentumConfirmed(row);
+  if (row.kospiEightPointEntry && row.exitSignal)
+    return rsConfirmed
+      ? "8점 신규 진입 후보 · RS 확인 · V8 Exit 조건"
+      : "8점 신규 진입 후보 · V8 Exit 조건";
+  if (row.kospiEightPointEntry)
+    return rsConfirmed ? "8점 신규 진입 후보 · RS 확인" : "8점 신규 진입 후보";
+
   if (row.exitSignal === "UP95") return "V8 Exit · 9.5점 이상";
   if (row.exitSignal === "DOWN25") return "V8 Exit · 2.5점 이하";
   if (row.grade === "A") return "관심 후보";
