@@ -269,6 +269,10 @@ export interface IndicatorSnapshot {
   foreignNet20d: number | null;
   foreignNet60d: number | null;
   institutionNet20d: number | null;
+  /** 현재 공매도 거래량 비중 - 20거래일 전 비중 (%p) */
+  shortSellingVolumeRate20dChangePp?: number | null;
+  /** 현재 대차잔고 수량 - 20거래일 전 수량 */
+  lendingBalanceQuantity20dChange?: number | null;
   extensionFromMa20: number | null; // %
   atrExtension: number | null; // ATR 배수
   /** 종가 위치 (close - low) / (high - low). high === low이면 null */
@@ -298,12 +302,26 @@ function sumLast(values: Array<number | null>, endIndex: number, n: number): num
   return s;
 }
 
+function changeFromLookback(
+  values: Array<number | null>,
+  endIndex: number,
+  lookback: number,
+): number | null {
+  const current = values[endIndex];
+  const prior = values[endIndex - lookback];
+  if (current === null || current === undefined || prior === null || prior === undefined) return null;
+  if (!Number.isFinite(current) || !Number.isFinite(prior)) return null;
+  return current - prior;
+}
+
 export function computeIndicators(bars: DailyPrice[], endIndex: number): IndicatorSnapshot {
   const closes = bars.map((b) => b.close);
   const volumes = bars.map((b) => b.volume);
   const values = bars.map((b) => b.tradingValue);
   const foreign = bars.map((b) => b.foreignNetBuyValue);
   const inst = bars.map((b) => b.institutionNetBuyValue);
+  const shortSellingVolumeRates = bars.map((b) => b.shortSellingVolumeRate ?? null);
+  const lendingBalanceQuantities = bars.map((b) => b.lendingBalanceQuantity ?? null);
 
   const ma20 = sma(closes, 20, endIndex);
   const ma20Prev5 = sma(closes, 20, endIndex - 5);
@@ -346,6 +364,8 @@ export function computeIndicators(bars: DailyPrice[], endIndex: number): Indicat
     foreignNet20d: sumLast(foreign, endIndex, 20),
     foreignNet60d: sumLast(foreign, endIndex, 60),
     institutionNet20d: sumLast(inst, endIndex, 20),
+    shortSellingVolumeRate20dChangePp: changeFromLookback(shortSellingVolumeRates, endIndex, 20),
+    lendingBalanceQuantity20dChange: changeFromLookback(lendingBalanceQuantities, endIndex, 20),
     extensionFromMa20: ma20 !== null && ma20 !== 0 ? (close / ma20 - 1) * 100 : null,
     atrExtension: ma20 !== null && atr14 ? (close - ma20) / atr14 : null,
     closeLocationValue: barCloseLocationValue(bars[endIndex]!),

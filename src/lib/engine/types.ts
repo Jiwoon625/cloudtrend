@@ -33,6 +33,10 @@ export interface DailyPrice {
   marketCap: number | null;
   foreignNetBuyValue: number | null;
   institutionNetBuyValue: number | null;
+  /** 공매도 거래량 비중(%). 공급자가 제공하지 않으면 null/undefined */
+  shortSellingVolumeRate?: number | null;
+  /** 대차잔고 수량. 공급자가 제공하지 않으면 null/undefined */
+  lendingBalanceQuantity?: number | null;
 }
 
 export interface FinancialFacts {

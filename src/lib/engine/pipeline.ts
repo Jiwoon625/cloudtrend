@@ -414,7 +414,16 @@ export function runAnalysis(
     const tech = vf ?? technicalScore(snap, valuePct, cfg);
     const legacyPriority = priorityScore(inst, snap, financials, last.marketCap, benchmark.dayReturn, cfg);
     const rotationScore = rotationScoreBySector.get(inst.sectorCode) ?? null;
-    const priority = buildPriorityScoreV8(legacyPriority, rotationScore);
+    const priority = buildPriorityScoreV8(
+      legacyPriority,
+      rotationScore,
+      inst.instrumentType === "STOCK"
+        ? {
+            shortSellingVolumeRate20dChangePp: snap.shortSellingVolumeRate20dChangePp ?? null,
+            lendingBalanceQuantity20dChange: snap.lendingBalanceQuantity20dChange ?? null,
+          }
+        : null,
+    );
     const modelGrade =
       inst.instrumentType === "STOCK" ? vfGrade(stockPercent) : technicalGrade(tech.points, cfg);
     const quality =
