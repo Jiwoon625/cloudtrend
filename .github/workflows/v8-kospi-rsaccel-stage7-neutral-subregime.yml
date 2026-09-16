@@ -3,31 +3,40 @@ name: V8 KOSPI RSAccel Stage7 Neutral Subregime
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     paths:
-      - "scripts/run-v8-kospi-rsaccel-stage7-neutral-subregime.ts"
-      - ".github/workflows/v8-kospi-rsaccel-stage7-neutral-subregime.yml"
+      - scripts/run-v8-kospi-rsaccel-stage7-neutral-subregime.ts
+      - .github/workflows/v8-kospi-rsaccel-stage7-neutral-subregime.yml
 
 permissions:
   contents: read
 
+concurrency:
+  group: v8-kospi-rsaccel-stage7-neutral-subregime-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   validate:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci
       - name: Format and lint research runner
         run: |
           npx prettier --write scripts/run-v8-kospi-rsaccel-stage7-neutral-subregime.ts
           npx eslint scripts/run-v8-kospi-rsaccel-stage7-neutral-subregime.ts
 
   study:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: validate
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -40,30 +49,29 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - name: Install dependencies
+        run: npm ci
       - name: Validate server configuration
         run: |
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
           test -n "$SUPABASE_USER_ID"
-      - name: Compute backtest source cache key
-        id: manifest
+      - id: backtest-source
+        name: Compute backtest source cache key
         run: |
           npm run backtest:cache -- manifest \
             --supabase-user-id "$SUPABASE_USER_ID" \
             --manifest "$BACKTEST_SOURCE_MANIFEST"
-          echo "cache_key=$(node -e \"const m=require('./$BACKTEST_SOURCE_MANIFEST'); process.stdout.write(m.cacheKey)\")" >> "$GITHUB_OUTPUT"
-      - name: Restore backtest source cache
-        id: cache
+      - id: backtest-cache
+        name: Restore backtest source cache
         uses: actions/cache@v4
         with:
           path: ${{ env.BACKTEST_SOURCE_CACHE_DIR }}
-          key: cloudtrend-backtest-raw-v1-${{ steps.manifest.outputs.cache_key }}
+          key: cloudtrend-backtest-raw-v1-${{ steps.backtest-source.outputs.cache_key }}
       - name: Download backtest sources on cache miss
-        if: steps.cache.outputs.cache-hit != 'true'
+        if: steps.backtest-cache.outputs.cache-hit != 'true'
         run: |
-          npm run backtest:cache -- download \
-            --supabase-user-id "$SUPABASE_USER_ID" \
+          npm run backtest:cache -- materialize \
             --manifest "$BACKTEST_SOURCE_MANIFEST" \
             --cache-dir "$BACKTEST_SOURCE_CACHE_DIR"
       - name: Run KOSPI RSAccel stage7 neutral subregime
@@ -74,6 +82,7 @@ jobs:
             --supabase-user-id "$SUPABASE_USER_ID" \
             --upload
       - name: Upload research artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: v8-kospi-rsaccel-stage7-neutral-subregime-${{ github.run_id }}
