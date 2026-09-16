@@ -1,0 +1,79 @@
+name: V8-14 Priority Index Weight Market Regime 3-FOS
+
+on:
+  push:
+    branches:
+      - research/v8-12-priority-index-mcap
+    paths:
+      - scripts/run-v8-priority-index-regime-3fos.mjs
+      - .github/workflows/v8-priority-index-regime-3fos.yml
+      - scripts/run-v8-priority-index-weight-portfolio-3fos.ts
+      - scripts/v8-priority-rotation-history.ts
+      - research-data/kosdaq150_membership_intervals_3fos.csv
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v8-14-priority-index-regime-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  study:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      BACKTEST_SOURCE_MANIFEST: .cache/cloudtrend-backtest-manifest.json
+      BACKTEST_SOURCE_CACHE_DIR: .cache/cloudtrend-backtest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: research/v8-12-priority-index-mcap
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate server configuration
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_USER_ID"
+      - id: backtest-source
+        name: Compute backtest source cache key
+        run: |
+          npm run backtest:cache -- manifest \
+            --supabase-user-id "$SUPABASE_USER_ID" \
+            --manifest "$BACKTEST_SOURCE_MANIFEST"
+      - id: backtest-cache
+        name: Restore backtest source cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.BACKTEST_SOURCE_CACHE_DIR }}
+          key: cloudtrend-backtest-raw-v1-${{ steps.backtest-source.outputs.cache_key }}
+      - name: Download backtest sources on cache miss
+        if: steps.backtest-cache.outputs.cache-hit != 'true'
+        run: |
+          npm run backtest:cache -- materialize \
+            --manifest "$BACKTEST_SOURCE_MANIFEST" \
+            --cache-dir "$BACKTEST_SOURCE_CACHE_DIR"
+      - name: Run V8-14 regime study
+        run: |
+          node scripts/run-v8-priority-index-regime-3fos.mjs \
+            --source-manifest "$BACKTEST_SOURCE_MANIFEST" \
+            --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR" \
+            --supabase-user-id "$SUPABASE_USER_ID" \
+            --upload
+      - name: Upload research artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v8-14-priority-index-regime-${{ github.run_id }}
+          path: analysis-runs/v8-14-priority-index-regime-3fos-*.json
+          if-no-files-found: warn
+          retention-days: 30
