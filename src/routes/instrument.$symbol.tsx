@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { instrumentQueryOptions } from "@/lib/analysisQuery";
 import { HISTORICAL_TECHNICAL_MAX } from "@/lib/engine/scoring";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
+import { getDisplayStatus } from "@/lib/statusDisplay";
 import { getDisplayWarnings } from "@/lib/warningDisplay";
 
 export const Route = createFileRoute("/instrument/$symbol")({
@@ -209,7 +210,7 @@ function InstrumentDetail() {
           value={`${formatNumber(row.priority.points, 2)} / ${formatNumber(row.priority.maxPoints, 1)}`}
         />
         <Stat label="모델등급" value={<GradeBadge grade={row.grade} />} />
-        <Stat label="상태" value={row.actionLabelText} />
+        <Stat label="상태" value={getDisplayStatus(row)} />
         <Stat label="52주 고점 거리" value={<Delta value={snap.distanceFrom52wHigh} />} />
       </div>
 
