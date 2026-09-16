@@ -1,0 +1,49 @@
+name: KOSPI Relative Quality UI validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - src/lib/kospiRelativeQuality.ts
+      - src/lib/statusDisplay.ts
+      - src/lib/statusDisplay.test.ts
+      - src/lib/dashboardRow.ts
+      - src/lib/screeningCache.ts
+      - src/components/ScreenerTable.tsx
+      - src/routes/index.tsx
+      - .github/workflows/kospi-relative-quality-ui-validation.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kospi-relative-quality-ui-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Test Relative Quality status
+        run: npx vitest run src/lib/statusDisplay.test.ts
+      - name: Lint changed implementation
+        run: >-
+          npx eslint
+          src/lib/kospiRelativeQuality.ts
+          src/lib/statusDisplay.ts
+          src/lib/statusDisplay.test.ts
+          src/lib/dashboardRow.ts
+          src/lib/screeningCache.ts
+          src/components/ScreenerTable.tsx
+          src/routes/index.tsx
+      - name: Production build
+        run: npm run build
