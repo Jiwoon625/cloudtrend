@@ -25,26 +25,52 @@ function legacyPriority(): ScoreBlock {
 }
 
 describe("buildPriorityScoreV8", () => {
-  it("removes duplicated foreign/high factors and adds continuous rotation for a 5-point score", () => {
+  it("keeps the existing 5-point base priority score", () => {
     const result = buildPriorityScoreV8(legacyPriority(), 82);
     expect(result.maxPoints).toBe(5);
     expect(result.availableMaxPoints).toBe(5);
     expect(result.points).toBe(4.82);
-    expect(result.rows.some((r) => r.group === "외국인 수급")).toBe(false);
-    expect(result.rows.some((r) => r.group === "신고가")).toBe(false);
-    expect(result.rows.find((r) => r.group === "섹터 로테이션")?.points).toBe(0.82);
   });
 
-  it("keeps the 5-point headline max while excluding missing rotation from available max", () => {
+  it("applies -0.5 for each worsening Supply Risk component", () => {
+    const result = buildPriorityScoreV8(legacyPriority(), 82, {
+      shortSellingVolumeRate20dChangePp: 0.35,
+      lendingBalanceQuantity20dChange: 120_000,
+    });
+    expect(result.maxPoints).toBe(5);
+    expect(result.points).toBe(3.82);
+    const supplyRows = result.rows.filter((r) => r.group === "Supply Risk");
+    expect(supplyRows.map((r) => r.points)).toEqual([-0.5, -0.5]);
+    expect(supplyRows.every((r) => r.status === "FAIL")).toBe(true);
+  });
+
+  it("treats non-increasing Supply Risk as neutral rather than a reward", () => {
+    const result = buildPriorityScoreV8(legacyPriority(), 50, {
+      shortSellingVolumeRate20dChangePp: -0.2,
+      lendingBalanceQuantity20dChange: 0,
+    });
+    expect(result.maxPoints).toBe(5);
+    expect(result.points).toBe(4.5);
+    const supplyRows = result.rows.filter((r) => r.group === "Supply Risk");
+    expect(supplyRows.map((r) => r.points)).toEqual([0, 0]);
+    expect(supplyRows.every((r) => r.status === "PASS")).toBe(true);
+  });
+
+  it("does not penalize missing Supply Risk data", () => {
+    const result = buildPriorityScoreV8(legacyPriority(), 100, {
+      shortSellingVolumeRate20dChangePp: null,
+      lendingBalanceQuantity20dChange: null,
+    });
+    expect(result.maxPoints).toBe(5);
+    expect(result.availableMaxPoints).toBe(5);
+    expect(result.points).toBe(5);
+    expect(result.rows.filter((r) => r.group === "Supply Risk").every((r) => r.status === "NO_DATA")).toBe(true);
+  });
+
+  it("keeps missing rotation out of available max", () => {
     const result = buildPriorityScoreV8(legacyPriority(), null);
     expect(result.maxPoints).toBe(5);
     expect(result.availableMaxPoints).toBe(4);
     expect(result.points).toBe(4);
-    expect(result.rows.find((r) => r.group === "섹터 로테이션")?.status).toBe("NO_DATA");
-  });
-
-  it("clamps rotation score to the supported 0~100 range", () => {
-    expect(buildPriorityScoreV8(legacyPriority(), 120).points).toBe(5);
-    expect(buildPriorityScoreV8(legacyPriority(), -20).points).toBe(4);
   });
 });

@@ -83,6 +83,10 @@ const FIELD_ALIASES: Record<string, string> = {
   institutionnetbuyvalue: "institutionNetBuyValue",
   institutionnet: "institutionNetBuyValue",
   기관순매수: "institutionNetBuyValue",
+  shortsellingvolumerate: "shortSellingVolumeRate",
+  공매도거래량비중: "shortSellingVolumeRate",
+  lendingbalancequantity: "lendingBalanceQuantity",
+  대차잔고수량: "lendingBalanceQuantity",
   sector: "sector",
   sectorcode: "sector",
   섹터: "sector",
@@ -270,6 +274,8 @@ export function parseManualMarketData(input: string | string[]): ManualParseResu
       marketCap: num(pick(rec, "marketCap")),
       foreignNetBuyValue: num(pick(rec, "foreignNetBuyValue")),
       institutionNetBuyValue: num(pick(rec, "institutionNetBuyValue")),
+      shortSellingVolumeRate: num(pick(rec, "shortSellingVolumeRate")),
+      lendingBalanceQuantity: num(pick(rec, "lendingBalanceQuantity")),
     };
 
     const existing = map.get(symbol);
