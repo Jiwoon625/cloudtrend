@@ -41,7 +41,10 @@ export const Route = createFileRoute("/")({
           "CloudTrend V8 Final 10점 기술점수의 KOSDAQ80 Onset, 9.5·2.5 Exit, 섹터 로테이션과 시장 상태를 한 화면에서 확인합니다.",
       },
       { property: "og:title", content: "대시보드 | CloudTrend V8 Final" },
-      { property: "og:description", content: "V8 Final KOSDAQ 운영신호와 전체 섹터 Rotation 대시보드." },
+      {
+        property: "og:description",
+        content: "V8 Final KOSDAQ 운영신호와 전체 섹터 Rotation 대시보드.",
+      },
     ],
   }),
   errorComponent: ({ error, reset }) => <DataError error={error} reset={reset} />,
@@ -62,20 +65,32 @@ function Card({
   return (
     <section className="rounded-lg border border-border bg-card p-4">
       <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
-        {icon}{title}
+        {icon}
+        {title}
       </h2>
-      {subtitle ? <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">{subtitle}</p> : null}
+      {subtitle ? (
+        <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">{subtitle}</p>
+      ) : null}
       {children}
     </section>
   );
 }
 
-function KeyValue({ label, value, hint }: { label: string; value: React.ReactNode; hint?: string }) {
+function KeyValue({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: React.ReactNode;
+  hint?: string;
+}) {
   return (
     <div className="flex items-baseline justify-between gap-2 border-b border-border py-1.5 last:border-0">
       <span className="text-[12px] text-muted-foreground">{label}</span>
       <span className="num text-[13px] font-medium">
-        {value}{hint ? <span className="ml-1 text-[10px] text-muted-foreground">{hint}</span> : null}
+        {value}
+        {hint ? <span className="ml-1 text-[10px] text-muted-foreground">{hint}</span> : null}
       </span>
     </div>
   );
@@ -117,8 +132,18 @@ function Dashboard() {
           {started && !summaryQuery.isPending ? (
             <>
               <PdfExportButton documentTitle="CloudTrend V8 Final 대시보드" />
-              <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void rescreen()} disabled={rescreening}>
-                {rescreening ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => void rescreen()}
+                disabled={rescreening}
+              >
+                {rescreening ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-3.5" />
+                )}
                 다시 스크리닝
               </Button>
             </>
@@ -131,20 +156,29 @@ function Dashboard() {
           <SlidersHorizontal className="mx-auto mb-3 size-8 text-primary" />
           <h2 className="mb-1 text-base font-semibold">아직 스크리닝을 시작하지 않았습니다</h2>
           <p className="mx-auto mb-4 max-w-md text-[12px] leading-relaxed text-muted-foreground">
-            데이터·산식 탭에서 시세 데이터를 입력한 뒤 스크리닝 시작을 누르면 V8 Final 캐시가 생성됩니다.
+            데이터·산식 탭에서 시세 데이터를 입력한 뒤 스크리닝 시작을 누르면 V8 Final 캐시가
+            생성됩니다.
           </p>
           <Button asChild size="lg" className="gap-2">
-            <Link to="/scoring"><SlidersHorizontal className="size-4" />데이터·산식 탭으로 이동</Link>
+            <Link to="/scoring">
+              <SlidersHorizontal className="size-4" />
+              데이터·산식 탭으로 이동
+            </Link>
           </Button>
         </section>
       ) : summaryQuery.isPending ? (
         <section className="rounded-lg border border-border bg-card p-8">
           <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />V8 Final 대시보드를 불러오는 중입니다…
+            <Loader2 className="size-4 animate-spin" />
+            V8 Final 대시보드를 불러오는 중입니다…
           </div>
         </section>
       ) : summaryQuery.isError || !summaryQuery.data ? (
-        <DataError error={summaryQuery.error ?? "대시보드 요약을 불러오지 못했습니다."} reset={() => summaryQuery.refetch()} embedded />
+        <DataError
+          error={summaryQuery.error ?? "대시보드 요약을 불러오지 못했습니다."}
+          reset={() => summaryQuery.refetch()}
+          embedded
+        />
       ) : (
         <DashboardContent summary={summaryQuery.data} />
       )}
@@ -155,27 +189,41 @@ function Dashboard() {
 function DashboardContent({ summary }: { summary: DashboardSummary }) {
   const gate = summary.marketGate;
   const { counts } = summary;
-  const gateColor = gate.status === "RISK_ON" ? "text-up" : gate.status === "NEUTRAL" ? "text-warn" : "text-down";
-  const gateLabel = gate.status === "RISK_ON" ? "Risk-On" : gate.status === "NEUTRAL" ? "Neutral" : "Risk-Off";
+  const gateColor =
+    gate.status === "RISK_ON" ? "text-up" : gate.status === "NEUTRAL" ? "text-warn" : "text-down";
+  const gateLabel =
+    gate.status === "RISK_ON" ? "Risk-On" : gate.status === "NEUTRAL" ? "Neutral" : "Risk-Off";
 
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] text-muted-foreground">
-          기준일 {summary.asOfDate} · 모델 <strong className="text-foreground">{summary.strategyVersion}</strong> · 데이터 {summary.dataVersion}
+          기준일 {summary.asOfDate} · 모델{" "}
+          <strong className="text-foreground">{summary.strategyVersion}</strong> · 데이터{" "}
+          {summary.dataVersion}
         </p>
-        <p className="text-[11px] text-muted-foreground">계산 시각 {formatKstDateTime(summary.calculatedAt)} (KST·미래 데이터 미사용)</p>
+        <p className="text-[11px] text-muted-foreground">
+          계산 시각 {formatKstDateTime(summary.calculatedAt)} (KST·미래 데이터 미사용)
+        </p>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-4">
         <Card title="오늘의 V8 신호" icon={<TrendingUp className="size-4 text-primary" />}>
           <KeyValue label="KOSDAQ80 Onset" value={formatCount(counts.kosdaq80Onsets)} />
+          <KeyValue
+            label="KOSPI 8점 신규 진입"
+            value={formatCount(counts.kospiEightPointEntries)}
+          />
           <KeyValue label="상승 Exit · 9.5점 이상" value={formatCount(counts.upsideExits)} />
           <KeyValue label="하락 Exit · 2.5점 이하" value={formatCount(counts.downsideExits)} />
           <KeyValue label="점수 산정 불가" value={formatCount(counts.incomplete)} />
         </Card>
 
-        <Card title="운영 기준" subtitle="확정된 포트폴리오 기본값입니다." icon={<ShieldCheck className="size-4 text-primary" />}>
+        <Card
+          title="운영 기준"
+          subtitle="확정된 포트폴리오 기본값입니다."
+          icon={<ShieldCheck className="size-4 text-primary" />}
+        >
           <KeyValue label="최대 동시보유" value="30종목" />
           <KeyValue label="균등 슬롯" value="약 3.33%" />
           <KeyValue label="왕복 거래비용 가정" value="0.30%" />
@@ -197,12 +245,23 @@ function DashboardContent({ summary }: { summary: DashboardSummary }) {
 
         <Card title="시장 상태 · 참고" icon={<Activity className="size-4 text-primary" />}>
           <div className={`mb-2 flex items-center gap-2 text-lg font-bold ${gateColor}`}>
-            {gate.status === "RISK_OFF" ? <ArrowDown className="size-5" /> : <ArrowUp className="size-5" />}
+            {gate.status === "RISK_OFF" ? (
+              <ArrowDown className="size-5" />
+            ) : (
+              <ArrowUp className="size-5" />
+            )}
             {gateLabel}
             <span className="num text-xs font-normal text-muted-foreground">{gate.metCount}/4</span>
           </div>
-          {gate.incomplete ? <p className="mb-2 text-[11px] text-warn">일부 시장 데이터가 없어 판정이 불완전합니다.</p> : null}
-          <KeyValue label="KOSPI / MA60" value={`${formatNumber(summary.kospi.close, 2)} / ${formatNumber(summary.kospi.ma60, 2)}`} />
+          {gate.incomplete ? (
+            <p className="mb-2 text-[11px] text-warn">
+              일부 시장 데이터가 없어 판정이 불완전합니다.
+            </p>
+          ) : null}
+          <KeyValue
+            label="KOSPI / MA60"
+            value={`${formatNumber(summary.kospi.close, 2)} / ${formatNumber(summary.kospi.ma60, 2)}`}
+          />
           <KeyValue label="KOSDAQ" value={formatNumber(summary.kosdaq.close, 2)} />
           <KeyValue label="변동성" value={formatNumber(summary.vkospi, 2)} />
           <KeyValue label="외국인 최근 5일" value={formatWon(summary.marketForeignNet5d)} />
@@ -216,7 +275,8 @@ function DashboardContent({ summary }: { summary: DashboardSummary }) {
         <div className="border-b border-border bg-surface-strong px-3 py-2">
           <h2 className="text-sm font-semibold">Sector Rotation · 전체 섹터</h2>
           <p className="text-[11px] text-muted-foreground">
-            Rotation Score는 기술점수와 분리되어 우선점수 0~1점으로 반영됩니다. 현재 계산된 모든 섹터를 표시합니다.
+            Rotation Score는 기술점수와 분리되어 우선점수 0~1점으로 반영됩니다. 현재 계산된 모든
+            섹터를 표시합니다.
           </p>
         </div>
         <div className="overflow-x-auto">
@@ -234,19 +294,34 @@ function DashboardContent({ summary }: { summary: DashboardSummary }) {
             </thead>
             <tbody>
               {summary.rotationSectors.map((sector) => {
-                const move = sector.prevRank > sector.rank
-                  ? `▲${sector.prevRank - sector.rank}`
-                  : sector.prevRank < sector.rank
-                    ? `▼${sector.rank - sector.prevRank}`
-                    : "-";
+                const move =
+                  sector.prevRank > sector.rank
+                    ? `▲${sector.prevRank - sector.rank}`
+                    : sector.prevRank < sector.rank
+                      ? `▼${sector.rank - sector.prevRank}`
+                      : "-";
                 return (
                   <tr key={sector.sectorCode} className="border-b border-border last:border-0">
                     <td className="num px-3 py-2">{sector.rank}</td>
-                    <td className="px-3 py-2 font-medium"><Link to="/sectors" className="hover:underline">{sector.sectorName}</Link></td>
-                    <td className="num px-3 py-2 text-right font-semibold">{formatNumber(sector.score, 1)}</td>
-                    <td className="num px-3 py-2 text-right">{sector.priceLeadership === null ? "-" : formatNumber(sector.priceLeadership, 1)}</td>
-                    <td className="num px-3 py-2 text-right">{sector.moneyFlow === null ? "-" : formatNumber(sector.moneyFlow, 1)}</td>
-                    <td className={`num px-3 py-2 text-right ${(sector.rs20 ?? 0) >= 0 ? "text-up" : "text-down"}`}>
+                    <td className="px-3 py-2 font-medium">
+                      <Link to="/sectors" className="hover:underline">
+                        {sector.sectorName}
+                      </Link>
+                    </td>
+                    <td className="num px-3 py-2 text-right font-semibold">
+                      {formatNumber(sector.score, 1)}
+                    </td>
+                    <td className="num px-3 py-2 text-right">
+                      {sector.priceLeadership === null
+                        ? "-"
+                        : formatNumber(sector.priceLeadership, 1)}
+                    </td>
+                    <td className="num px-3 py-2 text-right">
+                      {sector.moneyFlow === null ? "-" : formatNumber(sector.moneyFlow, 1)}
+                    </td>
+                    <td
+                      className={`num px-3 py-2 text-right ${(sector.rs20 ?? 0) >= 0 ? "text-up" : "text-down"}`}
+                    >
                       {sector.rs20 === null ? "-" : formatPercent(sector.rs20, 2)}
                     </td>
                     <td className="num px-3 py-2 text-right text-muted-foreground">{move}</td>
@@ -261,26 +336,63 @@ function DashboardContent({ summary }: { summary: DashboardSummary }) {
       <section className="mt-6">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <h2 className="text-sm font-semibold">오늘의 KOSDAQ80 Onset</h2>
-          <Badge variant="outline" className="border-primary/30 bg-primary/5 text-[10px] text-primary">전일 &lt;8.0 → 당일 ≥8.0</Badge>
-          <span className="text-[11px] text-muted-foreground">우선점수(Sector Rotation 포함)가 높은 순으로 최대 30개를 표시합니다.</span>
+          <Badge
+            variant="outline"
+            className="border-primary/30 bg-primary/5 text-[10px] text-primary"
+          >
+            전일 &lt;8.0 → 당일 ≥8.0
+          </Badge>
+          <span className="text-[11px] text-muted-foreground">
+            우선점수(Sector Rotation 포함)가 높은 순으로 최대 30개를 표시합니다.
+          </span>
         </div>
         {summary.onsetRows.length ? (
           <ScreenerTable rows={summary.onsetRows} />
         ) : (
-          <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">오늘 새로 발생한 KOSDAQ80 Onset이 없습니다.</div>
+          <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">
+            오늘 새로 발생한 KOSDAQ80 Onset이 없습니다.
+          </div>
+        )}
+      </section>
+
+      <section className="mt-6">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <h2 className="text-sm font-semibold">KOSPI 8점 신규 진입 후보</h2>
+          <Badge
+            variant="outline"
+            className="border-primary/30 bg-primary/5 text-[10px] text-primary"
+          >
+            전일 &lt;8.0 → 당일 ≥8.0
+          </Badge>
+          <span className="text-[11px] text-muted-foreground">
+            KOSDAQ80 포트폴리오 Onset과 분리된 참고 후보입니다.
+          </span>
+        </div>
+        {summary.kospiEntryRows.length ? (
+          <ScreenerTable rows={summary.kospiEntryRows} />
+        ) : (
+          <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">
+            오늘 새로 발생한 KOSPI 8점 신규 진입 후보가 없습니다.
+          </div>
         )}
       </section>
 
       <section className="mt-6">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <h2 className="text-sm font-semibold text-warn">V8 Exit 조건</h2>
-          <Badge variant="outline" className="border-warn/30 bg-warn-soft text-[10px] text-warn">≥9.5 또는 ≤2.5</Badge>
-          <span className="text-[11px] text-muted-foreground">실제 매도 대상 여부는 보유 여부와 함께 확인해야 합니다.</span>
+          <Badge variant="outline" className="border-warn/30 bg-warn-soft text-[10px] text-warn">
+            ≥9.5 또는 ≤2.5
+          </Badge>
+          <span className="text-[11px] text-muted-foreground">
+            실제 매도 대상 여부는 보유 여부와 함께 확인해야 합니다.
+          </span>
         </div>
         {summary.exitRows.length ? (
           <ScreenerTable rows={summary.exitRows} />
         ) : (
-          <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">현재 점수 Exit 조건에 해당하는 KOSDAQ 종목이 없습니다.</div>
+          <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">
+            현재 점수 Exit 조건에 해당하는 KOSDAQ 종목이 없습니다.
+          </div>
         )}
       </section>
 
@@ -289,14 +401,18 @@ function DashboardContent({ summary }: { summary: DashboardSummary }) {
           <h2 className="border-b border-border bg-surface-strong px-3 py-2 text-sm font-semibold">
             Universe 실격 사유 분포 · {formatCount(counts.disqualified)}종목
           </h2>
-          <table className="w-full text-[12px]"><tbody>
-            {summary.failReasons.map(([reason, count]) => (
-              <tr key={reason} className="border-b border-border last:border-0">
-                <td className="px-3 py-2">{reason}</td>
-                <td className="num px-3 py-2 text-right font-semibold text-warn">{formatCount(count)}건</td>
-              </tr>
-            ))}
-          </tbody></table>
+          <table className="w-full text-[12px]">
+            <tbody>
+              {summary.failReasons.map(([reason, count]) => (
+                <tr key={reason} className="border-b border-border last:border-0">
+                  <td className="px-3 py-2">{reason}</td>
+                  <td className="num px-3 py-2 text-right font-semibold text-warn">
+                    {formatCount(count)}건
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
       ) : null}
     </>

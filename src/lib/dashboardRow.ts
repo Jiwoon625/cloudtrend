@@ -41,6 +41,7 @@ export function compactDashboardRow(row: ScreeningRow): ScreeningRow {
     grade: row.grade,
     operatingScore10: row.operatingScore10,
     kosdaq80Onset: row.kosdaq80Onset,
+    kospiEightPointEntry: row.kospiEightPointEntry,
     exitSignal: row.exitSignal,
     sectorPriceLeadership: row.sectorPriceLeadership,
     sectorRotationScore: row.sectorRotationScore,

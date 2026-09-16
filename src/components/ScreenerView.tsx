@@ -20,6 +20,7 @@ type PresetId =
   | "FOREIGN"
   | "VALUEUP"
   | "HEAD_FAKE"
+  | "KOSPI_ENTRY_8"
   | "EXIT";
 
 const PRESETS: Array<{ id: PresetId; label: string; test: (r: ScreeningRow) => boolean }> = [
@@ -43,6 +44,11 @@ const PRESETS: Array<{ id: PresetId; label: string; test: (r: ScreeningRow) => b
     test: (r) => r.instrument.indexMemberships.includes("KOREA_VALUEUP"),
   },
   { id: "HEAD_FAKE", label: "Head Fake 경고", test: (r) => r.warnings.includes("HEAD_FAKE") },
+  {
+    id: "KOSPI_ENTRY_8",
+    label: "KOSPI 8점 신규 진입",
+    test: (r) => r.kospiEightPointEntry,
+  },
   { id: "EXIT", label: "Exit 점검", test: (r) => r.exitSignal !== null },
 ];
 
@@ -76,16 +82,14 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
       return false;
     if (query) {
       const q = query.trim().toLowerCase();
-      if (
-        !r.instrument.name.toLowerCase().includes(q) &&
-        !r.instrument.symbol.includes(q)
-      )
+      if (!r.instrument.name.toLowerCase().includes(q) && !r.instrument.symbol.includes(q))
         return false;
     }
     if (sector !== "ALL" && r.instrument.sectorName !== sector) return false;
     const technicalScore =
       r.instrument.instrumentType === "STOCK" ? r.operatingScore10 : (r.vf ?? r.technical).points;
-    if (minTechnical > 0 && (technicalScore === null || technicalScore < minTechnical)) return false;
+    if (minTechnical > 0 && (technicalScore === null || technicalScore < minTechnical))
+      return false;
     if ((r.snapshot.volumeRatio20 ?? 0) < minVolumeRatio) return false;
     if (preset) {
       const p = PRESETS.find((x) => x.id === preset)!;
@@ -94,12 +98,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
     return true;
   });
 
-  const numberField = (
-    label: string,
-    value: number,
-    onChange: (v: number) => void,
-    step = 1,
-  ) => (
+  const numberField = (label: string, value: number, onChange: (v: number) => void, step = 1) => (
     <div className="space-y-1">
       <Label className="text-[11px] text-muted-foreground">{label}</Label>
       <Input
@@ -129,8 +128,9 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
             ({analysis.marketGate.metCount}/4)
           </p>
           <p className="text-[12px] text-muted-foreground">
-            분석 종목 {base.length}건 중 <span className="text-foreground">{filtered.length}건</span>{" "}
-            표시 · 통과 {base.filter((r) => r.hardFilterPassed).length}건 / 실격{" "}
+            분석 종목 {base.length}건 중{" "}
+            <span className="text-foreground">{filtered.length}건</span> 표시 · 통과{" "}
+            {base.filter((r) => r.hardFilterPassed).length}건 / 실격{" "}
             {base.filter((r) => !r.hardFilterPassed).length}건
           </p>
         </div>
@@ -180,11 +180,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         {numberField("기술점수 최소", minTechnical, setMinTechnical, 0.5)}
         {numberField("거래량 비율 최소(%)", minVolumeRatio, setMinVolumeRatio, 10)}
         <div className="flex items-center gap-2 lg:col-span-2">
-          <Switch
-            id="disq"
-            checked={showDisqualified}
-            onCheckedChange={setShowDisqualified}
-          />
+          <Switch id="disq" checked={showDisqualified} onCheckedChange={setShowDisqualified} />
           <Label htmlFor="disq" className="text-[12px]">
             실격 종목 보기 (사유 표시)
           </Label>

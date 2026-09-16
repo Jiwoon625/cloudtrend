@@ -21,16 +21,12 @@ import {
 } from "@/lib/manualDataStore";
 import { computeLocalAnalysis } from "@/lib/localAnalysis";
 import type { AnalysisPayload, InstrumentDetailPayload } from "@/lib/market.functions";
-import {
-  buildSnapshot,
-  hydrateSnapshots,
-  saveSnapshot,
-} from "@/lib/screeningHistory";
+import { buildSnapshot, hydrateSnapshots, saveSnapshot } from "@/lib/screeningHistory";
 import { listRegisteredSources } from "@/lib/sourceRegistry";
 
-export const SCREENING_CACHE_VERSION = "screening-cache-v8-final-v2" as const;
-export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-final-v2" as const;
-export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-final-v2" as const;
+export const SCREENING_CACHE_VERSION = "screening-cache-v8-final-v3" as const;
+export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-final-v3" as const;
+export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-final-v3" as const;
 
 interface CacheMeta {
   version: string;
@@ -73,12 +69,14 @@ export interface DashboardSummary {
     passed: number;
     disqualified: number;
     kosdaq80Onsets: number;
+    kospiEightPointEntries: number;
     upsideExits: number;
     downsideExits: number;
     incomplete: number;
   };
   failReasons: Array<[string, number]>;
   onsetRows: ScreeningRow[];
+  kospiEntryRows: ScreeningRow[];
   exitRows: ScreeningRow[];
   top: ScreeningRow[];
 }
@@ -220,6 +218,10 @@ async function buildDashboardSummary(
     .filter((row) => row.kosdaq80Onset)
     .sort(signalPriority)
     .slice(0, 30);
+  const kospiEntryRows = [...rows]
+    .filter((row) => row.kospiEightPointEntry)
+    .sort(signalPriority)
+    .slice(0, 30);
   const exitRows = [...rows]
     .filter(
       (row) =>
@@ -267,6 +269,7 @@ async function buildDashboardSummary(
       passed: passed.length,
       disqualified: rows.length - passed.length,
       kosdaq80Onsets: rows.filter((row) => row.kosdaq80Onset).length,
+      kospiEightPointEntries: rows.filter((row) => row.kospiEightPointEntry).length,
       upsideExits: rows.filter(
         (row) => row.instrument.market === "KOSDAQ" && row.exitSignal === "UP95",
       ).length,
@@ -279,6 +282,7 @@ async function buildDashboardSummary(
     },
     failReasons: [...failMap.entries()].sort((a, b) => b[1] - a[1]),
     onsetRows: onsetRows.map(compactDashboardRow),
+    kospiEntryRows: kospiEntryRows.map(compactDashboardRow),
     exitRows: exitRows.map(compactDashboardRow),
     top: top.map(compactDashboardRow),
   };
@@ -354,7 +358,8 @@ export async function getCachedInstrumentDetail(symbol: string): Promise<Instrum
   const normalized = symbol.trim().toUpperCase();
   const screening = await readScreeningCache();
   const shared = screening ?? (await buildAndPersistScreeningCaches()).screening;
-  const row = shared.payload.analysis.rows.find((item) => item.instrument.symbol === normalized) ?? null;
+  const row =
+    shared.payload.analysis.rows.find((item) => item.instrument.symbol === normalized) ?? null;
   if (!row)
     return {
       source: shared.payload.source,
@@ -380,7 +385,8 @@ export async function getCachedInstrumentDetail(symbol: string): Promise<Instrum
         cached.inputFingerprint === shared.inputFingerprint &&
         cached.resultDigest === shared.resultDigest &&
         cached.symbol === normalized
-      ) return cached.detail;
+      )
+        return cached.detail;
     } catch {
       // 손상/구버전 cache는 아래에서 재생성한다.
     }
