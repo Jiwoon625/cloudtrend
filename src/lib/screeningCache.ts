@@ -13,6 +13,10 @@ import {
   type ScreeningRow,
 } from "@/lib/engine/pipeline";
 import { buildInstrumentDetailDataset } from "@/lib/engine/instrumentDetailDataset";
+import {
+  compareKospiRelativeQuality,
+  isKospiRelativeMomentumConfirmed,
+} from "@/lib/kospiRelativeQuality";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import {
   ensureManualDataText,
@@ -25,7 +29,7 @@ import { buildSnapshot, hydrateSnapshots, saveSnapshot } from "@/lib/screeningHi
 import { listRegisteredSources } from "@/lib/sourceRegistry";
 
 export const SCREENING_CACHE_VERSION = "screening-cache-v8-final-v3" as const;
-export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-final-v3" as const;
+export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-final-v4" as const;
 export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-final-v3" as const;
 
 interface CacheMeta {
@@ -70,6 +74,7 @@ export interface DashboardSummary {
     disqualified: number;
     kosdaq80Onsets: number;
     kospiEightPointEntries: number;
+    kospiRelativeQualityConfirmed: number;
     upsideExits: number;
     downsideExits: number;
     incomplete: number;
@@ -220,7 +225,7 @@ async function buildDashboardSummary(
     .slice(0, 30);
   const kospiEntryRows = [...rows]
     .filter((row) => row.kospiEightPointEntry)
-    .sort(signalPriority)
+    .sort(compareKospiRelativeQuality)
     .slice(0, 30);
   const exitRows = [...rows]
     .filter(
@@ -270,6 +275,9 @@ async function buildDashboardSummary(
       disqualified: rows.length - passed.length,
       kosdaq80Onsets: rows.filter((row) => row.kosdaq80Onset).length,
       kospiEightPointEntries: rows.filter((row) => row.kospiEightPointEntry).length,
+      kospiRelativeQualityConfirmed: rows.filter(
+        (row) => row.kospiEightPointEntry && isKospiRelativeMomentumConfirmed(row),
+      ).length,
       upsideExits: rows.filter(
         (row) => row.instrument.market === "KOSDAQ" && row.exitSignal === "UP95",
       ).length,
