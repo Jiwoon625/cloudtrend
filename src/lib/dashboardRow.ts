@@ -11,6 +11,8 @@ export function compactDashboardRow(row: ScreeningRow): ScreeningRow {
       symbol: row.instrument.symbol,
       name: row.instrument.name,
       market: row.instrument.market,
+      instrumentType: row.instrument.instrumentType,
+      sectorCode: row.instrument.sectorCode,
       sectorName: row.instrument.sectorName,
     },
     snapshot: {
@@ -50,5 +52,6 @@ export function compactDashboardRow(row: ScreeningRow): ScreeningRow {
     hardFilterPassed: row.hardFilterPassed,
     marketCap: row.marketCap,
     rs20: row.rs20,
+    rs60: row.rs60,
   } as unknown as ScreeningRow;
 }
