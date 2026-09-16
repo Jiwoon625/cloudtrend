@@ -4,8 +4,9 @@ import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
+import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
+import { getKospiRsAccel, isKospiRelativeMomentumConfirmed } from "@/lib/kospiRelativeQuality";
 import { getDisplayStatus } from "@/lib/statusDisplay";
 import { getDisplayWarnings } from "@/lib/warningDisplay";
 
@@ -52,12 +53,32 @@ function ScoreDelta({ value }: { value: number | null }) {
   );
 }
 
+function RsAccel({ row }: { row: ScreeningRow }) {
+  const value = getKospiRsAccel(row);
+  if (value === null) return <span className="text-muted-foreground">-</span>;
+  const Icon = value > 0 ? ArrowUp : value < 0 ? ArrowDown : Minus;
+  const cls = value > 0 ? "text-up" : value < 0 ? "text-down" : "text-muted-foreground";
+  const signed = value > 0 ? `+${formatNumber(value, 2)}` : formatNumber(value, 2);
+  return (
+    <span className="inline-flex flex-col items-end gap-0.5">
+      <span className={`inline-flex items-center justify-end gap-0.5 font-semibold ${cls}`}>
+        <Icon className="size-3" aria-hidden />
+        {signed}%p
+      </span>
+      {row.kospiEightPointEntry && isKospiRelativeMomentumConfirmed(row) ? (
+        <span className="text-[10px] font-medium text-up">RS 확인</span>
+      ) : null}
+    </span>
+  );
+}
+
 type SortKey =
   | "scoreDelta1d"
   | "technical"
   | "priority"
   | "volumeRatio"
   | "rs20"
+  | "rsAccel"
   | "distanceHigh"
   | "marketCap"
   | "close";
@@ -74,6 +95,7 @@ const COLUMNS: Array<{ key: SortKey | "static"; label: string; id: string }> = [
   { key: "static", label: "모델등급", id: "grade" },
   { key: "volumeRatio", label: "거래량 비율", id: "volumeRatio" },
   { key: "rs20", label: "RS20", id: "rs20" },
+  { key: "rsAccel", label: "RSAccel", id: "rsAccel" },
   { key: "distanceHigh", label: "52주 고점 거리", id: "distanceHigh" },
   { key: "marketCap", label: "시가총액", id: "marketCap" },
   { key: "static", label: "상태", id: "status" },
@@ -97,6 +119,8 @@ function sortValue(row: ScreeningRow, key: SortKey): number | null {
       return row.snapshot.volumeRatio20;
     case "rs20":
       return row.rs20;
+    case "rsAccel":
+      return getKospiRsAccel(row);
     case "distanceHigh":
       return row.snapshot.distanceFrom52wHigh;
     case "marketCap":
@@ -107,7 +131,11 @@ function sortValue(row: ScreeningRow, key: SortKey): number | null {
 }
 
 export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
-  const [sortKey, setSortKey] = useState<SortKey>("technical");
+  const [sortKey, setSortKey] = useState<SortKey>(() =>
+    rows.length > 0 && rows.every((row) => row.kospiEightPointEntry && row.instrument.market === "KOSPI")
+      ? "rsAccel"
+      : "technical",
+  );
   const [dir, setDir] = useState<"asc" | "desc">("desc");
   const [hidden, setHidden] = useState<string[]>([]);
 
@@ -125,6 +153,10 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
           const priorityDiff = b.priority.points - a.priority.points;
           if (priorityDiff !== 0) return priorityDiff;
         }
+        if (sortKey === "rsAccel") {
+          const priorityDiff = b.priority.points - a.priority.points;
+          if (priorityDiff !== 0) return priorityDiff;
+        }
         return a.instrument.symbol.localeCompare(b.instrument.symbol);
       }
       return dir === "desc" ? -diff : diff;
@@ -138,6 +170,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
     const header = visible.map((c) => c.label).join(",");
     const lines = sorted.map((r, i) => {
       const tech = technicalValue(r);
+      const rsAccel = getKospiRsAccel(r);
       const values: Record<string, string | number> = {
         rank: i + 1,
         name: r.instrument.name,
@@ -153,6 +186,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
         grade: r.grade,
         volumeRatio: r.snapshot.volumeRatio20?.toFixed(1) ?? "",
         rs20: r.rs20?.toFixed(2) ?? "",
+        rsAccel: rsAccel?.toFixed(2) ?? "",
         distanceHigh: r.snapshot.distanceFrom52wHigh?.toFixed(2) ?? "",
         marketCap: r.marketCap ?? "",
         status: getDisplayStatus(r),
@@ -238,7 +272,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
       </div>
 
       <div className="max-h-[70vh] overflow-auto rounded-lg border border-border bg-card">
-        <table className="w-full min-w-[1120px] text-[12px]">
+        <table className="w-full min-w-[1200px] text-[12px]">
           <thead>
             <tr>{visible.map((c) => th(c))}</tr>
           </thead>
@@ -312,6 +346,11 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
                 rs20: (
                   <span className="num">
                     <Delta value={r.rs20} digits={2} />
+                  </span>
+                ),
+                rsAccel: (
+                  <span className="num">
+                    <RsAccel row={r} />
                   </span>
                 ),
                 distanceHigh: (
