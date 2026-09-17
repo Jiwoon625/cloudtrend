@@ -11,7 +11,7 @@ export interface SnapshotEntry {
   status: string;
   totalScore: number;
   scoreDelta1d: number | null;
-  technicalPoints: number;
+  technicalPoints: number | null;
   priorityPoints: number;
   hardFilterPassed: boolean;
   /** V8 Final operational signals. Optional for backward compatibility with old snapshots. */
@@ -59,7 +59,10 @@ export function buildSnapshot(analysis: {
     status: getDisplayStatus(row),
     totalScore: row.totalScoreNormalized,
     scoreDelta1d: row.scoreDelta1d,
-    technicalPoints: row.technical.points,
+    technicalPoints:
+      row.instrument.instrumentType === "STOCK"
+        ? row.operatingScore10
+        : (row.vf ?? row.technical).points,
     priorityPoints: row.priority.points,
     hardFilterPassed: row.hardFilterPassed,
     kosdaq80Onset: row.kosdaq80Onset,
