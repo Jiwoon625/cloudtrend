@@ -83,7 +83,7 @@ function HistoryPage() {
         ? [...selected.entries]
             .sort(
               (a, b) =>
-                b.technicalPoints - a.technicalPoints ||
+                (b.technicalPoints ?? -Infinity) - (a.technicalPoints ?? -Infinity) ||
                 b.priorityPoints - a.priorityPoints ||
                 a.name.localeCompare(b.name, "ko"),
             )
@@ -237,7 +237,7 @@ function HistoryPage() {
                             {e.instrumentType === "ETF" ? "ETF" : "주식"}
                           </td>
                           <td className="num py-1.5 pr-2 text-right">
-                            {formatNumber(e.technicalPoints, 1)}
+                            {e.technicalPoints === null ? "-" : formatNumber(e.technicalPoints, 1)}
                           </td>
                           <td className="num py-1.5 pr-2 text-right">
                             {formatNumber(e.priorityPoints, 1)}
