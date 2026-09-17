@@ -39,7 +39,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "CloudTrend V8 Final 10점 기술점수의 KOSDAQ80 Onset, KOSPI 8점 Onset과 RSAccel Relative Quality, 9.5·2.5 Exit, 섹터 로테이션과 시장 상태를 한 화면에서 확인합니다.",
+          "CloudTrend V8 Final 10점 기술점수의 KOSDAQ80 Onset, KOSPI 8점 Onset과 RSAccel Relative Quality, KOSDAQ 9.0 상향·3.0 하향 Exit, 섹터 로테이션과 시장 상태를 한 화면에서 확인합니다.",
       },
       { property: "og:title", content: "대시보드 | CloudTrend V8 Final" },
       {
@@ -123,7 +123,8 @@ function Dashboard() {
         <div>
           <h1 className="text-xl font-bold tracking-tight">대시보드 · V8 Final</h1>
           <p className="text-[12px] text-muted-foreground">
-            KOSDAQ80 Onset, KOSPI 8점 Onset · Relative Quality, 점수 Exit와 섹터 Rotation을 확인합니다.
+            KOSDAQ80 Onset, KOSPI 8점 Onset · Relative Quality, 점수 Exit와 섹터 Rotation을
+            확인합니다.
           </p>
         </div>
         <div className="flex items-center gap-2" data-no-print>
@@ -217,8 +218,8 @@ function DashboardContent({ summary }: { summary: DashboardSummary }) {
             value={formatCount(counts.kospiRelativeQualityConfirmed)}
             hint="RSAccel > 0"
           />
-          <KeyValue label="상승 Exit · 9.5점 이상" value={formatCount(counts.upsideExits)} />
-          <KeyValue label="하락 Exit · 2.5점 이하" value={formatCount(counts.downsideExits)} />
+          <KeyValue label="상승 Exit · 9.0점 상향 재돌파" value={formatCount(counts.upsideExits)} />
+          <KeyValue label="하락 Exit · 3.0점 하향 이탈" value={formatCount(counts.downsideExits)} />
           <KeyValue label="점수 산정 불가" value={formatCount(counts.incomplete)} />
         </Card>
 
@@ -239,11 +240,14 @@ function DashboardContent({ summary }: { summary: DashboardSummary }) {
         <Card title="진입·Exit 규칙" icon={<TrendingUp className="size-4 text-primary" />}>
           <KeyValue label="KOSDAQ 진입" value="KOSDAQ80 Onset" />
           <KeyValue label="KOSPI 참고" value="8점 Onset + RSAccel" />
-          <KeyValue label="상승 Exit" value="점수 ≥ 9.5" />
-          <KeyValue label="하락 Exit" value="점수 ≤ 2.5" />
+          <KeyValue label="상승 Exit" value="9.0 상향 재돌파" />
+          <KeyValue label="하락 Exit" value="3.0 하향 이탈" />
+          <KeyValue label="최대 보유" value="60거래일" />
           <KeyValue label="기술점수" value="Raw 0~10" />
           <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
-            RSAccel은 KOSPI 전용 Relative Quality 축이며 기술점수나 우선점수에 합산하지 않습니다.
+            KOSDAQ Exit는 8.0 Onset 당일의 9.0 초과 진입을 즉시 청산으로 보지 않고, 이후 재돌파·하향
+            이탈을 신호로 봅니다. 60거래일 만기는 포지션 추적 기능 연결 전까지 화면 자동 신호로
+            표시하지 않습니다. RSAccel은 KOSPI 전용 Relative Quality 축입니다.
           </p>
         </Card>
 
@@ -389,10 +393,11 @@ function DashboardContent({ summary }: { summary: DashboardSummary }) {
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <h2 className="text-sm font-semibold text-warn">V8 Exit 조건</h2>
           <Badge variant="outline" className="border-warn/30 bg-warn-soft text-[10px] text-warn">
-            ≥9.5 또는 ≤2.5
+            9.0 상향 재돌파 또는 3.0 하향 이탈
           </Badge>
           <span className="text-[11px] text-muted-foreground">
-            실제 매도 대상 여부는 보유 여부와 함께 확인해야 합니다.
+            실제 매도 대상 여부는 보유 여부와 함께 확인해야 하며, 최대 보유 60거래일은 별도 포지션
+            관리 기준입니다.
           </span>
         </div>
         {summary.exitRows.length ? (

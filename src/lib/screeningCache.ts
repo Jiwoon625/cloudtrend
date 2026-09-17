@@ -28,9 +28,9 @@ import type { AnalysisPayload, InstrumentDetailPayload } from "@/lib/market.func
 import { buildSnapshot, hydrateSnapshots, saveSnapshot } from "@/lib/screeningHistory";
 import { listRegisteredSources } from "@/lib/sourceRegistry";
 
-export const SCREENING_CACHE_VERSION = "screening-cache-v8-final-v3" as const;
-export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-final-v4" as const;
-export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-final-v3" as const;
+export const SCREENING_CACHE_VERSION = "screening-cache-v8-final-v4" as const;
+export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-final-v5" as const;
+export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-final-v4" as const;
 
 interface CacheMeta {
   version: string;
@@ -279,10 +279,10 @@ async function buildDashboardSummary(
         (row) => row.kospiEightPointEntry && isKospiRelativeMomentumConfirmed(row),
       ).length,
       upsideExits: rows.filter(
-        (row) => row.instrument.market === "KOSDAQ" && row.exitSignal === "UP95",
+        (row) => row.instrument.market === "KOSDAQ" && row.exitSignal === "UP90",
       ).length,
       downsideExits: rows.filter(
-        (row) => row.instrument.market === "KOSDAQ" && row.exitSignal === "DOWN25",
+        (row) => row.instrument.market === "KOSDAQ" && row.exitSignal === "DOWN30",
       ).length,
       incomplete: rows.filter(
         (row) => row.instrument.instrumentType === "STOCK" && row.operatingScore10 === null,
