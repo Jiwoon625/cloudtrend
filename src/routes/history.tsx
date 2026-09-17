@@ -6,7 +6,7 @@ import { AppShell } from "@/components/AppShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCount, formatKstDateTime, formatNumber } from "@/lib/format";
-import { diffSnapshots, useSnapshots, type SnapshotEntry } from "@/lib/screeningHistory";
+import { useSnapshots, type SnapshotEntry } from "@/lib/screeningHistory";
 
 export const Route = createFileRoute("/history")({
   ssr: false,
@@ -16,17 +16,34 @@ export const Route = createFileRoute("/history")({
       {
         name: "description",
         content:
-          "날짜별로 저장된 마지막 스크리닝 결과를 조회하고 전일 대비 신규 A등급 진입·A→B 하락 종목을 비교합니다.",
+          "날짜별 스크리닝 결과와 KOSDAQ 8 ONSET·EXIT 조건 달성 종목, 기술점수·우선점수·운영상태를 조회합니다.",
       },
       { property: "og:title", content: "스크리닝 이력 | TrendScore KR" },
       {
         property: "og:description",
-        content: "일별 마지막 스크리닝 스냅샷과 등급 변화 비교.",
+        content: "일별 마지막 스크리닝 스냅샷과 V8 운영신호 기록.",
       },
     ],
   }),
   component: HistoryPage,
 });
+
+function isKosdaq8Onset(entry: SnapshotEntry): boolean {
+  if (entry.kosdaq80Onset === true) return true;
+  return /KOSDAQ\s*80\s*Onset|KOSDAQ\s*8\s*ONSET/i.test(entry.status ?? "");
+}
+
+function isKosdaqExit(entry: SnapshotEntry): boolean {
+  if (entry.exitSignal === "UP90" || entry.exitSignal === "DOWN30") return true;
+  return /KOSDAQ\s*Exit/i.test(entry.status ?? "");
+}
+
+function historyStatus(entry: SnapshotEntry): string {
+  const status = entry.status?.trim() || (entry.hardFilterPassed ? "관찰" : "실격");
+  return status
+    .replace(/KOSDAQ80 Onset/gi, "KOSDAQ 8 ONSET")
+    .replace(/KOSDAQ 80 Onset/gi, "KOSDAQ 8 ONSET");
+}
 
 function EntryList({ entries, empty }: { entries: SnapshotEntry[]; empty: string }) {
   if (entries.length === 0) return <p className="text-[11px] text-muted-foreground">{empty}</p>;
@@ -50,15 +67,27 @@ function HistoryPage() {
     () => snapshots.find((s) => s.date === selectedDate) ?? snapshots[0] ?? null,
     [snapshots, selectedDate],
   );
-  const diff = useMemo(
-    () => (selected ? diffSnapshots(selected, snapshots) : null),
-    [selected, snapshots],
+
+  const kosdaq8Onsets = useMemo(
+    () => selected?.entries.filter(isKosdaq8Onset) ?? [],
+    [selected],
+  );
+  const exitConditionMet = useMemo(
+    () => selected?.entries.filter(isKosdaqExit) ?? [],
+    [selected],
   );
 
   const sortedEntries = useMemo(
     () =>
       selected
-        ? [...selected.entries].sort((a, b) => b.totalScore - a.totalScore).slice(0, 50)
+        ? [...selected.entries]
+            .sort(
+              (a, b) =>
+                b.technicalPoints - a.technicalPoints ||
+                b.priorityPoints - a.priorityPoints ||
+                a.name.localeCompare(b.name, "ko"),
+            )
+            .slice(0, 50)
         : [],
     [selected],
   );
@@ -156,41 +185,37 @@ function HistoryPage() {
                 <section className="rounded-lg border border-border bg-card p-4">
                   <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-up">
                     <ArrowUpRight className="size-4" />
-                    신규 A등급 진입 {diff ? `(${diff.newGradeA.length})` : ""}
+                    KOSDAQ 8 ONSET ({kosdaq8Onsets.length})
                   </h3>
                   <p className="mb-2 text-[11px] text-muted-foreground">
-                    {diff?.previous
-                      ? `${diff.previous.date} 스냅샷 대비 A등급으로 새로 올라온 종목입니다.`
-                      : "비교할 이전 날짜 스냅샷이 없습니다."}
+                    해당 스크리닝일에 KOSDAQ 8.0 신규 상향 돌파 진입조건을 달성한 종목입니다.
                   </p>
-                  <EntryList entries={diff?.newGradeA ?? []} empty="해당 종목 없음" />
+                  <EntryList entries={kosdaq8Onsets} empty="해당 종목 없음" />
                 </section>
                 <section className="rounded-lg border border-border bg-card p-4">
                   <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-down">
                     <ArrowDownRight className="size-4" />
-                    A→B 하락 {diff ? `(${diff.droppedAtoB.length})` : ""}
+                    EXIT조건 달성 ({exitConditionMet.length})
                   </h3>
                   <p className="mb-2 text-[11px] text-muted-foreground">
-                    {diff?.previous
-                      ? `${diff.previous.date}에 A등급이었으나 B등급으로 내려온 종목입니다.`
-                      : "비교할 이전 날짜 스냅샷이 없습니다."}
+                    KOSDAQ 9.0점 상향 재돌파 또는 3.0점 하향 이탈 Exit 조건을 달성한 종목입니다.
                   </p>
-                  <EntryList entries={diff?.droppedAtoB ?? []} empty="해당 종목 없음" />
+                  <EntryList entries={exitConditionMet} empty="해당 종목 없음" />
                 </section>
               </div>
 
               <section className="rounded-lg border border-border bg-card p-4">
-                <h3 className="mb-2 text-sm font-semibold">저장된 종목 (종합점수 상위 50)</h3>
+                <h3 className="mb-2 text-sm font-semibold">저장된 종목 (기술점수 상위 50)</h3>
                 <div className="overflow-x-auto">
-                  <table className="w-full text-[12px]">
+                  <table className="w-full min-w-[760px] text-[12px]">
                     <thead>
                       <tr className="border-b border-border text-left text-muted-foreground">
                         <th className="py-1.5 pr-2 font-medium">종목</th>
                         <th className="py-1.5 pr-2 font-medium">구분</th>
-                        <th className="py-1.5 pr-2 text-right font-medium">종합점수</th>
                         <th className="py-1.5 pr-2 text-right font-medium">기술점수</th>
+                        <th className="py-1.5 pr-2 text-right font-medium">우선점수</th>
                         <th className="py-1.5 pr-2 font-medium">등급</th>
-                        <th className="py-1.5 font-medium">Universe</th>
+                        <th className="py-1.5 font-medium">상태</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -212,13 +237,13 @@ function HistoryPage() {
                             {e.instrumentType === "ETF" ? "ETF" : "주식"}
                           </td>
                           <td className="num py-1.5 pr-2 text-right">
-                            {formatNumber(e.totalScore, 1)}
+                            {formatNumber(e.technicalPoints, 1)}
                           </td>
-                          <td className="num py-1.5 pr-2 text-right">{e.technicalPoints}</td>
+                          <td className="num py-1.5 pr-2 text-right">
+                            {formatNumber(e.priorityPoints, 1)}
+                          </td>
                           <td className="py-1.5 pr-2 font-semibold">{e.grade}</td>
-                          <td className="py-1.5 text-muted-foreground">
-                            {e.hardFilterPassed ? "통과" : "실격"}
-                          </td>
+                          <td className="py-1.5 font-medium">{historyStatus(e)}</td>
                         </tr>
                       ))}
                     </tbody>
