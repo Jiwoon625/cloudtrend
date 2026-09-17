@@ -2,6 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 
 import { computeLocalDataStatus } from "@/lib/localAnalysis";
 import { ensureManualDataset } from "@/lib/manualDataStore";
+import type { ScoreBlock } from "@/lib/engine/scoring";
 import {
   DASHBOARD_CACHE_VERSION,
   getCachedInstrumentDetail,
@@ -35,6 +36,20 @@ export function isAnalysisFailurePayload(value: unknown): value is AnalysisFailu
   );
 }
 
+function withThreeDecimalClv(block: ScoreBlock, clv: number): ScoreBlock {
+  return {
+    ...block,
+    rows: block.rows.map((row) => {
+      if ((row.group !== "Vf Volume" && row.group !== "Volume") || !row.actual.includes("CLV "))
+        return row;
+      return {
+        ...row,
+        actual: row.actual.replace(/CLV\s+-?\d+(?:\.\d+)?/, `CLV ${clv.toFixed(3)}`),
+      };
+    }),
+  };
+}
+
 export const analysisQueryOptions = queryOptions({
   queryKey: ["market-analysis", V8_QUERY_VERSION, SCREENING_CACHE_VERSION],
   queryFn: () => getOrBuildScreeningPayloadServerFirst(),
@@ -62,7 +77,19 @@ export const dataStatusQueryOptions = queryOptions({
 export const instrumentQueryOptions = (symbol: string) =>
   queryOptions({
     queryKey: ["instrument", V8_QUERY_VERSION, INSTRUMENT_CACHE_VERSION, symbol],
-    queryFn: () => getCachedInstrumentDetail(symbol),
+    queryFn: async () => {
+      const detail = await getCachedInstrumentDetail(symbol);
+      const clv = detail.row?.snapshot.closeLocationValue;
+      if (!detail.row || clv === null || clv === undefined || !Number.isFinite(clv)) return detail;
+      return {
+        ...detail,
+        row: {
+          ...detail.row,
+          technical: withThreeDecimalClv(detail.row.technical, clv),
+          vf: detail.row.vf ? withThreeDecimalClv(detail.row.vf, clv) : detail.row.vf,
+        },
+      };
+    },
     staleTime: 5 * 60 * 1000,
     retry: false,
   });
