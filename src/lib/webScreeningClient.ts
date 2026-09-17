@@ -6,6 +6,8 @@ import {
   readDashboardCache,
   readScreeningCache,
 } from "@/lib/screeningCache";
+import { hydrateSnapshots } from "@/lib/screeningHistory";
+import { syncPortfolioFromHistory } from "@/lib/portfolioStore";
 import { runWebScreeningServer } from "@/lib/webScreening.functions";
 
 let serverBuildInFlight: Promise<void> | null = null;
@@ -30,11 +32,17 @@ async function buildCachesOnServer() {
   return serverBuildInFlight;
 }
 
+async function refreshHistoryAndPortfolio() {
+  await hydrateSnapshots();
+  await syncPortfolioFromHistory();
+}
+
 export async function getOrBuildDashboardSummaryServerFirst() {
   const cached = await readDashboardCache();
   if (cached) return cached;
   try {
     await buildCachesOnServer();
+    await refreshHistoryAndPortfolio();
     const rebuilt = await readDashboardCache();
     if (rebuilt) return rebuilt;
     throw new Error("서버 계산은 완료됐지만 대시보드 캐시를 다시 읽지 못했습니다.");
@@ -54,6 +62,7 @@ export async function getOrBuildScreeningPayloadServerFirst() {
   if (cached) return cached.payload;
   try {
     await buildCachesOnServer();
+    await refreshHistoryAndPortfolio();
     const rebuilt = await readScreeningCache();
     if (rebuilt) return rebuilt.payload;
     throw new Error("서버 계산은 완료됐지만 스크리닝 캐시를 다시 읽지 못했습니다.");
@@ -71,6 +80,7 @@ export async function getOrBuildScreeningPayloadServerFirst() {
 /** 사용자가 명시적으로 다시 스크리닝을 눌렀을 때 기존 캐시 유무와 관계없이 서버에서 재계산한다. */
 export async function rebuildScreeningCachesServerFirst() {
   await buildCachesOnServer();
+  await refreshHistoryAndPortfolio();
   const [screening, dashboard] = await Promise.all([readScreeningCache(), readDashboardCache()]);
   if (!screening || !dashboard) throw new Error("서버 재계산 후 캐시 검증에 실패했습니다.");
   return { screening, dashboard };
