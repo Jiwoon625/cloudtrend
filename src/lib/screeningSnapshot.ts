@@ -1,3 +1,6 @@
+import type { ScreeningRow, V8ExitSignal } from "@/lib/engine/pipeline";
+import { getDisplayStatus } from "@/lib/statusDisplay";
+
 export interface SnapshotEntry {
   symbol: string;
   name: string;
@@ -11,6 +14,10 @@ export interface SnapshotEntry {
   technicalPoints: number;
   priorityPoints: number;
   hardFilterPassed: boolean;
+  /** V8 Final operational signals. Optional for backward compatibility with old snapshots. */
+  kosdaq80Onset?: boolean;
+  kospiEightPointEntry?: boolean;
+  exitSignal?: V8ExitSignal;
 }
 
 export interface ScreeningSnapshot {
@@ -24,23 +31,6 @@ export interface ScreeningSnapshot {
   gradeACount: number;
   gradeBCount: number;
   entries: SnapshotEntry[];
-}
-
-interface SnapshotSourceRow {
-  instrument: {
-    symbol: string;
-    name: string;
-    instrumentType: "STOCK" | "ETF";
-    sectorCode: string;
-    sectorName: string;
-  };
-  grade: string;
-  actionLabelText: string;
-  totalScoreNormalized: number;
-  scoreDelta1d: number | null;
-  technical: { points: number };
-  priority: { points: number };
-  hardFilterPassed: boolean;
 }
 
 export function kstDateKey(d: Date = new Date()): string {
@@ -57,7 +47,7 @@ export function buildSnapshot(analysis: {
   asOfDate: string;
   calculatedAt: string;
   marketGate: { status: string };
-  rows: SnapshotSourceRow[];
+  rows: ScreeningRow[];
 }): ScreeningSnapshot {
   const entries: SnapshotEntry[] = analysis.rows.map((row) => ({
     symbol: row.instrument.symbol,
@@ -66,12 +56,15 @@ export function buildSnapshot(analysis: {
     sectorCode: row.instrument.sectorCode,
     sectorName: row.instrument.sectorName,
     grade: row.grade,
-    status: row.actionLabelText,
+    status: getDisplayStatus(row),
     totalScore: row.totalScoreNormalized,
     scoreDelta1d: row.scoreDelta1d,
     technicalPoints: row.technical.points,
     priorityPoints: row.priority.points,
     hardFilterPassed: row.hardFilterPassed,
+    kosdaq80Onset: row.kosdaq80Onset,
+    kospiEightPointEntry: row.kospiEightPointEntry,
+    exitSignal: row.exitSignal,
   }));
   const passed = entries.filter((entry) => entry.hardFilterPassed);
   return {
