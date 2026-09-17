@@ -80,7 +80,7 @@ interface CapacitySpec {`,
   );
   source = replaceExactly(
     source,
-    /  const baselineReplay = \{ checked: false, passed: false, comparisons: 0 \};[\s\S]*?\n  const createdAt = new Date\(\)\.toISOString\(\);/g,
+    / {2}const baselineReplay = \{ checked: false, passed: false, comparisons: 0 \};[\s\S]*?\n {2}const createdAt = new Date\(\)\.toISOString\(\);/g,
     `  const baselineReplay = {
     checked: false,
     passed: false,
