@@ -315,7 +315,7 @@ function PortfolioPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[2140px] text-[11px]">
                 <thead>
-                  <tr className="border-b border-border bg-card text-muted-foreground">
+                  <tr className="border-b border-border bg-card text-muted-foreground [&>th]:text-center">
                     <th className="px-2 py-2 text-left font-medium">종목</th>
                     <th className="px-2 py-2 text-left font-medium">시장</th>
                     <th className="px-2 py-2 text-left font-medium">신호일</th>

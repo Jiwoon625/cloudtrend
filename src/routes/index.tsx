@@ -27,6 +27,7 @@ import {
   formatPercent,
   formatWon,
 } from "@/lib/format";
+import { loadPortfolioState, type PortfolioState } from "@/lib/portfolioStore";
 import type { DashboardSummary } from "@/lib/screeningCache";
 import { isScreeningStarted } from "@/lib/screeningRun";
 import { rebuildScreeningCachesServerFirst } from "@/lib/webScreeningClient";
@@ -102,6 +103,11 @@ function Dashboard() {
   const [started] = useState(() => isScreeningStarted());
   const [rescreening, setRescreening] = useState(false);
   const summaryQuery = useQuery({ ...dashboardQueryOptions, enabled: started });
+  const portfolioQuery = useQuery({
+    queryKey: ["portfolio-state"],
+    queryFn: loadPortfolioState,
+    enabled: started,
+  });
 
   const rescreen = async () => {
     setRescreening(true);
@@ -178,19 +184,32 @@ function Dashboard() {
           embedded
         />
       ) : (
-        <DashboardContent summary={summaryQuery.data} />
+        <DashboardContent
+          summary={summaryQuery.data}
+          portfolio={portfolioQuery.data ?? null}
+          portfolioPending={portfolioQuery.isPending}
+        />
       )}
     </AppShell>
   );
 }
 
-function DashboardContent({ summary }: { summary: DashboardSummary }) {
+function DashboardContent({
+  summary,
+  portfolio,
+  portfolioPending,
+}: {
+  summary: DashboardSummary;
+  portfolio: PortfolioState | null;
+  portfolioPending: boolean;
+}) {
   const gate = summary.marketGate;
   const { counts } = summary;
   const gateColor =
     gate.status === "RISK_ON" ? "text-up" : gate.status === "NEUTRAL" ? "text-warn" : "text-down";
   const gateLabel =
     gate.status === "RISK_ON" ? "Risk-On" : gate.status === "NEUTRAL" ? "Neutral" : "Risk-Off";
+  const portfolioFallback = portfolioPending ? "불러오는 중…" : "-";
 
   return (
     <>
@@ -223,8 +242,32 @@ function DashboardContent({ summary }: { summary: DashboardSummary }) {
         </Card>
 
         <Card title="KOSDAQ 실전 포트폴리오" icon={<ShieldCheck className="size-4 text-primary" />}>
-          <KeyValue label="포트폴리오 한도" value="P30 · 최대 30종목" />
-          <KeyValue label="오늘 Onset / 최대 슬롯" value={`${counts.kosdaq80Onsets} / 30`} />
+          <KeyValue
+            label="운용자금"
+            value={portfolio ? formatWon(portfolio.settings.initialCapital) : portfolioFallback}
+          />
+          <KeyValue
+            label="보유 종목수"
+            value={
+              portfolio
+                ? `${portfolio.summary.openPositions} / ${portfolio.settings.maxPositions}`
+                : portfolioFallback
+            }
+          />
+          <KeyValue
+            label="평가손익"
+            value={portfolio ? formatWon(portfolio.summary.unrealizedPnl) : portfolioFallback}
+          />
+          <KeyValue
+            label="실현손익"
+            value={portfolio ? formatWon(portfolio.summary.realizedPnl) : portfolioFallback}
+          />
+          <Link
+            to="/portfolio"
+            className="mt-3 inline-flex text-[11px] font-medium text-primary hover:underline"
+          >
+            포트폴리오 상세 보기 →
+          </Link>
         </Card>
 
         <Card title="진입·Exit 규칙" icon={<TrendingUp className="size-4 text-primary" />}>
