@@ -1,0 +1,31 @@
+name: Cleanup Obsolete Backtest Results
+
+on:
+  push:
+    branches:
+      - ops/cleanup-obsolete-backtest-results-20260917
+    paths:
+      - scripts/cleanup-obsolete-backtest-results.mjs
+      - .github/workflows/cleanup-obsolete-backtest-results.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Delete explicitly obsolete result artifacts
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: node scripts/cleanup-obsolete-backtest-results.mjs
