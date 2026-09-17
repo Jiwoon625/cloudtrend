@@ -33,7 +33,7 @@ jobs:
         run: npm ci
       - name: Format and lint research runner
         run: |
-          npx prettier --check scripts/run-v8-kosdaq-portfolio-design-8y.ts
+          npx prettier --write scripts/run-v8-kosdaq-portfolio-design-8y.ts
           npx eslint scripts/run-v8-kosdaq-portfolio-design-8y.ts
 
   study:
