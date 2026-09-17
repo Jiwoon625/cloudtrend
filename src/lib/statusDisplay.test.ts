@@ -58,7 +58,7 @@ describe("V8 display status", () => {
     );
   });
 
-  it("keeps the official KOSDAQ onset label unchanged", () => {
+  it("uses the operational KOSDAQ 8 ONSET label", () => {
     expect(
       getDisplayStatus(
         row({
@@ -68,7 +68,7 @@ describe("V8 display status", () => {
           rs60: 2,
         }),
       ),
-    ).toBe("KOSDAQ80 Onset");
+    ).toBe("KOSDAQ 8 ONSET");
   });
 
   it("shows the validated KOSDAQ aggressive exit labels", () => {
