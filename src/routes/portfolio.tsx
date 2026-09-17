@@ -135,8 +135,8 @@ function PortfolioPage() {
       toast.error("실제 진입가격을 올바르게 입력해 주세요.");
       return;
     }
-    if (!Number.isInteger(shares) || shares <= 0) {
-      toast.error("실제 매수수량은 1주 이상의 정수로 입력해 주세요.");
+    if (!Number.isInteger(shares) || shares < 0) {
+      toast.error("실제 매수수량은 0주 이상의 정수로 입력해 주세요.");
       return;
     }
     setEditSaving(true);
@@ -145,7 +145,11 @@ function PortfolioPage() {
       const next = await syncPortfolioFromHistory();
       setState(next);
       setEditingTrade(null);
-      toast.success("실제 체결값으로 수정했습니다. 이후 자동 동기화에서도 유지됩니다.");
+      toast.success(
+        shares === 0
+          ? "미매수(0주)로 저장했습니다. P30 보유 종목 수에서 제외됩니다."
+          : "실제 체결값으로 수정했습니다. 이후 자동 동기화에서도 유지됩니다.",
+      );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "체결값 수정에 실패했습니다.");
     } finally {
@@ -281,7 +285,7 @@ function PortfolioPage() {
                   <Input
                     className="num mt-1"
                     type="number"
-                    min="1"
+                    min="0"
                     step="1"
                     value={editShares}
                     onChange={(event) => setEditShares(event.target.value)}
@@ -293,8 +297,9 @@ function PortfolioPage() {
                 </Button>
               </div>
               <p className="mt-2 text-[10px] text-muted-foreground">
-                저장하면 매수금액·거래비용·평가손익이 다시 계산됩니다. 이미 청산된 거래라면 실현손익도
-                수정된 실제 체결가와 수량 기준으로 즉시 다시 계산됩니다.
+                실제로 매수하지 않았다면 수량을 0주로 저장하세요. 해당 신호는 원장에는 남지만 P30 보유
+                종목 수·섹터 한도·현금·손익 계산에서는 제외됩니다. 1주 이상이면 매수금액·거래비용·평가손익을
+                다시 계산하며, 이미 청산된 거래라면 실현손익도 수정된 실제 체결가와 수량 기준으로 재계산됩니다.
               </p>
             </section>
           ) : null}
@@ -304,8 +309,7 @@ function PortfolioPage() {
               <h2 className="text-sm font-semibold">매수·매도 원장 · 전체 거래</h2>
               <p className="text-[11px] text-muted-foreground">
                 신호일과 실제 체결일을 분리합니다. 예: 9/17 ONSET → 9/18 데이터를 업로드한 시점에 9/18
-                시가로 매수기록 생성. 청산된 거래도 삭제하지 않고 원장에 계속 남겨 실현손익과 누적성과에
-                반영합니다.
+                시가로 매수기록 생성. 청산된 거래와 미매수(0주) 신호도 삭제하지 않고 원장에 계속 남깁니다.
               </p>
             </div>
             <div className="overflow-x-auto">
@@ -347,6 +351,7 @@ function PortfolioPage() {
                   ) : (
                     sortedTrades.map((trade) => {
                       const mark = tradeMark(trade, state.settings.roundTripCostRate / 2);
+                      const noFill = trade.shares === 0 && (trade.exitReason ?? "").startsWith("미매수");
                       return (
                         <tr key={trade.id} className="border-b border-border/60 last:border-0">
                           <td className="whitespace-nowrap px-2 py-2">
@@ -393,8 +398,10 @@ function PortfolioPage() {
                             {formatNumber(trade.currentTechnicalPoints, 1)}
                           </td>
                           <td className="max-w-[220px] px-2 py-2">{trade.currentStatus ?? "-"}</td>
-                          <td className="num px-2 py-2">{trade.exitDate ?? "-"}</td>
-                          <td className="num px-2 py-2 text-right">{formatPrice(trade.exitPrice)}</td>
+                          <td className="num px-2 py-2">{noFill ? "-" : trade.exitDate ?? "-"}</td>
+                          <td className="num px-2 py-2 text-right">
+                            {noFill ? "-" : formatPrice(trade.exitPrice)}
+                          </td>
                           <td className="whitespace-nowrap px-2 py-2">{trade.exitReason ?? "-"}</td>
                           <td className={`num px-2 py-2 text-right font-semibold ${pnlClass(trade.realizedPnl)}`}>
                             {trade.realizedPnl === null ? "-" : formatWon(trade.realizedPnl)}
