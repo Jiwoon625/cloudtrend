@@ -91,6 +91,18 @@ interface CapacitySpec {`,
   const createdAt = new Date().toISOString();`,
     "3-FOS baseline replay block",
   );
+  source = replaceExactly(
+    source,
+    /Every scenario uses identical fold-year-plus-all-60-bar-candidate runoff evaluation dates; idle cash earns zero\. Fold outcomes are not a continuous 3-year investment\./g,
+    "Every scenario uses identical fold-year-plus-all-60-bar-candidate runoff evaluation dates; idle cash earns zero. Fold outcomes are not a continuous multi-year investment.",
+    "fold-window note",
+  );
+  source = replaceExactly(
+    source,
+    /Exploratory re-analysis of already reviewed 2018\/2022\/2025 folds; ranking is NOT a new untouched OOS test or proof of a universal optimum\./g,
+    "Primary untouched validation uses 2019/2020/2021/2023/2024 folds, excluded from the 2018/2022/2025 grid selection. Candidate parameters were frozen before this run; no holdout tuning was performed.",
+    "holdout note",
+  );
 
   source = source.replaceAll(
     "v8-entry-exit-grid-fixed-signal-3fos",
