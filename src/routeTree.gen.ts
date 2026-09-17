@@ -13,6 +13,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as BacktestRouteImport } from './routes/backtest'
 import { Route as DataStatusRouteImport } from './routes/data-status'
 import { Route as HistoryRouteImport } from './routes/history'
+import { Route as McpRouteImport } from './routes/mcp'
+import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as PositionSizingRouteImport } from './routes/position-sizing'
 import { Route as ScoringRouteImport } from './routes/scoring'
 import { Route as SectorsRouteImport } from './routes/sectors'
@@ -21,6 +23,7 @@ import { Route as ScreenerEtfsRouteImport } from './routes/screener.etfs'
 import { Route as ScreenerStocksRouteImport } from './routes/screener.stocks'
 import { Route as UsIndexRouteImport } from './routes/us.index'
 import { Route as UsScreenerRouteImport } from './routes/us.screener'
+import { Route as ApiGptUploadRouteImport } from './routes/api.gpt.upload'
 import { Route as UsInstrumentSymbolRouteImport } from './routes/us.instrument.$symbol'
 
 const IndexRoute = IndexRouteImport.update({
@@ -41,6 +44,16 @@ const DataStatusRoute = DataStatusRouteImport.update({
 const HistoryRoute = HistoryRouteImport.update({
   id: '/history',
   path: '/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PortfolioRoute = PortfolioRouteImport.update({
+  id: '/portfolio',
+  path: '/portfolio',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PositionSizingRoute = PositionSizingRouteImport.update({
@@ -83,6 +96,11 @@ const UsScreenerRoute = UsScreenerRouteImport.update({
   path: '/us/screener',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiGptUploadRoute = ApiGptUploadRouteImport.update({
+  id: '/api/gpt/upload',
+  path: '/api/gpt/upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const UsInstrumentSymbolRoute = UsInstrumentSymbolRouteImport.update({
   id: '/us/instrument/$symbol',
   path: '/us/instrument/$symbol',
@@ -94,6 +112,8 @@ export interface FileRoutesByFullPath {
   '/backtest': typeof BacktestRoute
   '/data-status': typeof DataStatusRoute
   '/history': typeof HistoryRoute
+  '/mcp': typeof McpRoute
+  '/portfolio': typeof PortfolioRoute
   '/position-sizing': typeof PositionSizingRoute
   '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
@@ -102,6 +122,7 @@ export interface FileRoutesByFullPath {
   '/screener/stocks': typeof ScreenerStocksRoute
   '/us/screener': typeof UsScreenerRoute
   '/us/': typeof UsIndexRoute
+  '/api/gpt/upload': typeof ApiGptUploadRoute
   '/us/instrument/$symbol': typeof UsInstrumentSymbolRoute
 }
 export interface FileRoutesByTo {
@@ -109,6 +130,8 @@ export interface FileRoutesByTo {
   '/backtest': typeof BacktestRoute
   '/data-status': typeof DataStatusRoute
   '/history': typeof HistoryRoute
+  '/mcp': typeof McpRoute
+  '/portfolio': typeof PortfolioRoute
   '/position-sizing': typeof PositionSizingRoute
   '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
@@ -117,6 +140,7 @@ export interface FileRoutesByTo {
   '/screener/stocks': typeof ScreenerStocksRoute
   '/us/screener': typeof UsScreenerRoute
   '/us': typeof UsIndexRoute
+  '/api/gpt/upload': typeof ApiGptUploadRoute
   '/us/instrument/$symbol': typeof UsInstrumentSymbolRoute
 }
 export interface FileRoutesById {
@@ -125,6 +149,8 @@ export interface FileRoutesById {
   '/backtest': typeof BacktestRoute
   '/data-status': typeof DataStatusRoute
   '/history': typeof HistoryRoute
+  '/mcp': typeof McpRoute
+  '/portfolio': typeof PortfolioRoute
   '/position-sizing': typeof PositionSizingRoute
   '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
@@ -133,6 +159,7 @@ export interface FileRoutesById {
   '/screener/stocks': typeof ScreenerStocksRoute
   '/us/screener': typeof UsScreenerRoute
   '/us/': typeof UsIndexRoute
+  '/api/gpt/upload': typeof ApiGptUploadRoute
   '/us/instrument/$symbol': typeof UsInstrumentSymbolRoute
 }
 export interface FileRouteTypes {
@@ -142,6 +169,8 @@ export interface FileRouteTypes {
     | '/backtest'
     | '/data-status'
     | '/history'
+    | '/mcp'
+    | '/portfolio'
     | '/position-sizing'
     | '/scoring'
     | '/sectors'
@@ -150,6 +179,7 @@ export interface FileRouteTypes {
     | '/screener/stocks'
     | '/us/screener'
     | '/us/'
+    | '/api/gpt/upload'
     | '/us/instrument/$symbol'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -157,6 +187,8 @@ export interface FileRouteTypes {
     | '/backtest'
     | '/data-status'
     | '/history'
+    | '/mcp'
+    | '/portfolio'
     | '/position-sizing'
     | '/scoring'
     | '/sectors'
@@ -165,6 +197,7 @@ export interface FileRouteTypes {
     | '/screener/stocks'
     | '/us/screener'
     | '/us'
+    | '/api/gpt/upload'
     | '/us/instrument/$symbol'
   id:
     | '__root__'
@@ -172,6 +205,8 @@ export interface FileRouteTypes {
     | '/backtest'
     | '/data-status'
     | '/history'
+    | '/mcp'
+    | '/portfolio'
     | '/position-sizing'
     | '/scoring'
     | '/sectors'
@@ -180,6 +215,7 @@ export interface FileRouteTypes {
     | '/screener/stocks'
     | '/us/screener'
     | '/us/'
+    | '/api/gpt/upload'
     | '/us/instrument/$symbol'
   fileRoutesById: FileRoutesById
 }
@@ -188,6 +224,8 @@ export interface RootRouteChildren {
   BacktestRoute: typeof BacktestRoute
   DataStatusRoute: typeof DataStatusRoute
   HistoryRoute: typeof HistoryRoute
+  McpRoute: typeof McpRoute
+  PortfolioRoute: typeof PortfolioRoute
   PositionSizingRoute: typeof PositionSizingRoute
   ScoringRoute: typeof ScoringRoute
   SectorsRoute: typeof SectorsRoute
@@ -196,6 +234,7 @@ export interface RootRouteChildren {
   ScreenerStocksRoute: typeof ScreenerStocksRoute
   UsScreenerRoute: typeof UsScreenerRoute
   UsIndexRoute: typeof UsIndexRoute
+  ApiGptUploadRoute: typeof ApiGptUploadRoute
   UsInstrumentSymbolRoute: typeof UsInstrumentSymbolRoute
 }
 
@@ -227,6 +266,20 @@ declare module '@tanstack/react-router' {
       path: '/history'
       fullPath: '/history'
       preLoaderRoute: typeof HistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/portfolio': {
+      id: '/portfolio'
+      path: '/portfolio'
+      fullPath: '/portfolio'
+      preLoaderRoute: typeof PortfolioRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/position-sizing': {
@@ -285,6 +338,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UsScreenerRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/gpt/upload': {
+      id: '/api/gpt/upload'
+      path: '/api/gpt/upload'
+      fullPath: '/api/gpt/upload'
+      preLoaderRoute: typeof ApiGptUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/us/instrument/$symbol': {
       id: '/us/instrument/$symbol'
       path: '/us/instrument/$symbol'
@@ -300,6 +360,8 @@ const rootRouteChildren: RootRouteChildren = {
   BacktestRoute: BacktestRoute,
   DataStatusRoute: DataStatusRoute,
   HistoryRoute: HistoryRoute,
+  McpRoute: McpRoute,
+  PortfolioRoute: PortfolioRoute,
   PositionSizingRoute: PositionSizingRoute,
   ScoringRoute: ScoringRoute,
   SectorsRoute: SectorsRoute,
@@ -308,6 +370,7 @@ const rootRouteChildren: RootRouteChildren = {
   ScreenerStocksRoute: ScreenerStocksRoute,
   UsScreenerRoute: UsScreenerRoute,
   UsIndexRoute: UsIndexRoute,
+  ApiGptUploadRoute: ApiGptUploadRoute,
   UsInstrumentSymbolRoute: UsInstrumentSymbolRoute,
 }
 export const routeTree = rootRouteImport
