@@ -3,6 +3,7 @@ import { supabase } from "@/lib/cloud";
 import { hydrateManualData } from "@/lib/manualDataStore";
 import { hydrateUsData } from "@/lib/usDataStore";
 import { hydrateSnapshots } from "@/lib/screeningHistory";
+import { syncPortfolioFromHistory } from "@/lib/portfolioStore";
 import loginBgAsset from "@/assets/login-bg.webp.asset.json";
 
 const LOGIN_BG_PLACEHOLDER =
@@ -36,8 +37,10 @@ export function CloudAccount({ children }: { children: ReactNode }) {
       .getSession()
       .then(async ({ data, error }) => {
         if (error) throw error;
-        if (data.session)
+        if (data.session) {
           await Promise.all([hydrateManualData(), hydrateUsData(), hydrateSnapshots()]);
+          await syncPortfolioFromHistory().catch(() => undefined);
+        }
         if (alive) setReady(true);
       })
       .catch((e: Error) => {
