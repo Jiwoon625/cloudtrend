@@ -73,6 +73,13 @@ const DEFAULT_SETTINGS: PortfolioSettings = {
   roundTripCostRate: 0.003,
 };
 
+type SignalDecision =
+  | "EXECUTED"
+  | "SKIPPED_CAPACITY"
+  | "SKIPPED_SECTOR"
+  | "SKIPPED_CASH"
+  | "SKIPPED_HELD";
+
 interface PortfolioTradeRow {
   id: string;
   symbol: string;
@@ -122,6 +129,8 @@ interface ExitPlan {
   timing: "OPEN" | "CLOSE";
 }
 
+let syncInFlight: Promise<PortfolioState> | null = null;
+
 const num = (value: number | string | null | undefined): number | null => {
   if (value === null || value === undefined) return null;
   const parsed = Number(value);
@@ -130,6 +139,7 @@ const num = (value: number | string | null | undefined): number | null => {
 
 const money = (value: number) => Math.round(value * 100) / 100;
 const rate = (value: number) => Math.round(value * 1_000_000) / 1_000_000;
+const signalKey = (symbol: string, signalDate: string) => `${symbol}|${signalDate}`;
 
 function mapTrade(row: PortfolioTradeRow): PortfolioTrade {
   return {
@@ -183,7 +193,8 @@ async function ensureSettings(): Promise<PortfolioSettings> {
       sector_cap: DEFAULT_SETTINGS.sectorCap,
       round_trip_cost_rate: DEFAULT_SETTINGS.roundTripCostRate,
     });
-    if (insertError) throw insertError;
+    if (insertError && insertError.code !== "23505") throw insertError;
+    if (insertError?.code === "23505") return ensureSettings();
     return { ...DEFAULT_SETTINGS };
   }
   return {
@@ -204,6 +215,37 @@ async function fetchTrades(): Promise<PortfolioTrade[]> {
     .order("symbol", { ascending: true });
   if (error) throw error;
   return ((data ?? []) as PortfolioTradeRow[]).map(mapTrade);
+}
+
+async function fetchHandledSignalKeys(uid: string) {
+  const { data, error } = await supabase
+    .from("portfolio_signal_log")
+    .select("symbol,signal_date")
+    .eq("user_id", uid);
+  if (error) throw error;
+  return new Set(
+    (data ?? []).map((row) => signalKey(String(row.symbol), String(row.signal_date))),
+  );
+}
+
+async function recordSignalDecision(
+  uid: string,
+  candidate: EntryCandidate,
+  decision: SignalDecision,
+  detail: string,
+) {
+  const { error } = await supabase.from("portfolio_signal_log").upsert(
+    {
+      user_id: uid,
+      symbol: candidate.entry.symbol,
+      signal_date: candidate.snapshot.asOfDate,
+      decision,
+      detail,
+      decided_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id,symbol,signal_date" },
+  );
+  if (error) throw error;
 }
 
 function normalizeSnapshots(input: ScreeningSnapshot[]): ScreeningSnapshot[] {
@@ -318,32 +360,32 @@ function cashAtEntry(settings: PortfolioSettings, trades: PortfolioTrade[], date
 }
 
 async function closeTrade(
+  uid: string,
   trade: PortfolioTrade,
   plan: ExitPlan,
   halfCostRate: number,
 ): Promise<PortfolioTrade> {
-  const uid = await userId();
   const exitGross = trade.shares * plan.exitPrice;
   const exitFee = money(exitGross * halfCostRate);
   const costBasis = trade.buyAmount + trade.entryFee;
   const realizedPnl = money(exitGross - exitFee - costBasis);
   const realizedReturn = costBasis > 0 ? rate((realizedPnl / costBasis) * 100) : 0;
-  const next: Partial<PortfolioTradeRow> = {
-    exit_signal_date: plan.signalDate,
-    exit_date: plan.exitDate,
-    exit_price: plan.exitPrice,
-    exit_reason: plan.reason,
-    exit_fee: exitFee,
-    realized_pnl: realizedPnl,
-    realized_return: realizedReturn,
-    status: "CLOSED",
-    mark_date: plan.exitDate,
-    current_price: plan.exitPrice,
-    current_status: `청산 · ${plan.reason}`,
-  };
   const { data, error } = await supabase
     .from("portfolio_trades")
-    .update({ ...next, updated_at: new Date().toISOString() })
+    .update({
+      exit_signal_date: plan.signalDate,
+      exit_date: plan.exitDate,
+      exit_price: plan.exitPrice,
+      exit_reason: plan.reason,
+      exit_fee: exitFee,
+      realized_pnl: realizedPnl,
+      realized_return: realizedReturn,
+      status: "CLOSED",
+      mark_date: plan.exitDate,
+      current_price: plan.exitPrice,
+      current_status: `청산 · ${plan.reason}`,
+      updated_at: new Date().toISOString(),
+    })
     .eq("user_id", uid)
     .eq("id", trade.id)
     .select("*")
@@ -399,38 +441,33 @@ export async function loadPortfolioState(): Promise<PortfolioState> {
 export async function savePortfolioCapital(initialCapital: number): Promise<void> {
   if (!Number.isFinite(initialCapital) || initialCapital <= 0)
     throw new Error("운용자금은 0보다 큰 금액으로 입력해 주세요.");
+  await ensureSettings();
   const uid = await userId();
-  const { error } = await supabase.from("portfolio_settings").upsert(
-    {
-      user_id: uid,
-      initial_capital: money(initialCapital),
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" },
-  );
+  const { error } = await supabase
+    .from("portfolio_settings")
+    .update({ initial_capital: money(initialCapital), updated_at: new Date().toISOString() })
+    .eq("user_id", uid);
   if (error) throw error;
 }
 
-/**
- * 스크리닝 이력을 거래 원장으로 연결한다.
- * - KOSDAQ 8 ONSET 발생 다음 거래일 시가에 진입
- * - 9.0 상향 재돌파 / 3.0 하향 이탈은 신호 다음 거래일 시가에 청산
- * - 60거래일 만기는 해당 거래일 종가에 청산
- * - P30, 동일섹터 최대 30%, 왕복비용 0.30% 기본값을 적용
- */
-export async function syncPortfolioFromHistory(): Promise<PortfolioState> {
+async function runPortfolioSync(): Promise<PortfolioState> {
   const settings = await ensureSettings();
   const snapshots = normalizeSnapshots(loadSnapshots());
   const latestDate = snapshots.at(-1)?.asOfDate ?? null;
+  const initialTrades = await fetchTrades();
   if (!latestDate || snapshots.length === 0)
-    return { settings, trades: await fetchTrades(), summary: buildSummary(settings, await fetchTrades(), latestDate) };
+    return { settings, trades: initialTrades, summary: buildSummary(settings, initialTrades, latestDate) };
 
   const parsed = await ensureManualDataset();
-  if (!parsed) return loadPortfolioState();
+  if (!parsed)
+    return { settings, trades: initialTrades, summary: buildSummary(settings, initialTrades, latestDate) };
+
   const dataset = parsed.dataset;
   const instrumentMap = new Map(dataset.instruments.map((instrument) => [instrument.symbol, instrument]));
-  const working = await fetchTrades();
-  const existingKeys = new Set(working.map((trade) => `${trade.symbol}|${trade.signalDate}`));
+  const working = [...initialTrades];
+  const uid = await userId();
+  const handledKeys = await fetchHandledSignalKeys(uid);
+  for (const trade of working) handledKeys.add(signalKey(trade.symbol, trade.signalDate));
   const halfCost = settings.roundTripCostRate / 2;
 
   const replaceWorking = (trade: PortfolioTrade) => {
@@ -444,11 +481,9 @@ export async function syncPortfolioFromHistory(): Promise<PortfolioState> {
       if (trade.status !== "OPEN") continue;
       const bars = dataset.bars[trade.symbol] ?? [];
       const plan = deriveExitPlan(trade, snapshots, bars, latestDate);
-      if (!plan) continue;
-      if (plan.exitDate > cutoffDate) continue;
+      if (!plan || plan.exitDate > cutoffDate) continue;
       if (beforeEntry && plan.exitDate === cutoffDate && plan.timing === "CLOSE") continue;
-      const closed = await closeTrade(trade, plan, halfCost);
-      replaceWorking(closed);
+      replaceWorking(await closeTrade(uid, trade, plan, halfCost));
     }
   };
 
@@ -458,12 +493,12 @@ export async function syncPortfolioFromHistory(): Promise<PortfolioState> {
       if (!isKosdaqOnset(entry)) continue;
       const instrument = instrumentMap.get(entry.symbol);
       if (!instrument || instrument.instrumentType !== "STOCK" || instrument.market !== "KOSDAQ") continue;
-      const bars = dataset.bars[entry.symbol] ?? [];
-      const entryBar = firstBarAfter(bars, snapshot.asOfDate);
+      const entryBar = firstBarAfter(dataset.bars[entry.symbol] ?? [], snapshot.asOfDate);
       if (!entryBar || entryBar.tradeDate > latestDate || entryBar.open <= 0) continue;
       candidates.push({ snapshot, entry, market: instrument.market, entryBar });
     }
   }
+
   candidates.sort((a, b) => {
     const dateDiff = a.entryBar.tradeDate.localeCompare(b.entryBar.tradeDate);
     if (dateDiff !== 0) return dateDiff;
@@ -474,27 +509,44 @@ export async function syncPortfolioFromHistory(): Promise<PortfolioState> {
     return a.entry.symbol.localeCompare(b.entry.symbol);
   });
 
-  const uid = await userId();
   for (const candidate of candidates) {
-    const key = `${candidate.entry.symbol}|${candidate.snapshot.asOfDate}`;
-    if (existingKeys.has(key)) continue;
+    const key = signalKey(candidate.entry.symbol, candidate.snapshot.asOfDate);
+    if (handledKeys.has(key)) continue;
     await closeDue(candidate.entryBar.tradeDate, true);
 
     const sameSymbolOpen = working.some(
       (trade) => trade.symbol === candidate.entry.symbol && activeAtEntry(trade, candidate.entryBar.tradeDate),
     );
-    if (sameSymbolOpen) continue;
+    if (sameSymbolOpen) {
+      await recordSignalDecision(uid, candidate, "SKIPPED_HELD", "신호 다음 거래일 시가 시점에 동일 종목 보유 중");
+      handledKeys.add(key);
+      continue;
+    }
+
     const active = working.filter((trade) => activeAtEntry(trade, candidate.entryBar.tradeDate));
-    if (active.length >= settings.maxPositions) continue;
+    if (active.length >= settings.maxPositions) {
+      await recordSignalDecision(uid, candidate, "SKIPPED_CAPACITY", `P${settings.maxPositions} 포지션 한도 도달`);
+      handledKeys.add(key);
+      continue;
+    }
 
     const sectorSlots = Math.max(1, Math.floor(settings.maxPositions * settings.sectorCap + 1e-9));
     const sectorCount = active.filter((trade) => trade.sectorCode === candidate.entry.sectorCode).length;
-    if (sectorCount >= sectorSlots) continue;
+    if (sectorCount >= sectorSlots) {
+      await recordSignalDecision(uid, candidate, "SKIPPED_SECTOR", `동일 섹터 ${Math.round(settings.sectorCap * 100)}% 한도 도달`);
+      handledKeys.add(key);
+      continue;
+    }
 
     const targetAmount = settings.initialCapital / settings.maxPositions;
     const availableCash = cashAtEntry(settings, working, candidate.entryBar.tradeDate);
     const maxAffordableShares = Math.floor(availableCash / (candidate.entryBar.open * (1 + halfCost)));
-    if (maxAffordableShares < 1) continue;
+    if (maxAffordableShares < 1) {
+      await recordSignalDecision(uid, candidate, "SKIPPED_CASH", "가용 현금으로 1주 매수 불가");
+      handledKeys.add(key);
+      continue;
+    }
+
     const nearestShares = Math.max(1, Math.round(targetAmount / candidate.entryBar.open));
     const shares = Math.min(nearestShares, maxAffordableShares);
     const buyAmount = money(shares * candidate.entryBar.open);
@@ -530,16 +582,10 @@ export async function syncPortfolioFromHistory(): Promise<PortfolioState> {
       })
       .select("*")
       .single();
-    if (error) {
-      if (error.code === "23505") {
-        existingKeys.add(key);
-        continue;
-      }
-      throw error;
-    }
-    const inserted = mapTrade(data as PortfolioTradeRow);
-    working.push(inserted);
-    existingKeys.add(key);
+    if (error && error.code !== "23505") throw error;
+    if (data) replaceWorking(mapTrade(data as PortfolioTradeRow));
+    await recordSignalDecision(uid, candidate, "EXECUTED", `${candidate.entryBar.tradeDate} 시가 ${candidate.entryBar.open}원 · ${shares}주`);
+    handledKeys.add(key);
   }
 
   await closeDue(latestDate, false);
@@ -572,4 +618,19 @@ export async function syncPortfolioFromHistory(): Promise<PortfolioState> {
 
   working.sort((a, b) => b.entryDate.localeCompare(a.entryDate) || a.symbol.localeCompare(b.symbol));
   return { settings, trades: working, summary: buildSummary(settings, working, latestDate) };
+}
+
+/**
+ * 스크리닝 이력을 거래 원장으로 연결한다.
+ * - KOSDAQ 8 ONSET 발생 다음 거래일 시가에 진입
+ * - 9.0 상향 재돌파 / 3.0 하향 이탈은 신호 다음 거래일 시가에 청산
+ * - 60거래일 만기는 해당 거래일 종가에 청산
+ * - P30, 동일섹터 최대 30%, 왕복비용 0.30% 기본값을 적용
+ */
+export async function syncPortfolioFromHistory(): Promise<PortfolioState> {
+  if (syncInFlight) return syncInFlight;
+  syncInFlight = runPortfolioSync().finally(() => {
+    syncInFlight = null;
+  });
+  return syncInFlight;
 }
