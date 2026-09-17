@@ -9,8 +9,8 @@ import { isKospiRelativeMomentumConfirmed } from "@/lib/kospiRelativeQuality";
  * KOSPI Relative Quality is display-only and never changes the V8 technical score.
  */
 export function getDisplayStatus(row: ScreeningRow): string {
-  if (row.kosdaq80Onset && row.exitSignal) return "KOSDAQ80 Onset · V8 Exit 조건";
-  if (row.kosdaq80Onset) return "KOSDAQ80 Onset";
+  if (row.kosdaq80Onset && row.exitSignal) return "KOSDAQ 8 ONSET · EXIT조건 달성";
+  if (row.kosdaq80Onset) return "KOSDAQ 8 ONSET";
 
   const rsConfirmed = row.kospiEightPointEntry && isKospiRelativeMomentumConfirmed(row);
   if (row.kospiEightPointEntry && row.exitSignal)
