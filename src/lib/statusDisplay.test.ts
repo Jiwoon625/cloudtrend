@@ -70,4 +70,13 @@ describe("V8 display status", () => {
       ),
     ).toBe("KOSDAQ80 Onset");
   });
+
+  it("shows the validated KOSDAQ aggressive exit labels", () => {
+    expect(getDisplayStatus(row({ instrument: instrument("KOSDAQ"), exitSignal: "UP90" }))).toBe(
+      "KOSDAQ Exit · 9.0점 상향 재돌파",
+    );
+    expect(getDisplayStatus(row({ instrument: instrument("KOSDAQ"), exitSignal: "DOWN30" }))).toBe(
+      "KOSDAQ Exit · 3.0점 하향 이탈",
+    );
+  });
 });

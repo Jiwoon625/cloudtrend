@@ -20,6 +20,8 @@ export function getDisplayStatus(row: ScreeningRow): string {
   if (row.kospiEightPointEntry)
     return rsConfirmed ? "8점 신규 진입 후보 · RS 확인" : "8점 신규 진입 후보";
 
+  if (row.exitSignal === "UP90") return "KOSDAQ Exit · 9.0점 상향 재돌파";
+  if (row.exitSignal === "DOWN30") return "KOSDAQ Exit · 3.0점 하향 이탈";
   if (row.exitSignal === "UP95") return "V8 Exit · 9.5점 이상";
   if (row.exitSignal === "DOWN25") return "V8 Exit · 2.5점 이하";
   if (row.grade === "A") return "관심 후보";
