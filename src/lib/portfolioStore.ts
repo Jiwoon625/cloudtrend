@@ -3,6 +3,7 @@ import { ensureManualDataset } from "@/lib/manualDataStore";
 import { loadSnapshots } from "@/lib/screeningHistory";
 import type { ScreeningSnapshot, SnapshotEntry } from "@/lib/screeningSnapshot";
 import type { DailyPrice, Market } from "@/lib/engine/types";
+import type { MarketDataset } from "@/lib/engine/dataset";
 
 export interface PortfolioSettings {
   initialCapital: number;
@@ -257,6 +258,19 @@ function normalizeSnapshots(input: ScreeningSnapshot[]): ScreeningSnapshot[] {
   return [...byAsOf.values()].sort((a, b) => a.asOfDate.localeCompare(b.asOfDate));
 }
 
+function datasetLatestDate(dataset: MarketDataset): string | null {
+  let latest: string | null = null;
+  for (const bars of Object.values(dataset.bars)) {
+    const date = bars.at(-1)?.tradeDate ?? null;
+    if (date && (latest === null || date > latest)) latest = date;
+  }
+  for (const series of dataset.indexSeries) {
+    const date = series.bars.at(-1)?.tradeDate ?? null;
+    if (date && (latest === null || date > latest)) latest = date;
+  }
+  return latest;
+}
+
 function isKosdaqOnset(entry: SnapshotEntry) {
   if (entry.kosdaq80Onset === true) return true;
   return /KOSDAQ\s*(?:80|8)\s*(?:Onset|ONSET)/i.test(entry.status ?? "");
@@ -453,16 +467,22 @@ export async function savePortfolioCapital(initialCapital: number): Promise<void
 async function runPortfolioSync(): Promise<PortfolioState> {
   const settings = await ensureSettings();
   const snapshots = normalizeSnapshots(loadSnapshots());
-  const latestDate = snapshots.at(-1)?.asOfDate ?? null;
   const initialTrades = await fetchTrades();
+  const parsed = await ensureManualDataset();
+  if (!parsed) {
+    const latestSnapshotDate = snapshots.at(-1)?.asOfDate ?? null;
+    return {
+      settings,
+      trades: initialTrades,
+      summary: buildSummary(settings, initialTrades, latestSnapshotDate),
+    };
+  }
+
+  const dataset = parsed.dataset;
+  const latestDate = datasetLatestDate(dataset) ?? snapshots.at(-1)?.asOfDate ?? null;
   if (!latestDate || snapshots.length === 0)
     return { settings, trades: initialTrades, summary: buildSummary(settings, initialTrades, latestDate) };
 
-  const parsed = await ensureManualDataset();
-  if (!parsed)
-    return { settings, trades: initialTrades, summary: buildSummary(settings, initialTrades, latestDate) };
-
-  const dataset = parsed.dataset;
   const instrumentMap = new Map(dataset.instruments.map((instrument) => [instrument.symbol, instrument]));
   const working = [...initialTrades];
   const uid = await userId();
@@ -626,6 +646,7 @@ async function runPortfolioSync(): Promise<PortfolioState> {
  * - 9.0 상향 재돌파 / 3.0 하향 이탈은 신호 다음 거래일 시가에 청산
  * - 60거래일 만기는 해당 거래일 종가에 청산
  * - P30, 동일섹터 최대 30%, 왕복비용 0.30% 기본값을 적용
+ * - 다음 거래일 데이터가 원천데이터에 들어오는 즉시 체결 가능 상태로 본다.
  */
 export async function syncPortfolioFromHistory(): Promise<PortfolioState> {
   if (syncInFlight) return syncInFlight;
