@@ -9,6 +9,7 @@ on:
       - scripts/source-registry-store.ts
       - scripts/research-shared-input.ts
       - scripts/run-v8-research-batch.ts
+      - tests/workflow-contract.test.mjs
       - tests/backtest-cache.test.ts
       - tests/parquet-roundtrip.test.py
       - .github/actions/backtest-source-cache/action.yml
@@ -24,6 +25,7 @@ on:
       - scripts/source-registry-store.ts
       - scripts/research-shared-input.ts
       - scripts/run-v8-research-batch.ts
+      - tests/workflow-contract.test.mjs
       - tests/backtest-cache.test.ts
       - tests/parquet-roundtrip.test.py
       - .github/actions/backtest-source-cache/action.yml
@@ -33,7 +35,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: cloudtrend-backtest-${{ github.event_name == 'pull_request' && github.ref || 'data' }}
+  group: cloudtrend-backtest-${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.ref) || 'data' }}
   cancel-in-progress: false
 
 jobs:
@@ -58,6 +60,7 @@ jobs:
           npx eslint scripts/backtest-canonicalize.ts scripts/backtest-source-cache.ts scripts/source-registry-store.ts
       - name: Test cache integrity and lossless Parquet conversion
         run: |
+          node tests/workflow-contract.test.mjs
           npx vite-node tests/backtest-cache.test.ts
           python tests/parquet-roundtrip.test.py
       - name: Smoke-test CSV to ZSTD Parquet converter

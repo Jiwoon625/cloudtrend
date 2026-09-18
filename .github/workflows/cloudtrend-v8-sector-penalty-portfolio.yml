@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: cloudtrend-backtest-${{ github.event_name == 'pull_request' && github.ref || 'data' }}
+  group: cloudtrend-backtest-${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.ref) || 'data' }}
   cancel-in-progress: false
 
 jobs:
