@@ -749,6 +749,38 @@ function decodeText(bytes: Uint8Array) {
   }
 }
 
+function oversizedSourceValidationResult(input: {
+  filename: string;
+  contentType?: string;
+  originalSizeBytes: number;
+}): SourceValidationResult {
+  const filename = input.filename.trim() || "source.csv";
+  const format = formatFromFilename(filename);
+  return {
+    valid: false,
+    format,
+    originalFilename: filename.slice(0, 180),
+    contentType:
+      input.contentType ||
+      (format === "xlsx"
+        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        : format === "json"
+          ? "application/json"
+          : "text/csv"),
+    originalSizeBytes: input.originalSizeBytes,
+    normalizedSizeBytes: 0,
+    fileHash: "",
+    dataHash: "",
+    schemaHash: "",
+    canonicalCsv: "",
+    columns: [],
+    rows: [],
+    stats: emptyStats(),
+    errors: [issue("FILE_TOO_LARGE", "파일 1개 크기는 45MB 이하여야 합니다.")],
+    warnings: [],
+  };
+}
+
 export async function validateSourceBytes(input: {
   bytes: Uint8Array;
   filename: string;
@@ -756,6 +788,13 @@ export async function validateSourceBytes(input: {
 }): Promise<SourceValidationResult> {
   const filename = input.filename.trim() || "source.csv";
   const filenameFormat = formatFromFilename(filename);
+  if (input.bytes.byteLength > SOURCE_MAX_FILE_BYTES) {
+    return oversizedSourceValidationResult({
+      filename,
+      contentType: input.contentType,
+      originalSizeBytes: input.bytes.byteLength,
+    });
+  }
   const rawText =
     filenameFormat !== "xlsx" &&
     input.bytes.byteLength > 0 &&
@@ -767,8 +806,6 @@ export async function validateSourceBytes(input: {
   const warnings: SourceValidationIssue[] = [];
   if (input.bytes.byteLength === 0)
     errors.push(issue("EMPTY_FILE", "빈 파일은 등록할 수 없습니다."));
-  if (input.bytes.byteLength > SOURCE_MAX_FILE_BYTES)
-    errors.push(issue("FILE_TOO_LARGE", "파일 1개 크기는 45MB 이하여야 합니다."));
 
   let recordSet: RecordSet = { records: [], columns: [] };
   if (errors.length === 0) {
@@ -835,6 +872,13 @@ export async function validateSourceText(text: string, filename = "source.csv") 
 }
 
 export async function validateSourceBlob(blob: Blob, filename: string) {
+  if (blob.size > SOURCE_MAX_FILE_BYTES) {
+    return oversizedSourceValidationResult({
+      filename,
+      contentType: blob.type,
+      originalSizeBytes: blob.size,
+    });
+  }
   return validateSourceBytes({
     bytes: new Uint8Array(await blob.arrayBuffer()),
     filename,
