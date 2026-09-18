@@ -1,0 +1,73 @@
+name: CloudTrend ETF canonical cache
+
+on:
+  pull_request:
+    paths:
+      - scripts/etf-backtest-canonicalize.ts
+      - scripts/etf-backtest-cache.ts
+      - .github/actions/etf-backtest-source-cache/action.yml
+      - .github/workflows/etf-backtest-canonical.yml
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/etf-backtest-canonicalize.ts
+      - scripts/etf-backtest-cache.ts
+      - .github/actions/etf-backtest-source-cache/action.yml
+      - .github/workflows/etf-backtest-canonical.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Lint ETF cache scripts
+        run: npx eslint scripts/etf-backtest-canonicalize.ts scripts/etf-backtest-cache.ts
+      - name: Check formatting
+        run: npx prettier --check scripts/etf-backtest-canonicalize.ts scripts/etf-backtest-cache.ts .github/actions/etf-backtest-source-cache/action.yml .github/workflows/etf-backtest-canonical.yml
+
+  migrate-and-seed-cache:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    concurrency:
+      group: cloudtrend-etf-backtest-data
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      ETF_STAGING_FILENAME: trendscore_input_20260918_061658.csv
+      ETF_BACKTEST_SOURCE_MANIFEST: .cache/cloudtrend-etf-backtest-manifest.json
+      ETF_BACKTEST_CACHE_DIR: .cache/cloudtrend-etf-backtest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Parquet dependency
+        run: python -m pip install --disable-pip-version-check pyarrow
+      - name: Validate server configuration
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_USER_ID"
+      - name: Canonicalize ETF backtest source
+        run: npx vite-node --script scripts/etf-backtest-canonicalize.ts
+      - name: Seed or restore ETF raw-byte cache
+        uses: ./.github/actions/etf-backtest-source-cache

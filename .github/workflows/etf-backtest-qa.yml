@@ -4,6 +4,10 @@ on:
   pull_request:
     paths:
       - scripts/run-etf-backtest-qa.ts
+      - scripts/etf-backtest-canonicalize.ts
+      - scripts/etf-backtest-cache.ts
+      - .github/actions/etf-backtest-source-cache/action.yml
+      - .github/workflows/etf-backtest-canonical.yml
       - .github/workflows/etf-backtest-qa.yml
   push:
     branches:
@@ -38,6 +42,10 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Lint ETF cache scripts
+        run: npx eslint scripts/etf-backtest-canonicalize.ts scripts/etf-backtest-cache.ts
+      - name: Check ETF cache formatting
+        run: npx prettier --check scripts/etf-backtest-canonicalize.ts scripts/etf-backtest-cache.ts .github/actions/etf-backtest-source-cache/action.yml .github/workflows/etf-backtest-canonical.yml
       - name: Validate server configuration
         run: |
           test -n "$SUPABASE_URL"
