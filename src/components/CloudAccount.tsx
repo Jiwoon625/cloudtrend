@@ -39,9 +39,16 @@ export function CloudAccount({ children }: { children: ReactNode }) {
         if (error) throw error;
         if (data.session) {
           await Promise.all([hydrateManualData(), hydrateUsData(), hydrateSnapshots()]);
-          await syncPortfolioFromHistory().catch(() => undefined);
         }
         if (alive) setReady(true);
+
+        // Portfolio reconciliation can scan the full local dataset and screening history.
+        // Do not block initial page access on that work; let the authenticated shell render first.
+        if (data.session) {
+          window.setTimeout(() => {
+            void syncPortfolioFromHistory().catch(() => undefined);
+          }, 0);
+        }
       })
       .catch((e: Error) => {
         if (alive) setMessage(e.message);
