@@ -1,0 +1,57 @@
+name: CloudTrend ETF backtest staging QA
+
+on:
+  pull_request:
+    paths:
+      - scripts/run-etf-backtest-qa.ts
+      - .github/workflows/etf-backtest-qa.yml
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/run-etf-backtest-qa.ts
+      - .github/workflows/etf-backtest-qa.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    concurrency:
+      group: cloudtrend-backtest-data
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      ETF_STAGING_FILENAME: trendscore_input_20260918_061658.csv
+      BACKTEST_SOURCE_MANIFEST: .cache/cloudtrend-backtest-manifest.json
+      BACKTEST_SOURCE_CACHE_DIR: .cache/cloudtrend-backtest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate server configuration
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_USER_ID"
+      - name: Restore verified stock-core backtest cache
+        uses: ./.github/actions/backtest-source-cache
+      - name: Run ETF staging QA
+        run: npx vite-node --script scripts/run-etf-backtest-qa.ts
+      - name: Upload QA artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: etf-backtest-qa-${{ github.run_id }}
+          path: analysis-runs/etf-backtest-qa.json
+          if-no-files-found: warn
+          retention-days: 30
