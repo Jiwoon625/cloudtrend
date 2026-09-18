@@ -1,0 +1,72 @@
+name: V8 production ETF PL validation
+
+on:
+  pull_request:
+    paths:
+      - src/lib/engine/vfConfig.ts
+      - src/lib/engine/v8SectorPriceLeadership.ts
+      - src/lib/engine/v8SectorPriceLeadershipPolicy.ts
+      - src/lib/engine/v8SectorPriceLeadershipPolicy.test.ts
+      - src/lib/engine/sectorScoreAdjustment.ts
+      - src/lib/engine/sectorScoreAdjustment.test.ts
+      - src/lib/engine/scoring.ts
+      - src/lib/engine/pipeline.ts
+      - scripts/run-v8-etf-pl-market-specific-finalist-oos.ts
+      - .github/workflows/v8-production-etf-pl-validation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Targeted V8 policy tests
+        run: |
+          npx vitest run \
+            src/lib/engine/v8SectorPriceLeadershipPolicy.test.ts \
+            src/lib/engine/sectorScoreAdjustment.test.ts
+      - name: Lint new validation files
+        run: |
+          npx eslint \
+            src/lib/engine/v8SectorPriceLeadershipPolicy.ts \
+            src/lib/engine/v8SectorPriceLeadershipPolicy.test.ts \
+            src/lib/engine/sectorScoreAdjustment.test.ts
+      - name: Build production app
+        run: npm run build
+      - name: Validate screening configuration
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_USER_ID"
+      - name: Diagnose current screening source integrity
+        run: npx vite-node --script scripts/diagnose-screening-source-hash.ts
+      - name: Compare hybrid policy with current V8 baseline
+        run: npx vite-node --script scripts/validate-v8-production-pl-policy.ts
+      - name: Current-source screening smoke test
+        run: |
+          npm run screening:run -- \
+            --supabase-user-id "$SUPABASE_USER_ID" \
+            --force \
+            --output analysis-runs
+      - name: Upload smoke-test artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v8-production-etf-pl-validation-${{ github.run_id }}
+          path: analysis-runs/
+          if-no-files-found: warn
+          retention-days: 14

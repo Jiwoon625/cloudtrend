@@ -82,10 +82,11 @@ function addFlag(
   if (value) aggregate[yesKey] += 1;
 }
 
-/** V8 Final technical score's 0.5-point Sector Price Leadership snapshot. */
+/** V8 Final Sector Price Leadership snapshot for either stocks or sector ETFs. */
 export function computeV8SectorPriceLeadership(
   dataset: MarketDataset,
   offset = 0,
+  sourceType: "STOCK" | "ETF" = "STOCK",
 ): Map<string, number> {
   const benchmark = dataset.indexSeries.find((series) => series.indexCode === "KOSPI");
   if (!benchmark) return new Map();
@@ -100,7 +101,7 @@ export function computeV8SectorPriceLeadership(
 
   for (const instrument of dataset.instruments) {
     if (
-      instrument.instrumentType !== "STOCK" || !instrument.isActive ||
+      instrument.instrumentType !== sourceType || !instrument.isActive ||
       instrument.sectorCode === "MARKET_IDX" || instrument.sectorCode === "ETC"
     ) continue;
     const bars = dataset.bars[instrument.symbol] ?? [];

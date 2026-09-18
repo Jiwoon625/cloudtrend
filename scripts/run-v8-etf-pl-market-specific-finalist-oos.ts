@@ -206,7 +206,7 @@ function usage(message?: string): never {
     [
       ...(message ? [message, ""] : []),
       "Usage:",
-      "  npx vite-node scripts/run-v8-etf-pl-model-comparison-3fos.ts --source-manifest <path> --source-cache-dir <dir> --etf-source-manifest <path> --etf-source-cache-dir <dir> [--supabase-user-id <uuid>] [--upload]",
+      "  npx vite-node scripts/run-v8-etf-pl-market-specific-finalist-oos.ts --source-manifest <path> --source-cache-dir <dir> --etf-source-manifest <path> --etf-source-cache-dir <dir> [--supabase-user-id <uuid>] [--upload]",
     ].join("\n"),
   );
 }
@@ -859,11 +859,16 @@ function foldRow(
   const candidateGross = candidates.map((c) => c.grossReturn);
   const signalPl = candidates.map((c) => c.sectorPl).filter(finite);
   const plAvailable = signalPl.length;
-  const modelDef = MODELS.find((item) => item.id === model)!;
   const slotEarned = candidates.filter((c) => {
     if (!finite(c.sectorPl)) return false;
     const threshold =
-      c.plSource === "ETF" ? modelDef.etfThreshold : STOCK_FALLBACK_THRESHOLD;
+      c.plSource === "ETF"
+        ? model === "FINAL_MARKET_SPECIFIC"
+          ? market === "KOSPI"
+            ? 84
+            : 85
+          : null
+        : STOCK_FALLBACK_THRESHOLD;
     return finite(threshold) && c.sectorPl < threshold;
   }).length;
   const avgCashWeight = average(points.map((p) => p.cashWeight));
@@ -1177,7 +1182,7 @@ async function main() {
       "ETF PL requires at least 130 bars and excludes MARKET_IDX/ETC. All stock base scores and entry/exit/portfolio rules remain unchanged.",
       "The separate canonical ETF history is parsed before stock-core inputs so overlapping ETF (symbol,date) rows use the verified canonical ETF copy; non-overlapping stock-core data are still retained.",
       "All threshold models use an identical market/fold evaluation calendar and P10 portfolio implementation.",
-      "The study is limited to the established 3-FOS years 2018/2022/2025 for direct comparability with the preceding D-model validation.",
+      "Final validation uses every complete annual OOS fold from 2018 through 2025; 2026 is excluded because the source year is incomplete.",
     ]
   };
 

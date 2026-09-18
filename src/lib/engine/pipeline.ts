@@ -35,6 +35,7 @@ import {
 import { computeSectorRotation, type SectorRotationResult } from "./sectorRotation";
 import { buildPriorityScoreV8 } from "./priorityScoreV8";
 import { computeV8SectorPriceLeadership } from "./v8SectorPriceLeadership";
+import { selectV8SectorPriceLeadership } from "./v8SectorPriceLeadershipPolicy";
 import {
   getKosdaqOperationalExitSignal,
   VF_DOWNSIDE_EXIT_RAW_SCORE,
@@ -377,8 +378,10 @@ export function runAnalysis(
       (sector) => [sector.sectorCode, sector.rotationScore] as const,
     ),
   );
-  const sectorPriceLeadership = computeV8SectorPriceLeadership(ds, 0);
-  const previousSectorPriceLeadership = computeV8SectorPriceLeadership(ds, 1);
+  const stockSectorPriceLeadership = computeV8SectorPriceLeadership(ds, 0, "STOCK");
+  const previousStockSectorPriceLeadership = computeV8SectorPriceLeadership(ds, 1, "STOCK");
+  const etfSectorPriceLeadership = computeV8SectorPriceLeadership(ds, 0, "ETF");
+  const previousEtfSectorPriceLeadership = computeV8SectorPriceLeadership(ds, 1, "ETF");
 
   const groups = new Map<string, number[]>();
   const prepared = ds.instruments
@@ -421,16 +424,41 @@ export function runAnalysis(
     const benchmarkIndex = benchmarkCloses.length - 1;
     const benchmarkR20 = periodReturn(benchmarkCloses, benchmarkIndex, 20);
     const benchmarkR60 = periodReturn(benchmarkCloses, benchmarkIndex, 60);
-    const currentPl = sectorPriceLeadership.get(inst.sectorCode) ?? null;
-    const previousPl = previousSectorPriceLeadership.get(inst.sectorCode) ?? null;
+    const stockMarket = inst.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI";
+    const currentPlSelection =
+      inst.instrumentType === "STOCK"
+        ? selectV8SectorPriceLeadership(
+            stockMarket,
+            inst.sectorCode,
+            stockSectorPriceLeadership,
+            etfSectorPriceLeadership,
+          )
+        : { value: null, source: null, threshold: null };
+    const previousPlSelection =
+      inst.instrumentType === "STOCK"
+        ? selectV8SectorPriceLeadership(
+            stockMarket,
+            inst.sectorCode,
+            previousStockSectorPriceLeadership,
+            previousEtfSectorPriceLeadership,
+          )
+        : { value: null, source: null, threshold: null };
+    const currentPl = currentPlSelection.value;
+    const previousPl = previousPlSelection.value;
 
     const vf =
       inst.instrumentType === "STOCK"
-        ? v8FinalStockScore(snap, cfg, { sectorPriceLeadership: currentPl })
+        ? v8FinalStockScore(snap, cfg, {
+            sectorPriceLeadership: currentPl,
+            sectorPriceLeadershipThreshold: currentPlSelection.threshold,
+          })
         : null;
     const previousVf =
       inst.instrumentType === "STOCK" && previousSnap
-        ? v8FinalStockScore(previousSnap, cfg, { sectorPriceLeadership: previousPl })
+        ? v8FinalStockScore(previousSnap, cfg, {
+            sectorPriceLeadership: previousPl,
+            sectorPriceLeadershipThreshold: previousPlSelection.threshold,
+          })
         : null;
     const operatingScore10 = vf ? strictRawTechnicalScore(vf) : null;
     const previousOperatingScore10 = previousVf ? strictRawTechnicalScore(previousVf) : null;

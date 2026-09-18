@@ -18,8 +18,21 @@ export const VF_FEATURE_WEIGHT_TOTAL = Object.values(VF_FEATURE_WEIGHTS).reduce(
   0,
 );
 
-/** V8 Final sector Price Leadership overheat threshold. PL >= 80 loses the 0.5-point slot. */
-export const VF_SECTOR_PL_OVERHEAT_THRESHOLD = 80;
+/** Stock-PL fallback threshold retained from the existing V8 operating model. */
+export const VF_STOCK_PL_FALLBACK_OVERHEAT_THRESHOLD = 80;
+
+/** Final ETF-PL thresholds validated across complete annual OOS folds (2018-2025). */
+export const VF_ETF_PL_KOSPI_OVERHEAT_THRESHOLD = 84;
+export const VF_ETF_PL_KOSDAQ_OVERHEAT_THRESHOLD = 85;
+
+/** Backward-compatible alias for research/legacy callers that still use Stock PL. */
+export const VF_SECTOR_PL_OVERHEAT_THRESHOLD = VF_STOCK_PL_FALLBACK_OVERHEAT_THRESHOLD;
+
+export function getV8EtfPlOverheatThreshold(market: "KOSPI" | "KOSDAQ"): number {
+  return market === "KOSDAQ"
+    ? VF_ETF_PL_KOSDAQ_OVERHEAT_THRESHOLD
+    : VF_ETF_PL_KOSPI_OVERHEAT_THRESHOLD;
+}
 
 /** Raw 0~10 operating-score thresholds. */
 export const VF_ENTRY_RAW_SCORE = 8;
