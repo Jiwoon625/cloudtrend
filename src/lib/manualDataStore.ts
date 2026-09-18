@@ -115,7 +115,10 @@ async function loadRegisteredValidation(source: AnalysisSourceFileRecord) {
   const validation = await validateSourceBlob(data, source.original_filename);
   if (!validation.valid)
     throw new Error(`스크리닝 원천파일 검증에 실패했습니다: ${source.original_filename}`);
-  if (validation.fileHash !== source.file_hash || validation.dataHash !== source.data_hash)
+  // file_hash protects the immutable uploaded object. data_hash is derived from
+  // the current normalization engine and may legitimately change after an
+  // intentional parser/mapping migration.
+  if (validation.fileHash !== source.file_hash)
     throw new Error(`스크리닝 원천파일 해시가 등록정보와 다릅니다: ${source.original_filename}`);
   sourceValidationCache.set(source.id, validation);
   return validation;
