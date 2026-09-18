@@ -54,6 +54,8 @@ jobs:
           test -n "$SUPABASE_USER_ID"
       - name: Diagnose current screening source integrity
         run: npx vite-node --script scripts/diagnose-screening-source-hash.ts
+      - name: Compare hybrid policy with current V8 baseline
+        run: npx vite-node --script scripts/validate-v8-production-pl-policy.ts
       - name: Current-source screening smoke test
         run: |
           npm run screening:run -- \
