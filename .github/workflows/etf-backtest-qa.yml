@@ -5,6 +5,12 @@ on:
     paths:
       - scripts/run-etf-backtest-qa.ts
       - .github/workflows/etf-backtest-qa.yml
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/run-etf-backtest-qa.ts
+      - .github/workflows/etf-backtest-qa.yml
   workflow_dispatch:
 
 permissions:
