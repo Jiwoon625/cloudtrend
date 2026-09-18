@@ -1,0 +1,55 @@
+name: Canonicalize CloudTrend backtest storage
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - scripts/backtest-canonicalize.ts
+      - scripts/csv-to-parquet.py
+      - scripts/backtest-source-cache.ts
+      - scripts/source-registry-store.ts
+      - .github/workflows/backtest-canonical-migration.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudtrend-backtest-canonical-migration
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Install parquet converter
+        run: python -m pip install --disable-pip-version-check duckdb
+      - name: Validate migration code
+        run: |
+          npx prettier --check scripts/backtest-canonicalize.ts scripts/backtest-source-cache.ts scripts/source-registry-store.ts
+          npx eslint scripts/backtest-canonicalize.ts scripts/backtest-source-cache.ts scripts/source-registry-store.ts
+      - name: Validate server configuration
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_USER_ID"
+      - name: Convert active backtest CSV storage to gzip transport + ZSTD Parquet canonical copies
+        run: |
+          npx vite-node scripts/backtest-canonicalize.ts \
+            --supabase-user-id "$SUPABASE_USER_ID"
