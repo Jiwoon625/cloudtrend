@@ -167,8 +167,12 @@ interface FoldRow {
   fold: FoldYear;
   candidateSignals: number;
   trades: number;
+  plCoverageRate: number | null;
   slotEarnRate: number | null;
   avgSignalPl: number | null;
+  candidateAvgGrossReturn: number | null;
+  candidateMedianGrossReturn: number | null;
+  candidateWinRate: number | null;
   totalReturn: number | null;
   benchmarkReturn: number | null;
   excessReturn: number | null;
@@ -620,26 +624,27 @@ function calendar(dataset: MarketDataset, market: Market) {
     dataset.indexSeries.find((s) => s.indexCode === market)?.bars.map((b) => b.tradeDate) ?? []
   );
 }
-function datesForCandidates(dataset: MarketDataset, market: Market, candidates: Candidate[]) {
-  if (!candidates.length) return [];
-  const first = candidates.reduce(
-    (v, c) => (c.entryDate < v ? c.entryDate : v),
-    candidates[0]!.entryDate,
-  );
-  const last = candidates.reduce(
-    (v, c) => (c.exitDate > v ? c.exitDate : v),
-    candidates[0]!.exitDate,
-  );
-  return calendar(dataset, market).filter((d) => d >= first && d <= last);
+function evaluationDates(dataset: MarketDataset, market: Market, fold: FoldYear) {
+  const dates = calendar(dataset, market);
+  const first = dates.findIndex((d) => Number(d.slice(0, 4)) === fold);
+  let last = -1;
+  for (let i = dates.length - 1; i >= 0; i--) {
+    if (Number(dates[i]!.slice(0, 4)) === fold) {
+      last = i;
+      break;
+    }
+  }
+  if (first < 0 || last < first) return [];
+  // Fold-year signals may hold for up to 60 trading days, so use a model-independent
+  // tail long enough to realize every planned exit on the same evaluation calendar.
+  return dates.slice(first, Math.min(dates.length, last + 66));
 }
 
 function simulate(
-  dataset: MarketDataset,
   series: PortfolioSeries[],
-  market: Market,
   candidates: Candidate[],
+  dates: string[],
 ): Simulation {
-  const dates = datesForCandidates(dataset, market, candidates);
   const seriesMap = new Map(series.map((s) => [key(s.market, s.symbol), s]));
   const halfCost = ROUND_TRIP_COST_BPS / 20_000;
   const byEntry = new Map<string, Candidate[]>();
@@ -777,7 +782,9 @@ function foldRow(
       ? benchmarkReturn(dataset, market, points[0]!.date, points.at(-1)!.date)
       : null;
   const returns = simulation.trades.map((t) => t.netReturn);
+  const candidateGross = candidates.map((c) => c.grossReturn);
   const signalPl = candidates.map((c) => c.sectorPl).filter(finite);
+  const plAvailable = signalPl.length;
   const slotEarned = candidates.filter((c) => finite(c.sectorPl) && c.sectorPl < 80).length;
   const avgCashWeight = average(points.map((p) => p.cashWeight));
   return {
@@ -786,8 +793,14 @@ function foldRow(
     fold,
     candidateSignals: candidates.length,
     trades: simulation.trades.length,
+    plCoverageRate: candidates.length ? round((plAvailable / candidates.length) * 100) : null,
     slotEarnRate: candidates.length ? round((slotEarned / candidates.length) * 100) : null,
     avgSignalPl: round(average(signalPl)),
+    candidateAvgGrossReturn: round(average(candidateGross)),
+    candidateMedianGrossReturn: round(median(candidateGross)),
+    candidateWinRate: candidateGross.length
+      ? round((candidateGross.filter((x) => x > 0).length / candidateGross.length) * 100)
+      : null,
     totalReturn: round(totalReturn),
     benchmarkReturn: round(benchmark),
     excessReturn:
@@ -838,7 +851,11 @@ function aggregate(rows: FoldRow[]) {
         avgCapitalOccupancy: avg((r) => r.avgCapitalOccupancy),
         avgCandidateSignals: round(average(selected.map((r) => r.candidateSignals))),
         avgTrades: round(average(selected.map((r) => r.trades))),
+        avgPlCoverageRate: avg((r) => r.plCoverageRate),
         avgSlotEarnRate: avg((r) => r.slotEarnRate),
+        avgCandidateGrossReturn: avg((r) => r.candidateAvgGrossReturn),
+        avgCandidateMedianGrossReturn: avg((r) => r.candidateMedianGrossReturn),
+        avgCandidateWinRate: avg((r) => r.candidateWinRate),
         totalCapacitySkips: selected.reduce((sum, r) => sum + r.skippedForCapacity, 0),
       });
     }
@@ -921,7 +938,17 @@ async function main() {
     for (const market of ["KOSPI", "KOSDAQ"] as const) {
       for (const fold of FOLD_YEARS) {
         const candidates = buildCandidates(modelSeries, market, fold);
-        const simulation = simulate(dataset, modelSeries, market, candidates);
+        const dates = evaluationDates(dataset, market, fold);
+        const lastExit = candidates.reduce(
+          (max, item) => (item.exitDate > max ? item.exitDate : max),
+          "",
+        );
+        if (lastExit && dates.at(-1) && lastExit > dates.at(-1)!) {
+          throw new Error(
+            `Evaluation calendar too short for ${model.id} ${market} ${fold}: ${lastExit} > ${dates.at(-1)}`,
+          );
+        }
+        const simulation = simulate(modelSeries, candidates, dates);
         foldRows.push(foldRow(model.id, market, fold, dataset, candidates, simulation));
         signalDiagnostics.push({
           model: model.id,
@@ -967,6 +994,8 @@ async function main() {
       kospiExit: "UP 9.5 crossing or DOWN 2.5 crossing at NEXT_OPEN; max 60D SAME_DAY_CLOSE",
       kosdaqExit: "UP 9.0 crossing or DOWN 3.0 crossing at NEXT_OPEN; max 60D SAME_DAY_CLOSE",
       portfolio: "P10: max 10 positions, 10% target slot, fractional shares, no rebalancing",
+      evaluationCalendar:
+        "For each market/fold, all models use the same calendar: first trading day of the fold year through 65 market trading days after the last fold-year trading day.",
       roundTripCostBps: ROUND_TRIP_COST_BPS,
       initialCapital: INITIAL_CAPITAL,
     },
@@ -980,6 +1009,8 @@ async function main() {
       "B changes only the PL source universe to mapped ETFs; stock base scores and all entry/exit/portfolio rules remain unchanged.",
       "C blends independently normalized Stock PL and ETF PL 50:50 instead of pooling raw constituents, preventing sectors with many ETFs from receiving a mechanical constituent-count advantage.",
       "ETF PL requires at least 130 bars and excludes MARKET_IDX/ETC. Missing ETF PL does not receive the 0.5 sector slot.",
+      "All three models use an identical market/fold evaluation calendar, so benchmark return and CAGR periods are directly comparable.",
+      "Candidate gross-return diagnostics are reported separately from the P10 portfolio to distinguish signal-set quality from capacity/priority effects.",
       "The study is intentionally limited to the established 3-FOS years 2018/2022/2025 to keep comparability with prior V8 validation.",
     ],
   };
