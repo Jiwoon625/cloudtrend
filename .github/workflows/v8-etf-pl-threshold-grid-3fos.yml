@@ -1,0 +1,65 @@
+name: V8 ETF PL Threshold Grid 3-FOS
+
+on:
+  pull_request:
+    paths:
+      - scripts/run-v8-etf-pl-threshold-grid-3fos.ts
+      - .github/workflows/v8-etf-pl-threshold-grid-3fos.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v8-etf-pl-threshold-grid-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  study:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      BACKTEST_SOURCE_MANIFEST: .cache/cloudtrend-backtest-manifest.json
+      BACKTEST_SOURCE_CACHE_DIR: .cache/cloudtrend-backtest
+      ETF_BACKTEST_SOURCE_MANIFEST: .cache/cloudtrend-etf-backtest-manifest.json
+      ETF_BACKTEST_CACHE_DIR: .cache/cloudtrend-etf-backtest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate server configuration
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_USER_ID"
+      - name: Restore verified stock-core backtest cache
+        uses: ./.github/actions/backtest-source-cache
+        with:
+          manifest: ${{ env.BACKTEST_SOURCE_MANIFEST }}
+          directory: ${{ env.BACKTEST_SOURCE_CACHE_DIR }}
+      - name: Restore verified ETF canonical cache
+        uses: ./.github/actions/etf-backtest-source-cache
+      - name: Run ETF PL threshold grid
+        run: |
+          npx vite-node --script scripts/run-v8-etf-pl-threshold-grid-3fos.ts \
+            --source-manifest "$BACKTEST_SOURCE_MANIFEST" \
+            --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR" \
+            --etf-source-manifest "$ETF_BACKTEST_SOURCE_MANIFEST" \
+            --etf-source-cache-dir "$ETF_BACKTEST_CACHE_DIR" \
+            --supabase-user-id "$SUPABASE_USER_ID" \
+            --upload
+      - name: Upload research artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v8-etf-pl-threshold-grid-${{ github.run_id }}
+          path: analysis-runs/v8-etf-pl-threshold-grid-3fos-*.json
+          if-no-files-found: warn
+          retention-days: 30
