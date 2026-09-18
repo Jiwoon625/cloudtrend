@@ -1137,6 +1137,10 @@ async function main() {
       etfSourceLogicalBytes: etfSource.manifest.logicalSizeBytes,
       parsedStats: parsed.stats,
       selectedStockSeries: context.symbolCount,
+      etfSymbols: dataset.instruments
+        .filter((instrument) => instrument.instrumentType === "ETF")
+        .map((instrument) => instrument.symbol)
+        .sort(),
     },
     design: {
       models: MODELS,
