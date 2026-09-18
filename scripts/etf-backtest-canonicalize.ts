@@ -103,7 +103,9 @@ async function uploadAndVerify(objectPath: string, bytes: Uint8Array) {
     cacheControl: "31536000",
   });
   if (error) throw new Error(`ETF canonical upload failed (${objectPath}): ${error.message}`);
-  const { data, error: readError } = await client.storage.from(ANALYSIS_BUCKET).download(objectPath);
+  const { data, error: readError } = await client.storage
+    .from(ANALYSIS_BUCKET)
+    .download(objectPath);
   if (readError || !data) throw new Error(`ETF canonical read-back failed: ${objectPath}`);
   const readBack = new Uint8Array(await data.arrayBuffer());
   if (readBack.byteLength !== bytes.byteLength || sha256(readBack) !== sha256(bytes))
@@ -229,6 +231,8 @@ async function main() {
 }
 
 main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
+  process.stderr.write(
+    `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+  );
   process.exitCode = 1;
 });
