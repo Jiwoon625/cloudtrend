@@ -18,8 +18,57 @@ export const VF_FEATURE_WEIGHT_TOTAL = Object.values(VF_FEATURE_WEIGHTS).reduce(
   0,
 );
 
-/** V8 Final sector Price Leadership overheat threshold. PL >= 80 loses the 0.5-point slot. */
+/** Legacy/default Stock PL overheat threshold. PL >= 80 loses the 0.5-point slot. */
 export const VF_SECTOR_PL_OVERHEAT_THRESHOLD = 80;
+
+/** Final validated ETF-primary PL rule (2026-09-19). */
+export const VF_STOCK_PL_FALLBACK_THRESHOLD = 80;
+export const VF_ETF_PL_OVERHEAT_THRESHOLD_BY_MARKET = {
+  KOSPI: 84,
+  KOSDAQ: 85,
+} as const;
+
+export type V8SectorPriceLeadershipSource = "ETF" | "STOCK" | null;
+
+export interface V8SectorPriceLeadershipSelection {
+  value: number | null;
+  source: V8SectorPriceLeadershipSource;
+  threshold: number | null;
+}
+
+export function getV8EtfPlOverheatThreshold(market: string): number {
+  return market === "KOSDAQ"
+    ? VF_ETF_PL_OVERHEAT_THRESHOLD_BY_MARKET.KOSDAQ
+    : VF_ETF_PL_OVERHEAT_THRESHOLD_BY_MARKET.KOSPI;
+}
+
+/**
+ * Final V8 selection rule:
+ * 1) ETF PL is primary when available.
+ * 2) Stock PL is the fallback at threshold 80.
+ * 3) ETF thresholds are market-specific: KOSPI 84 / KOSDAQ 85.
+ */
+export function selectV8SectorPriceLeadership(
+  market: string,
+  etfPriceLeadership: number | null | undefined,
+  stockPriceLeadership: number | null | undefined,
+): V8SectorPriceLeadershipSelection {
+  if (etfPriceLeadership !== null && etfPriceLeadership !== undefined && Number.isFinite(etfPriceLeadership)) {
+    return {
+      value: etfPriceLeadership,
+      source: "ETF",
+      threshold: getV8EtfPlOverheatThreshold(market),
+    };
+  }
+  if (stockPriceLeadership !== null && stockPriceLeadership !== undefined && Number.isFinite(stockPriceLeadership)) {
+    return {
+      value: stockPriceLeadership,
+      source: "STOCK",
+      threshold: VF_STOCK_PL_FALLBACK_THRESHOLD,
+    };
+  }
+  return { value: null, source: null, threshold: null };
+}
 
 /** Raw 0~10 operating-score thresholds. */
 export const VF_ENTRY_RAW_SCORE = 8;
