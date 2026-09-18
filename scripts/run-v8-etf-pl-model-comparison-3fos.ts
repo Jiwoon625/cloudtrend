@@ -907,23 +907,57 @@ function deltaVsA(aggregateRows: ReturnType<typeof aggregate>) {
 }
 
 function sourceCoverage(dataset: MarketDataset, etfMap: Map<string, number>, stockMap: Map<string, number>) {
-  const eligibleEtfs = dataset.instruments.filter(
+  const allEtfs = dataset.instruments.filter((i) => i.instrumentType === "ETF");
+  const eligibleEtfs = allEtfs.filter(
     (i) =>
-      i.instrumentType === "ETF" &&
       i.sectorCode !== "MARKET_IDX" &&
       i.sectorCode !== "ETC" &&
       (dataset.bars[i.symbol]?.length ?? 0) >= 130,
   );
-  const bySector = new Map<string, number>();
-  for (const i of eligibleEtfs) bySector.set(i.sectorCode, (bySector.get(i.sectorCode) ?? 0) + 1);
+  const eligibleBySector = new Map<string, number>();
+  for (const i of eligibleEtfs)
+    eligibleBySector.set(i.sectorCode, (eligibleBySector.get(i.sectorCode) ?? 0) + 1);
+  const allBySector = new Map<string, number>();
+  for (const i of allEtfs)
+    allBySector.set(i.sectorCode, (allBySector.get(i.sectorCode) ?? 0) + 1);
+
+  const oldestObservedEtfsBySector = [...new Set(allEtfs.map((i) => i.sectorCode))]
+    .sort()
+    .map((sectorCode) => ({
+      sectorCode,
+      top5: allEtfs
+        .filter((i) => i.sectorCode === sectorCode)
+        .map((i) => {
+          const bars = dataset.bars[i.symbol] ?? [];
+          return {
+            symbol: i.symbol,
+            name: i.name,
+            firstObservedDate: bars[0]?.tradeDate ?? null,
+            lastObservedDate: bars.at(-1)?.tradeDate ?? null,
+            observedBars: bars.length,
+          };
+        })
+        .sort(
+          (a, b) =>
+            String(a.firstObservedDate ?? "9999-99-99").localeCompare(
+              String(b.firstObservedDate ?? "9999-99-99"),
+            ) || b.observedBars - a.observedBars || a.symbol.localeCompare(b.symbol),
+        )
+        .slice(0, 5),
+    }));
+
   return {
     stockInstruments: dataset.instruments.filter((i) => i.instrumentType === "STOCK").length,
-    etfInstruments: dataset.instruments.filter((i) => i.instrumentType === "ETF").length,
-    eligibleEtfsForPl: eligibleEtfs.length,
-    eligibleEtfSectors: bySector.size,
-    eligibleEtfsBySector: [...bySector.entries()]
+    etfInstruments: allEtfs.length,
+    allEtfsBySector: [...allBySector.entries()]
       .map(([sectorCode, count]) => ({ sectorCode, count }))
       .sort((a, b) => b.count - a.count || a.sectorCode.localeCompare(b.sectorCode)),
+    eligibleEtfsForPl: eligibleEtfs.length,
+    eligibleEtfSectors: eligibleBySector.size,
+    eligibleEtfsBySector: [...eligibleBySector.entries()]
+      .map(([sectorCode, count]) => ({ sectorCode, count }))
+      .sort((a, b) => b.count - a.count || a.sectorCode.localeCompare(b.sectorCode)),
+    oldestObservedEtfsBySector,
     stockPlDateSectorPoints: stockMap.size,
     etfPlDateSectorPoints: etfMap.size,
   };
