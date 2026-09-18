@@ -642,14 +642,96 @@ const STOCK_NAME_RULES: Array<[RegExp, string]> = [
  * 전력설비는 검토된 주식 마스터(LS ELECTRIC/효성중공업/HD현대일렉트릭)의 ENERGY에 맞춘다.
  */
 export const ETF_SECTOR_BY_SYMBOL: Readonly<Record<string, string>> = Object.freeze({
-  "0183J0": "SHIP_DEF", // TIGER 미국우주테크
-  "102780": "MARKET_IDX", // KODEX 삼성그룹
-  "278530": "MARKET_IDX", // KODEX 200TR
-  "294400": "MARKET_IDX", // KIWOOM 200TR (구 KOSEF)
-  "315930": "MARKET_IDX", // KODEX Top5PlusTR
-  "465580": "MARKET_IDX", // ACE 미국빅테크TOP7 Plus: 반도체/플랫폼/소비재 복합
-  "483320": "SEMI", // ACE 엔비디아밸류체인액티브
-  "487240": "ENERGY", // KODEX AI전력핵심설비
+  // 2026-09-18 장기 ETF PL 재검증용 65종 확정 매핑.
+  // 코드 매핑을 상품명 정규식보다 먼저 적용해 소부장/에너지화학/필수소비재 등 오분류를 막는다.
+  "091160": "SEMI",
+  "091230": "SEMI",
+  "395270": "SEMI",
+  "396500": "SEMI",
+  "455850": "SEMI",
+
+  "305720": "BATTERY",
+  "305540": "BATTERY",
+  "364980": "BATTERY",
+  "461950": "BATTERY",
+  "462010": "BATTERY",
+
+  "091180": "AUTO",
+  "138540": "AUTO",
+  "385520": "AUTO",
+  "464600": "AUTO",
+  "466930": "AUTO",
+
+  "143860": "BIO",
+  "227540": "BIO",
+  "244580": "BIO",
+  "253280": "BIO",
+  "261070": "BIO",
+
+  "266370": "IT_HW",
+  "326240": "IT_HW",
+  "363580": "IT_HW",
+  "380340": "IT_HW",
+  "487750": "IT_HW",
+
+  "157490": "SOFTWARE",
+  "365000": "SOFTWARE",
+  "407820": "SOFTWARE",
+  "427120": "SOFTWARE",
+  "0105D0": "SOFTWARE",
+
+  "091170": "FINANCE",
+  "091220": "FINANCE",
+  "102970": "FINANCE",
+  "139270": "FINANCE",
+  "140700": "FINANCE",
+
+  "102960": "SHIP_DEF",
+  "139230": "SHIP_DEF",
+  "441540": "SHIP_DEF",
+  "463250": "SHIP_DEF",
+  "466920": "SHIP_DEF",
+
+  "117680": "CHEM_STEEL",
+  "139240": "CHEM_STEEL",
+
+  "117460": "ENERGY",
+  "139250": "ENERGY",
+  "367770": "ENERGY",
+  "377990": "ENERGY",
+  "434730": "ENERGY",
+
+  "139290": "CONSUMER",
+  "227560": "CONSUMER",
+  "228800": "CONSUMER",
+  "266390": "CONSUMER",
+  "266410": "CONSUMER",
+
+  "228790": "HEALTH_SVC",
+  "307510": "HEALTH_SVC",
+  "464610": "HEALTH_SVC",
+  "479850": "HEALTH_SVC",
+  "0008T0": "HEALTH_SVC",
+
+  "228810": "TELCO_MEDIA",
+  "266360": "TELCO_MEDIA",
+  "300950": "TELCO_MEDIA",
+  "395290": "TELCO_MEDIA",
+  "475050": "TELCO_MEDIA",
+
+  "117700": "CONSTRUCT",
+  "139220": "CONSTRUCT",
+  "140710": "CONSTRUCT",
+
+  // 기존 수동 확정 매핑도 유지.
+  "0183J0": "SHIP_DEF",
+  "102780": "MARKET_IDX",
+  "278530": "MARKET_IDX",
+  "294400": "MARKET_IDX",
+  "315930": "MARKET_IDX",
+  "465580": "MARKET_IDX",
+  "483320": "SEMI",
+  "487240": "ENERGY",
 });
 
 export function resolveCuratedEtfSectorCode(symbol: string): string | undefined {
