@@ -8,6 +8,7 @@ import {
 } from "./vfConfig";
 import type { IndicatorSnapshot } from "./indicators";
 import type { EtfFacts, FinancialFacts, Instrument } from "./types";
+import { adjustSectorPenaltyScore } from "./sectorScoreAdjustment";
 
 export const STRATEGY_VERSION = VF_MODEL_LABEL;
 
@@ -388,28 +389,33 @@ export function vfStockScore(
 export function v8FinalStockScore(
   snap: IndicatorSnapshot,
   cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
-  options: { exclude52wHigh?: boolean; sectorPriceLeadership?: number | null } = {},
+  options: {
+    exclude52wHigh?: boolean;
+    sectorPriceLeadership?: number | null;
+    sectorPriceLeadershipThreshold?: number | null;
+  } = {},
 ): ScoreBlock {
   const base = vfStockScore(snap, cfg, { exclude52wHigh: options.exclude52wHigh });
   const priceLeadership = options.sectorPriceLeadership ?? null;
-  const overheated =
-    priceLeadership !== null && priceLeadership >= VF_SECTOR_PL_OVERHEAT_THRESHOLD;
-  const sectorPoints = overheated ? 0 : VF_FEATURE_WEIGHTS.SECTOR_PRICE_LEADERSHIP;
+  const threshold =
+    options.sectorPriceLeadershipThreshold ?? VF_SECTOR_PL_OVERHEAT_THRESHOLD;
+  const adjustment = adjustSectorPenaltyScore(base.points, priceLeadership, threshold);
+  const available = adjustment.sectorScoreAvailable;
+  const sectorPoints = Math.round((adjustment.score - base.points) * 100) / 100;
   const sectorRow: RuleRow = {
     group: "V8 Sector",
-    rule: `Sector Price Leadership 과열 억제 (PL < ${VF_SECTOR_PL_OVERHEAT_THRESHOLD})`,
-    actual:
-      priceLeadership === null
-        ? "데이터 없음 · V8 기본 슬롯 유지"
-        : `PL ${priceLeadership.toFixed(1)} / 100${overheated ? " · 과열" : ""}`,
-    threshold: `PL < ${VF_SECTOR_PL_OVERHEAT_THRESHOLD} 또는 데이터 없음 시 +${VF_FEATURE_WEIGHTS.SECTOR_PRICE_LEADERSHIP}`,
-    status: overheated ? "FAIL" : "PASS",
+    rule: `Sector Price Leadership 과열 억제 (PL < ${threshold})`,
+    actual: available
+      ? `PL ${priceLeadership!.toFixed(1)} / 100${adjustment.overheated ? " · 과열" : ""}`
+      : "데이터 없음 · 섹터 슬롯 0점",
+    threshold: `PL < ${threshold} 시 +${VF_FEATURE_WEIGHTS.SECTOR_PRICE_LEADERSHIP}; 데이터 없음/과열 시 0점`,
+    status: adjustment.overheated ? "FAIL" : "PASS",
     points: sectorPoints,
     maxPoints: VF_FEATURE_WEIGHTS.SECTOR_PRICE_LEADERSHIP,
   };
   const rows = [...base.rows, sectorRow];
   return {
-    points: Math.round((base.points + sectorPoints) * 100) / 100,
+    points: adjustment.score,
     maxPoints: Math.round((base.maxPoints + sectorRow.maxPoints) * 100) / 100,
     availableMaxPoints: Math.round((base.availableMaxPoints + sectorRow.maxPoints) * 100) / 100,
     rows,
