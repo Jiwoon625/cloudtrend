@@ -1,10 +1,12 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-import { parseManualMarketData } from "../src/lib/engine/manualDataset";
-import { buildPortfolioSignalContext } from "../src/lib/engine/sectorPenaltyPortfolioSignals";
+import {
+  parseSharedMarketData as parseManualMarketData,
+  loadResearchTexts,
+} from "./research-shared-input";
+import { buildSharedSignalContext as buildPortfolioSignalContext } from "./research-shared-input";
 import type { MarketDataset } from "../src/lib/engine/dataset";
 import type { DailyPrice } from "../src/lib/engine/types";
 import { trustedSupabaseClient, uploadJson } from "./analysis-run-store";
@@ -26,24 +28,6 @@ type Horizon = (typeof HORIZONS)[number];
 type CostBps = (typeof COST_BPS)[number];
 type Regime = "BULL" | "NEUTRAL" | "BEAR";
 type StrategyId = "BASELINE_ONSET8" | "FILTER_POSITIVE" | "RANK_TOP33" | "FILTER_Q4PLUS";
-
-interface CacheManifestFile {
-  id: string;
-  fileName: string;
-  bytes: number;
-  savedAt: string;
-  fileHash: string;
-  cacheFile: string;
-}
-
-interface CacheManifest {
-  schemaVersion: 1;
-  sourceType: "backtest";
-  cacheKey: string;
-  fileCount: number;
-  totalBytes: number;
-  files: CacheManifestFile[];
-}
 
 interface Options {
   sourceManifest: string;
@@ -148,38 +132,8 @@ function round(value: number | null, digits = 6) {
   return Math.round(value * factor) / factor;
 }
 
-function decodeSourceBytes(bytes: Uint8Array) {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return new TextDecoder("euc-kr").decode(bytes);
-  }
-}
-
 async function loadCachedTexts(manifestPath: string, cacheDir: string) {
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as CacheManifest;
-  if (
-    manifest.schemaVersion !== 1 ||
-    manifest.sourceType !== "backtest" ||
-    !Array.isArray(manifest.files) ||
-    manifest.files.length !== manifest.fileCount
-  ) {
-    throw new Error("지원하지 않거나 손상된 source cache manifest입니다.");
-  }
-
-  const texts: string[] = [];
-  for (const file of manifest.files) {
-    const bytes = new Uint8Array(await readFile(path.join(cacheDir, file.cacheFile)));
-    const fileHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-    if (bytes.byteLength !== file.bytes || fileHash !== file.fileHash) {
-      throw new Error(`source cache 무결성 검증 실패: ${file.fileName}`);
-    }
-    texts.push(decodeSourceBytes(bytes));
-  }
-  process.stderr.write(
-    `KOSPI RSAccel stage5 source cache verified: ${manifest.fileCount} files / ${(manifest.totalBytes / 1_000_000).toFixed(1)} MB\n`,
-  );
-  return { texts, manifest };
+  return loadResearchTexts(manifestPath, cacheDir);
 }
 
 function benchmarkSeries(dataset: MarketDataset) {
@@ -226,7 +180,10 @@ function alignedRelativeStrength(
   return stockReturn - marketReturn;
 }
 
-function marketRegime(signalDate: string, benchmark: ReturnType<typeof benchmarkSeries>): Regime | null {
+function marketRegime(
+  signalDate: string,
+  benchmark: ReturnType<typeof benchmarkSeries>,
+): Regime | null {
   const index = benchmark.indexByDate.get(signalDate);
   if (index === undefined || index < REGIME_MA_DAYS - 1 || index < REGIME_RETURN_DAYS) return null;
   const current = benchmark.bars[index];
@@ -393,7 +350,7 @@ function summarizeTrades(trades: Trade[], costBps: CostBps): TradeMetrics {
   };
 }
 
-async function main() {
+export async function runStudy() {
   const options = parseArgs(process.argv.slice(2));
   const { texts, manifest } = await loadCachedTexts(options.sourceManifest, options.sourceCacheDir);
   const parsed = parseManualMarketData(texts);
@@ -422,8 +379,20 @@ async function main() {
       const previousScore = scores[i - 1];
       if (!finite(score)) continue;
 
-      const rs20 = alignedRelativeStrength(series.bars, dateIndex, signalBar.tradeDate, benchmark, 20);
-      const rs60 = alignedRelativeStrength(series.bars, dateIndex, signalBar.tradeDate, benchmark, 60);
+      const rs20 = alignedRelativeStrength(
+        series.bars,
+        dateIndex,
+        signalBar.tradeDate,
+        benchmark,
+        20,
+      );
+      const rs60 = alignedRelativeStrength(
+        series.bars,
+        dateIndex,
+        signalBar.tradeDate,
+        benchmark,
+        60,
+      );
       const regime = marketRegime(signalBar.tradeDate, benchmark);
       if (!finite(rs20) || !finite(rs60) || !regime) continue;
 
@@ -434,7 +403,8 @@ async function main() {
         rs20,
         rs60,
         rsAccel: rs20 - rs60,
-        onset8: finite(previousScore) && previousScore < ONSET_THRESHOLD && score >= ONSET_THRESHOLD,
+        onset8:
+          finite(previousScore) && previousScore < ONSET_THRESHOLD && score >= ONSET_THRESHOLD,
         signalIndex: i,
         regime,
       });
@@ -454,7 +424,12 @@ async function main() {
     const qMap = dailyMarketQuintiles(rows);
     return HORIZONS.flatMap((horizon) =>
       strategies.flatMap((strategy) => {
-        const accepted = buildTrades(selectStrategy(strategy, rows, qMap), horizon, seriesBySymbol, benchmark);
+        const accepted = buildTrades(
+          selectStrategy(strategy, rows, qMap),
+          horizon,
+          seriesBySymbol,
+          benchmark,
+        );
         return COST_BPS.flatMap((costBps) =>
           regimes.map((regime) => ({
             fold,
@@ -546,7 +521,10 @@ async function main() {
   }));
 
   const now = new Date();
-  const runId = now.toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
+  const runId = now
+    .toISOString()
+    .replace(/[-:TZ.]/g, "")
+    .slice(0, 14);
   const result = {
     studyVersion: STUDY_VERSION,
     generatedAt: now.toISOString(),
@@ -603,10 +581,15 @@ async function main() {
     );
   }
 
-  process.stdout.write(`${JSON.stringify({ outputPath, remotePath, regimeSignalCounts, primarySummary }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify({ outputPath, remotePath, regimeSignalCounts, primarySummary }, null, 2)}\n`,
+  );
 }
 
-main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1]?.endsWith("run-v8-kospi-rsaccel-stage5-regime-3fos.ts"))
+  runStudy().catch((error) => {
+    process.stderr.write(
+      `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+    );
+    process.exitCode = 1;
+  });

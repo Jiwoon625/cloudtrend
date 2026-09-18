@@ -1,6 +1,7 @@
 import path from "node:path";
+import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { gunzipSync } from "node:zlib";
+import { gzipSync, gunzipSync } from "node:zlib";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -224,6 +225,26 @@ function unpackRegisteredBytes(record: SourceRecord, storedBytes: Uint8Array) {
   return { logicalBytes, logicalFileHash };
 }
 
+async function registeredLogicalBytes(client: SupabaseClient, record: SourceRecord) {
+  const cacheDir = process.env["BACKTEST_SOURCE_CACHE_DIR"];
+  if (record.source_type === "backtest" && cacheDir) {
+    const migration = canonicalMigrationMeta(record);
+    const expectedHash = String(migration?.["logicalFileHash"] ?? record.file_hash);
+    if (!/^sha256:[0-9a-f]{64}$/.test(expectedHash)) throw new Error("Invalid logical source hash");
+    const logicalBytes = new Uint8Array(
+      await readFile(path.join(cacheDir, `${expectedHash.slice(7)}.source`)),
+    );
+    const logicalFileHash = `sha256:${createHash("sha256").update(logicalBytes).digest("hex")}`;
+    if (logicalFileHash !== expectedHash)
+      throw new Error(`Local source integrity failure: ${record.original_filename}`);
+    return { logicalBytes, logicalFileHash };
+  }
+  return unpackRegisteredBytes(
+    record,
+    await downloadBytes(client, record.storage_bucket, record.storage_path),
+  );
+}
+
 function lightweightValidation(
   record: SourceRecord,
   text: string,
@@ -283,8 +304,7 @@ async function loadRegistryInputsLightweight(
     if (/\.xlsx$/i.test(record.original_filename)) {
       throw new Error(`대용량 실행 경량 로더는 CSV/JSON만 지원합니다: ${record.original_filename}`);
     }
-    const storedBytes = await downloadBytes(client, record.storage_bucket, record.storage_path);
-    const { logicalBytes, logicalFileHash } = unpackRegisteredBytes(record, storedBytes);
+    const { logicalBytes, logicalFileHash } = await registeredLogicalBytes(client, record);
     const text = decodeSourceBytes(logicalBytes);
     loaded.push({
       id: record.id,
@@ -306,8 +326,7 @@ async function loadRegistryInputs(client: SupabaseClient, userId: string, source
   const records = await listSourceRecords(client, userId, sourceType);
   return Promise.all(
     records.map(async (record): Promise<LoadedSourceInput> => {
-      const storedBytes = await downloadBytes(client, record.storage_bucket, record.storage_path);
-      const { logicalBytes, logicalFileHash } = unpackRegisteredBytes(record, storedBytes);
+      const { logicalBytes, logicalFileHash } = await registeredLogicalBytes(client, record);
       const validation = await validateSourceBytes({
         bytes: logicalBytes,
         filename: record.original_filename,
@@ -431,7 +450,7 @@ export async function loadAnalysisSourceInputs(
   }
   // Registry가 있는 대용량 실행에서는 이미 등록·활성화된 파일만이 권위 입력이다.
   // legacy JSON을 재검증하면 같은 데이터를 다시 메모리에 올리므로 전환기 병합을 생략한다.
-  if (options.lightweight && registered.length > 0) return registered;
+  if (registered.length > 0) return registered;
   const legacy = await loadLegacyBacktestInputs(client, userId);
   const seen = new Set(registered.map((input) => input.dataHash));
   const uniqueLegacy = legacy.filter((input) => {
@@ -536,7 +555,7 @@ export async function registerSourceBytes(input: {
   origin: SourceUploadOrigin;
   bytes: Uint8Array;
   filename: string;
-  contentType?: string;
+  contentType?: string | undefined;
   syncLegacy?: boolean;
 }) {
   modeFor(input.sourceType, input.mode);
@@ -545,7 +564,7 @@ export async function registerSourceBytes(input: {
   const validation = await validateSourceBytes({
     bytes: input.bytes,
     filename: input.filename,
-    contentType: input.contentType,
+    ...(input.contentType ? { contentType: input.contentType } : {}),
   });
   if (!validation.valid)
     throw new Error(
@@ -596,11 +615,15 @@ export async function registerSourceBytes(input: {
 
   const sourceId = crypto.randomUUID();
   const storedName = safeFileName(validation.originalFilename, validation.format);
-  const storagePath = `${input.userId}/source/${input.sourceType}/${sourceId}/${storedName}`;
+  const compressBacktest = input.sourceType === "backtest" && validation.format === "csv";
+  const storageBytes = compressBacktest
+    ? new Uint8Array(gzipSync(input.bytes, { level: 9 }))
+    : input.bytes;
+  const storagePath = `${input.userId}/source/${input.sourceType}/${sourceId}/${storedName}${compressBacktest ? ".gz" : ""}`;
   const { error: uploadError } = await input.client.storage
     .from(ANALYSIS_BUCKET)
-    .upload(storagePath, input.bytes, {
-      contentType: validation.contentType,
+    .upload(storagePath, storageBytes, {
+      contentType: compressBacktest ? "application/octet-stream" : validation.contentType,
       upsert: false,
     });
   if (uploadError) throw new Error(`원천파일 업로드 실패: ${uploadError.message}`);
@@ -614,7 +637,25 @@ export async function registerSourceBytes(input: {
     validation,
     overlap,
   });
-  const { error: insertError } = await input.client.from("analysis_source_files").insert(record);
+  const storedRecord = compressBacktest
+    ? {
+        ...record,
+        canonical_format: "csv.gz",
+        content_type: "application/octet-stream",
+        file_size_bytes: storageBytes.byteLength,
+        file_hash: `sha256:${createHash("sha256").update(storageBytes).digest("hex")}`,
+        validation_result: {
+          ...record.validation_result,
+          backtestCanonicalMigration: {
+            logicalFileHash: validation.fileHash,
+            logicalSizeBytes: input.bytes.byteLength,
+          },
+        },
+      }
+    : record;
+  const { error: insertError } = await input.client
+    .from("analysis_source_files")
+    .insert(storedRecord);
   if (insertError) {
     await input.client.storage.from(ANALYSIS_BUCKET).remove([storagePath]);
     throw new Error(`원천데이터 등록 실패: ${insertError.message}`);
@@ -635,7 +676,7 @@ export async function registerSourceBytes(input: {
     if (input.sourceType === "screening") {
       const activeAfter = await loadRegistryInputs(input.client, input.userId, "screening");
       await syncLegacyScreening(input.client, input.userId, activeAfter, source.original_filename);
-    } else {
+    } else if (input.syncLegacy === true) {
       await syncLegacyBacktestEntry(
         input.client,
         input.userId,

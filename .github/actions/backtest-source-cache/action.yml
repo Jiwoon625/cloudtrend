@@ -1,0 +1,40 @@
+name: Verified backtest source cache
+description: Resolve metadata once, reuse verified files, and save before any experiment runs
+inputs:
+  manifest:
+    default: .cache/cloudtrend-backtest-manifest.json
+  directory:
+    default: .cache/cloudtrend-backtest
+outputs:
+  cache-key:
+    value: ${{ steps.source.outputs.cache_key }}
+  cache-hit:
+    value: ${{ steps.restore.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - id: source
+      shell: bash
+      env:
+        MANIFEST: ${{ inputs.manifest }}
+      run: npm run backtest:cache -- manifest --manifest "$MANIFEST"
+    - id: restore
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ inputs.directory }}
+        key: cloudtrend-backtest-raw-v2-${{ steps.source.outputs.cache_key }}
+        restore-keys: |
+          cloudtrend-backtest-raw-v2-
+          cloudtrend-backtest-raw-v1-
+    - name: Verify all local files and download only missing or corrupt files
+      shell: bash
+      env:
+        MANIFEST: ${{ inputs.manifest }}
+        CACHE_DIR: ${{ inputs.directory }}
+      run: npm run backtest:cache -- materialize --manifest "$MANIFEST" --cache-dir "$CACHE_DIR"
+    - name: Save verified source cache before running experiments
+      if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ inputs.directory }}
+        key: cloudtrend-backtest-raw-v2-${{ steps.source.outputs.cache_key }}

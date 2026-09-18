@@ -1,10 +1,12 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-import { parseManualMarketData } from "../src/lib/engine/manualDataset";
-import { buildPortfolioSignalContext } from "../src/lib/engine/sectorPenaltyPortfolioSignals";
+import {
+  parseSharedMarketData as parseManualMarketData,
+  loadResearchTexts,
+} from "./research-shared-input";
+import { buildSharedSignalContext as buildPortfolioSignalContext } from "./research-shared-input";
 import type { MarketDataset } from "../src/lib/engine/dataset";
 import type { DailyPrice } from "../src/lib/engine/types";
 import { trustedSupabaseClient, uploadJson } from "./analysis-run-store";
@@ -26,22 +28,6 @@ type Horizon = (typeof HORIZONS)[number];
 type Feature = (typeof FEATURES)[number];
 type FeatureMap = Record<Feature, number | null>;
 
-interface CacheManifestFile {
-  id: string;
-  fileName: string;
-  bytes: number;
-  savedAt: string;
-  fileHash: string;
-  cacheFile: string;
-}
-interface CacheManifest {
-  schemaVersion: 1;
-  sourceType: "backtest";
-  cacheKey: string;
-  fileCount: number;
-  totalBytes: number;
-  files: CacheManifestFile[];
-}
 interface Options {
   sourceManifest: string;
   sourceCacheDir: string;
@@ -91,14 +77,19 @@ function parseArgs(argv: string[]): Options {
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--source-manifest") options.sourceManifest = argv[++i] ?? usage("--source-manifest 값이 없습니다.");
-    else if (arg === "--source-cache-dir") options.sourceCacheDir = argv[++i] ?? usage("--source-cache-dir 값이 없습니다.");
-    else if (arg === "--supabase-user-id") options.userId = argv[++i] ?? usage("--supabase-user-id 값이 없습니다.");
+    if (arg === "--source-manifest")
+      options.sourceManifest = argv[++i] ?? usage("--source-manifest 값이 없습니다.");
+    else if (arg === "--source-cache-dir")
+      options.sourceCacheDir = argv[++i] ?? usage("--source-cache-dir 값이 없습니다.");
+    else if (arg === "--supabase-user-id")
+      options.userId = argv[++i] ?? usage("--supabase-user-id 값이 없습니다.");
     else if (arg === "--upload") options.upload = true;
     else usage(`지원하지 않는 인자입니다: ${arg}`);
   }
-  if (!options.sourceManifest || !options.sourceCacheDir) usage("source manifest와 cache dir가 필요합니다.");
-  if (options.upload && !/^[0-9a-f-]{36}$/i.test(options.userId ?? "")) usage("업로드에는 유효한 Supabase user id가 필요합니다.");
+  if (!options.sourceManifest || !options.sourceCacheDir)
+    usage("source manifest와 cache dir가 필요합니다.");
+  if (options.upload && !/^[0-9a-f-]{36}$/i.test(options.userId ?? ""))
+    usage("업로드에는 유효한 Supabase user id가 필요합니다.");
   return options;
 }
 const finite = (value: number | null | undefined): value is number =>
@@ -118,7 +109,9 @@ function round(value: number | null, digits = 6) {
   return Math.round(value * factor) / factor;
 }
 function ranks(values: number[]) {
-  const indexed = values.map((value, index) => ({ value, index })).sort((a, b) => a.value - b.value);
+  const indexed = values
+    .map((value, index) => ({ value, index }))
+    .sort((a, b) => a.value - b.value);
   const output = new Array<number>(values.length);
   let i = 0;
   while (i < indexed.length) {
@@ -158,33 +151,8 @@ function partialSpearman(x: number[], y: number[], control: number[]) {
   const denominator = Math.sqrt((1 - rxz * rxz) * (1 - ryz * ryz));
   return denominator > 0 ? (rxy - rxz * ryz) / denominator : null;
 }
-function decodeSourceBytes(bytes: Uint8Array) {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return new TextDecoder("euc-kr").decode(bytes);
-  }
-}
 async function loadCachedTexts(manifestPath: string, cacheDir: string) {
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as CacheManifest;
-  if (
-    manifest.schemaVersion !== 1 ||
-    manifest.sourceType !== "backtest" ||
-    !Array.isArray(manifest.files) ||
-    manifest.files.length !== manifest.fileCount
-  ) throw new Error("지원하지 않거나 손상된 source cache manifest입니다.");
-  const texts: string[] = [];
-  for (const file of manifest.files) {
-    const bytes = new Uint8Array(await readFile(path.join(cacheDir, file.cacheFile)));
-    const fileHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-    if (bytes.byteLength !== file.bytes || fileHash !== file.fileHash)
-      throw new Error(`source cache 무결성 검증 실패: ${file.fileName}`);
-    texts.push(decodeSourceBytes(bytes));
-  }
-  process.stderr.write(
-    `KOSPI Relative Quality stage12 source cache verified: ${manifest.fileCount} files / ${(manifest.totalBytes / 1_000_000).toFixed(1)} MB\n`,
-  );
-  return { texts, manifest };
+  return loadResearchTexts(manifestPath, cacheDir);
 }
 function benchmarkSeries(dataset: MarketDataset) {
   const series = dataset.indexSeries.find((item) => item.indexCode === "KOSPI");
@@ -196,10 +164,22 @@ function benchmarkSeries(dataset: MarketDataset) {
     indexByDate: new Map(bars.map((bar, index) => [bar.tradeDate, index])),
   };
 }
-function benchmarkReturn(benchmark: ReturnType<typeof benchmarkSeries>, entryDate: string, exitDate: string) {
+function benchmarkReturn(
+  benchmark: ReturnType<typeof benchmarkSeries>,
+  entryDate: string,
+  exitDate: string,
+) {
   const entry = benchmark.byDate.get(entryDate);
   const exit = benchmark.byDate.get(exitDate);
-  if (!entry || !exit || !finite(entry.open) || entry.open <= 0 || !finite(exit.close) || exit.close <= 0) return null;
+  if (
+    !entry ||
+    !exit ||
+    !finite(entry.open) ||
+    entry.open <= 0 ||
+    !finite(exit.close) ||
+    exit.close <= 0
+  )
+    return null;
   return (exit.close / entry.open - 1) * 100;
 }
 function adjustedScore10(baseScore9p5: number | null, sectorPriceLeadership: number | null) {
@@ -219,14 +199,30 @@ function alignedRs(
   if (marketIndex === undefined || marketIndex < lag) return null;
   const marketNow = benchmark.bars[marketIndex];
   const marketPast = benchmark.bars[marketIndex - lag];
-  if (!marketNow || !marketPast || !finite(marketNow.close) || !finite(marketPast.close) || marketPast.close <= 0) return null;
+  if (
+    !marketNow ||
+    !marketPast ||
+    !finite(marketNow.close) ||
+    !finite(marketPast.close) ||
+    marketPast.close <= 0
+  )
+    return null;
   const stockNowIndex = dateIndex.get(marketNow.tradeDate);
   const stockPastIndex = dateIndex.get(marketPast.tradeDate);
   if (stockNowIndex === undefined || stockPastIndex === undefined) return null;
   const stockNow = bars[stockNowIndex];
   const stockPast = bars[stockPastIndex];
-  if (!stockNow || !stockPast || !finite(stockNow.close) || !finite(stockPast.close) || stockPast.close <= 0) return null;
-  return (stockNow.close / stockPast.close - 1) * 100 - (marketNow.close / marketPast.close - 1) * 100;
+  if (
+    !stockNow ||
+    !stockPast ||
+    !finite(stockNow.close) ||
+    !finite(stockPast.close) ||
+    stockPast.close <= 0
+  )
+    return null;
+  return (
+    (stockNow.close / stockPast.close - 1) * 100 - (marketNow.close / marketPast.close - 1) * 100
+  );
 }
 function byDate<T extends { date: string }>(rows: T[]) {
   const map = new Map<string, T[]>();
@@ -237,11 +233,17 @@ function byDate<T extends { date: string }>(rows: T[]) {
   }
   return map;
 }
-function evaluate(rows: Observation[], feature: Feature, target: "indexExcess" | "sectorExcess" = "indexExcess") {
+function evaluate(
+  rows: Observation[],
+  feature: Feature,
+  target: "indexExcess" | "sectorExcess" = "indexExcess",
+) {
   const valid = rows.filter((row) => finite(row.features[feature]) && finite(row[target]));
   const xs = valid.map((row) => row.features[feature] as number);
   const ys = valid.map((row) => row[target] as number);
-  const sorted = [...valid].sort((a, b) => (a.features[feature] as number) - (b.features[feature] as number));
+  const sorted = [...valid].sort(
+    (a, b) => (a.features[feature] as number) - (b.features[feature] as number),
+  );
   const tailCount = Math.floor(sorted.length * 0.3);
   const low = tailCount >= 5 ? sorted.slice(0, tailCount) : [];
   const high = tailCount >= 5 ? sorted.slice(-tailCount) : [];
@@ -255,7 +257,9 @@ function evaluate(rows: Observation[], feature: Feature, target: "indexExcess" |
     const dateYs = dateRows.map((row) => row[target] as number);
     const ic = spearman(dateXs, dateYs);
     if (finite(ic)) dailyIc.push(ic);
-    const ordered = [...dateRows].sort((a, b) => (a.features[feature] as number) - (b.features[feature] as number));
+    const ordered = [...dateRows].sort(
+      (a, b) => (a.features[feature] as number) - (b.features[feature] as number),
+    );
     const half = Math.floor(ordered.length / 2);
     if (half >= 2) {
       const lower = ordered.slice(0, half).map((row) => row[target] as number);
@@ -270,18 +274,27 @@ function evaluate(rows: Observation[], feature: Feature, target: "indexExcess" |
     bottom30Count: low.length,
     top30AvgPct: round(average(highValues)),
     bottom30AvgPct: round(average(lowValues)),
-    topBottomSpreadPct: high.length && low.length ? round(average(highValues)! - average(lowValues)!) : null,
-    topBottomMedianSpreadPct: high.length && low.length ? round(median(highValues)! - median(lowValues)!) : null,
+    topBottomSpreadPct:
+      high.length && low.length ? round(average(highValues)! - average(lowValues)!) : null,
+    topBottomMedianSpreadPct:
+      high.length && low.length ? round(median(highValues)! - median(lowValues)!) : null,
     dailyCrossSections: dailyIc.length,
     meanDailySpearman: round(average(dailyIc)),
-    positiveDailyIcRatePct: dailyIc.length ? round((dailyIc.filter((v) => v > 0).length / dailyIc.length) * 100) : null,
+    positiveDailyIcRatePct: dailyIc.length
+      ? round((dailyIc.filter((v) => v > 0).length / dailyIc.length) * 100)
+      : null,
     meanDailyTopBottomSpreadPct: round(average(dailySpread)),
-    positiveDailySpreadRatePct: dailySpread.length ? round((dailySpread.filter((v) => v > 0).length / dailySpread.length) * 100) : null,
+    positiveDailySpreadRatePct: dailySpread.length
+      ? round((dailySpread.filter((v) => v > 0).length / dailySpread.length) * 100)
+      : null,
   };
 }
 function diagnostics(rows: Observation[]) {
   const valid = rows.filter(
-    (row) => finite(row.features.RS_ACCEL) && finite(row.features.SECTOR_REL_RS_ACCEL) && finite(row.indexExcess),
+    (row) =>
+      finite(row.features.RS_ACCEL) &&
+      finite(row.features.SECTOR_REL_RS_ACCEL) &&
+      finite(row.indexExcess),
   );
   if (valid.length < 5) return null;
   const raw = valid.map((row) => row.features.RS_ACCEL as number);
@@ -297,7 +310,7 @@ function diagnostics(rows: Observation[]) {
   };
 }
 
-async function main() {
+export async function runStudy() {
   const options = parseArgs(process.argv.slice(2));
   const { texts, manifest } = await loadCachedTexts(options.sourceManifest, options.sourceCacheDir);
   const dataset = parseManualMarketData(texts).dataset;
@@ -309,19 +322,36 @@ async function main() {
   const signalDates = new Set<string>();
   for (let seriesIndex = 0; seriesIndex < kospiSeries.length; seriesIndex++) {
     const series = kospiSeries[seriesIndex]!;
-    const scores = series.baseScores.map((base, index) => adjustedScore10(base, series.sectorPriceLeadership[index] ?? null));
+    const scores = series.baseScores.map((base, index) =>
+      adjustedScore10(base, series.sectorPriceLeadership[index] ?? null),
+    );
     for (let i = 1; i < series.bars.length; i++) {
       const signal = series.bars[i]!;
       const year = Number(signal.tradeDate.slice(0, 4));
       if (!YEARS.includes(year)) continue;
       const score = scores[i];
       const previousScore = scores[i - 1];
-      if (!finite(score) || !finite(previousScore) || previousScore >= ONSET_THRESHOLD || score < ONSET_THRESHOLD) continue;
+      if (
+        !finite(score) ||
+        !finite(previousScore) ||
+        previousScore >= ONSET_THRESHOLD ||
+        score < ONSET_THRESHOLD
+      )
+        continue;
       const rs20 = alignedRs(series.bars, series.dateIndex, benchmark, signal.tradeDate, 20);
       const rs60 = alignedRs(series.bars, series.dateIndex, benchmark, signal.tradeDate, 60);
       if (!finite(rs20) || !finite(rs60)) continue;
       const rsAccel = rs20 - rs60;
-      seeds.push({ year, date: signal.tradeDate, symbol: series.symbol, sectorCode: series.sectorCode, score, signalIndex: i, seriesIndex, rsAccel });
+      seeds.push({
+        year,
+        date: signal.tradeDate,
+        symbol: series.symbol,
+        sectorCode: series.sectorCode,
+        score,
+        signalIndex: i,
+        seriesIndex,
+        rsAccel,
+      });
       signalDates.add(signal.tradeDate);
     }
   }
@@ -348,7 +378,15 @@ async function main() {
         if (i === undefined) continue;
         const entry = series.bars[i + 1];
         const exit = series.bars[i + horizon];
-        if (!entry || !exit || !finite(entry.open) || entry.open <= 0 || !finite(exit.close) || exit.close <= 0) continue;
+        if (
+          !entry ||
+          !exit ||
+          !finite(entry.open) ||
+          entry.open <= 0 ||
+          !finite(exit.close) ||
+          exit.close <= 0
+        )
+          continue;
         const key = `${date}|${horizon}|${series.sectorCode}`;
         const bucket = futureSectorReturns.get(key) ?? [];
         bucket.push({ symbol: series.symbol, ret: (exit.close / entry.open - 1) * 100 });
@@ -361,19 +399,35 @@ async function main() {
   let sectorFeatureAvailable = 0;
   for (const seed of seeds) {
     const series = kospiSeries[seed.seriesIndex]!;
-    const peerRs = (sectorRsByDate.get(seed.date)?.get(seed.sectorCode) ?? []).filter((item) => item.symbol !== seed.symbol);
-    const sectorRsAccel = peerRs.length >= MIN_SECTOR_PEERS ? median(peerRs.map((item) => item.value)) : null;
+    const peerRs = (sectorRsByDate.get(seed.date)?.get(seed.sectorCode) ?? []).filter(
+      (item) => item.symbol !== seed.symbol,
+    );
+    const sectorRsAccel =
+      peerRs.length >= MIN_SECTOR_PEERS ? median(peerRs.map((item) => item.value)) : null;
     const sectorRelRsAccel = finite(sectorRsAccel) ? seed.rsAccel - sectorRsAccel : null;
     if (finite(sectorRelRsAccel)) sectorFeatureAvailable++;
     for (const horizon of HORIZONS) {
       const entry = series.bars[seed.signalIndex + 1];
       const exit = series.bars[seed.signalIndex + horizon];
-      if (!entry || !exit || !finite(entry.open) || entry.open <= 0 || !finite(exit.close) || exit.close <= 0) continue;
+      if (
+        !entry ||
+        !exit ||
+        !finite(entry.open) ||
+        entry.open <= 0 ||
+        !finite(exit.close) ||
+        exit.close <= 0
+      )
+        continue;
       const indexReturn = benchmarkReturn(benchmark, entry.tradeDate, exit.tradeDate);
       if (!finite(indexReturn)) continue;
       const ret = (exit.close / entry.open - 1) * 100;
-      const peerReturns = (futureSectorReturns.get(`${seed.date}|${horizon}|${seed.sectorCode}`) ?? []).filter((item) => item.symbol !== seed.symbol);
-      const sectorReturn = peerReturns.length >= MIN_SECTOR_PEERS ? average(peerReturns.map((item) => item.ret)) : null;
+      const peerReturns = (
+        futureSectorReturns.get(`${seed.date}|${horizon}|${seed.sectorCode}`) ?? []
+      ).filter((item) => item.symbol !== seed.symbol);
+      const sectorReturn =
+        peerReturns.length >= MIN_SECTOR_PEERS
+          ? average(peerReturns.map((item) => item.ret))
+          : null;
       observations.push({
         year: seed.year,
         horizon,
@@ -409,10 +463,19 @@ async function main() {
   );
   const yearly20 = COMPLETE_YEARS.flatMap((year) => {
     const rows = observations.filter((row) => row.year === year && row.horizon === 20);
-    return FEATURES.map((feature) => ({ year, feature, indexExcess: evaluate(rows, feature, "indexExcess"), sectorExcess: evaluate(rows, feature, "sectorExcess") }));
+    return FEATURES.map((feature) => ({
+      year,
+      feature,
+      indexExcess: evaluate(rows, feature, "indexExcess"),
+      sectorExcess: evaluate(rows, feature, "sectorExcess"),
+    }));
   });
   const holdoutRows = observations.filter((row) => row.year === 2026 && row.horizon === 20);
-  const holdout2026 = FEATURES.map((feature) => ({ feature, indexExcess: evaluate(holdoutRows, feature, "indexExcess"), sectorExcess: evaluate(holdoutRows, feature, "sectorExcess") }));
+  const holdout2026 = FEATURES.map((feature) => ({
+    feature,
+    indexExcess: evaluate(holdoutRows, feature, "indexExcess"),
+    sectorExcess: evaluate(holdoutRows, feature, "sectorExcess"),
+  }));
 
   const candidateSummary = FEATURES.map((feature) => {
     const fold20 = foldResults.filter((row) => row.feature === feature && row.horizon === 20);
@@ -421,18 +484,40 @@ async function main() {
     return {
       feature,
       threeFos20: {
-        indexMeanSpearman: round(average(fold20.map((row) => row.indexExcess.spearman).filter(finite))),
-        indexPositiveSpearmanFolds: fold20.filter((row) => finite(row.indexExcess.spearman) && row.indexExcess.spearman > 0).length,
-        indexMeanSpreadPct: round(average(fold20.map((row) => row.indexExcess.topBottomSpreadPct).filter(finite))),
-        indexPositiveSpreadFolds: fold20.filter((row) => finite(row.indexExcess.topBottomSpreadPct) && row.indexExcess.topBottomSpreadPct > 0).length,
-        sectorMeanSpearman: round(average(fold20.map((row) => row.sectorExcess.spearman).filter(finite))),
-        sectorMeanSpreadPct: round(average(fold20.map((row) => row.sectorExcess.topBottomSpreadPct).filter(finite))),
+        indexMeanSpearman: round(
+          average(fold20.map((row) => row.indexExcess.spearman).filter(finite)),
+        ),
+        indexPositiveSpearmanFolds: fold20.filter(
+          (row) => finite(row.indexExcess.spearman) && row.indexExcess.spearman > 0,
+        ).length,
+        indexMeanSpreadPct: round(
+          average(fold20.map((row) => row.indexExcess.topBottomSpreadPct).filter(finite)),
+        ),
+        indexPositiveSpreadFolds: fold20.filter(
+          (row) =>
+            finite(row.indexExcess.topBottomSpreadPct) && row.indexExcess.topBottomSpreadPct > 0,
+        ).length,
+        sectorMeanSpearman: round(
+          average(fold20.map((row) => row.sectorExcess.spearman).filter(finite)),
+        ),
+        sectorMeanSpreadPct: round(
+          average(fold20.map((row) => row.sectorExcess.topBottomSpreadPct).filter(finite)),
+        ),
       },
       yearly2017to2025: {
-        positiveIndexSpearmanYears: annual.filter((row) => finite(row.indexExcess.spearman) && row.indexExcess.spearman > 0).length,
-        meanIndexSpearman: round(average(annual.map((row) => row.indexExcess.spearman).filter(finite))),
-        positiveIndexSpreadYears: annual.filter((row) => finite(row.indexExcess.topBottomSpreadPct) && row.indexExcess.topBottomSpreadPct > 0).length,
-        meanIndexSpreadPct: round(average(annual.map((row) => row.indexExcess.topBottomSpreadPct).filter(finite))),
+        positiveIndexSpearmanYears: annual.filter(
+          (row) => finite(row.indexExcess.spearman) && row.indexExcess.spearman > 0,
+        ).length,
+        meanIndexSpearman: round(
+          average(annual.map((row) => row.indexExcess.spearman).filter(finite)),
+        ),
+        positiveIndexSpreadYears: annual.filter(
+          (row) =>
+            finite(row.indexExcess.topBottomSpreadPct) && row.indexExcess.topBottomSpreadPct > 0,
+        ).length,
+        meanIndexSpreadPct: round(
+          average(annual.map((row) => row.indexExcess.topBottomSpreadPct).filter(finite)),
+        ),
       },
       holdout2026: {
         observations: holdout.indexExcess.observations,
@@ -442,32 +527,60 @@ async function main() {
         sectorSpreadPct: holdout.sectorExcess.topBottomSpreadPct,
       },
       robustness3Fos: [5, 40].map((horizon) => {
-        const rows = foldResults.filter((row) => row.feature === feature && row.horizon === horizon);
+        const rows = foldResults.filter(
+          (row) => row.feature === feature && row.horizon === horizon,
+        );
         return {
           horizon,
-          meanIndexSpearman: round(average(rows.map((row) => row.indexExcess.spearman).filter(finite))),
-          positiveIndexSpearmanFolds: rows.filter((row) => finite(row.indexExcess.spearman) && row.indexExcess.spearman > 0).length,
-          meanIndexSpreadPct: round(average(rows.map((row) => row.indexExcess.topBottomSpreadPct).filter(finite))),
-          positiveIndexSpreadFolds: rows.filter((row) => finite(row.indexExcess.topBottomSpreadPct) && row.indexExcess.topBottomSpreadPct > 0).length,
+          meanIndexSpearman: round(
+            average(rows.map((row) => row.indexExcess.spearman).filter(finite)),
+          ),
+          positiveIndexSpearmanFolds: rows.filter(
+            (row) => finite(row.indexExcess.spearman) && row.indexExcess.spearman > 0,
+          ).length,
+          meanIndexSpreadPct: round(
+            average(rows.map((row) => row.indexExcess.topBottomSpreadPct).filter(finite)),
+          ),
+          positiveIndexSpreadFolds: rows.filter(
+            (row) =>
+              finite(row.indexExcess.topBottomSpreadPct) && row.indexExcess.topBottomSpreadPct > 0,
+          ).length,
         };
       }),
     };
   });
 
   const diagnosticSummary = {
-    threeFos20: FOLD_YEARS.map((year) => ({ year, ...diagnostics(observations.filter((row) => row.year === year && row.horizon === 20)) })),
-    completeYears20: COMPLETE_YEARS.map((year) => ({ year, ...diagnostics(observations.filter((row) => row.year === year && row.horizon === 20)) })),
+    threeFos20: FOLD_YEARS.map((year) => ({
+      year,
+      ...diagnostics(observations.filter((row) => row.year === year && row.horizon === 20)),
+    })),
+    completeYears20: COMPLETE_YEARS.map((year) => ({
+      year,
+      ...diagnostics(observations.filter((row) => row.year === year && row.horizon === 20)),
+    })),
     holdout2026: diagnostics(holdoutRows),
   };
 
   const raw = candidateSummary.find((row) => row.feature === "RS_ACCEL")!;
   const sectorRelative = candidateSummary.find((row) => row.feature === "SECTOR_REL_RS_ACCEL")!;
   const decisionComparison = {
-    threeFos20MeanIcDelta: round((sectorRelative.threeFos20.indexMeanSpearman ?? 0) - (raw.threeFos20.indexMeanSpearman ?? 0)),
-    threeFos20MeanSpreadDeltaPct: round((sectorRelative.threeFos20.indexMeanSpreadPct ?? 0) - (raw.threeFos20.indexMeanSpreadPct ?? 0)),
-    positiveYearDelta: sectorRelative.yearly2017to2025.positiveIndexSpearmanYears - raw.yearly2017to2025.positiveIndexSpearmanYears,
-    holdout2026IcDelta: round((sectorRelative.holdout2026.indexSpearman ?? 0) - (raw.holdout2026.indexSpearman ?? 0)),
-    holdout2026SpreadDeltaPct: round((sectorRelative.holdout2026.indexSpreadPct ?? 0) - (raw.holdout2026.indexSpreadPct ?? 0)),
+    threeFos20MeanIcDelta: round(
+      (sectorRelative.threeFos20.indexMeanSpearman ?? 0) - (raw.threeFos20.indexMeanSpearman ?? 0),
+    ),
+    threeFos20MeanSpreadDeltaPct: round(
+      (sectorRelative.threeFos20.indexMeanSpreadPct ?? 0) -
+        (raw.threeFos20.indexMeanSpreadPct ?? 0),
+    ),
+    positiveYearDelta:
+      sectorRelative.yearly2017to2025.positiveIndexSpearmanYears -
+      raw.yearly2017to2025.positiveIndexSpearmanYears,
+    holdout2026IcDelta: round(
+      (sectorRelative.holdout2026.indexSpearman ?? 0) - (raw.holdout2026.indexSpearman ?? 0),
+    ),
+    holdout2026SpreadDeltaPct: round(
+      (sectorRelative.holdout2026.indexSpreadPct ?? 0) - (raw.holdout2026.indexSpreadPct ?? 0),
+    ),
     rule: "Prefer sector-relative only if it adds repeatable 3-FOS and 2026 holdout separation rather than merely changing one pooled average; otherwise retain raw RSAccel as the final KOSPI Relative Quality feature.",
   };
 
@@ -490,21 +603,26 @@ async function main() {
       evaluatedRows: observations.length,
     },
     design: {
-      objective: "Final test of whether within-sector RSAccel adds useful information beyond raw KOSPI-relative RSAccel inside strict V8 8-point KOSPI onset candidates.",
+      objective:
+        "Final test of whether within-sector RSAccel adds useful information beyond raw KOSPI-relative RSAccel inside strict V8 8-point KOSPI onset candidates.",
       completeYears: COMPLETE_YEARS,
       threeFosYears: [...FOLD_YEARS],
       holdoutYear: 2026,
       horizons: [...HORIZONS],
       featureDefinitions: {
         RS_ACCEL: "Stock RS20 minus RS60 versus KOSPI, aligned to identical KOSPI trading dates.",
-        SECTOR_RS_ACCEL: "Leave-one-out median RSAccel of other KOSPI stocks in the same mapped sector on the signal date; requires at least three peers.",
+        SECTOR_RS_ACCEL:
+          "Leave-one-out median RSAccel of other KOSPI stocks in the same mapped sector on the signal date; requires at least three peers.",
         SECTOR_REL_RS_ACCEL: "Stock RSAccel minus leave-one-out sector median RSAccel.",
       },
       targets: {
-        indexExcess: "Future stock return minus KOSPI return over identical NEXT_OPEN to horizon-close dates.",
-        sectorExcess: "Future stock return minus equal-weight return of other KOSPI stocks in the same mapped sector over the same signal date/horizon; evaluation target only.",
+        indexExcess:
+          "Future stock return minus KOSPI return over identical NEXT_OPEN to horizon-close dates.",
+        sectorExcess:
+          "Future stock return minus equal-weight return of other KOSPI stocks in the same mapped sector over the same signal date/horizon; evaluation target only.",
       },
-      pointInTime: "All feature values use only prices observable on or before the signal close. Future sector returns are used only as evaluation targets.",
+      pointInTime:
+        "All feature values use only prices observable on or before the signal close. Future sector returns are used only as evaluation targets.",
       selectionRule: decisionComparison.rule,
     },
     candidateSummary,
@@ -522,19 +640,31 @@ async function main() {
 
   const outputDir = path.resolve("analysis-runs");
   await mkdir(outputDir, { recursive: true });
-  const outputPath = path.join(outputDir, `v8-kospi-relative-quality-stage12-sector-relative-${runId}.json`);
+  const outputPath = path.join(
+    outputDir,
+    `v8-kospi-relative-quality-stage12-sector-relative-${runId}.json`,
+  );
   await writeFile(outputPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
   let remotePath: string | null = null;
   if (options.upload) {
     const client = trustedSupabaseClient();
     remotePath = `${options.userId}/results/v8-kospi-relative-quality-stage12-sector-relative/${runId}.json`;
     await uploadJson(client, remotePath, result);
-    await uploadJson(client, `${options.userId}/results/v8-kospi-relative-quality-stage12-sector-relative/latest.json`, result);
+    await uploadJson(
+      client,
+      `${options.userId}/results/v8-kospi-relative-quality-stage12-sector-relative/latest.json`,
+      result,
+    );
   }
-  process.stdout.write(`${JSON.stringify({ outputPath, remotePath, candidateSummary, decisionComparison, diagnosticSummary }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify({ outputPath, remotePath, candidateSummary, decisionComparison, diagnosticSummary }, null, 2)}\n`,
+  );
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1]?.endsWith("run-v8-kospi-relative-quality-stage12-sector-relative.ts"))
+  runStudy().catch((error: unknown) => {
+    process.stderr.write(
+      `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+    );
+    process.exitCode = 1;
+  });

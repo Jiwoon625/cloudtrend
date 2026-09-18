@@ -95,12 +95,15 @@ function digestFromHash(hash: string) {
   return digest.toLowerCase();
 }
 
-function cacheKeyFor(files: BacktestSourceCacheManifestFile[]) {
-  const canonical = [...files]
-    .map((file) => ({ dataHash: file.dataHash, schemaHash: file.schemaHash }))
-    .sort((a, b) =>
-      `${a.dataHash}:${a.schemaHash}`.localeCompare(`${b.dataHash}:${b.schemaHash}`),
-    );
+export function cacheKeyFor(files: BacktestSourceCacheManifestFile[]) {
+  // Preserve source precedence and distinguish different CSV encodings of the same data.
+  // Physical gzip/parquet paths do not invalidate this logical identity.
+  const canonical = files.map((file) => ({
+    id: file.id,
+    dataHash: file.dataHash,
+    schemaHash: file.schemaHash,
+    fileHash: file.fileHash,
+  }));
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
@@ -142,7 +145,7 @@ async function createManifest(options: Options) {
       storageBytes: record.file_size_bytes,
       storageFileHash: record.file_hash,
       canonicalFormat: record.canonical_format,
-      cacheFile: `${digestFromHash(record.data_hash)}.source`,
+      cacheFile: `${digestFromHash(logical.logicalFileHash)}.source`,
     };
   });
 
@@ -153,10 +156,7 @@ async function createManifest(options: Options) {
     cacheKey: cacheKeyFor(files),
     fileCount: files.length,
     totalBytes: files.reduce((sum, file) => sum + file.bytes, 0),
-    totalStorageBytes: files.reduce(
-      (sum, file) => sum + (file.storageBytes ?? file.bytes),
-      0,
-    ),
+    totalStorageBytes: files.reduce((sum, file) => sum + (file.storageBytes ?? file.bytes), 0),
     files,
   };
 
@@ -189,14 +189,13 @@ async function createManifest(options: Options) {
   );
 }
 
-async function readManifest(manifestPath: string) {
-  const manifest = JSON.parse(
-    await readFile(manifestPath, "utf8"),
-  ) as BacktestSourceCacheManifest;
+export async function readManifest(manifestPath: string) {
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as BacktestSourceCacheManifest;
   if (
     manifest.schemaVersion !== 1 ||
     manifest.sourceType !== "backtest" ||
-    !Array.isArray(manifest.files)
+    !Array.isArray(manifest.files) ||
+    manifest.files.length !== manifest.fileCount
   )
     throw new Error("지원하지 않는 백테스트 cache manifest입니다.");
   if (cacheKeyFor(manifest.files) !== manifest.cacheKey)
@@ -223,9 +222,9 @@ function unpackStoredBytes(file: BacktestSourceCacheManifestFile, stored: Uint8A
   return stored;
 }
 
-async function materialize(options: Options) {
+export async function materialize(options: Options) {
   const manifest = await readManifest(options.manifestPath);
-  const client = trustedSupabaseClient();
+  let client: ReturnType<typeof trustedSupabaseClient> | undefined;
   await mkdir(options.cacheDir, { recursive: true });
 
   let cacheHits = 0;
@@ -234,12 +233,14 @@ async function materialize(options: Options) {
   let materializedBytes = 0;
 
   for (const file of manifest.files) {
+    if (!/^[0-9a-f]{64}\.source$/.test(file.cacheFile)) throw new Error("Invalid cache path");
     const target = path.join(options.cacheDir, file.cacheFile);
     if (await usableCachedFile(target, file)) {
       cacheHits += 1;
       continue;
     }
 
+    client ??= trustedSupabaseClient();
     const { data, error } = await client.storage
       .from(file.storageBucket)
       .download(file.storagePath);
@@ -251,10 +252,7 @@ async function materialize(options: Options) {
     const stored = new Uint8Array(await data.arrayBuffer());
     const expectedStorageBytes = file.storageBytes ?? file.bytes;
     const expectedStorageHash = file.storageFileHash ?? file.fileHash;
-    if (
-      stored.byteLength !== expectedStorageBytes ||
-      hashBytes(stored) !== expectedStorageHash
-    )
+    if (stored.byteLength !== expectedStorageBytes || hashBytes(stored) !== expectedStorageHash)
       throw new Error(`백테스트 저장객체 무결성 검증 실패: ${file.fileName}`);
 
     const logical = unpackStoredBytes(file, stored);
@@ -267,6 +265,7 @@ async function materialize(options: Options) {
     materializedBytes += logical.byteLength;
   }
 
+  const report = { cacheHits, downloadedFiles, downloadedStorageBytes: downloadedBytes };
   process.stdout.write(
     `${JSON.stringify(
       {
@@ -282,6 +281,7 @@ async function materialize(options: Options) {
       2,
     )}\n`,
   );
+  return report;
 }
 
 async function main() {
@@ -290,7 +290,8 @@ async function main() {
   else await materialize(options);
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1]?.endsWith("backtest-source-cache.ts"))
+  main().catch((error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  });

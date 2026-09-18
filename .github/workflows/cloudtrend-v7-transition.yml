@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: cloudtrend-v7-transition-${{ github.repository }}
+  group: cloudtrend-backtest-${{ github.event_name == 'pull_request' && github.ref || 'data' }}
   cancel-in-progress: false
 
 jobs:
@@ -25,6 +25,8 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      BACKTEST_SOURCE_MANIFEST: .cache/cloudtrend-backtest-manifest.json
+      BACKTEST_SOURCE_CACHE_DIR: .cache/cloudtrend-backtest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,6 +40,8 @@ jobs:
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
           test -n "$SUPABASE_USER_ID"
+      - name: Prepare verified shared backtest sources
+        uses: ./.github/actions/backtest-source-cache
       - name: Run V7.3 sector score band transition backtest
         run: |
           npx vite-node scripts/run-sector-transition-backtest.ts \

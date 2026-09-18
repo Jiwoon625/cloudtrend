@@ -4,11 +4,7 @@ import process from "node:process";
 
 import { parseManualMarketData } from "../src/lib/engine/manualDataset";
 import { runSectorScoreTransitionBacktest } from "../src/lib/engine/sectorScoreTransitionBacktest";
-import {
-  codeVersion,
-  trustedSupabaseClient,
-  uploadJson,
-} from "./analysis-run-store";
+import { codeVersion, trustedSupabaseClient, uploadJson } from "./analysis-run-store";
 import { loadAnalysisSourceInputs } from "./source-registry-store";
 
 interface Options {
@@ -49,7 +45,9 @@ function parseArgs(argv: string[]): Options {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const client = trustedSupabaseClient();
-  const inputs = await loadAnalysisSourceInputs(client, options.supabaseUserId!, "backtest");
+  const inputs = await loadAnalysisSourceInputs(client, options.supabaseUserId!, "backtest", {
+    lightweight: true,
+  });
   const parsed = parseManualMarketData(inputs.map((input) => input.text));
   const result = runSectorScoreTransitionBacktest(parsed.dataset);
   if (!result) throw new Error("V7.3 섹터 점수대 전환 백테스트 결과를 계산하지 못했습니다.");
@@ -77,7 +75,10 @@ async function main() {
 
   const outputDir = path.resolve(options.outputRoot, runId);
   await mkdir(outputDir, { recursive: true });
-  await writeFile(path.join(outputDir, "sector-score-transitions.json"), JSON.stringify(payload, null, 2));
+  await writeFile(
+    path.join(outputDir, "sector-score-transitions.json"),
+    JSON.stringify(payload, null, 2),
+  );
 
   let remotePath: string | null = null;
   if (options.upload) {
@@ -85,7 +86,9 @@ async function main() {
     await uploadJson(client, remotePath, payload);
   }
 
-  process.stdout.write(`${JSON.stringify({ outputDir, remotePath, run: payload.run, result }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify({ outputDir, remotePath, run: payload.run, result }, null, 2)}\n`,
+  );
 }
 
 main().catch((error: unknown) => {

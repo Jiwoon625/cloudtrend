@@ -1,10 +1,12 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-import { parseManualMarketData } from "../src/lib/engine/manualDataset";
-import { buildPortfolioSignalContext } from "../src/lib/engine/sectorPenaltyPortfolioSignals";
+import {
+  parseSharedMarketData as parseManualMarketData,
+  loadResearchTexts,
+} from "./research-shared-input";
+import { buildSharedSignalContext as buildPortfolioSignalContext } from "./research-shared-input";
 import type { MarketDataset } from "../src/lib/engine/dataset";
 import type { DailyPrice } from "../src/lib/engine/types";
 import { trustedSupabaseClient, uploadJson } from "./analysis-run-store";
@@ -36,22 +38,6 @@ type Feature = (typeof FEATURES)[number];
 
 type FeatureMap = Record<Feature, number | null>;
 
-interface CacheManifestFile {
-  id: string;
-  fileName: string;
-  bytes: number;
-  savedAt: string;
-  fileHash: string;
-  cacheFile: string;
-}
-interface CacheManifest {
-  schemaVersion: 1;
-  sourceType: "backtest";
-  cacheKey: string;
-  fileCount: number;
-  totalBytes: number;
-  files: CacheManifestFile[];
-}
 interface Options {
   sourceManifest: string;
   sourceCacheDir: string;
@@ -122,7 +108,9 @@ function round(value: number | null, digits = 6) {
   return Math.round(value * factor) / factor;
 }
 function ranks(values: number[]) {
-  const indexed = values.map((value, index) => ({ value, index })).sort((a, b) => a.value - b.value);
+  const indexed = values
+    .map((value, index) => ({ value, index }))
+    .sort((a, b) => a.value - b.value);
   const output = new Array<number>(values.length);
   let i = 0;
   while (i < indexed.length) {
@@ -155,35 +143,8 @@ function spearman(xs: number[], ys: number[]) {
   return pearson(ranks(xs), ranks(ys));
 }
 
-function decodeSourceBytes(bytes: Uint8Array) {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return new TextDecoder("euc-kr").decode(bytes);
-  }
-}
-
 async function loadCachedTexts(manifestPath: string, cacheDir: string) {
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as CacheManifest;
-  if (
-    manifest.schemaVersion !== 1 ||
-    manifest.sourceType !== "backtest" ||
-    !Array.isArray(manifest.files) ||
-    manifest.files.length !== manifest.fileCount
-  )
-    throw new Error("지원하지 않거나 손상된 source cache manifest입니다.");
-  const texts: string[] = [];
-  for (const file of manifest.files) {
-    const bytes = new Uint8Array(await readFile(path.join(cacheDir, file.cacheFile)));
-    const fileHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-    if (bytes.byteLength !== file.bytes || fileHash !== file.fileHash)
-      throw new Error(`source cache 무결성 검증 실패: ${file.fileName}`);
-    texts.push(decodeSourceBytes(bytes));
-  }
-  process.stderr.write(
-    `KOSPI Relative Quality stage9 source cache verified: ${manifest.fileCount} files / ${(manifest.totalBytes / 1_000_000).toFixed(1)} MB\n`,
-  );
-  return { texts, manifest };
+  return loadResearchTexts(manifestPath, cacheDir);
 }
 
 function benchmarkSeries(dataset: MarketDataset) {
@@ -393,9 +354,17 @@ function relativeFeatures(
       return null;
     const stockPast = bars[stockPastIndex];
     const stockNow = bars[stockNowIndex];
-    if (!stockPast || !stockNow || !finite(stockPast.close) || stockPast.close <= 0 || !finite(stockNow.close))
+    if (
+      !stockPast ||
+      !stockNow ||
+      !finite(stockPast.close) ||
+      stockPast.close <= 0 ||
+      !finite(stockNow.close)
+    )
       return null;
-    return (stockNow.close / stockPast.close - 1) * 100 - (marketNow.close / marketPast.close - 1) * 100;
+    return (
+      (stockNow.close / stockPast.close - 1) * 100 - (marketNow.close / marketPast.close - 1) * 100
+    );
   })();
   const rs60 = (() => {
     const marketPast = benchmark.bars[benchmarkIndex - 60];
@@ -414,9 +383,17 @@ function relativeFeatures(
       return null;
     const stockPast = bars[stockPastIndex];
     const stockNow = bars[stockNowIndex];
-    if (!stockPast || !stockNow || !finite(stockPast.close) || stockPast.close <= 0 || !finite(stockNow.close))
+    if (
+      !stockPast ||
+      !stockNow ||
+      !finite(stockPast.close) ||
+      stockPast.close <= 0 ||
+      !finite(stockNow.close)
+    )
       return null;
-    return (stockNow.close / stockPast.close - 1) * 100 - (marketNow.close / marketPast.close - 1) * 100;
+    return (
+      (stockNow.close / stockPast.close - 1) * 100 - (marketNow.close / marketPast.close - 1) * 100
+    );
   })();
 
   return {
@@ -455,9 +432,13 @@ function evaluate(rows: Observation[], feature: Feature) {
   const bottom = tailCount >= 5 ? sorted.slice(0, tailCount) : [];
   const top = tailCount >= 5 ? sorted.slice(-tailCount) : [];
   const pooledSpread =
-    top.length && bottom.length ? average(top.map((row) => row.excess))! - average(bottom.map((row) => row.excess))! : null;
+    top.length && bottom.length
+      ? average(top.map((row) => row.excess))! - average(bottom.map((row) => row.excess))!
+      : null;
   const pooledMedianSpread =
-    top.length && bottom.length ? median(top.map((row) => row.excess))! - median(bottom.map((row) => row.excess))! : null;
+    top.length && bottom.length
+      ? median(top.map((row) => row.excess))! - median(bottom.map((row) => row.excess))!
+      : null;
 
   const dailyIc: number[] = [];
   const dailySpread: number[] = [];
@@ -474,7 +455,9 @@ function evaluate(rows: Observation[], feature: Feature) {
     if (half >= 2) {
       const low = ordered.slice(0, half);
       const high = ordered.slice(-half);
-      dailySpread.push(average(high.map((row) => row.excess))! - average(low.map((row) => row.excess))!);
+      dailySpread.push(
+        average(high.map((row) => row.excess))! - average(low.map((row) => row.excess))!,
+      );
     }
   }
 
@@ -503,7 +486,7 @@ function evaluate(rows: Observation[], feature: Feature) {
   };
 }
 
-async function main() {
+export async function runStudy() {
   const options = parseArgs(process.argv.slice(2));
   const { texts, manifest } = await loadCachedTexts(options.sourceManifest, options.sourceCacheDir);
   const parsed = parseManualMarketData(texts);
@@ -529,12 +512,7 @@ async function main() {
       if (!onset8) continue;
       rawOnsets++;
 
-      const features = relativeFeatures(
-        series.bars,
-        series.dateIndex,
-        benchmark,
-        signal.tradeDate,
-      );
+      const features = relativeFeatures(series.bars, series.dateIndex, benchmark, signal.tradeDate);
       if (!features) continue;
       const entry = series.bars[i + 1];
       if (!entry || !finite(entry.open) || entry.open <= 0) continue;
@@ -583,7 +561,9 @@ async function main() {
       return {
         horizon,
         meanSpearman: round(average(rows.map((row) => row.overallSpearman).filter(finite))),
-        positiveSpearmanFolds: rows.filter((row) => finite(row.overallSpearman) && row.overallSpearman > 0).length,
+        positiveSpearmanFolds: rows.filter(
+          (row) => finite(row.overallSpearman) && row.overallSpearman > 0,
+        ).length,
         meanTopBottomSpreadPct: round(
           average(rows.map((row) => row.topBottomAvgSpreadPct).filter(finite)),
         ),
@@ -599,7 +579,9 @@ async function main() {
         positiveSpearmanFolds: fold20.filter(
           (row) => finite(row.overallSpearman) && row.overallSpearman > 0,
         ).length,
-        meanDailySpearman: round(average(fold20.map((row) => row.meanDailySpearman).filter(finite))),
+        meanDailySpearman: round(
+          average(fold20.map((row) => row.meanDailySpearman).filter(finite)),
+        ),
         meanTopBottomSpreadPct: round(
           average(fold20.map((row) => row.topBottomAvgSpreadPct).filter(finite)),
         ),
@@ -671,14 +653,15 @@ async function main() {
         RS_ACCEL: "Existing baseline: RS20 - RS60 using identical KOSPI trading dates.",
         RESID20:
           "Sum of the last 20 aligned daily stock residual returns after removing beta120 * KOSPI daily return; beta120 is estimated point-in-time from up to 120 prior aligned daily returns with at least 100 pairs.",
-        RESID60:
-          "Same beta-adjusted residual momentum over the last 60 KOSPI trading days.",
+        RESID60: "Same beta-adjusted residual momentum over the last 60 KOSPI trading days.",
         RESID_ACCEL: "RESID20 - RESID60; recent idiosyncratic momentum improvement.",
         REL_TREND20: "20-day return of the stock/KOSPI relative-price ratio.",
         REL_MA60_GAP: "Current stock/KOSPI relative-price ratio versus its trailing 60-day mean.",
-        REL_HIGH120_GAP: "Current stock/KOSPI relative-price ratio versus its trailing 120-day high; values closer to zero are stronger.",
+        REL_HIGH120_GAP:
+          "Current stock/KOSPI relative-price ratio versus its trailing 120-day high; values closer to zero are stronger.",
       },
-      target: "Future stock return minus KOSPI return over identical NEXT_OPEN to horizon-close dates.",
+      target:
+        "Future stock return minus KOSPI return over identical NEXT_OPEN to horizon-close dates.",
       crossSection:
         "Research is restricted to strict V8 8-point upward onset candidates. Top/bottom spread compares the highest and lowest 30% of each feature within the evaluation period; daily statistics use onset dates with at least four candidates.",
       pointInTime:
@@ -720,7 +703,10 @@ async function main() {
   );
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1]?.endsWith("run-v8-kospi-relative-quality-stage9.ts"))
+  runStudy().catch((error: unknown) => {
+    process.stderr.write(
+      `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+    );
+    process.exitCode = 1;
+  });

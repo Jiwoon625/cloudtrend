@@ -66,13 +66,15 @@ function hashBytes(bytes: Uint8Array) {
 }
 
 function safeStem(filename: string) {
-  return path
-    .basename(filename)
-    .normalize("NFKC")
-    .replace(/[^0-9A-Za-z가-힣._-]/g, "-")
-    .replace(/\.(csv|txt|json|xlsx)$/i, "")
-    .replace(/^[-.]+|[-.]+$/g, "")
-    .slice(0, 100) || "source";
+  return (
+    path
+      .basename(filename)
+      .normalize("NFKC")
+      .replace(/[^0-9A-Za-z가-힣._-]/g, "-")
+      .replace(/\.(csv|txt|json|xlsx)$/i, "")
+      .replace(/^[-.]+|[-.]+$/g, "")
+      .slice(0, 100) || "source"
+  );
 }
 
 function decodeSourceBytes(bytes: Uint8Array) {
@@ -93,14 +95,24 @@ function existingMigration(record: SourceRecord) {
 function sourceFingerprint(records: SourceRecord[]) {
   const canonical = records
     .map((record) => ({ dataHash: record.data_hash, schemaHash: record.schema_hash }))
-    .sort((a, b) =>
-      `${a.dataHash}:${a.schemaHash}`.localeCompare(`${b.dataHash}:${b.schemaHash}`),
-    );
+    .sort((a, b) => `${a.dataHash}:${a.schemaHash}`.localeCompare(`${b.dataHash}:${b.schemaHash}`));
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 
 async function downloadObject(record: SourceRecord) {
   const client = trustedSupabaseClient();
+  const cacheDir = process.env["BACKTEST_SOURCE_CACHE_DIR"];
+  if (cacheDir && record.canonical_format === "csv") {
+    try {
+      const cached = new Uint8Array(
+        await readFile(path.join(cacheDir, `${record.file_hash.replace(/^sha256:/, "")}.source`)),
+      );
+      if (cached.byteLength === record.file_size_bytes && hashBytes(cached) === record.file_hash)
+        return { stored: cached, logical: cached };
+    } catch {
+      /* Missing local copy: download and verify below. */
+    }
+  }
   const { data, error } = await client.storage
     .from(record.storage_bucket)
     .download(record.storage_path);
@@ -111,10 +123,7 @@ async function downloadObject(record: SourceRecord) {
   const stored = new Uint8Array(await data.arrayBuffer());
   if (stored.byteLength !== record.file_size_bytes || hashBytes(stored) !== record.file_hash)
     throw new Error(`원천 저장객체 무결성 검증 실패: ${record.original_filename}`);
-  if (
-    record.canonical_format === "csv.gz" ||
-    record.storage_path.toLowerCase().endsWith(".gz")
-  ) {
+  if (record.canonical_format === "csv.gz" || record.storage_path.toLowerCase().endsWith(".gz")) {
     return {
       stored,
       logical: new Uint8Array(gunzipSync(stored)),
@@ -137,7 +146,9 @@ async function buildParquet(csvBytes: Uint8Array, expectedRows: number) {
       rowCount: number;
       columnCount: number;
       compression: "zstd";
+      roundtripVerified: boolean;
     };
+    if (!info.roundtripVerified) throw new Error("Parquet roundtrip was not verified");
     if (info.rowCount !== expectedRows)
       throw new Error(
         `Parquet row count 불일치: expected=${expectedRows}, actual=${info.rowCount}`,
@@ -157,6 +168,16 @@ async function uploadObject(objectPath: string, bytes: Uint8Array, contentType: 
     cacheControl: "31536000",
   });
   if (error) throw new Error(`canonical object 업로드 실패 (${objectPath}): ${error.message}`);
+  // Read back the small compressed object before moving the registry/deleting CSV.
+  const { data, error: readError } = await client.storage
+    .from(ANALYSIS_BUCKET)
+    .download(objectPath);
+  if (
+    readError ||
+    !data ||
+    hashBytes(new Uint8Array(await data.arrayBuffer())) !== hashBytes(bytes)
+  )
+    throw new Error(`Uploaded object verification failed: ${objectPath}`);
 }
 
 async function migrateRecord(record: SourceRecord, userId: string) {
@@ -166,6 +187,29 @@ async function migrateRecord(record: SourceRecord, userId: string) {
     prior?.version === MIGRATION_VERSION &&
     prior.parquet?.path
   ) {
+    // A prior run may have committed the registry and then failed deleting the CSV.
+    // Recheck both replacements before completing that cleanup on retry.
+    if (prior.replacedStoragePath && prior.replacedStoragePath !== record.storage_path) {
+      const { logical } = await downloadObject(record);
+      if (hashBytes(logical) !== prior.logicalFileHash)
+        throw new Error("Migrated gzip integrity failure");
+      const client = trustedSupabaseClient();
+      const { data, error } = await client.storage
+        .from(record.storage_bucket)
+        .download(prior.parquet.path);
+      if (
+        error ||
+        !data ||
+        hashBytes(new Uint8Array(await data.arrayBuffer())) !== prior.parquet.fileHash
+      )
+        throw new Error("Migrated Parquet integrity failure");
+      if (!prior.replacedStoragePath.startsWith(`${userId}/source/backtest/`))
+        throw new Error("Unexpected original source path");
+      const { error: removeError } = await client.storage
+        .from(record.storage_bucket)
+        .remove([prior.replacedStoragePath]);
+      if (removeError) throw removeError;
+    }
     return { record, migration: prior as MigrationMeta, changed: false };
   }
   if (record.source_type !== "backtest")
@@ -187,8 +231,8 @@ async function migrateRecord(record: SourceRecord, userId: string) {
   const gzipPath = `${root}/${stem}.csv.gz`;
   const parquetPath = `${root}/${stem}.parquet`;
 
-  await uploadObject(gzipPath, gzipBytes, "application/gzip");
-  await uploadObject(parquetPath, parquet.bytes, "application/vnd.apache.parquet");
+  await uploadObject(gzipPath, gzipBytes, "application/octet-stream");
+  await uploadObject(parquetPath, parquet.bytes, "application/octet-stream");
 
   const migration: MigrationMeta = {
     version: MIGRATION_VERSION,
@@ -215,12 +259,12 @@ async function migrateRecord(record: SourceRecord, userId: string) {
     ...(record.validation_result ?? {}),
     backtestCanonicalMigration: migration,
   };
-  const { error: updateError } = await client
+  const { data: updated, error: updateError } = await client
     .from("analysis_source_files")
     .update({
       storage_bucket: ANALYSIS_BUCKET,
       storage_path: gzipPath,
-      content_type: "application/gzip",
+      content_type: "application/octet-stream",
       canonical_format: "csv.gz",
       file_size_bytes: gzipBytes.byteLength,
       file_hash: gzipHash,
@@ -229,12 +273,20 @@ async function migrateRecord(record: SourceRecord, userId: string) {
     })
     .eq("id", record.id)
     .eq("user_id", userId)
-    .eq("status", "active");
-  if (updateError)
-    throw new Error(`원천 registry canonical 전환 실패 (${record.original_filename}): ${updateError.message}`);
+    .eq("status", "active")
+    .eq("storage_path", oldPath)
+    .eq("file_hash", record.file_hash)
+    .select("id")
+    .single();
+  if (updateError || !updated)
+    throw new Error(
+      `원천 registry canonical 전환 실패 (${record.original_filename}): ${updateError?.message ?? "concurrent registry change"}`,
+    );
 
   if (oldPath !== gzipPath) {
-    const { error: removeError } = await client.storage.from(record.storage_bucket).remove([oldPath]);
+    const { error: removeError } = await client.storage
+      .from(record.storage_bucket)
+      .remove([oldPath]);
     if (removeError)
       throw new Error(`기존 CSV 삭제 실패 (${record.original_filename}): ${removeError.message}`);
   }
@@ -259,6 +311,8 @@ async function main() {
   }
 
   const refreshed = await listSourceRecords(client, options.userId!, "backtest", ["active"]);
+  if (sourceFingerprint(records) !== sourceFingerprint(refreshed))
+    throw new Error("Active source set changed during migration; rerun before publishing manifest");
   const fingerprint = sourceFingerprint(refreshed);
   const gzipBytes = refreshed.reduce((sum, record) => sum + record.file_size_bytes, 0);
   const parquetBytes = results.reduce(

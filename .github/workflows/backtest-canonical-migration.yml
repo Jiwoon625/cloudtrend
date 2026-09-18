@@ -7,6 +7,11 @@ on:
       - scripts/csv-to-parquet.py
       - scripts/backtest-source-cache.ts
       - scripts/source-registry-store.ts
+      - scripts/research-shared-input.ts
+      - scripts/run-v8-research-batch.ts
+      - tests/backtest-cache.test.ts
+      - tests/parquet-roundtrip.test.py
+      - .github/actions/backtest-source-cache/action.yml
       - .github/workflows/backtest-canonical-migration.yml
   workflow_dispatch:
   push:
@@ -17,13 +22,18 @@ on:
       - scripts/csv-to-parquet.py
       - scripts/backtest-source-cache.ts
       - scripts/source-registry-store.ts
+      - scripts/research-shared-input.ts
+      - scripts/run-v8-research-batch.ts
+      - tests/backtest-cache.test.ts
+      - tests/parquet-roundtrip.test.py
+      - .github/actions/backtest-source-cache/action.yml
       - .github/workflows/backtest-canonical-migration.yml
 
 permissions:
   contents: read
 
 concurrency:
-  group: cloudtrend-backtest-canonical-migration-${{ github.ref }}
+  group: cloudtrend-backtest-${{ github.event_name == 'pull_request' && github.ref || 'data' }}
   cancel-in-progress: false
 
 jobs:
@@ -41,11 +51,15 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
       - name: Install parquet converter
-        run: python -m pip install --disable-pip-version-check duckdb
+        run: python -m pip install --disable-pip-version-check pyarrow==21.0.0
       - name: Validate migration code
         run: |
           npx prettier --check scripts/backtest-canonicalize.ts scripts/backtest-source-cache.ts scripts/source-registry-store.ts
           npx eslint scripts/backtest-canonicalize.ts scripts/backtest-source-cache.ts scripts/source-registry-store.ts
+      - name: Test cache integrity and lossless Parquet conversion
+        run: |
+          npx vite-node tests/backtest-cache.test.ts
+          python tests/parquet-roundtrip.test.py
       - name: Smoke-test CSV to ZSTD Parquet converter
         run: |
           printf 'date,symbol,close\n2026-09-18,005930,70000\n' > /tmp/cloudtrend-smoke.csv
@@ -61,6 +75,8 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      BACKTEST_SOURCE_CACHE_DIR: .cache/cloudtrend-backtest
+      BACKTEST_SOURCE_MANIFEST: .cache/cloudtrend-backtest-manifest.json
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -73,13 +89,19 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
       - name: Install parquet converter
-        run: python -m pip install --disable-pip-version-check duckdb
+        run: python -m pip install --disable-pip-version-check pyarrow==21.0.0
       - name: Validate server configuration
         run: |
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
           test -n "$SUPABASE_USER_ID"
+      - name: Restore or populate verified source cache once
+        uses: ./.github/actions/backtest-source-cache
       - name: Convert active backtest CSV storage to gzip transport + ZSTD Parquet canonical copies
         run: |
           npx vite-node scripts/backtest-canonicalize.ts \
             --supabase-user-id "$SUPABASE_USER_ID"
+      - name: Verify migrated manifest reuses the same local sources without downloads
+        run: |
+          npm run backtest:cache -- manifest
+          npm run backtest:cache -- materialize

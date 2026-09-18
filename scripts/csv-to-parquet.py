@@ -1,57 +1,37 @@
 #!/usr/bin/env python3
+"""Preserve every CSV cell as a string, including empty values and symbol zeros."""
+import csv
 import json
-import os
 import sys
+from pathlib import Path
 
-import duckdb
-
-
-def quote(path: str) -> str:
-    return path.replace("'", "''")
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 
-def main() -> None:
-    if len(sys.argv) != 3:
-        raise SystemExit("usage: csv-to-parquet.py <input.csv> <output.parquet>")
-
-    input_path = os.path.abspath(sys.argv[1])
-    output_path = os.path.abspath(sys.argv[2])
-    con = duckdb.connect()
-    source = quote(input_path)
-    target = quote(output_path)
-
-    con.execute(
-        f"""
-        COPY (
-          SELECT *
-          FROM read_csv_auto(
-            '{source}',
-            header=true,
-            all_varchar=true,
-            sample_size=-1
-          )
-        )
-        TO '{target}'
-        (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 100000)
-        """
+def convert(source, target):
+    with open(source, encoding="utf-8-sig", newline="") as stream:
+        reader = csv.reader(stream, strict=True)
+        columns = next(reader)
+        if len(set(columns)) != len(columns):
+            raise ValueError("Duplicate CSV column names")
+        rows = [row for row in reader if row]
+    if any(len(row) != len(columns) for row in rows):
+        raise ValueError("CSV row width mismatch")
+    table = pa.Table.from_arrays(
+        [pa.array([row[i] for row in rows], type=pa.string()) for i in range(len(columns))],
+        names=columns,
     )
-    row_count = con.execute(
-        f"SELECT COUNT(*) FROM read_parquet('{target}')"
-    ).fetchone()[0]
-    column_count = len(
-        con.execute(f"DESCRIBE SELECT * FROM read_parquet('{target}')").fetchall()
-    )
-    print(
-        json.dumps(
-            {
-                "rowCount": int(row_count),
-                "columnCount": int(column_count),
-                "compression": "zstd",
-                "sizeBytes": os.path.getsize(output_path),
-            }
-        )
-    )
+    pq.write_table(table, target, compression="zstd", compression_level=9, row_group_size=100000)
+    restored = pq.read_table(target)
+    if not table.equals(restored):
+        raise ValueError("Parquet cell-by-cell roundtrip mismatch")
+    return {"rowCount": table.num_rows, "columnCount": table.num_columns,
+            "compression": "zstd", "roundtripVerified": True,
+            "sizeBytes": Path(target).stat().st_size}
 
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) != 3:
+        raise SystemExit("usage: csv-to-parquet.py <input.csv> <output.parquet>")
+    print(json.dumps(convert(sys.argv[1], sys.argv[2])))

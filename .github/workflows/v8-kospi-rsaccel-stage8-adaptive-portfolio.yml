@@ -2,18 +2,12 @@ name: V8 KOSPI RSAccel Stage8 Adaptive Portfolio
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - scripts/run-v8-kospi-rsaccel-stage8-adaptive-portfolio.ts
-      - .github/workflows/v8-kospi-rsaccel-stage8-adaptive-portfolio.yml
 
 permissions:
   contents: read
 
 concurrency:
-  group: v8-kospi-rsaccel-stage8-adaptive-portfolio-${{ github.ref }}
+  group: cloudtrend-backtest-${{ github.event_name == 'pull_request' && github.ref || 'data' }}
   cancel-in-progress: false
 
 jobs:
@@ -33,7 +27,7 @@ jobs:
           npx eslint scripts/run-v8-kospi-rsaccel-stage8-adaptive-portfolio.ts
 
   study:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -56,24 +50,8 @@ jobs:
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
           test -n "$SUPABASE_USER_ID"
-      - id: backtest-source
-        name: Compute backtest source cache key
-        run: |
-          npm run backtest:cache -- manifest \
-            --supabase-user-id "$SUPABASE_USER_ID" \
-            --manifest "$BACKTEST_SOURCE_MANIFEST"
-      - id: backtest-cache
-        name: Restore backtest source cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.BACKTEST_SOURCE_CACHE_DIR }}
-          key: cloudtrend-backtest-raw-v1-${{ steps.backtest-source.outputs.cache_key }}
-      - name: Download backtest sources on cache miss
-        if: steps.backtest-cache.outputs.cache-hit != 'true'
-        run: |
-          npm run backtest:cache -- materialize \
-            --manifest "$BACKTEST_SOURCE_MANIFEST" \
-            --cache-dir "$BACKTEST_SOURCE_CACHE_DIR"
+      - name: Prepare verified shared backtest sources
+        uses: ./.github/actions/backtest-source-cache
       - name: Run KOSPI RSAccel stage8 adaptive portfolio
         run: |
           npx vite-node scripts/run-v8-kospi-rsaccel-stage8-adaptive-portfolio.ts \

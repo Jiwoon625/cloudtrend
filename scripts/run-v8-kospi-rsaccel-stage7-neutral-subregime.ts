@@ -1,10 +1,12 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-import { parseManualMarketData } from "../src/lib/engine/manualDataset";
-import { buildPortfolioSignalContext } from "../src/lib/engine/sectorPenaltyPortfolioSignals";
+import {
+  parseSharedMarketData as parseManualMarketData,
+  loadResearchTexts,
+} from "./research-shared-input";
+import { buildSharedSignalContext as buildPortfolioSignalContext } from "./research-shared-input";
 import type { MarketDataset } from "../src/lib/engine/dataset";
 import type { DailyPrice } from "../src/lib/engine/types";
 import { trustedSupabaseClient, uploadJson } from "./analysis-run-store";
@@ -26,28 +28,9 @@ const BEAR_RETURN_THRESHOLD = -5;
 
 type Regime = "BULL" | "NEUTRAL" | "BEAR";
 type NeutralSubregime =
-  | "UP_TRANSITION_20D"
-  | "ABOVE_MA_STABLE"
-  | "DOWN_TRANSITION_20D"
-  | "BELOW_MA_STABLE";
+  "UP_TRANSITION_20D" | "ABOVE_MA_STABLE" | "DOWN_TRANSITION_20D" | "BELOW_MA_STABLE";
 type StrategyId = "BASELINE_ONSET8" | "FILTER_POSITIVE" | "FILTER_Q4PLUS";
 
-interface CacheManifestFile {
-  id: string;
-  fileName: string;
-  bytes: number;
-  savedAt: string;
-  fileHash: string;
-  cacheFile: string;
-}
-interface CacheManifest {
-  schemaVersion: 1;
-  sourceType: "backtest";
-  cacheKey: string;
-  fileCount: number;
-  totalBytes: number;
-  files: CacheManifestFile[];
-}
 interface Options {
   sourceManifest: string;
   sourceCacheDir: string;
@@ -131,35 +114,9 @@ function round(value: number | null, digits = 6) {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
 }
-function decodeSourceBytes(bytes: Uint8Array) {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return new TextDecoder("euc-kr").decode(bytes);
-  }
-}
 
 async function loadCachedTexts(manifestPath: string, cacheDir: string) {
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as CacheManifest;
-  if (
-    manifest.schemaVersion !== 1 ||
-    manifest.sourceType !== "backtest" ||
-    !Array.isArray(manifest.files) ||
-    manifest.files.length !== manifest.fileCount
-  )
-    throw new Error("지원하지 않거나 손상된 source cache manifest입니다.");
-  const texts: string[] = [];
-  for (const file of manifest.files) {
-    const bytes = new Uint8Array(await readFile(path.join(cacheDir, file.cacheFile)));
-    const fileHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-    if (bytes.byteLength !== file.bytes || fileHash !== file.fileHash)
-      throw new Error(`source cache 무결성 검증 실패: ${file.fileName}`);
-    texts.push(decodeSourceBytes(bytes));
-  }
-  process.stderr.write(
-    `KOSPI RSAccel stage7 source cache verified: ${manifest.fileCount} files / ${(manifest.totalBytes / 1_000_000).toFixed(1)} MB\n`,
-  );
-  return { texts, manifest };
+  return loadResearchTexts(manifestPath, cacheDir);
 }
 
 function benchmarkSeries(dataset: MarketDataset) {
@@ -256,7 +213,9 @@ function alignedRelativeStrength(
 }
 
 function ranks(values: number[]) {
-  const indexed = values.map((value, index) => ({ value, index })).sort((a, b) => a.value - b.value);
+  const indexed = values
+    .map((value, index) => ({ value, index }))
+    .sort((a, b) => a.value - b.value);
   const output = new Array<number>(values.length);
   let i = 0;
   while (i < indexed.length) {
@@ -291,12 +250,14 @@ function dailyQuintiles(rows: Observation[]) {
   return quintiles;
 }
 
-function select(strategy: StrategyId, rows: Observation[], quintiles: Map<string, 1 | 2 | 3 | 4 | 5>) {
+function select(
+  strategy: StrategyId,
+  rows: Observation[],
+  quintiles: Map<string, 1 | 2 | 3 | 4 | 5>,
+) {
   if (strategy === "BASELINE_ONSET8") return rows.filter((row) => row.onset8);
   if (strategy === "FILTER_POSITIVE") return rows.filter((row) => row.onset8 && row.rsAccel > 0);
-  return rows.filter(
-    (row) => row.onset8 && (quintiles.get(`${row.date}|${row.symbol}`) ?? 0) >= 4,
-  );
+  return rows.filter((row) => row.onset8 && (quintiles.get(`${row.date}|${row.symbol}`) ?? 0) >= 4);
 }
 
 function benchmarkReturn(
@@ -306,7 +267,14 @@ function benchmarkReturn(
 ) {
   const entry = benchmark.byDate.get(entryDate);
   const exit = benchmark.byDate.get(exitDate);
-  if (!entry || !exit || !finite(entry.open) || entry.open <= 0 || !finite(exit.close) || exit.close <= 0)
+  if (
+    !entry ||
+    !exit ||
+    !finite(entry.open) ||
+    entry.open <= 0 ||
+    !finite(exit.close) ||
+    exit.close <= 0
+  )
     return null;
   return (exit.close / entry.open - 1) * 100;
 }
@@ -325,7 +293,14 @@ function buildTradesForYear(
     if (!series) continue;
     const entry = series.bars[signal.signalIndex + 1];
     const exit = series.bars[signal.signalIndex + HORIZON];
-    if (!entry || !exit || !finite(entry.open) || entry.open <= 0 || !finite(exit.close) || exit.close <= 0)
+    if (
+      !entry ||
+      !exit ||
+      !finite(entry.open) ||
+      entry.open <= 0 ||
+      !finite(exit.close) ||
+      exit.close <= 0
+    )
       continue;
     const benchmarkPct = benchmarkReturn(benchmark, entry.tradeDate, exit.tradeDate);
     if (!finite(benchmarkPct)) continue;
@@ -345,7 +320,9 @@ function buildTradesForYear(
       netExcessPct: gross - benchmarkPct - COST_BPS / 100,
     });
   }
-  candidates.sort((a, b) => a.entryDate.localeCompare(b.entryDate) || a.symbol.localeCompare(b.symbol));
+  candidates.sort(
+    (a, b) => a.entryDate.localeCompare(b.entryDate) || a.symbol.localeCompare(b.symbol),
+  );
   const accepted: Trade[] = [];
   const heldUntil = new Map<string, string>();
   for (const trade of candidates) {
@@ -364,14 +341,18 @@ function summarize(trades: Trade[]) {
     trades: trades.length,
     avgReturnPct: round(average(returns)),
     medianReturnPct: round(median(returns)),
-    winRatePct: trades.length ? round((returns.filter((value) => value > 0).length / trades.length) * 100) : null,
+    winRatePct: trades.length
+      ? round((returns.filter((value) => value > 0).length / trades.length) * 100)
+      : null,
     avgExcessPct: round(average(excess)),
     medianExcessPct: round(median(excess)),
-    excessWinRatePct: trades.length ? round((excess.filter((value) => value > 0).length / trades.length) * 100) : null,
+    excessWinRatePct: trades.length
+      ? round((excess.filter((value) => value > 0).length / trades.length) * 100)
+      : null,
   };
 }
 
-async function main() {
+export async function runStudy() {
   const options = parseArgs(process.argv.slice(2));
   const { texts, manifest } = await loadCachedTexts(options.sourceManifest, options.sourceCacheDir);
   const parsed = parseManualMarketData(texts);
@@ -409,7 +390,8 @@ async function main() {
         rs20,
         rs60,
         rsAccel: rs20 - rs60,
-        onset8: finite(previousScore) && previousScore < ONSET_THRESHOLD && score >= ONSET_THRESHOLD,
+        onset8:
+          finite(previousScore) && previousScore < ONSET_THRESHOLD && score >= ONSET_THRESHOLD,
         signalIndex: i,
         regime: marketState.regime,
         neutralSubregime:
@@ -453,7 +435,10 @@ async function main() {
       strategies.map((strategy) => {
         const rows = yearly.filter(
           (row) =>
-            years.includes(row.year) && row.subregime === subregime && row.strategy === strategy && row.trades > 0,
+            years.includes(row.year) &&
+            row.subregime === subregime &&
+            row.strategy === strategy &&
+            row.trades > 0,
         );
         const baselineByYear = new Map(
           yearly
@@ -485,7 +470,9 @@ async function main() {
           meanYearAvgExcessPct: round(average(rows.map((row) => row.avgExcessPct).filter(finite))),
           medianYearAvgExcessPct: round(median(rows.map((row) => row.avgExcessPct).filter(finite))),
           pooledAvgExcessPct: round(average(pooledTrades.map((trade) => trade.netExcessPct))),
-          positiveExcessYears: rows.filter((row) => finite(row.avgExcessPct) && row.avgExcessPct! > 0).length,
+          positiveExcessYears: rows.filter(
+            (row) => finite(row.avgExcessPct) && row.avgExcessPct! > 0,
+          ).length,
           positiveDeltaYears:
             strategy === "BASELINE_ONSET8" ? null : deltas.filter((value) => value > 0).length,
           meanDeltaVsBaselinePct: strategy === "BASELINE_ONSET8" ? 0 : round(average(deltas)),
@@ -519,13 +506,15 @@ async function main() {
       roundTripCostBps: COST_BPS,
       entry: "NEXT_OPEN",
       exit: "signal index + 20 trading bars close",
-      duplicateHoldingRule: "same symbol already held => later signal ignored, across all market regimes",
-      baseRegime:
-        "NEUTRAL = not (close>MA120 & KOSPI60D>+5%) and not (close<MA120 & KOSPI60D<-5%)",
+      duplicateHoldingRule:
+        "same symbol already held => later signal ignored, across all market regimes",
+      baseRegime: "NEUTRAL = not (close>MA120 & KOSPI60D>+5%) and not (close<MA120 & KOSPI60D<-5%)",
       neutralSubregimes: {
-        UP_TRANSITION_20D: "neutral, current KOSPI close>MA120 and 20 trading days ago close<=its MA120",
+        UP_TRANSITION_20D:
+          "neutral, current KOSPI close>MA120 and 20 trading days ago close<=its MA120",
         ABOVE_MA_STABLE: "neutral, current and 20 trading days ago both above their MA120",
-        DOWN_TRANSITION_20D: "neutral, current KOSPI close<=MA120 and 20 trading days ago close>its MA120",
+        DOWN_TRANSITION_20D:
+          "neutral, current KOSPI close<=MA120 and 20 trading days ago close>its MA120",
         BELOW_MA_STABLE: "neutral, current and 20 trading days ago both below/equal their MA120",
       },
       rsAccel: "RS20 - RS60; both are stock return minus same-date KOSPI return",
@@ -547,7 +536,10 @@ async function main() {
   };
 
   await mkdir("analysis-runs", { recursive: true });
-  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[-:TZ.]/g, "")
+    .slice(0, 14);
   const outputPath = path.join(
     "analysis-runs",
     `v8-kospi-rsaccel-stage7-neutral-subregime-${stamp}.json`,
