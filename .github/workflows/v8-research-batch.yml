@@ -1,0 +1,88 @@
+name: CloudTrend V8 research batch
+
+on:
+  workflow_dispatch:
+    inputs:
+      scripts:
+        description: "쉼표로 구분한 cache-aware V8 연구 스크립트 경로"
+        required: true
+        default: "scripts/run-v8-ma-bb-ablation-3fos.ts,scripts/run-v8-kosdaq80-exit-portfolio-fixed-entry-3fos.ts"
+        type: string
+      upload:
+        description: "연구 결과를 Supabase results/에 업로드"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudtrend-v8-research-batch
+  cancel-in-progress: false
+
+jobs:
+  batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      BACKTEST_SOURCE_MANIFEST: .cache/cloudtrend-backtest-manifest.json
+      BACKTEST_SOURCE_CACHE_DIR: .cache/cloudtrend-backtest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Validate server configuration
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_USER_ID"
+      - id: backtest-source
+        name: Compute logical backtest data-hash cache key
+        run: |
+          npm run backtest:cache -- manifest \
+            --supabase-user-id "$SUPABASE_USER_ID" \
+            --manifest "$BACKTEST_SOURCE_MANIFEST"
+      - id: backtest-cache
+        name: Restore shared backtest source cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.BACKTEST_SOURCE_CACHE_DIR }}
+          key: cloudtrend-backtest-raw-v1-${{ steps.backtest-source.outputs.cache_key }}
+      - name: Materialize sources only on cache miss
+        if: steps.backtest-cache.outputs.cache-hit != 'true'
+        run: |
+          npm run backtest:cache -- materialize \
+            --manifest "$BACKTEST_SOURCE_MANIFEST" \
+            --cache-dir "$BACKTEST_SOURCE_CACHE_DIR"
+      - name: Report single-load status
+        run: |
+          echo "Backtest files: ${{ steps.backtest-source.outputs.file_count }}"
+          echo "Logical bytes: ${{ steps.backtest-source.outputs.source_bytes }}"
+          echo "Supabase storage bytes: ${{ steps.backtest-source.outputs.storage_bytes }}"
+          echo "GitHub cache hit: ${{ steps.backtest-cache.outputs.cache-hit }}"
+      - name: Run selected studies sequentially
+        run: |
+          args=(
+            --scripts "${{ inputs.scripts }}"
+            --source-manifest "$BACKTEST_SOURCE_MANIFEST"
+            --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR"
+            --supabase-user-id "$SUPABASE_USER_ID"
+          )
+          if [[ "${{ inputs.upload }}" == "true" ]]; then args+=(--upload); fi
+          node scripts/run-v8-research-batch.mjs "${args[@]}"
+      - name: Upload research artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v8-research-batch-${{ github.run_id }}
+          path: analysis-runs/
+          if-no-files-found: warn
+          retention-days: 30
