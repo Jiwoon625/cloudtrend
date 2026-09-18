@@ -1,6 +1,13 @@
 name: Canonicalize CloudTrend backtest storage
 
 on:
+  pull_request:
+    paths:
+      - scripts/backtest-canonicalize.ts
+      - scripts/csv-to-parquet.py
+      - scripts/backtest-source-cache.ts
+      - scripts/source-registry-store.ts
+      - .github/workflows/backtest-canonical-migration.yml
   workflow_dispatch:
   push:
     branches:
@@ -16,11 +23,38 @@ permissions:
   contents: read
 
 concurrency:
-  group: cloudtrend-backtest-canonical-migration
+  group: cloudtrend-backtest-canonical-migration-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Install parquet converter
+        run: python -m pip install --disable-pip-version-check duckdb
+      - name: Validate migration code
+        run: |
+          npx prettier --check scripts/backtest-canonicalize.ts scripts/backtest-source-cache.ts scripts/source-registry-store.ts
+          npx eslint scripts/backtest-canonicalize.ts scripts/backtest-source-cache.ts scripts/source-registry-store.ts
+      - name: Smoke-test CSV to ZSTD Parquet converter
+        run: |
+          printf 'date,symbol,close\n2026-09-18,005930,70000\n' > /tmp/cloudtrend-smoke.csv
+          python scripts/csv-to-parquet.py /tmp/cloudtrend-smoke.csv /tmp/cloudtrend-smoke.parquet
+          test -s /tmp/cloudtrend-smoke.parquet
+
   migrate:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -40,10 +74,6 @@ jobs:
         run: npm ci
       - name: Install parquet converter
         run: python -m pip install --disable-pip-version-check duckdb
-      - name: Validate migration code
-        run: |
-          npx prettier --check scripts/backtest-canonicalize.ts scripts/backtest-source-cache.ts scripts/source-registry-store.ts
-          npx eslint scripts/backtest-canonicalize.ts scripts/backtest-source-cache.ts scripts/source-registry-store.ts
       - name: Validate server configuration
         run: |
           test -n "$SUPABASE_URL"
