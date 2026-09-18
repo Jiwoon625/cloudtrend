@@ -50,4 +50,4 @@ jobs:
             cat /tmp/cloudtrend-build-tail.log
             echo '\`\`\`'
           } > /tmp/comment.md
-          gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --input /tmp/comment.md
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -f "body=$(cat /tmp/comment.md)"
