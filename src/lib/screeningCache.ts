@@ -5,18 +5,8 @@ import {
   writeBinaryObject,
   writeObject,
 } from "@/lib/cloud";
-import { compactDashboardRow } from "@/lib/dashboardRow";
-import {
-  chartSeries,
-  scoreHistory,
-  type AnalysisResult,
-  type ScreeningRow,
-} from "@/lib/engine/pipeline";
+import { chartSeries, scoreHistory, type AnalysisResult } from "@/lib/engine/pipeline";
 import { buildInstrumentDetailDataset } from "@/lib/engine/instrumentDetailDataset";
-import {
-  compareKospiRelativeQuality,
-  isKospiRelativeMomentumConfirmed,
-} from "@/lib/kospiRelativeQuality";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import {
   ensureManualDataText,
@@ -27,10 +17,18 @@ import { computeLocalAnalysis } from "@/lib/localAnalysis";
 import type { AnalysisPayload, InstrumentDetailPayload } from "@/lib/market.functions";
 import { buildSnapshot, hydrateSnapshots, saveSnapshot } from "@/lib/screeningHistory";
 import { listRegisteredSources } from "@/lib/sourceRegistry";
+import {
+  buildDashboardSummary,
+  DASHBOARD_CACHE_VERSION,
+  deterministicAnalysis,
+  INSTRUMENT_CACHE_VERSION,
+  SCREENING_CACHE_VERSION,
+  stableCacheJson,
+  type DashboardSummary,
+} from "@/lib/screeningCacheContract";
 
-export const SCREENING_CACHE_VERSION = "screening-cache-v8-final-v4" as const;
-export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-final-v5" as const;
-export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-final-v4" as const;
+export { DASHBOARD_CACHE_VERSION, INSTRUMENT_CACHE_VERSION, SCREENING_CACHE_VERSION };
+export type { DashboardSummary };
 
 interface CacheMeta {
   version: string;
@@ -44,63 +42,10 @@ export interface ScreeningCachePayload extends CacheMeta {
   payload: AnalysisPayload;
 }
 
-export interface DashboardSummary {
-  version: typeof DASHBOARD_CACHE_VERSION;
-  createdAt: string;
-  inputFingerprint: string;
-  resultDigest: string;
-  asOfDate: string;
-  strategyVersion: string;
-  dataVersion: string;
-  calculatedAt: string;
-  marketGate: AnalysisResult["marketGate"];
-  kospi: AnalysisResult["kospi"];
-  kosdaq: AnalysisResult["kosdaq"];
-  vkospi: number | null;
-  marketForeignNet5d: number | null;
-  rotationSectors: Array<{
-    sectorCode: string;
-    sectorName: string;
-    rank: number;
-    prevRank: number;
-    rs20: number | null;
-    score: number;
-    priceLeadership: number | null;
-    moneyFlow: number | null;
-  }>;
-  counts: {
-    total: number;
-    passed: number;
-    disqualified: number;
-    kosdaq80Onsets: number;
-    kospiEightPointEntries: number;
-    kospiRelativeQualityConfirmed: number;
-    upsideExits: number;
-    downsideExits: number;
-    incomplete: number;
-  };
-  failReasons: Array<[string, number]>;
-  onsetRows: ScreeningRow[];
-  kospiEntryRows: ScreeningRow[];
-  exitRows: ScreeningRow[];
-  top: ScreeningRow[];
-}
-
 interface InstrumentCachePayload extends CacheMeta {
   version: typeof INSTRUMENT_CACHE_VERSION;
   symbol: string;
   detail: InstrumentDetailPayload;
-}
-
-function stable(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
-  const object = value as Record<string, unknown>;
-  return `{${Object.keys(object)
-    .filter((key) => object[key] !== undefined)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stable(object[key])}`)
-    .join(",")}}`;
 }
 
 async function sha256Text(text: string) {
@@ -109,12 +54,8 @@ async function sha256Text(text: string) {
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
 
-function deterministicAnalysis(analysis: AnalysisResult) {
-  return { ...analysis, calculatedAt: "" };
-}
-
 async function analysisDigest(analysis: AnalysisResult) {
-  return sha256Text(stable(deterministicAnalysis(analysis)));
+  return sha256Text(stableCacheJson(deterministicAnalysis(analysis)));
 }
 
 async function currentInputFingerprint() {
@@ -124,7 +65,7 @@ async function currentInputFingerprint() {
   ]);
   const meta = getManualDataMeta();
   return sha256Text(
-    stable({
+    stableCacheJson({
       version: SCREENING_CACHE_VERSION,
       strategyConfig: config,
       sources: sources
@@ -175,127 +116,6 @@ async function gunzipJson<T>(bytes: Uint8Array): Promise<T> {
   return JSON.parse(await new Response(stream).text()) as T;
 }
 
-function buildRotationSectors(analysis: AnalysisResult): DashboardSummary["rotationSectors"] {
-  const rotation = analysis.sectorRotation?.sectors ?? [];
-  if (rotation.length > 0)
-    return [...rotation]
-      .sort((a, b) => a.rank - b.rank)
-      .map((sector) => ({
-        sectorCode: sector.sectorCode,
-        sectorName: sector.sectorName,
-        rank: sector.rank,
-        prevRank: sector.prevRank,
-        rs20: sector.rs20,
-        score: sector.rotationScore,
-        priceLeadership: sector.priceLeadership.score,
-        moneyFlow: sector.moneyFlow.score,
-      }));
-  return [...analysis.sectors]
-    .sort((a, b) => a.rank - b.rank)
-    .map((sector) => ({
-      sectorCode: sector.sectorCode,
-      sectorName: sector.sectorName,
-      rank: sector.rank,
-      prevRank: sector.prevRank,
-      rs20: sector.rs20,
-      score: sector.score,
-      priceLeadership: null,
-      moneyFlow: null,
-    }));
-}
-
-function signalPriority(a: ScreeningRow, b: ScreeningRow) {
-  const priority = b.priority.points - a.priority.points;
-  if (priority !== 0) return priority;
-  const rotation = (b.sectorRotationScore ?? -Infinity) - (a.sectorRotationScore ?? -Infinity);
-  if (rotation !== 0) return rotation;
-  return (b.operatingScore10 ?? -Infinity) - (a.operatingScore10 ?? -Infinity);
-}
-
-async function buildDashboardSummary(
-  analysis: AnalysisResult,
-  inputFingerprint: string,
-  resultDigest: string,
-): Promise<DashboardSummary> {
-  const rows = analysis.rows;
-  const passed = rows.filter((row) => row.hardFilterPassed);
-  const onsetRows = [...rows]
-    .filter((row) => row.kosdaq80Onset)
-    .sort(signalPriority)
-    .slice(0, 30);
-  const kospiEntryRows = [...rows]
-    .filter((row) => row.kospiEightPointEntry)
-    .sort(compareKospiRelativeQuality)
-    .slice(0, 30);
-  const exitRows = [...rows]
-    .filter(
-      (row) =>
-        row.instrument.instrumentType === "STOCK" &&
-        row.instrument.market === "KOSDAQ" &&
-        row.exitSignal !== null,
-    )
-    .sort((a, b) => (b.operatingScore10 ?? -Infinity) - (a.operatingScore10 ?? -Infinity))
-    .slice(0, 30);
-  const top = [...passed]
-    .filter((row) => row.instrument.instrumentType === "STOCK")
-    .sort((a, b) => b.totalScoreNormalized - a.totalScoreNormalized)
-    .slice(0, 10);
-
-  const failMap = new Map<string, number>();
-  for (const row of rows) {
-    if (row.hardFilterPassed) continue;
-    for (const reason of row.failedRules) failMap.set(reason, (failMap.get(reason) ?? 0) + 1);
-  }
-
-  try {
-    await hydrateSnapshots();
-    await saveSnapshot(buildSnapshot(analysis));
-  } catch {
-    // 이력 저장 실패가 V8 스크리닝 결과 생성을 막지 않게 한다.
-  }
-
-  return {
-    version: DASHBOARD_CACHE_VERSION,
-    createdAt: new Date().toISOString(),
-    inputFingerprint,
-    resultDigest,
-    asOfDate: analysis.asOfDate,
-    strategyVersion: analysis.strategyVersion,
-    dataVersion: analysis.dataVersion,
-    calculatedAt: analysis.calculatedAt,
-    marketGate: analysis.marketGate,
-    kospi: analysis.kospi,
-    kosdaq: analysis.kosdaq,
-    vkospi: analysis.vkospi,
-    marketForeignNet5d: analysis.marketForeignNet5d,
-    rotationSectors: buildRotationSectors(analysis),
-    counts: {
-      total: rows.length,
-      passed: passed.length,
-      disqualified: rows.length - passed.length,
-      kosdaq80Onsets: rows.filter((row) => row.kosdaq80Onset).length,
-      kospiEightPointEntries: rows.filter((row) => row.kospiEightPointEntry).length,
-      kospiRelativeQualityConfirmed: rows.filter(
-        (row) => row.kospiEightPointEntry && isKospiRelativeMomentumConfirmed(row),
-      ).length,
-      upsideExits: rows.filter(
-        (row) => row.instrument.market === "KOSDAQ" && row.exitSignal === "UP90",
-      ).length,
-      downsideExits: rows.filter(
-        (row) => row.instrument.market === "KOSDAQ" && row.exitSignal === "DOWN30",
-      ).length,
-      incomplete: rows.filter(
-        (row) => row.instrument.instrumentType === "STOCK" && row.operatingScore10 === null,
-      ).length,
-    },
-    failReasons: [...failMap.entries()].sort((a, b) => b[1] - a[1]),
-    onsetRows: onsetRows.map(compactDashboardRow),
-    kospiEntryRows: kospiEntryRows.map(compactDashboardRow),
-    exitRows: exitRows.map(compactDashboardRow),
-    top: top.map(compactDashboardRow),
-  };
-}
-
 export async function readScreeningCache(): Promise<ScreeningCachePayload | null> {
   const cached = await readObject<ScreeningCachePayload>(await screeningPath());
   if (!cached || cached.version !== SCREENING_CACHE_VERSION) return null;
@@ -339,7 +159,13 @@ export async function buildAndPersistScreeningCaches(): Promise<{
     resultDigest,
     payload,
   };
-  const dashboard = await buildDashboardSummary(payload.analysis, inputFingerprint, resultDigest);
+  try {
+    await hydrateSnapshots();
+    await saveSnapshot(buildSnapshot(payload.analysis));
+  } catch {
+    // 이력 저장 실패가 V8 스크리닝 결과 생성을 막지 않게 한다.
+  }
+  const dashboard = buildDashboardSummary(payload.analysis, inputFingerprint, resultDigest);
   await Promise.all([
     writeObject(await screeningPath(), screening),
     writeObject(await dashboardPath(), dashboard),

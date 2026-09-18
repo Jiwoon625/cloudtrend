@@ -1,0 +1,53 @@
+name: Screening cache contract check
+
+on:
+  pull_request:
+    paths:
+      - src/lib/screeningCache.ts
+      - src/lib/webScreening.functions.ts
+      - src/lib/screeningCacheContract.ts
+      - .github/workflows/screening-cache-contract-check.yml
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Lint changed cache files
+        run: npx eslint src/lib/screeningCache.ts src/lib/webScreening.functions.ts src/lib/screeningCacheContract.ts
+      - name: Build
+        id: build
+        shell: bash
+        run: |
+          set +e
+          npm run build > /tmp/cloudtrend-build.log 2>&1
+          code=$?
+          cat /tmp/cloudtrend-build.log
+          if [[ $code -ne 0 ]]; then
+            tail -n 120 /tmp/cloudtrend-build.log > /tmp/cloudtrend-build-tail.log
+          fi
+          exit $code
+      - name: Comment build failure
+        if: failure() && steps.build.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          {
+            echo 'CloudTrend cache contract build failed:'
+            echo
+            echo '\`\`\`text'
+            cat /tmp/cloudtrend-build-tail.log
+            echo '\`\`\`'
+          } > /tmp/comment.md
+          gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -f "body=$(cat /tmp/comment.md)"
