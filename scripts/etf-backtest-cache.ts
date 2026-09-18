@@ -4,11 +4,7 @@ import path from "node:path";
 import process from "node:process";
 import { gunzipSync } from "node:zlib";
 
-import {
-  ANALYSIS_BUCKET,
-  downloadJson,
-  trustedSupabaseClient,
-} from "./analysis-run-store";
+import { ANALYSIS_BUCKET, downloadJson, trustedSupabaseClient } from "./analysis-run-store";
 
 const VERSION = "etf-backtest-canonical-v1" as const;
 
@@ -59,7 +55,7 @@ function indexPath(uid: string) {
 
 function argValue(args: string[], name: string, fallback: string) {
   const idx = args.indexOf(name);
-  return idx >= 0 ? args[idx + 1] ?? fallback : fallback;
+  return idx >= 0 ? (args[idx + 1] ?? fallback) : fallback;
 }
 
 async function writeGithubOutput(name: string, value: string) {
@@ -72,7 +68,10 @@ async function writeGithubOutput(name: string, value: string) {
 async function buildManifest(manifestPath: string) {
   const uid = userId();
   const client = trustedSupabaseClient();
-  const index = await downloadJson<EtfBacktestCanonicalIndex>(client, indexPath(uid));
+  const index = await downloadJson<EtfBacktestCanonicalIndex>(
+    client,
+    indexPath(uid),
+  );
   if (index.version !== VERSION) throw new Error(`Unsupported ETF canonical version: ${index.version}`);
   if (!/^sha256:[0-9a-f]{64}$/.test(index.logicalFileHash))
     throw new Error("Invalid ETF logical file hash");
@@ -105,7 +104,9 @@ async function readManifest(manifestPath: string) {
 async function validLocal(filePath: string, manifest: CacheManifest) {
   try {
     const bytes = new Uint8Array(await readFile(filePath));
-    return bytes.byteLength === manifest.logicalSizeBytes && sha256(bytes) === manifest.logicalFileHash;
+    return (
+      bytes.byteLength === manifest.logicalSizeBytes && sha256(bytes) === manifest.logicalFileHash
+    );
   } catch {
     return false;
   }
@@ -134,14 +135,19 @@ async function materialize(manifestPath: string, cacheDir: string) {
 
   await rm(filePath, { force: true });
   const client = trustedSupabaseClient();
-  const { data, error } = await client.storage.from(ANALYSIS_BUCKET).download(manifest.gzip.path);
+  const { data, error } = await client.storage
+    .from(ANALYSIS_BUCKET)
+    .download(manifest.gzip.path);
   if (error || !data) throw new Error(`ETF canonical gzip download failed: ${error?.message ?? "unknown"}`);
   const stored = new Uint8Array(await data.arrayBuffer());
   if (stored.byteLength !== manifest.gzip.sizeBytes || sha256(stored) !== manifest.gzip.fileHash)
     throw new Error("ETF canonical gzip storage integrity failure");
 
   const logical = new Uint8Array(gunzipSync(stored));
-  if (logical.byteLength !== manifest.logicalSizeBytes || sha256(logical) !== manifest.logicalFileHash)
+  if (
+    logical.byteLength !== manifest.logicalSizeBytes ||
+    sha256(logical) !== manifest.logicalFileHash
+  )
     throw new Error("ETF canonical logical CSV integrity failure");
 
   const temp = `${filePath}.tmp-${process.pid}`;
@@ -178,10 +184,15 @@ async function main() {
 
   if (command === "manifest") await buildManifest(manifestPath);
   else if (command === "materialize") await materialize(manifestPath, cacheDir);
-  else throw new Error("Usage: etf-backtest-cache.ts <manifest|materialize> [--manifest path] [--cache-dir dir]");
+  else
+    throw new Error(
+      "Usage: etf-backtest-cache.ts <manifest|materialize> [--manifest path] [--cache-dir dir]",
+    );
 }
 
 main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
+  process.stderr.write(
+    `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+  );
   process.exitCode = 1;
 });
