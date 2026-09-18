@@ -68,11 +68,9 @@ async function writeGithubOutput(name: string, value: string) {
 async function buildManifest(manifestPath: string) {
   const uid = userId();
   const client = trustedSupabaseClient();
-  const index = await downloadJson<EtfBacktestCanonicalIndex>(
-    client,
-    indexPath(uid),
-  );
-  if (index.version !== VERSION) throw new Error(`Unsupported ETF canonical version: ${index.version}`);
+  const index = await downloadJson<EtfBacktestCanonicalIndex>(client, indexPath(uid));
+  if (index.version !== VERSION)
+    throw new Error(`Unsupported ETF canonical version: ${index.version}`);
   if (!/^sha256:[0-9a-f]{64}$/.test(index.logicalFileHash))
     throw new Error("Invalid ETF logical file hash");
   const key = index.logicalFileHash.replace(/^sha256:/, "");
@@ -135,10 +133,9 @@ async function materialize(manifestPath: string, cacheDir: string) {
 
   await rm(filePath, { force: true });
   const client = trustedSupabaseClient();
-  const { data, error } = await client.storage
-    .from(ANALYSIS_BUCKET)
-    .download(manifest.gzip.path);
-  if (error || !data) throw new Error(`ETF canonical gzip download failed: ${error?.message ?? "unknown"}`);
+  const { data, error } = await client.storage.from(ANALYSIS_BUCKET).download(manifest.gzip.path);
+  if (error || !data)
+    throw new Error(`ETF canonical gzip download failed: ${error?.message ?? "unknown"}`);
   const stored = new Uint8Array(await data.arrayBuffer());
   if (stored.byteLength !== manifest.gzip.sizeBytes || sha256(stored) !== manifest.gzip.fileHash)
     throw new Error("ETF canonical gzip storage integrity failure");
