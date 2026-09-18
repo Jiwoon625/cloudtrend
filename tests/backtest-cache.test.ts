@@ -138,6 +138,17 @@ try {
     { encoding: "utf8" },
   );
   assert.notEqual(invalidCli.status, 0, "CLI must not silently skip its entrypoint");
+  const migrationCli = spawnSync(
+    process.execPath,
+    [
+      path.resolve("node_modules/vite-node/vite-node.mjs"),
+      "--script",
+      "scripts/backtest-canonicalize.ts",
+      "--invalid",
+    ],
+    { encoding: "utf8" },
+  );
+  assert.notEqual(migrationCli.status, 0, "migration CLI must execute argument validation");
   const researchCli = spawnSync(
     process.execPath,
     [
