@@ -24,7 +24,7 @@ const MAX_POSITIONS = 10;
 
 type FoldYear = (typeof FOLD_YEARS)[number];
 type Market = "KOSPI" | "KOSDAQ";
-type ModelId = "A_STOCK_PL" | "B_ETF_PL" | "C_HYBRID_PL";
+type ModelId = "A_STOCK_PL" | "B_ETF_PL" | "C_HYBRID_PL" | "D_ETF_PRIMARY_FALLBACK";
 
 interface ModelDef {
   id: ModelId;
@@ -39,6 +39,11 @@ const MODELS: ModelDef[] = [
     id: "C_HYBRID_PL",
     label: "C. Hybrid PL",
     description: "50% Stock PL + 50% ETF PL when both exist; otherwise use the available side",
+  },
+  {
+    id: "D_ETF_PRIMARY_FALLBACK",
+    label: "D. ETF-primary fallback",
+    description: "Use ETF PL when available; otherwise fall back to Stock PL",
   },
 ];
 
@@ -501,6 +506,18 @@ function hybridMap(stock: Map<string, number>, etf: Map<string, number>) {
   return out;
 }
 
+function etfPrimaryFallbackMap(stock: Map<string, number>, etf: Map<string, number>) {
+  const out = new Map<string, number>();
+  const keys = new Set([...stock.keys(), ...etf.keys()]);
+  for (const key of keys) {
+    const e = etf.get(key);
+    const s = stock.get(key);
+    if (finite(e)) out.set(key, e);
+    else if (finite(s)) out.set(key, s);
+  }
+  return out;
+}
+
 function attachPl(series: PortfolioSeries[], map: Map<string, number>) {
   return series.map((s) => ({
     ...s,
@@ -868,7 +885,7 @@ function deltaVsA(aggregateRows: ReturnType<typeof aggregate>) {
   for (const market of ["KOSPI", "KOSDAQ"] as const) {
     const base = aggregateRows.find((r) => r.model === "A_STOCK_PL" && r.market === market);
     if (!base) continue;
-    for (const model of ["B_ETF_PL", "C_HYBRID_PL"] as const) {
+    for (const model of ["B_ETF_PL", "C_HYBRID_PL", "D_ETF_PRIMARY_FALLBACK"] as const) {
       const row = aggregateRows.find((r) => r.model === model && r.market === market);
       if (!row) continue;
       const d = (a: number | null, b: number | null) =>
@@ -925,10 +942,12 @@ async function main() {
   const stockPl = context.sectorPriceLeadershipByDate;
   const etfPl = buildPriceLeadershipMap(dataset, "ETF");
   const hybridPl = hybridMap(stockPl, etfPl);
+  const etfPrimaryFallbackPl = etfPrimaryFallbackMap(stockPl, etfPl);
   const maps: Record<ModelId, Map<string, number>> = {
     A_STOCK_PL: stockPl,
     B_ETF_PL: etfPl,
     C_HYBRID_PL: hybridPl,
+    D_ETF_PRIMARY_FALLBACK: etfPrimaryFallbackPl,
   };
 
   const foldRows: FoldRow[] = [];
@@ -987,6 +1006,8 @@ async function main() {
         "Same V8 PL formula: RS20 20% + RS60 20% + RS120 10% + trend 15% + breadth 20% + near-high 10% + relative-turnover 5%.",
       hybridFormula:
         "Arithmetic mean of independently normalized Stock PL and ETF PL when both exist; otherwise use the available side.",
+      etfPrimaryFallbackFormula:
+        "Use independently normalized ETF PL whenever it exists for date-sector; otherwise use Stock PL. This preserves PL coverage while isolating the value of ETF PL from missing-data filtering.",
       excludedPlSectors: ["MARKET_IDX", "ETC"],
       scoreRule:
         "Base 9.5 + 0.5 only when selected PL exists and is <80. PL>=80 or missing earns 0 sector slot.",
@@ -1008,8 +1029,9 @@ async function main() {
       "A uses the existing V8 Stock PL map produced by buildPortfolioSignalContext, so the baseline is frozen to current engine behavior.",
       "B changes only the PL source universe to mapped ETFs; stock base scores and all entry/exit/portfolio rules remain unchanged.",
       "C blends independently normalized Stock PL and ETF PL 50:50 instead of pooling raw constituents, preventing sectors with many ETFs from receiving a mechanical constituent-count advantage.",
-      "ETF PL requires at least 130 bars and excludes MARKET_IDX/ETC. Missing ETF PL does not receive the 0.5 sector slot.",
-      "All three models use an identical market/fold evaluation calendar, so benchmark return and CAGR periods are directly comparable.",
+      "D uses ETF PL whenever available and falls back to Stock PL only when ETF PL is missing, preserving 100% PL coverage while isolating ETF PL information value.",
+      "ETF PL requires at least 130 bars and excludes MARKET_IDX/ETC. In B, missing ETF PL does not receive the 0.5 sector slot; in D, Stock PL supplies the fallback.",
+      "All four models use an identical market/fold evaluation calendar, so benchmark return and CAGR periods are directly comparable.",
       "Candidate gross-return diagnostics are reported separately from the P10 portfolio to distinguish signal-set quality from capacity/priority effects.",
       "The study is intentionally limited to the established 3-FOS years 2018/2022/2025 to keep comparability with prior V8 validation.",
     ],
