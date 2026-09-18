@@ -39,7 +39,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: cloudtrend-backtest-${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.ref) || 'data' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'issue_comment' && github.run_id || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -71,6 +71,9 @@ jobs:
         run: node scripts/parse-cloudtrend-command.mjs >> "$GITHUB_OUTPUT"
 
   analyze:
+    concurrency:
+      group: cloudtrend-backtest-data
+      cancel-in-progress: false
     needs: parameters
     runs-on: ubuntu-latest
     timeout-minutes: 90
