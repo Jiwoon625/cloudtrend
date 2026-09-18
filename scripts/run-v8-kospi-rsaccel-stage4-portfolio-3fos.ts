@@ -1,10 +1,12 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-import { parseManualMarketData } from "../src/lib/engine/manualDataset";
-import { buildPortfolioSignalContext } from "../src/lib/engine/sectorPenaltyPortfolioSignals";
+import {
+  parseSharedMarketData as parseManualMarketData,
+  loadResearchTexts,
+} from "./research-shared-input";
+import { buildSharedSignalContext as buildPortfolioSignalContext } from "./research-shared-input";
 import type { MarketDataset } from "../src/lib/engine/dataset";
 import type { DailyPrice } from "../src/lib/engine/types";
 import { trustedSupabaseClient, uploadJson } from "./analysis-run-store";
@@ -23,29 +25,7 @@ type FoldYear = (typeof FOLD_YEARS)[number];
 type Horizon = (typeof HORIZONS)[number];
 type CostBps = (typeof COST_BPS)[number];
 type StrategyId =
-  | "BASELINE_ONSET8"
-  | "FILTER_POSITIVE"
-  | "RANK_TOP50"
-  | "RANK_TOP33"
-  | "FILTER_Q4PLUS";
-
-interface CacheManifestFile {
-  id: string;
-  fileName: string;
-  bytes: number;
-  savedAt: string;
-  fileHash: string;
-  cacheFile: string;
-}
-
-interface CacheManifest {
-  schemaVersion: 1;
-  sourceType: "backtest";
-  cacheKey: string;
-  fileCount: number;
-  totalBytes: number;
-  files: CacheManifestFile[];
-}
+  "BASELINE_ONSET8" | "FILTER_POSITIVE" | "RANK_TOP50" | "RANK_TOP33" | "FILTER_Q4PLUS";
 
 interface Options {
   sourceManifest: string;
@@ -157,38 +137,8 @@ function round(value: number | null, digits = 6) {
   return Math.round(value * factor) / factor;
 }
 
-function decodeSourceBytes(bytes: Uint8Array) {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return new TextDecoder("euc-kr").decode(bytes);
-  }
-}
-
 async function loadCachedTexts(manifestPath: string, cacheDir: string) {
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as CacheManifest;
-  if (
-    manifest.schemaVersion !== 1 ||
-    manifest.sourceType !== "backtest" ||
-    !Array.isArray(manifest.files) ||
-    manifest.files.length !== manifest.fileCount
-  ) {
-    throw new Error("지원하지 않거나 손상된 source cache manifest입니다.");
-  }
-
-  const texts: string[] = [];
-  for (const file of manifest.files) {
-    const bytes = new Uint8Array(await readFile(path.join(cacheDir, file.cacheFile)));
-    const fileHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-    if (bytes.byteLength !== file.bytes || fileHash !== file.fileHash) {
-      throw new Error(`source cache 무결성 검증 실패: ${file.fileName}`);
-    }
-    texts.push(decodeSourceBytes(bytes));
-  }
-  process.stderr.write(
-    `KOSPI RSAccel stage4 source cache verified: ${manifest.fileCount} files / ${(manifest.totalBytes / 1_000_000).toFixed(1)} MB\n`,
-  );
-  return { texts, manifest };
+  return loadResearchTexts(manifestPath, cacheDir);
 }
 
 function benchmarkSeries(dataset: MarketDataset) {
@@ -544,11 +494,7 @@ function monthlyHitRate(rows: DailyPortfolioRow[]) {
     : null;
 }
 
-function portfolioMetrics(
-  trades: Trade[],
-  dailyRows: DailyPortfolioRow[],
-  costBps: CostBps,
-) {
+function portfolioMetrics(trades: Trade[], dailyRows: DailyPortfolioRow[], costBps: CostBps) {
   const dailyReturns = dailyRows.map((row) => row.netReturn);
   const benchmarkReturns = dailyRows.map((row) => row.benchmarkReturn);
   const activeDays = dailyRows.filter((row) => row.activePositions > 0);
@@ -560,9 +506,7 @@ function portfolioMetrics(
   const annualizedMean = (average(dailyReturns) ?? 0) * TRADING_DAYS_PER_YEAR;
   const avgConcurrent = average(activeDays.map((row) => row.activePositions)) ?? 0;
   const netTradeReturns = trades.map((trade) => trade.grossReturnPct - costBps / 100);
-  const netTradeExcess = trades.map(
-    (trade) => trade.grossExcessPct - costBps / 100,
-  );
+  const netTradeExcess = trades.map((trade) => trade.grossExcessPct - costBps / 100);
 
   return {
     trades: trades.length,
@@ -577,14 +521,12 @@ function portfolioMetrics(
       : null,
     portfolioTotalReturnPct: round((equity - 1) * 100),
     matchedBenchmarkTotalReturnPct: round((benchmarkEquity - 1) * 100),
-    portfolioCagrPct:
-      years > 0 && equity > 0 ? round((equity ** (1 / years) - 1) * 100) : null,
+    portfolioCagrPct: years > 0 && equity > 0 ? round((equity ** (1 / years) - 1) * 100) : null,
     matchedBenchmarkCagrPct:
-      years > 0 && benchmarkEquity > 0
-        ? round((benchmarkEquity ** (1 / years) - 1) * 100)
-        : null,
+      years > 0 && benchmarkEquity > 0 ? round((benchmarkEquity ** (1 / years) - 1) * 100) : null,
     annualizedVolPct: finite(annualizedVol) ? round(annualizedVol * 100) : null,
-    sharpeRf0: finite(annualizedVol) && annualizedVol > 0 ? round(annualizedMean / annualizedVol) : null,
+    sharpeRf0:
+      finite(annualizedVol) && annualizedVol > 0 ? round(annualizedMean / annualizedVol) : null,
     maxDrawdownPct: round(maxDrawdown(dailyReturns) * 100),
     activeDayPct: dailyRows.length ? round((activeDays.length / dailyRows.length) * 100) : null,
     avgConcurrentPositions: round(avgConcurrent),
@@ -597,12 +539,9 @@ function portfolioMetrics(
   };
 }
 
-async function main() {
+export async function runStudy() {
   const options = parseArgs(process.argv.slice(2));
-  const { texts, manifest } = await loadCachedTexts(
-    options.sourceManifest,
-    options.sourceCacheDir,
-  );
+  const { texts, manifest } = await loadCachedTexts(options.sourceManifest, options.sourceCacheDir);
   const parsed = parseManualMarketData(texts);
   const dataset = parsed.dataset;
   const context = buildPortfolioSignalContext(dataset, LIMIT);
@@ -679,19 +618,9 @@ async function main() {
     return HORIZONS.flatMap((horizon) =>
       strategies.flatMap((strategy) => {
         const selected = selectStrategy(strategy, rows, qMap);
-        const { candidates, accepted } = buildTrades(
-          selected,
-          horizon,
-          seriesBySymbol,
-          benchmark,
-        );
+        const { candidates, accepted } = buildTrades(selected, horizon, seriesBySymbol, benchmark);
         return COST_BPS.map((costBps) => {
-          const daily = simulateDailyPortfolio(
-            accepted,
-            costBps,
-            benchmark,
-            seriesBySymbol,
-          );
+          const daily = simulateDailyPortfolio(accepted, costBps, benchmark, seriesBySymbol);
           return {
             fold,
             horizon,
@@ -711,10 +640,7 @@ async function main() {
     strategies.flatMap((strategy) =>
       COST_BPS.map((costBps) => {
         const rows = foldResults.filter(
-          (row) =>
-            row.horizon === horizon &&
-            row.strategy === strategy &&
-            row.costBps === costBps,
+          (row) => row.horizon === horizon && row.strategy === strategy && row.costBps === costBps,
         );
         const baselineRows = foldResults.filter(
           (row) =>
@@ -745,10 +671,7 @@ async function main() {
           costBps,
           folds: rows.length,
           totalTrades: rows.reduce((sum, row) => sum + row.trades, 0),
-          totalDuplicateSuppressed: rows.reduce(
-            (sum, row) => sum + row.duplicateSuppressed,
-            0,
-          ),
+          totalDuplicateSuppressed: rows.reduce((sum, row) => sum + row.duplicateSuppressed, 0),
           meanPortfolioCagrPct: round(
             average(rows.map((row) => row.portfolioCagrPct).filter(finite)),
           ),
@@ -756,15 +679,11 @@ async function main() {
             average(rows.map((row) => row.matchedBenchmarkCagrPct).filter(finite)),
           ),
           meanSharpeRf0: round(average(rows.map((row) => row.sharpeRf0).filter(finite))),
-          meanMaxDrawdownPct: round(
-            average(rows.map((row) => row.maxDrawdownPct).filter(finite)),
-          ),
+          meanMaxDrawdownPct: round(average(rows.map((row) => row.maxDrawdownPct).filter(finite))),
           meanAvgTradeExcessPct: round(
             average(rows.map((row) => row.avgTradeExcessPct).filter(finite)),
           ),
-          meanActiveDayPct: round(
-            average(rows.map((row) => row.activeDayPct).filter(finite)),
-          ),
+          meanActiveDayPct: round(average(rows.map((row) => row.activeDayPct).filter(finite))),
           meanConcurrentPositions: round(
             average(rows.map((row) => row.avgConcurrentPositions).filter(finite)),
           ),
@@ -808,7 +727,10 @@ async function main() {
   });
 
   const now = new Date();
-  const runId = now.toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
+  const runId = now
+    .toISOString()
+    .replace(/[-:TZ.]/g, "")
+    .slice(0, 14);
   const result = {
     studyVersion: STUDY_VERSION,
     generatedAt: now.toISOString(),
@@ -828,8 +750,10 @@ async function main() {
       roundTripCostBps: COST_BPS,
       entry: "next trading-day open",
       exit: "fixed horizon close",
-      duplicateRule: "ignore a new signal while the same symbol is already held through that entry date",
-      portfolio: "daily equal weight across active trades; cash return is zero when no trade is active",
+      duplicateRule:
+        "ignore a new signal while the same symbol is already held through that entry date",
+      portfolio:
+        "daily equal weight across active trades; cash return is zero when no trade is active",
       matchedBenchmark:
         "KOSPI return over the same active capital windows; entry-day benchmark return uses open-to-close",
       transactionCost:
@@ -851,10 +775,7 @@ async function main() {
 
   const outputDir = path.resolve("analysis-runs");
   await mkdir(outputDir, { recursive: true });
-  const outputPath = path.join(
-    outputDir,
-    `v8-kospi-rsaccel-stage4-portfolio-3fos-${runId}.json`,
-  );
+  const outputPath = path.join(outputDir, `v8-kospi-rsaccel-stage4-portfolio-3fos-${runId}.json`);
   await writeFile(outputPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
 
   let remotePath: string | null = null;
@@ -869,14 +790,13 @@ async function main() {
     );
   }
 
-  process.stdout.write(
-    `${JSON.stringify({ outputPath, remotePath, stage4Summary }, null, 2)}\n`,
-  );
+  process.stdout.write(`${JSON.stringify({ outputPath, remotePath, stage4Summary }, null, 2)}\n`);
 }
 
-main().catch((error) => {
-  process.stderr.write(
-    `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
-  );
-  process.exitCode = 1;
-});
+if (process.argv[1]?.endsWith("run-v8-kospi-rsaccel-stage4-portfolio-3fos.ts"))
+  runStudy().catch((error) => {
+    process.stderr.write(
+      `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+    );
+    process.exitCode = 1;
+  });

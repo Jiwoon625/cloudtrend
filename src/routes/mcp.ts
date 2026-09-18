@@ -59,7 +59,8 @@ const REGISTER_TOOL = {
       sourceType: {
         type: "string",
         enum: ["screening", "backtest"],
-        description: "screening for the current screening/dashboard dataset, or backtest for long-term backtest data.",
+        description:
+          "screening for the current screening/dashboard dataset, or backtest for long-term backtest data.",
       },
       mode: {
         type: "string",
@@ -145,7 +146,8 @@ function parseRegisterArgs(value: unknown): RegisterArgs {
     throw new Error("file.file_id가 필요합니다.");
 
   const mode = input.mode;
-  if (mode !== undefined && typeof mode !== "string") throw new Error("mode 형식이 올바르지 않습니다.");
+  if (mode !== undefined && typeof mode !== "string")
+    throw new Error("mode 형식이 올바르지 않습니다.");
 
   return {
     sourceType,
@@ -210,7 +212,7 @@ async function callRegisterTool(args: unknown) {
     bytes,
     filename: safeFilename(input.file),
     contentType: input.file.mime_type,
-    syncLegacy: true,
+    syncLegacy: input.sourceType === "screening",
   });
 
   const structuredContent = {
@@ -311,7 +313,8 @@ export const Route = createFileRoute("/mcp")({
       POST: async ({ request }) => {
         if (!authorize(request)) return json({ error: "Unauthorized" }, 401);
         const contentType = request.headers.get("content-type") ?? "";
-        if (!contentType.includes("application/json")) return json({ error: "Unsupported Media Type" }, 415);
+        if (!contentType.includes("application/json"))
+          return json({ error: "Unsupported Media Type" }, 415);
         try {
           const body = (await request.json()) as JsonRpcRequest;
           return await handleRpc(body);

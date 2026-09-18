@@ -1,10 +1,12 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-import { parseManualMarketData } from "../src/lib/engine/manualDataset";
-import { buildPortfolioSignalContext } from "../src/lib/engine/sectorPenaltyPortfolioSignals";
+import {
+  parseSharedMarketData as parseManualMarketData,
+  loadResearchTexts,
+} from "./research-shared-input";
+import { buildSharedSignalContext as buildPortfolioSignalContext } from "./research-shared-input";
 import type { MarketDataset } from "../src/lib/engine/dataset";
 import type { DailyPrice } from "../src/lib/engine/types";
 import { trustedSupabaseClient, uploadJson } from "./analysis-run-store";
@@ -30,32 +32,10 @@ type Horizon = (typeof HORIZONS)[number];
 type CostBps = (typeof COST_BPS)[number];
 type Regime = "BULL" | "NEUTRAL" | "BEAR";
 type NeutralSubregime =
-  | "UP_TRANSITION_20D"
-  | "ABOVE_MA_STABLE"
-  | "DOWN_TRANSITION_20D"
-  | "BELOW_MA_STABLE";
+  "UP_TRANSITION_20D" | "ABOVE_MA_STABLE" | "DOWN_TRANSITION_20D" | "BELOW_MA_STABLE";
 type StrategyId =
-  | "BASELINE_ONSET8"
-  | "GLOBAL_RSACCEL_POSITIVE"
-  | "GLOBAL_Q4PLUS"
-  | "ADAPTIVE_KOSPI";
+  "BASELINE_ONSET8" | "GLOBAL_RSACCEL_POSITIVE" | "GLOBAL_Q4PLUS" | "ADAPTIVE_KOSPI";
 
-interface CacheManifestFile {
-  id: string;
-  fileName: string;
-  bytes: number;
-  savedAt: string;
-  fileHash: string;
-  cacheFile: string;
-}
-interface CacheManifest {
-  schemaVersion: 1;
-  sourceType: "backtest";
-  cacheKey: string;
-  fileCount: number;
-  totalBytes: number;
-  files: CacheManifestFile[];
-}
 interface Options {
   sourceManifest: string;
   sourceCacheDir: string;
@@ -152,35 +132,9 @@ function round(value: number | null, digits = 6) {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
 }
-function decodeSourceBytes(bytes: Uint8Array) {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return new TextDecoder("euc-kr").decode(bytes);
-  }
-}
 
 async function loadCachedTexts(manifestPath: string, cacheDir: string) {
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as CacheManifest;
-  if (
-    manifest.schemaVersion !== 1 ||
-    manifest.sourceType !== "backtest" ||
-    !Array.isArray(manifest.files) ||
-    manifest.files.length !== manifest.fileCount
-  )
-    throw new Error("지원하지 않거나 손상된 source cache manifest입니다.");
-  const texts: string[] = [];
-  for (const file of manifest.files) {
-    const bytes = new Uint8Array(await readFile(path.join(cacheDir, file.cacheFile)));
-    const fileHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-    if (bytes.byteLength !== file.bytes || fileHash !== file.fileHash)
-      throw new Error(`source cache 무결성 검증 실패: ${file.fileName}`);
-    texts.push(decodeSourceBytes(bytes));
-  }
-  process.stderr.write(
-    `KOSPI RSAccel stage8 source cache verified: ${manifest.fileCount} files / ${(manifest.totalBytes / 1_000_000).toFixed(1)} MB\n`,
-  );
-  return { texts, manifest };
+  return loadResearchTexts(manifestPath, cacheDir);
 }
 
 function benchmarkSeries(dataset: MarketDataset) {
@@ -277,7 +231,9 @@ function alignedRelativeStrength(
 }
 
 function ranks(values: number[]) {
-  const indexed = values.map((value, index) => ({ value, index })).sort((a, b) => a.value - b.value);
+  const indexed = values
+    .map((value, index) => ({ value, index }))
+    .sort((a, b) => a.value - b.value);
   const output = new Array<number>(values.length);
   let i = 0;
   while (i < indexed.length) {
@@ -329,8 +285,7 @@ function strategyPass(
   if (!row.onset8) return false;
   if (strategy === "BASELINE_ONSET8") return true;
   if (strategy === "GLOBAL_RSACCEL_POSITIVE") return row.rsAccel > 0;
-  if (strategy === "GLOBAL_Q4PLUS")
-    return (quintiles.get(`${row.date}|${row.symbol}`) ?? 0) >= 4;
+  if (strategy === "GLOBAL_Q4PLUS") return (quintiles.get(`${row.date}|${row.symbol}`) ?? 0) >= 4;
   return adaptivePass(row, quintiles);
 }
 
@@ -341,7 +296,14 @@ function benchmarkReturn(
 ) {
   const entry = benchmark.byDate.get(entryDate);
   const exit = benchmark.byDate.get(exitDate);
-  if (!entry || !exit || !finite(entry.open) || entry.open <= 0 || !finite(exit.close) || exit.close <= 0)
+  if (
+    !entry ||
+    !exit ||
+    !finite(entry.open) ||
+    entry.open <= 0 ||
+    !finite(exit.close) ||
+    exit.close <= 0
+  )
     return null;
   return (exit.close / entry.open - 1) * 100;
 }
@@ -361,7 +323,14 @@ function buildTrades(
     if (!series) continue;
     const entry = series.bars[signal.signalIndex + 1];
     const exit = series.bars[signal.signalIndex + horizon];
-    if (!entry || !exit || !finite(entry.open) || entry.open <= 0 || !finite(exit.close) || exit.close <= 0)
+    if (
+      !entry ||
+      !exit ||
+      !finite(entry.open) ||
+      entry.open <= 0 ||
+      !finite(exit.close) ||
+      exit.close <= 0
+    )
       continue;
     const benchmarkPct = benchmarkReturn(benchmark, entry.tradeDate, exit.tradeDate);
     if (!finite(benchmarkPct)) continue;
@@ -377,7 +346,9 @@ function buildTrades(
       signal,
     });
   }
-  candidates.sort((a, b) => a.entryDate.localeCompare(b.entryDate) || a.symbol.localeCompare(b.symbol));
+  candidates.sort(
+    (a, b) => a.entryDate.localeCompare(b.entryDate) || a.symbol.localeCompare(b.symbol),
+  );
   const accepted: Trade[] = [];
   const heldUntil = new Map<string, string>();
   for (const trade of candidates) {
@@ -451,7 +422,15 @@ function simulateDailyPortfolio(
     const entries = active.filter((trade) => trade.entryDate === date).length;
     const exits = active.filter((trade) => trade.exitDate === date).length;
     if (!active.length) {
-      rows.push({ date, activePositions: 0, entries: 0, exits: 0, grossReturn: 0, benchmarkReturn: 0, netReturn: 0 });
+      rows.push({
+        date,
+        activePositions: 0,
+        entries: 0,
+        exits: 0,
+        grossReturn: 0,
+        benchmarkReturn: 0,
+        netReturn: 0,
+      });
       continue;
     }
     const stockReturns = active.map((trade) => {
@@ -507,18 +486,26 @@ function portfolioMetrics(trades: Trade[], dailyRows: DailyPortfolioRow[], costB
     trades: trades.length,
     avgTradeReturnPct: round(average(tradeReturns)),
     medianTradeReturnPct: round(median(tradeReturns)),
-    tradeWinRatePct: trades.length ? round((tradeReturns.filter((value) => value > 0).length / trades.length) * 100) : null,
+    tradeWinRatePct: trades.length
+      ? round((tradeReturns.filter((value) => value > 0).length / trades.length) * 100)
+      : null,
     avgTradeExcessPct: round(average(tradeExcess)),
     medianTradeExcessPct: round(median(tradeExcess)),
-    tradeExcessWinRatePct: trades.length ? round((tradeExcess.filter((value) => value > 0).length / trades.length) * 100) : null,
+    tradeExcessWinRatePct: trades.length
+      ? round((tradeExcess.filter((value) => value > 0).length / trades.length) * 100)
+      : null,
     portfolioTotalReturnPct: round((equity - 1) * 100),
     matchedBenchmarkTotalReturnPct: round((benchmarkEquity - 1) * 100),
     portfolioCagrPct: years > 0 && equity > 0 ? round((equity ** (1 / years) - 1) * 100) : null,
-    matchedBenchmarkCagrPct: years > 0 && benchmarkEquity > 0 ? round((benchmarkEquity ** (1 / years) - 1) * 100) : null,
-    sharpeRf0: finite(annualizedVol) && annualizedVol > 0 ? round(annualizedMean / annualizedVol) : null,
+    matchedBenchmarkCagrPct:
+      years > 0 && benchmarkEquity > 0 ? round((benchmarkEquity ** (1 / years) - 1) * 100) : null,
+    sharpeRf0:
+      finite(annualizedVol) && annualizedVol > 0 ? round(annualizedMean / annualizedVol) : null,
     maxDrawdownPct: round(maxDrawdown(dailyReturns) * 100),
     avgConcurrentPositions: round(avgConcurrent),
-    maxConcurrentPositions: activeDays.length ? Math.max(...activeDays.map((row) => row.activePositions)) : 0,
+    maxConcurrentPositions: activeDays.length
+      ? Math.max(...activeDays.map((row) => row.activePositions))
+      : 0,
     activeDayPct: dailyRows.length ? round((activeDays.length / dailyRows.length) * 100) : null,
   };
 }
@@ -534,7 +521,14 @@ function signalOutcome(
   if (!series) return null;
   const entry = series.bars[row.signalIndex + 1];
   const exit = series.bars[row.signalIndex + horizon];
-  if (!entry || !exit || !finite(entry.open) || entry.open <= 0 || !finite(exit.close) || exit.close <= 0)
+  if (
+    !entry ||
+    !exit ||
+    !finite(entry.open) ||
+    entry.open <= 0 ||
+    !finite(exit.close) ||
+    exit.close <= 0
+  )
     return null;
   const benchmarkPct = benchmarkReturn(benchmark, entry.tradeDate, exit.tradeDate);
   if (!finite(benchmarkPct)) return null;
@@ -561,16 +555,20 @@ function discrimination(
     onsetSignals: selected.length + rejected.length,
     selectedSignals: selected.length,
     rejectedSignals: rejected.length,
-    retentionPct: selected.length + rejected.length ? round((selected.length / (selected.length + rejected.length)) * 100) : null,
+    retentionPct:
+      selected.length + rejected.length
+        ? round((selected.length / (selected.length + rejected.length)) * 100)
+        : null,
     selectedAvgExcessPct: round(average(selected)),
     rejectedAvgExcessPct: round(average(rejected)),
     selectedMedianExcessPct: round(median(selected)),
     rejectedMedianExcessPct: round(median(rejected)),
-    selectionSpreadPct: selected.length && rejected.length ? round(average(selected)! - average(rejected)!) : null,
+    selectionSpreadPct:
+      selected.length && rejected.length ? round(average(selected)! - average(rejected)!) : null,
   };
 }
 
-async function main() {
+export async function runStudy() {
   const options = parseArgs(process.argv.slice(2));
   const { texts, manifest } = await loadCachedTexts(options.sourceManifest, options.sourceCacheDir);
   const parsed = parseManualMarketData(texts);
@@ -579,7 +577,10 @@ async function main() {
   const benchmark = benchmarkSeries(dataset);
   const kospiSeries = context.series.filter((series) => series.market === "KOSPI");
   const observations: Observation[] = [];
-  const seriesBySymbol = new Map<string, { bars: DailyPrice[]; indexByDate: Map<string, number> }>();
+  const seriesBySymbol = new Map<
+    string,
+    { bars: DailyPrice[]; indexByDate: Map<string, number> }
+  >();
 
   for (const series of kospiSeries) {
     const scores = series.baseScores.map((base, index) =>
@@ -609,7 +610,8 @@ async function main() {
         rs20,
         rs60,
         rsAccel: rs20 - rs60,
-        onset8: finite(previousScore) && previousScore < ONSET_THRESHOLD && score >= ONSET_THRESHOLD,
+        onset8:
+          finite(previousScore) && previousScore < ONSET_THRESHOLD && score >= ONSET_THRESHOLD,
         signalIndex: i,
         regime: state.regime,
         neutralSubregime: neutralSubregimeAt(benchmarkIndex, benchmark),
@@ -629,7 +631,14 @@ async function main() {
     const rows = observations.filter((row) => row.year === fold);
     return HORIZONS.flatMap((horizon) =>
       strategies.flatMap((strategy) => {
-        const { candidates, accepted } = buildTrades(rows, strategy, horizon, quintiles, seriesBySymbol, benchmark);
+        const { candidates, accepted } = buildTrades(
+          rows,
+          strategy,
+          horizon,
+          quintiles,
+          seriesBySymbol,
+          benchmark,
+        );
         return COST_BPS.map((costBps) => ({
           fold,
           horizon,
@@ -656,7 +665,10 @@ async function main() {
         const baseline = new Map(
           foldResults
             .filter(
-              (row) => row.horizon === horizon && row.strategy === "BASELINE_ONSET8" && row.costBps === costBps,
+              (row) =>
+                row.horizon === horizon &&
+                row.strategy === "BASELINE_ONSET8" &&
+                row.costBps === costBps,
             )
             .map((row) => [row.fold, row]),
         );
@@ -674,12 +686,20 @@ async function main() {
           costBps,
           folds: rows.length,
           totalTrades: rows.reduce((sum, row) => sum + row.trades, 0),
-          meanPortfolioCagrPct: round(average(rows.map((row) => row.portfolioCagrPct).filter(finite))),
-          meanMatchedBenchmarkCagrPct: round(average(rows.map((row) => row.matchedBenchmarkCagrPct).filter(finite))),
+          meanPortfolioCagrPct: round(
+            average(rows.map((row) => row.portfolioCagrPct).filter(finite)),
+          ),
+          meanMatchedBenchmarkCagrPct: round(
+            average(rows.map((row) => row.matchedBenchmarkCagrPct).filter(finite)),
+          ),
           meanSharpeRf0: round(average(rows.map((row) => row.sharpeRf0).filter(finite))),
           meanMaxDrawdownPct: round(average(rows.map((row) => row.maxDrawdownPct).filter(finite))),
-          meanAvgTradeExcessPct: round(average(rows.map((row) => row.avgTradeExcessPct).filter(finite))),
-          meanConcurrentPositions: round(average(rows.map((row) => row.avgConcurrentPositions).filter(finite))),
+          meanAvgTradeExcessPct: round(
+            average(rows.map((row) => row.avgTradeExcessPct).filter(finite)),
+          ),
+          meanConcurrentPositions: round(
+            average(rows.map((row) => row.avgConcurrentPositions).filter(finite)),
+          ),
           meanCagrDeltaVsBaselinePct: round(average(cagrDeltas)),
           positiveCagrDeltaFolds: cagrDeltas.filter((value) => value > 0).length,
         };
@@ -723,7 +743,8 @@ async function main() {
       medianYearCagrPct: round(median(rows.map((row) => row.portfolioCagrPct).filter(finite))),
       meanYearSharpe: round(average(rows.map((row) => row.sharpeRf0).filter(finite))),
       meanYearMddPct: round(average(rows.map((row) => row.maxDrawdownPct).filter(finite))),
-      positiveCagrDeltaYears: strategy === "BASELINE_ONSET8" ? null : deltas.filter((value) => value > 0).length,
+      positiveCagrDeltaYears:
+        strategy === "BASELINE_ONSET8" ? null : deltas.filter((value) => value > 0).length,
       meanCagrDeltaVsBaselinePct: strategy === "BASELINE_ONSET8" ? 0 : round(average(deltas)),
       medianCagrDeltaVsBaselinePct: strategy === "BASELINE_ONSET8" ? 0 : round(median(deltas)),
     };
@@ -732,7 +753,14 @@ async function main() {
   const holdoutRows = observations.filter((row) => row.year === HOLDOUT_YEAR);
   const holdout2026 = HORIZONS.flatMap((horizon) =>
     strategies.map((strategy) => {
-      const { accepted } = buildTrades(holdoutRows, strategy, horizon, quintiles, seriesBySymbol, benchmark);
+      const { accepted } = buildTrades(
+        holdoutRows,
+        strategy,
+        horizon,
+        quintiles,
+        seriesBySymbol,
+        benchmark,
+      );
       return {
         year: HOLDOUT_YEAR,
         horizon,
@@ -780,11 +808,14 @@ async function main() {
 
   const stateActivation = ["BULL", "NEUTRAL", "BEAR"].flatMap((regime) => {
     const stateRows = observations.filter((row) => row.regime === regime && row.onset8);
-    const bySubregime = regime === "NEUTRAL"
-      ? ["UP_TRANSITION_20D", "ABOVE_MA_STABLE", "DOWN_TRANSITION_20D", "BELOW_MA_STABLE"]
-      : [null];
+    const bySubregime =
+      regime === "NEUTRAL"
+        ? ["UP_TRANSITION_20D", "ABOVE_MA_STABLE", "DOWN_TRANSITION_20D", "BELOW_MA_STABLE"]
+        : [null];
     return bySubregime.map((subregime) => {
-      const rows = subregime ? stateRows.filter((row) => row.neutralSubregime === subregime) : stateRows;
+      const rows = subregime
+        ? stateRows.filter((row) => row.neutralSubregime === subregime)
+        : stateRows;
       const passed = rows.filter((row) => adaptivePass(row, quintiles));
       return {
         regime,
@@ -819,7 +850,10 @@ async function main() {
   });
 
   const now = new Date();
-  const runId = now.toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
+  const runId = now
+    .toISOString()
+    .replace(/[-:TZ.]/g, "")
+    .slice(0, 14);
   const result = {
     studyVersion: STUDY_VERSION,
     generatedAt: now.toISOString(),
@@ -841,7 +875,8 @@ async function main() {
       roundTripCostBps: COST_BPS,
       entry: "next trading-day open",
       exit: "fixed horizon close",
-      duplicateRule: "ignore a new signal while the same symbol is already held through that entry date",
+      duplicateRule:
+        "ignore a new signal while the same symbol is already held through that entry date",
       adaptiveRule: {
         bull: "keep every strict V8 8-point onset",
         neutralAboveMaStable: "keep every strict V8 8-point onset",
@@ -866,7 +901,10 @@ async function main() {
 
   const outputDir = path.resolve("analysis-runs");
   await mkdir(outputDir, { recursive: true });
-  const outputPath = path.join(outputDir, `v8-kospi-rsaccel-stage8-adaptive-portfolio-${runId}.json`);
+  const outputPath = path.join(
+    outputDir,
+    `v8-kospi-rsaccel-stage8-adaptive-portfolio-${runId}.json`,
+  );
   await writeFile(outputPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
 
   let remotePath: string | null = null;
@@ -886,7 +924,10 @@ async function main() {
   );
 }
 
-main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1]?.endsWith("run-v8-kospi-rsaccel-stage8-adaptive-portfolio.ts"))
+  runStudy().catch((error) => {
+    process.stderr.write(
+      `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+    );
+    process.exitCode = 1;
+  });

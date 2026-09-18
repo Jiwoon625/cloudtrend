@@ -1,13 +1,8 @@
 name: V8 KOSPI Relative Strength 3-FOS
 
 on:
+  workflow_dispatch:
   pull_request:
-    paths:
-      - scripts/run-v8-kospi-relative-strength-3fos.ts
-      - .github/workflows/v8-kospi-relative-strength-3fos.yml
-  push:
-    branches:
-      - main
     paths:
       - scripts/run-v8-kospi-relative-strength-3fos.ts
       - .github/workflows/v8-kospi-relative-strength-3fos.yml
@@ -16,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: v8-kospi-relative-strength-3fos-${{ github.ref }}
+  group: cloudtrend-backtest-${{ github.event_name == 'pull_request' && format('{0}-{1}', github.workflow, github.ref) || 'data' }}
   cancel-in-progress: false
 
 jobs:
@@ -34,7 +29,7 @@ jobs:
         run: npx eslint scripts/run-v8-kospi-relative-strength-3fos.ts --fix
 
   study:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -57,24 +52,8 @@ jobs:
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
           test -n "$SUPABASE_USER_ID"
-      - id: backtest-source
-        name: Compute backtest source cache key
-        run: |
-          npm run backtest:cache -- manifest \
-            --supabase-user-id "$SUPABASE_USER_ID" \
-            --manifest "$BACKTEST_SOURCE_MANIFEST"
-      - id: backtest-cache
-        name: Restore backtest source cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.BACKTEST_SOURCE_CACHE_DIR }}
-          key: cloudtrend-backtest-raw-v1-${{ steps.backtest-source.outputs.cache_key }}
-      - name: Download backtest sources on cache miss
-        if: steps.backtest-cache.outputs.cache-hit != 'true'
-        run: |
-          npm run backtest:cache -- materialize \
-            --manifest "$BACKTEST_SOURCE_MANIFEST" \
-            --cache-dir "$BACKTEST_SOURCE_CACHE_DIR"
+      - name: Prepare verified shared backtest sources
+        uses: ./.github/actions/backtest-source-cache
       - name: Run KOSPI relative strength 3-FOS
         run: |
           npx vite-node scripts/run-v8-kospi-relative-strength-3fos.ts \

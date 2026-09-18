@@ -93,16 +93,18 @@ interface PreviousPayload {
 }
 
 function usage(): never {
-  throw new Error([
-    "Usage:",
-    "  npx vite-node scripts/run-sector-penalty-portfolio-backtest.ts --supabase-user-id <uuid> [--upload]",
-    "Options:",
-    "  --output <dir>             default: v8-sector-penalty-portfolio-runs",
-    "  --limit <count>            default: 613",
-    "  --initial-capital <won>    default: 100000000",
-    "  --allow-result-change      같은 원천/설정의 regression baseline 변경을 명시적으로 허용",
-    "Supabase mode requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
-  ].join("\n"));
+  throw new Error(
+    [
+      "Usage:",
+      "  npx vite-node scripts/run-sector-penalty-portfolio-backtest.ts --supabase-user-id <uuid> [--upload]",
+      "Options:",
+      "  --output <dir>             default: v8-sector-penalty-portfolio-runs",
+      "  --limit <count>            default: 613",
+      "  --initial-capital <won>    default: 100000000",
+      "  --allow-result-change      같은 원천/설정의 regression baseline 변경을 명시적으로 허용",
+      "Supabase mode requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
+    ].join("\n"),
+  );
 }
 
 function parseArgs(argv: string[]): Options {
@@ -174,31 +176,38 @@ async function maybeDownloadJson<T>(
   try {
     return await downloadJson<T>(client, objectPath);
   } catch (error) {
-    if (error instanceof Error && /Object not found|not_found|404/i.test(error.message)) return null;
+    if (error instanceof Error && /Object not found|not_found|404/i.test(error.message))
+      return null;
     throw error;
   }
 }
 
 function sourceFingerprintFor(files: RuntimeSourceFile[], limit: number) {
-  return sha256(stableJson({
-    featureVersion: PORTFOLIO_FEATURE_CACHE_VERSION,
-    limit,
-    sources: files
-      .map((file) => ({ dataHash: file.dataHash, schemaHash: file.schemaHash }))
-      .sort((a, b) => `${a.dataHash}:${a.schemaHash}`.localeCompare(`${b.dataHash}:${b.schemaHash}`)),
-  }));
+  return sha256(
+    stableJson({
+      featureVersion: PORTFOLIO_FEATURE_CACHE_VERSION,
+      limit,
+      sources: files
+        .map((file) => ({ dataHash: file.dataHash, schemaHash: file.schemaHash }))
+        .sort((a, b) =>
+          `${a.dataHash}:${a.schemaHash}`.localeCompare(`${b.dataHash}:${b.schemaHash}`),
+        ),
+    }),
+  );
 }
 
 function configFingerprint(options: Options) {
-  return sha256(stableJson({
-    engineVersion: SECTOR_PENALTY_PORTFOLIO_VERSION,
-    limit: options.limit,
-    initialCapital: options.initialCapital,
-    roundTripCostBps: ROUND_TRIP_COST_BPS,
-    maxPositions: MAX_POSITIONS,
-    weightModes: WEIGHT_MODES,
-    scenarioDefinitions: PORTFOLIO_STRATEGIES,
-  }));
+  return sha256(
+    stableJson({
+      engineVersion: SECTOR_PENALTY_PORTFOLIO_VERSION,
+      limit: options.limit,
+      initialCapital: options.initialCapital,
+      roundTripCostBps: ROUND_TRIP_COST_BPS,
+      maxPositions: MAX_POSITIONS,
+      weightModes: WEIGHT_MODES,
+      scenarioDefinitions: PORTFOLIO_STRATEGIES,
+    }),
+  );
 }
 
 /** optimizationStats는 cache hit 여부에 따라 달라지므로 계산결과 회귀 digest에서는 제외한다. */
@@ -224,7 +233,11 @@ function hasFullResult(
 function previousPayloadSourceFingerprint(payload: PreviousPayload) {
   const limit = payload.run?.limit;
   const files = payload.sourceFiles;
-  if (!Number.isInteger(limit) || !files?.length || files.some((file) => !file.dataHash || !file.schemaHash)) {
+  if (
+    !Number.isInteger(limit) ||
+    !files?.length ||
+    files.some((file) => !file.dataHash || !file.schemaHash)
+  ) {
     return null;
   }
   return sourceFingerprintFor(files, limit!);
@@ -233,16 +246,19 @@ function previousPayloadSourceFingerprint(payload: PreviousPayload) {
 function previousPayloadConfigFingerprint(payload: PreviousPayload) {
   const run = payload.run;
   const scenarios = payload.result?.scenarioDefinitions;
-  if (!run || !scenarios || !Number.isInteger(run.limit) || !Number.isFinite(run.initialCapital)) return null;
-  return sha256(stableJson({
-    engineVersion: payload.result?.version,
-    limit: run.limit,
-    initialCapital: run.initialCapital,
-    roundTripCostBps: run.roundTripCostBps,
-    maxPositions: run.maxPositions,
-    weightModes: run.weightModes,
-    scenarioDefinitions: scenarios,
-  }));
+  if (!run || !scenarios || !Number.isInteger(run.limit) || !Number.isFinite(run.initialCapital))
+    return null;
+  return sha256(
+    stableJson({
+      engineVersion: payload.result?.version,
+      limit: run.limit,
+      initialCapital: run.initialCapital,
+      roundTripCostBps: run.roundTripCostBps,
+      maxPositions: run.maxPositions,
+      weightModes: run.weightModes,
+      scenarioDefinitions: scenarios,
+    }),
+  );
 }
 
 function previousPayloadDigest(
@@ -278,9 +294,17 @@ async function main() {
     buildBacktestSourceManifest(client, userId, options.limit),
   );
   const runtimeCachePath = `${userId}/results/cache/sector-v8-portfolio/${PORTFOLIO_RUNTIME_CACHE_VERSION}/l${options.limit}-${manifest.fingerprint.slice(0, 24)}.json.gz`;
-  const runtimeDownload = await measured(steps, "load_runtime_cache", () =>
-    maybeDownloadPortfolioRuntimeCache(client, runtimeCachePath, manifest.fingerprint, options.limit),
-  );
+  const localSources = Boolean(process.env["BACKTEST_SOURCE_CACHE_DIR"]);
+  const runtimeDownload = localSources
+    ? { cache: null, compressedBytes: null, uncompressedBytes: null }
+    : await measured(steps, "load_runtime_cache", () =>
+        maybeDownloadPortfolioRuntimeCache(
+          client,
+          runtimeCachePath,
+          manifest.fingerprint,
+          options.limit,
+        ),
+      );
 
   let dataset: MarketDataset;
   let sourceFiles: RuntimeSourceFile[];
@@ -295,7 +319,7 @@ async function main() {
     runtimeCacheUsed = true;
   } else {
     const inputs = await measured(steps, "load_source_inputs", () =>
-      loadAnalysisSourceInputs(client, userId, "backtest"),
+      loadAnalysisSourceInputs(client, userId, "backtest", { lightweight: true }),
     );
     const parsed = measuredSync(steps, "parse_dataset", () =>
       parseManualMarketData(inputs.map((input) => input.text)),
@@ -311,7 +335,7 @@ async function main() {
   let featureCacheSource: "RUNTIME" | "STANDALONE" | "COMPUTED" = embeddedFeatureCache
     ? "RUNTIME"
     : "COMPUTED";
-  if (!featureCache) {
+  if (!featureCache && !localSources) {
     featureCache = await measured(steps, "load_feature_cache", () =>
       maybeDownloadJson<PortfolioFeatureCache>(client, standaloneFeatureCachePath),
     );
@@ -322,7 +346,9 @@ async function main() {
     buildPortfolioSignalContext(dataset, options.limit, featureCache),
   );
   if (runtimeCacheUsed && !signalContext.featureCacheUsed) {
-    throw new Error("Runtime Cache v2의 embedded Feature Cache를 복원하지 못했습니다. 캐시를 무효화해야 합니다.");
+    throw new Error(
+      "Runtime Cache v2의 embedded Feature Cache를 복원하지 못했습니다. 캐시를 무효화해야 합니다.",
+    );
   }
 
   let resolvedFeatureCache = featureCache;
@@ -332,7 +358,7 @@ async function main() {
       createPortfolioFeatureCache(signalContext, dataset, options.limit),
     );
     featureCacheSource = "COMPUTED";
-    if (options.upload) {
+    if (options.upload && !localSources) {
       const stored = await measured(steps, "persist_feature_cache", () =>
         uploadCompactJson(client, standaloneFeatureCachePath, resolvedFeatureCache),
       );
@@ -341,7 +367,7 @@ async function main() {
   }
 
   // Runtime Cache v2는 계산에 필요한 최소 dataset + Feature Cache를 한 객체로 묶는다.
-  if (!runtimeCacheUsed && options.upload) {
+  if (!runtimeCacheUsed && options.upload && !localSources) {
     const cache = measuredSync(steps, "serialize_runtime_cache", () =>
       createPortfolioRuntimeCache({
         manifestFingerprint: manifest.fingerprint,
@@ -361,12 +387,17 @@ async function main() {
   let regressionBaseline = await measured(steps, "load_regression_baseline", () =>
     maybeDownloadJson<RegressionBaseline>(client, regressionPath),
   );
-  let regressionBaselineSource: "BASELINE" | "LATEST" | "NONE" = regressionBaseline ? "BASELINE" : "NONE";
+  let regressionBaselineSource: "BASELINE" | "LATEST" | "NONE" = regressionBaseline
+    ? "BASELINE"
+    : "NONE";
   let previousRunId: string | null = null;
 
   if (!regressionBaseline) {
     const previous = await measured(steps, "load_previous_latest_for_regression", () =>
-      maybeDownloadJson<PreviousPayload>(client, `${userId}/results/sector-v8-penalty-portfolio/latest.json`),
+      maybeDownloadJson<PreviousPayload>(
+        client,
+        `${userId}/results/sector-v8-penalty-portfolio/latest.json`,
+      ),
     );
     if (previous) {
       const digest = previousPayloadDigest(previous, sourceFingerprint, currentConfigFingerprint);
@@ -406,7 +437,10 @@ async function main() {
     );
   }
 
-  if (options.upload && (!regressionBaseline || (!regressionMatched && options.allowResultChange))) {
+  if (
+    options.upload &&
+    (!regressionBaseline || (!regressionMatched && options.allowResultChange))
+  ) {
     regressionBaseline = {
       version: REGRESSION_GUARD_VERSION,
       sourceFingerprint,
@@ -525,38 +559,44 @@ async function main() {
     remoteLatestBytes = storedLatest.bytes;
   }
 
-  process.stdout.write(`${JSON.stringify({
-    outputDir,
-    remotePath,
-    remoteStorage: {
-      latestBytes: remoteLatestBytes,
-      details: detailStorage,
-    },
-    runtimeCache: commonPayload.runtimeCache,
-    featureCache: commonPayload.featureCache,
-    regressionGuard: commonPayload.regressionGuard,
-    profile: {
-      ...profile,
-      totalElapsedMs: Math.round((performance.now() - totalStartedAt) * 100) / 100,
-      finalMemory: memorySnapshot(),
-    },
-    run: commonPayload.run,
-    summary: {
-      metadata: result.metadata,
-      optimizationStats: result.optimizationStats,
-      scenarioDefinitions: result.scenarioDefinitions,
-      portfolioAssumptions: result.portfolioAssumptions,
-      bestRows: result.bestRows,
-      rowCount: result.rows.length,
-      detailCounts: {
-        yearlyReturns: result.yearlyReturns.length,
-        monthlyReturns: result.monthlyReturns.length,
-        regimeReturns: result.regimeReturns.length,
-        equityCurve: result.equityCurve.length,
-        drawdownSeries: result.drawdownSeries.length,
+  process.stdout.write(
+    `${JSON.stringify(
+      {
+        outputDir,
+        remotePath,
+        remoteStorage: {
+          latestBytes: remoteLatestBytes,
+          details: detailStorage,
+        },
+        runtimeCache: commonPayload.runtimeCache,
+        featureCache: commonPayload.featureCache,
+        regressionGuard: commonPayload.regressionGuard,
+        profile: {
+          ...profile,
+          totalElapsedMs: Math.round((performance.now() - totalStartedAt) * 100) / 100,
+          finalMemory: memorySnapshot(),
+        },
+        run: commonPayload.run,
+        summary: {
+          metadata: result.metadata,
+          optimizationStats: result.optimizationStats,
+          scenarioDefinitions: result.scenarioDefinitions,
+          portfolioAssumptions: result.portfolioAssumptions,
+          bestRows: result.bestRows,
+          rowCount: result.rows.length,
+          detailCounts: {
+            yearlyReturns: result.yearlyReturns.length,
+            monthlyReturns: result.monthlyReturns.length,
+            regimeReturns: result.regimeReturns.length,
+            equityCurve: result.equityCurve.length,
+            drawdownSeries: result.drawdownSeries.length,
+          },
+        },
       },
-    },
-  }, null, 2)}\n`);
+      null,
+      2,
+    )}\n`,
+  );
 }
 
 main().catch((error: unknown) => {

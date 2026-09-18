@@ -1,10 +1,12 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-import { parseManualMarketData } from "../src/lib/engine/manualDataset";
-import { buildPortfolioSignalContext } from "../src/lib/engine/sectorPenaltyPortfolioSignals";
+import {
+  parseSharedMarketData as parseManualMarketData,
+  loadResearchTexts,
+} from "./research-shared-input";
+import { buildSharedSignalContext as buildPortfolioSignalContext } from "./research-shared-input";
 import type { MarketDataset } from "../src/lib/engine/dataset";
 import type { DailyPrice } from "../src/lib/engine/types";
 import { trustedSupabaseClient, uploadJson } from "./analysis-run-store";
@@ -26,22 +28,6 @@ const BEAR_RETURN_THRESHOLD = -5;
 type Regime = "BULL" | "NEUTRAL" | "BEAR";
 type StrategyId = "BASELINE_ONSET8" | "FILTER_POSITIVE" | "FILTER_Q4PLUS";
 
-interface CacheManifestFile {
-  id: string;
-  fileName: string;
-  bytes: number;
-  savedAt: string;
-  fileHash: string;
-  cacheFile: string;
-}
-interface CacheManifest {
-  schemaVersion: 1;
-  sourceType: "backtest";
-  cacheKey: string;
-  fileCount: number;
-  totalBytes: number;
-  files: CacheManifestFile[];
-}
 interface Options {
   sourceManifest: string;
   sourceCacheDir: string;
@@ -145,37 +131,8 @@ function round(value: number | null, digits = 6) {
   return Math.round(value * factor) / factor;
 }
 
-function decodeSourceBytes(bytes: Uint8Array) {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return new TextDecoder("euc-kr").decode(bytes);
-  }
-}
-
 async function loadCachedTexts(manifestPath: string, cacheDir: string) {
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as CacheManifest;
-  if (
-    manifest.schemaVersion !== 1 ||
-    manifest.sourceType !== "backtest" ||
-    !Array.isArray(manifest.files) ||
-    manifest.files.length !== manifest.fileCount
-  ) {
-    throw new Error("지원하지 않거나 손상된 source cache manifest입니다.");
-  }
-  const texts: string[] = [];
-  for (const file of manifest.files) {
-    const bytes = new Uint8Array(await readFile(path.join(cacheDir, file.cacheFile)));
-    const fileHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-    if (bytes.byteLength !== file.bytes || fileHash !== file.fileHash) {
-      throw new Error(`source cache 무결성 검증 실패: ${file.fileName}`);
-    }
-    texts.push(decodeSourceBytes(bytes));
-  }
-  process.stderr.write(
-    `KOSPI RSAccel stage6 source cache verified: ${manifest.fileCount} files / ${(manifest.totalBytes / 1_000_000).toFixed(1)} MB\n`,
-  );
-  return { texts, manifest };
+  return loadResearchTexts(manifestPath, cacheDir);
 }
 
 function benchmarkSeries(dataset: MarketDataset) {
@@ -241,13 +198,7 @@ function regimeAt(date: string, benchmark: ReturnType<typeof benchmarkSeries>): 
   if (index === undefined || index < Math.max(MA_LOOKBACK - 1, RETURN_LOOKBACK)) return null;
   const current = benchmark.bars[index];
   const past = benchmark.bars[index - RETURN_LOOKBACK];
-  if (
-    !current ||
-    !past ||
-    !finite(current.close) ||
-    !finite(past.close) ||
-    past.close <= 0
-  ) {
+  if (!current || !past || !finite(current.close) || !finite(past.close) || past.close <= 0) {
     return null;
   }
   const maBars = benchmark.bars.slice(index - MA_LOOKBACK + 1, index + 1);
@@ -308,9 +259,7 @@ function selectStrategy(
   if (strategy === "FILTER_POSITIVE") {
     return rows.filter((row) => row.onset8 && row.rsAccel > 0);
   }
-  return rows.filter(
-    (row) => row.onset8 && (quintiles.get(`${row.date}|${row.symbol}`) ?? 0) >= 4,
-  );
+  return rows.filter((row) => row.onset8 && (quintiles.get(`${row.date}|${row.symbol}`) ?? 0) >= 4);
 }
 
 function benchmarkReturn(
@@ -433,14 +382,11 @@ function robustnessSummary(
           .map((row) => [row.year, row.avgExcessPct]),
       );
       const deltas = rows
-        .filter(
-          (row) => finite(row.avgExcessPct) && finite(baselineByYear.get(row.year)),
-        )
+        .filter((row) => finite(row.avgExcessPct) && finite(baselineByYear.get(row.year)))
         .map((row) => row.avgExcessPct! - baselineByYear.get(row.year)!);
       const totalTrades = rows.reduce((sum, row) => sum + row.trades, 0);
       const pooledAvgExcessPct = totalTrades
-        ? rows.reduce((sum, row) => sum + (row.avgExcessPct ?? 0) * row.trades, 0) /
-          totalTrades
+        ? rows.reduce((sum, row) => sum + (row.avgExcessPct ?? 0) * row.trades, 0) / totalTrades
         : null;
       const tradeCounts = rows.map((row) => row.trades);
       return {
@@ -450,33 +396,23 @@ function robustnessSummary(
         totalTrades,
         minYearTrades: tradeCounts.length ? Math.min(...tradeCounts) : 0,
         medianYearTrades: round(median(tradeCounts)),
-        meanYearAvgExcessPct: round(
-          average(rows.map((row) => row.avgExcessPct).filter(finite)),
-        ),
-        medianYearAvgExcessPct: round(
-          median(rows.map((row) => row.avgExcessPct).filter(finite)),
-        ),
+        meanYearAvgExcessPct: round(average(rows.map((row) => row.avgExcessPct).filter(finite))),
+        medianYearAvgExcessPct: round(median(rows.map((row) => row.avgExcessPct).filter(finite))),
         pooledAvgExcessPct: round(pooledAvgExcessPct),
-        positiveExcessYears: rows.filter(
-          (row) => finite(row.avgExcessPct) && row.avgExcessPct > 0,
-        ).length,
+        positiveExcessYears: rows.filter((row) => finite(row.avgExcessPct) && row.avgExcessPct > 0)
+          .length,
         positiveDeltaYears:
           strategy === "BASELINE_ONSET8" ? null : deltas.filter((value) => value > 0).length,
-        meanDeltaVsBaselinePct:
-          strategy === "BASELINE_ONSET8" ? 0 : round(average(deltas)),
-        medianDeltaVsBaselinePct:
-          strategy === "BASELINE_ONSET8" ? 0 : round(median(deltas)),
+        meanDeltaVsBaselinePct: strategy === "BASELINE_ONSET8" ? 0 : round(average(deltas)),
+        medianDeltaVsBaselinePct: strategy === "BASELINE_ONSET8" ? 0 : round(median(deltas)),
       };
     }),
   );
 }
 
-async function main() {
+export async function runStudy() {
   const options = parseArgs(process.argv.slice(2));
-  const { texts, manifest } = await loadCachedTexts(
-    options.sourceManifest,
-    options.sourceCacheDir,
-  );
+  const { texts, manifest } = await loadCachedTexts(options.sourceManifest, options.sourceCacheDir);
   const parsed = parseManualMarketData(texts);
   const dataset = parsed.dataset;
   const context = buildPortfolioSignalContext(dataset, LIMIT);
@@ -498,20 +434,8 @@ async function main() {
       const score = scores[index];
       const previousScore = scores[index - 1];
       if (!finite(score)) continue;
-      const rs20 = alignedRelativeStrength(
-        series.bars,
-        dateIndex,
-        bar.tradeDate,
-        benchmark,
-        20,
-      );
-      const rs60 = alignedRelativeStrength(
-        series.bars,
-        dateIndex,
-        bar.tradeDate,
-        benchmark,
-        60,
-      );
+      const rs20 = alignedRelativeStrength(series.bars, dateIndex, bar.tradeDate, benchmark, 20);
+      const rs60 = alignedRelativeStrength(series.bars, dateIndex, bar.tradeDate, benchmark, 60);
       const regime = regimeAt(bar.tradeDate, benchmark);
       if (!finite(rs20) || !finite(rs60) || !regime) continue;
       observations.push({
@@ -522,9 +446,7 @@ async function main() {
         rs60,
         rsAccel: rs20 - rs60,
         onset8:
-          finite(previousScore) &&
-          previousScore < ONSET_THRESHOLD &&
-          score >= ONSET_THRESHOLD,
+          finite(previousScore) && previousScore < ONSET_THRESHOLD && score >= ONSET_THRESHOLD,
         signalIndex: index,
         regime,
       });
@@ -532,11 +454,7 @@ async function main() {
   }
 
   const quintiles = dailyQuintiles(observations);
-  const strategies: StrategyId[] = [
-    "BASELINE_ONSET8",
-    "FILTER_POSITIVE",
-    "FILTER_Q4PLUS",
-  ];
+  const strategies: StrategyId[] = ["BASELINE_ONSET8", "FILTER_POSITIVE", "FILTER_Q4PLUS"];
   const regimes: Regime[] = ["BULL", "NEUTRAL", "BEAR"];
   const yearly: YearlyRow[] = [];
 
@@ -609,7 +527,10 @@ async function main() {
   };
 
   await mkdir("analysis-runs", { recursive: true });
-  const stamp = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
+  const stamp = new Date()
+    .toISOString()
+    .replace(/[-:TZ.]/g, "")
+    .slice(0, 14);
   const outputPath = path.resolve(
     `analysis-runs/v8-kospi-rsaccel-stage6-yearly-regime-${stamp}.json`,
   );

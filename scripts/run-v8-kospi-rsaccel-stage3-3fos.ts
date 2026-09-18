@@ -1,10 +1,12 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-import { parseManualMarketData } from "../src/lib/engine/manualDataset";
-import { buildPortfolioSignalContext } from "../src/lib/engine/sectorPenaltyPortfolioSignals";
+import {
+  parseSharedMarketData as parseManualMarketData,
+  loadResearchTexts,
+} from "./research-shared-input";
+import { buildSharedSignalContext as buildPortfolioSignalContext } from "./research-shared-input";
 import type { MarketDataset } from "../src/lib/engine/dataset";
 import type { DailyPrice } from "../src/lib/engine/types";
 import { trustedSupabaseClient, uploadJson } from "./analysis-run-store";
@@ -31,24 +33,6 @@ type VariantId =
   | "FILTER_Q5"
   | "BONUS_Q4PLUS"
   | "BONUS_Q5";
-
-interface CacheManifestFile {
-  id: string;
-  fileName: string;
-  bytes: number;
-  savedAt: string;
-  fileHash: string;
-  cacheFile: string;
-}
-
-interface CacheManifest {
-  schemaVersion: 1;
-  sourceType: "backtest";
-  cacheKey: string;
-  fileCount: number;
-  totalBytes: number;
-  files: CacheManifestFile[];
-}
 
 interface Options {
   sourceManifest: string;
@@ -149,38 +133,8 @@ function round(value: number | null, digits = 6) {
   return Math.round(value * factor) / factor;
 }
 
-function decodeSourceBytes(bytes: Uint8Array) {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return new TextDecoder("euc-kr").decode(bytes);
-  }
-}
-
 async function loadCachedTexts(manifestPath: string, cacheDir: string) {
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as CacheManifest;
-  if (
-    manifest.schemaVersion !== 1 ||
-    manifest.sourceType !== "backtest" ||
-    !Array.isArray(manifest.files) ||
-    manifest.files.length !== manifest.fileCount
-  ) {
-    throw new Error("지원하지 않거나 손상된 source cache manifest입니다.");
-  }
-
-  const texts: string[] = [];
-  for (const file of manifest.files) {
-    const bytes = new Uint8Array(await readFile(path.join(cacheDir, file.cacheFile)));
-    const fileHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-    if (bytes.byteLength !== file.bytes || fileHash !== file.fileHash) {
-      throw new Error(`source cache 무결성 검증 실패: ${file.fileName}`);
-    }
-    texts.push(decodeSourceBytes(bytes));
-  }
-  process.stderr.write(
-    `KOSPI RSAccel stage3 source cache verified: ${manifest.fileCount} files / ${(manifest.totalBytes / 1_000_000).toFixed(1)} MB\n`,
-  );
-  return { texts, manifest };
+  return loadResearchTexts(manifestPath, cacheDir);
 }
 
 function benchmarkSeries(dataset: MarketDataset) {
@@ -457,12 +411,9 @@ function variantMetrics(
   };
 }
 
-async function main() {
+export async function runStudy() {
   const options = parseArgs(process.argv.slice(2));
-  const { texts, manifest } = await loadCachedTexts(
-    options.sourceManifest,
-    options.sourceCacheDir,
-  );
+  const { texts, manifest } = await loadCachedTexts(options.sourceManifest, options.sourceCacheDir);
   const parsed = parseManualMarketData(texts);
   const dataset = parsed.dataset;
   const context = buildPortfolioSignalContext(dataset, LIMIT);
@@ -487,20 +438,8 @@ async function main() {
       const score = scores[i];
       if (!finite(score)) continue;
 
-      const rs20 = alignedRelativeStrength(
-        series.bars,
-        dateIndex,
-        signal.tradeDate,
-        benchmark,
-        20,
-      );
-      const rs60 = alignedRelativeStrength(
-        series.bars,
-        dateIndex,
-        signal.tradeDate,
-        benchmark,
-        60,
-      );
+      const rs20 = alignedRelativeStrength(series.bars, dateIndex, signal.tradeDate, benchmark, 20);
+      const rs60 = alignedRelativeStrength(series.bars, dateIndex, signal.tradeDate, benchmark, 60);
       if (!finite(rs20) || !finite(rs60)) continue;
       const rsAccel = rs20 - rs60;
 
@@ -546,16 +485,8 @@ async function main() {
           subsetBaselineByMarketRule(rows, qMap, "POSITIVE"),
           baseline,
         ),
-        variantMetrics(
-          "FILTER_Q4PLUS",
-          subsetBaselineByMarketRule(rows, qMap, "Q4PLUS"),
-          baseline,
-        ),
-        variantMetrics(
-          "FILTER_Q5",
-          subsetBaselineByMarketRule(rows, qMap, "Q5"),
-          baseline,
-        ),
+        variantMetrics("FILTER_Q4PLUS", subsetBaselineByMarketRule(rows, qMap, "Q4PLUS"), baseline),
+        variantMetrics("FILTER_Q5", subsetBaselineByMarketRule(rows, qMap, "Q5"), baseline),
         variantMetrics("BONUS_Q4PLUS", buildBonusOnsets(rows, qMap, "Q4PLUS"), baseline),
         variantMetrics("BONUS_Q5", buildBonusOnsets(rows, qMap, "Q5"), baseline),
       ];
@@ -581,9 +512,7 @@ async function main() {
         foldsWithData: rows.filter((row) => row.count > 0).length,
         totalSignals: rows.reduce((sum, row) => sum + row.count, 0),
         equalWeightAvgReturn: round(average(rows.map((row) => row.avgReturn).filter(finite))),
-        equalWeightMedianReturn: round(
-          average(rows.map((row) => row.medianReturn).filter(finite)),
-        ),
+        equalWeightMedianReturn: round(average(rows.map((row) => row.medianReturn).filter(finite))),
         equalWeightWinRate: round(average(rows.map((row) => row.winRate).filter(finite))),
         equalWeightAvgExcessReturn: round(
           average(rows.map((row) => row.avgExcessReturn).filter(finite)),
@@ -616,9 +545,7 @@ async function main() {
     const rows = foldResults.filter((row) => row.horizon === horizon);
     return {
       horizon,
-      meanOnsetRankIc: round(
-        average(rows.map((row) => row.onsetRankIc.mean).filter(finite)),
-      ),
+      meanOnsetRankIc: round(average(rows.map((row) => row.onsetRankIc.mean).filter(finite))),
       meanPositiveRate: round(
         average(rows.map((row) => row.onsetRankIc.positiveRate).filter(finite)),
       ),
@@ -644,7 +571,10 @@ async function main() {
   });
 
   const now = new Date();
-  const runId = now.toISOString().replace(/[-:TZ.]/g, "").slice(0, 14);
+  const runId = now
+    .toISOString()
+    .replace(/[-:TZ.]/g, "")
+    .slice(0, 14);
   const result = {
     studyVersion: STUDY_VERSION,
     generatedAt: now.toISOString(),
@@ -670,7 +600,8 @@ async function main() {
       rsAccel: "RS20 - RS60",
       rank: "rank only existing 8-point onset candidates by RSAccel each date",
       filter: "retain existing onset signals by RSAccel > 0 or market-wide daily RSAccel quintile",
-      bonus: "+0.5 point when market-wide RSAccel is Q4+ or Q5, capped at 10; recompute 8-point onset",
+      bonus:
+        "+0.5 point when market-wide RSAccel is Q4+ or Q5, capped at 10; recompute 8-point onset",
     },
     rankIcAggregates,
     aggregates,
@@ -700,9 +631,10 @@ async function main() {
   );
 }
 
-main().catch((error) => {
-  process.stderr.write(
-    `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
-  );
-  process.exitCode = 1;
-});
+if (process.argv[1]?.endsWith("run-v8-kospi-rsaccel-stage3-3fos.ts"))
+  runStudy().catch((error) => {
+    process.stderr.write(
+      `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+    );
+    process.exitCode = 1;
+  });

@@ -157,6 +157,8 @@ export async function listRegisteredSources(
 }
 
 async function activeRows(sourceType: SourceType) {
+  if (sourceType === "backtest")
+    throw new Error("장기 데이터 검증은 GitHub Actions에서 실행해 주세요.");
   const active = await listRegisteredSources(sourceType);
   return Promise.all(
     active.map(async (source) => {

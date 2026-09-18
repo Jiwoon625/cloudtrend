@@ -216,6 +216,8 @@ async function fileText(id: string): Promise<string | null> {
 
 /** 계정에 저장된 모든 백테스트 파일을 하나의 데이터셋으로 합쳐서 돌려준다. */
 export async function loadBacktestDataset(): Promise<ManualParseResult | null> {
+  if (typeof window !== "undefined")
+    throw new Error("장기 백테스트는 GitHub Actions에서 실행해 주세요.");
   await hydrateBacktestData();
   if (entries.length === 0) return null;
   const key = entries.map((f) => `${f.id}:${f.bytes}`).join("|");

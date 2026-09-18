@@ -1,9 +1,18 @@
-name: CloudTrend V8 sector penalty portfolio backtest
+name: CloudTrend V8 research batch
 
 on:
   workflow_dispatch:
-  issue_comment:
-    types: [created]
+    inputs:
+      scripts:
+        description: "쉼표로 구분한 cache-aware V8 연구 스크립트 경로"
+        required: true
+        default: "scripts/run-v8-ma-bb-ablation-3fos.ts,scripts/run-v8-kosdaq80-exit-portfolio-fixed-entry-3fos.ts"
+        type: string
+      upload:
+        description: "연구 결과를 Supabase results/에 업로드"
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -13,21 +22,15 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  analyze:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.issue.pull_request == null &&
-       github.actor == github.repository_owner &&
-       github.event.comment.body == '/cloudtrend v8-sector-penalty-portfolio')
+  batch:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
       BACKTEST_SOURCE_MANIFEST: .cache/cloudtrend-backtest-manifest.json
       BACKTEST_SOURCE_CACHE_DIR: .cache/cloudtrend-backtest
-      NODE_OPTIONS: --max-old-space-size=6144
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -43,18 +46,24 @@ jobs:
           test -n "$SUPABASE_USER_ID"
       - name: Prepare verified shared backtest sources
         uses: ./.github/actions/backtest-source-cache
-      - name: Run V8 sector penalty portfolio backtest
+      - name: Run selected studies sequentially
+        env:
+          SELECTED_SCRIPTS: ${{ inputs.scripts }}
+          UPLOAD_RESULTS: ${{ inputs.upload }}
         run: |
-          npx vite-node scripts/run-sector-penalty-portfolio-backtest.ts \
-            --supabase-user-id "$SUPABASE_USER_ID" \
-            --limit 613 \
-            --initial-capital 100000000 \
-            --upload
-      - name: Upload V8 sector penalty portfolio artifact
+          args=(
+            --scripts "$SELECTED_SCRIPTS"
+            --source-manifest "$BACKTEST_SOURCE_MANIFEST"
+            --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR"
+            --supabase-user-id "$SUPABASE_USER_ID"
+          )
+          if [[ "$UPLOAD_RESULTS" == "true" ]]; then args+=(--upload); fi
+          npx vite-node scripts/run-v8-research-batch.ts "${args[@]}"
+      - name: Upload research artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cloudtrend-v8-sector-penalty-portfolio-${{ github.run_id }}
-          path: v8-sector-penalty-portfolio-runs/
+          name: v8-research-batch-${{ github.run_id }}
+          path: analysis-runs/
           if-no-files-found: warn
-          retention-days: 14
+          retention-days: 30

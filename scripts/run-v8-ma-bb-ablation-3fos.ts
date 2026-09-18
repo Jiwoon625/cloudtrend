@@ -1,10 +1,12 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-import { parseManualMarketData } from "../src/lib/engine/manualDataset";
-import { buildPortfolioSignalContext } from "../src/lib/engine/sectorPenaltyPortfolioSignals";
+import {
+  parseSharedMarketData as parseManualMarketData,
+  loadResearchTexts,
+} from "./research-shared-input";
+import { buildSharedSignalContext as buildPortfolioSignalContext } from "./research-shared-input";
 import type { MarketDataset } from "../src/lib/engine/dataset";
 import type { DailyPrice } from "../src/lib/engine/types";
 import { trustedSupabaseClient, uploadJson } from "./analysis-run-store";
@@ -38,24 +40,6 @@ const VARIANTS: Variant[] = [
   { id: "NO_BB", label: "BB 제거 · MA 1.0 · BB 0", maWeight: 1, bbWeight: 0 },
   { id: "NO_MA_BB", label: "MA+BB 제거 · MA 0 · BB 0", maWeight: 0, bbWeight: 0 },
 ];
-
-interface CacheManifestFile {
-  id: string;
-  fileName: string;
-  bytes: number;
-  savedAt: string;
-  fileHash: string;
-  cacheFile: string;
-}
-
-interface CacheManifest {
-  schemaVersion: 1;
-  sourceType: "backtest";
-  cacheKey: string;
-  fileCount: number;
-  totalBytes: number;
-  files: CacheManifestFile[];
-}
 
 interface Options {
   sourceManifest: string;
@@ -142,14 +126,19 @@ function parseArgs(argv: string[]): Options {
   };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--source-manifest") options.sourceManifest = argv[++i] ?? usage("--source-manifest 값이 없습니다.");
-    else if (arg === "--source-cache-dir") options.sourceCacheDir = argv[++i] ?? usage("--source-cache-dir 값이 없습니다.");
-    else if (arg === "--supabase-user-id") options.userId = argv[++i] ?? usage("--supabase-user-id 값이 없습니다.");
+    if (arg === "--source-manifest")
+      options.sourceManifest = argv[++i] ?? usage("--source-manifest 값이 없습니다.");
+    else if (arg === "--source-cache-dir")
+      options.sourceCacheDir = argv[++i] ?? usage("--source-cache-dir 값이 없습니다.");
+    else if (arg === "--supabase-user-id")
+      options.userId = argv[++i] ?? usage("--supabase-user-id 값이 없습니다.");
     else if (arg === "--upload") options.upload = true;
     else usage(`지원하지 않는 인자입니다: ${arg}`);
   }
-  if (!options.sourceManifest || !options.sourceCacheDir) usage("source manifest와 cache dir가 필요합니다.");
-  if (options.upload && !/^[0-9a-f-]{36}$/i.test(options.userId ?? "")) usage("업로드에는 유효한 Supabase user id가 필요합니다.");
+  if (!options.sourceManifest || !options.sourceCacheDir)
+    usage("source manifest와 cache dir가 필요합니다.");
+  if (options.upload && !/^[0-9a-f-]{36}$/i.test(options.userId ?? ""))
+    usage("업로드에는 유효한 Supabase user id가 필요합니다.");
   return options;
 }
 
@@ -173,33 +162,8 @@ function round(value: number | null, digits = 6) {
   return Math.round(value * factor) / factor;
 }
 
-function decodeSourceBytes(bytes: Uint8Array) {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return new TextDecoder("euc-kr").decode(bytes);
-  }
-}
-
 async function loadCachedTexts(manifestPath: string, cacheDir: string) {
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as CacheManifest;
-  if (
-    manifest.schemaVersion !== 1 ||
-    manifest.sourceType !== "backtest" ||
-    !Array.isArray(manifest.files) ||
-    manifest.files.length !== manifest.fileCount
-  ) throw new Error("지원하지 않거나 손상된 source cache manifest입니다.");
-
-  const texts: string[] = [];
-  for (const file of manifest.files) {
-    const bytes = new Uint8Array(await readFile(path.join(cacheDir, file.cacheFile)));
-    const fileHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-    if (bytes.byteLength !== file.bytes || fileHash !== file.fileHash)
-      throw new Error(`source cache 무결성 검증 실패: ${file.fileName}`);
-    texts.push(decodeSourceBytes(bytes));
-  }
-  process.stderr.write(`V8-10 source cache verified: ${manifest.fileCount} files / ${(manifest.totalBytes / 1_000_000).toFixed(1)} MB\n`);
-  return { texts, manifest };
+  return loadResearchTexts(manifestPath, cacheDir);
 }
 
 function prefix(values: number[]) {
@@ -269,7 +233,12 @@ function adjustedNormalizedScore(
 }
 
 function crossed80(previous: number | null, current: number | null) {
-  return finite(previous) && finite(current) && previous < ENTRY_THRESHOLD_10 && current >= ENTRY_THRESHOLD_10;
+  return (
+    finite(previous) &&
+    finite(current) &&
+    previous < ENTRY_THRESHOLD_10 &&
+    current >= ENTRY_THRESHOLD_10
+  );
 }
 
 function benchmarkMaps(dataset: MarketDataset) {
@@ -289,7 +258,15 @@ function benchmarkReturn(
 ) {
   const entry = maps.get(market)?.get(entryDate);
   const exit = maps.get(market)?.get(exitDate);
-  if (!entry || !exit || !finite(entry.open) || entry.open <= 0 || !finite(exit.close) || exit.close <= 0) return null;
+  if (
+    !entry ||
+    !exit ||
+    !finite(entry.open) ||
+    entry.open <= 0 ||
+    !finite(exit.close) ||
+    exit.close <= 0
+  )
+    return null;
   return (exit.close / entry.open - 1) * 100;
 }
 
@@ -343,7 +320,14 @@ function makeAcc(): MetricAcc {
   };
 }
 
-function addTrade(acc: MetricAcc, date: string, ret: number, excess: number | null, mae: number, mfe: number) {
+function addTrade(
+  acc: MetricAcc,
+  date: string,
+  ret: number,
+  excess: number | null,
+  mae: number,
+  mfe: number,
+) {
   acc.returns.push(ret);
   acc.positive += ret > 0 ? 1 : 0;
   if (ret > 0) acc.profitSum += ret;
@@ -369,7 +353,13 @@ function metricKey(variant: string, fold: FoldYear, market: Market, horizon: Hor
   return `${variant}|${fold}|${market}|${horizon}`;
 }
 
-function finalizeMetric(variant: string, fold: FoldYear, market: Market, horizon: Horizon, acc: MetricAcc): FoldMetricRow {
+function finalizeMetric(
+  variant: string,
+  fold: FoldYear,
+  market: Market,
+  horizon: Horizon,
+  acc: MetricAcc,
+): FoldMetricRow {
   const dailyExcess = [...acc.daily.values()]
     .filter((row) => row.excessN > 0)
     .map((row) => row.excessSum / row.excessN);
@@ -387,7 +377,9 @@ function finalizeMetric(variant: string, fold: FoldYear, market: Market, horizon
     profitFactor: acc.lossAbsSum > 0 ? round(acc.profitSum / acc.lossAbsSum) : null,
     avgExcessReturn: round(average(acc.excessReturns)),
     medianExcessReturn: round(median(acc.excessReturns)),
-    excessWinRate: acc.excessReturns.length ? round((acc.excessPositive / acc.excessReturns.length) * 100) : null,
+    excessWinRate: acc.excessReturns.length
+      ? round((acc.excessPositive / acc.excessReturns.length) * 100)
+      : null,
     avgMae: round(average(acc.mae)),
     avgMfe: round(average(acc.mfe)),
     dailyAvgExcessHacMean: round(hac.mean),
@@ -402,21 +394,37 @@ function aggregateRows(rows: FoldMetricRow[]): AggregateRow[] {
   for (const variant of VARIANTS) {
     for (const market of ["ALL", "KOSPI", "KOSDAQ"] as const) {
       for (const horizon of HORIZONS) {
-        const selected = rows.filter((row) => row.variant === variant.id && row.market === market && row.horizon === horizon && row.count > 0);
+        const selected = rows.filter(
+          (row) =>
+            row.variant === variant.id &&
+            row.market === market &&
+            row.horizon === horizon &&
+            row.count > 0,
+        );
         const validExcess = selected.map((row) => row.avgExcessReturn).filter(finite);
         result.push({
           variant: variant.id,
           market,
           horizon,
           foldsWithSignals: selected.length,
-          foldsPositiveAvgExcess: selected.filter((row) => finite(row.avgExcessReturn) && row.avgExcessReturn > 0).length,
+          foldsPositiveAvgExcess: selected.filter(
+            (row) => finite(row.avgExcessReturn) && row.avgExcessReturn > 0,
+          ).length,
           totalSignals: selected.reduce((sum, row) => sum + row.count, 0),
           equalWeightAvgReturn: round(average(selected.map((row) => row.avgReturn).filter(finite))),
-          equalWeightMedianReturn: round(average(selected.map((row) => row.medianReturn).filter(finite))),
-          equalWeightProfitFactor: round(average(selected.map((row) => row.profitFactor).filter(finite))),
+          equalWeightMedianReturn: round(
+            average(selected.map((row) => row.medianReturn).filter(finite)),
+          ),
+          equalWeightProfitFactor: round(
+            average(selected.map((row) => row.profitFactor).filter(finite)),
+          ),
           equalWeightAvgExcess: round(average(validExcess)),
-          equalWeightMedianExcess: round(average(selected.map((row) => row.medianExcessReturn).filter(finite))),
-          equalWeightExcessWinRate: round(average(selected.map((row) => row.excessWinRate).filter(finite))),
+          equalWeightMedianExcess: round(
+            average(selected.map((row) => row.medianExcessReturn).filter(finite)),
+          ),
+          equalWeightExcessWinRate: round(
+            average(selected.map((row) => row.excessWinRate).filter(finite)),
+          ),
           worstFoldAvgExcess: validExcess.length ? round(Math.min(...validExcess)) : null,
           bestFoldAvgExcess: validExcess.length ? round(Math.max(...validExcess)) : null,
         });
@@ -426,7 +434,7 @@ function aggregateRows(rows: FoldMetricRow[]): AggregateRow[] {
   return result;
 }
 
-async function main() {
+export async function runStudy() {
   const options = parseArgs(process.argv.slice(2));
   const { texts, manifest } = await loadCachedTexts(options.sourceManifest, options.sourceCacheDir);
   const parsed = parseManualMarketData(texts);
@@ -459,7 +467,12 @@ async function main() {
           const exit = series.bars[i + horizon];
           if (!exit || !finite(exit.close) || exit.close <= 0) continue;
           const ret = (exit.close / entry.open - 1) * 100 - ROUND_TRIP_COST_BPS / 100;
-          const benchmark = benchmarkReturn(benchmarks, series.market, entry.tradeDate, exit.tradeDate);
+          const benchmark = benchmarkReturn(
+            benchmarks,
+            series.market,
+            entry.tradeDate,
+            exit.tradeDate,
+          );
           const excess = finite(benchmark) ? ret - benchmark : null;
           const ex = excursion(series.bars, i + 1, i + horizon, entry.open);
           for (const market of ["ALL", series.market] as const) {
@@ -485,7 +498,9 @@ async function main() {
     }
   }
   const aggregates = aggregateRows(foldRows);
-  const baseline = aggregates.find((row) => row.variant === "BASELINE" && row.market === "KOSDAQ" && row.horizon === 30);
+  const baseline = aggregates.find(
+    (row) => row.variant === "BASELINE" && row.market === "KOSDAQ" && row.horizon === 30,
+  );
   const primaryComparison = aggregates
     .filter((row) => row.market === "KOSDAQ" && row.horizon === 30)
     .map((row) => ({
@@ -529,7 +544,8 @@ async function main() {
       roundTripCostBps: ROUND_TRIP_COST_BPS,
       sectorSlotPoints: SECTOR_SLOT,
       sectorOverheatThreshold: SECTOR_OVERHEAT_THRESHOLD,
-      normalization: "Each variant is divided by its own attainable max (including 0.5 sector slot) and rescaled to 10 points before the same 80% onset test.",
+      normalization:
+        "Each variant is divided by its own attainable max (including 0.5 sector slot) and rescaled to 10 points before the same 80% onset test.",
       fixedOtherWeights: {
         ICH_ABOVE_CLOUD: 1,
         ICH_TENKAN_KIJUN: 1,
@@ -538,7 +554,10 @@ async function main() {
         FOREIGN_NET_POSITIVE: 2,
       },
     },
-    variants: VARIANTS.map((variant) => ({ ...variant, rawMaxIncludingSectorSlot: variantMax(variant) })),
+    variants: VARIANTS.map((variant) => ({
+      ...variant,
+      rawMaxIncludingSectorSlot: variantMax(variant),
+    })),
     primaryComparison,
     aggregateRows: aggregates,
     foldRows,
@@ -569,10 +588,15 @@ async function main() {
     });
   }
 
-  process.stdout.write(`${JSON.stringify({ outputPath, remotePath, primaryComparison }, null, 2)}\n`);
+  process.stdout.write(
+    `${JSON.stringify({ outputPath, remotePath, primaryComparison }, null, 2)}\n`,
+  );
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1]?.endsWith("run-v8-ma-bb-ablation-3fos.ts"))
+  runStudy().catch((error: unknown) => {
+    process.stderr.write(
+      `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+    );
+    process.exitCode = 1;
+  });
