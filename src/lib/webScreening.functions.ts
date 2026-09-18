@@ -89,7 +89,9 @@ async function loadActiveSources(client: SupabaseClient, userId: string) {
       .from(source.storage_bucket)
       .download(source.storage_path);
     if (downloadError)
-      throw new Error(`스크리닝 원천파일 다운로드 실패 (${source.original_filename}): ${downloadError.message}`);
+      throw new Error(
+        `스크리닝 원천파일 다운로드 실패 (${source.original_filename}): ${downloadError.message}`,
+      );
     const bytes = new Uint8Array(await blob.arrayBuffer());
     const fileHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
     if (fileHash !== source.file_hash)
