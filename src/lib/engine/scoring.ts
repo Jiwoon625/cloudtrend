@@ -388,22 +388,51 @@ export function vfStockScore(
 export function v8FinalStockScore(
   snap: IndicatorSnapshot,
   cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
-  options: { exclude52wHigh?: boolean; sectorPriceLeadership?: number | null } = {},
+  options: {
+    exclude52wHigh?: boolean;
+    sectorPriceLeadership?: number | null;
+    sectorPriceLeadershipThreshold?: number | null;
+    sectorPriceLeadershipSource?: "ETF" | "STOCK" | null;
+    sectorPriceLeadershipMissingEarnsSlot?: boolean;
+  } = {},
 ): ScoreBlock {
   const base = vfStockScore(snap, cfg, { exclude52wHigh: options.exclude52wHigh });
   const priceLeadership = options.sectorPriceLeadership ?? null;
+  const threshold =
+    options.sectorPriceLeadershipThreshold === undefined
+      ? VF_SECTOR_PL_OVERHEAT_THRESHOLD
+      : options.sectorPriceLeadershipThreshold;
+  const sourceLabel = options.sectorPriceLeadershipSource
+    ? `${options.sectorPriceLeadershipSource} `
+    : "";
+  const hasPriceLeadership = priceLeadership !== null && Number.isFinite(priceLeadership);
   const overheated =
-    priceLeadership !== null && priceLeadership >= VF_SECTOR_PL_OVERHEAT_THRESHOLD;
-  const sectorPoints = overheated ? 0 : VF_FEATURE_WEIGHTS.SECTOR_PRICE_LEADERSHIP;
+    hasPriceLeadership && threshold !== null && priceLeadership >= threshold;
+  const missingEarnsSlot = options.sectorPriceLeadershipMissingEarnsSlot ?? true;
+  const sectorPoints = hasPriceLeadership
+    ? overheated
+      ? 0
+      : VF_FEATURE_WEIGHTS.SECTOR_PRICE_LEADERSHIP
+    : missingEarnsSlot
+      ? VF_FEATURE_WEIGHTS.SECTOR_PRICE_LEADERSHIP
+      : 0;
   const sectorRow: RuleRow = {
     group: "V8 Sector",
-    rule: `Sector Price Leadership 과열 억제 (PL < ${VF_SECTOR_PL_OVERHEAT_THRESHOLD})`,
+    rule:
+      threshold === null
+        ? `${sourceLabel}Sector Price Leadership`
+        : `${sourceLabel}Sector Price Leadership 과열 억제 (PL < ${threshold})`,
     actual:
       priceLeadership === null
-        ? "데이터 없음 · V8 기본 슬롯 유지"
+        ? missingEarnsSlot
+          ? "데이터 없음 · V8 기본 슬롯 유지"
+          : "데이터 없음 · 섹터 슬롯 미부여"
         : `PL ${priceLeadership.toFixed(1)} / 100${overheated ? " · 과열" : ""}`,
-    threshold: `PL < ${VF_SECTOR_PL_OVERHEAT_THRESHOLD} 또는 데이터 없음 시 +${VF_FEATURE_WEIGHTS.SECTOR_PRICE_LEADERSHIP}`,
-    status: overheated ? "FAIL" : "PASS",
+    threshold:
+      threshold === null
+        ? "PL 데이터 필요"
+        : `PL < ${threshold} 시 +${VF_FEATURE_WEIGHTS.SECTOR_PRICE_LEADERSHIP}`,
+    status: priceLeadership === null ? "NO_DATA" : overheated ? "FAIL" : "PASS",
     points: sectorPoints,
     maxPoints: VF_FEATURE_WEIGHTS.SECTOR_PRICE_LEADERSHIP,
   };
@@ -411,6 +440,8 @@ export function v8FinalStockScore(
   return {
     points: Math.round((base.points + sectorPoints) * 100) / 100,
     maxPoints: Math.round((base.maxPoints + sectorRow.maxPoints) * 100) / 100,
+    // The final operating model treats PL as an optional source-selection feature:
+    // absence does not invalidate the remaining 9.5-point technical score.
     availableMaxPoints: Math.round((base.availableMaxPoints + sectorRow.maxPoints) * 100) / 100,
     rows,
   };
