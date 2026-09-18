@@ -152,10 +152,12 @@ export const runWebScreeningServer = createServerFn({ method: "POST" })
 
     try {
       const snapshot = buildSnapshot(analysis);
-      await client.from("screening_history").upsert(
-        { user_id: authData.user.id, date: snapshot.date, snapshot },
-        { onConflict: "user_id,date" },
-      );
+      await client
+        .from("screening_history")
+        .upsert(
+          { user_id: authData.user.id, date: snapshot.date, snapshot },
+          { onConflict: "user_id,date" },
+        );
     } catch {
       // 이력 저장 실패가 웹 스크리닝 성공을 막지 않게 한다.
     }
@@ -166,7 +168,9 @@ export const runWebScreeningServer = createServerFn({ method: "POST" })
       resultDigest?: string;
       payload?: { analysis?: AnalysisResult };
     }>(client, screeningPath);
-    const roundTripDigest = roundTrip.payload?.analysis ? resultDigest(roundTrip.payload.analysis) : null;
+    const roundTripDigest = roundTrip.payload?.analysis
+      ? resultDigest(roundTrip.payload.analysis)
+      : null;
     if (
       roundTrip.version !== SCREENING_CACHE_VERSION ||
       roundTrip.inputFingerprint !== fingerprint ||
