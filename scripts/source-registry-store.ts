@@ -1,5 +1,6 @@
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -193,10 +194,41 @@ function decodeSourceBytes(bytes: Uint8Array) {
   }
 }
 
+function canonicalMigrationMeta(record: SourceRecord) {
+  const value = (record.validation_result as Record<string, unknown> | null)?.[
+    "backtestCanonicalMigration"
+  ];
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+}
+
+function unpackRegisteredBytes(record: SourceRecord, storedBytes: Uint8Array) {
+  const storageHash = `sha256:${createHash("sha256").update(storedBytes).digest("hex")}`;
+  if (storageHash !== record.file_hash)
+    throw new Error(`등록 원천데이터 저장객체 해시 불일치: ${record.original_filename}`);
+
+  const gzip =
+    record.canonical_format.toLowerCase() === "csv.gz" ||
+    record.storage_path.toLowerCase().endsWith(".gz") ||
+    /gzip/i.test(record.content_type);
+  const logicalBytes = gzip ? new Uint8Array(gunzipSync(storedBytes)) : storedBytes;
+  const logicalFileHash = `sha256:${createHash("sha256").update(logicalBytes).digest("hex")}`;
+  const migration = canonicalMigrationMeta(record);
+  const expectedLogicalHash =
+    typeof migration?.["logicalFileHash"] === "string"
+      ? String(migration["logicalFileHash"])
+      : gzip
+        ? null
+        : record.file_hash;
+  if (expectedLogicalHash && logicalFileHash !== expectedLogicalHash)
+    throw new Error(`등록 원천데이터 논리 해시 불일치: ${record.original_filename}`);
+  return { logicalBytes, logicalFileHash };
+}
+
 function lightweightValidation(
   record: SourceRecord,
   text: string,
   fileHash: string,
+  logicalSizeBytes: number,
 ): SourceValidationResult {
   const stored = record.validation_result as Partial<SourceValidationResult>;
   const stats = (stored.stats ?? {}) as Partial<SourceValidationResult["stats"]>;
@@ -204,8 +236,8 @@ function lightweightValidation(
     valid: true,
     format: record.original_filename.toLowerCase().endsWith(".json") ? "json" : "csv",
     originalFilename: record.original_filename,
-    contentType: record.content_type,
-    originalSizeBytes: record.file_size_bytes,
+    contentType: record.canonical_format === "csv.gz" ? "text/csv" : record.content_type,
+    originalSizeBytes: logicalSizeBytes,
     normalizedSizeBytes: record.normalized_size_bytes,
     fileHash,
     dataHash: record.data_hash,
@@ -251,22 +283,20 @@ async function loadRegistryInputsLightweight(
     if (/\.xlsx$/i.test(record.original_filename)) {
       throw new Error(`대용량 실행 경량 로더는 CSV/JSON만 지원합니다: ${record.original_filename}`);
     }
-    const bytes = await downloadBytes(client, record.storage_bucket, record.storage_path);
-    const fileHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-    if (fileHash !== record.file_hash)
-      throw new Error(`등록 원천데이터 원본 해시 불일치: ${record.original_filename}`);
-    const text = decodeSourceBytes(bytes);
+    const storedBytes = await downloadBytes(client, record.storage_bucket, record.storage_path);
+    const { logicalBytes, logicalFileHash } = unpackRegisteredBytes(record, storedBytes);
+    const text = decodeSourceBytes(logicalBytes);
     loaded.push({
       id: record.id,
       fileName: record.original_filename,
-      bytes: record.file_size_bytes,
+      bytes: logicalBytes.byteLength,
       savedAt: record.activated_at ?? record.created_at,
       text,
-      fileHash,
+      fileHash: logicalFileHash,
       dataHash: record.data_hash,
       schemaHash: record.schema_hash,
       sourceRecord: record,
-      validation: lightweightValidation(record, text, fileHash),
+      validation: lightweightValidation(record, text, logicalFileHash, logicalBytes.byteLength),
     });
   }
   return loaded;
@@ -276,29 +306,30 @@ async function loadRegistryInputs(client: SupabaseClient, userId: string, source
   const records = await listSourceRecords(client, userId, sourceType);
   return Promise.all(
     records.map(async (record): Promise<LoadedSourceInput> => {
-      const bytes = await downloadBytes(client, record.storage_bucket, record.storage_path);
+      const storedBytes = await downloadBytes(client, record.storage_bucket, record.storage_path);
+      const { logicalBytes, logicalFileHash } = unpackRegisteredBytes(record, storedBytes);
       const validation = await validateSourceBytes({
-        bytes,
+        bytes: logicalBytes,
         filename: record.original_filename,
-        contentType: record.content_type,
+        contentType: record.canonical_format === "csv.gz" ? "text/csv" : record.content_type,
       });
       if (!validation.valid)
         throw new Error(
           `등록 원천데이터 검증 실패 (${record.original_filename}): ${validation.errors[0]?.message ?? "형식 오류"}`,
         );
       if (
-        validation.fileHash !== record.file_hash ||
         validation.dataHash !== record.data_hash ||
-        validation.schemaHash !== record.schema_hash
+        validation.schemaHash !== record.schema_hash ||
+        validation.fileHash !== logicalFileHash
       )
-        throw new Error(`등록 원천데이터 해시 불일치: ${record.original_filename}`);
+        throw new Error(`등록 원천데이터 논리 해시 불일치: ${record.original_filename}`);
       return {
         id: record.id,
         fileName: record.original_filename,
-        bytes: record.file_size_bytes,
+        bytes: logicalBytes.byteLength,
         savedAt: record.activated_at ?? record.created_at,
         text: validation.canonicalCsv,
-        fileHash: validation.fileHash,
+        fileHash: logicalFileHash,
         dataHash: validation.dataHash,
         schemaHash: validation.schemaHash,
         sourceRecord: record,
