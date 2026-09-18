@@ -180,7 +180,7 @@ async function uploadObject(objectPath: string, bytes: Uint8Array, contentType: 
     throw new Error(`Uploaded object verification failed: ${objectPath}`);
 }
 
-async function migrateRecord(record: SourceRecord, userId: string) {
+export async function migrateRecord(record: SourceRecord, userId: string) {
   const prior = existingMigration(record);
   if (
     record.canonical_format === "csv.gz" &&
@@ -190,10 +190,25 @@ async function migrateRecord(record: SourceRecord, userId: string) {
     // A prior run may have committed the registry and then failed deleting the CSV.
     // Recheck both replacements before completing that cleanup on retry.
     if (prior.replacedStoragePath && prior.replacedStoragePath !== record.storage_path) {
+      const client = trustedSupabaseClient();
+      const { data: originals, error: listError } = await client.storage
+        .from(record.storage_bucket)
+        .list(path.posix.dirname(prior.replacedStoragePath), {
+          search: path.posix.basename(prior.replacedStoragePath),
+          limit: 100,
+        });
+      if (listError) throw listError;
+      // Completed files need no second download of either compressed object.
+      // Only a leftover CSV requires the recovery verification below.
+      if (
+        !(originals ?? []).some(
+          (entry) => entry.name === path.posix.basename(prior.replacedStoragePath!),
+        )
+      )
+        return { record, migration: prior as MigrationMeta, changed: false };
       const { logical } = await downloadObject(record);
       if (hashBytes(logical) !== prior.logicalFileHash)
         throw new Error("Migrated gzip integrity failure");
-      const client = trustedSupabaseClient();
       const { data, error } = await client.storage
         .from(record.storage_bucket)
         .download(prior.parquet.path);
@@ -361,7 +376,8 @@ async function main() {
   );
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1]?.endsWith("backtest-canonicalize.ts"))
+  main().catch((error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  });

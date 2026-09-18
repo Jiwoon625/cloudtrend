@@ -1,3 +1,5 @@
+import { migrateRecord } from "../scripts/backtest-canonicalize";
+import type { SourceRecord } from "../scripts/source-registry-store";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
@@ -19,11 +21,18 @@ import {
 const hash = (bytes: Uint8Array) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 const temp = await mkdtemp(path.join(tmpdir(), "ct-cache-test-"));
 let downloads = 0;
+let metadataReads = 0;
 const raw = await readFile("tests/fixtures/source-valid.csv");
 const compressed = gzipSync(raw);
 const additionalRaw = Buffer.concat([raw, Buffer.from("\n")]);
 const additionalCompressed = gzipSync(additionalRaw);
 const server = createServer((req, res) => {
+  if (req.url?.includes("/object/list/")) {
+    metadataReads++;
+    res.setHeader("Content-Type", "application/json");
+    res.end("[]");
+    return;
+  }
   downloads++;
   res.setHeader("Content-Type", "application/octet-stream");
   res.end(req.url?.includes("additional") ? additionalCompressed : compressed);
@@ -63,6 +72,30 @@ async function manifest(files: BacktestSourceCacheManifestFile[]) {
   );
 }
 try {
+  const beforeSkip = downloads;
+  const skipped = await migrateRecord(
+    {
+      source_type: "backtest",
+      canonical_format: "csv.gz",
+      storage_bucket: "test",
+      storage_path: "owner/source/backtest-canonical/a.csv.gz",
+      validation_result: {
+        backtestCanonicalMigration: {
+          version: "backtest-canonical-parquet-v1",
+          replacedStoragePath: "owner/source/backtest/a.csv",
+          parquet: { path: "owner/source/backtest-canonical/a.parquet" },
+        },
+      },
+    } as unknown as SourceRecord,
+    "owner",
+  );
+  assert.equal(skipped.changed, false);
+  assert.equal(
+    downloads,
+    beforeSkip,
+    "completed migration must not re-download compressed sources",
+  );
+  assert.equal(metadataReads, 1);
   await manifest([file]);
   assert.equal((await materialize(options)).downloadedFiles, 1);
   assert.equal(downloads, 1);
