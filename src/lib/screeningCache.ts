@@ -5,7 +5,7 @@ import {
   writeBinaryObject,
   writeObject,
 } from "@/lib/cloud";
-import { chartSeries, scoreHistory } from "@/lib/engine/pipeline";
+import { chartSeries, scoreHistory, type AnalysisResult } from "@/lib/engine/pipeline";
 import { buildInstrumentDetailDataset } from "@/lib/engine/instrumentDetailDataset";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import {
