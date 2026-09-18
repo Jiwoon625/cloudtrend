@@ -27,6 +27,9 @@ import {
   type DashboardSummary,
 } from "@/lib/screeningCacheContract";
 
+export { DASHBOARD_CACHE_VERSION, INSTRUMENT_CACHE_VERSION, SCREENING_CACHE_VERSION };
+export type { DashboardSummary };
+
 interface CacheMeta {
   version: string;
   createdAt: string;
