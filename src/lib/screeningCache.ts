@@ -5,7 +5,7 @@ import {
   writeBinaryObject,
   writeObject,
 } from "@/lib/cloud";
-import { chartSeries, scoreHistory, type AnalysisResult } from "@/lib/engine/pipeline";
+import { chartSeries, scoreHistory } from "@/lib/engine/pipeline";
 import { buildInstrumentDetailDataset } from "@/lib/engine/instrumentDetailDataset";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import {
@@ -49,10 +49,6 @@ async function sha256Text(text: string) {
   const bytes = new TextEncoder().encode(text);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
-}
-
-function deterministicAnalysis(analysis: AnalysisResult) {
-  return { ...analysis, calculatedAt: "" };
 }
 
 async function analysisDigest(analysis: AnalysisResult) {
