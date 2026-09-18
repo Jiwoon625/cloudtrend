@@ -1,7 +1,4 @@
-import {
-  VF_STOCK_PL_FALLBACK_OVERHEAT_THRESHOLD,
-  getV8EtfPlOverheatThreshold,
-} from "./vfConfig";
+import { VF_STOCK_PL_FALLBACK_OVERHEAT_THRESHOLD, getV8EtfPlOverheatThreshold } from "./vfConfig";
 
 export type V8SectorPlSource = "ETF" | "STOCK" | null;
 
