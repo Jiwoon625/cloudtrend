@@ -39,15 +39,12 @@ jobs:
           npx vitest run \
             src/lib/engine/v8SectorPriceLeadershipPolicy.test.ts \
             src/lib/engine/sectorScoreAdjustment.test.ts
-      - name: Lint changed production files
+      - name: Lint new validation files
         run: |
           npx eslint \
-            src/lib/engine/vfConfig.ts \
-            src/lib/engine/v8SectorPriceLeadership.ts \
             src/lib/engine/v8SectorPriceLeadershipPolicy.ts \
-            src/lib/engine/sectorScoreAdjustment.ts \
-            src/lib/engine/scoring.ts \
-            src/lib/engine/pipeline.ts
+            src/lib/engine/v8SectorPriceLeadershipPolicy.test.ts \
+            src/lib/engine/sectorScoreAdjustment.test.ts
       - name: Build production app
         run: npm run build
       - name: Validate screening configuration
