@@ -680,7 +680,15 @@ export async function removeSourceRecord(client: SupabaseClient, userId: string,
     .eq("user_id", userId);
   if (updateError) throw new Error(`원천데이터 삭제상태 저장 실패: ${updateError.message}`);
   const paths = [source.storage_path];
-  if (source.source_type === "backtest") paths.push(`${userId}/backtest/${source.id}.json`);
+  if (source.source_type === "backtest") {
+    paths.push(`${userId}/backtest/${source.id}.json`);
+    const migration = canonicalMigrationMeta(source);
+    const parquet = migration?.["parquet"];
+    if (parquet && typeof parquet === "object") {
+      const parquetPath = (parquet as Record<string, unknown>)["path"];
+      if (typeof parquetPath === "string" && parquetPath) paths.push(parquetPath);
+    }
+  }
   const { error: removeError } = await client.storage.from(ANALYSIS_BUCKET).remove(paths);
   if (removeError) throw new Error(`원천파일 삭제 실패: ${removeError.message}`);
 
