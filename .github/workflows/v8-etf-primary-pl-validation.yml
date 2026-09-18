@@ -1,0 +1,36 @@
+name: V8 ETF-Primary PL Validation
+
+on:
+  pull_request:
+    paths:
+      - "src/lib/engine/vfConfig.ts"
+      - "src/lib/engine/vfConfig.test.ts"
+      - "src/lib/engine/scoring.ts"
+      - "src/lib/engine/pipeline.ts"
+      - "src/lib/engine/v8SectorPriceLeadership.ts"
+      - ".github/workflows/v8-etf-primary-pl-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run focused engine tests
+        run: npx vitest run src/lib/engine/vfConfig.test.ts src/lib/engine/scoring.test.ts src/lib/engine/v8FeatureAvailability.test.ts
+
+      - name: Production build
+        run: npm run build
