@@ -168,7 +168,9 @@ async function activeRows(sourceType: SourceType) {
       const validation = await validateSourceBlob(data, source.original_filename);
       if (!validation.valid)
         throw new Error(`기존 원천데이터 검증에 실패했습니다: ${source.original_filename}`);
-      if (validation.fileHash !== source.file_hash || validation.dataHash !== source.data_hash)
+      // Raw bytes are immutable and are the integrity boundary. The derived
+      // data hash can change when normalization/mapping rules are intentionally migrated.
+      if (validation.fileHash !== source.file_hash)
         throw new Error(
           `기존 원천데이터의 해시가 등록정보와 다릅니다: ${source.original_filename}`,
         );
