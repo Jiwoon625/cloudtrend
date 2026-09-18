@@ -3,16 +3,17 @@ import { createHash } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
 
-import { compactDashboardRow } from "@/lib/dashboardRow";
 import { parseManualMarketData } from "@/lib/engine/manualDataset";
 import { runFullMarketAnalysis } from "@/lib/engine/fullMarketAnalysis";
 import { mergeScoringConfig, type ScoringConfig } from "@/lib/engine/scoring";
-import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
-import {
-  compareKospiRelativeQuality,
-  isKospiRelativeMomentumConfirmed,
-} from "@/lib/kospiRelativeQuality";
+import type { AnalysisResult } from "@/lib/engine/pipeline";
 import { buildSnapshot } from "@/lib/screeningHistory";
+import {
+  buildDashboardSummary,
+  deterministicAnalysis,
+  SCREENING_CACHE_VERSION,
+  stableCacheJson,
+} from "@/lib/screeningCacheContract";
 
 const SUPABASE_URL =
   import.meta.env["VITE_SUPABASE_URL"] || "https://ahbvrtugugwnbrfnbxzp.supabase.co";
@@ -20,12 +21,6 @@ const SUPABASE_PUBLISHABLE_KEY =
   import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
   "sb_publishable_j1o5NMjbXz7UA1CsbCj1dA_hiMBgBlE";
 const ANALYSIS_BUCKET = "cloudtrend-data";
-
-// Keep these in sync with src/lib/screeningCache.ts. The server writes the same cache
-// contract that the browser reads, but performs the expensive 40MB+ source parsing on
-// the application server instead of the user's phone or PC.
-const SCREENING_CACHE_VERSION = "screening-cache-v8-final-v3" as const;
-const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-final-v4" as const;
 
 interface ActiveSourceRecord {
   id: string;
@@ -39,32 +34,17 @@ interface ActiveSourceRecord {
   created_at: string;
 }
 
-function stable(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
-  const object = value as Record<string, unknown>;
-  return `{${Object.keys(object)
-    .filter((key) => object[key] !== undefined)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stable(object[key])}`)
-    .join(",")}}`;
-}
-
 function sha256Text(text: string) {
   return createHash("sha256").update(text).digest("hex");
 }
 
-function deterministicAnalysis(analysis: AnalysisResult) {
-  return { ...analysis, calculatedAt: "" };
-}
-
 function resultDigest(analysis: AnalysisResult) {
-  return sha256Text(stable(deterministicAnalysis(analysis)));
+  return sha256Text(stableCacheJson(deterministicAnalysis(analysis)));
 }
 
 function inputFingerprint(sources: ActiveSourceRecord[], config: ScoringConfig) {
   return sha256Text(
-    stable({
+    stableCacheJson({
       version: SCREENING_CACHE_VERSION,
       strategyConfig: config,
       sources: sources
@@ -117,116 +97,6 @@ async function loadActiveSources(client: SupabaseClient, userId: string) {
     texts.push(decodeSource(bytes));
   }
   return { sources, texts };
-}
-
-function buildRotationSectors(analysis: AnalysisResult) {
-  const rotation = analysis.sectorRotation?.sectors ?? [];
-  if (rotation.length > 0)
-    return [...rotation]
-      .sort((a, b) => a.rank - b.rank)
-      .map((sector) => ({
-        sectorCode: sector.sectorCode,
-        sectorName: sector.sectorName,
-        rank: sector.rank,
-        prevRank: sector.prevRank,
-        rs20: sector.rs20,
-        score: sector.rotationScore,
-        priceLeadership: sector.priceLeadership.score,
-        moneyFlow: sector.moneyFlow.score,
-      }));
-  return [...analysis.sectors]
-    .sort((a, b) => a.rank - b.rank)
-    .map((sector) => ({
-      sectorCode: sector.sectorCode,
-      sectorName: sector.sectorName,
-      rank: sector.rank,
-      prevRank: sector.prevRank,
-      rs20: sector.rs20,
-      score: sector.score,
-      priceLeadership: null,
-      moneyFlow: null,
-    }));
-}
-
-function signalPriority(a: ScreeningRow, b: ScreeningRow) {
-  const priority = b.priority.points - a.priority.points;
-  if (priority !== 0) return priority;
-  const rotation = (b.sectorRotationScore ?? -Infinity) - (a.sectorRotationScore ?? -Infinity);
-  if (rotation !== 0) return rotation;
-  return (b.operatingScore10 ?? -Infinity) - (a.operatingScore10 ?? -Infinity);
-}
-
-function buildDashboardSummary(analysis: AnalysisResult, fingerprint: string, digest: string) {
-  const rows = analysis.rows;
-  const passed = rows.filter((row) => row.hardFilterPassed);
-  const onsetRows = [...rows]
-    .filter((row) => row.kosdaq80Onset)
-    .sort(signalPriority)
-    .slice(0, 30);
-  const kospiEntryRows = [...rows]
-    .filter((row) => row.kospiEightPointEntry)
-    .sort(compareKospiRelativeQuality)
-    .slice(0, 30);
-  const exitRows = [...rows]
-    .filter(
-      (row) =>
-        row.instrument.instrumentType === "STOCK" &&
-        row.instrument.market === "KOSDAQ" &&
-        row.exitSignal !== null,
-    )
-    .sort((a, b) => (b.operatingScore10 ?? -Infinity) - (a.operatingScore10 ?? -Infinity))
-    .slice(0, 30);
-  const top = [...passed]
-    .filter((row) => row.instrument.instrumentType === "STOCK")
-    .sort((a, b) => b.totalScoreNormalized - a.totalScoreNormalized)
-    .slice(0, 10);
-
-  const failMap = new Map<string, number>();
-  for (const row of rows) {
-    if (row.hardFilterPassed) continue;
-    for (const reason of row.failedRules) failMap.set(reason, (failMap.get(reason) ?? 0) + 1);
-  }
-
-  return {
-    version: DASHBOARD_CACHE_VERSION,
-    createdAt: new Date().toISOString(),
-    inputFingerprint: fingerprint,
-    resultDigest: digest,
-    asOfDate: analysis.asOfDate,
-    strategyVersion: analysis.strategyVersion,
-    dataVersion: analysis.dataVersion,
-    calculatedAt: analysis.calculatedAt,
-    marketGate: analysis.marketGate,
-    kospi: analysis.kospi,
-    kosdaq: analysis.kosdaq,
-    vkospi: analysis.vkospi,
-    marketForeignNet5d: analysis.marketForeignNet5d,
-    rotationSectors: buildRotationSectors(analysis),
-    counts: {
-      total: rows.length,
-      passed: passed.length,
-      disqualified: rows.length - passed.length,
-      kosdaq80Onsets: rows.filter((row) => row.kosdaq80Onset).length,
-      kospiEightPointEntries: rows.filter((row) => row.kospiEightPointEntry).length,
-      kospiRelativeQualityConfirmed: rows.filter(
-        (row) => row.kospiEightPointEntry && isKospiRelativeMomentumConfirmed(row),
-      ).length,
-      upsideExits: rows.filter(
-        (row) => row.instrument.market === "KOSDAQ" && row.exitSignal === "UP95",
-      ).length,
-      downsideExits: rows.filter(
-        (row) => row.instrument.market === "KOSDAQ" && row.exitSignal === "DOWN25",
-      ).length,
-      incomplete: rows.filter(
-        (row) => row.instrument.instrumentType === "STOCK" && row.operatingScore10 === null,
-      ).length,
-    },
-    failReasons: [...failMap.entries()].sort((a, b) => b[1] - a[1]),
-    onsetRows: onsetRows.map(compactDashboardRow),
-    kospiEntryRows: kospiEntryRows.map(compactDashboardRow),
-    exitRows: exitRows.map(compactDashboardRow),
-    top: top.map(compactDashboardRow),
-  };
 }
 
 async function uploadJson(client: SupabaseClient, path: string, value: unknown) {
