@@ -52,6 +52,8 @@ jobs:
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
           test -n "$SUPABASE_USER_ID"
+      - name: Diagnose current screening source integrity
+        run: npx vite-node --script scripts/diagnose-screening-source-hash.ts
       - name: Current-source screening smoke test
         run: |
           npm run screening:run -- \
