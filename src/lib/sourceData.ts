@@ -1,7 +1,7 @@
 import "./engine/stockSectorMaster";
 import "./engine/additionalStockSectorMaster";
 
-import { resolveSectorCode, SECTOR_NAME_BY_CODE } from "./engine/sectors";
+import { resolveSectorCode, resolveCuratedEtfSectorCode, SECTOR_NAME_BY_CODE } from "./engine/sectors";
 
 export const SOURCE_MAX_FILE_BYTES = 45 * 1024 * 1024;
 
@@ -595,13 +595,14 @@ function normalizeRecords(recordSet: RecordSet) {
       }
     }
     const explicitSector = String(record["sector"] ?? "").trim();
-    const resolvedSector = explicitSector
+    const curatedEtfSector = type === "ETF" ? resolveCuratedEtfSectorCode(symbol) : undefined;
+    const resolvedSector = curatedEtfSector ?? (explicitSector
       ? SECTOR_NAME_BY_CODE[explicitSector.toUpperCase()]
         ? explicitSector.toUpperCase()
         : explicitSector
       : type === "INDEX"
         ? "MARKET_IDX"
-        : resolveSectorCode(symbol, name, type === "ETF").code;
+        : resolveSectorCode(symbol, name, type === "ETF").code);
 
     const row: CanonicalSourceRow = {
       symbol,

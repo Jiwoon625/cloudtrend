@@ -1,0 +1,28 @@
+name: Refresh ETF sector metadata
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/refresh-etf-sector-metadata.ts
+permissions:
+  contents: read
+concurrency:
+  group: refresh-etf-sector-metadata
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vite-node scripts/refresh-etf-sector-metadata.ts

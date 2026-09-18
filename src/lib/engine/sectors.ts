@@ -4,7 +4,7 @@
 // 분류 우선순위:
 //   1) 개별 주식: 종목코드 → 섹터 (SYMBOL_SECTOR)
 //   2) 개별 주식: 종목명 키워드 → 섹터 (STOCK_NAME_RULES)
-//   3) ETF/ETN: 상품명 키워드 → 섹터 (ETF_KEYWORD_RULES, 위에서부터 우선)
+//   3) ETF/ETN: 확정 종목코드 → 상품명 키워드 → 섹터 (ETF_KEYWORD_RULES, 위에서부터 우선)
 //   4) 어디에도 걸리지 않으면 "ETC"(기타)
 // 시장대표지수·레버리지·인버스·채권·CD금리·금·배당·혼합형 상품은 산업 방향성이 없으므로
 // MARKET_IDX(시장지수·파생)로 분류해 섹터 로테이션 계산에서 제외한다.
@@ -638,6 +638,28 @@ const STOCK_NAME_RULES: Array<[RegExp, string]> = [
   ],
 ];
 
+/** 2026-09-18: 기존 미매핑 ETF 8종목. 복합산업 바스켓은 MARKET_IDX로 분리한다.
+ * 전력설비는 검토된 주식 마스터(LS ELECTRIC/효성중공업/HD현대일렉트릭)의 ENERGY에 맞춘다.
+ */
+export const ETF_SECTOR_BY_SYMBOL: Readonly<Record<string, string>> = Object.freeze({
+  "0183J0": "SHIP_DEF", // TIGER 미국우주테크
+  "102780": "MARKET_IDX", // KODEX 삼성그룹
+  "278530": "MARKET_IDX", // KODEX 200TR
+  "294400": "MARKET_IDX", // KIWOOM 200TR (구 KOSEF)
+  "315930": "MARKET_IDX", // KODEX Top5PlusTR
+  "465580": "MARKET_IDX", // ACE 미국빅테크TOP7 Plus: 반도체/플랫폼/소비재 복합
+  "483320": "SEMI", // ACE 엔비디아밸류체인액티브
+  "487240": "ENERGY", // KODEX AI전력핵심설비
+});
+
+export function resolveCuratedEtfSectorCode(symbol: string): string | undefined {
+  let normalized = String(symbol ?? "").trim().toUpperCase().replace(/^[\'\"]+/, "");
+  if (/^A[0-9A-Z]{6}$/.test(normalized)) normalized = normalized.slice(1);
+  if (/^\d+\.0$/.test(normalized)) normalized = normalized.slice(0, -2);
+  if (/^\d{1,6}$/.test(normalized)) normalized = normalized.padStart(6, "0");
+  return ETF_SECTOR_BY_SYMBOL[normalized];
+}
+
 /** ETF/ETN 상품명 키워드 → 섹터 (앞선 규칙이 우선) */
 const ETF_KEYWORD_RULES: Array<[RegExp, string]> = [
   // 1) 산업 방향성이 전혀 없는 상품(채권·현금성·원자재·통화·인버스·배당·혼합)
@@ -685,7 +707,7 @@ export function resolveSectorCode(
   let code: string | undefined;
 
   if (isEtf) {
-    code = ETF_KEYWORD_RULES.find(([re]) => re.test(safeName))?.[1];
+    code = resolveCuratedEtfSectorCode(symbol) ?? ETF_KEYWORD_RULES.find(([re]) => re.test(safeName))?.[1];
   } else {
     code = SYMBOL_SECTOR[symbol];
     if (!code) code = STOCK_NAME_RULES.find(([re]) => re.test(safeName))?.[1];

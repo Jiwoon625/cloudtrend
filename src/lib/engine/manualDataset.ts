@@ -1,7 +1,7 @@
 // 직접 입력(붙여넣기 / CSV 업로드) 데이터를 엔진이 소비하는 MarketDataset으로 변환한다.
 // 서버 API를 호출하지 않고 브라우저에서만 동작하는 순수 함수다.
 import { NO_CAPABILITIES, type MarketDataset } from "./dataset";
-import { resolveSectorCode, THEME_SECTORS } from "./sectors";
+import { resolveSectorCode, resolveCuratedEtfSectorCode, THEME_SECTORS } from "./sectors";
 import type { DailyPrice, EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
 import { visitDelimitedRows } from "../sourceData";
 
@@ -354,7 +354,10 @@ export function parseManualMarketData(input: string | string[]): ManualParseResu
     if (s.kind === "INDEX") continue;
     if (s.bars.length === 0) continue;
     const isEtf = s.kind === "ETF";
-    const resolved = s.sector
+    const curatedEtfSector = isEtf ? resolveCuratedEtfSectorCode(s.symbol) : undefined;
+    const resolved = curatedEtfSector
+      ? resolveSectorCode(s.symbol, s.name, true)
+      : s.sector
       ? {
           code: s.sector.toUpperCase(),
           name: THEME_SECTORS.find((t) => t.code === s.sector!.toUpperCase())?.name ?? s.sector,
