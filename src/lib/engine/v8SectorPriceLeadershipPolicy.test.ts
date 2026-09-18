@@ -14,14 +14,14 @@ describe("selectV8SectorPriceLeadership", () => {
     });
   });
 
-  it("uses ETF PL first and applies KOSDAQ threshold 85", () => {
+  it("retains Stock PL 80 for KOSDAQ even when ETF PL is available", () => {
     const stock = new Map([["BIO", 74]]);
     const etf = new Map([["BIO", 83]]);
 
     expect(selectV8SectorPriceLeadership("KOSDAQ", "BIO", stock, etf)).toEqual({
-      value: 83,
-      source: "ETF",
-      threshold: 85,
+      value: 74,
+      source: "STOCK",
+      threshold: 80,
     });
   });
 
