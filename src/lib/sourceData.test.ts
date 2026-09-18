@@ -1,9 +1,11 @@
 import ExcelJS from "exceljs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
+  SOURCE_MAX_FILE_BYTES,
   compareSourceRows,
   parseDelimitedRows,
+  validateSourceBlob,
   validateSourceBytes,
   validateSourceText,
 } from "./sourceData";
@@ -76,6 +78,27 @@ describe("CloudTrend source validation", () => {
     const result = await validateSourceText(json, "source.json");
     expect(result.valid).toBe(true);
     expect(result.rows[0]).toMatchObject({ symbol: "005930", date: "2026-09-09", close: "11" });
+  });
+
+  it("stops immediately when an uploaded file exceeds 45MB", async () => {
+    const arrayBuffer = vi.fn(async () => {
+      throw new Error("oversized file should not be read");
+    });
+    const blob = {
+      size: SOURCE_MAX_FILE_BYTES + 1,
+      type: "text/csv",
+      arrayBuffer,
+    } as unknown as Blob;
+
+    const result = await validateSourceBlob(blob, "oversized.csv");
+
+    expect(arrayBuffer).not.toHaveBeenCalled();
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual([
+      { code: "FILE_TOO_LARGE", message: "파일 1개 크기는 45MB 이하여야 합니다." },
+    ]);
+    expect(result.rows).toEqual([]);
+    expect(result.columns).toEqual([]);
   });
 
   it("reads the first worksheet of an XLSX file", async () => {
