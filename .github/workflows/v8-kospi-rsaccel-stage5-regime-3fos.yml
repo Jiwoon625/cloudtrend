@@ -57,7 +57,7 @@ jobs:
         uses: ./.github/actions/backtest-source-cache
       - name: Run KOSPI RSAccel stage5 regime 3-FOS
         run: |
-          npx vite-node scripts/run-v8-kospi-rsaccel-stage5-regime-3fos.ts \
+          npx vite-node --script scripts/run-v8-kospi-rsaccel-stage5-regime-3fos.ts \
             --source-manifest "$BACKTEST_SOURCE_MANIFEST" \
             --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR" \
             --supabase-user-id "$SUPABASE_USER_ID" \

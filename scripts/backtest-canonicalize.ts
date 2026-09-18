@@ -43,7 +43,7 @@ function usage(message?: string): never {
     [
       ...(message ? [message, ""] : []),
       "Usage:",
-      "  npx vite-node scripts/backtest-canonicalize.ts --supabase-user-id <uuid>",
+      "  npx vite-node --script scripts/backtest-canonicalize.ts --supabase-user-id <uuid>",
     ].join("\n"),
   );
 }

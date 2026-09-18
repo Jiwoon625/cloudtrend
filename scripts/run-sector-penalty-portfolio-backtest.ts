@@ -96,7 +96,7 @@ function usage(): never {
   throw new Error(
     [
       "Usage:",
-      "  npx vite-node scripts/run-sector-penalty-portfolio-backtest.ts --supabase-user-id <uuid> [--upload]",
+      "  npx vite-node --script scripts/run-sector-penalty-portfolio-backtest.ts --supabase-user-id <uuid> [--upload]",
       "Options:",
       "  --output <dir>             default: v8-sector-penalty-portfolio-runs",
       "  --limit <count>            default: 613",

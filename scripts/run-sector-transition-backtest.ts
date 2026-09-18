@@ -17,7 +17,7 @@ function usage(): never {
   throw new Error(
     [
       "Usage:",
-      "  npx vite-node scripts/run-sector-transition-backtest.ts --supabase-user-id <uuid> [--upload]",
+      "  npx vite-node --script scripts/run-sector-transition-backtest.ts --supabase-user-id <uuid> [--upload]",
       "Options:",
       "  --output <dir>  default: v7-sector-transition-runs",
       "Supabase mode requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",

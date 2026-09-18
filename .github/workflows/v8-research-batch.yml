@@ -61,7 +61,7 @@ jobs:
             --supabase-user-id "$SUPABASE_USER_ID"
           )
           if [[ "$UPLOAD_RESULTS" == "true" ]]; then args+=(--upload); fi
-          npx vite-node scripts/run-v8-research-batch.ts "${args[@]}"
+          npx vite-node --script scripts/run-v8-research-batch.ts "${args[@]}"
       - name: Upload research artifacts
         if: always()
         uses: actions/upload-artifact@v4
