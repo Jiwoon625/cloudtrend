@@ -80,7 +80,7 @@ function usage(message?: string): never {
     [
       ...(message ? [message, ""] : []),
       "Usage:",
-      "  npx vite-node scripts/run-v8-kospi-rsaccel-stage8-adaptive-portfolio.ts --source-manifest <path> --source-cache-dir <dir> [--supabase-user-id <uuid>] [--upload]",
+      "  npx vite-node --script scripts/run-v8-kospi-rsaccel-stage8-adaptive-portfolio.ts --source-manifest <path> --source-cache-dir <dir> [--supabase-user-id <uuid>] [--upload]",
     ].join("\n"),
   );
 }

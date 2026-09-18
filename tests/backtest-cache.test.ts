@@ -1,3 +1,4 @@
+import { execFileSync, spawnSync } from "node:child_process";
 import { migrateRecord } from "../scripts/backtest-canonicalize";
 import type { SourceRecord } from "../scripts/source-registry-store";
 import assert from "node:assert/strict";
@@ -107,6 +108,50 @@ try {
     "warm cache must work without Supabase credentials",
   );
   assert.equal(downloads, 1);
+  const cliOutput = execFileSync(
+    process.execPath,
+    [
+      path.resolve("node_modules/vite-node/vite-node.mjs"),
+      "--script",
+      "scripts/backtest-source-cache.ts",
+      "materialize",
+      "--manifest",
+      manifestPath,
+      "--cache-dir",
+      temp,
+    ],
+    { encoding: "utf8", env: process.env },
+  );
+  assert.equal(
+    JSON.parse(cliOutput).downloadedStorageBytes,
+    0,
+    "actual CLI must execute and report warm-cache download bytes",
+  );
+  const invalidCli = spawnSync(
+    process.execPath,
+    [
+      path.resolve("node_modules/vite-node/vite-node.mjs"),
+      "--script",
+      "scripts/backtest-source-cache.ts",
+      "invalid",
+    ],
+    { encoding: "utf8" },
+  );
+  assert.notEqual(invalidCli.status, 0, "CLI must not silently skip its entrypoint");
+  const researchCli = spawnSync(
+    process.execPath,
+    [
+      path.resolve("node_modules/vite-node/vite-node.mjs"),
+      "--script",
+      "scripts/run-v8-kospi-rsaccel-stage3-3fos.ts",
+    ],
+    { encoding: "utf8" },
+  );
+  assert.notEqual(
+    researchCli.status,
+    0,
+    "individual research CLI must execute argument validation",
+  );
   assert.equal(
     cacheKeyFor([file]),
     cacheKeyFor([{ ...file, storagePath: "new/path", storageFileHash: hash(raw) }]),

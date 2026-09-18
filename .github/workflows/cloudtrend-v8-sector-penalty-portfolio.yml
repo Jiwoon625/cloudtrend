@@ -48,7 +48,7 @@ jobs:
         uses: ./.github/actions/backtest-source-cache
       - name: Run V8 sector penalty portfolio backtest
         run: |
-          npx vite-node scripts/run-sector-penalty-portfolio-backtest.ts \
+          npx vite-node --script scripts/run-sector-penalty-portfolio-backtest.ts \
             --supabase-user-id "$SUPABASE_USER_ID" \
             --limit 613 \
             --initial-capital 100000000 \

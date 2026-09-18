@@ -26,7 +26,7 @@ The runner reads and verifies one pinned manifest, parses the dataset once, reus
 
 ## Verification
 
-- `npx vite-node tests/backtest-cache.test.ts`: gzip integrity, cold/warm cache, zero-download execution without Supabase credentials, physical-migration key stability, changed-data invalidation, corruption repair and same-instance data/context reuse.
+- `npx vite-node --script tests/backtest-cache.test.ts`: gzip integrity, cold/warm cache, zero-download execution without Supabase credentials, physical-migration key stability, changed-data invalidation, corruption repair and same-instance data/context reuse.
 - `python tests/parquet-roundtrip.test.py` with `pyarrow==21.0.0`: blanks, Unicode, embedded quotes/newlines, leading-zero/alphanumeric symbols and decimal precision.
 - Stage 3/4/5 batch outputs were compared with pre-change individual runners on a generated multi-year fixture and matched completely after excluding generation timestamps.
 - Web production build passed. Repository-wide `tsc` has pre-existing errors outside this change.

@@ -47,7 +47,7 @@ jobs:
         uses: ./.github/actions/backtest-source-cache
       - name: Run V7.2 sector score band decomposition
         run: |
-          npx vite-node scripts/run-sector-flow-decomposition.ts \
+          npx vite-node --script scripts/run-sector-flow-decomposition.ts \
             --supabase-user-id "$SUPABASE_USER_ID" \
             --upload
       - name: Upload V7.2 diagnostic artifact

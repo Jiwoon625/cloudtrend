@@ -17,7 +17,15 @@ runs:
       shell: bash
       env:
         MANIFEST: ${{ inputs.manifest }}
-      run: npm run backtest:cache -- manifest --manifest "$MANIFEST"
+      run: |
+        npm run backtest:cache -- manifest --manifest "$MANIFEST"
+        test -s "$MANIFEST"
+        node -e 'const fs = require("fs"); const m = JSON.parse(fs.readFileSync(process.env.MANIFEST, "utf8")); if (!/^[0-9a-f]{64}$/.test(m.cacheKey)) throw new Error("Missing data cache key");'
+    - name: Require emitted cache key
+      shell: bash
+      env:
+        CACHE_KEY: ${{ steps.source.outputs.cache_key }}
+      run: test -n "$CACHE_KEY"
     - id: restore
       uses: actions/cache/restore@v4
       with:

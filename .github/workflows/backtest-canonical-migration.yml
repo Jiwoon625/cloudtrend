@@ -61,7 +61,7 @@ jobs:
       - name: Test cache integrity and lossless Parquet conversion
         run: |
           node tests/workflow-contract.test.mjs
-          npx vite-node tests/backtest-cache.test.ts
+          npx vite-node --script tests/backtest-cache.test.ts
           python tests/parquet-roundtrip.test.py
       - name: Smoke-test CSV to ZSTD Parquet converter
         run: |
@@ -105,7 +105,7 @@ jobs:
         uses: ./.github/actions/backtest-source-cache
       - name: Convert active backtest CSV storage to gzip transport + ZSTD Parquet canonical copies
         run: |
-          npx vite-node scripts/backtest-canonicalize.ts \
+          npx vite-node --script scripts/backtest-canonicalize.ts \
             --supabase-user-id "$SUPABASE_USER_ID"
       - name: Verify migrated manifest reuses the same local sources without downloads
         run: |

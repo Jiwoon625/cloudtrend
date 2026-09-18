@@ -61,7 +61,7 @@ jobs:
         uses: ./.github/actions/backtest-source-cache
       - name: Run V8-11 KOSDAQ80 exit portfolio 3-FOS
         run: |
-          npx vite-node scripts/run-v8-kosdaq80-exit-portfolio-3fos.ts \
+          npx vite-node --script scripts/run-v8-kosdaq80-exit-portfolio-3fos.ts \
             --source-manifest "$BACKTEST_SOURCE_MANIFEST" \
             --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR" \
             --supabase-user-id "$SUPABASE_USER_ID" \

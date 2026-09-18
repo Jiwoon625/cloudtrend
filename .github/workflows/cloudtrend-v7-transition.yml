@@ -47,7 +47,7 @@ jobs:
         uses: ./.github/actions/backtest-source-cache
       - name: Run V7.3 sector score band transition backtest
         run: |
-          npx vite-node scripts/run-sector-transition-backtest.ts \
+          npx vite-node --script scripts/run-sector-transition-backtest.ts \
             --supabase-user-id "$SUPABASE_USER_ID" \
             --upload
       - name: Upload V7.3 transition artifact

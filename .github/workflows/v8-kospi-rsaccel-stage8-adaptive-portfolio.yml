@@ -57,7 +57,7 @@ jobs:
         uses: ./.github/actions/backtest-source-cache
       - name: Run KOSPI RSAccel stage8 adaptive portfolio
         run: |
-          npx vite-node scripts/run-v8-kospi-rsaccel-stage8-adaptive-portfolio.ts \
+          npx vite-node --script scripts/run-v8-kospi-rsaccel-stage8-adaptive-portfolio.ts \
             --source-manifest "$BACKTEST_SOURCE_MANIFEST" \
             --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR" \
             --supabase-user-id "$SUPABASE_USER_ID" \

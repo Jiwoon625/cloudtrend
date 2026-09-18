@@ -25,4 +25,4 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx vite-node scripts/refresh-etf-sector-metadata.ts
+      - run: npx vite-node --script scripts/refresh-etf-sector-metadata.ts
