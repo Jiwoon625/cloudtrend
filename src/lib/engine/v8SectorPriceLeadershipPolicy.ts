@@ -12,11 +12,10 @@ const finite = (value: number | null | undefined): value is number =>
   value !== null && value !== undefined && Number.isFinite(value);
 
 /**
- * Production V8 policy:
- * 1) use sector ETF PL when available,
- * 2) otherwise fall back to Stock PL,
- * 3) use market-specific ETF thresholds (KOSPI 84 / KOSDAQ 85),
- * 4) keep Stock PL fallback threshold at 80.
+ * Production V8 policy after the complete 2018-2025 annual OOS gate:
+ * - KOSPI: use sector ETF PL at threshold 84, with Stock PL 80 fallback.
+ * - KOSDAQ: retain the existing Stock PL 80 policy; ETF PL 85 did not clear
+ *   the final robustness gate.
  */
 export function selectV8SectorPriceLeadership(
   market: "KOSPI" | "KOSDAQ",
@@ -24,13 +23,15 @@ export function selectV8SectorPriceLeadership(
   stockPl: Map<string, number>,
   etfPl: Map<string, number>,
 ): V8SectorPlSelection {
-  const etfValue = etfPl.get(sectorCode);
-  if (finite(etfValue)) {
-    return {
-      value: etfValue,
-      source: "ETF",
-      threshold: getV8EtfPlOverheatThreshold(market),
-    };
+  if (market === "KOSPI") {
+    const etfValue = etfPl.get(sectorCode);
+    if (finite(etfValue)) {
+      return {
+        value: etfValue,
+        source: "ETF",
+        threshold: getV8EtfPlOverheatThreshold("KOSPI"),
+      };
+    }
   }
 
   const stockValue = stockPl.get(sectorCode);
