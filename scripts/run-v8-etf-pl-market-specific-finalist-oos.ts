@@ -12,7 +12,7 @@ import type { MarketDataset } from "../src/lib/engine/dataset";
 import type { DailyPrice, Instrument } from "../src/lib/engine/types";
 import { trustedSupabaseClient, uploadJson } from "./analysis-run-store";
 
-const STUDY_VERSION = "CloudTrend PR102 KOSPI Four Exit Rules Annual OOS" as const;
+const STUDY_VERSION = "CloudTrend PR102 Market Three Strategy Annual OOS" as const;
 // 130-bar ETF PL warm-up begins in 2016-07 data, so 2017 is only partially warm.
 // 2018 is the first full calendar year with the intended ETF PL lookback available.
 // 2026 is excluded because the source ends 2026-09-18 and is not a complete OOS year.
@@ -27,10 +27,30 @@ const SECTOR_SLOT = 0.5;
 const MAX_POSITIONS = 10;
 
 const EXIT_STRATEGIES = [
-  { id: "E8-U8.5-DX-H60", up: 8.5, down: null },
-  { id: "E8-U9-DX-H60", up: 9, down: null },
-  { id: "E8-U9.5-DX-H60", up: 9.5, down: null },
-  { id: "E8-U9-D2.5-H60", up: 9, down: 2.5 },
+  {
+    id: "KOSPI-E8-U9.5-DX-H60",
+    market: "KOSPI",
+    up: 9.5,
+    down: null,
+    etfThreshold: 84,
+    plPolicy: "ETF PL 84 primary; Stock PL 80 fallback",
+  },
+  {
+    id: "KOSPI-E8-U9.5-D2.5-H60",
+    market: "KOSPI",
+    up: 9.5,
+    down: 2.5,
+    etfThreshold: 84,
+    plPolicy: "ETF PL 84 primary; Stock PL 80 fallback",
+  },
+  {
+    id: "KOSDAQ-E8-U9.5-D2.5-H60",
+    market: "KOSDAQ",
+    up: 9.5,
+    down: 2.5,
+    etfThreshold: null,
+    plPolicy: "Stock PL 80 (PR102 KOSDAQ policy)",
+  },
 ] as const;
 
 type FoldYear = (typeof FOLD_YEARS)[number];
@@ -1076,13 +1096,13 @@ async function main() {
   const stockPl = context.sectorPriceLeadershipByDate;
   const etfPl = buildPriceLeadershipMap(dataset, "ETF");
 
-  const foldRows: Array<FoldRow & { strategy: string }> = [];
+  const foldRows: Array<FoldRow & { strategy: string; plPolicy: string }> = [];
   const signalDiagnostics = [];
   const model: ModelId = "FINAL_MARKET_SPECIFIC";
   const modelSeries = context.series;
-  const market: Market = "KOSPI";
 
   for (const strategy of EXIT_STRATEGIES) {
+    const market: Market = strategy.market;
     for (const fold of FOLD_YEARS) {
       const candidates = buildCandidates(
         modelSeries,
@@ -1090,7 +1110,7 @@ async function main() {
         fold,
         stockPl,
         etfPl,
-        84,
+        strategy.etfThreshold,
         strategy.up,
         strategy.down,
       );
@@ -1108,9 +1128,11 @@ async function main() {
       foldRows.push({
         ...foldRow(model, market, fold, dataset, candidates, simulation),
         strategy: strategy.id,
+        plPolicy: strategy.plPolicy,
       });
       signalDiagnostics.push({
         strategy: strategy.id,
+        plPolicy: strategy.plPolicy,
         model,
         market,
         fold,
@@ -1121,46 +1143,55 @@ async function main() {
         stockFallbackSignals: candidates.filter((c) => c.plSource === "STOCK").length,
         slotEarned: candidates.filter((c) => {
           if (!finite(c.sectorPl)) return false;
-          const threshold = c.plSource === "ETF" ? 84 : STOCK_FALLBACK_THRESHOLD;
-          return c.sectorPl < threshold;
+          const threshold = c.plSource === "ETF" ? strategy.etfThreshold : STOCK_FALLBACK_THRESHOLD;
+          return finite(threshold) && c.sectorPl < threshold;
         }).length,
         overheated: candidates.filter((c) => {
           if (!finite(c.sectorPl)) return false;
-          const threshold = c.plSource === "ETF" ? 84 : STOCK_FALLBACK_THRESHOLD;
-          return c.sectorPl >= threshold;
+          const threshold = c.plSource === "ETF" ? strategy.etfThreshold : STOCK_FALLBACK_THRESHOLD;
+          return finite(threshold) && c.sectorPl >= threshold;
         }).length,
       });
     }
   }
 
-  const aggregateRows = EXIT_STRATEGIES.map((strategy) => {
-    const selected = foldRows.filter((r) => r.strategy === strategy.id);
+  function summarizeStrategy(
+    strategy: (typeof EXIT_STRATEGIES)[number],
+    selected: Array<(typeof foldRows)[number]>,
+  ) {
     const avg = (pick: (r: (typeof selected)[number]) => number | null) =>
       round(average(selected.map(pick).filter(finite)));
     const totalTrades = selected.reduce((sum, r) => sum + r.trades, 0);
     const pooledWinRate =
       totalTrades > 0
         ? round(
-            selected.reduce(
+            (selected.reduce(
               (sum, r) => sum + (finite(r.winRate) ? (r.winRate / 100) * r.trades : 0),
               0,
             ) /
-              totalTrades *
+              totalTrades) *
               100,
           )
         : null;
     const annualExcess = selected.map((r) => r.excessReturn).filter(finite);
+    const positiveExcess = selected.filter(
+      (r) => finite(r.excessReturn) && r.excessReturn > 0,
+    ).length;
     return {
       strategy: strategy.id,
+      market: strategy.market,
+      plPolicy: strategy.plPolicy,
       upExit: strategy.up,
       downExit: strategy.down,
       maxHoldingDays: 60,
+      years: selected.map((r) => r.fold),
       folds: selected.length,
       foldsPositiveReturn: selected.filter((r) => finite(r.totalReturn) && r.totalReturn > 0)
         .length,
-      foldsPositiveExcess: selected.filter((r) => finite(r.excessReturn) && r.excessReturn > 0)
-        .length,
+      foldsPositiveExcess: positiveExcess,
+      positiveExcessRate: selected.length ? round((positiveExcess / selected.length) * 100) : null,
       avgTotalReturn: avg((r) => r.totalReturn),
+      avgBenchmarkReturn: avg((r) => r.benchmarkReturn),
       avgExcessReturn: avg((r) => r.excessReturn),
       medianAnnualExcessReturn: round(median(annualExcess)),
       avgCagr: avg((r) => r.cagr),
@@ -1179,6 +1210,16 @@ async function main() {
       avgCandidateSignals: round(average(selected.map((r) => r.candidateSignals))),
       avgTrades: round(average(selected.map((r) => r.trades))),
       totalCapacitySkips: selected.reduce((sum, r) => sum + r.skippedForCapacity, 0),
+    };
+  }
+
+  const aggregateRows = EXIT_STRATEGIES.map((strategy) => {
+    const allYears = foldRows.filter((r) => r.strategy === strategy.id);
+    const without2025 = allYears.filter((r) => r.fold !== 2025);
+    return {
+      strategy: strategy.id,
+      with2025: summarizeStrategy(strategy, allYears),
+      without2025: summarizeStrategy(strategy, without2025),
     };
   });
 
@@ -1210,18 +1251,18 @@ async function main() {
       exitStrategies: EXIT_STRATEGIES,
       folds: [...FOLD_YEARS],
       etfThresholdGrid: [],
-      marketSpecificThresholds: { KOSPI: 84, KOSDAQ: 85 },
+      marketSpecificThresholds: { KOSPI: 84, KOSDAQ: null },
       stockFallbackThreshold: STOCK_FALLBACK_THRESHOLD,
       plFormula:
         "Same V8 PL formula: RS20 20% + RS60 20% + RS120 10% + trend 15% + breadth 20% + near-high 10% + relative-turnover 5%.",
       thresholdGridFormula:
-        "Frozen finalist: KOSPI ETF PL threshold 84 and KOSDAQ ETF PL threshold 85; Stock PL fallback fixed at 80. Baseline A uses Stock PL only at 80. OOS years 2018-2025.",
+        "PR102 production parity: KOSPI uses ETF PL 84 primary with Stock PL 80 fallback; KOSDAQ uses Stock PL 80. OOS years 2018-2025.",
       excludedPlSectors: ["MARKET_IDX", "ETC"],
       scoreRule:
         "Base 9.5 + 0.5 only when selected PL is below its applicable threshold. ETF threshold varies by model; Stock fallback threshold remains 80. Missing PL earns 0 sector slot.",
       entry: "8.0 onset, NEXT_OPEN",
-      kospiExit: "Compared: U8.5/DX, U9/DX, U9.5/DX, U9/D2.5; all max 60D",
-      kosdaqExit: "Not evaluated in this focused study",
+      kospiExit: "Compared: U9.5/DX and U9.5/D2.5; max 60D",
+      kosdaqExit: "Compared: U9.5/D2.5; max 60D",
       portfolio: "P10: max 10 positions, 10% target slot, fractional shares, no rebalancing",
       evaluationCalendar:
         "For each market/fold, all models use the same calendar: first trading day of the fold year through 65 market trading days after the last fold-year trading day.",
@@ -1249,7 +1290,7 @@ async function main() {
   await mkdir(outputDir, { recursive: true });
   const outputPath = path.join(
     outputDir,
-    "pr102-kospi-four-exit-oos-" + runId + ".json",
+    "v8-etf-pl-market-specific-finalist-oos-" + runId + ".json",
   );
   await writeFile(outputPath, JSON.stringify(result, null, 2) + "\n");
 
@@ -1257,11 +1298,11 @@ async function main() {
   if (options.upload) {
     const client = trustedSupabaseClient();
     remotePath =
-      options.userId + "/results/pr102-kospi-four-exit-oos/" + runId + ".json";
+      options.userId + "/results/pr102-market-three-strategy-oos/" + runId + ".json";
     await uploadJson(client, remotePath, result);
     await uploadJson(
       client,
-      options.userId + "/results/pr102-kospi-four-exit-oos/latest.json",
+      options.userId + "/results/pr102-market-three-strategy-oos/latest.json",
       {
         version: STUDY_VERSION,
         createdAt,
