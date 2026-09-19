@@ -17,7 +17,7 @@ export const Route = createFileRoute("/history")({
       {
         name: "description",
         content:
-          "날짜별 스크리닝 결과와 KOSDAQ 8 ONSET·EXIT 조건 달성 종목, 기술점수·우선점수·운영상태를 조회합니다.",
+          "날짜별 스크리닝 결과와 KOSPI / KOSDAQ 8.0 Onset·Exit 조건 달성 종목, 기술점수·우선점수·운영상태를 조회합니다.",
       },
       { property: "og:title", content: "스크리닝 이력 | TrendScore KR" },
       {
@@ -29,13 +29,13 @@ export const Route = createFileRoute("/history")({
   component: HistoryPage,
 });
 
-function isKosdaq8Onset(entry: SnapshotEntry): boolean {
+function isOperational8Onset(entry: SnapshotEntry): boolean {
   if (isOperationalEntry(entry)) return true;
   if (entry.kosdaq80Onset === true) return true;
   return /KOSDAQ\s*80\s*Onset|KOSDAQ\s*8\s*ONSET/i.test(entry.status ?? "");
 }
 
-function isKosdaqExit(entry: SnapshotEntry): boolean {
+function isOperationalExit(entry: SnapshotEntry): boolean {
   if (getStoredOperationalExit(entry, "KOSPI")) return true;
   if (entry.exitSignal === "UP90" || entry.exitSignal === "DOWN30") return true;
   return /KOSDAQ\s*Exit/i.test(entry.status ?? "");
@@ -71,8 +71,8 @@ function HistoryPage() {
     [snapshots, selectedDate],
   );
 
-  const kosdaq8Onsets = useMemo(() => selected?.entries.filter(isKosdaq8Onset) ?? [], [selected]);
-  const exitConditionMet = useMemo(() => selected?.entries.filter(isKosdaqExit) ?? [], [selected]);
+  const entryOnsets = useMemo(() => selected?.entries.filter(isOperational8Onset) ?? [], [selected]);
+  const exitConditionMet = useMemo(() => selected?.entries.filter(isOperationalExit) ?? [], [selected]);
 
   const sortedEntries = useMemo(
     () =>
@@ -182,13 +182,13 @@ function HistoryPage() {
                 <section className="rounded-lg border border-border bg-card p-4">
                   <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-up">
                     <ArrowUpRight className="size-4" />
-                    KOSPI / KOSDAQ 신규 진입 ({kosdaq8Onsets.length})
+                    KOSPI / KOSDAQ 신규 진입 ({entryOnsets.length})
                   </h3>
                   <p className="mb-2 text-[11px] text-muted-foreground">
                     해당 스크리닝일에 KOSPI / KOSDAQ 8.0 신규 상향 돌파 진입조건을 달성한
                     종목입니다.
                   </p>
-                  <EntryList entries={kosdaq8Onsets} empty="해당 종목 없음" />
+                  <EntryList entries={entryOnsets} empty="해당 종목 없음" />
                 </section>
                 <section className="rounded-lg border border-border bg-card p-4">
                   <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-down">
