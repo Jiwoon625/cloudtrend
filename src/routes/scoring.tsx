@@ -9,8 +9,9 @@ import { ManualDataInput } from "@/components/ManualDataInput";
 import { Button } from "@/components/ui/button";
 import {
   VF_FEATURE_WEIGHTS,
+  VF_ETF_PL_KOSPI_OVERHEAT_THRESHOLD,
   VF_MODEL_LABEL,
-  VF_SECTOR_PL_OVERHEAT_THRESHOLD,
+  VF_STOCK_PL_FALLBACK_OVERHEAT_THRESHOLD,
 } from "@/lib/engine/vfConfig";
 import { getManualDataText } from "@/lib/manualDataStore";
 import { syncPortfolioFromHistory } from "@/lib/portfolioStore";
@@ -64,7 +65,7 @@ const FEATURES = [
   [
     "Sector Price Leadership",
     VF_FEATURE_WEIGHTS.SECTOR_PRICE_LEADERSHIP,
-    `PL < ${VF_SECTOR_PL_OVERHEAT_THRESHOLD}이면 +0.5, 과열(≥${VF_SECTOR_PL_OVERHEAT_THRESHOLD})이면 0`,
+    `KOSPI: ETF PL < ${VF_ETF_PL_KOSPI_OVERHEAT_THRESHOLD} 우선 (없으면 Stock PL < ${VF_STOCK_PL_FALLBACK_OVERHEAT_THRESHOLD}) · KOSDAQ: Stock PL < ${VF_STOCK_PL_FALLBACK_OVERHEAT_THRESHOLD}이면 +0.5`,
   ],
 ] as const;
 
