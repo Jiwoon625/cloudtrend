@@ -21,38 +21,94 @@ export function CloudAccount({ children }: { children: ReactNode }) {
   const [message, setMessage] = useState("");
   useEffect(() => {
     let alive = true;
-    let previous: string | null | undefined;
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      const id = session?.user.id ?? null;
-      if (previous !== undefined && previous !== id) {
-        window.location.reload();
-        return;
-      }
-      previous = id;
-      if (alive) setAccount(session?.user.email ?? null);
-    });
-    void supabase.auth
-      .getSession()
-      .then(async ({ data, error }) => {
-        if (error) throw error;
-        if (data.session) {
-          await Promise.all([hydrateManualData(), hydrateUsData(), hydrateSnapshots()]);
-        }
-        if (alive) setReady(true);
+    let lastAuthenticatedUserId: string | null = null;
+    const hydrationAttempted = new Set<string>();
 
-        // Portfolio reconciliation can scan the full local dataset and screening history.
-        // Do not block initial page access on that work; let the authenticated shell render first.
-        if (data.session) {
+    const startCloudHydration = (userId: string) => {
+      if (hydrationAttempted.has(userId)) return;
+      hydrationAttempted.add(userId);
+
+      const tasks = [
+        { label: "국내 데이터", run: () => hydrateManualData() },
+        { label: "미국 데이터", run: () => hydrateUsData() },
+        { label: "스크리닝 이력", run: () => hydrateSnapshots() },
+      ] as const;
+
+      void Promise.allSettled(tasks.map((task) => task.run())).then((results) => {
+        if (!alive) return;
+
+        const failed = results.flatMap((result, index) =>
+          result.status === "rejected" ? [tasks[index]!.label] : [],
+        );
+        if (failed.length > 0) {
+          console.warn(
+            "Cloud data hydration partially failed after authentication",
+            results
+              .map((result, index) => ({ label: tasks[index]!.label, result }))
+              .filter(({ result }) => result.status === "rejected"),
+          );
+          setMessage(
+            `로그인은 정상입니다. 클라우드 데이터 일부를 불러오지 못했습니다: ${failed.join(
+              ", ",
+            )}. 필요하면 '다른 기기의 최신 데이터 불러오기'로 다시 시도해 주세요.`,
+          );
+        } else {
+          setMessage((current) =>
+            current.startsWith("로그인은 정상입니다. 클라우드 데이터 일부를 불러오지 못했습니다")
+              ? ""
+              : current,
+          );
+        }
+
+        // Portfolio reconciliation depends on screening history. Keep it best-effort
+        // and never let it block or roll back an otherwise valid authenticated session.
+        if (results[2]?.status === "fulfilled") {
           window.setTimeout(() => {
             void syncPortfolioFromHistory().catch(() => undefined);
           }, 0);
         }
+      });
+    };
+
+    const applySession = (
+      session: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"],
+      event?: string,
+    ) => {
+      const nextId = session?.user.id ?? null;
+
+      // A real user switch must still clear module-level caches before exposing another
+      // account's data. Transient loss/recovery of the same session no longer reloads.
+      if (nextId && lastAuthenticatedUserId && nextId !== lastAuthenticatedUserId) {
+        window.location.reload();
+        return;
+      }
+      if (nextId) lastAuthenticatedUserId = nextId;
+      if (event === "SIGNED_OUT") hydrationAttempted.clear();
+
+      if (!alive) return;
+      setAccount(session?.user.email ?? null);
+      setReady(true);
+      if (nextId) startCloudHydration(nextId);
+    };
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      applySession(session, event);
+    });
+
+    void supabase.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (error) throw error;
+        applySession(data.session, "INITIAL_SESSION");
       })
       .catch((e: Error) => {
-        if (alive) setMessage(e.message);
+        if (!alive) return;
+        setReady(true);
+        setMessage(`세션 확인 중 오류가 발생했습니다: ${e.message}`);
       });
+
     return () => {
       alive = false;
       subscription.unsubscribe();
@@ -94,7 +150,13 @@ export function CloudAccount({ children }: { children: ReactNode }) {
           <button
             onClick={() =>
               void supabase.auth.signOut().then(({ error }) => {
-                if (error) setMessage(error.message);
+                if (error) {
+                  setMessage(error.message);
+                  return;
+                }
+                // Explicit logout may be followed by a different account login.
+                // Reload here to clear module-level user data, not on transient auth events.
+                window.location.reload();
               })
             }
           >
