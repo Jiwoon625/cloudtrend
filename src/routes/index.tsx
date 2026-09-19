@@ -41,7 +41,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "CloudTrend V8 Final 10점 기술점수의 KOSDAQ 8.0 Onset, KOSPI 8점 Onset과 RSAccel Relative Quality, KOSDAQ 9.0 상향·3.0 하향 Exit, 섹터 로테이션과 시장 상태를 한 화면에서 확인합니다.",
+          "CloudTrend V8 Final 10점 기술점수의 KOSPI / KOSDAQ 8.0 Onset, KOSPI U9.5 / DX, KOSDAQ U9.0 / D3.0 Exit, 섹터 로테이션과 시장 상태를 한 화면에서 확인합니다.",
       },
       { property: "og:title", content: "대시보드 | CloudTrend V8 Final" },
       {
@@ -130,7 +130,7 @@ function Dashboard() {
         <div>
           <h1 className="text-xl font-bold tracking-tight">대시보드 · V8 Final</h1>
           <p className="text-[12px] text-muted-foreground">
-            KOSDAQ 8.0 Onset, 확정 포트폴리오 운영 규칙, 점수 Exit와 섹터 Rotation을 확인합니다.
+            KOSPI / KOSDAQ 8.0 Onset, 확정 포트폴리오 운영 규칙, 점수 Exit와 섹터 Rotation을 확인합니다.
           </p>
         </div>
         <div className="flex items-center gap-2" data-no-print>
@@ -414,7 +414,7 @@ function DashboardContent({
           <ScreenerTable rows={summary.kospiEntryRows} />
         ) : (
           <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">
-            오늘 새로 발생한 KOSPI 8.0 Onset 신규 진입가 없습니다.
+            오늘 새로 발생한 KOSPI 8.0 Onset 신규 진입이 없습니다.
           </div>
         )}
       </section>
