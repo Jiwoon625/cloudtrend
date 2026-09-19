@@ -1,3 +1,8 @@
+import {
+  getStoredOperationalExit,
+  isOperationalEntry,
+  STRATEGY_CONFIG,
+} from "@/lib/engine/operationalStrategy";
 import { supabase, userId } from "@/lib/cloud";
 import { ensureManualDataset } from "@/lib/manualDataStore";
 import { loadSnapshots } from "@/lib/screeningHistory";
@@ -75,11 +80,7 @@ const DEFAULT_SETTINGS: PortfolioSettings = {
 };
 
 type SignalDecision =
-  | "EXECUTED"
-  | "SKIPPED_CAPACITY"
-  | "SKIPPED_SECTOR"
-  | "SKIPPED_CASH"
-  | "SKIPPED_HELD";
+  "EXECUTED" | "SKIPPED_CAPACITY" | "SKIPPED_SECTOR" | "SKIPPED_CASH" | "SKIPPED_HELD";
 
 interface PortfolioTradeRow {
   id: string;
@@ -224,9 +225,7 @@ async function fetchHandledSignalKeys(uid: string) {
     .select("symbol,signal_date")
     .eq("user_id", uid);
   if (error) throw error;
-  return new Set(
-    (data ?? []).map((row) => signalKey(String(row.symbol), String(row.signal_date))),
-  );
+  return new Set((data ?? []).map((row) => signalKey(String(row.symbol), String(row.signal_date))));
 }
 
 async function recordSignalDecision(
@@ -271,12 +270,15 @@ function datasetLatestDate(dataset: MarketDataset): string | null {
   return latest;
 }
 
-function isKosdaqOnset(entry: SnapshotEntry) {
+export function isEntryOnset(entry: SnapshotEntry, market: Market) {
+  if (market === "KOSPI") return isOperationalEntry({ ...entry, kosdaq80Onset: false });
+  if (market !== "KOSDAQ") return false;
   if (entry.kosdaq80Onset === true) return true;
   return /KOSDAQ\s*(?:80|8)\s*(?:Onset|ONSET)/i.test(entry.status ?? "");
 }
 
-function operationalExit(entry: SnapshotEntry): "UP90" | "DOWN30" | null {
+function operationalExit(entry: SnapshotEntry, market: Market): "UP95" | "UP90" | "DOWN30" | null {
+  if (market !== "KOSDAQ") return getStoredOperationalExit(entry, market);
   if (entry.exitSignal === "UP90" || entry.exitSignal === "DOWN30") return entry.exitSignal;
   const status = entry.status ?? "";
   if (/9\.0점.*상향/i.test(status)) return "UP90";
@@ -309,7 +311,7 @@ function latestSnapshotEntry(snapshots: ScreeningSnapshot[], symbol: string): Sn
   return null;
 }
 
-function deriveExitPlan(
+export function deriveExitPlan(
   trade: PortfolioTrade,
   snapshots: ScreeningSnapshot[],
   bars: DailyPrice[],
@@ -320,7 +322,7 @@ function deriveExitPlan(
     if (snapshot.asOfDate < trade.entryDate || snapshot.asOfDate > latestDate) continue;
     const entry = snapshot.entries.find((item) => item.symbol === trade.symbol);
     if (!entry) continue;
-    const signal = operationalExit(entry);
+    const signal = operationalExit(entry, trade.market);
     if (!signal) continue;
     const execution = firstBarAfter(bars, snapshot.asOfDate);
     if (!execution || execution.tradeDate > latestDate || execution.open <= 0) continue;
@@ -328,14 +330,26 @@ function deriveExitPlan(
       signalDate: snapshot.asOfDate,
       exitDate: execution.tradeDate,
       exitPrice: execution.open,
-      reason: signal === "UP90" ? "9.0점 상향 재돌파" : "3.0점 하향 이탈",
+      reason:
+        signal === "UP95"
+          ? "9.5점 상향돌파"
+          : signal === "UP90"
+            ? "9.0점 상향 재돌파"
+            : "3.0점 하향 이탈",
       timing: "OPEN",
     };
     break;
   }
 
   const entryIndex = bars.findIndex((bar) => bar.tradeDate === trade.entryDate);
-  const timeBar = entryIndex >= 0 ? bars[entryIndex + 59] : undefined;
+  const timeBar =
+    entryIndex >= 0
+      ? bars[
+          entryIndex +
+            STRATEGY_CONFIG[trade.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI"].maxHoldingDays -
+            1
+        ]
+      : undefined;
   const timePlan: ExitPlan | null =
     timeBar && timeBar.tradeDate <= latestDate && timeBar.close > 0
       ? {
@@ -408,7 +422,11 @@ async function closeTrade(
   return mapTrade(data as PortfolioTradeRow);
 }
 
-function buildSummary(settings: PortfolioSettings, trades: PortfolioTrade[], latestDate: string | null) {
+function buildSummary(
+  settings: PortfolioSettings,
+  trades: PortfolioTrade[],
+  latestDate: string | null,
+) {
   const halfCost = settings.roundTripCostRate / 2;
   let cash = settings.initialCapital;
   let marketValue = 0;
@@ -481,9 +499,15 @@ async function runPortfolioSync(): Promise<PortfolioState> {
   const dataset = parsed.dataset;
   const latestDate = datasetLatestDate(dataset) ?? snapshots.at(-1)?.asOfDate ?? null;
   if (!latestDate || snapshots.length === 0)
-    return { settings, trades: initialTrades, summary: buildSummary(settings, initialTrades, latestDate) };
+    return {
+      settings,
+      trades: initialTrades,
+      summary: buildSummary(settings, initialTrades, latestDate),
+    };
 
-  const instrumentMap = new Map(dataset.instruments.map((instrument) => [instrument.symbol, instrument]));
+  const instrumentMap = new Map(
+    dataset.instruments.map((instrument) => [instrument.symbol, instrument]),
+  );
   const working = [...initialTrades];
   const uid = await userId();
   const handledKeys = await fetchHandledSignalKeys(uid);
@@ -510,9 +534,13 @@ async function runPortfolioSync(): Promise<PortfolioState> {
   const candidates: EntryCandidate[] = [];
   for (const snapshot of snapshots) {
     for (const entry of snapshot.entries) {
-      if (!isKosdaqOnset(entry)) continue;
       const instrument = instrumentMap.get(entry.symbol);
-      if (!instrument || instrument.instrumentType !== "STOCK" || instrument.market !== "KOSDAQ") continue;
+      if (
+        !instrument ||
+        instrument.instrumentType !== "STOCK" ||
+        !isEntryOnset(entry, instrument.market)
+      )
+        continue;
       const entryBar = firstBarAfter(dataset.bars[entry.symbol] ?? [], snapshot.asOfDate);
       if (!entryBar || entryBar.tradeDate > latestDate || entryBar.open <= 0) continue;
       candidates.push({ snapshot, entry, market: instrument.market, entryBar });
@@ -522,9 +550,11 @@ async function runPortfolioSync(): Promise<PortfolioState> {
   candidates.sort((a, b) => {
     const dateDiff = a.entryBar.tradeDate.localeCompare(b.entryBar.tradeDate);
     if (dateDiff !== 0) return dateDiff;
-    const techDiff = (b.entry.technicalPoints ?? -Infinity) - (a.entry.technicalPoints ?? -Infinity);
+    const techDiff =
+      (b.entry.technicalPoints ?? -Infinity) - (a.entry.technicalPoints ?? -Infinity);
     if (techDiff !== 0) return techDiff;
-    const priorityDiff = (b.entry.priorityPoints ?? -Infinity) - (a.entry.priorityPoints ?? -Infinity);
+    const priorityDiff =
+      (b.entry.priorityPoints ?? -Infinity) - (a.entry.priorityPoints ?? -Infinity);
     if (priorityDiff !== 0) return priorityDiff;
     return a.entry.symbol.localeCompare(b.entry.symbol);
   });
@@ -535,32 +565,53 @@ async function runPortfolioSync(): Promise<PortfolioState> {
     await closeDue(candidate.entryBar.tradeDate, true);
 
     const sameSymbolOpen = working.some(
-      (trade) => trade.symbol === candidate.entry.symbol && activeAtEntry(trade, candidate.entryBar.tradeDate),
+      (trade) =>
+        trade.symbol === candidate.entry.symbol &&
+        activeAtEntry(trade, candidate.entryBar.tradeDate),
     );
     if (sameSymbolOpen) {
-      await recordSignalDecision(uid, candidate, "SKIPPED_HELD", "신호 다음 거래일 시가 시점에 동일 종목 보유 중");
+      await recordSignalDecision(
+        uid,
+        candidate,
+        "SKIPPED_HELD",
+        "신호 다음 거래일 시가 시점에 동일 종목 보유 중",
+      );
       handledKeys.add(key);
       continue;
     }
 
     const active = working.filter((trade) => activeAtEntry(trade, candidate.entryBar.tradeDate));
     if (active.length >= settings.maxPositions) {
-      await recordSignalDecision(uid, candidate, "SKIPPED_CAPACITY", `P${settings.maxPositions} 포지션 한도 도달`);
+      await recordSignalDecision(
+        uid,
+        candidate,
+        "SKIPPED_CAPACITY",
+        `P${settings.maxPositions} 포지션 한도 도달`,
+      );
       handledKeys.add(key);
       continue;
     }
 
     const sectorSlots = Math.max(1, Math.floor(settings.maxPositions * settings.sectorCap + 1e-9));
-    const sectorCount = active.filter((trade) => trade.sectorCode === candidate.entry.sectorCode).length;
+    const sectorCount = active.filter(
+      (trade) => trade.sectorCode === candidate.entry.sectorCode,
+    ).length;
     if (sectorCount >= sectorSlots) {
-      await recordSignalDecision(uid, candidate, "SKIPPED_SECTOR", `동일 섹터 ${Math.round(settings.sectorCap * 100)}% 한도 도달`);
+      await recordSignalDecision(
+        uid,
+        candidate,
+        "SKIPPED_SECTOR",
+        `동일 섹터 ${Math.round(settings.sectorCap * 100)}% 한도 도달`,
+      );
       handledKeys.add(key);
       continue;
     }
 
     const targetAmount = settings.initialCapital / settings.maxPositions;
     const availableCash = cashAtEntry(settings, working, candidate.entryBar.tradeDate);
-    const maxAffordableShares = Math.floor(availableCash / (candidate.entryBar.open * (1 + halfCost)));
+    const maxAffordableShares = Math.floor(
+      availableCash / (candidate.entryBar.open * (1 + halfCost)),
+    );
     if (maxAffordableShares < 1) {
       await recordSignalDecision(uid, candidate, "SKIPPED_CASH", "가용 현금으로 1주 매수 불가");
       handledKeys.add(key);
@@ -586,7 +637,7 @@ async function runPortfolioSync(): Promise<PortfolioState> {
         entry_price: candidate.entryBar.open,
         entry_technical_points: candidate.entry.technicalPoints,
         entry_priority_points: candidate.entry.priorityPoints,
-        entry_status: "KOSDAQ 8 ONSET",
+        entry_status: `${candidate.market} 8.0 Onset · 신규 진입`,
         target_weight: rate(1 / settings.maxPositions),
         target_amount: money(targetAmount),
         shares,
@@ -604,7 +655,12 @@ async function runPortfolioSync(): Promise<PortfolioState> {
       .single();
     if (error && error.code !== "23505") throw error;
     if (data) replaceWorking(mapTrade(data as PortfolioTradeRow));
-    await recordSignalDecision(uid, candidate, "EXECUTED", `${candidate.entryBar.tradeDate} 시가 ${candidate.entryBar.open}원 · ${shares}주`);
+    await recordSignalDecision(
+      uid,
+      candidate,
+      "EXECUTED",
+      `${candidate.entryBar.tradeDate} 시가 ${candidate.entryBar.open}원 · ${shares}주`,
+    );
     handledKeys.add(key);
   }
 
@@ -624,7 +680,10 @@ async function runPortfolioSync(): Promise<PortfolioState> {
         current_price: mark.close,
         current_technical_points: current?.technicalPoints ?? null,
         current_priority_points: current?.priorityPoints ?? null,
-        current_status: current?.status ?? "보유",
+        current_status:
+          current && operationalExit(current, trade.market)
+            ? `청산 대기 · ${current.status}`
+            : "보유",
         holding_days: days,
         updated_at: new Date().toISOString(),
       })
@@ -636,13 +695,16 @@ async function runPortfolioSync(): Promise<PortfolioState> {
     replaceWorking(mapTrade(data as PortfolioTradeRow));
   }
 
-  working.sort((a, b) => b.entryDate.localeCompare(a.entryDate) || a.symbol.localeCompare(b.symbol));
+  working.sort(
+    (a, b) => b.entryDate.localeCompare(a.entryDate) || a.symbol.localeCompare(b.symbol),
+  );
   return { settings, trades: working, summary: buildSummary(settings, working, latestDate) };
 }
 
 /**
  * 스크리닝 이력을 거래 원장으로 연결한다.
- * - KOSDAQ 8 ONSET 발생 다음 거래일 시가에 진입
+ * - KOSPI/KOSDAQ 8.0 Onset 발생 다음 거래일 시가에 진입
+ * - KOSPI는 U9.5 상향돌파만 점수 청산(DX), 과거 참고용 스냅샷은 진입하지 않음
  * - 9.0 상향 재돌파 / 3.0 하향 이탈은 신호 다음 거래일 시가에 청산
  * - 60거래일 만기는 해당 거래일 종가에 청산
  * - P30, 동일섹터 최대 30%, 왕복비용 0.30% 기본값을 적용

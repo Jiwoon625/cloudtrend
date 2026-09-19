@@ -1,3 +1,4 @@
+import { getStoredOperationalExit, isOperationalEntry } from "@/lib/engine/operationalStrategy";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowDownRight, ArrowUpRight, History, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -29,11 +30,13 @@ export const Route = createFileRoute("/history")({
 });
 
 function isKosdaq8Onset(entry: SnapshotEntry): boolean {
+  if (isOperationalEntry(entry)) return true;
   if (entry.kosdaq80Onset === true) return true;
   return /KOSDAQ\s*80\s*Onset|KOSDAQ\s*8\s*ONSET/i.test(entry.status ?? "");
 }
 
 function isKosdaqExit(entry: SnapshotEntry): boolean {
+  if (getStoredOperationalExit(entry, "KOSPI")) return true;
   if (entry.exitSignal === "UP90" || entry.exitSignal === "DOWN30") return true;
   return /KOSDAQ\s*Exit/i.test(entry.status ?? "");
 }
@@ -68,14 +71,8 @@ function HistoryPage() {
     [snapshots, selectedDate],
   );
 
-  const kosdaq8Onsets = useMemo(
-    () => selected?.entries.filter(isKosdaq8Onset) ?? [],
-    [selected],
-  );
-  const exitConditionMet = useMemo(
-    () => selected?.entries.filter(isKosdaqExit) ?? [],
-    [selected],
-  );
+  const kosdaq8Onsets = useMemo(() => selected?.entries.filter(isKosdaq8Onset) ?? [], [selected]);
+  const exitConditionMet = useMemo(() => selected?.entries.filter(isKosdaqExit) ?? [], [selected]);
 
   const sortedEntries = useMemo(
     () =>
@@ -185,10 +182,11 @@ function HistoryPage() {
                 <section className="rounded-lg border border-border bg-card p-4">
                   <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-up">
                     <ArrowUpRight className="size-4" />
-                    KOSDAQ 8 ONSET ({kosdaq8Onsets.length})
+                    KOSPI / KOSDAQ 신규 진입 ({kosdaq8Onsets.length})
                   </h3>
                   <p className="mb-2 text-[11px] text-muted-foreground">
-                    해당 스크리닝일에 KOSDAQ 8.0 신규 상향 돌파 진입조건을 달성한 종목입니다.
+                    해당 스크리닝일에 KOSPI / KOSDAQ 8.0 신규 상향 돌파 진입조건을 달성한
+                    종목입니다.
                   </p>
                   <EntryList entries={kosdaq8Onsets} empty="해당 종목 없음" />
                 </section>
@@ -198,7 +196,8 @@ function HistoryPage() {
                     EXIT조건 달성 ({exitConditionMet.length})
                   </h3>
                   <p className="mb-2 text-[11px] text-muted-foreground">
-                    KOSDAQ 9.0점 상향 재돌파 또는 3.0점 하향 이탈 Exit 조건을 달성한 종목입니다.
+                    KOSPI 9.5점 상향돌파 또는 KOSDAQ 9.0점 상향 재돌파 / 3.0점 하향 이탈 Exit 조건을
+                    달성한 종목입니다.
                   </p>
                   <EntryList entries={exitConditionMet} empty="해당 종목 없음" />
                 </section>

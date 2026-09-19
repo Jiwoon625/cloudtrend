@@ -40,7 +40,7 @@ type SnapshotWithOptionalBreakout = ScreeningRow["snapshot"] & {
 export function getDisplayWarnings(row: ScreeningRow): string[] {
   const out: string[] = [];
 
-  if (row.exitSignal === "UP95") out.push("상단 Exit · 9.5점 이상");
+  if (row.exitSignal === "UP95") out.push("상단 Exit · 9.5점 상향돌파");
   if (row.exitSignal === "DOWN25") out.push("하단 Exit · 2.5점 이하");
   if (
     row.sectorPriceLeadership !== null &&
@@ -51,8 +51,7 @@ export function getDisplayWarnings(row: ScreeningRow): string[] {
 
   const snapshot = row.snapshot as SnapshotWithOptionalBreakout;
   const hasDetailedBreakout =
-    snapshot.bollinger?.bbBreakout !== undefined &&
-    snapshot.closeLocationValue !== undefined;
+    snapshot.bollinger?.bbBreakout !== undefined && snapshot.closeLocationValue !== undefined;
   const volumeConfirmationFailed =
     snapshot.bollinger?.bbBreakout === true &&
     snapshot.bollinger?.headFakeWarning !== true &&

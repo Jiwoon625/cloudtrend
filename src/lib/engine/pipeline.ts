@@ -36,12 +36,7 @@ import { computeSectorRotation, type SectorRotationResult } from "./sectorRotati
 import { buildPriorityScoreV8 } from "./priorityScoreV8";
 import { computeV8SectorPriceLeadership } from "./v8SectorPriceLeadership";
 import { selectV8SectorPriceLeadership } from "./v8SectorPriceLeadershipPolicy";
-import {
-  getKosdaqOperationalExitSignal,
-  VF_DOWNSIDE_EXIT_RAW_SCORE,
-  VF_ENTRY_RAW_SCORE,
-  VF_UPSIDE_EXIT_RAW_SCORE,
-} from "./vfConfig";
+import { getOperationalSignals, getOperationalStatus } from "./operationalStrategy";
 import type { DatasetCapabilities, MarketDataset } from "./dataset";
 import type { DailyPrice, EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
 
@@ -125,7 +120,9 @@ export interface ScreeningRow {
   /** Strict raw 0~10 score. null when any core feature is unavailable. */
   operatingScore10: number | null;
   kosdaq80Onset: boolean;
-  /** KOSPI stock crossing from below 8.0 to 8.0 or above; informational, not a portfolio entry signal. */
+  kospi80Onset?: boolean;
+  operationalSignalVersion?: string;
+  /** Compatibility alias for the executable KOSPI 8.0 Onset. */
   kospiEightPointEntry: boolean;
   exitSignal: V8ExitSignal;
   sectorPriceLeadership: number | null;
@@ -334,24 +331,6 @@ function sectorSnapshotScores(ds: MarketDataset, rows: ScreeningRow[]): SectorSc
   }));
 }
 
-function displayActionLabel(
-  kosdaq80Onset: boolean,
-  kospiEightPointEntry: boolean,
-  exitSignal: V8ExitSignal,
-  grade: TechnicalGrade,
-  gate: MarketGate["status"],
-) {
-  if (kosdaq80Onset && exitSignal) return "KOSDAQ80 Onset · V8 Exit 조건";
-  if (kosdaq80Onset) return "KOSDAQ80 Onset";
-  if (kospiEightPointEntry && exitSignal) return "8점 신규 진입 후보 · V8 Exit 조건";
-  if (kospiEightPointEntry) return "8점 신규 진입 후보";
-  if (exitSignal === "UP90") return "KOSDAQ Exit · 9.0점 상향 재돌파";
-  if (exitSignal === "DOWN30") return "KOSDAQ Exit · 3.0점 하향 이탈";
-  if (exitSignal === "UP95") return "V8 Exit · 9.5점 이상";
-  if (exitSignal === "DOWN25") return "V8 Exit · 2.5점 이하";
-  return actionLabel(grade, gate);
-}
-
 export function runAnalysis(
   ds: MarketDataset,
   cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
@@ -507,25 +486,13 @@ export function runAnalysis(
       universe.passed = false;
     }
 
-    const crossedEightPointThreshold =
-      inst.instrumentType === "STOCK" &&
-      universe.passed &&
-      previousOperatingScore10 !== null &&
-      operatingScore10 !== null &&
-      previousOperatingScore10 < VF_ENTRY_RAW_SCORE &&
-      operatingScore10 >= VF_ENTRY_RAW_SCORE;
-    const kosdaq80Onset = crossedEightPointThreshold && inst.market === "KOSDAQ";
-    const kospiEightPointEntry = crossedEightPointThreshold && inst.market === "KOSPI";
-    const exitSignal: V8ExitSignal =
-      inst.market === "KOSDAQ"
-        ? getKosdaqOperationalExitSignal(previousOperatingScore10, operatingScore10, kosdaq80Onset)
-        : operatingScore10 === null
-          ? null
-          : operatingScore10 >= VF_UPSIDE_EXIT_RAW_SCORE
-            ? "UP95"
-            : operatingScore10 <= VF_DOWNSIDE_EXIT_RAW_SCORE
-              ? "DOWN25"
-              : null;
+    const signals = getOperationalSignals(
+      inst.instrumentType === "STOCK" ? inst.market : "ETF",
+      previousOperatingScore10,
+      operatingScore10,
+      universe.passed,
+    );
+    const { exitSignal } = signals;
     const technicalNormalized = inst.instrumentType === "STOCK" ? stockPercent : normalize(tech);
     const priorityNormalized = normalize(priority);
     const qualityScore =
@@ -553,17 +520,12 @@ export function runAnalysis(
           : null,
       dataCompletenessRatio,
       grade: modelGrade,
-      actionLabelText: displayActionLabel(
-        kosdaq80Onset,
-        kospiEightPointEntry,
-        exitSignal,
-        modelGrade,
-        gate.status,
-      ),
+      actionLabelText:
+        inst.instrumentType === "STOCK"
+          ? getOperationalStatus(signals, inst.market)
+          : actionLabel(modelGrade, gate.status),
       operatingScore10,
-      kosdaq80Onset,
-      kospiEightPointEntry,
-      exitSignal,
+      ...signals,
       sectorPriceLeadership: currentPl,
       sectorRotationScore: rotationScore,
       warnings: [],

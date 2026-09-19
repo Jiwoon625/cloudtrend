@@ -26,6 +26,7 @@ function instrument(market: "KOSPI" | "KOSDAQ"): Instrument {
 function row(overrides: Partial<ScreeningRow> = {}): ScreeningRow {
   return {
     instrument: instrument("KOSPI"),
+    operationalSignalVersion: "kospi-e8-u95-dx-v1",
     kosdaq80Onset: false,
     kospiEightPointEntry: false,
     exitSignal: null,
@@ -38,27 +39,29 @@ function row(overrides: Partial<ScreeningRow> = {}): ScreeningRow {
 
 describe("V8 display status", () => {
   it("labels a KOSPI 8-point threshold crossing as a new entry candidate", () => {
-    expect(getDisplayStatus(row({ kospiEightPointEntry: true, rs20: 4, rs60: 5 }))).toBe(
-      "8점 신규 진입 후보",
-    );
+    expect(
+      getDisplayStatus(row({ kospiEightPointEntry: true, kospi80Onset: true, rs20: 4, rs60: 5 })),
+    ).toBe("KOSPI 8.0 Onset · 신규 진입");
   });
 
   it("adds RS confirmation when KOSPI RSAccel is positive", () => {
-    expect(getDisplayStatus(row({ kospiEightPointEntry: true, rs20: 6, rs60: 2 }))).toBe(
-      "8점 신규 진입 후보 · RS 확인",
-    );
+    expect(
+      getDisplayStatus(row({ kospiEightPointEntry: true, kospi80Onset: true, rs20: 6, rs60: 2 })),
+    ).toBe("KOSPI 8.0 Onset · 신규 진입 · RS 확인");
   });
 
   it("does not confirm relative momentum when RSAccel is zero or unavailable", () => {
-    expect(getDisplayStatus(row({ kospiEightPointEntry: true, rs20: 3, rs60: 3 }))).toBe(
-      "8점 신규 진입 후보",
-    );
-    expect(getDisplayStatus(row({ kospiEightPointEntry: true, rs20: null, rs60: 3 }))).toBe(
-      "8점 신규 진입 후보",
-    );
+    expect(
+      getDisplayStatus(row({ kospiEightPointEntry: true, kospi80Onset: true, rs20: 3, rs60: 3 })),
+    ).toBe("KOSPI 8.0 Onset · 신규 진입");
+    expect(
+      getDisplayStatus(
+        row({ kospiEightPointEntry: true, kospi80Onset: true, rs20: null, rs60: 3 }),
+      ),
+    ).toBe("KOSPI 8.0 Onset · 신규 진입");
   });
 
-  it("uses the operational KOSDAQ 8 ONSET label", () => {
+  it("uses the operational KOSDAQ 8.0 Onset · 신규 진입 label", () => {
     expect(
       getDisplayStatus(
         row({
@@ -68,15 +71,15 @@ describe("V8 display status", () => {
           rs60: 2,
         }),
       ),
-    ).toBe("KOSDAQ 8 ONSET");
+    ).toBe("KOSDAQ 8.0 Onset · 신규 진입");
   });
 
   it("shows the validated KOSDAQ aggressive exit labels", () => {
     expect(getDisplayStatus(row({ instrument: instrument("KOSDAQ"), exitSignal: "UP90" }))).toBe(
-      "KOSDAQ Exit · 9.0점 상향 재돌파",
+      "KOSDAQ 청산 · 9.0점 상향 재돌파",
     );
     expect(getDisplayStatus(row({ instrument: instrument("KOSDAQ"), exitSignal: "DOWN30" }))).toBe(
-      "KOSDAQ Exit · 3.0점 하향 이탈",
+      "KOSDAQ 청산 · 3.0점 하향 이탈",
     );
   });
 });
