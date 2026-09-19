@@ -1,3 +1,4 @@
+import { StrategyDescription } from "@/components/StrategyDescription";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Database, Play, ShieldCheck } from "lucide-react";
@@ -7,12 +8,9 @@ import { AppShell } from "@/components/AppShell";
 import { ManualDataInput } from "@/components/ManualDataInput";
 import { Button } from "@/components/ui/button";
 import {
-  VF_DOWNSIDE_EXIT_RAW_SCORE,
-  VF_ENTRY_RAW_SCORE,
   VF_FEATURE_WEIGHTS,
   VF_MODEL_LABEL,
   VF_SECTOR_PL_OVERHEAT_THRESHOLD,
-  VF_UPSIDE_EXIT_RAW_SCORE,
 } from "@/lib/engine/vfConfig";
 import { getManualDataText } from "@/lib/manualDataStore";
 import { syncPortfolioFromHistory } from "@/lib/portfolioStore";
@@ -26,7 +24,7 @@ export const Route = createFileRoute("/scoring")({
       {
         name: "description",
         content:
-          "CloudTrend V8 Final 10점 기술점수, KOSDAQ80 Onset·Exit 규칙과 우선점수 구조를 확인하고 스크리닝 데이터를 입력합니다.",
+          "CloudTrend V8 Final 10점 기술점수, KOSPI / KOSDAQ 8.0 Onset·Exit 규칙과 우선점수 구조를 확인하고 스크리닝 데이터를 입력합니다.",
       },
       { property: "og:title", content: "데이터 입력 및 V8 Final 산식 | CloudTrend" },
       { property: "og:description", content: "검증 완료된 V8 Final 운영모델과 데이터 입력 화면." },
@@ -94,8 +92,8 @@ function ScoringPage() {
       <div className="mb-4">
         <h1 className="text-xl font-bold tracking-tight">데이터 입력 및 {VF_MODEL_LABEL} 산식</h1>
         <p className="text-[12px] text-muted-foreground">
-          장기 3-FOS 검증으로 확정한 10점 기술점수와 KOSDAQ 운영규칙을 사용합니다. 운영 배점은
-          고정되어 있으며 화면에서 직접 변경하지 않습니다.
+          장기 3-FOS 검증으로 확정한 10점 기술점수와 KOSPI / KOSDAQ 운영규칙을 사용합니다. 운영
+          배점은 고정되어 있으며 화면에서 직접 변경하지 않습니다.
         </p>
       </div>
 
@@ -118,7 +116,7 @@ function ScoringPage() {
             </Button>
             <span className="text-[11px] text-muted-foreground">
               {hasData
-                ? "V8 Final 10점 점수와 명시적 KOSDAQ80 Onset / Exit 신호를 계산합니다."
+                ? "V8 Final 10점 점수와 명시적 KOSPI / KOSDAQ 8.0 Onset / Exit 신호를 계산합니다."
                 : "먼저 데이터를 입력하고 데이터 적용을 눌러 주세요."}
             </span>
           </div>
@@ -148,41 +146,40 @@ function ScoringPage() {
                   </tr>
                 ))}
                 <tr className="border-t border-border font-semibold">
-                  <td className="pt-2">합계</td><td className="num pt-2 text-right">10.0</td><td />
+                  <td className="pt-2">합계</td>
+                  <td className="num pt-2 text-right">10.0</td>
+                  <td />
                 </tr>
               </tbody>
             </table>
           </div>
           <p className="mt-3 rounded-md border border-border bg-surface p-2 text-[11px] leading-relaxed text-muted-foreground">
-            Sector PL 데이터가 없는 경우에는 연구 정의의 기본 슬롯 +0.5를 유지합니다. 나머지 핵심
-            피처 중 하나라도 NO_DATA이면 운영 기술점수는 <strong className="text-foreground">산정 불가</strong>로
-            처리하며, 8.0 Onset을 만들기 위해 분모를 줄여 재환산하지 않습니다.
+            Sector PL 데이터가 없는 경우에는 해당 슬롯을 0점으로 처리합니다. 나머지 핵심 피처 중
+            하나라도 NO_DATA이면 운영 기술점수는{" "}
+            <strong className="text-foreground">산정 불가</strong>로 처리하며, 8.0 Onset을 만들기
+            위해 분모를 줄여 재환산하지 않습니다.
           </p>
         </Section>
 
         <Section
-          title="3. KOSDAQ 최종 운영규칙"
+          title="3. KOSPI / KOSDAQ 최종 운영규칙"
           desc="시장 Gate와 분리된 V8 Final 명시적 신호입니다."
         >
           <div className="space-y-2 text-[12px]">
-            <div className="rounded-md border border-primary/30 bg-primary/5 p-3">
-              <p className="font-semibold">진입 · KOSDAQ80 Onset</p>
-              <p className="mt-1 text-muted-foreground">
-                전 거래일 점수 &lt; {VF_ENTRY_RAW_SCORE.toFixed(1)} → 당일 점수 ≥ {VF_ENTRY_RAW_SCORE.toFixed(1)}로
-                최초 상향돌파. 전일·당일 모두 10점 핵심 피처 산정이 완전해야 합니다.
-              </p>
-            </div>
-            <div className="rounded-md border border-border p-3">
-              <p className="font-semibold">점수 Exit</p>
-              <p className="mt-1 text-muted-foreground">
-                보유 후 기술점수 ≥ {VF_UPSIDE_EXIT_RAW_SCORE.toFixed(1)} 또는 ≤ {VF_DOWNSIDE_EXIT_RAW_SCORE.toFixed(1)}.
-                둘 다 없으면 최종 전략의 시간 청산은 최대 60거래일입니다.
-              </p>
-            </div>
+            <StrategyDescription />
             <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-md bg-surface p-2"><p className="num font-semibold">30</p><p className="text-[10px] text-muted-foreground">최대 종목</p></div>
-              <div className="rounded-md bg-surface p-2"><p className="num font-semibold">3.33%</p><p className="text-[10px] text-muted-foreground">균등 슬롯</p></div>
-              <div className="rounded-md bg-surface p-2"><p className="num font-semibold">0.30%</p><p className="text-[10px] text-muted-foreground">왕복 비용 가정</p></div>
+              <div className="rounded-md bg-surface p-2">
+                <p className="num font-semibold">30</p>
+                <p className="text-[10px] text-muted-foreground">최대 종목</p>
+              </div>
+              <div className="rounded-md bg-surface p-2">
+                <p className="num font-semibold">3.33%</p>
+                <p className="text-[10px] text-muted-foreground">균등 슬롯</p>
+              </div>
+              <div className="rounded-md bg-surface p-2">
+                <p className="num font-semibold">0.30%</p>
+                <p className="text-[10px] text-muted-foreground">왕복 비용 가정</p>
+              </div>
             </div>
           </div>
         </Section>
@@ -192,19 +189,32 @@ function ScoringPage() {
           desc="기술점수와 분리해 같은 진입후보 안에서 우선순위를 정하는 보조 점수입니다."
         >
           <div className="grid grid-cols-2 gap-2 text-[12px]">
-            <div className="rounded-md border border-border p-2"><strong>지수 편입 2점</strong><p className="text-[11px] text-muted-foreground">KOSPI200 / KOSDAQ150 / KRX300</p></div>
-            <div className="rounded-md border border-border p-2"><strong>규모 1점</strong><p className="text-[11px] text-muted-foreground">시가총액 기준</p></div>
-            <div className="rounded-md border border-border p-2"><strong>상대성과 1점</strong><p className="text-[11px] text-muted-foreground">당일 벤치마크 대비</p></div>
-            <div className="rounded-md border border-border p-2"><strong>Sector Rotation 0~1점</strong><p className="text-[11px] text-muted-foreground">Rotation Score 0~100 비례</p></div>
+            <div className="rounded-md border border-border p-2">
+              <strong>지수 편입 2점</strong>
+              <p className="text-[11px] text-muted-foreground">KOSPI200 / KOSDAQ150 / KRX300</p>
+            </div>
+            <div className="rounded-md border border-border p-2">
+              <strong>규모 1점</strong>
+              <p className="text-[11px] text-muted-foreground">시가총액 기준</p>
+            </div>
+            <div className="rounded-md border border-border p-2">
+              <strong>상대성과 1점</strong>
+              <p className="text-[11px] text-muted-foreground">당일 벤치마크 대비</p>
+            </div>
+            <div className="rounded-md border border-border p-2">
+              <strong>Sector Rotation 0~1점</strong>
+              <p className="text-[11px] text-muted-foreground">Rotation Score 0~100 비례</p>
+            </div>
           </div>
           <p className="mt-2 text-[11px] text-muted-foreground">
-            외국인 20D 순매수와 52주 신고가 근접은 이미 10점 기술점수에 포함되므로 우선점수에서는 중복 가점하지 않습니다.
+            외국인 20D 순매수와 52주 신고가 근접은 이미 10점 기술점수에 포함되므로 우선점수에서는
+            중복 가점하지 않습니다.
           </p>
         </Section>
 
         <Section
           title="5. Market Gate"
-          desc="시장 상태는 참고정보로 표시하되 KOSDAQ80 Onset을 차단하거나 관망 라벨로 덮어쓰지 않습니다."
+          desc="시장 상태는 참고정보로 표시하되 KOSPI / KOSDAQ 8.0 Onset을 차단하거나 관망 라벨로 덮어쓰지 않습니다."
         >
           <div className="flex gap-2 text-[12px]">
             <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />

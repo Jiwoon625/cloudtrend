@@ -1,3 +1,4 @@
+import { StrategyDescription } from "@/components/StrategyDescription";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Activity,
@@ -40,7 +41,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "CloudTrend V8 Final 10점 기술점수의 KOSDAQ80 Onset, KOSPI 8점 Onset과 RSAccel Relative Quality, KOSDAQ 9.0 상향·3.0 하향 Exit, 섹터 로테이션과 시장 상태를 한 화면에서 확인합니다.",
+          "CloudTrend V8 Final 10점 기술점수의 KOSDAQ 8.0 Onset, KOSPI 8점 Onset과 RSAccel Relative Quality, KOSDAQ 9.0 상향·3.0 하향 Exit, 섹터 로테이션과 시장 상태를 한 화면에서 확인합니다.",
       },
       { property: "og:title", content: "대시보드 | CloudTrend V8 Final" },
       {
@@ -129,7 +130,7 @@ function Dashboard() {
         <div>
           <h1 className="text-xl font-bold tracking-tight">대시보드 · V8 Final</h1>
           <p className="text-[12px] text-muted-foreground">
-            KOSDAQ80 Onset, 확정 포트폴리오 운영 규칙, 점수 Exit와 섹터 Rotation을 확인합니다.
+            KOSDAQ 8.0 Onset, 확정 포트폴리오 운영 규칙, 점수 Exit와 섹터 Rotation을 확인합니다.
           </p>
         </div>
         <div className="flex items-center gap-2" data-no-print>
@@ -226,22 +227,28 @@ function DashboardContent({
 
       <div className="grid gap-4 lg:grid-cols-4">
         <Card title="오늘의 V8 신호" icon={<TrendingUp className="size-4 text-primary" />}>
-          <KeyValue label="KOSDAQ80 Onset" value={formatCount(counts.kosdaq80Onsets)} />
-          <KeyValue
-            label="KOSPI 8점 신규 진입"
-            value={formatCount(counts.kospiEightPointEntries)}
-          />
+          <KeyValue label="KOSDAQ 8.0 Onset" value={formatCount(counts.kosdaq80Onsets)} />
+          <KeyValue label="KOSPI 8.0 Onset" value={formatCount(counts.kospiEightPointEntries)} />
           <KeyValue
             label="KOSPI RS 확인"
             value={formatCount(counts.kospiRelativeQualityConfirmed)}
             hint="RSAccel > 0"
           />
-          <KeyValue label="상승 Exit · 9.0점 상향 재돌파" value={formatCount(counts.upsideExits)} />
-          <KeyValue label="하락 Exit · 3.0점 하향 이탈" value={formatCount(counts.downsideExits)} />
+          <KeyValue
+            label="상승 Exit · KOSPI U9.5 / KOSDAQ U9.0"
+            value={formatCount(counts.upsideExits)}
+          />
+          <KeyValue
+            label="KOSDAQ 하락 Exit · 3.0점 하향 이탈"
+            value={formatCount(counts.downsideExits)}
+          />
           <KeyValue label="점수 산정 불가" value={formatCount(counts.incomplete)} />
         </Card>
 
-        <Card title="KOSDAQ 실전 포트폴리오" icon={<ShieldCheck className="size-4 text-primary" />}>
+        <Card
+          title="KOSPI / KOSDAQ 포트폴리오"
+          icon={<ShieldCheck className="size-4 text-primary" />}
+        >
           <KeyValue
             label="운용자금"
             value={portfolio ? formatWon(portfolio.settings.initialCapital) : portfolioFallback}
@@ -271,17 +278,7 @@ function DashboardContent({
         </Card>
 
         <Card title="진입·Exit 규칙" icon={<TrendingUp className="size-4 text-primary" />}>
-          <KeyValue label="KOSDAQ 진입" value="KOSDAQ80 Onset" />
-          <KeyValue label="KOSPI 참고" value="8점 Onset + RSAccel" />
-          <KeyValue label="상승 Exit" value="9.0 상향 재돌파" />
-          <KeyValue label="하락 Exit" value="3.0 하향 이탈" />
-          <KeyValue label="최대 보유" value="60거래일" />
-          <KeyValue label="기술점수" value="Raw 0~10" />
-          <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
-            KOSDAQ Exit는 8.0 Onset 당일의 9.0 초과 진입을 즉시 청산으로 보지 않고, 이후 재돌파·하향
-            이탈을 신호로 봅니다. 60거래일 만기는 포지션 추적 기능 연결 전까지 화면 자동 신호로
-            표시하지 않습니다. RSAccel은 KOSPI 전용 Relative Quality 축입니다.
-          </p>
+          <StrategyDescription />
         </Card>
 
         <Card title="시장 상태 · 참고" icon={<Activity className="size-4 text-primary" />}>
@@ -307,7 +304,7 @@ function DashboardContent({
           <KeyValue label="변동성" value={formatNumber(summary.vkospi, 2)} />
           <KeyValue label="외국인 최근 5일" value={formatWon(summary.marketForeignNet5d)} />
           <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
-            Market Gate는 참고정보이며 KOSDAQ80 Onset 또는 Exit를 차단하지 않습니다.
+            Market Gate는 참고정보이며 KOSPI / KOSDAQ 8.0 Onset 또는 Exit를 차단하지 않습니다.
           </p>
         </Card>
       </div>
@@ -376,7 +373,7 @@ function DashboardContent({
 
       <section className="mt-6">
         <div className="mb-2 flex flex-wrap items-center gap-2">
-          <h2 className="text-sm font-semibold">오늘의 KOSDAQ80 Onset</h2>
+          <h2 className="text-sm font-semibold">오늘의 KOSDAQ 8.0 Onset</h2>
           <Badge
             variant="outline"
             className="border-primary/30 bg-primary/5 text-[10px] text-primary"
@@ -391,14 +388,14 @@ function DashboardContent({
           <ScreenerTable rows={summary.onsetRows} />
         ) : (
           <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">
-            오늘 새로 발생한 KOSDAQ80 Onset이 없습니다.
+            오늘 새로 발생한 KOSDAQ 8.0 Onset이 없습니다.
           </div>
         )}
       </section>
 
       <section className="mt-6">
         <div className="mb-2 flex flex-wrap items-center gap-2">
-          <h2 className="text-sm font-semibold">KOSPI 8점 신규 진입 후보 · Relative Quality</h2>
+          <h2 className="text-sm font-semibold">KOSPI 8.0 Onset · 신규 진입</h2>
           <Badge
             variant="outline"
             className="border-primary/30 bg-primary/5 text-[10px] text-primary"
@@ -409,15 +406,15 @@ function DashboardContent({
             RSAccel = RS20 − RS60
           </Badge>
           <span className="text-[11px] text-muted-foreground">
-            RSAccel &gt; 0은 ‘RS 확인’으로 표시합니다. 기술점수에는 합산하지 않으며 RSAccel이 높은
-            후보부터 최대 30개를 표시합니다.
+            RSAccel &gt; 0은 ‘RS 확인’으로 표시합니다. 기술점수나 진입조건에는 합산하지 않으며
+            우선점수가 높은 진입 종목부터 최대 30개를 표시합니다.
           </span>
         </div>
         {summary.kospiEntryRows.length ? (
           <ScreenerTable rows={summary.kospiEntryRows} />
         ) : (
           <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">
-            오늘 새로 발생한 KOSPI 8점 신규 진입 후보가 없습니다.
+            오늘 새로 발생한 KOSPI 8.0 Onset 신규 진입가 없습니다.
           </div>
         )}
       </section>
@@ -426,7 +423,7 @@ function DashboardContent({
         <div className="mb-2 flex flex-wrap items-center gap-2">
           <h2 className="text-sm font-semibold text-warn">V8 Exit 조건</h2>
           <Badge variant="outline" className="border-warn/30 bg-warn-soft text-[10px] text-warn">
-            9.0 상향 재돌파 또는 3.0 하향 이탈
+            KOSPI U9.5 / DX · KOSDAQ U9.0 / D3.0
           </Badge>
           <span className="text-[11px] text-muted-foreground">
             실제 매도 대상 여부는 보유 여부와 함께 확인해야 하며, 최대 보유 60거래일은 별도 포지션
@@ -437,7 +434,7 @@ function DashboardContent({
           <ScreenerTable rows={summary.exitRows} />
         ) : (
           <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">
-            현재 점수 Exit 조건에 해당하는 KOSDAQ 종목이 없습니다.
+            현재 점수 Exit 조건에 해당하는 종목이 없습니다.
           </div>
         )}
       </section>

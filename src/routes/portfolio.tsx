@@ -1,3 +1,4 @@
+import { StrategyDescription } from "@/components/StrategyDescription";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BriefcaseBusiness, Loader2, Pencil, RefreshCw, Save, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -24,7 +25,7 @@ export const Route = createFileRoute("/portfolio")({
       {
         name: "description",
         content:
-          "스크리닝 이력의 KOSDAQ 8 ONSET과 Exit 신호를 실제 운용 규칙에 따라 다음 거래일 시가 기준 가상 매매 원장으로 기록합니다.",
+          "스크리닝 이력의 KOSPI / KOSDAQ 8.0 Onset과 Exit 신호를 실제 운용 규칙에 따라 다음 거래일 시가 기준 가상 매매 원장으로 기록합니다.",
       },
     ],
   }),
@@ -54,7 +55,15 @@ function tradeMark(trade: PortfolioTrade, halfCost: number) {
   };
 }
 
-function SummaryItem({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
+function SummaryItem({
+  label,
+  value,
+  valueClass,
+}: {
+  label: string;
+  value: string;
+  valueClass?: string;
+}) {
   return (
     <div className="rounded-lg border border-border bg-surface px-3 py-2">
       <p className="text-[10px] text-muted-foreground">{label}</p>
@@ -166,16 +175,21 @@ function PortfolioPage() {
             포트폴리오 · 실제운용 추적
           </h1>
           <p className="text-[12px] text-muted-foreground">
-            스크리닝 이력의 KOSDAQ 8 ONSET은 다음 거래일 시가에 가상 매수하고, Exit 신호는 다음
-            거래일 시가에 가상 매도합니다. 60거래일 만기는 해당일 종가로 처리합니다.
+            스크리닝 이력의 KOSPI / KOSDAQ 8.0 Onset은 다음 거래일 시가에 가상 매수하고, Exit 신호는
+            다음 거래일 시가에 가상 매도합니다. 60거래일 만기는 해당일 종가로 처리합니다.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading}>
-          {loading ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+          {loading ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="size-3.5" />
+          )}
           이력 동기화
         </Button>
       </div>
 
+      <StrategyDescription />
       <section className="mb-4 rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap items-end gap-3">
           <label className="min-w-[240px] flex-1 text-[12px] font-medium">
@@ -190,19 +204,23 @@ function PortfolioPage() {
                 className="num"
               />
               <Button onClick={() => void saveCapital()} disabled={saving} className="gap-1.5">
-                {saving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                {saving ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Save className="size-3.5" />
+                )}
                 저장
               </Button>
             </div>
           </label>
           <div className="min-w-[210px] rounded-lg bg-muted/40 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-            P30 기준 목표금액은 운용자금 ÷ 30입니다. 실제 수량은 다음 거래일 시가에서 목표금액에 가장
-            가까운 정수 주식 수로 결정합니다.
+            P30 기준 목표금액은 운용자금 ÷ 30입니다. 실제 수량은 다음 거래일 시가에서 목표금액에
+            가장 가까운 정수 주식 수로 결정합니다.
           </div>
         </div>
         <p className="mt-2 text-[10px] text-muted-foreground">
-          운용자금 변경은 기존 체결기록을 소급 수정하지 않고 이후 신규 진입의 목표금액·수량에 적용됩니다.
-          동일 섹터 신규 진입은 최대 30%, 거래비용은 왕복 0.30% 가정입니다.
+          운용자금 변경은 기존 체결기록을 소급 수정하지 않고 이후 신규 진입의 목표금액·수량에
+          적용됩니다. 동일 섹터 신규 진입은 최대 30%, 거래비용은 왕복 0.30% 가정입니다.
         </p>
       </section>
 
@@ -255,8 +273,9 @@ function PortfolioPage() {
                 <div>
                   <h2 className="text-sm font-semibold">실제 체결값 수정 · {editingTrade.name}</h2>
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    신호일 {editingTrade.signalDate} · 진입일 {editingTrade.entryDate}은 전략 기록으로 유지합니다.
-                    자동 입력된 다음 거래일 시가와 실제 체결이 다를 때 진입가격과 수량만 보정합니다.
+                    신호일 {editingTrade.signalDate} · 진입일 {editingTrade.entryDate}은 전략
+                    기록으로 유지합니다. 자동 입력된 다음 거래일 시가와 실제 체결이 다를 때
+                    진입가격과 수량만 보정합니다.
                   </p>
                 </div>
                 <button
@@ -291,15 +310,24 @@ function PortfolioPage() {
                     onChange={(event) => setEditShares(event.target.value)}
                   />
                 </label>
-                <Button className="gap-1.5" disabled={editSaving} onClick={() => void saveEntryEdit()}>
-                  {editSaving ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+                <Button
+                  className="gap-1.5"
+                  disabled={editSaving}
+                  onClick={() => void saveEntryEdit()}
+                >
+                  {editSaving ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Save className="size-3.5" />
+                  )}
                   체결값 저장
                 </Button>
               </div>
               <p className="mt-2 text-[10px] text-muted-foreground">
-                실제로 매수하지 않았다면 수량을 0주로 저장하세요. 해당 신호는 원장에는 남지만 P30 보유
-                종목 수·섹터 한도·현금·손익 계산에서는 제외됩니다. 1주 이상이면 매수금액·거래비용·평가손익을
-                다시 계산하며, 이미 청산된 거래라면 실현손익도 수정된 실제 체결가와 수량 기준으로 재계산됩니다.
+                실제로 매수하지 않았다면 수량을 0주로 저장하세요. 해당 신호는 원장에는 남지만 P30
+                보유 종목 수·섹터 한도·현금·손익 계산에서는 제외됩니다. 1주 이상이면
+                매수금액·거래비용·평가손익을 다시 계산하며, 이미 청산된 거래라면 실현손익도 수정된
+                실제 체결가와 수량 기준으로 재계산됩니다.
               </p>
             </section>
           ) : null}
@@ -308,8 +336,9 @@ function PortfolioPage() {
             <div className="border-b border-border bg-surface-strong px-3 py-2">
               <h2 className="text-sm font-semibold">매수·매도 원장 · 전체 거래</h2>
               <p className="text-[11px] text-muted-foreground">
-                신호일과 실제 체결일을 분리합니다. 예: 9/17 ONSET → 9/18 데이터를 업로드한 시점에 9/18
-                시가로 매수기록 생성. 청산된 거래와 미매수(0주) 신호도 삭제하지 않고 원장에 계속 남깁니다.
+                신호일과 실제 체결일을 분리합니다. 예: 9/17 ONSET → 9/18 데이터를 업로드한 시점에
+                9/18 시가로 매수기록 생성. 청산된 거래와 미매수(0주) 신호도 삭제하지 않고 원장에
+                계속 남깁니다.
               </p>
             </div>
             <div className="overflow-x-auto">
@@ -344,14 +373,15 @@ function PortfolioPage() {
                   {sortedTrades.length === 0 ? (
                     <tr>
                       <td colSpan={22} className="px-3 py-10 text-center text-muted-foreground">
-                        아직 체결된 가상 포지션이 없습니다. KOSDAQ 8 ONSET이 발생한 다음 거래일 데이터가
-                        업로드되면 자동으로 기록됩니다.
+                        아직 체결된 가상 포지션이 없습니다. KOSPI / KOSDAQ 8.0 Onset이 발생한 다음
+                        거래일 데이터가 업로드되면 자동으로 기록됩니다.
                       </td>
                     </tr>
                   ) : (
                     sortedTrades.map((trade) => {
                       const mark = tradeMark(trade, state.settings.roundTripCostRate / 2);
-                      const noFill = trade.shares === 0 && (trade.exitReason ?? "").startsWith("미매수");
+                      const noFill =
+                        trade.shares === 0 && (trade.exitReason ?? "").startsWith("미매수");
                       return (
                         <tr key={trade.id} className="border-b border-border/60 last:border-0">
                           <td className="whitespace-nowrap px-2 py-2">
@@ -362,14 +392,19 @@ function PortfolioPage() {
                             >
                               {trade.name}
                             </Link>
-                            <span className="num ml-1 text-[9px] text-muted-foreground">{trade.symbol}</span>
+                            <span className="num ml-1 text-[9px] text-muted-foreground">
+                              {trade.symbol}
+                            </span>
                           </td>
                           <td className="px-2 py-2">{trade.market}</td>
                           <td className="num px-2 py-2">{trade.signalDate}</td>
                           <td className="num px-2 py-2">{trade.entryDate}</td>
-                          <td className="num px-2 py-2 text-right">{formatPrice(trade.entryPrice)}</td>
+                          <td className="num px-2 py-2 text-right">
+                            {formatPrice(trade.entryPrice)}
+                          </td>
                           <td className="num px-2 py-2 text-right font-medium">
-                            {formatNumber(trade.entryTechnicalPoints, 1)} / {formatNumber(trade.entryPriorityPoints, 1)}
+                            {formatNumber(trade.entryTechnicalPoints, 1)} /{" "}
+                            {formatNumber(trade.entryPriorityPoints, 1)}
                           </td>
                           <td className="whitespace-nowrap px-2 py-2">
                             <Badge variant="outline" className="text-[9px] text-up">
@@ -380,17 +415,23 @@ function PortfolioPage() {
                             {(trade.targetWeight * 100).toFixed(2)}%
                           </td>
                           <td className="num px-2 py-2 text-right">{formatWon(trade.buyAmount)}</td>
-                          <td className="num px-2 py-2 text-right">{trade.shares.toLocaleString("ko-KR")}주</td>
+                          <td className="num px-2 py-2 text-right">
+                            {trade.shares.toLocaleString("ko-KR")}주
+                          </td>
                           <td className="num px-2 py-2 text-right">
                             {trade.status === "OPEN" ? formatPrice(trade.currentPrice) : "-"}
                           </td>
                           <td className="num px-2 py-2 text-right">
                             {mark.marketValue === null ? "-" : formatWon(mark.marketValue)}
                           </td>
-                          <td className={`num px-2 py-2 text-right font-medium ${pnlClass(mark.pnl)}`}>
+                          <td
+                            className={`num px-2 py-2 text-right font-medium ${pnlClass(mark.pnl)}`}
+                          >
                             {mark.pnl === null ? "-" : formatWon(mark.pnl)}
                           </td>
-                          <td className={`num px-2 py-2 text-right font-medium ${pnlClass(mark.returnPct)}`}>
+                          <td
+                            className={`num px-2 py-2 text-right font-medium ${pnlClass(mark.returnPct)}`}
+                          >
                             {mark.returnPct === null ? "-" : formatPercent(mark.returnPct, 2)}
                           </td>
                           <td className="num px-2 py-2 text-right">{trade.holdingDays}</td>
@@ -398,12 +439,16 @@ function PortfolioPage() {
                             {formatNumber(trade.currentTechnicalPoints, 1)}
                           </td>
                           <td className="max-w-[220px] px-2 py-2">{trade.currentStatus ?? "-"}</td>
-                          <td className="num px-2 py-2">{noFill ? "-" : trade.exitDate ?? "-"}</td>
+                          <td className="num px-2 py-2">
+                            {noFill ? "-" : (trade.exitDate ?? "-")}
+                          </td>
                           <td className="num px-2 py-2 text-right">
                             {noFill ? "-" : formatPrice(trade.exitPrice)}
                           </td>
                           <td className="whitespace-nowrap px-2 py-2">{trade.exitReason ?? "-"}</td>
-                          <td className={`num px-2 py-2 text-right font-semibold ${pnlClass(trade.realizedPnl)}`}>
+                          <td
+                            className={`num px-2 py-2 text-right font-semibold ${pnlClass(trade.realizedPnl)}`}
+                          >
                             {trade.realizedPnl === null ? "-" : formatWon(trade.realizedPnl)}
                           </td>
                           <td className="px-2 py-2 text-center">

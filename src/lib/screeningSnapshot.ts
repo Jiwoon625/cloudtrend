@@ -17,6 +17,8 @@ export interface SnapshotEntry {
   /** V8 Final operational signals. Optional for backward compatibility with old snapshots. */
   kosdaq80Onset?: boolean;
   kospiEightPointEntry?: boolean;
+  kospi80Onset?: boolean;
+  operationalSignalVersion?: string;
   exitSignal?: V8ExitSignal;
 }
 
@@ -67,6 +69,10 @@ export function buildSnapshot(analysis: {
     hardFilterPassed: row.hardFilterPassed,
     kosdaq80Onset: row.kosdaq80Onset,
     kospiEightPointEntry: row.kospiEightPointEntry,
+    kospi80Onset: row.kospi80Onset ?? false,
+    ...(row.operationalSignalVersion
+      ? { operationalSignalVersion: row.operationalSignalVersion }
+      : {}),
     exitSignal: row.exitSignal,
   }));
   const passed = entries.filter((entry) => entry.hardFilterPassed);

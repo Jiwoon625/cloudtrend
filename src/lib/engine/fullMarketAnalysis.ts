@@ -5,7 +5,6 @@ import {
   computeFullUniverseSectorRotation,
 } from "./sectorRotationFullUniverse";
 import { DEFAULT_SCORING_CONFIG, type ScoringConfig } from "./scoring";
-import { applyV6MomentumStatuses } from "./v6Momentum";
 
 /**
  * Browser screening, dashboard snapshots, and trusted automation share this
@@ -18,7 +17,7 @@ export function runFullMarketAnalysis(
 ): { analysis: AnalysisResult; dataset: MarketDataset } {
   const dataset = buildFullUniverseSectorDataset(rawDataset);
   const analysis = runAnalysis(dataset, config);
-  applyV6MomentumStatuses(analysis, dataset, config);
+  // Preserve the V8 structural signals, status and score delta from the pipeline.
 
   const representativeEtf = new Map<string, { symbol: string; name: string }>();
   for (const sector of analysis.sectorRotation?.sectors ?? []) {

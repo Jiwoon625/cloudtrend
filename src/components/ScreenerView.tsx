@@ -1,3 +1,4 @@
+import { StrategyDescription } from "@/components/StrategyDescription";
 import { useState } from "react";
 
 import { PdfExportButton } from "@/components/PdfExportButton";
@@ -11,7 +12,11 @@ import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
 
 type Mode = "STOCK" | "ETF";
 
+import { isOperationalEntry } from "@/lib/engine/operationalStrategy";
+
 type PresetId =
+  | "ENTRY"
+  | "KOSDAQ_ENTRY_8"
   | "CORE"
   | "GRADE_A"
   | "GRADE_B"
@@ -24,6 +29,8 @@ type PresetId =
   | "EXIT";
 
 const PRESETS: Array<{ id: PresetId; label: string; test: (r: ScreeningRow) => boolean }> = [
+  { id: "ENTRY", label: "신규 진입", test: isOperationalEntry },
+  { id: "KOSDAQ_ENTRY_8", label: "KOSDAQ Onset", test: (r) => r.kosdaq80Onset },
   { id: "CORE", label: "Core 후보", test: (r) => r.grade !== "C" && r.hardFilterPassed },
   { id: "GRADE_A", label: "A등급", test: (r) => r.grade === "A" },
   { id: "GRADE_B", label: "B등급 리테스트 대기", test: (r) => r.grade === "B" },
@@ -46,8 +53,8 @@ const PRESETS: Array<{ id: PresetId; label: string; test: (r: ScreeningRow) => b
   { id: "HEAD_FAKE", label: "Head Fake 경고", test: (r) => r.warnings.includes("HEAD_FAKE") },
   {
     id: "KOSPI_ENTRY_8",
-    label: "KOSPI 8점 신규 진입",
-    test: (r) => r.kospiEightPointEntry,
+    label: "KOSPI Onset",
+    test: (r) => r.kospi80Onset === true,
   },
   { id: "EXIT", label: "Exit 점검", test: (r) => r.exitSignal !== null },
 ];
@@ -139,7 +146,15 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         />
       </header>
 
+      {mode === "STOCK" ? <StrategyDescription /> : null}
       <div className="flex flex-wrap gap-1">
+        <button
+          type="button"
+          onClick={() => setPreset(null)}
+          className="rounded-full border px-2.5 py-1 text-[11px]"
+        >
+          전체
+        </button>
         {PRESETS.map((p) => (
           <button
             key={p.id}
@@ -147,7 +162,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
             onClick={() => setPreset(preset === p.id ? null : p.id)}
             className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${preset === p.id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-surface hover:bg-accent"}`}
           >
-            {p.label}
+            {p.label} ({base.filter(p.test).length})
           </button>
         ))}
       </div>

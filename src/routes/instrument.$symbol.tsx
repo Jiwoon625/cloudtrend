@@ -1,4 +1,6 @@
-import { useSuspenseQuery } from "@tanstack/react-query";
+import { loadPortfolioState } from "@/lib/portfolioStore";
+import { StrategyDescription } from "@/components/StrategyDescription";
+import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { useState } from "react";
 import {
@@ -66,6 +68,13 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
 function InstrumentDetail() {
   const { symbol } = Route.useParams();
   const { data: detail } = useSuspenseQuery(instrumentQueryOptions(symbol));
+  const { data: portfolio } = useQuery({
+    queryKey: ["portfolio-state"],
+    queryFn: loadPortfolioState,
+  });
+  const holding = portfolio?.trades.find(
+    (trade) => trade.symbol === symbol && trade.status === "OPEN" && trade.shares > 0,
+  );
   const analysis = detail;
   const row = detail.row!;
   const chart = detail.chart;
@@ -123,6 +132,8 @@ function InstrumentDetail() {
     signals: {
       kosdaq80Onset: row.kosdaq80Onset,
       kospiEightPointEntry: row.kospiEightPointEntry,
+      kospi80Onset: row.kospi80Onset,
+      operationalSignalVersion: row.operationalSignalVersion,
       exitSignal: row.exitSignal,
     },
     failedRules: row.failedRules,
@@ -166,6 +177,7 @@ function InstrumentDetail() {
 
   return (
     <AppShell>
+      <StrategyDescription />
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight">
@@ -210,7 +222,16 @@ function InstrumentDetail() {
           value={`${formatNumber(row.priority.points, 2)} / ${formatNumber(row.priority.maxPoints, 1)}`}
         />
         <Stat label="모델등급" value={<GradeBadge grade={row.grade} />} />
-        <Stat label="상태" value={getDisplayStatus(row)} />
+        <Stat
+          label="상태"
+          value={
+            holding
+              ? row.exitSignal
+                ? `청산 대기 · ${getDisplayStatus(row)}`
+                : "보유"
+              : getDisplayStatus(row)
+          }
+        />
         <Stat label="52주 고점 거리" value={<Delta value={snap.distanceFrom52wHigh} />} />
       </div>
 

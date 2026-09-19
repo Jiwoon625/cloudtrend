@@ -1,13 +1,11 @@
+import { isOperationalEntry } from "@/lib/engine/operationalStrategy";
 import { compactDashboardRow } from "@/lib/dashboardRow";
 import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
-import {
-  compareKospiRelativeQuality,
-  isKospiRelativeMomentumConfirmed,
-} from "@/lib/kospiRelativeQuality";
+import { isKospiRelativeMomentumConfirmed } from "@/lib/kospiRelativeQuality";
 
-export const SCREENING_CACHE_VERSION = "screening-cache-v8-final-v4" as const;
-export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-final-v5" as const;
-export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-final-v4" as const;
+export const SCREENING_CACHE_VERSION = "screening-cache-v8-final-v5" as const;
+export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-final-v6" as const;
+export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-final-v5" as const;
 
 export interface DashboardSummary {
   version: typeof DASHBOARD_CACHE_VERSION;
@@ -116,21 +114,20 @@ export function buildDashboardSummary(
     .sort(signalPriority)
     .slice(0, 30);
   const kospiEntryRows = [...rows]
-    .filter((row) => row.kospiEightPointEntry)
-    .sort(compareKospiRelativeQuality)
+    .filter((row) => row.kospi80Onset)
+    .sort(signalPriority)
     .slice(0, 30);
   const exitRows = [...rows]
-    .filter(
-      (row) =>
-        row.instrument.instrumentType === "STOCK" &&
-        row.instrument.market === "KOSDAQ" &&
-        row.exitSignal !== null,
-    )
+    .filter((row) => row.instrument.instrumentType === "STOCK" && row.exitSignal !== null)
     .sort((a, b) => (b.operatingScore10 ?? -Infinity) - (a.operatingScore10 ?? -Infinity))
     .slice(0, 30);
   const top = [...passed]
     .filter((row) => row.instrument.instrumentType === "STOCK")
-    .sort((a, b) => b.totalScoreNormalized - a.totalScoreNormalized)
+    .sort(
+      (a, b) =>
+        Number(isOperationalEntry(b)) - Number(isOperationalEntry(a)) ||
+        b.totalScoreNormalized - a.totalScoreNormalized,
+    )
     .slice(0, 10);
 
   const failMap = new Map<string, number>();
@@ -159,13 +156,12 @@ export function buildDashboardSummary(
       passed: passed.length,
       disqualified: rows.length - passed.length,
       kosdaq80Onsets: rows.filter((row) => row.kosdaq80Onset).length,
-      kospiEightPointEntries: rows.filter((row) => row.kospiEightPointEntry).length,
+      kospiEightPointEntries: rows.filter((row) => row.kospi80Onset).length,
       kospiRelativeQualityConfirmed: rows.filter(
-        (row) => row.kospiEightPointEntry && isKospiRelativeMomentumConfirmed(row),
+        (row) => row.kospi80Onset && isKospiRelativeMomentumConfirmed(row),
       ).length,
-      upsideExits: rows.filter(
-        (row) => row.instrument.market === "KOSDAQ" && row.exitSignal === "UP90",
-      ).length,
+      upsideExits: rows.filter((row) => row.exitSignal === "UP95" || row.exitSignal === "UP90")
+        .length,
       downsideExits: rows.filter(
         (row) => row.instrument.market === "KOSDAQ" && row.exitSignal === "DOWN30",
       ).length,

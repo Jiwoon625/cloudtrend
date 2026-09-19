@@ -25,8 +25,7 @@ export function GradeBadge({ grade }: { grade: "A" | "B" | "C" }) {
 }
 
 export function Delta({ value, digits = 1 }: { value: number | null; digits?: number }) {
-  if (value === null)
-    return <span className="text-muted-foreground">데이터 없음</span>;
+  if (value === null) return <span className="text-muted-foreground">데이터 없음</span>;
   const Icon = value > 0 ? ArrowUp : value < 0 ? ArrowDown : Minus;
   const cls = value > 0 ? "text-up" : value < 0 ? "text-down" : "text-muted-foreground";
   return (
@@ -72,7 +71,10 @@ function RsAccel({ row }: { row: ScreeningRow }) {
   );
 }
 
+import { isOperationalEntry } from "@/lib/engine/operationalStrategy";
+
 type SortKey =
+  | "entry"
   | "scoreDelta1d"
   | "technical"
   | "priority"
@@ -109,6 +111,8 @@ function technicalValue(row: ScreeningRow): number | null {
 
 function sortValue(row: ScreeningRow, key: SortKey): number | null {
   switch (key) {
+    case "entry":
+      return Number(isOperationalEntry(row));
     case "scoreDelta1d":
       return row.scoreDelta1d;
     case "technical":
@@ -131,11 +135,7 @@ function sortValue(row: ScreeningRow, key: SortKey): number | null {
 }
 
 export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
-  const [sortKey, setSortKey] = useState<SortKey>(() =>
-    rows.length > 0 && rows.every((row) => row.kospiEightPointEntry && row.instrument.market === "KOSPI")
-      ? "rsAccel"
-      : "technical",
-  );
+  const [sortKey, setSortKey] = useState<SortKey>("entry");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
   const [hidden, setHidden] = useState<string[]>([]);
 
@@ -149,7 +149,11 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
       if (bv === null) return -1;
       const diff = av - bv;
       if (diff === 0) {
-        if (sortKey === "technical") {
+        if (sortKey === "entry") {
+          const technicalDiff = (technicalValue(b) ?? -Infinity) - (technicalValue(a) ?? -Infinity);
+          if (technicalDiff !== 0) return technicalDiff;
+        }
+        if (sortKey === "technical" || sortKey === "entry") {
           const priorityDiff = b.priority.points - a.priority.points;
           if (priorityDiff !== 0) return priorityDiff;
         }
@@ -305,12 +309,16 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
                       <>
                         <span className="text-warn">산정 불가</span>
                         <span className="block text-[10px] font-normal text-muted-foreground">
-                          원점수 {formatNumber(techBlock.points, 1)}/{formatNumber(techBlock.maxPoints, 1)}
+                          원점수 {formatNumber(techBlock.points, 1)}/
+                          {formatNumber(techBlock.maxPoints, 1)}
                         </span>
                       </>
                     ) : (
                       <>
-                        {formatNumber(tech, 1)}/{r.instrument.instrumentType === "STOCK" ? "10" : formatNumber(techBlock.maxPoints, 1)}
+                        {formatNumber(tech, 1)}/
+                        {r.instrument.instrumentType === "STOCK"
+                          ? "10"
+                          : formatNumber(techBlock.maxPoints, 1)}
                         {techBlock.availableMaxPoints < techBlock.maxPoints ? (
                           <span className="block text-[10px] font-normal text-muted-foreground">
                             산정 가능 {formatNumber(techBlock.availableMaxPoints, 1)}
@@ -369,7 +377,18 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
                 ),
                 status: (
                   <div className="flex flex-col items-start gap-0.5">
-                    <span className="text-[11px] font-medium">{displayStatus}</span>
+                    <Badge
+                      variant="outline"
+                      className={
+                        isOperationalEntry(r)
+                          ? "border-primary/30 bg-primary/5 text-primary"
+                          : r.exitSignal
+                            ? "border-warn/30 bg-warn-soft text-warn"
+                            : "text-muted-foreground"
+                      }
+                    >
+                      {displayStatus}
+                    </Badge>
                     {!r.hardFilterPassed ? (
                       <span className="text-[10px] text-down">실격: {r.failedRules[0]}</span>
                     ) : null}

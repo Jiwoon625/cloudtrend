@@ -1,0 +1,30 @@
+name: KOSPI operational strategy
+on:
+  pull_request:
+    paths:
+      - "src/lib/**"
+      - "src/components/**"
+      - "src/routes/**"
+      - "scripts/web-screening-cache-store.ts"
+      - ".github/workflows/kospi-operational-strategy.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/lib/engine/operationalStrategy*"
+      - "src/lib/portfolioStore.ts"
+      - ".github/workflows/kospi-operational-strategy.yml"
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify signals, snapshots, portfolio execution and PL policy
+        run: npx vitest run src/lib/engine/operationalStrategy.test.ts src/lib/portfolioStrategy.test.ts src/lib/statusDisplay.test.ts src/lib/engine/vfConfig.test.ts src/lib/engine/v8SectorPriceLeadershipPolicy.test.ts
+      - run: npm run build
