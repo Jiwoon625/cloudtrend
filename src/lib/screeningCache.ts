@@ -1,3 +1,4 @@
+import { buildCompactChart, type InstrumentChartRange } from "@/lib/engine/instrumentChart";
 import {
   ownerPath,
   readBinaryObject,
@@ -254,4 +255,58 @@ export async function getCachedInstrumentDetail(symbol: string): Promise<Instrum
   };
   await writeBinaryObject(path, await gzipJson(cache));
   return detail;
+}
+
+// Separate range-specific files prevent the initial view downloading the full history.
+export const INSTRUMENT_CHART_VERSION = "instrument-chart-compact-v1";
+export async function getCachedInstrumentChart(
+  symbol: string,
+  range: InstrumentChartRange,
+  payload: AnalysisPayload,
+) {
+  const normalized = symbol.trim().toUpperCase();
+  const config = getActiveScoringConfig();
+  const [inputFingerprint, resultDigest, path] = await Promise.all([
+    currentInputFingerprint(),
+    analysisDigest(payload.analysis),
+    ownerPath(`cache/instruments/${normalized}.compact-${range}.json.gz`),
+  ]);
+  type ChartData = Awaited<ReturnType<typeof buildCompactChart>>;
+  type ChartCache = CacheMeta & { symbol: string; range: InstrumentChartRange; data: ChartData };
+  try {
+    const compressed = await readBinaryObject(path);
+    if (compressed) {
+      const cached = await gunzipJson<ChartCache>(compressed);
+      if (
+        cached.version === INSTRUMENT_CHART_VERSION &&
+        cached.symbol === normalized &&
+        cached.range === range &&
+        cached.inputFingerprint === inputFingerprint &&
+        cached.resultDigest === resultDigest
+      )
+        return cached.data;
+    }
+  } catch (error) {
+    console.warn("종목 차트 캐시를 읽지 못해 원천 자료로 계산합니다.", error);
+  }
+  const raw = await ensureManualDataText();
+  if (!raw) throw new Error("종목 상세 차트를 만들 원천 시세가 없습니다.");
+  const dataset = buildInstrumentDetailDataset(raw, normalized);
+  const data = await buildCompactChart(dataset, normalized, range, config);
+  const cache: ChartCache = {
+    version: INSTRUMENT_CHART_VERSION,
+    createdAt: new Date().toISOString(),
+    inputFingerprint,
+    resultDigest,
+    symbol: normalized,
+    range,
+    data,
+  };
+  // A best-effort browser cache write must neither delay nor fail a usable chart.
+  void gzipJson(cache)
+    .then((bytes) => writeBinaryObject(path, bytes))
+    .catch((error) => {
+      console.warn("종목 차트 캐시 저장에 실패했습니다.", error);
+    });
+  return data;
 }
