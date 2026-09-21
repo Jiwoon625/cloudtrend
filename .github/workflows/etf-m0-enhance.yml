@@ -126,6 +126,11 @@ jobs:
       - name: Re-select score-only exits without time cap
         run: python -W ignore scripts/research_etf_m0_uncapped.py --results analysis-runs/m0-enhance
 
+      - name: Compare M0 block contribution with MA60 exits
+        run: |
+          python scripts/research_etf_m0_blocks.py --results analysis-runs/m0-enhance
+          python scripts/research_etf_m0_block_diagnostic.py --results analysis-runs/m0-enhance
+
       - name: Upload enhancement artifacts
         if: always()
         uses: actions/upload-artifact@v4

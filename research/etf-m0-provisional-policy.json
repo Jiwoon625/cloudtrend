@@ -1,0 +1,15 @@
+{
+  "status": "provisional_research_policy",
+  "model": "continuous_technical_M0",
+  "weights": {"technicalContinuous": 55, "priorityM0": 15, "health": 15, "marketSectorScore": 15},
+  "blockScale": "each block 0..100; Priority existing implementation retained without ceiling rescale",
+  "entry": "previous M0 < 80 and current M0 >= 80 and eligible",
+  "exit": "underlying index close < underlying index MA60",
+  "execution": "signal at close; fill next session open",
+  "holdingTimeCap": null,
+  "portfolioSlots": 10,
+  "costPerSide": 0.0015,
+  "blockStudyDecision": "retain all four blocks; none of 19 alternatives passes both train and validation gates",
+  "productionDeployment": false,
+  "limitations": ["reused retrospective holdout", "survivorship bias", "dividend and adjustment consistency unverified", "slot-count and symbol tie-break sensitivity"]
+}
