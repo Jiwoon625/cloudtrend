@@ -1,0 +1,40 @@
+name: Archive completed ETF M0 results
+on:
+  push:
+    branches:
+      - research/etf-m0-enhance-20260921
+    paths:
+      - research/etf-m0-archive-manifest.json
+      - research/etf-m0-archive-payload/**
+      - scripts/archive_etf_m0_results.py
+      - .github/workflows/etf-m0-archive.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: etf-m0-archive-20260921
+  cancel-in-progress: false
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: etf-m0-enhance-35559774005
+          run-id: 35559774005
+          github-token: ${{ github.token }}
+          path: analysis-runs/m0-main
+      - name: Save missing results and verify
+        run: python scripts/archive_etf_m0_results.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: etf-m0-storage-receipt
+          path: analysis-runs/m0-archive/archive-receipt.json
