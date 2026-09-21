@@ -36,11 +36,14 @@ for f in manifest['files']:
     rel=f['path'];remote=prefix+'/'+rel
     if rel in entries:
         # User requested no duplicate saves: verify an existing object instead of replacing it.
-        with request('GET','object/authenticated/'+bucket+'/'+remote) as r:existing=r.read()
-        if hashlib.sha256(existing).hexdigest()!=f['sha256']:raise RuntimeError('Existing object differs; not overwritten: '+remote)
+        local=Path('analysis-runs/m0-main')/rel.removeprefix('enhancement/capped/') if rel.startswith('enhancement/capped/') else root/'supplement'/rel
+        meta=entries[rel].get('metadata',{});etag=str(meta.get('eTag','')).strip(chr(34))
+        if int(meta.get('size',-1))!=f['size'] or etag!=hashlib.md5(local.read_bytes()).hexdigest():
+            with request('GET','object/authenticated/'+bucket+'/'+remote) as r:existing=r.read()
+            if hashlib.sha256(existing).hexdigest()!=f['sha256']:raise RuntimeError('Existing object differs; not overwritten: '+remote)
         results.append(dict(path=remote,status='already_saved'));continue
     p=Path('analysis-runs/m0-main')/rel.removeprefix('enhancement/capped/') if rel.startswith('enhancement/capped/') else root/'supplement'/rel
-    ext=p.suffix;ctype={'.json':'application/json','.csv':'text/csv','.md':'text/markdown','.gz':'application/gzip'}.get(ext,'application/octet-stream')
+    ext=p.suffix;ctype={'.json':'application/json','.csv':'text/csv','.md':'text/plain','.gz':'application/octet-stream'}.get(ext,'application/octet-stream')
     with request('POST','object/'+bucket+'/'+remote,p.read_bytes(),{'Content-Type':ctype,'x-upsert':'false'}) as r:assert r.status in [200,201]
     results.append(dict(path=remote,status='uploaded'))
 
