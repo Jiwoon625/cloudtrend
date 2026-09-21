@@ -45,13 +45,13 @@ def read_stock(a):
     k['dayReturn']=k.close/k.close.shift(1)-1
     return s[s.sectorCode.isin(STOCK_SECTORS)],k
 
-def events(d,cid):
+def events(d,cid,start='2017-01-01'):
     out=[]
     for sym,g in d.groupby('symbol',sort=False):
         g=g.reset_index(drop=True);dates=g.date.to_numpy();op=g.open.to_numpy();u=g.etfUnderlyingIndexClose.to_numpy();ma=g.uMa60.to_numpy()
         bad=~np.isfinite(u)|(u<=0)
         hit=np.flatnonzero(bad|(np.isfinite(ma)&(u<ma)))
-        for s in np.flatnonzero(g.onset.to_numpy()&g.eligible.to_numpy()&(dates>='2018-01-01')):
+        for s in np.flatnonzero(g.onset.to_numpy()&g.eligible.to_numpy()&(dates>=start)):
             b=s+1
             if b>=len(g) or not np.isfinite(op[b]) or op[b]<=0:continue
             hh=hit[hit>=b];x=int(hh[0]) if len(hh) else len(g)
@@ -62,7 +62,7 @@ def events(d,cid):
     return pd.DataFrame(out,columns=['candidate','symbol','signalDate','entryDate','entryOpen','exitSignalDate','exitDate','exitOpen','reason'])
 
 def compare(d,out):
-    cal=sorted(d.loc[d.date>='2018-01-01','date'].unique());spans=[('train','2018-01-01','2022-12-31'),('validation','2023-01-01','2024-12-31'),('test','2025-01-01',cal[-1]),('all','2018-01-01',cal[-1])]
+    start=d.loc[d.eligible,'date'].min();cal=sorted(d.loc[d.date>=start,'date'].unique());spans=[('train',start,'2022-12-31'),('validation','2023-01-01','2024-12-31'),('test','2025-01-01',cal[-1]),('all',start,cal[-1]),('legacy_window','2018-01-01',cal[-1])]
     prices={(r.symbol,r.date):dict(open=r.open,close=r.close) for r in d[['symbol','date','open','close']].itertuples(index=False)}
     rows=[];curves=[];alltrades=[];signals=[];cache={};counts=[]
     for spec in SPECS:
@@ -84,8 +84,8 @@ def compare(d,out):
         if spec.get('gate'):gate&=(d.etfMarketCap>=50e9)&(d.healthTv20>=1e9)
         if spec.get('entryRegime'):gate&=d.etfUnderlyingIndexClose>d.uMa60
         d['onset']=onset&gate
-        signals.append(dict(candidate=spec['id'],onsets=int((onset&d.eligible&(d.date>='2018-01-01')).sum()),passed=int((d.onset&d.eligible&(d.date>='2018-01-01')).sum())))
-        t=events(d,spec['id']);cache[spec['id']]=t;alltrades.append(t)
+        signals.append(dict(candidate=spec['id'],onsets=int((onset&d.eligible&(d.date>=cal[0])).sum()),passed=int((d.onset&d.eligible&(d.date>=cal[0])).sum())))
+        t=events(d,spec['id'],cal[0]);cache[spec['id']]=t;alltrades.append(t)
         for split,start,end in spans:
             q=t[(t.signalDate>=start)&(t.entryDate<=end)];c=portfolio(q,prices,[dt for dt in cal if start<=dt<=end]);rows.append(dict(candidate=spec['id'],split=split,**curve_stats(c)))
             counts.append(dict(candidate=spec['id'],split=split,matchedEvents=len(q),completed=int((q.exitDate<=end).sum()),dataErrorEvents=int(((q.reason=='data_unavailable')&(q.exitDate<=end)).sum())))
@@ -120,7 +120,7 @@ def main():
     a=ap.parse_args();out=Path(a.output_dir);out.mkdir(parents=True,exist_ok=True)
     mapping=pd.read_csv(a.mapping,dtype={'symbol':str},keep_default_na=False);assert len(mapping)==393 and mapping.symbol.nunique()==393
     shutil.copyfile(a.mapping,out/'etf-universe-sector-map.csv')
-    save_json(out/'design.json',dict(cutoff=CUTOFF,specs=SPECS,entry='M0 onset80; gates never generate delayed onset',exit='underlying close<MA60 next open; invalid underlying during holding triggers separately labelled data-error liquidation',scale='55/15/15/15; omitted block weights renormalized to100; no threshold tuning',selection='train2018-22 AND validation2023-24: improve CAGR and Sharpe with MDD at most3pp worse; reused2025+ descriptive',price='TOSS_ADJUSTED_CANDLE',money='KRX_ETF marketCap and tradingValue in KRW',ignored=['premium','trackingError','expenseRatio'],mapping='current snapshot, not historical constituents',slots=10,costPerSide=.0015))
+    save_json(out/'design.json',dict(cutoff=CUTOFF,specs=SPECS,entry='M0 onset80; gates never generate delayed onset',exit='underlying close<MA60 next open; invalid underlying during holding triggers separately labelled data-error liquidation',scale='55/15/15/15; omitted block weights renormalized to100; no threshold tuning',selection='train maximal-valid-start through2022 AND validation2023-24: improve CAGR and Sharpe with MDD at most3pp worse; reused2025+ descriptive',price='TOSS_ADJUSTED_CANDLE',money='KRX_ETF marketCap and tradingValue in KRW',ignored=['premium','trackingError','expenseRatio'],mapping='current snapshot, not historical constituents',slots=10,costPerSide=.0015))
     print('Load verified source and legacy reference',flush=True)
     d=enrich_scores(load_and_score(a));d=d[d.date<=CUTOFF].copy().sort_values(['symbol','date']).reset_index(drop=True)
     assert set(d.symbol)==set(mapping.symbol)
@@ -170,7 +170,7 @@ def main():
     for sym,q in d.groupby('symbol'):
         v=q[q.eligible];coverage.append(dict(symbol=sym,name=q.name.iloc[-1],rows=len(q),eligibleRows=len(v),firstEligible=v.date.min() if len(v) else '',lastEligible=v.date.max() if len(v) else '',invalidIndex=int(q.etfUnderlyingIndexClose.isna().sum()),mappedRotationFinite=int(q.mappedRotation.notna().sum()),rotationSource=q.rotationSource.iloc[-1]))
     pd.DataFrame(coverage).to_csv(out/'input-coverage.csv',index=False)
-    save_json(out/'data-audit.json',dict(universe=len(mapping),equity=d.symbol.nunique(),cutoff=end,commonInputFirst=min(complete_dates),commonInputLast=max(complete_dates),firstPortfolioDate=min(x for x in complete_dates if x>='2018-01-01'),rows=len(d),eligibleRows=int(d.eligible.sum()),unavailableUnderlyingRows=int(bad.sum()),legacyEquity=int((mapping.legacyAssetClass=='equity').sum()),assetCorrections=mapping[mapping.assetClass!=mapping.legacyAssetClass][['symbol','name','legacyAssetClass','assetClass']].to_dict('records'),rotationCounts=mapping.rotationSource.value_counts().to_dict(),sourceHash=sha256(Path(a.etf_parquet)),mappingSha256=hashlib.sha256(Path(a.mapping).read_bytes()).hexdigest(),limitations=['current-universe survivorship bias','snapshot sector labels not point-in-time holdings','adjusted source return series not independently certified total return','one China-consumption theme has unverified listing geography and does not use domestic rotation','reused retrospective test']))
+    save_json(out/'data-audit.json',dict(universe=len(mapping),equity=d.symbol.nunique(),cutoff=end,commonInputFirst=min(complete_dates),commonInputLast=max(complete_dates),firstPortfolioDate=d.loc[d.eligible,'date'].min(),rows=len(d),eligibleRows=int(d.eligible.sum()),unavailableUnderlyingRows=int(bad.sum()),legacyEquity=int((mapping.legacyAssetClass=='equity').sum()),assetCorrections=mapping[mapping.assetClass!=mapping.legacyAssetClass][['symbol','name','legacyAssetClass','assetClass']].to_dict('records'),rotationCounts=mapping.rotationSource.value_counts().to_dict(),sourceHash=sha256(Path(a.etf_parquet)),mappingSha256=hashlib.sha256(Path(a.mapping).read_bytes()).hexdigest(),limitations=['current-universe survivorship bias','snapshot sector labels not point-in-time holdings','adjusted source return series not independently certified total return','reused retrospective test']))
     keep=['symbol','name','date','mappedSectorCode','region','rotationSource','open','close','etfUnderlyingIndexClose','uMa60','techContinuous','priorityClean','healthClean','sectorClean','etfMarketCap','healthTv20','eligible']
     d[keep].to_parquet(out/'clean-input-panel.parquet',compression='zstd',index=False)
     compare(d,out)
