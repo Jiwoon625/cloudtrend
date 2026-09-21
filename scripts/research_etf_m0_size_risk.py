@@ -16,18 +16,28 @@ SPECS={
  'FAMILY2':{'family2':True},
  'ENTRY_REGIME':{},
  'DD_HALF10':{'ddhalf':True},
- 'VOL20_SECTOR30':{'vol20':True,'sector30':True}}
+ 'VOL20_SECTOR30':{'vol20':True,'sector30':True},
+ 'CORRELATED40':{'correlation40':True}}
 DESIGN=dict(cutoff='2026-09-11',entry='M0 80 onset',exit='underlyingMA60 next open; no new exit',slots=10,
  score='Technical62.5 Priority7.5 Health15 Environment15; priority size removed and relative slot normalized to100; foreign relative remains disabled',
- candidates=SPECS,
- definitions={'fixed': '8% entry equity vs10%; cash control', 'vol20':'entry ticket10% times min(1,20%/annualized20day close-return sample volatility); frozen at entry, no rebalancing', 'sector30':'same region+mappedsector opening weight <=30% after new buys; partial entry allowed; no forced selling if drift above cap', 'family2':'maximum2 same economic index family positions', 'entryRegime':'signal-day underlying > MA60; reject onset, no delayed entry', 'ddhalf':'previous close NAV / running peak <0.9 then halve only new entries; no forced de-risk of held positions'},
+ candidates=SPECS,posthocFollowup='CORRELATED40 added only after the first seven fixed overlays and drawdown attribution; descriptive challenger, not eligible for adoption in this reused sample',
+ definitions={'correlation40':'prior60 full aligned daily returns, Pearson>=0.8 with proposed ETF; sum related existing opening market value plus new entry <=40% equity; no force trim; no region restriction; missing60day history leaves pair unmatched, counted', 'fixed': '8% entry equity vs10%; cash control', 'vol20':'entry ticket10% times min(1,20%/annualized20day close-return sample volatility); frozen at entry, no rebalancing', 'sector30':'same region+mappedsector opening weight <=30% after new buys; partial entry allowed; no forced selling if drift above cap', 'family2':'maximum2 same economic index family positions', 'entryRegime':'signal-day underlying > MA60; reject onset, no delayed entry', 'ddhalf':'previous close NAV / running peak <0.9 then halve only new entries; no forced de-risk of held positions'},
  selection='Train and validation at both15/30bp: CAGR >= V01 +80% of positive NOSIZE-minus-V01 CAGR increment, Sharpe>V01, MDD>=NOSIZE and >=V01-3pp, >=25entries. Passing candidates tested20 paired order seeds: need12/20 preserve80%increment vspairedV01 with improvedSharpe and MDD>=NOSIZE and >=V01-3pp. Select validationSharpe among passers only. Otherwise retainV01.',
  dataUse='2017-2022 train,2023-2024 validation,2025-20260911 reused retrospective diagnostic; risk candidates motivated partly by inspected2026 drawdown; not independent OOS',
  limitations=['Current survivor universe','Dividend adjustments unverified','Current sector/name mapping, not point-in-time','Foreign Priority asymmetry remains','No grid; thresholds fixed before candidate returns computed'],productionDeployment=False)
 
 class RiskStudy(Study):
     def __init__(self,d,out):
-        super().__init__(d,out);self.attribution={}
+        super().__init__(d,out);self.attribution={};self.corr_cache={};self.corr_missing=set()
+        cl=d.pivot(index='date',columns='symbol',values='close').sort_index();self.returns=cl.pct_change(fill_method=None).to_numpy();self.date_index={v:i for i,v in enumerate(cl.index)};self.symbol_index={v:i for i,v in enumerate(cl.columns)}
+    def correlated(self,day,a,b):
+        key=(day,*sorted([a,b]))
+        if key not in self.corr_cache:
+            j=self.date_index[day];x=self.returns[max(0,j-59):j+1,self.symbol_index[a]];y=self.returns[max(0,j-59):j+1,self.symbol_index[b]]
+            if len(x)<60 or not np.isfinite(x).all() or not np.isfinite(y).all() or x.std()==0 or y.std()==0:
+                self.corr_missing.add(key);self.corr_cache[key]=False
+            else:self.corr_cache[key]=bool(np.corrcoef(x,y)[0,1]>=.8)
+        return self.corr_cache[key]
     def risk_build(self,cid,priority,overlay=None,gate=None):
         self.build(cid,priority,self.d.healthClean,gate=gate)
         self.config[cid]['risk']=overlay or {}
@@ -63,6 +73,9 @@ class RiskStudy(Study):
                     sector=r['region']+'|'+r['mappedSectorCode']
                     current=sum(x['units']*quote(sym,'open',x['last']) for sym,x in held.items() if x['region']+'|'+x['mappedSectorCode']==sector)
                     amount=min(amount,max(0.,opening*.30-current))
+                if risk.get('correlation40'):
+                    related=sum(x['units']*quote(sym,'open',x['last']) for sym,x in held.items() if self.correlated(r['signalDate'],r['symbol'],sym))
+                    amount=min(amount,max(0.,opening*.40-related))
                 if amount<1e-10:continue
                 cash-=amount;pnl[r['symbol']]-=amount;auditinfo[r['symbol']]=(r['mappedSectorCode'],r['region']);turn+=amount/opening;p=dict(r,units=amount/(r['entryOpen']*(1+cost)),last=r['entryOpen']);held[r['symbol']]=p;fills.append(dict(r,entryWeight=amount/opening,allocated=amount,riskFactor=factor))
             for s,p in held.items():p['last']=quote(s,'close',p['last'])
@@ -122,7 +135,7 @@ def main():
         ck=(x.cagr>=floor)&(x.sharpe>b.sharpe)&(x.mdd>=n.mdd)&(x.mdd>=b.mdd-.03);wins[cid]=int(ck.sum())
         summary.append(dict(candidate=cid,jointPasses=wins[cid],requiredPasses=12,returnRetentionPasses=int((x.cagr>=floor).sum()),mddImprovementVsNoSize=int((x.mdd>=n.mdd).sum()),mddWithin3ppV01=int((x.mdd>=b.mdd-.03).sum()),medianCagrDeltaNoSize=(x.cagr-n.cagr).median(),medianMddDeltaNoSize=(x.mdd-n.mdd).median(),medianCagr=x.cagr.median(),medianMdd=x.mdd.median()))
     pd.DataFrame(summary).to_csv(out/'paired-order-summary.csv',index=False);pd.DataFrame(audits).to_csv(out/'risk-selection-audit.csv',index=False)
-    passed=[c for c in pre if wins[c]>=12];pick=max(passed,key=lambda c:s.row(c,'validation')['sharpe']) if passed else 'V01'
+    passed=[c for c in pre if wins[c]>=12 and c!='CORRELATED40'];pick=max(passed,key=lambda c:s.row(c,'validation')['sharpe']) if passed else 'V01'
     # Descriptive time-period and concentration attribution; additive currency P&L divided by peak equity, not trade averages.
     draw=[];contrib=[]
     for c in s.curves:
@@ -137,6 +150,6 @@ def main():
         for order in ['reverse','score','liquidity']:
             _,r,_=s.sim(cid,s.start,s.cal[-1],force_order=order);sens.append(dict(candidate=cid,order=order,**r))
     pd.DataFrame(sens).to_csv(out/'deterministic-order-sensitivity.csv',index=False);s.finish()
-    save_json(out/'decision.json',dict(selected=pick,temporalPassers=pre,passed=passed,randomJointWins=wins,baselineReproduced=True,pnlAttributionReconciled=True,productionDeployment=False))
+    save_json(out/'decision.json',dict(selected=pick,temporalPassers=pre,passed=passed,randomJointWins=wins,baselineReproduced=True,pnlAttributionReconciled=True,correlationPairsChecked=len(s.corr_cache),correlationPairsMissing60=len(s.corr_missing),posthocChallenger='CORRELATED40',productionDeployment=False))
     print(json.dumps({'selected':pick,'temporalPassers':pre,'passed':passed}),flush=True)
 if __name__=='__main__':main()
