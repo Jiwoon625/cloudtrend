@@ -108,6 +108,43 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
           보유기한 제한은 없습니다.
         </p>
       </section>
+      <section className="rounded-lg border bg-card p-4" aria-label="M0 요소별 산출방법">
+        <h2 className="mb-3 text-sm font-semibold">M0 요소별 산출방법</h2>
+        <dl className="grid gap-4 text-xs leading-relaxed sm:grid-cols-2">
+          <div>
+            <dt className="mb-1 font-semibold">기술 · 62.5점</dt>
+            <dd className="text-muted-foreground">
+              종가/구름대 상단, MA20/MA60, MA60/MA120, 종가/MA20, MA60의 5거래일 변화율을
+              평가합니다. 각 비율의 이격도를 20일 일수익률 변동성으로 조정해 0~100점으로 연속 산정한
+              뒤, 5개 항목 평균 × 62.5%를 반영합니다.
+            </dd>
+          </div>
+          <div>
+            <dt className="mb-1 font-semibold">Priority · 7.5점</dt>
+            <dd className="text-muted-foreground">
+              국내 투자 ETF의 당일 수정주가 수익률이 KOSPI 당일 수익률보다 2%p 이상 높으면 7.5점,
+              미충족 또는 해외 투자 ETF는 0점입니다. 규모·로테이션·지수편입 가점은 없습니다.
+            </dd>
+          </div>
+          <div>
+            <dt className="mb-1 font-semibold">Health · 15점</dt>
+            <dd className="text-muted-foreground">
+              KRX ETF 시가총액 500억 원 이상 5점, 1,000억 원 이상이면 추가 2.5점, 최근 20거래일 평균
+              거래대금 10억 원 이상 5점, 일반형 구조 2.5점을 합산합니다. 규모 기준은 이 항목에 남아
+              있으며, 필수 데이터가 없으면 산정하지 않습니다.
+            </dd>
+          </div>
+          <div>
+            <dt className="mb-1 font-semibold">환경 · 15점</dt>
+            <dd className="text-muted-foreground">
+              국내 섹터형은 해당 주식 섹터의 20·60일 상대강도 순위, 추세, 상승 확산도를 합산합니다.
+              해외·시장대표형은 같은 지역의 다른 기초지수군 3개 이상으로 추세 50% + 상승 확산도
+              50%를 산정하고, 부족하면 자체 기초지수 추세로 대체합니다. 해외·시장대표형은 전일 값을
+              사용하며, 환경 원점수 × 15%를 반영합니다.
+            </dd>
+          </div>
+        </dl>
+      </section>
       <section className="rounded-lg border bg-card p-4 space-y-3" aria-label="신규 매수 수량 계산">
         <h2 className="font-semibold">신규 매수 계획</h2>
         <div className="grid gap-3 sm:grid-cols-3">
