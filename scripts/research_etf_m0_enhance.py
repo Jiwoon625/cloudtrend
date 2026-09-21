@@ -17,17 +17,26 @@ from research_etf_m0_exit_rules import load_and_score
 
 MODELS = ['scoreM0', 'm0Ema3', 'm0Ema5', 'persistentM0', 'continuousM0', 'regimeM0']
 COST = 0.0015  # each side; 30bp round trip
+# Reviewed using names and underlying-index labels, without performance selection.
+# These equity themes/factors are not covered by the broad keyword classifier.
+EQUITY_OVERRIDES = {
+    '234310','275980','292150','322400','368190','298770','315930','108450',
+    '105780','104520','102780','464930','456600','457480','0023A0','213610',
+    '400970','309230','401170','401470','435040','147970','174350','414270',
+}
 
 
 def asset_class(r):
+    if str(r.get('symbol','')) in EQUITY_OVERRIDES:
+        return 'equity'
     text = (str(r['name']) + ' ' + str(r['etfUnderlyingIndexName'])).upper()
     if re.search(r'레버리지|인버스|\b[23]X\b|LEVERAGED|INVERSE|\bSHORT\b', text):
         return 'leveraged_inverse'
     if re.search(r'혼합|MIXED|TDF|TRF|타겟데이트|자산배분|멀티에셋|MULTI.ASSET', text):
         return 'mixed'
-    if re.search(r'채권|국고채|국채|미국채|회사채|단기채|장기채|KOFR|CD금리|CD 금리|머니마켓|BOND|TREASURY|SOFR|금리액티브|통안채', text):
+    if re.search(r'채권|국고채|국채|미국채|회사채|단기채|장기채|KOFR|CD금리|CD 금리|머니마켓|BOND|TREASURY|SOFR|금리액티브|통안채|하이일드|HIGH YIELD', text):
         return 'bond_cash'
-    if re.search(r'금현물|골드선물|GOLD|은선물|SILVER|원유|\bOIL\b|구리선물|COPPER|농산물|팔라듐|원자재|COMMOD|달러선물|엔선물|유로선물', text):
+    if re.search(r'금현물|골드선물|GOLD|은선물|SILVER|원유|\bOIL\b|구리선물|COPPER|농산물|팔라듐|원자재|COMMOD|달러선물|엔선물|유로선물|탄소배출권|CARBON FUTURES', text):
         return 'commodity_fx'
     if re.search(r'리츠|REIT|부동산|인프라|INFRA', text):
         return 'reit_infra'
@@ -254,6 +263,10 @@ def main():
     a = p.parse_args()
     out = Path(a.output_dir); out.mkdir(parents=True, exist_ok=True)
     d = enrich_scores(load_and_score(a))
+    panel_cols = ['symbol','name','sectorCode','etfUnderlyingIndexName','date','open','close',
+                  'technical','health','priorityM0','marketSectorScore','etfUnderlyingIndexClose',
+                  'uMa60','originalOnset','eligible'] + MODELS + ['onset_'+m for m in MODELS]
+    d[panel_cols].to_parquet(out/'scored-panel.parquet',index=False,compression='zstd')
     meta = d.sort_values('date').drop_duplicates('symbol', keep='last')[['symbol','name','sectorCode','etfUnderlyingIndexName']].copy()
     meta['assetClass'] = meta.apply(asset_class, axis=1)
     meta.to_csv(out/'classification.csv', index=False)
@@ -313,6 +326,10 @@ def main():
     shortlist=tr.head(10).candidate.tolist()
     val=ports[(ports.split=='validation')&ports.candidate.isin(shortlist)].sort_values(['sharpe','cagr'],ascending=False)
     selected=val.iloc[0].candidate
+    mt=ports[(ports.split=='train')&(ports.entryMode=='modified')].sort_values(['sharpe','cagr'],ascending=False)
+    modified_shortlist=mt.head(5).candidate.tolist()
+    mv=ports[(ports.split=='validation')&ports.candidate.isin(modified_shortlist)].sort_values(['sharpe','cagr'],ascending=False)
+    modified_selected=mv.iloc[0].candidate
     # Calendar-year performance from continuous curves (includes carry positions).
     annual=[]
     for candidate,c in curve.groupby('candidate',sort=False):
@@ -364,7 +381,9 @@ def main():
                     c=portfolio(pt[(pt.signalDate>=start)&(pt.entryDate<=end)],prices,[dt for dt in calendar if start<=dt<=end],cost=cost)
                     sens.append(dict(candidate=ss['id'],holdCap=cap,costRoundTrip=cost*2,split=split,**curve_stats(c)))
     pd.DataFrame(sens).to_csv(out/'sensitivity.csv',index=False)
-    result=dict(selected=selected,shortlist=shortlist,candidates=len(specs),equitySymbols=len(symbols),
+    result=dict(selected=selected,shortlist=shortlist,modifiedSelected=modified_selected,modifiedShortlist=modified_shortlist,
+                modifiedComparison=ports[ports.candidate.isin(['BASE_MA60_H60',modified_selected])].to_dict('records'),
+                candidates=len(specs),equitySymbols=len(symbols),
                 classification=meta.assetClass.value_counts().to_dict(),eligibleRows=int(d.eligible.sum()),
                 start=calendar[0],end=calendar[-1],
                 comparison=ports[ports.candidate.isin(['BASE_MA60_H60',selected])].to_dict('records'),
