@@ -1,11 +1,6 @@
 import type { MarketDataset } from "./dataset";
-import { computeIndicators } from "./indicators";
-import {
-  DEFAULT_SCORING_CONFIG,
-  historicalTechnicalScore,
-  vfGrade,
-  type ScoringConfig,
-} from "./scoring";
+import { historicalInstrumentScore } from "./historicalInstrumentScore";
+import { DEFAULT_SCORING_CONFIG, vfGrade, type ScoringConfig } from "./scoring";
 
 export type InstrumentChartRange = "120" | "all";
 
@@ -17,7 +12,7 @@ export function instrumentChartPoint(
   cfg: ScoringConfig,
 ) {
   const bars = ds.bars[symbol] ?? [];
-  const score = historicalTechnicalScore(computeIndicators(bars, index), cfg);
+  const score = historicalInstrumentScore(ds, symbol, index, cfg);
   return {
     tradeDate: bars[index]!.tradeDate,
     close: bars[index]!.close,
@@ -62,7 +57,7 @@ export async function buildCompactChart(
   const bars = ds.bars[symbol] ?? [];
   const chart: InstrumentChart = [];
   for (let i = range === "all" ? 0 : Math.max(0, bars.length - 120); i < bars.length;) {
-    const end = Math.min(i + 20, bars.length);
+    const end = Math.min(i + 5, bars.length);
     for (; i < end; i++) chart.push(instrumentChartPoint(ds, symbol, i, cfg));
     if (i < bars.length) await new Promise((resolve) => setTimeout(resolve, 0));
   }

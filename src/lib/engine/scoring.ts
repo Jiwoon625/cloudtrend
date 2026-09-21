@@ -428,8 +428,9 @@ export const HISTORICAL_TECHNICAL_MAX = 10;
 export function historicalTechnicalScore(
   snap: IndicatorSnapshot,
   cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
+  options: Parameters<typeof v8FinalStockScore>[2] = {},
 ) {
-  const score = v8FinalStockScore(snap, cfg);
+  const score = v8FinalStockScore(snap, cfg, options);
   const missingRules = score.rows.filter((row) => row.status === "NO_DATA").map((row) => row.rule);
   return {
     points:
