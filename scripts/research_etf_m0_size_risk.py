@@ -120,7 +120,7 @@ def main():
         for cost in [.0015,.003]:
             for split in ['train','validation']:
                 r=s.row(cid,split,cost);b=s.row('V01',split,cost);n=s.row('NOSIZE',split,cost);floor=b['cagr']+.8*max(n['cagr']-b['cagr'],0)
-                checks=dict(retention=r['cagr']>=floor,sharpe=r['sharpe']>b['sharpe'],mddVsNoSize=r['mdd']>=n['mdd'],mddVsV01=r['mdd']>=b['mdd']-.03,entries=r['entries']>=25)
+                checks=dict(retention=r['cagr']>=floor,sharpe=r['sharpe']>b['sharpe'],mddVsNoSize=r['mdd']>=n['mdd']-1e-10,mddVsV01=r['mdd']>=b['mdd']-.03-1e-10,entries=r['entries']>=25)
                 audits.append(dict(candidate=cid,split=split,costPerSide=cost,cagrFloor=floor,**checks));ok &= all(checks.values())
         if ok:pre.append(cid)
     # All overlays get20 paired trials, to report risk and return tradeoffs even when a temporal gate failed.
@@ -132,8 +132,8 @@ def main():
     b=rr[rr.candidate=='V01'].set_index('seed');n=rr[rr.candidate=='NOSIZE'].set_index('seed')
     for cid in SPECS:
         x=rr[rr.candidate==cid].set_index('seed');floor=b.cagr+.8*(n.cagr-b.cagr).clip(lower=0)
-        ck=(x.cagr>=floor)&(x.sharpe>b.sharpe)&(x.mdd>=n.mdd)&(x.mdd>=b.mdd-.03);wins[cid]=int(ck.sum())
-        summary.append(dict(candidate=cid,jointPasses=wins[cid],requiredPasses=12,returnRetentionPasses=int((x.cagr>=floor).sum()),mddImprovementVsNoSize=int((x.mdd>=n.mdd).sum()),mddWithin3ppV01=int((x.mdd>=b.mdd-.03).sum()),medianCagrDeltaNoSize=(x.cagr-n.cagr).median(),medianMddDeltaNoSize=(x.mdd-n.mdd).median(),medianCagr=x.cagr.median(),medianMdd=x.mdd.median()))
+        ck=(x.cagr>=floor)&(x.sharpe>b.sharpe)&(x.mdd>=n.mdd-1e-10)&(x.mdd>=b.mdd-.03-1e-10);wins[cid]=int(ck.sum())
+        summary.append(dict(candidate=cid,jointPasses=wins[cid],requiredPasses=12,returnRetentionPasses=int((x.cagr>=floor).sum()),mddImprovementVsNoSize=int((x.mdd>=n.mdd-1e-10).sum()),mddWithin3ppV01=int((x.mdd>=b.mdd-.03-1e-10).sum()),medianCagrDeltaNoSize=(x.cagr-n.cagr).median(),medianMddDeltaNoSize=(x.mdd-n.mdd).median(),medianCagr=x.cagr.median(),medianMdd=x.mdd.median()))
     pd.DataFrame(summary).to_csv(out/'paired-order-summary.csv',index=False);pd.DataFrame(audits).to_csv(out/'risk-selection-audit.csv',index=False)
     passed=[c for c in pre if wins[c]>=12 and c!='CORRELATED40'];pick=max(passed,key=lambda c:s.row(c,'validation')['sharpe']) if passed else 'V01'
     # Descriptive time-period and concentration attribution; additive currency P&L divided by peak equity, not trade averages.
