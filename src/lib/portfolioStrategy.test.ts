@@ -3,7 +3,7 @@ vi.mock("./cloud", () => ({ supabase: {}, userId: vi.fn() }));
 vi.mock("./manualDataStore", () => ({ ensureManualDataset: vi.fn() }));
 vi.mock("./screeningHistory", () => ({ loadSnapshots: vi.fn() }));
 import { deriveExitPlan, isEntryOnset, type PortfolioTrade } from "./portfolioStore";
-import { getOperationalSignals } from "./engine/operationalStrategy";
+import { getOperationalSignals, STRATEGY_CONFIG } from "./engine/operationalStrategy";
 import type { SnapshotEntry, ScreeningSnapshot } from "./screeningSnapshot";
 import type { DailyPrice } from "./engine/types";
 
@@ -52,5 +52,12 @@ describe("portfolio consumes KOSPI operational signals", () => {
       reason: "60거래일 만기",
       timing: "CLOSE",
     });
+  });
+});
+
+describe("portfolio sector caps", () => {
+  it("uses the validated market-specific limits", () => {
+    expect(STRATEGY_CONFIG.KOSPI.sectorCap).toBe(0.1);
+    expect(STRATEGY_CONFIG.KOSDAQ.sectorCap).toBe(0.2);
   });
 });
