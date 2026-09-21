@@ -27,8 +27,7 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--source-manifest", required=True)
     p.add_argument("--source-cache-dir", required=True)
-    p.add_argument("--etf-source-manifest", required=True)
-    p.add_argument("--etf-source-cache-dir", required=True)
+    p.add_argument("--etf-parquet", required=True)
     p.add_argument("--sector-map", required=True)
     p.add_argument("--output", required=True)
     return p.parse_args()
@@ -186,9 +185,11 @@ def enrich_price(df, flows=False):
 
 
 def pct_below(s: pd.Series) -> pd.Series:
-    n = s.transform("count")
+    n = int(s.count())
+    if n == 0:
+        return pd.Series(np.nan, index=s.index, dtype=float)
     rank = s.rank(method="min")
-    return (rank - 1.0) / n
+    return (rank - 1.0) / float(n)
 
 
 def weighted_row(df, pairs):
@@ -355,6 +356,7 @@ def build_m1(etf):
     for n in [20,60,120]:
         e[f"uR{n}"] = e["etfUnderlyingIndexClose"] / g["etfUnderlyingIndexClose"].shift(n) - 1.0
         e[f"rs{n}Own"] = (e[f"r{n}"] - e[f"uR{n}"]) * 100.0
+    g = e.groupby("symbol", sort=False)
     e["dRs20_5"] = e["rs20Own"] - g["rs20Own"].shift(5)
     e["dRs20_10"] = e["rs20Own"] - g["rs20Own"].shift(10)
     e["dRs60_10"] = e["rs60Own"] - g["rs60Own"].shift(10)
@@ -488,11 +490,6 @@ def main():
             raise RuntimeError("Stock cache integrity failure: " + f["fileName"])
         stock_paths.append(p)
 
-    etf_manifest = json.loads(Path(a.etf_source_manifest).read_text())
-    etf_path = Path(a.etf_source_cache_dir) / etf_manifest["cacheFile"]
-    if etf_path.stat().st_size != etf_manifest["logicalSizeBytes"] or sha256(etf_path) != etf_manifest["logicalFileHash"]:
-        raise RuntimeError("ETF cache integrity failure")
-
     sector_doc = json.loads(Path(a.sector_map).read_text())
     meta = pd.DataFrame(sector_doc["instruments"])
     meta["symbol"] = meta["symbol"].map(norm_symbol)
@@ -501,19 +498,12 @@ def main():
     etf_symbols = set(etf_meta["symbol"])
     stock_symbols = set(stock_meta["symbol"])
 
-    raw = read_csv_cols(etf_path, BASE_COLS + ETF_EXTRA)
+    raw = pd.read_parquet(a.etf_parquet, columns=BASE_COLS + ETF_EXTRA)
     raw["symbol"] = raw["symbol"].map(norm_symbol)
     raw["date"] = raw["date"].astype(str).str.slice(0,10)
-    for c in [x for x in BASE_COLS + ETF_EXTRA if x not in {"symbol","name","market","securityType","date","etfUnderlyingIndexName"}]:
-        if c in raw:
-            raw[c] = pd.to_numeric(raw[c], errors="coerce")
-
-    idx = raw[raw["symbol"].isin(["KOSPI","KOSDAQ"])][["symbol","date","close"]].dropna().drop_duplicates(["symbol","date"])
-    kospi = idx[idx["symbol"] == "KOSPI"].sort_values("date").copy()
-    kg = kospi.groupby("symbol", sort=False)
-    for n in [20,60,120]:
-        kospi[f"r{n}"] = kospi["close"] / kg["close"].shift(n) - 1.0
-    kospi["dayReturn"] = kospi["close"] / kg["close"].shift(1) - 1.0
+    for col in [x for x in BASE_COLS + ETF_EXTRA if x not in {"symbol","name","market","securityType","date","etfUnderlyingIndexName"}]:
+        if col in raw:
+            raw[col] = pd.to_numeric(raw[col], errors="coerce")
 
     etf = raw[raw["symbol"].isin(etf_symbols)].copy()
     etf = etf.drop_duplicates(["symbol","date"], keep="first")
@@ -525,13 +515,25 @@ def main():
     etf.drop(columns=["name_meta"], inplace=True)
 
     stock_parts = []
+    index_parts = []
     for p in stock_paths:
         x = read_csv_cols(p, BASE_COLS)
         x["symbol"] = x["symbol"].map(norm_symbol)
-        x = x[x["symbol"].isin(stock_symbols)]
-        if len(x):
-            stock_parts.append(x)
+        ix = x[x["symbol"].isin(["KOSPI","KOSDAQ"])][["symbol","date","close"]].copy()
+        if len(ix):
+            index_parts.append(ix)
+        sx = x[x["symbol"].isin(stock_symbols)]
+        if len(sx):
+            stock_parts.append(sx)
     stock = pd.concat(stock_parts, ignore_index=True)
+    idx = pd.concat(index_parts, ignore_index=True).dropna().drop_duplicates(["symbol","date"], keep="first")
+    idx["date"] = idx["date"].astype(str).str.slice(0,10)
+    idx["close"] = pd.to_numeric(idx["close"], errors="coerce")
+    kospi = idx[idx["symbol"] == "KOSPI"].sort_values("date").copy()
+    kg = kospi.groupby("symbol", sort=False)
+    for n in [20,60,120]:
+        kospi[f"r{n}"] = kospi["close"] / kg["close"].shift(n) - 1.0
+    kospi["dayReturn"] = kospi["close"] / kg["close"].shift(1) - 1.0
     stock["date"] = stock["date"].astype(str).str.slice(0,10)
     for c in ["open","high","low","close","volume","tradingValue","marketCap","foreignNetBuyValue","institutionNetBuyValue"]:
         stock[c] = pd.to_numeric(stock[c], errors="coerce")
