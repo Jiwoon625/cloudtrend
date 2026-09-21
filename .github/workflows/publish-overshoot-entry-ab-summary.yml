@@ -1,0 +1,29 @@
+name: Publish Overshoot A/B Summary
+
+on:
+  pull_request:
+    paths:
+      - scripts/publish-overshoot-entry-ab-summary.ts
+      - .github/workflows/publish-overshoot-entry-ab-summary.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Publish latest overshoot A/B summary to analysis_runs
+        run: npx vite-node --script scripts/publish-overshoot-entry-ab-summary.ts
