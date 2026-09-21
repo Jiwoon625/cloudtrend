@@ -310,6 +310,9 @@ function DashboardContent({
             {gateLabel}
             <span className="num text-xs font-normal text-muted-foreground">{gate.metCount}/4</span>
           </div>
+          <p className="mb-2 text-[10px] text-muted-foreground">
+            Risk-On 4/4 · Neutral 2–3/4 · Risk-Off 0–1/4
+          </p>
           {gate.incomplete ? (
             <p className="mb-2 text-[11px] text-warn">
               일부 시장 데이터가 없어 판정이 불완전합니다.
@@ -319,7 +322,11 @@ function DashboardContent({
             label="KOSPI / MA60"
             value={
               <GateConditionValue
-                comparison={`${formatNumber(summary.kospi.close, 2)} ${gate.benchmarkAboveMa60 ? ">" : "≤"} ${formatNumber(summary.kospi.ma60, 2)}`}
+                comparison={
+                  gate.benchmarkAboveMa60 === null
+                    ? "데이터 없음"
+                    : `${formatNumber(summary.kospi.close, 2)} ${gate.benchmarkAboveMa60 ? ">" : "≤"} ${formatNumber(summary.kospi.ma60, 2)}`
+                }
                 met={gate.benchmarkAboveMa60}
               />
             }
@@ -328,7 +335,11 @@ function DashboardContent({
             label="KOSPI / Cloud Top"
             value={
               <GateConditionValue
-                comparison={`${formatNumber(summary.kospi.close, 2)} ${gate.benchmarkAboveCloud ? ">" : "≤"} ${formatNumber(summary.kospi.ichimoku.cloudTop, 2)}`}
+                comparison={
+                  gate.benchmarkAboveCloud === null
+                    ? "데이터 없음"
+                    : `${formatNumber(summary.kospi.close, 2)} ${gate.benchmarkAboveCloud ? ">" : "≤"} ${formatNumber(summary.kospi.ichimoku.cloudTop, 2)}`
+                }
                 met={gate.benchmarkAboveCloud}
               />
             }
@@ -342,7 +353,11 @@ function DashboardContent({
             label="변동성 (VKOSPI)"
             value={
               <GateConditionValue
-                comparison={`${formatNumber(summary.vkospi, 2)} ${gate.vkospiBelow30 ? "<" : "≥"} 30`}
+                comparison={
+                  gate.vkospiBelow30 === null
+                    ? "데이터 없음"
+                    : `${formatNumber(summary.vkospi, 2)} ${gate.vkospiBelow30 ? "<" : "≥"} 30`
+                }
                 met={gate.vkospiBelow30}
               />
             }
