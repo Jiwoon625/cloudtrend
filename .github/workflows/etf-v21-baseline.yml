@@ -1,0 +1,76 @@
+name: CloudTrend ETF v2.1 baseline
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - research/etf-v21-baseline-20260921
+    paths:
+      - scripts/etf-v21-materialize.ts
+      - scripts/parquet-to-etf-v21-compact.py
+      - scripts/run-etf-v21-baseline.ts
+      - config/backtest.etf-v21-baseline.json
+      - .github/workflows/etf-v21-baseline.yml
+
+permissions:
+  contents: read
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Parquet dependency
+        run: python -m pip install --disable-pip-version-check pyarrow
+
+      - name: Validate server configuration
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_USER_ID"
+
+      - name: Download and verify ETF v2.1 canonical parquet
+        run: |
+          npx vite-node --script scripts/etf-v21-materialize.ts \
+            --output .cache/etf-v21/source.parquet \
+            --manifest-output .cache/etf-v21/manifest.json
+
+      - name: Build compact ETF research CSV
+        run: |
+          python scripts/parquet-to-etf-v21-compact.py \
+            --input .cache/etf-v21/source.parquet \
+            --output .cache/etf-v21/compact.csv
+
+      - name: Run expanded-universe ETF baseline
+        run: |
+          npx vite-node --script scripts/run-etf-v21-baseline.ts \
+            --input .cache/etf-v21/compact.csv \
+            --manifest .cache/etf-v21/manifest.json \
+            --config config/backtest.etf-v21-baseline.json \
+            --output analysis-runs/etf-v21-baseline/result.json
+
+      - name: Upload baseline artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: etf-v21-baseline-${{ github.run_id }}
+          path: analysis-runs/etf-v21-baseline/result.json
+          if-no-files-found: warn
+          retention-days: 30
