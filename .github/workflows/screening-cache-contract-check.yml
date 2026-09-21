@@ -6,6 +6,7 @@ on:
       - src/lib/screeningCache.ts
       - src/lib/webScreening.functions.ts
       - src/lib/screeningCacheContract.ts
+      - tests/dashboard-cache.test.ts
       - .github/workflows/screening-cache-contract-check.yml
 
 permissions:
@@ -23,6 +24,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Test dashboard cache recovery and confirmed strategies
+        run: npx vitest run tests/dashboard-cache.test.ts src/lib/engine/operationalStrategy.test.ts src/lib/engine/etfStrategy.test.ts
       - name: Lint changed cache files
         run: npx eslint src/lib/screeningCache.ts src/lib/webScreening.functions.ts src/lib/screeningCacheContract.ts
       - name: Build
