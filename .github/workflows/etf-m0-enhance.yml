@@ -120,6 +120,12 @@ jobs:
             --sector-map analysis-runs/etf-m0-m1-sector-map.json \
             --output-dir analysis-runs/m0-enhance
 
+      - name: Verify frozen candidates across slots and costs
+        run: python -W ignore scripts/research_etf_m0_robustness.py --results analysis-runs/m0-enhance
+
+      - name: Re-select score-only exits without time cap
+        run: python -W ignore scripts/research_etf_m0_uncapped.py --results analysis-runs/m0-enhance
+
       - name: Upload enhancement artifacts
         if: always()
         uses: actions/upload-artifact@v4
