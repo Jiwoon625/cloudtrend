@@ -1,0 +1,39 @@
+{
+  "analysisCutoff": "2026-09-11",
+  "startPolicy": "earliest common valid date after each ETF indicator warmup; do not wait for the newest listing",
+  "ignoredFields": [
+    "premiumDiscount",
+    "trackingError",
+    "totalExpenseRatio"
+  ],
+  "priceSource": "TOSS_ADJUSTED_CANDLE",
+  "monetarySource": "KRX_ETF",
+  "sizeField": "etfMarketCap",
+  "liquidityField": "trailing20Mean(etfTradingValue)",
+  "currency": "KRW",
+  "mappingFile": "research/etf-universe-sector-map-20260911.csv",
+  "mappingUniverse": 393,
+  "plainEquityUniverse": 245,
+  "stockSectorRotation": "101 compatible domestic equity ETFs only; 144 others explicitly not applicable",
+  "marketSectorResearch": "domestic stock-only sector snapshots; own underlying regime for broad/foreign/multi-sector ETF candidates",
+  "missingData": "no zero-fill or future-fill; valid positive underlying window before entry; separate data-error exit during holding",
+  "entry": "M0 crosses from below80 to at least80",
+  "normalExit": "underlying index close below MA60; next session open",
+  "reports": "chat only; important data and tests in Supabase results",
+  "mappingEvidence": {
+    "150460": {
+      "region": "KR",
+      "source": "https://www.funetf.co.kr/product/etf/view/KR7150460004",
+      "note": "Domestic-stock strategy classification and Korean-company holdings; current snapshot only"
+    }
+  },
+  "limitations": [
+    "current universe survivorship bias",
+    "snapshot sector mapping not point-in-time constituents",
+    "source adjusted prices not independently certified total return",
+    "reused historical holdout"
+  ],
+  "mappingStoragePath": "source/Reference/etf-universe-sector-map-20260911.csv",
+  "environmentResearch": "User-adopted peerMix:50%continuous regional trend+50%peer breadth, exclude own economic family,minimum3 other families,1-observation lag. Domestic stock-sector retained; ownLag fallback where peer environment unavailable.",
+  "environmentRoutingStoragePath": "source/Reference/etf-environment-routing-20260911-peer-mix.csv"
+}

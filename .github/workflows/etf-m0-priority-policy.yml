@@ -1,0 +1,39 @@
+name: Persist qualified ETF Priority research policy
+on:
+  push:
+    branches:
+      - research/etf-m0-enhance-20260921
+    paths:
+      - .github/workflows/etf-m0-priority-policy.yml
+permissions:
+  contents: read
+jobs:
+  save:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Append qualified policy and verify its hash
+        run: |
+          python - <<'PY'
+          import json,os,hashlib,urllib.request
+          from pathlib import Path
+          owner=os.environ['SUPABASE_USER_ID'];assert owner=='bdfc8818-33a7-4030-9dbd-ecad39f223ac'
+          prefix=owner+'/results/etf-m0-priority-weights/20260911/35567515449'
+          doc=json.loads(Path('research/etf-m0-provisional-policy.json').read_text())
+          assert doc['weights']['priorityTwo']==7.5 and doc['researchResult']['robustAcrossPortfolioSizes'] is False
+          doc['policyCommit']=os.environ['GITHUB_SHA'];doc['appliedPanelVerification']={'scoreReproduced':True,'onsetsReproduced':True,'rows':425757,'end':'2026-09-11'}
+          data=json.dumps(doc,ensure_ascii=False,indent=2).encode();name='qualified-policy.json';bucket='cloudtrend-data'
+          url=os.environ['SUPABASE_URL'].rstrip('/');key=os.environ['SUPABASE_SERVICE_ROLE_KEY']
+          def req(method,path,data=None):
+              r=urllib.request.Request(url+'/storage/v1/'+path,data=data,method=method,headers={'Authorization':'Bearer '+key,'apikey':key,'Content-Type':'application/json','x-upsert':'false'})
+              with urllib.request.urlopen(r,timeout=60) as x:return x.read()
+          def listing():return {x['name']:x for x in json.loads(req('POST','object/list/'+bucket,json.dumps({'prefix':prefix,'limit':1000}).encode())) if x.get('id')}
+          old=listing()
+          if name not in old:req('POST','object/'+bucket+'/'+prefix+'/'+name,data)
+          m=listing()[name]['metadata'];assert int(m['size'])==len(data) and str(m['eTag']).strip('"')==hashlib.md5(data).hexdigest()
+          print(json.dumps({'qualifiedPolicySaved':True,'hashVerified':True}))
+          PY

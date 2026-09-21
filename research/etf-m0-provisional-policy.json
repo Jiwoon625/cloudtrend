@@ -1,0 +1,189 @@
+{
+  "status": "research_operating_maximum_10_selected",
+  "model": "continuous_M0_peer_environment",
+  "weights": {
+    "technicalContinuous": 62.5,
+    "priorityTwo": 7.5,
+    "healthCapLiquidityPlain": 15,
+    "marketSectorMapped": 15
+  },
+  "blockScale": "All blocks0..100; Priority has exactly2 active slots; no stock-index membership or rotation slot",
+  "entry": "previous M0 < 80 and current M0 >= 80 and eligible",
+  "exit": "underlying index close < underlying index MA60",
+  "execution": "signal at close; fill next session open",
+  "holdingTimeCap": null,
+  "portfolioSlots": 10,
+  "costPerSide": 0.0015,
+  "blockStudyDecision": "Fixed Technical62.5/Priority7.5/Health15/Environment15; paired 5/10 study supports maximum10, conditional on this score model.",
+  "productionDeployment": false,
+  "limitations": [
+    "reused retrospective holdout",
+    "survivorship bias",
+    "dividend and adjustment consistency unverified",
+    "Holding-count conclusion is conditional on weights previously selected at10slots; order sensitivity tested, future performance not established"
+  ],
+  "componentStudyDecision": "Priority weight selected by train and validation only; external environment imposed by user, not claimed superior to old environment",
+  "researchChallengers": [],
+  "dataQualityNotes": [
+    "All analysis and fills end2026-09-11",
+    "393explicit mappings,245plain equity ETFs after6asset-class corrections",
+    "KRX marketCap used as size,KRX tradingValue as liquidity,TOSS adjusted OHLC for prices",
+    "No missing index zero-fill; positive underlying and full warmup required",
+    "990missing/nonpositive underlying rows recorded; data-error liquidation explicit; selected10slot portfolio had0such executed exits",
+    "Current-snapshot metadata; historical constituent classifications unavailable"
+  ],
+  "researchDataPolicy": "research/etf-research-data-policy.json",
+  "analysisStart": "2017-01-03",
+  "analysisCutoff": "2026-09-11",
+  "ignoredFields": [
+    "premiumDiscount",
+    "trackingError",
+    "totalExpenseRatio"
+  ],
+  "priority": {
+    "sizePoint": "KRX ETF marketCap >= 300bn KRW",
+    "relativePoint": "daily ETF return exceeds KOSPI by >=2 percentage points, Korean exposure only",
+    "rotationPoint": 0,
+    "denominator": 2,
+    "reason": "Both deleted components removed from numerator and denominator; no 5/4 or3/2 hidden denominator remains.",
+    "indexMembershipPoints": 0,
+    "foreignRelativeTerm": "Disabled as in preceding clean policy until a compatible market-return benchmark is defined; never KOSPI for foreign exposure."
+  },
+  "health": {
+    "scale": 60,
+    "sizePoints": "20 for marketCap>=50bn KRW plus10 for>=100bn",
+    "liquidityPoints": "20 for trailing20 average KRX tradingValue>=1bn KRW",
+    "plainPoints": 10,
+    "ignored": [
+      "premium",
+      "trackingError",
+      "expenseRatio"
+    ],
+    "requiredHardGate": false
+  },
+  "marketSector": {
+    "domesticSector": "stock-only sector relative strength, trend and breadth; ETFs excluded from stock breadth",
+    "otherEquity": "Peer mix where available; lagged own-index regime fallback; domestic stock-sector unchanged",
+    "domesticRotationCompatibleEtfs": 101,
+    "otherEquityEtfs": 144,
+    "environmentStudy": {
+      "sourceRun": 35566534880,
+      "peerMethod": "Same region, exclude own economic underlying-index family, equal family weighting, minimum3 other families, one-observation lag; explicit own-regime fallback",
+      "passed": [],
+      "sparseRegions": [
+        "EU",
+        "ID",
+        "IN",
+        "JP",
+        "KR_TW",
+        "US_CN",
+        "VN"
+      ],
+      "adoptionBasis": "Explicit user instruction to apply all computable external environments; peerMix fixed before weight tests",
+      "weightStudySource": "results/etf-m0-priority-weights/20260911",
+      "method": "50%continuous regional trend+50%peer breadth;1-observation lag;own index family excluded;minimum3 other families;ownLag fallback"
+    }
+  },
+  "dataErrorExit": "If underlying index becomes unavailable while held, separately label next-open data-error liquidation; not a MA60 signal.",
+  "researchResult": {
+    "selected": "P7.5",
+    "passed": [
+      "P7.5"
+    ],
+    "cutoff": "2026-09-11",
+    "outOfSampleStatus": "reused retrospective holdout",
+    "sourceRun": 35567515449,
+    "robustAcrossPortfolioSizes": false,
+    "limitations": [
+      "P7.5 improves train and validation versus the user-adopted peer-environment P15 baseline; not evidence that this environment beats the original model",
+      "At5slots P7.5 CAGR6.82%/MDD-36.63% versus P15 CAGR9.24%/MDD-28.65%",
+      "At30bp per side P7.5 CAGR improves but MDD deteriorates to-30.15% versus-24.79%",
+      "Research-only conditional selection; not a universally validated operating weight"
+    ],
+    "exactMetrics": [
+      {
+        "candidate": "P7.5",
+        "priorityWeight": 7.5,
+        "technicalWeight": 62.5,
+        "scope": "all",
+        "split": "train",
+        "cagr": 0.0446956269202625,
+        "mdd": -0.2265426578505933,
+        "sharpe": 0.4626024440349314,
+        "totalReturn": 0.2914426436766553,
+        "exposure": 0.5421638325212315,
+        "days": 1474
+      },
+      {
+        "candidate": "P7.5",
+        "priorityWeight": 7.5,
+        "technicalWeight": 62.5,
+        "scope": "all",
+        "split": "validation",
+        "cagr": 0.0291268551226158,
+        "mdd": -0.1432415698701079,
+        "sharpe": 0.2699760674200493,
+        "totalReturn": 0.0572936538679544,
+        "exposure": 0.8131322952332837,
+        "days": 489
+      },
+      {
+        "candidate": "P7.5",
+        "priorityWeight": 7.5,
+        "technicalWeight": 62.5,
+        "scope": "all",
+        "split": "test",
+        "cagr": 0.494727092515941,
+        "mdd": -0.2090947514040217,
+        "sharpe": 1.4035277372006305,
+        "totalReturn": 0.9323579077146098,
+        "exposure": 0.8980317263753888,
+        "days": 413
+      },
+      {
+        "candidate": "P7.5",
+        "priorityWeight": 7.5,
+        "technicalWeight": 62.5,
+        "scope": "all",
+        "split": "all",
+        "cagr": 0.111184063581432,
+        "mdd": -0.2464596993533023,
+        "sharpe": 0.6953863153745806,
+        "totalReturn": 1.70207009508731,
+        "exposure": 0.6605578538747595,
+        "days": 2376
+      },
+      {
+        "candidate": "P7.5",
+        "priorityWeight": 7.5,
+        "technicalWeight": 62.5,
+        "scope": "all",
+        "split": "legacy_window",
+        "cagr": 0.0805072422798951,
+        "mdd": -0.2464596993533025,
+        "sharpe": 0.5250171940045492,
+        "totalReturn": 0.9264944087267404,
+        "exposure": 0.6272573448470293,
+        "days": 2134
+      }
+    ]
+  },
+  "mappingStoragePath": "source/Reference/etf-universe-sector-map-20260911.csv",
+  "holdingCountDecision": {
+    "selectedMaximum": 10,
+    "sourceRun": 35569906101,
+    "resultPath": "results/etf-m0-holding-count/20260911/35569906101",
+    "initialAllocation": "Up to10% of opening equity per new position, cash constrained",
+    "rebalance": false,
+    "forceFill": false,
+    "tieBreak": "symbol ascending; unchanged primary rule",
+    "randomOrderTrials": 100,
+    "tenWinsCagrMddSharpeJoint": 100,
+    "yearlyReturnWins": 9,
+    "yearlyPeriods": 10,
+    "lastYearPartialThrough": "2026-09-11",
+    "exception": "2025-onward reset segment MDD:5slots -20.11%,10slots -20.91%",
+    "notFreshHoldout": true,
+    "productionDeployment": false
+  }
+}

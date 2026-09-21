@@ -1,0 +1,364 @@
+{
+  "scope": "ETF M0 research through 2026-09-21",
+  "existingSourceArtifactRun": 35559774005,
+  "files": [
+    {
+      "path": "initial/etf-screener-m0-vs-m1.json",
+      "size": 97788,
+      "sha256": "7e90c8953398297825f9123dae87921121686ea4989c706cb367dcc5888b08eb"
+    },
+    {
+      "path": "initial/etf-m0-m1-sector-map.json",
+      "size": 285445,
+      "sha256": "c39d72b0975a613490682dad063a009d36b54d1bb4dbf425a942e8c008bed74e"
+    },
+    {
+      "path": "initial/etf-m0-onset-filter-study.csv",
+      "size": 14459,
+      "sha256": "eac9136a37523a40b507b45f715aed22b4ce949b09376983c682e6121c13525c"
+    },
+    {
+      "path": "initial/etf-m0-exit-rule-trades.csv",
+      "size": 14324136,
+      "sha256": "a3579b1c8f578454c9dddeb9897f2a86125531a8d84c7453c89b77f33c161fe5"
+    },
+    {
+      "path": "initial/etf-m0-exit-rule-study.csv",
+      "size": 5125,
+      "sha256": "4ff7f84759f514a3fe8ebcb49ca39ad84392711acf64109ed27b5795949165bc"
+    },
+    {
+      "path": "initial/etf-m0-exit-rule-study.json",
+      "size": 91463,
+      "sha256": "4d38a56c7d1899b1302e94e5eff3a9b72e11e077cc681154d0434a52d0870351"
+    },
+    {
+      "path": "initial/etf-m0-onset-filter-study.json",
+      "size": 53520,
+      "sha256": "224ae7ac9e5d8506f52869b62e5c1eff0cf87b74bd25b1f7bc0f46ae2353293c"
+    },
+    {
+      "path": "initial/etf-v21-symbols.json",
+      "size": 29179,
+      "sha256": "153682034feb7413aad6a48d9ec8b9731857cd0175d7f75e1a72f9e431e5eea2"
+    },
+    {
+      "path": "enhancement/uncapped/result.json",
+      "size": 4511,
+      "sha256": "4a1144efa3b790f212fb43ccbe36b3dd491c59d297da00cfa956086d9c43f8d8"
+    },
+    {
+      "path": "enhancement/uncapped/walk-forward.csv",
+      "size": 3513,
+      "sha256": "797c0b5bdeacd714942055f9595c3f7f6967aa26432014b2e851b8129356fc9a"
+    },
+    {
+      "path": "enhancement/uncapped/annual-portfolios.csv",
+      "size": 128290,
+      "sha256": "d827c2e71de0062906c6f2f0b3dc5cc91e20836efe59e790b5f81e4af5dba23a"
+    },
+    {
+      "path": "enhancement/uncapped/portfolio-curves.csv.gz",
+      "size": 3211412,
+      "sha256": "b906b252b95a73d7c8781e7c3f604740355362fa2de7c39b3dc14d2a190c3894"
+    },
+    {
+      "path": "enhancement/uncapped/sensitivity.csv",
+      "size": 9965,
+      "sha256": "2af830c83ab8d850232ab875930df33074e5a377ca13d39122dfd4bd270caa2e"
+    },
+    {
+      "path": "enhancement/uncapped/portfolio-summary.csv",
+      "size": 60362,
+      "sha256": "63aa39c5da0f5abffc3e1e9fc8310c2a25e0ea1cfbcea130b87adb84461286d5"
+    },
+    {
+      "path": "blocks/block-distribution.csv",
+      "size": 479,
+      "sha256": "f59d77c7e23caafc0b10dc0ab04b1506c2ddc2d0a64922a2064ad3217975c0d4"
+    },
+    {
+      "path": "blocks/result.json",
+      "size": 458,
+      "sha256": "1f34635f35501b73ba9f29460a00f3600915a704e61cff08deff141d166001b7"
+    },
+    {
+      "path": "blocks/design.json",
+      "size": 3163,
+      "sha256": "d5d4595bb8fb2d123fd880ee6f131380894ac9980bb925d90e177512108c2d2b"
+    },
+    {
+      "path": "blocks/frequency-matched-performance.csv",
+      "size": 1916,
+      "sha256": "578e8321105f178aa9200c8beb9da6e36b5c4730b53ed7518a5eb2d0eeca0039"
+    },
+    {
+      "path": "blocks/frequency-matched-thresholds.csv",
+      "size": 189,
+      "sha256": "de3d3081c29554e49db4dcf615bacbce2fc5112fbdfa41ddd22a24aa0a3ce001"
+    },
+    {
+      "path": "blocks/annual.csv",
+      "size": 21072,
+      "sha256": "baeec52c4ba19d675ad8800246fbc2a56721d2964105f1a35a4162281eda9504"
+    },
+    {
+      "path": "blocks/event-counts.csv",
+      "size": 2300,
+      "sha256": "d0fcbb26db9c1ce08759368b58eb137c9b986ff5b0372505d4ae4cf6a5169883"
+    },
+    {
+      "path": "blocks/selection-audit.csv",
+      "size": 1525,
+      "sha256": "70c2eed83a2795e3fc2b2b0a1c38c2476a6344d30a15765febc86cab48b918af"
+    },
+    {
+      "path": "blocks/portfolio-curves.csv.gz",
+      "size": 634941,
+      "sha256": "e9e038e12c9af7f1e81903c69aeabc0acf27cbbf23ce24fb2b7be1faf8a0b8ea"
+    },
+    {
+      "path": "blocks/sensitivity.csv",
+      "size": 15058,
+      "sha256": "23c5f498a5d64182834d2bffa62c05503cf7a7f45a30833299b1857c297867a8"
+    },
+    {
+      "path": "blocks/block-correlations.csv",
+      "size": 271,
+      "sha256": "c6d19042a4623b6386b867724dfc34f49025d1241c1fd0e76fb5223bb3520525"
+    },
+    {
+      "path": "blocks/portfolio-summary.csv",
+      "size": 9468,
+      "sha256": "9b9a8f0108aa1825e6042c0c177a45a4fb4751793a0a837ec16f77ed354070f3"
+    },
+    {
+      "path": "components/aum-nav-unit-anomalies.csv.gz",
+      "size": 1953957,
+      "sha256": "11ed1ee301ef539c1422c84acd2177393146c1eb19b0406bb3d44187d9c2df09"
+    },
+    {
+      "path": "components/classification.csv",
+      "size": 32520,
+      "sha256": "3e33351153e18aff2498f1cbd14ed9d41c4a165bfa94ee7412c31aef2a4af8a7"
+    },
+    {
+      "path": "components/qa-yearly.csv",
+      "size": 71573,
+      "sha256": "ac7731169dc485d12fe6495c9d7eddcb9cf22cbfb4296490ff2c24ea06f0c376"
+    },
+    {
+      "path": "components/invalid-underlying-rows.csv",
+      "size": 61062,
+      "sha256": "32f1b54d1f91f3aea9bca1bfb7b5c22713b95b0ecbb2ac61f7b57a431e9735bc"
+    },
+    {
+      "path": "components/index-qa-impact.json",
+      "size": 514,
+      "sha256": "4c5d76c287da324328efba830bb18397888bec757a7667f5394a1a6239cd41ed"
+    },
+    {
+      "path": "components/export-result.json",
+      "size": 252,
+      "sha256": "17c5888e1b06d2934bea7fb145aa6e7f9fd4dedae4f331679184e40b13eb34a3"
+    },
+    {
+      "path": "components/comparison-design.json",
+      "size": 2312,
+      "sha256": "4afacc2c9e0a3701b0aff568c33712ae0b5c7a184a3f76cd4c84c8b79105ca9e"
+    },
+    {
+      "path": "components/comparison-result.json",
+      "size": 115,
+      "sha256": "c05ce73e0daeb40bdc0cf40eff856e48ea3d2858df4bf451c5e989338bb4c657"
+    },
+    {
+      "path": "components/raw-schema.json",
+      "size": 2567,
+      "sha256": "efb304918a857f84f7ffe5ece498bb62748c79dac791297e0a28769841511bda"
+    },
+    {
+      "path": "components/source-provenance.csv",
+      "size": 124,
+      "sha256": "827eeb2f6046bf7e3befddafd9c827db11ed217d45c35f5c98fc7aa0714aa9f9"
+    },
+    {
+      "path": "components/qa-symbol.csv",
+      "size": 180195,
+      "sha256": "5ed67f3b55a90c40e53a9119a259a341786d44a1ff28274adb6d74901a6842aa"
+    },
+    {
+      "path": "components/annual.csv",
+      "size": 22104,
+      "sha256": "011e97ffc6d704b09588f3f8a06ae2414a6d1130af853c6eaa34f02680611fe5"
+    },
+    {
+      "path": "components/event-counts.csv",
+      "size": 2653,
+      "sha256": "2b55c384d8c4130ad1e52eabe0ebd86daa20d740cbaf137021041221ee745978"
+    },
+    {
+      "path": "components/index-qa-sensitivity.csv",
+      "size": 3318,
+      "sha256": "8c1b873fefc6bcd75b889f4d1d6cf30e43a052efa0654d81f906c71e080f94c6"
+    },
+    {
+      "path": "components/selection-audit.csv",
+      "size": 1707,
+      "sha256": "95725bfc0de0c86ec45801a18bf9d5637aec2c86088abcdff9693ac533fd0be7"
+    },
+    {
+      "path": "components/portfolio-curves.csv.gz",
+      "size": 583850,
+      "sha256": "5e4bc924ca5619e3bfa6ba72052dafdec39fe8b08e1bf7f4d323a992ecb2fb16"
+    },
+    {
+      "path": "components/sensitivity.csv",
+      "size": 12422,
+      "sha256": "59a92f8a27042f471d086e6f4d117d537ad21c92b62b210d1594d667dca5bf72"
+    },
+    {
+      "path": "components/decision.json",
+      "size": 332,
+      "sha256": "cf4c031dc1a79663f154f30618b23ef3101c64d7ad22df5f4ba4f699a812a321"
+    },
+    {
+      "path": "components/rotation-sector-coverage.csv",
+      "size": 316,
+      "sha256": "6bb0a8b1d5aefe83c0f3ff439429954da47ab895290ff874562d22b8aaa691b4"
+    },
+    {
+      "path": "components/zero-aum.csv",
+      "size": 20462,
+      "sha256": "2e502bb473882f7179457c25f5bf7d3796737febb952994c648ec779cf03a5c7"
+    },
+    {
+      "path": "components/diagnostics.json",
+      "size": 348,
+      "sha256": "8b1f58e6f306e8b5a8f6d9b3eea0d9ad919018bbb2b6e51a2bf3f08c38657176"
+    },
+    {
+      "path": "components/signal-quality.csv",
+      "size": 1534,
+      "sha256": "65cdc309546ef41e41fae471e16dc14805e4006f4df50de72a22a6b83b2060f9"
+    },
+    {
+      "path": "components/component-contributions.csv",
+      "size": 10328,
+      "sha256": "5b53d4a197516d81597222caaa2235c082819f65373411d928e03a2237eb0272"
+    },
+    {
+      "path": "components/portfolio-summary.csv",
+      "size": 9878,
+      "sha256": "19c48d34a86af3d1cb880355f2be106df8376555345e3cc5dcd86c5366a5148b"
+    },
+    {
+      "path": "components/raw-consistency.csv",
+      "size": 3553,
+      "sha256": "d0bb48e14a5c0092044275a7a4c58ac06a298a87b7c91e79e50d46ce4226aa33"
+    },
+    {
+      "path": "enhancement/selected-robustness.csv",
+      "size": 15310,
+      "sha256": "b8fdeff767486475091e7c8724b2ca75df25df35100eceaf1f1b71dcffe6aa26"
+    },
+    {
+      "path": "enhancement/modified-walk-forward.csv",
+      "size": 1802,
+      "sha256": "26ccc293e620383170a068a99e6f9eb0c2c2a8d3919115b3b1de6cf7fdef7d71"
+    },
+    {
+      "path": "enhancement/robustness-qa.json",
+      "size": 261,
+      "sha256": "6004792b8151399b3866d278885b0a94059dae2bc7d2763ca6d1c978a490c206"
+    },
+    {
+      "path": "reports/CloudTrend_M0_Components_QA_20260921.md",
+      "size": 14055,
+      "sha256": "400a84cff9438ace31a08311b0d6ff75d1f346884189fddd0de8ba9e5f528268"
+    },
+    {
+      "path": "reports/CloudTrend_M0_Enhancement_20260921.md",
+      "size": 14570,
+      "sha256": "99418384dc31a4ea26da99e6e613c6b295362377d4f445dc25426097c74ffedf"
+    },
+    {
+      "path": "reports/CloudTrend_M0_Block_Study_20260921.md",
+      "size": 9895,
+      "sha256": "82668ef9d5c2f0f407c460766e42ea9200bc8d1354e9602d8de3d4594a8dcb95"
+    },
+    {
+      "path": "policy.json",
+      "size": 2129,
+      "sha256": "85f2ea6bdc77bebd7911f75dd8bb034cff4e714a0b3faf5754bd69ace41fe6c3"
+    },
+    {
+      "path": "enhancement/capped/annual-portfolios.csv",
+      "size": 128291,
+      "sha256": "2e086a3ada23ca582034f5420b13a5444a1708ec6c6111dd757cc3487164e194"
+    },
+    {
+      "path": "enhancement/capped/classification.csv",
+      "size": 32520,
+      "sha256": "1358e98d12aca135e750e6e5126a77492566c01a4e3b16c55ac380d7876fa50d"
+    },
+    {
+      "path": "enhancement/capped/design.json",
+      "size": 20661,
+      "sha256": "3b9661ea48debabe63c2c664bb299cc65939d7ec6202f4be589986811b7878f2"
+    },
+    {
+      "path": "enhancement/capped/matched-trades.csv.gz",
+      "size": 14796487,
+      "sha256": "6d70d9fa33013019ff53224ce8335276ad55da2bc3a3acf38fb97515fcaf8c8e"
+    },
+    {
+      "path": "enhancement/capped/paired-selected.csv",
+      "size": 784452,
+      "sha256": "0c39f6ac04697b7abdf5f9fd6c14521d730d7b84107fbc842fad9219ac05da09"
+    },
+    {
+      "path": "enhancement/capped/portfolio-curves.csv.gz",
+      "size": 3259116,
+      "sha256": "9cfccca34d673db6a7ea6028351383f3373d4471502b70b4d96c0591ee77c6a3"
+    },
+    {
+      "path": "enhancement/capped/portfolio-summary.csv",
+      "size": 60311,
+      "sha256": "09d549a63aa74c28d9501934b758bd31cac81c2e1c49d96748d27024cbff7f3a"
+    },
+    {
+      "path": "enhancement/capped/result.json",
+      "size": 15608,
+      "sha256": "d7d3d777beebc0dba2383bd161adeadbbc1c9e56f07d168d992cad33a6e8bf26"
+    },
+    {
+      "path": "enhancement/capped/sensitivity.csv",
+      "size": 8656,
+      "sha256": "53bb945947059663233b80eaf45905e87f381cb62cc31ec32e748daa5eeb29ab"
+    },
+    {
+      "path": "enhancement/capped/trade-summary.csv",
+      "size": 222583,
+      "sha256": "005bcebdb224f282e99a7b4cc36f7a7b067d1e2e47001120e941ff6494953dfc"
+    },
+    {
+      "path": "enhancement/capped/walk-forward.csv",
+      "size": 1736,
+      "sha256": "ca0afe1f4d7a9c6cabb2e3a9c174d5d521b0f6b52d298e2209001c13ffc72f1c"
+    },
+    {
+      "path": "enhancement/capped/yearly-trades.csv",
+      "size": 458819,
+      "sha256": "255c732b5a005e44a0517889a55699e87740834c4238896527df36dbdad442f6"
+    }
+  ],
+  "bucket": "cloudtrend-data",
+  "prefix": "bdfc8818-33a7-4030-9dbd-ecad39f223ac/results/etf-m0-research/20260921",
+  "sourceCode": "b800ada05160f4377ed183b525fa76290b20a67a",
+  "excludedInputs": [
+    "scored-panel.parquet",
+    "component-panel.parquet"
+  ],
+  "note": "Result files only; original input panels remain in their previously saved research bundles."
+}

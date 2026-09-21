@@ -1,0 +1,51 @@
+name: Verify ETF environment and persist current research policy
+on:
+  push:
+    branches:
+      - research/etf-m0-enhance-20260921
+    paths:
+      - scripts/verify_etf_environment.py
+      - .github/workflows/etf-m0-environment-finalize.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check pandas==2.2.3 numpy==2.1.3 pyarrow==23.0.1
+      - uses: actions/download-artifact@v4
+        with:
+          name: etf-m0-clean-35564981988
+          run-id: 35564981988
+          github-token: ${{ github.token }}
+          path: analysis-runs/m0-clean-base
+      - uses: actions/download-artifact@v4
+        with:
+          name: etf-m0-environment-35566534880
+          run-id: 35566534880
+          github-token: ${{ github.token }}
+          path: analysis-runs/m0-environment-base
+      - name: Verify no future data or own-family contamination
+        run: |
+          python -W ignore scripts/verify_etf_environment.py --base analysis-runs/m0-clean-base --environment-results analysis-runs/m0-environment-base --mapping research/etf-universe-sector-map-20260911.csv --output analysis-runs/m0-environment
+          cp research/etf-m0-provisional-policy.json analysis-runs/m0-environment/provisional-policy.json
+          cp research/etf-research-data-policy.json analysis-runs/m0-environment/data-policy.json
+      - name: Persist validation and policy only
+        run: python scripts/save_etf_environment_assets.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: etf-m0-environment-final-${{ github.run_id }}
+          path: analysis-runs/m0-environment/
+          retention-days: 30
