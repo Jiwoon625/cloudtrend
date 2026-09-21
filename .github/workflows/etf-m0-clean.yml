@@ -1,0 +1,134 @@
+name: ETF M0 clean inputs and rule study
+
+on:
+  push:
+    branches:
+      - research/etf-m0-enhance-20260921
+    paths:
+      - scripts/research_etf_m0_clean.py
+      - scripts/save_etf_clean_results.py
+      - research/etf-universe-sector-map-20260911.csv
+      - .github/workflows/etf-m0-clean.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: etf-m0-clean-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  study:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      BACKTEST_SOURCE_MANIFEST: .cache/cloudtrend-backtest-manifest.json
+      BACKTEST_SOURCE_CACHE_DIR: .cache/cloudtrend-backtest
+      ETF_V21_MANIFEST: .cache/cloudtrend-etf-v21-manifest.json
+      ETF_V21_CACHE_DIR: .cache/cloudtrend-etf-v21
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Install research Python dependencies
+        run: python -m pip install --disable-pip-version-check pandas==2.2.3 numpy==2.1.3 pyarrow==23.0.1
+
+      - name: Restore verified stock-core backtest cache
+        uses: ./.github/actions/backtest-source-cache
+        with:
+          manifest: ${{ env.BACKTEST_SOURCE_MANIFEST }}
+          directory: ${{ env.BACKTEST_SOURCE_CACHE_DIR }}
+
+      - name: Build ETF v2.1 parquet manifest
+        id: v21-source
+        run: |
+          npx vite-node --script scripts/etf-v21-cache.ts manifest \
+            --manifest "$ETF_V21_MANIFEST"
+
+      - name: Restore ETF v2.1 parquet cache
+        id: v21-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.ETF_V21_CACHE_DIR }}
+          key: cloudtrend-etf-v21-${{ steps.v21-source.outputs.cache_key }}
+
+      - name: Verify or materialize ETF v2.1 parquet
+        run: |
+          npx vite-node --script scripts/etf-v21-cache.ts materialize \
+            --manifest "$ETF_V21_MANIFEST" \
+            --cache-dir "$ETF_V21_CACHE_DIR"
+
+      - name: Save ETF v2.1 parquet cache
+        if: steps.v21-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.ETF_V21_CACHE_DIR }}
+          key: cloudtrend-etf-v21-${{ steps.v21-source.outputs.cache_key }}
+
+      - name: Extract ETF v2.1 symbol list
+        run: |
+          mkdir -p analysis-runs
+          python - <<'PY'
+          import json
+          import pathlib
+          import pandas as pd
+          m = json.loads(pathlib.Path(".cache/cloudtrend-etf-v21-manifest.json").read_text())
+          p = pathlib.Path(".cache/cloudtrend-etf-v21") / m["cacheFile"]
+          df = pd.read_parquet(p, columns=["symbol","name"]).drop_duplicates("symbol")
+          df["symbol"] = df["symbol"].astype(str).str.strip().str.upper()
+          out = [{"symbol": r.symbol, "name": str(r.name)} for r in df.itertuples(index=False)]
+          pathlib.Path("analysis-runs/etf-v21-symbols.json").write_text(
+              json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+          )
+          print(json.dumps({"etfSymbols": len(out), "parquet": str(p)}))
+          PY
+
+      - name: Export canonical sector map
+        run: |
+          npx vite-node --script scripts/export-etf-m0-m1-sector-map.ts \
+            --source-manifest "$BACKTEST_SOURCE_MANIFEST" \
+            --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR" \
+            --etf-symbols analysis-runs/etf-v21-symbols.json \
+            --output analysis-runs/etf-m0-m1-sector-map.json
+
+      - name: Resolve ETF parquet path
+        id: etf-path
+        run: |
+          ETF_PARQUET="$(python - <<'PY'
+          import json, pathlib
+          m=json.loads(pathlib.Path(".cache/cloudtrend-etf-v21-manifest.json").read_text())
+          print(pathlib.Path(".cache/cloudtrend-etf-v21") / m["cacheFile"])
+          PY
+          )"
+          echo "ETF_PARQUET=$ETF_PARQUET" >> "$GITHUB_ENV"
+
+      - name: Run cutoff-frozen mapping and rule study
+        run: |
+          python -W ignore scripts/research_etf_m0_clean.py \
+            --source-manifest "$BACKTEST_SOURCE_MANIFEST" \
+            --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR" \
+            --etf-parquet "$ETF_PARQUET" \
+            --sector-map analysis-runs/etf-m0-m1-sector-map.json \
+            --mapping research/etf-universe-sector-map-20260911.csv \
+            --output-dir analysis-runs/m0-clean
+      - name: Save important results to private Supabase results path
+        run: python scripts/save_etf_clean_results.py
+      - name: Upload reviewable data and results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: etf-m0-clean-${{ github.run_id }}
+          path: analysis-runs/m0-clean/
+          if-no-files-found: warn
+          retention-days: 30
