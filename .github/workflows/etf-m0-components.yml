@@ -1,21 +1,19 @@
-name: ETF M0 Enhancement Research
+name: ETF M0 Component Data QA
 
 on:
   push:
     branches:
       - research/etf-m0-enhance-20260921
     paths:
-      - scripts/research_etf_m0_enhance.py
-      - scripts/research_etf_m0_uncapped.py
-      - scripts/research_etf_m0_robustness.py
-      - scripts/research_etf_m0_blocks.py
+      - scripts/research_etf_m0_components_export.py
+      - .github/workflows/etf-m0-components.yml
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: etf-m0-enhance-${{ github.ref }}
+  group: etf-m0-components-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -113,34 +111,20 @@ jobs:
           )"
           echo "ETF_PARQUET=$ETF_PARQUET" >> "$GITHUB_ENV"
 
-      - name: Verify execution semantics
-        run: python scripts/test_etf_m0_enhance.py
-
-      - name: Run M0 enhancement research
+      - name: Export component data and inspect quality
         run: |
-          python -W ignore scripts/research_etf_m0_enhance.py \
+          python -W ignore scripts/research_etf_m0_components_export.py \
             --source-manifest "$BACKTEST_SOURCE_MANIFEST" \
             --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR" \
             --etf-parquet "$ETF_PARQUET" \
             --sector-map analysis-runs/etf-m0-m1-sector-map.json \
-            --output-dir analysis-runs/m0-enhance
+            --output-dir analysis-runs/m0-components
 
-      - name: Verify frozen candidates across slots and costs
-        run: python -W ignore scripts/research_etf_m0_robustness.py --results analysis-runs/m0-enhance
-
-      - name: Re-select score-only exits without time cap
-        run: python -W ignore scripts/research_etf_m0_uncapped.py --results analysis-runs/m0-enhance
-
-      - name: Compare M0 block contribution with MA60 exits
-        run: |
-          python scripts/research_etf_m0_blocks.py --results analysis-runs/m0-enhance
-          python scripts/research_etf_m0_block_diagnostic.py --results analysis-runs/m0-enhance
-
-      - name: Upload enhancement artifacts
+      - name: Upload component artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: etf-m0-enhance-${{ github.run_id }}
-          path: analysis-runs/m0-enhance/
+          name: etf-m0-components-${{ github.run_id }}
+          path: analysis-runs/m0-components/
           if-no-files-found: warn
           retention-days: 30
