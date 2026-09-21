@@ -5,7 +5,7 @@ import { isKospiRelativeMomentumConfirmed } from "@/lib/kospiRelativeQuality";
 
 export const SCREENING_CACHE_VERSION = "screening-cache-v8-final-v5" as const;
 export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-final-v6" as const;
-export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-final-v5" as const;
+export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-final-v6-sector-pl" as const;
 
 export interface DashboardSummary {
   version: typeof DASHBOARD_CACHE_VERSION;

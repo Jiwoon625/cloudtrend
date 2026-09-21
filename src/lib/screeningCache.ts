@@ -7,13 +7,9 @@ import {
   writeObject,
 } from "@/lib/cloud";
 import { chartSeries, scoreHistory, type AnalysisResult } from "@/lib/engine/pipeline";
-import { buildInstrumentDetailDataset } from "@/lib/engine/instrumentDetailDataset";
+import { historicalSectorDataset } from "@/lib/engine/historicalInstrumentScore";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
-import {
-  ensureManualDataText,
-  ensureManualDataset,
-  getManualDataMeta,
-} from "@/lib/manualDataStore";
+import { ensureManualDataset, getManualDataMeta } from "@/lib/manualDataStore";
 import { computeLocalAnalysis } from "@/lib/localAnalysis";
 import type { AnalysisPayload, InstrumentDetailPayload } from "@/lib/market.functions";
 import { buildSnapshot, hydrateSnapshots, saveSnapshot } from "@/lib/screeningHistory";
@@ -227,9 +223,9 @@ export async function getCachedInstrumentDetail(symbol: string): Promise<Instrum
     }
   }
 
-  const raw = await ensureManualDataText();
-  if (!raw) throw new Error("종목 상세 차트를 만들 원천 시세가 없습니다.");
-  const targetDataset = buildInstrumentDetailDataset(raw, normalized);
+  const parsed = await ensureManualDataset();
+  if (!parsed) throw new Error("종목 상세 차트를 만들 원천 시세가 없습니다.");
+  const targetDataset = historicalSectorDataset(parsed.dataset);
   const config = getActiveScoringConfig();
   const analysis = shared.payload.analysis;
   const detail: InstrumentDetailPayload = {
@@ -258,7 +254,7 @@ export async function getCachedInstrumentDetail(symbol: string): Promise<Instrum
 }
 
 // Separate range-specific files prevent the initial view downloading the full history.
-export const INSTRUMENT_CHART_VERSION = "instrument-chart-compact-v1";
+export const INSTRUMENT_CHART_VERSION = "instrument-chart-compact-v2-sector-pl";
 export async function getCachedInstrumentChart(
   symbol: string,
   range: InstrumentChartRange,
@@ -289,9 +285,9 @@ export async function getCachedInstrumentChart(
   } catch (error) {
     console.warn("종목 차트 캐시를 읽지 못해 원천 자료로 계산합니다.", error);
   }
-  const raw = await ensureManualDataText();
-  if (!raw) throw new Error("종목 상세 차트를 만들 원천 시세가 없습니다.");
-  const dataset = buildInstrumentDetailDataset(raw, normalized);
+  const parsed = await ensureManualDataset();
+  if (!parsed) throw new Error("종목 상세 차트를 만들 원천 시세가 없습니다.");
+  const dataset = historicalSectorDataset(parsed.dataset);
   const data = await buildCompactChart(dataset, normalized, range, config);
   const cache: ChartCache = {
     version: INSTRUMENT_CHART_VERSION,

@@ -1,3 +1,4 @@
+import { historicalInstrumentScore } from "./historicalInstrumentScore";
 // 스크리닝 파이프라인: MarketDataset → 지표 → 실격 필터 → 시장 게이트 → 점수
 // 데이터 공급자(mock / 토스증권 Open API)에 의존하지 않고 주입된 dataset만 사용한다.
 import {
@@ -18,7 +19,6 @@ import {
   evaluateMarketGate,
   evaluateUniverse,
   fundamentalScore,
-  historicalTechnicalScore,
   normalize,
   priorityScore,
   strictRawTechnicalScore,
@@ -617,7 +617,7 @@ export function scoreHistory(
   const out: Array<{ tradeDate: string; technicalPoints: number | null; grade: TechnicalGrade }> =
     [];
   for (let i = Math.max(0, bars.length - days); i < bars.length; i++) {
-    const score = historicalTechnicalScore(computeIndicators(bars, i), cfg);
+    const score = historicalInstrumentScore(ds, symbol, i, cfg);
     out.push({
       tradeDate: bars[i]!.tradeDate,
       technicalPoints: score.points,
@@ -639,7 +639,7 @@ export function chartSeries(
   for (let i = Math.max(0, bars.length - days); i < bars.length; i++) {
     const snap = computeIndicators(bars, i);
     const ich = snap.ichimoku;
-    const technical = historicalTechnicalScore(snap, cfg);
+    const technical = historicalInstrumentScore(ds, symbol, i, cfg, snap);
     const top = ich.cloudTop;
     const bottom = ich.cloudBottom;
     const srcIndex = i - 26;

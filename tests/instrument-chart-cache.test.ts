@@ -15,13 +15,13 @@ vi.mock("@/lib/cloud", () => ({
   writeObject: vi.fn(),
 }));
 vi.mock("@/lib/manualDataStore", () => ({
-  ensureManualDataText: mocks.raw,
-  ensureManualDataset: vi.fn(),
+  ensureManualDataText: vi.fn(),
+  ensureManualDataset: mocks.raw,
   getManualDataMeta: () => null,
 }));
 vi.mock("@/lib/engine/instrumentChart", () => ({ buildCompactChart: mocks.build }));
-vi.mock("@/lib/engine/instrumentDetailDataset", () => ({
-  buildInstrumentDetailDataset: () => ({}),
+vi.mock("@/lib/engine/historicalInstrumentScore", () => ({
+  historicalSectorDataset: (dataset: unknown) => dataset,
 }));
 vi.mock("@/lib/scoringConfigStore", () => ({ getActiveScoringConfig: () => ({}) }));
 vi.mock("@/lib/localAnalysis", () => ({ computeLocalAnalysis: vi.fn() }));
@@ -46,7 +46,7 @@ const data = { chart: [{ tradeDate: "2026-09-21" }], history: [] };
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.read.mockResolvedValue(null);
-  mocks.raw.mockResolvedValue("source csv");
+  mocks.raw.mockResolvedValue({ dataset: {} });
   mocks.build.mockResolvedValue(data);
   mocks.sources.mockResolvedValue([]);
 });
