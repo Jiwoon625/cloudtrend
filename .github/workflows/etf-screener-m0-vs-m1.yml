@@ -1,6 +1,9 @@
 name: ETF Screener M0 vs M1 Research
 
 on:
+  push:
+    branches:
+      - research/etf-m0-vs-m1-20260921
   pull_request:
     paths:
       - scripts/export-etf-m0-m1-sector-map.ts
@@ -22,6 +25,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
       BACKTEST_SOURCE_MANIFEST: .cache/cloudtrend-backtest-manifest.json
       BACKTEST_SOURCE_CACHE_DIR: .cache/cloudtrend-backtest
       ETF_BACKTEST_SOURCE_MANIFEST: .cache/cloudtrend-etf-backtest-manifest.json
