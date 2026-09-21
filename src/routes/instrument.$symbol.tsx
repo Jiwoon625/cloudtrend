@@ -2,20 +2,7 @@ import { loadPortfolioState } from "@/lib/portfolioStore";
 import { StrategyDescription } from "@/components/StrategyDescription";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound } from "@tanstack/react-router";
-import { useState } from "react";
-import {
-  Area,
-  Bar,
-  Brush,
-  CartesianGrid,
-  ComposedChart,
-  Legend,
-  Line,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { lazy, Suspense, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
@@ -23,18 +10,20 @@ import { BreakdownTable } from "@/components/BreakdownTable";
 import { Delta, GradeBadge } from "@/components/ScreenerTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { instrumentQueryOptions } from "@/lib/analysisQuery";
-import { HISTORICAL_TECHNICAL_MAX } from "@/lib/engine/scoring";
+import { analysisQueryOptions, withThreeDecimalClv } from "@/lib/analysisQuery";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
 import { getDisplayStatus } from "@/lib/statusDisplay";
 import { getDisplayWarnings } from "@/lib/warningDisplay";
 
+const InstrumentCharts = lazy(() => import("@/components/InstrumentCharts"));
+
 export const Route = createFileRoute("/instrument/$symbol")({
   ssr: false,
   loader: async ({ params, context }) => {
-    const detail = await context.queryClient.ensureQueryData(instrumentQueryOptions(params.symbol));
-    if (!detail.row) throw notFound();
-    return { name: detail.row.instrument.name, symbol: detail.row.instrument.symbol };
+    const payload = await context.queryClient.ensureQueryData(analysisQueryOptions);
+    const row = payload.analysis.rows.find((item) => item.instrument.symbol === params.symbol);
+    if (!row) throw notFound();
+    return { name: row.instrument.name, symbol: row.instrument.symbol };
   },
   head: ({ loaderData }) => {
     if (!loaderData)
@@ -67,21 +56,28 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
 
 function InstrumentDetail() {
   const { symbol } = Route.useParams();
-  const { data: detail } = useSuspenseQuery(instrumentQueryOptions(symbol));
+  const { data: payload, dataUpdatedAt } = useSuspenseQuery(analysisQueryOptions);
   const { data: portfolio } = useQuery({
     queryKey: ["portfolio-state"],
     queryFn: loadPortfolioState,
   });
+  const [showLog, setShowLog] = useState(false);
+  const [watched, setWatched] = useState(false);
   const holding = portfolio?.trades.find(
     (trade) => trade.symbol === symbol && trade.status === "OPEN" && trade.shares > 0,
   );
-  const analysis = detail;
-  const row = detail.row!;
-  const chart = detail.chart;
-  const history = detail.history;
-  const [showLog, setShowLog] = useState(false);
-  const [watched, setWatched] = useState(false);
-  const [visible, setVisible] = useState({ ma: true, bb: true, cloud: true, technical: true });
+  const analysis = payload.analysis;
+  const originalRow = analysis.rows.find((item) => item.instrument.symbol === symbol);
+  if (!originalRow) throw notFound();
+  const clv = originalRow.snapshot.closeLocationValue;
+  const row =
+    clv === null || !Number.isFinite(clv)
+      ? originalRow
+      : {
+          ...originalRow,
+          technical: withThreeDecimalClv(originalRow.technical, clv),
+          vf: originalRow.vf ? withThreeDecimalClv(originalRow.vf, clv) : originalRow.vf,
+        };
 
   const score = row.vf ?? row.technical;
   const snap = row.snapshot;
@@ -259,268 +255,15 @@ function InstrumentDetail() {
         </div>
       ) : null}
 
-      <section className="mt-5 rounded-lg border border-border bg-card p-4">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold">가격 · 지표 차트 (일봉)</h2>
-          <div className="flex flex-wrap gap-1">
-            {(
-              [
-                ["ma", "이동평균"],
-                ["bb", "볼린저밴드"],
-                ["cloud", "일목 구름"],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setVisible((v) => ({ ...v, [key]: !v[key] }))}
-                className={`rounded border px-2 py-0.5 text-[11px] ${visible[key] ? "border-primary/40 bg-info-soft text-info" : "border-border text-muted-foreground"}`}
-              >
-                {label}
-              </button>
-            ))}
-            <button
-              type="button"
-              aria-pressed={visible.technical}
-              onClick={() => setVisible((v) => ({ ...v, technical: !v.technical }))}
-              className={`rounded border px-2 py-0.5 text-[11px] ${visible.technical ? "border-primary/40 bg-info-soft text-info" : "border-border text-muted-foreground"}`}
-            >
-              기술점수 (10점)
-            </button>
+      <Suspense
+        fallback={
+          <div className="mt-5 rounded-lg border border-border p-4" role="status">
+            차트를 불러오는 중입니다…
           </div>
-        </div>
-        <div className="h-[420px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chart}>
-              <CartesianGrid stroke="var(--color-grid)" vertical={false} />
-              <XAxis dataKey="tradeDate" tick={{ fontSize: 10 }} minTickGap={40} />
-              <YAxis
-                yAxisId="price"
-                domain={["auto", "auto"]}
-                tick={{ fontSize: 10 }}
-                width={70}
-                tickFormatter={(v: number) => v.toLocaleString("ko-KR")}
-              />
-              <YAxis yAxisId="volume" orientation="right" hide />
-              {visible.technical ? (
-                <YAxis
-                  yAxisId="technical"
-                  orientation="right"
-                  domain={[0, HISTORICAL_TECHNICAL_MAX]}
-                  ticks={[0, 2, 4, 6, 8, 10]}
-                  width={48}
-                  tick={{ fontSize: 10, fill: "#f97316" }}
-                  tickFormatter={(v: number) => `${v}점`}
-                />
-              ) : null}
-              <Tooltip
-                contentStyle={{
-                  background: "var(--color-card)",
-                  border: "1px solid var(--color-border)",
-                  fontSize: 11,
-                }}
-                formatter={(v, name, item) => {
-                  if (item.dataKey === "historicalTechnicalPoints") {
-                    const s = item.payload.historicalTechnical;
-                    return [
-                      <span>
-                        {Number(v).toFixed(1)} / {s.rawMaxPoints}점
-                        <br />
-                        산정 가능 배점 {s.availableMaxPoints} / {s.rawMaxPoints}점
-                        {s.missingRules.length > 0 ? (
-                          <>
-                            <br />
-                            자료 부족: {s.missingRules.join(", ")}
-                          </>
-                        ) : null}
-                      </span>,
-                      name,
-                    ];
-                  }
-                  return typeof v === "number" ? v.toLocaleString("ko-KR") : v;
-                }}
-              />
-              <Legend wrapperStyle={{ fontSize: 10 }} />
-              {visible.cloud ? (
-                <Area
-                  yAxisId="price"
-                  dataKey="bullCloud"
-                  stroke="none"
-                  fill="var(--color-down)"
-                  fillOpacity={0.2}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                  name="양운"
-                />
-              ) : null}
-              {visible.cloud ? (
-                <Area
-                  yAxisId="price"
-                  dataKey="bearCloud"
-                  stroke="none"
-                  fill="var(--color-info)"
-                  fillOpacity={0.2}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                  name="음운"
-                />
-              ) : null}
-              {visible.bb ? (
-                <Area
-                  yAxisId="price"
-                  dataKey="bbBand"
-                  stroke="none"
-                  fill="var(--color-chart-2)"
-                  fillOpacity={0.14}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                  name="볼린저(20, 2σ)"
-                />
-              ) : null}
-              {visible.cloud ? (
-                <Line
-                  yAxisId="price"
-                  dataKey="tenkan"
-                  stroke="var(--color-chart-3)"
-                  dot={false}
-                  strokeWidth={1}
-                  isAnimationActive={false}
-                  name="전환선(9)"
-                />
-              ) : null}
-              {visible.cloud ? (
-                <Line
-                  yAxisId="price"
-                  dataKey="kijun"
-                  stroke="var(--color-chart-1)"
-                  dot={false}
-                  strokeWidth={1}
-                  isAnimationActive={false}
-                  name="기준선(26)"
-                />
-              ) : null}
-              <Bar
-                yAxisId="volume"
-                dataKey="volume"
-                fill="var(--color-grid)"
-                isAnimationActive={false}
-                name="거래량"
-              />
-              <Line
-                yAxisId="price"
-                dataKey="close"
-                stroke="var(--color-foreground)"
-                dot={false}
-                strokeWidth={1.6}
-                isAnimationActive={false}
-                name="종가"
-              />
-              {visible.ma ? (
-                <Line
-                  yAxisId="price"
-                  dataKey="ma5"
-                  stroke="var(--color-chart-4)"
-                  dot={false}
-                  strokeWidth={1}
-                  isAnimationActive={false}
-                  name="MA5"
-                />
-              ) : null}
-              {visible.ma ? (
-                <Line
-                  yAxisId="price"
-                  dataKey="ma20"
-                  stroke="var(--color-chart-3)"
-                  dot={false}
-                  strokeWidth={1}
-                  isAnimationActive={false}
-                  name="MA20"
-                />
-              ) : null}
-              {visible.ma ? (
-                <Line
-                  yAxisId="price"
-                  dataKey="ma60"
-                  stroke="var(--color-chart-1)"
-                  dot={false}
-                  strokeWidth={1}
-                  isAnimationActive={false}
-                  name="MA60"
-                />
-              ) : null}
-              {visible.ma ? (
-                <Line
-                  yAxisId="price"
-                  dataKey="ma120"
-                  stroke="var(--color-chart-5)"
-                  dot={false}
-                  strokeWidth={1}
-                  isAnimationActive={false}
-                  name="MA120"
-                />
-              ) : null}
-              {visible.bb ? (
-                <Line
-                  yAxisId="price"
-                  dataKey="bbUpper"
-                  stroke="var(--color-chart-2)"
-                  dot={false}
-                  strokeDasharray="4 3"
-                  strokeWidth={1}
-                  isAnimationActive={false}
-                  name="BB 상단"
-                />
-              ) : null}
-              {visible.bb ? (
-                <Line
-                  yAxisId="price"
-                  dataKey="bbLower"
-                  stroke="var(--color-chart-2)"
-                  dot={false}
-                  strokeDasharray="4 3"
-                  strokeWidth={1}
-                  isAnimationActive={false}
-                  name="BB 하단"
-                />
-              ) : null}
-              {visible.technical ? (
-                <Line
-                  yAxisId="technical"
-                  dataKey="historicalTechnicalPoints"
-                  name="기술점수 (V8 Final · 10점)"
-                  type="linear"
-                  stroke="#f97316"
-                  strokeWidth={2.5}
-                  strokeDasharray="6 3"
-                  dot={false}
-                  connectNulls={false}
-                  isAnimationActive={false}
-                />
-              ) : null}
-              <Brush
-                dataKey="tradeDate"
-                height={22}
-                travellerWidth={8}
-                stroke="var(--color-border)"
-                fill="var(--color-surface)"
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          하단 막대를 좌우로 끌면 과거 구간까지 확인할 수 있습니다. 이동평균 5·20·60·120일,
-          볼린저밴드 20일·2σ, 일목균형표 9·26·52(선행 26) 기준 · 양운 붉은색 / 음운 파랑색.
-        </p>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          오른쪽 축은 V8 Final 기술점수 0~10점입니다. 52주 신고가, 외국인 20일 순매수와 Sector Price
-          Leadership 0.5점 슬롯을 포함하며, 핵심 피처가 결측인 날짜는 남은 항목으로 재정규화하지
-          않고 선을 비워 둡니다.
-        </p>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          ATR 손절선 참고: {formatPrice(snap.close - 1.8 * (snap.atr14 ?? 0))} (진입가 기준 1.8 ATR)
-          · 52주 신고가 {formatPrice(snap.high52w)}
-        </p>
-      </section>
+        }
+      >
+        <InstrumentCharts key={symbol} symbol={symbol} payload={payload} revision={dataUpdatedAt} />
+      </Suspense>
 
       <div className="mt-5 space-y-4">
         <BreakdownTable
@@ -561,38 +304,7 @@ function InstrumentDetail() {
         />
       </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
-        <section className="rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-2 text-sm font-semibold">최근 60거래일 기술점수 추이 (10점)</h2>
-          <div className="h-[200px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={history}>
-                <CartesianGrid stroke="var(--color-grid)" vertical={false} />
-                <XAxis dataKey="tradeDate" tick={{ fontSize: 10 }} minTickGap={40} />
-                <YAxis
-                  domain={[0, HISTORICAL_TECHNICAL_MAX]}
-                  ticks={[0, 2, 4, 6, 8, 10]}
-                  tick={{ fontSize: 10 }}
-                  width={30}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "var(--color-card)",
-                    border: "1px solid var(--color-border)",
-                    fontSize: 11,
-                  }}
-                />
-                <Line
-                  dataKey="technicalPoints"
-                  stroke="var(--color-chart-1)"
-                  dot={false}
-                  name="기술점수"
-                />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
-
+      <div className="mt-5 grid gap-4">
         <section className="rounded-lg border border-border bg-card p-4">
           <h2 className="mb-2 text-sm font-semibold">수급 · 이격</h2>
           <div className="grid grid-cols-2 gap-2">

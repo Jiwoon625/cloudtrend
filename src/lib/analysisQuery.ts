@@ -36,7 +36,7 @@ export function isAnalysisFailurePayload(value: unknown): value is AnalysisFailu
   );
 }
 
-function withThreeDecimalClv(block: ScoreBlock, clv: number): ScoreBlock {
+export function withThreeDecimalClv(block: ScoreBlock, clv: number): ScoreBlock {
   return {
     ...block,
     rows: block.rows.map((row) => {
