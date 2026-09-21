@@ -97,7 +97,8 @@ jobs:
             --etf-symbols analysis-runs/etf-v21-symbols.json \
             --output analysis-runs/etf-m0-m1-sector-map.json
 
-      - name: Run ETF M0 vs M1 research
+      - name: Resolve ETF parquet path
+        id: etf-path
         run: |
           ETF_PARQUET="$(python - <<'PY'
           import json, pathlib
@@ -105,6 +106,10 @@ jobs:
           print(pathlib.Path(".cache/cloudtrend-etf-v21") / m["cacheFile"])
           PY
           )"
+          echo "ETF_PARQUET=$ETF_PARQUET" >> "$GITHUB_ENV"
+
+      - name: Run ETF M0 vs M1 research
+        run: |
           python scripts/research_etf_m0_vs_m1.py \
             --source-manifest "$BACKTEST_SOURCE_MANIFEST" \
             --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR" \
@@ -114,12 +119,6 @@ jobs:
 
       - name: Run ETF M0 onset filter research
         run: |
-          ETF_PARQUET="$(python - <<'PY'
-          import json, pathlib
-          m=json.loads(pathlib.Path(".cache/cloudtrend-etf-v21-manifest.json").read_text())
-          print(pathlib.Path(".cache/cloudtrend-etf-v21") / m["cacheFile"])
-          PY
-          )"
           python scripts/research_etf_m0_onset_filters.py \
             --source-manifest "$BACKTEST_SOURCE_MANIFEST" \
             --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR" \
@@ -127,6 +126,17 @@ jobs:
             --sector-map analysis-runs/etf-m0-m1-sector-map.json \
             --output-json analysis-runs/etf-m0-onset-filter-study.json \
             --output-csv analysis-runs/etf-m0-onset-filter-study.csv
+
+      - name: Run ETF M0 exit rule research
+        run: |
+          python scripts/research_etf_m0_exit_rules.py \
+            --source-manifest "$BACKTEST_SOURCE_MANIFEST" \
+            --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR" \
+            --etf-parquet "$ETF_PARQUET" \
+            --sector-map analysis-runs/etf-m0-m1-sector-map.json \
+            --output-json analysis-runs/etf-m0-exit-rule-study.json \
+            --output-csv analysis-runs/etf-m0-exit-rule-study.csv \
+            --output-trades analysis-runs/etf-m0-exit-rule-trades.csv
 
       - name: Upload research artifacts
         if: always()
@@ -139,5 +149,8 @@ jobs:
             analysis-runs/etf-screener-m0-vs-m1.json
             analysis-runs/etf-m0-onset-filter-study.json
             analysis-runs/etf-m0-onset-filter-study.csv
+            analysis-runs/etf-m0-exit-rule-study.json
+            analysis-runs/etf-m0-exit-rule-study.csv
+            analysis-runs/etf-m0-exit-rule-trades.csv
           if-no-files-found: warn
           retention-days: 30
