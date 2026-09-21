@@ -123,10 +123,29 @@ export async function readScreeningCache(): Promise<ScreeningCachePayload | null
 }
 
 export async function readDashboardCache(): Promise<DashboardSummary | null> {
-  const cached = await readObject<DashboardSummary>(await dashboardPath());
-  if (!cached || cached.version !== DASHBOARD_CACHE_VERSION) return null;
-  const expectedInput = await currentInputFingerprint();
-  return cached.inputFingerprint === expectedInput ? cached : null;
+  const path = await dashboardPath();
+  const cached = await readObject<DashboardSummary>(path);
+  if (cached?.version === DASHBOARD_CACHE_VERSION) {
+    const expectedInput = await currentInputFingerprint();
+    if (cached.inputFingerprint === expectedInput) return cached;
+  }
+
+  // The dashboard is only a projection. A missing/stale summary must not trigger
+  // another engine run when the shared screening result is already valid.
+  // readScreeningCache checks version, active inputs and the full result digest.
+  const screening = await readScreeningCache();
+  if (!screening) return null;
+  const recovered = buildDashboardSummary(
+    screening.payload.analysis,
+    screening.inputFingerprint,
+    screening.resultDigest,
+    screening.createdAt,
+  );
+  // Rendering must not depend on the repair upload (or a CDN read-after-write).
+  void writeObject(path, recovered).catch((error: unknown) => {
+    console.warn("대시보드 요약 캐시 복원 저장 실패", error);
+  });
+  return recovered;
 }
 
 export async function buildAndPersistScreeningCaches(): Promise<{
