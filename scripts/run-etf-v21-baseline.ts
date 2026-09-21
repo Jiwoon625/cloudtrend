@@ -2,13 +2,16 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-import { parseManualMarketData } from "../src/lib/engine/manualDataset";
 import {
   DEFAULT_BACKTEST_PARAMS,
   runBacktest,
   type BacktestInputSeries,
   type BacktestParams,
 } from "../src/lib/engine/backtestV4";
+import { normalizeKrxSymbol } from "../src/lib/engine/manualDataset";
+import { resolveSectorCode } from "../src/lib/engine/sectors";
+import type { DailyPrice } from "../src/lib/engine/types";
+import { visitDelimitedRows } from "../src/lib/sourceData";
 import {
   ANALYSIS_BUCKET,
   codeVersion,
@@ -42,6 +45,14 @@ interface EtfV21Manifest {
   };
 }
 
+interface MutableSeries {
+  symbol: string;
+  name: string;
+  market: "KOSPI" | "KOSDAQ";
+  bars: DailyPrice[];
+  dates: Set<string>;
+}
+
 function argValue(args: string[], name: string, fallback: string) {
   const idx = args.indexOf(name);
   return idx >= 0 ? (args[idx + 1] ?? fallback) : fallback;
@@ -51,6 +62,114 @@ function userId() {
   const value = process.env["SUPABASE_USER_ID"] ?? "";
   if (!/^[0-9a-f-]{36}$/i.test(value)) throw new Error("SUPABASE_USER_ID is required");
   return value;
+}
+
+function normalizeHeader(value: string) {
+  return value.replace(/[\s_]/g, "").toLowerCase();
+}
+
+function normalizeDate(value: string | undefined) {
+  const digits = String(value ?? "").replace(/[^0-9]/g, "");
+  return digits.length >= 8
+    ? `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`
+    : "";
+}
+
+function num(value: string | undefined): number | null {
+  if (value == null) return null;
+  const normalized = value.replace(/[, %₩원]/g, "").trim();
+  if (!normalized || /^(null|none|nan|na|-)$/i.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseEtfSeries(csvText: string): BacktestInputSeries[] {
+  let header: string[] | null = null;
+  const map = new Map<string, MutableSeries>();
+
+  visitDelimitedRows(csvText, (cells, rowIndex) => {
+    if (rowIndex === 0) {
+      header = cells.map(normalizeHeader);
+      return;
+    }
+    if (!header) return;
+
+    const idx = (...names: string[]) => header!.findIndex((item) => names.includes(item));
+    const value = (...names: string[]) => {
+      const i = idx(...names);
+      return i >= 0 ? cells[i] : undefined;
+    };
+
+    const symbol = normalizeKrxSymbol(value("symbol", "code", "종목코드", "단축코드"));
+    const date = normalizeDate(value("date", "tradedate", "기준일", "일자"));
+    const close = num(value("close", "종가"));
+    if (!symbol || !date || close === null || !(close > 0)) return;
+
+    const securityType = String(value("securitytype", "type", "종류") ?? "").toUpperCase();
+    if (securityType !== "ETF") return;
+
+    const name = String(value("name", "종목명") ?? symbol).trim() || symbol;
+    const rawMarket = String(value("market", "시장") ?? "").toUpperCase();
+    const market = rawMarket.includes("KOSDAQ") || rawMarket.includes("코스닥")
+      ? ("KOSDAQ" as const)
+      : ("KOSPI" as const);
+    const open = num(value("open", "시가")) ?? close;
+    const highRaw = num(value("high", "고가")) ?? Math.max(open, close);
+    const lowRaw = num(value("low", "저가")) ?? Math.min(open, close);
+    const high = Math.max(highRaw, open, close, lowRaw);
+    const low = Math.min(lowRaw, open, close, highRaw);
+    const volume = num(value("volume", "거래량")) ?? 0;
+    const tradingValue = num(value("tradingvalue", "amount", "tradingamount", "거래대금"))
+      ?? close * volume;
+
+    const bar: DailyPrice = {
+      tradeDate: date,
+      open,
+      high,
+      low,
+      close,
+      volume,
+      tradingValue,
+      marketCap: num(value("marketcap", "시가총액")),
+      foreignNetBuyValue: num(value("foreignnetbuyvalue", "foreignnet", "외국인순매수")),
+      institutionNetBuyValue: num(
+        value("institutionnetbuyvalue", "institutionnet", "기관순매수"),
+      ),
+      shortSellingVolumeRate: null,
+      lendingBalanceQuantity: null,
+    };
+
+    const existing = map.get(symbol);
+    if (existing) {
+      if (!existing.dates.has(date)) {
+        existing.dates.add(date);
+        existing.bars.push(bar);
+      }
+    } else {
+      map.set(symbol, {
+        symbol,
+        name,
+        market,
+        bars: [bar],
+        dates: new Set([date]),
+      });
+    }
+  });
+
+  return [...map.values()]
+    .map((item) => {
+      item.bars.sort((a, b) => a.tradeDate.localeCompare(b.tradeDate));
+      const sector = resolveSectorCode(item.symbol, item.name, true);
+      return {
+        symbol: item.symbol,
+        name: item.name,
+        market: item.market,
+        sectorCode: sector.code,
+        sectorName: sector.name,
+        bars: item.bars,
+      } satisfies BacktestInputSeries;
+    })
+    .sort((a, b) => a.symbol.localeCompare(b.symbol));
 }
 
 async function main() {
@@ -68,24 +187,11 @@ async function main() {
   const manifest = JSON.parse(manifestText) as EtfV21Manifest;
   const config = JSON.parse(configText) as BaselineConfig;
 
-  const parsed = parseManualMarketData([csvText]);
   const selected = new Set((config.symbols ?? []).map((symbol) => symbol.trim().toUpperCase()));
-  const pool = parsed.dataset.instruments
-    .filter((instrument) => instrument.instrumentType === "ETF")
-    .filter((instrument) => selected.size === 0 || selected.has(instrument.symbol))
-    .sort((a, b) => a.symbol.localeCompare(b.symbol))
+  const allSeries = parseEtfSeries(csvText);
+  const series = allSeries
+    .filter((item) => selected.size === 0 || selected.has(item.symbol))
     .slice(0, Math.max(1, Math.round(config.limit ?? 1000)));
-
-  const series: BacktestInputSeries[] = pool
-    .map((instrument) => ({
-      symbol: instrument.symbol,
-      name: instrument.name,
-      market: instrument.market === "KOSDAQ" ? ("KOSDAQ" as const) : ("KOSPI" as const),
-      sectorCode: instrument.sectorCode,
-      sectorName: instrument.sectorName,
-      bars: parsed.dataset.bars[instrument.symbol] ?? [],
-    }))
-    .filter((item) => item.bars.length > 0);
 
   if (series.length !== manifest.etfSymbolCount) {
     throw new Error(
@@ -101,6 +207,9 @@ async function main() {
     roundTripCostBps: Math.max(0, config.roundTripCostBps ?? 30),
   };
 
+  // The v2.1 ETF parquet intentionally contains ETF rows only. This baseline therefore
+  // runs without a fabricated market-index context. Market-adjusted/regime fields remain
+  // unavailable; absolute and cross-sectional results are the primary readout.
   const result = runBacktest(series, params);
   const scoreOnset678 = result.scoreOnsets.filter(
     (row) => row.threshold === 6 || row.threshold === 7 || row.threshold === 8,
@@ -145,7 +254,7 @@ async function main() {
       roundTripCostBps: params.roundTripCostBps,
       sampleEvery: params.sampleEvery,
       benchmark:
-        "No external market index is embedded in the ETF-only parquet; absolute/cross-sectional baseline is primary in this run.",
+        "The canonical ETF parquet contains ETF rows only. No synthetic index was inserted; absolute/cross-sectional baseline is primary and market-adjusted/regime metrics are unavailable.",
     },
     firstReadout: {
       parsedUniverse: series.length,
@@ -184,7 +293,10 @@ async function main() {
   const { data: readBack, error: readError } = await client.storage
     .from(ANALYSIS_BUCKET)
     .download(versionedPath);
-  if (readError || !readBack) throw new Error(`ETF baseline result read-back failed: ${readError?.message ?? "unknown"}`);
+  if (readError || !readBack)
+    throw new Error(
+      `ETF baseline result read-back failed: ${readError?.message ?? "unknown"}`,
+    );
 
   process.stdout.write(
     JSON.stringify(
