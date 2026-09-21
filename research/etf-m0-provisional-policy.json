@@ -1,7 +1,12 @@
 {
   "status": "provisional_research_policy",
   "model": "continuous_technical_M0",
-  "weights": {"technicalContinuous": 55, "priorityM0": 15, "health": 15, "marketSectorScore": 15},
+  "weights": {
+    "technicalContinuous": 55,
+    "priorityM0": 15,
+    "health": 15,
+    "marketSectorScore": 15
+  },
   "blockScale": "each block 0..100; Priority existing implementation retained without ceiling rescale",
   "entry": "previous M0 < 80 and current M0 >= 80 and eligible",
   "exit": "underlying index close < underlying index MA60",
@@ -11,5 +16,34 @@
   "costPerSide": 0.0015,
   "blockStudyDecision": "retain all four blocks; none of 19 alternatives passes both train and validation gates",
   "productionDeployment": false,
-  "limitations": ["reused retrospective holdout", "survivorship bias", "dividend and adjustment consistency unverified", "slot-count and symbol tie-break sensitivity"]
+  "limitations": [
+    "reused retrospective holdout",
+    "survivorship bias",
+    "dividend and adjustment consistency unverified",
+    "slot-count and symbol tie-break sensitivity"
+  ],
+  "componentStudyDecision": "retain baseline: no candidate improved both train and validation CAGR/Sharpe",
+  "researchChallengers": [
+    {
+      "id": "GATE_AUM50_TV1",
+      "status": "watch_only",
+      "aumMinimum": 50000000000,
+      "averageTradingValue20dMinimum": 1000000000,
+      "healthScoreRetained": true
+    },
+    {
+      "id": "P_ZERO_Rotation",
+      "status": "watch_only",
+      "note": "Zero rotation contribution while retaining current denominator; not a production row deletion"
+    }
+  ],
+  "dataQualityNotes": [
+    "2026-09-18 AUM=0 for 238 equity ETFs: treat as suspect/unavailable, not actual zero assets",
+    "KOSPI reference and sector inputs end 2026-09-11; later ETF bars are MTM only",
+    "Rotation absent structurally for MARKET_IDX and ETC",
+    "Official premium and tracking-error history empty; expense-ratio column absent",
+    "Price-adjustment and AUM/NAV/unit timestamp consistency require reconciliation",
+    "Price source explicitly TOSS_ADJUSTED_CANDLE; monetary fields KRX_ETF; do not compare adjusted close directly to NAV",
+    "Five ETFs have zero underlying index values; 10 baseline matched exits coincide with invalid index. Repair before final strategy validation."
+  ]
 }

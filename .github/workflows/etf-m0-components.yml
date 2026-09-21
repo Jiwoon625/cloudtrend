@@ -120,6 +120,9 @@ jobs:
             --sector-map analysis-runs/etf-m0-m1-sector-map.json \
             --output-dir analysis-runs/m0-components
 
+      - name: Summarize raw component diagnostics
+        run: python scripts/research_etf_m0_components_diagnostics.py --components analysis-runs/m0-components
+
       - name: Upload component artifacts
         if: always()
         uses: actions/upload-artifact@v4
