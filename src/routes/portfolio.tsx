@@ -220,7 +220,7 @@ function PortfolioPage() {
         </div>
         <p className="mt-2 text-[10px] text-muted-foreground">
           운용자금 변경은 기존 체결기록을 소급 수정하지 않고 이후 신규 진입의 목표금액·수량에
-          적용됩니다. 동일 섹터 신규 진입은 최대 30%, 거래비용은 왕복 0.30% 가정입니다.
+          적용됩니다. 동일 섹터 보유 한도는 KOSPI 10% / KOSDAQ 20%이며, 거래비용은 왕복 0.30% 가정입니다.
         </p>
       </section>
 

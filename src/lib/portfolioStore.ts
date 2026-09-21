@@ -592,7 +592,9 @@ async function runPortfolioSync(): Promise<PortfolioState> {
       continue;
     }
 
-    const sectorSlots = Math.max(1, Math.floor(settings.maxPositions * settings.sectorCap + 1e-9));
+    const sectorCap =
+      STRATEGY_CONFIG[candidate.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI"].sectorCap;
+    const sectorSlots = Math.max(1, Math.floor(settings.maxPositions * sectorCap + 1e-9));
     const sectorCount = active.filter(
       (trade) => trade.sectorCode === candidate.entry.sectorCode,
     ).length;
@@ -601,7 +603,7 @@ async function runPortfolioSync(): Promise<PortfolioState> {
         uid,
         candidate,
         "SKIPPED_SECTOR",
-        `동일 섹터 ${Math.round(settings.sectorCap * 100)}% 한도 도달`,
+        `${candidate.market} 동일 섹터 ${Math.round(sectorCap * 100)}% 한도 도달`,
       );
       handledKeys.add(key);
       continue;
@@ -707,7 +709,7 @@ async function runPortfolioSync(): Promise<PortfolioState> {
  * - KOSPI는 U9.5 상향돌파만 점수 청산(DX), 과거 참고용 스냅샷은 진입하지 않음
  * - 9.0 상향 재돌파 / 3.0 하향 이탈은 신호 다음 거래일 시가에 청산
  * - 60거래일 만기는 해당 거래일 종가에 청산
- * - P30, 동일섹터 최대 30%, 왕복비용 0.30% 기본값을 적용
+ * - P30, KOSPI 동일섹터 최대 10% / KOSDAQ 최대 20%, 왕복비용 0.30%를 적용
  * - 다음 거래일 데이터가 원천데이터에 들어오는 즉시 체결 가능 상태로 본다.
  */
 export async function syncPortfolioFromHistory(): Promise<PortfolioState> {

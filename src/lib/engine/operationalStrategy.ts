@@ -12,12 +12,14 @@ export const STRATEGY_CONFIG = {
     summary:
       "KOSPI: ETF PL 84 우선 / Stock PL 80 fallback · 8.0 Onset 진입 · U9.5 상향돌파 청산 · Downside Exit 없음(DX) · H60",
     maxHoldingDays: 60,
+    sectorCap: 0.1,
   },
   KOSDAQ: {
     pl: "Stock PL 80",
     summary:
       "KOSDAQ: Stock PL 80 · 8.0 Onset 진입 · U9.0 상향 재돌파 / D3.0 하향 이탈 · H60 (기존 운영 전략 유지)",
     maxHoldingDays: 60,
+    sectorCap: 0.2,
   },
 } as const;
 
