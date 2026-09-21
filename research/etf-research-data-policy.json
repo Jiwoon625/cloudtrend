@@ -34,5 +34,6 @@
     "reused historical holdout"
   ],
   "mappingStoragePath": "source/Reference/etf-universe-sector-map-20260911.csv",
-  "environmentResearch": "Point-in-time regional ETF peer composites exclude own/duplicate underlying family; minimum3 others;1-observation lag. Candidates not adopted after failed validation."
+  "environmentResearch": "User-adopted peerMix:50%continuous regional trend+50%peer breadth, exclude own economic family,minimum3 other families,1-observation lag. Domestic stock-sector retained; ownLag fallback where peer environment unavailable.",
+  "environmentRoutingStoragePath": "source/Reference/etf-environment-routing-20260911-peer-mix.csv"
 }

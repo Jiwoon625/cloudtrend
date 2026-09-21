@@ -1,12 +1,12 @@
 """Current ETF research baseline: two active Priority slots, no index/rotation points.
 
-This is a structural cleanup, not a claim of superior performance. Environment
-challengers did not pass validation. Research cutoff remains 2026-09-11.
+This is a structural cleanup, not a claim of superior performance. Peer-mix environment adopted by user. Priority7.5 is conditional on10slots,
+not robust across portfolio sizes. Research cutoff remains 2026-09-11.
 """
 import numpy as np
 import pandas as pd
 
-WEIGHTS={'technicalContinuous':.55,'priorityTwo':.15,'healthCapLiquidityPlain':.15,'marketSectorMapped':.15}
+WEIGHTS={'technicalContinuous':.625,'priorityTwo':.075,'healthCapLiquidityPlain':.15,'marketSectorMapped':.15}
 CUTOFF='2026-09-11'
 
 def priority_score(market_cap,day_return,benchmark_day_return,region):
@@ -38,4 +38,13 @@ def score_and_signals(panel:pd.DataFrame)->pd.DataFrame:
     d['entrySignal']=(prev<80)&(d.m0Provisional>=80)&d.eligible.fillna(False)&uvalid&mvalid
     d['exitSignal']=uvalid&mvalid&(d.etfUnderlyingIndexClose<d.uMa60)
     d['dataErrorExitSignal']=~uvalid
+    return d
+
+
+def apply_environment(panel:pd.DataFrame)->pd.DataFrame:
+    """Inputs peerMix/ownLag must already be lagged by one observation."""
+    d=panel.copy();local=d.rotationSource.eq('domestic_stock_sector')
+    peer=d.peerMixAvailable.fillna(False)&d.peerMix.notna()
+    d['marketSectorMapped']=d.sectorClean.where(local,d.peerMix.where(peer,d.ownLag))
+    d['environmentSource']=np.where(local,'domestic_stock_sector',np.where(peer,'regional_peer_mix_lag1','own_underlying_regime_lag1_fallback'))
     return d

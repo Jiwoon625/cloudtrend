@@ -1,9 +1,9 @@
 {
-  "status": "research_baseline_recalibration_required",
-  "model": "continuous_M0_two_active_priority_slots",
+  "status": "conditional_research_candidate_for_10_slots",
+  "model": "continuous_M0_peer_environment",
   "weights": {
-    "technicalContinuous": 55,
-    "priorityTwo": 15,
+    "technicalContinuous": 62.5,
+    "priorityTwo": 7.5,
     "healthCapLiquidityPlain": 15,
     "marketSectorMapped": 15
   },
@@ -14,7 +14,7 @@
   "holdingTimeCap": null,
   "portfolioSlots": 10,
   "costPerSide": 0.0015,
-  "blockStudyDecision": "Four blocks retained provisionally. Priority effective influence increased after removing unused slots; allocation requires future validation.",
+  "blockStudyDecision": "Technical62.5/Priority7.5/Health15/Environment15 is a10-slot research candidate; cross-slot robustness not established.",
   "productionDeployment": false,
   "limitations": [
     "reused retrospective holdout",
@@ -22,44 +22,8 @@
     "dividend and adjustment consistency unverified",
     "slot-count and symbol tie-break sensitivity"
   ],
-  "componentStudyDecision": "User-authorized structural cleanup retained despite performance regression. No regional environment candidate passed BOTH train and validation.",
-  "researchChallengers": [
-    {
-      "id": "P2_OWN_LAG1",
-      "status": "not_adopted",
-      "reason": "Did not pass joint train/validation CAGR,Sharpe,MDD gate"
-    },
-    {
-      "id": "P2_PEER_TREND",
-      "status": "not_adopted",
-      "reason": "Did not pass joint train/validation CAGR,Sharpe,MDD gate"
-    },
-    {
-      "id": "P2_PEER_CONTINUOUS",
-      "status": "not_adopted",
-      "reason": "Did not pass joint train/validation CAGR,Sharpe,MDD gate"
-    },
-    {
-      "id": "P2_PEER_BREADTH",
-      "status": "not_adopted",
-      "reason": "Did not pass joint train/validation CAGR,Sharpe,MDD gate"
-    },
-    {
-      "id": "P2_PEER_MIX",
-      "status": "not_adopted",
-      "reason": "Did not pass joint train/validation CAGR,Sharpe,MDD gate"
-    },
-    {
-      "id": "P2_NEUTRAL",
-      "status": "not_adopted",
-      "reason": "Did not pass joint train/validation CAGR,Sharpe,MDD gate"
-    },
-    {
-      "id": "P2_NO_ENV",
-      "status": "not_adopted",
-      "reason": "Did not pass joint train/validation CAGR,Sharpe,MDD gate"
-    }
-  ],
+  "componentStudyDecision": "Priority weight selected by train and validation only; external environment imposed by user, not claimed superior to old environment",
+  "researchChallengers": [],
   "dataQualityNotes": [
     "All analysis and fills end2026-09-11",
     "393explicit mappings,245plain equity ETFs after6asset-class corrections",
@@ -99,7 +63,7 @@
   },
   "marketSector": {
     "domesticSector": "stock-only sector relative strength, trend and breadth; ETFs excluded from stock breadth",
-    "otherEquity": "Provisional existing own-underlying regime retained; none of the independent regional environment candidates passed train and validation.",
+    "otherEquity": "Peer mix where available; lagged own-index regime fallback; domestic stock-sector unchanged",
     "domesticRotationCompatibleEtfs": 101,
     "otherEquityEtfs": 144,
     "environmentStudy": {
@@ -114,27 +78,95 @@
         "KR_TW",
         "US_CN",
         "VN"
-      ]
+      ],
+      "adoptionBasis": "Explicit user instruction to apply all computable external environments; peerMix fixed before weight tests",
+      "weightStudySource": "results/etf-m0-priority-weights/20260911",
+      "method": "50%continuous regional trend+50%peer breadth;1-observation lag;own index family excluded;minimum3 other families;ownLag fallback"
     }
   },
   "dataErrorExit": "If underlying index becomes unavailable while held, separately label next-open data-error liquidation; not a MA60 signal.",
   "researchResult": {
-    "baseRun": 35566534880,
-    "selected": "P2_OWN",
-    "cagr": 0.11504015137249057,
-    "mdd": -0.26942933811329073,
-    "sharpe": 0.6983489901312766,
-    "note": "Structural baseline; inferior to previous denominator-preserving variant. Not approved as superior investment model."
-  },
-  "historicalReference": {
-    "baseRun": 35564981988,
-    "selected": "DROP_P_ROTATION",
-    "cagr": 0.15073,
-    "mdd": -0.2308,
-    "sharpe": 0.90226,
-    "entryCount": 346,
-    "note": "Summary rounded; exact values in Supabase portfolio-summary.csv; not independently untouched holdout.",
-    "currentPolicy": false
+    "selected": "P7.5",
+    "passed": [
+      "P7.5"
+    ],
+    "cutoff": "2026-09-11",
+    "outOfSampleStatus": "reused retrospective holdout",
+    "sourceRun": 35567515449,
+    "robustAcrossPortfolioSizes": false,
+    "limitations": [
+      "P7.5 improves train and validation versus the user-adopted peer-environment P15 baseline; not evidence that this environment beats the original model",
+      "At5slots P7.5 CAGR6.82%/MDD-36.63% versus P15 CAGR9.24%/MDD-28.65%",
+      "At30bp per side P7.5 CAGR improves but MDD deteriorates to-30.15% versus-24.79%",
+      "Research-only conditional selection; not a universally validated operating weight"
+    ],
+    "exactMetrics": [
+      {
+        "candidate": "P7.5",
+        "priorityWeight": 7.5,
+        "technicalWeight": 62.5,
+        "scope": "all",
+        "split": "train",
+        "cagr": 0.0446956269202625,
+        "mdd": -0.2265426578505933,
+        "sharpe": 0.4626024440349314,
+        "totalReturn": 0.2914426436766553,
+        "exposure": 0.5421638325212315,
+        "days": 1474
+      },
+      {
+        "candidate": "P7.5",
+        "priorityWeight": 7.5,
+        "technicalWeight": 62.5,
+        "scope": "all",
+        "split": "validation",
+        "cagr": 0.0291268551226158,
+        "mdd": -0.1432415698701079,
+        "sharpe": 0.2699760674200493,
+        "totalReturn": 0.0572936538679544,
+        "exposure": 0.8131322952332837,
+        "days": 489
+      },
+      {
+        "candidate": "P7.5",
+        "priorityWeight": 7.5,
+        "technicalWeight": 62.5,
+        "scope": "all",
+        "split": "test",
+        "cagr": 0.494727092515941,
+        "mdd": -0.2090947514040217,
+        "sharpe": 1.4035277372006305,
+        "totalReturn": 0.9323579077146098,
+        "exposure": 0.8980317263753888,
+        "days": 413
+      },
+      {
+        "candidate": "P7.5",
+        "priorityWeight": 7.5,
+        "technicalWeight": 62.5,
+        "scope": "all",
+        "split": "all",
+        "cagr": 0.111184063581432,
+        "mdd": -0.2464596993533023,
+        "sharpe": 0.6953863153745806,
+        "totalReturn": 1.70207009508731,
+        "exposure": 0.6605578538747595,
+        "days": 2376
+      },
+      {
+        "candidate": "P7.5",
+        "priorityWeight": 7.5,
+        "technicalWeight": 62.5,
+        "scope": "all",
+        "split": "legacy_window",
+        "cagr": 0.0805072422798951,
+        "mdd": -0.2464596993533025,
+        "sharpe": 0.5250171940045492,
+        "totalReturn": 0.9264944087267404,
+        "exposure": 0.6272573448470293,
+        "days": 2134
+      }
+    ]
   },
   "mappingStoragePath": "source/Reference/etf-universe-sector-map-20260911.csv"
 }
