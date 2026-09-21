@@ -1,0 +1,49 @@
+name: ETF V0.1 sequential improvements
+on:
+  push:
+    branches:
+      - research/etf-m0-enhance-20260921
+    paths:
+      - scripts/research_etf_m0_v01_improvements.py
+      - scripts/save_etf_v01_improvement_results.py
+      - .github/workflows/etf-m0-v01-improvements.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  study:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check pandas==2.2.3 numpy==2.1.3 pyarrow==23.0.1
+      - uses: actions/download-artifact@v4
+        with:
+          name: etf-m0-priority-weights-35567515449
+          run-id: 35567515449
+          github-token: ${{ github.token }}
+          path: analysis-runs/m0-priority-base
+      - uses: actions/download-artifact@v4
+        with:
+          name: etf-m0-clean-35564981988
+          run-id: 35564981988
+          github-token: ${{ github.token }}
+          path: analysis-runs/m0-clean-base
+      - name: Three sequential model improvements
+        run: python -W ignore scripts/research_etf_m0_v01_improvements.py --base analysis-runs/m0-priority-base --clean analysis-runs/m0-clean-base --mapping research/etf-universe-sector-map-20260911.csv --output analysis-runs/m0-v01-improvements
+      - name: Persist verified results
+        run: python scripts/save_etf_v01_improvement_results.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: etf-m0-v01-improvements-${{ github.run_id }}
+          path: analysis-runs/m0-v01-improvements/
+          retention-days: 30
