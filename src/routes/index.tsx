@@ -99,6 +99,25 @@ function KeyValue({
   );
 }
 
+function GateConditionValue({
+  comparison,
+  met,
+}: {
+  comparison: string;
+  met: boolean | null;
+}) {
+  const className =
+    met === true ? "text-up" : met === false ? "text-down" : "text-muted-foreground";
+  const label = met === true ? "충족" : met === false ? "미충족" : "미평가";
+
+  return (
+    <span className={className}>
+      {comparison}
+      <span className="ml-1 text-[10px] font-normal">{label}</span>
+    </span>
+  );
+}
+
 function Dashboard() {
   const queryClient = useQueryClient();
   const [started] = useState(() => isScreeningStarted());
@@ -298,11 +317,55 @@ function DashboardContent({
           ) : null}
           <KeyValue
             label="KOSPI / MA60"
-            value={`${formatNumber(summary.kospi.close, 2)} / ${formatNumber(summary.kospi.ma60, 2)}`}
+            value={
+              <GateConditionValue
+                comparison={`${formatNumber(summary.kospi.close, 2)} ${gate.benchmarkAboveMa60 ? ">" : "≤"} ${formatNumber(summary.kospi.ma60, 2)}`}
+                met={gate.benchmarkAboveMa60}
+              />
+            }
           />
-          <KeyValue label="KOSDAQ" value={formatNumber(summary.kosdaq.close, 2)} />
-          <KeyValue label="변동성" value={formatNumber(summary.vkospi, 2)} />
-          <KeyValue label="외국인 최근 5일" value={formatWon(summary.marketForeignNet5d)} />
+          <KeyValue
+            label="KOSPI / Cloud Top"
+            value={
+              <GateConditionValue
+                comparison={`${formatNumber(summary.kospi.close, 2)} ${gate.benchmarkAboveCloud ? ">" : "≤"} ${formatNumber(summary.kospi.ichimoku.cloudTop, 2)}`}
+                met={gate.benchmarkAboveCloud}
+              />
+            }
+          />
+          <KeyValue
+            label="KOSDAQ"
+            value={formatNumber(summary.kosdaq.close, 2)}
+            hint="참고 · Gate 기준 없음"
+          />
+          <KeyValue
+            label="변동성 (VKOSPI)"
+            value={
+              <GateConditionValue
+                comparison={`${formatNumber(summary.vkospi, 2)} ${gate.vkospiBelow30 ? "<" : "≥"} 30`}
+                met={gate.vkospiBelow30}
+              />
+            }
+          />
+          <KeyValue
+            label="외국인 최근 5일 순매수(도)"
+            value={
+              <GateConditionValue
+                comparison={
+                  summary.marketForeignNet5d === null
+                    ? "데이터 없음"
+                    : `${formatWon(summary.marketForeignNet5d)} ${
+                        summary.marketForeignNet5d > 0
+                          ? ">"
+                          : summary.marketForeignNet5d < 0
+                            ? "<"
+                            : "="
+                      } 0`
+                }
+                met={gate.foreignNet5dPositive}
+              />
+            }
+          />
           <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
             Market Gate는 참고정보이며 KOSPI / KOSDAQ 8.0 Onset 또는 Exit를 차단하지 않습니다.
           </p>
