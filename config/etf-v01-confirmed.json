@@ -1,0 +1,56 @@
+{
+  "status": "user_confirmed",
+  "confirmedOn": "2026-09-21",
+  "version": "etf-v01-m0-std20-t15-v1",
+  "weights": {
+    "technical": 62.5,
+    "priority": 7.5,
+    "health": 15,
+    "environment": 15
+  },
+  "technical": "mean of clip(50+25*gap/max(daily sample std20,0.003),0,100) for close/cloudTop-1, MA20/MA60-1, MA60/MA120-1, close/MA20-1, MA60/MA60[t-5]-1",
+  "priority": "100 if KR exposure and daily adjusted return exceeds KOSPI by >=2 percentage points, otherwise0; no size/rotation/index-membership bonus",
+  "health": "(20 if KRX cap>=50bn +10 if cap>=100bn +20 if trailing20 KRX trading value>=1bn +10 plain)/60*100; no hard liquidity gate",
+  "environment": "stock-only domestic sector; otherwise regional leave-family-out50%continuous trend+50%breadth with >=3 other families, lag1; own-index regime lag1 fallback",
+  "entry": "previous M0 <80 and current M0 >=80 and eligible; next session open",
+  "exit": "underlying close<MA60 state; next session open; missing underlying separately labelled data-error exit",
+  "sizing": {
+    "window": 20,
+    "returns": "simple adjusted-close daily returns",
+    "ddof": 1,
+    "annualization": 252,
+    "target": 0.15,
+    "power": 1,
+    "formula": "0.10*min(1,0.15/annualizedVolatility)",
+    "maxPositions": 10,
+    "budget": "min(availableCash,equity*weight)",
+    "quantity": "floor(budget/(orderPrice*(1+0.0015)))",
+    "tieBreak": "symbol ascending",
+    "rebalance": false,
+    "holdingTimeCap": null
+  },
+  "dataPolicy": {
+    "researchStart": "2017-01-03",
+    "researchCutoff": "2026-09-11",
+    "productionAsOf": "latest supplied Korean session; cutoff is research-only",
+    "priceSource": "TOSS_ADJUSTED_CANDLE",
+    "amountSource": "KRX_ETF",
+    "mapping": "source/Reference/etf-universe-sector-map-20260911.csv",
+    "ignored": ["premiumDiscount", "trackingError", "expenseRatio"],
+    "missing": "block new order; do not manufacture zero scores or forward-fill underlying"
+  },
+  "researchEvidence": {
+    "candidate": "STD20_T15",
+    "run": 35600857094,
+    "resultPath": "results/etf-m0-volatility-sizing/20260911/35600857094/",
+    "cagr": 0.0967196891,
+    "mdd": -0.1692763161,
+    "sharpe": 0.8945898,
+    "selection": "explicit user decision; supersedes proposed power2 choice",
+    "limitations": [
+      "retrospective reused holdout",
+      "current-universe survivorship",
+      "not independently certified total return"
+    ]
+  }
+}

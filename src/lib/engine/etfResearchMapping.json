@@ -1,0 +1,3146 @@
+{
+  "0008T0": {
+    "assetClass": "equity",
+    "sectorCode": "HEALTH_SVC",
+    "region": "KR",
+    "stockSectorCode": "HEALTH_SVC",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 화장품TOP3 플러스 지수(PR)"
+  },
+  "0023A0": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_TECH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "KEDI 미국양자컴퓨팅 TOP10(PR)"
+  },
+  "0043B0": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS-미래에셋 MMF지수"
+  },
+  "0051G0": {
+    "assetClass": "equity",
+    "sectorCode": "ENERGY",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "KEDI 미국원자력 SMR 지수(PR)"
+  },
+  "0052D0": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Dow Jones Korea Dividend 30 지수 (Price Return)"
+  },
+  "0053L0": {
+    "assetClass": "equity",
+    "sectorCode": "SHIP_DEF",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Mirae Asset China Humanoid Robot 지수(PR)"
+  },
+  "0072R0": {
+    "assetClass": "commodity_fx",
+    "sectorCode": "COMMODITY_FX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KRX 금현물지수"
+  },
+  "0080G0": {
+    "assetClass": "equity",
+    "sectorCode": "SHIP_DEF",
+    "region": "KR",
+    "stockSectorCode": "SHIP_DEF",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "iSelect 방산 TOP10 지수(Price Return)"
+  },
+  "0091P0": {
+    "assetClass": "equity",
+    "sectorCode": "ENERGY",
+    "region": "KR",
+    "stockSectorCode": "ENERGY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "iSelect 코리아 원자력 지수 (Price Return)"
+  },
+  "0105D0": {
+    "assetClass": "equity",
+    "sectorCode": "SOFTWARE",
+    "region": "KR",
+    "stockSectorCode": "SOFTWARE",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KEDI 한국AI소프트웨어 지수(PR)"
+  },
+  "0117V0": {
+    "assetClass": "equity",
+    "sectorCode": "ENERGY",
+    "region": "KR",
+    "stockSectorCode": "ENERGY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KEDI 코리아AI전력기기TOP3플러스 지수"
+  },
+  "0148J0": {
+    "assetClass": "equity",
+    "sectorCode": "SHIP_DEF",
+    "region": "KR",
+    "stockSectorCode": "SHIP_DEF",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KEDI 코리아 휴머노이드로봇산업 지수 (PR)"
+  },
+  "0162Z0": {
+    "assetClass": "mixed",
+    "sectorCode": "MULTI_ASSET",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KAP 삼성전자SK하이닉스채권혼합50 지수"
+  },
+  "0167A0": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide AI반도체 TOP2 플러스 지수(PR)"
+  },
+  "0173Y0": {
+    "assetClass": "equity",
+    "sectorCode": "IT_HW",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Akros 미국 AI 광통신 및 네트워크 인프라 지수(PR)"
+  },
+  "0177N0": {
+    "assetClass": "mixed",
+    "sectorCode": "MULTI_ASSET",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "Wise 삼성전자 SK하이닉스 채권혼합 지수"
+  },
+  "0177R0": {
+    "assetClass": "option_overlay",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "FnGuide 반도체 TOP10 Capped 지수(Price Return)"
+  },
+  "0182R0": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "NICE K반도체 TOP2 MAX+ 지수"
+  },
+  "0183J0": {
+    "assetClass": "equity",
+    "sectorCode": "SHIP_DEF",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Akros U.S. Space Tech 지수(PR)"
+  },
+  "0193T0": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KRX SK하이닉스 지수"
+  },
+  "0193W0": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KRX 삼성전자 지수"
+  },
+  "0195R0": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KRX 삼성전자 지수"
+  },
+  "0195S0": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KRX SK하이닉스 지수"
+  },
+  "0197X0": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KRX SK하이닉스 선물 지수"
+  },
+  "0210A0": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX K-AI 반도체TOP2+ 지수"
+  },
+  "0219E0": {
+    "assetClass": "option_overlay",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 커버드콜 5% OTM"
+  },
+  "069500": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200"
+  },
+  "069660": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200"
+  },
+  "091160": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 반도체"
+  },
+  "091170": {
+    "assetClass": "equity",
+    "sectorCode": "FINANCE",
+    "region": "KR",
+    "stockSectorCode": "FINANCE",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 은행"
+  },
+  "091180": {
+    "assetClass": "equity",
+    "sectorCode": "AUTO",
+    "region": "KR",
+    "stockSectorCode": "AUTO",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 자동차"
+  },
+  "091220": {
+    "assetClass": "equity",
+    "sectorCode": "FINANCE",
+    "region": "KR",
+    "stockSectorCode": "FINANCE",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 은행"
+  },
+  "091230": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 반도체"
+  },
+  "099140": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Hang Seng China H"
+  },
+  "101280": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "JP",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "TOPIX100"
+  },
+  "102110": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200"
+  },
+  "102780": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "삼성그룹"
+  },
+  "102960": {
+    "assetClass": "equity",
+    "sectorCode": "SHIP_DEF",
+    "region": "KR",
+    "stockSectorCode": "SHIP_DEF",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 기계장비"
+  },
+  "102970": {
+    "assetClass": "equity",
+    "sectorCode": "FINANCE",
+    "region": "KR",
+    "stockSectorCode": "FINANCE",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 증권"
+  },
+  "104520": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "MKF 블루칩"
+  },
+  "105190": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200"
+  },
+  "105780": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "MKF 5대그룹주"
+  },
+  "108450": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "MKF SAMs SW"
+  },
+  "108590": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200"
+  },
+  "114100": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KTB INDEX(시장가격)"
+  },
+  "114260": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "MKF 국고채지수(총수익)"
+  },
+  "114470": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KTB INDEX(시장가격)"
+  },
+  "114800": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 선물지수"
+  },
+  "114820": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KTB INDEX(시장가격)"
+  },
+  "117460": {
+    "assetClass": "equity",
+    "sectorCode": "ENERGY",
+    "region": "KR",
+    "stockSectorCode": "ENERGY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 에너지화학"
+  },
+  "117680": {
+    "assetClass": "equity",
+    "sectorCode": "CHEM_STEEL",
+    "region": "KR",
+    "stockSectorCode": "CHEM_STEEL",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 철강"
+  },
+  "117700": {
+    "assetClass": "equity",
+    "sectorCode": "CONSTRUCT",
+    "region": "KR",
+    "stockSectorCode": "CONSTRUCT",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 건설"
+  },
+  "122090": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 50"
+  },
+  "122260": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "MK 통안채지수(총수익)"
+  },
+  "122630": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200"
+  },
+  "123310": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 선물지수"
+  },
+  "123320": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200"
+  },
+  "130680": {
+    "assetClass": "commodity_fx",
+    "sectorCode": "COMMODITY_FX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "S&P GSCI Crude Oil Enhanced Index ER"
+  },
+  "130730": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "MK 머니마켓 지수(총수익)"
+  },
+  "132030": {
+    "assetClass": "commodity_fx",
+    "sectorCode": "COMMODITY_FX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "S&P GSCI Gold Index(TR)"
+  },
+  "133690": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "NASDAQ 100"
+  },
+  "136340": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KOBI 크레딧 지수(총수익)"
+  },
+  "137610": {
+    "assetClass": "commodity_fx",
+    "sectorCode": "COMMODITY_FX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "S&P GSCI Agriculture Enhanced Index(ER)"
+  },
+  "138230": {
+    "assetClass": "commodity_fx",
+    "sectorCode": "COMMODITY_FX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "미국달러선물지수"
+  },
+  "138540": {
+    "assetClass": "equity",
+    "sectorCode": "AUTO",
+    "region": "KR",
+    "stockSectorCode": "AUTO",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "MKF 현대차그룹+ FW"
+  },
+  "139220": {
+    "assetClass": "equity",
+    "sectorCode": "CONSTRUCT",
+    "region": "KR",
+    "stockSectorCode": "CONSTRUCT",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "코스피 200 건설"
+  },
+  "139230": {
+    "assetClass": "equity",
+    "sectorCode": "SHIP_DEF",
+    "region": "KR",
+    "stockSectorCode": "SHIP_DEF",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "코스피 200 중공업"
+  },
+  "139240": {
+    "assetClass": "equity",
+    "sectorCode": "CHEM_STEEL",
+    "region": "KR",
+    "stockSectorCode": "CHEM_STEEL",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "코스피 200 철강/소재"
+  },
+  "139250": {
+    "assetClass": "equity",
+    "sectorCode": "ENERGY",
+    "region": "KR",
+    "stockSectorCode": "ENERGY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "코스피 200 에너지/화학"
+  },
+  "139260": {
+    "assetClass": "equity",
+    "sectorCode": "IT_HW",
+    "region": "KR",
+    "stockSectorCode": "IT_HW",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "코스피 200 정보기술"
+  },
+  "139270": {
+    "assetClass": "equity",
+    "sectorCode": "FINANCE",
+    "region": "KR",
+    "stockSectorCode": "FINANCE",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "코스피 200 금융"
+  },
+  "139280": {
+    "assetClass": "equity",
+    "sectorCode": "CONSUMER",
+    "region": "KR",
+    "stockSectorCode": "CONSUMER",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "코스피 200 경기방어소비재"
+  },
+  "139290": {
+    "assetClass": "equity",
+    "sectorCode": "CONSUMER",
+    "region": "KR",
+    "stockSectorCode": "CONSUMER",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "코스피 200 경기소비재"
+  },
+  "139660": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "미국달러선물지수"
+  },
+  "140700": {
+    "assetClass": "equity",
+    "sectorCode": "FINANCE",
+    "region": "KR",
+    "stockSectorCode": "FINANCE",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 보험"
+  },
+  "140710": {
+    "assetClass": "equity",
+    "sectorCode": "CONSTRUCT",
+    "region": "KR",
+    "stockSectorCode": "CONSTRUCT",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 운송"
+  },
+  "140950": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 100"
+  },
+  "143850": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "S&P 500 Futures Index(ER)"
+  },
+  "143860": {
+    "assetClass": "equity",
+    "sectorCode": "BIO",
+    "region": "KR",
+    "stockSectorCode": "BIO",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 헬스케어"
+  },
+  "144600": {
+    "assetClass": "commodity_fx",
+    "sectorCode": "COMMODITY_FX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "S&P GSCI Silver Index(TR)"
+  },
+  "145670": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 선물지수"
+  },
+  "147970": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FnGuide 모멘텀 지수"
+  },
+  "148020": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200"
+  },
+  "148070": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS 10년 국고채 지수 (총수익)"
+  },
+  "150460": {
+    "assetClass": "equity",
+    "sectorCode": "CONSUMER",
+    "region": "KR",
+    "stockSectorCode": "CONSUMER",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 중국내수테마 지수"
+  },
+  "152100": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200"
+  },
+  "152380": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "10년국채선물지수"
+  },
+  "152500": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200"
+  },
+  "152870": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200"
+  },
+  "153130": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KRW Cash 지수(총수익)"
+  },
+  "153270": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 100"
+  },
+  "156080": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "MSCI Korea Index"
+  },
+  "157450": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS MSB 6M(총수익)"
+  },
+  "157490": {
+    "assetClass": "equity",
+    "sectorCode": "SOFTWARE",
+    "region": "KR",
+    "stockSectorCode": "SOFTWARE",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 소프트웨어 지수"
+  },
+  "157500": {
+    "assetClass": "equity",
+    "sectorCode": "FINANCE",
+    "region": "KR",
+    "stockSectorCode": "FINANCE",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 증권 지수"
+  },
+  "161510": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FnGuide 배당주 지수"
+  },
+  "168580": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "CSI 300 Index"
+  },
+  "169950": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FTSE China A50 Index"
+  },
+  "174350": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FnGuide Low Vol 지수"
+  },
+  "174360": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "CSI A100"
+  },
+  "176950": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "10년국채선물지수"
+  },
+  "182480": {
+    "assetClass": "reit_infra",
+    "sectorCode": "REIT",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "MSCI US REIT Index"
+  },
+  "182490": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "iBoxx USD Liquid High Yield 0-5 year Index"
+  },
+  "183700": {
+    "assetClass": "mixed",
+    "sectorCode": "MULTI_ASSET",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 KTB 혼합지수"
+  },
+  "185680": {
+    "assetClass": "equity",
+    "sectorCode": "BIO",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "S&P Biotechnology Select Industry Index"
+  },
+  "190620": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS MSB 단기지수(총수익)"
+  },
+  "192090": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "CSI 300 Index"
+  },
+  "195920": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "JP",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "TOPIX"
+  },
+  "195930": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "EU",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "EURO STOXX 50 Index"
+  },
+  "196030": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "JP",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "TOPIX"
+  },
+  "196230": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS 통안채 5개월 지수(총수익)"
+  },
+  "200250": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "IN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Nifty 50 Index"
+  },
+  "203780": {
+    "assetClass": "equity",
+    "sectorCode": "BIO",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "NASDAQ Biotechnology 지수(시장가격지수)"
+  },
+  "204450": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "Hang Seng China H"
+  },
+  "204480": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "CSI 300 Index"
+  },
+  "205720": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "JP",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "TOPIX"
+  },
+  "210780": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 고배당 50"
+  },
+  "211560": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 배당성장 50"
+  },
+  "211900": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 배당성장 50"
+  },
+  "213610": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "WISE 삼성그룹 밸류 인덱스"
+  },
+  "214980": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KRW Cash PLUS 지수(총수익)"
+  },
+  "217770": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "S&P GSCI Crude Oil Index ER"
+  },
+  "217780": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "CSI 300 Index"
+  },
+  "219390": {
+    "assetClass": "equity",
+    "sectorCode": "ENERGY",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "S&P Oil & Gas Exploration & Production Select Industry Index(PR)"
+  },
+  "219480": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "S&P 500 Futures Total Return Index"
+  },
+  "219900": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "CSI 300 Index"
+  },
+  "220130": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "CSI 500 지수"
+  },
+  "223190": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200 가치저변동성"
+  },
+  "225030": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "S&P 500 Futures Total Return Index"
+  },
+  "225040": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "S&P 500"
+  },
+  "225130": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "S&P GSCI GOLD Index Excess Return"
+  },
+  "225800": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "미국달러선물지수"
+  },
+  "226380": {
+    "assetClass": "equity",
+    "sectorCode": "CONSUMER",
+    "region": "KR",
+    "stockSectorCode": "CONSUMER",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 성장소비주도 지수"
+  },
+  "226490": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피"
+  },
+  "226980": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200 중소형주지수"
+  },
+  "227540": {
+    "assetClass": "equity",
+    "sectorCode": "BIO",
+    "region": "KR",
+    "stockSectorCode": "BIO",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "코스피 200 헬스케어"
+  },
+  "227560": {
+    "assetClass": "equity",
+    "sectorCode": "CONSUMER",
+    "region": "KR",
+    "stockSectorCode": "CONSUMER",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "코스피 200 생활소비재"
+  },
+  "227570": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FnGuide 퀄리티밸류 지수"
+  },
+  "227830": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피"
+  },
+  "228790": {
+    "assetClass": "equity",
+    "sectorCode": "HEALTH_SVC",
+    "region": "KR",
+    "stockSectorCode": "HEALTH_SVC",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "WISE 화장품 지수"
+  },
+  "228800": {
+    "assetClass": "equity",
+    "sectorCode": "CONSUMER",
+    "region": "KR",
+    "stockSectorCode": "CONSUMER",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "WISE 여행레저 지수"
+  },
+  "228810": {
+    "assetClass": "equity",
+    "sectorCode": "TELCO_MEDIA",
+    "region": "KR",
+    "stockSectorCode": "TELCO_MEDIA",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "WISE 미디어컨텐츠 지수"
+  },
+  "229200": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스닥 150"
+  },
+  "230480": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "미국달러선물지수"
+  },
+  "232080": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스닥 150"
+  },
+  "233160": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스닥 150"
+  },
+  "233740": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스닥 150"
+  },
+  "234310": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FnGuide 셀렉트 밸류 지수"
+  },
+  "237350": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 100"
+  },
+  "237370": {
+    "assetClass": "mixed",
+    "sectorCode": "MULTI_ASSET",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "배당성장채권혼합지수"
+  },
+  "238720": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "JP",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Nikkei 225"
+  },
+  "239660": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KOBI HALF CREDIT Index(총수익)"
+  },
+  "243880": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "IT_HW",
+    "region": "KR",
+    "stockSectorCode": "IT_HW",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 정보기술"
+  },
+  "243890": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "CHEM_STEEL",
+    "region": "KR",
+    "stockSectorCode": "CHEM_STEEL",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 에너지/화학"
+  },
+  "244580": {
+    "assetClass": "equity",
+    "sectorCode": "BIO",
+    "region": "KR",
+    "stockSectorCode": "BIO",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 바이오 지수"
+  },
+  "245360": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Hang Seng China H"
+  },
+  "245710": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "VN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "VN30 Index(PR)"
+  },
+  "248270": {
+    "assetClass": "equity",
+    "sectorCode": "BIO",
+    "region": "GLOBAL",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "S&P Global 1200 Health Care Index"
+  },
+  "250780": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "F-코스닥150 지수"
+  },
+  "251340": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "F-코스닥150 지수"
+  },
+  "251350": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "GLOBAL",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "MSCI World"
+  },
+  "252000": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200 동일가중지수"
+  },
+  "252400": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 선물지수"
+  },
+  "252410": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 선물지수"
+  },
+  "252420": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 선물지수"
+  },
+  "252670": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 선물지수"
+  },
+  "252710": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 선물지수"
+  },
+  "253160": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 선물지수"
+  },
+  "253230": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 선물지수"
+  },
+  "253250": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 선물지수"
+  },
+  "253280": {
+    "assetClass": "equity",
+    "sectorCode": "BIO",
+    "region": "KR",
+    "stockSectorCode": "BIO",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 헬스케어 지수"
+  },
+  "256440": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "ID",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "MSCI Indonesia Index"
+  },
+  "256750": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "SZSE ChiNext Price Index"
+  },
+  "261060": {
+    "assetClass": "equity",
+    "sectorCode": "IT_HW",
+    "region": "KR",
+    "stockSectorCode": "IT_HW",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "코스닥 150 정보기술"
+  },
+  "261070": {
+    "assetClass": "equity",
+    "sectorCode": "BIO",
+    "region": "KR",
+    "stockSectorCode": "BIO",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "코스닥 150 헬스케어"
+  },
+  "261110": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "미국달러선물지수"
+  },
+  "261120": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "미국달러선물지수"
+  },
+  "261140": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 우선주 지수"
+  },
+  "261220": {
+    "assetClass": "commodity_fx",
+    "sectorCode": "COMMODITY_FX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "S&P GSCI Crude Oil Index ER"
+  },
+  "261240": {
+    "assetClass": "commodity_fx",
+    "sectorCode": "COMMODITY_FX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "미국달러선물지수"
+  },
+  "261250": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "미국달러선물지수"
+  },
+  "261260": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "미국달러선물지수"
+  },
+  "261270": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "미국달러선물지수"
+  },
+  "266160": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FnGuide 고배당포커스 지수"
+  },
+  "266360": {
+    "assetClass": "equity",
+    "sectorCode": "TELCO_MEDIA",
+    "region": "KR",
+    "stockSectorCode": "TELCO_MEDIA",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX K콘텐츠"
+  },
+  "266370": {
+    "assetClass": "equity",
+    "sectorCode": "IT_HW",
+    "region": "KR",
+    "stockSectorCode": "IT_HW",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 정보기술"
+  },
+  "266390": {
+    "assetClass": "equity",
+    "sectorCode": "CONSUMER",
+    "region": "KR",
+    "stockSectorCode": "CONSUMER",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 경기소비재"
+  },
+  "266410": {
+    "assetClass": "equity",
+    "sectorCode": "CONSUMER",
+    "region": "KR",
+    "stockSectorCode": "CONSUMER",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 필수소비재"
+  },
+  "267440": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "S&P U.S. Treasury Bond Futures Excess Return Index"
+  },
+  "267450": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "S&P U.S. Treasury Bond Futures Excess Return Index"
+  },
+  "267770": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 선물지수"
+  },
+  "269420": {
+    "assetClass": "equity",
+    "sectorCode": "INFRA_EQUITY",
+    "region": "GLOBAL",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "S&P Global Infrastructure Index"
+  },
+  "270800": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FnGuide KQ고배당포커스 지수"
+  },
+  "270810": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스닥 150"
+  },
+  "271050": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "S&P GSCI Crude Oil Index ER"
+  },
+  "271060": {
+    "assetClass": "commodity_fx",
+    "sectorCode": "COMMODITY_FX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "S&P GSCI Grains Select Index ER"
+  },
+  "272560": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS 종합채권국공채3M~1.5Y지수"
+  },
+  "272570": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS 종합채권국공채4~5Y지수"
+  },
+  "272580": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS MSB 6M PLUS 지수"
+  },
+  "273130": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KAP 한국종합채권지수"
+  },
+  "273140": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KAP 단기변동금리부은행채권지수"
+  },
+  "275750": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "F-코스닥150 지수"
+  },
+  "275980": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_TECH",
+    "region": "GLOBAL",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Morningstar Exponential Technologies Equal Weighted Select PR USD"
+  },
+  "276650": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_TECH",
+    "region": "GLOBAL",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "S&P Global 1200 Information Technology and Interactive Media & Services(PR)"
+  },
+  "276990": {
+    "assetClass": "equity",
+    "sectorCode": "SHIP_DEF",
+    "region": "GLOBAL",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "ROBO Global Robotics & Automation UCITS Price Return Index"
+  },
+  "277540": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "S&P ASIA50 Price Return Index"
+  },
+  "277630": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피"
+  },
+  "277640": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 대형주"
+  },
+  "277650": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 중형주"
+  },
+  "278240": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "F-코스닥150 지수"
+  },
+  "278530": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200 TR"
+  },
+  "278540": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "MSCI Korea TR Index"
+  },
+  "279530": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FnGuide 고배당 Plus 지수"
+  },
+  "280320": {
+    "assetClass": "equity",
+    "sectorCode": "SOFTWARE",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "다우존스 인터넷 종합지수"
+  },
+  "282000": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "국채선물지수"
+  },
+  "283580": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "CSI 300 Index"
+  },
+  "284430": {
+    "assetClass": "mixed",
+    "sectorCode": "MULTI_ASSET",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 미국채 혼합지수"
+  },
+  "289480": {
+    "assetClass": "option_overlay",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 커버드콜 ATM 지수"
+  },
+  "290130": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "KRX ESG 사회책임경영지수(S)"
+  },
+  "291620": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "F-코스닥150 지수"
+  },
+  "291630": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "F-코스닥150 지수"
+  },
+  "291890": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "GLOBAL",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "iEdge Emerging Markets Futures Index(ER)"
+  },
+  "292050": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "KRX 300"
+  },
+  "292150": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FnGuide TOP10 지수"
+  },
+  "292160": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "KRX 300"
+  },
+  "292190": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "KRX 300"
+  },
+  "292560": {
+    "assetClass": "commodity_fx",
+    "sectorCode": "COMMODITY_FX",
+    "region": "JP",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "엔선물지수"
+  },
+  "292770": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "국채선물지수"
+  },
+  "293180": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200"
+  },
+  "294400": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200 TR"
+  },
+  "295040": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200 TR"
+  },
+  "298770": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_TECH",
+    "region": "KR_TW",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "한국 대만 IT 프리미어지수"
+  },
+  "300640": {
+    "assetClass": "equity",
+    "sectorCode": "TELCO_MEDIA",
+    "region": "KR",
+    "stockSectorCode": "TELCO_MEDIA",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "WISE 게임 테마 지수 (시장가격지수)"
+  },
+  "300950": {
+    "assetClass": "equity",
+    "sectorCode": "TELCO_MEDIA",
+    "region": "KR",
+    "stockSectorCode": "TELCO_MEDIA",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 게임 산업 지수"
+  },
+  "302190": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS 국채 3-10년 지수(시장가격지수)"
+  },
+  "302450": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피"
+  },
+  "304660": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "S&P Ultra T-Bond Futures Index(ER)"
+  },
+  "304780": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 선물지수"
+  },
+  "304940": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "NASDAQ 100"
+  },
+  "305540": {
+    "assetClass": "equity",
+    "sectorCode": "BATTERY",
+    "region": "KR",
+    "stockSectorCode": "BATTERY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "WISE 2차전지 테마 지수"
+  },
+  "305720": {
+    "assetClass": "equity",
+    "sectorCode": "BATTERY",
+    "region": "KR",
+    "stockSectorCode": "BATTERY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 2차전지 산업 지수"
+  },
+  "306520": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 선물지수"
+  },
+  "306950": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KRX 300"
+  },
+  "307510": {
+    "assetClass": "equity",
+    "sectorCode": "HEALTH_SVC",
+    "region": "KR",
+    "stockSectorCode": "HEALTH_SVC",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 의료기기 지수"
+  },
+  "309230": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "MorningStar Wide Moat Focus Index"
+  },
+  "310960": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200 TR"
+  },
+  "310970": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "MSCI Korea TR Index"
+  },
+  "314250": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_TECH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "NYSE U.S. Big TECH 10 INDEX"
+  },
+  "315930": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FnGuide TOP 5 Plus Total Return 지수"
+  },
+  "315960": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "WISE 대형고배당10 TR 지수"
+  },
+  "322400": {
+    "assetClass": "equity",
+    "sectorCode": "SOFTWARE",
+    "region": "KR",
+    "stockSectorCode": "SOFTWARE",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide E커머스 지수"
+  },
+  "325010": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FnGuide 성장 지수(PR)"
+  },
+  "325020": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FnGuide SLV 배당가치 지수"
+  },
+  "326240": {
+    "assetClass": "equity",
+    "sectorCode": "IT_HW",
+    "region": "KR",
+    "stockSectorCode": "IT_HW",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide IT플러스 지수"
+  },
+  "328370": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 TR"
+  },
+  "329200": {
+    "assetClass": "reit_infra",
+    "sectorCode": "REIT",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "FnGuide 리츠부동산인프라"
+  },
+  "329750": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS U.S. TREASURY BOND 0-1Y 지수(총수익)"
+  },
+  "332500": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "코스피 200 TR"
+  },
+  "334690": {
+    "assetClass": "commodity_fx",
+    "sectorCode": "COMMODITY_FX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "S&P GSCI Palladium Excess Return Index"
+  },
+  "357870": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS CD Index(총수익)"
+  },
+  "360200": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "S&P 500"
+  },
+  "360750": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "S&P 500"
+  },
+  "363580": {
+    "assetClass": "equity",
+    "sectorCode": "IT_HW",
+    "region": "KR",
+    "stockSectorCode": "IT_HW",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "코스피200 정보기술 TR"
+  },
+  "364960": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_SECTOR",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "KRX BBIG 지수"
+  },
+  "364970": {
+    "assetClass": "equity",
+    "sectorCode": "BIO",
+    "region": "KR",
+    "stockSectorCode": "BIO",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 바이오 TOP 10 지수"
+  },
+  "364980": {
+    "assetClass": "equity",
+    "sectorCode": "BATTERY",
+    "region": "KR",
+    "stockSectorCode": "BATTERY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 2차전지 TOP 10 지수"
+  },
+  "364990": {
+    "assetClass": "equity",
+    "sectorCode": "TELCO_MEDIA",
+    "region": "KR",
+    "stockSectorCode": "TELCO_MEDIA",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 게임 TOP 10 지수"
+  },
+  "365000": {
+    "assetClass": "equity",
+    "sectorCode": "SOFTWARE",
+    "region": "KR",
+    "stockSectorCode": "SOFTWARE",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 인터넷 TOP 10 지수"
+  },
+  "367380": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "NASDAQ 100"
+  },
+  "367760": {
+    "assetClass": "equity",
+    "sectorCode": "IT_HW",
+    "region": "KR",
+    "stockSectorCode": "IT_HW",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 네트워크 인프라 지수"
+  },
+  "367770": {
+    "assetClass": "equity",
+    "sectorCode": "ENERGY",
+    "region": "KR",
+    "stockSectorCode": "ENERGY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 수소 경제 테마 지수"
+  },
+  "368190": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_TECH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FnGuide K-뉴딜 디지털 플러스 지수"
+  },
+  "368590": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "NASDAQ 100"
+  },
+  "371160": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_TECH",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Hang Seng TECH Index"
+  },
+  "371460": {
+    "assetClass": "equity",
+    "sectorCode": "BATTERY",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Solactive China Electric Vehicle and Battery Index(PR)"
+  },
+  "371470": {
+    "assetClass": "equity",
+    "sectorCode": "BIO",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Solactive China Biotech Index(PR)"
+  },
+  "372330": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_TECH",
+    "region": "CN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Hang Seng TECH Index"
+  },
+  "377990": {
+    "assetClass": "equity",
+    "sectorCode": "ENERGY",
+    "region": "KR",
+    "stockSectorCode": "ENERGY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 신재생에너지 지수"
+  },
+  "379780": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "S&P 500"
+  },
+  "379800": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "S&P 500"
+  },
+  "379810": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "NASDAQ 100"
+  },
+  "380340": {
+    "assetClass": "equity",
+    "sectorCode": "IT_HW",
+    "region": "KR",
+    "stockSectorCode": "IT_HW",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 코리아AI테크핵심산업지수 (Price Return)"
+  },
+  "381170": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_TECH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Indxx US Tech Top 10 Index"
+  },
+  "381180": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "PHLX Semiconductor Sector Index"
+  },
+  "385520": {
+    "assetClass": "equity",
+    "sectorCode": "AUTO",
+    "region": "KR",
+    "stockSectorCode": "AUTO",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide K-미래차 지수"
+  },
+  "385550": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS 단기채권알파지수(AA-이상)(총수익지수)"
+  },
+  "385560": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS 국고채30년Enhanced지수(시장가격)"
+  },
+  "388420": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "iSelect 비메모리반도체 지수(시장가격지수)"
+  },
+  "390390": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "MVIS US Listed Semiconductor 25 Index"
+  },
+  "394660": {
+    "assetClass": "equity",
+    "sectorCode": "BATTERY",
+    "region": "GLOBAL",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Solactive Autonomous & Electric Vehicles 지수(PR)"
+  },
+  "394670": {
+    "assetClass": "equity",
+    "sectorCode": "BATTERY",
+    "region": "GLOBAL",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Solactive Global Lithium 지수(PR)"
+  },
+  "395160": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide AI반도체 TOP2+ 지수"
+  },
+  "395270": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide K-반도체 지수"
+  },
+  "395290": {
+    "assetClass": "equity",
+    "sectorCode": "TELCO_MEDIA",
+    "region": "KR",
+    "stockSectorCode": "TELCO_MEDIA",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide K-POP & 미디어 지수"
+  },
+  "396500": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 반도체TOP10 지수"
+  },
+  "400570": {
+    "assetClass": "commodity_fx",
+    "sectorCode": "COMMODITY_FX",
+    "region": "EU",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "ICE EUA Carbon Futures Index(Excess Return)"
+  },
+  "400970": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_TECH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FnGuide 메타버스테마 지수"
+  },
+  "401170": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_TECH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "iSelect 메타버스 지수(시장가격지수)"
+  },
+  "401470": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_TECH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FnGuide K-메타버스 지수"
+  },
+  "402970": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Dow Jones U.S. Dividend 100 Price Return Index"
+  },
+  "407820": {
+    "assetClass": "equity",
+    "sectorCode": "SOFTWARE",
+    "region": "KR",
+    "stockSectorCode": "SOFTWARE",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 플랫폼 지수(Price Return)"
+  },
+  "409810": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "NASDAQ 100"
+  },
+  "409820": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "NASDAQ 100"
+  },
+  "411060": {
+    "assetClass": "commodity_fx",
+    "sectorCode": "COMMODITY_FX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KRX 금현물지수"
+  },
+  "411420": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_TECH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Nasdaq CB Insights Metaverse US Index (Price Return)"
+  },
+  "412570": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "BATTERY",
+    "region": "KR",
+    "stockSectorCode": "BATTERY",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KRX 2차전지 TOP 10 지수"
+  },
+  "412770": {
+    "assetClass": "equity",
+    "sectorCode": "SOFTWARE",
+    "region": "GLOBAL",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Indxx Global Metaverse Index (Price Return)"
+  },
+  "414270": {
+    "assetClass": "equity",
+    "sectorCode": "AUTO",
+    "region": "US_CN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "FactSet US-China Electric&Autonomous Vehicle Price Return Index"
+  },
+  "417630": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "KEDI 혁신기업ESG30 지수(시장가격 지수)"
+  },
+  "418660": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "NASDAQ 100"
+  },
+  "419890": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS ESG 9M~1.5Y"
+  },
+  "422420": {
+    "assetClass": "equity",
+    "sectorCode": "BATTERY",
+    "region": "KR",
+    "stockSectorCode": "BATTERY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "iSelect 2차전지 지수 (시장가격지수)"
+  },
+  "423160": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KOFR 지수"
+  },
+  "423920": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "SEMI",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "PHLX Semiconductor Sector Index"
+  },
+  "426030": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "NASDAQ 100"
+  },
+  "427120": {
+    "assetClass": "equity",
+    "sectorCode": "SOFTWARE",
+    "region": "KR",
+    "stockSectorCode": "SOFTWARE",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide AI 플랫폼 지수"
+  },
+  "434730": {
+    "assetClass": "equity",
+    "sectorCode": "ENERGY",
+    "region": "KR",
+    "stockSectorCode": "ENERGY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "iSelect 원자력지수 (시장가격)"
+  },
+  "435040": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "GLOBAL",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Bloomberg Global Select Industry Leaders TOP10 Index(PR)"
+  },
+  "441540": {
+    "assetClass": "equity",
+    "sectorCode": "SHIP_DEF",
+    "region": "KR",
+    "stockSectorCode": "SHIP_DEF",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 조선해운지수"
+  },
+  "441640": {
+    "assetClass": "option_overlay",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "S&P 500"
+  },
+  "441680": {
+    "assetClass": "option_overlay",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "Cboe Nasdaq-100 BuyWrite V2 지수 (Total Return)"
+  },
+  "442580": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "GLOBAL",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "iSelect 글로벌HBM반도체 지수"
+  },
+  "445290": {
+    "assetClass": "equity",
+    "sectorCode": "SHIP_DEF",
+    "region": "KR",
+    "stockSectorCode": "SHIP_DEF",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "iSelect K-로봇테마 지수"
+  },
+  "446720": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Dow Jones U.S. Dividend 100 Price Return Index"
+  },
+  "446770": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "GLOBAL",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Solactive Global Semiconductor TOP4 Plus Price Return Index"
+  },
+  "449170": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KOFR 지수"
+  },
+  "449450": {
+    "assetClass": "equity",
+    "sectorCode": "SHIP_DEF",
+    "region": "KR",
+    "stockSectorCode": "SHIP_DEF",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide K-방위산업 지수"
+  },
+  "451530": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS STRIP 30Y Index(총수익지수)"
+  },
+  "452360": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Dow Jones U.S. Dividend 100 Price Return Index"
+  },
+  "453810": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "IN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Nifty 50 Index"
+  },
+  "453850": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "Bloomberg U.S Treasury 20+ Year Total Return Index"
+  },
+  "453870": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "IN",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Nifty 50 Index"
+  },
+  "455850": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide AI 반도체 소부장 지수"
+  },
+  "455860": {
+    "assetClass": "equity",
+    "sectorCode": "BATTERY",
+    "region": "KR",
+    "stockSectorCode": "BATTERY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 2차전지 소부장 지수(PR)"
+  },
+  "455890": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS 시가평가 MMF 지수 (총수익지수)"
+  },
+  "456600": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_TECH",
+    "region": "GLOBAL",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Solactive Global Artificial Intelligence 지수"
+  },
+  "457480": {
+    "assetClass": "equity",
+    "sectorCode": "AUTO",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Bloomberg EV Supporters Plus Tesla Price Return Index"
+  },
+  "457990": {
+    "assetClass": "equity",
+    "sectorCode": "ENERGY",
+    "region": "KR",
+    "stockSectorCode": "ENERGY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 태양광 & ESS 지수"
+  },
+  "458250": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "ICE BofA Long US Treasury Principal STRIPS Index"
+  },
+  "458730": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Dow Jones U.S. Dividend 100 Price Return Index"
+  },
+  "458760": {
+    "assetClass": "option_overlay",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "DowJones U.S. Dividend 100 7% Premium Covered Call 지수 (TR)"
+  },
+  "459580": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KAP 양도성예금증서(CD)금리지수(총수익지수)"
+  },
+  "461950": {
+    "assetClass": "equity",
+    "sectorCode": "BATTERY",
+    "region": "KR",
+    "stockSectorCode": "BATTERY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 2차전지핵심소재10 지수"
+  },
+  "462010": {
+    "assetClass": "equity",
+    "sectorCode": "BATTERY",
+    "region": "KR",
+    "stockSectorCode": "BATTERY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 2차전지소재 (Price Return) 지수"
+  },
+  "462330": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "BATTERY",
+    "region": "KR",
+    "stockSectorCode": "BATTERY",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "FnGuide 2차전지 산업 지수"
+  },
+  "462900": {
+    "assetClass": "equity",
+    "sectorCode": "BIO",
+    "region": "KR",
+    "stockSectorCode": "BIO",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "iSelect 바이오헬스케어 PR 지수"
+  },
+  "463050": {
+    "assetClass": "equity",
+    "sectorCode": "BIO",
+    "region": "KR",
+    "stockSectorCode": "BIO",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "KRX 헬스케어"
+  },
+  "463250": {
+    "assetClass": "equity",
+    "sectorCode": "SHIP_DEF",
+    "region": "KR",
+    "stockSectorCode": "SHIP_DEF",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "iSelect K방산&우주"
+  },
+  "464600": {
+    "assetClass": "equity",
+    "sectorCode": "AUTO",
+    "region": "KR",
+    "stockSectorCode": "AUTO",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 자동차소부장지수(PR)"
+  },
+  "464610": {
+    "assetClass": "equity",
+    "sectorCode": "HEALTH_SVC",
+    "region": "KR",
+    "stockSectorCode": "HEALTH_SVC",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 의료기기소부장지수(PR)"
+  },
+  "464930": {
+    "assetClass": "equity",
+    "sectorCode": "MARKET_IDX",
+    "region": "GLOBAL",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Mirae Asset Global Innovative Bluechip Top 10 Index(PR)"
+  },
+  "465330": {
+    "assetClass": "equity",
+    "sectorCode": "BATTERY",
+    "region": "KR",
+    "stockSectorCode": "BATTERY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "iSelect 2차전지 TOP10 지수(PR)"
+  },
+  "465350": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "BATTERY",
+    "region": "KR",
+    "stockSectorCode": "BATTERY",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "iSelect 2차전지 TOP10 지수(PR)"
+  },
+  "465580": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_TECH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Solactive US Big Tech Top 7 Plus Price Return Index"
+  },
+  "466920": {
+    "assetClass": "equity",
+    "sectorCode": "SHIP_DEF",
+    "region": "KR",
+    "stockSectorCode": "SHIP_DEF",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 조선TOP3플러스지수(PR)"
+  },
+  "466930": {
+    "assetClass": "equity",
+    "sectorCode": "AUTO",
+    "region": "KR",
+    "stockSectorCode": "AUTO",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 자동차TOP3플러스지수(PR)"
+  },
+  "466940": {
+    "assetClass": "equity",
+    "sectorCode": "FINANCE",
+    "region": "KR",
+    "stockSectorCode": "FINANCE",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 은행고배당플러스TOP10 지수(시장가격 지수)"
+  },
+  "469070": {
+    "assetClass": "equity",
+    "sectorCode": "SHIP_DEF",
+    "region": "KR",
+    "stockSectorCode": "SHIP_DEF",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "iSelect AI&로봇 지수(시장가격)"
+  },
+  "469150": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide AI반도체 TOP3+ 지수"
+  },
+  "469830": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KAP 단기자금시장지수"
+  },
+  "471230": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KAP 국고채 10년 지수(TR)"
+  },
+  "471760": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "iSelect AI반도체핵심공정지수"
+  },
+  "471990": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "iSelect AI 반도체핵심장비 지수"
+  },
+  "472150": {
+    "assetClass": "option_overlay",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 커버드콜 5% OTM"
+  },
+  "472160": {
+    "assetClass": "equity",
+    "sectorCode": "MULTI_TECH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "Indxx US Tech Top 10 Index"
+  },
+  "472870": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS 미국채30년 엔화노출 지수(USD/JPY 헤지)(총수익지수)"
+  },
+  "473330": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KEDI 미국 국채 20년+ 커버드콜 지수(NTR)"
+  },
+  "474220": {
+    "assetClass": "option_overlay",
+    "sectorCode": "MULTI_TECH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "Bloomberg U.S. Tech Top10+10% Premium Covered Call Index"
+  },
+  "475050": {
+    "assetClass": "equity",
+    "sectorCode": "TELCO_MEDIA",
+    "region": "KR",
+    "stockSectorCode": "TELCO_MEDIA",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "iSelect K-POP 포커스지수(시장가격)"
+  },
+  "475080": {
+    "assetClass": "mixed",
+    "sectorCode": "MULTI_ASSET",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KEDI 테슬라 인컴 프리미엄 밸런스드 지수(TR)"
+  },
+  "475300": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 반도체 전공정 지수(PR)"
+  },
+  "475630": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS CD 1Y 총수익지수"
+  },
+  "475720": {
+    "assetClass": "option_overlay",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 위클리 커버드콜 ATM 지수"
+  },
+  "476550": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KEDI 미국채30년 위클리 커버드콜30 지수(Total Return)"
+  },
+  "479850": {
+    "assetClass": "equity",
+    "sectorCode": "HEALTH_SVC",
+    "region": "KR",
+    "stockSectorCode": "HEALTH_SVC",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide K-뷰티 지수"
+  },
+  "481050": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KAP 1년은행 CD+추가금리 지수(총수익지수)"
+  },
+  "481060": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "Bloomberg U.S.Treasury 20+ Year(TLT)+ 12% Premium Covered Call index(TR)"
+  },
+  "483280": {
+    "assetClass": "option_overlay",
+    "sectorCode": "MULTI_TECH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KEDI 미국 AI 테크 TOP10+15%프리미엄 지수(Total Return)"
+  },
+  "483320": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "GLOBAL",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "KEDI 글로벌AI반도체 지수"
+  },
+  "484790": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KEDI-KAP 미국 국채 20+ 지수(TR)"
+  },
+  "486290": {
+    "assetClass": "option_overlay",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "NASDAQ 100 Daily Covered Call Target Premium 15% 지수(TR)"
+  },
+  "487230": {
+    "assetClass": "equity",
+    "sectorCode": "ENERGY",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "iSelect 미국AI전력핵심인프라 지수(Price Return)"
+  },
+  "487240": {
+    "assetClass": "equity",
+    "sectorCode": "ENERGY",
+    "region": "KR",
+    "stockSectorCode": "ENERGY",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "iSelect AI 전력핵심설비 지수(Price Return)"
+  },
+  "487750": {
+    "assetClass": "equity",
+    "sectorCode": "IT_HW",
+    "region": "KR",
+    "stockSectorCode": "IT_HW",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "FnGuide 온디바이스AI 지수"
+  },
+  "488080": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "FnGuide 반도체TOP10 지수"
+  },
+  "488770": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KAP MMF 지수(TR)"
+  },
+  "494300": {
+    "assetClass": "option_overlay",
+    "sectorCode": "MARKET_IDX",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "NASDAQ-100 Daily Covered Call 101 Index(TR)"
+  },
+  "494310": {
+    "assetClass": "leveraged_inverse",
+    "sectorCode": "SEMI",
+    "region": "KR",
+    "stockSectorCode": "SEMI",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KRX 반도체"
+  },
+  "494670": {
+    "assetClass": "equity",
+    "sectorCode": "SHIP_DEF",
+    "region": "KR",
+    "stockSectorCode": "SHIP_DEF",
+    "rotationSource": "domestic_stock_sector",
+    "underlyingIndexName": "iSelect 조선TOP10 Index(PR)"
+  },
+  "497570": {
+    "assetClass": "equity",
+    "sectorCode": "SEMI",
+    "region": "US",
+    "stockSectorCode": "",
+    "rotationSource": "not_applicable_no_compatible_stock_sector",
+    "underlyingIndexName": "PHLX US AI Semiconductor 지수 (PR)"
+  },
+  "498400": {
+    "assetClass": "option_overlay",
+    "sectorCode": "MARKET_IDX",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 타겟 15% 위클리 커버드콜 지수"
+  },
+  "498410": {
+    "assetClass": "option_overlay",
+    "sectorCode": "FINANCE",
+    "region": "KR",
+    "stockSectorCode": "FINANCE",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "코스피 200 금융 고배당 TOP 10 타겟 15%분배 위클리 커버드콜 지수"
+  },
+  "499660": {
+    "assetClass": "bond_cash",
+    "sectorCode": "BOND_CASH",
+    "region": "KR",
+    "stockSectorCode": "",
+    "rotationSource": "excluded_nonplain_equity",
+    "underlyingIndexName": "KIS CD+CPI연동금리 월분배 지수"
+  }
+}
