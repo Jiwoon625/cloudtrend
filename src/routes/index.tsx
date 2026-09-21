@@ -345,11 +345,6 @@ function DashboardContent({
             }
           />
           <KeyValue
-            label="KOSDAQ"
-            value={formatNumber(summary.kosdaq.close, 2)}
-            hint="참고 · Gate 기준 없음"
-          />
-          <KeyValue
             label="변동성 (VKOSPI)"
             value={
               <GateConditionValue
@@ -380,6 +375,11 @@ function DashboardContent({
                 met={gate.foreignNet5dPositive}
               />
             }
+          />
+          <KeyValue
+            label="KOSDAQ"
+            value={formatNumber(summary.kosdaq.close, 2)}
+            hint="참고 · Gate 기준 없음"
           />
           <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
             Market Gate는 참고정보이며 KOSPI / KOSDAQ 8.0 Onset 또는 Exit를 차단하지 않습니다.
