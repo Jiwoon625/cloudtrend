@@ -1,5 +1,5 @@
 {
-  "status": "conditional_research_candidate_for_10_slots",
+  "status": "research_operating_maximum_10_selected",
   "model": "continuous_M0_peer_environment",
   "weights": {
     "technicalContinuous": 62.5,
@@ -14,13 +14,13 @@
   "holdingTimeCap": null,
   "portfolioSlots": 10,
   "costPerSide": 0.0015,
-  "blockStudyDecision": "Technical62.5/Priority7.5/Health15/Environment15 is a10-slot research candidate; cross-slot robustness not established.",
+  "blockStudyDecision": "Fixed Technical62.5/Priority7.5/Health15/Environment15; paired 5/10 study supports maximum10, conditional on this score model.",
   "productionDeployment": false,
   "limitations": [
     "reused retrospective holdout",
     "survivorship bias",
     "dividend and adjustment consistency unverified",
-    "slot-count and symbol tie-break sensitivity"
+    "Holding-count conclusion is conditional on weights previously selected at10slots; order sensitivity tested, future performance not established"
   ],
   "componentStudyDecision": "Priority weight selected by train and validation only; external environment imposed by user, not claimed superior to old environment",
   "researchChallengers": [],
@@ -168,5 +168,22 @@
       }
     ]
   },
-  "mappingStoragePath": "source/Reference/etf-universe-sector-map-20260911.csv"
+  "mappingStoragePath": "source/Reference/etf-universe-sector-map-20260911.csv",
+  "holdingCountDecision": {
+    "selectedMaximum": 10,
+    "sourceRun": 35569906101,
+    "resultPath": "results/etf-m0-holding-count/20260911/35569906101",
+    "initialAllocation": "Up to10% of opening equity per new position, cash constrained",
+    "rebalance": false,
+    "forceFill": false,
+    "tieBreak": "symbol ascending; unchanged primary rule",
+    "randomOrderTrials": 100,
+    "tenWinsCagrMddSharpeJoint": 100,
+    "yearlyReturnWins": 9,
+    "yearlyPeriods": 10,
+    "lastYearPartialThrough": "2026-09-11",
+    "exception": "2025-onward reset segment MDD:5slots -20.11%,10slots -20.91%",
+    "notFreshHoldout": true,
+    "productionDeployment": false
+  }
 }
