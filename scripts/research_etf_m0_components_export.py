@@ -28,10 +28,15 @@ def main():
     d=enrich_scores(load_and_score(a));d=d.sort_values(['symbol','date']).reset_index(drop=True)
     meta=d.drop_duplicates('symbol',keep='last')[['symbol','name','sectorCode','etfUnderlyingIndexName']].copy();meta['assetClass']=meta.apply(asset_class,axis=1);meta.to_csv(out/'classification.csv',index=False)
     optional=[c for c in schema if any(x in c.lower() for x in ['premium','discount','expense','tracking','aum']) and c not in d]
-    if optional:
-        raw=pd.read_parquet(a.etf_parquet,columns=['symbol','date']+optional)
+    source_fields=[c for c in ['priceSource','tradingValueSource','marketCapSource'] if c in schema]
+    if optional or source_fields:
+        raw=pd.read_parquet(a.etf_parquet,columns=['symbol','date']+optional+source_fields)
         from research_etf_m0_vs_m1 import norm_symbol
         raw['symbol']=raw.symbol.map(norm_symbol);raw['date']=raw.date.astype(str).str[:10];raw=raw.drop_duplicates(['symbol','date']);d=d.merge(raw,on=['symbol','date'],how='left',validate='one_to_one')
+    sources=[]
+    for col in source_fields:
+        for value,n in d[col].fillna('MISSING').value_counts().items():sources.append(dict(column=col,source=str(value),rows=int(n)))
+    pd.DataFrame(sources).to_csv(out/'source-provenance.csv',index=False)
     d['pSize']=(d.marketCap>=300e9).astype(float)
     d['pRelative']=((d.dayReturn-d.kospiDay)*100>=2).astype(float)
     d['pRotation']=d.rotationScore.fillna(0)/100
@@ -57,7 +62,7 @@ def main():
                 sym.append(dict(symbol=symbol,name=g.name.iloc[-1],column=col,rows=len(g),first=first,last=last,coverage=ok.mean(),leadingMissing=int((g.date<first).sum()),internalMissing=int((inside&~ok).sum()),trailingMissing=int((g.date>last).sum())))
             else:sym.append(dict(symbol=symbol,name=g.name.iloc[-1],column=col,rows=len(g),coverage=0))
     pd.DataFrame(sym).to_csv(out/'qa-symbol.csv',index=False)
-    keep=['symbol','date','name','sectorCode','marketCap','tradingValue','close','dayReturn','kospiDay','rotationScore','etfTradingValue','etfMarketCap','etfNetAssetTotalAmount','etfListedUnits','etfNav','healthTv20','derivedPremium','pSize','pRelative','pRotation','pDenominator','hAum','hLiquidity','hPremium','hPlain','underlyingDayReturn','priorityM0','health','continuousM0','eligible',*optional]
+    keep=['symbol','date','name','sectorCode','marketCap','tradingValue','close','dayReturn','kospiDay','rotationScore','etfTradingValue','etfMarketCap','etfNetAssetTotalAmount','etfListedUnits','etfNav','healthTv20','derivedPremium','pSize','pRelative','pRotation','pDenominator','hAum','hLiquidity','hPremium','hPlain','underlyingDayReturn','priorityM0','health','continuousM0','eligible',*optional,*source_fields]
     equity[keep].to_parquet(out/'component-panel.parquet',index=False,compression='zstd')
     p=(equity.pSize+equity.pRelative+equity.pRotation)/equity.pDenominator*100
     h=(equity.hAum+equity.hLiquidity+equity.hPremium+equity.hPlain)/80*100
