@@ -46,6 +46,12 @@ export interface ManualParseResult {
 
 /** 입력 파일에서 인식하는 컬럼 이름(별칭 포함) */
 const FIELD_ALIASES: Record<string, string> = {
+  etfunderlyingindexclose: "etfUnderlyingIndexClose",
+  etfmarketcap: "etfMarketCap",
+  etftradingvalue: "etfTradingValue",
+  pricesource: "priceSource",
+  marketcapsource: "marketCapSource",
+  tradingvaluesource: "tradingValueSource",
   symbol: "symbol",
   code: "symbol",
   종목코드: "symbol",
@@ -264,6 +270,16 @@ export function parseManualMarketData(input: string | string[]): ManualParseResu
     const tradingValue = num(pick(rec, "tradingValue")) ?? close * volume;
 
     const bar: DailyPrice = {
+      ...(isEtf
+        ? {
+            etfUnderlyingIndexClose: num(pick(rec, "etfUnderlyingIndexClose")),
+            etfMarketCap: num(pick(rec, "etfMarketCap")),
+            etfTradingValue: num(pick(rec, "etfTradingValue")),
+            priceSource: String(pick(rec, "priceSource") ?? ""),
+            marketCapSource: String(pick(rec, "marketCapSource") ?? ""),
+            tradingValueSource: String(pick(rec, "tradingValueSource") ?? ""),
+          }
+        : {}),
       tradeDate: date,
       open,
       high: Math.max(high, open, close, low),
@@ -358,11 +374,11 @@ export function parseManualMarketData(input: string | string[]): ManualParseResu
     const resolved = curatedEtfSector
       ? resolveSectorCode(s.symbol, s.name, true)
       : s.sector
-      ? {
-          code: s.sector.toUpperCase(),
-          name: THEME_SECTORS.find((t) => t.code === s.sector!.toUpperCase())?.name ?? s.sector,
-        }
-      : resolveSectorCode(s.symbol, s.name, isEtf);
+        ? {
+            code: s.sector.toUpperCase(),
+            name: THEME_SECTORS.find((t) => t.code === s.sector!.toUpperCase())?.name ?? s.sector,
+          }
+        : resolveSectorCode(s.symbol, s.name, isEtf);
     usedSectors.add(resolved.code);
     if (s.bars.some((b) => b.marketCap !== null)) marketCapCount++;
     if (s.bars.some((b) => b.foreignNetBuyValue !== null)) flowCount++;

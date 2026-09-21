@@ -22,6 +22,13 @@ export interface Instrument {
 }
 
 export interface DailyPrice {
+  /** ETF V0.1 uses the dated underlying and KRX amounts, never NAV proxies. */
+  etfUnderlyingIndexClose?: number | null;
+  etfMarketCap?: number | null;
+  etfTradingValue?: number | null;
+  priceSource?: string;
+  marketCapSource?: string;
+  tradingValueSource?: string;
   tradeDate: string;
   open: number;
   high: number;

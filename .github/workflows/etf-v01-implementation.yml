@@ -1,0 +1,61 @@
+name: ETF V0.1 confirmed strategy validation
+on:
+  push:
+    branches: [feat/etf-v01-vol15-20260921]
+  pull_request:
+    paths: ["src/lib/engine/etf*", "src/components/EtfScreener.tsx", "src/routes/screener.etfs.tsx", "src/lib/engine/manualDataset.ts", "config/etf-v01-confirmed.json", ".github/workflows/etf-v01-implementation.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: mkdir -p etf-validation
+      - name: Verify confirmed ETF and existing stock rules
+        run: npx vitest run src/lib/engine/etfStrategy.test.ts src/lib/engine/operationalStrategy.test.ts src/lib/portfolioStrategy.test.ts src/lib/statusDisplay.test.ts src/lib/engine/screeningSourceContract.test.ts --reporter=default --reporter=json --outputFile=etf-validation/unit-tests.json
+      - run: npm run build
+      - uses: actions/setup-python@v5
+        if: github.event_name == 'push'
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pandas==2.2.3 numpy==2.1.3 pyarrow==23.0.1
+        if: github.event_name == 'push'
+      - uses: actions/download-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          github-token: ${{ github.token }}
+          run-id: 35564981988
+          name: etf-m0-clean-35564981988
+          path: .parity/clean
+      - uses: actions/download-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          github-token: ${{ github.token }}
+          run-id: 35567515449
+          name: etf-m0-priority-weights-35567515449
+          path: .parity/adopted
+      - name: Compare implementation against saved research
+        if: github.event_name == 'push'
+        run: |
+          python scripts/build-etf-v01-parity-fixture.py --clean .parity/clean/clean-input-panel.parquet --adopted .parity/adopted/adopted-environment-panel.parquet --output .parity/input.json
+          npx vite-node scripts/verify-etf-v01-parity.ts .parity/input.json etf-validation/environment-parity.json
+          cp config/etf-v01-confirmed.json etf-validation/confirmed-policy.json
+      - name: Save and verify important results
+        if: github.event_name == 'push'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: python scripts/save-etf-v01-validation.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: etf-v01-validation-${{ github.run_id }}
+          path: etf-validation

@@ -1,4 +1,5 @@
 import { historicalInstrumentScore } from "./historicalInstrumentScore";
+import { calculateEtfStrategies, ETF_POLICY, type EtfStrategySnapshot } from "./etfStrategy";
 // 스크리닝 파이프라인: MarketDataset → 지표 → 실격 필터 → 시장 게이트 → 점수
 // 데이터 공급자(mock / 토스증권 Open API)에 의존하지 않고 주입된 dataset만 사용한다.
 import {
@@ -100,6 +101,7 @@ export interface SectorScore {
 export type V8ExitSignal = "UP90" | "DOWN30" | "UP95" | "DOWN25" | null;
 
 export interface ScreeningRow {
+  etfStrategy?: EtfStrategySnapshot;
   instrument: Instrument;
   snapshot: IndicatorSnapshot;
   technical: ScoreBlock;
@@ -579,10 +581,70 @@ export function runAnalysis(
     });
   }
 
+  // ETF V0.1 is fixed independently of editable legacy stock/ETF settings.
+  const etfStrategies = calculateEtfStrategies(ds);
+  const block = (label: string, value: number | null, rule: string): ScoreBlock => ({
+    points: value ?? 0,
+    maxPoints: 100,
+    availableMaxPoints: value === null ? 0 : 100,
+    rows: [
+      {
+        group: label,
+        rule,
+        actual: value === null ? "데이터 없음" : value.toFixed(2),
+        threshold: "0–100",
+        status: value === null ? "NO_DATA" : "PASS",
+        points: value ?? 0,
+        maxPoints: 100,
+      },
+    ],
+  });
+  for (const row of rows) {
+    const s = etfStrategies.get(row.instrument.symbol);
+    if (!s) continue;
+    row.etfStrategy = s;
+    row.technical = block("ETF Technical", s.technical, "변동성 표준화 5개 추세 연속점수");
+    row.priority = block(
+      "ETF Priority",
+      s.priority,
+      "국내 KOSPI 대비 일수익률 +2%p; 규모·로테이션·지수편입 가점 없음",
+    );
+    row.quality = block("ETF Health", s.health, "KRX 시총·20일 거래대금·일반 구조");
+    row.technicalNormalized = s.technical;
+    row.priorityNormalized = s.priority;
+    row.qualityScore = s.health;
+    row.marketSectorScore = s.environment;
+    row.totalScoreNormalized = s.score ?? 0;
+    row.scoreDelta1d =
+      s.score !== null && s.previousScore !== null ? s.score - s.previousScore : null;
+    row.dataCompletenessRatio =
+      [s.technical, s.priority, s.health, s.environment].filter((x) => x !== null).length / 4;
+    row.hardFilterPassed = s.eligible;
+    row.failedRules = s.issues;
+    row.skippedRules = [];
+    row.sectorRotationScore = null;
+    row.grade = s.eligible && s.score !== null && s.score >= 80 ? "A" : "C";
+    row.actionLabelText =
+      s.exit === "DATA_UNAVAILABLE"
+        ? "기초지수 데이터 점검"
+        : s.onset
+          ? "M0 80 Onset · 다음 시가 진입"
+          : s.exit === "MA60"
+            ? "보유 시 다음 시가 청산"
+            : "관찰";
+    row.warnings = [...s.issues];
+  }
+
   return {
     asOfDate: ds.asOfDate,
-    strategyVersion: STRATEGY_VERSION,
-    scoringConfig: cfg,
+    strategyVersion: `${STRATEGY_VERSION} / ${ETF_POLICY.version}`,
+    scoringConfig: {
+      ...cfg,
+      weights: {
+        ...cfg.weights,
+        etf: { technical: 0.625, priority: 0.075, fundamental: 0.15, marketSector: 0.15 },
+      },
+    },
     dataVersion: ds.version,
     dataProvider: ds.provider,
     isLive: ds.isLive,
