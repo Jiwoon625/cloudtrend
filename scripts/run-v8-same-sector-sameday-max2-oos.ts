@@ -1505,7 +1505,7 @@ async function main() {
       entry: "8.0 onset, NEXT_OPEN",
       kospiExit: "E8 / UP 9.5 crossing / downside exit OFF / max 60D",
       kosdaqExit: "UP 9.0 crossing or DOWN 3.0 crossing at NEXT_OPEN; max 60D SAME_DAY_CLOSE",
-      portfolio: "P30 equal-slot portfolio. Compare BASELINE vs same-signal-day same-sector MAX2. Sector schemes: current 30% both markets and proposed KOSPI 10% / KOSDAQ 20%. Overshoot remains fully allowed."
+      portfolio: "P30 equal-slot portfolio. Compare BASELINE vs same-signal-day same-sector MAX2. Sector schemes: current 30% both markets and proposed KOSPI 10% / KOSDAQ 20%. Overshoot remains fully allowed.",
       evaluationCalendar:
         "For each market/fold, all models use the same calendar: first trading day of the fold year through 65 market trading days after the last fold-year trading day.",
       roundTripCostBps: ROUND_TRIP_COST_BPS,
