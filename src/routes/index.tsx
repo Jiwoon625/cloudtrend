@@ -296,7 +296,7 @@ function DashboardContent({
           </Link>
         </Card>
 
-        <Card title="진입·Exit 규칙" icon={<TrendingUp className="size-4 text-primary" />}>
+        <Card title="진입·청산 규칙" icon={<TrendingUp className="size-4 text-primary" />}>
           <StrategyDescription />
         </Card>
 
