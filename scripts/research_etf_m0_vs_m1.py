@@ -608,8 +608,13 @@ def main():
     g = etf.groupby("symbol", sort=False)
     for h in HORIZONS:
         etf[f"fwd{h}"] = g["close"].shift(-h) / etf["close"] - 1.0
-        u_fwd = g["etfUnderlyingIndexClose"].shift(-h) / etf["etfUnderlyingIndexClose"] - 1.0
-        etf[f"excess{h}"] = etf[f"fwd{h}"] - u_fwd
+        u_now = pd.to_numeric(etf["etfUnderlyingIndexClose"], errors="coerce").where(
+            pd.to_numeric(etf["etfUnderlyingIndexClose"], errors="coerce") > 0
+        )
+        u_future = g["etfUnderlyingIndexClose"].shift(-h)
+        u_future = pd.to_numeric(u_future, errors="coerce").where(pd.to_numeric(u_future, errors="coerce") > 0)
+        u_fwd = u_future / u_now - 1.0
+        etf[f"excess{h}"] = (etf[f"fwd{h}"] - u_fwd).replace([np.inf, -np.inf], np.nan)
 
     # Stable research window; 2026 is partial and is still reported separately.
     eligible = etf[(etf["date"] >= "2018-01-01") & etf["technical"].notna() & etf["health"].notna()].copy()
