@@ -32,5 +32,7 @@
     "snapshot sector mapping not point-in-time constituents",
     "source adjusted prices not independently certified total return",
     "reused historical holdout"
-  ]
+  ],
+  "mappingStoragePath": "source/Reference/etf-universe-sector-map-20260911.csv",
+  "environmentResearch": "Point-in-time regional ETF peer composites exclude own/duplicate underlying family; minimum3 others;1-observation lag. Candidates not adopted after failed validation."
 }

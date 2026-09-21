@@ -1,20 +1,20 @@
 {
-  "status": "provisional_research_policy_after_clean_inputs",
-  "model": "continuous_technical_M0_without_priority_rotation",
+  "status": "research_baseline_recalibration_required",
+  "model": "continuous_M0_two_active_priority_slots",
   "weights": {
     "technicalContinuous": 55,
-    "priorityWithoutRotation": 15,
+    "priorityTwo": 15,
     "healthCapLiquidityPlain": 15,
     "marketSectorMapped": 15
   },
-  "blockScale": "each block 0..100; Priority existing implementation retained without ceiling rescale",
+  "blockScale": "All blocks0..100; Priority has exactly2 active slots; no stock-index membership or rotation slot",
   "entry": "previous M0 < 80 and current M0 >= 80 and eligible",
   "exit": "underlying index close < underlying index MA60",
   "execution": "signal at close; fill next session open",
   "holdingTimeCap": null,
   "portfolioSlots": 10,
   "costPerSide": 0.0015,
-  "blockStudyDecision": "Keep Technical/Priority/Health/Market blocks; remove only Priority rotation contribution in the new provisional research rule.",
+  "blockStudyDecision": "Four blocks retained provisionally. Priority effective influence increased after removing unused slots; allocation requires future validation.",
   "productionDeployment": false,
   "limitations": [
     "reused retrospective holdout",
@@ -22,12 +22,42 @@
     "dividend and adjustment consistency unverified",
     "slot-count and symbol tie-break sensitivity"
   ],
-  "componentStudyDecision": "DROP_P_ROTATION selected among15 predeclared models: train and validation CAGR/Sharpe improve, MDD within3pp; larger costs and5/20slots maintain improvement versus CLEAN.",
+  "componentStudyDecision": "User-authorized structural cleanup retained despite performance regression. No regional environment candidate passed BOTH train and validation.",
   "researchChallengers": [
     {
-      "id": "DROP_P_ROTATION_GATE",
+      "id": "P2_OWN_LAG1",
       "status": "not_adopted",
-      "reason": "Additional marketCap>=50bn and TV20>=1bn gate reduces validation CAGR and Sharpe."
+      "reason": "Did not pass joint train/validation CAGR,Sharpe,MDD gate"
+    },
+    {
+      "id": "P2_PEER_TREND",
+      "status": "not_adopted",
+      "reason": "Did not pass joint train/validation CAGR,Sharpe,MDD gate"
+    },
+    {
+      "id": "P2_PEER_CONTINUOUS",
+      "status": "not_adopted",
+      "reason": "Did not pass joint train/validation CAGR,Sharpe,MDD gate"
+    },
+    {
+      "id": "P2_PEER_BREADTH",
+      "status": "not_adopted",
+      "reason": "Did not pass joint train/validation CAGR,Sharpe,MDD gate"
+    },
+    {
+      "id": "P2_PEER_MIX",
+      "status": "not_adopted",
+      "reason": "Did not pass joint train/validation CAGR,Sharpe,MDD gate"
+    },
+    {
+      "id": "P2_NEUTRAL",
+      "status": "not_adopted",
+      "reason": "Did not pass joint train/validation CAGR,Sharpe,MDD gate"
+    },
+    {
+      "id": "P2_NO_ENV",
+      "status": "not_adopted",
+      "reason": "Did not pass joint train/validation CAGR,Sharpe,MDD gate"
     }
   ],
   "dataQualityNotes": [
@@ -50,8 +80,10 @@
     "sizePoint": "KRX ETF marketCap >= 300bn KRW",
     "relativePoint": "daily ETF return exceeds KOSPI by >=2 percentage points, Korean exposure only",
     "rotationPoint": 0,
-    "denominator": "Retain5 for compatible domestic-sector ETFs,4 for other ETFs; no ceiling rescale",
-    "reason": "Remove rotation contribution only; denominator recalibration is a different experiment and did not pass."
+    "denominator": 2,
+    "reason": "Both deleted components removed from numerator and denominator; no 5/4 or3/2 hidden denominator remains.",
+    "indexMembershipPoints": 0,
+    "foreignRelativeTerm": "Disabled as in preceding clean policy until a compatible market-return benchmark is defined; never KOSPI for foreign exposure."
   },
   "health": {
     "scale": 60,
@@ -67,18 +99,42 @@
   },
   "marketSector": {
     "domesticSector": "stock-only sector relative strength, trend and breadth; ETFs excluded from stock breadth",
-    "otherEquity": "underlying aboveMA20, aboveMA60, MA20>MA60, MA60 rising5sessions;25points each",
+    "otherEquity": "Provisional existing own-underlying regime retained; none of the independent regional environment candidates passed train and validation.",
     "domesticRotationCompatibleEtfs": 101,
-    "otherEquityEtfs": 144
+    "otherEquityEtfs": 144,
+    "environmentStudy": {
+      "sourceRun": 35566534880,
+      "peerMethod": "Same region, exclude own economic underlying-index family, equal family weighting, minimum3 other families, one-observation lag; explicit own-regime fallback",
+      "passed": [],
+      "sparseRegions": [
+        "EU",
+        "ID",
+        "IN",
+        "JP",
+        "KR_TW",
+        "US_CN",
+        "VN"
+      ]
+    }
   },
+  "dataErrorExit": "If underlying index becomes unavailable while held, separately label next-open data-error liquidation; not a MA60 signal.",
   "researchResult": {
+    "baseRun": 35566534880,
+    "selected": "P2_OWN",
+    "cagr": 0.11504015137249057,
+    "mdd": -0.26942933811329073,
+    "sharpe": 0.6983489901312766,
+    "note": "Structural baseline; inferior to previous denominator-preserving variant. Not approved as superior investment model."
+  },
+  "historicalReference": {
     "baseRun": 35564981988,
     "selected": "DROP_P_ROTATION",
     "cagr": 0.15073,
     "mdd": -0.2308,
     "sharpe": 0.90226,
     "entryCount": 346,
-    "note": "Summary rounded; exact values in Supabase portfolio-summary.csv; not independently untouched holdout."
+    "note": "Summary rounded; exact values in Supabase portfolio-summary.csv; not independently untouched holdout.",
+    "currentPolicy": false
   },
-  "dataErrorExit": "If underlying index becomes unavailable while held, separately label next-open data-error liquidation; not a MA60 signal."
+  "mappingStoragePath": "source/Reference/etf-universe-sector-map-20260911.csv"
 }
