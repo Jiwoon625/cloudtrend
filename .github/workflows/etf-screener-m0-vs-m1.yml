@@ -4,13 +4,6 @@ on:
   push:
     branches:
       - research/etf-m0-vs-m1-20260921
-  pull_request:
-    paths:
-      - scripts/export-etf-m0-m1-sector-map.ts
-      - scripts/research_etf_m0_vs_m1.py
-      - .github/workflows/etf-screener-m0-vs-m1.yml
-      - .github/actions/backtest-source-cache/action.yml
-      - .github/actions/etf-backtest-source-cache/action.yml
   workflow_dispatch:
 
 permissions:
@@ -18,7 +11,7 @@ permissions:
 
 concurrency:
   group: etf-screener-m0-vs-m1-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   study:
@@ -30,8 +23,8 @@ jobs:
       SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
       BACKTEST_SOURCE_MANIFEST: .cache/cloudtrend-backtest-manifest.json
       BACKTEST_SOURCE_CACHE_DIR: .cache/cloudtrend-backtest
-      ETF_BACKTEST_SOURCE_MANIFEST: .cache/cloudtrend-etf-backtest-manifest.json
-      ETF_BACKTEST_CACHE_DIR: .cache/cloudtrend-etf-backtest
+      ETF_V21_MANIFEST: .cache/cloudtrend-etf-v21-manifest.json
+      ETF_V21_CACHE_DIR: .cache/cloudtrend-etf-v21
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -44,37 +37,88 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
       - name: Install research Python dependencies
-        run: python -m pip install --disable-pip-version-check pandas==2.2.3 numpy==2.1.3
+        run: python -m pip install --disable-pip-version-check pandas==2.2.3 numpy==2.1.3 pyarrow==23.0.1
+
       - name: Restore verified stock-core backtest cache
         uses: ./.github/actions/backtest-source-cache
         with:
           manifest: ${{ env.BACKTEST_SOURCE_MANIFEST }}
           directory: ${{ env.BACKTEST_SOURCE_CACHE_DIR }}
-      - name: Restore verified ETF canonical cache
-        uses: ./.github/actions/etf-backtest-source-cache
+
+      - name: Build ETF v2.1 parquet manifest
+        id: v21-source
+        run: |
+          npx vite-node --script scripts/etf-v21-cache.ts manifest \
+            --manifest "$ETF_V21_MANIFEST"
+
+      - name: Restore ETF v2.1 parquet cache
+        id: v21-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.ETF_V21_CACHE_DIR }}
+          key: cloudtrend-etf-v21-${{ steps.v21-source.outputs.cache_key }}
+
+      - name: Verify or materialize ETF v2.1 parquet
+        run: |
+          npx vite-node --script scripts/etf-v21-cache.ts materialize \
+            --manifest "$ETF_V21_MANIFEST" \
+            --cache-dir "$ETF_V21_CACHE_DIR"
+
+      - name: Save ETF v2.1 parquet cache
+        if: steps.v21-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.ETF_V21_CACHE_DIR }}
+          key: cloudtrend-etf-v21-${{ steps.v21-source.outputs.cache_key }}
+
+      - name: Extract ETF v2.1 symbol list
+        run: |
+          mkdir -p analysis-runs
+          python - <<'PY'
+          import json
+          import pathlib
+          import pandas as pd
+          m = json.loads(pathlib.Path(".cache/cloudtrend-etf-v21-manifest.json").read_text())
+          p = pathlib.Path(".cache/cloudtrend-etf-v21") / m["cacheFile"]
+          df = pd.read_parquet(p, columns=["symbol","name"]).drop_duplicates("symbol")
+          df["symbol"] = df["symbol"].astype(str).str.strip().str.upper()
+          out = [{"symbol": r.symbol, "name": str(r.name)} for r in df.itertuples(index=False)]
+          pathlib.Path("analysis-runs/etf-v21-symbols.json").write_text(
+              json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+          )
+          print(json.dumps({"etfSymbols": len(out), "parquet": str(p)}))
+          PY
+
       - name: Export canonical sector map
         run: |
           npx vite-node --script scripts/export-etf-m0-m1-sector-map.ts \
             --source-manifest "$BACKTEST_SOURCE_MANIFEST" \
             --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR" \
-            --etf-source-manifest "$ETF_BACKTEST_SOURCE_MANIFEST" \
-            --etf-source-cache-dir "$ETF_BACKTEST_CACHE_DIR" \
+            --etf-symbols analysis-runs/etf-v21-symbols.json \
             --output analysis-runs/etf-m0-m1-sector-map.json
+
       - name: Run ETF M0 vs M1 research
         run: |
+          ETF_PARQUET="$(python - <<'PY'
+          import json, pathlib
+          m=json.loads(pathlib.Path(".cache/cloudtrend-etf-v21-manifest.json").read_text())
+          print(pathlib.Path(".cache/cloudtrend-etf-v21") / m["cacheFile"])
+          PY
+          )"
           python scripts/research_etf_m0_vs_m1.py \
             --source-manifest "$BACKTEST_SOURCE_MANIFEST" \
             --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR" \
-            --etf-source-manifest "$ETF_BACKTEST_SOURCE_MANIFEST" \
-            --etf-source-cache-dir "$ETF_BACKTEST_CACHE_DIR" \
+            --etf-parquet "$ETF_PARQUET" \
             --sector-map analysis-runs/etf-m0-m1-sector-map.json \
             --output analysis-runs/etf-screener-m0-vs-m1.json
+
       - name: Upload research artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: etf-screener-m0-vs-m1-${{ github.run_id }}
           path: |
+            analysis-runs/etf-v21-symbols.json
             analysis-runs/etf-m0-m1-sector-map.json
             analysis-runs/etf-screener-m0-vs-m1.json
           if-no-files-found: warn
