@@ -112,6 +112,22 @@ jobs:
             --sector-map analysis-runs/etf-m0-m1-sector-map.json \
             --output analysis-runs/etf-screener-m0-vs-m1.json
 
+      - name: Run ETF M0 onset filter research
+        run: |
+          ETF_PARQUET="$(python - <<'PY'
+          import json, pathlib
+          m=json.loads(pathlib.Path(".cache/cloudtrend-etf-v21-manifest.json").read_text())
+          print(pathlib.Path(".cache/cloudtrend-etf-v21") / m["cacheFile"])
+          PY
+          )"
+          python scripts/research_etf_m0_onset_filters.py \
+            --source-manifest "$BACKTEST_SOURCE_MANIFEST" \
+            --source-cache-dir "$BACKTEST_SOURCE_CACHE_DIR" \
+            --etf-parquet "$ETF_PARQUET" \
+            --sector-map analysis-runs/etf-m0-m1-sector-map.json \
+            --output-json analysis-runs/etf-m0-onset-filter-study.json \
+            --output-csv analysis-runs/etf-m0-onset-filter-study.csv
+
       - name: Upload research artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -121,5 +137,7 @@ jobs:
             analysis-runs/etf-v21-symbols.json
             analysis-runs/etf-m0-m1-sector-map.json
             analysis-runs/etf-screener-m0-vs-m1.json
+            analysis-runs/etf-m0-onset-filter-study.json
+            analysis-runs/etf-m0-onset-filter-study.csv
           if-no-files-found: warn
           retention-days: 30
