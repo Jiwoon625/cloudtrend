@@ -1,11 +1,11 @@
 {
-  "status": "provisional_research_policy",
-  "model": "continuous_technical_M0",
+  "status": "provisional_research_policy_after_clean_inputs",
+  "model": "continuous_technical_M0_without_priority_rotation",
   "weights": {
     "technicalContinuous": 55,
-    "priorityM0": 15,
-    "health": 15,
-    "marketSectorScore": 15
+    "priorityWithoutRotation": 15,
+    "healthCapLiquidityPlain": 15,
+    "marketSectorMapped": 15
   },
   "blockScale": "each block 0..100; Priority existing implementation retained without ceiling rescale",
   "entry": "previous M0 < 80 and current M0 >= 80 and eligible",
@@ -14,7 +14,7 @@
   "holdingTimeCap": null,
   "portfolioSlots": 10,
   "costPerSide": 0.0015,
-  "blockStudyDecision": "retain all four blocks; none of 19 alternatives passes both train and validation gates",
+  "blockStudyDecision": "Keep Technical/Priority/Health/Market blocks; remove only Priority rotation contribution in the new provisional research rule.",
   "productionDeployment": false,
   "limitations": [
     "reused retrospective holdout",
@@ -22,28 +22,63 @@
     "dividend and adjustment consistency unverified",
     "slot-count and symbol tie-break sensitivity"
   ],
-  "componentStudyDecision": "retain baseline: no candidate improved both train and validation CAGR/Sharpe",
+  "componentStudyDecision": "DROP_P_ROTATION selected among15 predeclared models: train and validation CAGR/Sharpe improve, MDD within3pp; larger costs and5/20slots maintain improvement versus CLEAN.",
   "researchChallengers": [
     {
-      "id": "GATE_AUM50_TV1",
-      "status": "watch_only",
-      "aumMinimum": 50000000000,
-      "averageTradingValue20dMinimum": 1000000000,
-      "healthScoreRetained": true
-    },
-    {
-      "id": "P_ZERO_Rotation",
-      "status": "watch_only",
-      "note": "Zero rotation contribution while retaining current denominator; not a production row deletion"
+      "id": "DROP_P_ROTATION_GATE",
+      "status": "not_adopted",
+      "reason": "Additional marketCap>=50bn and TV20>=1bn gate reduces validation CAGR and Sharpe."
     }
   ],
   "dataQualityNotes": [
-    "2026-09-18 AUM=0 for 238 equity ETFs: treat as suspect/unavailable, not actual zero assets",
-    "KOSPI reference and sector inputs end 2026-09-11; later ETF bars are MTM only",
-    "Rotation absent structurally for MARKET_IDX and ETC",
-    "Official premium and tracking-error history empty; expense-ratio column absent",
-    "Price-adjustment and AUM/NAV/unit timestamp consistency require reconciliation",
-    "Price source explicitly TOSS_ADJUSTED_CANDLE; monetary fields KRX_ETF; do not compare adjusted close directly to NAV",
-    "Five ETFs have zero underlying index values; 10 baseline matched exits coincide with invalid index. Repair before final strategy validation."
-  ]
+    "All analysis and fills end2026-09-11",
+    "393explicit mappings,245plain equity ETFs after6asset-class corrections",
+    "KRX marketCap used as size,KRX tradingValue as liquidity,TOSS adjusted OHLC for prices",
+    "No missing index zero-fill; positive underlying and full warmup required",
+    "990missing/nonpositive underlying rows recorded; data-error liquidation explicit; selected10slot portfolio had0such executed exits",
+    "Current-snapshot metadata; historical constituent classifications unavailable"
+  ],
+  "researchDataPolicy": "research/etf-research-data-policy.json",
+  "analysisStart": "2017-01-03",
+  "analysisCutoff": "2026-09-11",
+  "ignoredFields": [
+    "premiumDiscount",
+    "trackingError",
+    "totalExpenseRatio"
+  ],
+  "priority": {
+    "sizePoint": "KRX ETF marketCap >= 300bn KRW",
+    "relativePoint": "daily ETF return exceeds KOSPI by >=2 percentage points, Korean exposure only",
+    "rotationPoint": 0,
+    "denominator": "Retain5 for compatible domestic-sector ETFs,4 for other ETFs; no ceiling rescale",
+    "reason": "Remove rotation contribution only; denominator recalibration is a different experiment and did not pass."
+  },
+  "health": {
+    "scale": 60,
+    "sizePoints": "20 for marketCap>=50bn KRW plus10 for>=100bn",
+    "liquidityPoints": "20 for trailing20 average KRX tradingValue>=1bn KRW",
+    "plainPoints": 10,
+    "ignored": [
+      "premium",
+      "trackingError",
+      "expenseRatio"
+    ],
+    "requiredHardGate": false
+  },
+  "marketSector": {
+    "domesticSector": "stock-only sector relative strength, trend and breadth; ETFs excluded from stock breadth",
+    "otherEquity": "underlying aboveMA20, aboveMA60, MA20>MA60, MA60 rising5sessions;25points each",
+    "domesticRotationCompatibleEtfs": 101,
+    "otherEquityEtfs": 144
+  },
+  "researchResult": {
+    "baseRun": 35564981988,
+    "selected": "DROP_P_ROTATION",
+    "cagr": 0.15073,
+    "mdd": -0.2308,
+    "sharpe": 0.90226,
+    "entryCount": 346,
+    "note": "Summary rounded; exact values in Supabase portfolio-summary.csv; not independently untouched holdout."
+  },
+  "dataErrorExit": "If underlying index becomes unavailable while held, separately label next-open data-error liquidation; not a MA60 signal."
 }
