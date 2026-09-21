@@ -4,6 +4,7 @@ import path from "node:path";
 import process from "node:process";
 
 import { parseManualMarketData } from "../src/lib/engine/manualDataset";
+import { resolveSectorCode } from "../src/lib/engine/sectors";
 
 interface CacheManifestFile {
   fileName: string;
@@ -16,14 +17,7 @@ interface CacheManifest {
   sourceType: "backtest";
   files: CacheManifestFile[];
 }
-interface EtfCacheManifest {
-  version: "etf-backtest-cache-v1";
-  cacheKey: string;
-  logicalFileHash: string;
-  logicalSizeBytes: number;
-  cacheFile: string;
-  sourceFilename: string;
-}
+interface EtfSymbol { symbol: string; name: string }
 
 function arg(name: string): string {
   const i = process.argv.indexOf(name);
@@ -31,25 +25,18 @@ function arg(name: string): string {
   if (!value) throw new Error(`Missing ${name}`);
   return value;
 }
-
 function decode(bytes: Uint8Array): string {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return new TextDecoder("euc-kr").decode(bytes);
-  }
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+  catch { return new TextDecoder("euc-kr").decode(bytes); }
 }
 
 async function main() {
   const sourceManifestPath = arg("--source-manifest");
   const sourceCacheDir = arg("--source-cache-dir");
-  const etfManifestPath = arg("--etf-source-manifest");
-  const etfCacheDir = arg("--etf-source-cache-dir");
+  const etfSymbolsPath = arg("--etf-symbols");
   const output = arg("--output");
 
   const stockManifest = JSON.parse(await readFile(sourceManifestPath, "utf8")) as CacheManifest;
-  if (stockManifest.schemaVersion !== 1 || stockManifest.sourceType !== "backtest")
-    throw new Error("Unsupported stock manifest");
   const stockTexts: string[] = [];
   for (const file of stockManifest.files) {
     const bytes = new Uint8Array(await readFile(path.join(sourceCacheDir, file.cacheFile)));
@@ -59,56 +46,41 @@ async function main() {
     stockTexts.push(decode(bytes));
   }
 
-  const etfManifest = JSON.parse(await readFile(etfManifestPath, "utf8")) as EtfCacheManifest;
-  const etfBytes = new Uint8Array(await readFile(path.join(etfCacheDir, etfManifest.cacheFile)));
-  const etfHash = "sha256:" + createHash("sha256").update(etfBytes).digest("hex");
-  if (
-    etfManifest.version !== "etf-backtest-cache-v1" ||
-    etfBytes.byteLength !== etfManifest.logicalSizeBytes ||
-    etfHash !== etfManifest.logicalFileHash
-  )
-    throw new Error("ETF cache integrity failure");
+  const parsed = parseManualMarketData(stockTexts);
+  const stockMapping = parsed.dataset.instruments
+    .filter((x) => x.instrumentType === "STOCK")
+    .map((x) => ({
+      symbol: x.symbol, name: x.name, instrumentType: x.instrumentType, market: x.market,
+      sectorCode: x.sectorCode, sectorName: x.sectorName,
+      isLeveraged: x.isLeveraged, isInverse: x.isInverse, isActive: x.isActive,
+    }));
 
-  // Canonical ETF text comes first so overlapping ETF rows use the verified canonical copy.
-  const parsed = parseManualMarketData([decode(etfBytes), ...stockTexts]);
-  const mapping = parsed.dataset.instruments.map((x) => ({
-    symbol: x.symbol,
-    name: x.name,
-    instrumentType: x.instrumentType,
-    market: x.market,
-    sectorCode: x.sectorCode,
-    sectorName: x.sectorName,
-    isLeveraged: x.isLeveraged,
-    isInverse: x.isInverse,
-    isActive: x.isActive,
-  }));
+  const etfSymbols = JSON.parse(await readFile(etfSymbolsPath, "utf8")) as EtfSymbol[];
+  const etfMapping = etfSymbols.map(({ symbol, name }) => {
+    const resolved = resolveSectorCode(symbol, name, true);
+    return {
+      symbol, name, instrumentType: "ETF" as const, market: "ETF" as const,
+      sectorCode: resolved.code, sectorName: resolved.name,
+      isLeveraged: /레버리지|2X|3X/i.test(name),
+      isInverse: /인버스|숏|SHORT/i.test(name),
+      isActive: true,
+    };
+  });
 
+  const instruments = [...stockMapping, ...etfMapping];
   await mkdir(path.dirname(output), { recursive: true });
-  await writeFile(
-    output,
-    JSON.stringify(
-      {
-        asOfDate: parsed.dataset.asOfDate,
-        stats: parsed.stats,
-        warnings: parsed.warnings,
-        sectors: parsed.dataset.sectors,
-        instruments: mapping,
-      },
-      null,
-      2,
-    ) + "\n",
-  );
-  process.stdout.write(
-    JSON.stringify({
-      output,
-      instruments: mapping.length,
-      etfs: mapping.filter((x) => x.instrumentType === "ETF").length,
-      stocks: mapping.filter((x) => x.instrumentType === "STOCK").length,
-      asOfDate: parsed.dataset.asOfDate,
-    }) + "\n",
-  );
+  await writeFile(output, JSON.stringify({
+    asOfDate: parsed.dataset.asOfDate,
+    stats: { ...parsed.stats, etfs: etfMapping.length, stocks: stockMapping.length },
+    warnings: parsed.warnings,
+    sectors: parsed.dataset.sectors,
+    instruments,
+  }, null, 2) + "\n");
+  process.stdout.write(JSON.stringify({
+    output, instruments: instruments.length, etfs: etfMapping.length,
+    stocks: stockMapping.length, asOfDate: parsed.dataset.asOfDate,
+  }) + "\n");
 }
-
 main().catch((e) => {
   process.stderr.write((e instanceof Error ? e.stack ?? e.message : String(e)) + "\n");
   process.exitCode = 1;
