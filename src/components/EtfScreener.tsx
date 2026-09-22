@@ -17,6 +17,55 @@ const environmentNames = {
   unavailable: "데이터 없음",
 };
 
+type SortDirection = "asc" | "desc";
+type SortKey =
+  | "instrument"
+  | "score"
+  | "previousScore"
+  | "technical"
+  | "priority"
+  | "health"
+  | "environment"
+  | "signal"
+  | "volatility"
+  | "entryWeight"
+  | "orderPrice"
+  | "quantity"
+  | "evidence";
+
+const ETF_TABLE_COLUMNS: Array<{ key: SortKey; label: string }> = [
+  { key: "instrument", label: "종목" },
+  { key: "score", label: "M0 / 100" },
+  { key: "previousScore", label: "전일 M0" },
+  { key: "technical", label: "기술 / 62.5" },
+  { key: "priority", label: "Priority / 7.5" },
+  { key: "health", label: "Health / 15" },
+  { key: "environment", label: "환경 / 15" },
+  { key: "signal", label: "신호" },
+  { key: "volatility", label: "20일 변동성" },
+  { key: "entryWeight", label: "신규 비중" },
+  { key: "orderPrice", label: "주문가격(원)" },
+  { key: "quantity", label: "매수 수량" },
+  { key: "evidence", label: "데이터·환경 근거" },
+];
+
+const compareNullable = (
+  a: string | number | null | undefined,
+  b: string | number | null | undefined,
+  direction: SortDirection,
+) => {
+  const aMissing = a == null || (typeof a === "number" && !Number.isFinite(a));
+  const bMissing = b == null || (typeof b === "number" && !Number.isFinite(b));
+  if (aMissing && bMissing) return 0;
+  if (aMissing) return 1;
+  if (bMissing) return -1;
+  const result =
+    typeof a === "number" && typeof b === "number"
+      ? a - b
+      : String(a).localeCompare(String(b), "ko", { numeric: true, sensitivity: "base" });
+  return direction === "asc" ? result : -result;
+};
+
 export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("equity");
@@ -24,6 +73,8 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
   const [cash, setCash] = useState("");
   const [held, setHeld] = useState("");
   const [prices, setPrices] = useState<Record<string, string>>({});
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const rows = analysis.rows.filter((r) => r.instrument.instrumentType === "ETF");
   const heldSymbols = [
     ...new Set(
@@ -63,6 +114,72 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
     [analysis, equity, cash, held, prices],
   );
   const bySymbol = new Map(orders.map((o) => [o.symbol, o]));
+  const getSignalLabel = (r: AnalysisResult["rows"][number]) => {
+    const s = r.etfStrategy;
+    const symbol = r.instrument.symbol;
+    const confirmed = s?.version === ETF_POLICY.version;
+    return !confirmed
+      ? "재계산 필요"
+      : !s.eligible
+        ? "대상·데이터 점검"
+        : heldSet.has(symbol)
+          ? s.exit === "MA60"
+            ? "다음 시가 청산"
+            : s.exit === "DATA_UNAVAILABLE"
+              ? "데이터 오류 청산 점검"
+              : "보유"
+          : s.onset
+            ? "신규 Onset"
+            : s.exit === "MA60"
+              ? "MA60 하회 · 보유 시 청산"
+              : s.score !== null && s.score >= 80
+                ? "80 이상 유지"
+                : "관찰";
+  };
+  const getSortValue = (r: AnalysisResult["rows"][number], key: SortKey) => {
+    const s = r.etfStrategy;
+    const symbol = r.instrument.symbol;
+    switch (key) {
+      case "instrument":
+        return `${r.instrument.name} ${symbol}`;
+      case "score":
+        return s?.score;
+      case "previousScore":
+        return s?.previousScore;
+      case "technical":
+        return s?.technical == null ? null : s.technical * 0.625;
+      case "priority":
+        return s?.priority == null ? null : s.priority * 0.075;
+      case "health":
+        return s?.health == null ? null : s.health * 0.15;
+      case "environment":
+        return s?.environment == null ? null : s.environment * 0.15;
+      case "signal":
+        return getSignalLabel(r);
+      case "volatility":
+        return s?.annualVolatility;
+      case "entryWeight":
+        return s?.entryWeight;
+      case "orderPrice": {
+        const enteredPrice = prices[symbol];
+        return enteredPrice === undefined ? r.snapshot.close : Number(enteredPrice);
+      }
+      case "quantity":
+        return bySymbol.get(symbol)?.quantity ?? null;
+      case "evidence":
+        return s
+          ? `${environmentNames[s.environmentSource]} ${s.issues.join(" ")}`
+          : "새 전략 재계산 필요";
+    }
+  };
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    setSortDirection("asc");
+  };
   const shown = rows
     .filter((r) => {
       const s = r.etfStrategy,
@@ -74,11 +191,20 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
       if (filter === "equity") return s?.eligible === true;
       return true;
     })
-    .sort(
-      (a, b) =>
+    .sort((a, b) => {
+      if (sortKey) {
+        const compared = compareNullable(
+          getSortValue(a, sortKey),
+          getSortValue(b, sortKey),
+          sortDirection,
+        );
+        if (compared !== 0) return compared;
+      }
+      return (
         Number(b.etfStrategy?.onset ?? false) - Number(a.etfStrategy?.onset ?? false) ||
-        a.instrument.symbol.localeCompare(b.instrument.symbol),
-    );
+        a.instrument.symbol.localeCompare(b.instrument.symbol)
+      );
+    });
   const exits = rows.filter((r) => heldSet.has(r.instrument.symbol) && r.etfStrategy?.exit != null);
   return (
     <div className="space-y-4">
@@ -246,25 +372,30 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
         <table className="w-full text-sm whitespace-nowrap">
           <thead className="bg-muted">
             <tr>
-              {[
-                "종목",
-                "M0 / 100",
-                "전일 M0",
-                "기술 / 62.5",
-                "Priority / 7.5",
-                "Health / 15",
-                "환경 / 15",
-                "신호",
-                "20일 변동성",
-                "신규 비중",
-                "주문가격(원)",
-                "매수 수량",
-                "데이터·환경 근거",
-              ].map((h) => (
-                <th key={h} className="p-3 text-left">
-                  {h}
-                </th>
-              ))}
+              {ETF_TABLE_COLUMNS.map((column) => {
+                const active = sortKey === column.key;
+                return (
+                  <th
+                    key={column.key}
+                    className="p-0 text-left"
+                    aria-sort={
+                      active ? (sortDirection === "asc" ? "ascending" : "descending") : "none"
+                    }
+                  >
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-1 p-3 text-left font-semibold hover:bg-muted-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => handleSort(column.key)}
+                      title={`${column.label} 정렬`}
+                    >
+                      <span>{column.label}</span>
+                      <span className="text-xs text-muted-foreground" aria-hidden="true">
+                        {active ? (sortDirection === "asc" ? "↑" : "↓") : "↕"}
+                      </span>
+                    </button>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -272,24 +403,7 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
               const s = r.etfStrategy,
                 symbol = r.instrument.symbol,
                 order = bySymbol.get(symbol);
-              const confirmed = s?.version === ETF_POLICY.version;
-              const label = !confirmed
-                ? "재계산 필요"
-                : !s.eligible
-                  ? "대상·데이터 점검"
-                  : heldSet.has(symbol)
-                    ? s.exit === "MA60"
-                      ? "다음 시가 청산"
-                      : s.exit === "DATA_UNAVAILABLE"
-                        ? "데이터 오류 청산 점검"
-                        : "보유"
-                    : s.onset
-                      ? "신규 Onset"
-                      : s.exit === "MA60"
-                        ? "MA60 하회 · 보유 시 청산"
-                        : s.score !== null && s.score >= 80
-                          ? "80 이상 유지"
-                          : "관찰";
+              const label = getSignalLabel(r);
               return (
                 <tr key={symbol} className="border-t align-top">
                   <td className="p-3">
