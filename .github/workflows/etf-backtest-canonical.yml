@@ -36,7 +36,7 @@ jobs:
         run: npx prettier --check scripts/etf-backtest-canonicalize.ts scripts/etf-backtest-cache.ts .github/actions/etf-backtest-source-cache/action.yml .github/workflows/etf-backtest-canonical.yml
 
   migrate-and-seed-cache:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' || github.head_ref == 'research/etf-canonical-execute-20260918'
     needs: validate
     concurrency:
       group: cloudtrend-etf-backtest-data
