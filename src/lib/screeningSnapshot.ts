@@ -32,6 +32,11 @@ export interface ScreeningSnapshot {
   passedCount: number;
   gradeACount: number;
   gradeBCount: number;
+  /** 기술점수 기준 주식 상위 50. 이전 스냅샷 호환을 위해 optional. */
+  topStocks?: SnapshotEntry[];
+  /** 기술점수 기준 ETF 상위 50. 이전 스냅샷 호환을 위해 optional. */
+  topEtfs?: SnapshotEntry[];
+  /** 운영신호/등급 비교를 위해 전체 분석 결과를 유지한다. */
   entries: SnapshotEntry[];
 }
 
@@ -42,6 +47,22 @@ export function kstDateKey(d: Date = new Date()): string {
     month: "2-digit",
     day: "2-digit",
   }).format(d);
+}
+
+export function topTechnicalEntries(
+  entries: SnapshotEntry[],
+  instrumentType: SnapshotEntry["instrumentType"],
+  limit = 50,
+): SnapshotEntry[] {
+  return entries
+    .filter((entry) => entry.instrumentType === instrumentType)
+    .sort(
+      (a, b) =>
+        (b.technicalPoints ?? -Infinity) - (a.technicalPoints ?? -Infinity) ||
+        b.priorityPoints - a.priorityPoints ||
+        a.name.localeCompare(b.name, "ko"),
+    )
+    .slice(0, limit);
 }
 
 /** 분석 결과를 웹·자동화가 공유하는 저장용 스냅샷으로 변환한다. */
@@ -85,6 +106,8 @@ export function buildSnapshot(analysis: {
     passedCount: passed.length,
     gradeACount: passed.filter((entry) => entry.grade === "A").length,
     gradeBCount: passed.filter((entry) => entry.grade === "B").length,
+    topStocks: topTechnicalEntries(entries, "STOCK"),
+    topEtfs: topTechnicalEntries(entries, "ETF"),
     entries,
   };
 }
