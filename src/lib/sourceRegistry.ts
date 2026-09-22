@@ -236,14 +236,37 @@ export async function registerSourceBlob(input: {
     };
   }
 
+  // Daily screening increments are strictly newer than every active source by construction.
+  // In that case overlap is impossible from metadata alone, so do not download and
+  // re-parse the entire active history in the user's browser just to prove there is no overlap.
+  // This keeps one-day append uploads small and reliable while preserving the full overlap
+  // validation path for corrections/re-uploads that touch an existing date.
+  const incomingMinDate = validation.stats.minDate;
+  const strictlyAfterActive =
+    input.sourceType === "screening" &&
+    input.mode === "append" &&
+    active.length > 0 &&
+    Boolean(incomingMinDate) &&
+    active.every((source) => Boolean(source.max_date) && source.max_date! < incomingMinDate!);
+
   const compareExisting =
     (input.sourceType === "screening" && input.mode === "replace") ||
-    (input.sourceType === "backtest" && input.mode === "replace_all")
+    (input.sourceType === "backtest" && input.mode === "replace_all") ||
+    strictlyAfterActive
       ? []
       : await activeRows(input.sourceType);
-  const overlap = compareSourceRows(validation.rows, compareExisting);
+  const overlap: SourceOverlapResult = strictlyAfterActive
+    ? {
+        incomingRows: validation.stats.rowCount,
+        newRows: validation.stats.rowCount,
+        identicalRows: 0,
+        conflictingRows: 0,
+        overlappingSymbols: 0,
+        examples: [],
+      }
+    : compareSourceRows(validation.rows, compareExisting);
   validateOverlap(input.sourceType, input.mode, overlap);
-  if (input.sourceType === "screening") {
+  if (input.sourceType === "screening" && !strictlyAfterActive) {
     const effective = new Map<string, (typeof validation.rows)[number]>();
     for (const source of compareExisting) {
       for (const row of source.rows) effective.set(sourceRowKey(row), row);
