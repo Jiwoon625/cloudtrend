@@ -3,7 +3,7 @@ import type { DailyPrice } from "./types";
 import researchMapping from "./etfResearchMapping.json";
 
 export const ETF_POLICY = {
-  version: "etf-v01-m0-std20-t15-v1",
+  version: "etf-v01-m0-std20-t15-covered-call-v2",
   weights: { technical: 62.5, priority: 7.5, health: 15, environment: 15 },
   entryScore: 80,
   maxPositions: 10,
@@ -15,6 +15,10 @@ export const ETF_POLICY = {
 } as const;
 export type EtfMapping = (typeof researchMapping)[keyof typeof researchMapping];
 export const ETF_MAPPING: Record<string, EtfMapping> = researchMapping;
+
+export function isEtfStrategyAssetClass(mapping: EtfMapping | undefined): boolean {
+  return mapping?.assetClass === "equity" || mapping?.assetClass === "option_overlay";
+}
 type N = number | null;
 export interface EtfStrategySnapshot {
   version: string;
@@ -259,7 +263,7 @@ function peerEnvironments(ds: MarketDataset, mapping: Record<string, EtfMapping>
     const m = mapping[inst.symbol];
     if (
       inst.instrumentType !== "ETF" ||
-      m?.assetClass !== "equity" ||
+      !isEtfStrategyAssetClass(m) ||
       inst.isLeveraged ||
       inst.isInverse
     )
@@ -364,8 +368,8 @@ export function calculateEtfStrategies(
         u = regime(values),
         ownLag = regime(values.slice(0, -1)).score;
       if (!m) issues.push("검증된 ETF 분류 없음");
-      else if (m.assetClass !== "equity" || inst.isLeveraged || inst.isInverse)
-        issues.push("일반 주식형 ETF 전략 대상 아님");
+      else if (!isEtfStrategyAssetClass(m) || inst.isLeveraged || inst.isInverse)
+        issues.push("주식형·커버드콜 ETF 전략 대상 아님");
       if (!last || last.tradeDate !== date) issues.push("기준일 ETF 가격 없음");
       if (
         bars.length < 120 ||

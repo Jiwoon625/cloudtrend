@@ -609,7 +609,7 @@ export function runAnalysis(
       s.priority,
       "국내 KOSPI 대비 일수익률 +2%p; 규모·로테이션·지수편입 가점 없음",
     );
-    row.quality = block("ETF Health", s.health, "KRX 시총·20일 거래대금·일반 구조");
+    row.quality = block("ETF Health", s.health, "KRX 시총·20일 거래대금·허용 구조");
     row.technicalNormalized = s.technical;
     row.priorityNormalized = s.priority;
     row.qualityScore = s.health;
