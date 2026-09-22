@@ -3,9 +3,9 @@ import { compactDashboardRow } from "@/lib/dashboardRow";
 import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
 import { isKospiRelativeMomentumConfirmed } from "@/lib/kospiRelativeQuality";
 
-export const SCREENING_CACHE_VERSION = "screening-cache-v8-etf-v01-vol15-v1" as const;
-export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-etf-v01-vol15-v1" as const;
-export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-etf-v01-vol15-v1" as const;
+export const SCREENING_CACHE_VERSION = "screening-cache-v8-etf-v01-covered-call-v2" as const;
+export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-stock-universe-v2" as const;
+export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-etf-v01-covered-call-v2" as const;
 
 export interface DashboardSummary {
   version: typeof DASHBOARD_CACHE_VERSION;
@@ -43,6 +43,7 @@ export interface DashboardSummary {
     incomplete: number;
   };
   failReasons: Array<[string, number]>;
+  skippedReasons: Array<[string, number]>;
   onsetRows: ScreeningRow[];
   kospiEntryRows: ScreeningRow[];
   exitRows: ScreeningRow[];
@@ -108,7 +109,8 @@ export function buildDashboardSummary(
   createdAt = new Date().toISOString(),
 ): DashboardSummary {
   const rows = analysis.rows;
-  const passed = rows.filter((row) => row.hardFilterPassed);
+  const stockRows = rows.filter((row) => row.instrument.instrumentType === "STOCK");
+  const passed = stockRows.filter((row) => row.hardFilterPassed);
   const onsetRows = [...rows]
     .filter((row) => row.kosdaq80Onset)
     .sort(signalPriority)
@@ -131,9 +133,12 @@ export function buildDashboardSummary(
     .slice(0, 10);
 
   const failMap = new Map<string, number>();
-  for (const row of rows) {
-    if (row.hardFilterPassed) continue;
-    for (const reason of row.failedRules) failMap.set(reason, (failMap.get(reason) ?? 0) + 1);
+  const skippedMap = new Map<string, number>();
+  for (const row of stockRows) {
+    if (!row.hardFilterPassed)
+      for (const reason of row.failedRules) failMap.set(reason, (failMap.get(reason) ?? 0) + 1);
+    for (const reason of row.skippedRules)
+      skippedMap.set(reason, (skippedMap.get(reason) ?? 0) + 1);
   }
 
   return {
@@ -152,9 +157,9 @@ export function buildDashboardSummary(
     marketForeignNet5d: analysis.marketForeignNet5d,
     rotationSectors: buildRotationSectors(analysis),
     counts: {
-      total: rows.length,
+      total: stockRows.length,
       passed: passed.length,
-      disqualified: rows.length - passed.length,
+      disqualified: stockRows.length - passed.length,
       kosdaq80Onsets: rows.filter((row) => row.kosdaq80Onset).length,
       kospiEightPointEntries: rows.filter((row) => row.kospi80Onset).length,
       kospiRelativeQualityConfirmed: rows.filter(
@@ -170,6 +175,7 @@ export function buildDashboardSummary(
       ).length,
     },
     failReasons: [...failMap.entries()].sort((a, b) => b[1] - a[1]),
+    skippedReasons: [...skippedMap.entries()].sort((a, b) => b[1] - a[1]),
     onsetRows: onsetRows.map(compactDashboardRow),
     kospiEntryRows: kospiEntryRows.map(compactDashboardRow),
     exitRows: exitRows.map(compactDashboardRow),
