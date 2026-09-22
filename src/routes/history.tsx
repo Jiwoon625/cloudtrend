@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCount, formatKstDateTime, formatNumber } from "@/lib/format";
 import { useSnapshots, type SnapshotEntry } from "@/lib/screeningHistory";
+import { topTechnicalEntries } from "@/lib/screeningSnapshot";
 
 export const Route = createFileRoute("/history")({
   ssr: false,
@@ -63,6 +64,66 @@ function EntryList({ entries, empty }: { entries: SnapshotEntry[]; empty: string
   );
 }
 
+function TopEntriesTable({
+  title,
+  subtitle,
+  entries,
+}: {
+  title: string;
+  subtitle: string;
+  entries: SnapshotEntry[];
+}) {
+  return (
+    <section className="rounded-lg border border-border bg-card p-4">
+      <div className="mb-2">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <p className="text-[11px] text-muted-foreground">{subtitle}</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[700px] text-[12px]">
+          <thead>
+            <tr className="border-b border-border text-left text-muted-foreground">
+              <th className="py-1.5 pr-2 font-medium">순위</th>
+              <th className="py-1.5 pr-2 font-medium">종목</th>
+              <th className="py-1.5 pr-2 text-right font-medium">기술점수</th>
+              <th className="py-1.5 pr-2 text-right font-medium">우선점수</th>
+              <th className="py-1.5 pr-2 font-medium">등급</th>
+              <th className="py-1.5 font-medium">상태</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((e, index) => (
+              <tr key={e.symbol} className="border-b border-border/60 last:border-0">
+                <td className="num py-1.5 pr-2 text-muted-foreground">{index + 1}</td>
+                <td className="py-1.5 pr-2">
+                  <Link
+                    to="/instrument/$symbol"
+                    params={{ symbol: e.symbol }}
+                    className="hover:underline"
+                  >
+                    {e.name}
+                    <span className="num ml-1 text-[10px] text-muted-foreground">
+                      {e.symbol}
+                    </span>
+                  </Link>
+                </td>
+                <td className="num py-1.5 pr-2 text-right">
+                  {e.technicalPoints === null ? "-" : formatNumber(e.technicalPoints, 1)}
+                </td>
+                <td className="num py-1.5 pr-2 text-right">
+                  {formatNumber(e.priorityPoints, 1)}
+                </td>
+                <td className="py-1.5 pr-2 font-semibold">{e.grade}</td>
+                <td className="py-1.5 font-medium">{historyStatus(e)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function HistoryPage() {
   const { snapshots, remove, clear } = useSnapshots();
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -74,17 +135,17 @@ function HistoryPage() {
   const entryOnsets = useMemo(() => selected?.entries.filter(isOperational8Onset) ?? [], [selected]);
   const exitConditionMet = useMemo(() => selected?.entries.filter(isOperationalExit) ?? [], [selected]);
 
-  const sortedEntries = useMemo(
+  const stockTopEntries = useMemo(
     () =>
       selected
-        ? [...selected.entries]
-            .sort(
-              (a, b) =>
-                (b.technicalPoints ?? -Infinity) - (a.technicalPoints ?? -Infinity) ||
-                b.priorityPoints - a.priorityPoints ||
-                a.name.localeCompare(b.name, "ko"),
-            )
-            .slice(0, 50)
+        ? (selected.topStocks ?? topTechnicalEntries(selected.entries, "STOCK"))
+        : [],
+    [selected],
+  );
+  const etfTopEntries = useMemo(
+    () =>
+      selected
+        ? (selected.topEtfs ?? topTechnicalEntries(selected.entries, "ETF"))
         : [],
     [selected],
   );
@@ -203,52 +264,16 @@ function HistoryPage() {
                 </section>
               </div>
 
-              <section className="rounded-lg border border-border bg-card p-4">
-                <h3 className="mb-2 text-sm font-semibold">저장된 종목 (기술점수 상위 50)</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[760px] text-[12px]">
-                    <thead>
-                      <tr className="border-b border-border text-left text-muted-foreground">
-                        <th className="py-1.5 pr-2 font-medium">종목</th>
-                        <th className="py-1.5 pr-2 font-medium">구분</th>
-                        <th className="py-1.5 pr-2 text-right font-medium">기술점수</th>
-                        <th className="py-1.5 pr-2 text-right font-medium">우선점수</th>
-                        <th className="py-1.5 pr-2 font-medium">등급</th>
-                        <th className="py-1.5 font-medium">상태</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sortedEntries.map((e) => (
-                        <tr key={e.symbol} className="border-b border-border/60 last:border-0">
-                          <td className="py-1.5 pr-2">
-                            <Link
-                              to="/instrument/$symbol"
-                              params={{ symbol: e.symbol }}
-                              className="hover:underline"
-                            >
-                              {e.name}
-                              <span className="num ml-1 text-[10px] text-muted-foreground">
-                                {e.symbol}
-                              </span>
-                            </Link>
-                          </td>
-                          <td className="py-1.5 pr-2 text-muted-foreground">
-                            {e.instrumentType === "ETF" ? "ETF" : "주식"}
-                          </td>
-                          <td className="num py-1.5 pr-2 text-right">
-                            {e.technicalPoints === null ? "-" : formatNumber(e.technicalPoints, 1)}
-                          </td>
-                          <td className="num py-1.5 pr-2 text-right">
-                            {formatNumber(e.priorityPoints, 1)}
-                          </td>
-                          <td className="py-1.5 pr-2 font-semibold">{e.grade}</td>
-                          <td className="py-1.5 font-medium">{historyStatus(e)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
+              <TopEntriesTable
+                title={`주식 기술점수 TOP 50 (${stockTopEntries.length})`}
+                subtitle="주식은 10점 만점 기술점수를 기준으로 별도 정렬합니다."
+                entries={stockTopEntries}
+              />
+              <TopEntriesTable
+                title={`ETF 기술점수 TOP 50 (${etfTopEntries.length})`}
+                subtitle="ETF는 100점 만점 기술점수를 기준으로 별도 정렬합니다."
+                entries={etfTopEntries}
+              />
             </div>
           ) : null}
         </div>
