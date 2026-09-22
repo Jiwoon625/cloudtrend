@@ -5,6 +5,7 @@ import {
   ETF_POLICY,
   etfEntryWeight,
   etfFamily,
+  isEtfStrategyAssetClass,
   etfOrderPlan,
   etfTechnical,
   type EtfStrategySnapshot,
@@ -75,9 +76,11 @@ function entry(vol = 0.3): EtfStrategySnapshot {
 }
 
 describe("ETF V0.1 confirmed policy", () => {
-  it("preserves all 393 research mappings, 245 plain equity classifications", () => {
+  it("preserves all 393 research mappings and supports equity plus covered-call overlays", () => {
     expect(Object.keys(ETF_MAPPING)).toHaveLength(393);
     expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "equity")).toHaveLength(245);
+    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "option_overlay")).toHaveLength(14);
+    expect(Object.values(ETF_MAPPING).filter(isEtfStrategyAssetClass)).toHaveLength(259);
     expect(Object.values(ETF_POLICY.weights).reduce<number>((a, b) => a + b, 0)).toBe(100);
   });
   it("matches independently calculated pandas technical and sample volatility", () => {
@@ -119,6 +122,31 @@ describe("ETF V0.1 confirmed policy", () => {
     expect(s.previousScore).toBeLessThan(80);
     expect(s.score).toBeGreaterThanOrEqual(80);
     expect(s.onset).toBe(true);
+  });
+  it("analyzes covered-call overlays on the same score path as equity ETFs", () => {
+    const ds = fixture();
+    const mapping = {
+      "360750": {
+        ...ETF_MAPPING["360750"]!,
+        assetClass: "option_overlay" as const,
+      },
+    };
+    const s = calculateEtfStrategies(ds, mapping).get("360750")!;
+    expect(s.eligible).toBe(true);
+    expect(s.score).not.toBeNull();
+    expect(s.issues.some((issue) => issue.includes("전략 대상 아님"))).toBe(false);
+  });
+  it("still excludes non-equity-like ETF asset classes", () => {
+    const ds = fixture();
+    const mapping = {
+      "360750": {
+        ...ETF_MAPPING["360750"]!,
+        assetClass: "bond_cash" as const,
+      },
+    };
+    const s = calculateEtfStrategies(ds, mapping).get("360750")!;
+    expect(s.eligible).toBe(false);
+    expect(s.issues).toContain("주식형·커버드콜 ETF 전략 대상 아님");
   });
   it("does not manufacture an onset across a missing previous session", () => {
     const ds = fixture();
