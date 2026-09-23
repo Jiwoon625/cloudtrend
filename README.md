@@ -42,17 +42,13 @@ CloudTrend는 사용자가 직접 준비한 일봉 데이터를 브라우저에�
 - 종목 상세 화면과 데이터 커버리지 표시
 - 토스증권 Open API 데이터를 로컬에서 수집하기 위한 Jupyter 예제 코드 제공
 
-### 백테스트
+### 백테스트 연구
 
-- 직접 업로드한 별도 백테스트 데이터 또는 한국 스크리닝 데이터 사용
-- 70점 Onset 당일의 1일 점수 변동을 0~~5p, 5~~10p, 10~20p, 20p 이상으로 나눈 대표전략 성과 비교
-- 실행마다 데이터 버전·Git 코드 버전·설정·전체 결과를 하나의 재현성 번들로 Supabase에 저장
-- 5·10·20·30·40·60거래일 forward return 동시 분석
-- 피처 신호·비신호 집단의 평균/중앙값 수익률, 승률, edge 및 t값 비교
-- edge decay, 점수 구간, 관측 간격, 진입 임계값, 거래량·과열 기준 민감도 분석
-- 피처 상관행렬과 수익률 분포 확인
-- 관측 시점 이후 데이터는 forward return 계산에만 사용하여 look-ahead 방지
-- 수수료, 세금, 슬리피지는 미반영
+- 한국·미국 장기 데이터와 연구 결과는 Google Drive에 보관
+- Google Colab + DuckDB/Python으로 OOS·피처·포트폴리오 실험 수행
+- 연구 결과에는 데이터/Universe 버전, 설정, QA와 manifest를 함께 저장
+- 확정된 전략만 GitHub Production 엔진에 반영
+- Supabase는 장기 백테스트 저장소로 사용하지 않음
 
 ## 사용 흐름
 
@@ -60,10 +56,10 @@ CloudTrend는 사용자가 직접 준비한 일봉 데이터를 브라우저에�
 2. 파싱 결과와 경고를 확인하고 **스크리닝 시작**을 누릅니다.
 3. 대시보드, 주식·ETF 스크리너, 섹터, 종목 상세 및 데이터 상태 화면에서 결과를 확인합니다.
 4. 필요한 경우 산식과 가중치를 조정해 다시 계산합니다.
-5. **백테스트** 화면에서 별도 장기 일봉을 입력해 피처 설명력과 임계값 민감도를 검증합니다.
+5. 장기 백테스트와 피처 연구는 Google Drive의 canonical 데이터를 Google Colab에서 불러와 수행합니다.
 6. 미국 시장은 **US 시장·데이터** 화면에서 데이터를 별도로 입력해 실행합니다.
 
-입력 CSV는 Supabase의 비공개 Storage에 계정별로 저장됩니다. 국내·미국 데이터는 각각 최신 파일을 유지하고, 백테스트 데이터는 파일당 45MB 이하로 여러 개를 저장해 실행 시 합칩니다. 같은 계정으로 로그인하면 다른 기기에서도 불러옵니다. 이미 열린 화면은 상단의 최신 데이터 불러오기 버튼으로 갱신합니다. 계산은 브라우저에서 수행합니다.
+한국 스크리닝 입력 CSV는 Supabase의 비공개 Storage에 계정별로 저장되어 GitHub screening workflow와 웹앱이 사용합니다. 장기 백테스트용 한국·미국 canonical 데이터는 Google Drive에 보관하며 Google Colab에서 계산합니다.
 
 웹과 GPT/ChatGPT Work 업로드는 같은 검증·정규화 모듈과 `analysis_source_files` 등록부를 사용합니다.
 원본 파일은 비공개 `source` 경로, 실행 결과는 `results` 경로에 분리하며 파일·데이터·스키마
@@ -164,7 +160,7 @@ src/
     ├── screener.*.tsx       한국 주식·ETF 스크리너
     ├── sectors.tsx          섹터 로테이션
     ├── instrument.*.tsx     국내 종목 상세
-    ├── backtest.tsx         피처 영향도 백테스트
+    ├── backtest.tsx         Drive+Colab 백테스트 연구 안내
     ├── history.tsx          스크리닝 이력
     ├── data-status.tsx      데이터 품질 점검
     └── us.*.tsx             미국 시장 화면
@@ -196,41 +192,17 @@ bunx vitest run
 bun run lint
 ```
 
-## 재현 가능한 백테스트 실행
+## 재현 가능한 백테스트 연구
 
-웹의 **백테스트 실행** 버튼은 현재 로그인 계정의 비공개 Storage에
-`backtest/runs/<실행 ID>.json`을 자동 저장합니다. 이 번들에는 입력 파일 목록으로 만든 데이터
-버전, 배포 Git SHA, 실제 엔진 설정, 점수 변동 구간 정의와 전체 결과가 함께 들어갑니다.
+장기 백테스트는 Google Drive + Google Colab 구조로 운영합니다. 한국시장 데이터는 `CloudTrend/한국시장`, 미국시장 데이터는 `CloudTrend/미국시장` 아래의 canonical·연구 폴더를 사용합니다.
 
-동일 엔진을 로컬 파일로 실행하려면 다음 명령을 사용합니다.
+GitHub는 Production 점수·진입/청산 규칙과 코드 버전을 관리합니다. 과거 Supabase backtest source를 GitHub Actions가 다운로드해 실행하던 경로는 종료했습니다. 연구 결과를 운영에 채택할 때만 검증된 변경을 `src/lib/engine/**`에 반영합니다.
 
-```bash
-npm run backtest:run -- --input data/part-1.csv --input data/part-2.csv
-```
+## GPT·GitHub Actions 자동 스크리닝
 
-신뢰된 서버나 GitHub Actions에서 Supabase의 비공개 백테스트 파일을 직접 읽고 결과까지 다시
-업로드하려면 서버 전용 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`를 환경변수로 설정합니다.
-서비스 역할 키는 브라우저나 `VITE_*` 환경변수에 넣으면 안 됩니다.
+`CloudTrend screening` Actions 워크플로는 Supabase의 활성 screening 입력을 사용해 웹 스크리너·대시보드와 같은 최신 점수 스냅샷을 계산합니다. 결과와 실행 이력은 Supabase의 운영용 Storage/DB에 계속 축적합니다.
 
-```bash
-npm run backtest:run -- --supabase-user-id <USER_UUID> --upload
-```
-
-기본 설정은 `config/backtest.score-change.json`, 로컬 산출물은
-`backtest-runs/<실행 ID>/bundle.json`과 `score-change-summary.json`입니다.
-
-## GPT·GitHub Actions 자동 분석
-
-`CloudTrend analysis` Actions 워크플로는 Supabase의 비공개 입력을 사용해 백테스트뿐 아니라
-웹 스크리너 및 대시보드와 동일한 최신 점수 스냅샷을 계산합니다. 핵심 결과는 사용자별 RLS가
-적용된 `analysis_runs`에, 상세 결과는 private Storage에 저장합니다. 종목별 섹터는 CSV의 명시값을
-우선하고, 값이 없으면 저장소의 검토 완료 613종목 및 추가 매핑을 적용합니다.
-
-수동 실행과 GPT 댓글 명령 형식은 [`docs/automation.md`](docs/automation.md)를 참고하세요.
-
-GPT에 첨부한 CSV를 검증·등록한 뒤 같은 원천으로 Actions를 실행하는 절차는
-[`docs/data-ingestion.md`](docs/data-ingestion.md)를 참고하세요. `validate_only`는 저장하지 않으며,
-등록 CLI의 응답은 자동화용 JSON입니다.
+수동 실행과 GPT 댓글 명령은 [`docs/automation.md`](docs/automation.md)를 참고하세요. 장기 백테스트는 Actions에서 실행하지 않습니다.
 
 ## 환경변수와 API 키
 
