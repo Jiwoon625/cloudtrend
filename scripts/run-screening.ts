@@ -1,3 +1,4 @@
+import { createPortfolioStore } from "../src/lib/portfolioCore";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -82,7 +83,7 @@ async function loadPreviousSnapshot(
     .from("screening_history")
     .select("snapshot")
     .eq("user_id", userId)
-    .lt("date", currentDate)
+    .lt("snapshot->>asOfDate", currentDate)
     .order("date", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -124,6 +125,12 @@ async function main() {
   const snapshot = buildSnapshot(analysis);
   const previous = await loadPreviousSnapshot(client, options.supabaseUserId, snapshot.date);
   const summary = buildScreeningSummary(analysis, snapshot, previous);
+  const expectedSourceId = process.env["CLOUDTREND_EXPECTED_SOURCE_ID"];
+  const expectedDate = process.env["CLOUDTREND_EXPECTED_AS_OF_DATE"];
+  if (expectedSourceId && !inputs.some((input) => input.id === expectedSourceId))
+    throw new Error("Requested source is no longer active; refusing screening publish");
+  if (expectedDate && analysis.asOfDate !== expectedDate)
+    throw new Error("Requested asOfDate differs from screening data");
   const createdAt = new Date().toISOString();
   const runId = `${createdAt.replace(/[-:.TZ]/g, "").slice(0, 14)}-${dataVersion.slice(7, 15)}`;
   const resultPath = `${options.supabaseUserId}/results/screening/${runId}.json`;
@@ -195,6 +202,40 @@ async function main() {
       snapshot,
       previous,
     });
+
+    const { data: historyRows, error: historyReadError } = await client
+      .from("screening_history")
+      .select("snapshot")
+      .eq("user_id", options.supabaseUserId)
+      .lte("snapshot->>asOfDate", snapshot.asOfDate)
+      .order("date", { ascending: false })
+      .limit(1000);
+    if (historyReadError) throw historyReadError;
+    const portfolio = await createPortfolioStore({
+      supabase: client,
+      userId: async () => options.supabaseUserId,
+      loadSnapshots: () => (historyRows ?? []).map((row) => row.snapshot as ScreeningSnapshot),
+      ensureManualDataset: async () => parsed,
+    }).syncPortfolioFromHistory();
+    if (portfolio.summary.latestDate !== analysis.asOfDate)
+      throw new Error("Portfolio date differs from screening date");
+    const pipelineContract = {
+      complete: true,
+      asOfDate: analysis.asOfDate,
+      historyDate: snapshot.date,
+      portfolioAsOfDate: portfolio.summary.latestDate,
+      sourceIds: inputs.map((input) => input.id),
+      codeVersion: currentCodeVersion,
+    };
+    await writeFile(
+      path.join(outputDir, "pipeline-contract.json"),
+      JSON.stringify(pipelineContract, null, 2),
+    );
+    await uploadJson(
+      client,
+      `${options.supabaseUserId}/results/screening/${runId}-pipeline.json`,
+      pipelineContract,
+    );
 
     await Promise.all([
       uploadJson(client, resultPath, bundle),

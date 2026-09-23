@@ -98,7 +98,7 @@ export function buildSnapshot(analysis: {
   }));
   const passed = entries.filter((entry) => entry.hardFilterPassed);
   return {
-    date: kstDateKey(new Date(analysis.calculatedAt)),
+    date: analysis.asOfDate,
     savedAt: analysis.calculatedAt,
     asOfDate: analysis.asOfDate,
     marketGateStatus: analysis.marketGate.status,
