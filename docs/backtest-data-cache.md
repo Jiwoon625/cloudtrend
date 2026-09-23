@@ -1,32 +1,38 @@
-# Backtest data and egress
+# Backtest data architecture
 
-Supabase holds the authoritative compressed source and results. Web screening uses only active `screening` sources and its screening/dashboard caches. The retired browser backtest loader rejects execution; registration no longer creates redundant legacy backtest JSON copies.
+## Current policy
 
-## Storage
+CloudTrend의 장기 백테스트와 연구는 **Google Drive + Google Colab**에서 수행합니다.
 
-`backtest-canonical-migration.yml` converts each active CSV into a ZSTD Parquet table (every original field retained as a string) plus a byte-exact `.csv.gz` transport for the existing TypeScript CSV parser. Parquet is available for column-oriented analysis; the current scoring engine intentionally continues to consume the identical CSV bytes after local decompression. This avoids a change in numeric, blank-value, symbol or scoring semantics. New CSV backtest registrations are immediately gzip-compressed; run the migration workflow to add their Parquet companion.
+- Google Drive: 한국·미국 시장 canonical Parquet, Reference, 연구 중간산출물, 결과
+- Google Colab: DuckDB/Python 기반 백테스트·OOS·피처 연구
+- GitHub: 운영 점수·진입/청산 규칙, Production 전략엔진, 코드 버전
+- Supabase: screening input/result/history, portfolio, signal log, settings, lightweight cache
 
-The migration verifies the source SHA-256, every Parquet cell through a roundtrip, registry row count, and both uploaded object hashes before conditionally switching the registry and deleting the raw CSV. Each file is independently resumable. The logical data/schema hashes and original filename remain unchanged. Only active registered sources are processed; unregistered ETF uploads are untouched.
+## Retired GitHub/Supabase backtest path
 
-## Actions cache
+2026-09-23부터 다음 경로는 사용하지 않습니다.
 
-All long backtest workflows use `.github/actions/backtest-source-cache`. It queries registry metadata, computes an ordered key from source id, `data_hash`, `schema_hash` and logical CSV SHA-256, restores the exact or previous cache, verifies all local bytes, downloads only missing/corrupt objects and saves before experiments start. Physical gzip/Parquet conversion does not change the key. A new source can reuse existing verified files. Legacy file-hash caches can be reused during migration.
+- Supabase `backtest-canonical` / `etf-backtest-canonical`을 GitHub Actions가 다운로드하는 방식
+- `.github/actions/backtest-source-cache`
+- `.github/actions/etf-backtest-source-cache`
+- `scripts/run-backtest.ts`의 Supabase 실행
+- `backtest-canonical-migration.yml`
+- `etf-backtest-canonical.yml`
+- Supabase canonical을 전제로 한 과거 V7/V8 연구 Actions workflows
 
-A warm run still queries small registry metadata and uploads results, but downloads zero source bytes from Supabase. Cache eviction, branch visibility restrictions or expiration can cause a compressed download. `downloadedStorageBytes` in the materialize log measures this explicitly. Actions Cache is not durable backup. Production backtest workflows share a concurrency group to avoid simultaneous cold fills; use the batch workflow for several experiments because GitHub concurrency keeps only one pending run.
+기존 한국 연구 데이터는 Google Drive `CloudTrend/한국시장`으로 검증 이관했으며, Supabase의 backtest source registry 기록은 삭제하지 않고 archived 상태로 보존합니다.
 
-## Batch
+## Reproducibility
 
-Run **CloudTrend V8 research batch** with comma-separated allowed script paths, for example:
+Colab 연구 결과는 가능한 한 다음 메타데이터를 함께 저장합니다.
 
-```
-scripts/run-v8-kospi-rsaccel-stage3-3fos.ts,scripts/run-v8-kospi-rsaccel-stage4-portfolio-3fos.ts,scripts/run-v8-kospi-rsaccel-stage5-regime-3fos.ts
-```
+- Universe/data version
+- source manifest / SHA-256
+- 연구 설정
+- 평가기간
+- Git commit SHA 또는 전략 버전
+- QA 결과
+- 결과 manifest
 
-The runner reads and verifies one pinned manifest, parses the dataset once, reuses the signal context for the same universe limit and runs selected studies sequentially in one process. Only experiment results are uploaded. `analysis-runs/batch-summary.json` records completion/failure; the job stops on the first failed study while preserving prior outputs and the source cache. Individual research workflows are now explicit manual dispatches rather than automatically re-running expensive experiments when code changes.
-
-## Verification
-
-- `npx vite-node --script tests/backtest-cache.test.ts`: gzip integrity, cold/warm cache, zero-download execution without Supabase credentials, physical-migration key stability, changed-data invalidation, corruption repair and same-instance data/context reuse.
-- `python tests/parquet-roundtrip.test.py` with `pyarrow==21.0.0`: blanks, Unicode, embedded quotes/newlines, leading-zero/alphanumeric symbols and decimal precision.
-- Stage 3/4/5 batch outputs were compared with pre-change individual runners on a generated multi-year fixture and matched completely after excluding generation timestamps.
-- Web production build passed. Repository-wide `tsc` has pre-existing errors outside this change.
+연구에서 채택한 규칙은 별도 검증 후 GitHub의 Production 전략엔진에 반영합니다. `src/lib/engine/**`은 운영 규칙의 기준이며, 연구 데이터 저장 위치 변경과 독립적으로 유지합니다.
