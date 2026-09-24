@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { deterministicAnalysis, stableCacheJson } from "../src/lib/screeningCacheContract";
 import { expect, test, vi } from "vitest";
 import { getMockDataset } from "../src/lib/engine/mockProvider";
 import { runFullMarketAnalysis } from "../src/lib/engine/fullMarketAnalysis";
@@ -9,6 +11,7 @@ import {
   assertChartMatchesCard,
 } from "../src/lib/instrumentChartContract";
 import {
+  restoreChartContext,
   scoredChart,
   priceChart,
   prepareChartBucket,
@@ -76,10 +79,15 @@ test("versioned cache isolates data, score configuration fingerprints, ranges an
 });
 function storage() {
   const files = new Map<string, Uint8Array>();
-  const upload = vi.fn(async (path: string, bytes: Uint8Array) => {
-    files.set(path, bytes);
-    return { error: null };
-  });
+  const upload = vi.fn(
+    async (path: string, bytes: Uint8Array, options: { contentType: string }) => {
+      // Mirror the production bucket MIME allowlist.
+      if (options.contentType !== "application/octet-stream")
+        return { error: { message: "mime type is not supported" } };
+      files.set(path, bytes);
+      return { error: null };
+    },
+  );
   const download = vi.fn(async (path: string) =>
     files.has(path)
       ? { data: new Blob([files.get(path)! as BlobPart]), error: null }
@@ -144,4 +152,22 @@ test("failed cache writes return usable on-demand data but do not mark a warmup 
   await expect(warmRecentCharts(s.client, "owner", identity, ctx)).rejects.toThrow();
   expect([...s.files.keys()].some((p) => p.endsWith("/scored-ready.json.gz"))).toBe(false);
   warn.mockRestore();
+});
+
+test("restored context preserves full-universe card parity without rescreening", () => {
+  const raw = getMockDataset();
+  const original = context();
+  // Both use the same deterministic mock fixture; preserve stored result identity.
+  const digest = createHash("sha256")
+    .update(stableCacheJson(deterministicAnalysis(original.analysis)))
+    .digest("hex");
+  const restored = restoreChartContext(raw, original.analysis, original.config, digest);
+  expect(restored.analysis).toBe(original.analysis);
+  for (const row of original.analysis.rows)
+    expect(scoredChart(restored, row.instrument.symbol, "120")).toEqual(
+      scoredChart(original, row.instrument.symbol, "120"),
+    );
+  expect(() =>
+    restoreChartContext(raw, original.analysis, original.config, "0".repeat(64)),
+  ).toThrow("검증");
 });

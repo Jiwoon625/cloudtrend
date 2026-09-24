@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { buildFullUniverseSectorDataset } from "./engine/sectorRotationFullUniverse";
+import { deterministicAnalysis, stableCacheJson } from "./screeningCacheContract";
 import { gzipSync, gunzipSync } from "node:zlib";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -20,6 +23,20 @@ export interface ChartContext {
   dataset: MarketDataset;
   analysis: AnalysisResult;
   config: ScoringConfig;
+}
+/** Restore chart inputs without rerunning portfolio/onset/full-screening analysis. */
+export function restoreChartContext(
+  rawDataset: MarketDataset,
+  analysis: AnalysisResult,
+  config: ScoringConfig,
+  expectedDigest: string,
+): ChartContext {
+  const digest = createHash("sha256")
+    .update(stableCacheJson(deterministicAnalysis(analysis)))
+    .digest("hex");
+  if (digest !== expectedDigest)
+    throw new Error("저장된 스크리닝 결과 검증에 실패했습니다. 스크리닝을 다시 실행해 주세요.");
+  return { dataset: buildFullUniverseSectorDataset(rawDataset), analysis, config };
 }
 // Bounded opportunistic server memory reuse, always scoped to user and immutable revision.
 let recent: { key: string; at: number; context: ChartContext } | undefined;
@@ -83,7 +100,7 @@ async function writeBundle(
   const bytes = gzipSync(JSON.stringify(bundle));
   const { error } = await client.storage
     .from(BUCKET)
-    .upload(`${uid}/${path}`, bytes, { contentType: "application/gzip", upsert: true });
+    .upload(`${uid}/${path}`, bytes, { contentType: "application/octet-stream", upsert: true });
   if (error) throw new Error(`차트 캐시 저장 실패: ${error.message}`);
 }
 export async function publishRecentPrices(

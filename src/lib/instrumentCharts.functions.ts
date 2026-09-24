@@ -1,12 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
-import { createHash } from "node:crypto";
 import { mergeScoringConfig } from "./engine/scoring";
 import { parseManualMarketData } from "./engine/manualDataset";
-import { runFullMarketAnalysis } from "./engine/fullMarketAnalysis";
-import { deterministicAnalysis, stableCacheJson } from "./screeningCacheContract";
+import { stableCacheJson } from "./screeningCacheContract";
 import { loadActiveSources, inputFingerprint } from "./screeningSources.server";
 import {
+  restoreChartContext,
   cachedChartContext,
   primeChartContext,
   prepareChartBucket,
@@ -65,7 +64,7 @@ async function session(input: Input) {
     saved.resultDigest !== input.resultDigest
   )
     throw new Error("스크리닝 자료가 변경됐습니다. 페이지를 새로고침해 주세요.");
-  return { client, uid };
+  return { client, uid, analysis: saved.payload.analysis };
 }
 const contexts = new Map<string, Promise<ChartContext>>();
 async function context(input: Input, ctx: Awaited<ReturnType<typeof session>>) {
@@ -80,13 +79,7 @@ async function context(input: Input, ctx: Awaited<ReturnType<typeof session>>) {
     if (inputFingerprint(sources, config) !== input.inputFingerprint)
       throw new Error("원천자료 또는 점수 설정이 변경됐습니다. 새로고침해 주세요.");
     const parsed = parseManualMarketData(texts);
-    const { dataset, analysis } = runFullMarketAnalysis(parsed.dataset, config);
-    const digest = createHash("sha256")
-      .update(stableCacheJson(deterministicAnalysis(analysis)))
-      .digest("hex");
-    if (digest !== input.resultDigest)
-      throw new Error("현재 엔진과 스크리닝 결과가 다릅니다. 스크리닝을 다시 실행해 주세요.");
-    const result = { dataset, analysis, config };
+    const result = restoreChartContext(parsed.dataset, ctx.analysis, config, input.resultDigest);
     primeChartContext(ctx.uid, input.inputFingerprint, input.resultDigest, result);
     return result;
   })().finally(() => contexts.delete(key));
