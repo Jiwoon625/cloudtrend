@@ -28,6 +28,7 @@ import {
   uploadJson,
 } from "./analysis-run-store";
 import { loadAnalysisSourceInputs } from "./source-registry-store";
+import { publishRecentPrices, warmRecentCharts } from "../src/lib/instrumentChartStore.server";
 import { persistWebScreeningCaches } from "./web-screening-cache-store";
 
 interface Options {
@@ -124,7 +125,7 @@ async function main() {
   }
 
   const parsed = parseManualMarketData(inputs.map((input) => input.text));
-  const { analysis } = runFullMarketAnalysis(parsed.dataset, config);
+  const { analysis, dataset } = runFullMarketAnalysis(parsed.dataset, config);
   const snapshot = buildSnapshot(
     analysis,
     latestSourceRegistration(
@@ -231,6 +232,24 @@ async function main() {
         error: null,
       }),
     ]);
+  }
+
+  if (options.upload && webCache) {
+    try {
+      const ctx = { dataset, analysis, config };
+      await publishRecentPrices(
+        client,
+        options.supabaseUserId,
+        webCache.inputFingerprint,
+        webCache.resultDigest,
+        ctx,
+      );
+      await warmRecentCharts(client, options.supabaseUserId, webCache, ctx);
+    } catch (error) {
+      process.stderr.write(
+        `차트 사전 준비 실패 (스크리닝 결과는 저장됨): ${error instanceof Error ? error.message : String(error)}\n`,
+      );
+    }
   }
 
   process.stdout.write(

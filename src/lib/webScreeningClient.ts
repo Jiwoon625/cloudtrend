@@ -16,6 +16,30 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+const chartWarmups = new Set<string>();
+function scheduleChartWarmup(identity: { inputFingerprint: string; resultDigest: string }) {
+  const key = identity.inputFingerprint + identity.resultDigest;
+  if (chartWarmups.has(key)) return;
+  chartWarmups.add(key);
+  if (chartWarmups.size > 3) chartWarmups.delete(chartWarmups.values().next().value!);
+  // A separate HTTP request awaits server work; navigation within the app does not cancel it.
+  void (async () => {
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session) throw new Error("로그인이 필요합니다.");
+    const { warmInstrumentChartsServer } = await import("./instrumentCharts.functions");
+    await warmInstrumentChartsServer({
+      data: {
+        ...identity,
+        accessToken: data.session.access_token,
+        config: getActiveScoringConfig(),
+      },
+    });
+  })().catch((error) => {
+    chartWarmups.delete(key);
+    console.warn("차트 사전 준비 중단: 종목 방문 시 다시 준비합니다.", error);
+  });
+}
+
 async function buildCachesOnServer() {
   if (serverBuildInFlight) return serverBuildInFlight;
   serverBuildInFlight = (async () => {
@@ -23,9 +47,10 @@ async function buildCachesOnServer() {
     if (error) throw error;
     const accessToken = data.session?.access_token;
     if (!accessToken) throw new Error("먼저 로그인해 주세요.");
-    await runWebScreeningServer({
+    const result = await runWebScreeningServer({
       data: { accessToken, config: getActiveScoringConfig() },
     });
+    scheduleChartWarmup(result);
   })().finally(() => {
     serverBuildInFlight = null;
   });
@@ -39,7 +64,10 @@ async function refreshHistoryAndPortfolio() {
 
 export async function getOrBuildDashboardSummaryServerFirst() {
   const cached = await readDashboardCache();
-  if (cached) return cached;
+  if (cached) {
+    scheduleChartWarmup(cached);
+    return cached;
+  }
   try {
     await buildCachesOnServer();
     await refreshHistoryAndPortfolio();
@@ -59,7 +87,10 @@ export async function getOrBuildDashboardSummaryServerFirst() {
 
 export async function getOrBuildScreeningPayloadServerFirst() {
   const cached = await readScreeningCache();
-  if (cached) return cached.payload;
+  if (cached) {
+    scheduleChartWarmup(cached);
+    return cached.payload;
+  }
   try {
     await buildCachesOnServer();
     await refreshHistoryAndPortfolio();
