@@ -1,5 +1,7 @@
 name: Diagnose and prepare chart cache
 on:
+  pull_request:
+    paths: [scripts/repair-chart-cache.ts, .github/workflows/repair-chart-cache.yml]
   workflow_dispatch:
   push:
     branches: [codex/repair-chart-startup]
@@ -11,6 +13,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   repair:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
