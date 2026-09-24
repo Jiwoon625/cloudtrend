@@ -1,0 +1,27 @@
+name: Diagnose and prepare chart cache
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/repair-chart-startup]
+    paths: [scripts/repair-chart-cache.ts, .github/workflows/repair-chart-cache.yml]
+permissions:
+  contents: read
+concurrency:
+  group: cloudtrend-chart-repair
+  cancel-in-progress: false
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vite-node --script scripts/repair-chart-cache.ts
