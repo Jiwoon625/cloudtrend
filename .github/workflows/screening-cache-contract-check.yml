@@ -3,6 +3,15 @@ name: Screening cache contract check
 on:
   pull_request:
     paths:
+      - src/lib/instrumentChart*
+      - src/lib/engine/instrumentChart.ts
+      - src/lib/screeningSources.server.ts
+      - src/lib/webScreeningClient.ts
+      - src/components/InstrumentCharts.tsx
+      - src/routes/instrument.$symbol.tsx
+      - scripts/run-screening.ts
+      - tests/fast-chart.test.ts
+      - tests/instrument-chart-cache.test.ts
       - src/lib/screeningCache.ts
       - src/lib/webScreening.functions.ts
       - src/lib/screeningCacheContract.ts
@@ -25,7 +34,7 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Test dashboard cache recovery and confirmed strategies
-        run: npx vitest run tests/dashboard-cache.test.ts src/lib/engine/operationalStrategy.test.ts src/lib/engine/etfStrategy.test.ts
+        run: npx vitest run tests/fast-chart.test.ts tests/instrument-chart-cache.test.ts tests/dashboard-cache.test.ts src/lib/engine/operationalStrategy.test.ts src/lib/engine/etfStrategy.test.ts
       - name: Lint changed cache files
         run: npx eslint src/lib/screeningCache.ts src/lib/webScreening.functions.ts src/lib/screeningCacheContract.ts
       - name: Build

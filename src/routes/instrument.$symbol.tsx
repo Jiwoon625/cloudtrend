@@ -15,11 +15,13 @@ import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/forma
 import { getDisplayStatus } from "@/lib/statusDisplay";
 import { getDisplayWarnings } from "@/lib/warningDisplay";
 
-const InstrumentCharts = lazy(() => import("@/components/InstrumentCharts"));
+const loadInstrumentCharts = () => import("@/components/InstrumentCharts");
+const InstrumentCharts = lazy(loadInstrumentCharts);
 
 export const Route = createFileRoute("/instrument/$symbol")({
   ssr: false,
   loader: async ({ params, context }) => {
+    void loadInstrumentCharts().catch(() => undefined);
     const payload = await context.queryClient.ensureQueryData(analysisQueryOptions);
     const row = payload.analysis.rows.find((item) => item.instrument.symbol === params.symbol);
     if (!row) throw notFound();
@@ -56,7 +58,7 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
 
 function InstrumentDetail() {
   const { symbol } = Route.useParams();
-  const { data: payload, dataUpdatedAt } = useSuspenseQuery(analysisQueryOptions);
+  const { data: payload } = useSuspenseQuery(analysisQueryOptions);
   const { data: portfolio } = useQuery({
     queryKey: ["portfolio-state"],
     queryFn: loadPortfolioState,
@@ -80,6 +82,11 @@ function InstrumentDetail() {
         };
 
   const score = row.vf ?? row.technical;
+  const cardPoints =
+    row.instrument.instrumentType === "ETF"
+      ? (row.etfStrategy?.technical ?? row.technicalNormalized)
+      : row.operatingScore10;
+  const cardMax = row.instrument.instrumentType === "ETF" ? 100 : 10;
   const snap = row.snapshot;
   const ich = snap.ichimoku;
   const displayWarnings = getDisplayWarnings(row);
@@ -139,6 +146,10 @@ function InstrumentDetail() {
   };
 
   const explanation = (() => {
+    if (row.instrument.instrumentType === "ETF")
+      return cardPoints === null
+        ? "ETF 기술점수 계산에 필요한 데이터가 부족합니다."
+        : `ETF 기술점수는 ${cardPoints.toFixed(1)}/100점입니다. 차트에도 같은 계산 기준을 사용합니다.`;
     const parts: string[] = [];
     const cloudState =
       ich.cloudTop === null
@@ -207,11 +218,7 @@ function InstrumentDetail() {
         <Stat label="현재가" value={formatPrice(snap.close)} />
         <Stat
           label="기술점수"
-          value={
-            row.operatingScore10 === null
-              ? "산정 불가"
-              : `${formatNumber(row.operatingScore10, 1)} / 10`
-          }
+          value={cardPoints === null ? "산정 불가" : `${formatNumber(cardPoints, 1)} / ${cardMax}`}
         />
         <Stat
           label="우선점수"
@@ -262,7 +269,7 @@ function InstrumentDetail() {
           </div>
         }
       >
-        <InstrumentCharts key={symbol} symbol={symbol} payload={payload} revision={dataUpdatedAt} />
+        <InstrumentCharts key={symbol} symbol={symbol} payload={payload} />
       </Suspense>
 
       <div className="mt-5 space-y-4">

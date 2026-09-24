@@ -1,3 +1,4 @@
+import { etfTechnical } from "./etfStrategy";
 import type { MarketDataset } from "./dataset";
 import { historicalInstrumentScore } from "./historicalInstrumentScore";
 import { DEFAULT_SCORING_CONFIG, vfGrade, type ScoringConfig } from "./scoring";
@@ -12,7 +13,17 @@ export function instrumentChartPoint(
   cfg: ScoringConfig,
 ) {
   const bars = ds.bars[symbol] ?? [];
-  const score = historicalInstrumentScore(ds, symbol, index, cfg);
+  const isEtf = ds.instruments.find((i) => i.symbol === symbol)?.instrumentType === "ETF";
+  const points = isEtf ? etfTechnical(bars.slice(0, index + 1)) : null;
+  const score = isEtf
+    ? {
+        points,
+        rawPoints: points ?? 0,
+        rawMaxPoints: 100,
+        availableMaxPoints: points === null ? 0 : 100,
+        missingRules: points === null ? ["ETF 기술점수 입력 부족"] : [],
+      }
+    : historicalInstrumentScore(ds, symbol, index, cfg);
   return {
     tradeDate: bars[index]!.tradeDate,
     close: bars[index]!.close,
@@ -42,7 +53,9 @@ export function chartScoreHistory(chart: InstrumentChart) {
     tradeDate: point.tradeDate,
     technicalPoints: point.historicalTechnicalPoints,
     grade: vfGrade(
-      point.historicalTechnicalPoints === null ? null : point.historicalTechnicalPoints * 10,
+      point.historicalTechnicalPoints === null
+        ? null
+        : point.historicalTechnicalPoints * (100 / point.historicalTechnical.rawMaxPoints),
     ),
   }));
 }

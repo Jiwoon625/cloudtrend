@@ -1,5 +1,7 @@
-import { buildCompactChart, type InstrumentChartRange } from "@/lib/engine/instrumentChart";
+import { type InstrumentChartRange } from "@/lib/engine/instrumentChart";
 import {
+  supabase,
+  userId,
   ownerPath,
   readBinaryObject,
   readObject,
@@ -272,56 +274,79 @@ export async function getCachedInstrumentDetail(symbol: string): Promise<Instrum
   return detail;
 }
 
-// Separate range-specific files prevent the initial view downloading the full history.
-export const INSTRUMENT_CHART_VERSION = "instrument-chart-compact-v2-sector-pl";
+export { FAST_CHART_VERSION as INSTRUMENT_CHART_VERSION } from "./instrumentChartContract";
+import { chartPath, assertChartMatchesCard, type ChartKind } from "./instrumentChartContract";
+import type { PreparedChart, PriceChart } from "./instrumentChartStore.server";
+// Share metadata work between price and score requests, without sharing across users/settings.
+const identities = new WeakMap<
+  AnalysisPayload,
+  Map<string, Promise<{ inputFingerprint: string; resultDigest: string }>>
+>();
+async function chartIdentity(payload: AnalysisPayload) {
+  const uid = await userId(),
+    key = uid + stableCacheJson(getActiveScoringConfig());
+  let values = identities.get(payload);
+  if (!values) {
+    values = new Map();
+    identities.set(payload, values);
+  }
+  let pending = values.get(key);
+  if (!pending) {
+    pending = Promise.all([currentInputFingerprint(), analysisDigest(payload.analysis)]).then(
+      ([inputFingerprint, resultDigest]) => ({ inputFingerprint, resultDigest }),
+    );
+    values.set(key, pending);
+    pending.catch(() => values!.delete(key));
+  }
+  return pending;
+}
+async function fastChart(
+  symbol: string,
+  range: InstrumentChartRange,
+  payload: AnalysisPayload,
+  kind: ChartKind,
+) {
+  const normalized = symbol.trim().toUpperCase(),
+    identity = await chartIdentity(payload);
+  const path = await ownerPath(chartPath(identity, normalized, range, kind));
+  let data: PreparedChart | PriceChart | undefined;
+  try {
+    const bytes = await readBinaryObject(path);
+    if (bytes)
+      data = (await gunzipJson<Record<string, PreparedChart | PriceChart>>(bytes))[normalized];
+  } catch (error) {
+    console.warn("차트 캐시 읽기 실패: 서버에서 재시도합니다.", error);
+  }
+  if (!data) {
+    const { data: session, error } = await supabase.auth.getSession();
+    if (error || !session.session) throw new Error("로그인이 필요합니다.");
+    const { getInstrumentChartServer } = await import("./instrumentCharts.functions");
+    data = await getInstrumentChartServer({
+      data: {
+        ...identity,
+        accessToken: session.session.access_token,
+        config: getActiveScoringConfig(),
+        symbol: normalized,
+        range,
+        kind,
+      },
+    });
+  }
+  if (kind === "scored")
+    assertChartMatchesCard((data as PreparedChart).chart, payload.analysis, normalized);
+  return data;
+}
 export async function getCachedInstrumentChart(
   symbol: string,
   range: InstrumentChartRange,
   payload: AnalysisPayload,
-) {
-  const normalized = symbol.trim().toUpperCase();
-  const config = getActiveScoringConfig();
-  const [inputFingerprint, resultDigest, path] = await Promise.all([
-    currentInputFingerprint(),
-    analysisDigest(payload.analysis),
-    ownerPath(`cache/instruments/${normalized}.compact-${range}.json.gz`),
-  ]);
-  type ChartData = Awaited<ReturnType<typeof buildCompactChart>>;
-  type ChartCache = CacheMeta & { symbol: string; range: InstrumentChartRange; data: ChartData };
-  try {
-    const compressed = await readBinaryObject(path);
-    if (compressed) {
-      const cached = await gunzipJson<ChartCache>(compressed);
-      if (
-        cached.version === INSTRUMENT_CHART_VERSION &&
-        cached.symbol === normalized &&
-        cached.range === range &&
-        cached.inputFingerprint === inputFingerprint &&
-        cached.resultDigest === resultDigest
-      )
-        return cached.data;
-    }
-  } catch (error) {
-    console.warn("종목 차트 캐시를 읽지 못해 원천 자료로 계산합니다.", error);
-  }
-  const parsed = await ensureManualDataset();
-  if (!parsed) throw new Error("종목 상세 차트를 만들 원천 시세가 없습니다.");
-  const dataset = historicalSectorDataset(parsed.dataset);
-  const data = await buildCompactChart(dataset, normalized, range, config);
-  const cache: ChartCache = {
-    version: INSTRUMENT_CHART_VERSION,
-    createdAt: new Date().toISOString(),
-    inputFingerprint,
-    resultDigest,
-    symbol: normalized,
-    range,
-    data,
-  };
-  // A best-effort browser cache write must neither delay nor fail a usable chart.
-  void gzipJson(cache)
-    .then((bytes) => writeBinaryObject(path, bytes))
-    .catch((error) => {
-      console.warn("종목 차트 캐시 저장에 실패했습니다.", error);
-    });
-  return data;
+): Promise<PreparedChart> {
+  return (await fastChart(symbol, range, payload, "scored")) as PreparedChart;
+}
+export async function getCachedInstrumentPrices(
+  symbol: string,
+  range: InstrumentChartRange,
+  payload: AnalysisPayload,
+): Promise<PriceChart> {
+  return (await fastChart(symbol, range, payload, "prices")) as PriceChart;
 }
