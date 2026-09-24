@@ -100,7 +100,7 @@ async function writeBundle(
   const bytes = gzipSync(JSON.stringify(bundle));
   const { error } = await client.storage
     .from(BUCKET)
-    .upload(`${uid}/${path}`, bytes, { contentType: "application/gzip", upsert: true });
+    .upload(`${uid}/${path}`, bytes, { contentType: "application/octet-stream", upsert: true });
   if (error) throw new Error(`차트 캐시 저장 실패: ${error.message}`);
 }
 export async function publishRecentPrices(

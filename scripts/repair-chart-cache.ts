@@ -33,6 +33,17 @@ async function main() {
   stage("context-restored");
   await warmRecentCharts(client, uid, saved, ctx);
   stage("charts-ready");
+  const { data: objects, error: listError } = await client.storage
+    .from("cloudtrend-data")
+    .list(
+      `${uid}/cache/charts/chart-v3-full-universe/${saved.inputFingerprint}/${saved.resultDigest}`,
+      { limit: 200 },
+    );
+  if (listError) throw listError;
+  stage("storage-verified", {
+    files: objects?.length,
+    ready: objects?.some((o) => o.name === "scored-ready.json.gz"),
+  });
   process.exit(0);
 }
 main().catch((error) => {

@@ -79,10 +79,15 @@ test("versioned cache isolates data, score configuration fingerprints, ranges an
 });
 function storage() {
   const files = new Map<string, Uint8Array>();
-  const upload = vi.fn(async (path: string, bytes: Uint8Array) => {
-    files.set(path, bytes);
-    return { error: null };
-  });
+  const upload = vi.fn(
+    async (path: string, bytes: Uint8Array, options: { contentType: string }) => {
+      // Mirror the production bucket MIME allowlist.
+      if (options.contentType !== "application/octet-stream")
+        return { error: { message: "mime type is not supported" } };
+      files.set(path, bytes);
+      return { error: null };
+    },
+  );
   const download = vi.fn(async (path: string) =>
     files.has(path)
       ? { data: new Blob([files.get(path)! as BlobPart]), error: null }
