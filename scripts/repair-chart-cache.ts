@@ -1,8 +1,13 @@
+import { chartReadyPath } from "../src/lib/instrumentChartContract";
 import { trustedSupabaseClient } from "./analysis-run-store";
 import { loadActiveSources, inputFingerprint } from "../src/lib/screeningSources.server";
 import { parseManualMarketData } from "../src/lib/engine/manualDataset";
 import { mergeScoringConfig } from "../src/lib/engine/scoring";
-import { restoreChartContext, warmRecentCharts } from "../src/lib/instrumentChartStore.server";
+import {
+  readChartBundle,
+  restoreChartContext,
+  warmRecentCharts,
+} from "../src/lib/instrumentChartStore.server";
 async function main() {
   const client = trustedSupabaseClient(),
     uid = process.env.SUPABASE_USER_ID!;
@@ -17,6 +22,10 @@ async function main() {
   if (error) throw error;
   const saved = JSON.parse(await blob.text());
   stage("saved-result");
+  if (await readChartBundle(client, uid, chartReadyPath(saved, "scored"))) {
+    stage("already-ready");
+    process.exit(0);
+  }
   const { sources, texts } = await loadActiveSources(client, uid);
   stage("sources-loaded", { count: sources.length });
   const config = mergeScoringConfig(undefined);
