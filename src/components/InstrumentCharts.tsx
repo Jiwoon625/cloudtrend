@@ -97,6 +97,9 @@ export default function InstrumentCharts({
         ) : !chart.length && (query.isError || priceQuery.isError) ? (
           <div className="p-4" role="alert">
             <p>차트를 불러오지 못했습니다.</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {query.error?.message ?? priceQuery.error?.message}
+            </p>
             <Button
               variant="outline"
               size="sm"
