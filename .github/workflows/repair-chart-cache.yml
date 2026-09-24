@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: cloudtrend-chart-repair-v2
+  group: cloudtrend-chart-repair
   cancel-in-progress: true
 jobs:
   repair:
@@ -27,4 +27,4 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx vite-node --script scripts/repair-chart-cache.ts
+      - run: npx vite-node --config vitest.charts.config.ts --script scripts/repair-chart-cache.ts
