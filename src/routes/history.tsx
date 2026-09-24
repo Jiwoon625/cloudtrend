@@ -102,17 +102,13 @@ function TopEntriesTable({
                     className="hover:underline"
                   >
                     {e.name}
-                    <span className="num ml-1 text-[10px] text-muted-foreground">
-                      {e.symbol}
-                    </span>
+                    <span className="num ml-1 text-[10px] text-muted-foreground">{e.symbol}</span>
                   </Link>
                 </td>
                 <td className="num py-1.5 pr-2 text-right">
                   {e.technicalPoints === null ? "-" : formatNumber(e.technicalPoints, 1)}
                 </td>
-                <td className="num py-1.5 pr-2 text-right">
-                  {formatNumber(e.priorityPoints, 1)}
-                </td>
+                <td className="num py-1.5 pr-2 text-right">{formatNumber(e.priorityPoints, 1)}</td>
                 <td className="py-1.5 pr-2 font-semibold">{e.grade}</td>
                 <td className="py-1.5 font-medium">{historyStatus(e)}</td>
               </tr>
@@ -132,21 +128,21 @@ function HistoryPage() {
     [snapshots, selectedDate],
   );
 
-  const entryOnsets = useMemo(() => selected?.entries.filter(isOperational8Onset) ?? [], [selected]);
-  const exitConditionMet = useMemo(() => selected?.entries.filter(isOperationalExit) ?? [], [selected]);
+  const entryOnsets = useMemo(
+    () => selected?.entries.filter(isOperational8Onset) ?? [],
+    [selected],
+  );
+  const exitConditionMet = useMemo(
+    () => selected?.entries.filter(isOperationalExit) ?? [],
+    [selected],
+  );
 
   const stockTopEntries = useMemo(
-    () =>
-      selected
-        ? (selected.topStocks ?? topTechnicalEntries(selected.entries, "STOCK"))
-        : [],
+    () => (selected ? (selected.topStocks ?? topTechnicalEntries(selected.entries, "STOCK")) : []),
     [selected],
   );
   const etfTopEntries = useMemo(
-    () =>
-      selected
-        ? (selected.topEtfs ?? topTechnicalEntries(selected.entries, "ETF"))
-        : [],
+    () => (selected ? (selected.topEtfs ?? topTechnicalEntries(selected.entries, "ETF")) : []),
     [selected],
   );
 
@@ -174,7 +170,8 @@ function HistoryPage() {
       {snapshots.length === 0 ? (
         <section className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
           <p className="text-[13px] text-muted-foreground">
-            저장된 이력이 없습니다. 대시보드에서 스크리닝을 실행하면 그날의 결과가 자동 저장됩니다.
+            저장된 이력이 없습니다. 대시보드에서 스크리닝을 실행하면 자료 기준일별 결과가 자동
+            저장됩니다.
           </p>
           <Link to="/" className="mt-3 inline-block text-[12px] text-primary hover:underline">
             대시보드로 이동
@@ -183,7 +180,7 @@ function HistoryPage() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
           <section className="rounded-lg border border-border bg-card p-3">
-            <h2 className="mb-2 text-sm font-semibold">저장된 날짜</h2>
+            <h2 className="mb-2 text-sm font-semibold">자료 기준일</h2>
             <ul className="space-y-1">
               {snapshots.map((s) => {
                 const isActive = selected?.date === s.date;
@@ -196,7 +193,7 @@ function HistoryPage() {
                         isActive ? "bg-primary/15 font-semibold text-primary" : "hover:bg-muted"
                       }`}
                     >
-                      {s.date}
+                      {s.asOfDate}
                       <span className="ml-1 text-[10px] text-muted-foreground">
                         {s.totalCount}종목 · A {s.gradeACount}
                       </span>
@@ -218,11 +215,18 @@ function HistoryPage() {
           {selected ? (
             <div className="space-y-4">
               <section className="rounded-lg border border-border bg-card p-4">
-                <h2 className="mb-2 text-sm font-semibold">{selected.date} 스크리닝 요약</h2>
+                <h2 className="mb-2 text-sm font-semibold">{selected.asOfDate} 스크리닝 요약</h2>
                 <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
                   {[
-                    ["저장 시각 (KST)", formatKstDateTime(selected.savedAt)],
-                    ["기준일", selected.asOfDate],
+                    ["자료 기준일", selected.asOfDate],
+                    ["자료 기준시각", "일별 자료 · 정확한 시각 미제공"],
+                    [
+                      "원천자료 등록 (KST)",
+                      selected.sourceRegisteredAt
+                        ? formatKstDateTime(selected.sourceRegisteredAt)
+                        : "기록 없음",
+                    ],
+                    ["스크리닝 실행 (KST)", formatKstDateTime(selected.savedAt)],
                     ["시장 게이트", selected.marketGateStatus],
                     ["전체 분석 종목", formatCount(selected.totalCount)],
                     ["Universe 통과", formatCount(selected.passedCount)],

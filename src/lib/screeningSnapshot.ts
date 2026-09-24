@@ -23,9 +23,10 @@ export interface SnapshotEntry {
 }
 
 export interface ScreeningSnapshot {
-  /** KST 기준 저장 날짜 (YYYY-MM-DD) — 같은 날 재스크리닝 시 덮어쓴다. */
+  /** 실제 자료 기준일 (YYYY-MM-DD) — 같은 기준일 재스크리닝 시 갱신한다. */
   date: string;
   savedAt: string;
+  sourceRegisteredAt?: string;
   asOfDate: string;
   marketGateStatus: string;
   totalCount: number;
@@ -66,12 +67,15 @@ export function topTechnicalEntries(
 }
 
 /** 분석 결과를 웹·자동화가 공유하는 저장용 스냅샷으로 변환한다. */
-export function buildSnapshot(analysis: {
-  asOfDate: string;
-  calculatedAt: string;
-  marketGate: { status: string };
-  rows: ScreeningRow[];
-}): ScreeningSnapshot {
+export function buildSnapshot(
+  analysis: {
+    asOfDate: string;
+    calculatedAt: string;
+    marketGate: { status: string };
+    rows: ScreeningRow[];
+  },
+  sourceRegisteredAt?: string,
+): ScreeningSnapshot {
   const entries: SnapshotEntry[] = analysis.rows.map((row) => ({
     symbol: row.instrument.symbol,
     name: row.instrument.name,
@@ -98,8 +102,9 @@ export function buildSnapshot(analysis: {
   }));
   const passed = entries.filter((entry) => entry.hardFilterPassed);
   return {
-    date: kstDateKey(new Date(analysis.calculatedAt)),
+    date: analysis.asOfDate,
     savedAt: analysis.calculatedAt,
+    ...(sourceRegisteredAt ? { sourceRegisteredAt } : {}),
     asOfDate: analysis.asOfDate,
     marketGateStatus: analysis.marketGate.status,
     totalCount: entries.length,
@@ -110,4 +115,21 @@ export function buildSnapshot(analysis: {
     topEtfs: topTechnicalEntries(entries, "ETF"),
     entries,
   };
+}
+
+/** Registration time is provenance, never a substitute for market data time. */
+export function latestSourceRegistration(
+  sources: Array<{
+    min_date: string | null;
+    max_date: string | null;
+    activated_at: string | null;
+    created_at: string;
+  }>,
+  asOfDate: string,
+): string | undefined {
+  return sources
+    .filter((s) => s.min_date && s.max_date && s.min_date <= asOfDate && s.max_date >= asOfDate)
+    .map((s) => s.activated_at ?? s.created_at)
+    .filter((t) => Number.isFinite(Date.parse(t)))
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
 }

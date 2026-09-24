@@ -12,7 +12,11 @@ import {
 } from "../src/lib/engine/scoring";
 import { ADDITIONAL_STOCK_SECTOR_COUNT } from "../src/lib/engine/additionalStockSectorMaster";
 import { REVIEWED_STOCK_SECTOR_COUNT } from "../src/lib/engine/stockSectorMaster";
-import { buildSnapshot, type ScreeningSnapshot } from "../src/lib/screeningSnapshot";
+import {
+  latestSourceRegistration,
+  buildSnapshot,
+  type ScreeningSnapshot,
+} from "../src/lib/screeningSnapshot";
 import {
   analysisRunKey,
   codeVersion,
@@ -121,7 +125,13 @@ async function main() {
 
   const parsed = parseManualMarketData(inputs.map((input) => input.text));
   const { analysis } = runFullMarketAnalysis(parsed.dataset, config);
-  const snapshot = buildSnapshot(analysis);
+  const snapshot = buildSnapshot(
+    analysis,
+    latestSourceRegistration(
+      inputs.flatMap((input) => (input.sourceRecord ? [input.sourceRecord] : [])),
+      analysis.asOfDate,
+    ),
+  );
   const previous = await loadPreviousSnapshot(client, options.supabaseUserId, snapshot.date);
   const summary = buildScreeningSummary(analysis, snapshot, previous);
   const createdAt = new Date().toISOString();
