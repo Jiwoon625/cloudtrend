@@ -38,6 +38,7 @@ export function loadSnapshots(): ScreeningSnapshot[] {
 }
 
 export async function saveSnapshot(snapshot: ScreeningSnapshot) {
+  snapshot = { ...snapshot, date: snapshot.asOfDate };
   const { error } = await supabase
     .from("screening_history")
     .upsert(
@@ -71,7 +72,9 @@ export function diffSnapshots(
   all: ScreeningSnapshot[] = loadSnapshots(),
 ): GradeDiff {
   const previous =
-    all.filter((s) => s.date < current.date).sort((a, b) => (a.date < b.date ? 1 : -1))[0] ?? null;
+    all
+      .filter((s) => s.asOfDate < current.asOfDate)
+      .sort((a, b) => (a.asOfDate < b.asOfDate ? 1 : -1))[0] ?? null;
   if (!previous) return { previous: null, newGradeA: [], droppedAtoB: [] };
 
   const prevMap = new Map(previous.entries.map((e) => [e.symbol, e]));

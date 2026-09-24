@@ -7,7 +7,7 @@ import { parseManualMarketData } from "@/lib/engine/manualDataset";
 import { runFullMarketAnalysis } from "@/lib/engine/fullMarketAnalysis";
 import { mergeScoringConfig, type ScoringConfig } from "@/lib/engine/scoring";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
-import { buildSnapshot } from "@/lib/screeningHistory";
+import { latestSourceRegistration, buildSnapshot } from "@/lib/screeningSnapshot";
 import {
   buildDashboardSummary,
   deterministicAnalysis,
@@ -30,6 +30,8 @@ interface ActiveSourceRecord {
   file_hash: string;
   data_hash: string;
   schema_hash: string;
+  min_date: string | null;
+  max_date: string | null;
   activated_at: string | null;
   created_at: string;
 }
@@ -72,7 +74,7 @@ async function loadActiveSources(client: SupabaseClient, userId: string) {
   const { data, error } = await client
     .from("analysis_source_files")
     .select(
-      "id,original_filename,storage_bucket,storage_path,file_hash,data_hash,schema_hash,activated_at,created_at",
+      "id,original_filename,storage_bucket,storage_path,file_hash,data_hash,schema_hash,min_date,max_date,activated_at,created_at",
     )
     .eq("user_id", userId)
     .eq("source_type", "screening")
@@ -153,7 +155,10 @@ export const runWebScreeningServer = createServerFn({ method: "POST" })
     ]);
 
     try {
-      const snapshot = buildSnapshot(analysis);
+      const snapshot = buildSnapshot(
+        analysis,
+        latestSourceRegistration(sources, analysis.asOfDate),
+      );
       await client
         .from("screening_history")
         .upsert(
