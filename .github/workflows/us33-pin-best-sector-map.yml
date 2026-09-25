@@ -50,7 +50,7 @@ jobs:
         run: >-
           python scripts/us33_upload_sector_map.py
           --source analysis-runs/us33-sector-map-v11-pinned
-          --prefix research/us/v0/sector
+          --prefix research/us/v0/sector/v1.1
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
