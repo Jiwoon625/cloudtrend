@@ -1,0 +1,38 @@
+feature,block,formula,direction
+ret5,TECHNICAL,5D adjusted close return,1
+ret20,TECHNICAL,20D adjusted close return,1
+ret60,TECHNICAL,60D adjusted close return,1
+ret120,TECHNICAL,120D adjusted close return,1
+ret252,TECHNICAL,252D adjusted close return,1
+ma20_gap,TECHNICAL,close / MA20 - 1,1
+ma60_gap,TECHNICAL,close / MA60 - 1,1
+ma120_gap,TECHNICAL,close / MA120 - 1,1
+ma20_slope5,TECHNICAL,MA20 / MA20[t-5] - 1,1
+ma60_slope5,TECHNICAL,MA60 / MA60[t-5] - 1,1
+high252_gap,TECHNICAL,close / rolling 252D high - 1,1
+donchian20_gap,TECHNICAL,close / prior 20D high - 1,1
+ichimoku_tk_gap,TECHNICAL,Tenkan / Kijun - 1,1
+efficiency20,TECHNICAL,absolute 20D price change / sum absolute daily price changes,1
+up_day_pct20,TECHNICAL,20D fraction of positive daily returns,1
+rs_spy20,RELATIVE_STRENGTH,stock 20D return - SPY 20D return,1
+rs_spy60,RELATIVE_STRENGTH,stock 60D return - SPY 60D return,1
+rs_spy120,RELATIVE_STRENGTH,stock 120D return - SPY 120D return,1
+rs_qqq20,RELATIVE_STRENGTH,stock 20D return - QQQ 20D return,1
+rs_qqq60,RELATIVE_STRENGTH,stock 60D return - QQQ 60D return,1
+rs_iwm20,RELATIVE_STRENGTH,stock 20D return - IWM 20D return,1
+rs_iwm60,RELATIVE_STRENGTH,stock 60D return - IWM 60D return,1
+rs_accel_spy,RELATIVE_STRENGTH,RS20(SPY) - RS60(SPY),-1
+relvol1_20,VOLUME_LIQUIDITY,current volume / 20D average volume - 1,1
+relvol5_20,VOLUME_LIQUIDITY,5D average volume / 20D average volume - 1,1
+log_dollarvol20,VOLUME_LIQUIDITY,ln(20D avg adjusted close*volume + 1),1
+dollarvol_growth5_20,VOLUME_LIQUIDITY,5D avg dollar-volume / 20D avg - 1,1
+amihud20,VOLUME_LIQUIDITY,20D avg abs(ret1) / dollar-volume,-1
+price_volume5,VOLUME_LIQUIDITY,ret5 * (5D avg volume / 20D avg volume),-1
+vol20_ann,RISK_QUALITY,20D realized volatility annualized,-1
+vol60_ann,RISK_QUALITY,60D realized volatility annualized,-1
+downside_vol20_ann,RISK_QUALITY,20D downside-return volatility annualized,-1
+drawdown60,RISK_QUALITY,close / rolling 60D max close - 1,1
+beta60_spy,RISK_QUALITY,60D beta vs SPY,1
+residual_mom60,RISK_QUALITY,ret60 - beta60*SPY_ret60,1
+gap_vol20_ann,RISK_QUALITY,20D overnight gap volatility annualized,-1
+tail_loss20,RISK_QUALITY,20D fraction of daily returns <= -5%,-1
