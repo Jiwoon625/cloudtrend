@@ -495,35 +495,38 @@ def finalize_state(state: PortfolioState) -> None:
     state.cash_weight = 1.0
 
 
-def stream_days(con: duckdb.DuckDBPyConnection, prepared_path: Path) -> Iterable[pd.DataFrame]:
-    query = f"""
-        SELECT *
-        FROM read_parquet('{str(prepared_path).replace("'", "''")}')
-        ORDER BY signal_dt, symbol
-    """
-    reader = con.execute(query).fetch_record_batch(rows_per_batch=100_000)
-    pending = pd.DataFrame()
-    for batch in reader:
-        chunk = batch.to_pandas()
+def stream_days(con: duckdb.DuckDBPyConnection, prepared_dir: Path) -> Iterable[pd.DataFrame]:
+    files = sorted(prepared_dir.glob("year=*.parquet"))
+    if not files:
+        raise RuntimeError(f"no prepared yearly files in {prepared_dir}")
+    for path in files:
+        query = f"""
+            SELECT *
+            FROM read_parquet('{str(path).replace("'", "''")}')
+            ORDER BY signal_dt, symbol
+        """
+        reader = con.execute(query).fetch_record_batch(rows_per_batch=100_000)
+        pending = pd.DataFrame()
+        for batch in reader:
+            chunk = batch.to_pandas()
+            if len(pending):
+                chunk = pd.concat([pending, chunk], ignore_index=True)
+            last_date = chunk["signal_dt"].iloc[-1]
+            complete = chunk[chunk["signal_dt"] != last_date]
+            pending = chunk[chunk["signal_dt"] == last_date].copy()
+            for _, g in complete.groupby("signal_dt", sort=False):
+                yield g
         if len(pending):
-            chunk = pd.concat([pending, chunk], ignore_index=True)
-        last_date = chunk["signal_dt"].iloc[-1]
-        complete = chunk[chunk["signal_dt"] != last_date]
-        pending = chunk[chunk["signal_dt"] == last_date].copy()
-        for _, g in complete.groupby("signal_dt", sort=False):
-            yield g
-    if len(pending):
-        for _, g in pending.groupby("signal_dt", sort=False):
-            yield g
-
+            for _, g in pending.groupby("signal_dt", sort=False):
+                yield g
 
 def run_configs(
     con: duckdb.DuckDBPyConnection,
-    prepared_path: Path,
+    prepared_dir: Path,
     configs: list[Config],
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     states = {c.config_id: PortfolioState(c) for c in configs}
-    for i, g in enumerate(stream_days(con, prepared_path), 1):
+    for i, g in enumerate(stream_days(con, prepared_dir), 1):
         for state in states.values():
             process_day(state, g)
         if i % 250 == 0:
@@ -567,95 +570,125 @@ def prepare_signals(
     panel: Path,
     input_root: Path,
     sector_map: Path,
-    prepared_path: Path,
+    prepared_dir: Path,
 ) -> dict[str, Any]:
-    price_glob = str(input_root / "canonical" / "year=*" / "us_stock_daily.parquet").replace("'", "''")
+    prepared_dir.mkdir(parents=True, exist_ok=True)
     bench = str(input_root / "benchmark" / "us_benchmarks_adjusted.parquet").replace("'", "''")
     panel_q = str(panel).replace("'", "''")
     sector_q = str(sector_map).replace("'", "''")
-    out_q = str(prepared_path).replace("'", "''")
-    con.execute(f"""
-        COPY (
-            WITH px AS (
-                SELECT CAST(symbol AS VARCHAR) AS symbol,
-                       CAST(tradeDateUsEastern AS DATE) AS dt,
-                       CAST(open AS DOUBLE) AS open
-                FROM read_parquet('{price_glob}', union_by_name=true)
-            ),
-            cal AS (
-                SELECT dt,
-                       LEAD(dt, 1) OVER (ORDER BY dt) AS entry_dt,
-                       LEAD(dt, 2) OVER (ORDER BY dt) AS exit_dt
-                FROM (SELECT DISTINCT dt FROM px)
-            ),
-            b AS (
-                SELECT CAST(dt AS DATE) AS dt, CAST(spy_close AS DOUBLE) AS spy_close
-                FROM read_parquet('{bench}')
-            ),
-            sig AS (
-                SELECT symbol,
-                       CAST(dt AS DATE) AS signal_dt,
-                       market_regime,
-                       mom_pct,
-                       ret120,
-                       ret252,
-                       ichimoku_tk_gap,
-                       relvol1_20,
-                       beta60_spy,
-                       dr_beta60_spy,
-                       dr_ichimoku_tk_gap,
-                       dr_relvol1_20,
-                       dr_log_dollarvol20,
-                       dr_amihud20
-                FROM read_parquet('{panel_q}')
-                WHERE mom_pct IS NOT NULL
-            ),
-            sm AS (
-                SELECT CAST(symbol AS VARCHAR) AS symbol,
-                       CAST(sectorCode AS VARCHAR) AS sectorCode,
-                       CAST(confidenceGrade AS VARCHAR) AS confidenceGrade,
-                       CAST(mappingVersion AS VARCHAR) AS mappingVersion
-                FROM read_csv_auto('{sector_q}', header=true)
-            )
-            SELECT s.*, c.entry_dt, c.exit_dt,
-                   sm.sectorCode, sm.confidenceGrade, sm.mappingVersion,
-                   CASE WHEN p1.open IS NULL OR p2.open IS NULL OR p1.open = 0 THEN NULL
-                        ELSE p2.open / p1.open - 1 END AS o2o_ret,
-                   CASE WHEN b1.spy_close IS NULL OR b2.spy_close IS NULL OR b1.spy_close = 0 THEN NULL
-                        ELSE b2.spy_close / b1.spy_close - 1 END AS spy_return
-            FROM sig s
-            JOIN cal c ON c.dt = s.signal_dt
-            JOIN sm USING (symbol)
-            LEFT JOIN px p1 ON p1.symbol = s.symbol AND p1.dt = c.entry_dt
-            LEFT JOIN px p2 ON p2.symbol = s.symbol AND p2.dt = c.exit_dt
-            LEFT JOIN b b1 ON b1.dt = c.entry_dt
-            LEFT JOIN b b2 ON b2.dt = c.exit_dt
-            WHERE c.entry_dt IS NOT NULL
-              AND c.exit_dt IS NOT NULL
-            ORDER BY signal_dt, symbol
-        ) TO '{out_q}'
-        (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 100000)
-    """)
-    qa = con.execute(
-        f"""
-        SELECT COUNT(*) AS rows,
-               COUNT(DISTINCT symbol) AS symbols,
-               COUNT(DISTINCT signal_dt) AS dates,
-               MIN(signal_dt) AS min_date,
-               MAX(signal_dt) AS max_date,
-               SUM(CASE WHEN o2o_ret IS NULL THEN 1 ELSE 0 END) AS missing_returns
-        FROM read_parquet('{out_q}')
-        """
-    ).fetchone()
-    return {
-        "rows": int(qa[0]),
-        "symbols": int(qa[1]),
-        "signalDates": int(qa[2]),
-        "minDate": str(qa[3]),
-        "maxDate": str(qa[4]),
-        "missingReturnRows": int(qa[5]),
-    }
 
+    year_qas: list[dict[str, Any]] = []
+    for year in range(2017, 2027):
+        price_paths = [input_root / "canonical" / f"year={year}" / "us_stock_daily.parquet"]
+        next_path = input_root / "canonical" / f"year={year + 1}" / "us_stock_daily.parquet"
+        if next_path.exists():
+            price_paths.append(next_path)
+        price_list = ",".join(
+            "'" + str(path).replace("'", "''") + "'" for path in price_paths
+        )
+        out_path = prepared_dir / f"year={year}.parquet"
+        out_q = str(out_path).replace("'", "''")
+        con.execute(f"""
+            COPY (
+                WITH px AS (
+                    SELECT CAST(symbol AS VARCHAR) AS symbol,
+                           CAST(tradeDateUsEastern AS DATE) AS dt,
+                           CAST(open AS DOUBLE) AS open
+                    FROM read_parquet([{price_list}], union_by_name=true)
+                ),
+                b0 AS (
+                    SELECT CAST(dt AS DATE) AS dt, CAST(spy_close AS DOUBLE) AS spy_close
+                    FROM read_parquet('{bench}')
+                ),
+                cal AS (
+                    SELECT dt,
+                           LEAD(dt, 1) OVER (ORDER BY dt) AS entry_dt,
+                           LEAD(dt, 2) OVER (ORDER BY dt) AS exit_dt
+                    FROM b0
+                ),
+                sig AS (
+                    SELECT symbol,
+                           CAST(dt AS DATE) AS signal_dt,
+                           market_regime,
+                           mom_pct,
+                           ret120,
+                           ret252,
+                           ichimoku_tk_gap,
+                           relvol1_20,
+                           beta60_spy,
+                           dr_beta60_spy,
+                           dr_ichimoku_tk_gap,
+                           dr_relvol1_20,
+                           dr_log_dollarvol20,
+                           dr_amihud20
+                    FROM read_parquet('{panel_q}')
+                    WHERE mom_pct IS NOT NULL
+                      AND YEAR(dt) = {year}
+                ),
+                sm AS (
+                    SELECT CAST(symbol AS VARCHAR) AS symbol,
+                           CAST(sectorCode AS VARCHAR) AS sectorCode,
+                           CAST(confidenceGrade AS VARCHAR) AS confidenceGrade,
+                           CAST(mappingVersion AS VARCHAR) AS mappingVersion
+                    FROM read_csv_auto('{sector_q}', header=true)
+                )
+                SELECT s.*, c.entry_dt, c.exit_dt,
+                       sm.sectorCode, sm.confidenceGrade, sm.mappingVersion,
+                       CASE WHEN p1.open IS NULL OR p2.open IS NULL OR p1.open = 0 THEN NULL
+                            ELSE p2.open / p1.open - 1 END AS o2o_ret,
+                       CASE WHEN b1.spy_close IS NULL OR b2.spy_close IS NULL OR b1.spy_close = 0 THEN NULL
+                            ELSE b2.spy_close / b1.spy_close - 1 END AS spy_return
+                FROM sig s
+                JOIN cal c ON c.dt = s.signal_dt
+                JOIN sm USING (symbol)
+                LEFT JOIN px p1 ON p1.symbol = s.symbol AND p1.dt = c.entry_dt
+                LEFT JOIN px p2 ON p2.symbol = s.symbol AND p2.dt = c.exit_dt
+                LEFT JOIN b0 b1 ON b1.dt = c.entry_dt
+                LEFT JOIN b0 b2 ON b2.dt = c.exit_dt
+                WHERE c.entry_dt IS NOT NULL
+                  AND c.exit_dt IS NOT NULL
+            ) TO '{out_q}'
+            (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 50000)
+        """)
+        qa = con.execute(
+            f"""
+            SELECT COUNT(*) AS rows,
+                   COUNT(DISTINCT symbol) AS symbols,
+                   COUNT(DISTINCT signal_dt) AS dates,
+                   MIN(signal_dt) AS min_date,
+                   MAX(signal_dt) AS max_date,
+                   SUM(CASE WHEN o2o_ret IS NULL THEN 1 ELSE 0 END) AS missing_returns
+            FROM read_parquet('{out_q}')
+            """
+        ).fetchone()
+        rec = {
+            "year": year,
+            "rows": int(qa[0]),
+            "symbols": int(qa[1]),
+            "signalDates": int(qa[2]),
+            "minDate": str(qa[3]),
+            "maxDate": str(qa[4]),
+            "missingReturnRows": int(qa[5]),
+            "bytes": out_path.stat().st_size,
+        }
+        year_qas.append(rec)
+        print(json.dumps({"preparedYear": rec}, ensure_ascii=False))
+
+    prepared_glob = str(prepared_dir / "year=*.parquet").replace("'", "''")
+    symbol_count = int(
+        con.execute(
+            f"SELECT COUNT(DISTINCT symbol) FROM read_parquet('{prepared_glob}')"
+        ).fetchone()[0]
+    )
+    return {
+        "rows": sum(x["rows"] for x in year_qas),
+        "symbols": symbol_count,
+        "signalDates": sum(x["signalDates"] for x in year_qas),
+        "minDate": year_qas[0]["minDate"],
+        "maxDate": year_qas[-1]["maxDate"],
+        "missingReturnRows": sum(x["missingReturnRows"] for x in year_qas),
+        "yearly": year_qas,
+    }
 
 def save_phase(
     out: Path,
@@ -689,7 +722,7 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     temp_root = Path(os.environ.get("RUNNER_TEMP", str(out / ".tmp"))) / "us33-entry-exit"
     temp_root.mkdir(parents=True, exist_ok=True)
-    prepared = temp_root / "prepared_signals.parquet"
+    prepared = temp_root / "prepared_signals"
 
     sector = pd.read_csv(sector_map)
     if len(sector) != 5032 or sector["symbol"].nunique() != 5032 or sector["sectorCode"].nunique() != 14:
@@ -702,6 +735,7 @@ def main() -> None:
     con.execute(f"SET threads={args.threads}")
     con.execute(f"SET memory_limit='{args.memory_limit}'")
     con.execute(f"SET temp_directory='{str(temp_root).replace("'", "''")}'")
+    con.execute("SET preserve_insertion_order=false")
 
     prepared_qa = prepare_signals(con, panel, input_root, sector_map, prepared)
     print(json.dumps({"prepared": prepared_qa}, ensure_ascii=False))
