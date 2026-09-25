@@ -259,7 +259,7 @@ def main():
       "COPY (SELECT *,"+", ".join(nat_expr)+" FROM scored_panel) "
       f"TO '{final_path}' (FORMAT PARQUET,COMPRESSION ZSTD)"
     )
-    qa=con.execute("SELECT COUNT(*) rows,COUNT(DISTINCT symbol) symbols,MIN(dt) min_date,MAX(dt) max_date FROM scored_panel").fetchone()
+    qa=con.execute("SELECT COUNT(*) AS row_count,COUNT(DISTINCT symbol) AS symbol_count,MIN(dt) AS min_date,MAX(dt) AS max_date FROM scored_panel").fetchone()
     print({"ok":True,"rows":qa[0],"symbols":qa[1],"minDate":str(qa[2]),"maxDate":str(qa[3]),"output":str(out)})
 
 if __name__=="__main__":
