@@ -57,7 +57,7 @@ jobs:
           --panel .cache/us32-panel/us32_full_panel.parquet
           --fallback research/us33-us-sector-map-14-v0.csv
           --output analysis-runs/us33-sector-map-v1
-          --workers 6
+          --workers 16
 
       - name: Persist map to Supabase Storage
         run: >-
