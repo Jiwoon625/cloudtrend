@@ -1,0 +1,52 @@
+name: US-3.3 Finalize Sector Map v1.1
+
+on:
+  push:
+    branches:
+      - research/us33-portfolio-backtest
+    paths:
+      - scripts/us33_finalize_sector_map_v11.py
+      - .github/workflows/us33-finalize-sector-map.yml
+      - research/triggers/us33-finalize-sector-map.txt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check pandas==2.2.3 requests==2.32.5
+      - name: Download Yahoo-refined map
+        run: >-
+          python scripts/us33_download_sector_map.py
+          --output .cache/us-sector-yahoo/us_stock_sector_map_14_v1.csv
+      - name: Finalize CloudTrend 14-sector map
+        run: >-
+          python scripts/us33_finalize_sector_map_v11.py
+          --yahoo-map .cache/us-sector-yahoo/us_stock_sector_map_14_v1.csv
+          --curated-v0 research/us33-us-sector-map-14-v0.csv
+          --output analysis-runs/us33-sector-map-v11
+      - name: Persist canonical map to Supabase Storage
+        run: >-
+          python scripts/us33_upload_sector_map.py
+          --source analysis-runs/us33-sector-map-v11
+          --prefix research/us/v0/sector
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: us33-sector-map-v11-${{ github.run_id }}
+          path: analysis-runs/us33-sector-map-v11/
+          retention-days: 30
+          if-no-files-found: error
