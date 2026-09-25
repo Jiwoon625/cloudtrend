@@ -129,7 +129,8 @@ def eval_score(con,panel,name,expr):
     for h in HORIZONS:
       d=con.execute(f"""
         WITH s AS (
-          SELECT dt,period_bucket,({expr}) score,fwd_ret_{h} target,spy_fwd_{h} spy,target_pct_{h}
+          SELECT dt,period_bucket,({expr}) AS score,fwd_ret_{h} AS target,spy_fwd_{h} AS spy,
+                 target_pct_{h} AS target_pct
           FROM read_parquet('{panel}')
           WHERE fwd_ret_{h} IS NOT NULL
         ), r AS (
