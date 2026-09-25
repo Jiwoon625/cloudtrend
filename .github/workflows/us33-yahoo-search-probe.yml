@@ -1,0 +1,25 @@
+name: US-3.3 Yahoo Search Probe
+
+on:
+  push:
+    branches:
+      - research/us33-portfolio-backtest
+    paths:
+      - scripts/us33_yahoo_search_probe.py
+      - .github/workflows/us33-yahoo-search-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check requests==2.32.5
+      - run: python scripts/us33_yahoo_search_probe.py
