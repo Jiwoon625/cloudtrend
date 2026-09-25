@@ -7,6 +7,7 @@ on:
     paths:
       - scripts/us33_probe_us_master.py
       - .github/workflows/us33-sector-master-probe.yml
+      - research/triggers/us33-sector-master-probe.txt
   workflow_dispatch:
 
 permissions:
