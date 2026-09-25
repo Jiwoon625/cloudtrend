@@ -1,0 +1,34 @@
+name: US-3.3 PIT Universe Audit
+
+on:
+  push:
+    branches:
+      - research/us33-stage4-portfolio-constraints-pit
+    paths:
+      - scripts/us33_pit_universe_audit.py
+      - .github/workflows/us33-pit-universe-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check pandas requests yfinance
+      - name: Run PIT audit
+        run: python scripts/us33_pit_universe_audit.py
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: us33-pit-audit-${{ github.run_id }}
+          path: analysis-runs/us33-pit-audit/
+          retention-days: 30
+          if-no-files-found: error
