@@ -53,7 +53,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .cache/us32-panel
-          key: us32-panel-v1-20260923
+          key: us32-panel-v2-nullsafe-20260923
 
       - name: Build complete 37-feature panel
         if: steps.us32-panel-cache.outputs.cache-hit != 'true'
@@ -69,7 +69,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .cache/us32-panel
-          key: us32-panel-v1-20260923
+          key: us32-panel-v2-nullsafe-20260923
 
       - name: Run broad signal map
         run: >-
