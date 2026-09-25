@@ -56,7 +56,7 @@ jobs:
           --memory-limit 5GB
 
       - name: Persist verified results to Supabase
-        if: ${{ inputs.upload_results == true }}
+        if: ${{ github.event_name == 'push' || inputs.upload_results == true }}
         run: >-
           python scripts/us3_supabase_io.py upload-results
           --source analysis-runs/us3-score-candidates
