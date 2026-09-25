@@ -1,0 +1,32 @@
+name: US-3.3 PIT Provider Availability
+
+on:
+  push:
+    branches:
+      - research/us33-stage4-portfolio-constraints-pit
+    paths:
+      - .github/workflows/us33-pit-provider-availability.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    env:
+      SHARADAR_API_KEY: ${{ secrets.SHARADAR_API_KEY }}
+      NASDAQ_DATA_LINK_API_KEY: ${{ secrets.NASDAQ_DATA_LINK_API_KEY }}
+      FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+      ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+    steps:
+      - name: Report provider availability only
+        shell: python
+        run: |
+          import json, os
+          print(json.dumps({
+            "SHARADAR_API_KEY": bool(os.getenv("SHARADAR_API_KEY")),
+            "NASDAQ_DATA_LINK_API_KEY": bool(os.getenv("NASDAQ_DATA_LINK_API_KEY")),
+            "FMP_API_KEY": bool(os.getenv("FMP_API_KEY")),
+            "ALPHAVANTAGE_API_KEY": bool(os.getenv("ALPHAVANTAGE_API_KEY")),
+          }))
