@@ -48,18 +48,33 @@ jobs:
       - name: Download missing US inputs from Supabase
         run: python scripts/us3_supabase_io.py download --root .cache/us-v0
 
+      - name: Restore US-3.2 feature panel cache
+        id: us32-panel-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/us32-panel
+          key: us32-panel-v1-20260923
+
       - name: Build complete 37-feature panel
+        if: steps.us32-panel-cache.outputs.cache-hit != 'true'
         run: >-
           python scripts/us32_build_feature_panel.py
           --input .cache/us-v0
-          --output "$RUNNER_TEMP/us32_full_panel.parquet"
+          --output .cache/us32-panel/us32_full_panel.parquet
           --threads 2
           --memory-limit 5GB
+
+      - name: Save US-3.2 feature panel cache
+        if: steps.us32-panel-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/us32-panel
+          key: us32-panel-v1-20260923
 
       - name: Run broad signal map
         run: >-
           python scripts/research_us32_broad_signal_map.py
-          --panel "$RUNNER_TEMP/us32_full_panel.parquet"
+          --panel .cache/us32-panel/us32_full_panel.parquet
           --registry research/us32-feature-registry.csv
           --input-root .cache/us-v0
           --output analysis-runs/us32-broad-signal-map
