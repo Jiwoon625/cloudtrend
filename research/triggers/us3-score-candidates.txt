@@ -1,0 +1,2 @@
+US-3 score candidate study trigger
+started_at_kst=2026-09-25T10:18:00+09:00
