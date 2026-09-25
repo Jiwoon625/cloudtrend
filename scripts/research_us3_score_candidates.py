@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 from typing import Dict
 
@@ -147,7 +148,8 @@ def main() -> None:
     root = Path(args.input).resolve()
     out = Path(args.output).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    work = out / "work"
+    runner_temp = Path(os.environ.get("RUNNER_TEMP", str(out.parent / ".us3-work")))
+    work = runner_temp / "cloudtrend-us3"
     work.mkdir(parents=True, exist_ok=True)
     (work / "tmp").mkdir(parents=True, exist_ok=True)
 
