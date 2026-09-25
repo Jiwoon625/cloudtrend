@@ -5,6 +5,7 @@ import concurrent.futures as cf
 import json
 import re
 import time
+import threading
 from pathlib import Path
 
 import duckdb
@@ -29,6 +30,16 @@ SECTOR_NAME = {
 }
 VALID = set(SECTOR_NAME)
 SEC_UA = "CloudTrendResearch/1.0 contact: Jiwoon625@users.noreply.github.com"
+_YAHOO_LOCAL = threading.local()
+
+
+def yahoo_session():
+    if not hasattr(_YAHOO_LOCAL, "session"):
+        s = requests.Session()
+        s.headers.update({"User-Agent": "Mozilla/5.0 (compatible; CloudTrendResearch/1.0)"})
+        _YAHOO_LOCAL.session = s
+    return _YAHOO_LOCAL.session
+
 
 # Yahoo Finance industry -> CloudTrend 14-sector split.
 # Order matters: more specific rules precede the broad Yahoo sector fallback.
@@ -145,15 +156,14 @@ def classify_sic(sic, desc):
 
 def yahoo_one(symbol: str):
     ys = norm_yahoo_symbol(symbol)
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; CloudTrendResearch/1.0)"}
+    session = yahoo_session()
     err = None
 
     for attempt in range(3):
         try:
-            r = requests.get(
+            r = session.get(
                 "https://query1.finance.yahoo.com/v1/finance/search",
                 params={"q": ys, "quotesCount": 5, "newsCount": 0},
-                headers=headers,
                 timeout=15,
             )
             r.raise_for_status()
