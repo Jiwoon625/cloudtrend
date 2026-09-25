@@ -178,7 +178,7 @@ def main():
     ),
     b AS (
       SELECT CAST(dt AS DATE) dt, CAST(spy_close AS DOUBLE) spy_close
-      FROM read_parquet('${bench}')
+      FROM read_parquet('{bench}')
     ),
     sig AS (
       SELECT symbol,dt AS signal_dt,market_regime,mom_pct,
