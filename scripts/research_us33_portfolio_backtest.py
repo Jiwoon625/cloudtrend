@@ -165,7 +165,7 @@ def main():
       FROM read_parquet('{panel}')
       WHERE mom_pct>=0.80
     )
-    SELECT s.*,c.entry_dt,c.exit_dt,m.sectorCode,m.mapMethod,m.confidenceGrade,
+    SELECT s.*,c.entry_dt,c.exit_dt,m.sectorCode,m.mapMethod,m.confidenceGrade,m.confidence,m.mappingVersion,
            CASE WHEN p1.open IS NULL OR p2.open IS NULL OR p1.open=0 THEN NULL
                 ELSE p2.open/p1.open-1 END AS o2o_ret
     FROM sig s
@@ -188,7 +188,7 @@ def main():
       "sectorMapRows":int(len(sm)),
       "sectorCounts":sm.sectorCode.value_counts().to_dict(),
       "mapMethodCounts":sm.mapMethod.value_counts().to_dict(),
-      "confidenceGradeCounts":sm.confidenceGrade.value_counts().to_dict(),
+      "confidenceGradeCounts":sm.confidenceGrade.value_counts().to_dict(),\n      "mappingVersions":sm.mappingVersion.value_counts().to_dict() if "mappingVersion" in sm.columns else {},
       "cost":{"roundTrip":ROUND_TRIP_COST,"oneWay":ONE_WAY_COST},
       "liquidityRankFloor":LIQUIDITY_RANK_FLOOR,
       "maxPositions":MAX_POSITIONS,
@@ -250,7 +250,7 @@ def main():
       "topPrimaryByCAGR":primary.sort_values(["CAGR","Sharpe"],ascending=False).head(10).to_dict(orient="records"),
       "limitations":[
         "Current survivor-only universe; production decision prohibited.",
-        "Sector mapping v0 uses explicit/rule mappings plus low-confidence name-imputed classifications where no source industry field exists.",
+        "Sector mapping v1 prioritizes Yahoo/yfinance sector+industry and uses the prior map only as an explicit fallback; SEC SIC cross-check is used when SEC access is available.",
         "This stage uses daily target rebalancing only to compare signal architecture; final entry/exit/holding rules belong to US-4/US-5."
       ]
     }
