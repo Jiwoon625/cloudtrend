@@ -8,6 +8,11 @@ on:
         required: true
         type: boolean
         default: true
+  push:
+    branches:
+      - main
+    paths:
+      - research/triggers/us3-score-candidates.txt
 
 permissions:
   contents: read
