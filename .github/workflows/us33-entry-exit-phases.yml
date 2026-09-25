@@ -6,6 +6,7 @@ on:
       - research/us33-entry-exit-phases
     paths:
       - scripts/research_us33_entry_exit_phases.py
+      - scripts/research_us33_entry_exit_phases_onset.py
       - scripts/us33_upload_entry_exit_results.py
       - scripts/us33_download_sector_map.py
       - .github/workflows/us33-entry-exit-phases.yml
@@ -41,6 +42,7 @@ jobs:
         run: >-
           python -m py_compile
           scripts/research_us33_entry_exit_phases.py
+          scripts/research_us33_entry_exit_phases_onset.py
           scripts/us33_upload_entry_exit_results.py
           scripts/us33_download_sector_map.py
 
@@ -76,7 +78,7 @@ jobs:
 
       - name: Execute Phase A to C sequentially
         run: >-
-          python scripts/research_us33_entry_exit_phases.py
+          python scripts/research_us33_entry_exit_phases_onset.py
           --panel .cache/us32-panel/us32_full_panel.parquet
           --input-root .cache/us-v0
           --sector-map .cache/us-sector/us_stock_sector_map_14_v1.csv
