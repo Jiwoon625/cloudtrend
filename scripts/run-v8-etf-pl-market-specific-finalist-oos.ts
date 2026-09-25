@@ -12,7 +12,7 @@ import type { MarketDataset } from "../src/lib/engine/dataset";
 import type { DailyPrice, Instrument } from "../src/lib/engine/types";
 import { trustedSupabaseClient, uploadJson } from "./analysis-run-store";
 
-const STUDY_VERSION = "CloudTrend V8 ETF PL Market-Specific Finalist OOS" as const;
+const STUDY_VERSION = "CloudTrend PR102 Market Three Strategy Annual OOS" as const;
 // 130-bar ETF PL warm-up begins in 2016-07 data, so 2017 is only partially warm.
 // 2018 is the first full calendar year with the intended ETF PL lookback available.
 // 2026 is excluded because the source ends 2026-09-18 and is not a complete OOS year.
@@ -25,6 +25,33 @@ const STOCK_FALLBACK_THRESHOLD = 80;
 const ETF_THRESHOLDS = [] as const;
 const SECTOR_SLOT = 0.5;
 const MAX_POSITIONS = 10;
+
+const EXIT_STRATEGIES = [
+  {
+    id: "KOSPI-E8-U9.5-DX-H60",
+    market: "KOSPI",
+    up: 9.5,
+    down: null,
+    etfThreshold: 84,
+    plPolicy: "ETF PL 84 primary; Stock PL 80 fallback",
+  },
+  {
+    id: "KOSPI-E8-U9.5-D2.5-H60",
+    market: "KOSPI",
+    up: 9.5,
+    down: 2.5,
+    etfThreshold: 84,
+    plPolicy: "ETF PL 84 primary; Stock PL 80 fallback",
+  },
+  {
+    id: "KOSDAQ-E8-U9.5-D2.5-H60",
+    market: "KOSDAQ",
+    up: 9.5,
+    down: 2.5,
+    etfThreshold: null,
+    plPolicy: "Stock PL 80 (PR102 KOSDAQ policy)",
+  },
+] as const;
 
 type FoldYear = (typeof FOLD_YEARS)[number];
 type Market = "KOSPI" | "KOSDAQ";
@@ -602,10 +629,10 @@ function buildCandidates(
   stockPl: Map<string, number>,
   etfPl: Map<string, number>,
   etfThreshold: number | null,
+  up: number,
+  down: number | null,
 ) {
   const out: Candidate[] = [];
-  const up = market === "KOSDAQ" ? 9 : 9.5;
-  const down = market === "KOSDAQ" ? 3 : 2.5;
   const maxHolding = 60;
   for (const s of series) {
     if (s.market !== market) continue;
@@ -632,7 +659,7 @@ function buildCandidates(
           const si = j - 1;
           const p = adjustedScoreAt(s, si - 1, stockPl, etfPl, etfThreshold);
           const c = adjustedScoreAt(s, si, stockPl, etfPl, etfThreshold);
-          if (crossedDown(p, c, down)) {
+          if (finite(down) && crossedDown(p, c, down)) {
             exitIndex = j;
             exitPrice = bar.open;
             exitTiming = "OPEN";
@@ -1069,61 +1096,133 @@ async function main() {
   const stockPl = context.sectorPriceLeadershipByDate;
   const etfPl = buildPriceLeadershipMap(dataset, "ETF");
 
-  const foldRows: FoldRow[] = [];
+  const foldRows: Array<FoldRow & { strategy: string; plPolicy: string }> = [];
   const signalDiagnostics = [];
-  for (const model of MODELS) {
-    const modelSeries = context.series;
-    for (const market of ["KOSPI", "KOSDAQ"] as const) {
-      for (const fold of FOLD_YEARS) {
-        const candidates = buildCandidates(
-          modelSeries,
-          market,
-          fold,
-          stockPl,
-          etfPl,
-          model.id === "FINAL_MARKET_SPECIFIC" ? (market === "KOSPI" ? 84 : 85) : null,
+  const model: ModelId = "FINAL_MARKET_SPECIFIC";
+  const modelSeries = context.series;
+
+  for (const strategy of EXIT_STRATEGIES) {
+    const market: Market = strategy.market;
+    for (const fold of FOLD_YEARS) {
+      const candidates = buildCandidates(
+        modelSeries,
+        market,
+        fold,
+        stockPl,
+        etfPl,
+        strategy.etfThreshold,
+        strategy.up,
+        strategy.down,
+      );
+      const dates = evaluationDates(dataset, market, fold);
+      const lastExit = candidates.reduce(
+        (max, item) => (item.exitDate > max ? item.exitDate : max),
+        "",
+      );
+      if (lastExit && dates.at(-1) && lastExit > dates.at(-1)!) {
+        throw new Error(
+          `Evaluation calendar too short for ${strategy.id} ${market} ${fold}: ${lastExit} > ${dates.at(-1)}`,
         );
-        const dates = evaluationDates(dataset, market, fold);
-        const lastExit = candidates.reduce(
-          (max, item) => (item.exitDate > max ? item.exitDate : max),
-          "",
-        );
-        if (lastExit && dates.at(-1) && lastExit > dates.at(-1)!) {
-          throw new Error(
-            `Evaluation calendar too short for ${model.id} ${market} ${fold}: ${lastExit} > ${dates.at(-1)}`,
-          );
-        }
-        const simulation = simulate(modelSeries, candidates, dates);
-        foldRows.push(foldRow(model.id, market, fold, dataset, candidates, simulation));
-        signalDiagnostics.push({
-          model: model.id,
-          market,
-          fold,
-          candidates: candidates.length,
-          plAvailable: candidates.filter((c) => finite(c.sectorPl)).length,
-          plMissing: candidates.filter((c) => !finite(c.sectorPl)).length,
-          etfPrimarySignals: candidates.filter((c) => c.plSource === "ETF").length,
-          stockFallbackSignals: candidates.filter((c) => c.plSource === "STOCK").length,
-          slotEarned: candidates.filter((c) => {
-            if (!finite(c.sectorPl)) return false;
-            const threshold = c.plSource === "ETF"
-              ? (model.id === "FINAL_MARKET_SPECIFIC" ? (market === "KOSPI" ? 84 : 85) : 80)
-              : STOCK_FALLBACK_THRESHOLD;
-            return finite(threshold) && c.sectorPl < threshold;
-          }).length,
-          overheated: candidates.filter((c) => {
-            if (!finite(c.sectorPl)) return false;
-            const threshold = c.plSource === "ETF"
-              ? (model.id === "FINAL_MARKET_SPECIFIC" ? (market === "KOSPI" ? 84 : 85) : 80)
-              : STOCK_FALLBACK_THRESHOLD;
-            return finite(threshold) && c.sectorPl >= threshold;
-          }).length,
-        });
       }
+      const simulation = simulate(modelSeries, candidates, dates);
+      foldRows.push({
+        ...foldRow(model, market, fold, dataset, candidates, simulation),
+        strategy: strategy.id,
+        plPolicy: strategy.plPolicy,
+      });
+      signalDiagnostics.push({
+        strategy: strategy.id,
+        plPolicy: strategy.plPolicy,
+        model,
+        market,
+        fold,
+        candidates: candidates.length,
+        plAvailable: candidates.filter((c) => finite(c.sectorPl)).length,
+        plMissing: candidates.filter((c) => !finite(c.sectorPl)).length,
+        etfPrimarySignals: candidates.filter((c) => c.plSource === "ETF").length,
+        stockFallbackSignals: candidates.filter((c) => c.plSource === "STOCK").length,
+        slotEarned: candidates.filter((c) => {
+          if (!finite(c.sectorPl)) return false;
+          const threshold = c.plSource === "ETF" ? strategy.etfThreshold : STOCK_FALLBACK_THRESHOLD;
+          return finite(threshold) && c.sectorPl < threshold;
+        }).length,
+        overheated: candidates.filter((c) => {
+          if (!finite(c.sectorPl)) return false;
+          const threshold = c.plSource === "ETF" ? strategy.etfThreshold : STOCK_FALLBACK_THRESHOLD;
+          return finite(threshold) && c.sectorPl >= threshold;
+        }).length,
+      });
     }
   }
 
-  const aggregateRows = aggregate(foldRows);
+  function summarizeStrategy(
+    strategy: (typeof EXIT_STRATEGIES)[number],
+    selected: Array<(typeof foldRows)[number]>,
+  ) {
+    const avg = (pick: (r: (typeof selected)[number]) => number | null) =>
+      round(average(selected.map(pick).filter(finite)));
+    const totalTrades = selected.reduce((sum, r) => sum + r.trades, 0);
+    const pooledWinRate =
+      totalTrades > 0
+        ? round(
+            (selected.reduce(
+              (sum, r) => sum + (finite(r.winRate) ? (r.winRate / 100) * r.trades : 0),
+              0,
+            ) /
+              totalTrades) *
+              100,
+          )
+        : null;
+    const annualExcess = selected.map((r) => r.excessReturn).filter(finite);
+    const positiveExcess = selected.filter(
+      (r) => finite(r.excessReturn) && r.excessReturn > 0,
+    ).length;
+    return {
+      strategy: strategy.id,
+      market: strategy.market,
+      plPolicy: strategy.plPolicy,
+      upExit: strategy.up,
+      downExit: strategy.down,
+      maxHoldingDays: 60,
+      years: selected.map((r) => r.fold),
+      folds: selected.length,
+      foldsPositiveReturn: selected.filter((r) => finite(r.totalReturn) && r.totalReturn > 0)
+        .length,
+      foldsPositiveExcess: positiveExcess,
+      positiveExcessRate: selected.length ? round((positiveExcess / selected.length) * 100) : null,
+      avgTotalReturn: avg((r) => r.totalReturn),
+      avgBenchmarkReturn: avg((r) => r.benchmarkReturn),
+      avgExcessReturn: avg((r) => r.excessReturn),
+      medianAnnualExcessReturn: round(median(annualExcess)),
+      avgCagr: avg((r) => r.cagr),
+      avgMdd: avg((r) => r.mdd),
+      worstFoldMdd: selected.length
+        ? round(Math.min(...selected.map((r) => r.mdd).filter(finite)))
+        : null,
+      avgTradeReturn: avg((r) => r.avgTradeReturn),
+      avgMedianTradeReturn: avg((r) => r.medianTradeReturn),
+      avgWinRate: avg((r) => r.winRate),
+      pooledWinRate,
+      avgProfitFactor: avg((r) => r.profitFactor),
+      avgHoldingDays: avg((r) => r.avgHoldingDays),
+      avgCapitalOccupancy: avg((r) => r.avgCapitalOccupancy),
+      totalTrades,
+      avgCandidateSignals: round(average(selected.map((r) => r.candidateSignals))),
+      avgTrades: round(average(selected.map((r) => r.trades))),
+      totalCapacitySkips: selected.reduce((sum, r) => sum + r.skippedForCapacity, 0),
+    };
+  }
+
+  const aggregateRows = EXIT_STRATEGIES.map((strategy) => {
+    const allYears = foldRows.filter((r) => r.strategy === strategy.id);
+    const without2025 = allYears.filter((r) => r.fold !== 2025);
+    return {
+      strategy: strategy.id,
+      with2025: summarizeStrategy(strategy, allYears),
+      without2025: summarizeStrategy(strategy, without2025),
+    };
+  });
+
   const createdAt = new Date().toISOString();
   const runId = createdAt.replace(/[-:.TZ]/g, "").slice(0, 14);
   const result = {
@@ -1148,21 +1247,22 @@ async function main() {
         .sort(),
     },
     design: {
-      models: MODELS,
+      models: ["FINAL_MARKET_SPECIFIC"],
+      exitStrategies: EXIT_STRATEGIES,
       folds: [...FOLD_YEARS],
       etfThresholdGrid: [],
-      marketSpecificThresholds: { KOSPI: 84, KOSDAQ: 85 },
+      marketSpecificThresholds: { KOSPI: 84, KOSDAQ: null },
       stockFallbackThreshold: STOCK_FALLBACK_THRESHOLD,
       plFormula:
         "Same V8 PL formula: RS20 20% + RS60 20% + RS120 10% + trend 15% + breadth 20% + near-high 10% + relative-turnover 5%.",
       thresholdGridFormula:
-        "Frozen finalist: KOSPI ETF PL threshold 84 and KOSDAQ ETF PL threshold 85; Stock PL fallback fixed at 80. Baseline A uses Stock PL only at 80. OOS years 2018-2025.",
+        "PR102 production parity: KOSPI uses ETF PL 84 primary with Stock PL 80 fallback; KOSDAQ uses Stock PL 80. OOS years 2018-2025.",
       excludedPlSectors: ["MARKET_IDX", "ETC"],
       scoreRule:
         "Base 9.5 + 0.5 only when selected PL is below its applicable threshold. ETF threshold varies by model; Stock fallback threshold remains 80. Missing PL earns 0 sector slot.",
       entry: "8.0 onset, NEXT_OPEN",
-      kospiExit: "UP 9.5 crossing or DOWN 2.5 crossing at NEXT_OPEN; max 60D SAME_DAY_CLOSE",
-      kosdaqExit: "UP 9.0 crossing or DOWN 3.0 crossing at NEXT_OPEN; max 60D SAME_DAY_CLOSE",
+      kospiExit: "Compared: U9.5/DX and U9.5/D2.5; max 60D",
+      kosdaqExit: "Compared: U9.5/D2.5; max 60D",
       portfolio: "P10: max 10 positions, 10% target slot, fractional shares, no rebalancing",
       evaluationCalendar:
         "For each market/fold, all models use the same calendar: first trading day of the fold year through 65 market trading days after the last fold-year trading day.",
@@ -1172,8 +1272,8 @@ async function main() {
     coverage: sourceCoverage(dataset, etfPl, stockPl),
     signalDiagnostics,
     aggregateRows,
-    deltaVsA: deltaVsA(aggregateRows),
-    robustness: buildRobustness(foldRows),
+    deltaVsA: [],
+    robustness: [],
     foldRows,
     notes: [
       "A uses existing V8 Stock PL at threshold 80 as frozen baseline.",
@@ -1198,11 +1298,11 @@ async function main() {
   if (options.upload) {
     const client = trustedSupabaseClient();
     remotePath =
-      options.userId + "/results/v8-etf-pl-market-specific-finalist-oos/" + runId + ".json";
+      options.userId + "/results/pr102-market-three-strategy-oos/" + runId + ".json";
     await uploadJson(client, remotePath, result);
     await uploadJson(
       client,
-      options.userId + "/results/v8-etf-pl-market-specific-finalist-oos/latest.json",
+      options.userId + "/results/pr102-market-three-strategy-oos/latest.json",
       {
         version: STUDY_VERSION,
         createdAt,
@@ -1210,7 +1310,8 @@ async function main() {
         resultPath: remotePath,
         coverage: result.coverage,
         aggregateRows,
-        deltaVsA: result.deltaVsA,
+        foldRows,
+        deltaVsA: [],
       },
     );
   }
@@ -1222,7 +1323,8 @@ async function main() {
         remotePath,
         coverage: result.coverage,
         aggregateRows,
-        deltaVsA: result.deltaVsA,
+        foldRows,
+        deltaVsA: [],
       },
       null,
       2,
