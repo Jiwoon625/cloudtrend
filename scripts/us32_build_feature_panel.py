@@ -69,10 +69,10 @@ def main():
 
     raw_sql=f"""
     WITH b0 AS (
-      SELECT CAST(dt AS DATE) dt,
-             CAST(spy_close AS DOUBLE) spy_close,
-             CAST(qqq_close AS DOUBLE) qqq_close,
-             CAST(iwm_close AS DOUBLE) iwm_close
+      SELECT CAST(dt AS DATE) AS dt,
+             CAST(spy_close AS DOUBLE) AS spy_close,
+             CAST(qqq_close AS DOUBLE) AS qqq_close,
+             CAST(iwm_close AS DOUBLE) AS iwm_close
       FROM read_parquet('{bench}')
     ),
     b1 AS (
@@ -117,13 +117,13 @@ def main():
       FROM b2
     ),
     s0 AS (
-      SELECT CAST(symbol AS VARCHAR) symbol,
-             CAST(tradeDateUsEastern AS DATE) dt,
-             CAST(open AS DOUBLE) open,
-             CAST(high AS DOUBLE) high,
-             CAST(low AS DOUBLE) low,
-             CAST(close AS DOUBLE) close,
-             CAST(volume AS DOUBLE) volume
+      SELECT CAST(symbol AS VARCHAR) AS symbol,
+             CAST(tradeDateUsEastern AS DATE) AS dt,
+             CAST(open AS DOUBLE) AS open,
+             CAST(high AS DOUBLE) AS high,
+             CAST(low AS DOUBLE) AS low,
+             CAST(close AS DOUBLE) AS close,
+             CAST(volume AS DOUBLE) AS volume
       FROM read_parquet('{price_glob}',union_by_name=true)
     ),
     s1 AS (
