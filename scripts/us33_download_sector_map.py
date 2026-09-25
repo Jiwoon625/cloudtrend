@@ -8,7 +8,7 @@ BUCKET="cloudtrend-data"
 
 def main():
     p=argparse.ArgumentParser()
-    p.add_argument("--remote",default="research/us/v0/sector/us_stock_sector_map_14_v1.csv")
+    p.add_argument("--remote",default="research/us/v0/sector/v1.1/us_stock_sector_map_14_v1.csv")
     p.add_argument("--output",required=True)
     a=p.parse_args()
     url=os.environ["SUPABASE_URL"].rstrip("/")
