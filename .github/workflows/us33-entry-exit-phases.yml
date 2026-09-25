@@ -66,8 +66,8 @@ jobs:
           python scripts/us32_build_feature_panel.py
           --input .cache/us-v0
           --output .cache/us32-panel/us32_full_panel.parquet
-          --threads 2
-          --memory-limit 5GB
+          --threads 1
+          --memory-limit 3GB
 
       - name: Download pinned 14-sector map v1.1
         run: >-
@@ -81,8 +81,8 @@ jobs:
           --input-root .cache/us-v0
           --sector-map .cache/us-sector/us_stock_sector_map_14_v1.csv
           --output analysis-runs/us33-entry-exit-phases
-          --threads 2
-          --memory-limit 5GB
+          --threads 1
+          --memory-limit 3GB
 
       - name: Persist results to Supabase Storage
         run: >-
