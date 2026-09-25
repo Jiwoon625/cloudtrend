@@ -246,7 +246,10 @@ def main():
         SELECT *,0.5*dr_ret120+0.5*dr_ret252 AS mom_score
         FROM ranked_panel
       )
-      SELECT *,PERCENT_RANK() OVER(PARTITION BY dt ORDER BY mom_score) AS mom_pct
+      SELECT *,
+        PERCENT_RANK() OVER(PARTITION BY dt ORDER BY mom_score) AS mom_pct,
+        PERCENT_RANK() OVER(PARTITION BY dt ORDER BY fwd_ret_120) AS target_pct_120,
+        PERCENT_RANK() OVER(PARTITION BY dt ORDER BY fwd_ret_252) AS target_pct_252
       FROM x
     """)
 
