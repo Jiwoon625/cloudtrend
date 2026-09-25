@@ -1,0 +1,60 @@
+name: US-3.3 Pin Best Sector Map
+
+on:
+  push:
+    branches:
+      - research/us33-portfolio-backtest
+    paths:
+      - .github/workflows/us33-pin-best-sector-map.yml
+      - research/triggers/us33-pin-best-sector-map.txt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  pin:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      GITHUB_TOKEN: ${{ github.token }}
+      SOURCE_ARTIFACT_ID: "10874382250"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check pandas==2.2.3 requests==2.32.5
+      - name: Download pinned high-coverage Yahoo artifact
+        run: |
+          mkdir -p .cache/pinned-sector
+          curl -L --fail --retry 3 \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Jiwoon625/cloudtrend/actions/artifacts/$SOURCE_ARTIFACT_ID/zip" \
+            -o .cache/pinned-sector/source.zip
+          unzip -o .cache/pinned-sector/source.zip -d .cache/pinned-sector/source
+          test -f .cache/pinned-sector/source/us_stock_sector_map_14_v1.csv
+      - name: Finalize CloudTrend thematic map
+        run: >-
+          python scripts/us33_finalize_sector_map_v11.py
+          --yahoo-map .cache/pinned-sector/source/us_stock_sector_map_14_v1.csv
+          --curated-v0 research/us33-us-sector-map-14-v0.csv
+          --output analysis-runs/us33-sector-map-v11-pinned
+      - name: Persist canonical sector map
+        run: >-
+          python scripts/us33_upload_sector_map.py
+          --source analysis-runs/us33-sector-map-v11-pinned
+          --prefix research/us/v0/sector
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: us33-sector-map-v11-pinned-${{ github.run_id }}
+          path: analysis-runs/us33-sector-map-v11-pinned/
+          retention-days: 30
+          if-no-files-found: error
