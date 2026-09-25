@@ -163,6 +163,7 @@ def select_unique_top(df,block,corr):
     picked=[]
     for _,r in z.iterrows():
       f=r.feature
+      if f in picked: continue
       if r.meanSelectedN is None or r.meanSelectedN<20: continue
       duplicate=False
       for p in picked:
@@ -267,6 +268,9 @@ def main():
     for b1,b2 in combinations(blocks.keys(),2):
       for f1 in shortlist[b1]:
         for f2 in shortlist[b2]:
+          cross_corr=corr[((corr.featureA==f1)&(corr.featureB==f2))|((corr.featureA==f2)&(corr.featureB==f1))]
+          if len(cross_corr) and float(cross_corr.absCorr.max())>=0.95:
+            continue
           r1=gdf[(gdf.feature==f1)&(gdf.horizon==252)&(gdf.momCut==0.90)].sort_values(["periodPositiveCount","deltaVsBaseline"],ascending=False).iloc[0]
           r2=gdf[(gdf.feature==f2)&(gdf.horizon==252)&(gdf.momCut==0.90)].sort_values(["periodPositiveCount","deltaVsBaseline"],ascending=False).iloc[0]
           q1=float(r1.confirmCut); q2=float(r2.confirmCut)
