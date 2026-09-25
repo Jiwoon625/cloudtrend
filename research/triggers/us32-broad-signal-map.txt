@@ -3,3 +3,4 @@ started_at_kst=2026-09-25T12:29:00+09:00
 rerun_after_sql_alias_fix=2026-09-25T12:32:00+09:00
 rerun_after_qa_alias_fix=2026-09-25T12:45:00+09:00
 rerun_after_eval_alias_and_panel_cache=2026-09-25T13:22:00+09:00
+rerun_nullsafe_rank_parity=2026-09-25T13:28:00+09:00
