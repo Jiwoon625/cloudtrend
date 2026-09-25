@@ -1,0 +1,1 @@
+trigger sector master probe
