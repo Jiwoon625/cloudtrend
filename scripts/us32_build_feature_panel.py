@@ -230,26 +230,37 @@ def main():
     con.execute("DROP TABLE IF EXISTS raw_panel")
     con.execute(f"CREATE TABLE raw_panel AS {raw_sql}")
 
+    def pct_rank_nonnull(col: str, descending: bool = False) -> str:
+        base = (
+            f"(RANK() OVER(PARTITION BY dt ORDER BY {col} NULLS LAST)-1)::DOUBLE "
+            f"/ NULLIF(COUNT({col}) OVER(PARTITION BY dt)-1,0)"
+        )
+        if descending:
+            base = f"1.0-({base})"
+        return f"CASE WHEN {col} IS NULL THEN NULL ELSE {base} END"
+
     rank_expr=[]
     for feat,_,direction in FEATURES:
-        if direction==1:
-            rank_expr.append(f"PERCENT_RANK() OVER(PARTITION BY dt ORDER BY {feat}) AS dr_{feat}")
-        else:
-            rank_expr.append(f"1.0-PERCENT_RANK() OVER(PARTITION BY dt ORDER BY {feat}) AS dr_{feat}")
+        rank_expr.append(
+            f"{pct_rank_nonnull(feat, descending=(direction==-1))} AS dr_{feat}"
+        )
     con.execute("DROP TABLE IF EXISTS ranked_panel")
     con.execute("CREATE TABLE ranked_panel AS SELECT *, "+", ".join(rank_expr)+" FROM raw_panel")
 
     con.execute("DROP TABLE IF EXISTS scored_panel")
-    con.execute("""
+    mom_rank = pct_rank_nonnull("mom_score")
+    target120_rank = pct_rank_nonnull("fwd_ret_120")
+    target252_rank = pct_rank_nonnull("fwd_ret_252")
+    con.execute(f"""
       CREATE TABLE scored_panel AS
       WITH x AS (
         SELECT *,0.5*dr_ret120+0.5*dr_ret252 AS mom_score
         FROM ranked_panel
       )
       SELECT *,
-        PERCENT_RANK() OVER(PARTITION BY dt ORDER BY mom_score) AS mom_pct,
-        PERCENT_RANK() OVER(PARTITION BY dt ORDER BY fwd_ret_120) AS target_pct_120,
-        PERCENT_RANK() OVER(PARTITION BY dt ORDER BY fwd_ret_252) AS target_pct_252
+        {mom_rank} AS mom_pct,
+        {target120_rank} AS target_pct_120,
+        {target252_rank} AS target_pct_252
       FROM x
     """)
 
@@ -260,7 +271,27 @@ def main():
       f"TO '{final_path}' (FORMAT PARQUET,COMPRESSION ZSTD)"
     )
     qa=con.execute("SELECT COUNT(*) AS row_count,COUNT(DISTINCT symbol) AS symbol_count,MIN(dt) AS min_date,MAX(dt) AS max_date FROM scored_panel").fetchone()
-    print({"ok":True,"rows":qa[0],"symbols":qa[1],"minDate":str(qa[2]),"maxDate":str(qa[3]),"output":str(out)})
+    parity=con.execute("""
+      WITH d AS (
+        SELECT dt,
+          AVG(CASE WHEN dr_ret120>=0.90 THEN fwd_ret_252 END) AS top10_ret,
+          AVG(fwd_ret_252) AS universe_ret
+        FROM scored_panel
+        WHERE fwd_ret_252 IS NOT NULL
+        GROUP BY dt
+      )
+      SELECT AVG(top10_ret-universe_ret)
+      FROM d
+      WHERE top10_ret IS NOT NULL
+    """).fetchone()[0]
+    expected_ret120_252=0.062711
+    if parity is None or abs(float(parity)-expected_ret120_252)>0.015:
+        raise RuntimeError(
+            f"US-2.1 parity QA failed: ret120 TOP10 252D excess={parity}, "
+            f"expected approximately {expected_ret120_252}"
+        )
+    print({"ok":True,"rows":qa[0],"symbols":qa[1],"minDate":str(qa[2]),"maxDate":str(qa[3]),
+           "ret120Top10Excess252Parity":float(parity),"output":str(out)})
 
 if __name__=="__main__":
     main()
