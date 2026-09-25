@@ -1,1 +1,1 @@
-trigger canonical-sector-v1.1
+trigger canonical-sector-v1.1 portfolio-backtest-final-2
