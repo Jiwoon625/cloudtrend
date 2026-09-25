@@ -1,0 +1,81 @@
+name: US-3.3 Stage 0 Direction QA
+
+on:
+  push:
+    branches:
+      - research/us33-stage0-qa
+    paths:
+      - scripts/research_us33_stage0_direction_qa.py
+      - .github/workflows/us33-stage0-direction-qa.yml
+      - research/triggers/us33-stage0-direction-qa.txt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: >-
+          python -m pip install --disable-pip-version-check
+          pandas==2.2.3 pyarrow==23.0.1 duckdb==1.3.2 requests==2.32.5
+
+      - name: Compile QA script
+        run: python -m py_compile scripts/research_us33_stage0_direction_qa.py
+
+      - name: Restore US-3.2 feature panel cache
+        id: us32-panel-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/us32-panel
+          key: us32-panel-v2-nullsafe-20260923
+
+      - name: Restore US V0 input cache if panel missing
+        if: steps.us32-panel-cache.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: .cache/us-v0
+          key: us-v0-20260923-canonical-v1
+
+      - name: Download missing US inputs if panel missing
+        if: steps.us32-panel-cache.outputs.cache-hit != 'true'
+        run: python scripts/us3_supabase_io.py download --root .cache/us-v0
+
+      - name: Build feature panel if cache missing
+        if: steps.us32-panel-cache.outputs.cache-hit != 'true'
+        run: >-
+          python scripts/us32_build_feature_panel.py
+          --input .cache/us-v0
+          --output .cache/us32-panel/us32_full_panel.parquet
+          --threads 2
+          --memory-limit 5GB
+
+      - name: Run Stage 0 direction QA
+        run: >-
+          python scripts/research_us33_stage0_direction_qa.py
+          --panel .cache/us32-panel/us32_full_panel.parquet
+          --output analysis-runs/us33-stage0-direction-qa
+          --threads 2
+          --memory-limit 5GB
+
+      - name: Upload Stage 0 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: us33-stage0-direction-qa-${{ github.run_id }}
+          path: analysis-runs/us33-stage0-direction-qa/
+          retention-days: 30
+          compression-level: 6
+          if-no-files-found: error
