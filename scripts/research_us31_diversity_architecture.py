@@ -142,14 +142,14 @@ def architecture_definitions() -> Dict[str, dict]:
             "family": "KOREAN_STYLE_CHECKLIST",
             "featureCount": 7,
             "expr": (
-                "1.0*sig_cloud_above + "
+                "(1.0*sig_cloud_above + "
                 "1.0*sig_tk_gt_kijun + "
                 "1.5*sig_bb_breakout + "
                 "1.0*sig_ma_alignment + "
                 "0.5*sig_high_close_volume + "
                 "2.5*sig_near_52w_high + "
-                "2.0*sig_rs120_outperform_spy"
-            ) + "/9.5",
+                "2.0*sig_rs120_outperform_spy)/9.5"
+            ),
         },
         "H1_MOM70_K730": {
             "family": "HYBRID",
