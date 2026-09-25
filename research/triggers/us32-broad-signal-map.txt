@@ -1,0 +1,2 @@
+US-3.2 broad signal map trigger
+started_at_kst=2026-09-25T12:29:00+09:00
