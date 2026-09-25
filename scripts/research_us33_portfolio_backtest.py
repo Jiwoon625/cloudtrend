@@ -38,18 +38,34 @@ def max_drawdown(returns: pd.Series) -> float:
     dd=eq/peak-1
     return float(dd.min()) if len(dd) else float("nan")
 
-def annualized_stats(d: pd.DataFrame):
-    r=d["net_return"].fillna(0)
+def series_stats(r: pd.Series):
+    r=r.fillna(0)
     n=len(r)
     if n==0:
-        return {}
+        return dict(totalReturn=None,CAGR=None,annualizedVol=None,Sharpe=None,MDD=None,positiveDayRate=None)
     total=float((1+r).prod()-1)
     cagr=float((1+total)**(252/max(n,1))-1) if total>-1 else -1
     vol=float(r.std(ddof=1)*np.sqrt(252)) if n>1 else np.nan
     sharpe=float(r.mean()/r.std(ddof=1)*np.sqrt(252)) if n>1 and r.std(ddof=1)>0 else np.nan
+    return dict(totalReturn=total,CAGR=cagr,annualizedVol=vol,Sharpe=sharpe,
+                MDD=max_drawdown(r),positiveDayRate=float((r>0).mean()))
+
+def annualized_stats(d: pd.DataFrame):
+    net=series_stats(d["net_return"])
+    gross=series_stats(d["gross_return"])
+    spy=series_stats(d["spy_return"])
+    n=len(d)
     return dict(
-        days=n,totalReturn=total,CAGR=cagr,annualizedVol=vol,Sharpe=sharpe,
-        MDD=max_drawdown(r),positiveDayRate=float((r>0).mean()),
+        days=n,
+        totalReturn=net["totalReturn"],CAGR=net["CAGR"],annualizedVol=net["annualizedVol"],
+        Sharpe=net["Sharpe"],MDD=net["MDD"],positiveDayRate=net["positiveDayRate"],
+        grossTotalReturn=gross["totalReturn"],grossCAGR=gross["CAGR"],grossSharpe=gross["Sharpe"],
+        grossMDD=gross["MDD"],
+        spyTotalReturn=spy["totalReturn"],spyCAGR=spy["CAGR"],spySharpe=spy["Sharpe"],spyMDD=spy["MDD"],
+        excessCAGRVsSpy=(net["CAGR"]-spy["CAGR"]) if net["CAGR"] is not None and spy["CAGR"] is not None else None,
+        grossExcessCAGRVsSpy=(gross["CAGR"]-spy["CAGR"]) if gross["CAGR"] is not None and spy["CAGR"] is not None else None,
+        avgDailyCost=float(d["cost"].mean()),
+        annualizedCostDragApprox=float(d["cost"].mean()*252),
         avgDailyTurnover=float(d["turnover"].mean()),
         annualTurnover=float(d["turnover"].mean()*252),
         avgPositions=float(d["positions"].mean()),
@@ -111,8 +127,9 @@ def run_config(candidates: pd.DataFrame, core_cut: float, strategy: str, sector_
 
         entry_dt=sel["entry_dt"].dropna().iloc[0] if n and sel["entry_dt"].notna().any() else pd.NaT
         regime=elig["market_regime"].dropna().iloc[0] if len(elig) and elig["market_regime"].notna().any() else None
+        spy_return=float(elig["spy_return"].dropna().iloc[0]) if len(elig) and elig["spy_return"].notna().any() else 0.0
         recs.append(dict(
-            signal_dt=signal_dt,entry_dt=entry_dt,gross_return=gross,cost=cost,net_return=gross-cost,
+            signal_dt=signal_dt,entry_dt=entry_dt,gross_return=gross,cost=cost,net_return=gross-cost,spy_return=spy_return,
             turnover=traded,positions=n,low_conf_positions=low_n,low_conf_weight=low_w,
             missing_return_weight=missing_w,market_regime=regime,
             maxSectorCount=max(sectors.values()) if sectors else 0,
@@ -134,6 +151,7 @@ def main():
     panel=str(Path(a.panel).resolve()).replace("'","''")
     root=Path(a.input_root).resolve()
     price_glob=str(root/"canonical"/"year=*"/"us_stock_daily.parquet").replace("'","''")
+    bench=str(root/"benchmark"/"us_benchmarks_adjusted.parquet").replace("'","''")
     sector_map=Path(a.sector_map).resolve()
     out=Path(a.output).resolve(); out.mkdir(parents=True,exist_ok=True)
 
@@ -158,6 +176,10 @@ def main():
              LEAD(dt,2) OVER(ORDER BY dt) exit_dt
       FROM (SELECT DISTINCT dt FROM px)
     ),
+    b AS (
+      SELECT CAST(dt AS DATE) dt, CAST(spy_close AS DOUBLE) spy_close
+      FROM read_parquet('${bench}')
+    ),
     sig AS (
       SELECT symbol,dt AS signal_dt,market_regime,mom_pct,
              dr_beta60_spy,dr_ichimoku_tk_gap,dr_relvol1_20,
@@ -167,12 +189,16 @@ def main():
     )
     SELECT s.*,c.entry_dt,c.exit_dt,m.sectorCode,m.mapMethod,m.confidenceGrade,m.confidence,m.mappingVersion,
            CASE WHEN p1.open IS NULL OR p2.open IS NULL OR p1.open=0 THEN NULL
-                ELSE p2.open/p1.open-1 END AS o2o_ret
+                ELSE p2.open/p1.open-1 END AS o2o_ret,
+           CASE WHEN b1.spy_close IS NULL OR b2.spy_close IS NULL OR b1.spy_close=0 THEN NULL
+                ELSE b2.spy_close/b1.spy_close-1 END AS spy_return
     FROM sig s
     JOIN cal c ON c.dt=s.signal_dt
     JOIN sector_map m USING(symbol)
     LEFT JOIN px p1 ON p1.symbol=s.symbol AND p1.dt=c.entry_dt
     LEFT JOIN px p2 ON p2.symbol=s.symbol AND p2.dt=c.exit_dt
+    LEFT JOIN b b1 ON b1.dt=c.entry_dt
+    LEFT JOIN b b2 ON b2.dt=c.exit_dt
     WHERE c.entry_dt IS NOT NULL AND c.exit_dt IS NOT NULL
     ORDER BY s.signal_dt,s.symbol
     """
