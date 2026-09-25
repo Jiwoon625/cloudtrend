@@ -1,0 +1,36 @@
+name: US-3.3 Sector Source Probe
+
+on:
+  push:
+    branches:
+      - research/us33-portfolio-backtest
+    paths:
+      - scripts/us33_sector_source_probe.py
+      - .github/workflows/us33-sector-source-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check yfinance requests
+      - name: Show yfinance version
+        run: python -c "import yfinance; print(yfinance.__version__)"
+      - name: Run source probe
+        run: python scripts/us33_sector_source_probe.py
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: us33-sector-source-probe-${{ github.run_id }}
+          path: analysis-runs/us33-sector-source-probe/
+          retention-days: 30
+          if-no-files-found: error
