@@ -6,7 +6,7 @@ on:
       - research/us33-portfolio-backtest
     paths:
       - scripts/research_us33_portfolio_backtest.py
-      - research/us33-us-sector-map-14-v0.csv
+      - scripts/us33_download_sector_map.py
       - .github/workflows/us33-portfolio-backtest.yml
       - research/triggers/us33-portfolio-backtest.txt
   workflow_dispatch:
@@ -27,19 +27,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
       - name: Install dependencies
         run: >-
           python -m pip install --disable-pip-version-check
           pandas==2.2.3 numpy==2.1.3 pyarrow==23.0.1
           duckdb==1.3.2 requests==2.32.5
+
       - name: Compile research engine
-        run: python -m py_compile scripts/research_us33_portfolio_backtest.py
+        run: >-
+          python -m py_compile
+          scripts/research_us33_portfolio_backtest.py
+          scripts/us33_download_sector_map.py
 
       - name: Restore US V0 canonical input cache
         uses: actions/cache@v4
         with:
           path: .cache/us-v0
           key: us-v0-20260923-canonical-v1
+
       - name: Download missing canonical inputs
         run: python scripts/us3_supabase_io.py download --root .cache/us-v0
 
@@ -49,6 +55,7 @@ jobs:
         with:
           path: .cache/us32-panel
           key: us32-panel-v2-nullsafe-20260923
+
       - name: Build feature panel if missing
         if: steps.panel.outputs.cache-hit != 'true'
         run: >-
@@ -58,21 +65,26 @@ jobs:
           --threads 2
           --memory-limit 5GB
 
+      - name: Download refined US sector map
+        run: >-
+          python scripts/us33_download_sector_map.py
+          --output .cache/us-sector/us_stock_sector_map_14_v1.csv
+
       - name: Run actual portfolio backtest
         run: >-
           python scripts/research_us33_portfolio_backtest.py
           --panel .cache/us32-panel/us32_full_panel.parquet
           --input-root .cache/us-v0
-          --sector-map research/us33-us-sector-map-14-v0.csv
-          --output analysis-runs/us33-portfolio-backtest
+          --sector-map .cache/us-sector/us_stock_sector_map_14_v1.csv
+          --output analysis-runs/us33-portfolio-backtest-v1
           --threads 2
           --memory-limit 5GB
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: us33-portfolio-backtest-${{ github.run_id }}
-          path: analysis-runs/us33-portfolio-backtest/
+          name: us33-portfolio-backtest-v1-${{ github.run_id }}
+          path: analysis-runs/us33-portfolio-backtest-v1/
           retention-days: 30
           compression-level: 6
           if-no-files-found: error
