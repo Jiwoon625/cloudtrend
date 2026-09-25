@@ -1,0 +1,1 @@
+trigger canonical-sector-v1.1
