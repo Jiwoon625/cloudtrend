@@ -1,4 +1,5 @@
 name: CloudTrend screening
+run-name: "CloudTrend screening ${{ inputs.expected_source_id || github.run_id }}"
 
 on:
   pull_request:
@@ -9,6 +10,14 @@ on:
       - tests/workflow-contract.test.mjs
   workflow_dispatch:
     inputs:
+      expected_source_id:
+        description: Optional published source ID to verify
+        required: false
+        type: string
+      expected_as_of_date:
+        description: Optional source date to verify
+        required: false
+        type: string
       force:
         description: 동일 실행 결과가 있어도 다시 계산
         required: true
@@ -21,7 +30,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'issue_comment' && github.run_id || github.ref }}
+  group: cloudtrend-screening-production
   cancel-in-progress: false
 
 jobs:
@@ -68,6 +77,8 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      CLOUDTREND_EXPECTED_SOURCE_ID: ${{ inputs.expected_source_id }}
+      CLOUDTREND_EXPECTED_AS_OF_DATE: ${{ inputs.expected_as_of_date }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
