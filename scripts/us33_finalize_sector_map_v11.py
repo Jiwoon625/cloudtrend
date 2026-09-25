@@ -43,7 +43,6 @@ def main():
         elif (
             o.get("sectorCode")=="BATTERY"
             and o.get("mapMethod")=="RULE"
-            and str(o.get("matchedRule")) in {"BATTERY","LITHIUM"}
         ):
             # GICS/Yahoo has no standalone battery sector; retain transparent
             # high-specificity battery/lithium theme rules for the CloudTrend taxonomy.
