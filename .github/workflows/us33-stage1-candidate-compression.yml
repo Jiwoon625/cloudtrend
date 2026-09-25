@@ -1,0 +1,57 @@
+name: US-3.3 Stage 1 Candidate Compression
+
+on:
+  push:
+    branches:
+      - research/us33-stage0-qa
+    paths:
+      - scripts/research_us33_stage1_candidate_compression.py
+      - .github/workflows/us33-stage1-candidate-compression.yml
+      - research/triggers/us33-stage1-candidate-compression.txt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  study:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: >-
+          python -m pip install --disable-pip-version-check
+          pandas==2.2.3 pyarrow==23.0.1 duckdb==1.3.2
+
+      - name: Compile Stage 1 script
+        run: python -m py_compile scripts/research_us33_stage1_candidate_compression.py
+
+      - name: Restore US-3.2 feature panel cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/us32-panel
+          key: us32-panel-v2-nullsafe-20260923
+          fail-on-cache-miss: true
+
+      - name: Run Stage 1 candidate compression
+        run: >-
+          python scripts/research_us33_stage1_candidate_compression.py
+          --panel .cache/us32-panel/us32_full_panel.parquet
+          --output analysis-runs/us33-stage1-candidate-compression
+          --threads 2
+          --memory-limit 5GB
+
+      - name: Upload Stage 1 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: us33-stage1-candidate-compression-${{ github.run_id }}
+          path: analysis-runs/us33-stage1-candidate-compression/
+          retention-days: 30
+          compression-level: 6
+          if-no-files-found: error
