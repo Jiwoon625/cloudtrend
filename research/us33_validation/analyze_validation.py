@@ -4,7 +4,7 @@ import pandas as pd,numpy as np,json,zipfile,hashlib
 OUT=Path(os.environ.get('US33_DATA_ROOT','/content/drive/MyDrive/미국주식데이터'))/'US33_validation_20260927'
 RUNTIME=Path(os.environ.get('US33_RUNTIME_ROOT','/content'))
 s=pd.read_csv(OUT/'validation_summary.csv')
-s=pd.concat([s,pd.read_csv(OUT/'consistent_validation_summary.csv')],ignore_index=True)
+s=pd.concat([s,pd.read_csv(OUT/'consistent_validation_summary.csv'),pd.read_csv(OUT/'verified_validation_summary.csv')],ignore_index=True)
 ref=pd.read_csv(OUT/'reference_prior_holdings_results.csv')
 checks=[]
 for r in ref[ref.max_positions.isin([15,20])].itertuples():
@@ -15,17 +15,17 @@ for r in ref[ref.max_positions.isin([15,20])].itertuples():
         checks.append(dict(config=config,period=period,expected=expected,actual=actual,difference=actual-expected,pass_1bp=abs(actual-expected)<.0001))
 pd.DataFrame(checks).to_csv(OUT/'reproduction_check.csv',index=False)
 assert all(x['pass_1bp'] for x in checks), 'Original research reproduction failed'
-# Paired comparisons use the same engine, historical industry rules, price source and dates.
+# Paired comparisons use the same engine, frozen sector classification rules (not point-in-time sectors), price source and dates.
 base=s[(s.engine=='ledger')&~s.config.str.contains('ZERO|COST2')]
-a=base[base.dataset=='survivor_consistent'];b=base[base.dataset=='full_consistent']
+a=base[base.dataset=='survivor_consistent'];b=base[base.dataset=='full_verified']
 comp=a.merge(b,on=['config','period'],suffixes=('_survivor','_historical'))
 for col in ['CAGR','Sharpe','MDD']:comp[col+'_survivor_minus_historical']=comp[col+'_survivor']-comp[col+'_historical']
 comp.to_csv(OUT/'survivorship_comparison.csv',index=False)
-full=base[(base.dataset=='full_consistent')&base.period.isin(['train','reviewed','full'])]
+full=base[(base.dataset=='full_verified')&base.period.isin(['train','reviewed','full'])]
 full.to_csv(OUT/'eight_strategies.csv',index=False)
 rows=[];rng=np.random.default_rng(330927)
 def daily(config):
-    return pd.read_csv(OUT/f'daily_full_consistent_ledger_{config}.csv',parse_dates=['date']).set_index('date')
+    return pd.read_csv(OUT/f'daily_full_verified_ledger_{config}.csv',parse_dates=['date']).set_index('date')
 for style,cap in [('AGGRESSIVE',2),('BALANCED',3)]:
     pairs=[(f'{style}_N20_SC{c}',f'{style}_N15_SC{c}','N20-minus-N15') for c in [cap,'NONE']]
     pairs += [(f'{style}_N{n}_SCNONE',f'{style}_N{n}_SC{cap}','no-cap-minus-cap') for n in [15,20]]
