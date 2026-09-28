@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { operateLedgers } from "./portfolioLedgers.server";
+import type { LedgerDocument } from "./portfolioLedgers";
 
 const csv =
   "symbol,date,market,open,high,low,close,volume\nA,2026-01-02,KOSDAQ,100,110,90,105,1000";
@@ -131,6 +132,21 @@ function database() {
 }
 
 describe("ledger persistence", () => {
+  it("reuses the strategy cache after JSONB changes object key order", async () => {
+    const db = database();
+    const first = await operateLedgers(db.client, "owner", { action: "sync" });
+    const stored = db.tables["portfolio_ledgers"]![0]!["payload"] as LedgerDocument;
+    stored.settings = {
+      sectorCap: stored.settings.sectorCap,
+      maxPositions: stored.settings.maxPositions,
+      roundTripCostRate: stored.settings.roundTripCostRate,
+      initialCapital: stored.settings.initialCapital,
+    };
+    stored.strategy!.calculatedAt = "cache-marker";
+    const second = await operateLedgers(db.client, "owner", { action: "sync" });
+    expect(second.revision).toBe(first.revision);
+    expect(second.document.strategy!.calculatedAt).toBe("cache-marker");
+  });
   it("migrates every positive legacy fill, retains zeros separately, and never changes legacy rows", async () => {
     const db = database(),
       before = JSON.stringify(db.tables["portfolio_trades"]);

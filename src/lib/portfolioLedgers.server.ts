@@ -209,7 +209,12 @@ async function refreshStrategy(client: SupabaseClient, uid: string, doc: LedgerD
     .update(
       JSON.stringify({
         version: LEDGER_VERSION,
-        settings: doc.settings,
+        settings: [
+          doc.settings.initialCapital,
+          doc.settings.maxPositions,
+          doc.settings.sectorCap,
+          doc.settings.roundTripCostRate,
+        ],
         sources: sources.map((s) => [s.id, s.file_hash, s.activated_at]),
         snapshots,
         symbols: [...symbols].sort(),
