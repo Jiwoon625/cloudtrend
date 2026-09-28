@@ -299,6 +299,18 @@ export function parseManualMarketData(input: string | string[]): ManualParseResu
       if (!existing.dates.has(date)) {
         existing.dates.add(date);
         existing.bars.push(bar);
+      } else {
+        // 활성 screening source는 기간이 겹칠 수 있다. 먼저 들어온 과거 행의
+        // 비어 있지 않은 값은 보존하고, 이후(더 최근에 활성화된) source의
+        // 비어 있지 않은 값으로 공매도·대차 등 보강 필드를 덮어쓴다.
+        const index = existing.bars.findIndex((item) => item.tradeDate === date);
+        if (index >= 0) {
+          const previous = existing.bars[index]!;
+          const enriched = Object.fromEntries(
+            Object.entries(bar).filter(([, value]) => value !== null && value !== undefined && value !== ""),
+          ) as Partial<DailyPrice>;
+          existing.bars[index] = { ...previous, ...enriched };
+        }
       }
       return;
     }
