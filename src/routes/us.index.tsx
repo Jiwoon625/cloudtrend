@@ -44,7 +44,7 @@ function UsMarketDataPage() {
   });
   const history = useQuery({
     queryKey: ["us-screening-history"],
-    queryFn: () => loadUsScreeningHistory(10),
+    queryFn: () => loadUsScreeningHistory(370),
     staleTime: 60_000,
   });
   const value = cache.data;
@@ -99,6 +99,41 @@ function UsMarketDataPage() {
                 : "-"
             }
           />
+        </section>
+
+        <section className="rounded-lg border border-border bg-card p-4">
+          <h2 className="text-sm font-semibold">최근 수집 · 신호 요약</h2>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <DataField title="데이터 공급자" body={value?.source.provider ?? "미수집"} />
+            <DataField
+              title="수집 종목 수 (SPY 포함)"
+              body={value ? `${value.analysis.rows.length.toLocaleString()}종목` : "-"}
+            />
+            <DataField title="입력 형식" body={value?.source.schemaVersion ?? "-"} />
+            <DataField
+              title="최근 처리 상태"
+              body={value ? "확정 종가 수집 · 엔진 저장 완료" : "수집 대기"}
+            />
+          </div>
+          <p className="mt-3 text-[10px] text-muted-foreground">원본 데이터 해시</p>
+          <p className="break-all font-mono text-[10px]">{value?.dataHash ?? "-"}</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            {(["a0", "a2", "b3"] as const).map((strategy) => (
+              <DataField
+                key={strategy}
+                title={`${strategy.toUpperCase()} 신호`}
+                body={
+                  value
+                    ? `신규 진입 ${value.analysis.summary[`${strategy}Entries`] ?? 0} · 청산 조건 ${value.analysis.summary[`${strategy}Exits`] ?? 0}`
+                    : "-"
+                }
+              />
+            ))}
+          </div>
+          <p className="mt-2 text-[10px] text-muted-foreground">
+            청산 조건 수는 전체 종목의 조건 충족 수이며 실제 매도 주문 수와 다릅니다. 첫 날짜는
+            순위만 저장해 신규 진입을 만들지 않습니다.
+          </p>
         </section>
 
         <section className="rounded-lg border border-border bg-card p-4">

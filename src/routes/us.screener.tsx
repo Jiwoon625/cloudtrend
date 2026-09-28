@@ -85,7 +85,10 @@ function UsScreenerPage() {
     ];
     const body = filtered.map((r) =>
       header
-        .map((k) => JSON.stringify((r as unknown as Record<string, unknown>)[k] ?? ""))
+        .map(
+          (k) =>
+            `"${String((r as unknown as Record<string, unknown>)[k] ?? "").replaceAll('"', '""')}"`,
+        )
         .join(","),
     );
     const blob = new Blob([[header.join(","), ...body].join("\n")], {
