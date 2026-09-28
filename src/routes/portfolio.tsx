@@ -1,480 +1,690 @@
-import { StrategyDescription } from "@/components/StrategyDescription";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { BriefcaseBusiness, Loader2, Pencil, RefreshCw, Save, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { BriefcaseBusiness, Loader2, RefreshCw, X } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
-
 import { AppShell } from "@/components/AppShell";
-import { Badge } from "@/components/ui/badge";
+import { StrategyDescription } from "@/components/StrategyDescription";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
-import { updatePortfolioEntryExecution } from "@/lib/portfolioManualEdit";
-import {
-  loadPortfolioState,
-  savePortfolioCapital,
-  syncPortfolioFromHistory,
-  type PortfolioState,
-  type PortfolioTrade,
-} from "@/lib/portfolioStore";
+import { formatWon, formatPercent, formatPrice } from "@/lib/format";
+import { supabase } from "@/lib/cloud";
+import { portfolioLedgersServer } from "@/lib/portfolioLedgers.functions";
+import type { ActualExecution, Candidate, DualPortfolioState } from "@/lib/portfolioLedgers";
+import type { PortfolioSummary } from "@/lib/portfolioStoreCore";
+import type { LedgerRequest } from "@/lib/portfolioLedgers.server";
 
 export const Route = createFileRoute("/portfolio")({
   ssr: false,
-  head: () => ({
-    meta: [
-      { title: "포트폴리오 | CloudTrend V8 Final" },
-      {
-        name: "description",
-        content:
-          "스크리닝 이력의 KOSPI / KOSDAQ 8.0 Onset과 Exit 신호를 실제 운용 규칙에 따라 다음 거래일 시가 기준 가상 매매 원장으로 기록합니다.",
-      },
-    ],
-  }),
+  head: () => ({ meta: [{ title: "포트폴리오 | 전략 성과 · 실제 투자" }] }),
   component: PortfolioPage,
 });
-
-function pnlClass(value: number | null | undefined) {
-  if (!value) return "text-muted-foreground";
-  return value > 0 ? "text-up" : "text-down";
+const QUERY = ["portfolio-ledgers"];
+async function request(input: LedgerRequest): Promise<DualPortfolioState> {
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data.session) throw new Error("먼저 로그인해 주세요.");
+  return portfolioLedgersServer({ data: { ...input, accessToken: data.session.access_token } });
 }
-
-function moneyInputValue(value: number) {
-  return String(Math.round(value));
-}
-
-function tradeMark(trade: PortfolioTrade, halfCost: number) {
-  if (trade.status === "CLOSED") return { marketValue: null, pnl: null, returnPct: null };
-  const current = trade.currentPrice ?? trade.entryPrice;
-  const marketValue = trade.shares * current;
-  const exitFee = marketValue * halfCost;
-  const cost = trade.buyAmount + trade.entryFee;
-  const pnl = marketValue - exitFee - cost;
-  return {
-    marketValue,
-    pnl,
-    returnPct: cost > 0 ? (pnl / cost) * 100 : null,
-  };
-}
-
-function SummaryItem({
-  label,
-  value,
-  valueClass,
+const pnlClass = (v: number) => (v > 0 ? "text-up" : v < 0 ? "text-down" : "text-muted-foreground");
+const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+function SummaryCard({
+  title,
+  caption,
+  s,
+  capital,
 }: {
-  label: string;
-  value: string;
-  valueClass?: string;
+  title: string;
+  caption: string;
+  s: PortfolioSummary;
+  capital: number;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-surface px-3 py-2">
-      <p className="text-[10px] text-muted-foreground">{label}</p>
-      <p className={`num mt-0.5 text-sm font-semibold ${valueClass ?? ""}`}>{value}</p>
-    </div>
+    <section className="rounded-xl border border-border bg-card p-4" aria-label={title}>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="font-semibold">{title}</h2>
+        <span className="rounded-full bg-muted px-2 py-1 text-xs">보유 {s.openPositions} / 30</span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">{caption}</p>
+      <p className={`num mt-4 text-2xl font-bold ${pnlClass(s.totalPnl)}`}>
+        {formatWon(s.totalPnl)}{" "}
+        <span className="text-base">({formatPercent(s.totalReturn, 2)})</span>
+      </p>
+      <p className="text-xs text-muted-foreground">누적손익 · 기준자금 {formatWon(capital)}</p>
+      <dl className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+        {[
+          ["총 평가자산", s.equity],
+          ["현금", s.cash],
+          ["실현손익", s.realizedPnl],
+          ["평가손익", s.unrealizedPnl],
+        ].map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd className="num mt-1 font-medium">{formatWon(Number(value))}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
+function StockLink({ symbol, name }: { symbol: string; name: string }) {
+  return (
+    <Link to="/instrument/$symbol" params={{ symbol }} className="font-medium hover:underline">
+      {name}
+      <span className="ml-1 text-[10px] text-muted-foreground">{symbol}</span>
+    </Link>
+  );
+}
+function LedgerTable({
+  title,
+  caption,
+  headers,
+  children,
+  empty,
+}: {
+  title: string;
+  caption?: string;
+  headers: string[];
+  children: ReactNode;
+  empty?: boolean;
+}) {
+  return (
+    <section className="mb-4 overflow-hidden rounded-lg border bg-card" aria-label={title}>
+      <div className="border-b p-3">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        {caption ? <p className="mt-1 text-xs text-muted-foreground">{caption}</p> : null}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-muted/40">
+            <tr>
+              {headers.map((h) => (
+                <th key={h} className="whitespace-nowrap px-3 py-2 text-left font-medium">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {empty ? (
+              <tr>
+                <td colSpan={headers.length} className="p-8 text-center text-muted-foreground">
+                  표시할 기록이 없습니다.
+                </td>
+              </tr>
+            ) : (
+              children
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+const td = "whitespace-nowrap px-3 py-3";
+type Edit = {
+  id: string;
+  symbol: string;
+  name: string;
+  market: ActualExecution["market"];
+  signalKey: string | null;
+  side: "BUY" | "SELL";
+  date: string;
+  price: string;
+  shares: string;
+  fee: string;
+  note: string;
+};
 
 function PortfolioPage() {
-  const [state, setState] = useState<PortfolioState | null>(null);
-  const [capital, setCapital] = useState("10000000");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [editingTrade, setEditingTrade] = useState<PortfolioTrade | null>(null);
-  const [editPrice, setEditPrice] = useState("");
-  const [editShares, setEditShares] = useState("");
-  const [editSaving, setEditSaving] = useState(false);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const qc = useQueryClient();
+  const query = useQuery({
+    queryKey: QUERY,
+    queryFn: () => request({ action: "sync" }),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+  const state = query.data,
+    doc = state?.document,
+    strategy = doc?.strategy;
+  const [tab, setTab] = useState<"strategy" | "actual" | "signals">("actual");
+  const [busy, setBusy] = useState(false),
+    [edit, setEdit] = useState<Edit | null>(null);
+  const [capitals, setCapitals] = useState<{ strategy: string; actual: string } | null>(null);
+  const [filter, setFilter] = useState("");
+  async function mutate(input: LedgerRequest) {
+    setBusy(true);
     try {
-      const saved = await loadPortfolioState();
-      setState(saved);
-      setCapital(moneyInputValue(saved.settings.initialCapital));
-      const next = await syncPortfolioFromHistory();
-      setState(next);
-      setCapital(moneyInputValue(next.settings.initialCapital));
+      const next = await request({ ...input, revision: state?.revision });
+      qc.setQueryData(QUERY, next);
+      return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "포트폴리오 동기화에 실패했습니다.");
+      toast.error(error instanceof Error ? error.message : "저장에 실패했습니다.");
+      return false;
     } finally {
-      setLoading(false);
+      setBusy(false);
     }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const sortedTrades = useMemo(
-    () =>
-      state
-        ? [...state.trades].sort((a, b) => {
-            if (a.status !== b.status) return a.status === "OPEN" ? -1 : 1;
-            return b.entryDate.localeCompare(a.entryDate) || a.symbol.localeCompare(b.symbol);
-          })
-        : [],
-    [state],
+  }
+  function beginBuy(c: Candidate) {
+    setEdit({
+      id: "",
+      symbol: c.symbol,
+      name: c.name,
+      market: c.market,
+      signalKey: c.key,
+      side: "BUY",
+      date: c.entryDate ?? today(),
+      price: String(c.price ?? strategy?.quotes[c.symbol]?.price ?? ""),
+      shares: "0",
+      fee: "0",
+      note: doc?.excluded[c.key] ?? "",
+    });
+  }
+  async function saveExecution() {
+    if (!edit) return;
+    const shares = Number(edit.shares),
+      price = Number(edit.price),
+      fee = Number(edit.fee);
+    if (edit.shares.trim() === "" || !Number.isInteger(shares) || shares < 0) {
+      toast.error("수량은 0 이상의 정수로 입력하세요.");
+      return;
+    }
+    if (shares === 0) {
+      if (edit.side === "SELL" || !edit.signalKey) {
+        toast.error("매도수량은 1주 이상이어야 합니다.");
+        return;
+      }
+      if (
+        await mutate({
+          action: "exclude",
+          signalKey: edit.signalKey,
+          executionId: edit.id || undefined,
+          note: edit.note || "미매수 · 0주",
+        })
+      ) {
+        setEdit(null);
+        toast.success("미매수 0주로 저장했습니다. 전략 원장은 유지됩니다.");
+      }
+      return;
+    }
+    if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(fee) || fee < 0) {
+      toast.error("체결가격과 수수료·세금을 확인하세요.");
+      return;
+    }
+    if (await mutate({ action: "execution", execution: { ...edit, shares, price, fee } })) {
+      setEdit(null);
+      toast.success("실제 체결만 반영했습니다. 전략 원장은 변경되지 않습니다.");
+    }
+  }
+  const matches = (v: { symbol: string; name: string }) =>
+    !filter || `${v.symbol} ${v.name}`.toLowerCase().includes(filter.toLowerCase());
+  const modelTrades = [...(strategy?.trades ?? [])].sort(
+    (a, b) =>
+      Number(a.status === "CLOSED") - Number(b.status === "CLOSED") ||
+      b.entryDate.localeCompare(a.entryDate),
   );
-
-  const saveCapital = async () => {
-    const amount = Number(capital.replaceAll(",", ""));
-    if (!Number.isFinite(amount) || amount <= 0) {
-      toast.error("운용자금을 올바르게 입력해 주세요.");
-      return;
-    }
-    setSaving(true);
-    try {
-      await savePortfolioCapital(amount);
-      const next = await syncPortfolioFromHistory();
-      setState(next);
-      setCapital(moneyInputValue(next.settings.initialCapital));
-      toast.success("운용자금을 저장했습니다. 이후 신규 진입 수량에 적용됩니다.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "운용자금 저장에 실패했습니다.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const startEntryEdit = (trade: PortfolioTrade) => {
-    setEditingTrade(trade);
-    setEditPrice(String(Math.round(trade.entryPrice)));
-    setEditShares(String(trade.shares));
-  };
-
-  const saveEntryEdit = async () => {
-    if (!editingTrade) return;
-    const price = Number(editPrice.replaceAll(",", ""));
-    const shares = Number(editShares.replaceAll(",", ""));
-    if (!Number.isFinite(price) || price <= 0) {
-      toast.error("실제 진입가격을 올바르게 입력해 주세요.");
-      return;
-    }
-    if (!Number.isInteger(shares) || shares < 0) {
-      toast.error("실제 매수수량은 0주 이상의 정수로 입력해 주세요.");
-      return;
-    }
-    setEditSaving(true);
-    try {
-      await updatePortfolioEntryExecution(editingTrade.id, price, shares);
-      const next = await syncPortfolioFromHistory();
-      setState(next);
-      setEditingTrade(null);
-      toast.success(
-        shares === 0
-          ? "미매수(0주)로 저장했습니다. P30 보유 종목 수에서 제외됩니다."
-          : "실제 체결값으로 수정했습니다. 이후 자동 동기화에서도 유지됩니다.",
-      );
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "체결값 수정에 실패했습니다.");
-    } finally {
-      setEditSaving(false);
-    }
-  };
+  const candidates = [...(strategy?.candidates ?? [])].sort((a, b) =>
+    b.signalDate.localeCompare(a.signalDate),
+  );
+  const bought = new Map<string, number>();
+  for (const e of doc?.executions ?? [])
+    if (e.side === "BUY" && e.signalKey)
+      bought.set(e.signalKey, (bought.get(e.signalKey) ?? 0) + e.shares);
 
   return (
     <AppShell>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight">
+          <h1 className="flex items-center gap-2 text-xl font-bold">
             <BriefcaseBusiness className="size-5 text-primary" />
-            포트폴리오 · 실제운용 추적
+            포트폴리오
           </h1>
-          <p className="text-[12px] text-muted-foreground">
-            스크리닝 이력의 KOSPI / KOSDAQ 8.0 Onset은 다음 거래일 시가에 가상 매수하고, Exit 신호는
-            다음 거래일 시가에 가상 매도합니다. 60거래일 만기는 해당일 종가로 처리합니다.
+          <p className="mt-1 text-sm text-muted-foreground">
+            전략대로 운용한 성과와 내가 실제로 투자한 손익을 따로 확인합니다.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void refresh()} disabled={loading}>
-          {loading ? (
-            <Loader2 className="size-3.5 animate-spin" />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={query.isFetching || busy}
+          onClick={() => void query.refetch()}
+        >
+          {query.isFetching ? (
+            <Loader2 className="size-4 animate-spin" />
           ) : (
-            <RefreshCw className="size-3.5" />
+            <RefreshCw className="size-4" />
           )}
           이력 동기화
         </Button>
       </div>
-
-      <StrategyDescription />
-      <section className="mb-4 rounded-lg border border-border bg-card p-4">
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="min-w-[240px] flex-1 text-[12px] font-medium">
-            전체 운용자금
-            <div className="mt-1.5 flex gap-2">
-              <Input
-                type="number"
-                min="1"
-                step="10000"
-                value={capital}
-                onChange={(event) => setCapital(event.target.value)}
-                className="num"
-              />
-              <Button onClick={() => void saveCapital()} disabled={saving} className="gap-1.5">
-                {saving ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Save className="size-3.5" />
-                )}
-                저장
-              </Button>
-            </div>
-          </label>
-          <div className="min-w-[210px] rounded-lg bg-muted/40 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-            P30 기준 목표금액은 운용자금 ÷ 30입니다. 실제 수량은 다음 거래일 시가에서 목표금액에
-            가장 가까운 정수 주식 수로 결정합니다.
-          </div>
+      {query.error ? (
+        <div role="alert" className="mb-4 rounded-lg border border-destructive/30 p-4 text-sm">
+          {query.error instanceof Error ? query.error.message : "원장을 불러오지 못했습니다."}
+          <Button className="ml-3" variant="outline" onClick={() => void query.refetch()}>
+            다시 시도
+          </Button>
         </div>
-        <p className="mt-2 text-[10px] text-muted-foreground">
-          운용자금 변경은 기존 체결기록을 소급 수정하지 않고 이후 신규 진입의 목표금액·수량에
-          적용됩니다. 동일 섹터 보유 한도는 KOSPI 10% / KOSDAQ 20%이며, 거래비용은 왕복 0.30%
-          가정입니다.
-        </p>
-      </section>
-
-      {loading && !state ? (
-        <section className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-          <Loader2 className="mx-auto mb-2 size-5 animate-spin" />
-          스크리닝 이력과 포트폴리오 원장을 동기화하는 중입니다…
-        </section>
-      ) : state ? (
+      ) : null}
+      {!state && query.isPending ? (
+        <div className="p-10 text-center text-sm text-muted-foreground">
+          <Loader2 className="mx-auto mb-3 animate-spin" />두 원장을 준비하고 있습니다. 첫 동기화는
+          저장된 신호를 순서대로 계산합니다.
+        </div>
+      ) : null}
+      {state && doc && strategy ? (
         <>
-          <section className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-            <SummaryItem label="기준 운용자금" value={formatWon(state.settings.initialCapital)} />
-            <SummaryItem label="1개 슬롯 목표" value={formatWon(state.summary.slotTargetAmount)} />
-            <SummaryItem
-              label="보유 종목"
-              value={`${state.summary.openPositions} / ${state.settings.maxPositions}`}
+          <div className="mb-4 grid gap-3 lg:grid-cols-2">
+            <SummaryCard
+              title="전략 포트폴리오"
+              caption="Onset 자동 진입 · 규칙에 따른 자동 청산 · 개인 미매수와 독립"
+              s={strategy.summary}
+              capital={doc.settings.initialCapital}
             />
-            <SummaryItem label="현금" value={formatWon(state.summary.cash)} />
-            <SummaryItem
-              label="총 평가자산"
-              value={formatWon(state.summary.equity)}
-              valueClass={pnlClass(state.summary.totalPnl)}
+            <SummaryCard
+              title="실제 투자"
+              caption="입력한 매수·매도 체결만 반영 · 미매수 0주는 보유 상한에서 제외"
+              s={state.actual.summary}
+              capital={doc.actualCapital}
             />
-            <SummaryItem
-              label="평가손익"
-              value={formatWon(state.summary.unrealizedPnl)}
-              valueClass={pnlClass(state.summary.unrealizedPnl)}
-            />
-            <SummaryItem
-              label="실현손익"
-              value={formatWon(state.summary.realizedPnl)}
-              valueClass={pnlClass(state.summary.realizedPnl)}
-            />
-            <SummaryItem
-              label="누적손익"
-              value={formatWon(state.summary.totalPnl)}
-              valueClass={pnlClass(state.summary.totalPnl)}
-            />
-            <SummaryItem
-              label="누적수익률"
-              value={formatPercent(state.summary.totalReturn, 2)}
-              valueClass={pnlClass(state.summary.totalReturn)}
-            />
-            <SummaryItem label="최근 반영 데이터" value={state.summary.latestDate ?? "-"} />
-          </section>
-
-          {editingTrade ? (
-            <section className="mb-4 rounded-lg border border-primary/30 bg-card p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-sm font-semibold">실제 체결값 수정 · {editingTrade.name}</h2>
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    신호일 {editingTrade.signalDate} · 진입일 {editingTrade.entryDate}은 전략
-                    기록으로 유지합니다. 자동 입력된 다음 거래일 시가와 실제 체결이 다를 때
-                    진입가격과 수량만 보정합니다.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  aria-label="수정 취소"
-                  className="rounded p-1 text-muted-foreground hover:text-foreground"
-                  onClick={() => setEditingTrade(null)}
-                >
-                  <X className="size-4" />
-                </button>
-              </div>
-              <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-                <label className="text-[11px] font-medium">
-                  실제 진입가격
+          </div>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span>
+              저장된 스크리닝 이력 {strategy.firstSignalDate ?? "-"}부터 · 평가 기준{" "}
+              {strategy.summary.latestDate ?? "-"} · 두 원장 각각 최대 30종목
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setCapitals({
+                  strategy: String(doc.settings.initialCapital),
+                  actual: String(doc.actualCapital),
+                })
+              }
+            >
+              운용자금 설정
+            </Button>
+          </div>
+          {capitals ? (
+            <section className="mb-4 rounded-lg border bg-card p-4">
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="text-xs">
+                  전략 기준자금
                   <Input
-                    className="num mt-1"
+                    className="mt-1"
                     type="number"
                     min="1"
-                    step="1"
-                    value={editPrice}
-                    onChange={(event) => setEditPrice(event.target.value)}
+                    value={capitals.strategy}
+                    onChange={(e) => setCapitals({ ...capitals, strategy: e.target.value })}
                   />
                 </label>
-                <label className="text-[11px] font-medium">
-                  실제 매수수량
+                <label className="text-xs">
+                  실제 운용자금
                   <Input
-                    className="num mt-1"
+                    className="mt-1"
                     type="number"
-                    min="0"
-                    step="1"
-                    value={editShares}
-                    onChange={(event) => setEditShares(event.target.value)}
+                    min="1"
+                    value={capitals.actual}
+                    onChange={(e) => setCapitals({ ...capitals, actual: e.target.value })}
                   />
                 </label>
                 <Button
-                  className="gap-1.5"
-                  disabled={editSaving}
-                  onClick={() => void saveEntryEdit()}
+                  disabled={busy}
+                  onClick={async () => {
+                    if (
+                      await mutate({
+                        action: "capital",
+                        strategyCapital: Number(capitals.strategy),
+                        actualCapital: Number(capitals.actual),
+                      })
+                    )
+                      setCapitals(null);
+                  }}
                 >
-                  {editSaving ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Save className="size-3.5" />
-                  )}
-                  체결값 저장
+                  저장
+                </Button>
+                <Button variant="ghost" onClick={() => setCapitals(null)}>
+                  취소
                 </Button>
               </div>
-              <p className="mt-2 text-[10px] text-muted-foreground">
-                실제로 매수하지 않았다면 수량을 0주로 저장하세요. 해당 신호는 원장에는 남지만 P30
-                보유 종목 수·섹터 한도·현금·손익 계산에서는 제외됩니다. 1주 이상이면
-                매수금액·거래비용·평가손익을 다시 계산하며, 이미 청산된 거래라면 실현손익도 수정된
-                실제 체결가와 수량 기준으로 재계산됩니다.
+              <p className="mt-2 text-xs text-muted-foreground">
+                전략 기준자금 변경 시 저장된 신호부터 전략 수량을 다시 계산합니다. 실제 체결 수량은
+                유지됩니다.
               </p>
             </section>
           ) : null}
-
-          <section className="overflow-hidden rounded-lg border border-border bg-card">
-            <div className="border-b border-border bg-surface-strong px-3 py-2">
-              <h2 className="text-sm font-semibold">매수·매도 원장 · 전체 거래</h2>
-              <p className="text-[11px] text-muted-foreground">
-                신호일과 실제 체결일을 분리합니다. 예: 9/17 ONSET → 9/18 데이터를 업로드한 시점에
-                9/18 시가로 매수기록 생성. 청산된 거래와 미매수(0주) 신호도 삭제하지 않고 원장에
-                계속 남깁니다.
+          <details className="mb-4 rounded-lg border bg-card p-3 text-xs">
+            <summary className="cursor-pointer font-medium">운용 규칙과 손익 기준</summary>
+            <div className="mt-3">
+              <StrategyDescription />
+              <p className="mt-2 leading-relaxed text-muted-foreground">
+                전략은 다음 거래일 시가 진입·신호 청산, 60거래일 종가 만기, 왕복 0.30% 비용을
+                적용합니다. 같은 날 후보는 기술점수 → 우선순위점수 → 종목코드 순입니다. 실제 원장은
+                입력한 체결만 반영하며 청산 신호로 자동 매도하지 않습니다. 실제 손익은 입력한
+                수수료·세금과 이동평균 매입원가를 사용합니다. 미체결 매도비용과 배당은 포함하지
+                않습니다. 과거 이관 기록은 기존 비용을 유지합니다.
               </p>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[2140px] text-[11px]">
-                <thead>
-                  <tr className="border-b border-border bg-card text-muted-foreground [&>th]:text-center">
-                    <th className="px-2 py-2 text-left font-medium">종목</th>
-                    <th className="px-2 py-2 text-left font-medium">시장</th>
-                    <th className="px-2 py-2 text-left font-medium">신호일</th>
-                    <th className="px-2 py-2 text-left font-medium">진입일</th>
-                    <th className="px-2 py-2 text-right font-medium">진입가격</th>
-                    <th className="px-2 py-2 text-right font-medium">진입점수 (기술/우선)</th>
-                    <th className="px-2 py-2 text-left font-medium">진입상태</th>
-                    <th className="px-2 py-2 text-right font-medium">목표비중</th>
-                    <th className="px-2 py-2 text-right font-medium">매수금액</th>
-                    <th className="px-2 py-2 text-right font-medium">수량</th>
-                    <th className="px-2 py-2 text-right font-medium">현재가</th>
-                    <th className="px-2 py-2 text-right font-medium">평가금액</th>
-                    <th className="px-2 py-2 text-right font-medium">평가손익</th>
-                    <th className="px-2 py-2 text-right font-medium">수익률</th>
-                    <th className="px-2 py-2 text-right font-medium">보유일수</th>
-                    <th className="px-2 py-2 text-right font-medium">현재 기술점수</th>
-                    <th className="px-2 py-2 text-left font-medium">현재 상태</th>
-                    <th className="px-2 py-2 text-left font-medium">Exit일</th>
-                    <th className="px-2 py-2 text-right font-medium">Exit가격</th>
-                    <th className="px-2 py-2 text-left font-medium">Exit사유</th>
-                    <th className="px-2 py-2 text-right font-medium">실현손익</th>
-                    <th className="px-2 py-2 text-center font-medium">체결수정</th>
+          </details>
+          {state.actual.summary.cash < 0 ? (
+            <p className="mb-3 text-sm text-down">
+              실제 체결금액이 운용자금을 초과했습니다. 추가 입금이 있었다면 실제 운용자금을 맞춰
+              주세요.
+            </p>
+          ) : null}
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div
+              className="flex gap-1 rounded-lg bg-muted p-1"
+              role="tablist"
+              aria-label="포트폴리오 원장"
+            >
+              {[
+                ["strategy", "전략 원장"],
+                ["actual", "실제 보유·거래"],
+                ["signals", "Onset · 미매수"],
+              ].map(([value, label]) => (
+                <Button
+                  key={value}
+                  role="tab"
+                  aria-selected={tab === value}
+                  variant={tab === value ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setTab(value as typeof tab)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+            <Input
+              aria-label="원장 종목 검색"
+              placeholder="종목명 / 종목코드 검색"
+              className="max-w-xs"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+            />
+          </div>
+          {edit ? (
+            <section
+              className="mb-4 rounded-lg border border-primary/40 bg-card p-4"
+              aria-label="실제 체결 입력"
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="font-semibold">
+                    {edit.side === "BUY" ? "실제 매수" : "실제 매도"} · {edit.name}
+                  </h2>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    실제 체결한 값을 입력하세요. 같은 날짜의 체결은 입력 순서대로 계산합니다.
+                  </p>
+                </div>
+                <Button
+                  aria-label="체결 입력 닫기"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setEdit(null)}
+                >
+                  <X className="size-4" />
+                </Button>
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-4">
+                {[
+                  ["date", "체결일", "date"],
+                  ["price", "체결가격", "number"],
+                  ["shares", "체결수량", "number"],
+                  ["fee", "수수료·세금 합계", "number"],
+                ].map(([field, label, type]) => (
+                  <label key={field} className="text-xs">
+                    {label}
+                    <Input
+                      className="mt-1"
+                      type={type}
+                      min={type === "number" ? "0" : undefined}
+                      value={edit[field as "date" | "price" | "shares" | "fee"]}
+                      onChange={(e) => setEdit({ ...edit, [field!]: e.target.value })}
+                    />
+                  </label>
+                ))}
+              </div>
+              <label className="mt-3 block text-xs">
+                메모 / 미매수 사유
+                <Input
+                  className="mt-1"
+                  placeholder="예: 독립성 정책으로 미매수"
+                  value={edit.note}
+                  onChange={(e) => setEdit({ ...edit, note: e.target.value })}
+                />
+              </label>
+              <div className="mt-3 flex items-center gap-3">
+                <Button disabled={busy} onClick={() => void saveExecution()}>
+                  {busy ? <Loader2 className="size-4 animate-spin" /> : null}실제 원장에 저장
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  매수 수량을 0주로 저장하면 미매수로 남고 전략 성과에는 영향을 주지 않습니다.
+                </p>
+              </div>
+            </section>
+          ) : null}
+          {tab === "strategy" ? (
+            <LedgerTable
+              title="전략 원장 · 가상 매수·매도"
+              caption={`전체 Onset ${candidates.length}건 중 전략 진입 ${modelTrades.length}건. 한도 초과와 체결 대기는 Onset 탭에서 확인합니다.`}
+              headers={[
+                "종목",
+                "신호일",
+                "진입일",
+                "진입가 / 수량",
+                "상태",
+                "현재가 / 청산가",
+                "청산일 · 사유",
+                "손익",
+                "수익률",
+              ]}
+              empty={!modelTrades.filter(matches).length}
+            >
+              {modelTrades.filter(matches).map((t) => {
+                const pnl =
+                  t.status === "CLOSED"
+                    ? (t.realizedPnl ?? 0)
+                    : t.shares * (t.currentPrice ?? t.entryPrice) - t.buyAmount - t.entryFee;
+                return (
+                  <tr key={t.id} className="border-t">
+                    <td className={td}>
+                      <StockLink {...t} />
+                    </td>
+                    <td className={td}>{t.signalDate}</td>
+                    <td className={td}>{t.entryDate}</td>
+                    <td className={td}>
+                      {formatPrice(t.entryPrice)} / {t.shares}주
+                    </td>
+                    <td className={td}>{t.currentStatus}</td>
+                    <td className={td}>
+                      {formatPrice(t.status === "CLOSED" ? t.exitPrice : t.currentPrice)}
+                    </td>
+                    <td className={td}>
+                      {t.exitDate ?? "-"}
+                      <br />
+                      {t.exitReason}
+                    </td>
+                    <td className={`${td} ${pnlClass(pnl)}`}>{formatWon(pnl)}</td>
+                    <td className={`${td} ${pnlClass(pnl)}`}>
+                      {formatPercent((pnl / (t.buyAmount + t.entryFee)) * 100, 2)}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {sortedTrades.length === 0 ? (
-                    <tr>
-                      <td colSpan={22} className="px-3 py-10 text-center text-muted-foreground">
-                        아직 체결된 가상 포지션이 없습니다. KOSPI / KOSDAQ 8.0 Onset이 발생한 다음
-                        거래일 데이터가 업로드되면 자동으로 기록됩니다.
+                );
+              })}
+            </LedgerTable>
+          ) : null}
+          {tab === "actual" ? (
+            <>
+              <LedgerTable
+                title={`실제 보유 종목 · ${state.actual.positions.length} / 30`}
+                headers={[
+                  "종목",
+                  "보유수량",
+                  "평균원가",
+                  "현재가",
+                  "평가금액",
+                  "평가손익",
+                  "전략 청산 신호",
+                  "실제 체결",
+                ]}
+                empty={!state.actual.positions.filter(matches).length}
+              >
+                {state.actual.positions.filter(matches).map((p) => (
+                  <tr key={p.symbol} className="border-t">
+                    <td className={td}>
+                      <StockLink {...p} />
+                    </td>
+                    <td className={td}>{p.shares}주</td>
+                    <td className={td}>{formatPrice(p.averagePrice)}</td>
+                    <td className={td}>
+                      {formatPrice(p.currentPrice)}
+                      <br />
+                      <span className="text-muted-foreground">{p.markDate ?? "체결가 기준"}</span>
+                    </td>
+                    <td className={td}>{formatWon(p.marketValue)}</td>
+                    <td className={`${td} ${pnlClass(p.unrealizedPnl)}`}>
+                      {formatWon(p.unrealizedPnl)}
+                    </td>
+                    <td className={td}>
+                      {p.exitSignal ?? "없음"}
+                      <br />
+                      <span className="text-muted-foreground">실제 매도는 직접 기록</span>
+                    </td>
+                    <td className={td}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() =>
+                          setEdit({
+                            id: "",
+                            symbol: p.symbol,
+                            name: p.name,
+                            market: p.market,
+                            signalKey: null,
+                            side: "SELL",
+                            date: today(),
+                            price: String(p.currentPrice),
+                            shares: String(p.shares),
+                            fee: "0",
+                            note: "",
+                          })
+                        }
+                      >
+                        매도 기록
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </LedgerTable>
+              <LedgerTable
+                title="실제 매수·매도 내역"
+                headers={[
+                  "체결일",
+                  "종목",
+                  "구분",
+                  "가격",
+                  "수량",
+                  "수수료·세금",
+                  "실현손익",
+                  "메모",
+                  "수정",
+                ]}
+                empty={!state.actual.executions.filter(matches).length}
+              >
+                {[...state.actual.executions]
+                  .reverse()
+                  .filter(matches)
+                  .map((e) => (
+                    <tr key={e.id} className="border-t">
+                      <td className={td}>{e.date}</td>
+                      <td className={td}>
+                        <StockLink {...e} />
+                      </td>
+                      <td className={td}>{e.side === "BUY" ? "매수" : "매도"}</td>
+                      <td className={td}>{formatPrice(e.price)}</td>
+                      <td className={td}>{e.shares}주</td>
+                      <td className={td}>{formatWon(e.fee)}</td>
+                      <td className={`${td} ${pnlClass(e.realizedPnl ?? 0)}`}>
+                        {e.realizedPnl === null ? "-" : formatWon(e.realizedPnl)}
+                      </td>
+                      <td className="max-w-[250px] px-3 py-3">{e.note}</td>
+                      <td className={td}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() =>
+                            setEdit({
+                              ...e,
+                              price: String(e.price),
+                              shares: String(e.shares),
+                              fee: String(e.fee),
+                            })
+                          }
+                        >
+                          수정
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={busy}
+                          onClick={async () => {
+                            if (
+                              window.confirm(
+                                "잘못 입력한 실제 체결 기록을 삭제할까요? 전략 원장은 유지됩니다.",
+                              )
+                            )
+                              await mutate({ action: "remove", executionId: e.id });
+                          }}
+                        >
+                          삭제
+                        </Button>
                       </td>
                     </tr>
-                  ) : (
-                    sortedTrades.map((trade) => {
-                      const mark = tradeMark(trade, state.settings.roundTripCostRate / 2);
-                      const noFill =
-                        trade.shares === 0 && (trade.exitReason ?? "").startsWith("미매수");
-                      return (
-                        <tr key={trade.id} className="border-b border-border/60 last:border-0">
-                          <td className="whitespace-nowrap px-2 py-2">
-                            <Link
-                              to="/instrument/$symbol"
-                              params={{ symbol: trade.symbol }}
-                              className="font-medium hover:underline"
-                            >
-                              {trade.name}
-                            </Link>
-                            <span className="num ml-1 text-[9px] text-muted-foreground">
-                              {trade.symbol}
-                            </span>
-                          </td>
-                          <td className="px-2 py-2">{trade.market}</td>
-                          <td className="num px-2 py-2">{trade.signalDate}</td>
-                          <td className="num px-2 py-2">{trade.entryDate}</td>
-                          <td className="num px-2 py-2 text-right">
-                            {formatPrice(trade.entryPrice)}
-                          </td>
-                          <td className="num px-2 py-2 text-right font-medium">
-                            {formatNumber(trade.entryTechnicalPoints, 1)} /{" "}
-                            {formatNumber(trade.entryPriorityPoints, 1)}
-                          </td>
-                          <td className="whitespace-nowrap px-2 py-2">
-                            <Badge variant="outline" className="text-[9px] text-up">
-                              {trade.entryStatus}
-                            </Badge>
-                          </td>
-                          <td className="num px-2 py-2 text-right">
-                            {(trade.targetWeight * 100).toFixed(2)}%
-                          </td>
-                          <td className="num px-2 py-2 text-right">{formatWon(trade.buyAmount)}</td>
-                          <td className="num px-2 py-2 text-right">
-                            {trade.shares.toLocaleString("ko-KR")}주
-                          </td>
-                          <td className="num px-2 py-2 text-right">
-                            {trade.status === "OPEN" ? formatPrice(trade.currentPrice) : "-"}
-                          </td>
-                          <td className="num px-2 py-2 text-right">
-                            {mark.marketValue === null ? "-" : formatWon(mark.marketValue)}
-                          </td>
-                          <td
-                            className={`num px-2 py-2 text-right font-medium ${pnlClass(mark.pnl)}`}
-                          >
-                            {mark.pnl === null ? "-" : formatWon(mark.pnl)}
-                          </td>
-                          <td
-                            className={`num px-2 py-2 text-right font-medium ${pnlClass(mark.returnPct)}`}
-                          >
-                            {mark.returnPct === null ? "-" : formatPercent(mark.returnPct, 2)}
-                          </td>
-                          <td className="num px-2 py-2 text-right">{trade.holdingDays}</td>
-                          <td className="num px-2 py-2 text-right">
-                            {formatNumber(trade.currentTechnicalPoints, 1)}
-                          </td>
-                          <td className="max-w-[220px] px-2 py-2">{trade.currentStatus ?? "-"}</td>
-                          <td className="num px-2 py-2">
-                            {noFill ? "-" : (trade.exitDate ?? "-")}
-                          </td>
-                          <td className="num px-2 py-2 text-right">
-                            {noFill ? "-" : formatPrice(trade.exitPrice)}
-                          </td>
-                          <td className="whitespace-nowrap px-2 py-2">{trade.exitReason ?? "-"}</td>
-                          <td
-                            className={`num px-2 py-2 text-right font-semibold ${pnlClass(trade.realizedPnl)}`}
-                          >
-                            {trade.realizedPnl === null ? "-" : formatWon(trade.realizedPnl)}
-                          </td>
-                          <td className="px-2 py-2 text-center">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 gap-1 px-2 text-[10px]"
-                              onClick={() => startEntryEdit(trade)}
-                            >
-                              <Pencil className="size-3" /> 수정
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                  ))}
+              </LedgerTable>
+            </>
+          ) : null}
+          {tab === "signals" ? (
+            <LedgerTable
+              title="전체 Onset · 실제 매수 여부"
+              caption="전략 한도와 관계없이 모든 신호를 보여줍니다. 새 신호는 실제 수량 0주로 시작하며, 매수한 경우에만 체결을 입력하세요."
+              headers={[
+                "종목",
+                "신호일",
+                "전략 판단",
+                "전략 진입일",
+                "실제 매수 누계",
+                "실제 상태 / 사유",
+                "체결 입력",
+              ]}
+              empty={!candidates.filter(matches).length}
+            >
+              {candidates.filter(matches).map((c) => (
+                <tr key={c.key} className="border-t">
+                  <td className={td}>
+                    <StockLink {...c} />
+                  </td>
+                  <td className={td}>{c.signalDate}</td>
+                  <td className={td}>{c.decision}</td>
+                  <td className={td}>{c.entryDate ?? "다음 거래일 대기"}</td>
+                  <td className={td}>{bought.get(c.key) ?? 0}주</td>
+                  <td className={td}>
+                    {bought.has(c.key)
+                      ? "실제 체결 기록됨"
+                      : (doc.excluded[c.key] ?? "미체결 · 확인 대기")}
+                  </td>
+                  <td className={td}>
+                    <Button variant="outline" size="sm" disabled={busy} onClick={() => beginBuy(c)}>
+                      매수 / 미매수 기록
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </LedgerTable>
+          ) : null}
         </>
       ) : null}
     </AppShell>

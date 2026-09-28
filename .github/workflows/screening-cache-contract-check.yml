@@ -12,6 +12,8 @@ on:
       - src/lib/freshStorage.ts
       - scripts/analysis-run-store.ts
       - src/lib/portfolio*.ts
+      - src/routes/portfolio.tsx
+      - vitest.portfolio.config.ts
       - src/lib/datasetDataStatus.ts
       - src/lib/usBrowserViews.ts
       - tests/us-browser-views.test.ts
@@ -46,6 +48,8 @@ jobs:
         run: npx vitest run src/lib/cloud.test.ts tests/us-browser-views.test.ts tests/web-screening-server-only.test.ts src/lib/portfolioStrategy.test.ts tests/fast-chart.test.ts tests/instrument-chart-cache.test.ts tests/dashboard-cache.test.ts src/lib/engine/operationalStrategy.test.ts src/lib/engine/etfStrategy.test.ts
       - name: Lint changed cache files
         run: npx eslint src/lib/screeningCache.ts src/lib/webScreening.functions.ts src/lib/screeningCacheContract.ts
+      - name: Test independent portfolio ledgers
+        run: npx vitest run --config vitest.portfolio.config.ts
       - name: Build
         id: build
         shell: bash
