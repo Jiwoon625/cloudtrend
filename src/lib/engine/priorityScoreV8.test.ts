@@ -67,6 +67,23 @@ describe("buildPriorityScoreV8", () => {
     expect(result.rows.filter((r) => r.group === "Supply Risk").every((r) => r.status === "NO_DATA")).toBe(true);
   });
 
+  it("shows recent supply data when 20D history is still insufficient", () => {
+    const result = buildPriorityScoreV8(legacyPriority(), 100, {
+      shortSellingVolumeRate20dChangePp: null,
+      shortSellingVolumeRateLatest: 1.75,
+      shortSellingVolumeRateObservationCount: 10,
+      lendingBalanceQuantity20dChange: null,
+      lendingBalanceQuantityLatest: 123456,
+      lendingBalanceQuantityObservationCount: 10,
+    });
+    const supplyRows = result.rows.filter((r) => r.group === "Supply Risk");
+    expect(supplyRows[0]?.actual).toContain("유효 10/21");
+    expect(supplyRows[0]?.actual).toContain("1.75%");
+    expect(supplyRows[1]?.actual).toContain("유효 10/21");
+    expect(supplyRows[1]?.actual).toContain("123,456주");
+    expect(supplyRows.every((r) => r.status === "NO_DATA")).toBe(true);
+  });
+
   it("keeps missing rotation out of available max", () => {
     const result = buildPriorityScoreV8(legacyPriority(), null);
     expect(result.maxPoints).toBe(5);
