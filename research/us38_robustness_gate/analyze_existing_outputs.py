@@ -4,11 +4,11 @@ This does not re-run the simulator. It deliberately uses already frozen paths;
 missing input data means no new execution surface or PIT claim is produced.
 """
 from pathlib import Path
-import zipfile, pandas as pd, numpy as np, json
+import zipfile, pandas as pd, numpy as np, json, os
 
-ROOT=Path(__file__).resolve().parents[2]
-US35=Path('/tmp/US35_results.zip')
-US37=ROOT/'attachments/59f9e599-ea9c-486c-ac69-ac422d129128/US37_results.zip'
+HERE=Path(__file__).resolve().parent
+US35=Path(os.environ.get('US35_RESULTS_ZIP',HERE/'US35_results.zip'))
+US37=Path(os.environ.get('US37_RESULTS_ZIP',HERE/'US37_results.zip'))
 OUT=Path(__file__).resolve().parent/'outputs'; OUT.mkdir(exist_ok=True)
 CANDIDATES={
  'A0_quarter':'daily_v3_A0_quarter.csv','A0_bimonth':'daily_v3_A0_bimonth.csv',
