@@ -15,6 +15,8 @@ export const Route = createFileRoute("/us/screener")({
   component: UsScreenerPage,
 });
 
+const EMPTY_ROWS: UsProspectiveCacheRow[] = [];
+
 type Filter =
   "PRIMARY_WATCH" | "PRIMARY_ENTRY" | "PRIMARY_EXIT" | "A2_ENTRY" | "B3_ENTRY" | "B3_EXIT" | "ALL";
 
@@ -36,8 +38,9 @@ function UsScreenerPage() {
   });
   const [filter, setFilter] = useState<Filter>("PRIMARY_ENTRY");
   const [sector, setSector] = useState("");
+  const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
-  const rows = query.data?.analysis.rows ?? [];
+  const rows = query.data?.analysis.rows ?? EMPTY_ROWS;
   const filtered = useMemo(() => {
     const q = search.trim().toUpperCase();
     return rows.filter((r) => {
@@ -53,6 +56,10 @@ function UsScreenerPage() {
       return r.coreRank !== null;
     });
   }, [rows, filter, search, sector]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / 100));
+  const currentPage = Math.min(page, pageCount - 1);
+  const visibleRows = filtered.slice(currentPage * 100, (currentPage + 1) * 100);
 
   const download = () => {
     const header = [
@@ -151,7 +158,10 @@ function UsScreenerPage() {
               ).map(([id, label]) => (
                 <button
                   key={id}
-                  onClick={() => setFilter(id)}
+                  onClick={() => {
+                    setFilter(id);
+                    setPage(0);
+                  }}
                   className={`rounded-full border px-2.5 py-1 text-[11px] ${filter === id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card"}`}
                 >
                   {label}
@@ -162,13 +172,19 @@ function UsScreenerPage() {
               <Input
                 className="h-8 max-w-sm text-[12px]"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(0);
+                }}
                 placeholder="티커 또는 종목명"
               />
               <select
                 aria-label="섹터"
                 value={sector}
-                onChange={(e) => setSector(e.target.value)}
+                onChange={(e) => {
+                  setSector(e.target.value);
+                  setPage(0);
+                }}
                 className="mt-2 rounded border bg-background p-1 text-xs"
               >
                 <option value="">전체 섹터</option>
@@ -181,6 +197,27 @@ function UsScreenerPage() {
                   ))}
               </select>
             </div>
+            <nav aria-label="종목 페이지" className="flex items-center gap-3 text-xs">
+              <span>
+                전체 {filtered.length.toLocaleString()}종목 · {currentPage + 1} / {pageCount}페이지
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={currentPage === 0}
+                onClick={() => setPage(currentPage - 1)}
+              >
+                이전
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={currentPage + 1 >= pageCount}
+                onClick={() => setPage(currentPage + 1)}
+              >
+                다음
+              </Button>
+            </nav>
             <div className="overflow-x-auto rounded-lg border border-border bg-card">
               <table className="w-full min-w-[1280px] text-[11px]">
                 <thead>
@@ -206,7 +243,7 @@ function UsScreenerPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((r) => (
+                  {visibleRows.map((r) => (
                     <ScreenerRow key={r.symbol} row={r} />
                   ))}
                 </tbody>

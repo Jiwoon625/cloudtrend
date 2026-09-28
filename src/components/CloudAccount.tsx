@@ -1,9 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/cloud";
-import { hydrateManualData } from "@/lib/manualDataStore";
-import { hydrateUsData } from "@/lib/usDataStore";
-import { hydrateSnapshots } from "@/lib/screeningHistory";
-import { syncPortfolioFromHistory } from "@/lib/portfolioStore";
 import loginBgAsset from "@/assets/login-bg.webp.asset.json";
 
 const LOGIN_BG_PLACEHOLDER =
@@ -12,13 +8,7 @@ const LOGIN_BG_STYLE = {
   backgroundImage: `url(${loginBgAsset.url}), url(${LOGIN_BG_PLACEHOLDER})`,
 } as const;
 
-export function CloudAccount({
-  children,
-  hydrateLegacyData = true,
-}: {
-  children: ReactNode;
-  hydrateLegacyData?: boolean;
-}) {
+export function CloudAccount({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [account, setAccount] = useState<string | null>(null);
@@ -26,61 +16,11 @@ export function CloudAccount({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const lastAuthenticatedUserId = useRef<string | null>(null);
-  const hydrationAttempted = useRef(new Set<string>());
   useEffect(() => {
     let alive = true;
 
-    const startCloudHydration = (userId: string) => {
-      // Prospective US routes load their own small, frozen result files.
-      // Parsing legacy KR history here can block the main thread for minutes.
-      if (!hydrateLegacyData || hydrationAttempted.current.has(userId)) return;
-      hydrationAttempted.current.add(userId);
-
-      const tasks = [
-        { label: "국내 데이터", run: () => hydrateManualData() },
-        { label: "미국 데이터", run: () => hydrateUsData() },
-        { label: "스크리닝 이력", run: () => hydrateSnapshots() },
-      ] as const;
-
-      void Promise.allSettled(tasks.map((task) => task.run())).then((results) => {
-        if (!alive) return;
-
-        const failed = results.flatMap((result, index) =>
-          result.status === "rejected" ? [tasks[index]!.label] : [],
-        );
-        if (failed.length > 0) {
-          console.warn(
-            "Cloud data hydration partially failed after authentication",
-            results
-              .map((result, index) => ({ label: tasks[index]!.label, result }))
-              .filter(({ result }) => result.status === "rejected"),
-          );
-          setMessage(
-            `로그인은 정상입니다. 클라우드 데이터 일부를 불러오지 못했습니다: ${failed.join(
-              ", ",
-            )}. 필요하면 '다른 기기의 최신 데이터 불러오기'로 다시 시도해 주세요.`,
-          );
-        } else {
-          setMessage((current) =>
-            current.startsWith("로그인은 정상입니다. 클라우드 데이터 일부를 불러오지 못했습니다")
-              ? ""
-              : current,
-          );
-        }
-
-        // Portfolio reconciliation depends on screening history. Keep it best-effort
-        // and never let it block or roll back an otherwise valid authenticated session.
-        if (results[2]?.status === "fulfilled") {
-          window.setTimeout(() => {
-            void syncPortfolioFromHistory().catch(() => undefined);
-          }, 0);
-        }
-      });
-    };
-
     const applySession = (
       session: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"],
-      event?: string,
     ) => {
       const nextId = session?.user.id ?? null;
 
@@ -91,25 +31,23 @@ export function CloudAccount({
         return;
       }
       if (nextId) lastAuthenticatedUserId.current = nextId;
-      if (event === "SIGNED_OUT") hydrationAttempted.current.clear();
 
       if (!alive) return;
       setAccount(session?.user.email ?? null);
       setReady(true);
-      if (nextId) startCloudHydration(nextId);
     };
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      applySession(session, event);
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      applySession(session);
     });
 
     void supabase.auth
       .getSession()
       .then(({ data, error }) => {
         if (error) throw error;
-        applySession(data.session, "INITIAL_SESSION");
+        applySession(data.session);
       })
       .catch((e: Error) => {
         if (!alive) return;
@@ -121,7 +59,7 @@ export function CloudAccount({
       alive = false;
       subscription.unsubscribe();
     };
-  }, [hydrateLegacyData]);
+  }, []);
   async function authenticate(signUp: boolean) {
     setBusy(true);
     setMessage("");

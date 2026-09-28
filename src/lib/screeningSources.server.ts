@@ -46,7 +46,7 @@ function decodeSource(bytes: Uint8Array) {
   }
 }
 
-export async function loadActiveSources(client: SupabaseClient, userId: string) {
+export async function listActiveSources(client: SupabaseClient, userId: string) {
   const { data, error } = await client
     .from("analysis_source_files")
     .select(
@@ -61,6 +61,11 @@ export async function loadActiveSources(client: SupabaseClient, userId: string) 
   const sources = (data ?? []) as ActiveSourceRecord[];
   if (sources.length === 0) throw new Error("활성 스크리닝 원천데이터가 없습니다.");
 
+  return sources;
+}
+
+export async function loadActiveSources(client: SupabaseClient, userId: string) {
+  const sources = await listActiveSources(client, userId);
   const texts: string[] = [];
   for (const source of sources) {
     const { data: blob, error: downloadError } = await client.storage

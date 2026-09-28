@@ -98,6 +98,7 @@ export function useSnapshots(): {
     const l = () => setSnapshots(loadSnapshots());
     l();
     listeners.add(l);
+    void hydrateSnapshots().catch((e: Error) => toast.error(e.message));
     return () => {
       listeners.delete(l);
     };

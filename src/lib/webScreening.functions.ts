@@ -1,4 +1,4 @@
-import { inputFingerprint, loadActiveSources } from "./screeningSources.server";
+import { inputFingerprint, loadActiveSources, listActiveSources } from "./screeningSources.server";
 import { primeChartContext, publishRecentPrices } from "./instrumentChartStore.server";
 import { createHash } from "node:crypto";
 
@@ -136,4 +136,31 @@ export const runWebScreeningServer = createServerFn({ method: "POST" })
       inputFingerprint: fingerprint,
       resultDigest: digest,
     };
+  });
+
+export const dataStatusServer = createServerFn({ method: "POST" })
+  .inputValidator((input: { accessToken: string; config?: unknown }) => ({
+    accessToken: String(input.accessToken ?? ""),
+    config: mergeScoringConfig(input.config),
+  }))
+  .handler(async ({ data }) => {
+    const client = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    });
+    const { data: auth, error } = await client.auth.getUser(data.accessToken);
+    if (error || !auth.user) throw new Error("로그인 세션 검증에 실패했습니다.");
+    const sources = await listActiveSources(client, auth.user.id);
+    const fingerprint = inputFingerprint(sources, data.config);
+    const path = `${auth.user.id}/cache/data-status/${fingerprint}.json`;
+    const { data: cached, error: cacheError } = await client.storage
+      .from(ANALYSIS_BUCKET)
+      .download(path);
+    if (!cacheError && cached)
+      return JSON.parse(await cached.text()) as import("./market.functions").DataStatusPayload;
+    const { texts } = await loadActiveSources(client, auth.user.id);
+    const { computeDatasetDataStatus } = await import("./datasetDataStatus");
+    const status = computeDatasetDataStatus(parseManualMarketData(texts).dataset, data.config);
+    await uploadJson(client, path, status);
+    return status;
   });

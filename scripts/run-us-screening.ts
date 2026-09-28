@@ -1,3 +1,6 @@
+import { gzipSync } from "node:zlib";
+import { usBrowserViews } from "../src/lib/usBrowserViews";
+import type { UsProspectiveCache } from "../src/lib/usProspectiveCloud";
 import process from "node:process";
 
 import {
@@ -19,6 +22,23 @@ import {
   US_PROSPECTIVE_STRATEGIES,
   type UsPortfolioState,
 } from "../src/lib/engine/usProspectivePortfolio";
+
+async function publishBrowserViews(
+  client: ReturnType<typeof trustedSupabaseClient>,
+  uid: string,
+  result: unknown,
+) {
+  const views = usBrowserViews(result as UsProspectiveCache);
+  const compressed = gzipSync(JSON.stringify(views.screening));
+  const { error } = await client.storage
+    .from(ANALYSIS_BUCKET)
+    .upload(`${uid}/cache/us-screening/view-v1.json.gz`, compressed, {
+      upsert: true,
+      contentType: "application/gzip",
+    });
+  if (error) throw error;
+  await uploadJson(client, `${uid}/cache/us-screening/summary-v1.json`, views.summary);
+}
 
 function arg(name: string) {
   const i = process.argv.indexOf(name);
@@ -118,6 +138,7 @@ async function main() {
     );
     if (!completed) throw new Error("Completed US result is missing");
     await uploadJson(client, `${userId}/cache/us-screening/latest.json`, completed);
+    await publishBrowserViews(client, userId, completed);
     console.log("US date already completed; portfolio and streak unchanged.");
     return;
   }
@@ -388,6 +409,7 @@ async function main() {
   const { error: historyError } = await client.from("us_screening_history").insert(historyRecord);
   if (historyError) throw historyError;
   await uploadJson(client, latestCachePath, existingResult ?? cachePayload);
+  await publishBrowserViews(client, userId, existingResult ?? cachePayload);
 
   console.log(
     JSON.stringify(

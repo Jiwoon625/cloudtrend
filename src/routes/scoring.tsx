@@ -14,7 +14,6 @@ import {
   VF_STOCK_PL_FALLBACK_OVERHEAT_THRESHOLD,
 } from "@/lib/engine/vfConfig";
 import { getManualDataText } from "@/lib/manualDataStore";
-import { syncPortfolioFromHistory } from "@/lib/portfolioStore";
 import { setScreeningStarted } from "@/lib/screeningRun";
 
 export const Route = createFileRoute("/scoring")({
@@ -80,7 +79,6 @@ function ScoringPage() {
     queryClient.removeQueries({ queryKey: ["market-analysis"] });
     queryClient.removeQueries({ queryKey: ["data-status"] });
     queryClient.removeQueries({ queryKey: ["instrument"] });
-    if (ok) void syncPortfolioFromHistory().catch(() => undefined);
   };
 
   const startScreening = () => {
