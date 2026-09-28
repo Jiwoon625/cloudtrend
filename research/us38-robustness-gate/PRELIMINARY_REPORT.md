@@ -1,3 +1,5 @@
+> HISTORICAL PRELIMINARY ARTIFACT — superseded by the actual 2026-09-28 run in `research/us38-robustness-gate/completed_run_20260928/` and the updated Notion US3.8 page. Missing-grid/auth-blocked statements and the old PBO convention below are not current results. Strict PIT remains NOT PASSED / PENDING.
+
 # US3.8 — Robustness / Overfitting Gate
 
 **Status: INCOMPLETE — no Production conclusion.** This is a preliminary audit of the frozen US3.5/US3.7 result files. All six candidates and three controls remain unchanged. This report does not promote a new parameter.

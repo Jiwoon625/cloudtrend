@@ -1,3 +1,5 @@
+> HISTORICAL PRELIMINARY ARTIFACT — superseded by the actual 2026-09-28 run in `research/us38-robustness-gate/completed_run_20260928/` and the updated Notion US3.8 page. Missing-grid/auth-blocked statements and the old PBO convention below are not current results. Strict PIT remains NOT PASSED / PENDING.
+
 # US3.8 — Robustness / Overfitting Gate
 
 This folder contains preliminary, non-reoptimized diagnostics from the frozen US3.5/US3.7 outputs. It is **not a completed validation gate**. No simulator rerun was possible because the full feature/price inputs are held in multi-gigabyte Drive files that this connector cannot materialize (the Drive fetch endpoint rejected `stocks.csv` at 3.17 GB against its 256 MiB limit). Sharadar/PIT collector code exists, but no processed Sharadar PIT dataset was found in the Drive folder.

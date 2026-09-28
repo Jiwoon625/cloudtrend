@@ -1,0 +1,8 @@
+{
+  "status": "REPLAY_AND_DIAGNOSTICS_COMPLETE",
+  "cases": 245,
+  "baselineParity": "PASS",
+  "strictPIT": "NOT PASSED / PENDING",
+  "productionDecision": "NO PROMOTION",
+  "output": "/content/drive/MyDrive/미국주식데이터/US38_robustness_gate_20260928/replay_20260928_authorized"
+}

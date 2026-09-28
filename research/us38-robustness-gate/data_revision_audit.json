@@ -1,6 +1,6 @@
 {
   "research_stage": "US3.8 — Robustness / Overfitting Gate",
-  "status": "RAW_SHARADAR_AVAILABLE_PIT_RECONSTRUCTION_PENDING",
+  "status": "REPLAY_COMPLETE_STRICT_PIT_NOT_PASSED",
   "anchor_commit": "b4d47858bccd5b732b88af9b14368ac9581e770a",
   "frozen_candidate_source": "US3.5 candidate_freeze and US3.7 design_frozen",
   "price_correction_revision": 3,
@@ -28,7 +28,7 @@
     "result": "rejected_before_download",
     "interpretation": "Connector transport limit only; raw source remains in Drive and can be streamed from Colab."
   },
-  "interpretation": "US3.5/US3.7 already use Sharadar-derived full-history prices/features, expanded-universe mapping v2 and verified corporate-event correction revision 3. The current results are Sharadar-based but not certified as strict point-in-time historical membership/category/sector results. Strict universe reconstruction, QC, and replay of the same nine frozen settings on that separate revision remain pending. US3.8 diagnostic Colab runner is prepared but has not executed because Google requires passkey verification.",
+  "interpretation": "US3.5/3.7 and this 245-path replay use Sharadar full-history derived features/prices, mapping v2 and corporate correction revision 3. All nine baselines passed daily parity before diagnostics. Historical listing eligibility, effective ticker/category/sector intervals and independent table publication vintages remain uncertified. Strict PIT reconstruction and replay are NOT PASSED / PENDING; metrics.csv is not used as a historical feature panel.",
   "sharadar_raw_full_history_available": true,
   "sharadar_source_folder": "Google Drive / 미국주식데이터",
   "sharadar_manifest_file": "manifest.json",
@@ -66,5 +66,15 @@
   "strict_pit_membership_reconstruction_complete": false,
   "strict_pit_frozen_nine_rerun_complete": false,
   "us38_colab_runner_prepared": true,
-  "us38_colab_execution_status": "PENDING_GOOGLE_PASSKEY_VERIFICATION; no new surface or parity output computed"
+  "us38_colab_execution_status": "PENDING_GOOGLE_PASSKEY_VERIFICATION; no new surface or parity output computed",
+  "us38_baseline_parity_max_error": 9.974659986866641e-17,
+  "us38_baseline_parity_tolerance": 1e-10,
+  "us38_baseline_paths": 9,
+  "us38_actual_replay_cases": 245,
+  "us38_capacity_violations": 0,
+  "us38_strict_PIT_replay_completed": false,
+  "production_promotion": false,
+  "run_directory": "US38_robustness_gate_20260928/replay_20260928_authorized",
+  "runner_commit": "628e1073c63d7b789a12d468638e894c5304035f",
+  "export_commit": "5aa7a809812d786fded864041013ea38006ae531"
 }

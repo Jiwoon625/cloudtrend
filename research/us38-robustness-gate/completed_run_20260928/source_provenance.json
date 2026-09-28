@@ -1,0 +1,19 @@
+{
+  "anchor": "b4d47858bccd5b732b88af9b14368ac9581e770a",
+  "researchCommit": "628e1073c63d7b789a12d468638e894c5304035f",
+  "sourceHashes": {
+    "US35_followup_20260928/us35_core.py": "3d3f7d607b22a6c7ee4c9aa122730ae66848c6113f3d78598dd779c321374c7c",
+    "US35_followup_20260928/design_frozen.json": "fa2d750290d0c9ea80f75c764171227bcb30cddca978f111209f27594768952e",
+    "US37_start2023_controlled_20260928/us37_controlled_core.py": "da8e92192dda666ed9aa1e396b1af8ab76270959d13e86e783ba61c72fe9979c",
+    "US37_start2023_controlled_20260928/run_us37_controlled.py": "c2f3e6eb3c713707536290be84ce1645e549fe3f9c1cf542f7e7fd62a336f7a2",
+    "US34_sensitivity_20260927/final/prepare_us34.py": "0bdc338756a65c11bfe645b72279f36d9696b3385b6d5ecbea4c629d6bc41b89",
+    "US34_sensitivity_20260927/final/run_us34.py": "e3011ddd61ab58e4f70dff50de894301d9a7c0ef9f944d4e58b7c0d5a2ba1eba",
+    "US34_sensitivity_20260927/final/corporate_event_corrections.json": "f9640e52c2d0b77b4bbeaf3e6dd9a5c21a3cd3e214e61a9a052f710ee4701ef4",
+    "US33_validation_20260927/run_validation.py": "17d893c1f4f4977751491279194ba5eadd216504c2632c4d42b3e019d6ed5f76",
+    "US33_validation_20260927/verified_events.py": "109e8c45a5ea2cf285dd6197ed3689eee09cde2c4c1c5b7485f5dd1fe1379bd5",
+    "US35_followup_20260928/mapping_v2.csv": "1a9014139900cc4179fbd7e72bca94cf36abb4e4eb14df4a775e97b4dd89c1cc"
+  },
+  "corporateRevision": 3,
+  "mapping": "20260927_r2",
+  "strictPIT": "NOT PASSED / PENDING"
+}

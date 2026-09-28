@@ -1,0 +1,10 @@
+{
+  "bootstrap": "10,000 paired circular blocks, 21/63; all 15 comparisons jointly; fixed bootstrap SE approximation, no re-simulation",
+  "PBO": "10 chronological blocks; 252 half-splits; ONLY fixed 9 settings; neither global search PBO nor a guaranteed lower bound",
+  "rankCorrection": "standard r/(N+1), logit<=0 includes median. Earlier r/N<=0.5 excluded rank 5 of 9. Both reported; simple-return Sharpe primary and legacy log-return Sharpe diagnostic.",
+  "DSR": {
+    "status": "NOT COMPUTED",
+    "reason": "No defensible full independent trial count. US34/US35 scenario counts include correlated/duplicate execution variants and omit broader research history."
+  },
+  "dataUse": "2017-2026 historical selection/review; no untouched OOS"
+}

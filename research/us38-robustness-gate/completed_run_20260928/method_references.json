@@ -1,0 +1,5 @@
+{
+  "PBO": "https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf",
+  "DSR": "https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf",
+  "note": "PBO finite-nine diagnostic only; DSR withheld without justified trial count; max-T uses fixed bootstrap SE approximation."
+}

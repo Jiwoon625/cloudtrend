@@ -1,0 +1,7 @@
+variant,classification,reason,strictPIT,productionPromotionAllowed
+A0_quarter,INCONCLUSIVE,"진단 간격 전반의 MDD는 비교적 완만하지만 자체 대조군 대비 max-T가 0 포함. Top5 제외 CAGR 12.97%, IT_HW 제외 13.10%; REAL5 15.98%. 분기 우위 확정 불가.",NOT PASSED / PENDING,False
+A0_bimonth,INCONCLUSIVE,"분기와 통계적으로 구분되지 않으며 Top5 제외 13.05%, IT_HW 제외 13.37%. REAL5 15.81%와 자금별 경로 변화가 있어 기존 baseline 교체 근거 부족.",NOT PASSED / PENDING,False
+A2_quarter,PROMISING BUT SENSITIVE,"자체 대조군 대비 개별 구간 개선은 있으나 max-T 후 불확실. 기본 MDD −58.42%, 2021 fresh MDD −63.38%, 2024 집중. Top5 제외 17.09%로 일부 유지되지만 견고성 인증 불가.",NOT PASSED / PENDING,False
+A2_week,PROMISING BUT SENSITIVE,"기본 낙폭은 분기보다 작으나 turnover 12.92x, 50bp CAGR 14.15%, IT_HW 제외 7.93%, Top10 제외 5.37%. 비용·집중·시작점에 민감.",NOT PASSED / PENDING,False
+B3_w55,REJECT / DIAGNOSTIC ONLY,"55%의 좁은 Core 봉우리, 2021 fresh CAGR 7.53%, Top3 제외 12.43%/MDD −66.29%, 50bp CAGR 19.26%. 과거 최고 CAGR을 Production 우승 근거로 기각; 고정 진단 설정은 보존.",NOT PASSED / PENDING,False
+B3_beta60d3,PROMISING BUT SENSITIVE,"기본 MDD 개선은 있으나 동일 threshold의 2/5일 CAGR 13.01/11.84%로 국소 불안정. Top10 제외 9.65%, IT_HW 제외 9.74%, 일부 fresh 시작 SPY 하회. 높은 turnover와 PIT 미통과.",NOT PASSED / PENDING,False

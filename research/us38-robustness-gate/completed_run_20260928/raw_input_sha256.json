@@ -1,0 +1,34 @@
+{
+  "descriptions.csv": {
+    "bytes": 93778,
+    "sha256": "5a64680bcce4d35ddda697b143ffb9bc6f828b06df3921bd40a6cdd6e9393dcf"
+  },
+  "actions.csv": {
+    "bytes": 49568954,
+    "sha256": "37f01d0d0c75016c8bfca1f2967e9850bdf23782ac536f46b58d4b1f2ac9afed"
+  },
+  "metrics.csv": {
+    "bytes": 3819669,
+    "sha256": "f4774f06fa8d2306b49fb9c2754faa5e61dffafefa7876fc344fad5bc57ff2a5"
+  },
+  "stocks.csv": {
+    "bytes": 3167196337,
+    "sha256": "21d30b7424b28f3f5628dff7e13e6bccb5a26dff4d988c745c5b9d7d17dc3840"
+  },
+  "tickers.csv": {
+    "bytes": 24975596,
+    "sha256": "d3a92545064935bae5f1f4a82fda0ade85a9feedae963b2a109e46598dc50d03"
+  },
+  "sp500.csv": {
+    "bytes": 3332824,
+    "sha256": "02f55c743ce9b3a674552796b2fda28b857cf55a9d965fc36ff131c17c48ad80"
+  },
+  "funds.csv": {
+    "bytes": 1114713626,
+    "sha256": "f6b063647637ac53c44c90df47b75bd5fc5898a732b7022bb80ef5e32b473ab8"
+  },
+  "manifest.json": {
+    "bytes": 6336,
+    "sha256": "bf2eccc3d5f8ecf02fa7ffea63a1759b430acc897416e331e4a4c77a41b18d7e"
+  }
+}

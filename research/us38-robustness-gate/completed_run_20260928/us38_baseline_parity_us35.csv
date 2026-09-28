@@ -1,0 +1,10 @@
+config,sameDates,finiteReturns,days,maxDailyReturnError,tolerance,passed
+A0_event,True,True,2442,9.974659986866641e-17,1e-10,True
+A0_quarter,True,True,2442,9.974659986866641e-17,1e-10,True
+A0_bimonth,True,True,2442,9.974659986866641e-17,1e-10,True
+A2_event,True,True,2442,9.974659986866641e-17,1e-10,True
+A2_quarter,True,True,2442,9.974659986866641e-17,1e-10,True
+A2_week,True,True,2442,9.974659986866641e-17,1e-10,True
+B3_w50,True,True,2442,9.974659986866641e-17,1e-10,True
+B3_w55,True,True,2442,9.93129189996722e-17,1e-10,True
+B3_beta60d3,True,True,2442,9.93129189996722e-17,1e-10,True
