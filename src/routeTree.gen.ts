@@ -22,6 +22,7 @@ import { Route as InstrumentSymbolRouteImport } from './routes/instrument.$symbo
 import { Route as ScreenerEtfsRouteImport } from './routes/screener.etfs'
 import { Route as ScreenerStocksRouteImport } from './routes/screener.stocks'
 import { Route as UsIndexRouteImport } from './routes/us.index'
+import { Route as UsPortfolioRouteImport } from './routes/us.portfolio'
 import { Route as UsScreenerRouteImport } from './routes/us.screener'
 import { Route as ApiGptUploadRouteImport } from './routes/api.gpt.upload'
 import { Route as UsInstrumentSymbolRouteImport } from './routes/us.instrument.$symbol'
@@ -91,6 +92,11 @@ const UsIndexRoute = UsIndexRouteImport.update({
   path: '/us/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UsPortfolioRoute = UsPortfolioRouteImport.update({
+  id: '/us/portfolio',
+  path: '/us/portfolio',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const UsScreenerRoute = UsScreenerRouteImport.update({
   id: '/us/screener',
   path: '/us/screener',
@@ -120,6 +126,7 @@ export interface FileRoutesByFullPath {
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
   '/screener/stocks': typeof ScreenerStocksRoute
+  '/us/portfolio': typeof UsPortfolioRoute
   '/us/screener': typeof UsScreenerRoute
   '/us/': typeof UsIndexRoute
   '/api/gpt/upload': typeof ApiGptUploadRoute
@@ -138,6 +145,7 @@ export interface FileRoutesByTo {
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
   '/screener/stocks': typeof ScreenerStocksRoute
+  '/us/portfolio': typeof UsPortfolioRoute
   '/us/screener': typeof UsScreenerRoute
   '/us': typeof UsIndexRoute
   '/api/gpt/upload': typeof ApiGptUploadRoute
@@ -157,6 +165,7 @@ export interface FileRoutesById {
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
   '/screener/stocks': typeof ScreenerStocksRoute
+  '/us/portfolio': typeof UsPortfolioRoute
   '/us/screener': typeof UsScreenerRoute
   '/us/': typeof UsIndexRoute
   '/api/gpt/upload': typeof ApiGptUploadRoute
@@ -177,6 +186,7 @@ export interface FileRouteTypes {
     | '/instrument/$symbol'
     | '/screener/etfs'
     | '/screener/stocks'
+    | '/us/portfolio'
     | '/us/screener'
     | '/us/'
     | '/api/gpt/upload'
@@ -195,6 +205,7 @@ export interface FileRouteTypes {
     | '/instrument/$symbol'
     | '/screener/etfs'
     | '/screener/stocks'
+    | '/us/portfolio'
     | '/us/screener'
     | '/us'
     | '/api/gpt/upload'
@@ -213,6 +224,7 @@ export interface FileRouteTypes {
     | '/instrument/$symbol'
     | '/screener/etfs'
     | '/screener/stocks'
+    | '/us/portfolio'
     | '/us/screener'
     | '/us/'
     | '/api/gpt/upload'
@@ -232,6 +244,7 @@ export interface RootRouteChildren {
   InstrumentSymbolRoute: typeof InstrumentSymbolRoute
   ScreenerEtfsRoute: typeof ScreenerEtfsRoute
   ScreenerStocksRoute: typeof ScreenerStocksRoute
+  UsPortfolioRoute: typeof UsPortfolioRoute
   UsScreenerRoute: typeof UsScreenerRoute
   UsIndexRoute: typeof UsIndexRoute
   ApiGptUploadRoute: typeof ApiGptUploadRoute
@@ -331,6 +344,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/us/portfolio': {
+      id: '/us/portfolio'
+      path: '/us/portfolio'
+      fullPath: '/us/portfolio'
+      preLoaderRoute: typeof UsPortfolioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/us/screener': {
       id: '/us/screener'
       path: '/us/screener'
@@ -368,6 +388,7 @@ const rootRouteChildren: RootRouteChildren = {
   InstrumentSymbolRoute: InstrumentSymbolRoute,
   ScreenerEtfsRoute: ScreenerEtfsRoute,
   ScreenerStocksRoute: ScreenerStocksRoute,
+  UsPortfolioRoute: UsPortfolioRoute,
   UsScreenerRoute: UsScreenerRoute,
   UsIndexRoute: UsIndexRoute,
   ApiGptUploadRoute: ApiGptUploadRoute,

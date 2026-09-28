@@ -24,6 +24,7 @@ export interface UsProspectiveCacheRow {
   onset80: boolean;
   a0Entry: boolean;
   a0Exit: boolean;
+  a0BetaExit: boolean;
   a2Entry: boolean;
   a2Exit: boolean;
   b3Entry: boolean;
@@ -117,27 +118,47 @@ export async function loadUsStrategyRegistry() {
 
 export async function loadUsPortfolioSnapshots(limitPerStrategy = 370) {
   const uid = await userId();
-  const { data, error } = await supabase
-    .from("us_portfolio_snapshots")
-    .select("*")
-    .eq("user_id", uid)
-    .order("date", { ascending: false })
-    .limit(limitPerStrategy * 4);
-  if (error) throw new Error(`US 포트폴리오 조회 실패: ${error.message}`);
-  return (data ?? []) as UsPortfolioSnapshotRecord[];
+  // Separate strategies avoid the REST row cap truncating a one-year, four-strategy chart.
+  const results = await Promise.all(
+    ["A0_QUARTER_PRIMARY", "A2_QUARTER_SHADOW", "B3_BETA_SHADOW", "SPY_BENCHMARK"].map((strategy) =>
+      supabase
+        .from("us_portfolio_snapshots")
+        .select("*")
+        .eq("user_id", uid)
+        .eq("strategy_id", strategy)
+        .order("date", { ascending: false })
+        .limit(Math.min(limitPerStrategy, 1000)),
+    ),
+  );
+  for (const result of results)
+    if (result.error) throw new Error(`US 포트폴리오 조회 실패: ${result.error.message}`);
+  return results
+    .flatMap((result) => result.data ?? [])
+    .sort((a, b) => b.date.localeCompare(a.date)) as UsPortfolioSnapshotRecord[];
 }
 
 export async function loadUsPortfolioTrades(limit = 500) {
   const uid = await userId();
-  const { data, error } = await supabase
-    .from("us_portfolio_trades")
-    .select("*")
-    .eq("user_id", uid)
-    .order("signal_date", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) throw new Error(`US 거래 원장 조회 실패: ${error.message}`);
-  return (data ?? []) as UsPortfolioTradeRecord[];
+  const results = await Promise.all([
+    supabase
+      .from("us_portfolio_trades")
+      .select("*")
+      .eq("user_id", uid)
+      .eq("status", "PENDING")
+      .order("signal_date", { ascending: false })
+      .limit(1000),
+    supabase
+      .from("us_portfolio_trades")
+      .select("*")
+      .eq("user_id", uid)
+      .in("status", ["EXECUTED", "PARTIAL"])
+      .order("execution_date", { ascending: false })
+      .order("trade_key", { ascending: true })
+      .limit(Math.min(limit, 1000)),
+  ]);
+  for (const result of results)
+    if (result.error) throw new Error(`US 거래 원장 조회 실패: ${result.error.message}`);
+  return results.flatMap((result) => result.data ?? []) as UsPortfolioTradeRecord[];
 }
 
 export async function saveUsActualExecution(
@@ -145,7 +166,7 @@ export async function saveUsActualExecution(
   values: { actualPrice: number | null; actualShares: number | null; actualFeeUsd: number | null },
 ) {
   const uid = await userId();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("us_portfolio_trades")
     .update({
       actual_price: values.actualPrice,
@@ -154,6 +175,11 @@ export async function saveUsActualExecution(
       updated_at: new Date().toISOString(),
     })
     .eq("user_id", uid)
-    .eq("trade_key", tradeKey);
+    .eq("trade_key", tradeKey)
+    .eq("strategy_id", "A0_QUARTER_PRIMARY")
+    .in("status", ["EXECUTED", "PARTIAL"])
+    .select("trade_key")
+    .single();
   if (error) throw new Error(`US 실제 체결 저장 실패: ${error.message}`);
+  if (!data) throw new Error("수정 가능한 A0 체결 기록을 찾지 못했습니다.");
 }

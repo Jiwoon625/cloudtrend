@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/cloud";
 import { hydrateManualData } from "@/lib/manualDataStore";
 import { hydrateUsData } from "@/lib/usDataStore";
@@ -12,21 +12,29 @@ const LOGIN_BG_STYLE = {
   backgroundImage: `url(${loginBgAsset.url}), url(${LOGIN_BG_PLACEHOLDER})`,
 } as const;
 
-export function CloudAccount({ children }: { children: ReactNode }) {
+export function CloudAccount({
+  children,
+  hydrateLegacyData = true,
+}: {
+  children: ReactNode;
+  hydrateLegacyData?: boolean;
+}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [account, setAccount] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const lastAuthenticatedUserId = useRef<string | null>(null);
+  const hydrationAttempted = useRef(new Set<string>());
   useEffect(() => {
     let alive = true;
-    let lastAuthenticatedUserId: string | null = null;
-    const hydrationAttempted = new Set<string>();
 
     const startCloudHydration = (userId: string) => {
-      if (hydrationAttempted.has(userId)) return;
-      hydrationAttempted.add(userId);
+      // Prospective US routes load their own small, frozen result files.
+      // Parsing legacy KR history here can block the main thread for minutes.
+      if (!hydrateLegacyData || hydrationAttempted.current.has(userId)) return;
+      hydrationAttempted.current.add(userId);
 
       const tasks = [
         { label: "국내 데이터", run: () => hydrateManualData() },
@@ -78,12 +86,12 @@ export function CloudAccount({ children }: { children: ReactNode }) {
 
       // A real user switch must still clear module-level caches before exposing another
       // account's data. Transient loss/recovery of the same session no longer reloads.
-      if (nextId && lastAuthenticatedUserId && nextId !== lastAuthenticatedUserId) {
+      if (nextId && lastAuthenticatedUserId.current && nextId !== lastAuthenticatedUserId.current) {
         window.location.reload();
         return;
       }
-      if (nextId) lastAuthenticatedUserId = nextId;
-      if (event === "SIGNED_OUT") hydrationAttempted.clear();
+      if (nextId) lastAuthenticatedUserId.current = nextId;
+      if (event === "SIGNED_OUT") hydrationAttempted.current.clear();
 
       if (!alive) return;
       setAccount(session?.user.email ?? null);
@@ -113,7 +121,7 @@ export function CloudAccount({ children }: { children: ReactNode }) {
       alive = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [hydrateLegacyData]);
   async function authenticate(signUp: boolean) {
     setBusy(true);
     setMessage("");
@@ -170,10 +178,7 @@ export function CloudAccount({ children }: { children: ReactNode }) {
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden p-6">
-      <div
-        className="absolute inset-0 bg-cover bg-[80%_80%]"
-        style={LOGIN_BG_STYLE}
-      />
+      <div className="absolute inset-0 bg-cover bg-[80%_80%]" style={LOGIN_BG_STYLE} />
       <div className="absolute inset-0 bg-gradient-to-br from-background/80 via-background/60 to-background/80 max-sm:from-background/50 max-sm:via-background/30 max-sm:to-background/50" />
       <main className="relative z-10 w-full max-w-md space-y-5 rounded-2xl border border-border/60 bg-surface/80 p-8 shadow-2xl backdrop-blur-md">
         <div className="space-y-1 text-center">
@@ -228,7 +233,8 @@ export function CloudAccount({ children }: { children: ReactNode }) {
           </div>
         </form>
         <p className="rounded-lg bg-muted/40 px-3 py-2 text-center text-xs text-muted-foreground">
-          처음 이용하시는 분은 이메일 입력 후 회원가입 버튼 클릭 시 해당 이메일로 전송되는 인증메일을 확인해주시고 로그인 버튼을 클릭해주세요.
+          처음 이용하시는 분은 이메일 입력 후 회원가입 버튼 클릭 시 해당 이메일로 전송되는
+          인증메일을 확인해주시고 로그인 버튼을 클릭해주세요.
         </p>
         {message && (
           <p role="alert" className="rounded-lg bg-warn-soft p-3 text-sm text-foreground">

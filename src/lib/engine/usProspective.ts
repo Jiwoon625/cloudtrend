@@ -1,9 +1,6 @@
-export const US_PROSPECTIVE_RULE_VERSION = "us-prospective-1.0.0";
+export const US_PROSPECTIVE_RULE_VERSION = "us-prospective-1.1.0-a0-anchor";
 
-export type UsProspectiveStrategyId =
-  | "A0_QUARTER_PRIMARY"
-  | "A2_QUARTER_SHADOW"
-  | "B3_BETA_SHADOW";
+export type UsProspectiveStrategyId = "A0_QUARTER_PRIMARY" | "A2_QUARTER_SHADOW" | "B3_BETA_SHADOW";
 
 export interface UsProspectiveInputRow {
   date: string;
@@ -36,6 +33,7 @@ export interface UsProspectiveInputRow {
 }
 
 export interface UsProspectivePreviousState {
+  lastDate?: string;
   coreRanks?: Record<string, number>;
   betaWeakStreak?: Record<string, number>;
 }
@@ -56,6 +54,7 @@ export interface UsProspectiveRow extends UsProspectiveInputRow {
   balancedConfirm: boolean;
   a0Entry: boolean;
   a0Exit: boolean;
+  a0BetaExit: boolean;
   a2Entry: boolean;
   a2Exit: boolean;
   b3Entry: boolean;
@@ -144,6 +143,9 @@ export function parseUsProspectiveCsv(text: string): UsProspectiveInputRow[] {
     "relvol1_20",
     "adv20_usd",
     "amihud20",
+    "active20",
+    "toss_tradable",
+    "is_common_share",
   ];
   const missing = required.filter((key) => !idx.has(key));
   if (missing.length > 0) throw new Error(`US 스크리닝 CSV 필수 열 누락: ${missing.join(", ")}`);
@@ -179,8 +181,8 @@ export function parseUsProspectiveCsv(text: string): UsProspectiveInputRow[] {
         adv20Usd: num(v(c, "adv20_usd")),
         amihud20: num(v(c, "amihud20")),
         active20: bool(v(c, "active20")),
-        tossTradable: bool(v(c, "toss_tradable"), true),
-        isCommonShare: bool(v(c, "is_common_share"), true),
+        tossTradable: bool(v(c, "toss_tradable")),
+        isCommonShare: bool(v(c, "is_common_share")),
         fxUsdKrw: num(v(c, "fx_usdkrw")),
       },
     ];
@@ -199,14 +201,18 @@ function percentileRank(items: Array<[string, number]>): Map<string, number> {
   while (i < sorted.length) {
     let j = i + 1;
     while (j < sorted.length && sorted[j]![1] === sorted[i]![1]) j++;
-    const averageZeroBasedRank = ((i + (j - 1)) / 2) / (sorted.length - 1);
+    const averageZeroBasedRank = (i + (j - 1)) / 2 / (sorted.length - 1);
     for (let k = i; k < j; k++) out.set(sorted[k]![0], averageZeroBasedRank);
     i = j;
   }
   return out;
 }
 
-function finitePairs(rows: UsProspectiveInputRow[], field: keyof UsProspectiveInputRow, invert = false) {
+function finitePairs(
+  rows: UsProspectiveInputRow[],
+  field: keyof UsProspectiveInputRow,
+  invert = false,
+) {
   const pairs: Array<[string, number]> = [];
   for (const row of rows) {
     const value = row[field];
@@ -227,18 +233,26 @@ function rankOf(map: Map<string, number>, symbol: string) {
  * - A0/A2 confirmation: ichimoku TK gap top20%
  * - B3 confirmation: relvol1_20 top20%
  * - A0/A2 Core exit: <0.70, B3 base exit: <0.50
- * - B3 shadow extra exit: beta rank <0.60 3일 연속
+ * - A0 Anchor / B3 shadow extra exit: beta rank <0.60 3일 연속 (A2 unchanged)
  */
 export function runUsProspectiveAnalysis(
   inputRows: UsProspectiveInputRow[],
   previous: UsProspectivePreviousState = {},
 ): UsProspectiveAnalysis {
   if (inputRows.length === 0) throw new Error("US 스크리닝 입력이 비어 있습니다.");
-  const date = inputRows.map((r) => r.date).sort().at(-1)!;
+  const date = inputRows
+    .map((r) => r.date)
+    .sort()
+    .at(-1)!;
   const rows = inputRows.filter((r) => r.date === date);
+  if (rows.length !== inputRows.length || new Set(rows.map((r) => r.symbol)).size !== rows.length)
+    throw new Error("US input must contain one date and unique symbols");
+  if (previous.lastDate && previous.lastDate >= date)
+    throw new Error("Rank state requires a later trading date");
 
   const tradable = rows.filter(
     (r) =>
+      r.symbol !== "SPY" &&
       r.isCommonShare &&
       r.tossTradable &&
       (r.status === null || r.status.toUpperCase() === "ACTIVE") &&
@@ -281,7 +295,13 @@ export function runUsProspectiveAnalysis(
     const a = rankOf(ami, row.symbol);
     if (core !== null) nextCore[row.symbol] = core;
     const prior = prevCore[row.symbol];
-    const onset80 = !bootstrap && core !== null && core >= 0.8 && prior !== undefined && Number.isFinite(prior) && prior < 0.8;
+    const onset80 =
+      !bootstrap &&
+      core !== null &&
+      core >= 0.8 &&
+      prior !== undefined &&
+      Number.isFinite(prior) &&
+      prior < 0.8;
     const eligibleBase =
       core !== null &&
       b !== null &&
@@ -298,11 +318,12 @@ export function runUsProspectiveAnalysis(
     const streak = weak ? (prevBetaStreak[row.symbol] ?? 0) + 1 : 0;
     nextStreak[row.symbol] = streak;
     const a0Entry = eligibleBase && onset80 && aggressiveConfirm;
-    const a0Exit = core === null || core < 0.7;
+    const a0BetaExit = streak >= 3;
+    const a0Exit = row.symbol !== "SPY" && (core === null || core < 0.7 || a0BetaExit);
     const a2Entry = a0Entry;
-    const a2Exit = a0Exit;
+    const a2Exit = row.symbol !== "SPY" && (core === null || core < 0.7);
     const b3Entry = eligibleBase && onset80 && balancedConfirm;
-    const b3BaseExit = core === null || core < 0.5;
+    const b3BaseExit = row.symbol !== "SPY" && (core === null || core < 0.5);
     const b3BetaExit = streak >= 3;
     const b3Exit = b3BaseExit || b3BetaExit;
     return {
@@ -322,6 +343,7 @@ export function runUsProspectiveAnalysis(
       balancedConfirm,
       a0Entry,
       a0Exit,
+      a0BetaExit,
       a2Entry,
       a2Exit,
       b3Entry,
@@ -329,7 +351,13 @@ export function runUsProspectiveAnalysis(
       betaWeakStreak: streak,
       b3BetaExit,
       b3Exit,
-      primarySignal: a0Entry ? "ENTRY" : a0Exit ? "EXIT" : core !== null && core >= 0.7 ? "WATCH" : "NONE",
+      primarySignal: a0Entry
+        ? "ENTRY"
+        : a0Exit
+          ? "EXIT"
+          : core !== null && core >= 0.7
+            ? "WATCH"
+            : "NONE",
     };
   });
 
@@ -344,7 +372,7 @@ export function runUsProspectiveAnalysis(
     date,
     ruleVersion: US_PROSPECTIVE_RULE_VERSION,
     rows: out,
-    state: { coreRanks: nextCore, betaWeakStreak: nextStreak },
+    state: { lastDate: date, coreRanks: nextCore, betaWeakStreak: nextStreak },
     summary: {
       inputRows: rows.length,
       rankedRows: coreRank.size,
@@ -362,7 +390,6 @@ export function runUsProspectiveAnalysis(
 export function usProspectiveCompactSignals(analysis: UsProspectiveAnalysis) {
   return analysis.rows
     .filter((r) => r.a0Entry || r.a2Entry || r.b3Entry || r.a0Exit || r.b3Exit)
-    .slice(0, 250)
     .map((r) => ({
       symbol: r.symbol,
       name: r.name,
@@ -373,6 +400,7 @@ export function usProspectiveCompactSignals(analysis: UsProspectiveAnalysis) {
       relvolRank: r.relvolRank,
       a0Entry: r.a0Entry,
       a0Exit: r.a0Exit,
+      a0BetaExit: r.a0BetaExit,
       a2Entry: r.a2Entry,
       a2Exit: r.a2Exit,
       b3Entry: r.b3Entry,
