@@ -41,11 +41,11 @@ add('B3_w60_beta50d3','B3_interaction',policy='B3',weight=60,mode='exit_beta')
 # Execution/cost stress outputs from US3.5 remain the reference; no stress mode is substituted here.
 configs=list(primary)
 design=dict(version='US3.8 Robustness Gate — diagnostics only',created=pd.Timestamp.now(tz='UTC').isoformat(),sourceCommit='b4d47858bccd5b732b88af9b14368ac9581e770a',sourceRevision=3,primaryCount=len(primary),runCount=len(configs),groups=groups,configs=[asdict(c) for c in configs],end='2026-09-23',newOOS=False,
-    selection='First require reproducibility, accounting, and capacity checks. Prefer full and both-subperiod growth, no material drawdown deterioration, lower turnover, and improvement across neighboring settings and P5/C50. Bootstrap uncertainty and yearly wins limit confidence. Retain a simple baseline when a tuned peak is isolated; max two candidates per policy. Interactions explicitly tested, never add individual effects.',
-    bootstrap='Paired circular blocks 21 and 63 sessions, 5000 samples, fixed seed 350928; CAGR difference and annual log-growth difference; simultaneous max standardized-error intervals across primary challengers; all historical post-selection.',
+    selection='Diagnostic surface only. Do not rank, select, promote, or retune any point. First assert frozen candidate/control daily parity against US3.5; if parity fails, stop interpretation.',
+    bootstrap='No new bootstrap is run by this surface script. Use the pre-existing US3.8 paired-bootstrap diagnostics for saved paths; rerun only if input returns change after baseline parity review.',
     schedules='Fixed-session surface d05/d10/d20/d40/d60 is anchored to the first executable session. First exchange session of week/month/quarter. Biweekly: alternating W-FRI periods anchored to first sample week. Bimonthly: Jan/Mar/May/Jul/Sep/Nov. Entry and exit remain daily.',
     beta='Strict rank < cut, consecutive observed portfolio days, reset on non-weak or missing rows; core missing itself triggers exit; pending sell persists after recovery.',
-    cost='C50 fully reruns portfolio under 50bp one-way; also report fixed-path fee drag separately, not as a rerun.')
+    cost='Every run in this surface is REAL1 with 25bp one-way costs. Existing US3.5 REAL5 and C50 outputs remain the execution/cost stress references; this diagnostic script does not rerun those stress modes.')
 (OUT/'design_frozen.json').write_text(json.dumps(design,indent=2))
 shutil.copy2(__file__,OUT/'run_us38_surfaces.py');shutil.copy2(TMP/'us35_core.py',OUT/'us35_core.py')
 print('DESIGN_FROZEN',len(primary),len(configs),flush=True)
