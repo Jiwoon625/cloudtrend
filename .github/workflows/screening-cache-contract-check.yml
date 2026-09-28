@@ -13,6 +13,9 @@ on:
       - scripts/analysis-run-store.ts
       - src/lib/portfolio*.ts
       - src/routes/portfolio.tsx
+      - src/lib/usActualLedger*.ts
+      - src/components/UsPortfolioLedgers.tsx
+      - src/routes/us.portfolio.tsx
       - vitest.portfolio.config.ts
       - src/lib/datasetDataStatus.ts
       - src/lib/usBrowserViews.ts

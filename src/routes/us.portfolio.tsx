@@ -1,18 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, RefreshCw, Save, X } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { UsPortfolioLedgers } from "@/components/UsPortfolioLedgers";
 import {
   loadUsPortfolioSnapshots,
   loadUsPortfolioTrades,
   loadUsStrategyRegistry,
-  saveUsActualExecution,
   type UsPortfolioSnapshotRecord,
   type UsPortfolioTradeRecord,
 } from "@/lib/usProspectiveCloud";
@@ -57,12 +55,7 @@ function UsPortfolioPage() {
     queryFn: () => loadUsPortfolioTrades(800),
     staleTime: 60_000,
   });
-  const [editing, setEditing] = useState<UsPortfolioTradeRecord | null>(null);
-  const [actualPrice, setActualPrice] = useState("");
   const [selectedStrategy, setSelectedStrategy] = useState("A0_QUARTER_PRIMARY");
-  const [actualFee, setActualFee] = useState("");
-  const [actualShares, setActualShares] = useState("");
-  const [saving, setSaving] = useState(false);
 
   const latest = useMemo(() => {
     const out = new Map<string, UsPortfolioSnapshotRecord>();
@@ -102,49 +95,10 @@ function UsPortfolioPage() {
   const pending = (trades.data ?? [])
     .filter((t) => t.status === "PENDING" && t.strategy_id === selectedStrategy)
     .slice(0, 50);
-  const executed = (trades.data ?? [])
-    .filter((t) => t.status === "EXECUTED" || t.status === "PARTIAL")
-    .slice(0, 120);
-
-  const beginEdit = (t: UsPortfolioTradeRecord) => {
-    setEditing(t);
-    setActualFee(String(t.actual_fee_usd ?? ""));
-    setActualPrice(String(t.actual_price ?? t.model_price ?? ""));
-    setActualShares(String(t.actual_shares ?? t.model_shares ?? ""));
-  };
-  const save = async () => {
-    if (!editing) return;
-    const p = actualPrice.trim() === "" ? null : Number(actualPrice);
-    const s = actualShares.trim() === "" ? null : Number(actualShares);
-    if (p !== null && (!Number.isFinite(p) || p <= 0)) {
-      toast.error("실제 체결가격을 확인해 주세요.");
-      return;
-    }
-    if (s !== null && (!Number.isInteger(s) || s < 0)) {
-      toast.error("실제 수량은 0 이상의 정수여야 합니다.");
-      return;
-    }
-    const fee = actualFee.trim() === "" ? null : Number(actualFee);
-    if (fee !== null && (!Number.isFinite(fee) || fee < 0)) {
-      toast.error("실제 수수료를 확인해 주세요.");
-      return;
-    }
-    setSaving(true);
-    try {
-      await saveUsActualExecution(editing.trade_key, {
-        actualPrice: p,
-        actualShares: s,
-        actualFeeUsd: fee,
-      });
-      await qc.invalidateQueries({ queryKey: ["us-portfolio-trades"] });
-      setEditing(null);
-      toast.success("실제 체결값을 저장했습니다.");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "저장 실패");
-    } finally {
-      setSaving(false);
-    }
-  };
+  const executed = (trades.data ?? []).filter(
+    (t) =>
+      (t.status === "EXECUTED" || t.status === "PARTIAL") && t.strategy_id === selectedStrategy,
+  );
 
   return (
     <AppShell loadAnalysis={false}>
@@ -156,7 +110,7 @@ function UsPortfolioPage() {
               <Badge>A0 PRIMARY</Badge>
             </div>
             <p className="mt-1 max-w-4xl text-[11px] leading-relaxed text-muted-foreground">
-              A0 분기 + Beta 순위 0.60 미만 3거래일 Anchor는 실제운용 기준, A2 분기와 B3 Beta는
+              A0 분기 + Beta 순위 0.60 미만 3거래일 Anchor는 기준 모델, A2 분기와 B3 Beta는
               Shadow입니다. 과거 성과에 맞춰 규칙을 바꾸지 않고 앞으로의 신호·NAV·거래를 같은
               데이터로 누적합니다.
             </p>
@@ -167,6 +121,7 @@ function UsPortfolioPage() {
             onClick={() => {
               void qc.invalidateQueries({ queryKey: ["us-portfolio-snapshots"] });
               void qc.invalidateQueries({ queryKey: ["us-portfolio-trades"] });
+              void qc.invalidateQueries({ queryKey: ["us-actual-ledger"] });
             }}
           >
             <RefreshCw className="size-3.5" />
@@ -229,7 +184,7 @@ function UsPortfolioPage() {
         </section>
 
         <label className="text-xs">
-          보유·대기 주문 전략{" "}
+          모델 보유·대기 주문 전략{" "}
           <select
             value={selectedStrategy}
             onChange={(e) => setSelectedStrategy(e.target.value)}
@@ -245,7 +200,7 @@ function UsPortfolioPage() {
         <section className="grid gap-4 xl:grid-cols-2">
           <div className="rounded-lg border border-border bg-card">
             <div className="border-b p-3">
-              <h2 className="text-sm font-semibold">{LABEL[selectedStrategy]} 현재 보유</h2>
+              <h2 className="text-sm font-semibold">{LABEL[selectedStrategy]} 모델 보유</h2>
               <p className="text-[10px] text-muted-foreground">
                 분기 비중조정, 신규 Onset/Exit는 매일 반영
               </p>
@@ -286,7 +241,7 @@ function UsPortfolioPage() {
           </div>
           <div className="rounded-lg border border-border bg-card">
             <div className="border-b p-3">
-              <h2 className="text-sm font-semibold">다음 정규장 주문 대기</h2>
+              <h2 className="text-sm font-semibold">다음 정규장 모델 주문 대기</h2>
               <p className="text-[10px] text-muted-foreground">
                 오늘 종가 신호 → 다음 미국 정규장 시가 모델
               </p>
@@ -295,118 +250,61 @@ function UsPortfolioPage() {
           </div>
         </section>
 
-        {editing ? (
-          <section className="rounded-lg border border-primary/30 bg-card p-4">
-            <div className="flex justify-between">
-              <div>
-                <h2 className="text-sm font-semibold">실제 체결 보정 · {editing.symbol}</h2>
-                <p className="text-[10px] text-muted-foreground">
-                  모델 신호/가격은 보존하고 사용자가 실제 수동 체결한 가격·수량만 별도 기록합니다.
-                </p>
-              </div>
-              <button aria-label="체결 수정 닫기" onClick={() => setEditing(null)}>
-                <X className="size-4" />
-              </button>
+        <UsPortfolioLedgers model={latest.get("A0_QUARTER_PRIMARY")}>
+          <section className="rounded-lg border border-border bg-card">
+            <div className="border-b p-3">
+              <h2 className="text-sm font-semibold">모델 체결 원장</h2>
+              <p className="text-[10px] text-muted-foreground">
+                A0/A2/B3 모델 체결만 표시합니다. 실제 보유·거래 탭에서 입력한 체결은 모델 성과에
+                영향을 주지 않습니다.
+              </p>
             </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
-              <label className="text-[11px]">
-                실제 가격
-                <Input
-                  className="mt-1"
-                  type="number"
-                  value={actualPrice}
-                  onChange={(e) => setActualPrice(e.target.value)}
-                />
-              </label>
-              <label className="text-[11px]">
-                실제 수량
-                <Input
-                  className="mt-1"
-                  type="number"
-                  value={actualShares}
-                  onChange={(e) => setActualShares(e.target.value)}
-                />
-              </label>
-              <label className="text-[11px]">
-                실제 수수료 USD
-                <Input
-                  className="mt-1"
-                  type="number"
-                  value={actualFee}
-                  onChange={(e) => setActualFee(e.target.value)}
-                />
-              </label>
-              <Button className="self-end" disabled={saving} onClick={() => void save()}>
-                <Save className="size-3.5" />
-                저장
-              </Button>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1000px] text-[10px]">
+                <thead>
+                  <tr className="border-b text-muted-foreground [&>th]:px-2 [&>th]:py-2">
+                    <th>전략</th>
+                    <th>신호일</th>
+                    <th>체결일</th>
+                    <th>종목</th>
+                    <th>Side</th>
+                    <th>사유</th>
+                    <th>상태</th>
+                    <th className="text-right">모델가격</th>
+                    <th className="text-right">모델수량</th>
+                    <th>모델비용 USD</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {executed.map((t) => (
+                    <tr
+                      key={t.trade_key}
+                      className="border-b last:border-0 [&>td]:px-2 [&>td]:py-2"
+                    >
+                      <td>{LABEL[t.strategy_id] ?? t.strategy_id}</td>
+                      <td>{t.signal_date}</td>
+                      <td>{t.execution_date ?? "-"}</td>
+                      <td className="font-medium">{t.symbol}</td>
+                      <td>{t.side}</td>
+                      <td>{t.reason}</td>
+                      <td>{t.status}</td>
+                      <td className="num text-right">
+                        {t.model_price ? `$${t.model_price.toFixed(2)}` : "-"}
+                      </td>
+                      <td className="num text-right">{t.model_shares ?? "-"}</td>
+                      <td className="num text-right">${Number(t.fee_usd).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {executed.length === 0 ? (
+                <p className="p-6 text-center text-xs text-muted-foreground">
+                  선택한 전략의 모델 체결 기록이 없습니다.
+                </p>
+              ) : null}
             </div>
           </section>
-        ) : null}
-
-        <section className="rounded-lg border border-border bg-card">
-          <div className="border-b p-3">
-            <h2 className="text-sm font-semibold">모델 체결 원장</h2>
-            <p className="text-[10px] text-muted-foreground">
-              A0/A2/B3 모두 보존합니다. A0 실제 수동 체결값은 별도 열에 기록할 수 있습니다.
-            </p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1350px] text-[10px]">
-              <thead>
-                <tr className="border-b text-muted-foreground [&>th]:px-2 [&>th]:py-2">
-                  <th>전략</th>
-                  <th>신호일</th>
-                  <th>체결일</th>
-                  <th>종목</th>
-                  <th>Side</th>
-                  <th>사유</th>
-                  <th>상태</th>
-                  <th className="text-right">모델가격</th>
-                  <th className="text-right">모델수량</th>
-                  <th className="text-right">실제가격</th>
-                  <th className="text-right">실제수량</th>
-                  <th>실제수수료</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {executed.map((t) => (
-                  <tr key={t.trade_key} className="border-b last:border-0 [&>td]:px-2 [&>td]:py-2">
-                    <td>{LABEL[t.strategy_id] ?? t.strategy_id}</td>
-                    <td>{t.signal_date}</td>
-                    <td>{t.execution_date ?? "-"}</td>
-                    <td className="font-medium">{t.symbol}</td>
-                    <td>{t.side}</td>
-                    <td>{t.reason}</td>
-                    <td>{t.status}</td>
-                    <td className="num text-right">
-                      {t.model_price ? `$${t.model_price.toFixed(2)}` : "-"}
-                    </td>
-                    <td className="num text-right">{t.model_shares ?? "-"}</td>
-                    <td className="num text-right">
-                      {t.actual_price ? `$${t.actual_price.toFixed(2)}` : "-"}
-                    </td>
-                    <td className="num text-right">{t.actual_shares ?? "-"}</td>
-                    <td>{t.actual_fee_usd ?? "-"}</td>
-                    <td>
-                      {t.strategy_id === "A0_QUARTER_PRIMARY" ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-1"
-                          onClick={() => beginEdit(t)}
-                        >
-                          <Pencil aria-label="실제 체결 수정" className="size-3" />
-                        </Button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        </UsPortfolioLedgers>
       </div>
     </AppShell>
   );
