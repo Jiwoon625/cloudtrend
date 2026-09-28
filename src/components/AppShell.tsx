@@ -28,6 +28,7 @@ const NAV = [
 const US_NAV = [
   { to: "/us", label: "US 시장·데이터" },
   { to: "/us/screener", label: "US 스크리너" },
+  { to: "/us/portfolio", label: "US 포트폴리오" },
 ] as const;
 
 const THEME_STORAGE_KEY = "cloudtrend-theme";

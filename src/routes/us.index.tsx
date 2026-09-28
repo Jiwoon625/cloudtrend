@@ -1,369 +1,132 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Activity,
-  AlertTriangle,
-  CheckCircle2,
-  Database,
-  FileCode2,
-  Loader2,
-  MinusCircle,
-  Play,
-  RefreshCw,
-} from "lucide-react";
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Database, ExternalLink, ShieldCheck, TimerReset } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { AppShell } from "@/components/AppShell";
-import { UsDataInput } from "@/components/us/UsDataInput";
-import { UsFetchGuide } from "@/components/us/UsFetchGuide";
-import { UsGradeBadge } from "@/components/us/UsScreenerTable";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatKstDateTime } from "@/lib/format";
-import {
-  isUsAnalysisFailure,
-  isUsAnalysisPayload,
-  usAnalysisQueryOptions,
-} from "@/lib/usAnalysisQuery";
-import { getUsDataText } from "@/lib/usDataStore";
-import type { ScoreStatus, UsAnalysisResult } from "@/lib/engine/usPipeline";
-import { UsDisclaimer } from "@/components/us/UsDisclaimer";
+import { loadUsProspectiveCache, loadUsScreeningHistory } from "@/lib/usProspectiveCloud";
 
 export const Route = createFileRoute("/us/")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "US 시장 브리핑 | CloudTrend 미국 주식·ETF 스크리너" },
+      { title: "US 시장·데이터 | CloudTrend Prospective" },
       {
         name: "description",
         content:
-          "SPY·QQQ·IWM 추세와 breadth로 미국 시장 상태를 판정하고, 11개 GICS 섹터 게이트와 Technical·Priority 점수를 근거와 함께 제공하는 리서치 워크스페이스입니다.",
+          "Toss Open API 기반 미국주식 자료수집 상태와 A0 분기 실제운용, A2/B3 Shadow prospective OOS 규칙을 확인합니다.",
       },
-      { property: "og:title", content: "US 시장 브리핑 | CloudTrend" },
-      {
-        property: "og:description",
-        content: "미국 주식·ETF의 시장 게이트, 섹터 강도, 점수 coverage를 한 화면에서 확인합니다.",
-      },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
-  component: UsHome,
+  component: UsMarketDataPage,
 });
 
-function StatusIcon({ status }: { status: ScoreStatus }) {
-  if (status === "PASS") return <CheckCircle2 className="size-3.5 text-up" />;
-  if (status === "FAIL") return <AlertTriangle className="size-3.5 text-down" />;
-  return <MinusCircle className="size-3.5 text-muted-foreground" />;
+const RULES = [
+  ["Core", "ret120 rank 50% + ret252 rank 50% → 횡단면 재순위"],
+  ["Primary Entry", "Core 0.80 Onset + beta60_spy 상위 10% + TK gap 상위 20% + 유동성 eligibility"],
+  ["Primary Exit", "Core < 0.70 / universe 이탈"],
+  ["A0 Portfolio", "동일 섹터 cap 없음 · 최대 20종목 · 분기 첫 거래일 비중조정 · 진입/청산은 매일"],
+  ["Execution model", "다음 미국 정규장 시가 · 편도 25bp · ADV20 1% 참여율 · 정수 주식"],
+] as const;
+
+function fmtDate(value: string | undefined | null) {
+  if (!value) return "-";
+  return new Date(value).toLocaleString("ko-KR", { hour12: false });
 }
 
-function Card({
-  title,
-  subtitle,
-  icon,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="rounded-lg border border-border bg-card p-4">
-      <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
-        {icon}
-        {title}
-      </h2>
-      {subtitle ? (
-        <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">{subtitle}</p>
-      ) : null}
-      {children}
-    </section>
-  );
-}
-
-function UsHome() {
-  const queryClient = useQueryClient();
-  const [started, setStarted] = useState(false);
-  const [hasData, setHasData] = useState(() => (getUsDataText() ?? "").trim().length > 0);
-  const query = useQuery({ ...usAnalysisQueryOptions, enabled: started });
-
-  const invalidate = () => {
-    queryClient.removeQueries({ queryKey: usAnalysisQueryOptions.queryKey });
-  };
+function UsMarketDataPage() {
+  const cache = useQuery({ queryKey: ["us-prospective-cache"], queryFn: loadUsProspectiveCache, staleTime: 60_000 });
+  const history = useQuery({ queryKey: ["us-screening-history"], queryFn: () => loadUsScreeningHistory(10), staleTime: 60_000 });
+  const value = cache.data;
 
   return (
     <AppShell loadAnalysis={false}>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">US 시장 브리핑 · 데이터 입력</h1>
-          <p className="text-[12px] text-muted-foreground">
-            로컬(주피터)에서 토스증권 Open API로 수집한 미국 종목 일봉을 업로드하면 시장 → 섹터 →
-            종목 순서로 분석합니다. 한국 시장 데이터와 별도로 저장됩니다.
+      <div className="space-y-5">
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="mb-1 flex items-center gap-2">
+              <h1 className="text-xl font-bold tracking-tight">US 시장 · 데이터</h1>
+              <Badge variant="outline">Prospective OOS</Badge>
+            </div>
+            <p className="max-w-3xl text-[12px] leading-relaxed text-muted-foreground">
+              과거 US3.8 이후 파라미터 탐색은 중단했습니다. 실제운용 기준은 A0 분기이며 A2 분기와 B3 Beta는 Shadow로 같은 미래 데이터를 누적합니다.
+            </p>
+          </div>
+          <Link to="/us/screener"><Button size="sm">US 스크리너 보기</Button></Link>
+        </header>
+
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Metric icon={<Database className="size-4" />} label="최근 데이터 기준일" value={value?.analysis.date ?? "미수집"} />
+          <Metric icon={<TimerReset className="size-4" />} label="수집 완료 시각" value={fmtDate(value?.source.collectedAt)} />
+          <Metric icon={<ShieldCheck className="size-4" />} label="룰 버전" value={value?.analysis.ruleVersion ?? "-"} />
+          <Metric icon={<Database className="size-4" />} label="랭킹 가능 종목" value={value ? `${Number(value.analysis.summary.rankedRows ?? 0).toLocaleString()}종목` : "-"} />
+        </section>
+
+        <section className="rounded-lg border border-border bg-card p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold">현재 운용 규칙 · A0 분기</h2>
+              <p className="text-[11px] text-muted-foreground">세부 숫자는 prospective 기간 동안 고정합니다.</p>
+            </div>
+            <Badge>PRIMARY</Badge>
+          </div>
+          <div className="grid gap-2 md:grid-cols-2">
+            {RULES.map(([label, description]) => (
+              <div key={label} className="rounded-md border border-border bg-surface px-3 py-2">
+                <p className="text-[11px] font-semibold">{label}</p>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">{description}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="grid gap-3 lg:grid-cols-3">
+          <StrategyCard role="PRIMARY" title="A0 분기" detail="공격형 · sector cap 없음 · E80 Onset · X70 · 분기 리밸런싱" />
+          <StrategyCard role="SHADOW" title="A2 분기" detail="A0와 동일 신호 · 동일 섹터 최대 2종목 · 분기 리밸런싱" />
+          <StrategyCard role="SHADOW" title="B3 Beta 0.60×3" detail="균형형 · 동일 섹터 최대 3종목 · E80 · X50 + beta rank<0.60 3일" />
+        </section>
+
+        <section className="rounded-lg border border-border bg-card p-4">
+          <h2 className="text-sm font-semibold">실제 자료수집 계약</h2>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Google Colab의 미국주식 전용 수집기가 Toss Open API를 호출하고, 계산에 필요한 원자 피처를 Supabase에 업로드합니다. 횡단면 순위와 Onset/Exit는 GitHub 엔진이 한 번만 계산합니다.
           </p>
-        </div>
-        {started && !query.isPending ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => {
-              invalidate();
-              setStarted(false);
-              setTimeout(() => setStarted(true), 0);
-            }}
-          >
-            <RefreshCw className="size-3.5" />
-            다시 스크리닝
-          </Button>
-        ) : null}
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <DataField title="가격" body="Adjusted 일봉 OHLCV, 현재가" />
+            <DataField title="종목 마스터" body="시장·통화·상장상태·발행주식수·보통주 여부" />
+            <DataField title="전략 피처" body="ret120/252, beta60, TK gap, relvol, ADV20, Amihud20" />
+            <DataField title="시장 메타" body="US 캘린더, USD/KRW, Toss 랭킹 snapshot(진단용)" />
+          </div>
+          <p className="mt-3 text-[10px] text-muted-foreground">
+            국내 전용 투자자매매·프로그램·공매도·신용·대차 데이터는 미국 전략 입력에 포함하지 않습니다.
+          </p>
+        </section>
+
+        <section className="rounded-lg border border-border bg-card p-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold">Prospective 누적 상태</h2>
+            <Link to="/us/portfolio" className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
+              US 포트폴리오 <ExternalLink className="size-3" />
+            </Link>
+          </div>
+          <p className="mt-2 text-[12px] text-muted-foreground">
+            저장된 스크리닝 일수: <span className="font-semibold text-foreground">{history.data?.length ?? 0}</span>
+            {history.data?.[0]?.date ? ` · 최근 ${history.data[0].date}` : ""}
+          </p>
+        </section>
       </div>
-
-      <div className="mb-4 grid gap-4 lg:grid-cols-2">
-        <Card
-          title="1. 이용할 데이터 & 토스증권 API 조회 코드 (로컬 수집기)"
-          subtitle="API 키·시크릿은 로컬 환경변수에만 두고, 검증·정규화된 CSV만 업로드합니다."
-          icon={<FileCode2 className="size-4 text-primary" />}
-        >
-          <UsFetchGuide />
-        </Card>
-        <Card
-          title="2. 받은 데이터 입력 (붙여넣기 또는 CSV/JSON 업로드)"
-          subtitle="입력 데이터는 이 브라우저에만 저장되며 서버로 시세를 조회하지 않습니다."
-          icon={<Database className="size-4 text-primary" />}
-        >
-          <UsDataInput
-            onChanged={(ok) => {
-              setHasData(ok);
-              invalidate();
-              setStarted(false);
-            }}
-          />
-        </Card>
-      </div>
-
-      {!started ? (
-        <section className="rounded-lg border border-dashed border-primary/50 bg-card p-8 text-center">
-          <Play className="mx-auto mb-3 size-8 text-primary" />
-          <h2 className="mb-1 text-base font-semibold">3. US 스크리닝 시작</h2>
-          <p className="mx-auto mb-4 max-w-md text-[12px] leading-relaxed text-muted-foreground">
-            Market Policy v1 → 섹터 게이트 → Technical 7 / Priority 10 / ETF Health를 계산하고, US
-            스크리너·종목 상세 탭이 이 데이터로 동작합니다.
-          </p>
-          <Button size="lg" className="gap-2" disabled={!hasData} onClick={() => setStarted(true)}>
-            <Play className="size-4" />
-            US 스크리닝 시작
-          </Button>
-          {!hasData ? (
-            <p className="mt-2 text-[11px] text-warn">먼저 위 2번 칸에 데이터를 적용해 주세요.</p>
-          ) : null}
-        </section>
-      ) : query.isPending ? (
-        <section className="flex items-center justify-center gap-2 rounded-lg border border-border bg-card p-8 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
-          입력한 미국 시세로 지표와 점수를 계산하는 중입니다…
-        </section>
-      ) : isUsAnalysisFailure(query.data) ? (
-        <section className="rounded-lg border border-down/40 bg-down/10 p-6 text-[12px] text-down">
-          <p className="flex items-center gap-1.5 font-semibold">
-            <AlertTriangle className="size-4" />
-            분석을 실행하지 못했습니다.
-          </p>
-          <p className="mt-1 leading-relaxed">{query.data.error}</p>
-        </section>
-      ) : isUsAnalysisPayload(query.data) ? (
-        <UsBriefing analysis={query.data.analysis} />
-      ) : null}
-
-      <UsDisclaimer />
     </AppShell>
   );
 }
 
-function UsBriefing({ analysis }: { analysis: UsAnalysisResult }) {
-  const { market, sectors, rows } = analysis;
-  const eligible = rows.filter((r) => r.eligibility.scoreEligible);
-  const stateLabel =
-    market.state === "RISK_ON" ? "Risk-On" : market.state === "NEUTRAL" ? "Neutral" : "Risk-Off";
-  const stateColor =
-    market.state === "RISK_ON" ? "text-up" : market.state === "NEUTRAL" ? "text-warn" : "text-down";
-  const postureLabel =
-    market.researchPosture === "NORMAL"
-      ? "NORMAL — 통상 리서치"
-      : market.researchPosture === "CAUTION"
-        ? "CAUTION — 확인 항목 증가"
-        : "DEFENSIVE — 데이터·리스크 점검 우선";
-  const top = [...eligible].slice(0, 10);
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
-        <span>
-          기준일 {analysis.asOfDate} · ruleVersion {analysis.ruleVersion} · 데이터{" "}
-          {analysis.dataVersion}
-        </span>
-        <span>계산 시각 {formatKstDateTime(analysis.calculatedAt)} (KST · EOD 확정 일봉)</span>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card
-          title="시장 상태 (Market Policy v1)"
-          icon={<Activity className="size-4 text-primary" />}
-        >
-          <p className={`mb-1 text-lg font-bold ${stateColor}`}>{stateLabel}</p>
-          <p className="mb-2 text-[11px] text-muted-foreground">
-            researchPosture {postureLabel} · 표시등급 상한 {market.displayGradeCap}
-          </p>
-          {market.incomplete ? (
-            <p className="mb-2 text-[11px] text-warn">
-              일부 시장 신호가 “데이터 없음”입니다({market.availableCount}/{market.signals.length}{" "}
-              판정 가능). 판단 보류 항목은 0점 처리하지 않습니다.
-            </p>
-          ) : null}
-          <ul className="space-y-1">
-            {market.signals.map((s) => (
-              <li key={s.key} className="flex items-start gap-1.5 text-[11.5px]">
-                <StatusIcon status={s.status} />
-                <span>
-                  <span className="font-medium">{s.label}</span>
-                  <span className="ml-1 text-muted-foreground">
-                    {s.observed} · 기준 {s.threshold}
-                  </span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-
-        <Card title="분석 요약" icon={<Activity className="size-4 text-primary" />}>
-          <dl className="space-y-1 text-[12px]">
-            {[
-              ["전체 분석 종목", `${rows.length}종목`],
-              ["평가 자격 통과", `${eligible.length}종목`],
-              [
-                "S/A 등급 (표시등급)",
-                `${eligible.filter((r) => r.displayGrade === "S" || r.displayGrade === "A").length}종목`,
-              ],
-              [
-                "coverage 90% 이상",
-                `${rows.filter((r) => r.dataStatus === "COMPLETE").length}종목`,
-              ],
-              [
-                "TACTICAL_ONLY (레버리지·인버스)",
-                `${rows.filter((r) => r.eligibility.status === "TACTICAL_ONLY").length}종목`,
-              ],
-              [
-                "NEW_LISTING (이력 부족)",
-                `${rows.filter((r) => r.eligibility.status === "NEW_LISTING").length}종목`,
-              ],
-            ].map(([k, v]) => (
-              <div
-                key={k}
-                className="flex justify-between border-b border-border py-1 last:border-0"
-              >
-                <dt className="text-muted-foreground">{k}</dt>
-                <dd className="num font-medium">{v}</dd>
-              </div>
-            ))}
-          </dl>
-          <p className="mt-2 text-[11px] text-muted-foreground">
-            상세 필터·CSV 내보내기는{" "}
-            <Link to="/us/screener" className="text-primary hover:underline">
-              US 스크리너
-            </Link>{" "}
-            탭에서 이용하세요.
-          </p>
-        </Card>
-
-        <Card
-          title="상위 우선도 후보 (매수 지시 아님)"
-          icon={<Activity className="size-4 text-primary" />}
-        >
-          <ul className="space-y-1">
-            {top.map((r) => (
-              <li
-                key={r.instrument.symbol}
-                className="flex items-center justify-between gap-2 text-[12px]"
-              >
-                <Link
-                  to="/us/instrument/$symbol"
-                  params={{ symbol: r.instrument.symbol }}
-                  className="flex items-center gap-1.5 hover:underline"
-                >
-                  <UsGradeBadge grade={r.displayGrade} />
-                  <span className="font-mono font-semibold">{r.instrument.symbol}</span>
-                  <span className="max-w-[110px] truncate text-muted-foreground">
-                    {r.instrument.name}
-                  </span>
-                </Link>
-                <span className="num">{r.rawComposite.toFixed(1)}</span>
-              </li>
-            ))}
-            {top.length === 0 ? (
-              <li className="text-[11px] text-muted-foreground">
-                평가 자격을 통과한 종목이 없습니다.
-              </li>
-            ) : null}
-          </ul>
-        </Card>
-      </div>
-
-      <section className="rounded-lg border border-border bg-card p-4">
-        <h2 className="mb-2 text-sm font-semibold">섹터 게이트 (11개 GICS 프록시 ETF)</h2>
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          {sectors.map((s) => (
-            <div key={s.sector} className="rounded-md border border-border p-2.5">
-              <div className="mb-1 flex items-center justify-between gap-2">
-                <span className="text-[12px] font-semibold">
-                  {s.label}{" "}
-                  <span className="font-mono text-[10px] text-muted-foreground">{s.proxyEtf}</span>
-                </span>
-                <Badge
-                  variant="outline"
-                  className={`text-[10px] ${
-                    s.state === "STRONG"
-                      ? "border-up/50 text-up"
-                      : s.state === "WEAK"
-                        ? "border-down/50 text-down"
-                        : s.state === "UNKNOWN"
-                          ? "text-muted-foreground"
-                          : "border-warn/50 text-warn"
-                  }`}
-                >
-                  {s.state === "UNKNOWN" ? "판단 보류" : s.state}
-                </Badge>
-              </div>
-              <p className="num text-[11px] text-muted-foreground">
-                조건 {s.score}/{s.availableConditions || 0} 충족 · 3M 초과수익{" "}
-                {s.excessReturn63 === null ? "N/A" : `${s.excessReturn63.toFixed(1)}%`} · breadth{" "}
-                {s.breadthMa50 === null ? "N/A" : `${s.breadthMa50.toFixed(0)}%`}
-              </p>
-              <ul className="mt-1 space-y-0.5">
-                {s.conditions.map((c) => (
-                  <li
-                    key={c.key}
-                    className="flex items-start gap-1 text-[10.5px] text-muted-foreground"
-                  >
-                    <StatusIcon status={c.status} />
-                    <span>
-                      {c.label} — {c.observed}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-lg border border-border bg-card p-4 text-[11px] leading-relaxed text-muted-foreground">
-        <h2 className="mb-1 text-sm font-semibold text-foreground">데이터 한계</h2>
-        <ul className="list-inside list-disc space-y-0.5">
-          {analysis.notes.map((n) => (
-            <li key={n}>{n}</li>
-          ))}
-        </ul>
-      </section>
-    </div>
-  );
+function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return <div className="rounded-lg border border-border bg-card p-3"><div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">{icon}{label}</div><p className="mt-1 text-sm font-semibold">{value}</p></div>;
+}
+function StrategyCard({ role, title, detail }: { role: string; title: string; detail: string }) {
+  return <div className="rounded-lg border border-border bg-card p-4"><Badge variant={role === "PRIMARY" ? "default" : "outline"}>{role}</Badge><h3 className="mt-2 text-sm font-semibold">{title}</h3><p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{detail}</p></div>;
+}
+function DataField({ title, body }: { title: string; body: string }) {
+  return <div className="rounded-md bg-muted/40 px-3 py-2"><p className="text-[11px] font-medium">{title}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{body}</p></div>;
 }

@@ -1,0 +1,62 @@
+name: US Prospective Screening
+
+on:
+  workflow_dispatch:
+    inputs:
+      supabase_user_id:
+        description: "CloudTrend Supabase user id (optional when secret is set)"
+        required: false
+        type: string
+  pull_request:
+    paths:
+      - "src/lib/engine/usProspective*.ts"
+      - "src/lib/usProspectiveCloud.ts"
+      - "src/routes/us*.tsx"
+      - "scripts/run-us-screening.ts"
+      - ".github/workflows/us-prospective-screening.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/lib/engine/usProspective*.ts"
+      - "src/lib/usProspectiveCloud.ts"
+      - "src/routes/us*.tsx"
+      - "scripts/run-us-screening.ts"
+      - ".github/workflows/us-prospective-screening.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: us-prospective-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:us
+      - run: npm run build
+
+  screen:
+    if: github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ inputs.supabase_user_id || secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Run frozen US prospective engine
+        run: npm run us:screening -- --user "$SUPABASE_USER_ID"
