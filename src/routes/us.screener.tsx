@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Download } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
@@ -19,6 +19,27 @@ const EMPTY_ROWS: UsProspectiveCacheRow[] = [];
 
 type Filter =
   "PRIMARY_WATCH" | "PRIMARY_ENTRY" | "PRIMARY_EXIT" | "A2_ENTRY" | "B3_ENTRY" | "B3_EXIT" | "ALL";
+
+type SortDirection = "asc" | "desc";
+type SortKey =
+  | "symbol"
+  | "marketSector"
+  | "close"
+  | "ret120"
+  | "ret252"
+  | "ret120Rank"
+  | "ret252Rank"
+  | "onset80"
+  | "betaWeakStreak"
+  | "coreRank"
+  | "betaRank"
+  | "tkRank"
+  | "relvolRank"
+  | "liquidityRank"
+  | "amihudRank"
+  | "adv20Usd"
+  | "a0Signal"
+  | "shadowSignal";
 
 function pct(v: number | null, digits = 1) {
   return v === null ? "-" : `${(v * 100).toFixed(digits)}%`;
@@ -40,6 +61,7 @@ function UsScreenerPage() {
   const [sector, setSector] = useState("");
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection } | null>(null);
   const rows = query.data?.analysis.rows ?? EMPTY_ROWS;
   const entryFunnel = useMemo(() => {
     const candidates = rows.filter((r) => r.symbol !== "SPY");
@@ -95,9 +117,42 @@ function UsScreenerPage() {
     });
   }, [rows, filter, search, sector]);
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / 100));
+  const sortValue = (r: UsProspectiveCacheRow, key: SortKey): number | string | null => {
+    if (key === "symbol") return `${r.symbol} ${r.name}`;
+    if (key === "marketSector") return `${r.market ?? ""} ${r.sector ?? ""}`;
+    if (key === "onset80") return r.onset80 ? 1 : 0;
+    if (key === "a0Signal") return r.a0Entry ? 2 : r.a0Exit ? 0 : 1;
+    if (key === "shadowSignal")
+      return (r.a2Entry ? 8 : 0) + (r.b3Entry ? 4 : 0) + (r.a2Exit ? 2 : 0) + (r.b3Exit ? 1 : 0);
+    return r[key];
+  };
+
+  const sorted = useMemo(() => {
+    if (!sort) return filtered;
+    const direction = sort.direction === "asc" ? 1 : -1;
+    return [...filtered].sort((a, b) => {
+      const av = sortValue(a, sort.key);
+      const bv = sortValue(b, sort.key);
+      if (av === null || av === undefined) return bv === null || bv === undefined ? 0 : 1;
+      if (bv === null || bv === undefined) return -1;
+      if (typeof av === "string" || typeof bv === "string")
+        return String(av).localeCompare(String(bv), undefined, { numeric: true }) * direction;
+      return (Number(av) - Number(bv)) * direction;
+    });
+  }, [filtered, sort]);
+
+  const toggleSort = (key: SortKey) => {
+    setSort((current) =>
+      current?.key === key
+        ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: "asc" },
+    );
+    setPage(0);
+  };
+
+  const pageCount = Math.max(1, Math.ceil(sorted.length / 100));
   const currentPage = Math.min(page, pageCount - 1);
-  const visibleRows = filtered.slice(currentPage * 100, (currentPage + 1) * 100);
+  const visibleRows = sorted.slice(currentPage * 100, (currentPage + 1) * 100);
 
   const download = () => {
     const header = [
@@ -128,7 +183,7 @@ function UsScreenerPage() {
       "b3Entry",
       "b3Exit",
     ];
-    const body = filtered.map((r) =>
+    const body = sorted.map((r) =>
       header
         .map(
           (k) =>
@@ -303,24 +358,24 @@ function UsScreenerPage() {
               <table className="w-full min-w-[1280px] text-[11px]">
                 <thead>
                   <tr className="border-b bg-surface-strong text-muted-foreground [&>th]:px-2 [&>th]:py-2 [&>th]:text-right">
-                    <th className="!text-left">종목</th>
-                    <th className="!text-left">시장/섹터</th>
-                    <th>종가</th>
-                    <th>120D</th>
-                    <th>252D</th>
-                    <th>120D 순위</th>
-                    <th>252D 순위</th>
-                    <th>Onset</th>
-                    <th>β 약화일</th>
-                    <th>Core</th>
-                    <th>Beta</th>
-                    <th>TK</th>
-                    <th>RelVol</th>
-                    <th>Liquidity</th>
-                    <th>Amihud</th>
-                    <th>ADV20</th>
-                    <th className="!text-left">A0</th>
-                    <th className="!text-left">Shadow</th>
+                    <SortableHeader label="종목" sortKey="symbol" sort={sort} onSort={toggleSort} align="left" />
+                    <SortableHeader label="시장/섹터" sortKey="marketSector" sort={sort} onSort={toggleSort} align="left" />
+                    <SortableHeader label="종가" sortKey="close" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="120D" sortKey="ret120" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="252D" sortKey="ret252" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="120D 순위" sortKey="ret120Rank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="252D 순위" sortKey="ret252Rank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="Onset" sortKey="onset80" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="β 약화일" sortKey="betaWeakStreak" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="Core" sortKey="coreRank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="Beta" sortKey="betaRank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="TK" sortKey="tkRank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="RelVol" sortKey="relvolRank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="Liquidity" sortKey="liquidityRank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="Amihud" sortKey="amihudRank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="ADV20" sortKey="adv20Usd" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="A0" sortKey="a0Signal" sort={sort} onSort={toggleSort} align="left" />
+                    <SortableHeader label="Shadow" sortKey="shadowSignal" sort={sort} onSort={toggleSort} align="left" />
                   </tr>
                 </thead>
                 <tbody>
@@ -339,6 +394,41 @@ function UsScreenerPage() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+
+function SortableHeader({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  align = "right",
+}: {
+  label: string;
+  sortKey: SortKey;
+  sort: { key: SortKey; direction: SortDirection } | null;
+  onSort: (key: SortKey) => void;
+  align?: "left" | "right";
+}) {
+  const active = sort?.key === sortKey;
+  const Icon = active ? (sort.direction === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+  const ariaSort = active ? (sort.direction === "asc" ? "ascending" : "descending") : "none";
+
+  return (
+    <th className={align === "left" ? "!text-left" : undefined} aria-sort={ariaSort}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`inline-flex w-full items-center gap-1 rounded px-1 py-0.5 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
+          align === "left" ? "justify-start" : "justify-end"
+        }`}
+        title={active ? `${label} ${sort.direction === "asc" ? "오름차순" : "내림차순"} 정렬 중` : `${label} 정렬`}
+      >
+        <span>{label}</span>
+        <Icon className={`size-3 ${active ? "text-foreground" : "opacity-40"}`} aria-hidden="true" />
+      </button>
+    </th>
   );
 }
 
