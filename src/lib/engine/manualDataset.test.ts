@@ -78,6 +78,99 @@ describe("parseManualMarketData large-column CSV path", () => {
     expect(parsed.dataset.bars["005930"]?.[0]?.tradingValue).toBe(70_500_000);
   });
 
+
+  it("fills short and lending fields from a later overlapping source", () => {
+    const supplyHeader = [
+      "symbol",
+      "name",
+      "market",
+      "securityType",
+      "date",
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume",
+      "tradingValue",
+      "marketCap",
+      "foreignNetBuyValue",
+      "institutionNetBuyValue",
+      "sectorCode",
+      "shortSellingVolumeRate",
+      "lendingBalanceQuantity",
+    ].join(",");
+
+    const indexes = Array.from({ length: 60 }, (_, index) =>
+      [
+        "KOSPI",
+        "코스피",
+        "INDEX",
+        "INDEX",
+        dateAt(index),
+        100,
+        101,
+        99,
+        100,
+        1,
+        100,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+      ].join(","),
+    );
+    const baseStock = [
+      "005930",
+      "삼성전자",
+      "KOSPI",
+      "STOCK",
+      dateAt(59),
+      70000,
+      71000,
+      69000,
+      70500,
+      1000,
+      70500000,
+      400000000,
+      1000000,
+      2000000,
+      "SEMICONDUCTOR",
+      "",
+      "",
+    ].join(",");
+    const enrichedStock = [
+      "005930",
+      "삼성전자",
+      "KOSPI",
+      "STOCK",
+      dateAt(59),
+      70000,
+      71000,
+      69000,
+      70500,
+      1000,
+      70500000,
+      "",
+      "",
+      "",
+      "SEMICONDUCTOR",
+      1.75,
+      123456,
+    ].join(",");
+
+    const parsed = parseManualMarketData([
+      [supplyHeader, ...indexes, baseStock].join("\n"),
+      [supplyHeader, enrichedStock].join("\n"),
+    ]);
+
+    const bar = parsed.dataset.bars["005930"]?.[0];
+    expect(bar?.marketCap).toBe(400_000_000);
+    expect(bar?.shortSellingVolumeRate).toBe(1.75);
+    expect(bar?.lendingBalanceQuantity).toBe(123_456);
+  });
+
   it("normalizes numeric KRX symbols without changing index or non-numeric symbols", () => {
     expect(normalizeKrxSymbol("5930")).toBe("005930");
     expect(normalizeKrxSymbol("660")).toBe("000660");

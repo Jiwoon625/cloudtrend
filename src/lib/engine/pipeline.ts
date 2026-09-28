@@ -460,7 +460,11 @@ export function runAnalysis(
       inst.instrumentType === "STOCK"
         ? {
             shortSellingVolumeRate20dChangePp: snap.shortSellingVolumeRate20dChangePp ?? null,
+            shortSellingVolumeRateLatest: snap.shortSellingVolumeRateLatest ?? null,
+            shortSellingVolumeRateObservationCount: snap.shortSellingVolumeRateObservationCount ?? 0,
             lendingBalanceQuantity20dChange: snap.lendingBalanceQuantity20dChange ?? null,
+            lendingBalanceQuantityLatest: snap.lendingBalanceQuantityLatest ?? null,
+            lendingBalanceQuantityObservationCount: snap.lendingBalanceQuantityObservationCount ?? 0,
           }
         : null,
     );

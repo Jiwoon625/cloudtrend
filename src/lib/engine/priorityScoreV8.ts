@@ -6,7 +6,11 @@ const PRIORITY_SUPPLY_RISK_COMPONENT_PENALTY = PRIORITY_SUPPLY_RISK_MAX_PENALTY 
 
 export interface PrioritySupplyRiskV8 {
   shortSellingVolumeRate20dChangePp: number | null;
+  shortSellingVolumeRateLatest?: number | null;
+  shortSellingVolumeRateObservationCount?: number;
   lendingBalanceQuantity20dChange: number | null;
+  lendingBalanceQuantityLatest?: number | null;
+  lendingBalanceQuantityObservationCount?: number;
 }
 
 function finiteOrNull(value: number | null): number | null {
@@ -64,11 +68,27 @@ export function buildPriorityScoreV8(
     const lendingChange = finiteOrNull(supplyRisk.lendingBalanceQuantity20dChange);
     const shortRisk = shortChange !== null && shortChange > 0;
     const lendingRisk = lendingChange !== null && lendingChange > 0;
+    const shortLatest = finiteOrNull(supplyRisk.shortSellingVolumeRateLatest ?? null);
+    const shortObservations = Math.max(0, supplyRisk.shortSellingVolumeRateObservationCount ?? 0);
+    const lendingLatest = finiteOrNull(supplyRisk.lendingBalanceQuantityLatest ?? null);
+    const lendingObservations = Math.max(0, supplyRisk.lendingBalanceQuantityObservationCount ?? 0);
+    const shortActual =
+      shortChange !== null
+        ? `${signed(shortChange, 2)}%p`
+        : shortLatest !== null
+          ? `20D 비교 이력 부족 (유효 ${shortObservations}/21) · 최신 ${shortLatest.toLocaleString("ko-KR", { maximumFractionDigits: 2 })}%`
+          : "데이터 없음";
+    const lendingActual =
+      lendingChange !== null
+        ? `${signed(lendingChange, 0)}주`
+        : lendingLatest !== null
+          ? `20D 비교 이력 부족 (유효 ${lendingObservations}/21) · 최신 ${Math.round(lendingLatest).toLocaleString("ko-KR")}주`
+          : "데이터 없음";
 
     supplyRows.push({
       group: "Supply Risk",
       rule: "공매도 거래량 비중 20D 증가",
-      actual: shortChange === null ? "데이터 없음" : `${signed(shortChange, 2)}%p`,
+      actual: shortActual,
       threshold: `20거래일 전 대비 증가 시 -${PRIORITY_SUPPLY_RISK_COMPONENT_PENALTY}점`,
       status: shortChange === null ? "NO_DATA" : shortRisk ? "FAIL" : "PASS",
       points: shortRisk ? -PRIORITY_SUPPLY_RISK_COMPONENT_PENALTY : 0,
@@ -77,7 +97,7 @@ export function buildPriorityScoreV8(
     supplyRows.push({
       group: "Supply Risk",
       rule: "대차잔고 20D 증가",
-      actual: lendingChange === null ? "데이터 없음" : `${signed(lendingChange, 0)}주`,
+      actual: lendingActual,
       threshold: `20거래일 전 대비 증가 시 -${PRIORITY_SUPPLY_RISK_COMPONENT_PENALTY}점`,
       status: lendingChange === null ? "NO_DATA" : lendingRisk ? "FAIL" : "PASS",
       points: lendingRisk ? -PRIORITY_SUPPLY_RISK_COMPONENT_PENALTY : 0,
