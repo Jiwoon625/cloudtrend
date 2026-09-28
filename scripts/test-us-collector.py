@@ -86,6 +86,26 @@ class CollectorTest(unittest.TestCase):
                 source = "\n".join(line for line in cell(index).splitlines() if not line.lstrip().startswith(("!", "%")))
                 compile(source, f"cell{index}", "exec")
 
+    def test_lifecycle_exemption_is_dated_and_never_fills_prices(self):
+        ns = dict(pd=pd, np=np)
+        functions(8, ns)
+        apply = ns["apply_verified_lifecycle"]
+        event = dict(symbol="TBPH", effective_date="2026-09-24", status="SUSPENDED", source_url="https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2026-668")
+        def snapshot():
+            return pd.DataFrame([dict(symbol="TBPH",close=np.nan,status="ACTIVE",toss_tradable=True,active20=True)])
+        with self.assertRaisesRegex(RuntimeError, "Missing confirmed"):
+            apply(snapshot(), ["TBPH"], "2026-09-23", [event])
+        with self.assertRaisesRegex(RuntimeError, "Missing confirmed"):
+            apply(snapshot(), ["TBPH"], "2026-09-25", [])
+        frame = snapshot()
+        self.assertEqual(apply(frame, ["TBPH"], "2026-09-25", [event]), [event])
+        self.assertTrue(pd.isna(frame.loc[0,"close"]))
+        self.assertFalse(frame.loc[0,"toss_tradable"])
+        self.assertFalse(frame.loc[0,"active20"])
+        self.assertEqual(frame.loc[0,"status"], "SUSPENDED")
+        with self.assertRaises(ValueError):
+            apply(frame, ["SPY"], "2026-09-25", [{**event,"symbol":"SPY"}])
+
     def test_same_day_source_bytes_are_frozen(self):
         with tempfile.TemporaryDirectory() as tmp:
             ns = dict(pd=pd,np=np,OUTPUT_DIR=Path(tmp),latest_date="2026-09-25",AS_OF_DATE="2026-09-25",display=lambda *args: None)
