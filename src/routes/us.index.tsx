@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { loadUsProspectiveCache, loadUsScreeningHistory } from "@/lib/usProspectiveCloud";
+import { loadUsProspectiveSummary, loadUsScreeningHistory } from "@/lib/usProspectiveCloud";
 
 export const Route = createFileRoute("/us/")({
   ssr: false,
@@ -38,8 +38,8 @@ function fmtDate(value: string | undefined | null) {
 
 function UsMarketDataPage() {
   const cache = useQuery({
-    queryKey: ["us-prospective-cache"],
-    queryFn: loadUsProspectiveCache,
+    queryKey: ["us-prospective-summary"],
+    queryFn: loadUsProspectiveSummary,
     staleTime: 60_000,
   });
   const history = useQuery({
@@ -107,7 +107,7 @@ function UsMarketDataPage() {
             <DataField title="데이터 공급자" body={value?.source.provider ?? "미수집"} />
             <DataField
               title="수집 종목 수 (SPY 포함)"
-              body={value ? `${value.analysis.rows.length.toLocaleString()}종목` : "-"}
+              body={value ? `${value.analysis.rowCount.toLocaleString()}종목` : "-"}
             />
             <DataField title="입력 형식" body={value?.source.schemaVersion ?? "-"} />
             <DataField

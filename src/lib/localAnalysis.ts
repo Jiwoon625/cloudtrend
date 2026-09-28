@@ -1,3 +1,4 @@
+import { computeDatasetDataStatus } from "./datasetDataStatus";
 // 직접 입력한 데이터로 브라우저에서 분석을 실행한다(외부 시세 API 호출 없음).
 import { runBacktest, type BacktestParams, type BacktestResult } from "@/lib/engine/backtestV4";
 import { buildAlignedRankingAnalysis } from "@/lib/engine/backtestRankingV5";
@@ -8,7 +9,6 @@ import {
   runSectorRotationBacktest,
   type SectorRotationBacktestResult,
 } from "@/lib/engine/sectorRotationBacktest";
-import { buildFullUniverseSectorDataset } from "@/lib/engine/sectorRotationFullUniverse";
 import { getManualDataset, MANUAL_DATA_MISSING_MESSAGE } from "@/lib/manualDataStore";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import type {
@@ -73,108 +73,7 @@ export function computeLocalInstrumentDetail(symbol: string): InstrumentDetailPa
 export function computeLocalDataStatus(): DataStatusPayload {
   const parsed = getManualDataset();
   if (!parsed) throw new Error(MANUAL_DATA_MISSING_MESSAGE);
-  const dataset = buildFullUniverseSectorDataset(parsed.dataset);
-  const today = dataset.asOfDate;
-
-  let ohlcErrors = 0;
-  let negativeVolume = 0;
-  let duplicates = 0;
-  let futureDates = 0;
-  let insufficient = 0;
-  let abnormalMoves = 0;
-  let priceRecords = 0;
-  const barCoverage: DataStatusPayload["barCoverage"] = [];
-
-  for (const inst of dataset.instruments) {
-    const bars = dataset.bars[inst.symbol] ?? [];
-    priceRecords += bars.length;
-    if (bars.length < 120) insufficient++;
-    const seen = new Set<string>();
-    for (let i = 0; i < bars.length; i++) {
-      const b = bars[i]!;
-      if (
-        b.high < b.low ||
-        b.high < b.open ||
-        b.high < b.close ||
-        b.low > b.open ||
-        b.low > b.close
-      )
-        ohlcErrors++;
-      if (b.volume < 0) negativeVolume++;
-      if (seen.has(b.tradeDate)) duplicates++;
-      seen.add(b.tradeDate);
-      if (b.tradeDate > today) futureDates++;
-      if (i > 0 && Math.abs(b.close / bars[i - 1]!.close - 1) > 0.29) abnormalMoves++;
-    }
-    barCoverage.push({
-      symbol: inst.symbol,
-      name: inst.name,
-      bars: bars.length,
-      first: bars[0]?.tradeDate ?? "-",
-      last: bars[bars.length - 1]?.tradeDate ?? "-",
-    });
-  }
-
-  const stockCount = dataset.instruments.filter((i) => i.instrumentType === "STOCK").length;
-  const etfCount = dataset.instruments.length - stockCount;
-  const indexRecords = dataset.indexSeries.reduce((a, s) => a + s.bars.length, 0);
-
-  return {
-    source: SOURCE,
-    asOfDate: dataset.asOfDate,
-    dataProvider: dataset.provider,
-    dataVersion: dataset.version,
-    strategyVersion: runAnalysis(dataset, getActiveScoringConfig()).strategyVersion,
-    isLive: dataset.isLive,
-    notes: dataset.notes,
-    capabilities: dataset.capabilities,
-    coverage: [
-      {
-        provider: dataset.provider,
-        kind: "종목 일봉(직접 입력)",
-        count: priceRecords,
-        entities: dataset.instruments.length,
-        ok: priceRecords > 0,
-      },
-      {
-        provider: dataset.provider,
-        kind: "지수 일봉(직접 입력)",
-        count: indexRecords,
-        entities: dataset.indexSeries.length,
-        ok: indexRecords > 0,
-      },
-      {
-        provider: dataset.provider,
-        kind: "시가총액",
-        count: dataset.capabilities.marketCap ? dataset.instruments.length : 0,
-        entities: dataset.instruments.length,
-        ok: dataset.capabilities.marketCap,
-      },
-      {
-        provider: dataset.provider,
-        kind: "투자자별 순매수",
-        count: dataset.capabilities.investorFlow ? priceRecords : 0,
-        entities: dataset.instruments.length,
-        ok: dataset.capabilities.investorFlow,
-      },
-      {
-        provider: dataset.provider,
-        kind: "ETF 상품 메타데이터",
-        count: 0,
-        entities: etfCount,
-        ok: false,
-      },
-      {
-        provider: dataset.provider,
-        kind: "재무 스냅샷",
-        count: 0,
-        entities: stockCount,
-        ok: false,
-      },
-    ],
-    checks: { ohlcErrors, negativeVolume, duplicates, futureDates, insufficient, abnormalMoves },
-    barCoverage,
-  };
+  return computeDatasetDataStatus(parsed.dataset, getActiveScoringConfig());
 }
 
 export interface LocalBacktestPayload {

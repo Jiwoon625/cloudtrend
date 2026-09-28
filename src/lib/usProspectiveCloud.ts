@@ -1,4 +1,5 @@
-import { ownerPath, readObject, supabase, userId } from "@/lib/cloud";
+import { usBrowserViews, type UsProspectiveSummary } from "./usBrowserViews";
+import { ownerPath, readObject, readBinaryObject, supabase, userId } from "@/lib/cloud";
 
 export interface UsProspectiveCacheRow {
   date: string;
@@ -89,14 +90,30 @@ export interface UsPortfolioTradeRecord {
 }
 
 export async function loadUsProspectiveCache() {
+  const bytes = await readBinaryObject(await ownerPath("cache/us-screening/view-v1.json.gz"));
+  if (bytes) {
+    const stream = new Blob([bytes as BlobPart])
+      .stream()
+      .pipeThrough(new DecompressionStream("gzip"));
+    return JSON.parse(await new Response(stream).text()) as UsProspectiveCache;
+  }
   return readObject<UsProspectiveCache>(await ownerPath("cache/us-screening/latest.json"));
+}
+
+export async function loadUsProspectiveSummary() {
+  const summary = await readObject<UsProspectiveSummary>(
+    await ownerPath("cache/us-screening/summary-v1.json"),
+  );
+  if (summary) return summary;
+  const legacy = await loadUsProspectiveCache();
+  return legacy ? usBrowserViews(legacy).summary : null;
 }
 
 export async function loadUsScreeningHistory(limit = 370) {
   const uid = await userId();
   const { data, error } = await supabase
     .from("us_screening_history")
-    .select("date,data_hash,rule_version,summary,signals,created_at")
+    .select("date,data_hash,rule_version")
     .eq("user_id", uid)
     .order("date", { ascending: false })
     .limit(limit);
@@ -123,7 +140,9 @@ export async function loadUsPortfolioSnapshots(limitPerStrategy = 370) {
     ["A0_QUARTER_PRIMARY", "A2_QUARTER_SHADOW", "B3_BETA_SHADOW", "SPY_BENCHMARK"].map((strategy) =>
       supabase
         .from("us_portfolio_snapshots")
-        .select("*")
+        .select(
+          "strategy_id,date,rule_version,nav_usd,cash_usd,benchmark_nav,daily_return,cumulative_return,turnover,fees_usd,positions_count",
+        )
         .eq("user_id", uid)
         .eq("strategy_id", strategy)
         .order("date", { ascending: false })
@@ -132,8 +151,28 @@ export async function loadUsPortfolioSnapshots(limitPerStrategy = 370) {
   );
   for (const result of results)
     if (result.error) throw new Error(`US 포트폴리오 조회 실패: ${result.error.message}`);
+  const latest = await Promise.all(
+    results.map(async (result) => {
+      const row = result.data?.[0];
+      if (!row) return null;
+      const { data, error } = await supabase
+        .from("us_portfolio_snapshots")
+        .select("positions:state->positions")
+        .eq("user_id", uid)
+        .eq("strategy_id", row.strategy_id)
+        .eq("date", row.date)
+        .single();
+      if (error) throw new Error(`US 보유종목 조회 실패: ${error.message}`);
+      return data;
+    }),
+  );
   return results
-    .flatMap((result) => result.data ?? [])
+    .flatMap((result, index) =>
+      (result.data ?? []).map((row, rowIndex) => ({
+        ...row,
+        state: rowIndex === 0 ? { positions: latest[index]?.positions ?? [] } : {},
+      })),
+    )
     .sort((a, b) => b.date.localeCompare(a.date)) as UsPortfolioSnapshotRecord[];
 }
 

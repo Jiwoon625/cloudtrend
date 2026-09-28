@@ -1,7 +1,8 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { computeLocalDataStatus } from "@/lib/localAnalysis";
-import { ensureManualDataset } from "@/lib/manualDataStore";
+import { supabase } from "./cloud";
+import { dataStatusServer } from "./webScreening.functions";
+import { getActiveScoringConfig } from "./scoringConfigStore";
 import type { ScoreBlock } from "@/lib/engine/scoring";
 import {
   DASHBOARD_CACHE_VERSION,
@@ -67,8 +68,12 @@ export const dashboardQueryOptions = queryOptions({
 export const dataStatusQueryOptions = queryOptions({
   queryKey: ["data-status", V8_QUERY_VERSION],
   queryFn: async () => {
-    await ensureManualDataset();
-    return computeLocalDataStatus();
+    const { data, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    if (!data.session) throw new Error("먼저 로그인해 주세요.");
+    return dataStatusServer({
+      data: { accessToken: data.session.access_token, config: getActiveScoringConfig() },
+    });
   },
   staleTime: 5 * 60 * 1000,
   retry: false,
