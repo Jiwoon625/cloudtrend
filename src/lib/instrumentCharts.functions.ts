@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
+import { downloadFreshObject } from "./freshStorage";
 import { mergeScoringConfig } from "./engine/scoring";
 import { parseManualMarketData } from "./engine/manualDataset";
 import { stableCacheJson } from "./screeningCacheContract";
@@ -50,9 +51,11 @@ async function session(input: Input) {
   const { data, error } = await client.auth.getUser(input.accessToken);
   if (error || !data.user) throw new Error("로그인 세션을 확인해 주세요.");
   const uid = data.user.id;
-  const { data: blob, error: readError } = await client.storage
-    .from("cloudtrend-data")
-    .download(`${uid}/cache/screening/latest.json`);
+  const { data: blob, error: readError } = await downloadFreshObject(
+    client,
+    "cloudtrend-data",
+    `${uid}/cache/screening/latest.json`,
+  );
   if (readError) throw new Error(`스크리닝 결과 조회 실패: ${readError.message}`);
   const saved = JSON.parse(await blob.text()) as {
     inputFingerprint: string;

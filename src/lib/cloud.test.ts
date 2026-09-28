@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({ auth: { getSession: mocks.getSession }, storage: { from: () => mocks } }),
 }));
-import { readFile, writeFile } from "./cloud";
+import { readFile, writeFile, readObject, writeObject } from "./cloud";
 describe("cloud file persistence", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -25,6 +25,31 @@ describe("cloud file persistence", () => {
     expect(await readFile("kr")).toEqual({ text: "csv", meta: {} });
     expect(mocks.download).toHaveBeenCalledWith("owner/kr.json");
   });
+  it.each(["dashboard", "screening"])(
+    "reads a new %s revision instead of a cached latest pointer after upload",
+    async (kind) => {
+      let origin = { revision: "old" };
+      const stale = origin;
+      mocks.download.mockImplementation(async (_path, options, parameters) => ({
+        data: new Blob([
+          JSON.stringify(options?.cacheNonce && parameters?.cache === "no-store" ? origin : stale),
+        ]),
+        error: null,
+      }));
+      mocks.upload.mockImplementation(async (_path, body) => {
+        origin = JSON.parse(await body.text());
+        return { error: null };
+      });
+      const path = `owner/cache/${kind}/latest.json`;
+      expect(await readObject(path)).toEqual({ revision: "old" });
+      await writeObject(path, { revision: "new" });
+      expect(await readObject(path)).toEqual({ revision: "new" });
+      expect(mocks.download.mock.calls[0][1].cacheNonce).not.toBe(
+        mocks.download.mock.calls[1][1].cacheNonce,
+      );
+      expect(mocks.upload.mock.calls[0][2].cacheControl).toBe("0");
+    },
+  );
   it("does not report network failures as empty data", async () => {
     mocks.download.mockResolvedValue({ error: { message: "offline" } });
     await expect(readFile("us")).rejects.toThrow("offline");
