@@ -41,6 +41,44 @@ function UsScreenerPage() {
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
   const rows = query.data?.analysis.rows ?? EMPTY_ROWS;
+  const entryFunnel = useMemo(() => {
+    const candidates = rows.filter((r) => r.symbol !== "SPY");
+    const onset = candidates.filter((r) => r.onset80);
+    const beta = onset.filter((r) => (r.betaRank ?? -1) >= 0.9);
+    const aggressiveConfirm = beta.filter((r) => (r.tkRank ?? -1) >= 0.8);
+    const balancedConfirm = beta.filter((r) => (r.relvolRank ?? -1) >= 0.8);
+
+    return [
+      {
+        step: "1",
+        label: "E80 Onset",
+        description: "전일 Core <80% → 당일 ≥80%",
+        a0: onset.length,
+        b3: onset.length,
+      },
+      {
+        step: "2",
+        label: "Beta 통과",
+        description: "Onset 중 Beta Rank ≥90%",
+        a0: beta.length,
+        b3: beta.length,
+      },
+      {
+        step: "3",
+        label: "Confirm 통과",
+        description: "A0/A2 TK ≥80% · B3 RelVol ≥80%",
+        a0: aggressiveConfirm.length,
+        b3: balancedConfirm.length,
+      },
+      {
+        step: "4",
+        label: "최종 Entry",
+        description: "유동성·거래가능 등 공통 조건까지 통과",
+        a0: candidates.filter((r) => r.a0Entry).length,
+        b3: candidates.filter((r) => r.b3Entry).length,
+      },
+    ];
+  }, [rows]);
   const filtered = useMemo(() => {
     const q = search.trim().toUpperCase();
     return rows.filter((r) => {
@@ -144,6 +182,49 @@ function UsScreenerPage() {
           </div>
         ) : (
           <>
+            <section className="space-y-2 rounded-lg border border-border bg-card p-3">
+              <div className="flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-semibold">신규 진입 Funnel</h2>
+                  <p className="text-[10px] text-muted-foreground">
+                    각 단계는 직전 단계 통과 종목 기준 · A0/A2는 동일 진입 신호
+                  </p>
+                </div>
+                {entryFunnel[0]?.a0 === 0 ? (
+                  <span className="text-[10px] text-muted-foreground">
+                    bootstrap 기준일에는 이전 Core가 없어 E80 Onset이 0건일 수 있습니다.
+                  </span>
+                ) : null}
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                {entryFunnel.map((item) => (
+                  <div key={item.step} className="rounded-md border border-border bg-background p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-semibold text-muted-foreground">
+                        STEP {item.step}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        A0/A2 · B3
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs font-semibold">{item.label}</p>
+                    <div className="mt-2 flex items-baseline gap-3">
+                      <span className="text-lg font-bold tabular-nums">
+                        {item.a0.toLocaleString()}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">A0/A2</span>
+                      <span className="text-lg font-bold tabular-nums">
+                        {item.b3.toLocaleString()}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">B3</span>
+                    </div>
+                    <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
+                      {item.description}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
             <div className="flex flex-wrap gap-1">
               {(
                 [
