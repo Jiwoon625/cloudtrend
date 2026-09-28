@@ -34,7 +34,7 @@ async function publishBrowserViews(
     .from(ANALYSIS_BUCKET)
     .upload(`${uid}/cache/us-screening/view-v1.json.gz`, compressed, {
       upsert: true,
-      contentType: "application/gzip",
+      contentType: "application/octet-stream",
     });
   if (error) throw error;
   await uploadJson(client, `${uid}/cache/us-screening/summary-v1.json`, views.summary);
