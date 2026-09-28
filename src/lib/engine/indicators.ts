@@ -271,8 +271,16 @@ export interface IndicatorSnapshot {
   institutionNet20d: number | null;
   /** 현재 공매도 거래량 비중 - 20거래일 전 비중 (%p) */
   shortSellingVolumeRate20dChangePp?: number | null;
+  /** 최근 21거래일 구간에서 확인 가능한 최신 공매도 거래량 비중 */
+  shortSellingVolumeRateLatest?: number | null;
+  /** 최근 21거래일 구간의 공매도 유효 관측치 수 */
+  shortSellingVolumeRateObservationCount?: number;
   /** 현재 대차잔고 수량 - 20거래일 전 수량 */
   lendingBalanceQuantity20dChange?: number | null;
+  /** 최근 21거래일 구간에서 확인 가능한 최신 대차잔고 수량 */
+  lendingBalanceQuantityLatest?: number | null;
+  /** 최근 21거래일 구간의 대차 유효 관측치 수 */
+  lendingBalanceQuantityObservationCount?: number;
   extensionFromMa20: number | null; // %
   atrExtension: number | null; // ATR 배수
   /** 종가 위치 (close - low) / (high - low). high === low이면 null */
@@ -312,6 +320,29 @@ function changeFromLookback(
   if (current === null || current === undefined || prior === null || prior === undefined) return null;
   if (!Number.isFinite(current) || !Number.isFinite(prior)) return null;
   return current - prior;
+}
+
+function latestFiniteInWindow(
+  values: Array<number | null>,
+  endIndex: number,
+  window: number,
+): number | null {
+  const start = Math.max(0, endIndex - window + 1);
+  for (let i = endIndex; i >= start; i--) {
+    const value = values[i];
+    if (value !== null && value !== undefined && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function finiteCountInWindow(values: Array<number | null>, endIndex: number, window: number): number {
+  const start = Math.max(0, endIndex - window + 1);
+  let count = 0;
+  for (let i = start; i <= endIndex; i++) {
+    const value = values[i];
+    if (value !== null && value !== undefined && Number.isFinite(value)) count++;
+  }
+  return count;
 }
 
 export function computeIndicators(bars: DailyPrice[], endIndex: number): IndicatorSnapshot {
@@ -365,7 +396,11 @@ export function computeIndicators(bars: DailyPrice[], endIndex: number): Indicat
     foreignNet60d: sumLast(foreign, endIndex, 60),
     institutionNet20d: sumLast(inst, endIndex, 20),
     shortSellingVolumeRate20dChangePp: changeFromLookback(shortSellingVolumeRates, endIndex, 20),
+    shortSellingVolumeRateLatest: latestFiniteInWindow(shortSellingVolumeRates, endIndex, 21),
+    shortSellingVolumeRateObservationCount: finiteCountInWindow(shortSellingVolumeRates, endIndex, 21),
     lendingBalanceQuantity20dChange: changeFromLookback(lendingBalanceQuantities, endIndex, 20),
+    lendingBalanceQuantityLatest: latestFiniteInWindow(lendingBalanceQuantities, endIndex, 21),
+    lendingBalanceQuantityObservationCount: finiteCountInWindow(lendingBalanceQuantities, endIndex, 21),
     extensionFromMa20: ma20 !== null && ma20 !== 0 ? (close / ma20 - 1) * 100 : null,
     atrExtension: ma20 !== null && atr14 ? (close - ma20) / atr14 : null,
     closeLocationValue: barCloseLocationValue(bars[endIndex]!),
