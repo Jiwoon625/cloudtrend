@@ -49,7 +49,13 @@ export function trustedSupabaseClient() {
 }
 
 export async function downloadJson<T>(client: SupabaseClient, objectPath: string): Promise<T> {
-  const { data, error } = await client.storage.from(ANALYSIS_BUCKET).download(objectPath);
+  const { data, error } = await client.storage
+    .from(ANALYSIS_BUCKET)
+    .download(
+      objectPath,
+      objectPath.endsWith("/latest.json") ? { cacheNonce: crypto.randomUUID() } : undefined,
+      objectPath.endsWith("/latest.json") ? { cache: "no-store" } : undefined,
+    );
   if (error) throw new Error(`Supabase 다운로드 실패 (${objectPath}): ${error.message}`);
   return JSON.parse(await data.text()) as T;
 }
@@ -59,6 +65,7 @@ export async function uploadJson(client: SupabaseClient, objectPath: string, val
   const { error } = await client.storage.from(ANALYSIS_BUCKET).upload(objectPath, body, {
     contentType: "application/json",
     upsert: true,
+    ...(objectPath.endsWith("/latest.json") ? { cacheControl: "0" } : {}),
   });
   if (error) throw new Error(`Supabase 업로드 실패 (${objectPath}): ${error.message}`);
   return { objectPath, body };

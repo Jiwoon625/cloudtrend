@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { downloadFreshObject } from "./freshStorage";
 
 // Publishable credentials only. Authorization is enforced by Supabase RLS.
 export const supabase = createClient(
@@ -32,7 +33,9 @@ export async function ownerPath(relative: string) {
 }
 
 export async function readObject<T>(path: string): Promise<T | null> {
-  const { data, error } = await supabase.storage.from(BUCKET).download(path);
+  const { data, error } = await (path.endsWith("/latest.json")
+    ? downloadFreshObject(supabase, BUCKET, path)
+    : supabase.storage.from(BUCKET).download(path));
   if (error) {
     if (isMissing(error as { statusCode?: string; message: string })) return null;
     throw new Error(`클라우드 파일을 불러오지 못했습니다: ${error.message}`);
@@ -47,6 +50,7 @@ export async function writeObject(path: string, value: unknown) {
   const { error } = await supabase.storage.from(BUCKET).upload(path, body, {
     upsert: true,
     contentType: "application/json",
+    ...(path.endsWith("/latest.json") ? { cacheControl: "0" } : {}),
   });
   if (error) throw new Error(`클라우드 저장 실패: ${error.message}`);
 }

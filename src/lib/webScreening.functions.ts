@@ -1,6 +1,7 @@
 import { inputFingerprint, loadActiveSources, listActiveSources } from "./screeningSources.server";
 import { primeChartContext, publishRecentPrices } from "./instrumentChartStore.server";
 import { createHash } from "node:crypto";
+import { downloadFreshObject } from "./freshStorage";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
@@ -35,12 +36,13 @@ async function uploadJson(client: SupabaseClient, path: string, value: unknown) 
   const { error } = await client.storage.from(ANALYSIS_BUCKET).upload(path, body, {
     upsert: true,
     contentType: "application/json",
+    cacheControl: "0",
   });
   if (error) throw new Error(`스크리닝 캐시 저장 실패 (${path}): ${error.message}`);
 }
 
 async function readJson<T>(client: SupabaseClient, path: string): Promise<T> {
-  const { data, error } = await client.storage.from(ANALYSIS_BUCKET).download(path);
+  const { data, error } = await downloadFreshObject(client, ANALYSIS_BUCKET, path);
   if (error) throw new Error(`스크리닝 캐시 재검증 실패 (${path}): ${error.message}`);
   return JSON.parse(await data.text()) as T;
 }
