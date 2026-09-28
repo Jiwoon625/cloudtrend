@@ -24,6 +24,7 @@ export interface UsProspectiveCacheRow {
   onset80: boolean;
   a0Entry: boolean;
   a0Exit: boolean;
+  a0BetaExit: boolean;
   a2Entry: boolean;
   a2Exit: boolean;
   b3Entry: boolean;
@@ -145,7 +146,7 @@ export async function saveUsActualExecution(
   values: { actualPrice: number | null; actualShares: number | null; actualFeeUsd: number | null },
 ) {
   const uid = await userId();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("us_portfolio_trades")
     .update({
       actual_price: values.actualPrice,
@@ -154,6 +155,11 @@ export async function saveUsActualExecution(
       updated_at: new Date().toISOString(),
     })
     .eq("user_id", uid)
-    .eq("trade_key", tradeKey);
+    .eq("trade_key", tradeKey)
+    .eq("strategy_id", "A0_QUARTER_PRIMARY")
+    .in("status", ["EXECUTED", "PARTIAL"])
+    .select("trade_key")
+    .single();
   if (error) throw new Error(`US 실제 체결 저장 실패: ${error.message}`);
+  if (!data) throw new Error("수정 가능한 A0 체결 기록을 찾지 못했습니다.");
 }

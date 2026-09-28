@@ -3,6 +3,7 @@ import process from "node:process";
 import {
   ANALYSIS_BUCKET,
   sha256,
+  stableJson,
   trustedSupabaseClient,
   uploadJson,
 } from "./analysis-run-store";
@@ -30,7 +31,10 @@ async function downloadText(client: ReturnType<typeof trustedSupabaseClient>, pa
   return data.text();
 }
 
-async function maybeDownloadJson<T>(client: ReturnType<typeof trustedSupabaseClient>, path: string) {
+async function maybeDownloadJson<T>(
+  client: ReturnType<typeof trustedSupabaseClient>,
+  path: string,
+) {
   const { data, error } = await client.storage.from(ANALYSIS_BUCKET).download(path);
   if (error) {
     if (/not.?found|404|Object not found/i.test(error.message)) return null;
@@ -64,6 +68,7 @@ function compactRow(row: UsProspectiveAnalysis["rows"][number]) {
     onset80: row.onset80,
     a0Entry: row.a0Entry,
     a0Exit: row.a0Exit,
+    a0BetaExit: row.a0BetaExit,
     a2Entry: row.a2Entry,
     a2Exit: row.a2Exit,
     b3Entry: row.b3Entry,
@@ -85,7 +90,46 @@ async function main() {
     .eq("user_id", userId)
     .maybeSingle();
   if (ingestError) throw new Error(`US ingest 조회 실패: ${ingestError.message}`);
-  if (!ingest) throw new Error("Colab에서 업로드한 US 스크리닝 입력이 없습니다.");
+  if (!ingest) {
+    console.log("No US ingest yet; nothing to process.");
+    return;
+  }
+  if (ingest.storage_bucket !== ANALYSIS_BUCKET) throw new Error("Unexpected US storage bucket");
+
+  const { data: lastHistory, error: lastError } = await client
+    .from("us_screening_history")
+    .select("date,data_hash,rule_version")
+    .eq("user_id", userId)
+    .order("date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (lastError) throw lastError;
+  if (lastHistory && lastHistory.date > ingest.as_of_date)
+    throw new Error("Past US history cannot be replaced");
+  if (lastHistory?.date === ingest.as_of_date) {
+    if (
+      lastHistory.data_hash !== ingest.data_hash ||
+      lastHistory.rule_version !== US_PROSPECTIVE_RULE_VERSION
+    )
+      throw new Error("Completed US date is immutable (hash/rule mismatch)");
+    const completed = await maybeDownloadJson<Record<string, unknown>>(
+      client,
+      `${userId}/results/us-screening/${ingest.as_of_date}.json`,
+    );
+    if (!completed) throw new Error("Completed US result is missing");
+    await uploadJson(client, `${userId}/cache/us-screening/latest.json`, completed);
+    console.log("US date already completed; portfolio and streak unchanged.");
+    return;
+  }
+  const sourceMetadata = ingest.metadata as {
+    previousSessionDate?: string;
+    confirmedRegularClose?: boolean;
+    failedSymbols?: number;
+  };
+  if (!sourceMetadata.confirmedRegularClose || sourceMetadata.failedSymbols !== 0)
+    throw new Error("US source is not a complete confirmed session");
+  if (lastHistory && sourceMetadata.previousSessionDate !== lastHistory.date)
+    throw new Error("Missing US session; collect the gap before advancing streak/portfolio");
 
   const latestCachePath = `${userId}/cache/us-screening/latest.json`;
   // 같은 기준일을 재실행해도 Onset 상태가 바뀌지 않도록, "현재 latest"가 아니라
@@ -102,19 +146,55 @@ async function main() {
     throw new Error(`US 이전 스크리닝 날짜 조회 실패: ${previousHistoryError.message}`);
   const previousResult = previousHistory?.date
     ? await maybeDownloadJson<{
-        analysis?: { state?: { coreRanks?: Record<string, number>; betaWeakStreak?: Record<string, number> } };
+        analysis?: {
+          state?: { coreRanks?: Record<string, number>; betaWeakStreak?: Record<string, number> };
+        };
       }>(client, `${userId}/results/us-screening/${previousHistory.date}.json`)
     : null;
+  if (previousHistory && !previousResult?.analysis?.state)
+    throw new Error("Previous US rank state is missing");
 
   const csv = await downloadText(client, String(ingest.storage_path));
   const actualHash = `sha256:${sha256(Buffer.from(csv, "utf8"))}`;
   if (actualHash !== String(ingest.data_hash))
     throw new Error(`US 입력 해시 불일치: DB ${ingest.data_hash} / Storage ${actualHash}`);
   const parsed = parseUsProspectiveCsv(csv);
+  if (
+    parsed.length !== ingest.row_count ||
+    new Set(parsed.map((r) => r.symbol)).size !== ingest.symbol_count ||
+    parsed.some((r) => r.date !== ingest.as_of_date)
+  )
+    throw new Error("US source row count, symbol count or dates mismatch");
   const analysis = runUsProspectiveAnalysis(parsed, previousResult?.analysis?.state ?? {});
   if (analysis.date !== String(ingest.as_of_date)) {
     throw new Error(`입력 기준일 불일치: DB ${ingest.as_of_date} / CSV ${analysis.date}`);
   }
+
+  // Lock a date's input before any ledger writes, including retries after partial failure.
+  const manifestPath = `${userId}/results/us-screening/${analysis.date}.manifest.json`;
+  const manifest = { dataHash: ingest.data_hash, ruleVersion: US_PROSPECTIVE_RULE_VERSION };
+  const { error: manifestError } = await client.storage
+    .from(ANALYSIS_BUCKET)
+    .upload(manifestPath, JSON.stringify(manifest), {
+      contentType: "application/json",
+      upsert: false,
+    });
+  if (manifestError) {
+    const frozenManifest = await maybeDownloadJson<typeof manifest>(client, manifestPath);
+    if (!frozenManifest || stableJson(frozenManifest) !== stableJson(manifest))
+      throw new Error("US date input is locked; cannot replay with a different input/rule");
+  }
+  const resultPath = `${userId}/results/us-screening/${analysis.date}.json`;
+  const existingResult = await maybeDownloadJson<{
+    dataHash: string;
+    analysis: { ruleVersion: string };
+  }>(client, resultPath);
+  if (
+    existingResult &&
+    (existingResult.dataHash !== ingest.data_hash ||
+      existingResult.analysis.ruleVersion !== US_PROSPECTIVE_RULE_VERSION)
+  )
+    throw new Error("Daily US result is immutable");
 
   const cachePayload = {
     generatedAt: new Date().toISOString(),
@@ -133,23 +213,29 @@ async function main() {
       rows: analysis.rows.map(compactRow),
     },
   };
-  await uploadJson(client, latestCachePath, cachePayload);
-  await uploadJson(client, `${userId}/results/us-screening/${analysis.date}.json`, cachePayload);
-
-  const { error: historyError } = await client.from("us_screening_history").upsert(
-    {
-      user_id: userId,
-      date: analysis.date,
-      data_hash: ingest.data_hash,
-      rule_version: US_PROSPECTIVE_RULE_VERSION,
-      summary: analysis.summary,
-      signals: usProspectiveCompactSignals(analysis),
-    },
-    { onConflict: "user_id,date" },
-  );
-  if (historyError) throw new Error(`US 스크리닝 이력 저장 실패: ${historyError.message}`);
+  const historyRecord = {
+    user_id: userId,
+    date: analysis.date,
+    data_hash: ingest.data_hash,
+    rule_version: US_PROSPECTIVE_RULE_VERSION,
+    summary: analysis.summary,
+    signals: usProspectiveCompactSignals(analysis),
+  };
 
   for (const strategy of US_PROSPECTIVE_STRATEGIES) {
+    const { data: frozen, error: frozenError } = await client
+      .from("us_strategy_registry")
+      .select("rule_version,config")
+      .eq("user_id", userId)
+      .eq("strategy_id", strategy.id)
+      .maybeSingle();
+    if (frozenError) throw frozenError;
+    if (
+      frozen &&
+      (frozen.rule_version !== US_PROSPECTIVE_RULE_VERSION ||
+        stableJson(frozen.config) !== stableJson(strategy))
+    )
+      throw new Error("Frozen strategy version differs; explicit migration required");
     const { error: registryError } = await client.from("us_strategy_registry").upsert(
       {
         user_id: userId,
@@ -176,6 +262,8 @@ async function main() {
       .limit(1)
       .maybeSingle();
     if (prevError) throw new Error(`US 포트폴리오 이전 상태 조회 실패: ${prevError.message}`);
+    if (lastHistory && prev?.date !== lastHistory.date)
+      throw new Error(`Previous portfolio state is missing: ${strategy.id}`);
     const previousState = (prev?.state as UsPortfolioState | null) ?? null;
     const previousNav = prev ? Number(prev.nav_usd) : null;
     const stepped = stepUsProspectivePortfolio(strategy, analysis, previousState, previousNav);
@@ -246,7 +334,7 @@ async function main() {
   // SPY benchmark gets its own daily snapshot for easy charting/comparison.
   const spy = analysis.rows.find((row) => row.symbol === "SPY");
   if (spy?.close) {
-    const { data: firstSpy } = await client
+    const { data: firstSpy, error: firstSpyError } = await client
       .from("us_portfolio_snapshots")
       .select("state")
       .eq("user_id", userId)
@@ -254,9 +342,12 @@ async function main() {
       .order("date", { ascending: true })
       .limit(1)
       .maybeSingle();
-    const basePrice = Number((firstSpy?.state as { basePrice?: number } | null)?.basePrice ?? spy.close);
+    if (firstSpyError) throw firstSpyError;
+    const basePrice = Number(
+      (firstSpy?.state as { basePrice?: number } | null)?.basePrice ?? spy.close,
+    );
     const nav = 100_000 * (spy.close / basePrice);
-    await client.from("us_strategy_registry").upsert(
+    const { error: spyRegistryError } = await client.from("us_strategy_registry").upsert(
       {
         user_id: userId,
         strategy_id: "SPY_BENCHMARK",
@@ -269,7 +360,8 @@ async function main() {
       },
       { onConflict: "user_id,strategy_id" },
     );
-    await client.from("us_portfolio_snapshots").upsert(
+    if (spyRegistryError) throw spyRegistryError;
+    const { error: spySnapshotError } = await client.from("us_portfolio_snapshots").upsert(
       {
         user_id: userId,
         strategy_id: "SPY_BENCHMARK",
@@ -287,7 +379,15 @@ async function main() {
       },
       { onConflict: "user_id,strategy_id,date" },
     );
+    if (spySnapshotError) throw spySnapshotError;
   }
+
+  // History is the completion marker. A failed run is replayed only from the prior date.
+  // Publish immutable daily result before the marker; publish latest only after all ledgers succeed.
+  if (!existingResult) await uploadJson(client, resultPath, cachePayload);
+  const { error: historyError } = await client.from("us_screening_history").insert(historyRecord);
+  if (historyError) throw historyError;
+  await uploadJson(client, latestCachePath, existingResult ?? cachePayload);
 
   console.log(
     JSON.stringify(
@@ -305,6 +405,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(error instanceof Error ? error.stack ?? error.message : error);
+  console.error(error instanceof Error ? (error.stack ?? error.message) : error);
   process.exitCode = 1;
 });

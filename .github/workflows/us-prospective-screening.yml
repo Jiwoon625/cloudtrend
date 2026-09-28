@@ -1,6 +1,8 @@
 name: US Prospective Screening
 
 on:
+  schedule:
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       supabase_user_id:
@@ -27,7 +29,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: us-prospective-${{ github.ref }}
+  group: us-prospective
   cancel-in-progress: false
 
 jobs:
@@ -44,7 +46,7 @@ jobs:
       - run: npm run build
 
   screen:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     needs: validate
     runs-on: ubuntu-latest
     env:
