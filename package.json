@@ -11,7 +11,9 @@
     "data:ingest": "vite-node --script scripts/ingest-source.ts",
     "screening:run": "vite-node --script scripts/run-screening.ts",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "us:screening": "vite-node --script scripts/run-us-screening.ts",
+    "test:us": "vitest run src/lib/engine/usProspective.test.ts"
   },
   "overrides": {
     "rolldown": "1.2.1"
