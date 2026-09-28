@@ -40,11 +40,11 @@ export interface StrategyLedger {
   fingerprint: string;
   calculatedAt: string;
 }
-export interface ActualExecution {
+export interface ActualExecution<M extends string = Market> {
   id: string;
   symbol: string;
   name: string;
-  market: Market;
+  market: M;
   signalKey: string | null;
   side: "BUY" | "SELL";
   date: string;
@@ -63,10 +63,10 @@ export interface LedgerDocument {
   strategy: StrategyLedger | null;
   migratedAt: string;
 }
-export interface ActualPosition {
+export interface ActualPosition<M extends string = Market> {
   symbol: string;
   name: string;
-  market: Market;
+  market: M;
   shares: number;
   cost: number;
   averagePrice: number;
@@ -77,9 +77,9 @@ export interface ActualPosition {
   unrealizedPnl: number;
   exitSignal: string | null;
 }
-export interface ActualLedger {
-  positions: ActualPosition[];
-  executions: (ActualExecution & { realizedPnl: number | null })[];
+export interface ActualLedger<M extends string = Market> {
+  positions: ActualPosition<M>[];
+  executions: (ActualExecution<M> & { realizedPnl: number | null })[];
   summary: PortfolioSummary;
 }
 export interface DualPortfolioState {
@@ -317,15 +317,15 @@ export function simulateStrategy(
 }
 
 /** Actual book: only confirmed events create holdings. Moving-average basis supports partial sales. */
-export function calculateActual(
+export function calculateActual<M extends string = Market>(
   capital: number,
-  events: ActualExecution[],
+  events: ActualExecution<M>[],
   quotes: Record<string, Quote>,
   latest: string | null,
-): ActualLedger {
+): ActualLedger<M> {
   if (!Number.isFinite(capital) || capital <= 0) throw new Error("실제 운용자금을 확인하세요.");
-  const positions = new Map<string, ActualPosition>();
-  const executions: ActualLedger["executions"] = [];
+  const positions = new Map<string, ActualPosition<M>>();
+  const executions: ActualLedger<M>["executions"] = [];
   let cash = capital,
     realized = 0;
   const ids = new Set<string>();
