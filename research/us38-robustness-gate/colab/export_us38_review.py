@@ -8,6 +8,22 @@ assert OUT.parent.name=='US38_robustness_gate_20260928'
 assert json.loads((OUT/'simulation_complete.json').read_text())['status']=='REPLAY_AND_DIAGNOSTICS_COMPLETE'
 assert json.loads((OUT/'baseline_gate.json').read_text())['passed']
 shutil.copy2(__file__,OUT/'export_us38_review.py')
+# Audit parsing correction only; strategy inputs and replay returns stay frozen.
+# pandas' default NA tokens otherwise erase the valid ticker string "NA".
+pit=json.loads((OUT/'pit_source_audit.json').read_text())
+for name in ['tickers','metrics']:
+    raw=pd.read_csv(OUT.parent.parent/f'{name}.csv',keep_default_na=False,low_memory=False)
+    pit[name]['sample']=raw.head(3).to_dict('records')
+    pit[name]['literalStringParser']={'keep_default_na':False,'uniqueTickers':int(raw.ticker.nunique()),'emptyTickerRows':int((raw.ticker=='').sum()),'literalNATickers':int((raw.ticker=='NA').sum())}
+    if name=='tickers':
+        pairs=raw[['ticker','permaticker']].drop_duplicates()
+        pit[name]['tickersWithMultiplePermatickers']=int((pairs.groupby('ticker').permaticker.nunique()>1).sum())
+        pit[name]['permatickersWithMultipleTickers']=int((pairs.groupby('permaticker').ticker.nunique()>1).sum())
+        pairs.to_csv(OUT/'ticker_permaticker_observed_pairs.csv',index=False)
+        for column in ['table','isdelisted','category','exchange']:
+            if column in raw:pit[name][column+'Counts']=raw[column].value_counts(dropna=False).astype(int).to_dict()
+pit['auditParserRevision']='literal ticker preservation; replay engine unchanged'
+(OUT/'pit_source_audit.json').write_text(json.dumps(pit,indent=2,ensure_ascii=False,default=str))
 m=pd.read_csv(OUT/'all_metrics.csv');cases=json.loads((OUT/'case_manifest.json').read_text())
 for field in ['kind','start','capital','mode','sector']:
     m['case_'+field]=m['case'].map(lambda c:cases[c]['diagnostic'].get(field,''))
