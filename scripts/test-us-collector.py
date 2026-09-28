@@ -24,6 +24,24 @@ def candle(date):
     return dict(timestamp=date + "T00:00:00-04:00", openPrice="100", highPrice="101", lowPrice="99", closePrice="100", volume="10000", currency="USD")
 
 class CollectorTest(unittest.TestCase):
+    def test_roster_requires_live_support_and_rechecks_waiting_candidates(self):
+        ns = dict(pd=pd)
+        functions(5, ns)
+        roster = pd.DataFrame([
+            dict(ticker='OLD',sectorCode='IT',role='EQUITY'),
+            dict(ticker='WAIT',sectorCode='FINANCE',role='EQUITY'),
+            dict(ticker='SPY',sectorCode='BENCHMARK',role='BENCHMARK'),
+        ])
+        build = ns['build_collection_seed']
+        old = dict(symbol='OLD',isCommonShare=True)
+        self.assertEqual(build(roster,[old]).ticker.tolist(),['OLD','SPY'])
+        self.assertEqual(build(roster,[old,dict(symbol='WAIT',isCommonShare=False)]).ticker.tolist(),['OLD','SPY'])
+        self.assertEqual(build(roster,[old,dict(symbol='WAIT',isCommonShare=True)]).ticker.tolist(),['OLD','SPY','WAIT'])
+        self.assertEqual(build(roster,[dict(symbol='WAIT',isCommonShare=True)]).ticker.tolist(),['SPY','WAIT'])
+        with self.assertRaises(RuntimeError): build(roster,[])
+        with self.assertRaises(ValueError): build(pd.concat([roster,roster]),[old])
+        with self.assertRaises(ValueError): build(roster[roster.ticker.ne('SPY')],[old])
+
     def namespace(self):
         ns = dict(pd=pd, np=np, json=json, AS_OF_DATE="2026-09-25", INITIAL_BARS=4, INCREMENTAL_BARS=2, FORCE_FULL_REFRESH=False)
         functions(7, ns)
