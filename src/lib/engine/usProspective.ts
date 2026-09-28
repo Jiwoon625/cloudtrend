@@ -319,11 +319,11 @@ export function runUsProspectiveAnalysis(
     nextStreak[row.symbol] = streak;
     const a0Entry = eligibleBase && onset80 && aggressiveConfirm;
     const a0BetaExit = streak >= 3;
-    const a0Exit = core === null || core < 0.7 || a0BetaExit;
+    const a0Exit = row.symbol !== "SPY" && (core === null || core < 0.7 || a0BetaExit);
     const a2Entry = a0Entry;
-    const a2Exit = core === null || core < 0.7;
+    const a2Exit = row.symbol !== "SPY" && (core === null || core < 0.7);
     const b3Entry = eligibleBase && onset80 && balancedConfirm;
-    const b3BaseExit = core === null || core < 0.5;
+    const b3BaseExit = row.symbol !== "SPY" && (core === null || core < 0.5);
     const b3BetaExit = streak >= 3;
     const b3Exit = b3BaseExit || b3BetaExit;
     return {

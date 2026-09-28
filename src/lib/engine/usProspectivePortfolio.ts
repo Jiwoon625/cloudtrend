@@ -516,6 +516,14 @@ export function stepUsProspectivePortfolio(
   }
   for (const pending of Object.values(state.pendingTargets)) {
     const row = rows.get(pending.symbol);
+    const held = state.positions[pending.symbol];
+    const deltaNotional = pending.targetWeight * nav - (held ? held.shares * held.lastPrice : 0);
+    const side =
+      deltaNotional < 0
+        ? "REBALANCE_SELL"
+        : pending.reason.startsWith("QUARTER")
+          ? "REBALANCE_BUY"
+          : "BUY";
     record({
       tradeKey: tkey(config.id, pending.signalDate, null, pending.symbol, "BUY", pending.reason),
       strategyId: config.id,
@@ -524,12 +532,12 @@ export function stepUsProspectivePortfolio(
       symbol: pending.symbol,
       name: row?.name ?? state.positions[pending.symbol]?.name ?? pending.symbol,
       sector: row?.sector ?? state.positions[pending.symbol]?.sector ?? null,
-      side: pending.reason.startsWith("QUARTER") ? "REBALANCE_BUY" : "BUY",
+      side,
       reason: pending.reason,
       status: "PENDING",
       modelPrice: null,
       modelShares: null,
-      modelNotional: pending.targetWeight * nav,
+      modelNotional: Math.abs(deltaNotional),
       feeUsd: 0,
       coreRank: row?.coreRank ?? null,
       detail: { targetWeight: pending.targetWeight },

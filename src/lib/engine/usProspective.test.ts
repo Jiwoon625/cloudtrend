@@ -214,6 +214,7 @@ describe("A0 Anchor and execution invariants", () => {
     const result = runUsProspectiveAnalysis([row("A", 1), row("B", 2), row("SPY", 100)]);
     expect(result.rows.find((r) => r.symbol === "B")!.coreRank).toBe(1);
     expect(result.rows.find((r) => r.symbol === "SPY")!.coreRank).toBeNull();
+    expect(result.rows.find((r) => r.symbol === "SPY")!.primarySignal).toBe("NONE");
   });
   it("rejects same-date rank-state reuse and duplicate symbols", () => {
     const rows = [row("A", 1), row("B", 2)];

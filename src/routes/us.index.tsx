@@ -68,6 +68,12 @@ function UsMarketDataPage() {
           </Link>
         </header>
 
+        {(cache.isError || history.isError) && (
+          <p role="alert" className="rounded-lg border border-destructive p-3 text-sm">
+            미국 데이터 상태를 조회하지 못했습니다. 로그인 상태를 확인한 뒤 다시 시도해 주세요.
+          </p>
+        )}
+
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Metric
             icon={<Database className="size-4" />}
