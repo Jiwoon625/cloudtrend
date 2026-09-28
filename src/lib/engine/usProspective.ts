@@ -278,7 +278,7 @@ export function runUsProspectiveAnalysis(
     const a = rankOf(ami, row.symbol);
     if (core !== null) nextCore[row.symbol] = core;
     const prior = prevCore[row.symbol];
-    const onset80 = core !== null && core >= 0.8 && (prior === undefined || !Number.isFinite(prior) || prior < 0.8);
+    const onset80 = !bootstrap && core !== null && core >= 0.8 && prior !== undefined && Number.isFinite(prior) && prior < 0.8;
     const eligibleBase =
       core !== null &&
       b !== null &&
