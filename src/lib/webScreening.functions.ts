@@ -138,6 +138,9 @@ export const runWebScreeningServer = createServerFn({ method: "POST" })
     };
   });
 
+// Keep only small QA responses; raw market data is never retained here.
+const dataStatusCache = new Map<string, import("./market.functions").DataStatusPayload>();
+
 export const dataStatusServer = createServerFn({ method: "POST" })
   .inputValidator((input: { accessToken: string; config?: unknown }) => ({
     accessToken: String(input.accessToken ?? ""),
@@ -152,15 +155,13 @@ export const dataStatusServer = createServerFn({ method: "POST" })
     if (error || !auth.user) throw new Error("로그인 세션 검증에 실패했습니다.");
     const sources = await listActiveSources(client, auth.user.id);
     const fingerprint = inputFingerprint(sources, data.config);
-    const path = `${auth.user.id}/cache/data-status/${fingerprint}.json`;
-    const { data: cached, error: cacheError } = await client.storage
-      .from(ANALYSIS_BUCKET)
-      .download(path);
-    if (!cacheError && cached)
-      return JSON.parse(await cached.text()) as import("./market.functions").DataStatusPayload;
+    const key = `${auth.user.id}/${fingerprint}`;
+    const cached = dataStatusCache.get(key);
+    if (cached) return cached;
     const { texts } = await loadActiveSources(client, auth.user.id);
     const { computeDatasetDataStatus } = await import("./datasetDataStatus");
     const status = computeDatasetDataStatus(parseManualMarketData(texts).dataset, data.config);
-    await uploadJson(client, path, status);
+    dataStatusCache.set(key, status);
+    if (dataStatusCache.size > 4) dataStatusCache.delete(dataStatusCache.keys().next().value!);
     return status;
   });
