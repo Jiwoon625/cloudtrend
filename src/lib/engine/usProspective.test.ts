@@ -34,12 +34,19 @@ function row(symbol: string, x: number): UsProspectiveInputRow {
 }
 
 describe("US prospective frozen rule", () => {
-  it("creates an E80 onset only when the previous rank was below 0.8", () => {
+  it("bootstraps ranks without a false entry, then emits E80 only on a real crossing", () => {
     const rows = Array.from({ length: 20 }, (_, i) => row(`S${String(i).padStart(2, "0")}`, i));
     const first = runUsProspectiveAnalysis(rows, {});
-    expect(first.rows.find((r) => r.symbol === "S19")?.a0Entry).toBe(true);
-    const second = runUsProspectiveAnalysis(rows, first.state);
-    expect(second.rows.find((r) => r.symbol === "S19")?.a0Entry).toBe(false);
+    expect(first.rows.some((r) => r.a0Entry)).toBe(false);
+
+    const nextRows = rows.map((r) => ({ ...r, date: "2026-09-29" }));
+    const target = nextRows.find((r) => r.symbol === "S10")!;
+    target.ret120 = 100;
+    target.ret252 = 100;
+    target.beta60Spy = 100;
+    target.ichimokuTkGap = 100;
+    const second = runUsProspectiveAnalysis(nextRows, first.state);
+    expect(second.rows.find((r) => r.symbol === "S10")?.a0Entry).toBe(true);
   });
 
   it("counts the B3 beta weakness streak and exits on day three", () => {
