@@ -266,6 +266,9 @@ export function runUsProspectiveAnalysis(
   const coreScore = new Map(coreScores);
   const prevCore = previous.coreRanks ?? {};
   const prevBetaStreak = previous.betaWeakStreak ?? {};
+  // 첫 prospective 스냅샷은 과거 Core 상태가 없으므로 Onset을 만들지 않고 기준선만 seed한다.
+  // 이후 날짜부터 직전 저장 rank와 비교해 0.80 상향 돌파만 신규 진입으로 인정한다.
+  const bootstrap = Object.keys(prevCore).length === 0;
   const nextCore: Record<string, number> = {};
   const nextStreak: Record<string, number> = {};
 
