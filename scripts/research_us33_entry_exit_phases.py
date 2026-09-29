@@ -34,6 +34,7 @@ PHASE_B_ARCHITECTURES = [
     "M+T+V",
     "M+B+T",
     "M+B+V",
+    "M+B+T+V",
 ]
 PHASE_C_EXIT_RULES = [
     "RANK",
