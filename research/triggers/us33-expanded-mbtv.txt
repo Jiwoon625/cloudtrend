@@ -9,3 +9,5 @@ retry=3 fix=remaining_close_refs cache=precompute
 retry=4 fix=raw_spy_close cache=hit_expected
 
 retry=5 debug=universe_counts cache=hit
+
+retry=6 fix=frozen_history_path cache=hit
