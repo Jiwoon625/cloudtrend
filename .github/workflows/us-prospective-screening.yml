@@ -2,7 +2,7 @@ name: US Prospective Screening
 
 on:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "40 2 * * *"
   workflow_dispatch:
     inputs:
       supabase_user_id:
