@@ -131,6 +131,66 @@ def build_features(con: duckdb.DuckDBPyConnection, root: Path, tmp: Path) -> Pat
     actions["ticker"] = actions["ticker"].astype(str)
     history = build_history(master, actions)
 
+    # The Sharadar provider has a legitimate ticker literally named "NA" (Nano Labs).
+    # The original CSV->Parquet conversion can turn that string into a NULL if pandas'
+    # default NA parser is used. Repair only when the NULL-price identity is proven to
+    # be exactly that security; otherwise fail rather than silently changing the universe.
+    null_rows, null_dates, null_min, null_max = con.execute(
+        f"""
+        SELECT COUNT(*), COUNT(DISTINCT CAST(date AS DATE)),
+               MIN(CAST(date AS DATE)), MAX(CAST(date AS DATE))
+        FROM read_parquet('{prices}', union_by_name=true)
+        WHERE ticker IS NULL
+        """
+    ).fetchone()
+    direct_na_rows = con.execute(
+        f"SELECT COUNT(*) FROM read_parquet('{prices}', union_by_name=true) WHERE CAST(ticker AS VARCHAR)='NA'"
+    ).fetchone()[0]
+    repair_null_ticker_as_na = False
+    if null_rows:
+        na_meta = master[master["ticker"].eq("NA")]
+        if len(na_meta) != 1:
+            raise RuntimeError(
+                f"Found {null_rows} NULL ticker price rows but security master has "
+                f"{len(na_meta)} rows for literal ticker NA"
+            )
+        if direct_na_rows:
+            raise RuntimeError(
+                f"Found both NULL ticker rows ({null_rows}) and literal NA price rows ({direct_na_rows}); "
+                "refusing ambiguous repair"
+            )
+        if int(null_rows) != int(null_dates):
+            raise RuntimeError(
+                f"NULL ticker prices are not a single daily identity: rows={null_rows}, dates={null_dates}"
+            )
+        first_meta = pd.to_datetime(na_meta.iloc[0].get("firstpricedate"), errors="coerce")
+        last_meta = pd.to_datetime(na_meta.iloc[0].get("lastpricedate"), errors="coerce")
+        if pd.notna(first_meta) and pd.Timestamp(null_min) != first_meta.normalize():
+            raise RuntimeError(
+                f"NULL ticker first date {null_min} != NA firstpricedate {first_meta.date()}"
+            )
+        if pd.notna(last_meta) and pd.Timestamp(null_max) != last_meta.normalize():
+            raise RuntimeError(
+                f"NULL ticker last date {null_max} != NA lastpricedate {last_meta.date()}"
+            )
+        repair_null_ticker_as_na = True
+
+    print({
+        "priceTickerAudit": {
+            "nullRows": int(null_rows),
+            "nullDates": int(null_dates),
+            "nullMin": str(null_min),
+            "nullMax": str(null_max),
+            "literalNARows": int(direct_na_rows),
+            "repairNullAsNA": bool(repair_null_ticker_as_na),
+        }
+    }, flush=True)
+    price_symbol_expr = (
+        "COALESCE(CAST(ticker AS VARCHAR), 'NA')"
+        if repair_null_ticker_as_na else
+        "CAST(ticker AS VARCHAR)"
+    )
+
     con.register("master_df", master)
     con.register("history_df", history)
     con.execute("CREATE OR REPLACE TABLE security AS SELECT * FROM master_df")
@@ -140,7 +200,7 @@ def build_features(con: duckdb.DuckDBPyConnection, root: Path, tmp: Path) -> Pat
         f"""
         CREATE OR REPLACE TABLE prices AS
         SELECT
-          CAST(ticker AS VARCHAR) symbol,
+          {price_symbol_expr} symbol,
           CAST(date AS DATE) dt,
           CAST("open" AS DOUBLE) AS px_open,
           CAST("high" AS DOUBLE) AS px_high,
