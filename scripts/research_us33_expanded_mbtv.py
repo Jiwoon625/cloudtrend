@@ -63,25 +63,55 @@ def pct(col: str, reverse: bool = False) -> str:
     )
 
 
-def build_exchange_history(master: pd.DataFrame, actions: pd.DataFrame) -> pd.DataFrame:
-    acts = {s: g for s, g in actions.groupby("ticker")}
-    empty = actions.iloc[:0]
-    rows = []
-    for r in master.itertuples(index=False):
-        aa = acts.get(r.ticker, empty)
-        changes = aa[aa.action.eq("exchangeto")].sort_values("date")
-        current = getattr(r, "exchange", None)
-        if len(changes):
-            first = changes.iloc[0]["date"]
-            fr = aa[(aa.action.eq("exchangefrom")) & (aa.date.eq(first))]
-            initial = fr.iloc[0].contraname if len(fr) else "UNKNOWN"
-        else:
-            initial = current
-        rows.append(dict(symbol=r.ticker, dt=pd.Timestamp("1900-01-01"), exchange=initial))
-        for c in changes.itertuples(index=False):
-            rows.append(dict(symbol=r.ticker, dt=pd.Timestamp(c.date), exchange=c.contraname))
-    return pd.DataFrame(rows)
+def sector_from_sic(sic) -> str:
+    try: n=int(float(sic))
+    except Exception: return "UNKNOWN"
+    if n==3674:return "SEMI"
+    if n==3691:return "BATTERY"
+    if 3710<=n<=3716:return "AUTO"
+    if 2830<=n<=2836:return "BIO"
+    if n==2844 or 3840<=n<=3851 or 8000<=n<=8099:return "HEALTH_SVC"
+    if 7370<=n<=7379:return "SOFTWARE"
+    if 6000<=n<=6799:return "FINANCE"
+    if 3570<=n<=3579:return "IT_HW"
+    if 3720<=n<=3769 or 3500<=n<=3599:return "SHIP_DEF"
+    if 1000<=n<=1299 or 2800<=n<=2899 or 3300<=n<=3499:return "CHEM_STEEL"
+    if 1300<=n<=1399 or 4900<=n<=4999:return "ENERGY"
+    if 4800<=n<=4899 or 7800<=n<=7999:return "TELCO_MEDIA"
+    if 1500<=n<=1799 or 4000<=n<=4799:return "CONSTRUCT"
+    if 3600<=n<=3699 or 3800<=n<=3839:return "IT_HW"
+    if 100<=n<=999 or 2000<=n<=2799 or 3000<=n<=3299 or 3900<=n<=3999 or 5000<=n<=5999 or 7000<=n<=7369 or 7500<=n<=7699:return "CONSUMER"
+    return "UNKNOWN"
 
+
+def build_history(master: pd.DataFrame, actions: pd.DataFrame) -> pd.DataFrame:
+    # Exact frozen US3.3 history construction: both SIC-sector and exchange timelines.
+    a=actions[~actions["action"].isin(["dividend","split"])].copy()
+    acts={s:g for s,g in a.groupby("ticker")}
+    empty=a.iloc[:0]
+    rows=[]
+    for r in master.itertuples(index=False):
+        aa=acts.get(r.ticker,empty)
+        specs=[
+            ("sector",sector_from_sic(getattr(r,"siccode",None)),"sicchangefrom","sicchangeto"),
+            ("exchange",getattr(r,"exchange",None),"exchangefrom","exchangeto"),
+        ]
+        for kind,current,fc,tc in specs:
+            changes=aa[aa.action.eq(tc)].sort_values("date")
+            if len(changes):
+                first=changes.iloc[0]["date"]
+                fr=aa[(aa.action.eq(fc)) & (aa.date.eq(first))]
+                if len(fr):
+                    initial=sector_from_sic(fr.iloc[0]["value"]) if kind=="sector" else fr.iloc[0]["contraname"]
+                else:
+                    initial="UNKNOWN"
+            else:
+                initial=current
+            rows.append(dict(symbol=r.ticker,dt=pd.Timestamp("1900-01-01"),kind=kind,value=initial))
+            for x in changes.itertuples(index=False):
+                value=sector_from_sic(x.value) if kind=="sector" else x.contraname
+                rows.append(dict(symbol=r.ticker,dt=pd.Timestamp(x.date),kind=kind,value=value))
+    return pd.DataFrame(rows)
 
 def build_features(con: duckdb.DuckDBPyConnection, root: Path, tmp: Path) -> Path:
     prices = str(root / "prices" / "year=*" / "data_0.parquet").replace("'", "''")
@@ -98,18 +128,12 @@ def build_features(con: duckdb.DuckDBPyConnection, root: Path, tmp: Path) -> Pat
 
     actions = pd.read_csv(actions_path, low_memory=False, parse_dates=["date"])
     actions["ticker"] = actions["ticker"].astype(str)
-    exchange_history = build_exchange_history(master, actions)
-
-    sector = pd.read_csv(sectors, low_memory=False)
-    sector = sector[["ticker", "sectorCode"]].drop_duplicates("ticker")
-    sector["ticker"] = sector["ticker"].astype(str)
+    history = build_history(master, actions)
 
     con.register("master_df", master)
-    con.register("exchange_history_df", exchange_history)
-    con.register("sector_df", sector)
+    con.register("history_df", history)
     con.execute("CREATE OR REPLACE TABLE security AS SELECT * FROM master_df")
-    con.execute("CREATE OR REPLACE TABLE exchange_history AS SELECT symbol,CAST(dt AS DATE) dt,exchange FROM exchange_history_df")
-    con.execute("CREATE OR REPLACE TABLE sector_map AS SELECT ticker symbol,sectorCode FROM sector_df")
+    con.execute("CREATE OR REPLACE TABLE history AS SELECT symbol,CAST(dt AS DATE) dt,kind,value FROM history_df")
 
     con.execute(
         f"""
@@ -187,16 +211,17 @@ def build_features(con: duckdb.DuckDBPyConnection, root: Path, tmp: Path) -> Pat
         CREATE OR REPLACE TABLE universe AS
         SELECT
           f.*,
-          COALESCE(sm.sectorCode,'UNKNOWN') sectorCode,
-          h.exchange,
+          hs.value sectorCode,
+          he.value exchange,
           s.is_common
         FROM feature_base f
         JOIN security s ON s.ticker=f.symbol
-        ASOF LEFT JOIN exchange_history h
-          ON f.symbol=h.symbol AND f.dt>=h.dt
-        LEFT JOIN sector_map sm ON sm.symbol=f.symbol
+        ASOF LEFT JOIN (SELECT * FROM history WHERE kind='sector') hs
+          ON f.symbol=hs.symbol AND f.dt>=hs.dt
+        ASOF LEFT JOIN (SELECT * FROM history WHERE kind='exchange') he
+          ON f.symbol=he.symbol AND f.dt>=he.dt
         WHERE s.is_common
-          AND UPPER(COALESCE(h.exchange,'')) IN ({allowed})
+          AND UPPER(COALESCE(he.value,'')) IN ({allowed})
           AND f.dt BETWEEN DATE '2017-01-01' AND DATE '2026-09-23'
         """
     )
@@ -567,12 +592,16 @@ def main() -> None:
         State("B_N20_SCNONE__MBTV",20,None,"B","MBTV"),
     ]
 
+    frozen_sector=(pd.read_csv(root/"reference"/"sector_map_extended.csv",keep_default_na=False)
+                     .drop_duplicates("ticker").set_index("ticker").sectorCode.to_dict())
     prev={}
     gate_diag=[]
     for path in sorted(panel.glob("year=*.parquet")):
         f=pd.read_parquet(path)
         f["dt"]=pd.to_datetime(f["dt"])
         f=f[f.mom_pct.notna()].copy()
+        # Frozen full_verified process: rank on PIT historical universe, cap on fixed extended taxonomy.
+        f["sectorCode"]=f.symbol.map(frozen_sector).fillna("UNKNOWN")
         f["k"]=f.symbol.map(ids)
         f=f[f.k.notna()].copy()
         f["k"]=f.k.astype(int)
