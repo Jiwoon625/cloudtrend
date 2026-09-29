@@ -1,0 +1,3 @@
+triggered_at=2026-09-29T23:36:00+09:00
+purpose=expanded-universe balanced MBV vs MBTV validation
+aggressive=MBT frozen
