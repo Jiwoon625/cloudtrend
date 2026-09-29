@@ -44,6 +44,9 @@ type SortKey =
 function pct(v: number | null, digits = 1) {
   return v === null ? "-" : `${(v * 100).toFixed(digits)}%`;
 }
+function topPct(v: number | null, digits = 1) {
+  return v === null ? "-" : `상위 ${((1 - v) * 100).toFixed(digits)}%`;
+}
 function money(v: number | null) {
   if (v === null) return "-";
   if (v >= 1e9) return `$${(v / 1e9).toFixed(1)}B`;
@@ -74,21 +77,21 @@ function UsScreenerPage() {
       {
         step: "1",
         label: "E80 Onset",
-        description: "전일 Core <80% → 당일 ≥80%",
+        description: "전일 Core 상위 20% 밖 → 당일 상위 20% 이내",
         a0: onset.length,
         b3: onset.length,
       },
       {
         step: "2",
         label: "Beta 통과",
-        description: "Onset 중 Beta Rank ≥90%",
+        description: "Onset 중 Beta 상위 10% 이내",
         a0: beta.length,
         b3: beta.length,
       },
       {
         step: "3",
         label: "Confirm 통과",
-        description: "A0/A2 TK ≥80% · B3 RelVol ≥80%",
+        description: "A0/A2 TK 상위 20% 이내 · B3 RelVol 상위 20% 이내",
         a0: aggressiveConfirm.length,
         b3: balancedConfirm.length,
       },
@@ -124,6 +127,19 @@ function UsScreenerPage() {
     if (key === "a0Signal") return r.a0Entry ? 2 : r.a0Exit ? 0 : 1;
     if (key === "shadowSignal")
       return (r.a2Entry ? 8 : 0) + (r.b3Entry ? 4 : 0) + (r.a2Exit ? 2 : 0) + (r.b3Exit ? 1 : 0);
+    if (
+      key === "ret120Rank" ||
+      key === "ret252Rank" ||
+      key === "coreRank" ||
+      key === "betaRank" ||
+      key === "tkRank" ||
+      key === "relvolRank" ||
+      key === "liquidityRank" ||
+      key === "amihudRank"
+    ) {
+      const value = r[key];
+      return value === null ? null : 1 - value;
+    }
     return r[key];
   };
 
@@ -212,7 +228,7 @@ function UsScreenerPage() {
               <Badge>A0 PRIMARY</Badge>
             </div>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              기준일 {query.data?.analysis.date ?? "-"} · E80 Onset / X70 + Beta 0.60×3 Anchor ·
+              기준일 {query.data?.analysis.date ?? "-"} · Core 상위 20% Onset / 상위 30% 밖 + Beta 상위 40% 밖×3 Anchor ·
               Core ret120/252 50:50 · 숫자 재튜닝 금지
             </p>
           </div>
@@ -361,18 +377,18 @@ function UsScreenerPage() {
                     <SortableHeader label="종목" sortKey="symbol" sort={sort} onSort={toggleSort} align="left" />
                     <SortableHeader label="시장/섹터" sortKey="marketSector" sort={sort} onSort={toggleSort} align="left" />
                     <SortableHeader label="종가" sortKey="close" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="Core" sortKey="coreRank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="Core 상위" sortKey="coreRank" sort={sort} onSort={toggleSort} />
                     <SortableHeader label="120D" sortKey="ret120" sort={sort} onSort={toggleSort} />
                     <SortableHeader label="252D" sortKey="ret252" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="120D 순위" sortKey="ret120Rank" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="252D 순위" sortKey="ret252Rank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="120D 상위" sortKey="ret120Rank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="252D 상위" sortKey="ret252Rank" sort={sort} onSort={toggleSort} />
                     <SortableHeader label="Onset" sortKey="onset80" sort={sort} onSort={toggleSort} />
                     <SortableHeader label="β 약화일" sortKey="betaWeakStreak" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="Beta" sortKey="betaRank" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="TK" sortKey="tkRank" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="RelVol" sortKey="relvolRank" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="Liquidity" sortKey="liquidityRank" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="Amihud" sortKey="amihudRank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="Beta 상위" sortKey="betaRank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="TK 상위" sortKey="tkRank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="RelVol 상위" sortKey="relvolRank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="Liquidity 상위" sortKey="liquidityRank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="Amihud 상위" sortKey="amihudRank" sort={sort} onSort={toggleSort} />
                     <SortableHeader label="ADV20" sortKey="adv20Usd" sort={sort} onSort={toggleSort} />
                     <SortableHeader label="A0" sortKey="a0Signal" sort={sort} onSort={toggleSort} align="left" />
                     <SortableHeader label="Shadow" sortKey="shadowSignal" sort={sort} onSort={toggleSort} align="left" />
@@ -445,18 +461,18 @@ function ScreenerRow({ row: r }: { row: UsProspectiveCacheRow }) {
         <span className="text-[9px]">{r.sector ?? "미분류"}</span>
       </td>
       <td>{r.close?.toFixed(2) ?? "-"}</td>
-      <td className="font-semibold">{pct(r.coreRank)}</td>
+      <td className="font-semibold">{topPct(r.coreRank)}</td>
       <td>{pct(r.ret120)}</td>
       <td>{pct(r.ret252)}</td>
-      <td>{pct(r.ret120Rank)}</td>
-      <td>{pct(r.ret252Rank)}</td>
+      <td>{topPct(r.ret120Rank)}</td>
+      <td>{topPct(r.ret252Rank)}</td>
       <td>{r.onset80 ? "E80" : "-"}</td>
       <td>{r.betaWeakStreak}</td>
-      <td>{pct(r.betaRank)}</td>
-      <td>{pct(r.tkRank)}</td>
-      <td>{pct(r.relvolRank)}</td>
-      <td>{pct(r.liquidityRank)}</td>
-      <td>{pct(r.amihudRank)}</td>
+      <td>{topPct(r.betaRank)}</td>
+      <td>{topPct(r.tkRank)}</td>
+      <td>{topPct(r.relvolRank)}</td>
+      <td>{topPct(r.liquidityRank)}</td>
+      <td>{topPct(r.amihudRank)}</td>
       <td>{money(r.adv20Usd)}</td>
       <td className="!text-left">
         {r.a0Entry ? (
