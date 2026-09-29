@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getHeldOperationalExitSignal,
   getOperationalSignals,
   getStoredOperationalExit,
   isOperationalEntry,
@@ -42,6 +43,18 @@ describe("KOSPI executable strategy", () => {
     expect(isOperationalEntry(getOperationalSignals("KOSPI", 7.5, 8, false))).toBe(false);
     expect(isOperationalEntry(getOperationalSignals("ETF", 7.5, 8, true))).toBe(false);
   });
+  it("reclassifies overlapping Onset as Exit only in held-position context", () => {
+    const simmtech = getOperationalSignals("KOSDAQ", 5.5, 9.5, true);
+    expect(simmtech.kosdaq80Onset).toBe(true);
+    expect(simmtech.exitSignal).toBeNull();
+    expect(getHeldOperationalExitSignal("KOSDAQ", 9.5, 40)).toBe("UP90");
+
+    const tiger = getOperationalSignals("KOSDAQ", 8.5, 9, true);
+    expect(tiger.kosdaq80Onset).toBe(false);
+    expect(tiger.exitSignal).toBe("UP90");
+    expect(getHeldOperationalExitSignal("KOSDAQ", 9, 5)).toBe("UP90");
+  });
+
   it("preserves every half-point KOSDAQ score transition", () => {
     for (let prev = 0; prev <= 10; prev += 0.5)
       for (let cur = 0; cur <= 10; cur += 0.5) {
