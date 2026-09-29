@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateActual, simulateStrategy, type ActualExecution } from "./portfolioLedgers";
+import { calculateActual, LEDGER_VERSION, simulateStrategy, type ActualExecution } from "./portfolioLedgers";
 import { getOperationalSignals } from "./engine/operationalStrategy";
 import type { ScreeningSnapshot, SnapshotEntry } from "./screeningSnapshot";
 import type { DailyPrice, Market } from "./engine/types";
@@ -51,6 +51,12 @@ const buy = (id: string, overrides: Partial<ActualExecution> = {}): ActualExecut
   note: "",
   order: 0,
   ...overrides,
+});
+
+describe("portfolio ledger rule version", () => {
+  it("invalidates cached strategy ledgers after held signal-priority rules change", () => {
+    expect(LEDGER_VERSION).toBe(2);
+  });
 });
 
 describe("independent strategy and actual books", () => {
