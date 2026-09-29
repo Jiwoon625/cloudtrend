@@ -76,7 +76,7 @@ function UsScreenerPage() {
     return [
       {
         step: "1",
-        label: "E80 Onset",
+        label: "Core 상위 20% 신규진입",
         description: "전일 Core 상위 20% 밖 → 당일 상위 20% 이내",
         a0: onset.length,
         b3: onset.length,
@@ -466,7 +466,7 @@ function ScreenerRow({ row: r }: { row: UsProspectiveCacheRow }) {
       <td>{pct(r.ret252)}</td>
       <td>{topPct(r.ret120Rank)}</td>
       <td>{topPct(r.ret252Rank)}</td>
-      <td>{r.onset80 ? "E80" : "-"}</td>
+      <td>{r.onset80 ? "신규진입" : "-"}</td>
       <td>{r.betaWeakStreak}</td>
       <td>{topPct(r.betaRank)}</td>
       <td>{topPct(r.tkRank)}</td>
