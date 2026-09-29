@@ -117,13 +117,13 @@ def build_features(con: duckdb.DuckDBPyConnection, root: Path, tmp: Path) -> Pat
         SELECT
           CAST(ticker AS VARCHAR) symbol,
           CAST(date AS DATE) dt,
-          CAST(open AS DOUBLE) open,
-          CAST(high AS DOUBLE) high,
-          CAST(low AS DOUBLE) low,
-          CAST(close AS DOUBLE) close,
-          CAST(volume AS DOUBLE) volume,
-          CAST(closeadj AS DOUBLE) closeadj,
-          CAST(closeunadj AS DOUBLE) closeunadj
+          CAST("open" AS DOUBLE) AS px_open,
+          CAST("high" AS DOUBLE) AS px_high,
+          CAST("low" AS DOUBLE) AS px_low,
+          CAST("close" AS DOUBLE) AS px_close,
+          CAST(volume AS DOUBLE) AS volume,
+          CAST(closeadj AS DOUBLE) AS closeadj,
+          CAST(closeunadj AS DOUBLE) AS closeunadj
         FROM read_parquet('{prices}', union_by_name=true)
         WHERE CAST(date AS DATE) >= DATE '2015-01-01'
         """
@@ -136,7 +136,7 @@ def build_features(con: duckdb.DuckDBPyConnection, root: Path, tmp: Path) -> Pat
     con.execute(
         f"""
         CREATE OR REPLACE TABLE bench AS
-        SELECT CAST(date AS DATE) dt,CAST({bench_px} AS DOUBLE) spy_close
+        SELECT CAST(date AS DATE) dt,CAST("{bench_px}" AS DOUBLE) AS spy_close
         FROM read_parquet('{spy}')
         WHERE ticker='SPY'
         ORDER BY dt
@@ -152,13 +152,13 @@ def build_features(con: duckdb.DuckDBPyConnection, root: Path, tmp: Path) -> Pat
         ),
         a AS (
           SELECT *,
-            close/LAG(close) OVER w-1 ret1,
+            px_close/LAG(px_close) OVER w-1 ret1,
             close/LAG(close,120) OVER w-1 ret120,
             close/LAG(close,252) OVER w-1 ret252,
             volume/NULLIF(AVG(volume) OVER w20,0)-1 relvol1_20,
-            LN(AVG(close*volume) OVER w20+1) log_dollarvol20,
-            ((MAX(high) OVER w9+MIN(low) OVER w9)/2)/
-              NULLIF((MAX(high) OVER w26+MIN(low) OVER w26)/2,0)-1 ichimoku_tk_gap
+            LN(AVG(px_close*volume) OVER w20+1) log_dollarvol20,
+            ((MAX(px_high) OVER w9+MIN(px_low) OVER w9)/2)/
+              NULLIF((MAX(px_high) OVER w26+MIN(px_low) OVER w26)/2,0)-1 ichimoku_tk_gap
           FROM prices
           WINDOW
             w AS(PARTITION BY symbol ORDER BY dt),
@@ -167,7 +167,7 @@ def build_features(con: duckdb.DuckDBPyConnection, root: Path, tmp: Path) -> Pat
             w26 AS(PARTITION BY symbol ORDER BY dt ROWS BETWEEN 25 PRECEDING AND CURRENT ROW)
         ),
         x AS (
-          SELECT a.*,b.spy_ret1,ABS(ret1)/NULLIF(close*volume,0) amihud1
+          SELECT a.*,b.spy_ret1,ABS(ret1)/NULLIF(px_close*volume,0) amihud1
           FROM a LEFT JOIN b USING(dt)
         )
         SELECT
@@ -258,7 +258,7 @@ def prepare_prices(con: duckdb.DuckDBPyConnection, root: Path):
         p = con.execute(
             """
             SELECT symbol,dt,
-                   open*closeadj/NULLIF(close,0) op,
+                   px_open*closeadj/NULLIF(px_close,0) AS op,
                    closeadj cl,
                    volume
             FROM prices
