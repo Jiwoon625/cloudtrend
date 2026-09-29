@@ -14,3 +14,4 @@ retry=6 fix=frozen_history_path cache=hit
 
 retry=7 fix=preserve_literal_NA_ticker expected=parity_pass
 parity-na-ticker-repair-20260930-0043
+retry=9 gate=exact_universe_and_anchor_parity
