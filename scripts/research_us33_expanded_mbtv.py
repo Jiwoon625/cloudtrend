@@ -153,8 +153,8 @@ def build_features(con: duckdb.DuckDBPyConnection, root: Path, tmp: Path) -> Pat
         a AS (
           SELECT *,
             px_close/LAG(px_close) OVER w-1 ret1,
-            close/LAG(close,120) OVER w-1 ret120,
-            close/LAG(close,252) OVER w-1 ret252,
+            px_close/LAG(px_close,120) OVER w-1 ret120,
+            px_close/LAG(px_close,252) OVER w-1 ret252,
             volume/NULLIF(AVG(volume) OVER w20,0)-1 relvol1_20,
             LN(AVG(px_close*volume) OVER w20+1) log_dollarvol20,
             ((MAX(px_high) OVER w9+MIN(px_low) OVER w9)/2)/
