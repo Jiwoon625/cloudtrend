@@ -120,13 +120,14 @@ def build_features(con: duckdb.DuckDBPyConnection, root: Path, tmp: Path) -> Pat
     actions_path = root / "reference" / "actions.csv"
     sectors = root / "reference" / "sector_map_extended.csv"
 
-    master = pd.read_csv(tickers, low_memory=False)
+    # Provider has a legitimate ticker "NA" (Nano Labs); never parse provider ticker strings as NA/null.
+    master = pd.read_csv(tickers, low_memory=False, keep_default_na=False)
     if "table" in master.columns:
         master = master[master["table"].eq("SEP")].copy()
     master["ticker"] = master["ticker"].astype(str)
     master["is_common"] = master["category"].astype(str).str.contains("Common Stock", na=False)
 
-    actions = pd.read_csv(actions_path, low_memory=False, parse_dates=["date"])
+    actions = pd.read_csv(actions_path, low_memory=False, parse_dates=["date"], keep_default_na=False)
     actions["ticker"] = actions["ticker"].astype(str)
     history = build_history(master, actions)
 
