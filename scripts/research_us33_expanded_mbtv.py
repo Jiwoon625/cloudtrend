@@ -236,10 +236,14 @@ def build_features(con: duckdb.DuckDBPyConnection, root: Path, tmp: Path) -> Pat
             """
         )
         q = con.execute(
-            "SELECT COUNT(*),COUNT(DISTINCT symbol) FROM ranked WHERE YEAR(dt)=?",
+            """SELECT COUNT(*),COUNT(DISTINCT symbol),
+                      COUNT(*) FILTER(WHERE mom_pct IS NOT NULL),
+                      COUNT(DISTINCT symbol) FILTER(WHERE mom_pct IS NOT NULL)
+               FROM ranked WHERE YEAR(dt)=?""",
             [year],
         ).fetchone()
-        print({"featureYear": year, "rows": q[0], "symbols": q[1]}, flush=True)
+        print({"featureYear": year, "rows": q[0], "symbols": q[1],
+               "momRows": q[2], "momSymbols": q[3]}, flush=True)
     return panel
 
 
