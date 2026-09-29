@@ -1,4 +1,5 @@
 import {
+  getHeldOperationalExitSignal,
   getStoredOperationalExit,
   isOperationalEntry,
   STRATEGY_CONFIG,
@@ -46,9 +47,21 @@ export function isEntryOnset(entry: SnapshotEntry, market: Market) {
 export function operationalExit(
   entry: SnapshotEntry,
   market: Market,
+  held = false,
 ): "UP95" | "UP90" | "DOWN30" | null {
-  if (market !== "KOSDAQ") return getStoredOperationalExit(entry, market);
-  if (entry.exitSignal === "UP90" || entry.exitSignal === "DOWN30") return entry.exitSignal;
+  const stored = getStoredOperationalExit(entry, market);
+  if (stored) return stored;
+  if (market === "KOSDAQ" && (entry.exitSignal === "UP90" || entry.exitSignal === "DOWN30"))
+    return entry.exitSignal;
+  if (held) {
+    const heldSignal = getHeldOperationalExitSignal(
+      market,
+      entry.technicalPoints ?? null,
+      entry.scoreDelta1d ?? null,
+    );
+    if (heldSignal) return heldSignal;
+  }
+  if (market !== "KOSDAQ") return null;
   const status = entry.status ?? "";
   if (/9\.0점.*상향/i.test(status)) return "UP90";
   if (/3\.0점.*하향/i.test(status)) return "DOWN30";
@@ -94,7 +107,7 @@ export function deriveExitPlan(
     if (snapshot.asOfDate < trade.entryDate || snapshot.asOfDate > latestDate) continue;
     const entry = snapshot.entries.find((item) => item.symbol === trade.symbol);
     if (!entry) continue;
-    const signal = operationalExit(entry, trade.market);
+    const signal = operationalExit(entry, trade.market, true);
     if (!signal) continue;
     const execution = firstBarAfter(bars, snapshot.asOfDate);
     if (!execution || execution.tradeDate > latestDate || execution.open <= 0) continue;

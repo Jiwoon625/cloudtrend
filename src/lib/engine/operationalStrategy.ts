@@ -39,6 +39,31 @@ export function getKospiOperationalExitSignal(
   return previous < VF_UPSIDE_EXIT_RAW_SCORE && current >= VF_UPSIDE_EXIT_RAW_SCORE ? "UP95" : null;
 }
 
+/**
+ * Re-evaluates the same score transition from the perspective of an already-held position.
+ * Generic screening keeps entry-Onset precedence, but holdings must honor an exit threshold
+ * crossed on the same day (for example KOSDAQ 5.5 -> 9.5).
+ *
+ * scoreDelta1d is stored on the 0-100 display scale, while current is the raw 0-10 score.
+ */
+export function getHeldOperationalExitSignal(
+  market: string,
+  current: number | null,
+  scoreDelta1d: number | null,
+): "UP95" | "UP90" | "DOWN30" | null {
+  if (
+    current === null ||
+    scoreDelta1d === null ||
+    !Number.isFinite(current) ||
+    !Number.isFinite(scoreDelta1d)
+  )
+    return null;
+  const previous = current - scoreDelta1d / 10;
+  if (market === "KOSPI") return getKospiOperationalExitSignal(previous, current, false);
+  if (market === "KOSDAQ") return getKosdaqOperationalExitSignal(previous, current, false);
+  return null;
+}
+
 export function getOperationalSignals(
   market: string,
   previous: number | null,

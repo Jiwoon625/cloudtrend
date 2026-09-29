@@ -129,13 +129,13 @@ export function simulateStrategy(
     const x = b.at(-1)?.tradeDate;
     return x && (!d || x > d) ? x : d;
   }, null);
-  const candidates: Candidate[] = [];
+  const rawCandidates: Candidate[] = [];
   for (const snapshot of snapshots)
     for (const entry of snapshot.entries) {
       const market = markets[entry.symbol];
       if (!market || entry.instrumentType !== "STOCK" || !isEntryOnset(entry, market)) continue;
       const next = firstBarAfter(bars[entry.symbol] ?? [], snapshot.asOfDate);
-      candidates.push({
+      rawCandidates.push({
         key: keyFor(entry.symbol, snapshot.asOfDate),
         symbol: entry.symbol,
         name: entry.name,
@@ -150,13 +150,14 @@ export function simulateStrategy(
         decision: "다음 거래일 대기",
       });
     }
-  candidates.sort(
+  rawCandidates.sort(
     (a, b) =>
       (a.entryDate ?? "9999").localeCompare(b.entryDate ?? "9999") ||
       (b.technical ?? -Infinity) - (a.technical ?? -Infinity) ||
       (b.priority ?? -Infinity) - (a.priority ?? -Infinity) ||
       a.symbol.localeCompare(b.symbol),
   );
+  const candidates: Candidate[] = [];
   const trades: PortfolioTrade[] = [];
   const half = settings.roundTripCostRate / 2;
   let cash = settings.initialCapital;
@@ -191,7 +192,15 @@ export function simulateStrategy(
       cash += t.shares * plan.exitPrice - fee;
     }
   };
-  for (const c of candidates) {
+  for (const c of rawCandidates) {
+    const heldOnSignal = trades.some(
+      (t) =>
+        t.symbol === c.symbol &&
+        t.entryDate <= c.signalDate &&
+        (!t.exitDate || t.exitDate > c.signalDate),
+    );
+    if (heldOnSignal) continue;
+    candidates.push(c);
     if (!c.entryDate || !c.price || !latest || c.entryDate > latest) continue;
     closeDue(c.entryDate, true);
     const active = trades.filter((t) => t.status === "OPEN");
@@ -269,7 +278,8 @@ export function simulateStrategy(
     quotes[symbol] = {
       price: mark.close,
       date: mark.tradeDate,
-      exitSignal: current && markets[symbol] ? operationalExit(current, markets[symbol]!) : null,
+      exitSignal:
+        current && markets[symbol] ? operationalExit(current, markets[symbol]!, true) : null,
     };
   }
   let value = 0,

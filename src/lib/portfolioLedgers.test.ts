@@ -100,6 +100,45 @@ describe("independent strategy and actual books", () => {
     });
     expect(calculateActual(30000, [buy("A")], model.quotes, date(4)).summary.openPositions).toBe(1);
   });
+  it("treats a held KOSDAQ 5.5→9.5 recovery as Exit and suppresses the repeated Onset", () => {
+    const make = (
+      previous: number,
+      current: number,
+      day: number,
+    ): ScreeningSnapshot =>
+      snapshot(
+        [
+          {
+            ...entry("SIM", "IT_HW"),
+            market: undefined,
+            technicalPoints: current,
+            totalScore: current * 10,
+            scoreDelta1d: (current - previous) * 10,
+            ...getOperationalSignals("KOSDAQ", previous, current, true),
+          } as SnapshotEntry,
+        ],
+        day,
+      );
+
+    const model = simulateStrategy(
+      settings,
+      [make(7.5, 9.5, 1), make(9.5, 5.5, 3), make(5.5, 9.5, 4)],
+      { SIM: bars(4) },
+      { SIM: "KOSDAQ" },
+    );
+
+    expect(model.trades).toHaveLength(1);
+    expect(model.trades[0]).toMatchObject({
+      symbol: "SIM",
+      status: "OPEN",
+      currentTechnicalPoints: 9.5,
+      currentStatus: "전략 청산 대기",
+    });
+    expect(model.quotes.SIM?.exitSignal).toBe("UP90");
+    expect(model.candidates).toHaveLength(1);
+    expect(model.candidates[0]).toMatchObject({ symbol: "SIM", signalDate: date(1) });
+  });
+
   it("does not use day-60 closing proceeds for the same morning's entry", () => {
     const all = bars(62);
     const model = simulateStrategy(
