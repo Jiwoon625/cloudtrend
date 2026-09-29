@@ -1,9 +1,9 @@
-name: US-3.3 Entry Exit Phases A-C
+name: US-3.3 MBTV Challenger
 
 on:
   push:
     branches:
-      - research/us33-entry-exit-phases
+      - research/us33-mbtv-challenger-20260929
     paths:
       - scripts/research_us33_entry_exit_phases.py
       - scripts/research_us33_entry_exit_phases_onset.py
@@ -85,11 +85,6 @@ jobs:
           --output analysis-runs/us33-entry-exit-phases
           --threads 1
           --memory-limit 3GB
-
-      - name: Persist results to Supabase Storage
-        run: >-
-          python scripts/us33_upload_entry_exit_results.py
-          --source analysis-runs/us33-entry-exit-phases
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
