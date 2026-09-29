@@ -7,3 +7,5 @@ retry=2 fix=duckdb_price_alias
 retry=3 fix=remaining_close_refs cache=precompute
 
 retry=4 fix=raw_spy_close cache=hit_expected
+
+retry=5 debug=universe_counts cache=hit
