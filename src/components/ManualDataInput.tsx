@@ -125,9 +125,7 @@ export function ManualDataInput({ onChanged }: Props) {
       <p className="text-xs leading-relaxed text-muted-foreground">
         장기 백테스트와 동일한 Toss+KRX 102컬럼 자료형을 여러 파일로 나눠 올릴 수 있습니다. 파일
         1개는 45MB 이하이며 개수 제한은 두지 않습니다. 스크리닝 시작 시 활성 파일을 모두 합쳐
-        하나의 시계열로 사용합니다. 완전히 같은 종목·거래일 중복은 한 번만 사용하고, 값이 다른
-        중복은 잘못된 혼합을 막기 위해 업로드를 거부합니다. 현재 Vf 점수는 검증된 7개 피처만
-        사용하며 섹터 0.5점 실험은 포함하지 않습니다.
+        하나의 시계열로 사용합니다.
       </p>
 
       <input
