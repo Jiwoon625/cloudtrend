@@ -11,7 +11,7 @@ import {
   operationalExit,
 } from "./portfolioStrategyRules";
 
-export const LEDGER_VERSION = 1;
+export const LEDGER_VERSION = 2;
 export interface Quote {
   price: number;
   date: string;
