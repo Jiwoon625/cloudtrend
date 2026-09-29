@@ -88,7 +88,7 @@ async function quotesFor(client: SupabaseClient, uid: string, symbols: Set<strin
       quotes[r.symbol] = {
         price: r.close,
         date: r.date || cache.analysis.date,
-        exitSignal: r.a0BetaExit ? "Beta 0.60 미만 3거래일" : r.a0Exit ? "A0 청산 신호" : null,
+        exitSignal: r.a0BetaExit ? "Beta 상위 40% 밖 3거래일 연속" : r.a0Exit ? "A0 청산 신호" : null,
       };
   return quotes;
 }
