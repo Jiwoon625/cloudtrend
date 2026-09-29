@@ -29,6 +29,7 @@ import {
   formatWon,
 } from "@/lib/format";
 import { loadPortfolioState, type PortfolioState } from "@/lib/portfolioStore";
+import { applyHoldingSignalPriority } from "@/lib/dashboardHoldingSignals";
 import type { DashboardSummary } from "@/lib/screeningCache";
 import { isScreeningStarted } from "@/lib/screeningRun";
 import { rebuildScreeningCachesServerFirst } from "@/lib/webScreeningClient";
@@ -205,7 +206,7 @@ function Dashboard() {
         />
       ) : (
         <DashboardContent
-          summary={summaryQuery.data}
+          summary={applyHoldingSignalPriority(summaryQuery.data, portfolioQuery.data ?? null)}
           portfolio={portfolioQuery.data ?? null}
           portfolioPending={portfolioQuery.isPending}
         />
