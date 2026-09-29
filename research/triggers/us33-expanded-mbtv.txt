@@ -13,3 +13,4 @@ retry=5 debug=universe_counts cache=hit
 retry=6 fix=frozen_history_path cache=hit
 
 retry=7 fix=preserve_literal_NA_ticker expected=parity_pass
+parity-na-ticker-repair-20260930-0043
