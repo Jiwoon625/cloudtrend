@@ -24,9 +24,9 @@ export const Route = createFileRoute("/us/")({
 });
 
 const RULES = [
-  ["Core", "ret120 rank 50% + ret252 rank 50% → 횡단면 재순위"],
-  ["Primary Entry", "Core 0.80 Onset + beta60_spy 상위 10% + TK gap 상위 20% + 유동성 eligibility"],
-  ["Primary Exit", "Core < 0.70 또는 beta 순위 < 0.60 연속 3거래일 (Anchor) / universe 이탈"],
+  ["Core", "ret120 순위 50% + ret252 순위 50% → 횡단면 재순위"],
+  ["Primary Entry", "Core 상위 20% 신규진입 + Beta 상위 10% 이내 + TK gap 상위 20% 이내 + 유동성 eligibility"],
+  ["Primary Exit", "Core 상위 30% 밖 또는 Beta 상위 40% 밖 3거래일 연속 (Anchor) / universe 이탈"],
   ["A0 Portfolio", "동일 섹터 cap 없음 · 최대 20종목 · 분기 첫 거래일 비중조정 · 진입/청산은 매일"],
   ["Execution model", "다음 미국 정규장 시가 · 편도 25bp · ADV20 1% 참여율 · 정수 주식"],
 ] as const;
@@ -162,17 +162,17 @@ function UsMarketDataPage() {
           <StrategyCard
             role="PRIMARY"
             title="A0 분기 · Anchor"
-            detail="공격형 · sector cap 없음 · E80 Onset · X70 또는 beta 순위 <0.60 3거래일 · 분기 리밸런싱"
+            detail="공격형 · sector cap 없음 · Core 상위 20% Onset · 상위 30% 밖 또는 Beta 상위 40% 밖 3거래일 · 분기 리밸런싱"
           />
           <StrategyCard
             role="SHADOW"
             title="A2 분기"
-            detail="E80/X70 · Anchor 미적용 · 동일 섹터 최대 2종목 · 분기 리밸런싱"
+            detail="Core 상위 20% Onset / 상위 30% 밖 청산 · Anchor 미적용 · 동일 섹터 최대 2종목 · 분기 리밸런싱"
           />
           <StrategyCard
             role="SHADOW"
-            title="B3 Beta 0.60×3"
-            detail="균형형 · 동일 섹터 최대 3종목 · E80 · X50 + beta rank<0.60 3일"
+            title="B3 Beta 상위 40% 밖×3"
+            detail="균형형 · 동일 섹터 최대 3종목 · Core 상위 20% Onset · 상위 50% 밖 청산 + Beta 상위 40% 밖 3거래일"
           />
         </section>
 
