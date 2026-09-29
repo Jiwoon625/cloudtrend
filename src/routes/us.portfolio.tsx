@@ -32,6 +32,9 @@ const LABEL: Record<string, string> = {
 function pct(v: number | null | undefined, digits = 2) {
   return v === null || v === undefined ? "-" : `${(v * 100).toFixed(digits)}%`;
 }
+function topPct(v: number | null | undefined, digits = 1) {
+  return v === null || v === undefined ? "-" : `상위 ${((1 - v) * 100).toFixed(digits)}%`;
+}
 function usd(v: number | null | undefined) {
   return v === null || v === undefined
     ? "-"
@@ -110,7 +113,7 @@ function UsPortfolioPage() {
               <Badge>A0 PRIMARY</Badge>
             </div>
             <p className="mt-1 max-w-4xl text-[11px] leading-relaxed text-muted-foreground">
-              A0 분기 + Beta 순위 0.60 미만 3거래일 Anchor는 기준 모델, A2 분기와 B3 Beta는
+              A0 분기 + Beta 상위 40% 밖 3거래일 연속 Anchor는 기준 모델, A2 분기와 B3 Beta는
               Shadow입니다. 과거 성과에 맞춰 규칙을 바꾸지 않고 앞으로의 신호·NAV·거래를 같은
               데이터로 누적합니다.
             </p>
@@ -214,7 +217,7 @@ function UsPortfolioPage() {
                     <th className="text-right">수량</th>
                     <th className="text-right">현재가</th>
                     <th>진입일</th>
-                    <th className="text-right">진입 Core</th>
+                    <th className="text-right">진입 Core 상위</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -227,7 +230,7 @@ function UsPortfolioPage() {
                       <td className="num text-right">{p.shares}</td>
                       <td className="num text-right">${p.lastPrice.toFixed(2)}</td>
                       <td>{p.entryDate}</td>
-                      <td className="num text-right">{pct(p.entryCoreRank)}</td>
+                      <td className="num text-right">{topPct(p.entryCoreRank)}</td>
                     </tr>
                   ))}
                 </tbody>
