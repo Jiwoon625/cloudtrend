@@ -3,3 +3,5 @@ purpose=expanded-universe balanced MBV vs MBTV validation
 aggressive=MBT frozen
 
 retry=2 fix=duckdb_price_alias
+
+retry=3 fix=remaining_close_refs cache=precompute
