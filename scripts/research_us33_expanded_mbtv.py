@@ -24,6 +24,19 @@ EXPECTED = {
 ALLOWED_EXCHANGES = {
     "NYSE", "NASDAQ", "NYSEMKT", "NYSEARCA", "BATS", "AMEX", "NYSEAMERICAN"
 }
+EXPECTED_MOM_UNIVERSE = {
+    2017: (1177308, 4969),
+    2018: (1165925, 4943),
+    2019: (1180004, 5009),
+    2020: (1202992, 5048),
+    2021: (1226633, 5450),
+    2022: (1461354, 6781),
+    2023: (1492575, 6551),
+    2024: (1377295, 5908),
+    2025: (1285980, 5571),
+    2026: (938490, 5508),
+}
+PARITY_ATOL = 1e-12
 
 
 def args() -> argparse.Namespace:
@@ -328,8 +341,18 @@ def build_features(con: duckdb.DuckDBPyConnection, root: Path, tmp: Path) -> Pat
                FROM ranked WHERE YEAR(dt)=?""",
             [year],
         ).fetchone()
+        expected_mom = EXPECTED_MOM_UNIVERSE[year]
+        universe_exact = (int(q[2]), int(q[3])) == expected_mom
         print({"featureYear": year, "rows": q[0], "symbols": q[1],
-               "momRows": q[2], "momSymbols": q[3]}, flush=True)
+               "momRows": q[2], "momSymbols": q[3],
+               "expectedMomRows": expected_mom[0],
+               "expectedMomSymbols": expected_mom[1],
+               "universeExact": universe_exact}, flush=True)
+        if not universe_exact:
+            raise RuntimeError(
+                f"Frozen full_pit universe mismatch in {year}: "
+                f"actual={(int(q[2]), int(q[3]))}, expected={expected_mom}"
+            )
     return panel
 
 
@@ -706,11 +729,12 @@ def main() -> None:
     for sid,expected in EXPECTED.items():
         actual=float(full.loc[sid,"CAGR"])
         diff=actual-expected
-        okp=abs(diff)<=.01
-        parity_ok = parity_ok and okp
+        exactp=abs(diff)<=PARITY_ATOL
+        within1pp=abs(diff)<=.01
+        parity_ok = parity_ok and exactp
         parity.append(dict(
             strategy=sid,expectedCAGR=expected,actualCAGR=actual,
-            difference=diff,within1pp=okp
+            difference=diff,exactParity=exactp,within1pp=within1pp
         ))
     pd.DataFrame(parity).to_csv(out/"parity_check.csv",index=False)
 
@@ -761,6 +785,8 @@ def main() -> None:
         "universe":"Sharadar expanded universe including delisted securities, common-stock and point-in-time exchange eligibility.",
         "execution":"ledger, t+1 adjusted open, 15bp one-way cost, corporate-terminal handling, verified event overrides",
         "parityPassed":bool(parity_ok),
+        "parityToleranceAbsCAGR":PARITY_ATOL,
+        "universeParity":"exact yearly momRows/momSymbols against frozen full_pit",
         "positiveCAGRAndSharpeConfigs":robust_count,
         "requiresREAL1Followup":bool(parity_ok and robust_count>=3),
         "comparison":fullcomp.to_dict("records"),
