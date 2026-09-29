@@ -361,13 +361,13 @@ function UsScreenerPage() {
                     <SortableHeader label="종목" sortKey="symbol" sort={sort} onSort={toggleSort} align="left" />
                     <SortableHeader label="시장/섹터" sortKey="marketSector" sort={sort} onSort={toggleSort} align="left" />
                     <SortableHeader label="종가" sortKey="close" sort={sort} onSort={toggleSort} />
+                    <SortableHeader label="Core" sortKey="coreRank" sort={sort} onSort={toggleSort} />
                     <SortableHeader label="120D" sortKey="ret120" sort={sort} onSort={toggleSort} />
                     <SortableHeader label="252D" sortKey="ret252" sort={sort} onSort={toggleSort} />
                     <SortableHeader label="120D 순위" sortKey="ret120Rank" sort={sort} onSort={toggleSort} />
                     <SortableHeader label="252D 순위" sortKey="ret252Rank" sort={sort} onSort={toggleSort} />
                     <SortableHeader label="Onset" sortKey="onset80" sort={sort} onSort={toggleSort} />
                     <SortableHeader label="β 약화일" sortKey="betaWeakStreak" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="Core" sortKey="coreRank" sort={sort} onSort={toggleSort} />
                     <SortableHeader label="Beta" sortKey="betaRank" sort={sort} onSort={toggleSort} />
                     <SortableHeader label="TK" sortKey="tkRank" sort={sort} onSort={toggleSort} />
                     <SortableHeader label="RelVol" sortKey="relvolRank" sort={sort} onSort={toggleSort} />
@@ -445,13 +445,13 @@ function ScreenerRow({ row: r }: { row: UsProspectiveCacheRow }) {
         <span className="text-[9px]">{r.sector ?? "미분류"}</span>
       </td>
       <td>{r.close?.toFixed(2) ?? "-"}</td>
+      <td className="font-semibold">{pct(r.coreRank)}</td>
       <td>{pct(r.ret120)}</td>
       <td>{pct(r.ret252)}</td>
       <td>{pct(r.ret120Rank)}</td>
       <td>{pct(r.ret252Rank)}</td>
       <td>{r.onset80 ? "E80" : "-"}</td>
       <td>{r.betaWeakStreak}</td>
-      <td className="font-semibold">{pct(r.coreRank)}</td>
       <td>{pct(r.betaRank)}</td>
       <td>{pct(r.tkRank)}</td>
       <td>{pct(r.relvolRank)}</td>
