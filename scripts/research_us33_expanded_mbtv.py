@@ -132,7 +132,8 @@ def build_features(con: duckdb.DuckDBPyConnection, root: Path, tmp: Path) -> Pat
     bench_cols = {r[0].lower() for r in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{spy}')").fetchall()}
     if "date" not in bench_cols or "ticker" not in bench_cols:
         raise RuntimeError(f"SPY parquet schema unexpected: {sorted(bench_cols)}")
-    bench_px = "closeadj" if "closeadj" in bench_cols else "close"
+    # Frozen US3.3 expanded validation used raw Sharadar fund close for beta ranks.
+    bench_px = "close"
     con.execute(
         f"""
         CREATE OR REPLACE TABLE bench AS
