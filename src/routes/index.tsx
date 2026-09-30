@@ -1,4 +1,3 @@
-import { StrategyDescription } from "@/components/StrategyDescription";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Activity,
@@ -16,10 +15,16 @@ import { toast } from "sonner";
 
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
-import { ScreenerTable } from "@/components/ScreenerTable";
 import { PdfExportButton } from "@/components/PdfExportButton";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DASHBOARD_OPERATIONS_QUERY,
+  DashboardSignalCounts,
+  DashboardSignalLists,
+  DashboardStrategyRules,
+  UsDashboardPortfolio,
+  useDashboardOperations,
+} from "@/components/DashboardOperations";
 import { dashboardQueryOptions } from "@/lib/analysisQuery";
 import {
   formatCount,
@@ -29,7 +34,6 @@ import {
   formatWon,
 } from "@/lib/format";
 import { loadPortfolioState, type PortfolioState } from "@/lib/portfolioStore";
-import { applyHoldingSignalPriority } from "@/lib/dashboardHoldingSignals";
 import type { DashboardSummary } from "@/lib/screeningCache";
 import { isScreeningStarted } from "@/lib/screeningRun";
 import { rebuildScreeningCachesServerFirst } from "@/lib/webScreeningClient";
@@ -124,6 +128,7 @@ function Dashboard() {
   const [started] = useState(() => isScreeningStarted());
   const [rescreening, setRescreening] = useState(false);
   const summaryQuery = useQuery({ ...dashboardQueryOptions, enabled: started });
+  const operations = useDashboardOperations(started, summaryQuery.data?.resultDigest);
   const portfolioQuery = useQuery({
     queryKey: ["portfolio-state"],
     queryFn: loadPortfolioState,
@@ -135,6 +140,7 @@ function Dashboard() {
     try {
       await rebuildScreeningCachesServerFirst();
       await queryClient.invalidateQueries({ queryKey: ["market-analysis"] });
+      await queryClient.invalidateQueries({ queryKey: DASHBOARD_OPERATIONS_QUERY });
       queryClient.removeQueries({ queryKey: ["instrument"] });
       toast.success("V8 Final 스크리닝을 서버에서 다시 계산했습니다.");
     } catch (error) {
@@ -206,9 +212,10 @@ function Dashboard() {
         />
       ) : (
         <DashboardContent
-          summary={applyHoldingSignalPriority(summaryQuery.data, portfolioQuery.data ?? null)}
+          summary={summaryQuery.data}
           portfolio={portfolioQuery.data ?? null}
           portfolioPending={portfolioQuery.isPending}
+          operations={operations}
         />
       )}
     </AppShell>
@@ -219,13 +226,14 @@ function DashboardContent({
   summary,
   portfolio,
   portfolioPending,
+  operations,
 }: {
   summary: DashboardSummary;
   portfolio: PortfolioState | null;
   portfolioPending: boolean;
+  operations: ReturnType<typeof useDashboardOperations>;
 }) {
   const gate = summary.marketGate;
-  const { counts } = summary;
   const gateColor =
     gate.status === "RISK_ON" ? "text-up" : gate.status === "NEUTRAL" ? "text-warn" : "text-down";
   const gateLabel =
@@ -246,59 +254,45 @@ function DashboardContent({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-4">
-        <Card title="오늘의 V8 신호" icon={<TrendingUp className="size-4 text-primary" />}>
-          <KeyValue label="KOSDAQ 8.0 Onset" value={formatCount(counts.kosdaq80Onsets)} />
-          <KeyValue label="KOSPI 8.0 Onset" value={formatCount(counts.kospiEightPointEntries)} />
-          <KeyValue
-            label="KOSPI RS 확인"
-            value={formatCount(counts.kospiRelativeQualityConfirmed)}
-            hint="RSAccel > 0"
-          />
-          <KeyValue
-            label="상승 Exit · KOSPI U9.5 / KOSDAQ U9.0"
-            value={formatCount(counts.upsideExits)}
-          />
-          <KeyValue
-            label="KOSDAQ 하락 Exit · 3.0점 하향 이탈"
-            value={formatCount(counts.downsideExits)}
-          />
-          <KeyValue label="점수 산정 불가" value={formatCount(counts.incomplete)} />
-        </Card>
+        <DashboardSignalCounts query={operations} counts={summary.counts} />
 
-        <Card
-          title="KOSPI / KOSDAQ 포트폴리오"
-          icon={<ShieldCheck className="size-4 text-primary" />}
-        >
-          <KeyValue
-            label="운용자금"
-            value={portfolio ? formatWon(portfolio.settings.initialCapital) : portfolioFallback}
-          />
-          <KeyValue
-            label="보유 종목수"
-            value={
-              portfolio
-                ? `${portfolio.summary.openPositions} / ${portfolio.settings.maxPositions}`
-                : portfolioFallback
-            }
-          />
-          <KeyValue
-            label="평가손익"
-            value={portfolio ? formatWon(portfolio.summary.unrealizedPnl) : portfolioFallback}
-          />
-          <KeyValue
-            label="실현손익"
-            value={portfolio ? formatWon(portfolio.summary.realizedPnl) : portfolioFallback}
-          />
-          <Link
-            to="/portfolio"
-            className="mt-3 inline-flex text-[11px] font-medium text-primary hover:underline"
+        <div className="space-y-4">
+          <Card
+            title="KOSPI / KOSDAQ 포트폴리오"
+            icon={<ShieldCheck className="size-4 text-primary" />}
           >
-            포트폴리오 상세 보기 →
-          </Link>
-        </Card>
+            <KeyValue
+              label="운용자금"
+              value={portfolio ? formatWon(portfolio.settings.initialCapital) : portfolioFallback}
+            />
+            <KeyValue
+              label="보유 종목수"
+              value={
+                portfolio
+                  ? `${portfolio.summary.openPositions} / ${portfolio.settings.maxPositions}`
+                  : portfolioFallback
+              }
+            />
+            <KeyValue
+              label="평가손익"
+              value={portfolio ? formatWon(portfolio.summary.unrealizedPnl) : portfolioFallback}
+            />
+            <KeyValue
+              label="실현손익"
+              value={portfolio ? formatWon(portfolio.summary.realizedPnl) : portfolioFallback}
+            />
+            <Link
+              to="/portfolio"
+              className="mt-3 inline-flex text-[11px] font-medium text-primary hover:underline"
+            >
+              포트폴리오 상세 보기 →
+            </Link>
+          </Card>
+          <UsDashboardPortfolio query={operations} />
+        </div>
 
         <Card title="진입·청산 규칙" icon={<TrendingUp className="size-4 text-primary" />}>
-          <StrategyDescription />
+          <DashboardStrategyRules />
         </Card>
 
         <Card title="시장 상태 · 참고" icon={<Activity className="size-4 text-primary" />}>
@@ -450,98 +444,7 @@ function DashboardContent({
         </div>
       </section>
 
-      <section className="mt-6">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <h2 className="text-sm font-semibold">오늘의 KOSDAQ 8.0 Onset</h2>
-          <Badge
-            variant="outline"
-            className="border-primary/30 bg-primary/5 text-[10px] text-primary"
-          >
-            전일 &lt;8.0 → 당일 ≥8.0
-          </Badge>
-          <span className="text-[11px] text-muted-foreground">
-            우선점수(Sector Rotation 포함)가 높은 순으로 최대 30개를 표시합니다.
-          </span>
-        </div>
-        {summary.onsetRows.length ? (
-          <ScreenerTable rows={summary.onsetRows} />
-        ) : (
-          <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">
-            오늘 새로 발생한 KOSDAQ 8.0 Onset이 없습니다.
-          </div>
-        )}
-      </section>
-
-      <section className="mt-6">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <h2 className="text-sm font-semibold">KOSPI 8.0 Onset · 신규 진입</h2>
-          <Badge
-            variant="outline"
-            className="border-primary/30 bg-primary/5 text-[10px] text-primary"
-          >
-            전일 &lt;8.0 → 당일 ≥8.0
-          </Badge>
-          <Badge variant="outline" className="border-up/30 bg-up-soft text-[10px] text-up">
-            RSAccel = RS20 − RS60
-          </Badge>
-          <span className="text-[11px] text-muted-foreground">
-            RSAccel &gt; 0은 ‘RS 확인’으로 표시합니다. 기술점수나 진입조건에는 합산하지 않으며
-            우선점수가 높은 진입 종목부터 최대 30개를 표시합니다.
-          </span>
-        </div>
-        {summary.kospiEntryRows.length ? (
-          <ScreenerTable rows={summary.kospiEntryRows} />
-        ) : (
-          <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">
-            오늘 새로 발생한 KOSPI 8.0 Onset 신규 진입이 없습니다.
-          </div>
-        )}
-      </section>
-
-      <section className="mt-6">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <h2 className="text-sm font-semibold text-warn">V8 Exit 조건</h2>
-          <Badge variant="outline" className="border-warn/30 bg-warn-soft text-[10px] text-warn">
-            KOSPI U9.5 / DX · KOSDAQ U9.0 / D3.0
-          </Badge>
-          <span className="text-[11px] text-muted-foreground">
-            실제 매도 대상 여부는 보유 여부와 함께 확인해야 하며, 최대 보유 60거래일은 별도 포지션
-            관리 기준입니다.
-          </span>
-        </div>
-        {summary.exitRows.length ? (
-          <ScreenerTable rows={summary.exitRows} />
-        ) : (
-          <div className="rounded-lg border border-border bg-card p-4 text-[12px] text-muted-foreground">
-            현재 점수 Exit 조건에 해당하는 종목이 없습니다.
-          </div>
-        )}
-      </section>
-
-      {summary.failReasons.length > 0 ? (
-        <section className="mt-6 overflow-hidden rounded-lg border border-border bg-card">
-          <div className="border-b border-border bg-surface-strong px-3 py-2">
-            <h2 className="text-sm font-semibold">
-              주식 Universe 실격 사유 분포 · {formatCount(counts.disqualified)}종목
-            </h2>
-            <p className="mt-0.5 text-[10px] text-muted-foreground">
-              KOSPI / KOSDAQ 주식만 집계합니다. ETF 실격 사유는 ETF 스크리너에서 별도로 확인합니다.
-            </p>
-          </div>
-          <table className="w-full text-[12px]">
-            <tbody>
-              {summary.failReasons.map(([reason, count]) => (
-                <tr key={reason} className="border-b border-border last:border-0">
-                  <td className="px-3 py-2">{reason}</td>
-                  <td className="num px-3 py-2 text-right font-semibold text-warn">
-                    {formatCount(count)}건
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
-      ) : null}
+      <DashboardSignalLists query={operations} />
 
       {summary.skippedReasons.length > 0 ? (
         <section className="mt-4 overflow-hidden rounded-lg border border-border bg-card">
