@@ -1,0 +1,37 @@
+name: Dashboard operations check
+
+on:
+  pull_request:
+    paths:
+      - src/routes/index.tsx
+      - src/components/DashboardOperations.tsx
+      - src/lib/dashboardOperations*.ts
+      - tests/dashboard-operations*.test.ts
+      - vitest.dashboard.config.ts
+      - .github/workflows/dashboard-operations-check.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Dashboard and current strategy regressions
+        run: npx vitest run --config vitest.dashboard.config.ts
+      - name: Actual portfolio accounting regressions
+        run: npx vitest run --config vitest.portfolio.config.ts
+      - name: Lint dashboard changes
+        run: npx eslint src/lib/dashboardOperations.ts src/lib/dashboardOperations.server.ts src/lib/dashboardOperations.functions.ts src/components/DashboardOperations.tsx src/routes/index.tsx tests/dashboard-operations.test.ts --rule 'prettier/prettier: off'
+      - name: Production build
+        run: npm run build
