@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BriefcaseBusiness, Loader2, RefreshCw, X } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { StrategyDescription } from "@/components/StrategyDescription";
@@ -152,6 +152,12 @@ function PortfolioPage() {
     [edit, setEdit] = useState<Edit | null>(null);
   const [capitals, setCapitals] = useState<{ strategy: string; actual: string } | null>(null);
   const [filter, setFilter] = useState("");
+  const editPanel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!edit) return;
+    editPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    editPanel.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+  }, [edit?.id, edit?.symbol, edit?.side]);
   async function mutate(input: LedgerRequest) {
     setBusy(true);
     try {
@@ -406,6 +412,7 @@ function PortfolioPage() {
           {edit ? (
             <section
               className="mb-4 rounded-lg border border-primary/40 bg-card p-4"
+              ref={editPanel}
               aria-label="실제 체결 입력"
             >
               <div className="flex items-start justify-between">
