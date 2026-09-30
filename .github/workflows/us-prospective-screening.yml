@@ -2,7 +2,9 @@ name: US Prospective Screening
 
 on:
   schedule:
+    # Primary 11:40 KST; bounded recovery checks at 12:10 and 12:40.
     - cron: "40 2 * * *"
+    - cron: "10,40 3 * * *"
   workflow_dispatch:
     inputs:
       supabase_user_id:
@@ -16,6 +18,8 @@ on:
       - "src/routes/us*.tsx"
       - "scripts/run-us-screening.ts"
       - "scripts/test-us-collector.py"
+      - "scripts/us-fallback-gate.cjs"
+      - "scripts/us-fallback-gate.test.cjs"
       - "notebooks/cloudtrend_US_*.ipynb"
       - ".github/workflows/us-prospective-screening.yml"
   push:
@@ -26,6 +30,8 @@ on:
       - "src/routes/us*.tsx"
       - "scripts/run-us-screening.ts"
       - "scripts/test-us-collector.py"
+      - "scripts/us-fallback-gate.cjs"
+      - "scripts/us-fallback-gate.test.cjs"
       - "notebooks/cloudtrend_US_*.ipynb"
       - ".github/workflows/us-prospective-screening.yml"
 
@@ -33,11 +39,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: us-prospective
+  # CI never replaces a pending production trigger.
+  group: us-prospective-${{ github.event_name }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
   validate:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +55,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:us
+      - run: node --test scripts/us-fallback-gate.test.cjs
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -56,7 +65,14 @@ jobs:
 
   screen:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
-    needs: validate
+    # All writers serialize, including collector dispatch and scheduled recovery.
+    concurrency:
+      group: us-prospective-production
+      cancel-in-progress: false
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
     runs-on: ubuntu-latest
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -64,10 +80,30 @@ jobs:
       SUPABASE_USER_ID: ${{ inputs.supabase_user_id || secrets.SUPABASE_USER_ID }}
     steps:
       - uses: actions/checkout@v4
+      - name: Check daily fallback completion
+        id: fallback
+        if: github.event_name == 'schedule'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const gate = require('./scripts/us-fallback-gate.cjs');
+            await gate({ github, context, core });
       - uses: actions/setup-node@v4
+        if: github.event_name != 'schedule' || steps.fallback.outputs.run == 'true'
         with:
           node-version: 22
           cache: npm
       - run: npm ci
+        if: github.event_name != 'schedule' || steps.fallback.outputs.run == 'true'
       - name: Run frozen US prospective engine
+        if: github.event_name != 'schedule' || steps.fallback.outputs.run == 'true'
         run: npm run us:screening -- --user "$SUPABASE_USER_ID"
+      - name: Record successful daily fallback
+        if: github.event_name == 'schedule' && steps.fallback.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.fallback.outputs.marker }}
+          path: .us-fallback-success.json
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
