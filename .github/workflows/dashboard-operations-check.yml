@@ -32,6 +32,7 @@ jobs:
       - name: Actual portfolio accounting regressions
         run: npx vitest run --config vitest.portfolio.config.ts
       - name: Lint dashboard changes
-        run: npx eslint src/lib/dashboardOperations.ts src/lib/dashboardOperations.server.ts src/lib/dashboardOperations.functions.ts src/components/DashboardOperations.tsx src/routes/index.tsx tests/dashboard-operations.test.ts --rule 'prettier/prettier: off'
+        run: |
+          npx eslint src/lib/dashboardOperations.ts src/lib/dashboardOperations.server.ts src/lib/dashboardOperations.functions.ts src/components/DashboardOperations.tsx src/routes/index.tsx tests/dashboard-operations.test.ts --rule 'prettier/prettier: off'
       - name: Production build
         run: npm run build
