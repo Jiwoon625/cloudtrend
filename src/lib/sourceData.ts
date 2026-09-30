@@ -785,6 +785,7 @@ export async function validateSourceBytes(input: {
   bytes: Uint8Array;
   filename: string;
   contentType?: string;
+  onStage?: (stage: string) => void;
 }): Promise<SourceValidationResult> {
   const filename = input.filename.trim() || "source.csv";
   const filenameFormat = formatFromFilename(filename);
@@ -823,7 +824,9 @@ export async function validateSourceBytes(input: {
       );
     }
   }
+  input.onStage?.("records-parsed");
   const normalized = normalizeRecords(recordSet);
+  input.onStage?.("records-normalized");
   // Large market-history files can contain hundreds of thousands of rows and
   // therefore as many row-level warnings. Spreading those arrays into push()
   // exceeds V8's argument limit and raises "Maximum call stack size exceeded".
@@ -833,9 +836,11 @@ export async function validateSourceBytes(input: {
     errors.push(issue("NO_DATA_ROWS", "유효한 데이터 행이 없습니다."));
 
   const canonicalCsv = toCanonicalCsv(normalized.rows);
+  input.onStage?.("canonical-csv-created");
   const sortedCsv = toCanonicalCsv(
     [...normalized.rows].sort((a, b) => sourceRowKey(a).localeCompare(sourceRowKey(b))),
   );
+  input.onStage?.("sorted-csv-created");
   const encoder = new TextEncoder();
   const [fileHash, dataHash, schemaHash] = await Promise.all([
     sha256(input.bytes),

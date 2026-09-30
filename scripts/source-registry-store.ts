@@ -327,7 +327,9 @@ async function loadRegistryInputs(client: SupabaseClient, userId: string, source
   return Promise.all(
     records.map(async (record): Promise<LoadedSourceInput> => {
       const { logicalBytes, logicalFileHash } = await registeredLogicalBytes(client, record);
+      process.stderr.write(`${JSON.stringify({ stage: "source-validation-start", bytes: logicalBytes.byteLength, ...process.memoryUsage() })}\n`);
       const validation = await validateSourceBytes({
+        onStage: (stage) => process.stderr.write(`${JSON.stringify({ stage, ...process.memoryUsage(), maxRssKiB: process.resourceUsage().maxRSS })}\n`),
         bytes: logicalBytes,
         filename: record.original_filename,
         contentType: record.canonical_format === "csv.gz" ? "text/csv" : record.content_type,

@@ -95,7 +95,13 @@ async function loadPreviousSnapshot(
   return (data?.snapshot as ScreeningSnapshot | undefined) ?? null;
 }
 
+function memory(stage: string) {
+  const usage = process.memoryUsage();
+  process.stderr.write(`${JSON.stringify({ stage, ...usage, maxRssKiB: process.resourceUsage().maxRSS })}\n`);
+}
+
 async function main() {
+  memory("start");
   const options = parseArgs(process.argv.slice(2));
   const client = trustedSupabaseClient();
   const [inputs, config] = await Promise.all([
@@ -103,6 +109,7 @@ async function main() {
     loadConfig(options.configPath),
   ]);
 
+  memory("inputs-loaded");
   const currentCodeVersion = codeVersion();
   const dataVersion = `sha256:${sha256(
     inputs
@@ -124,8 +131,11 @@ async function main() {
     }
   }
 
+  memory("parse-start");
   const parsed = parseManualMarketData(inputs.map((input) => input.text));
+  memory("parse-end");
   const { analysis, dataset } = runFullMarketAnalysis(parsed.dataset, config);
+  memory("analysis-end");
   const snapshot = buildSnapshot(
     analysis,
     latestSourceRegistration(
@@ -182,11 +192,13 @@ async function main() {
 
   const outputDir = path.resolve(options.outputRoot, `screening-${runId}`);
   await mkdir(outputDir, { recursive: true });
+  memory("bundle-write-start");
   await Promise.all([
     writeFile(path.join(outputDir, "screening-bundle.json"), JSON.stringify(bundle, null, 2)),
     writeFile(path.join(outputDir, "screening-summary.json"), JSON.stringify(summary, null, 2)),
   ]);
 
+  memory("bundle-write-end");
   let webCache: Awaited<ReturnType<typeof persistWebScreeningCaches>> | null = null;
   if (options.upload) {
     const { error: historyError } = await client
