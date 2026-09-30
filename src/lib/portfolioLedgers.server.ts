@@ -4,6 +4,7 @@ import { listActiveSources, type ActiveSourceRecord } from "./screeningSources.s
 import { visitDelimitedRows } from "./sourceData";
 import type { DailyPrice, Market } from "./engine/types";
 import type { ScreeningSnapshot } from "./screeningSnapshot";
+import { portfolioEtfContext } from "./dashboardOperations.server";
 import {
   calculateActual,
   keyFor,
@@ -21,6 +22,7 @@ export interface LedgerRequest {
   revision?: number | undefined;
   strategyCapital?: number | undefined;
   actualCapital?: number | undefined;
+  etfCapital?: number | undefined;
   execution?: Omit<ActualExecution, "order"> | undefined;
   executionId?: string | undefined;
   signalKey?: string | undefined;
@@ -163,7 +165,7 @@ async function priceInputs(
         date = cell("date");
       if (!symbols.has(symbol) || date < from) return;
       const market = cell("market");
-      if (market !== "KOSPI" && market !== "KOSDAQ") return;
+      if (market !== "KOSPI" && market !== "KOSDAQ" && market !== "ETF") return;
       const number = (key: string) => Number(cell(key).replaceAll(",", ""));
       if (number("open") <= 0 || number("close") <= 0) return;
       const series = bySymbol.get(symbol) ?? new Map<string, DailyPrice>();
@@ -238,6 +240,11 @@ export async function operateLedgers(
 ): Promise<DualPortfolioState> {
   const row = await readDocument(client, uid);
   const doc = structuredClone(row.payload);
+  let etfWarning: string | null = null;
+  const etfContext = await portfolioEtfContext(client, uid).catch((error) => {
+    etfWarning = error instanceof Error ? error.message : "ETF 결과 조회 실패";
+    return { rows: [], trackedSymbols: [], date: null };
+  });
   let changed = false;
   for (const execution of doc.executions) {
     if (execution.note === "기존 0주 초과 기록 이관 · 기존 비용 유지") {
@@ -248,11 +255,14 @@ export async function operateLedgers(
   if (input.action !== "load" && input.action !== "sync" && input.revision !== row.revision)
     throw new Error("다른 화면에서 원장이 변경됐습니다. 새로고침 후 다시 저장하세요.");
   if (input.action === "capital") {
-    for (const v of [input.strategyCapital, input.actualCapital])
+    for (const v of [input.strategyCapital, input.actualCapital, input.etfCapital].filter(
+      (v) => v !== undefined,
+    ))
       if (!Number.isFinite(v) || v! <= 0 || v! > 1e15)
         throw new Error("운용자금은 0보다 큰 금액으로 입력하세요.");
-    doc.settings.initialCapital = input.strategyCapital!;
-    doc.actualCapital = input.actualCapital!;
+    if (input.strategyCapital !== undefined) doc.settings.initialCapital = input.strategyCapital;
+    if (input.actualCapital !== undefined) doc.actualCapital = input.actualCapital;
+    if (input.etfCapital !== undefined) doc.etfCapital = input.etfCapital;
     changed = true;
   }
   if (input.action === "execution") {
@@ -262,7 +272,9 @@ export async function operateLedgers(
     if (e.id && !existing) throw new Error("수정할 체결 기록을 찾지 못했습니다.");
     const candidate = doc.strategy?.candidates.find((c) => c.key === e.signalKey);
     const position = doc.executions.find((x) => x.symbol === e.symbol);
-    if (!candidate && !position) throw new Error("등록된 Onset 또는 실제 보유 종목을 선택하세요.");
+    const etf = e.market === "ETF" ? etfContext.rows.find((r) => r.symbol === e.symbol) : undefined;
+    if (!existing && !candidate && !position && !etf)
+      throw new Error("등록된 Onset 또는 실제 보유 종목을 선택하세요.");
     if (e.date > new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }))
       throw new Error("미래 날짜로 실제 체결을 기록할 수 없습니다.");
     if (
@@ -270,13 +282,13 @@ export async function operateLedgers(
       new Date(e.date).toISOString().slice(0, 10) !== e.date
     )
       throw new Error("체결 날짜를 확인하세요.");
-    const meta = candidate ?? position!;
+    const meta = existing ?? candidate ?? position ?? etf!;
     if (e.symbol !== meta.symbol) throw new Error("체결 종목과 신호가 다릅니다.");
     const event: ActualExecution = {
       id: existing?.id ?? crypto.randomUUID(),
       symbol: meta.symbol,
       name: meta.name,
-      market: meta.market,
+      market: meta.market as Market,
       signalKey: existing?.signalKey ?? candidate?.key ?? null,
       side: e.side,
       date: e.date,
@@ -314,10 +326,27 @@ export async function operateLedgers(
     changed = (await refreshStrategy(client, uid, doc)) || changed;
   const actual = calculateActual(
     doc.actualCapital,
-    doc.executions,
+    doc.executions.filter((e) => e.market !== "ETF"),
     doc.strategy?.quotes ?? {},
     doc.strategy?.summary.latestDate ?? null,
   );
+  const etfQuotes = Object.fromEntries(
+    etfContext.rows
+      .filter((r) => r.price !== null && r.price > 0)
+      .map((r) => [r.symbol, { price: r.price!, date: r.date, exitSignal: r.exitReason }]),
+  );
+  const etfActual = calculateActual(
+    doc.etfCapital ?? 10_000_000,
+    doc.executions.filter((e) => e.market === "ETF"),
+    { ...doc.strategy?.quotes, ...etfQuotes },
+    etfContext.date,
+  );
+  const etfState = {
+    etfActual,
+    etfRows: etfContext.rows,
+    etfTrackedSymbols: etfContext.trackedSymbols,
+    etfWarning,
+  };
   if (changed) {
     const { data, error } = await client
       .from(TABLE)
@@ -328,7 +357,7 @@ export async function operateLedgers(
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!data) throw new Error("동시에 원장이 변경됐습니다. 새로고침 후 다시 시도하세요.");
-    return { revision: row.revision + 1, document: doc, actual };
+    return { revision: row.revision + 1, document: doc, actual, ...etfState };
   }
-  return { revision: row.revision, document: doc, actual };
+  return { revision: row.revision, document: doc, actual, ...etfState };
 }

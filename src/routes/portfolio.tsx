@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BriefcaseBusiness, Loader2, RefreshCw, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { AppShell } from "@/components/AppShell";
+import { PortfolioAssetHub } from "@/components/PortfolioAssetHub";
 import { StrategyDescription } from "@/components/StrategyDescription";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -136,6 +136,10 @@ type Edit = {
 };
 
 function PortfolioPage() {
+  return <PortfolioAssetHub domestic={<KoreaPortfolioContent />} />;
+}
+
+function KoreaPortfolioContent() {
   const qc = useQueryClient();
   const query = useQuery({
     queryKey: QUERY,
@@ -238,12 +242,12 @@ function PortfolioPage() {
       bought.set(e.signalKey, (bought.get(e.signalKey) ?? 0) + e.shares);
 
   return (
-    <AppShell>
+    <>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-bold">
             <BriefcaseBusiness className="size-5 text-primary" />
-            포트폴리오
+            한국주식 포트폴리오
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             전략대로 운용한 성과와 내가 실제로 투자한 손익을 따로 확인합니다.
@@ -585,73 +589,6 @@ function PortfolioPage() {
                   </tr>
                 ))}
               </LedgerTable>
-              <LedgerTable
-                title="실제 매수·매도 내역"
-                headers={[
-                  "체결일",
-                  "종목",
-                  "구분",
-                  "가격",
-                  "수량",
-                  "수수료·세금",
-                  "실현손익",
-                  "메모",
-                  "수정",
-                ]}
-                empty={!state.actual.executions.filter(matches).length}
-              >
-                {[...state.actual.executions]
-                  .reverse()
-                  .filter(matches)
-                  .map((e) => (
-                    <tr key={e.id} className="border-t">
-                      <td className={td}>{e.date}</td>
-                      <td className={td}>
-                        <StockLink {...e} />
-                      </td>
-                      <td className={td}>{e.side === "BUY" ? "매수" : "매도"}</td>
-                      <td className={td}>{formatPrice(e.price)}</td>
-                      <td className={td}>{e.shares}주</td>
-                      <td className={td}>{formatWon(e.fee)}</td>
-                      <td className={`${td} ${pnlClass(e.realizedPnl ?? 0)}`}>
-                        {e.realizedPnl === null ? "-" : formatWon(e.realizedPnl)}
-                      </td>
-                      <td className="max-w-[250px] px-3 py-3">{e.note}</td>
-                      <td className={td}>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={busy}
-                          onClick={() =>
-                            setEdit({
-                              ...e,
-                              price: String(e.price),
-                              shares: String(e.shares),
-                              fee: String(e.fee),
-                            })
-                          }
-                        >
-                          수정
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={busy}
-                          onClick={async () => {
-                            if (
-                              window.confirm(
-                                "잘못 입력한 실제 체결 기록을 삭제할까요? 전략 원장은 유지됩니다.",
-                              )
-                            )
-                              await mutate({ action: "remove", executionId: e.id });
-                          }}
-                        >
-                          삭제
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-              </LedgerTable>
             </>
           ) : null}
           {tab === "signals" ? (
@@ -694,6 +631,6 @@ function PortfolioPage() {
           ) : null}
         </>
       ) : null}
-    </AppShell>
+    </>
   );
 }

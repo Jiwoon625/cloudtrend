@@ -68,7 +68,7 @@ export function migrateUsActual(trades: UsPortfolioTradeRecord[]): UsActualDocum
       price: t.actual_price,
       fee: t.actual_fee_usd ?? 0,
       order: doc.executions.length,
-      note: "기존 실제 체결값 이관",
+      note: "",
     });
   }
   calculateActual(doc.capital, doc.executions, {}, null);
