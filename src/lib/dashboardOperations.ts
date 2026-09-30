@@ -3,6 +3,7 @@ import { ETF_POLICY } from "./engine/etfStrategy";
 import type { AnalysisResult } from "./engine/pipeline";
 import type { UsProspectiveCache } from "./usProspectiveCloud";
 import type { PortfolioSummary } from "./portfolioStoreCore";
+import type { ActualExecution } from "./portfolioLedgers";
 
 export type DashboardMarket = "KOSPI" | "KOSDAQ" | "ETF" | "US";
 export interface DashboardSignal {
@@ -119,10 +120,23 @@ export function exitLabel(reason: string): string {
 }
 
 /** Count the complete projection first; pagination belongs exclusively to the UI. */
+export function soldSymbolsSinceSignal(
+  executions: Pick<ActualExecution<string>, "symbol" | "market" | "date" | "side" | "shares">[],
+  market: DashboardMarket,
+  signalDate: string,
+): Set<string> {
+  // A sale consumes the same dated entry signal, including a prior-close signal sold
+  // the following morning. A newer screening date can produce a fresh entry again.
+  return new Set(executions.filter((e) =>
+    e.market === market && e.side === "SELL" && e.shares > 0 && e.date >= signalDate,
+  ).map((e) => e.symbol));
+}
+
 export function marketSignals(
   index: DashboardIndex | null,
   market: DashboardMarket,
   holdings: DashboardHolding[] | null,
+  executions: Pick<ActualExecution<string>, "symbol" | "market" | "date" | "side" | "shares">[] = [],
 ): DashboardMarketSignals {
   const result: DashboardMarketSignals = {
     market, date: index?.date ?? null, holdingsKnown: holdings !== null,
@@ -131,13 +145,14 @@ export function marketSignals(
   };
   if (!index) return result;
   const held = new Map((holdings ?? []).filter((p) => p.shares > 0).map((p) => [p.symbol, p]));
+  const sold = soldSymbolsSinceSignal(executions, market, index.date);
   const rows = new Map(index.rows.filter((r) => r.market === market).map((r) => [r.symbol, r]));
   const dates = [...new Set(index.tradeDates)].filter((d) => d <= index.date).sort();
   for (const row of rows.values()) {
     // A stale individual quote cannot create today's signal.
     if (row.date !== index.date) continue;
     const holding = held.get(row.symbol);
-    if (row.onset && !holding) {
+    if (row.onset && !holding && !sold.has(row.symbol)) {
       result.onsets.push({
         ...row,
         reason: market === "US" ? "A0 신규 진입" : market === "ETF" ? "M0 80 Onset" : "8.0 Onset",
