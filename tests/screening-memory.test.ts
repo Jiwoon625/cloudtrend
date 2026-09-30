@@ -125,6 +125,8 @@ test("compact registry retains hash verification and activation order while rele
 });
 test("streamed bundle keeps native JSON values and uploads the existing single object path", async () => {
   const bundle = {
+    omittedFunction: () => 1,
+    omittedSymbol: Symbol("omit"),
     schemaVersion: 1,
     run: { id: "run", unused: undefined },
     config: {},

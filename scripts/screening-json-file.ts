@@ -12,7 +12,7 @@ export function* screeningJsonChunks(bundle: Record<string, unknown>): Generator
     yield "{";
     let first = true;
     for (const [key, item] of Object.entries(value)) {
-      if (item === undefined) continue;
+      if (item === undefined || typeof item === "function" || typeof item === "symbol") continue;
       if (!first) yield ",";
       first = false;
       yield `${JSON.stringify(key)}:`;

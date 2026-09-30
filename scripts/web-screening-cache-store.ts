@@ -1,3 +1,4 @@
+import { memory } from "./screening-memory";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { buildDashboardSummary, SCREENING_CACHE_VERSION } from "../src/lib/screeningCacheContract";
@@ -136,7 +137,10 @@ export async function persistWebScreeningCaches(input: {
     payload,
   };
   const dashboard = buildDashboardSummary(input.analysis, fingerprint, digest);
+  memory("dashboard-built", dashboard.counts);
+  memory("raw-cache-merge-start");
   const canonicalCsv = canonicalMergedCsv(input.inputs);
+  memory("raw-cache-merge-end");
   const rawPath = `${input.userId}/raw/screening/latest.csv`;
   const rawCacheBytes = Buffer.byteLength(canonicalCsv);
   const shouldUploadRawCache = rawCacheBytes <= MAX_RAW_CACHE_BYTES;
@@ -164,10 +168,12 @@ export async function persistWebScreeningCaches(input: {
     uploadJson(input.client, `${input.userId}/kr.json`, meta),
   ]);
 
+  memory("cache-uploads-end");
   const roundTrip = await downloadJson<ExistingScreeningCache>(input.client, screeningPath);
   const roundTripDigest = roundTrip.payload?.analysis
     ? resultDigest(roundTrip.payload.analysis)
     : null;
+  memory("cache-roundtrip-end");
   if (roundTrip.resultDigest !== digest || roundTripDigest !== digest) {
     throw new Error(
       `스크리닝 cache 저장 후 digest 검증 실패: stored=${roundTrip.resultDigest ?? "null"}, recalculated=${roundTripDigest ?? "null"}, expected=${digest}`,
