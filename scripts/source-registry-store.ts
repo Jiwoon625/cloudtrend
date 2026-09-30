@@ -441,9 +441,10 @@ export async function loadAnalysisSourceInputs(
     ? await loadRegistryInputsLightweight(client, userId, sourceType)
     : await loadRegistryInputs(client, userId, sourceType);
   if (sourceType === "screening") {
-    // parseManualMarketData는 같은 종목·거래일의 첫 행을 유지한다. merge에서
-    // 나중에 활성화한 원천이 기존 값을 덮어쓰도록 최신 파일부터 넘긴다.
-    if (registered.length > 0) return [...registered].reverse();
+    // parseManualMarketData는 같은 종목·거래일에서 뒤에 들어온 source의
+    // 비어 있지 않은 값을 기존 행에 덮어쓴다. 따라서 활성화 순서가 오래된
+    // source → 최신 source가 되도록 유지해야 최신 KRX/ETF 보강값이 최종 승리한다.
+    if (registered.length > 0) return registered;
     const legacy = await legacyInput(client, `${userId}/kr.json`, "screening.csv", "legacy:kr");
     if (!legacy) throw new Error("Supabase에 활성 스크리닝 원천데이터 또는 kr.json이 없습니다.");
     return [legacy];
