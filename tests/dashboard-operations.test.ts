@@ -71,6 +71,53 @@ describe("actual-held signal selection", () => {
   });
 });
 
+describe("sold entry-signal suppression", () => {
+  const fill = (side: "BUY" | "SELL", shares: number, executionDate: string, market: ActualExecution<string>["market"] = "KOSDAQ"): ActualExecution<string> => ({
+    id: `${side}-${executionDate}`, symbol: "222800", name: "심텍", market,
+    signalKey: null, side, date: executionDate, price: 100, shares, fee: 0,
+    note: "", order: side === "BUY" ? 0 : 1,
+  });
+  it("does not reintroduce today's Onset after a complete sale or repeat screening", () => {
+    const projected = projectKrDashboard(analysis([krRow("222800")]));
+    const book = calculateActual(10000, [fill("BUY", 3, "2026-09-28"), fill("SELL", 3, date)], {}, date);
+    expect(book.positions).toHaveLength(0);
+    for (let run = 0; run < 2; run++) {
+      const result = marketSignals(projected, "KOSDAQ", book.positions, book.executions);
+      expect(result.onsets).toHaveLength(0);
+      expect(result.onsetCount).toBe(0);
+      expect(result.exitCount).toBe(0);
+    }
+  });
+  it("consumes a prior-close signal sold the following morning, but permits a newer dated entry", () => {
+    const projected = projectKrDashboard(analysis([krRow("222800")]));
+    const book = calculateActual(10000, [fill("BUY", 3, "2026-09-28"), fill("SELL", 3, "2026-09-30")], {}, date);
+    expect(marketSignals(projected, "KOSDAQ", book.positions, book.executions).onsetCount).toBe(0);
+    const fresh = { ...projected, date: "2026-10-01", rows: projected.rows.map((r) => ({ ...r, date: "2026-10-01" })) };
+    expect(marketSignals(fresh, "KOSDAQ", book.positions, book.executions).onsetCount).toBe(1);
+  });
+  it("keeps an exit actionable for the residual position after a partial sale", () => {
+    const book = calculateActual(10000, [fill("BUY", 3, "2026-09-28"), fill("SELL", 1, date)], {}, date);
+    const result = marketSignals(projectKrDashboard(analysis([krRow("222800")])), "KOSDAQ", book.positions, book.executions);
+    expect(result.onsetCount).toBe(0);
+    expect(result.exitCount).toBe(1);
+    expect(book.positions[0]?.shares).toBe(2);
+  });
+  it("restores the signal when the sale is removed and does not suppress an untouched stock", () => {
+    const projected = projectKrDashboard(analysis([krRow("222800")]));
+    expect(marketSignals(projected, "KOSDAQ", [], []).onsetCount).toBe(1);
+    expect(marketSignals(projected, "KOSDAQ", [], [fill("BUY", 3, date)]).onsetCount).toBe(1);
+  });
+  it("applies the same date rule to each asset group without cross-market symbol collisions", () => {
+    for (const market of ["KOSPI", "KOSDAQ", "ETF", "US"] as const) {
+      const input = index([row("222800", { market, onset: true })]);
+      expect(marketSignals(input, market, [], [fill("SELL", 3, date, market)]).onsetCount).toBe(0);
+      expect(marketSignals(input, market, [], [fill("SELL", 3, "2026-09-28", market)]).onsetCount).toBe(1);
+      const otherMarket = market === "US" ? "ETF" : "US";
+      expect(marketSignals(input, market, [], [fill("SELL", 3, date, otherMarket)]).onsetCount).toBe(1);
+    }
+  });
+});
+
 describe("current KR and ETF rules", () => {
   it("handles held SimTech-style 5.5 -> 9.5 as EXIT rather than repeated Onset", () => {
     const projected = projectKrDashboard(analysis([krRow("222800")]));

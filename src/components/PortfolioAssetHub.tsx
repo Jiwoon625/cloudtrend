@@ -14,7 +14,7 @@ import { loadUsPortfolioSnapshots } from "@/lib/usProspectiveCloud";
 import type { LedgerRequest } from "@/lib/portfolioLedgers.server";
 import type { UsActualRequest } from "@/lib/usActualLedger";
 import type { ActualExecution, ActualLedger } from "@/lib/portfolioLedgers";
-import { exitLabel } from "@/lib/dashboardOperations";
+import { exitLabel, soldSymbolsSinceSignal } from "@/lib/dashboardOperations";
 import { formatWon } from "@/lib/format";
 
 type Asset = "KR" | "US" | "ETF";
@@ -136,10 +136,16 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
       !kr.data?.document.executions.some((e) => e.market === "ETF" && e.symbol === symbol),
   );
   const heldEtfs = new Set([...(books.ETF?.positions.map((p) => p.symbol) ?? []), ...tracked]);
+  const soldEtfs = soldSymbolsSinceSignal(
+    books.ETF?.executions ?? [],
+    "ETF",
+    books.ETF?.summary.latestDate ?? "9999-12-31",
+  );
   const etfSignalRows = etfRows.filter(
     (r) =>
       r.date === books.ETF?.summary.latestDate &&
-      ((r.onset && !heldEtfs.has(r.symbol)) || (r.exitReason && heldEtfs.has(r.symbol))),
+      ((r.onset && !heldEtfs.has(r.symbol) && !soldEtfs.has(r.symbol)) ||
+        (r.exitReason && heldEtfs.has(r.symbol))),
   );
   const model = snapshots.data?.find((s) => s.strategy_id === "A0_QUARTER_PRIMARY");
   const modelPositions = Object.values(

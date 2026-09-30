@@ -154,6 +154,7 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
   const markets = DASHBOARD_MARKETS.map((market) => marketSignals(
     market === "US" ? us : kr, market,
     market === "US" ? usActual?.positions ?? null : market === "ETF" ? etfPositions : krActual?.positions ?? null,
+    market === "US" ? usActual?.executions ?? [] : market === "ETF" ? etfActual?.executions ?? [] : krActual?.executions ?? [],
   ));
   if (!krDoc) warnings.push("국내 실제 원장이 없거나 조회되지 않아 국내 EXIT는 집계하지 않았습니다.");
   if (!usDoc) warnings.push("미국 실제 원장이 없거나 조회되지 않아 A0 실제 포트폴리오와 EXIT는 미확인으로 표시합니다.");
