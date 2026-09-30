@@ -50,7 +50,7 @@ async function writeJson(client: SupabaseClient, path: string, value: unknown) {
 }
 
 /** Full completed result is projected at most once per digest; never reads raw prices or runs an engine. */
-async function projection(client: SupabaseClient, uid: string, kind: "kr" | "us") {
+export async function projection(client: SupabaseClient, uid: string, kind: "kr" | "us") {
   const meta = kind === "kr"
     ? await readJson<DashboardSummary>(client, `${uid}/cache/dashboard/latest.json`)
     : await readJson<UsProspectiveCache>(client, `${uid}/cache/us-screening/summary-v1.json`);
@@ -98,6 +98,17 @@ async function projection(client: SupabaseClient, uid: string, kind: "kr" | "us"
     inFlight.delete(key);
   }
 }
+export async function portfolioEtfContext(client: SupabaseClient, uid: string) {
+  const [index, tracked] = await Promise.all([
+    projection(client, uid, "kr"),
+    readJson<{ symbols: string[] }>(client, `${uid}/${ETF_HOLDINGS_PATH}`),
+  ]);
+  return {
+    rows: index?.rows.filter((r) => r.market === "ETF") ?? [],
+    trackedSymbols: tracked?.symbols ?? [],
+    date: index?.date ?? null,
+  };
+}
 async function documentFor<T>(client: SupabaseClient, uid: string, table: string): Promise<T | null> {
   const { data, error } = await client.from(table).select("payload").eq("user_id", uid).maybeSingle();
   if (error) throw new Error(error.message);
@@ -127,16 +138,22 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
     safe("ETF 보유", () => readJson<NonNullable<DashboardOperations["etfHoldings"]>>(client, `${uid}/${ETF_HOLDINGS_PATH}`)),
   ]);
   const krActual = krDoc ? await safe("국내 실제 원장", async () =>
-    calculateActual(krDoc.actualCapital, krDoc.executions, quotesFor(kr), kr?.date ?? null)) : null;
+    calculateActual(krDoc.actualCapital, krDoc.executions.filter((e) => e.market !== "ETF"), quotesFor(kr), kr?.date ?? null)) : null;
   const usActual = usDoc ? await safe("미국 실제 원장", async () =>
     calculateActual(usDoc.capital, usDoc.executions, quotesFor(us), us?.date ?? null)) : null;
+  const etfActual = krDoc ? await safe("ETF 실제 원장", async () =>
+    calculateActual(krDoc.etfCapital ?? 10_000_000, krDoc.executions.filter((e) => e.market === "ETF"), quotesFor(kr), kr?.date ?? null)) : null;
   const etf = etfHoldings ? await safe("ETF 보유정보 검증", async () =>
     validateEtfHoldingSymbols(etfHoldings.symbols).map((symbol) => ({
       symbol, name: symbol, shares: 1, firstEntryDate: "",
     }))) : null;
+  const enteredEtfs = new Set(krDoc?.executions.filter((e) => e.market === "ETF").map((e) => e.symbol) ?? []);
+  const etfPositions = etfActual
+    ? [...etfActual.positions, ...(etf ?? []).filter((p) => !enteredEtfs.has(p.symbol))]
+    : etf;
   const markets = DASHBOARD_MARKETS.map((market) => marketSignals(
     market === "US" ? us : kr, market,
-    market === "US" ? usActual?.positions ?? null : market === "ETF" ? etf : krActual?.positions ?? null,
+    market === "US" ? usActual?.positions ?? null : market === "ETF" ? etfPositions : krActual?.positions ?? null,
   ));
   if (!krDoc) warnings.push("국내 실제 원장이 없거나 조회되지 않아 국내 EXIT는 집계하지 않았습니다.");
   if (!usDoc) warnings.push("미국 실제 원장이 없거나 조회되지 않아 A0 실제 포트폴리오와 EXIT는 미확인으로 표시합니다.");

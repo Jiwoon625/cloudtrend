@@ -88,7 +88,11 @@ async function quotesFor(client: SupabaseClient, uid: string, symbols: Set<strin
       quotes[r.symbol] = {
         price: r.close,
         date: r.date || cache.analysis.date,
-        exitSignal: r.a0BetaExit ? "Beta 상위 40% 밖 3거래일 연속" : r.a0Exit ? "A0 청산 신호" : null,
+        exitSignal: r.a0BetaExit
+          ? "Beta 상위 40% 밖 3거래일 연속"
+          : r.a0Exit
+            ? "A0 청산 신호"
+            : null,
       };
   return quotes;
 }
@@ -99,6 +103,13 @@ export async function operateUsActual(
 ): Promise<UsActualState> {
   const [row, candidates] = await Promise.all([read(client, uid), candidatesFor(client, uid)]);
   const doc = structuredClone(row.payload);
+  let cleaned = false;
+  for (const e of doc.executions) {
+    if (e.note === "기존 실제 체결값 이관") {
+      e.note = "";
+      cleaned = true;
+    }
+  }
   if (input.action !== "load") {
     if (input.revision !== row.revision)
       throw new Error("다른 화면에서 원장이 변경됐습니다. 새로고침 후 다시 저장하세요.");
@@ -121,7 +132,7 @@ export async function operateUsActual(
       .at(-1) ?? null;
   const actual = calculateActual(doc.capital, doc.executions, quotes, latest);
   let revision = row.revision;
-  if (input.action !== "load") {
+  if (input.action !== "load" || cleaned) {
     const result = await client
       .from(TABLE)
       .update({ payload: doc, revision: revision + 1, updated_at: new Date().toISOString() })

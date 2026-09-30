@@ -9,6 +9,7 @@ const request = z.object({
   revision: z.number().int().optional(),
   strategyCapital: z.number().optional(),
   actualCapital: z.number().optional(),
+  etfCapital: z.number().positive().optional(),
   executionId: z.string().optional(),
   signalKey: z.string().optional(),
   note: z.string().max(300).optional(),

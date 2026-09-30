@@ -58,6 +58,7 @@ export interface LedgerDocument {
   version: number;
   settings: PortfolioSettings;
   actualCapital: number;
+  etfCapital?: number;
   executions: ActualExecution[];
   excluded: Record<string, string>;
   strategy: StrategyLedger | null;
@@ -86,6 +87,10 @@ export interface DualPortfolioState {
   revision: number;
   document: LedgerDocument;
   actual: ActualLedger;
+  etfActual?: ActualLedger;
+  etfRows?: import("./dashboardOperations").DashboardIndexRow[];
+  etfTrackedSymbols?: string[];
+  etfWarning?: string | null;
 }
 export const money = (v: number) => Math.round(v * 100) / 100;
 export const keyFor = (symbol: string, date: string) => `${symbol}|${date}`;

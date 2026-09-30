@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "./ui/button";
@@ -72,7 +72,11 @@ function Table({
 export function UsPortfolioLedgers({
   children,
   model,
+  hideHistory = false,
+  initialTab = "model",
 }: {
+  hideHistory?: boolean;
+  initialTab?: "model" | "actual" | "signals";
   children: ReactNode;
   model: UsPortfolioSnapshotRecord | undefined;
 }) {
@@ -87,11 +91,17 @@ export function UsPortfolioLedgers({
   const data = query.data,
     doc = data?.document,
     actual = data?.actual;
-  const [tab, setTab] = useState<"model" | "actual" | "signals">("model");
+  const [tab, setTab] = useState<"model" | "actual" | "signals">(initialTab);
   const [edit, setEdit] = useState<Editor | null>(null),
     [busy, setBusy] = useState(false),
     [capital, setCapital] = useState<string | null>(null),
     [filter, setFilter] = useState("");
+  const editPanel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!edit) return;
+    editPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    editPanel.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+  }, [edit?.id, edit?.symbol, edit?.side]);
   const matches = (x: { symbol: string; name: string }) =>
     `${x.symbol} ${x.name}`.toLowerCase().includes(filter.toLowerCase());
   const buys = new Map<string, number>();
@@ -307,6 +317,7 @@ export function UsPortfolioLedgers({
       {edit ? (
         <section
           className="rounded-lg border border-primary/40 bg-card p-4"
+          ref={editPanel}
           aria-label="US 실제 체결 입력"
         >
           <div className="flex justify-between">
@@ -421,59 +432,61 @@ export function UsPortfolioLedgers({
               </tr>
             ))}
           </Table>
-          <Table
-            title="실제 매수·매도 내역"
-            heads={["체결일", "종목", "구분", "가격", "수량", "비용", "실현손익", "메모", "수정"]}
-            empty={!actual.executions.filter(matches).length}
-          >
-            {[...actual.executions]
-              .reverse()
-              .filter(matches)
-              .map((e) => (
-                <tr key={e.id} className="border-t">
-                  <td className={td}>{e.date}</td>
-                  <td className={td}>{e.symbol}</td>
-                  <td className={td}>{e.side === "BUY" ? "매수" : "매도"}</td>
-                  <td className={td}>{usd(e.price)}</td>
-                  <td className={td}>{e.shares}주</td>
-                  <td className={td}>{usd(e.fee)}</td>
-                  <td className={td}>{e.realizedPnl === null ? "-" : usd(e.realizedPnl)}</td>
-                  <td className="max-w-[220px] p-3">{e.note}</td>
-                  <td className={td}>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={busy}
-                      onClick={() =>
-                        setEdit({
-                          ...e,
-                          price: String(e.price),
-                          shares: String(e.shares),
-                          fee: String(e.fee),
-                        })
-                      }
-                    >
-                      수정
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={busy}
-                      onClick={async () => {
-                        if (
-                          window.confirm(
-                            "잘못 입력한 실제 체결을 삭제할까요? 모델 원장은 유지됩니다.",
+          {!hideHistory ? (
+            <Table
+              title="실제 매수·매도 내역"
+              heads={["체결일", "종목", "구분", "가격", "수량", "비용", "실현손익", "메모", "수정"]}
+              empty={!actual.executions.filter(matches).length}
+            >
+              {[...actual.executions]
+                .reverse()
+                .filter(matches)
+                .map((e) => (
+                  <tr key={e.id} className="border-t">
+                    <td className={td}>{e.date}</td>
+                    <td className={td}>{e.symbol}</td>
+                    <td className={td}>{e.side === "BUY" ? "매수" : "매도"}</td>
+                    <td className={td}>{usd(e.price)}</td>
+                    <td className={td}>{e.shares}주</td>
+                    <td className={td}>{usd(e.fee)}</td>
+                    <td className={td}>{e.realizedPnl === null ? "-" : usd(e.realizedPnl)}</td>
+                    <td className="max-w-[220px] p-3">{e.note}</td>
+                    <td className={td}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={busy}
+                        onClick={() =>
+                          setEdit({
+                            ...e,
+                            price: String(e.price),
+                            shares: String(e.shares),
+                            fee: String(e.fee),
+                          })
+                        }
+                      >
+                        수정
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={busy}
+                        onClick={async () => {
+                          if (
+                            window.confirm(
+                              "잘못 입력한 실제 체결을 삭제할까요? 모델 원장은 유지됩니다.",
+                            )
                           )
-                        )
-                          await mutate({ action: "remove", executionId: e.id });
-                      }}
-                    >
-                      삭제
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-          </Table>
+                            await mutate({ action: "remove", executionId: e.id });
+                        }}
+                      >
+                        삭제
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+            </Table>
+          ) : null}
         </>
       ) : null}
       {tab === "signals" && data ? (
