@@ -76,11 +76,19 @@ function entry(vol = 0.3): EtfStrategySnapshot {
 }
 
 describe("ETF V0.1 confirmed policy", () => {
-  it("preserves all 393 research mappings and supports equity plus covered-call overlays", () => {
-    expect(Object.keys(ETF_MAPPING)).toHaveLength(393);
-    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "equity")).toHaveLength(245);
-    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "option_overlay")).toHaveLength(14);
-    expect(Object.values(ETF_MAPPING).filter(isEtfStrategyAssetClass)).toHaveLength(259);
+  it("covers the frozen 1,171-ETF mapping and keeps M0 restricted to equity-like assets", () => {
+    expect(Object.keys(ETF_MAPPING)).toHaveLength(1171);
+    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "equity")).toHaveLength(719);
+    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "option_overlay")).toHaveLength(49);
+    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "bond_cash")).toHaveLength(172);
+    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "leveraged_inverse")).toHaveLength(103);
+    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "mixed")).toHaveLength(82);
+    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "commodity_fx")).toHaveLength(26);
+    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "reit_infra")).toHaveLength(14);
+    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "structured_other")).toHaveLength(6);
+    expect(Object.values(ETF_MAPPING).filter(isEtfStrategyAssetClass)).toHaveLength(768);
+    expect(ETF_MAPPING["472150"]).toMatchObject({ assetClass: "option_overlay", region: "KR" });
+    expect(ETF_MAPPING["490590"]).toMatchObject({ assetClass: "option_overlay", region: "US" });
     expect(Object.values(ETF_POLICY.weights).reduce<number>((a, b) => a + b, 0)).toBe(100);
   });
   it("matches independently calculated pandas technical and sample volatility", () => {
