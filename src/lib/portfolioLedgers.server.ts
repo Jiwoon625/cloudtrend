@@ -59,7 +59,7 @@ async function readDocument(client: SupabaseClient, uid: string): Promise<Row> {
       market: t.market as Market,
       signalKey,
       shares: Number(t.shares),
-      note: "기존 0주 초과 기록 이관 · 기존 비용 유지",
+      note: "",
     };
     executions.push({
       ...shared,
@@ -239,6 +239,12 @@ export async function operateLedgers(
   const row = await readDocument(client, uid);
   const doc = structuredClone(row.payload);
   let changed = false;
+  for (const execution of doc.executions) {
+    if (execution.note === "기존 0주 초과 기록 이관 · 기존 비용 유지") {
+      execution.note = "";
+      changed = true;
+    }
+  }
   if (input.action !== "load" && input.action !== "sync" && input.revision !== row.revision)
     throw new Error("다른 화면에서 원장이 변경됐습니다. 새로고침 후 다시 저장하세요.");
   if (input.action === "capital") {
