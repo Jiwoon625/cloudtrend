@@ -1,7 +1,11 @@
 import "./engine/stockSectorMaster";
 import "./engine/additionalStockSectorMaster";
 
-import { resolveSectorCode, resolveCuratedEtfSectorCode, SECTOR_NAME_BY_CODE } from "./engine/sectors";
+import {
+  resolveSectorCode,
+  resolveCuratedEtfSectorCode,
+  SECTOR_NAME_BY_CODE,
+} from "./engine/sectors";
 
 export const SOURCE_MAX_FILE_BYTES = 45 * 1024 * 1024;
 
@@ -518,7 +522,11 @@ function issue(
   return { code, message, ...detail };
 }
 
-function normalizeRecords(recordSet: RecordSet) {
+function normalizeRecords(
+  recordSet: RecordSet,
+  visit: (consume: (record: RawRecord, index: number) => void) => void = (consume) =>
+    recordSet.records.forEach(consume),
+) {
   const errors: SourceValidationIssue[] = [];
   const warnings: SourceValidationIssue[] = [];
   const unique = new Map<string, CanonicalSourceRow>();
@@ -536,7 +544,7 @@ function normalizeRecords(recordSet: RecordSet) {
     }
   }
 
-  recordSet.records.forEach((record, index) => {
+  visit((record, index) => {
     const rowNumber = index + 2;
     const symbol = normalizeSymbol(record["symbol"]);
     const date = normalizeDate(record["date"]);
@@ -596,13 +604,15 @@ function normalizeRecords(recordSet: RecordSet) {
     }
     const explicitSector = String(record["sector"] ?? "").trim();
     const curatedEtfSector = type === "ETF" ? resolveCuratedEtfSectorCode(symbol) : undefined;
-    const resolvedSector = curatedEtfSector ?? (explicitSector
-      ? SECTOR_NAME_BY_CODE[explicitSector.toUpperCase()]
-        ? explicitSector.toUpperCase()
-        : explicitSector
-      : type === "INDEX"
-        ? "MARKET_IDX"
-        : resolveSectorCode(symbol, name, type === "ETF").code);
+    const resolvedSector =
+      curatedEtfSector ??
+      (explicitSector
+        ? SECTOR_NAME_BY_CODE[explicitSector.toUpperCase()]
+          ? explicitSector.toUpperCase()
+          : explicitSector
+        : type === "INDEX"
+          ? "MARKET_IDX"
+          : resolveSectorCode(symbol, name, type === "ETF").code);
 
     const row: CanonicalSourceRow = {
       symbol,
@@ -786,6 +796,7 @@ export async function validateSourceBytes(input: {
   filename: string;
   contentType?: string;
   onStage?: (stage: string) => void;
+  streamingCsv?: boolean;
 }): Promise<SourceValidationResult> {
   const filename = input.filename.trim() || "source.csv";
   const filenameFormat = formatFromFilename(filename);
@@ -809,12 +820,32 @@ export async function validateSourceBytes(input: {
     errors.push(issue("EMPTY_FILE", "빈 파일은 등록할 수 없습니다."));
 
   let recordSet: RecordSet = { records: [], columns: [] };
+  let visit: ((consume: (record: RawRecord, index: number) => void) => void) | undefined;
   if (errors.length === 0) {
     try {
-      recordSet =
-        format === "xlsx"
-          ? await recordsFromXlsx(input.bytes)
-          : parseSourceTextRecords(rawText, format);
+      if (format === "csv" && input.streamingCsv) {
+        let header: string[] = [];
+        let count = 0;
+        visitDelimitedRows(rawText.trim(), (cells, index) => {
+          if (index === 0) header = cells.map(normalizedHeader);
+          count++;
+        });
+        recordSet.columns = count >= 2 ? [...new Set(header.filter(Boolean))] : [];
+        visit = (consume) =>
+          visitDelimitedRows(rawText.trim(), (cells, index) => {
+            if (index === 0) return;
+            const record: RawRecord = {};
+            header.forEach((key, i) => {
+              if (key) record[key] = cells[i];
+            });
+            consume(record, index - 1);
+          });
+      } else {
+        recordSet =
+          format === "xlsx"
+            ? await recordsFromXlsx(input.bytes)
+            : parseSourceTextRecords(rawText, format);
+      }
     } catch (error) {
       errors.push(
         issue(
@@ -825,7 +856,7 @@ export async function validateSourceBytes(input: {
     }
   }
   input.onStage?.("records-parsed");
-  const normalized = normalizeRecords(recordSet);
+  const normalized = normalizeRecords(recordSet, visit);
   input.onStage?.("records-normalized");
   // Large market-history files can contain hundreds of thousands of rows and
   // therefore as many row-level warnings. Spreading those arrays into push()

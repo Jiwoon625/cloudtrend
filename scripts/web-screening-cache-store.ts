@@ -4,7 +4,7 @@ import { buildDashboardSummary, SCREENING_CACHE_VERSION } from "../src/lib/scree
 import type { AnalysisResult } from "../src/lib/engine/pipeline";
 import type { ScoringConfig } from "../src/lib/engine/scoring";
 import type { ScreeningSnapshot } from "../src/lib/screeningSnapshot";
-import { sourceRowKey, toCanonicalCsv } from "../src/lib/sourceData";
+import { CANONICAL_SOURCE_COLUMNS, visitDelimitedRows } from "../src/lib/sourceData";
 import type { AnalysisPayload } from "../src/lib/market.functions";
 import {
   ANALYSIS_BUCKET,
@@ -83,12 +83,23 @@ async function maybeDownloadJson<T>(client: SupabaseClient, objectPath: string):
   }
 }
 
-function canonicalMergedCsv(inputs: LoadedSourceInput[]) {
-  const rows = new Map<string, LoadedSourceInput["validation"]["rows"][number]>();
+export function canonicalMergedCsv(inputs: LoadedSourceInput[]) {
+  // Inputs are already validated canonical CSV. Keep one encoded line per key,
+  // rather than reconstructing 102-property objects for the entire history.
+  const rows = new Map<string, string>();
+  const cell = (value: string) =>
+    /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
   for (const input of inputs) {
-    for (const row of input.validation.rows) rows.set(sourceRowKey(row), row);
+    visitDelimitedRows(input.text, (values, index) => {
+      if (index === 0) {
+        if (values.join(",") !== CANONICAL_SOURCE_COLUMNS.join(","))
+          throw new Error("Expected validated canonical source columns");
+        return;
+      }
+      rows.set(`${values[0]}\u0000${values[4]}`, values.map(cell).join(","));
+    });
   }
-  return toCanonicalCsv([...rows.values()]);
+  return `${[CANONICAL_SOURCE_COLUMNS.join(","), ...rows.values()].join("\n")}\n`;
 }
 
 export async function persistWebScreeningCaches(input: {
