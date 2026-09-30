@@ -1,3 +1,4 @@
+import { memory } from "./screening-memory";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -322,40 +323,50 @@ async function loadRegistryInputsLightweight(
   return loaded;
 }
 
-async function loadRegistryInputs(client: SupabaseClient, userId: string, sourceType: SourceType) {
+async function loadRegistryInputs(
+  client: SupabaseClient,
+  userId: string,
+  sourceType: SourceType,
+  compact = false,
+) {
   const records = await listSourceRecords(client, userId, sourceType);
-  return Promise.all(
-    records.map(async (record): Promise<LoadedSourceInput> => {
-      const { logicalBytes, logicalFileHash } = await registeredLogicalBytes(client, record);
-      const validation = await validateSourceBytes({
-        bytes: logicalBytes,
-        filename: record.original_filename,
-        contentType: record.canonical_format === "csv.gz" ? "text/csv" : record.content_type,
-      });
-      if (!validation.valid)
-        throw new Error(
-          `등록 원천데이터 검증 실패 (${record.original_filename}): ${validation.errors[0]?.message ?? "형식 오류"}`,
-        );
-      if (
-        validation.dataHash !== record.data_hash ||
-        validation.schemaHash !== record.schema_hash ||
-        validation.fileHash !== logicalFileHash
-      )
-        throw new Error(`등록 원천데이터 논리 해시 불일치: ${record.original_filename}`);
-      return {
-        id: record.id,
-        fileName: record.original_filename,
-        bytes: logicalBytes.byteLength,
-        savedAt: record.activated_at ?? record.created_at,
-        text: validation.canonicalCsv,
-        fileHash: logicalFileHash,
-        dataHash: validation.dataHash,
-        schemaHash: validation.schemaHash,
-        sourceRecord: record,
-        validation,
-      };
-    }),
-  );
+  const load = async (record: SourceRecord): Promise<LoadedSourceInput> => {
+    const { logicalBytes, logicalFileHash } = await registeredLogicalBytes(client, record);
+    memory("source-validation-start", { bytes: logicalBytes.byteLength });
+    const validation = await validateSourceBytes({
+      streamingCsv: compact,
+      onStage: memory,
+      bytes: logicalBytes,
+      filename: record.original_filename,
+      contentType: record.canonical_format === "csv.gz" ? "text/csv" : record.content_type,
+    });
+    if (!validation.valid)
+      throw new Error(
+        `등록 원천데이터 검증 실패 (${record.original_filename}): ${validation.errors[0]?.message ?? "형식 오류"}`,
+      );
+    if (
+      validation.dataHash !== record.data_hash ||
+      validation.schemaHash !== record.schema_hash ||
+      validation.fileHash !== logicalFileHash
+    )
+      throw new Error(`등록 원천데이터 논리 해시 불일치: ${record.original_filename}`);
+    return {
+      id: record.id,
+      fileName: record.original_filename,
+      bytes: logicalBytes.byteLength,
+      savedAt: record.activated_at ?? record.created_at,
+      text: validation.canonicalCsv,
+      fileHash: logicalFileHash,
+      dataHash: validation.dataHash,
+      schemaHash: validation.schemaHash,
+      sourceRecord: record,
+      validation: compact ? { ...validation, rows: [] } : validation,
+    };
+  };
+  if (!compact) return Promise.all(records.map(load));
+  const loaded: LoadedSourceInput[] = [];
+  for (const record of records) loaded.push(await load(record));
+  return loaded;
 }
 
 async function maybeDownloadJson<T>(client: SupabaseClient, objectPath: string): Promise<T | null> {
@@ -435,11 +446,11 @@ export async function loadAnalysisSourceInputs(
   client: SupabaseClient,
   userId: string,
   sourceType: SourceType,
-  options: { lightweight?: boolean } = {},
+  options: { lightweight?: boolean; compact?: boolean } = {},
 ) {
   const registered = options.lightweight
     ? await loadRegistryInputsLightweight(client, userId, sourceType)
-    : await loadRegistryInputs(client, userId, sourceType);
+    : await loadRegistryInputs(client, userId, sourceType, options.compact);
   if (sourceType === "screening") {
     // parseManualMarketData는 같은 종목·거래일에서 뒤에 들어온 source의
     // 비어 있지 않은 값을 기존 행에 덮어쓴다. 따라서 활성화 순서가 오래된

@@ -1,0 +1,41 @@
+name: Screening memory regression
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - scripts/**
+      - tests/screening-memory*.ts
+      - vitest.screening-memory.config.ts
+      - scripts/run-screening.ts
+      - scripts/source-registry-store.ts
+      - src/lib/sourceData.ts
+      - .github/workflows/screening-memory-regression.yml
+permissions:
+  contents: read
+jobs:
+  screening:
+    if: github.head_ref == 'fix/screening-oom-20260930' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SCREENING_MEMORY_PROFILE: "1"
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Regression contracts
+        run: npx vitest run --config vitest.screening-memory.config.ts
+      - name: Run screening and dashboard snapshot
+        run: npm run screening:run -- --supabase-user-id "$SUPABASE_USER_ID" --upload --force
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screening-memory-${{ github.run_id }}
+          path: analysis-runs/
+          if-no-files-found: warn

@@ -1,3 +1,4 @@
+import { memory } from "./screening-memory";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -29,6 +30,7 @@ import {
 } from "./analysis-run-store";
 import { loadAnalysisSourceInputs } from "./source-registry-store";
 import { publishRecentPrices, warmRecentCharts } from "../src/lib/instrumentChartStore.server";
+import { writeScreeningJson, uploadScreeningJsonFile } from "./screening-json-file";
 import { persistWebScreeningCaches } from "./web-screening-cache-store";
 
 interface Options {
@@ -95,14 +97,35 @@ async function loadPreviousSnapshot(
   return (data?.snapshot as ScreeningSnapshot | undefined) ?? null;
 }
 
-async function main() {
-  const options = parseArgs(process.argv.slice(2));
+function analyzeInputs(
+  inputs: Awaited<ReturnType<typeof loadAnalysisSourceInputs>>,
+  config: ScoringConfig,
+) {
+  const parsed = parseManualMarketData(inputs.map((input) => input.text));
+  memory("parse-end");
+  const result = runFullMarketAnalysis(parsed.dataset, config);
+  memory("analysis-end");
+  return { ...result, stats: parsed.stats };
+}
+
+function releaseSourcePayloads(inputs: Awaited<ReturnType<typeof loadAnalysisSourceInputs>>) {
+  for (const input of inputs) {
+    input.text = "";
+    input.validation.canonicalCsv = "";
+    input.validation.rows = [];
+  }
+}
+
+export async function runScreening(argv = process.argv.slice(2)) {
+  memory("start");
+  const options = parseArgs(argv);
   const client = trustedSupabaseClient();
   const [inputs, config] = await Promise.all([
-    loadAnalysisSourceInputs(client, options.supabaseUserId, "screening"),
+    loadAnalysisSourceInputs(client, options.supabaseUserId, "screening", { compact: true }),
     loadConfig(options.configPath),
   ]);
 
+  memory("inputs-loaded");
   const currentCodeVersion = codeVersion();
   const dataVersion = `sha256:${sha256(
     inputs
@@ -124,8 +147,8 @@ async function main() {
     }
   }
 
-  const parsed = parseManualMarketData(inputs.map((input) => input.text));
-  const { analysis, dataset } = runFullMarketAnalysis(parsed.dataset, config);
+  memory("parse-start");
+  const { analysis, dataset, stats } = analyzeInputs(inputs, config);
   const snapshot = buildSnapshot(
     analysis,
     latestSourceRegistration(
@@ -168,7 +191,7 @@ async function main() {
       savedAt: inputs.at(-1)?.savedAt ?? null,
       bytes: inputs.reduce((sum, input) => sum + input.bytes, 0),
       asOfDate: analysis.asOfDate,
-      stats: parsed.stats,
+      stats,
       sectorMapping: {
         reviewedSymbols: REVIEWED_STOCK_SECTOR_COUNT,
         additionalSymbols: ADDITIONAL_STOCK_SECTOR_COUNT,
@@ -182,11 +205,12 @@ async function main() {
 
   const outputDir = path.resolve(options.outputRoot, `screening-${runId}`);
   await mkdir(outputDir, { recursive: true });
-  await Promise.all([
-    writeFile(path.join(outputDir, "screening-bundle.json"), JSON.stringify(bundle, null, 2)),
-    writeFile(path.join(outputDir, "screening-summary.json"), JSON.stringify(summary, null, 2)),
-  ]);
+  memory("bundle-write-start");
+  const bundleFile = path.join(outputDir, "screening-bundle.json");
+  await writeScreeningJson(bundleFile, bundle);
+  await writeFile(path.join(outputDir, "screening-summary.json"), JSON.stringify(summary, null, 2));
 
+  memory("bundle-write-end");
   let webCache: Awaited<ReturnType<typeof persistWebScreeningCaches>> | null = null;
   if (options.upload) {
     const { error: historyError } = await client
@@ -197,6 +221,7 @@ async function main() {
       );
     if (historyError) throw new Error(`스크리닝 이력 저장 실패: ${historyError.message}`);
 
+    memory("cache-publish-start");
     webCache = await persistWebScreeningCaches({
       client,
       userId: options.supabaseUserId,
@@ -207,8 +232,10 @@ async function main() {
       previous,
     });
 
+    memory("cache-publish-end");
+    releaseSourcePayloads(inputs);
     await Promise.all([
-      uploadJson(client, resultPath, bundle),
+      uploadScreeningJsonFile(client, resultPath, bundleFile),
       uploadJson(client, `${options.supabaseUserId}/results/screening/latest.json`, {
         run,
         resultPath,
@@ -234,6 +261,8 @@ async function main() {
     ]);
   }
 
+  releaseSourcePayloads(inputs);
+  memory("publish-end");
   if (options.upload && webCache) {
     try {
       const ctx = { dataset, analysis, config };
@@ -252,12 +281,14 @@ async function main() {
     }
   }
 
+  memory("charts-end");
   process.stdout.write(
     `${JSON.stringify({ reused: false, run, outputDir, resultPath: options.upload ? resultPath : null, webCache, summary }, null, 2)}\n`,
   );
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+if (!process.env["VITEST"])
+  runScreening().catch((error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  });
