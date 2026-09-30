@@ -55,8 +55,10 @@ export async function listActiveSources(client: SupabaseClient, userId: string) 
     .eq("user_id", userId)
     .eq("source_type", "screening")
     .eq("status", "active")
-    .order("activated_at", { ascending: false, nullsFirst: false })
-    .order("created_at", { ascending: false });
+    // parseManualMarketData는 뒤에 들어온 중복 행의 비어 있지 않은 값을
+    // 덮어쓴다. 오래된 source부터 읽어 최신 활성 source가 최종 우선권을 갖게 한다.
+    .order("activated_at", { ascending: true, nullsFirst: true })
+    .order("created_at", { ascending: true });
   if (error) throw new Error(`스크리닝 원천데이터 목록 조회 실패: ${error.message}`);
   const sources = (data ?? []) as ActiveSourceRecord[];
   if (sources.length === 0) throw new Error("활성 스크리닝 원천데이터가 없습니다.");
