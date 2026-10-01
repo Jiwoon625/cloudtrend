@@ -287,7 +287,7 @@ function KoreaPortfolioContent() {
           <div className="mb-4 grid gap-3 lg:grid-cols-2">
             <SummaryCard
               title="전략 포트폴리오"
-              caption="Onset 자동 진입 · 규칙에 따른 자동 청산 · 개인 미매수와 독립"
+              caption="KOSPI 확인 완료 / KOSDAQ Onset 진입 · 규칙에 따른 청산 · 개인 미매수와 독립"
               s={strategy.summary}
               capital={doc.settings.initialCapital}
             />
@@ -392,7 +392,7 @@ function KoreaPortfolioContent() {
               {[
                 ["strategy", "전략 원장"],
                 ["actual", "실제 보유·거래"],
-                ["signals", "Onset · 미매수"],
+                ["signals", "진입 신호 · 미매수"],
               ].map(([value, label]) => (
                 <Button
                   key={value}
@@ -479,7 +479,7 @@ function KoreaPortfolioContent() {
           {tab === "strategy" ? (
             <LedgerTable
               title="전략 원장 · 가상 매수·매도"
-              caption={`전체 Onset ${candidates.length}건 중 전략 진입 ${modelTrades.length}건. 한도 초과와 체결 대기는 Onset 탭에서 확인합니다.`}
+              caption={`전체 진입 신호 ${candidates.length}건 중 전략 진입 ${modelTrades.length}건. 한도 초과와 체결 대기는 진입 신호 탭에서 확인합니다.`}
               headers={[
                 "종목",
                 "신호일",
@@ -594,8 +594,8 @@ function KoreaPortfolioContent() {
           ) : null}
           {tab === "signals" ? (
             <LedgerTable
-              title="전체 Onset · 실제 매수 여부"
-              caption="전략 한도와 관계없이 모든 신호를 보여줍니다. 새 신호는 실제 수량 0주로 시작하며, 매수한 경우에만 체결을 입력하세요."
+              title="전체 진입 신호 · 실제 매수 여부"
+              caption="KOSPI 확인 완료와 KOSDAQ Onset 진입 신호를 전략 한도와 관계없이 보여줍니다. 새 신호는 실제 수량 0주로 시작하며, 매수한 경우에만 체결을 입력하세요."
               headers={[
                 "종목",
                 "신호일",

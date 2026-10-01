@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase, userId } from "@/lib/cloud";
 import {
   buildSnapshot,
+  persistScreeningSnapshot,
   kstDateKey,
   type ScreeningSnapshot,
   type SnapshotEntry,
@@ -39,13 +40,7 @@ export function loadSnapshots(): ScreeningSnapshot[] {
 
 export async function saveSnapshot(snapshot: ScreeningSnapshot) {
   snapshot = { ...snapshot, date: snapshot.asOfDate };
-  const { error } = await supabase
-    .from("screening_history")
-    .upsert(
-      { user_id: await userId(), date: snapshot.date, snapshot },
-      { onConflict: "user_id,date" },
-    );
-  if (error) throw error;
+  await persistScreeningSnapshot(supabase, await userId(), snapshot);
   await hydrateSnapshots();
 }
 export async function deleteSnapshot(date: string) {

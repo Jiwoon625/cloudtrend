@@ -1,3 +1,9 @@
+import {
+  buildKospiEntrySnapshot,
+  isKospiEntryReady,
+  KOSPI_ENTRY_POLICY,
+  type KospiEntrySnapshot,
+} from "./kospiEntryConfirmation";
 import { historicalInstrumentScore } from "./historicalInstrumentScore";
 import { calculateEtfStrategies, ETF_POLICY, type EtfStrategySnapshot } from "./etfStrategy";
 // 스크리닝 파이프라인: MarketDataset → 지표 → 실격 필터 → 시장 게이트 → 점수
@@ -101,6 +107,7 @@ export interface SectorScore {
 export type V8ExitSignal = "UP90" | "DOWN30" | "UP95" | "DOWN25" | null;
 
 export interface ScreeningRow {
+  kospiEntry?: KospiEntrySnapshot | undefined;
   etfStrategy?: EtfStrategySnapshot;
   instrument: Instrument;
   snapshot: IndicatorSnapshot;
@@ -124,7 +131,7 @@ export interface ScreeningRow {
   kosdaq80Onset: boolean;
   kospi80Onset?: boolean;
   operationalSignalVersion?: string;
-  /** Compatibility alias for the executable KOSPI 8.0 Onset. */
+  /** Compatibility alias for confirmed, date-bound KOSPI entry readiness. */
   kospiEightPointEntry: boolean;
   exitSignal: V8ExitSignal;
   sectorPriceLeadership: number | null;
@@ -556,6 +563,26 @@ export function runAnalysis(
     };
   });
 
+  for (const row of rows) {
+    if (row.instrument.instrumentType !== "STOCK" || row.instrument.market !== "KOSPI") continue;
+    const dated = buildKospiEntrySnapshot(ds, row.instrument.symbol, cfg);
+    row.kospiEntry = dated.entry;
+    Object.assign(
+      row,
+      getOperationalSignals(
+        "KOSPI",
+        dated.previous?.score ?? null,
+        dated.current.score,
+        dated.current.observed && dated.current.eligible,
+      ),
+    );
+    row.kospi80Onset = dated.entry.state === "pending";
+    row.kospiEightPointEntry = isKospiEntryReady(dated.entry, ds.asOfDate);
+    row.rs20 = dated.rs20;
+    row.rs60 = dated.rs60;
+    row.actionLabelText = getOperationalStatus(row, "KOSPI");
+  }
+
   const sectors = sectorSnapshotScores(ds, rows);
   const sectorByCode = new Map(sectors.map((sector) => [sector.sectorCode, sector]));
   for (const row of rows) {
@@ -649,7 +676,7 @@ export function runAnalysis(
 
   return {
     asOfDate: ds.asOfDate,
-    strategyVersion: `${STRATEGY_VERSION} / ${ETF_POLICY.version}`,
+    strategyVersion: `${STRATEGY_VERSION} / ${ETF_POLICY.version} / ${KOSPI_ENTRY_POLICY.version}`,
     scoringConfig: {
       ...cfg,
       weights: {

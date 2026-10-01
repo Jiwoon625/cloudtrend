@@ -1,5 +1,6 @@
 import { loadDomesticPositionContext } from "@/lib/portfolioPositionContext";
 import { StrategyDescription } from "@/components/StrategyDescription";
+import { KospiEntryDetails } from "@/components/KospiEntryDetails";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
@@ -135,6 +136,7 @@ function InstrumentDetail() {
       kosdaq80Onset: row.kosdaq80Onset,
       kospiEightPointEntry: row.kospiEightPointEntry,
       kospi80Onset: row.kospi80Onset,
+      kospiEntry: row.kospiEntry,
       operationalSignalVersion: row.operationalSignalVersion,
       exitSignal: row.exitSignal,
     },
@@ -230,6 +232,16 @@ function InstrumentDetail() {
         />
         <Stat label="52주 고점 거리" value={<Delta value={snap.distanceFrom52wHigh} />} />
       </div>
+
+      {row.instrument.instrumentType === "STOCK" && row.instrument.market === "KOSPI" ? (
+        <section
+          className="mt-3 rounded-md border border-border bg-card p-3"
+          aria-label="KOSPI 확인 기록"
+        >
+          <h2 className="mb-1 text-xs font-semibold">KOSPI 하루 확인 기록</h2>
+          <KospiEntryDetails entry={row.kospiEntry} showState />
+        </section>
+      ) : null}
 
       {displayWarnings.length > 0 ? (
         <div className="mt-3 flex flex-wrap gap-1">

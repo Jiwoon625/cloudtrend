@@ -1,3 +1,4 @@
+import { kospiEntryConfirmation } from "./kospiEntryConfirmation";
 import { describe, expect, it } from "vitest";
 import {
   getHeldOperationalExitSignal,
@@ -27,7 +28,8 @@ describe("KOSPI executable strategy", () => {
     [9, null, false, null],
   ])("%s -> %s: entry=%s exit=%s", (previous, current, entry, exit) => {
     const signals = getOperationalSignals("KOSPI", previous, current, true);
-    expect(isOperationalEntry(signals)).toBe(entry);
+    expect(signals.kospi80Onset).toBe(entry);
+    expect(isOperationalEntry(signals)).toBe(false); // raw onset always waits for confirmation
     expect(signals.exitSignal).toBe(exit);
     expect(getStoredOperationalExit(signals, "KOSPI")).toBe(exit);
   });
@@ -71,9 +73,19 @@ describe("KOSPI executable strategy", () => {
     const entry = {
       ...base,
       instrument: { ...base.instrument, market: "KOSPI" as const },
-      ...getOperationalSignals("KOSPI", 7.5, 8, true),
+      ...getOperationalSignals("KOSPI", 8, 8.5, true),
+      kospiEntry: kospiEntryConfirmation(
+        { date: "2026-10-05", score: 8.5, rsAccel: 1, eligible: true, observed: true },
+        { date: "2026-10-02", score: 8, rsAccel: -1, eligible: true, observed: true },
+        { date: "2026-10-01", score: 7.5, rsAccel: 0, eligible: true, observed: true },
+      ),
     };
-    const exit = { ...entry, ...getOperationalSignals("KOSPI", 9, 9.5, true) };
+    const exit = {
+      ...entry,
+      kospiEntry: undefined,
+      ...getOperationalSignals("KOSPI", 9, 9.5, true),
+    };
+    analysis.asOfDate = "2026-10-05";
     analysis.rows = [entry, exit];
     const snapshot = buildSnapshot(analysis);
     expect(isOperationalEntry(snapshot.entries[0]!)).toBe(true);

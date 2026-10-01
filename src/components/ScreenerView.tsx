@@ -30,10 +30,12 @@ type PresetId =
   | "VALUEUP"
   | "HEAD_FAKE"
   | "KOSPI_ENTRY_8"
+  | "KOSPI_PENDING"
+  | "KOSPI_CONFIRMED"
   | "EXIT";
 
 const PRESETS: Array<{ id: PresetId; label: string; test: (r: ScreeningRow) => boolean }> = [
-  { id: "ENTRY", label: "신규 진입", test: isOperationalEntry },
+  { id: "ENTRY", label: "진입 준비", test: isOperationalEntry },
   { id: "KOSDAQ_ENTRY_8", label: "KOSDAQ Onset", test: (r) => r.kosdaq80Onset },
   { id: "CORE", label: "Core 후보", test: (r) => r.grade !== "C" && r.hardFilterPassed },
   { id: "GRADE_A", label: "A등급", test: (r) => r.grade === "A" },
@@ -57,8 +59,18 @@ const PRESETS: Array<{ id: PresetId; label: string; test: (r: ScreeningRow) => b
   { id: "HEAD_FAKE", label: "Head Fake 경고", test: (r) => r.warnings.includes("HEAD_FAKE") },
   {
     id: "KOSPI_ENTRY_8",
-    label: "KOSPI Onset",
+    label: "KOSPI 원시 Onset",
     test: (r) => r.kospi80Onset === true,
+  },
+  {
+    id: "KOSPI_PENDING",
+    label: "KOSPI 하루 확인 대기",
+    test: (r) => r.instrument.market === "KOSPI" && r.kospiEntry?.state === "pending",
+  },
+  {
+    id: "KOSPI_CONFIRMED",
+    label: "KOSPI 확인 완료 · 진입 준비",
+    test: (r) => r.instrument.market === "KOSPI" && isOperationalEntry(r),
   },
   { id: "EXIT", label: "Exit 점검", test: (r) => r.exitSignal !== null },
 ];
@@ -98,9 +110,31 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
       if (id === "ENTRY")
         return isPortfolioAwareOperationalEntry(r, positionContext, analysis.asOfDate);
       if (id === "KOSDAQ_ENTRY_8")
-        return r.kosdaq80Onset && !isOnsetSuppressed(positionContext, r.instrument.symbol, analysis.asOfDate);
+        return (
+          r.kosdaq80Onset &&
+          !isOnsetSuppressed(positionContext, r.instrument.symbol, analysis.asOfDate)
+        );
       if (id === "KOSPI_ENTRY_8")
-        return r.kospi80Onset && !isOnsetSuppressed(positionContext, r.instrument.symbol, analysis.asOfDate);
+        return (
+          r.kospi80Onset &&
+          !isOnsetSuppressed(positionContext, r.instrument.symbol, analysis.asOfDate)
+        );
+      if (id === "KOSPI_PENDING")
+        return (
+          r.instrument.market === "KOSPI" &&
+          r.kospiEntry?.state === "pending" &&
+          r.kospiEntry.date === analysis.asOfDate &&
+          !isOnsetSuppressed(
+            positionContext,
+            r.instrument.symbol,
+            r.kospiEntry.originDate ?? analysis.asOfDate,
+          )
+        );
+      if (id === "KOSPI_CONFIRMED")
+        return (
+          r.instrument.market === "KOSPI" &&
+          isPortfolioAwareOperationalEntry(r, positionContext, analysis.asOfDate)
+        );
     }
     return PRESETS.find((presetItem) => presetItem.id === id)!.test(r);
   };
@@ -264,7 +298,11 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         </div>
       </div>
 
-      <ScreenerTable rows={filtered} positionContext={positionContext} signalDate={analysis.asOfDate} />
+      <ScreenerTable
+        rows={filtered}
+        positionContext={positionContext}
+        signalDate={analysis.asOfDate}
+      />
     </div>
   );
 }

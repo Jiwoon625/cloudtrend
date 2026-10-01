@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { listActiveSources, type ActiveSourceRecord } from "./screeningSources.server";
 import { visitDelimitedRows } from "./sourceData";
+import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
 import type { DailyPrice, Market } from "./engine/types";
 import type { ScreeningSnapshot } from "./screeningSnapshot";
 import { portfolioEtfContext } from "./dashboardOperations.server";
@@ -130,6 +131,8 @@ async function priceInputs(
 ) {
   const bySymbol = new Map<string, Map<string, DailyPrice>>();
   const markets: Record<string, Market> = {};
+  const kospiDates = new Set<string>();
+  const observedDates = new Set<string>();
   for (const source of sources) {
     if (source.max_date && source.max_date < from) continue;
     const { data, error } = await client.storage
@@ -163,11 +166,19 @@ async function priceInputs(
       const cell = (key: string) => cells[header[key]!] ?? "";
       const symbol = cell("symbol"),
         date = cell("date");
-      if (!symbols.has(symbol) || date < from) return;
+      if (date < from || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
       const market = cell("market");
+      if (symbol === "KOSPI") kospiDates.add(date);
+      if (market === "KOSPI" || market === "KOSDAQ" || symbol === "KOSPI") observedDates.add(date);
+      if (!symbols.has(symbol)) return;
       if (market !== "KOSPI" && market !== "KOSDAQ" && market !== "ETF") return;
-      const number = (key: string) => Number(cell(key).replaceAll(",", ""));
-      if (number("open") <= 0 || number("close") <= 0) return;
+      const number = (key: string) => {
+        const raw = cell(key).replaceAll(",", "").trim();
+        return raw ? Number(raw) : Number.NaN;
+      };
+      // Only the new KOSPI entry path needs raw suspension/invalid rows. Other markets retain
+      // their original price filtering; simulateStrategy separates raw entry bars from replay quotes.
+      if (market !== "KOSPI" && (number("open") <= 0 || number("close") <= 0)) return;
       const series = bySymbol.get(symbol) ?? new Map<string, DailyPrice>();
       if (!series.has(date))
         series.set(date, {
@@ -192,7 +203,7 @@ async function priceInputs(
       [...b.values()].sort((a, b) => a.tradeDate.localeCompare(b.tradeDate)),
     ]),
   );
-  return { bars, markets };
+  return { bars, markets, marketDates: [...new Set([...kospiDates, ...observedDates])].sort() };
 }
 
 async function refreshStrategy(client: SupabaseClient, uid: string, doc: LedgerDocument) {
@@ -202,7 +213,13 @@ async function refreshStrategy(client: SupabaseClient, uid: string, doc: LedgerD
   ]);
   const symbols = new Set(doc.executions.map((e) => e.symbol));
   for (const s of snapshots)
-    for (const e of s.entries) if (e.kospi80Onset || e.kosdaq80Onset) symbols.add(e.symbol);
+    for (const e of s.entries)
+      if (
+        e.kospi80Onset ||
+        e.kosdaq80Onset ||
+        (e.kospiEntry?.originDate && e.kospiEntry.state !== "none")
+      )
+        symbols.add(e.symbol);
   // Include old KOSDAQ status-only onsets, supported by the original rule.
   for (const s of snapshots)
     for (const e of s.entries)
@@ -211,6 +228,7 @@ async function refreshStrategy(client: SupabaseClient, uid: string, doc: LedgerD
     .update(
       JSON.stringify({
         version: LEDGER_VERSION,
+        entryPolicy: KOSPI_ENTRY_POLICY.version,
         settings: [
           doc.settings.initialCapital,
           doc.settings.maxPositions,
@@ -228,8 +246,8 @@ async function refreshStrategy(client: SupabaseClient, uid: string, doc: LedgerD
     [...snapshots.map((s) => s.asOfDate), ...doc.executions.map((e) => e.date)]
       .filter(Boolean)
       .sort()[0] ?? "9999-12-31";
-  const { bars, markets } = await priceInputs(client, sources, symbols, from);
-  doc.strategy = simulateStrategy(doc.settings, snapshots, bars, markets, fingerprint);
+  const { bars, markets, marketDates } = await priceInputs(client, sources, symbols, from);
+  doc.strategy = simulateStrategy(doc.settings, snapshots, bars, markets, fingerprint, marketDates);
   return true;
 }
 

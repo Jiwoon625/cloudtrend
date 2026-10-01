@@ -1,3 +1,5 @@
+import { kospiEntryConfirmation } from "./engine/kospiEntryConfirmation";
+import { OPERATIONAL_SIGNAL_VERSION } from "./engine/operationalStrategy";
 import { describe, expect, it } from "vitest";
 
 import type { ScreeningRow } from "./engine/pipeline";
@@ -43,27 +45,27 @@ function row(overrides: Partial<ScreeningRow> = {}): ScreeningRow {
 }
 
 describe("V8 display status", () => {
-  it("labels a KOSPI 8-point threshold crossing as a new entry candidate", () => {
+  it("does not promote old raw KOSPI onset to a new-policy entry", () => {
     expect(
       getDisplayStatus(row({ kospiEightPointEntry: true, kospi80Onset: true, rs20: 4, rs60: 5 })),
-    ).toBe("KOSPI 8.0 Onset · 신규 진입");
+    ).toBe("KOSPI 8.0 Onset · 확인 기록 없음");
   });
 
-  it("adds RS confirmation when KOSPI RSAccel is positive", () => {
+  it("does not promote onset-day positive RS without next-day confirmation", () => {
     expect(
       getDisplayStatus(row({ kospiEightPointEntry: true, kospi80Onset: true, rs20: 6, rs60: 2 })),
-    ).toBe("KOSPI 8.0 Onset · 신규 진입 · RS 확인");
+    ).toBe("KOSPI 8.0 Onset · 확인 기록 없음");
   });
 
   it("does not confirm relative momentum when RSAccel is zero or unavailable", () => {
     expect(
       getDisplayStatus(row({ kospiEightPointEntry: true, kospi80Onset: true, rs20: 3, rs60: 3 })),
-    ).toBe("KOSPI 8.0 Onset · 신규 진입");
+    ).toBe("KOSPI 8.0 Onset · 확인 기록 없음");
     expect(
       getDisplayStatus(
         row({ kospiEightPointEntry: true, kospi80Onset: true, rs20: null, rs60: 3 }),
       ),
-    ).toBe("KOSPI 8.0 Onset · 신규 진입");
+    ).toBe("KOSPI 8.0 Onset · 확인 기록 없음");
   });
 
   it("uses the operational KOSDAQ 8.0 Onset · 신규 진입 label", () => {
@@ -104,7 +106,16 @@ describe("V8 display status", () => {
       heldSymbols: [],
       lastSellDateBySymbol: { "000000": "2026-09-30" },
     };
-    const candidate = row({ kospiEightPointEntry: true, kospi80Onset: true });
+    const candidate = row({
+      kospiEightPointEntry: false,
+      kospi80Onset: true,
+      operationalSignalVersion: OPERATIONAL_SIGNAL_VERSION,
+      kospiEntry: kospiEntryConfirmation(
+        { date: "2026-09-30", score: 8, rsAccel: 1, eligible: true, observed: true },
+        { date: "2026-09-29", score: 7.5, rsAccel: 1, eligible: true, observed: true },
+        null,
+      ),
+    });
     expect(isPortfolioAwareOperationalEntry(candidate, sold, "2026-09-30")).toBe(false);
     expect(getPortfolioAwareDisplayStatus(candidate, sold, "2026-09-30")).toBe(
       "당일 매도 · 재진입 제외",

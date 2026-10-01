@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { operateLedgers } from "./portfolioLedgers.server";
+import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
+import { OPERATIONAL_SIGNAL_VERSION } from "./engine/operationalStrategy";
 import type { LedgerDocument } from "./portfolioLedgers";
 
 vi.mock("./dashboardOperations.server", () => ({
@@ -22,15 +24,14 @@ vi.mock("./dashboardOperations.server", () => ({
   }),
 }));
 
-const csv =
-  "symbol,date,market,open,high,low,close,volume\nA,2026-01-02,KOSDAQ,100,110,90,105,1000";
+let csv = "symbol,date,market,open,high,low,close,volume\nA,2026-01-02,KOSDAQ,100,110,90,105,1000";
 vi.mock("./screeningSources.server", () => ({
   listActiveSources: async () => [
     {
       id: "source",
       storage_bucket: "test",
       storage_path: "test",
-      max_date: "2026-01-02",
+      max_date: "9999-12-31",
       file_hash: `sha256:${createHash("sha256").update(csv).digest("hex")}`,
     },
   ],
@@ -293,5 +294,118 @@ describe("ledger persistence", () => {
     expect(
       (await operateLedgers(db.client, "owner", { action: "load" })).document.executions[0]!.note,
     ).toBe("사용자 메모 · 이관 내용 확인");
+  });
+});
+
+const confirmedSnapshot = () => ({
+  date: "2026-10-02",
+  asOfDate: "2026-10-02",
+  savedAt: "2026-10-02T09:00:00Z",
+  entries: [
+    {
+      symbol: "C",
+      name: "C",
+      instrumentType: "STOCK",
+      sectorCode: "S",
+      sectorName: "S",
+      kospi80Onset: false,
+      technicalPoints: 8.5,
+      priorityPoints: 5,
+      operationalSignalVersion: OPERATIONAL_SIGNAL_VERSION,
+      kospiEntry: {
+        version: KOSPI_ENTRY_POLICY.version,
+        date: "2026-10-02",
+        originDate: "2026-10-01",
+        confirmationDate: "2026-10-02",
+        state: "confirmed",
+        issues: [],
+        rsAccel: 1,
+        score: 8.5,
+        originScore: 8,
+        eligible: true,
+      },
+    },
+  ],
+});
+const confirmationCsv = (middle: string) =>
+  [
+    "symbol,date,market,open,high,low,close,volume",
+    "A,2026-01-02,KOSDAQ,100,110,90,105,1000",
+    "C,2026-10-01,KOSPI,100,110,90,105,1000",
+    "C,2026-10-02,KOSPI,100,110,90,105,1000",
+    middle,
+    "C,2026-10-07,KOSPI,110,120,100,115,1000",
+    "KOSPI,2026-10-01,INDEX,100,110,90,105,1000",
+    "KOSPI,2026-10-02,INDEX,100,110,90,105,1000",
+    "KOSPI,2026-10-06,INDEX,100,110,90,105,1000",
+    "KOSPI,2026-10-07,INDEX,100,110,90,105,1000",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+describe("confirmation source and persistence integration", () => {
+  it("loads confirmed symbols without raw onset and preserves actual executions across same-day syncs", async () => {
+    const previousCsv = csv;
+    try {
+      csv = confirmationCsv("C,2026-10-06,KOSPI,0,0,0,0,0");
+      const db = database();
+      const first = await operateLedgers(db.client, "owner", { action: "load" });
+      const originalExecutions = structuredClone(first.document.executions);
+      db.tables["screening_history"]!.push({ user_id: "owner", snapshot: confirmedSnapshot() });
+      const confirmed = await operateLedgers(db.client, "owner", { action: "sync" });
+      expect(
+        confirmed.document.strategy?.trades.find((trade) => trade.symbol === "C"),
+      ).toMatchObject({ entryDate: "2026-10-07", entryPrice: 110 });
+      expect(confirmed.document.executions).toEqual(originalExecutions);
+      const rerun = await operateLedgers(db.client, "owner", { action: "sync" });
+      expect(rerun.revision).toBe(confirmed.revision);
+      expect(rerun.document.strategy?.trades).toEqual(confirmed.document.strategy?.trades);
+      expect(rerun.document.executions).toEqual(originalExecutions);
+    } finally {
+      csv = previousCsv;
+    }
+  });
+  it("uses observed sessions despite a partial benchmark to block a late fill after an absent symbol bar", async () => {
+    const previousCsv = csv;
+    try {
+      csv = confirmationCsv("").replace(
+        "KOSPI,2026-10-06,INDEX,100,110,90,105,1000",
+        "D,2026-10-06,KOSPI,100,110,90,105,1000",
+      );
+      const db = database();
+      db.tables["screening_history"]!.push({ user_id: "owner", snapshot: confirmedSnapshot() });
+      const model = (await operateLedgers(db.client, "owner", { action: "sync" })).document
+        .strategy!;
+      expect(model.trades.some((trade) => trade.symbol === "C")).toBe(false);
+      expect(model.candidates.find((candidate) => candidate.symbol === "C")?.decision).toContain(
+        "2026-10-06 자료 누락",
+      );
+    } finally {
+      csv = previousCsv;
+    }
+  });
+  it("does not turn KOSDAQ zero-price source rows into fills or actual quotes", async () => {
+    const previousCsv = csv;
+    try {
+      csv = [
+        "symbol,date,market,open,high,low,close,volume",
+        "A,2026-01-02,KOSDAQ,0,0,0,0,0",
+        "A,2026-01-03,KOSDAQ,100,110,90,105,0",
+        "A,2026-01-04,KOSDAQ,0,0,0,0,0",
+      ].join("\n");
+      const db = database();
+      const state = await operateLedgers(db.client, "owner", { action: "sync" });
+      expect(state.document.strategy?.trades[0]?.entryDate).toBe("2026-01-03");
+      expect(state.document.strategy?.quotes["A"]).toMatchObject({
+        price: 105,
+        date: "2026-01-03",
+      });
+      expect(state.actual.positions[0]).toMatchObject({
+        currentPrice: 105,
+        markDate: "2026-01-03",
+      });
+    } finally {
+      csv = previousCsv;
+    }
   });
 });

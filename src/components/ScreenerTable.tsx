@@ -4,9 +4,10 @@ import { useMemo, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { KospiEntryDetails } from "@/components/KospiEntryDetails";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
-import { getKospiRsAccel, isKospiRelativeMomentumConfirmed } from "@/lib/kospiRelativeQuality";
+import { getKospiRsAccel } from "@/lib/kospiRelativeQuality";
 import {
   getPortfolioAwareDisplayStatus,
   isPortfolioAwareOperationalEntry,
@@ -56,7 +57,15 @@ function ScoreDelta({ value }: { value: number | null }) {
   );
 }
 
-function RsAccel({ row, positionContext, signalDate }: { row: ScreeningRow; positionContext?: DomesticPositionContext; signalDate: string }) {
+function RsAccel({
+  row,
+  positionContext,
+  signalDate,
+}: {
+  row: ScreeningRow;
+  positionContext?: DomesticPositionContext | undefined;
+  signalDate: string;
+}) {
   const value = getKospiRsAccel(row);
   if (value === null) return <span className="text-muted-foreground">-</span>;
   const Icon = value > 0 ? ArrowUp : value < 0 ? ArrowDown : Minus;
@@ -68,13 +77,13 @@ function RsAccel({ row, positionContext, signalDate }: { row: ScreeningRow; posi
         <Icon className="size-3" aria-hidden />
         {signed}%p
       </span>
-      {isPortfolioAwareOperationalEntry(row, positionContext, signalDate) && row.instrument.market === "KOSPI" && isKospiRelativeMomentumConfirmed(row) ? (
-        <span className="text-[10px] font-medium text-up">RS 확인</span>
+      {isPortfolioAwareOperationalEntry(row, positionContext, signalDate) &&
+      row.instrument.market === "KOSPI" ? (
+        <span className="text-[10px] font-medium text-up">확인일 RS 통과</span>
       ) : null}
     </span>
   );
 }
-
 
 type SortKey =
   | "entry"
@@ -148,7 +157,7 @@ export function ScreenerTable({
   signalDate,
 }: {
   rows: ScreeningRow[];
-  positionContext?: DomesticPositionContext;
+  positionContext?: DomesticPositionContext | undefined;
   signalDate: string;
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("entry");
@@ -405,6 +414,9 @@ export function ScreenerTable({
                     >
                       {displayStatus}
                     </Badge>
+                    {r.instrument.instrumentType === "STOCK" && r.instrument.market === "KOSPI" ? (
+                      <KospiEntryDetails entry={r.kospiEntry} compact />
+                    ) : null}
                     {!r.hardFilterPassed ? (
                       <span className="text-[10px] text-down">실격: {r.failedRules[0]}</span>
                     ) : null}

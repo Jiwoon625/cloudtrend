@@ -4,7 +4,6 @@ import {
   getOperationalStatus,
   isOperationalEntry,
 } from "@/lib/engine/operationalStrategy";
-import { isKospiRelativeMomentumConfirmed } from "@/lib/kospiRelativeQuality";
 import { isOnsetSuppressed, type DomesticPositionContext } from "@/lib/positionSignalContext";
 
 /** Status is a signal, not evidence of an actual holding. Portfolio tracks holdings. */
@@ -15,13 +14,10 @@ export function getDisplayStatus(row: ScreeningRow): string {
       if (row.grade === "A") return "관심 후보";
       if (row.grade === "B") return "관찰 후보";
     }
-    return row.kospi80Onset && isKospiRelativeMomentumConfirmed(row)
-      ? `${status} · RS 확인`
-      : status;
+    return status;
   }
   return row.actionLabelText || "관찰";
 }
-
 
 function heldExitStatus(row: ScreeningRow): string | null {
   const exit = getHeldOperationalExitSignal(
@@ -40,7 +36,10 @@ export function isPortfolioAwareOperationalEntry(
   context: DomesticPositionContext | null | undefined,
   signalDate: string,
 ): boolean {
-  return isOperationalEntry(row) && !isOnsetSuppressed(context, row.instrument.symbol, signalDate);
+  return (
+    isOperationalEntry(row, signalDate) &&
+    !isOnsetSuppressed(context, row.instrument.symbol, row.kospiEntry?.originDate ?? signalDate)
+  );
 }
 
 /** Reconcile user-facing status with the canonical actual ledger without mutating raw screening history. */
@@ -49,10 +48,22 @@ export function getPortfolioAwareDisplayStatus(
   context: DomesticPositionContext | null | undefined,
   signalDate: string,
 ): string {
-  if (row.instrument.instrumentType !== "STOCK" || !context) return getDisplayStatus(row);
+  if (row.instrument.instrumentType !== "STOCK") return getDisplayStatus(row);
+  if (
+    row.kospiEntry?.state === "confirmed" &&
+    row.kospiEntry.date !== signalDate &&
+    !context?.heldSymbols.includes(row.instrument.symbol)
+  )
+    return "기한 지난 확인 · 진입 제외";
+  if (!context) return getDisplayStatus(row);
   const symbol = row.instrument.symbol;
   if (context.heldSymbols.includes(symbol)) return heldExitStatus(row) ?? "보유";
-  if (isOnsetSuppressed(context, symbol, signalDate) && isOperationalEntry(row))
+  if (
+    isOnsetSuppressed(context, symbol, row.kospiEntry?.originDate ?? signalDate) &&
+    (isOperationalEntry(row, signalDate) || row.kospiEntry?.state === "pending")
+  )
     return "당일 매도 · 재진입 제외";
+  if (row.kospiEntry?.state === "confirmed" && row.kospiEntry.date !== signalDate)
+    return "기한 지난 확인 · 진입 제외";
   return getDisplayStatus(row);
 }

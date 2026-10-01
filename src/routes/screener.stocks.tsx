@@ -15,7 +15,7 @@ export const Route = createFileRoute("/screener/stocks")({
       {
         name: "description",
         content:
-          "KOSPI·KOSDAQ 종목을 CloudTrend V8 Final 8개 피처·10점 기술점수로 스크리닝합니다. KOSPI / KOSDAQ 8.0 Onset과 점수 Exit는 명시적 신호로 계산됩니다.",
+          "KOSPI·KOSDAQ 종목을 CloudTrend V8 Final 8개 피처·10점 기술점수로 스크리닝합니다. KOSPI 8.0 Onset은 하루 확인·양의 RSAccel을 거쳐 진입 준비로 구분하며, KOSDAQ Onset과 점수 Exit는 기존 규칙을 유지합니다.",
       },
       { property: "og:title", content: "주식 스크리너 | CloudTrend V8 Final" },
       {
