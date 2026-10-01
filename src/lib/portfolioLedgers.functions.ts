@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { operateLedgers } from "./portfolioLedgers.server";
 import { calculateActual, type LedgerDocument } from "./portfolioLedgers";
+import type { DomesticPositionContext } from "./positionSignalContext";
 
 const request = z.object({
   accessToken: z.string().min(1),
@@ -52,10 +53,6 @@ export const portfolioLedgersServer = createServerFn({ method: "POST" })
     return operateLedgers(client, uid, data);
   });
 
-export interface DomesticPositionContext {
-  heldSymbols: string[];
-  lastSellDateBySymbol: Record<string, string>;
-}
 
 export const portfolioPositionContextServer = createServerFn({ method: "POST" })
   .inputValidator((input: { accessToken: string }) => ({
