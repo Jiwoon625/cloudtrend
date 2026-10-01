@@ -15,6 +15,7 @@ import type { LedgerRequest } from "@/lib/portfolioLedgers.server";
 import type { UsActualRequest } from "@/lib/usActualLedger";
 import type { ActualExecution, ActualLedger } from "@/lib/portfolioLedgers";
 import { exitLabel, soldSymbolsSinceSignal } from "@/lib/dashboardOperations";
+import { ETF_POLICY } from "@/lib/engine/etfStrategy";
 import { formatWon } from "@/lib/format";
 
 type Asset = "KR" | "US" | "ETF";
@@ -136,17 +137,29 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
       !kr.data?.document.executions.some((e) => e.market === "ETF" && e.symbol === symbol),
   );
   const heldEtfs = new Set([...(books.ETF?.positions.map((p) => p.symbol) ?? []), ...tracked]);
-  const soldEtfs = soldSymbolsSinceSignal(
-    books.ETF?.executions ?? [],
-    "ETF",
-    books.ETF?.summary.latestDate ?? "9999-12-31",
-  );
-  const etfSignalRows = etfRows.filter(
-    (r) =>
-      r.date === books.ETF?.summary.latestDate &&
-      ((r.onset && !heldEtfs.has(r.symbol) && !soldEtfs.has(r.symbol)) ||
-        (r.exitReason && heldEtfs.has(r.symbol))),
-  );
+  const etfConsumed = (r: (typeof etfRows)[number]) =>
+    soldSymbolsSinceSignal(
+      books.ETF?.executions ?? [],
+      "ETF",
+      r.etfEntry?.originDate ?? r.date,
+    ).has(r.symbol);
+  const etfSignalRows = etfRows
+    .filter(
+      (r) =>
+        r.date === books.ETF?.summary.latestDate &&
+        ((r.etfEntry?.entryState &&
+          r.etfEntry.entryState !== "none" &&
+          !heldEtfs.has(r.symbol) &&
+          !etfConsumed(r)) ||
+          (r.exitReason && heldEtfs.has(r.symbol))),
+    )
+    .sort(
+      (a, b) =>
+        Number(b.onset) - Number(a.onset) ||
+        b.priority - a.priority ||
+        a.symbol.localeCompare(b.symbol),
+    );
+  const staleEtfPolicy = etfRows.some((r) => r.etfEntry?.version !== ETF_POLICY.version);
   const model = snapshots.data?.find((s) => s.strategy_id === "A0_QUARTER_PRIMARY");
   const modelPositions = Object.values(
     (
@@ -399,9 +412,20 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
         {asset === "ETF" ? (
           <>
             <p className="mb-3 text-sm text-muted-foreground">
-              M0 진입·청산 신호와 실제 보유를 확인합니다. 실제 매수·매도는 직접 입력하며, 전략
-              신호로 자동 체결하지 않습니다.
+              M0 80점 신규 돌파 후 다음 거래일 종가에 M0 ≥ 80·기초지수 ≥ MA60·데이터 적격을
+              확인하고, 그다음 거래일 시가에 진입합니다. 확인일 20거래일 평균 거래대금 내림차순(동률
+              종목코드순), 최대 10종목, 변동성 비례 비중입니다. 자리가 없으면 건너뛰며 교체·추가
+              매수는 하지 않습니다. 청산 체결 후 실제 현금만 사용합니다. 실제 매수·매도는 직접
+              입력하며 신호로 자동 체결하지 않습니다.
             </p>
+            {staleEtfPolicy && (
+              <p role="alert" className="mb-3 text-sm text-down">
+                이전 ETF 규칙 캐시입니다. 스크리닝을 다시 실행해야 새 진입 신호가 표시됩니다.
+              </p>
+            )}
+            <Link to="/screener/etfs" className="mb-3 block text-sm text-primary underline">
+              ETF 확인 상태·거래대금 우선순위·신규 비중 및 수량 계산
+            </Link>
             {kr.data?.etfWarning ? (
               <p role="alert" className="mb-3 text-sm text-down">
                 ETF 신호 조회: {kr.data.etfWarning}
@@ -558,8 +582,16 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
               </Table>
             ) : null}
             <Table
-              title="M0 신규 진입 · 청산 신호"
-              heads={["종목", "기준일", "M0 점수", "신호", "체결"]}
+              title="ETF 하루 확인 · 진입·청산 신호"
+              heads={[
+                "종목",
+                "Onset / 확인일",
+                "M0 점수",
+                "20일 평균 거래대금",
+                "신규 비중",
+                "신호",
+                "체결",
+              ]}
               empty={!etfSignalRows.length}
             >
               {etfSignalRows.map((r) => (
@@ -567,17 +599,39 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
                   <td className={td}>
                     {r.symbol} · {r.name}
                   </td>
-                  <td className={td}>{r.date}</td>
+                  <td className={td}>
+                    {r.etfEntry?.originDate ?? "—"} /{" "}
+                    {r.etfEntry?.confirmationDate ??
+                      (r.etfEntry?.entryState === "pending" ? "다음 거래일 종가" : r.date)}
+                  </td>
                   <td className={td}>{r.score?.toFixed(1) ?? "-"}</td>
+                  <td className={td}>
+                    {r.etfEntry?.averageTradingValue20 == null
+                      ? "—"
+                      : formatWon(r.etfEntry.averageTradingValue20)}
+                  </td>
+                  <td className={td}>
+                    {r.onset && r.etfEntry?.entryWeight != null
+                      ? `${(r.etfEntry.entryWeight * 100).toFixed(2)}%`
+                      : "—"}
+                  </td>
                   <td className={td}>
                     {r.exitReason && heldEtfs.has(r.symbol)
                       ? exitLabel(r.exitReason)
-                      : "M0 80 Onset"}
+                      : r.etfEntry?.entryState === "pending"
+                        ? "하루 확인 대기"
+                        : r.etfEntry?.entryState === "rejected"
+                          ? `확인 탈락 · ${(r.etfEntry.confirmationIssues ?? []).join(" · ")}`
+                          : "확인 완료 · 다음 거래일 시가 진입"}
                   </td>
                   <td className={td}>
                     <Button
                       variant="outline"
-                      disabled={busy}
+                      disabled={
+                        busy ||
+                        (!r.onset && !heldEtfs.has(r.symbol)) ||
+                        r.etfEntry?.version !== ETF_POLICY.version
+                      }
                       onClick={() =>
                         beginEtf(r.symbol, r.exitReason && heldEtfs.has(r.symbol) ? "SELL" : "BUY")
                       }

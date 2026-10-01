@@ -1,7 +1,7 @@
 {
   "status": "user_confirmed",
-  "confirmedOn": "2026-09-21",
-  "version": "etf-v01-m0-std20-t15-v1",
+  "confirmedOn": "2026-10-01",
+  "version": "etf-v02-confirm1-liquidity-no-replacement",
   "weights": {
     "technical": 62.5,
     "priority": 7.5,
@@ -12,7 +12,7 @@
   "priority": "100 if KR exposure and daily adjusted return exceeds KOSPI by >=2 percentage points, otherwise0; no size/rotation/index-membership bonus",
   "health": "(20 if KRX cap>=50bn +10 if cap>=100bn +20 if trailing20 KRX trading value>=1bn +10 plain)/60*100; no hard liquidity gate",
   "environment": "stock-only domestic sector; otherwise regional leave-family-out50%continuous trend+50%breadth with >=3 other families, lag1; own-index regime lag1 fallback",
-  "entry": "previous M0 <80 and current M0 >=80 and eligible; next session open",
+  "entry": "Raw Onset t: eligible M0 crosses from <80 to >=80 on consecutive Korean sessions. At t+1 close require eligible M0>=80 and underlying>=MA60; execute t+2 open. Missing/failed confirmation is discarded; a new raw Onset is required. onset field means confirmed actionable entry, not raw crossover.",
   "exit": "underlying close<MA60 state; next session open; missing underlying separately labelled data-error exit",
   "sizing": {
     "window": 20,
@@ -25,9 +25,11 @@
     "maxPositions": 10,
     "budget": "min(availableCash,equity*weight)",
     "quantity": "floor(budget/(orderPrice*(1+0.0015)))",
-    "tieBreak": "symbol ascending",
+    "tieBreak": "confirmation-day trailing20 KRX trading value descending, symbol ascending for ties",
     "rebalance": false,
-    "holdingTimeCap": null
+    "holdingTimeCap": null,
+    "replacement": false,
+    "volatilityAsOf": "confirmation close"
   },
   "dataPolicy": {
     "researchStart": "2017-01-03",
@@ -37,7 +39,9 @@
     "amountSource": "KRX_ETF",
     "mapping": "source/Reference/etf-universe-sector-map-20260911.csv",
     "ignored": ["premiumDiscount", "trackingError", "expenseRatio"],
-    "missing": "block new order; do not manufacture zero scores or forward-fill underlying"
+    "missing": "block new order; do not manufacture zero scores or forward-fill underlying",
+    "calendar": "exact consecutive ds.tradeDates sessions; never skip a missing symbol session; trailing20 amounts require matching dates",
+    "signalSuppression": "exclude actual/legacy held ETFs and all sales on or after original Onset date; no rewrite of historical executions"
   },
   "researchEvidence": {
     "candidate": "STD20_T15",
@@ -51,6 +55,30 @@
       "retrospective reused holdout",
       "current-universe survivorship",
       "not independently certified total return"
+    ],
+    "previousPolicy": true
+  },
+  "confirmationResearch": {
+    "universe": 1171,
+    "m0Candidates": 768,
+    "currentStockPanel": 614,
+    "costRoundtrip": 0.003,
+    "currentImmediate": {
+      "cagr": 0.080801,
+      "mdd": -0.177177,
+      "sharpe": 0.785789
+    },
+    "confirmLiquidityNoReplacement": {
+      "cagr": 0.094397,
+      "mdd": -0.150629,
+      "sharpe": 0.91155
+    },
+    "source": "https://app.notion.com/p/3ecd908cac2f81d1b0e3f1d4716cf5bc",
+    "limitations": [
+      "reused historical holdout",
+      "current-universe survivorship",
+      "uncertified total return and corporate-action accounting",
+      "recent period MDD is not uniformly improved"
     ]
   }
 }

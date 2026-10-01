@@ -3,9 +3,12 @@ import { compactDashboardRow } from "@/lib/dashboardRow";
 import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
 import { isKospiRelativeMomentumConfirmed } from "@/lib/kospiRelativeQuality";
 
-export const SCREENING_CACHE_VERSION = "screening-cache-v8-source-precedence-etf1171-v2" as const;
-export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-source-precedence-etf1171-v2" as const;
-export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-source-precedence-etf1171-v2" as const;
+export const SCREENING_CACHE_VERSION =
+  "screening-cache-v8-source-precedence-etf1171-confirm1-v3" as const;
+export const DASHBOARD_CACHE_VERSION =
+  "dashboard-cache-v8-source-precedence-etf1171-confirm1-v3" as const;
+export const INSTRUMENT_CACHE_VERSION =
+  "instrument-cache-v8-source-precedence-etf1171-confirm1-v3" as const;
 
 export interface DashboardSummary {
   version: typeof DASHBOARD_CACHE_VERSION;

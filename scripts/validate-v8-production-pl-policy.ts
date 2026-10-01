@@ -1,4 +1,5 @@
 import process from "node:process";
+import { memory } from "./screening-memory";
 
 import { runFullMarketAnalysis } from "../src/lib/engine/fullMarketAnalysis";
 import { computeIndicators } from "../src/lib/engine/indicators";
@@ -25,11 +26,22 @@ const userId = process.env["SUPABASE_USER_ID"];
 if (!userId) throw new Error("Missing SUPABASE_USER_ID");
 
 const client = trustedSupabaseClient();
-const inputs = await loadAnalysisSourceInputs(client, userId, "screening");
+// Match the production runner: verify every source but release expanded validation rows.
+// The default non-compact path retained all canonical records and exceeded the 4GB heap.
+const inputs = await loadAnalysisSourceInputs(client, userId, "screening", { compact: true });
+memory("validation-inputs-loaded");
 const parsed = parseManualMarketData(inputs.map((input) => input.text));
+// Only metadata is needed below; do not retain raw CSV alongside both datasets.
+for (const input of inputs) {
+  input.text = "";
+  input.validation.canonicalCsv = "";
+  input.validation.rows = [];
+}
+memory("validation-parse-end");
 const config = mergeScoringConfig(DEFAULT_SCORING_CONFIG);
 const { analysis } = runFullMarketAnalysis(parsed.dataset, config);
 
+memory("validation-analysis-end");
 const stockPl = computeV8SectorPriceLeadership(parsed.dataset, 0, "STOCK");
 const previousStockPl = computeV8SectorPriceLeadership(parsed.dataset, 1, "STOCK");
 
@@ -47,8 +59,7 @@ function exitSignal(
 ) {
   if (previousScore === null || currentScore === null || onset) return null;
   const up = market === "KOSDAQ" ? KOSDAQ_UPSIDE_EXIT_RAW_SCORE : VF_UPSIDE_EXIT_RAW_SCORE;
-  const down =
-    market === "KOSDAQ" ? KOSDAQ_DOWNSIDE_EXIT_RAW_SCORE : VF_DOWNSIDE_EXIT_RAW_SCORE;
+  const down = market === "KOSDAQ" ? KOSDAQ_DOWNSIDE_EXIT_RAW_SCORE : VF_DOWNSIDE_EXIT_RAW_SCORE;
   if (crossedUp(previousScore, currentScore, up)) return `UP_${up}`;
   if (crossedDown(previousScore, currentScore, down)) return `DOWN_${down}`;
   return null;
@@ -78,8 +89,7 @@ for (const hybrid of analysis.rows) {
   const hybridCurrent = hybrid.operatingScore10;
   const market = hybrid.instrument.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI";
   const baselineOnset = crossedUp(baselinePrevious, baselineCurrent, VF_ENTRY_RAW_SCORE);
-  const hybridOnset =
-    market === "KOSDAQ" ? hybrid.kosdaq80Onset : hybrid.kospiEightPointEntry;
+  const hybridOnset = market === "KOSDAQ" ? hybrid.kosdaq80Onset : hybrid.kospiEightPointEntry;
   rows.push({
     symbol: hybrid.instrument.symbol,
     name: hybrid.instrument.name,
@@ -102,7 +112,13 @@ for (const hybrid of analysis.rows) {
 const changed = rows.filter((row) => row.delta !== null && row.delta !== 0);
 const onsetChanged = rows.filter((row) => row.baselineOnset !== row.hybridOnset);
 const exitChanged = rows.filter(
-  (row) => String(row.baselineExit ?? "") !== String(row.hybridExit ?? "").replace("UP90", "UP_9").replace("DOWN30", "DOWN_3").replace("UP95", "UP_9.5").replace("DOWN25", "DOWN_2.5"),
+  (row) =>
+    String(row.baselineExit ?? "") !==
+    String(row.hybridExit ?? "")
+      .replace("UP90", "UP_9")
+      .replace("DOWN30", "DOWN_3")
+      .replace("UP95", "UP_9.5")
+      .replace("DOWN25", "DOWN_2.5"),
 );
 const byMarket = Object.fromEntries(
   (["KOSPI", "KOSDAQ"] as const).map((market) => {

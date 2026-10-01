@@ -3,7 +3,7 @@ import type { DailyPrice } from "./types";
 import researchMapping from "./etfResearchMapping.json";
 
 export const ETF_POLICY = {
-  version: "etf-v01-m0-std20-t15-covered-call-v2",
+  version: "etf-v02-confirm1-liquidity-no-replacement",
   weights: { technical: 62.5, priority: 7.5, health: 15, environment: 15 },
   entryScore: 80,
   maxPositions: 10,
@@ -38,7 +38,14 @@ export interface EtfStrategySnapshot {
   entryWeight: N;
   underlyingClose: N;
   underlyingMa60: N;
+  /** Actionable confirmation at this close; execution is next session open. */
   onset: boolean;
+  rawOnset: boolean;
+  entryState: "none" | "pending" | "confirmed" | "rejected";
+  originDate: string | null;
+  confirmationDate: string | null;
+  confirmationIssues: string[];
+  averageTradingValue20: N;
   exit: "MA60" | "DATA_UNAVAILABLE" | null;
   issues: string[];
 }
@@ -72,10 +79,63 @@ export function etfEntryWeight(annualVolatility: N): N {
     ? ETF_POLICY.baseWeight
     : ETF_POLICY.baseWeight * Math.min(1, ETF_POLICY.volatilityTarget / annualVolatility);
 }
+export interface EtfEntryObservation {
+  date: string;
+  score: N;
+  eligible: boolean;
+  underlyingClose: N;
+  underlyingMa60: N;
+}
+/** Inputs are consecutive market sessions, never consecutive available symbol bars. */
+export function etfEntryConfirmation(
+  current: EtfEntryObservation,
+  previous: EtfEntryObservation | null,
+  beforePrevious: EtfEntryObservation | null,
+) {
+  const cross = (a: EtfEntryObservation | null, b: EtfEntryObservation | null) =>
+    !!a &&
+    !!b &&
+    a.eligible &&
+    b.eligible &&
+    finite(a.score) &&
+    finite(b.score) &&
+    a.score < ETF_POLICY.entryScore &&
+    b.score >= ETF_POLICY.entryScore;
+  const rawOnset = cross(previous, current);
+  const awaiting = cross(beforePrevious, previous);
+  const confirmationIssues: string[] = [];
+  if (awaiting) {
+    if (!current.eligible) confirmationIssues.push("확인일 데이터·대상 부적격");
+    if (!finite(current.score) || current.score < ETF_POLICY.entryScore)
+      confirmationIssues.push("확인일 M0 80 미만 또는 결측");
+    if (!positive(current.underlyingClose) || !positive(current.underlyingMa60))
+      confirmationIssues.push("확인일 기초지수·MA60 결측");
+    else if (current.underlyingClose < current.underlyingMa60)
+      confirmationIssues.push("확인일 기초지수 MA60 하회");
+  }
+  const entryState: EtfStrategySnapshot["entryState"] = awaiting
+    ? confirmationIssues.length
+      ? "rejected"
+      : "confirmed"
+    : rawOnset
+      ? "pending"
+      : "none";
+  return {
+    rawOnset,
+    entryState,
+    onset: entryState === "confirmed",
+    originDate: awaiting ? previous!.date : rawOnset ? current.date : null,
+    confirmationDate: awaiting ? current.date : null,
+    confirmationIssues,
+  };
+}
+
 export function etfOrderPlan(input: {
   equity: number;
   cash: number;
   heldSymbols: string[];
+  excludedSymbols?: string[];
+  asOfDate?: string;
   candidates: Array<{ symbol: string; price: number; strategy?: EtfStrategySnapshot | undefined }>;
 }) {
   let cash = input.cash;
@@ -89,12 +149,28 @@ export function etfOrderPlan(input: {
     }> = [];
   if (!positive(input.equity) || !finite(cash) || cash < 0 || cash > input.equity) return orders;
   const seen = new Set<string>();
-  for (const c of [...input.candidates].sort((a, b) => a.symbol.localeCompare(b.symbol))) {
+  for (const c of [...input.candidates].sort(
+    (a, b) =>
+      (b.strategy?.averageTradingValue20 ?? -1) - (a.strategy?.averageTradingValue20 ?? -1) ||
+      a.symbol.localeCompare(b.symbol),
+  )) {
     if (held.size + orders.length >= ETF_POLICY.maxPositions) break;
-    if (held.has(c.symbol) || seen.has(c.symbol)) continue;
+    if (held.has(c.symbol) || input.excludedSymbols?.includes(c.symbol) || seen.has(c.symbol))
+      continue;
     seen.add(c.symbol);
     const s = c.strategy;
-    if (!s || s.version !== ETF_POLICY.version || !s.eligible || !s.onset || !positive(c.price))
+    if (
+      !s ||
+      s.version !== ETF_POLICY.version ||
+      !s.eligible ||
+      !s.onset ||
+      s.entryState !== "confirmed" ||
+      s.confirmationDate !== s.date ||
+      (input.asOfDate && s.date !== input.asOfDate) ||
+      !finite(s.averageTradingValue20) ||
+      s.averageTradingValue20 < 0 ||
+      !positive(c.price)
+    )
       continue;
     const weight = etfEntryWeight(s.annualVolatility);
     if (weight === null) continue;
@@ -263,6 +339,7 @@ function peerEnvironments(ds: MarketDataset, mapping: Record<string, EtfMapping>
     const m = mapping[inst.symbol];
     if (
       inst.instrumentType !== "ETF" ||
+      !m ||
       !isEtfStrategyAssetClass(m) ||
       inst.isLeveraged ||
       inst.isInverse
@@ -342,8 +419,10 @@ export function calculateEtfStrategies(
   const out = new Map<string, EtfStrategySnapshot>(),
     peers = peerEnvironments(ds, mapping),
     sectors = new Map<string, Map<string, number>>();
-  const calendar = ds.tradeDates.filter((d) => d <= ds.asOfDate),
-    previousDate = calendar.at(-2) ?? null;
+  const calendar = [...new Set(ds.tradeDates)].filter((d) => d <= ds.asOfDate).sort(),
+    currentIndex = calendar.indexOf(ds.asOfDate),
+    previousDate = currentIndex > 0 ? calendar[currentIndex - 1]! : null,
+    beforePreviousDate = currentIndex > 1 ? calendar[currentIndex - 2]! : null;
   const sectorAt = (date: string) => {
     let v = sectors.get(date);
     if (!v) {
@@ -385,7 +464,12 @@ export function calculateEtfStrategies(
             ? b.etfTradingValue
             : null,
         );
-      const tv20 = avg(tv, 20);
+      const expectedDates = calendar.filter((d) => d <= date).slice(-20);
+      const actualDates = bars.slice(-20).map((b) => b.tradeDate);
+      const tv20 =
+        expectedDates.length === 20 && expectedDates.every((d, i) => d === actualDates[i])
+          ? avg(tv, 20)
+          : null;
       if (!positive(cap) || tv20 === null) issues.push("KRX 시총·20일 거래대금 필요");
       const health =
         positive(cap) && tv20 !== null
@@ -432,6 +516,7 @@ export function calculateEtfStrategies(
         annualVolatility = vol === null ? null : vol * Math.sqrt(252);
       return {
         score,
+        averageTradingValue20: tv20,
         technical,
         priority,
         health,
@@ -443,7 +528,20 @@ export function calculateEtfStrategies(
       };
     };
     const current = at(ds.asOfDate),
-      previous = previousDate ? at(previousDate) : null;
+      previous = previousDate ? at(previousDate) : null,
+      beforePrevious = beforePreviousDate ? at(beforePreviousDate) : null;
+    const observation = (date: string, v: typeof current): EtfEntryObservation => ({
+      date,
+      score: v.score,
+      eligible: v.issues.length === 0 && v.score !== null,
+      underlyingClose: v.u.close,
+      underlyingMa60: v.u.ma60,
+    });
+    const entry = etfEntryConfirmation(
+      observation(ds.asOfDate, current),
+      previous && previousDate ? observation(previousDate, previous) : null,
+      beforePrevious && beforePreviousDate ? observation(beforePreviousDate, beforePrevious) : null,
+    );
     const eligible = current.issues.length === 0 && current.score !== null;
     out.set(inst.symbol, {
       version: ETF_POLICY.version,
@@ -463,13 +561,8 @@ export function calculateEtfStrategies(
       entryWeight: eligible ? etfEntryWeight(current.annualVolatility) : null,
       underlyingClose: current.u.close,
       underlyingMa60: current.u.ma60,
-      onset:
-        eligible &&
-        previous?.score !== null &&
-        previous?.score !== undefined &&
-        all.some((b) => b.tradeDate === previousDate) &&
-        previous.score < 80 &&
-        current.score! >= 80,
+      ...entry,
+      averageTradingValue20: current.averageTradingValue20,
       exit:
         all.at(-1)?.tradeDate !== ds.asOfDate || current.u.close === null || current.u.ma60 === null
           ? "DATA_UNAVAILABLE"

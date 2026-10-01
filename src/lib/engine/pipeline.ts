@@ -461,10 +461,12 @@ export function runAnalysis(
         ? {
             shortSellingVolumeRate20dChangePp: snap.shortSellingVolumeRate20dChangePp ?? null,
             shortSellingVolumeRateLatest: snap.shortSellingVolumeRateLatest ?? null,
-            shortSellingVolumeRateObservationCount: snap.shortSellingVolumeRateObservationCount ?? 0,
+            shortSellingVolumeRateObservationCount:
+              snap.shortSellingVolumeRateObservationCount ?? 0,
             lendingBalanceQuantity20dChange: snap.lendingBalanceQuantity20dChange ?? null,
             lendingBalanceQuantityLatest: snap.lendingBalanceQuantityLatest ?? null,
-            lendingBalanceQuantityObservationCount: snap.lendingBalanceQuantityObservationCount ?? 0,
+            lendingBalanceQuantityObservationCount:
+              snap.lendingBalanceQuantityObservationCount ?? 0,
           }
         : null,
     );
@@ -632,10 +634,14 @@ export function runAnalysis(
       s.exit === "DATA_UNAVAILABLE"
         ? "기초지수 데이터 점검"
         : s.onset
-          ? "M0 80 Onset · 다음 시가 진입"
+          ? "하루 확인 완료 · 다음 거래일 시가 진입"
           : s.exit === "MA60"
             ? "보유 시 다음 시가 청산"
-            : "관찰";
+            : s.entryState === "pending"
+              ? "Onset · 다음 거래일 종가 확인 대기"
+              : s.entryState === "rejected"
+                ? "하루 확인 탈락 · 새 Onset 필요"
+                : "관찰";
     row.warnings = [...s.issues];
   }
 

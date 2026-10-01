@@ -4,6 +4,7 @@ import {
   ETF_MAPPING,
   ETF_POLICY,
   etfEntryWeight,
+  etfEntryConfirmation,
   etfFamily,
   isEtfStrategyAssetClass,
   etfOrderPlan,
@@ -72,20 +73,38 @@ function snapshot(ds = fixture()) {
   return calculateEtfStrategies(ds).get("360750")!;
 }
 function entry(vol = 0.3): EtfStrategySnapshot {
-  return { ...snapshot(), onset: true, annualVolatility: vol };
+  return {
+    ...snapshot(),
+    onset: true,
+    entryState: "confirmed",
+    confirmationDate: snapshot().date,
+    annualVolatility: vol,
+  };
 }
 
 describe("ETF V0.1 confirmed policy", () => {
   it("covers the frozen 1,171-ETF mapping and keeps M0 restricted to equity-like assets", () => {
     expect(Object.keys(ETF_MAPPING)).toHaveLength(1171);
     expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "equity")).toHaveLength(719);
-    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "option_overlay")).toHaveLength(49);
-    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "bond_cash")).toHaveLength(172);
-    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "leveraged_inverse")).toHaveLength(103);
+    expect(
+      Object.values(ETF_MAPPING).filter((m) => m.assetClass === "option_overlay"),
+    ).toHaveLength(49);
+    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "bond_cash")).toHaveLength(
+      172,
+    );
+    expect(
+      Object.values(ETF_MAPPING).filter((m) => m.assetClass === "leveraged_inverse"),
+    ).toHaveLength(103);
     expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "mixed")).toHaveLength(82);
-    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "commodity_fx")).toHaveLength(26);
-    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "reit_infra")).toHaveLength(14);
-    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "structured_other")).toHaveLength(6);
+    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "commodity_fx")).toHaveLength(
+      26,
+    );
+    expect(Object.values(ETF_MAPPING).filter((m) => m.assetClass === "reit_infra")).toHaveLength(
+      14,
+    );
+    expect(
+      Object.values(ETF_MAPPING).filter((m) => m.assetClass === "structured_other"),
+    ).toHaveLength(6);
     expect(Object.values(ETF_MAPPING).filter(isEtfStrategyAssetClass)).toHaveLength(768);
     expect(ETF_MAPPING["472150"]).toMatchObject({ assetClass: "option_overlay", region: "KR" });
     expect(ETF_MAPPING["490590"]).toMatchObject({ assetClass: "option_overlay", region: "US" });
@@ -129,7 +148,31 @@ describe("ETF V0.1 confirmed policy", () => {
     const s = snapshot(ds);
     expect(s.previousScore).toBeLessThan(80);
     expect(s.score).toBeGreaterThanOrEqual(80);
-    expect(s.onset).toBe(true);
+    expect(s.rawOnset).toBe(true);
+    expect(s.entryState).toBe("pending");
+    expect(s.onset).toBe(false);
+  });
+  it("confirms a prior crossover in the real scoring pipeline and expires missing-day candidates", () => {
+    const ds = fixture(),
+      bars = ds.bars["360750"]!;
+    bars.forEach((b) => {
+      b.etfTradingValue = 0;
+      b.etfMarketCap = 10e9;
+    });
+    bars.at(-2)!.etfMarketCap = 100e9;
+    bars.at(-1)!.etfMarketCap = 100e9;
+    expect(snapshot(ds)).toMatchObject({
+      onset: true,
+      rawOnset: false,
+      entryState: "confirmed",
+      originDate: bars.at(-2)!.tradeDate,
+      confirmationDate: ds.asOfDate,
+    });
+    bars.at(-1)!.etfUnderlyingIndexClose = null;
+    expect(snapshot(ds)).toMatchObject({ onset: false, entryState: "rejected" });
+    bars.at(-1)!.etfUnderlyingIndexClose = 249;
+    bars.splice(-2, 1);
+    expect(snapshot(ds).onset).toBe(false);
   });
   it("analyzes covered-call overlays on the same score path as equity ETFs", () => {
     const ds = fixture();
@@ -343,5 +386,66 @@ describe("ETF executable new-order budget", () => {
       x.price = NaN;
     });
     expect(etfOrderPlan({ equity: 1e7, cash: 1e7, heldSymbols: [], candidates: c })).toEqual([]);
+  });
+});
+
+describe("one-session confirmation without a pending queue", () => {
+  const obs = (date: string, score: number | null, eligible = true, underlyingClose = 100) => ({
+    date,
+    score,
+    eligible,
+    underlyingClose,
+    underlyingMa60: 100,
+  });
+  const fri = obs("2026-10-02", 79),
+    mon = obs("2026-10-05", 81),
+    tue = obs("2026-10-06", 80);
+  it("waits one market session, confirms equality, and does not emit again", () => {
+    expect(etfEntryConfirmation(mon, fri, null)).toMatchObject({
+      entryState: "pending",
+      onset: false,
+      originDate: mon.date,
+    });
+    expect(etfEntryConfirmation(tue, mon, fri)).toMatchObject({
+      entryState: "confirmed",
+      onset: true,
+      originDate: mon.date,
+      confirmationDate: tue.date,
+    });
+    expect(etfEntryConfirmation(obs("2026-10-07", 82), tue, mon).onset).toBe(false);
+    expect(etfEntryConfirmation(tue, mon, fri)).toEqual(etfEntryConfirmation(tue, mon, fri));
+  });
+  it.each([
+    obs(tue.date, 79),
+    obs(tue.date, null, false),
+    obs(tue.date, 82, false),
+    obs(tue.date, 82, true, 99),
+  ])("rejects a failed confirmation permanently: %j", (current) => {
+    expect(etfEntryConfirmation(current, mon, fri)).toMatchObject({
+      entryState: "rejected",
+      onset: false,
+    });
+    expect(etfEntryConfirmation(obs("2026-10-07", 83), current, mon).onset).toBe(false);
+  });
+  it("does not bridge missing or invalid sessions", () => {
+    expect(etfEntryConfirmation(tue, null, fri).onset).toBe(false);
+    expect(etfEntryConfirmation(tue, { ...mon, eligible: false }, fri).onset).toBe(false);
+  });
+  it("ranks liquidity first, excludes sold symbols and cannot replace a full book", () => {
+    const cs = [1, 2, 3].map((i) => ({
+      symbol: String(i),
+      price: 100,
+      strategy: { ...entry(), averageTradingValue20: i * 1e9 },
+    }));
+    const base = { equity: 1e7, cash: 1e7, heldSymbols: [], candidates: cs };
+    expect(etfOrderPlan(base).map((x) => x.symbol)).toEqual(["3", "2", "1"]);
+    expect(etfOrderPlan({ ...base, excludedSymbols: ["3"] }).map((x) => x.symbol)).toEqual([
+      "2",
+      "1",
+    ]);
+    expect(
+      etfOrderPlan({ ...base, heldSymbols: Array.from({ length: 10 }, (_, i) => `held${i}`) }),
+    ).toEqual([]);
+    expect(etfOrderPlan({ ...base, asOfDate: "2099-01-01" })).toEqual([]);
   });
 });

@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { analysisQueryOptions, isAnalysisPayload } from "@/lib/analysisQuery";
 
+import { loadDomesticPortfolioLedger } from "@/lib/portfolioPositionContext";
 import { AnalysisRequired } from "@/components/AnalysisRequired";
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
@@ -17,7 +18,7 @@ export const Route = createFileRoute("/screener/etfs")({
       {
         name: "description",
         content:
-          "ETF V0.1: M0 80점 신규 돌파 진입, 기초지수 MA60 청산, 최대 10종목, 20일 변동성·15% 기준 신규 매수 비중 계산.",
+          "ETF: M0 80점 신규 돌파 후 하루 확인, 20일 평균 거래대금순 진입, 교체 없음, 기초지수 MA60 청산, 최대 10종목, 20일 변동성·15% 기준 신규 매수 비중 계산.",
       },
       { property: "og:title", content: "ETF 스크리너 | TrendScore KR" },
       {
@@ -32,6 +33,12 @@ export const Route = createFileRoute("/screener/etfs")({
 function EtfScreenerPage() {
   // 저장된 입력 데이터로 이 화면에서도 직접 계산한다(외부 API 호출 없음).
   const { data: cached, error, isError, isPending, refetch } = useQuery(analysisQueryOptions);
+  const ledger = useQuery({
+    queryKey: ["portfolio-ledgers"],
+    queryFn: loadDomesticPortfolioLedger,
+    staleTime: 60_000,
+    retry: false,
+  });
   if (isPending) return <AnalysisRequired loading />;
   if (isError) return <DataError error={error} reset={refetch} />;
   if (!isAnalysisPayload(cached)) {
@@ -44,7 +51,11 @@ function EtfScreenerPage() {
   }
   return (
     <AppShell>
-      <EtfScreener analysis={cached.analysis} />
+      <EtfScreener
+        analysis={cached.analysis}
+        ledger={ledger.data}
+        ledgerError={ledger.error?.message}
+      />
     </AppShell>
   );
 }
