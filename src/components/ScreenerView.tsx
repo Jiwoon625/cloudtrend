@@ -1,5 +1,6 @@
 import { StrategyDescription } from "@/components/StrategyDescription";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { PdfExportButton } from "@/components/PdfExportButton";
 import { ScreenerTable } from "@/components/ScreenerTable";
@@ -13,6 +14,9 @@ import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
 type Mode = "STOCK" | "ETF";
 
 import { isOperationalEntry } from "@/lib/engine/operationalStrategy";
+import { loadDomesticPositionContext } from "@/lib/portfolioPositionContext";
+import { isOnsetSuppressed } from "@/lib/positionSignalContext";
+import { isPortfolioAwareOperationalEntry } from "@/lib/statusDisplay";
 
 type PresetId =
   | "ENTRY"
@@ -60,6 +64,13 @@ const PRESETS: Array<{ id: PresetId; label: string; test: (r: ScreeningRow) => b
 ];
 
 export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: AnalysisResult }) {
+  const { data: positionContext } = useQuery({
+    queryKey: ["domestic-position-context"],
+    queryFn: loadDomesticPositionContext,
+    enabled: mode === "STOCK",
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
   const [query, setQuery] = useState("");
   const [minTechnical, setMinTechnical] = useState(0);
   const [minVolumeRatio, setMinVolumeRatio] = useState(0);
@@ -82,6 +93,17 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
 
   const base = analysis.rows.filter((r) => r.instrument.instrumentType === mode);
   const sectors = [...new Set(base.map((r) => r.instrument.sectorName))];
+  const presetMatches = (r: ScreeningRow, id: PresetId) => {
+    if (mode === "STOCK") {
+      if (id === "ENTRY")
+        return isPortfolioAwareOperationalEntry(r, positionContext, analysis.asOfDate);
+      if (id === "KOSDAQ_ENTRY_8")
+        return r.kosdaq80Onset && !isOnsetSuppressed(positionContext, r.instrument.symbol, analysis.asOfDate);
+      if (id === "KOSPI_ENTRY_8")
+        return r.kospi80Onset && !isOnsetSuppressed(positionContext, r.instrument.symbol, analysis.asOfDate);
+    }
+    return PRESETS.find((presetItem) => presetItem.id === id)!.test(r);
+  };
 
   const filtered = base.filter((r) => {
     if (!showDisqualified && !r.hardFilterPassed) return false;
@@ -99,8 +121,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
       return false;
     if ((r.snapshot.volumeRatio20 ?? 0) < minVolumeRatio) return false;
     if (preset) {
-      const p = PRESETS.find((x) => x.id === preset)!;
-      if (!p.test(r)) return false;
+      if (!presetMatches(r, preset)) return false;
     }
     return true;
   });
@@ -162,7 +183,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
             onClick={() => setPreset(preset === p.id ? null : p.id)}
             className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${preset === p.id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-surface hover:bg-accent"}`}
           >
-            {p.label} ({base.filter(p.test).length})
+            {p.label} ({base.filter((r) => presetMatches(r, p.id)).length})
           </button>
         ))}
       </div>
@@ -243,7 +264,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         </div>
       </div>
 
-      <ScreenerTable rows={filtered} />
+      <ScreenerTable rows={filtered} positionContext={positionContext} signalDate={analysis.asOfDate} />
     </div>
   );
 }
