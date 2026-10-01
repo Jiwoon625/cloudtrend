@@ -8,7 +8,6 @@ import type { ScreeningRow } from "@/lib/engine/pipeline";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
 import { getKospiRsAccel, isKospiRelativeMomentumConfirmed } from "@/lib/kospiRelativeQuality";
 import {
-  getDisplayStatus,
   getPortfolioAwareDisplayStatus,
   isPortfolioAwareOperationalEntry,
 } from "@/lib/statusDisplay";
@@ -76,7 +75,6 @@ function RsAccel({ row, positionContext, signalDate }: { row: ScreeningRow; posi
   );
 }
 
-import { isOperationalEntry } from "@/lib/engine/operationalStrategy";
 
 type SortKey =
   | "entry"
