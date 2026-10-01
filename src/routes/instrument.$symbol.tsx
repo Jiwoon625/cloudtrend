@@ -1,4 +1,4 @@
-import { loadPortfolioState } from "@/lib/portfolioStore";
+import { loadDomesticPositionContext } from "@/lib/portfolioPositionContext";
 import { StrategyDescription } from "@/components/StrategyDescription";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound } from "@tanstack/react-router";
@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { analysisQueryOptions, withThreeDecimalClv } from "@/lib/analysisQuery";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
-import { getDisplayStatus } from "@/lib/statusDisplay";
+import { getPortfolioAwareDisplayStatus } from "@/lib/statusDisplay";
 import { getDisplayWarnings } from "@/lib/warningDisplay";
 
 const loadInstrumentCharts = () => import("@/components/InstrumentCharts");
@@ -59,15 +59,14 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
 function InstrumentDetail() {
   const { symbol } = Route.useParams();
   const { data: payload } = useSuspenseQuery(analysisQueryOptions);
-  const { data: portfolio } = useQuery({
-    queryKey: ["portfolio-state"],
-    queryFn: loadPortfolioState,
+  const { data: positionContext } = useQuery({
+    queryKey: ["domestic-position-context"],
+    queryFn: loadDomesticPositionContext,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
   const [showLog, setShowLog] = useState(false);
   const [watched, setWatched] = useState(false);
-  const holding = portfolio?.trades.find(
-    (trade) => trade.symbol === symbol && trade.status === "OPEN" && trade.shares > 0,
-  );
   const analysis = payload.analysis;
   const originalRow = analysis.rows.find((item) => item.instrument.symbol === symbol);
   if (!originalRow) throw notFound();
@@ -227,13 +226,7 @@ function InstrumentDetail() {
         <Stat label="모델등급" value={<GradeBadge grade={row.grade} />} />
         <Stat
           label="상태"
-          value={
-            holding
-              ? row.exitSignal
-                ? `청산 대기 · ${getDisplayStatus(row)}`
-                : "보유"
-              : getDisplayStatus(row)
-          }
+          value={getPortfolioAwareDisplayStatus(row, positionContext, analysis.asOfDate)}
         />
         <Stat label="52주 고점 거리" value={<Delta value={snap.distanceFrom52wHigh} />} />
       </div>
