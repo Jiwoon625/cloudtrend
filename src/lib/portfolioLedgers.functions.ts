@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { operateLedgers } from "./portfolioLedgers.server";
+import { calculateActual, type LedgerDocument } from "./portfolioLedgers";
+import type { DomesticPositionContext } from "./positionSignalContext";
 
 const request = z.object({
   accessToken: z.string().min(1),
@@ -29,19 +31,54 @@ const request = z.object({
     })
     .optional(),
 });
+async function authenticate(accessToken: string) {
+  const client = createClient(
+    import.meta.env["VITE_SUPABASE_URL"] || "https://ahbvrtugugwnbrfnbxzp.supabase.co",
+    import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
+      "sb_publishable_j1o5NMjbXz7UA1CsbCj1dA_hiMBgBlE",
+    {
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    },
+  );
+  const { data: auth, error } = await client.auth.getUser(accessToken);
+  if (error || !auth.user) throw new Error("로그인 세션을 확인하세요.");
+  return { client, uid: auth.user.id };
+}
+
 export const portfolioLedgersServer = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => request.parse(input))
   .handler(async ({ data }) => {
-    const client = createClient(
-      import.meta.env["VITE_SUPABASE_URL"] || "https://ahbvrtugugwnbrfnbxzp.supabase.co",
-      import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
-        "sb_publishable_j1o5NMjbXz7UA1CsbCj1dA_hiMBgBlE",
-      {
-        global: { headers: { Authorization: `Bearer ${data.accessToken}` } },
-        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-      },
-    );
-    const { data: auth, error } = await client.auth.getUser(data.accessToken);
-    if (error || !auth.user) throw new Error("로그인 세션을 확인하세요.");
-    return operateLedgers(client, auth.user.id, data);
+    const { client, uid } = await authenticate(data.accessToken);
+    return operateLedgers(client, uid, data);
+  });
+
+
+export const portfolioPositionContextServer = createServerFn({ method: "POST" })
+  .inputValidator((input: { accessToken: string }) => ({
+    accessToken: String(input.accessToken ?? ""),
+  }))
+  .handler(async ({ data }): Promise<DomesticPositionContext> => {
+    const { client, uid } = await authenticate(data.accessToken);
+    const { data: row, error } = await client
+      .from("portfolio_ledgers")
+      .select("payload")
+      .eq("user_id", uid)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    const doc = row?.payload as LedgerDocument | undefined;
+    if (!doc) return { heldSymbols: [], lastSellDateBySymbol: {} };
+
+    const executions = doc.executions.filter((e) => e.market !== "ETF");
+    const actual = calculateActual(doc.actualCapital, executions, {}, null);
+    const lastSellDateBySymbol: Record<string, string> = {};
+    for (const execution of executions) {
+      if (execution.side !== "SELL" || execution.shares <= 0) continue;
+      const previous = lastSellDateBySymbol[execution.symbol];
+      if (!previous || execution.date > previous) lastSellDateBySymbol[execution.symbol] = execution.date;
+    }
+    return {
+      heldSymbols: actual.positions.map((position) => position.symbol).sort(),
+      lastSellDateBySymbol,
+    };
   });
