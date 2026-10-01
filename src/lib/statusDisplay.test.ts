@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import type { ScreeningRow } from "./engine/pipeline";
 import type { Instrument } from "./engine/types";
-import { getDisplayStatus } from "./statusDisplay";
+import {
+  getDisplayStatus,
+  getPortfolioAwareDisplayStatus,
+  isPortfolioAwareOperationalEntry,
+} from "./statusDisplay";
+import type { DomesticPositionContext } from "./positionSignalContext";
 
 function instrument(market: "KOSPI" | "KOSDAQ"): Instrument {
   return {
@@ -80,6 +85,42 @@ describe("V8 display status", () => {
     );
     expect(getDisplayStatus(row({ instrument: instrument("KOSDAQ"), exitSignal: "DOWN30" }))).toBe(
       "KOSDAQ 청산 · 3.0점 하향 이탈",
+    );
+  });
+  it("suppresses a fresh Onset when the canonical actual ledger already holds the symbol", () => {
+    const held: DomesticPositionContext = { heldSymbols: ["000000"], lastSellDateBySymbol: {} };
+    const candidate = row({
+      kospiEightPointEntry: true,
+      kospi80Onset: true,
+      operatingScore10: 8,
+      scoreDelta1d: 25,
+    });
+    expect(isPortfolioAwareOperationalEntry(candidate, held, "2026-09-30")).toBe(false);
+    expect(getPortfolioAwareDisplayStatus(candidate, held, "2026-09-30")).toBe("보유");
+  });
+
+  it("suppresses same-day re-entry after an actual sale", () => {
+    const sold: DomesticPositionContext = {
+      heldSymbols: [],
+      lastSellDateBySymbol: { "000000": "2026-09-30" },
+    };
+    const candidate = row({ kospiEightPointEntry: true, kospi80Onset: true });
+    expect(isPortfolioAwareOperationalEntry(candidate, sold, "2026-09-30")).toBe(false);
+    expect(getPortfolioAwareDisplayStatus(candidate, sold, "2026-09-30")).toBe(
+      "당일 매도 · 재진입 제외",
+    );
+  });
+
+  it("gives held-position exit priority over a same-day KOSDAQ Onset", () => {
+    const held: DomesticPositionContext = { heldSymbols: ["111111"], lastSellDateBySymbol: {} };
+    const candidate = row({
+      instrument: instrument("KOSDAQ"),
+      kosdaq80Onset: true,
+      operatingScore10: 9.5,
+      scoreDelta1d: 40,
+    });
+    expect(getPortfolioAwareDisplayStatus(candidate, held, "2026-09-30")).toBe(
+      "청산 대기 · KOSDAQ 9.0점 상향 재돌파",
     );
   });
 });
