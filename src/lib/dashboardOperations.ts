@@ -44,6 +44,7 @@ export interface DashboardMarketSignals {
 }
 export interface DashboardOperations {
   markets: DashboardMarketSignals[];
+  krPortfolio: { capital: number; summary: PortfolioSummary; unpricedPositions: number } | null;
   usPortfolio: { capital: number; summary: PortfolioSummary; unpricedPositions: number } | null;
   etfHoldings: { symbols: string[]; updatedAt: string } | null;
   warnings: string[];
