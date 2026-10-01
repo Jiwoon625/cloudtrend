@@ -33,7 +33,8 @@ import {
   formatPercent,
   formatWon,
 } from "@/lib/format";
-import { loadPortfolioState, type PortfolioState } from "@/lib/portfolioStore";
+import { loadDomesticPortfolioLedger } from "@/lib/portfolioPositionContext";
+import type { DualPortfolioState } from "@/lib/portfolioLedgers";
 import type { DashboardSummary } from "@/lib/screeningCache";
 import { isScreeningStarted } from "@/lib/screeningRun";
 import { rebuildScreeningCachesServerFirst } from "@/lib/webScreeningClient";
@@ -130,9 +131,11 @@ function Dashboard() {
   const summaryQuery = useQuery({ ...dashboardQueryOptions, enabled: started });
   const operations = useDashboardOperations(started, summaryQuery.data?.resultDigest);
   const portfolioQuery = useQuery({
-    queryKey: ["portfolio-state"],
-    queryFn: loadPortfolioState,
+    queryKey: ["portfolio-ledgers-overview"],
+    queryFn: loadDomesticPortfolioLedger,
     enabled: started,
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
   const rescreen = async () => {
@@ -229,7 +232,7 @@ function DashboardContent({
   operations,
 }: {
   summary: DashboardSummary;
-  portfolio: PortfolioState | null;
+  portfolio: DualPortfolioState | null;
   portfolioPending: boolean;
   operations: ReturnType<typeof useDashboardOperations>;
 }) {
@@ -263,23 +266,23 @@ function DashboardContent({
           >
             <KeyValue
               label="운용자금"
-              value={portfolio ? formatWon(portfolio.settings.initialCapital) : portfolioFallback}
+              value={portfolio ? formatWon(portfolio.document.actualCapital) : portfolioFallback}
             />
             <KeyValue
               label="보유 종목수"
               value={
                 portfolio
-                  ? `${portfolio.summary.openPositions} / ${portfolio.settings.maxPositions}`
+                  ? `${portfolio.actual.summary.openPositions} / ${portfolio.document.settings.maxPositions}`
                   : portfolioFallback
               }
             />
             <KeyValue
               label="평가손익"
-              value={portfolio ? formatWon(portfolio.summary.unrealizedPnl) : portfolioFallback}
+              value={portfolio ? formatWon(portfolio.actual.summary.unrealizedPnl) : portfolioFallback}
             />
             <KeyValue
               label="실현손익"
-              value={portfolio ? formatWon(portfolio.summary.realizedPnl) : portfolioFallback}
+              value={portfolio ? formatWon(portfolio.actual.summary.realizedPnl) : portfolioFallback}
             />
             <Link
               to="/portfolio"
