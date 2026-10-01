@@ -7,7 +7,12 @@ import { Button } from "@/components/ui/button";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
 import { getKospiRsAccel, isKospiRelativeMomentumConfirmed } from "@/lib/kospiRelativeQuality";
-import { getDisplayStatus } from "@/lib/statusDisplay";
+import {
+  getDisplayStatus,
+  getPortfolioAwareDisplayStatus,
+  isPortfolioAwareOperationalEntry,
+} from "@/lib/statusDisplay";
+import type { DomesticPositionContext } from "@/lib/positionSignalContext";
 import { getDisplayWarnings } from "@/lib/warningDisplay";
 
 export function GradeBadge({ grade }: { grade: "A" | "B" | "C" }) {
@@ -52,7 +57,7 @@ function ScoreDelta({ value }: { value: number | null }) {
   );
 }
 
-function RsAccel({ row }: { row: ScreeningRow }) {
+function RsAccel({ row, positionContext, signalDate }: { row: ScreeningRow; positionContext?: DomesticPositionContext; signalDate: string }) {
   const value = getKospiRsAccel(row);
   if (value === null) return <span className="text-muted-foreground">-</span>;
   const Icon = value > 0 ? ArrowUp : value < 0 ? ArrowDown : Minus;
@@ -64,7 +69,7 @@ function RsAccel({ row }: { row: ScreeningRow }) {
         <Icon className="size-3" aria-hidden />
         {signed}%p
       </span>
-      {row.kospiEightPointEntry && isKospiRelativeMomentumConfirmed(row) ? (
+      {isPortfolioAwareOperationalEntry(row, positionContext, signalDate) && row.instrument.market === "KOSPI" && isKospiRelativeMomentumConfirmed(row) ? (
         <span className="text-[10px] font-medium text-up">RS 확인</span>
       ) : null}
     </span>
@@ -109,10 +114,15 @@ function technicalValue(row: ScreeningRow): number | null {
   return (row.vf ?? row.technical).points;
 }
 
-function sortValue(row: ScreeningRow, key: SortKey): number | null {
+function sortValue(
+  row: ScreeningRow,
+  key: SortKey,
+  positionContext: DomesticPositionContext | undefined,
+  signalDate: string,
+): number | null {
   switch (key) {
     case "entry":
-      return Number(isOperationalEntry(row));
+      return Number(isPortfolioAwareOperationalEntry(row, positionContext, signalDate));
     case "scoreDelta1d":
       return row.scoreDelta1d;
     case "technical":
@@ -134,7 +144,15 @@ function sortValue(row: ScreeningRow, key: SortKey): number | null {
   }
 }
 
-export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
+export function ScreenerTable({
+  rows,
+  positionContext,
+  signalDate,
+}: {
+  rows: ScreeningRow[];
+  positionContext?: DomesticPositionContext;
+  signalDate: string;
+}) {
   const [sortKey, setSortKey] = useState<SortKey>("entry");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
   const [hidden, setHidden] = useState<string[]>([]);
@@ -142,8 +160,8 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
   const sorted = useMemo(() => {
     const copy = [...rows];
     copy.sort((a, b) => {
-      const av = sortValue(a, sortKey);
-      const bv = sortValue(b, sortKey);
+      const av = sortValue(a, sortKey, positionContext, signalDate);
+      const bv = sortValue(b, sortKey, positionContext, signalDate);
       if (av === null && bv === null) return a.instrument.symbol.localeCompare(b.instrument.symbol);
       if (av === null) return 1;
       if (bv === null) return -1;
@@ -166,7 +184,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
       return dir === "desc" ? -diff : diff;
     });
     return copy;
-  }, [rows, sortKey, dir]);
+  }, [rows, sortKey, dir, positionContext, signalDate]);
 
   const visible = COLUMNS.filter((c) => !hidden.includes(c.id));
 
@@ -193,7 +211,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
         rsAccel: rsAccel?.toFixed(2) ?? "",
         distanceHigh: r.snapshot.distanceFrom52wHigh?.toFixed(2) ?? "",
         marketCap: r.marketCap ?? "",
-        status: getDisplayStatus(r),
+        status: getPortfolioAwareDisplayStatus(r, positionContext, signalDate),
         warnings: getDisplayWarnings(r).join("|"),
       };
       return visible.map((c) => values[c.id] ?? "").join(",");
@@ -285,7 +303,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
               const tech = technicalValue(r);
               const techBlock = r.vf ?? r.technical;
               const displayWarnings = getDisplayWarnings(r);
-              const displayStatus = getDisplayStatus(r);
+              const displayStatus = getPortfolioAwareDisplayStatus(r, positionContext, signalDate);
               const cells: Record<string, React.ReactNode> = {
                 rank: <span className="num">{i + 1}</span>,
                 name: (
@@ -358,7 +376,7 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
                 ),
                 rsAccel: (
                   <span className="num">
-                    <RsAccel row={r} />
+                    <RsAccel row={r} positionContext={positionContext} signalDate={signalDate} />
                   </span>
                 ),
                 distanceHigh: (
@@ -380,9 +398,9 @@ export function ScreenerTable({ rows }: { rows: ScreeningRow[] }) {
                     <Badge
                       variant="outline"
                       className={
-                        isOperationalEntry(r)
+                        isPortfolioAwareOperationalEntry(r, positionContext, signalDate)
                           ? "border-primary/30 bg-primary/5 text-primary"
-                          : r.exitSignal
+                          : displayStatus.includes("청산")
                             ? "border-warn/30 bg-warn-soft text-warn"
                             : "text-muted-foreground"
                       }
