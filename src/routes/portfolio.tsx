@@ -144,7 +144,8 @@ function KoreaPortfolioContent() {
   const query = useQuery({
     queryKey: QUERY,
     queryFn: () => request({ action: "sync" }),
-    staleTime: 60_000,
+    staleTime: Infinity,
+    gcTime: Infinity,
     refetchOnWindowFocus: false,
     retry: false,
   });
