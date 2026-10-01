@@ -1,10 +1,8 @@
 import { supabase } from "./cloud";
-import {
-  portfolioPositionContextServer,
-  type DomesticPositionContext,
-} from "./portfolioLedgers.functions";
+import { portfolioPositionContextServer } from "./portfolioLedgers.functions";
+import type { DomesticPositionContext } from "./positionSignalContext";
 
-export type { DomesticPositionContext };
+export type { DomesticPositionContext } from "./positionSignalContext";
 
 export async function loadDomesticPositionContext(): Promise<DomesticPositionContext> {
   const { data, error } = await supabase.auth.getSession();
@@ -15,13 +13,3 @@ export async function loadDomesticPositionContext(): Promise<DomesticPositionCon
   });
 }
 
-export function isOnsetSuppressed(
-  context: DomesticPositionContext | null | undefined,
-  symbol: string,
-  signalDate: string,
-): boolean {
-  if (!context) return false;
-  if (context.heldSymbols.includes(symbol)) return true;
-  const lastSellDate = context.lastSellDateBySymbol[symbol];
-  return Boolean(lastSellDate && lastSellDate >= signalDate);
-}
