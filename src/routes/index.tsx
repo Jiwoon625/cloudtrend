@@ -47,7 +47,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "CloudTrend V8 Final 10점 기술점수의 KOSPI / KOSDAQ 8.0 Onset, KOSPI U9.5 / DX, KOSDAQ U9.0 / D3.0 Exit, 섹터 로테이션과 시장 상태를 한 화면에서 확인합니다.",
+          "CloudTrend V8 Final 10점 기술점수의 KOSPI 하루 확인·RSAccel 진입, KOSDAQ 8.0 Onset, KOSPI U9.5 / DX, KOSDAQ U9.0 / D3.0 Exit, 섹터 로테이션과 시장 상태를 한 화면에서 확인합니다.",
       },
       { property: "og:title", content: "대시보드 | CloudTrend V8 Final" },
       {
@@ -105,13 +105,7 @@ function KeyValue({
   );
 }
 
-function GateConditionValue({
-  comparison,
-  met,
-}: {
-  comparison: string;
-  met: boolean | null;
-}) {
+function GateConditionValue({ comparison, met }: { comparison: string; met: boolean | null }) {
   const className =
     met === true ? "text-up" : met === false ? "text-down" : "text-muted-foreground";
   const label = met === true ? "충족" : met === false ? "미충족" : "미평가";
@@ -160,7 +154,8 @@ function Dashboard() {
         <div>
           <h1 className="text-xl font-bold tracking-tight">대시보드 · V8 Final</h1>
           <p className="text-[12px] text-muted-foreground">
-            KOSPI / KOSDAQ 8.0 Onset, 확정 포트폴리오 운영 규칙, 점수 Exit와 섹터 Rotation을 확인합니다.
+            KOSPI 하루 확인 대기·진입 준비, KOSDAQ 8.0 Onset, 점수 Exit와 섹터 Rotation을
+            확인합니다.
           </p>
         </div>
         <div className="flex items-center gap-2" data-no-print>
@@ -279,11 +274,15 @@ function DashboardContent({
             />
             <KeyValue
               label="평가손익"
-              value={portfolio ? formatWon(portfolio.actual.summary.unrealizedPnl) : portfolioFallback}
+              value={
+                portfolio ? formatWon(portfolio.actual.summary.unrealizedPnl) : portfolioFallback
+              }
             />
             <KeyValue
               label="실현손익"
-              value={portfolio ? formatWon(portfolio.actual.summary.realizedPnl) : portfolioFallback}
+              value={
+                portfolio ? formatWon(portfolio.actual.summary.realizedPnl) : portfolioFallback
+              }
             />
             <Link
               to="/portfolio"
@@ -381,7 +380,8 @@ function DashboardContent({
             hint="참고 · Gate 기준 없음"
           />
           <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
-            Market Gate는 참고정보이며 KOSPI / KOSDAQ 8.0 Onset 또는 Exit를 차단하지 않습니다.
+            Market Gate는 참고정보이며 진입·Exit를 차단하지 않습니다. KOSPI는 별도 하루 확인·RSAccel
+            조건을 적용합니다.
           </p>
         </Card>
       </div>

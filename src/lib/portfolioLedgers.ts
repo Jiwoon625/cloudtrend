@@ -1,10 +1,14 @@
 import type { DailyPrice, Market } from "./engine/types";
 import type { ScreeningSnapshot } from "./screeningSnapshot";
 import type { PortfolioSettings, PortfolioSummary, PortfolioTrade } from "./portfolioStoreCore";
+import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
 import { STRATEGY_CONFIG } from "./engine/operationalStrategy";
 import {
   normalizeSnapshots,
   isEntryOnset,
+  isLegacyReplayEntry,
+  nextConfirmedEntry,
+  heldDuringEntryWindow,
   firstBarAfter,
   deriveExitPlan,
   latestSnapshotEntry,
@@ -25,6 +29,9 @@ export interface Candidate {
   sectorCode: string;
   sectorName: string;
   signalDate: string;
+  originDate?: string;
+  confirmationDate?: string | null;
+  entryState?: "none" | "pending" | "confirmed" | "rejected" | "unobservable";
   entryDate: string | null;
   price: number | null;
   technical: number | null;
@@ -128,33 +135,114 @@ export function simulateStrategy(
   bars: Record<string, DailyPrice[]>,
   markets: Record<string, Market>,
   fingerprint = "",
+  marketDates: string[] = [],
 ): StrategyLedger {
   const snapshots = normalizeSnapshots(input);
+  const entryBars = bars;
+  // Source loading historically excluded invalid opens/closes. Keep that exact replay/quote
+  // boundary while the confirmation executor alone sees raw observed suspension and gap evidence.
+  bars = Object.fromEntries(
+    Object.entries(bars).map(([symbol, series]) => [
+      symbol,
+      series.filter(
+        (bar) =>
+          Number.isFinite(bar.open) && bar.open > 0 && Number.isFinite(bar.close) && bar.close > 0,
+      ),
+    ]),
+  );
   const latest = Object.values(bars).reduce<string | null>((d, b) => {
     const x = b.at(-1)?.tradeDate;
     return x && (!d || x > d) ? x : d;
   }, null);
-  const rawCandidates: Candidate[] = [];
+  const observedDates = marketDates.length
+    ? marketDates
+    : [
+        ...new Set([
+          ...Object.values(entryBars).flatMap((series) => series.map((bar) => bar.tradeDate)),
+          ...snapshots.map((snapshot) => snapshot.asOfDate),
+        ]),
+      ].sort();
+  type ReplayCandidate = Candidate & { executable: boolean; confirmedPolicy: boolean };
+  const byKey = new Map<string, ReplayCandidate>();
   for (const snapshot of snapshots)
     for (const entry of snapshot.entries) {
-      const market = markets[entry.symbol];
-      if (!market || entry.instrumentType !== "STOCK" || !isEntryOnset(entry, market)) continue;
-      const next = firstBarAfter(bars[entry.symbol] ?? [], snapshot.asOfDate);
-      rawCandidates.push({
-        key: keyFor(entry.symbol, snapshot.asOfDate),
+      const market = markets[entry.symbol] ?? (entry.kospiEntry ? "KOSPI" : undefined);
+      if (!market || entry.instrumentType !== "STOCK") continue;
+      const confirmation = market === "KOSPI" ? entry.kospiEntry : undefined;
+      const legacy = isLegacyReplayEntry(entry, market, snapshot.asOfDate);
+      const executable = isEntryOnset(entry, market, snapshot.asOfDate) || legacy;
+      const confirmedPolicy = market === "KOSPI" && !legacy;
+      if (
+        !executable &&
+        !(
+          market === "KOSPI" &&
+          (entry.kospi80Onset || (confirmation?.originDate && confirmation.state !== "none"))
+        )
+      )
+        continue;
+      const originDate = confirmation?.originDate ?? snapshot.asOfDate;
+      const signalDate = confirmation?.confirmationDate ?? snapshot.asOfDate;
+      let next: DailyPrice | null = null;
+      let decision = "다음 거래일 대기";
+      if (confirmedPolicy) {
+        if (executable) {
+          const execution = nextConfirmedEntry(
+            entryBars[entry.symbol] ?? [],
+            signalDate,
+            observedDates,
+          );
+          next = execution.bar;
+          decision = execution.reason;
+        } else if (
+          confirmation?.state === "confirmed" &&
+          snapshot.asOfDate < KOSPI_ENTRY_POLICY.effectiveConfirmationDate
+        ) {
+          decision = "적용일 이전 · 참고용";
+        } else if (
+          !confirmation ||
+          confirmation.date !== snapshot.asOfDate ||
+          confirmation.version !== KOSPI_ENTRY_POLICY.version
+        ) {
+          decision = "확인 자료 없음 · 진입 제외";
+        } else if (confirmation.state === "pending") {
+          decision = "익일 확인 대기";
+        } else if (confirmation.state === "rejected") {
+          decision = `확인 실패 · ${confirmation.issues.join(", ") || "진입 조건 미충족"}`;
+        } else if (confirmation.state === "unobservable") {
+          decision = `확인 관측 불가 · ${confirmation.issues.join(", ") || "자료 부족"}`;
+        } else {
+          decision = "확인 조건 미충족 · 진입 제외";
+        }
+      } else next = firstBarAfter(bars[entry.symbol] ?? [], snapshot.asOfDate);
+      const key = keyFor(entry.symbol, confirmedPolicy ? originDate : snapshot.asOfDate);
+      // A legacy origin immediately before adoption already owns its next-open replay fill.
+      // A later confirmation must not replace or retime that historical trade.
+      if (confirmedPolicy && byKey.get(key)?.confirmedPolicy === false) continue;
+      byKey.set(key, {
+        key,
         symbol: entry.symbol,
         name: entry.name,
         market,
         sectorCode: entry.sectorCode,
         sectorName: entry.sectorName,
-        signalDate: snapshot.asOfDate,
+        signalDate,
+        ...(confirmedPolicy
+          ? {
+              originDate,
+              confirmationDate: confirmation?.confirmationDate ?? null,
+              entryState: confirmation?.state ?? "unobservable",
+            }
+          : {}),
         entryDate: next?.tradeDate ?? null,
         price: next?.open ?? null,
         technical: entry.technicalPoints,
         priority: entry.priorityPoints,
-        decision: "다음 거래일 대기",
+        decision,
+        executable,
+        confirmedPolicy,
       });
     }
+  const rawCandidates = [...byKey.values()];
   rawCandidates.sort(
     (a, b) =>
       (a.entryDate ?? "9999").localeCompare(b.entryDate ?? "9999") ||
@@ -197,17 +285,43 @@ export function simulateStrategy(
       cash += t.shares * plan.exitPrice - fee;
     }
   };
-  for (const c of rawCandidates) {
-    const heldOnSignal = trades.some(
-      (t) =>
-        t.symbol === c.symbol &&
-        t.entryDate <= c.signalDate &&
-        (!t.exitDate || t.exitDate > c.signalDate),
+  for (const candidate of rawCandidates) {
+    const { executable, confirmedPolicy, ...c } = candidate;
+    if (confirmedPolicy && c.entryDate && latest) closeDue(c.entryDate, true);
+    const heldOnSignal = trades.some((trade) =>
+      confirmedPolicy
+        ? heldDuringEntryWindow(
+            trade,
+            c.symbol,
+            c.originDate ?? c.signalDate,
+            c.entryDate ?? c.signalDate,
+          )
+        : trade.symbol === c.symbol &&
+          trade.entryDate <= c.signalDate &&
+          (!trade.exitDate || trade.exitDate > c.signalDate),
     );
-    if (heldOnSignal) continue;
+    if (heldOnSignal) {
+      if (confirmedPolicy)
+        candidates.push({
+          ...c,
+          entryDate: null,
+          price: null,
+          decision: "발생일 이후 보유/당일 매도 · 진입 제외",
+        });
+      continue;
+    }
     candidates.push(c);
-    if (!c.entryDate || !c.price || !latest || c.entryDate > latest) continue;
-    closeDue(c.entryDate, true);
+    if (
+      !executable ||
+      !c.entryDate ||
+      !Number.isFinite(c.price) ||
+      !c.price ||
+      c.price < 0 ||
+      !latest ||
+      c.entryDate > latest
+    )
+      continue;
+    if (!confirmedPolicy) closeDue(c.entryDate, true);
     const active = trades.filter((t) => t.status === "OPEN");
     if (active.some((t) => t.symbol === c.symbol)) {
       c.decision = "동일 종목 보유";
@@ -252,7 +366,7 @@ export function simulateStrategy(
       entryPrice: c.price,
       entryTechnicalPoints: c.technical,
       entryPriorityPoints: c.priority,
-      entryStatus: "Onset · 전략 진입",
+      entryStatus: confirmedPolicy ? "익일 확인 통과 · 전략 진입" : "Onset · 전략 진입",
       targetWeight: 1 / settings.maxPositions,
       targetAmount: target,
       shares,
@@ -277,7 +391,7 @@ export function simulateStrategy(
   if (latest) closeDue(latest, false);
   const quotes: Record<string, Quote> = {};
   for (const [symbol, series] of Object.entries(bars)) {
-    const mark = series.at(-1);
+    const mark = [...series].reverse().find((bar) => Number.isFinite(bar.close) && bar.close > 0);
     if (!mark) continue;
     const current = latestSnapshotEntry(snapshots, symbol);
     quotes[symbol] = {

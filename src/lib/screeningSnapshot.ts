@@ -1,3 +1,5 @@
+import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
+import { LEGACY_OPERATIONAL_SIGNAL_VERSION } from "./engine/operationalStrategy";
 import type { ScreeningRow, V8ExitSignal } from "@/lib/engine/pipeline";
 import { getDisplayStatus } from "@/lib/statusDisplay";
 
@@ -18,6 +20,7 @@ export interface SnapshotEntry {
   kosdaq80Onset?: boolean;
   kospiEightPointEntry?: boolean;
   kospi80Onset?: boolean;
+  kospiEntry?: import("./engine/kospiEntryConfirmation").KospiEntrySnapshot | undefined;
   operationalSignalVersion?: string;
   exitSignal?: V8ExitSignal;
 }
@@ -94,6 +97,7 @@ export function buildSnapshot(
     hardFilterPassed: row.hardFilterPassed,
     kosdaq80Onset: row.kosdaq80Onset,
     kospiEightPointEntry: row.kospiEightPointEntry,
+    kospiEntry: row.kospiEntry,
     kospi80Onset: row.kospi80Onset ?? false,
     ...(row.operationalSignalVersion
       ? { operationalSignalVersion: row.operationalSignalVersion }
@@ -132,4 +136,49 @@ export function latestSourceRegistration(
     .map((s) => s.activated_at ?? s.created_at)
     .filter((t) => Number.isFinite(Date.parse(t)))
     .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+}
+
+/** Recalculation must not replace the source record of pre-adoption modeled trades. */
+export function preservePreAdoptionSnapshot(
+  incoming: ScreeningSnapshot,
+  existing: ScreeningSnapshot | null,
+): ScreeningSnapshot {
+  return existing &&
+    existing.asOfDate === incoming.asOfDate &&
+    incoming.asOfDate < KOSPI_ENTRY_POLICY.effectiveConfirmationDate &&
+    existing.entries.some((e) => e.operationalSignalVersion === LEGACY_OPERATIONAL_SIGNAL_VERSION)
+    ? existing
+    : incoming;
+}
+
+/** Shared writer for browser, server and automation; data-read errors fail closed before replacement. */
+export async function persistScreeningSnapshot(
+  client: import("@supabase/supabase-js").SupabaseClient,
+  userId: string,
+  incoming: ScreeningSnapshot,
+) {
+  const { data, error } = await client
+    .from("screening_history")
+    .select("snapshot")
+    .eq("user_id", userId)
+    .eq("date", incoming.asOfDate)
+    .maybeSingle();
+  if (error) throw error;
+  const snapshot = preservePreAdoptionSnapshot(
+    incoming,
+    (data?.snapshot as ScreeningSnapshot | undefined) ?? null,
+  );
+  if (snapshot !== incoming) return snapshot;
+  const { error: writeError } = await client
+    .from("screening_history")
+    .upsert(
+      {
+        user_id: userId,
+        date: snapshot.asOfDate,
+        snapshot: { ...snapshot, date: snapshot.asOfDate },
+      },
+      { onConflict: "user_id,date" },
+    );
+  if (writeError) throw writeError;
+  return snapshot;
 }

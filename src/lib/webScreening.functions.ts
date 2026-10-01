@@ -10,7 +10,11 @@ import { parseManualMarketData } from "@/lib/engine/manualDataset";
 import { runFullMarketAnalysis } from "@/lib/engine/fullMarketAnalysis";
 import { mergeScoringConfig, type ScoringConfig } from "@/lib/engine/scoring";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
-import { latestSourceRegistration, buildSnapshot } from "@/lib/screeningSnapshot";
+import {
+  latestSourceRegistration,
+  buildSnapshot,
+  persistScreeningSnapshot,
+} from "@/lib/screeningSnapshot";
 import {
   buildDashboardSummary,
   deterministicAnalysis,
@@ -88,12 +92,7 @@ export const runWebScreeningServer = createServerFn({ method: "POST" })
         analysis,
         latestSourceRegistration(sources, analysis.asOfDate),
       );
-      await client
-        .from("screening_history")
-        .upsert(
-          { user_id: authData.user.id, date: snapshot.date, snapshot },
-          { onConflict: "user_id,date" },
-        );
+      await persistScreeningSnapshot(client, authData.user.id, snapshot);
     } catch {
       // 이력 저장 실패가 웹 스크리닝 성공을 막지 않게 한다.
     }

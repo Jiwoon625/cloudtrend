@@ -1,9 +1,18 @@
+import { STRATEGY_CONFIG } from "@/lib/engine/operationalStrategy";
 import {
-  getHeldOperationalExitSignal,
-  getStoredOperationalExit,
-  isOperationalEntry,
-  STRATEGY_CONFIG,
-} from "@/lib/engine/operationalStrategy";
+  normalizeSnapshots,
+  datasetLatestDate,
+  isEntryOnset,
+  operationalExit,
+  firstBarAfter,
+  nextConfirmedEntry,
+  heldDuringEntryWindow,
+  barOnOrBefore,
+  holdingDays,
+  latestSnapshotEntry,
+  deriveExitPlan,
+  type ExitPlan,
+} from "./portfolioStrategyRules";
 import type { ScreeningSnapshot, SnapshotEntry } from "@/lib/screeningSnapshot";
 import type { DailyPrice, Market } from "@/lib/engine/types";
 import type { MarketDataset } from "@/lib/engine/dataset";
@@ -132,14 +141,6 @@ export function createPortfolioStore({
     entryBar: DailyPrice;
   }
 
-  interface ExitPlan {
-    signalDate: string | null;
-    exitDate: string;
-    exitPrice: number;
-    reason: string;
-    timing: "OPEN" | "CLOSE";
-  }
-
   let syncInFlight: Promise<PortfolioState> | null = null;
 
   const num = (value: number | string | null | undefined): number | null => {
@@ -257,144 +258,6 @@ export function createPortfolioStore({
       { onConflict: "user_id,symbol,signal_date" },
     );
     if (error) throw error;
-  }
-
-  function normalizeSnapshots(input: ScreeningSnapshot[]): ScreeningSnapshot[] {
-    const byAsOf = new Map<string, ScreeningSnapshot>();
-    for (const snapshot of [...input].sort((a, b) => a.savedAt.localeCompare(b.savedAt))) {
-      if (!snapshot.asOfDate) continue;
-      byAsOf.set(snapshot.asOfDate, snapshot);
-    }
-    return [...byAsOf.values()].sort((a, b) => a.asOfDate.localeCompare(b.asOfDate));
-  }
-
-  function datasetLatestDate(dataset: MarketDataset): string | null {
-    let latest: string | null = null;
-    for (const bars of Object.values(dataset.bars)) {
-      const date = bars.at(-1)?.tradeDate ?? null;
-      if (date && (latest === null || date > latest)) latest = date;
-    }
-    for (const series of dataset.indexSeries) {
-      const date = series.bars.at(-1)?.tradeDate ?? null;
-      if (date && (latest === null || date > latest)) latest = date;
-    }
-    return latest;
-  }
-
-  function isEntryOnset(entry: SnapshotEntry, market: Market) {
-    if (market === "KOSPI") return isOperationalEntry({ ...entry, kosdaq80Onset: false });
-    if (market !== "KOSDAQ") return false;
-    if (entry.kosdaq80Onset === true) return true;
-    return /KOSDAQ\s*(?:80|8)\s*(?:Onset|ONSET)/i.test(entry.status ?? "");
-  }
-
-  function operationalExit(
-    entry: SnapshotEntry,
-    market: Market,
-    held = false,
-  ): "UP95" | "UP90" | "DOWN30" | null {
-    const stored = getStoredOperationalExit(entry, market);
-    if (stored) return stored;
-    if (market === "KOSDAQ" && (entry.exitSignal === "UP90" || entry.exitSignal === "DOWN30"))
-      return entry.exitSignal;
-    if (held) {
-      const heldSignal = getHeldOperationalExitSignal(
-        market,
-        entry.technicalPoints ?? null,
-        entry.scoreDelta1d ?? null,
-      );
-      if (heldSignal) return heldSignal;
-    }
-    if (market !== "KOSDAQ") return null;
-    const status = entry.status ?? "";
-    if (/9\.0점.*상향/i.test(status)) return "UP90";
-    if (/3\.0점.*하향/i.test(status)) return "DOWN30";
-    return null;
-  }
-
-  function firstBarAfter(bars: DailyPrice[], date: string): DailyPrice | null {
-    for (const bar of bars) if (bar.tradeDate > date) return bar;
-    return null;
-  }
-
-  function barOnOrBefore(bars: DailyPrice[], date: string): DailyPrice | null {
-    for (let i = bars.length - 1; i >= 0; i--) {
-      const bar = bars[i]!;
-      if (bar.tradeDate <= date) return bar;
-    }
-    return null;
-  }
-
-  function holdingDays(bars: DailyPrice[], entryDate: string, endDate: string) {
-    return bars.filter((bar) => bar.tradeDate >= entryDate && bar.tradeDate <= endDate).length;
-  }
-
-  function latestSnapshotEntry(
-    snapshots: ScreeningSnapshot[],
-    symbol: string,
-  ): SnapshotEntry | null {
-    for (let i = snapshots.length - 1; i >= 0; i--) {
-      const found = snapshots[i]!.entries.find((entry) => entry.symbol === symbol);
-      if (found) return found;
-    }
-    return null;
-  }
-
-  function deriveExitPlan(
-    trade: PortfolioTrade,
-    snapshots: ScreeningSnapshot[],
-    bars: DailyPrice[],
-    latestDate: string,
-  ): ExitPlan | null {
-    let scorePlan: ExitPlan | null = null;
-    for (const snapshot of snapshots) {
-      if (snapshot.asOfDate < trade.entryDate || snapshot.asOfDate > latestDate) continue;
-      const entry = snapshot.entries.find((item) => item.symbol === trade.symbol);
-      if (!entry) continue;
-      const signal = operationalExit(entry, trade.market, true);
-      if (!signal) continue;
-      const execution = firstBarAfter(bars, snapshot.asOfDate);
-      if (!execution || execution.tradeDate > latestDate || execution.open <= 0) continue;
-      scorePlan = {
-        signalDate: snapshot.asOfDate,
-        exitDate: execution.tradeDate,
-        exitPrice: execution.open,
-        reason:
-          signal === "UP95"
-            ? "9.5점 상향돌파"
-            : signal === "UP90"
-              ? "9.0점 상향 재돌파"
-              : "3.0점 하향 이탈",
-        timing: "OPEN",
-      };
-      break;
-    }
-
-    const entryIndex = bars.findIndex((bar) => bar.tradeDate === trade.entryDate);
-    const timeBar =
-      entryIndex >= 0
-        ? bars[
-            entryIndex +
-              STRATEGY_CONFIG[trade.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI"].maxHoldingDays -
-              1
-          ]
-        : undefined;
-    const timePlan: ExitPlan | null =
-      timeBar && timeBar.tradeDate <= latestDate && timeBar.close > 0
-        ? {
-            signalDate: null,
-            exitDate: timeBar.tradeDate,
-            exitPrice: timeBar.close,
-            reason: "60거래일 만기",
-            timing: "CLOSE",
-          }
-        : null;
-
-    if (!scorePlan) return timePlan;
-    if (!timePlan) return scorePlan;
-    if (scorePlan.exitDate < timePlan.exitDate) return scorePlan;
-    if (scorePlan.exitDate > timePlan.exitDate) return timePlan;
-    return scorePlan.timing === "OPEN" ? scorePlan : timePlan;
   }
 
   function activeAtEntry(trade: PortfolioTrade, date: string) {
@@ -561,6 +424,10 @@ export function createPortfolioStore({
       }
     };
 
+    const benchmarkDates = dataset.indexSeries
+      .find((series) => series.indexCode === "KOSPI")
+      ?.bars.map((bar) => bar.tradeDate);
+    const marketDates = [...new Set([...(benchmarkDates ?? []), ...dataset.tradeDates])].sort();
     const candidates: EntryCandidate[] = [];
     for (const snapshot of snapshots) {
       for (const entry of snapshot.entries) {
@@ -568,11 +435,21 @@ export function createPortfolioStore({
         if (
           !instrument ||
           instrument.instrumentType !== "STOCK" ||
-          !isEntryOnset(entry, instrument.market)
+          !isEntryOnset(entry, instrument.market, snapshot.asOfDate)
         )
           continue;
-        const entryBar = firstBarAfter(dataset.bars[entry.symbol] ?? [], snapshot.asOfDate);
-        if (!entryBar || entryBar.tradeDate > latestDate || entryBar.open <= 0) continue;
+        const entryBar =
+          instrument.market === "KOSPI"
+            ? nextConfirmedEntry(dataset.bars[entry.symbol] ?? [], snapshot.asOfDate, marketDates)
+                .bar
+            : firstBarAfter(dataset.bars[entry.symbol] ?? [], snapshot.asOfDate);
+        if (
+          !entryBar ||
+          entryBar.tradeDate > latestDate ||
+          !Number.isFinite(entryBar.open) ||
+          entryBar.open <= 0
+        )
+          continue;
         candidates.push({ snapshot, entry, market: instrument.market, entryBar });
       }
     }
@@ -594,17 +471,25 @@ export function createPortfolioStore({
       if (handledKeys.has(key)) continue;
       await closeDue(candidate.entryBar.tradeDate, true);
 
-      const sameSymbolOpen = working.some(
-        (trade) =>
-          trade.symbol === candidate.entry.symbol &&
-          activeAtEntry(trade, candidate.entryBar.tradeDate),
+      const sameSymbolOpen = working.some((trade) =>
+        candidate.market === "KOSPI"
+          ? heldDuringEntryWindow(
+              trade,
+              candidate.entry.symbol,
+              candidate.entry.kospiEntry?.originDate ?? candidate.snapshot.asOfDate,
+              candidate.entryBar.tradeDate,
+            )
+          : trade.symbol === candidate.entry.symbol &&
+            activeAtEntry(trade, candidate.entryBar.tradeDate),
       );
       if (sameSymbolOpen) {
         await recordSignalDecision(
           uid,
           candidate,
           "SKIPPED_HELD",
-          "신호 다음 거래일 시가 시점에 동일 종목 보유 중",
+          candidate.market === "KOSPI"
+            ? "발생일부터 진입일까지 동일 종목 보유 또는 당일 매도"
+            : "신호 다음 거래일 시가 시점에 동일 종목 보유 중",
         );
         handledKeys.add(key);
         continue;
@@ -669,7 +554,10 @@ export function createPortfolioStore({
           entry_price: candidate.entryBar.open,
           entry_technical_points: candidate.entry.technicalPoints,
           entry_priority_points: candidate.entry.priorityPoints,
-          entry_status: `${candidate.market} 8.0 Onset · 신규 진입`,
+          entry_status:
+            candidate.market === "KOSPI"
+              ? "KOSPI 익일 확인 통과 · 신규 진입"
+              : `${candidate.market} 8.0 Onset · 신규 진입`,
           target_weight: rate(1 / settings.maxPositions),
           target_amount: money(targetAmount),
           shares,
@@ -735,12 +623,12 @@ export function createPortfolioStore({
 
   /**
    * 스크리닝 이력을 거래 원장으로 연결한다.
-   * - KOSPI/KOSDAQ 8.0 Onset 발생 다음 거래일 시가에 진입
+   * - KOSPI는 유효일부터 익일 확인 통과 후 다음 거래가능일 시가, KOSDAQ은 기존 Onset 다음 시가
    * - KOSPI는 U9.5 상향돌파만 점수 청산(DX), 과거 참고용 스냅샷은 진입하지 않음
    * - 9.0 상향 재돌파 / 3.0 하향 이탈은 신호 다음 거래일 시가에 청산
    * - 60거래일 만기는 해당 거래일 종가에 청산
    * - P30, KOSPI 동일섹터 최대 10% / KOSDAQ 최대 20%, 왕복비용 0.30%를 적용
-   * - 다음 거래일 데이터가 원천데이터에 들어오는 즉시 체결 가능 상태로 본다.
+   * - KOSPI 거래량 0은 정지 대기, 예상 세션 자료 누락/비정상 시가는 체결하지 않는다.
    */
   async function syncPortfolioFromHistory(): Promise<PortfolioState> {
     if (syncInFlight) return syncInFlight;

@@ -24,7 +24,7 @@ export const Route = createFileRoute("/scoring")({
       {
         name: "description",
         content:
-          "CloudTrend V8 Final 10점 기술점수, KOSPI / KOSDAQ 8.0 Onset·Exit 규칙과 우선점수 구조를 확인하고 스크리닝 데이터를 입력합니다.",
+          "CloudTrend V8 Final 10점 기술점수, KOSPI 하루 확인·RSAccel 진입과 KOSDAQ Onset·Exit 규칙과 우선점수 구조를 확인하고 스크리닝 데이터를 입력합니다.",
       },
       { property: "og:title", content: "데이터 입력 및 V8 Final 산식 | CloudTrend" },
       { property: "og:description", content: "검증 완료된 V8 Final 운영모델과 데이터 입력 화면." },
@@ -92,7 +92,7 @@ function ScoringPage() {
       <div className="mb-4">
         <h1 className="text-xl font-bold tracking-tight">데이터 입력 및 {VF_MODEL_LABEL} 산식</h1>
         <p className="text-[12px] text-muted-foreground">
-          장기 3-FOS 검증으로 확정한 10점 기술점수와 KOSPI / KOSDAQ 운영규칙을 사용합니다. 운영
+          V8 Final 10점 기술점수와 KOSPI 하루 확인·RSAccel 진입, KOSDAQ 운영규칙을 사용합니다. 운영
           배점은 고정되어 있으며 화면에서 직접 변경하지 않습니다.
         </p>
       </div>
@@ -116,7 +116,7 @@ function ScoringPage() {
             </Button>
             <span className="text-[11px] text-muted-foreground">
               {hasData
-                ? "V8 Final 10점 점수와 명시적 KOSPI / KOSDAQ 8.0 Onset / Exit 신호를 계산합니다."
+                ? "V8 Final 10점 점수, KOSPI 하루 확인·RSAccel 진입, KOSDAQ Onset과 Exit 신호를 계산합니다."
                 : "먼저 데이터를 입력하고 데이터 적용을 눌러 주세요."}
             </span>
           </div>
@@ -214,7 +214,7 @@ function ScoringPage() {
 
         <Section
           title="5. Market Gate"
-          desc="시장 상태는 참고정보로 표시하되 KOSPI / KOSDAQ 8.0 Onset을 차단하거나 관망 라벨로 덮어쓰지 않습니다."
+          desc="시장 상태는 참고정보입니다. KOSPI 하루 확인·RSAccel 조건과 KOSDAQ 진입·Exit 규칙은 Gate와 별도로 적용합니다."
         >
           <div className="flex gap-2 text-[12px]">
             <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />

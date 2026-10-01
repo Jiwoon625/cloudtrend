@@ -2,8 +2,10 @@ import {
   getHeldOperationalExitSignal,
   getStoredOperationalExit,
   isOperationalEntry,
+  LEGACY_OPERATIONAL_SIGNAL_VERSION,
   STRATEGY_CONFIG,
 } from "./engine/operationalStrategy";
+import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
 import type { ScreeningSnapshot, SnapshotEntry } from "./screeningSnapshot";
 import type { DailyPrice, Market } from "./engine/types";
 import type { MarketDataset } from "./engine/dataset";
@@ -19,7 +21,24 @@ export function normalizeSnapshots(input: ScreeningSnapshot[]): ScreeningSnapsho
   const byAsOf = new Map<string, ScreeningSnapshot>();
   for (const snapshot of [...input].sort((a, b) => a.savedAt.localeCompare(b.savedAt))) {
     if (!snapshot.asOfDate) continue;
-    byAsOf.set(snapshot.asOfDate, snapshot);
+    const previous = byAsOf.get(snapshot.asOfDate);
+    // A historical re-screen under the new policy cannot rewrite genuine old operational signals.
+    // This only retains signals that were actually stored; it never upgrades informational history.
+    if (previous && snapshot.asOfDate < KOSPI_ENTRY_POLICY.effectiveConfirmationDate) {
+      const legacy = new Map(
+        previous.entries
+          .filter((entry) => entry.operationalSignalVersion === LEGACY_OPERATIONAL_SIGNAL_VERSION)
+          .map((entry) => [entry.symbol, entry]),
+      );
+      const entries = snapshot.entries.map((entry) => {
+        const original = legacy.get(entry.symbol);
+        legacy.delete(entry.symbol);
+        return original && entry.operationalSignalVersion !== LEGACY_OPERATIONAL_SIGNAL_VERSION
+          ? original
+          : entry;
+      });
+      byAsOf.set(snapshot.asOfDate, { ...snapshot, entries: [...entries, ...legacy.values()] });
+    } else byAsOf.set(snapshot.asOfDate, snapshot);
   }
   return [...byAsOf.values()].sort((a, b) => a.asOfDate.localeCompare(b.asOfDate));
 }
@@ -37,11 +56,74 @@ export function datasetLatestDate(dataset: MarketDataset): string | null {
   return latest;
 }
 
-export function isEntryOnset(entry: SnapshotEntry, market: Market) {
-  if (market === "KOSPI") return isOperationalEntry({ ...entry, kosdaq80Onset: false });
+export function isEntryOnset(entry: SnapshotEntry, market: Market, asOfDate?: string) {
+  if (market === "KOSPI") return isOperationalEntry({ ...entry, kosdaq80Onset: false }, asOfDate);
   if (market !== "KOSDAQ") return false;
   if (entry.kosdaq80Onset === true) return true;
   return /KOSDAQ\s*(?:80|8)\s*(?:Onset|ONSET)/i.test(entry.status ?? "");
+}
+
+/** Explicit historical replay exception. Never use this as a live action gate. */
+export function isLegacyReplayEntry(entry: SnapshotEntry, market: Market, asOfDate: string) {
+  return (
+    market === "KOSPI" &&
+    asOfDate < KOSPI_ENTRY_POLICY.effectiveConfirmationDate &&
+    entry.operationalSignalVersion === LEGACY_OPERATIONAL_SIGNAL_VERSION &&
+    entry.kospi80Onset === true
+  );
+}
+
+export interface EntryExecution {
+  bar: DailyPrice | null;
+  state: "ready" | "waiting" | "unobservable";
+  reason: string;
+}
+
+/** A zero-volume observed bar is a suspension; an absent bar is an unknown gap, never a late fill. */
+export function nextConfirmedEntry(
+  bars: DailyPrice[],
+  confirmationDate: string,
+  marketDates: string[],
+): EntryExecution {
+  const byDate = new Map(bars.map((bar) => [bar.tradeDate, bar]));
+  const dates = [...new Set([...marketDates, ...byDate.keys()])]
+    .filter((date) => date > confirmationDate)
+    .sort();
+  for (const date of dates) {
+    const bar = byDate.get(date);
+    if (!bar)
+      return { bar: null, state: "unobservable", reason: `가격 관측 불가 · ${date} 자료 누락` };
+    if (
+      !Number.isFinite(bar.volume) ||
+      bar.volume < 0 ||
+      !Number.isFinite(bar.open) ||
+      bar.open < 0
+    )
+      return {
+        bar: null,
+        state: "unobservable",
+        reason: `가격 관측 불가 · ${date} 시가/거래량 오류`,
+      };
+    if (bar.volume === 0) continue;
+    if (bar.open <= 0)
+      return { bar: null, state: "unobservable", reason: `가격 관측 불가 · ${date} 시가 오류` };
+    return { bar, state: "ready", reason: "다음 거래가능일 대기" };
+  }
+  return { bar: null, state: "waiting", reason: "다음 거래가능일 대기" };
+}
+
+/** Any holding during the origin-to-execution window (including a same-day sale) blocks re-entry. */
+export function heldDuringEntryWindow(
+  trade: PortfolioTrade,
+  symbol: string,
+  originDate: string,
+  entryDate: string,
+) {
+  return (
+    trade.symbol === symbol &&
+    trade.entryDate <= entryDate &&
+    (!trade.exitDate || trade.exitDate >= originDate)
+  );
 }
 
 export function operationalExit(

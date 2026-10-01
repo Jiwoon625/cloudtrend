@@ -1,4 +1,8 @@
-import { getHeldOperationalExitSignal, STRATEGY_CONFIG } from "./engine/operationalStrategy";
+import {
+  getHeldOperationalExitSignal,
+  isOperationalEntry,
+  STRATEGY_CONFIG,
+} from "./engine/operationalStrategy";
 import { ETF_POLICY } from "./engine/etfStrategy";
 import type { AnalysisResult } from "./engine/pipeline";
 import type { UsProspectiveCache } from "./usProspectiveCloud";
@@ -19,6 +23,7 @@ export interface DashboardSignal {
 }
 export interface DashboardIndexRow extends Omit<DashboardSignal, "reason"> {
   onset: boolean;
+  kospiEntry?: import("./engine/kospiEntryConfirmation").KospiEntrySnapshot | undefined;
   exitReason: string | null;
   etfEntry?:
     | Pick<
@@ -54,6 +59,8 @@ export interface DashboardMarketSignals {
   onsetCount: number | null;
   exitCount: number | null;
   onsets: DashboardSignal[];
+  pendingCount?: number | null;
+  pending?: DashboardSignal[];
   exits: DashboardSignal[];
 }
 export interface DashboardOperations {
@@ -82,7 +89,10 @@ export function projectKrDashboard(analysis: AnalysisResult): DashboardIndex {
       name: r.instrument.name,
       market,
       sector: r.instrument.sectorName ?? "-",
-      date: etf ? (strategy?.date ?? analysis.asOfDate) : analysis.asOfDate,
+      date: etf
+        ? (strategy?.date ?? analysis.asOfDate)
+        : (r.snapshot.tradeDate ?? analysis.asOfDate),
+      kospiEntry: r.kospiEntry,
       price: finite(r.snapshot.close),
       score: finite(etf ? strategy?.score : r.operatingScore10),
       priority: finite(etf ? strategy?.averageTradingValue20 : r.priority.points) ?? 0,
@@ -107,7 +117,7 @@ export function projectKrDashboard(analysis: AnalysisResult): DashboardIndex {
             strategy.onset &&
             strategy.dataStatus !== "krx_batch_pending",
           )
-        : Boolean(r.kosdaq80Onset || r.kospi80Onset),
+        : isOperationalEntry(r, analysis.asOfDate),
       exitReason: etf
         ? currentEtf
           ? (strategy?.exit ?? null)
@@ -196,6 +206,8 @@ export function marketSignals(
     onsetCount: index ? 0 : null,
     exitCount: index && holdings !== null ? 0 : null,
     onsets: [],
+    pendingCount: index ? 0 : null,
+    pending: [],
     exits: [],
   };
   if (!index) return result;
@@ -208,9 +220,16 @@ export function marketSignals(
     if (row.date !== index.date) continue;
     const holding = held.get(row.symbol);
     const consumed =
-      market === "ETF" && row.etfEntry?.originDate
-        ? soldSymbolsSinceSignal(executions, market, row.etfEntry.originDate).has(row.symbol)
+      (market === "ETF" && row.etfEntry?.originDate) ||
+      (market === "KOSPI" && row.kospiEntry?.originDate)
+        ? soldSymbolsSinceSignal(
+            executions,
+            market,
+            (row.kospiEntry?.originDate ?? row.etfEntry?.originDate)!,
+          ).has(row.symbol)
         : sold.has(row.symbol);
+    if (market === "KOSPI" && row.kospiEntry?.state === "pending" && !holding && !consumed)
+      result.pending!.push({ ...row, reason: "8.0 Onset · 다음 거래일 종가 확인 대기" });
     if (row.onset && !holding && !consumed) {
       result.onsets.push({
         ...row,
@@ -219,7 +238,9 @@ export function marketSignals(
             ? "A0 신규 진입"
             : market === "ETF"
               ? "하루 확인 완료 · 다음 거래일 시가 진입"
-              : "8.0 Onset",
+              : market === "KOSPI"
+                ? "하루·RS 확인 완료 · 다음 거래 가능 시가 진입 대기"
+                : "8.0 Onset",
       });
     }
     if (!holding || holding.firstEntryDate > index.date) continue;
@@ -236,6 +257,7 @@ export function marketSignals(
   }
   result.onsets.sort((a, b) => b.priority - a.priority || a.symbol.localeCompare(b.symbol));
   result.exits.sort((a, b) => a.symbol.localeCompare(b.symbol));
+  result.pendingCount = result.pending!.length;
   result.onsetCount = result.onsets.length;
   if (holdings !== null) result.exitCount = result.exits.length;
   return result;

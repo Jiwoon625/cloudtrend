@@ -4,7 +4,11 @@ import { downloadFreshObject } from "./freshStorage";
 import { calculateActual, type LedgerDocument, type Quote } from "./portfolioLedgers";
 import type { UsActualDocument } from "./usActualLedger";
 import type { AnalysisResult } from "./engine/pipeline";
-import type { DashboardSummary } from "./screeningCacheContract";
+import {
+  DASHBOARD_CACHE_VERSION,
+  SCREENING_CACHE_VERSION,
+  type DashboardSummary,
+} from "./screeningCacheContract";
 import type { UsProspectiveCache } from "./usProspectiveCloud";
 import {
   DASHBOARD_MARKETS,
@@ -18,7 +22,7 @@ import {
 } from "./dashboardOperations";
 
 const BUCKET = "cloudtrend-data";
-const VERSION = "dashboard-operations-etf-krx-status-v3";
+const VERSION = "dashboard-operations-kospi-confirm1-v4";
 const memory = new Map<string, { expires: number; index: DashboardIndex }>();
 const inFlight = new Map<string, Promise<DashboardIndex>>();
 
@@ -68,6 +72,8 @@ export async function projection(client: SupabaseClient, uid: string, kind: "kr"
       ? await readJson<DashboardSummary>(client, `${uid}/cache/dashboard/latest.json`)
       : await readJson<UsProspectiveCache>(client, `${uid}/cache/us-screening/summary-v1.json`);
   if (!meta) return null;
+  if (kind === "kr" && (meta as DashboardSummary).version !== DASHBOARD_CACHE_VERSION)
+    throw new Error("KOSPI 하루·RS 확인 규칙으로 스크리닝을 다시 실행해 주세요.");
   const digest =
     kind === "kr"
       ? (meta as DashboardSummary).resultDigest
@@ -83,11 +89,16 @@ export async function projection(client: SupabaseClient, uid: string, kind: "kr"
     if (sidecar?.key === key && Array.isArray(sidecar.index?.rows)) return sidecar.index;
     let index: DashboardIndex;
     if (kind === "kr") {
-      const full = await readJson<{ resultDigest: string; payload: { analysis: AnalysisResult } }>(
-        client,
-        `${uid}/cache/screening/latest.json`,
-      );
-      if (!full?.payload?.analysis || full.resultDigest !== digest) {
+      const full = await readJson<{
+        version: string;
+        resultDigest: string;
+        payload: { analysis: AnalysisResult };
+      }>(client, `${uid}/cache/screening/latest.json`);
+      if (
+        !full?.payload?.analysis ||
+        full.version !== SCREENING_CACHE_VERSION ||
+        full.resultDigest !== digest
+      ) {
         throw new Error("국내 스크리닝이 갱신 중입니다. 잠시 후 새로고침해 주세요.");
       }
       index = projectKrDashboard(full.payload.analysis);

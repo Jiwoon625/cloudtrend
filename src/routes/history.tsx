@@ -4,6 +4,8 @@ import { ArrowDownRight, ArrowUpRight, History, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
+import { KospiEntryDetails } from "@/components/KospiEntryDetails";
+import { kospiEntryStateLabel } from "@/components/kospiEntryPresentation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCount, formatKstDateTime, formatNumber } from "@/lib/format";
@@ -18,7 +20,7 @@ export const Route = createFileRoute("/history")({
       {
         name: "description",
         content:
-          "날짜별 스크리닝 결과와 KOSPI / KOSDAQ 8.0 Onset·Exit 조건 달성 종목, 기술점수·우선점수·운영상태를 조회합니다.",
+          "날짜별 스크리닝 결과와 KOSPI 하루 확인 기록, KOSDAQ Onset·Exit 조건 달성 종목, 기술점수·운영상태를 조회합니다.",
       },
       { property: "og:title", content: "스크리닝 이력 | TrendScore KR" },
       {
@@ -30,8 +32,8 @@ export const Route = createFileRoute("/history")({
   component: HistoryPage,
 });
 
-function isOperational8Onset(entry: SnapshotEntry): boolean {
-  if (isOperationalEntry(entry)) return true;
+function isOperational8Onset(entry: SnapshotEntry, asOfDate: string): boolean {
+  if (isOperationalEntry(entry, asOfDate)) return true;
   if (entry.kosdaq80Onset === true) return true;
   return /KOSDAQ\s*80\s*Onset|KOSDAQ\s*8\s*ONSET/i.test(entry.status ?? "");
 }
@@ -44,6 +46,11 @@ function isOperationalExit(entry: SnapshotEntry): boolean {
 
 function historyStatus(entry: SnapshotEntry): string {
   const status = entry.status?.trim() || (entry.hardFilterPassed ? "관찰" : "실격");
+  if (getStoredOperationalExit(entry, "KOSPI")) return status;
+  if (entry.kospiEntry && entry.kospiEntry.state !== "none")
+    return `KOSPI ${kospiEntryStateLabel(entry.kospiEntry)}`;
+  if (!entry.kospiEntry && (entry.kospi80Onset || entry.kospiEightPointEntry))
+    return `기존 운영 기록: ${status} · 하루 확인 기록 없음`;
   return status
     .replace(/KOSDAQ80 Onset/gi, "KOSDAQ 8 ONSET")
     .replace(/KOSDAQ 80 Onset/gi, "KOSDAQ 8 ONSET");
@@ -129,7 +136,17 @@ function HistoryPage() {
   );
 
   const entryOnsets = useMemo(
-    () => selected?.entries.filter(isOperational8Onset) ?? [],
+    () => selected?.entries.filter((entry) => isOperational8Onset(entry, selected.asOfDate)) ?? [],
+    [selected],
+  );
+  const kospiAssessments = useMemo(
+    () =>
+      selected?.entries.filter(
+        (entry) =>
+          (entry.kospiEntry && entry.kospiEntry.state !== "none") ||
+          entry.kospi80Onset ||
+          entry.kospiEightPointEntry,
+      ) ?? [],
     [selected],
   );
   const exitConditionMet = useMemo(
@@ -247,11 +264,11 @@ function HistoryPage() {
                 <section className="rounded-lg border border-border bg-card p-4">
                   <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-up">
                     <ArrowUpRight className="size-4" />
-                    KOSPI / KOSDAQ 신규 진입 ({entryOnsets.length})
+                    KOSPI / KOSDAQ 진입 준비 ({entryOnsets.length})
                   </h3>
                   <p className="mb-2 text-[11px] text-muted-foreground">
-                    해당 스크리닝일에 KOSPI / KOSDAQ 8.0 신규 상향 돌파 진입조건을 달성한
-                    종목입니다.
+                    저장된 KOSPI 하루 확인·RSAccel 조건 통과와 KOSDAQ 8.0 Onset 신호입니다. KOSPI
+                    원시 Onset과 과거 운영 기록은 현재 진입 준비로 집계하지 않습니다.
                   </p>
                   <EntryList entries={entryOnsets} empty="해당 종목 없음" />
                 </section>
@@ -267,6 +284,38 @@ function HistoryPage() {
                   <EntryList entries={exitConditionMet} empty="해당 종목 없음" />
                 </section>
               </div>
+
+              <section className="rounded-lg border border-border bg-card p-4">
+                <h3 className="mb-1 text-sm font-semibold">
+                  KOSPI 원시 Onset · 하루 확인 기록 ({kospiAssessments.length})
+                </h3>
+                <p className="mb-3 text-[11px] text-muted-foreground">
+                  해당 날짜에 저장된 상태·Onset일·확인일을 표시합니다. 확인 기록이 없는 이전 이력은
+                  가격이나 RSAccel만으로 확인 완료를 추정하지 않습니다.
+                </p>
+                {kospiAssessments.length ? (
+                  <div className="divide-y divide-border">
+                    {kospiAssessments.map((entry) => (
+                      <div
+                        key={entry.symbol}
+                        className="flex flex-wrap items-start justify-between gap-2 py-2"
+                      >
+                        <Link
+                          to="/instrument/$symbol"
+                          params={{ symbol: entry.symbol }}
+                          className="text-xs font-medium hover:underline"
+                        >
+                          {entry.name}{" "}
+                          <span className="text-[10px] text-muted-foreground">{entry.symbol}</span>
+                        </Link>
+                        <KospiEntryDetails entry={entry.kospiEntry} showState />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">저장된 KOSPI 확인 대상 없음</p>
+                )}
+              </section>
 
               <TopEntriesTable
                 title={`주식 기술점수 TOP 50 (${stockTopEntries.length})`}

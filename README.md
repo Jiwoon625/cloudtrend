@@ -25,6 +25,8 @@ CloudTrend는 사용자가 직접 준비한 일봉 데이터를 브라우저에�
 - CSV·XLSX·JSON 업로드 또는 텍스트 붙여넣기를 통한 분석 데이터 입력
 - KOSPI·KOSDAQ 시장 게이트와 Risk-On / Neutral / Risk-Off 판정
 - 국내 주식 및 ETF 분리 스크리닝
+- KOSPI 8.0 Onset 다음 KOSPI 거래일 종가에 8점 이상·U9.5 상향돌파 없음·RSAccel > 0 확인 후 그다음 거래 가능한 시가 진입
+- KOSPI 원시 Onset·하루 확인 대기와 확인 완료 진입 준비를 분리하고 확인 이력을 저장
 - 종목별 Technical, Priority, Fundamental 또는 ETF Health 점수
 - 실격 필터, 데이터 누락 항목, 경고 신호 및 점수 계산 근거 표시
 - 종목 상세 차트: OHLC, 이동평균, 볼린저밴드, 일목균형표, 거래량

@@ -16,6 +16,7 @@ import { REVIEWED_STOCK_SECTOR_COUNT } from "../src/lib/engine/stockSectorMaster
 import {
   latestSourceRegistration,
   buildSnapshot,
+  persistScreeningSnapshot,
   type ScreeningSnapshot,
 } from "../src/lib/screeningSnapshot";
 import {
@@ -213,13 +214,7 @@ export async function runScreening(argv = process.argv.slice(2)) {
   memory("bundle-write-end");
   let webCache: Awaited<ReturnType<typeof persistWebScreeningCaches>> | null = null;
   if (options.upload) {
-    const { error: historyError } = await client
-      .from("screening_history")
-      .upsert(
-        { user_id: options.supabaseUserId, date: snapshot.date, snapshot },
-        { onConflict: "user_id,date" },
-      );
-    if (historyError) throw new Error(`스크리닝 이력 저장 실패: ${historyError.message}`);
+    await persistScreeningSnapshot(client, options.supabaseUserId, snapshot);
 
     memory("cache-publish-start");
     webCache = await persistWebScreeningCaches({

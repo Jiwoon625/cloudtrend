@@ -3,12 +3,9 @@ import { compactDashboardRow } from "@/lib/dashboardRow";
 import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
 import { isKospiRelativeMomentumConfirmed } from "@/lib/kospiRelativeQuality";
 
-export const SCREENING_CACHE_VERSION =
-  "screening-cache-v8-source-precedence-etf1171-confirm1-krx-status-v4" as const;
-export const DASHBOARD_CACHE_VERSION =
-  "dashboard-cache-v8-source-precedence-etf1171-confirm1-krx-status-v4" as const;
-export const INSTRUMENT_CACHE_VERSION =
-  "instrument-cache-v8-source-precedence-etf1171-confirm1-krx-status-v4" as const;
+export const SCREENING_CACHE_VERSION = "screening-cache-v8-kospi-confirm1-rsaccel-v5" as const;
+export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-kospi-confirm1-rsaccel-v5" as const;
+export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-kospi-confirm1-rsaccel-v5" as const;
 
 export interface DashboardSummary {
   version: typeof DASHBOARD_CACHE_VERSION;
@@ -40,6 +37,7 @@ export interface DashboardSummary {
     disqualified: number;
     kosdaq80Onsets: number;
     kospiEightPointEntries: number;
+    kospiPendingEntries?: number;
     kospiRelativeQualityConfirmed: number;
     upsideExits: number;
     downsideExits: number;
@@ -119,7 +117,9 @@ export function buildDashboardSummary(
     .sort(signalPriority)
     .slice(0, 30);
   const kospiEntryRows = [...rows]
-    .filter((row) => row.kospi80Onset)
+    .filter(
+      (row) => row.instrument.market === "KOSPI" && isOperationalEntry(row, analysis.asOfDate),
+    )
     .sort(signalPriority)
     .slice(0, 30);
   const exitRows = [...rows]
@@ -164,9 +164,14 @@ export function buildDashboardSummary(
       passed: passed.length,
       disqualified: stockRows.length - passed.length,
       kosdaq80Onsets: rows.filter((row) => row.kosdaq80Onset).length,
-      kospiEightPointEntries: rows.filter((row) => row.kospi80Onset).length,
+      kospiEightPointEntries: rows.filter(
+        (row) => row.instrument.market === "KOSPI" && isOperationalEntry(row, analysis.asOfDate),
+      ).length,
       kospiRelativeQualityConfirmed: rows.filter(
-        (row) => row.kospi80Onset && isKospiRelativeMomentumConfirmed(row),
+        (row) =>
+          row.instrument.market === "KOSPI" &&
+          isOperationalEntry(row, analysis.asOfDate) &&
+          isKospiRelativeMomentumConfirmed(row),
       ).length,
       upsideExits: rows.filter((row) => row.exitSignal === "UP95" || row.exitSignal === "UP90")
         .length,

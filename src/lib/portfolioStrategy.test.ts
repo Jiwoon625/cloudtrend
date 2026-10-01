@@ -3,7 +3,17 @@ vi.mock("./cloud", () => ({ supabase: {}, userId: vi.fn() }));
 vi.mock("./manualDataStore", () => ({ ensureManualDataset: vi.fn() }));
 vi.mock("./screeningHistory", () => ({ loadSnapshots: vi.fn() }));
 import { deriveExitPlan, isEntryOnset, type PortfolioTrade } from "./portfolioStore";
-import { getOperationalSignals, STRATEGY_CONFIG } from "./engine/operationalStrategy";
+import {
+  getOperationalSignals,
+  LEGACY_OPERATIONAL_SIGNAL_VERSION,
+  STRATEGY_CONFIG,
+} from "./engine/operationalStrategy";
+import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
+import {
+  nextConfirmedEntry,
+  normalizeSnapshots,
+  heldDuringEntryWindow,
+} from "./portfolioStrategyRules";
 import type { SnapshotEntry, ScreeningSnapshot } from "./screeningSnapshot";
 import type { DailyPrice } from "./engine/types";
 
@@ -24,10 +34,41 @@ function snapshot(previous: number, current: number, day = 2): ScreeningSnapshot
   } as ScreeningSnapshot;
 }
 describe("portfolio consumes KOSPI operational signals", () => {
-  it("accepts versioned onset but never historical informational entry", () => {
+  it("requires confirmed eligibility and never accepts raw or legacy onsets as live entries", () => {
     expect(
       isEntryOnset(getOperationalSignals("KOSPI", 7.5, 8, true) as SnapshotEntry, "KOSPI"),
+    ).toBe(false);
+    expect(
+      isEntryOnset(
+        {
+          ...getOperationalSignals("KOSPI", 7.5, 8, true),
+          kospiEntry: {
+            version: KOSPI_ENTRY_POLICY.version,
+            date: "2026-10-02",
+            originDate: "2026-10-01",
+            confirmationDate: "2026-10-02",
+            state: "confirmed",
+            issues: [],
+            rsAccel: 1,
+            eligible: true,
+            score: 8,
+            originScore: 8,
+          },
+        } as unknown as SnapshotEntry,
+        "KOSPI",
+        "2026-10-02",
+      ),
     ).toBe(true);
+    expect(
+      isEntryOnset(
+        {
+          ...getOperationalSignals("KOSPI", 7.5, 8, true),
+          operationalSignalVersion: LEGACY_OPERATIONAL_SIGNAL_VERSION,
+        } as SnapshotEntry,
+        "KOSPI",
+        "2026-10-02",
+      ),
+    ).toBe(false);
     expect(
       isEntryOnset(
         { kospiEightPointEntry: true, status: "8점 신규 진입 후보" } as SnapshotEntry,
@@ -59,5 +100,53 @@ describe("portfolio sector caps", () => {
   it("uses the validated market-specific limits", () => {
     expect(STRATEGY_CONFIG.KOSPI.sectorCap).toBe(0.1);
     expect(STRATEGY_CONFIG.KOSDAQ.sectorCap).toBe(0.2);
+  });
+});
+
+describe("confirmation execution guards", () => {
+  it("classifies known suspension separately from an unknown price gap", () => {
+    const prices = [
+      { tradeDate: "2026-10-06", open: 100, volume: 0 },
+      { tradeDate: "2026-10-07", open: 101, volume: 10 },
+    ] as DailyPrice[];
+    const marketDates = prices.map((bar) => bar.tradeDate);
+    expect(nextConfirmedEntry(prices, "2026-10-02", marketDates)).toMatchObject({
+      state: "ready",
+      bar: { tradeDate: "2026-10-07" },
+    });
+    expect(nextConfirmedEntry(prices.slice(1), "2026-10-02", marketDates)).toMatchObject({
+      state: "unobservable",
+      bar: null,
+    });
+  });
+  it("preserves original legacy entries across same-day historical recomputation", () => {
+    const original = {
+      ...snapshot(7.5, 8),
+      savedAt: "2026-01-04",
+      entries: [
+        {
+          symbol: "A",
+          kospi80Onset: true,
+          operationalSignalVersion: LEGACY_OPERATIONAL_SIGNAL_VERSION,
+        },
+      ],
+    } as ScreeningSnapshot;
+    const later = {
+      ...original,
+      savedAt: "2026-10-02",
+      entries: [{ symbol: "A", ...getOperationalSignals("KOSPI", 9, 9.5, true) }],
+    } as ScreeningSnapshot;
+    expect(normalizeSnapshots([later, original])[0]?.entries).toEqual(original.entries);
+    expect(original.entries[0]?.kospi80Onset).toBe(true);
+  });
+  it("blocks positions held at any time since the origin, including an origin-day or entry-day sale", () => {
+    const t = { symbol: "A", entryDate: "2026-09-01", exitDate: "2026-10-01" } as PortfolioTrade;
+    expect(heldDuringEntryWindow(t, "A", "2026-10-01", "2026-10-06")).toBe(true);
+    expect(
+      heldDuringEntryWindow({ ...t, exitDate: "2026-10-06" }, "A", "2026-10-01", "2026-10-06"),
+    ).toBe(true);
+    expect(
+      heldDuringEntryWindow({ ...t, exitDate: "2026-09-30" }, "A", "2026-10-01", "2026-10-06"),
+    ).toBe(false);
   });
 });
