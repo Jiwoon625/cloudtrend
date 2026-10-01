@@ -9,7 +9,11 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 }));
 const date = "2026-10-01";
-function page(state: "pending" | "confirmed" | "rejected", ledger?: DualPortfolioState) {
+function page(
+  state: "pending" | "confirmed" | "rejected",
+  ledger?: DualPortfolioState,
+  dataPending = false,
+) {
   const analysis = {
     asOfDate: date,
     rows: [
@@ -22,6 +26,8 @@ function page(state: "pending" | "confirmed" | "rejected", ledger?: DualPortfoli
         },
         snapshot: { close: 10000 },
         etfStrategy: {
+          dataStatus: dataPending ? "krx_batch_pending" : "ready",
+          krxReferenceDate: dataPending ? "2026-09-30" : null,
           version: ETF_POLICY.version,
           date,
           eligible: true,
@@ -58,6 +64,12 @@ const book = {
   etfTrackedSymbols: [],
 } as unknown as DualPortfolioState;
 describe("ETF screener rendered state contract", () => {
+  it("labels batch arrival separately from a normal exit", () => {
+    const html = page("confirmed", book, true);
+    expect(html).toContain("KRX 금액·기초지수 자료가 일괄 미수신");
+    expect(html).toContain("KRX 자료 대기 · 신호 판단 보류");
+    expect(html).not.toContain('aria-label="360750 주문가격"');
+  });
   it("shows pending dates without an order input", () => {
     const html = page("pending", book);
     expect(html).toContain("하루 확인 대기");

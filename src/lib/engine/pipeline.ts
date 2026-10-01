@@ -631,17 +631,19 @@ export function runAnalysis(
     row.sectorRotationScore = null;
     row.grade = s.eligible && s.score !== null && s.score >= 80 ? "A" : "C";
     row.actionLabelText =
-      s.exit === "DATA_UNAVAILABLE"
-        ? "기초지수 데이터 점검"
-        : s.onset
-          ? "하루 확인 완료 · 다음 거래일 시가 진입"
-          : s.exit === "MA60"
-            ? "보유 시 다음 시가 청산"
-            : s.entryState === "pending"
-              ? "Onset · 다음 거래일 종가 확인 대기"
-              : s.entryState === "rejected"
-                ? "하루 확인 탈락 · 새 Onset 필요"
-                : "관찰";
+      s.dataStatus === "krx_batch_pending"
+        ? "KRX 일괄 미수신 · 신호 판단 대기"
+        : s.exit === "DATA_UNAVAILABLE"
+          ? "기초지수 데이터 점검"
+          : s.onset
+            ? "하루 확인 완료 · 다음 거래일 시가 진입"
+            : s.exit === "MA60"
+              ? "보유 시 다음 시가 청산"
+              : s.entryState === "pending"
+                ? "Onset · 다음 거래일 종가 확인 대기"
+                : s.entryState === "rejected"
+                  ? "하루 확인 탈락 · 새 Onset 필요"
+                  : "관찰";
     row.warnings = [...s.issues];
   }
 

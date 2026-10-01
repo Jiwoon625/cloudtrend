@@ -30,6 +30,8 @@ export interface DashboardIndexRow extends Omit<DashboardSignal, "reason"> {
         | "confirmationIssues"
         | "averageTradingValue20"
         | "entryWeight"
+        | "dataStatus"
+        | "krxReferenceDate"
       >
     | undefined;
 }
@@ -88,6 +90,8 @@ export function projectKrDashboard(analysis: AnalysisResult): DashboardIndex {
         etf && strategy
           ? {
               version: strategy.version,
+              dataStatus: strategy.dataStatus,
+              krxReferenceDate: strategy.krxReferenceDate,
               entryState: strategy.entryState,
               originDate: strategy.originDate,
               confirmationDate: strategy.confirmationDate,
@@ -97,7 +101,12 @@ export function projectKrDashboard(analysis: AnalysisResult): DashboardIndex {
             }
           : undefined,
       onset: etf
-        ? Boolean(currentEtf && strategy?.eligible && strategy.onset)
+        ? Boolean(
+            currentEtf &&
+            strategy?.eligible &&
+            strategy.onset &&
+            strategy.dataStatus !== "krx_batch_pending",
+          )
         : Boolean(r.kosdaq80Onset || r.kospi80Onset),
       exitReason: etf
         ? currentEtf
