@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ETF_POLICY, etfOrderPlan } from "@/lib/engine/etfStrategy";
+import type { DualPortfolioState } from "@/lib/portfolioLedgers";
+import { soldSymbolsSinceSignal } from "@/lib/dashboardOperations";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
 
 const num = (n: number | null | undefined, digits = 2) =>
@@ -26,6 +28,7 @@ type SortKey =
   | "priority"
   | "health"
   | "environment"
+  | "tradingValue"
   | "signal"
   | "volatility"
   | "entryWeight"
@@ -41,7 +44,8 @@ const ETF_TABLE_COLUMNS: Array<{ key: SortKey; label: string }> = [
   { key: "priority", label: "Priority / 7.5" },
   { key: "health", label: "Health / 15" },
   { key: "environment", label: "환경 / 15" },
-  { key: "signal", label: "신호" },
+  { key: "signal", label: "신호·확인 일정" },
+  { key: "tradingValue", label: "20일 평균 거래대금(원)" },
   { key: "volatility", label: "20일 변동성" },
   { key: "entryWeight", label: "신규 비중" },
   { key: "orderPrice", label: "주문가격(원)" },
@@ -66,7 +70,15 @@ const compareNullable = (
   return direction === "asc" ? result : -result;
 };
 
-export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
+export function EtfScreener({
+  analysis,
+  ledger,
+  ledgerError,
+}: {
+  analysis: AnalysisResult;
+  ledger?: DualPortfolioState | undefined;
+  ledgerError?: string | undefined;
+}) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("equity");
   const [equity, setEquity] = useState("");
@@ -77,6 +89,11 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const rows = analysis.rows.filter((r) => r.instrument.instrumentType === "ETF");
   const heldSymbols = [
+    ...(ledger?.etfActual?.positions.map((p) => p.symbol) ?? []),
+    ...(ledger?.etfTrackedSymbols ?? []).filter(
+      (symbol) =>
+        !ledger?.document.executions.some((e) => e.market === "ETF" && e.symbol === symbol),
+    ),
     ...new Set(
       held
         .split(/[\s,]+/)
@@ -85,56 +102,60 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
     ),
   ];
   const heldSet = new Set(heldSymbols);
+  const blocked = (r: AnalysisResult["rows"][number]) =>
+    soldSymbolsSinceSignal(
+      ledger?.document.executions ?? [],
+      "ETF",
+      r.etfStrategy?.originDate ?? analysis.asOfDate,
+    ).has(r.instrument.symbol);
+  const actionable = (r: AnalysisResult["rows"][number]) =>
+    !!ledger &&
+    r.etfStrategy?.version === ETF_POLICY.version &&
+    r.etfStrategy.onset &&
+    !heldSet.has(r.instrument.symbol) &&
+    !blocked(r);
   const validAccount =
     Number(equity) > 0 && cash.trim() !== "" && Number(cash) >= 0 && Number(cash) <= Number(equity);
-  const orders = useMemo(
-    () =>
-      etfOrderPlan({
+  const orders = ledger
+    ? etfOrderPlan({
         equity: Number(equity),
         cash: cash.trim() === "" ? NaN : Number(cash),
-        heldSymbols: [
-          ...new Set(
-            held
-              .split(/[\s,]+/)
-              .map((x) => x.trim().toUpperCase())
-              .filter(Boolean),
-          ),
-        ],
-        candidates: analysis.rows
-          .filter((r) => r.instrument.instrumentType === "ETF")
-          .map((r) => ({
-            symbol: r.instrument.symbol,
-            strategy: r.etfStrategy,
-            price:
-              prices[r.instrument.symbol] === undefined
-                ? r.snapshot.close
-                : Number(prices[r.instrument.symbol]),
-          })),
-      }),
-    [analysis, equity, cash, held, prices],
-  );
+        heldSymbols: [...heldSet],
+        asOfDate: analysis.asOfDate,
+        excludedSymbols: rows.filter(blocked).map((r) => r.instrument.symbol),
+        candidates: rows.map((r) => ({
+          symbol: r.instrument.symbol,
+          strategy: r.etfStrategy,
+          price:
+            prices[r.instrument.symbol] === undefined
+              ? r.snapshot.close
+              : Number(prices[r.instrument.symbol]),
+        })),
+      })
+    : [];
   const bySymbol = new Map(orders.map((o) => [o.symbol, o]));
   const getSignalLabel = (r: AnalysisResult["rows"][number]) => {
     const s = r.etfStrategy;
     const symbol = r.instrument.symbol;
     const confirmed = s?.version === ETF_POLICY.version;
-    return !confirmed
-      ? "재계산 필요"
-      : !s.eligible
-        ? "대상·데이터 점검"
-        : heldSet.has(symbol)
-          ? s.exit === "MA60"
-            ? "다음 시가 청산"
-            : s.exit === "DATA_UNAVAILABLE"
-              ? "데이터 오류 청산 점검"
-              : "보유"
-          : s.onset
-            ? "신규 Onset"
-            : s.exit === "MA60"
-              ? "MA60 하회 · 보유 시 청산"
-              : s.score !== null && s.score >= 80
-                ? "80 이상 유지"
-                : "관찰";
+    if (!confirmed) return "재계산 필요";
+    if (heldSet.has(symbol))
+      return s.exit === "MA60"
+        ? "다음 시가 청산"
+        : s.exit === "DATA_UNAVAILABLE"
+          ? "데이터 오류 · 청산 점검"
+          : "보유 · 추가 매수 없음";
+    if (blocked(r)) return "청산한 신호 · 재진입 제외";
+    if (s.entryState === "rejected") return "하루 확인 탈락";
+    if (!s.eligible) return "대상·데이터 점검";
+    if (s.entryState === "pending") return "하루 확인 대기";
+    if (s.onset)
+      return ledger ? "하루 확인 완료 · 다음 시가 진입" : "확인 완료 · 보유정보 확인 필요";
+    return s.exit === "MA60"
+      ? "MA60 하회 · 보유 시 청산"
+      : s.score !== null && s.score >= 80
+        ? "80 이상 유지"
+        : "관찰";
   };
   const getSortValue = (r: AnalysisResult["rows"][number], key: SortKey) => {
     const s = r.etfStrategy;
@@ -154,6 +175,8 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
         return s?.health == null ? null : s.health * 0.15;
       case "environment":
         return s?.environment == null ? null : s.environment * 0.15;
+      case "tradingValue":
+        return s?.averageTradingValue20;
       case "signal":
         return getSignalLabel(r);
       case "volatility":
@@ -185,7 +208,9 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
       const s = r.etfStrategy,
         text = `${r.instrument.symbol} ${r.instrument.name}`.toLowerCase();
       if (!text.includes(query.trim().toLowerCase())) return false;
-      if (filter === "entry") return s?.onset === true;
+      if (filter === "entry") return actionable(r);
+      if (filter === "pending") return s?.entryState === "pending";
+      if (filter === "rejected") return s?.entryState === "rejected";
       if (filter === "exit") return heldSet.has(r.instrument.symbol) && s?.exit != null;
       if (filter === "missing") return !s?.eligible;
       if (filter === "equity") return s?.eligible === true;
@@ -201,7 +226,9 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
         if (compared !== 0) return compared;
       }
       return (
-        Number(b.etfStrategy?.onset ?? false) - Number(a.etfStrategy?.onset ?? false) ||
+        Number(actionable(b)) - Number(actionable(a)) ||
+        (b.etfStrategy?.averageTradingValue20 ?? -1) -
+          (a.etfStrategy?.averageTradingValue20 ?? -1) ||
         a.instrument.symbol.localeCompare(b.instrument.symbol)
       );
     });
@@ -210,16 +237,19 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
     <div className="space-y-4">
       <header>
         <h1 className="text-xl font-bold">
-          ETF 스크리너 <span className="text-sm text-muted-foreground">V0.1 확정 전략</span>
+          ETF 스크리너{" "}
+          <span className="text-sm text-muted-foreground">하루 확인 · 거래대금순 · 교체 없음</span>
         </h1>
         <p className="text-sm text-muted-foreground">
-          기준일 {analysis.asOfDate} · 일반 주식형 ETF · 최대 10종목
+          기준일 {analysis.asOfDate} · 주식형·커버드콜 ETF · 최대 10종목
         </p>
       </header>
       <section className="rounded-lg border bg-card p-4 text-sm space-y-2" aria-label="확정 전략">
         <p>
-          <strong>진입</strong> 전일 M0 &lt; 80 → 당일 M0 ≥ 80 · <strong>청산</strong> 기초지수 종가
-          &lt; MA60 · 신호 확인 후 다음 거래일 시가 기준
+          <strong>진입</strong> M0 80점 신규 돌파(Onset) → 다음 거래일 종가에 M0 ≥ 80·기초지수 ≥
+          MA60·데이터 적격 확인 → 그다음 거래일 시가 진입. 확인 실패·결측은 폐기하며 새 Onset을
+          기다립니다. 80점은 상위 20%가 아닌 절대점수입니다.
+          <strong> 청산</strong> 기초지수 종가 &lt; MA60이면 다음 거래일 시가 기준
         </p>
         <p>
           기술 62.5 + Priority 7.5 + Health 15 + 환경 15 = 100점. Priority는 국내 상대성과만
@@ -272,7 +302,13 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
         </dl>
       </section>
       <section className="rounded-lg border bg-card p-4 space-y-3" aria-label="신규 매수 수량 계산">
-        <h2 className="font-semibold">신규 매수 계획</h2>
+        <h2 className="font-semibold">신규 매수 계획 · 확인일 20일 평균 거래대금 내림차순</h2>
+        {!ledger && (
+          <p role="alert" className="text-sm">
+            {ledgerError ?? "실제 ETF 보유·청산 내역 확인 중"} · 확인 전 신규 매수 계획은 생성하지
+            않습니다.
+          </p>
+        )}
         <div className="grid gap-3 sm:grid-cols-3">
           <div>
             <Label htmlFor="etf-equity">ETF 운용 총자산(원)</Label>
@@ -297,7 +333,7 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
             />
           </div>
           <div>
-            <Label htmlFor="etf-held">기보유 ETF 코드</Label>
+            <Label htmlFor="etf-held">추가 제외할 기보유 ETF 코드</Label>
             <Input
               id="etf-held"
               value={held}
@@ -307,19 +343,20 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          기보유 {heldSymbols.length}/10 · 신규 계획 {orders.length}종목 · 비용 포함 예상 사용액{" "}
+          기보유 {heldSet.size}/10 · 신규 계획 {orders.length}종목 · 비용 포함 예상 사용액{" "}
           {num(
             orders.reduce((s, o) => s + o.estimatedCost, 0),
             0,
           )}
-          원. 종목코드 순서로 배정하며 화면 검색·필터는 배정 순서에 영향을 주지 않습니다.
+          원. 확인일 최근 20거래일 평균 거래대금 내림차순(동률은 종목코드순)으로 배정하며 화면
+          검색·필터는 배정 순서에 영향을 주지 않습니다.
         </p>
         {!validAccount && (
           <p className="text-sm">
             총자산과 가용현금을 입력해 주세요. 현금은 총자산을 초과할 수 없습니다.
           </p>
         )}
-        {heldSymbols.length >= 10 && (
+        {heldSet.size >= 10 && (
           <p className="text-sm">
             보유 한도에 도달했습니다. 청산 체결 후 보유 코드와 가용현금을 갱신해 주세요.
           </p>
@@ -338,8 +375,9 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
         )}
         <p className="text-xs text-muted-foreground">
           주문가격 기본값은 기준일 종가로 계산한 추정치입니다. 실제 주문가격으로 수정하면 수량을
-          다시 계산합니다. 비용 여유분 편도 0.15% 포함, 소수점 수량 버림. 입력한 보유 종목은 신규
-          매수에서 제외합니다.
+          다시 계산합니다. 비용 여유분 편도 0.15% 포함, 소수점 수량 버림. 실제 원장과 입력한 보유
+          종목 및 Onset 이후 청산 종목은 신규 매수에서 제외합니다. 자리가 없으면 매수를 건너뛰며
+          보유 종목을 교체하지 않습니다.
         </p>
       </section>
       <div className="flex flex-wrap gap-2 items-center">
@@ -357,15 +395,16 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
           onChange={(e) => setFilter(e.target.value)}
         >
           <option value="equity">계산 가능한 전략 대상</option>
-          <option value="entry">신규 Onset</option>
+          <option value="entry">확인 완료 · 신규 진입</option>
+          <option value="pending">하루 확인 대기</option>
+          <option value="rejected">하루 확인 탈락</option>
           <option value="exit">보유 ETF 청산·점검</option>
           <option value="missing">대상 제외·데이터 점검</option>
           <option value="all">전체 ETF</option>
         </select>
         <span className="text-sm text-muted-foreground">
-          {shown.length}/{rows.length}종목 · 신규 신호{" "}
-          {rows.filter((r) => r.etfStrategy?.onset).length}건 · 데이터·대상 점검{" "}
-          {rows.filter((r) => !r.etfStrategy?.eligible).length}건
+          {shown.length}/{rows.length}종목 · 신규 신호 {rows.filter(actionable).length}건 ·
+          데이터·대상 점검 {rows.filter((r) => !r.etfStrategy?.eligible).length}건
         </span>
       </div>
       <div className="overflow-x-auto rounded-lg border">
@@ -428,14 +467,25 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
                   </td>
                   <td className="p-3">
                     <strong>{label}</strong>
+                    {s?.originDate && (
+                      <div className="text-xs">
+                        Onset {s.originDate} · 확인 {s.confirmationDate ?? "다음 거래일 종가"}
+                      </div>
+                    )}
+                    {s?.confirmationIssues?.length ? (
+                      <div className="text-xs whitespace-normal max-w-64">
+                        {s.confirmationIssues.join(" · ")}
+                      </div>
+                    ) : null}
                     <div className="text-xs text-muted-foreground">
                       기초지수 {num(s?.underlyingClose)} / MA60 {num(s?.underlyingMa60)}
                     </div>
                   </td>
+                  <td className="p-3">{num(s?.averageTradingValue20, 0)}</td>
                   <td className="p-3">{pct(s?.annualVolatility)}</td>
                   <td className="p-3">{pct(s?.entryWeight)}</td>
                   <td className="p-3">
-                    {s?.onset && !heldSet.has(symbol) ? (
+                    {actionable(r) ? (
                       <Input
                         type="number"
                         min="0"
@@ -451,7 +501,7 @@ export function EtfScreener({ analysis }: { analysis: AnalysisResult }) {
                   <td className="p-3">
                     {order
                       ? `${num(order.quantity, 0)}주`
-                      : s?.onset && validAccount && !heldSet.has(symbol)
+                      : actionable(r) && validAccount
                         ? "0주 · 한도/현금/가격 점검"
                         : "—"}
                   </td>
