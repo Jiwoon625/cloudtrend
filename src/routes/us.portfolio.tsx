@@ -6,7 +6,6 @@ import { useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { UsPortfolioLedgers } from "@/components/UsPortfolioLedgers";
 import {
   loadUsPortfolioSnapshots,
   loadUsPortfolioTrades,
@@ -114,8 +113,8 @@ function UsPortfolioPage() {
             </div>
             <p className="mt-1 max-w-4xl text-[11px] leading-relaxed text-muted-foreground">
               A0 분기 + Beta 상위 40% 밖 3거래일 연속 Anchor는 기준 모델, A2 분기와 B3 Beta는
-              Shadow입니다. 과거 성과에 맞춰 규칙을 바꾸지 않고 앞으로의 신호·NAV·거래를 같은
-              데이터로 누적합니다.
+              Shadow입니다. 실제 투자 내역과 분리해 A0·A2·B3 모델 신호·NAV·보유·거래만
+              prospective 방식으로 누적합니다.
             </p>
           </div>
           <Button
@@ -124,7 +123,6 @@ function UsPortfolioPage() {
             onClick={() => {
               void qc.invalidateQueries({ queryKey: ["us-portfolio-snapshots"] });
               void qc.invalidateQueries({ queryKey: ["us-portfolio-trades"] });
-              void qc.invalidateQueries({ queryKey: ["us-actual-ledger"] });
             }}
           >
             <RefreshCw className="size-3.5" />
@@ -253,13 +251,12 @@ function UsPortfolioPage() {
           </div>
         </section>
 
-        <UsPortfolioLedgers model={latest.get("A0_QUARTER_PRIMARY")}>
-          <section className="rounded-lg border border-border bg-card">
+        <section className="rounded-lg border border-border bg-card">
             <div className="border-b p-3">
               <h2 className="text-sm font-semibold">모델 체결 원장</h2>
               <p className="text-[10px] text-muted-foreground">
-                A0/A2/B3 모델 체결만 표시합니다. 실제 보유·거래 탭에서 입력한 체결은 모델 성과에
-                영향을 주지 않습니다.
+                선택한 A0/A2/B3 모델의 prospective 체결만 표시합니다. 실제 투자 내역은 통합
+                포트폴리오 탭에서 별도로 관리합니다.
               </p>
             </div>
             <div className="overflow-x-auto">
@@ -306,8 +303,7 @@ function UsPortfolioPage() {
                 </p>
               ) : null}
             </div>
-          </section>
-        </UsPortfolioLedgers>
+        </section>
       </div>
     </AppShell>
   );
