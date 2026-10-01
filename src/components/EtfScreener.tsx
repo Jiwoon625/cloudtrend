@@ -88,6 +88,9 @@ export function EtfScreener({
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const rows = analysis.rows.filter((r) => r.instrument.instrumentType === "ETF");
+  const krxPending = rows.find(
+    (r) => r.etfStrategy?.dataStatus === "krx_batch_pending",
+  )?.etfStrategy;
   const heldSymbols = [
     ...(ledger?.etfActual?.positions.map((p) => p.symbol) ?? []),
     ...(ledger?.etfTrackedSymbols ?? []).filter(
@@ -112,6 +115,7 @@ export function EtfScreener({
     !!ledger &&
     r.etfStrategy?.version === ETF_POLICY.version &&
     r.etfStrategy.onset &&
+    r.etfStrategy.dataStatus !== "krx_batch_pending" &&
     !heldSet.has(r.instrument.symbol) &&
     !blocked(r);
   const validAccount =
@@ -139,6 +143,7 @@ export function EtfScreener({
     const symbol = r.instrument.symbol;
     const confirmed = s?.version === ETF_POLICY.version;
     if (!confirmed) return "재계산 필요";
+    if (s.dataStatus === "krx_batch_pending") return "KRX 자료 대기 · 신호 판단 보류";
     if (heldSet.has(symbol))
       return s.exit === "MA60"
         ? "다음 시가 청산"
@@ -209,9 +214,14 @@ export function EtfScreener({
         text = `${r.instrument.symbol} ${r.instrument.name}`.toLowerCase();
       if (!text.includes(query.trim().toLowerCase())) return false;
       if (filter === "entry") return actionable(r);
-      if (filter === "pending") return s?.entryState === "pending";
+      if (filter === "pending")
+        return s?.entryState === "pending" || s?.entryState === "data_pending";
       if (filter === "rejected") return s?.entryState === "rejected";
-      if (filter === "exit") return heldSet.has(r.instrument.symbol) && s?.exit != null;
+      if (filter === "exit")
+        return (
+          heldSet.has(r.instrument.symbol) &&
+          (s?.exit != null || s?.dataStatus === "krx_batch_pending")
+        );
       if (filter === "missing") return !s?.eligible;
       if (filter === "equity") return s?.eligible === true;
       return true;
@@ -244,6 +254,25 @@ export function EtfScreener({
           기준일 {analysis.asOfDate} · 주식형·커버드콜 ETF · 최대 10종목
         </p>
       </header>
+      {krxPending && (
+        <section
+          role="status"
+          aria-label="KRX 자료 수신 상태"
+          className="rounded-lg border border-amber-400 bg-amber-50 p-4 text-sm text-slate-900"
+        >
+          <strong>{analysis.asOfDate} KRX 금액·기초지수 자료가 일괄 미수신 상태입니다</strong>
+          <p>
+            주가는 {analysis.asOfDate}, 직전 KRX 자료 확인일은 {krxPending.krxReferenceDate}입니다.
+            수집 시각에 따른 발표 대기 여부를 확인해 주세요. 새 KRX 자료를 수집한 뒤 다시
+            스크리닝해야 당일 M0·진입·청산을 판단할 수 있습니다. 전일 M0는 과거 참고값이며 오늘 매수
+            신호가 아닙니다.
+          </p>
+          <p>
+            이 상태는 기초지수 MA60 하회 청산 신호와 구분합니다. 개별 종목의 이력 부족·전략 대상
+            제외는 아래 데이터 근거에 별도로 남습니다.
+          </p>
+        </section>
+      )}
       <section className="rounded-lg border bg-card p-4 text-sm space-y-2" aria-label="확정 전략">
         <p>
           <strong>진입</strong> M0 80점 신규 돌파(Onset) → 다음 거래일 종가에 M0 ≥ 80·기초지수 ≥

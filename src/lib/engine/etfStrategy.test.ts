@@ -449,3 +449,73 @@ describe("one-session confirmation without a pending queue", () => {
     expect(etfOrderPlan({ ...base, asOfDate: "2099-01-01" })).toEqual([]);
   });
 });
+
+describe("KRX batch-arrival state", () => {
+  const batch = () => {
+    const ds = fixture();
+    for (let i = 1; i < 10; i++) {
+      const symbol = `TEST${i}`;
+      ds.instruments.push({ ...ds.instruments[0]!, symbol, id: symbol });
+      ds.bars[symbol] = ds.bars["360750"]!.map((b) => ({ ...b }));
+    }
+    return ds;
+  };
+  const missing = (ds: MarketDataset) => {
+    for (const bars of Object.values(ds.bars)) {
+      Object.assign(bars.at(-1)!, {
+        etfMarketCap: null,
+        etfTradingValue: null,
+        etfUnderlyingIndexClose: null,
+        marketCapSource: "",
+        tradingValueSource: "CLOSE_X_VOLUME_PROXY",
+      });
+    }
+  };
+  it("does not turn a missing newest market batch into exits or invented scores", () => {
+    const ds = batch();
+    missing(ds);
+    const before = JSON.stringify(ds);
+    const s = snapshot(ds);
+    expect(s).toMatchObject({
+      dataStatus: "krx_batch_pending",
+      krxReferenceDate: ds.tradeDates.at(-2),
+      eligible: false,
+      onset: false,
+      exit: null,
+      score: null,
+      underlyingClose: null,
+    });
+    expect(s.previousScore).not.toBeNull();
+    expect(JSON.stringify(ds)).toBe(before);
+  });
+  it("blocks even inconsistent cached actionable flags when the batch is pending", () => {
+    const strategy = { ...entry(), dataStatus: "krx_batch_pending" as const };
+    expect(
+      etfOrderPlan({
+        equity: 1e7,
+        cash: 1e7,
+        heldSymbols: [],
+        candidates: [{ symbol: "360750", price: 10000, strategy }],
+      }),
+    ).toEqual([]);
+  });
+  it("keeps isolated omissions and insufficient prior coverage as ordinary data issues", () => {
+    const ds = batch();
+    ds.bars["360750"]!.at(-1)!.etfUnderlyingIndexClose = null;
+    expect(snapshot(ds)).toMatchObject({ dataStatus: "incomplete", exit: "DATA_UNAVAILABLE" });
+    missing(ds);
+    for (const bars of Object.values(ds.bars)) bars.at(-2)!.etfUnderlyingIndexClose = null;
+    expect(snapshot(ds).dataStatus).toBe("incomplete");
+  });
+  it("resumes real MA60 evaluation when the dated batch arrives", () => {
+    const ds = batch();
+    const saved = Object.fromEntries(
+      Object.entries(ds.bars).map(([k, bars]) => [k, { ...bars.at(-1)! }]),
+    );
+    missing(ds);
+    expect(snapshot(ds).exit).toBeNull();
+    for (const [symbol, b] of Object.entries(saved)) Object.assign(ds.bars[symbol]!.at(-1)!, b);
+    ds.bars["360750"]!.at(-1)!.etfUnderlyingIndexClose = 50;
+    expect(snapshot(ds)).toMatchObject({ dataStatus: "ready", exit: "MA60" });
+  });
+});

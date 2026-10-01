@@ -151,7 +151,8 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
           r.etfEntry.entryState !== "none" &&
           !heldEtfs.has(r.symbol) &&
           !etfConsumed(r)) ||
-          (r.exitReason && heldEtfs.has(r.symbol))),
+          ((r.exitReason || r.etfEntry?.dataStatus === "krx_batch_pending") &&
+            heldEtfs.has(r.symbol))),
     )
     .sort(
       (a, b) =>
@@ -159,6 +160,7 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
         b.priority - a.priority ||
         a.symbol.localeCompare(b.symbol),
     );
+  const krxPending = etfRows.find((r) => r.etfEntry?.dataStatus === "krx_batch_pending");
   const staleEtfPolicy = etfRows.some((r) => r.etfEntry?.version !== ETF_POLICY.version);
   const model = snapshots.data?.find((s) => s.strategy_id === "A0_QUARTER_PRIMARY");
   const modelPositions = Object.values(
@@ -418,6 +420,16 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
               매수는 하지 않습니다. 청산 체결 후 실제 현금만 사용합니다. 실제 매수·매도는 직접
               입력하며 신호로 자동 체결하지 않습니다.
             </p>
+            {krxPending && (
+              <p
+                role="status"
+                className="mb-3 rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-slate-900"
+              >
+                {krxPending.date} KRX 금액·기초지수 일괄 미수신 · 직전 자료 확인일{" "}
+                {krxPending.etfEntry?.krxReferenceDate}. ETF 신규 진입·청산 판단은 자료 수신까지
+                대기합니다. MA60 하회 청산으로 해석하지 마세요.
+              </p>
+            )}
             {staleEtfPolicy && (
               <p role="alert" className="mb-3 text-sm text-down">
                 이전 ETF 규칙 캐시입니다. 스크리닝을 다시 실행해야 새 진입 신호가 표시됩니다.
@@ -538,11 +550,13 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
                     {formatWon(p.unrealizedPnl)}
                   </td>
                   <td className={td}>
-                    {p.markDate === books.ETF?.summary.latestDate
-                      ? p.exitSignal
-                        ? exitLabel(p.exitSignal)
-                        : "없음"
-                      : "최신 신호 미확인"}
+                    {krxPending
+                      ? "KRX 자료 대기 · 판단 보류"
+                      : p.markDate === books.ETF?.summary.latestDate
+                        ? p.exitSignal
+                          ? exitLabel(p.exitSignal)
+                          : "없음"
+                        : "최신 신호 미확인"}
                   </td>
                   <td className={td}>
                     <Button
@@ -616,19 +630,22 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
                       : "—"}
                   </td>
                   <td className={td}>
-                    {r.exitReason && heldEtfs.has(r.symbol)
-                      ? exitLabel(r.exitReason)
-                      : r.etfEntry?.entryState === "pending"
-                        ? "하루 확인 대기"
-                        : r.etfEntry?.entryState === "rejected"
-                          ? `확인 탈락 · ${(r.etfEntry.confirmationIssues ?? []).join(" · ")}`
-                          : "확인 완료 · 다음 거래일 시가 진입"}
+                    {r.etfEntry?.dataStatus === "krx_batch_pending"
+                      ? "KRX 자료 대기 · 판단 보류"
+                      : r.exitReason && heldEtfs.has(r.symbol)
+                        ? exitLabel(r.exitReason)
+                        : r.etfEntry?.entryState === "pending"
+                          ? "하루 확인 대기"
+                          : r.etfEntry?.entryState === "rejected"
+                            ? `확인 탈락 · ${(r.etfEntry.confirmationIssues ?? []).join(" · ")}`
+                            : "확인 완료 · 다음 거래일 시가 진입"}
                   </td>
                   <td className={td}>
                     <Button
                       variant="outline"
                       disabled={
                         busy ||
+                        r.etfEntry?.dataStatus === "krx_batch_pending" ||
                         (!r.onset && !heldEtfs.has(r.symbol)) ||
                         r.etfEntry?.version !== ETF_POLICY.version
                       }

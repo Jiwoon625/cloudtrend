@@ -41,11 +41,13 @@ export interface EtfStrategySnapshot {
   /** Actionable confirmation at this close; execution is next session open. */
   onset: boolean;
   rawOnset: boolean;
-  entryState: "none" | "pending" | "confirmed" | "rejected";
+  entryState: "none" | "pending" | "confirmed" | "rejected" | "data_pending";
   originDate: string | null;
   confirmationDate: string | null;
   confirmationIssues: string[];
   averageTradingValue20: N;
+  dataStatus: "ready" | "incomplete" | "krx_batch_pending";
+  krxReferenceDate: string | null;
   exit: "MA60" | "DATA_UNAVAILABLE" | null;
   issues: string[];
 }
@@ -164,6 +166,7 @@ export function etfOrderPlan(input: {
       s.version !== ETF_POLICY.version ||
       !s.eligible ||
       !s.onset ||
+      s.dataStatus === "krx_batch_pending" ||
       s.entryState !== "confirmed" ||
       s.confirmationDate !== s.date ||
       (input.asOfDate && s.date !== input.asOfDate) ||
@@ -412,6 +415,35 @@ function peerEnvironments(ds: MarketDataset, mapping: Record<string, EtfMapping>
   return out;
 }
 
+/** A market-wide missing newest KRX batch is not an instrument exit signal.
+ * This diagnoses data arrival, never substitutes yesterday's fields into today's score.
+ * It deliberately requires a fully missing batch and broad prior-day coverage.
+ */
+export function etfKrxBatchPending(ds: MarketDataset, previousDate: string | null): boolean {
+  if (!previousDate) return false;
+  const instruments = ds.instruments.filter((i) => i.instrumentType === "ETF");
+  const pairs = instruments.map((i) => ({
+    current: ds.bars[i.symbol]?.find((b) => b.tradeDate === ds.asOfDate),
+    previous: ds.bars[i.symbol]?.find((b) => b.tradeDate === previousDate),
+  }));
+  if (pairs.length < 10 || pairs.filter((p) => p.current).length < pairs.length * 0.8) return false;
+  const received = (b: DailyPrice | undefined) =>
+    !!b &&
+    (positive(b.etfMarketCap) || finite(b.etfTradingValue) || positive(b.etfUnderlyingIndexClose));
+  const complete = (b: DailyPrice | undefined) =>
+    !!b &&
+    b.marketCapSource === "KRX_ETF" &&
+    b.tradingValueSource === "KRX_ETF" &&
+    positive(b.etfMarketCap) &&
+    finite(b.etfTradingValue) &&
+    b.etfTradingValue >= 0 &&
+    positive(b.etfUnderlyingIndexClose);
+  return (
+    pairs.every((p) => !received(p.current)) &&
+    pairs.filter((p) => complete(p.previous)).length >= pairs.length * 0.8
+  );
+}
+
 export function calculateEtfStrategies(
   ds: MarketDataset,
   mapping = ETF_MAPPING,
@@ -423,6 +455,7 @@ export function calculateEtfStrategies(
     currentIndex = calendar.indexOf(ds.asOfDate),
     previousDate = currentIndex > 0 ? calendar[currentIndex - 1]! : null,
     beforePreviousDate = currentIndex > 1 ? calendar[currentIndex - 2]! : null;
+  const krxBatchPending = etfKrxBatchPending(ds, previousDate);
   const sectorAt = (date: string) => {
     let v = sectors.get(date);
     if (!v) {
@@ -562,9 +595,21 @@ export function calculateEtfStrategies(
       underlyingClose: current.u.close,
       underlyingMa60: current.u.ma60,
       ...entry,
+      ...(krxBatchPending && entry.originDate
+        ? {
+            entryState: "data_pending" as const,
+            onset: false,
+            confirmationIssues: ["KRX 일괄 미수신으로 확인 대기"],
+          }
+        : {}),
+      dataStatus: krxBatchPending ? "krx_batch_pending" : eligible ? "ready" : "incomplete",
+      krxReferenceDate: krxBatchPending ? previousDate : null,
       averageTradingValue20: current.averageTradingValue20,
-      exit:
-        all.at(-1)?.tradeDate !== ds.asOfDate || current.u.close === null || current.u.ma60 === null
+      exit: krxBatchPending
+        ? null
+        : all.at(-1)?.tradeDate !== ds.asOfDate ||
+            current.u.close === null ||
+            current.u.ma60 === null
           ? "DATA_UNAVAILABLE"
           : current.u.close < current.u.ma60
             ? "MA60"

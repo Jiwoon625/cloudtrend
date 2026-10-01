@@ -18,7 +18,7 @@ import {
 } from "./dashboardOperations";
 
 const BUCKET = "cloudtrend-data";
-const VERSION = "dashboard-operations-etf-confirm1-v2";
+const VERSION = "dashboard-operations-etf-krx-status-v3";
 const memory = new Map<string, { expires: number; index: DashboardIndex }>();
 const inFlight = new Map<string, Promise<DashboardIndex>>();
 
@@ -174,6 +174,11 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
       ),
     ),
   ]);
+  if (kr?.rows.some((r) => r.market === "ETF" && r.etfEntry?.dataStatus === "krx_batch_pending")) {
+    warnings.push(
+      `ETF ${kr.date}: 최신 KRX 금액·기초지수 일괄 미수신. 신규 진입·청산 판단 대기, 다음 자료 수집 후 재확인 필요.`,
+    );
+  }
   const krActual = krDoc
     ? await safe("국내 실제 원장", async () =>
         calculateActual(
