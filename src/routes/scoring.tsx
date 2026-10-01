@@ -77,6 +77,7 @@ function ScoringPage() {
     setHasData(ok);
     setScreeningStarted(false);
     queryClient.removeQueries({ queryKey: ["market-analysis"] });
+    void queryClient.invalidateQueries({ queryKey: ["portfolio-ledgers"] });
     queryClient.removeQueries({ queryKey: ["data-status"] });
     queryClient.removeQueries({ queryKey: ["instrument"] });
   };

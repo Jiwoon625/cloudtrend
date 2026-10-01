@@ -93,7 +93,8 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
   const kr = useQuery({
     queryKey: ["portfolio-ledgers"],
     queryFn: () => krRequest({ action: "sync" }),
-    staleTime: 60_000,
+    staleTime: Infinity,
+    gcTime: Infinity,
     retry: false,
     refetchOnWindowFocus: false,
   });

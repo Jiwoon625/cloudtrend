@@ -143,6 +143,7 @@ function Dashboard() {
     try {
       await rebuildScreeningCachesServerFirst();
       await queryClient.invalidateQueries({ queryKey: ["market-analysis"] });
+      await queryClient.invalidateQueries({ queryKey: ["portfolio-ledgers"] });
       await queryClient.invalidateQueries({ queryKey: DASHBOARD_OPERATIONS_QUERY });
       queryClient.removeQueries({ queryKey: ["instrument"] });
       toast.success("V8 Final 스크리닝을 서버에서 다시 계산했습니다.");
