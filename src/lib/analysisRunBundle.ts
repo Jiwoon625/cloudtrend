@@ -1,3 +1,5 @@
+import { isOperationalEntry } from "./engine/operationalStrategy";
+import { ETF_POLICY } from "./engine/etfStrategy";
 import type { BacktestRunBundle } from "./backtestRunBundle";
 import type { AnalysisResult, ScreeningRow } from "./engine/pipeline";
 import type { ScreeningSnapshot } from "./screeningSnapshot";
@@ -39,6 +41,7 @@ export interface ScreeningCandidateSummary {
   grade: string;
   status: string;
   hardFilterPassed: boolean;
+  kospiEntry?: ScreeningRow["kospiEntry"];
   rs20: number | null;
   rs60: number | null;
   marketCap: number | null;
@@ -63,6 +66,7 @@ function candidate(row: ScreeningRow, rank: number): ScreeningCandidateSummary {
     grade: row.grade,
     status: row.actionLabelText,
     hardFilterPassed: row.hardFilterPassed,
+    kospiEntry: row.kospiEntry,
     rs20: row.rs20,
     rs60: row.rs60,
     marketCap: row.marketCap,
@@ -87,9 +91,16 @@ export function buildScreeningSummary(
 ) {
   const passed = analysis.rows.filter((row) => row.hardFilterPassed);
   const sortedPassed = ranked(passed);
-  const onsets = sortedPassed.filter(
-    (row) => row.actionLabelText === "진입후보" || row.actionLabelText === "우선진입후보",
+  // Structural signals only: display translations must never decide entry eligibility.
+  const onsets = sortedPassed.filter((row) =>
+    row.instrument.instrumentType === "STOCK"
+      ? isOperationalEntry(row, analysis.asOfDate)
+      : row.etfStrategy?.version === ETF_POLICY.version &&
+        row.etfStrategy.onset &&
+        row.etfStrategy.date === analysis.asOfDate &&
+        row.etfStrategy.dataStatus !== "krx_batch_pending",
   );
+  const kospiPending = sortedPassed.filter((row) => row.kospiEntry?.state === "pending");
   const momentumRisk = ranked(analysis.rows.filter((row) => row.actionLabelText === "모멘텀 위험"));
   const failureReasons = new Map<string, number>();
   const warningCounts = new Map<string, number>();
@@ -168,6 +179,11 @@ export function buildScreeningSummary(
       gradeB: passed.filter((row) => row.grade === "B").length,
       entryOnset60: onsets.filter((row) => row.actionLabelText === "진입후보").length,
       priorityOnset70: onsets.filter((row) => row.actionLabelText === "우선진입후보").length,
+      operationalEntryCandidates: onsets.length,
+      kospiConfirmed: onsets.filter((row) => row.instrument.market === "KOSPI").length,
+      kospiPending: kospiPending.length,
+      kosdaqOnsets: onsets.filter((row) => row.instrument.market === "KOSDAQ").length,
+      etfConfirmed: onsets.filter((row) => row.instrument.instrumentType === "ETF").length,
       momentumRisk: momentumRisk.length,
       incomplete: analysis.rows.filter((row) => row.dataCompletenessRatio < 0.7).length,
     },
@@ -199,6 +215,7 @@ export function buildScreeningSummary(
     droppedAtoB,
     topCandidates: sortedPassed.slice(0, 50).map(candidate),
     onsetCandidates: onsets.slice(0, 50).map(candidate),
+    kospiPendingCandidates: kospiPending.slice(0, 50).map(candidate),
     momentumRisk: momentumRisk.slice(0, 50).map(candidate),
     topSectors,
     failureReasons: [...failureReasons.entries()]

@@ -89,7 +89,7 @@ for (const hybrid of analysis.rows) {
   const hybridCurrent = hybrid.operatingScore10;
   const market = hybrid.instrument.market === "KOSDAQ" ? "KOSDAQ" : "KOSPI";
   const baselineOnset = crossedUp(baselinePrevious, baselineCurrent, VF_ENTRY_RAW_SCORE);
-  const hybridOnset = market === "KOSDAQ" ? hybrid.kosdaq80Onset : hybrid.kospiEightPointEntry;
+  const hybridOnset = market === "KOSDAQ" ? hybrid.kosdaq80Onset : hybrid.kospi80Onset;
   rows.push({
     symbol: hybrid.instrument.symbol,
     name: hybrid.instrument.name,

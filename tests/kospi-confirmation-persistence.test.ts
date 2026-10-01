@@ -1,3 +1,4 @@
+import { buildScreeningSummary } from "../src/lib/analysisRunBundle";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildSnapshot,
@@ -98,6 +99,30 @@ describe("confirmation projections and actual-position context", () => {
     ).toBe(0);
   });
 });
+describe("CLI summary structural signals", () => {
+  it("publishes confirmation evidence without relying on retired display labels", () => {
+    const pending = {
+      ...row,
+      instrument: { ...row.instrument, symbol: "PENDING" },
+      kospiEntry: kospiEntryConfirmation(obs("2026-10-05", 8), obs("2026-10-02", 7.5), null),
+      kospi80Onset: true,
+      kospiEightPointEntry: false,
+    };
+    const a = {
+      ...current,
+      rows: [
+        { ...row, actionLabelText: "translated arbitrary label", hardFilterPassed: true },
+        { ...pending, hardFilterPassed: true },
+      ],
+    };
+    const summary = buildScreeningSummary(a, buildSnapshot(a), null);
+    expect(summary.counts.kospiConfirmed).toBe(1);
+    expect(summary.counts.kospiPending).toBe(1);
+    expect(summary.onsetCandidates[0]?.kospiEntry).toEqual(state);
+    expect(summary.kospiPendingCandidates[0]?.symbol).toBe("PENDING");
+  });
+});
+
 describe("pre-adoption persistence", () => {
   const incoming = { ...buildSnapshot(current), date: "2026-09-30", asOfDate: "2026-09-30" };
   const legacy: ScreeningSnapshot = {
