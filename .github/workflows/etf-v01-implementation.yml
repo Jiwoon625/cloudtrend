@@ -13,6 +13,9 @@ on:
         "src/lib/dashboardOperations*",
         "src/lib/screeningCacheContract.ts",
         "tests/dashboard-operations.test.ts",
+        "tests/portfolio-session-cache.test.ts",
+        "package.json",
+        "package-lock.json",
         "config/etf-v01-confirmed.json",
         ".github/workflows/etf-v01-implementation.yml",
       ]
@@ -34,6 +37,8 @@ jobs:
       - name: Verify confirmed ETF and existing stock rules
         run: npx vitest run src/lib/engine/etfStrategy.test.ts src/lib/engine/operationalStrategy.test.ts src/lib/portfolioStrategy.test.ts src/lib/statusDisplay.test.ts src/lib/engine/screeningSourceContract.test.ts tests/dashboard-operations.test.ts tests/dashboard-cache.test.ts tests/etf-confirmation-ui.test.tsx --reporter=default --reporter=json --outputFile=etf-validation/unit-tests.json
       - run: npm run build
+      - name: Verify portfolio session cache and patched framework resolutions
+        run: npx vitest run tests/portfolio-session-cache.test.ts --reporter=default
       - uses: actions/setup-python@v5
         if: github.event_name == 'push'
         with:
