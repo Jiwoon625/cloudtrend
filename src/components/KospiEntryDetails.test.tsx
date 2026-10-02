@@ -215,10 +215,10 @@ describe("KOSPI confirmation UI", () => {
         <DashboardSignalLists query={query} />
       </QueryClientProvider>,
     );
-    expect(html).toContain("KOSPI 하루 확인 대기");
-    expect(html).toContain("2종목");
+    expect(html).toContain("확인대기(KOSPI/ETF)");
+    expect(html).toContain("2/—");
     expect(html).toContain("진입 준비 (1)");
-    expect(html).toContain("KOSPI 확인 대기 (2)");
+    expect(html).toContain("확인대기 (2)");
     expect(html).toContain("확인 준비 종목");
     expect(html).not.toContain("원시 대기 종목");
   });

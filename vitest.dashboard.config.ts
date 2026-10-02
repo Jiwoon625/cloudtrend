@@ -7,6 +7,7 @@ export default defineConfig({
   test: {
     include: [
       "src/components/KospiEntryDetails.test.tsx",
+      "src/components/DashboardOperations.test.tsx",
       "tests/dashboard-operations.test.ts",
       "tests/dashboard-operations-server.test.ts",
       "src/lib/dashboardHoldingSignals.test.ts",

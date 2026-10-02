@@ -230,6 +230,16 @@ export function marketSignals(
         : sold.has(row.symbol);
     if (market === "KOSPI" && row.kospiEntry?.state === "pending" && !holding && !consumed)
       result.pending!.push({ ...row, reason: "8.0 Onset · 다음 거래일 종가 확인 대기" });
+    if (
+      market === "ETF" &&
+      row.etfEntry?.version === ETF_POLICY.version &&
+      row.etfEntry.entryState === "pending" &&
+      row.etfEntry.dataStatus === "ready" &&
+      row.etfEntry.originDate === index.date &&
+      !holding &&
+      !consumed
+    )
+      result.pending!.push({ ...row, reason: "M0 80점 Onset · 다음 거래일 종가 확인 대기" });
     if (row.onset && !holding && !consumed) {
       result.onsets.push({
         ...row,
@@ -257,6 +267,7 @@ export function marketSignals(
   }
   result.onsets.sort((a, b) => b.priority - a.priority || a.symbol.localeCompare(b.symbol));
   result.exits.sort((a, b) => a.symbol.localeCompare(b.symbol));
+  result.pending!.sort((a, b) => b.priority - a.priority || a.symbol.localeCompare(b.symbol));
   result.pendingCount = result.pending!.length;
   result.onsetCount = result.onsets.length;
   if (holdings !== null) result.exitCount = result.exits.length;
