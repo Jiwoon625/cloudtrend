@@ -25,7 +25,10 @@ export const Route = createFileRoute("/us/")({
 
 const RULES = [
   ["Core", "ret120 순위 50% + ret252 순위 50% → 횡단면 재순위"],
-  ["Primary Entry", "Core 상위 20% 신규진입 + Beta 상위 10% 이내 + TK gap 상위 20% 이내 + 유동성 eligibility"],
+  [
+    "Primary Entry",
+    "Core 상위 20% 신규진입 + Beta 상위 10% 이내 + TK gap 상위 20% 이내 + 유동성 eligibility",
+  ],
   ["Primary Exit", "Core 상위 30% 밖 또는 Beta 상위 40% 밖 3거래일 연속 (Anchor) / universe 이탈"],
   ["A0 Portfolio", "동일 섹터 cap 없음 · 최대 20종목 · 분기 첫 거래일 비중조정 · 진입/청산은 매일"],
   ["Execution model", "다음 미국 정규장 시가 · 편도 25bp · ADV20 1% 참여율 · 정수 주식"],
@@ -175,6 +178,13 @@ function UsMarketDataPage() {
             detail="균형형 · 동일 섹터 최대 3종목 · Core 상위 20% Onset · 상위 50% 밖 청산 + Beta 상위 40% 밖 3거래일"
           />
         </section>
+        <p className="text-sm text-muted-foreground">
+          A2·B3의 모델 보유·성과·체결 기록은{" "}
+          <Link to="/shadow" className="underline">
+            통합 Shadow 탭
+          </Link>
+          에서 확인합니다.
+        </p>
 
         <section className="rounded-lg border border-border bg-card p-4">
           <h2 className="text-sm font-semibold">실제 자료수집 계약</h2>

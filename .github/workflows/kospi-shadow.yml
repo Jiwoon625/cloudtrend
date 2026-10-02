@@ -1,0 +1,70 @@
+name: KOSPI prospective Shadow
+on:
+  workflow_dispatch:
+    inputs:
+      as_of:
+        description: "Optional date assertion; must match the active source snapshot exactly"
+        type: string
+        required: false
+  workflow_run:
+    workflows: [CloudTrend screening]
+    types: [completed]
+    branches: [main]
+  pull_request:
+    paths:
+      - "src/lib/engine/kospiShadow*"
+      - "src/lib/kospiShadow*"
+      - "src/components/*Shadow*"
+      - "src/components/UsPortfolioView*"
+      - "src/routes/shadow.tsx"
+      - "src/routes/us.portfolio.tsx"
+      - "src/components/AppShell.tsx"
+      - "scripts/run-kospi-shadow.ts"
+      - "scripts/kospi-shadow-runtime.config.ts"
+      - "tests/shadow-*"
+      - ".github/workflows/kospi-shadow.yml"
+permissions:
+  contents: read
+concurrency:
+  group: kospi-prospective-shadow
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run src/lib/engine/kospiShadow.test.ts src/lib/engine/kospiShadowDataset.test.ts src/lib/kospiShadowStore.test.ts
+      - run: npx vitest run --config vitest.shadow.config.ts
+      - run: node tests/shadow-runner-smoke.mjs
+      - run: npm run test:us
+      - run: npm run build
+  advance:
+    needs: verify
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event != 'pull_request')
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      SHADOW_AS_OF: ${{ inputs.as_of }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Advance isolated immutable KOSPI model journal
+        run: |
+          args=(--user "$SUPABASE_USER_ID")
+          if [[ -n "$SHADOW_AS_OF" ]]; then args+=(--as-of "$SHADOW_AS_OF"); fi
+          npx vite-node --config scripts/kospi-shadow-runtime.config.ts scripts/run-kospi-shadow.ts -- "${args[@]}"
