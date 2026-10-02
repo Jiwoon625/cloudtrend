@@ -131,6 +131,9 @@ export function DashboardSignalCounts({
   counts: DashboardSummary["counts"];
 }) {
   const kospiPending = query.data?.markets.find((m) => m.market === "KOSPI")?.pendingCount;
+  const etfPending = query.data?.markets.find((m) => m.market === "ETF")?.pendingCount;
+  const pendingCount = (value: number | null | undefined) =>
+    value == null ? "—" : formatCount(value);
   return (
     <section
       className="rounded-lg border border-border bg-card p-4"
@@ -186,8 +189,13 @@ export function DashboardSignalCounts({
         </p>
       ) : null}
       <div className="mt-2 border-t border-border pt-1">
-        <Row label="KOSPI 하루 확인 대기">
-          {kospiPending == null ? "—" : `${formatCount(kospiPending)}종목`}
+        <Row label="확인대기(KOSPI/ETF)">
+          <span
+            className="whitespace-nowrap"
+            aria-label={`KOSPI ${kospiPending == null ? "미확인" : `${formatCount(kospiPending)}종목`}, ETF ${etfPending == null ? "미확인" : `${formatCount(etfPending)}종목`}`}
+          >
+            {pendingCount(kospiPending)}/{pendingCount(etfPending)}
+          </span>
         </Row>
         <Row label="점수 산정 불가">{formatCount(counts.incomplete)}</Row>
       </div>
@@ -303,20 +311,27 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
   const [tab, setTab] = useState<"onsets" | "pending" | "exits">("onsets");
   const [market, setMarket] = useState<DashboardMarket | "ALL">("ALL");
   const [page, setPage] = useState(0);
-  const selected = (query.data?.markets ?? []).filter(
-    (m) => m.market !== "ETF" && (market === "ALL" || m.market === market),
-  );
+  const listMarkets = (kind: typeof tab): DashboardMarket[] =>
+    kind === "pending" ? ["KOSPI", "ETF"] : ["KOSPI", "KOSDAQ", "US"];
+  const selectedMarkets = listMarkets(tab).filter((m) => market === "ALL" || m === market);
+  const selected = (query.data?.markets ?? []).filter((m) => selectedMarkets.includes(m.market));
   const rows = selected.flatMap((m) => m[tab] ?? []);
   const pageCount = Math.max(1, Math.ceil(rows.length / 25));
   const currentPage = Math.min(page, pageCount - 1);
   const visible = rows.slice(currentPage * 25, currentPage * 25 + 25);
-  const incomplete = selected.some(
-    (m) =>
-      (tab === "onsets" ? m.onsetCount : tab === "pending" ? m.pendingCount : m.exitCount) === null,
-  );
+  const incomplete = selectedMarkets.some((selectedMarket) => {
+    const item = selected.find((m) => m.market === selectedMarket);
+    return (
+      (tab === "onsets"
+        ? item?.onsetCount
+        : tab === "pending"
+          ? item?.pendingCount
+          : item?.exitCount) == null
+    );
+  });
   const totals = (kind: "onsets" | "pending" | "exits") =>
     (query.data?.markets ?? [])
-      .filter((m) => m.market !== "ETF")
+      .filter((m) => listMarkets(kind).includes(m.market))
       .reduce((sum, m) => sum + (m[kind]?.length ?? 0), 0);
   return (
     <section
@@ -325,7 +340,9 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
     >
       <div className="border-b border-border p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold">조건달성종목 · KOSPI / KOSDAQ / 미국 A0</h2>
+          <h2 className="text-sm font-semibold">
+            조건달성종목 · {tab === "pending" ? "KOSPI / ETF" : "KOSPI / KOSDAQ / 미국 A0"}
+          </h2>
           <select
             aria-label="조건달성종목 시장"
             value={market}
@@ -336,16 +353,19 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
             className="rounded border border-border bg-background px-2 py-1 text-xs"
           >
             <option value="ALL">전체 시장</option>
-            <option value="KOSPI">KOSPI</option>
-            <option value="KOSDAQ">KOSDAQ</option>
-            <option value="US">미국 A0</option>
+            {listMarkets(tab).map((item) => (
+              <option key={item} value={item}>
+                {LABEL[item]}
+              </option>
+            ))}
           </select>
         </div>
         <p className="mt-1 text-[10px] text-muted-foreground">
-          시장 간 점수를 서로 비교하지 않습니다. 진입 준비는 시장별 우선순위 순이며, KOSPI 원시
-          Onset은 하루 확인 대기로 분리합니다. EXIT는 실제 보유종목만 표시합니다.
+          시장 간 점수를 서로 비교하지 않습니다. 확인대기는 KOSPI·ETF의 다음 거래일 확인 전
+          종목이며, 자료 미수신·확인 탈락은 포함하지 않습니다. 진입 준비는 시장별 우선순위 순,
+          EXIT는 실제 보유종목 기준입니다. ETF 진입 준비·EXIT는 ETF 조건 상세에서 확인합니다.
         </p>
-        <div className="mt-3 flex gap-2" role="tablist" aria-label="신호 종류">
+        <div className="mt-3 flex flex-wrap gap-2" role="tablist" aria-label="신호 종류">
           {(["onsets", "pending", "exits"] as const).map((kind) => (
             <Button
               key={kind}
@@ -357,10 +377,11 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
               variant={tab === kind ? "default" : "outline"}
               onClick={() => {
                 setTab(kind);
+                if (market !== "ALL" && !listMarkets(kind).includes(market)) setMarket("ALL");
                 setPage(0);
               }}
             >
-              {kind === "onsets" ? "진입 준비" : kind === "pending" ? "KOSPI 확인 대기" : "EXIT"}{" "}
+              {kind === "onsets" ? "진입 준비" : kind === "pending" ? "확인대기" : "EXIT"}{" "}
               {query.data ? `(${totals(kind)})` : ""}
             </Button>
           ))}
@@ -410,7 +431,7 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
                         ? "—"
                         : row.market === "US"
                           ? `상위 ${((1 - row.score) * 100).toFixed(1)}%`
-                          : `${row.score.toFixed(1)} / 10`}
+                          : `${row.score.toFixed(1)} / ${row.market === "ETF" ? 100 : 10}`}
                     </td>
                     <td className="num whitespace-nowrap px-3 py-3 text-right">
                       {row.price === null
@@ -431,7 +452,7 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
           <p className="p-6 text-xs text-muted-foreground">
             {incomplete
               ? "확인된 신호가 없습니다. 미확인 시장의 데이터를 확인해 주세요."
-              : `해당 ${tab === "onsets" ? "진입 준비" : tab === "pending" ? "KOSPI 확인 대기" : "보유 EXIT"} 종목이 없습니다.`}
+              : `해당 ${tab === "onsets" ? "진입 준비" : tab === "pending" ? "확인대기" : "보유 EXIT"} 종목이 없습니다.`}
           </p>
         )}
         {rows.length > 25 ? (

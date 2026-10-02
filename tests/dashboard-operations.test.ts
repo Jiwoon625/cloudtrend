@@ -439,6 +439,202 @@ describe("ETF registration and dashboard preservation", () => {
   });
 });
 
+describe("ETF pending-entry selection", () => {
+  type EtfEntry = NonNullable<DashboardIndexRow["etfEntry"]>;
+  const pendingEntry = (values: Partial<EtfEntry> = {}): EtfEntry => ({
+    version: ETF_POLICY.version,
+    entryState: "pending",
+    originDate: date,
+    confirmationDate: null,
+    confirmationIssues: [],
+    averageTradingValue20: 2e9,
+    entryWeight: 0.05,
+    dataStatus: "ready",
+    krxReferenceDate: date,
+    ...values,
+  });
+  const pendingRow = (symbol: string, values: Partial<DashboardIndexRow> = {}): DashboardIndexRow =>
+    row(symbol, { market: "ETF", priority: 2e9, etfEntry: pendingEntry(), ...values });
+  const sale = (
+    executionDate: string,
+    values: Partial<NonNullable<Parameters<typeof marketSignals>[3]>[number]> = {},
+  ): NonNullable<Parameters<typeof marketSignals>[3]>[number] => ({
+    symbol: "069500",
+    market: "ETF",
+    date: executionDate,
+    side: "SELL",
+    shares: 1,
+    ...values,
+  });
+
+  it("selects a genuine current-policy raw Onset as pending through the KR projection", () => {
+    const strategy: NonNullable<ScreeningRow["etfStrategy"]> = {
+      ...pendingEntry(),
+      date,
+      previousDate: "2026-09-28",
+      eligible: true,
+      score: 85,
+      previousScore: 75,
+      technical: 80,
+      priority: 90,
+      health: 85,
+      environment: 85,
+      environmentSource: "stock_sector",
+      region: "KR",
+      sector: "반도체",
+      annualVolatility: 0.3,
+      underlyingClose: 120,
+      underlyingMa60: 100,
+      onset: false,
+      rawOnset: true,
+      exit: null,
+      issues: [],
+    };
+    const projected = projectKrDashboard(
+      analysis([
+        krRow("069500", {
+          instrument: {
+            symbol: "069500",
+            name: "ETF",
+            instrumentType: "ETF",
+            market: "KOSPI",
+          } as ScreeningRow["instrument"],
+          etfStrategy: strategy,
+        }),
+      ]),
+    );
+    const result = marketSignals(projected, "ETF", []);
+    expect(projected.rows[0]?.etfEntry).toMatchObject(pendingEntry());
+    expect(result.pending?.map((r) => r.symbol)).toEqual(["069500"]);
+    expect(result.pendingCount).toBe(1);
+    expect(result.onsetCount).toBe(0);
+    expect(result.exitCount).toBe(0);
+    expect(marketSignals(projected, "KOSPI", []).pendingCount).toBe(0);
+  });
+
+  it.each(["confirmed", "rejected", "data_pending", "none"] as const)(
+    "excludes the %s entry state from pending",
+    (entryState) => {
+      const input = index([pendingRow("069500", { etfEntry: pendingEntry({ entryState }) })]);
+      expect(marketSignals(input, "ETF", []).pendingCount).toBe(0);
+    },
+  );
+
+  it.each(["incomplete", "krx_batch_pending"] as const)(
+    "excludes pending entries when data is %s",
+    (dataStatus) => {
+      const input = index([pendingRow("069500", { etfEntry: pendingEntry({ dataStatus }) })]);
+      expect(marketSignals(input, "ETF", []).pending).toEqual([]);
+    },
+  );
+
+  it("rejects an old policy and missing legacy confirmation fields", () => {
+    const { entryState: _entryState, ...withoutState } = pendingEntry();
+    const { dataStatus: _dataStatus, ...withoutDataStatus } = pendingEntry();
+    const input = index([
+      pendingRow("OLD", { etfEntry: pendingEntry({ version: "old-policy" }) }),
+      // Legacy persisted projections may predate required confirmation fields.
+      pendingRow("NO_STATE", { etfEntry: withoutState as EtfEntry }),
+      pendingRow("NO_DATA", { etfEntry: withoutDataStatus as EtfEntry }),
+      pendingRow("NO_ENTRY", { etfEntry: undefined }),
+    ]);
+    const result = marketSignals(input, "ETF", []);
+    expect(result.pending).toEqual([]);
+    expect(result.pendingCount).toBe(0);
+  });
+
+  it.each(["2026-09-28", "2026-09-30", null])(
+    "requires an origin on the index date instead of %s",
+    (originDate) => {
+      const input = index([pendingRow("069500", { etfEntry: pendingEntry({ originDate }) })]);
+      expect(marketSignals(input, "ETF", []).pendingCount).toBe(0);
+    },
+  );
+
+  it("requires a fresh quote even when the pending origin is current", () => {
+    const input = index([pendingRow("069500", { date: "2026-09-28" })]);
+    expect(marketSignals(input, "ETF", []).pendingCount).toBe(0);
+  });
+
+  it("excludes held pending entries but permits confirmed zero-share holdings", () => {
+    const input = index([pendingRow("HELD"), pendingRow("ZERO"), pendingRow("UNHELD")]);
+    const result = marketSignals(input, "ETF", [hold("HELD"), hold("ZERO", 0)]);
+    expect(result.pending?.map((r) => r.symbol)).toEqual(["UNHELD", "ZERO"]);
+    expect(result.pendingCount).toBe(2);
+  });
+
+  it.each([date, "2026-09-30"])(
+    "consumes pending entries sold on or after origin (%s)",
+    (executionDate) => {
+      const input = index([pendingRow("069500")]);
+      const result = marketSignals(input, "ETF", [], [sale(executionDate)]);
+      expect(result.pending).toEqual([]);
+      expect(result.pendingCount).toBe(0);
+    },
+  );
+
+  it("ignores earlier sales, other-market sales, buys, and zero-share sales", () => {
+    const input = index([pendingRow("069500")]);
+    for (const execution of [
+      sale("2026-09-28"),
+      sale(date, { market: "KOSPI" }),
+      sale(date, { side: "BUY" }),
+      sale(date, { shares: 0 }),
+    ]) {
+      expect(marketSignals(input, "ETF", [], [execution]).pendingCount).toBe(1);
+    }
+  });
+
+  it("deduplicates symbols before counting pending entries", () => {
+    const result = marketSignals(index([pendingRow("069500"), pendingRow("069500")]), "ETF", []);
+    expect(result.pending?.map((r) => r.symbol)).toEqual(["069500"]);
+    expect(result.pendingCount).toBe(1);
+  });
+
+  it("keeps pending counts separate from confirmed actionable onsets", () => {
+    const result = marketSignals(
+      index([
+        pendingRow("PENDING"),
+        pendingRow("CONFIRMED", {
+          onset: true,
+          etfEntry: pendingEntry({
+            entryState: "confirmed",
+            originDate: "2026-09-28",
+            confirmationDate: date,
+          }),
+        }),
+      ]),
+      "ETF",
+      [],
+    );
+    expect(result.pending?.map((r) => r.symbol)).toEqual(["PENDING"]);
+    expect(result.onsets.map((r) => r.symbol)).toEqual(["CONFIRMED"]);
+    expect(result.pendingCount).toBe(1);
+    expect(result.onsetCount).toBe(1);
+  });
+
+  it("orders pending entries by liquidity priority with a symbol tie-break", () => {
+    const result = marketSignals(
+      index([
+        pendingRow("LOW", {
+          priority: 1e9,
+          etfEntry: pendingEntry({ averageTradingValue20: 1e9 }),
+        }),
+        pendingRow("B"),
+        pendingRow("HIGH", {
+          priority: 3e9,
+          etfEntry: pendingEntry({ averageTradingValue20: 3e9 }),
+        }),
+        pendingRow("A"),
+      ]),
+      "ETF",
+      [],
+    );
+    expect(result.pending?.map((r) => r.symbol)).toEqual(["HIGH", "A", "B", "LOW"]);
+    expect(result.pendingCount).toBe(4);
+  });
+});
+
 describe("ETF confirmed-entry projection", () => {
   it("ranks confirmation-day liquidity and suppresses sales since original Onset", () => {
     const entry = {
