@@ -5,6 +5,7 @@ on:
     paths:
       - src/routes/index.tsx
       - src/components/DashboardOperations.tsx
+      - src/components/DashboardOperations.test.tsx
       - src/components/UsOrderPreview*
       - src/lib/usOrderPreview*
       - src/lib/engine/usProspectiveOrderPreview*
@@ -37,6 +38,6 @@ jobs:
         run: npx vitest run --config vitest.portfolio.config.ts
       - name: Lint dashboard changes
         run: |
-          npx eslint src/lib/dashboardOperations.ts src/lib/dashboardOperations.server.ts src/lib/dashboardOperations.functions.ts src/components/DashboardOperations.tsx src/routes/index.tsx tests/dashboard-operations.test.ts --rule 'prettier/prettier: off'
+          npx eslint src/lib/dashboardOperationsSectorLimits.ts src/lib/dashboardOperations.ts src/lib/dashboardOperations.server.ts src/lib/dashboardOperations.functions.ts src/components/DashboardOperations.tsx src/routes/index.tsx tests/dashboard-operations.test.ts --rule 'prettier/prettier: off'
       - name: Production build
         run: npm run build

@@ -13,6 +13,7 @@ export default defineConfig({
       "src/lib/usOrderPreview*.test.ts",
       "tests/us-order-preview*.test.ts",
       "tests/dashboard-operations.test.ts",
+      "tests/dashboard-operations-sector-limits.test.ts",
       "tests/dashboard-operations-server.test.ts",
       "src/lib/dashboardHoldingSignals.test.ts",
       "src/lib/engine/operationalStrategy.test.ts",

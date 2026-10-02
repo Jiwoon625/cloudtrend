@@ -8,6 +8,11 @@ import type { AnalysisResult } from "./engine/pipeline";
 import type { UsProspectiveCache } from "./usProspectiveCloud";
 import type { PortfolioSummary } from "./portfolioStoreCore";
 import type { ActualExecution } from "./portfolioLedgers";
+import {
+  dashboardSectorLimit,
+  type DashboardSectorContext,
+  type DashboardSectorLimit,
+} from "./dashboardOperationsSectorLimits";
 
 export type DashboardMarket = "KOSPI" | "KOSDAQ" | "ETF" | "US";
 export interface DashboardSignal {
@@ -15,6 +20,8 @@ export interface DashboardSignal {
   name: string;
   market: DashboardMarket;
   sector: string;
+  sectorCode?: string | undefined;
+  sectorLimit?: DashboardSectorLimit | undefined;
   date: string;
   price: number | null;
   score: number | null;
@@ -42,6 +49,7 @@ export interface DashboardIndexRow extends Omit<DashboardSignal, "reason"> {
 }
 /** Server-side projection only. No OHLC history, score breakdowns, or shadow fields. */
 export interface DashboardIndex {
+  screeningCreatedAt?: string | undefined;
   date: string;
   rows: DashboardIndexRow[];
   tradeDates: string[];
@@ -90,6 +98,7 @@ export function projectKrDashboard(analysis: AnalysisResult): DashboardIndex {
       name: r.instrument.name,
       market,
       sector: r.instrument.sectorName ?? "-",
+      sectorCode: r.instrument.sectorCode,
       date: etf
         ? (strategy?.date ?? analysis.asOfDate)
         : (r.snapshot.tradeDate ?? analysis.asOfDate),
@@ -199,6 +208,7 @@ export function marketSignals(
     ActualExecution<string>,
     "symbol" | "market" | "date" | "side" | "shares"
   >[] = [],
+  sectorContext: DashboardSectorContext | null = null,
 ): DashboardMarketSignals {
   const result: DashboardMarketSignals = {
     market,
@@ -229,8 +239,13 @@ export function marketSignals(
             (row.kospiEntry?.originDate ?? row.etfEntry?.originDate)!,
           ).has(row.symbol)
         : sold.has(row.symbol);
+    const sectorLimit = dashboardSectorLimit(row, sectorContext);
     if (market === "KOSPI" && row.kospiEntry?.state === "pending" && !holding && !consumed)
-      result.pending!.push({ ...row, reason: "8.0 Onset · 다음 거래일 종가 확인 대기" });
+      result.pending!.push({
+        ...row,
+        sectorLimit,
+        reason: "8.0 Onset · 다음 거래일 종가 확인 대기",
+      });
     if (
       market === "ETF" &&
       row.etfEntry?.version === ETF_POLICY.version &&
@@ -244,6 +259,7 @@ export function marketSignals(
     if (row.onset && !holding && !consumed) {
       result.onsets.push({
         ...row,
+        sectorLimit,
         reason:
           market === "US"
             ? "A0 신규 진입"

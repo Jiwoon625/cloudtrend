@@ -179,3 +179,82 @@ describe("combined dashboard confirmation list", () => {
     }
   });
 });
+
+describe("Korean sector-limit badges", () => {
+  const withLimits = () => {
+    const value = data(1, 1);
+    for (const market of value.markets) {
+      for (const row of [...market.onsets, ...(market.pending ?? [])]) {
+        if (row.market !== "KOSPI" && row.market !== "KOSDAQ") continue;
+        row.sectorLimit = {
+          status: "blocked",
+          count: 6,
+          limit: row.market === "KOSPI" ? 3 : 6,
+          cap: row.market === "KOSPI" ? 0.1 : 0.2,
+          maxPositions: 30,
+          asOfDate: date,
+          issue: null,
+        };
+      }
+    }
+    return value;
+  };
+  it("keeps entry signals and scores visible with count/limit and explicit block text", () => {
+    const html = renderList(withLimits());
+    expect(html).toContain("섹터 제한 · 6/3종목");
+    expect(html).toContain("섹터 제한 · 6/6종목");
+    expect(html).toContain("추가 진입 제한");
+    expect(html).toContain(`전략 장부 기준 ${date}`);
+    expect(html).toContain("KOSPI 한도 10% · 국내 30슬롯");
+    expect(html).toContain("KOSDAQ 한도 20% · 국내 30슬롯");
+    expect(html).toContain("KOSPI ready 99");
+    expect(html).toContain("KOSDAQ ready 99");
+    expect(html).toContain("8.5 / 10");
+    expect(html).toContain("진입 준비 (3)");
+    expect(html).toContain("예정 청산은 미차감");
+    expect(html).toContain("슬롯은 미예약");
+    expect(html).toContain("진입을 보장하지 않습니다");
+  });
+  it("labels pending KOSPI without implying confirmation completion or restricting ETFs", () => {
+    state.tab = "pending";
+    const html = renderList(withLimits());
+    expect(html).toContain("섹터 제한 · 6/3종목");
+    expect(html.match(/data-sector-status=/g)).toHaveLength(1);
+    expect(html).toContain("다음 거래일 종가 확인 대기");
+    expect(html).toContain("ETF pending 0");
+  });
+  it("uses neutral snapshot room and preserves zero", () => {
+    const value = withLimits();
+    const badge = value.markets[0]!.onsets[0]!.sectorLimit!;
+    badge.status = "room";
+    badge.count = 0;
+    const html = renderList(value);
+    expect(html).toContain("섹터 여유 · 0/3종목");
+    expect(html).not.toContain("진입 가능");
+  });
+  it("shows missing or stale data as unknown with the saved date", () => {
+    expect(renderList(data(1, 1))).toContain("섹터 미확인 · —/—종목");
+    const value = withLimits();
+    const badge = value.markets[0]!.onsets[0]!.sectorLimit!;
+    badge.status = "unknown";
+    badge.asOfDate = "2026-09-30";
+    badge.issue = "신호·장부 기준일 불일치";
+    const html = renderList(value);
+    expect(html).toContain("섹터 미확인 · 6/3종목");
+    expect(html).toContain("신호·장부 기준일 불일치");
+    expect(html).toContain("전략 장부 기준 2026-09-30");
+  });
+  it("keeps labels and Korean-sector notes off US-only and EXIT views", () => {
+    state.market = "US";
+    let html = renderList(withLimits());
+    expect(html).not.toContain("data-sector-status");
+    expect(html).not.toContain("섹터 보유 수는");
+    state.market = "ALL";
+    state.tab = "exits";
+    const value = withLimits();
+    value.markets[0]!.exits = value.markets[0]!.onsets;
+    html = renderList(value);
+    expect(html).not.toContain("data-sector-status");
+    expect(html).not.toContain("섹터 보유 수는");
+  });
+});
