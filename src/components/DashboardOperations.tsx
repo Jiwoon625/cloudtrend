@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { StrategyDescription } from "./StrategyDescription";
-import { UsOrderPreview } from "./UsOrderPreview";
 import { supabase } from "@/lib/cloud";
 import { formatCount, formatKstDateTime } from "@/lib/format";
 import {
@@ -227,9 +226,6 @@ export function DashboardSignalCounts({
 export function UsDashboardPortfolio({ query }: { query: OperationsQuery }) {
   const portfolio = query.data?.usPortfolio;
   const fallback = query.isPending ? "불러오는 중…" : query.isError ? "조회 실패" : "미확인";
-  const previewError = query.isError
-    ? "저장된 미국 모델 자료를 불러오지 못했습니다."
-    : query.data?.warnings.find((warning) => warning.startsWith("US 주문 미리보기"));
   return (
     <div className="min-w-0 space-y-4">
       <section
@@ -260,12 +256,6 @@ export function UsDashboardPortfolio({ query }: { query: OperationsQuery }) {
           포트폴리오 상세 보기 →
         </Link>
       </section>
-      <UsOrderPreview
-        bundle={query.data?.usOrderPreview ?? null}
-        compact
-        isPending={query.isPending}
-        error={previewError ?? null}
-      />
     </div>
   );
 }

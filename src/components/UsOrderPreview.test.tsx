@@ -323,7 +323,7 @@ describe("US saved model order preview", () => {
   });
 });
 
-describe("dashboard model preview integration", () => {
+describe("dashboard portfolio without the model preview card", () => {
   const query = (changes: Partial<DashboardOperations> = {}, flags = {}) =>
     ({
       data: {
@@ -339,33 +339,38 @@ describe("dashboard model preview integration", () => {
       ...flags,
     }) as Parameters<typeof UsDashboardPortfolio>[0]["query"];
 
-  it("keeps model quantities visible in a separate card even without an actual account", () => {
+  it("keeps the actual account summary and link while leaving model plans to the US portfolio", () => {
     const html = renderToStaticMarkup(<UsDashboardPortfolio query={query()} />);
     expect(html).toContain('aria-label="미국주식 A0 포트폴리오"');
-    expect(html).toContain('aria-label="A0 모델 조정 미리보기"');
     expect(html).toContain("실제 체결 원장 기준 · USD");
-    expect(html).toContain("BUY1");
-    expect(html).toContain("추가 매수 15주 추정");
-    expect(html).toContain("FUND1");
-    expect(html).toContain("실계좌 권장수량: 미산출");
+    expect(html).toContain('href="/us/portfolio"');
+    expect(html).toContain("포트폴리오 상세 보기 →");
+    expect(html).toContain("min-w-0");
+    expect(html).not.toContain("모델 조정 미리보기");
+    expect(html).not.toContain("다음 분기 비중조정");
+    expect(html).not.toContain("다음 정규장 대기 조정");
+    expect(html).not.toContain("BUY1");
+    expect(html).not.toContain("FUND1");
   });
 
-  it("surfaces preview-specific failures but not unrelated warnings as preview errors", () => {
-    const failure = renderToStaticMarkup(
+  it.each([
+    [{}, "미확인"],
+    [{ isPending: true }, "불러오는 중…"],
+    [{ isError: true }, "조회 실패"],
+  ])("does not restore the preview for missing, loading, or failed data: %o", (flags, fallback) => {
+    const html = renderToStaticMarkup(
       <UsDashboardPortfolio
-        query={query({ usOrderPreview: null, warnings: ["US 주문 미리보기: 저장 자료 조회 실패"] })}
+        query={query(
+          { usOrderPreview: null, warnings: ["US 주문 미리보기: 저장 자료 조회 실패"] },
+          flags,
+        )}
       />,
     );
-    expect(failure).toContain("모델 조정 미리보기 조회 실패");
-    expect(failure).toContain("저장 자료 조회 실패");
-    const unrelated = renderToStaticMarkup(
-      <UsDashboardPortfolio query={query({ warnings: ["US 실제 원장 조회 실패"] })} />,
-    );
-    expect(unrelated).not.toContain("모델 조정 미리보기 조회 실패");
-    const requestFailure = renderToStaticMarkup(
-      <UsDashboardPortfolio query={query({ usOrderPreview: null }, { isError: true })} />,
-    );
-    expect(requestFailure).toContain("저장된 미국 모델 자료를 불러오지 못했습니다");
+    expect(html).toContain(fallback);
+    expect(html).toContain('href="/us/portfolio"');
+    expect(html).not.toContain("모델 조정 미리보기");
+    expect(html).not.toContain("다음 분기 비중조정");
+    expect(html).not.toContain("저장 자료 조회 실패");
   });
 });
 
@@ -402,9 +407,26 @@ describe("portfolio saved snapshot preview integration", () => {
   it("renders the selected model snapshot preview and removes the conflicting target-notional table", () => {
     const html = renderPortfolio();
     expect(html).toContain("A0 분기 · β Anchor 모델 조정 미리보기");
-    expect(html).toContain("BUY1");
-    expect(html).toContain("FUND1");
-    expect(html).toContain("예상 조정수량");
+    for (const text of [
+      "다음 분기 비중조정 · 2027Q1",
+      "2026-12-30",
+      "2026-12-31",
+      "2027-01-04",
+      "가정 미리보기 · 확정 전",
+      "BUY1",
+      "10주 → 25주",
+      "15주 추정",
+      "다음 정규장 대기 조정",
+      "FUND1",
+      "50주 → 45주",
+      "5주 추정",
+      "신규 진입 자금 마련 · 기존 보유 축소",
+      "예상 조정수량",
+      "실계좌 권장수량: 미산출",
+      "overflow-x-auto",
+      "min-w-0",
+    ])
+      expect(html).toContain(text);
     expect(html).not.toContain("다음 정규장 모델 주문 대기</h2>");
     expect(html).not.toContain("목표금액</th>");
   });
