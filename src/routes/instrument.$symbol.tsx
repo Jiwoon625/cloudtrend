@@ -238,8 +238,12 @@ function InstrumentDetail() {
           className="mt-3 rounded-md border border-border bg-card p-3"
           aria-label="KOSPI 확인 기록"
         >
-          <h2 className="mb-1 text-xs font-semibold">KOSPI 하루 확인 기록</h2>
+          <h2 className="mb-1 text-xs font-semibold">KOSPI 하루·시장국면 확인 기록</h2>
           <KospiEntryDetails entry={row.kospiEntry} showState />
+          <p className="mt-2 text-[10px] text-muted-foreground">
+            Onset일과 체결 직전 마지막 완료 거래일의 Risk-On/Neutral 확인이 필요합니다.
+            하락장·결측·오래된 시장자료로 취소된 후보는 새 Onset 없이 다시 진입하지 않습니다.
+          </p>
         </section>
       ) : null}
 

@@ -1,3 +1,4 @@
+import { kospiEntryGates, kospiGateDataset } from "../../tests/kospi-policy-fixtures";
 import { describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -314,6 +315,7 @@ const confirmedSnapshot = () => ({
       operationalSignalVersion: OPERATIONAL_SIGNAL_VERSION,
       kospiEntry: {
         version: KOSPI_ENTRY_POLICY.version,
+        marketGate: kospiEntryGates(),
         date: "2026-10-02",
         originDate: "2026-10-01",
         confirmationDate: "2026-10-02",
@@ -329,16 +331,20 @@ const confirmedSnapshot = () => ({
 });
 const confirmationCsv = (middle: string) =>
   [
-    "symbol,date,market,open,high,low,close,volume",
+    "symbol,date,market,open,high,low,close,volume,foreignnetbuyvalue",
+    ...kospiGateDataset([
+      "2026-10-01",
+      "2026-10-02",
+      "2026-10-06",
+      "2026-10-07",
+    ]).indexSeries[0]!.bars.map(
+      (b) => `KOSPI,${b.tradeDate},INDEX,${b.open},${b.high},${b.low},${b.close},${b.volume},10`,
+    ),
     "A,2026-01-02,KOSDAQ,100,110,90,105,1000",
     "C,2026-10-01,KOSPI,100,110,90,105,1000",
     "C,2026-10-02,KOSPI,100,110,90,105,1000",
     middle,
     "C,2026-10-07,KOSPI,110,120,100,115,1000",
-    "KOSPI,2026-10-01,INDEX,100,110,90,105,1000",
-    "KOSPI,2026-10-02,INDEX,100,110,90,105,1000",
-    "KOSPI,2026-10-06,INDEX,100,110,90,105,1000",
-    "KOSPI,2026-10-07,INDEX,100,110,90,105,1000",
   ]
     .filter(Boolean)
     .join("\n");
@@ -369,7 +375,7 @@ describe("confirmation source and persistence integration", () => {
     const previousCsv = csv;
     try {
       csv = confirmationCsv("").replace(
-        "KOSPI,2026-10-06,INDEX,100,110,90,105,1000",
+        /^KOSPI,2026-10-06,.*$/m,
         "D,2026-10-06,KOSPI,100,110,90,105,1000",
       );
       const db = database();

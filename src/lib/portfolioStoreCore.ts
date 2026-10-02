@@ -1,3 +1,4 @@
+import { evaluateKospiMarketGateAtDate } from "./engine/kospiMarketGate";
 import { STRATEGY_CONFIG } from "@/lib/engine/operationalStrategy";
 import {
   normalizeSnapshots,
@@ -5,7 +6,7 @@ import {
   isEntryOnset,
   operationalExit,
   firstBarAfter,
-  nextConfirmedEntry,
+  nextKospiConfirmedEntry,
   heldDuringEntryWindow,
   barOnOrBefore,
   holdingDays,
@@ -428,6 +429,9 @@ export function createPortfolioStore({
       .find((series) => series.indexCode === "KOSPI")
       ?.bars.map((bar) => bar.tradeDate);
     const marketDates = [...new Set([...(benchmarkDates ?? []), ...dataset.tradeDates])].sort();
+    const marketGates = Object.fromEntries(
+      marketDates.map((date) => [date, evaluateKospiMarketGateAtDate(dataset, date)]),
+    );
     const candidates: EntryCandidate[] = [];
     for (const snapshot of snapshots) {
       for (const entry of snapshot.entries) {
@@ -440,8 +444,12 @@ export function createPortfolioStore({
           continue;
         const entryBar =
           instrument.market === "KOSPI"
-            ? nextConfirmedEntry(dataset.bars[entry.symbol] ?? [], snapshot.asOfDate, marketDates)
-                .bar
+            ? nextKospiConfirmedEntry(
+                dataset.bars[entry.symbol] ?? [],
+                entry.kospiEntry!,
+                marketDates,
+                marketGates,
+              ).bar
             : firstBarAfter(dataset.bars[entry.symbol] ?? [], snapshot.asOfDate);
         if (
           !entryBar ||

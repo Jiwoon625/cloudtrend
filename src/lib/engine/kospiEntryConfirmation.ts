@@ -2,11 +2,12 @@ import type { MarketDataset } from "./dataset";
 import type { DailyPrice } from "./types";
 import { computeIndicators } from "./indicators";
 import { ALL_AVAILABLE, evaluateUniverse, type ScoringConfig } from "./scoring";
+import { evaluateKospiMarketGateAtDate, type KospiMarketGateEvidence } from "./kospiMarketGate";
 import { historicalInstrumentScore } from "./historicalInstrumentScore";
 
 /** Adopted 2026-10-02 KST. This is a prospective entry policy, not a backtest rewrite. */
 export const KOSPI_ENTRY_POLICY = {
-  version: "kospi-e8-confirm1-rsaccel-v2",
+  version: "kospi-e8-confirm1-rsaccel-bear-v3",
   effectiveConfirmationDate: "2026-10-02",
   entryScore: 8,
   upsideExitScore: 9.5,
@@ -21,6 +22,12 @@ export interface KospiEntrySnapshot {
   rsAccel: number | null;
   score: number | null;
   originScore: number | null;
+  marketGate?:
+    | {
+        origin: KospiMarketGateEvidence | null;
+        confirmation: KospiMarketGateEvidence | null;
+      }
+    | undefined;
   /** Prospective, date-bound eligibility; never evidence of an actual fill. */
   eligible: boolean;
 }
@@ -30,6 +37,7 @@ export interface KospiEntryObservation {
   eligible: boolean;
   observed: boolean;
   rsAccel: number | null;
+  marketGate?: KospiMarketGateEvidence | undefined;
 }
 const finite = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 const positive = (x: unknown): x is number => finite(x) && x > 0;
@@ -64,6 +72,10 @@ export function kospiEntryConfirmation(
     score: finite(current.score) ? current.score : null,
     originScore: awaiting ? previous!.score : pending ? current.score : null,
     eligible: false,
+    marketGate: {
+      origin: (awaiting ? previous?.marketGate : pending ? current.marketGate : null) ?? null,
+      confirmation: awaiting ? (current.marketGate ?? null) : null,
+    },
   };
   if (awaiting) {
     if (current.observed && !current.eligible) result.issues.push("확인일 대상 부적격");
@@ -97,6 +109,40 @@ export function kospiEntryConfirmation(
     result.state = "unobservable";
     result.issues.push("연속 거래일 관측 부족 · 신규 돌파/확인 여부 미확인");
   }
+  // The dated guard is prospective. Older reconstructed states stay reference-only.
+  if ((awaiting || pending) && current.date >= KOSPI_ENTRY_POLICY.effectiveConfirmationDate) {
+    const checks = [
+      { label: "발생일", date: result.originDate!, gate: result.marketGate!.origin },
+      ...(awaiting
+        ? [{ label: "확인일", date: current.date, gate: result.marketGate!.confirmation }]
+        : []),
+    ];
+    let unknown = false;
+    let bear = false;
+    for (const check of checks) {
+      if (
+        !check.gate ||
+        check.gate.date !== check.date ||
+        check.gate.status === "UNKNOWN" ||
+        check.gate.incomplete ||
+        check.gate.evaluatedCount !== 4 ||
+        check.gate.issues.length > 0
+      ) {
+        unknown = true;
+        result.issues.push(
+          `${check.label} 시장국면 미확인 · 신규매수 제한${check.gate?.issues.length ? ` (${check.gate.issues.join(", ")})` : ""}`,
+        );
+      } else if (check.gate.status === "RISK_OFF") {
+        bear = true;
+        result.issues.push(`${check.label} 불황(RISK_OFF) · 신규매수 제한 · 새 Onset 필요`);
+      }
+    }
+    if (bear || unknown) {
+      result.eligible = false;
+      // An observed failure stays a rejection even if another prerequisite is unknown.
+      result.state = bear || result.state === "rejected" ? "rejected" : "unobservable";
+    }
+  }
   return result;
 }
 
@@ -115,7 +161,22 @@ export function isKospiEntryReady(s: KospiEntrySnapshot | undefined, asOfDate?: 
     s.score >= 8 &&
     finite(s.rsAccel) &&
     s.rsAccel > 0 &&
-    s.issues.length === 0
+    s.issues.length === 0 &&
+    !!s.marketGate &&
+    [
+      [s.marketGate.origin, s.originDate],
+      [s.marketGate.confirmation, s.confirmationDate],
+    ].every(([gate, date]) => {
+      const g = gate as KospiMarketGateEvidence | null;
+      return (
+        !!g &&
+        g.date === date &&
+        !g.incomplete &&
+        g.evaluatedCount === 4 &&
+        g.issues.length === 0 &&
+        (g.status === "RISK_ON" || g.status === "NEUTRAL")
+      );
+    })
   );
 }
 
@@ -151,7 +212,9 @@ export function kospiRelativeReturns(
 /** Reconstruct only the three required closes from dated source data, not run counts or saved labels. */
 export function buildKospiEntrySnapshot(ds: MarketDataset, symbol: string, cfg: ScoringConfig) {
   const benchmark = ds.indexSeries.find((s) => s.indexCode === "KOSPI")?.bars ?? [];
-  const sessions = [...new Set([...ds.tradeDates, ...benchmark.map((b) => b.tradeDate)])]
+  const sessions = [
+    ...new Set([...(ds.kospiGateDates ?? ds.tradeDates), ...benchmark.map((b) => b.tradeDate)]),
+  ]
     .filter((d) => d <= ds.asOfDate)
     .sort();
   const bars = ds.bars[symbol] ?? [];
@@ -162,7 +225,9 @@ export function buildKospiEntrySnapshot(ds: MarketDataset, symbol: string, cfg: 
     const bar = bars[index];
     const observed = !!bar && benchmark.some((b) => b.tradeDate === date && positive(b.close));
     const rs = kospiRelativeReturns(bars, benchmark, sessions, date);
-    if (!observed) return { date, score: null, eligible: false, observed: false, rsAccel: null };
+    const marketGate = evaluateKospiMarketGateAtDate(ds, date);
+    if (!observed)
+      return { date, score: null, eligible: false, observed: false, rsAccel: null, marketGate };
     const snap = computeIndicators(bars, index);
     const score = historicalInstrumentScore(ds, symbol, index, cfg, snap).points;
     const universe = evaluateUniverse(
@@ -177,7 +242,14 @@ export function buildKospiEntrySnapshot(ds: MarketDataset, symbol: string, cfg: 
     );
     const prior20 = bars.slice(Math.max(0, index - 20), index);
     const liquid = prior20.length < 20 || prior20.filter((b) => b.volume > 0).length >= 10;
-    return { date, score, observed, eligible: universe.passed && liquid, rsAccel: rs.rsAccel };
+    return {
+      date,
+      score,
+      observed,
+      eligible: universe.passed && liquid,
+      rsAccel: rs.rsAccel,
+      marketGate,
+    };
   };
   // asOfDate must itself have a market observation, even when all symbol bars are stale.
   const i = sessions.indexOf(ds.asOfDate);

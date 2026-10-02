@@ -1,3 +1,4 @@
+import { evaluateKospiMarketGateAtDate, type KospiMarketGateEvidence } from "./kospiMarketGate";
 import {
   buildKospiEntrySnapshot,
   isKospiEntryReady,
@@ -159,6 +160,7 @@ export interface AnalysisResult {
   capabilities: DatasetCapabilities;
   notes: string[];
   marketGate: MarketGate;
+  kospiMarketGate?: KospiMarketGateEvidence;
   vkospi: number | null;
   kospi: IndicatorSnapshot;
   kosdaq: IndicatorSnapshot;
@@ -576,7 +578,8 @@ export function runAnalysis(
         dated.current.observed && dated.current.eligible,
       ),
     );
-    row.kospi80Onset = dated.entry.state === "pending";
+    // Preserve the raw onset for a blocked badge; readiness is independently guarded.
+    row.kospi80Onset = dated.entry.originDate === ds.asOfDate;
     row.kospiEightPointEntry = isKospiEntryReady(dated.entry, ds.asOfDate);
     row.rs20 = dated.rs20;
     row.rs60 = dated.rs60;
@@ -690,6 +693,7 @@ export function runAnalysis(
     capabilities: ds.capabilities,
     notes: ds.notes,
     marketGate: gate,
+    kospiMarketGate: evaluateKospiMarketGateAtDate(ds, ds.asOfDate),
     vkospi,
     kospi,
     kosdaq,

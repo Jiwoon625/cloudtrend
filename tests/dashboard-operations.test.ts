@@ -408,7 +408,7 @@ describe("ETF registration and dashboard preservation", () => {
     const source = readFileSync(new URL("../src/routes/index.tsx", import.meta.url), "utf8");
     for (const preserved of [
       "KOSPI / KOSDAQ 포트폴리오",
-      "시장 상태 · 참고",
+      "KOSPI 시장 상태 · 신규 진입 조건",
       "Sector Rotation · 전체 섹터",
       "주식 Universe 검사 생략 사유",
       "PdfExportButton",

@@ -1,3 +1,4 @@
+import { kospiEntryGates, kospiGate } from "../../tests/kospi-policy-fixtures";
 import { describe, expect, it } from "vitest";
 import {
   calculateActual,
@@ -66,7 +67,7 @@ const buy = (id: string, overrides: Partial<ActualExecution> = {}): ActualExecut
 
 describe("portfolio ledger rule version", () => {
   it("invalidates cached strategy ledgers after held signal-priority rules change", () => {
-    expect(LEDGER_VERSION).toBe(2);
+    expect(LEDGER_VERSION).toBe(3);
   });
 });
 
@@ -244,6 +245,7 @@ const policyEntry = (
   operationalSignalVersion: OPERATIONAL_SIGNAL_VERSION,
   kospiEntry: {
     version: KOSPI_ENTRY_POLICY.version,
+    marketGate: kospiEntryGates(),
     date: "2026-10-02",
     originDate: "2026-10-01",
     confirmationDate: "2026-10-02",
@@ -342,6 +344,9 @@ describe("prospective KOSPI confirmation replay", () => {
       [policySnapshot([policyEntry()])],
       { A: prices },
       { A: "KOSPI" },
+      "",
+      prices.map((bar) => bar.tradeDate),
+      { "2026-10-06": kospiGate("2026-10-06") },
     );
     expect(suspended.trades[0]?.entryDate).toBe("2026-10-07");
     const missing = simulateStrategy(
@@ -540,5 +545,157 @@ describe("confirmation candidate provenance", () => {
     );
     expect(model.candidates[0]?.decision).toBe("익일 확인 대기");
     expect(model.trades).toHaveLength(0);
+  });
+});
+
+describe("dated KOSPI pre-fill bear guard", () => {
+  const days = ["2026-10-01", "2026-10-02", "2026-10-06", "2026-10-07", "2026-10-08"];
+  const delayed = () =>
+    policyBars(days).map((bar) =>
+      bar.tradeDate === "2026-10-06" ? { ...bar, volume: 0, open: 0 } : bar,
+    );
+  it("uses the last completed session before fill and never defers rejected fills to a later bull day", () => {
+    const gates = {
+      "2026-10-06": kospiGate("2026-10-06", "RISK_OFF"),
+      "2026-10-07": kospiGate("2026-10-07", "RISK_ON"),
+    };
+    const result = simulateStrategy(
+      settings,
+      [policySnapshot([policyEntry()])],
+      { A: delayed() },
+      { A: "KOSPI" },
+      "",
+      days,
+      gates,
+    );
+    expect(result.trades).toHaveLength(0);
+    expect(result.candidates[0]?.decision).toContain("체결 전 완료일 불황");
+    expect(result.candidates[0]?.decision).toContain("2026-10-06");
+    expect(result.candidates[0]?.entryDate).toBeNull();
+    expect(
+      simulateStrategy(
+        settings,
+        [policySnapshot([policyEntry()])],
+        { A: delayed() },
+        { A: "KOSPI" },
+        "",
+        days,
+        gates,
+      ).trades,
+    ).toEqual(result.trades);
+  });
+  it("does not look ahead to the fill-day bear close", () => {
+    const gates = {
+      "2026-10-06": kospiGate("2026-10-06", "NEUTRAL"),
+      "2026-10-07": kospiGate("2026-10-07", "RISK_OFF"),
+    };
+    const result = simulateStrategy(
+      settings,
+      [policySnapshot([policyEntry()])],
+      { A: delayed() },
+      { A: "KOSPI" },
+      "",
+      days,
+      gates,
+    );
+    expect(result.trades[0]?.entryDate).toBe("2026-10-07");
+  });
+  it("blocks missing or stale prefill evidence instead of using a later current regime", () => {
+    for (const gates of [
+      {},
+      { "2026-10-06": kospiGate("2026-10-02") },
+      { "2026-10-06": kospiGate("2026-10-06", "UNKNOWN") },
+      { "2026-10-07": kospiGate("2026-10-07") },
+    ]) {
+      const result = simulateStrategy(
+        settings,
+        [policySnapshot([policyEntry()])],
+        { A: delayed() },
+        { A: "KOSPI" },
+        "",
+        days,
+        gates,
+      );
+      expect(result.trades).toHaveLength(0);
+      expect(result.candidates[0]?.decision).toContain("시장국면 미확인");
+    }
+  });
+  it("retains held UP95 liquidation during bear conditions", () => {
+    const bought = policySnapshot([policyEntry()]);
+    const exit = policySnapshot(
+      [{ ...policyEntry(), kospiEntry: undefined, exitSignal: "UP95" }],
+      "2026-10-06",
+    );
+    const result = simulateStrategy(
+      settings,
+      [bought, exit],
+      { A: policyBars(days) },
+      { A: "KOSPI" },
+      "",
+      days,
+      { "2026-10-06": kospiGate("2026-10-06", "RISK_OFF") },
+    );
+    expect(result.trades[0]).toMatchObject({
+      entryDate: "2026-10-06",
+      exitDate: "2026-10-07",
+      exitReason: "9.5점 상향돌파",
+    });
+  });
+});
+
+describe("KOSPI suspended candidate cancellation boundary", () => {
+  it("never revives a bear-confirmation rejection after suspension and a neutral return", () => {
+    const rejected = policyEntry("rejected", {
+      eligible: false,
+      issues: ["확인일 불황(RISK_OFF) · 신규매수 제한"],
+      marketGate: {
+        origin: kospiGate("2026-10-01"),
+        confirmation: kospiGate("2026-10-02", "RISK_OFF"),
+      },
+    });
+    const prices = policyBars();
+    prices[2] = { ...prices[2]!, volume: 0, open: 0 };
+    const result = simulateStrategy(
+      settings,
+      [policySnapshot([rejected])],
+      { A: prices },
+      { A: "KOSPI" },
+      "",
+      prices.map((bar) => bar.tradeDate),
+      { "2026-10-06": kospiGate("2026-10-06", "NEUTRAL") },
+    );
+    expect(result.trades).toHaveLength(0);
+    expect(result.candidates[0]?.decision).toContain("확인일 불황");
+  });
+  it("does not label an all-suspended waiting interval a terminal bear cancellation", () => {
+    const prices = policyBars();
+    prices[2] = { ...prices[2]!, volume: 0, open: 0 };
+    prices[3] = { ...prices[3]!, volume: 0, open: 0 };
+    const waiting = simulateStrategy(
+      settings,
+      [policySnapshot([policyEntry()])],
+      { A: prices.slice(0, 3) },
+      { A: "KOSPI" },
+      "",
+      prices.slice(0, 3).map((bar) => bar.tradeDate),
+      { "2026-10-06": kospiGate("2026-10-06", "RISK_OFF") },
+    );
+    expect(waiting.trades).toHaveLength(0);
+    expect(waiting.candidates[0]?.decision).toContain("대기");
+    expect(waiting.candidates[0]?.decision).not.toContain("새 Onset 필요");
+    prices.push({ ...prices[0]!, tradeDate: "2026-10-08" });
+    const filled = simulateStrategy(
+      settings,
+      [policySnapshot([policyEntry()])],
+      { A: prices },
+      { A: "KOSPI" },
+      "",
+      prices.map((bar) => bar.tradeDate),
+      {
+        "2026-10-06": kospiGate("2026-10-06", "RISK_OFF"),
+        "2026-10-07": kospiGate("2026-10-07", "NEUTRAL"),
+      },
+    );
+    expect(filled.trades[0]?.entryDate).toBe("2026-10-08");
   });
 });

@@ -145,8 +145,9 @@ export function DashboardSignalCounts({
         오늘의 진입 준비/EXIT
       </h2>
       <p className="mb-2 text-[10px] leading-relaxed text-muted-foreground">
-        시장별 최신 확정 거래일 기준 · KOSPI는 하루 확인·RSAccel 조건을 통과한 진입 준비만 집계 ·
-        EXIT는 실제 보유종목 기준입니다.
+        시장별 최신 확정 거래일 기준 · KOSPI는 하루 확인·RSAccel·시장국면 조건을 통과한 진입 준비만
+        집계 · KOSPI는 체결 직전 완료 거래일 시장국면을 다시 확인하며, EXIT는 실제 보유종목
+        기준입니다.
       </p>
       <table className="w-full text-[12px]">
         <thead>
@@ -402,7 +403,8 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
         <p className="mt-1 text-[10px] text-muted-foreground">
           시장 간 점수를 서로 비교하지 않습니다. 확인대기는 KOSPI·ETF의 다음 거래일 확인 전
           종목이며, 자료 미수신·확인 탈락은 포함하지 않습니다. 진입 준비는 시장별 우선순위 순,
-          EXIT는 실제 보유종목 기준입니다. ETF 진입 준비·EXIT는 ETF 조건 상세에서 확인합니다.
+          KOSPI는 체결 직전 완료 거래일 시장국면을 다시 확인하며, EXIT는 실제 보유종목 기준입니다.
+          ETF 진입 준비·EXIT는 ETF 조건 상세에서 확인합니다.
         </p>
         {tab !== "exits" && selectedMarkets.some((m) => m === "KOSPI" || m === "KOSDAQ") ? (
           <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">

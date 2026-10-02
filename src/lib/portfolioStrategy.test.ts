@@ -1,3 +1,4 @@
+import { kospiEntryGates } from "../../tests/kospi-policy-fixtures";
 import { describe, expect, it, vi } from "vitest";
 vi.mock("./cloud", () => ({ supabase: {}, userId: vi.fn() }));
 vi.mock("./manualDataStore", () => ({ ensureManualDataset: vi.fn() }));
@@ -44,6 +45,7 @@ describe("portfolio consumes KOSPI operational signals", () => {
           ...getOperationalSignals("KOSPI", 7.5, 8, true),
           kospiEntry: {
             version: KOSPI_ENTRY_POLICY.version,
+            marketGate: kospiEntryGates(),
             date: "2026-10-02",
             originDate: "2026-10-01",
             confirmationDate: "2026-10-02",

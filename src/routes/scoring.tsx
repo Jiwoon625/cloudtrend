@@ -24,7 +24,7 @@ export const Route = createFileRoute("/scoring")({
       {
         name: "description",
         content:
-          "CloudTrend V8 Final 10점 기술점수, KOSPI 하루 확인·RSAccel 진입과 KOSDAQ Onset·Exit 규칙과 우선점수 구조를 확인하고 스크리닝 데이터를 입력합니다.",
+          "CloudTrend V8 Final 10점 기술점수, KOSPI 하루 확인·RSAccel·하락장 신규진입 차단과 KOSDAQ Onset·Exit 규칙과 우선점수 구조를 확인하고 스크리닝 데이터를 입력합니다.",
       },
       { property: "og:title", content: "데이터 입력 및 V8 Final 산식 | CloudTrend" },
       { property: "og:description", content: "검증 완료된 V8 Final 운영모델과 데이터 입력 화면." },
@@ -92,8 +92,8 @@ function ScoringPage() {
       <div className="mb-4">
         <h1 className="text-xl font-bold tracking-tight">데이터 입력 및 {VF_MODEL_LABEL} 산식</h1>
         <p className="text-[12px] text-muted-foreground">
-          V8 Final 10점 기술점수와 KOSPI 하루 확인·RSAccel 진입, KOSDAQ 운영규칙을 사용합니다. 운영
-          배점은 고정되어 있으며 화면에서 직접 변경하지 않습니다.
+          V8 Final 10점 기술점수와 KOSPI 하루 확인·RSAccel·하락장 신규진입 차단, KOSDAQ 운영규칙을
+          사용합니다. 운영 배점은 고정되어 있으며 화면에서 직접 변경하지 않습니다.
         </p>
       </div>
 
@@ -116,7 +116,7 @@ function ScoringPage() {
             </Button>
             <span className="text-[11px] text-muted-foreground">
               {hasData
-                ? "V8 Final 10점 점수, KOSPI 하루 확인·RSAccel 진입, KOSDAQ Onset과 Exit 신호를 계산합니다."
+                ? "V8 Final 10점 점수, KOSPI 하루 확인·RSAccel·하락장 신규진입 차단, KOSDAQ Onset과 Exit 신호를 계산합니다."
                 : "먼저 데이터를 입력하고 데이터 적용을 눌러 주세요."}
             </span>
           </div>
@@ -214,13 +214,15 @@ function ScoringPage() {
 
         <Section
           title="5. Market Gate"
-          desc="시장 상태는 참고정보입니다. KOSPI 하루 확인·RSAccel 조건과 KOSDAQ 진입·Exit 규칙은 Gate와 별도로 적용합니다."
+          desc="KOSPI 신규 진입에는 Onset일과 체결 직전 마지막 완료 거래일의 non-bear 시장국면 확인을 적용합니다. KOSDAQ·ETF의 기존 진입·청산 규칙은 유지합니다."
         >
           <div className="flex gap-2 text-[12px]">
             <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
             <p className="leading-relaxed text-muted-foreground">
               KOSPI MA60·일목 구름, 변동성, 외국인 5일 수급으로 Risk-On / Neutral / Risk-Off를 계속
-              표시합니다. 다만 V8 Final 진입·Exit는 기술점수 신호에서 독립적으로 계산합니다.
+              표시합니다. 날짜에 맞는 시장자료가 없거나 오래되면 Unknown으로 진입을 차단합니다.
+              취소된 후보는 새 Onset이 있어야 다시 평가하며, 기존 보유종목의 U9.5·H60 청산은 하락장
+              진입 차단과 관계없이 유지합니다.
             </p>
           </div>
         </Section>

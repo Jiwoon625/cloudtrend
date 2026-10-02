@@ -49,6 +49,15 @@ function indexRows() {
 }
 
 describe("parseManualMarketData large-column CSV path", () => {
+  it("allows explicit index-only parsing for the shared strict market-gate provider", () => {
+    const csv = [header, ...indexRows()].join("\n");
+    expect(() => parseManualMarketData(csv)).toThrow("분석할 종목 일봉이 없습니다");
+    const parsed = parseManualMarketData(csv, { allowIndexOnly: true });
+    expect(parsed.dataset.instruments).toEqual([]);
+    expect(parsed.dataset.indexSeries[0]?.bars).toHaveLength(60);
+    expect(parsed.dataset.vkospiObservations).toHaveLength(60);
+  });
+
   it("reads only engine fields, maps new headers, and de-duplicates across files", () => {
     const stock = [
       "005930",
@@ -76,8 +85,14 @@ describe("parseManualMarketData large-column CSV path", () => {
     expect(parsed.dataset.instruments[0]?.sectorCode).toBe("SEMICONDUCTOR");
     expect(parsed.dataset.bars["005930"]).toHaveLength(1);
     expect(parsed.dataset.bars["005930"]?.[0]?.tradingValue).toBe(70_500_000);
+    expect(parsed.dataset.vkospiObservations?.[19]?.value).toBeNull();
+    expect(parsed.dataset.vkospiObservations?.[20]).toEqual({
+      date: dateAt(20),
+      value: 0,
+      source: "REALIZED_VOLATILITY_KOSPI",
+    });
+    expect(parsed.dataset.vkospiSeries).toHaveLength(40);
   });
-
 
   it("fills short and lending fields from a later overlapping source", () => {
     const supplyHeader = [

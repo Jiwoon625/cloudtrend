@@ -1,6 +1,6 @@
 // Mock data provider — 화면 테스트용 합성 데이터. 실제 시세/재무가 아닙니다.
 // 시드 기반 결정론적 생성: 같은 시드 = 같은 데이터 = 같은 점수.
-import { FULL_CAPABILITIES, type MarketDataset } from "./dataset";
+import { FULL_CAPABILITIES, type KospiVolatilityObservation, type MarketDataset } from "./dataset";
 import type {
   DailyPrice,
   EtfFacts,
@@ -248,16 +248,18 @@ export const INDEX_SERIES: IndexSeries[] = [
   })),
 ];
 
-export const VKOSPI_SERIES: number[] = (() => {
+export const VKOSPI_OBSERVATIONS: KospiVolatilityObservation[] = (() => {
   const rnd = mulberry32(hashSeed("vkospi"));
-  const out: number[] = [];
+  const out: KospiVolatilityObservation[] = [];
   let v = 18;
   for (let i = 0; i < TRADE_DATES.length; i++) {
     v = Math.min(45, Math.max(11, v + (rnd() - 0.5) * 1.8));
-    out.push(Math.round(v * 100) / 100);
+    out.push({ date: TRADE_DATES[i]!, value: Math.round(v * 100) / 100, source: "MOCK_VKOSPI" });
   }
   return out;
 })();
+
+export const VKOSPI_SERIES: number[] = VKOSPI_OBSERVATIONS.map((point) => point.value!);
 
 export const INSTRUMENTS: Instrument[] = ALL_SPECS.map((s) => ({
   id: s.symbol,
@@ -375,5 +377,6 @@ export function getMockDataset(): MarketDataset {
     financials,
     etfFacts,
     vkospiSeries: VKOSPI_SERIES,
+    vkospiObservations: VKOSPI_OBSERVATIONS,
   };
 }

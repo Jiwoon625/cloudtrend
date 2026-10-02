@@ -1,3 +1,4 @@
+import { kospiGate } from "../../../tests/kospi-policy-fixtures";
 import { kospiEntryConfirmation } from "./kospiEntryConfirmation";
 import { describe, expect, it } from "vitest";
 import {
@@ -75,9 +76,30 @@ describe("KOSPI executable strategy", () => {
       instrument: { ...base.instrument, market: "KOSPI" as const },
       ...getOperationalSignals("KOSPI", 8, 8.5, true),
       kospiEntry: kospiEntryConfirmation(
-        { date: "2026-10-05", score: 8.5, rsAccel: 1, eligible: true, observed: true },
-        { date: "2026-10-02", score: 8, rsAccel: -1, eligible: true, observed: true },
-        { date: "2026-10-01", score: 7.5, rsAccel: 0, eligible: true, observed: true },
+        {
+          marketGate: kospiGate("2026-10-05"),
+          date: "2026-10-05",
+          score: 8.5,
+          rsAccel: 1,
+          eligible: true,
+          observed: true,
+        },
+        {
+          marketGate: kospiGate("2026-10-02"),
+          date: "2026-10-02",
+          score: 8,
+          rsAccel: -1,
+          eligible: true,
+          observed: true,
+        },
+        {
+          marketGate: kospiGate("2026-10-01"),
+          date: "2026-10-01",
+          score: 7.5,
+          rsAccel: 0,
+          eligible: true,
+          observed: true,
+        },
       ),
     };
     const exit = {

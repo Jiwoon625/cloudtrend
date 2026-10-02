@@ -1,5 +1,4 @@
 import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
-import { LEGACY_OPERATIONAL_SIGNAL_VERSION } from "./engine/operationalStrategy";
 import type { ScreeningRow, V8ExitSignal } from "@/lib/engine/pipeline";
 import { getDisplayStatus } from "@/lib/statusDisplay";
 
@@ -32,6 +31,7 @@ export interface ScreeningSnapshot {
   sourceRegisteredAt?: string;
   asOfDate: string;
   marketGateStatus: string;
+  kospiMarketGate?: import("./engine/kospiMarketGate").KospiMarketGateEvidence | undefined;
   totalCount: number;
   passedCount: number;
   gradeACount: number;
@@ -75,6 +75,7 @@ export function buildSnapshot(
     asOfDate: string;
     calculatedAt: string;
     marketGate: { status: string };
+    kospiMarketGate?: import("./engine/kospiMarketGate").KospiMarketGateEvidence | undefined;
     rows: ScreeningRow[];
   },
   sourceRegisteredAt?: string,
@@ -111,6 +112,7 @@ export function buildSnapshot(
     ...(sourceRegisteredAt ? { sourceRegisteredAt } : {}),
     asOfDate: analysis.asOfDate,
     marketGateStatus: analysis.marketGate.status,
+    kospiMarketGate: analysis.kospiMarketGate,
     totalCount: entries.length,
     passedCount: passed.length,
     gradeACount: passed.filter((entry) => entry.grade === "A").length,
@@ -145,8 +147,7 @@ export function preservePreAdoptionSnapshot(
 ): ScreeningSnapshot {
   return existing &&
     existing.asOfDate === incoming.asOfDate &&
-    incoming.asOfDate < KOSPI_ENTRY_POLICY.effectiveConfirmationDate &&
-    existing.entries.some((e) => e.operationalSignalVersion === LEGACY_OPERATIONAL_SIGNAL_VERSION)
+    incoming.asOfDate < KOSPI_ENTRY_POLICY.effectiveConfirmationDate
     ? existing
     : incoming;
 }
@@ -169,16 +170,14 @@ export async function persistScreeningSnapshot(
     (data?.snapshot as ScreeningSnapshot | undefined) ?? null,
   );
   if (snapshot !== incoming) return snapshot;
-  const { error: writeError } = await client
-    .from("screening_history")
-    .upsert(
-      {
-        user_id: userId,
-        date: snapshot.asOfDate,
-        snapshot: { ...snapshot, date: snapshot.asOfDate },
-      },
-      { onConflict: "user_id,date" },
-    );
+  const { error: writeError } = await client.from("screening_history").upsert(
+    {
+      user_id: userId,
+      date: snapshot.asOfDate,
+      snapshot: { ...snapshot, date: snapshot.asOfDate },
+    },
+    { onConflict: "user_id,date" },
+  );
   if (writeError) throw writeError;
   return snapshot;
 }

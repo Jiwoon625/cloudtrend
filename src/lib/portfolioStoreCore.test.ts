@@ -1,3 +1,4 @@
+import { kospiEntryGates, kospiGateDataset } from "../../tests/kospi-policy-fixtures";
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createPortfolioStore } from "./portfolioStoreCore";
@@ -6,7 +7,7 @@ import {
   LEGACY_OPERATIONAL_SIGNAL_VERSION,
   OPERATIONAL_SIGNAL_VERSION,
 } from "./engine/operationalStrategy";
-import { NO_CAPABILITIES, type MarketDataset } from "./engine/dataset";
+import { type MarketDataset } from "./engine/dataset";
 import type { DailyPrice, Instrument } from "./engine/types";
 import type { ScreeningSnapshot, SnapshotEntry } from "./screeningSnapshot";
 
@@ -29,6 +30,7 @@ function entry(changes: Partial<KospiEntrySnapshot> = {}): SnapshotEntry {
     operationalSignalVersion: OPERATIONAL_SIGNAL_VERSION,
     kospiEntry: {
       version: KOSPI_ENTRY_POLICY.version,
+      marketGate: kospiEntryGates(),
       date: dates[1]!,
       originDate: dates[0]!,
       confirmationDate: dates[1]!,
@@ -61,20 +63,18 @@ function dataset(): MarketDataset {
     version: "test",
     asOfDate: dates.at(-1)!,
     isLive: false,
-    capabilities: NO_CAPABILITIES,
     notes: [],
     sectors: [],
-    tradeDates: dates,
     instruments: [{ symbol: "A", market: "KOSPI", instrumentType: "STOCK" } as Instrument],
     bars: {
       A: dates.map(
         (tradeDate) => ({ tradeDate, open: 100, close: 110, volume: 1000 }) as DailyPrice,
       ),
     },
-    indexSeries: [],
     financials: {},
     etfFacts: {},
     vkospiSeries: [],
+    ...kospiGateDataset(dates),
   };
 }
 function database(initialTrades: Record<string, unknown>[] = []) {
