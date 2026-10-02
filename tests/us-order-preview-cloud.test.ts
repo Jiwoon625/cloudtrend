@@ -30,7 +30,7 @@ const preview = buildUsOrderPreview(
   } as UsPortfolioState,
   [],
 )!;
-function rows() {
+function rows(taxProjection: Record<string, unknown> = {}) {
   vi.mocked(supabase.from).mockImplementation(() => {
     const filters: Record<string, unknown> = {};
     const query = {
@@ -52,7 +52,10 @@ function rows() {
               : [],
         error: null,
       })),
-      single: vi.fn(async () => ({ data: { positions: { ABC: position } }, error: null })),
+      single: vi.fn(async () => ({
+        data: { positions: { ABC: position }, ...taxProjection },
+        error: null,
+      })),
     };
     return query as unknown as ReturnType<typeof supabase.from>;
   });
@@ -125,5 +128,17 @@ describe("portfolio preview isolation", () => {
     expect(latest.state["positions"]).toEqual({ ABC: position });
     expect(latest.state.orderPreviewError).toContain("로그인");
     expect(usOrderPreviewsServer).not.toHaveBeenCalled();
+  });
+});
+
+describe("tax source read isolation", () => {
+  it("returns holdings without waiting for expensive tax-history projection", async () => {
+    rows({ initialCapital: 100000 });
+    vi.mocked(usOrderPreviewsServer).mockResolvedValue([]);
+    const result = await loadUsPortfolioSnapshots();
+    const latest = result.find((r) => r.strategy_id === strategyId && r.date === date)!;
+    expect(latest.state["initialCapital"]).toBe(100000);
+    expect(latest.state).not.toHaveProperty("taxEvidence");
+    expect(latest.state["positions"]).toEqual({ ABC: position });
   });
 });

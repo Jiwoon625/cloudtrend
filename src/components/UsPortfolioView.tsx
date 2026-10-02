@@ -7,6 +7,7 @@ import { AppShell } from "@/components/AppShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { UsOrderPreview } from "@/components/UsOrderPreview";
+import { UsModelTaxEstimatePanel } from "@/components/UsModelTaxEstimatePanel";
 import type { UsOrderPreviewBundle } from "@/lib/engine/usProspectiveOrderPreview";
 import {
   loadUsPortfolioSnapshots,
@@ -150,6 +151,7 @@ export function UsPortfolioView({
           onClick={() => {
             void qc.invalidateQueries({ queryKey: ["us-portfolio-snapshots"] });
             void qc.invalidateQueries({ queryKey: ["us-portfolio-trades"] });
+            void qc.invalidateQueries({ queryKey: ["us-model-tax-projection"] });
           }}
         >
           <RefreshCw className="size-3.5" />
@@ -200,6 +202,11 @@ export function UsPortfolioView({
           );
         })}
       </section>
+
+      <UsModelTaxEstimatePanel
+        snapshot={currentPrimary}
+        title={`${LABEL[selectedStrategy] ?? selectedStrategy} · 양도소득세 추정`}
+      />
 
       <section className="rounded-lg border border-border bg-card p-4">
         <div className="mb-3">

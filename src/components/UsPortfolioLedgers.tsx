@@ -3,6 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { UsTaxEstimatePanel } from "./UsTaxEstimatePanel";
+import { UsModelTaxEstimatePanel } from "./UsModelTaxEstimatePanel";
 import { supabase } from "@/lib/cloud";
 import { usActualLedgerServer } from "@/lib/usActualLedger.functions";
 import type {
@@ -12,11 +14,13 @@ import type {
   UsExecution,
 } from "@/lib/usActualLedger";
 import type { UsPortfolioSnapshotRecord } from "@/lib/usProspectiveCloud";
+import { actualUsTaxOverlay } from "@/lib/usTaxOverlay";
 
 const QUERY = ["us-actual-ledger"];
 const usd = (v: number) =>
   `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+const taxToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
 const td = "whitespace-nowrap px-3 py-2";
 type Editor = Omit<UsExecution, "price" | "shares" | "fee"> & {
   price: string;
@@ -91,6 +95,14 @@ export function UsPortfolioLedgers({
   const data = query.data,
     doc = data?.document,
     actual = data?.actual;
+  const actualTaxEstimate = actualUsTaxOverlay({
+    document: doc,
+    revision: data?.revision,
+    navUsd: actual?.summary.equity,
+    capitalUsd: doc?.capital,
+    // Tax coverage is current through the Korean observation date, even if quotes are stale.
+    asOf: taxToday(),
+  });
   const [tab, setTab] = useState<"model" | "actual" | "signals">(initialTab);
   const [edit, setEdit] = useState<Editor | null>(null),
     [busy, setBusy] = useState(false),
@@ -239,6 +251,10 @@ export function UsPortfolioLedgers({
             실제 운용자금 설정
           </Button>
         </section>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <UsModelTaxEstimatePanel snapshot={model} title="A0 모델 · 양도소득세 추정" />
+        <UsTaxEstimatePanel estimate={actualTaxEstimate} title="실제 투자 · 양도소득세 추정" />
       </div>
       <p className="text-xs text-muted-foreground">
         실제 원장은 모델의 매수·매도를 자동 체결하지 않습니다. USD 기준 이동평균 원가와 입력한
