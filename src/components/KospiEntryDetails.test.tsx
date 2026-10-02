@@ -223,3 +223,26 @@ describe("KOSPI confirmation UI", () => {
     expect(html).not.toContain("원시 대기 종목");
   });
 });
+
+describe("UP95 confirmation rendered status", () => {
+  it("shows new entry readiness for unheld, exit for held, and no re-entry after sale", () => {
+    const candidate = {
+      ...row(confirmation({ score: 9.5 })),
+      operatingScore10: 9.5,
+      scoreDelta1d: 15,
+      exitSignal: "UP95" as const,
+    };
+    const render = (context: DomesticPositionContext) =>
+      renderToStaticMarkup(
+        <ScreenerTable rows={[candidate]} positionContext={context} signalDate={date} />,
+      );
+    expect(render(emptyContext)).toContain("미보유 다음 거래 가능 시가 진입 대기");
+    expect(render(emptyContext)).toContain("확인일 RS 통과");
+    const held = render({ heldSymbols: ["005930"], lastSellDateBySymbol: {} });
+    expect(held).toContain("청산 대기");
+    expect(held).not.toContain("확인일 RS 통과");
+    const sold = render({ heldSymbols: [], lastSellDateBySymbol: { "005930": date } });
+    expect(sold).toContain("재진입 제외");
+    expect(sold).not.toContain("확인일 RS 통과");
+  });
+});

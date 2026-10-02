@@ -1,3 +1,4 @@
+import { getDisplayWarnings } from "../src/lib/warningDisplay";
 import { buildScreeningSummary } from "../src/lib/analysisRunBundle";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -155,5 +156,50 @@ describe("pre-adoption persistence", () => {
     table.maybeSingle.mockResolvedValueOnce({ data: null, error: new Error("read failed") });
     await expect(persistScreeningSnapshot(client, "uid", incoming)).rejects.toThrow("read failed");
     expect(upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe("UP95 confirmation projections", () => {
+  it("keeps current new-entry readiness and held exits distinct across UI and caches", () => {
+    const up95 = {
+      ...row,
+      operatingScore10: 9.5,
+      scoreDelta1d: 15,
+      exitSignal: "UP95" as const,
+      kospiEntry: kospiEntryConfirmation(
+        obs("2026-10-05", 9.5),
+        obs("2026-10-02", 8),
+        obs("2026-10-01", 7.5),
+      ),
+    };
+    const analysis = { ...current, rows: [up95] };
+    expect(isOperationalEntry(buildSnapshot(analysis).entries[0]!, state.date)).toBe(true);
+    expect(isOperationalEntry(compactDashboardRow(up95), state.date)).toBe(true);
+    const summary = buildDashboardSummary(analysis, "x", "x");
+    expect(summary.counts.kospiEightPointEntries).toBe(1);
+    expect(summary.kospiEntryRows).toHaveLength(1);
+    expect(
+      getPortfolioAwareDisplayStatus(
+        up95,
+        { heldSymbols: [], lastSellDateBySymbol: {} },
+        state.date,
+      ),
+    ).toContain("미보유 다음 거래 가능 시가 진입");
+    expect(getDisplayWarnings(up95)).toContain("기존 보유 U9.5 청산 · 미보유 확인 진입 허용");
+    const held = { heldSymbols: [row.instrument.symbol], lastSellDateBySymbol: {} };
+    expect(isPortfolioAwareOperationalEntry(up95, held, state.date)).toBe(false);
+    expect(getPortfolioAwareDisplayStatus(up95, held, state.date)).toContain("청산 대기");
+    const sold = { heldSymbols: [], lastSellDateBySymbol: { [row.instrument.symbol]: state.date } };
+    expect(isPortfolioAwareOperationalEntry(up95, sold, state.date)).toBe(false);
+    expect(getPortfolioAwareDisplayStatus(up95, sold, state.date)).toContain("재진입 제외");
+    const index = projectKrDashboard(analysis);
+    const fresh = marketSignals(index, "KOSPI", []);
+    expect(fresh.onsetCount).toBe(1);
+    expect(fresh.exitCount).toBe(0);
+    const holding = marketSignals(index, "KOSPI", [
+      { symbol: row.instrument.symbol, name: "x", shares: 1, firstEntryDate: "2026-10-01" },
+    ]);
+    expect(holding.onsetCount).toBe(0);
+    expect(holding.exitCount).toBe(1);
   });
 });

@@ -1,7 +1,7 @@
 import type { DailyPrice, Market } from "./engine/types";
 import type { ScreeningSnapshot } from "./screeningSnapshot";
 import type { PortfolioSettings, PortfolioSummary, PortfolioTrade } from "./portfolioStoreCore";
-import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
+import { KOSPI_ENTRY_POLICY, isSupportedKospiEntryVersion } from "./engine/kospiEntryConfirmation";
 import { STRATEGY_CONFIG } from "./engine/operationalStrategy";
 import {
   normalizeSnapshots,
@@ -12,14 +12,17 @@ import {
   firstBarAfter,
   deriveExitPlan,
   latestSnapshotEntry,
+  latestSnapshotObservation,
   operationalExit,
 } from "./portfolioStrategyRules";
 
-export const LEDGER_VERSION = 2;
+export const LEDGER_VERSION = 3;
 export interface Quote {
   price: number;
   date: string;
   exitSignal: string | null;
+  /** KOSPI exit evidence may predate the price mark and a newly opened position. */
+  exitSignalDate?: string;
 }
 export interface Candidate {
   key: string;
@@ -201,7 +204,7 @@ export function simulateStrategy(
         } else if (
           !confirmation ||
           confirmation.date !== snapshot.asOfDate ||
-          confirmation.version !== KOSPI_ENTRY_POLICY.version
+          !isSupportedKospiEntryVersion(confirmation.version)
         ) {
           decision = "확인 자료 없음 · 진입 제외";
         } else if (confirmation.state === "pending") {
@@ -393,12 +396,14 @@ export function simulateStrategy(
   for (const [symbol, series] of Object.entries(bars)) {
     const mark = [...series].reverse().find((bar) => Number.isFinite(bar.close) && bar.close > 0);
     if (!mark) continue;
-    const current = latestSnapshotEntry(snapshots, symbol);
+    const observation = latestSnapshotObservation(snapshots, symbol);
+    const current = observation?.entry;
     quotes[symbol] = {
       price: mark.close,
       date: mark.tradeDate,
       exitSignal:
         current && markets[symbol] ? operationalExit(current, markets[symbol]!, true) : null,
+      ...(markets[symbol] === "KOSPI" && observation ? { exitSignalDate: observation.date } : {}),
     };
   }
   let value = 0,
@@ -416,7 +421,10 @@ export function simulateStrategy(
     const current = latestSnapshotEntry(snapshots, t.symbol);
     t.currentTechnicalPoints = current?.technicalPoints ?? null;
     t.currentPriorityPoints = current?.priorityPoints ?? null;
-    t.currentStatus = q?.exitSignal ? "전략 청산 대기" : "전략 보유";
+    t.currentStatus =
+      q?.exitSignal && (t.market !== "KOSPI" || (q.exitSignalDate ?? q.date) >= t.entryDate)
+        ? "전략 청산 대기"
+        : "전략 보유";
     t.holdingDays = (bars[t.symbol] ?? []).filter(
       (b) => b.tradeDate >= t.entryDate && b.tradeDate <= t.markDate!,
     ).length;
@@ -526,7 +534,10 @@ export function calculateActual<M extends string = Market>(
       candidateQuote && candidateQuote.date >= p.firstEntryDate ? candidateQuote : undefined;
     p.currentPrice = q?.price ?? p.currentPrice;
     p.markDate = q?.date ?? null;
-    p.exitSignal = q?.exitSignal ?? null;
+    p.exitSignal =
+      p.market === "KOSPI" && q && (q.exitSignalDate ?? q.date) < p.firstEntryDate
+        ? null
+        : (q?.exitSignal ?? null);
     p.marketValue = money(p.shares * p.currentPrice);
     p.unrealizedPnl = money(p.marketValue - p.cost);
     value += p.marketValue;

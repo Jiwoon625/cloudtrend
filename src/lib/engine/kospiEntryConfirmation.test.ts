@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   kospiEntryConfirmation,
+  PREVIOUS_KOSPI_ENTRY_POLICY_VERSION,
   isKospiEntryReady,
   kospiRelativeReturns,
   buildKospiEntrySnapshot,
@@ -35,16 +36,60 @@ describe("KOSPI first-session close confirmation", () => {
       kospiEntryConfirmation({ ...confirm, rsAccel: rs }, { ...onset, rsAccel: 2 }, before).state,
     ).toBe("rejected");
   });
-  it("rejects score decline below eight and a confirmation-day upper exit", () => {
+  it("rejects score decline below eight while allowing a confirmation-day upper exit", () => {
     expect(kospiEntryConfirmation({ ...confirm, score: 7.5 }, onset, before).state).toBe(
       "rejected",
     );
-    expect(kospiEntryConfirmation({ ...confirm, score: 9.5 }, onset, before).issues).toContain(
-      "확인일 U9.5 청산신호",
-    );
+    const up95 = kospiEntryConfirmation({ ...confirm, score: 9.5 }, onset, before);
+    expect(up95.issues).toEqual([]);
+    expect(isKospiEntryReady(up95, confirm.date)).toBe(true);
     expect(
       kospiEntryConfirmation({ ...confirm, score: 9.5 }, { ...onset, score: 9.5 }, before).state,
     ).toBe("confirmed");
+  });
+  it.each([9.5, 10])("allows UP95 score %s only after the first-session confirmation", (score) => {
+    const ready = kospiEntryConfirmation({ ...confirm, score }, onset, before);
+    expect(isKospiEntryReady(ready, confirm.date)).toBe(true);
+    expect(kospiEntryConfirmation({ ...onset, score }, before, o("2026-09-30", 7)).state).toBe(
+      "pending",
+    );
+    for (const rsAccel of [0, -1, null, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const failed = kospiEntryConfirmation({ ...confirm, score, rsAccel }, onset, before);
+      expect(isKospiEntryReady(failed)).toBe(false);
+      expect(
+        isKospiEntryReady(
+          kospiEntryConfirmation(o("2026-10-06", score), { ...confirm, score, rsAccel }, onset),
+        ),
+      ).toBe(false);
+    }
+    expect(
+      isKospiEntryReady(
+        kospiEntryConfirmation({ ...confirm, score, eligible: false }, onset, before),
+      ),
+    ).toBe(false);
+    expect(
+      isKospiEntryReady(
+        kospiEntryConfirmation({ ...confirm, score, observed: false }, onset, before),
+      ),
+    ).toBe(false);
+  });
+  it("retains valid v2 evidence without upgrading rejected, stale or impossible v2 crossings", () => {
+    const previous = {
+      ...kospiEntryConfirmation(confirm, onset, before),
+      version: PREVIOUS_KOSPI_ENTRY_POLICY_VERSION,
+    };
+    expect(isKospiEntryReady(previous, confirm.date)).toBe(true);
+    expect(isKospiEntryReady(previous, "2026-10-06")).toBe(false);
+    expect(isKospiEntryReady({ ...previous, score: 9.5 })).toBe(false);
+    expect(isKospiEntryReady({ ...previous, score: 9.5, originScore: 9.5 })).toBe(true);
+    expect(
+      isKospiEntryReady({
+        ...previous,
+        state: "rejected",
+        eligible: false,
+        issues: ["확인일 U9.5 청산신호"],
+      }),
+    ).toBe(false);
   });
   it("separates unobservable from observed rejection and cannot catch up after a gap", () => {
     for (const missing of [

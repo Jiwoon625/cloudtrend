@@ -1,3 +1,4 @@
+import { isOperationalEntry } from "@/lib/engine/operationalStrategy";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
 import { WARNING_LABELS } from "@/lib/engine/scoring";
 import { VF_SECTOR_PL_OVERHEAT_THRESHOLD } from "@/lib/engine/vfConfig";
@@ -40,7 +41,12 @@ type SnapshotWithOptionalBreakout = ScreeningRow["snapshot"] & {
 export function getDisplayWarnings(row: ScreeningRow): string[] {
   const out: string[] = [];
 
-  if (row.exitSignal === "UP95") out.push("상단 Exit · 9.5점 상향돌파");
+  if (row.exitSignal === "UP95")
+    out.push(
+      row.instrument.market === "KOSPI" && isOperationalEntry(row)
+        ? "기존 보유 U9.5 청산 · 미보유 확인 진입 허용"
+        : "상단 Exit · 9.5점 상향돌파",
+    );
   if (row.exitSignal === "DOWN25") out.push("하단 Exit · 2.5점 이하");
   if (
     row.sectorPriceLeadership !== null &&

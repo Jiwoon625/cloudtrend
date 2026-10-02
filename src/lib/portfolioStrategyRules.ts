@@ -167,15 +167,21 @@ export function holdingDays(bars: DailyPrice[], entryDate: string, endDate: stri
   return bars.filter((bar) => bar.tradeDate >= entryDate && bar.tradeDate <= endDate).length;
 }
 
+/** Preserve the signal's source date separately from a later market-price mark. */
+export function latestSnapshotObservation(snapshots: ScreeningSnapshot[], symbol: string) {
+  for (let i = snapshots.length - 1; i >= 0; i--) {
+    const snapshot = snapshots[i]!;
+    const entry = snapshot.entries.find((item) => item.symbol === symbol);
+    if (entry) return { entry, date: snapshot.asOfDate };
+  }
+  return null;
+}
+
 export function latestSnapshotEntry(
   snapshots: ScreeningSnapshot[],
   symbol: string,
 ): SnapshotEntry | null {
-  for (let i = snapshots.length - 1; i >= 0; i--) {
-    const found = snapshots[i]!.entries.find((entry) => entry.symbol === symbol);
-    if (found) return found;
-  }
-  return null;
+  return latestSnapshotObservation(snapshots, symbol)?.entry ?? null;
 }
 
 export function deriveExitPlan(

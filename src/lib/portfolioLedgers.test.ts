@@ -10,7 +10,11 @@ import {
   LEGACY_OPERATIONAL_SIGNAL_VERSION,
   OPERATIONAL_SIGNAL_VERSION,
 } from "./engine/operationalStrategy";
-import { KOSPI_ENTRY_POLICY, type KospiEntrySnapshot } from "./engine/kospiEntryConfirmation";
+import {
+  KOSPI_ENTRY_POLICY,
+  PREVIOUS_KOSPI_ENTRY_POLICY_VERSION,
+  type KospiEntrySnapshot,
+} from "./engine/kospiEntryConfirmation";
 import type { ScreeningSnapshot, SnapshotEntry } from "./screeningSnapshot";
 import type { DailyPrice, Market } from "./engine/types";
 
@@ -66,7 +70,7 @@ const buy = (id: string, overrides: Partial<ActualExecution> = {}): ActualExecut
 
 describe("portfolio ledger rule version", () => {
   it("invalidates cached strategy ledgers after held signal-priority rules change", () => {
-    expect(LEDGER_VERSION).toBe(2);
+    expect(LEDGER_VERSION).toBe(3);
   });
 });
 
@@ -540,5 +544,133 @@ describe("confirmation candidate provenance", () => {
     );
     expect(model.candidates[0]?.decision).toBe("익일 확인 대기");
     expect(model.trades).toHaveLength(0);
+  });
+});
+
+describe("new confirmation UP95 never becomes a pre-entry liquidation", () => {
+  const up95 = {
+    ...policyEntry("confirmed", { score: 9.5 }),
+    technicalPoints: 9.5,
+    scoreDelta1d: 15,
+    exitSignal: "UP95" as const,
+  };
+  it("fills once at next open, keeps the new holding open and dates exit evidence separately from the mark", () => {
+    const input = [policySnapshot([up95]), policySnapshot([up95], "2026-10-02", "10:00:00Z")];
+    const model = simulateStrategy(settings, input, { A: policyBars() }, { A: "KOSPI" });
+    expect(model.trades).toHaveLength(1);
+    expect(model.trades[0]).toMatchObject({
+      entryDate: "2026-10-06",
+      status: "OPEN",
+      exitDate: null,
+      currentStatus: "전략 보유",
+    });
+    expect(model.quotes["A"]).toMatchObject({
+      date: "2026-10-07",
+      exitSignal: "UP95",
+      exitSignalDate: "2026-10-02",
+    });
+    expect(simulateStrategy(settings, input, { A: policyBars() }, { A: "KOSPI" }).trades).toEqual(
+      model.trades,
+    );
+    const actualNew = calculateActual(
+      30000,
+      [buy("A", { date: "2026-10-06" })],
+      model.quotes,
+      "2026-10-07",
+    );
+    expect(actualNew.positions[0]?.exitSignal).toBeNull();
+    const actualHeld = calculateActual(
+      30000,
+      [buy("A", { date: "2026-10-01" })],
+      model.quotes,
+      "2026-10-07",
+    );
+    expect(actualHeld.positions[0]?.exitSignal).toBe("UP95");
+  });
+  it("does not sell on a persistent upper score, but a later new upward cross still exits", () => {
+    const flat = policySnapshot(
+      [
+        {
+          ...entry("A"),
+          ...getOperationalSignals("KOSPI", 9.5, 10, true),
+          technicalPoints: 10,
+          scoreDelta1d: 5,
+        },
+      ],
+      "2026-10-06",
+    );
+    const input = [policySnapshot([up95]), flat];
+    expect(
+      simulateStrategy(settings, input, { A: policyBars() }, { A: "KOSPI" }).trades[0]?.status,
+    ).toBe("OPEN");
+    const later = policySnapshot(
+      [
+        {
+          ...entry("A"),
+          ...getOperationalSignals("KOSPI", 9, 9.5, true),
+          technicalPoints: 9.5,
+          scoreDelta1d: 5,
+        },
+      ],
+      "2026-10-07",
+    );
+    const result = simulateStrategy(
+      settings,
+      [...input, later],
+      { A: policyBars(["2026-10-01", "2026-10-02", "2026-10-06", "2026-10-07", "2026-10-08"]) },
+      { A: "KOSPI" },
+    );
+    expect(result.trades[0]).toMatchObject({
+      status: "CLOSED",
+      exitDate: "2026-10-08",
+      exitReason: "9.5점 상향돌파",
+    });
+  });
+  it("exits an existing holding without creating a second trade from the same confirmation", () => {
+    const initial = policySnapshot([entry("A")], "2026-09-28");
+    const model = simulateStrategy(
+      settings,
+      [initial, policySnapshot([up95])],
+      { A: policyBars(["2026-09-28", "2026-09-29", "2026-10-01", "2026-10-02", "2026-10-06"]) },
+      { A: "KOSPI" },
+    );
+    expect(model.trades).toHaveLength(1);
+    expect(model.trades[0]).toMatchObject({
+      entryDate: "2026-09-29",
+      exitDate: "2026-10-06",
+      status: "CLOSED",
+    });
+    expect(model.candidates.find((c) => c.originDate === "2026-10-01")?.decision).toContain(
+      "보유/당일 매도",
+    );
+  });
+});
+
+describe("v2 snapshot compatibility without historical upgrade", () => {
+  it("keeps valid previous confirmations in replay and leaves old rejections unfilled", () => {
+    const old = {
+      ...policyEntry("confirmed", { version: PREVIOUS_KOSPI_ENTRY_POLICY_VERSION }),
+      operationalSignalVersion: PREVIOUS_KOSPI_ENTRY_POLICY_VERSION,
+    };
+    const input = [policySnapshot([old])];
+    const saved = JSON.stringify(input);
+    const model = simulateStrategy(settings, input, { A: policyBars() }, { A: "KOSPI" });
+    expect(model.trades[0]).toMatchObject({ entryDate: "2026-10-06", status: "OPEN" });
+    const rejected = {
+      ...old,
+      exitSignal: "UP95" as const,
+      kospiEntry: {
+        ...old.kospiEntry!,
+        state: "rejected" as const,
+        eligible: false,
+        score: 9.5,
+        issues: ["확인일 U9.5 청산신호"],
+      },
+    };
+    expect(
+      simulateStrategy(settings, [policySnapshot([rejected])], { A: policyBars() }, { A: "KOSPI" })
+        .trades,
+    ).toHaveLength(0);
+    expect(JSON.stringify(input)).toBe(saved);
   });
 });

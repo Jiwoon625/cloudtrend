@@ -9,7 +9,7 @@ import {
   heldDuringEntryWindow,
   barOnOrBefore,
   holdingDays,
-  latestSnapshotEntry,
+  latestSnapshotObservation,
   deriveExitPlan,
   type ExitPlan,
 } from "./portfolioStrategyRules";
@@ -591,7 +591,8 @@ export function createPortfolioStore({
       const bars = dataset.bars[trade.symbol] ?? [];
       const mark = barOnOrBefore(bars, latestDate);
       if (!mark || mark.close <= 0) continue;
-      const current = latestSnapshotEntry(snapshots, trade.symbol);
+      const observation = latestSnapshotObservation(snapshots, trade.symbol);
+      const current = observation?.entry;
       const days = Math.max(1, holdingDays(bars, trade.entryDate, mark.tradeDate));
       const { data, error } = await supabase
         .from("portfolio_trades")
@@ -601,7 +602,9 @@ export function createPortfolioStore({
           current_technical_points: current?.technicalPoints ?? null,
           current_priority_points: current?.priorityPoints ?? null,
           current_status:
-            current && operationalExit(current, trade.market, true)
+            current &&
+            (trade.market !== "KOSPI" || observation!.date >= trade.entryDate) &&
+            operationalExit(current, trade.market, true)
               ? `청산 대기 · ${current.status}`
               : "보유",
           holding_days: days,

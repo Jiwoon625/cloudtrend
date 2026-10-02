@@ -1,6 +1,8 @@
 import {
   KOSPI_ENTRY_POLICY,
   isKospiEntryReady,
+  isSupportedKospiEntryVersion,
+  PREVIOUS_KOSPI_ENTRY_POLICY_VERSION,
   type KospiEntrySnapshot,
 } from "./kospiEntryConfirmation";
 import {
@@ -16,7 +18,7 @@ export const STRATEGY_CONFIG = {
   KOSPI: {
     pl: "ETF PL 84 우선 / Stock PL 80 fallback",
     summary:
-      "KOSPI: ETF PL 84 우선 / Stock PL 80 fallback · 8.0 Onset → 다음 거래일 종가 8점 이상·청산 없음·RSAccel > 0 확인 → 다음 거래 가능 시가 진입 · U9.5 상향돌파 청산 · Downside Exit 없음(DX) · H60",
+      "KOSPI: ETF PL 84 우선 / Stock PL 80 fallback · 8.0 Onset → 다음 거래일 종가 8점 이상·RSAccel > 0 확인 (확인일 U9.5 신규 진입 허용) → 다음 거래 가능 시가 진입 · 보유 종목 U9.5 상향돌파 청산 · Downside Exit 없음(DX) · H60",
     maxHoldingDays: 60,
     sectorCap: 0.1,
   },
@@ -111,7 +113,11 @@ interface Signals {
 export function isOperationalEntry(row: Signals, asOfDate?: string): boolean {
   return (
     row.kosdaq80Onset === true ||
-    (row.operationalSignalVersion === OPERATIONAL_SIGNAL_VERSION &&
+    (isSupportedKospiEntryVersion(row.operationalSignalVersion) &&
+      row.operationalSignalVersion === row.kospiEntry?.version &&
+      (row.exitSignal == null ||
+        (row.exitSignal === "UP95" &&
+          row.operationalSignalVersion === OPERATIONAL_SIGNAL_VERSION)) &&
       isKospiEntryReady(row.kospiEntry, asOfDate))
   );
 }
@@ -121,6 +127,7 @@ export function getStoredOperationalExit(
 ): "UP95" | "UP90" | "DOWN30" | null {
   if (market === "KOSPI")
     return (row.operationalSignalVersion === OPERATIONAL_SIGNAL_VERSION ||
+      row.operationalSignalVersion === PREVIOUS_KOSPI_ENTRY_POLICY_VERSION ||
       row.operationalSignalVersion === LEGACY_OPERATIONAL_SIGNAL_VERSION) &&
       row.exitSignal === "UP95"
       ? "UP95"
@@ -131,6 +138,8 @@ export function getStoredOperationalExit(
 }
 export function getOperationalStatus(row: Signals, market: string): string {
   const exit = getStoredOperationalExit(row, market);
+  if (exit === "UP95" && market === "KOSPI" && isOperationalEntry(row))
+    return "KOSPI 하루·RS 확인 완료 · 미보유 다음 거래 가능 시가 진입 대기 / 보유 U9.5 청산";
   if (exit === "UP95") return "KOSPI 청산 · 9.5점 상향돌파";
   if (exit === "UP90") return "KOSDAQ 청산 · 9.0점 상향 재돌파";
   if (exit === "DOWN30") return "KOSDAQ 청산 · 3.0점 하향 이탈";

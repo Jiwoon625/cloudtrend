@@ -269,3 +269,26 @@ describe("legacy explicit portfolio sync confirmation gate", () => {
     expect((await store.syncPortfolioFromHistory()).trades[0]?.entryDate).toBe("2026-10-06");
   });
 });
+
+describe("explicit sync with confirmation UP95", () => {
+  it("does not sell or mark a new fill for the prior confirmation close and does not duplicate it", async () => {
+    const up95 = {
+      ...entry({ score: 9.5 }),
+      technicalPoints: 9.5,
+      scoreDelta1d: 15,
+      exitSignal: "UP95" as const,
+    };
+    const { store, tables } = setup([snapshot(up95)]);
+    const first = await store.syncPortfolioFromHistory();
+    expect(first.trades).toHaveLength(1);
+    expect(first.trades[0]).toMatchObject({
+      entryDate: "2026-10-06",
+      status: "OPEN",
+      exitDate: null,
+      currentStatus: "보유",
+    });
+    await store.syncPortfolioFromHistory();
+    expect(tables["portfolio_trades"]).toHaveLength(1);
+    expect(tables["portfolio_signal_log"]).toHaveLength(1);
+  });
+});

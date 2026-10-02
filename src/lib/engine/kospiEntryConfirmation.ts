@@ -6,11 +6,18 @@ import { historicalInstrumentScore } from "./historicalInstrumentScore";
 
 /** Adopted 2026-10-02 KST. This is a prospective entry policy, not a backtest rewrite. */
 export const KOSPI_ENTRY_POLICY = {
-  version: "kospi-e8-confirm1-rsaccel-v2",
+  version: "kospi-e8-confirm1-rsaccel-up95-v3",
   effectiveConfirmationDate: "2026-10-02",
   entryScore: 8,
   upsideExitScore: 9.5,
 } as const;
+/** v2 confirmed records keep their stricter original rule; rejected records are never upgraded. */
+export const PREVIOUS_KOSPI_ENTRY_POLICY_VERSION = "kospi-e8-confirm1-rsaccel-v2";
+
+export function isSupportedKospiEntryVersion(version: string | undefined): boolean {
+  return version === KOSPI_ENTRY_POLICY.version || version === PREVIOUS_KOSPI_ENTRY_POLICY_VERSION;
+}
+
 export interface KospiEntrySnapshot {
   version: string;
   date: string;
@@ -69,13 +76,7 @@ export function kospiEntryConfirmation(
     if (current.observed && !current.eligible) result.issues.push("확인일 대상 부적격");
     if (finite(current.score) && current.score < KOSPI_ENTRY_POLICY.entryScore)
       result.issues.push("확인일 V8 8점 미만");
-    if (
-      finite(previous!.score) &&
-      finite(current.score) &&
-      previous!.score < 9.5 &&
-      current.score >= 9.5
-    )
-      result.issues.push("확인일 U9.5 청산신호");
+    // UP95 on this close is an exit for an existing holding, not a new-entry veto.
     if (finite(current.rsAccel) && current.rsAccel <= 0)
       result.issues.push("확인일 RSAccel 0 이하");
     if (result.issues.length) result.state = "rejected";
@@ -103,7 +104,15 @@ export function kospiEntryConfirmation(
 export function isKospiEntryReady(s: KospiEntrySnapshot | undefined, asOfDate?: string): boolean {
   return (
     !!s &&
-    s.version === KOSPI_ENTRY_POLICY.version &&
+    isSupportedKospiEntryVersion(s.version) &&
+    // Accept old confirmations only under their original no-UP95 rule.
+    (s.version !== PREVIOUS_KOSPI_ENTRY_POLICY_VERSION ||
+      (finite(s.originScore) &&
+        !(
+          s.originScore < KOSPI_ENTRY_POLICY.upsideExitScore &&
+          finite(s.score) &&
+          s.score >= KOSPI_ENTRY_POLICY.upsideExitScore
+        ))) &&
     s.state === "confirmed" &&
     s.eligible &&
     s.date === s.confirmationDate &&

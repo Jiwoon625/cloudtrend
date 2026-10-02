@@ -1,7 +1,11 @@
-import { kospiEntryConfirmation } from "./kospiEntryConfirmation";
+import {
+  kospiEntryConfirmation,
+  PREVIOUS_KOSPI_ENTRY_POLICY_VERSION,
+} from "./kospiEntryConfirmation";
 import { describe, expect, it } from "vitest";
 import {
   getHeldOperationalExitSignal,
+  getOperationalStatus,
   getOperationalSignals,
   getStoredOperationalExit,
   isOperationalEntry,
@@ -102,5 +106,46 @@ describe("KOSPI executable strategy", () => {
       expect(row.actionLabelText).not.toMatch(/우선진입후보|모멘텀 위험|^진입후보$/);
       expect(row.operationalSignalVersion).toBe(OPERATIONAL_SIGNAL_VERSION);
     }
+  });
+});
+
+describe("confirmation-day UP95 context", () => {
+  const confirmation = kospiEntryConfirmation(
+    { date: "2026-10-02", score: 9.5, rsAccel: 1, eligible: true, observed: true },
+    { date: "2026-10-01", score: 8, rsAccel: -1, eligible: true, observed: true },
+    { date: "2026-09-30", score: 7.5, rsAccel: 0, eligible: true, observed: true },
+  );
+  const signals = { ...getOperationalSignals("KOSPI", 8, 9.5, true), kospiEntry: confirmation };
+  it("separates new entry readiness from the unchanged held exit", () => {
+    expect(isOperationalEntry(signals, confirmation.date)).toBe(true);
+    expect(getStoredOperationalExit(signals, "KOSPI")).toBe("UP95");
+    expect(getHeldOperationalExitSignal("KOSPI", 9.5, 15)).toBe("UP95");
+    expect(getOperationalStatus(signals, "KOSPI")).toContain(
+      "미보유 다음 거래 가능 시가 진입 대기 / 보유 U9.5 청산",
+    );
+  });
+  it("does not relax other exit signals or mismatched versions", () => {
+    for (const exitSignal of ["DOWN25", "DOWN30", "UP90", "UNKNOWN"]) {
+      expect(isOperationalEntry({ ...signals, exitSignal }, confirmation.date)).toBe(false);
+    }
+    expect(
+      isOperationalEntry({
+        ...signals,
+        operationalSignalVersion: PREVIOUS_KOSPI_ENTRY_POLICY_VERSION,
+      }),
+    ).toBe(false);
+    expect(
+      getStoredOperationalExit(
+        { ...signals, operationalSignalVersion: PREVIOUS_KOSPI_ENTRY_POLICY_VERSION },
+        "KOSPI",
+      ),
+    ).toBe("UP95");
+    const old = {
+      ...signals,
+      exitSignal: null,
+      operationalSignalVersion: PREVIOUS_KOSPI_ENTRY_POLICY_VERSION,
+      kospiEntry: { ...confirmation, score: 8.5, version: PREVIOUS_KOSPI_ENTRY_POLICY_VERSION },
+    };
+    expect(isOperationalEntry(old, confirmation.date)).toBe(true);
   });
 });
