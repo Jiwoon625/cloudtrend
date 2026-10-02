@@ -125,15 +125,15 @@ create table public.ledger_model_sessions (
   check (previous_session_date is null or previous_session_date < session_date)
 );
 
--- Outbox is an immutable intent/attempt/ack journal. No bridge/schedule is enabled by this DDL.
-create table public.ledger_sync_log (
+-- Append-only user-requested receipt recording status. The assistant verifies each destination; no automatic delivery or scheduled retry.
+create table public.ledger_recording_log (
   user_id uuid not null,
-  intent_key text not null,
-  attempt integer not null check (attempt >= 0),
-  status text not null check (status in ('PENDING','BLOCKED_BRIDGE','CONFLICT','ACKNOWLEDGED')),
+  task_key text not null,
+  revision integer not null check (revision > 0),
+  status text not null check (status in ('PENDING','PARTIAL','CONFLICT','VERIFIED')),
   payload jsonb not null check (jsonb_typeof(payload) = 'object'),
   recorded_at timestamptz not null default now(),
-  primary key (user_id, intent_key, attempt)
+  primary key (user_id, task_key, revision)
 );
 
 -- Future archive ingestion is separate from screening_history's existing 90-date UI trigger.
@@ -162,7 +162,7 @@ do $$
 declare t text;
 begin
   foreach t in array array['ledger_security_versions','ledger_event_sources','ledger_event_versions','ledger_evidence_refs',
-    'ledger_reconciliation_log','ledger_valuation_versions','ledger_model_series','ledger_model_sessions','ledger_sync_log','ledger_provenance_archive']
+    'ledger_reconciliation_log','ledger_valuation_versions','ledger_model_series','ledger_model_sessions','ledger_recording_log','ledger_provenance_archive']
   loop
     execute format('alter table public.%I enable row level security', t);
     execute format('revoke all on public.%I from public, anon, authenticated, service_role', t);
@@ -174,10 +174,10 @@ begin
 end;
 $$;
 
--- Atomic service-only event+outbox append. Must be locally verified before applying.
+-- Atomic service-only event+assisted-recording status append. Must be locally verified before applying.
 -- Review authorization and validateEvent are required in the trusted server caller.
 create function public.ledger_append_reviewed_event(
-  p_user_id uuid, p_expected_revision integer, p_event jsonb, p_sync_intent jsonb default null
+  p_user_id uuid, p_expected_revision integer, p_event jsonb, p_recording_task jsonb default null
 ) returns jsonb language plpgsql security invoker set search_path = '' as $$
 declare
   v_book text := p_event->>'book';
@@ -199,11 +199,11 @@ begin
     where user_id=p_user_id and book=v_book and book_id=v_book_id and event_id=v_id and revision=v_revision;
   if found then
     if v_existing <> p_event then raise exception 'Immutable event revision conflict'; end if;
-    -- Event and initial outbox entry were committed in one transaction. A retry is read-only.
-    if p_sync_intent is not null and not exists (
-      select 1 from public.ledger_sync_log where user_id=p_user_id
-        and intent_key=p_sync_intent->>'key' and attempt=0 and payload=p_sync_intent
-    ) then raise exception 'Retry outbox mismatch'; end if;
+    -- An explicitly repeated request reuses the existing event and initial tracking record.
+    if p_recording_task is not null and not exists (
+      select 1 from public.ledger_recording_log where user_id=p_user_id
+        and task_key=p_recording_task->>'key' and revision=1 and payload=p_recording_task
+    ) then raise exception 'Repeated recording task mismatch'; end if;
     return jsonb_build_object('reused', true, 'revision', v_revision);
   end if;
   select coalesce(max(revision),0) into v_head from public.ledger_event_versions
@@ -230,15 +230,16 @@ begin
     p_event->>'correctionReason',(p_event->>'effectiveDate')::date,p_event->>'kind',
     p_event#>>'{source,system}',p_event#>>'{source,recordId}',p_event#>>'{source,revision}',
     p_event#>>'{source,contentHash}',p_event,(p_event->>'recordedAt')::timestamptz);
-  if p_sync_intent is not null then
-    if v_book <> 'ACTUAL' or p_sync_intent->>'eventId' is distinct from v_id or
-       (p_sync_intent->>'eventRevision')::integer is distinct from v_revision or
-       p_sync_intent->>'sourceHash' is distinct from p_event#>>'{source,contentHash}' or
-       p_sync_intent->>'status' is distinct from 'PENDING' then
-      raise exception 'Outbox intent does not match appended actual event';
+  if p_recording_task is not null then
+    if v_book <> 'ACTUAL' or p_recording_task->>'key' is distinct from ('RECEIPT:' || v_id || ':' || v_revision::text) or
+       coalesce(length(trim(p_recording_task->>'requestRef')),0) = 0 or p_recording_task->>'eventId' is distinct from v_id or
+       (p_recording_task->>'eventRevision')::integer is distinct from v_revision or
+       p_recording_task->>'sourceHash' is distinct from p_event#>>'{source,contentHash}' or
+       p_recording_task->>'status' is distinct from 'PENDING' then
+      raise exception 'Recording task does not match appended actual event';
     end if;
-    insert into public.ledger_sync_log(user_id,intent_key,attempt,status,payload)
-      values(p_user_id,p_sync_intent->>'key',0,'PENDING',p_sync_intent);
+    insert into public.ledger_recording_log(user_id,task_key,revision,status,payload)
+      values(p_user_id,p_recording_task->>'key',1,'PENDING',p_recording_task);
   end if;
   return jsonb_build_object('reused', false, 'revision', v_revision);
 end;

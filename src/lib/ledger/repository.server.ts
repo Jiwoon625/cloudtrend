@@ -1,30 +1,32 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LedgerEvent } from "./types";
-import type { SyncIntent } from "./sync";
+import type { AssistedRecordingTask } from "./assistedRecording";
 import { validateEvent } from "./validation";
 /** Trusted reviewed flow only. No browser route exposes this writer; RPC permissions fail closed. */
 export async function appendReviewedEvent(
   client: SupabaseClient,
   userId: string,
   event: LedgerEvent,
-  intent: SyncIntent | null,
+  task: AssistedRecordingTask | null,
 ) {
   if (!/^[a-f\d-]{36}$/i.test(userId)) throw new Error("Verified owner ID required");
   validateEvent(event);
   if (
-    intent &&
+    task &&
     (event.book !== "ACTUAL" ||
-      intent.eventId !== event.id ||
-      intent.eventRevision !== event.revision ||
-      intent.sourceHash !== event.source.contentHash ||
-      intent.status !== "PENDING")
+      task.key !== `RECEIPT:${event.id}:${event.revision}` ||
+      !task.requestRef.trim() ||
+      task.eventId !== event.id ||
+      task.eventRevision !== event.revision ||
+      task.sourceHash !== event.source.contentHash ||
+      task.status !== "PENDING")
   )
-    throw new Error("Outbox event identity mismatch");
+    throw new Error("Assisted recording event identity mismatch");
   const { data, error } = await client.rpc("ledger_append_reviewed_event", {
     p_user_id: userId,
     p_expected_revision: event.revision - 1,
     p_event: event,
-    p_sync_intent: intent,
+    p_recording_task: task,
   });
   if (error) throw new Error(`Reviewed journal append failed: ${error.message}`);
   if (!data || typeof data.reused !== "boolean" || data.revision !== event.revision)

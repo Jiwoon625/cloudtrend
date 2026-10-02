@@ -3,7 +3,11 @@ import { canonicalJson, correctEvent, normalizeLegacyExecution, planImport } fro
 import { decimal, format, integerBudgetQuantity } from "./decimal";
 import { currentEvents, validateEvent, validateSecurity } from "./validation";
 import { valueBook } from "./valuation";
-import { inspectSync, makeSyncIntent } from "./sync";
+import {
+  inspectRecordingTargets,
+  makeAssistedRecordingTask,
+  verifyAssistedRecording,
+} from "./assistedRecording";
 import type { LedgerEvent, OpeningBalance, Security, SourceRef } from "./types";
 const hash = `sha256:${"a".repeat(64)}`;
 const source: SourceRef = { system: "broker", recordId: "r1", revision: "1", contentHash: hash };
@@ -259,47 +263,63 @@ describe("valuation coverage and currency", () => {
     expect(v.baseEquity).toBeNull();
   });
 });
-describe("Notion synchronization boundary", () => {
-  const intent = makeSyncIntent(event(), "TO_NOTION", {
+describe("requested receipt recording on both destinations", () => {
+  const task = makeAssistedRecordingTask(event(), "synthetic-user-request", {
     notionPageId: "notion-1",
     expectedNotionHash: hash,
     expectedLedgerRevision: 1,
   });
-  it("fails closed without runtime bridge and quarantines concurrent edits", () => {
+  const readback = { eventId: task.eventId, eventRevision: task.eventRevision, sourceHash: hash };
+  it("needs no runtime bridge and keeps concurrent edits for review", () => {
+    expect(inspectRecordingTargets(task, { ledgerRevision: 1, notionHash: hash }).status).toBe(
+      "PENDING",
+    );
+    expect(inspectRecordingTargets(task, { ledgerRevision: 2, notionHash: hash }).status).toBe(
+      "CONFLICT",
+    );
+  });
+  it("marks one-sided recording partial and verifies only two matching readbacks", () => {
+    expect(verifyAssistedRecording(task, { ledger: readback, notion: null }).status).toBe(
+      "PARTIAL",
+    );
     expect(
-      inspectSync(intent, {
-        bridgeAvailable: false,
-        ledgerRevision: 1,
-        notionHash: hash,
-        acknowledgement: null,
-      }).status,
-    ).toBe("BLOCKED_BRIDGE");
+      verifyAssistedRecording(task, { ledger: null, notion: { ...readback, pageId: "notion-1" } })
+        .status,
+    ).toBe("PARTIAL");
+    expect(verifyAssistedRecording(task, { ledger: null, notion: null }).status).toBe("PENDING");
+    const complete = { ledger: readback, notion: { ...readback, pageId: "notion-1" } };
+    expect(verifyAssistedRecording(task, complete).status).toBe("VERIFIED");
+    expect(verifyAssistedRecording(verifyAssistedRecording(task, complete), complete).status).toBe(
+      "VERIFIED",
+    );
+  });
+  it("blocks wrong pages, mismatched facts, missing requests and model-as-actual records", () => {
     expect(
-      inspectSync(intent, {
-        bridgeAvailable: true,
-        ledgerRevision: 2,
-        notionHash: hash,
-        acknowledgement: null,
+      verifyAssistedRecording(task, {
+        ledger: readback,
+        notion: { ...readback, pageId: "other-page" },
       }).status,
     ).toBe("CONFLICT");
-  });
-  it("requires an exact idempotent acknowledgement", () => {
     expect(
-      inspectSync(intent, {
-        bridgeAvailable: false,
-        ledgerRevision: 1,
-        notionHash: hash,
-        acknowledgement: { key: intent.key, sourceHash: hash, notionPageId: "notion-1" },
+      verifyAssistedRecording(task, {
+        ledger: { ...readback, sourceHash: `sha256:${"b".repeat(64)}` },
+        notion: { ...readback, pageId: "notion-1" },
       }).status,
-    ).toBe("ACKNOWLEDGED");
-    expect(
-      inspectSync(intent, {
-        bridgeAvailable: true,
-        ledgerRevision: 1,
-        notionHash: hash,
-        acknowledgement: null,
-      }).status,
-    ).toBe("PENDING");
+    ).toBe("CONFLICT");
+    expect(() =>
+      makeAssistedRecordingTask(event(), "", {
+        notionPageId: null,
+        expectedNotionHash: null,
+        expectedLedgerRevision: null,
+      }),
+    ).toThrow("request");
+    expect(() =>
+      makeAssistedRecordingTask(event({ book: "MODEL", bookId: "test-model" }), "request", {
+        notionPageId: null,
+        expectedNotionHash: null,
+        expectedLedgerRevision: null,
+      }),
+    ).toThrow("actual");
   });
 });
 describe("audit regression invariants", () => {
