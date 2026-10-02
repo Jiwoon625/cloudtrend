@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { StrategyDescription } from "./StrategyDescription";
+import { UsOrderPreview } from "./UsOrderPreview";
 import { supabase } from "@/lib/cloud";
 import { formatCount, formatKstDateTime } from "@/lib/format";
 import {
@@ -225,35 +226,46 @@ export function DashboardSignalCounts({
 export function UsDashboardPortfolio({ query }: { query: OperationsQuery }) {
   const portfolio = query.data?.usPortfolio;
   const fallback = query.isPending ? "불러오는 중…" : query.isError ? "조회 실패" : "미확인";
+  const previewError = query.isError
+    ? "저장된 미국 모델 자료를 불러오지 못했습니다."
+    : query.data?.warnings.find((warning) => warning.startsWith("US 주문 미리보기"));
   return (
-    <section
-      className="rounded-lg border border-border bg-card p-4"
-      aria-label="미국주식 A0 포트폴리오"
-    >
-      <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
-        <ShieldCheck className="size-4 text-primary" />
-        미국주식 A0 포트폴리오
-      </h2>
-      <p className="mb-2 text-[10px] text-muted-foreground">실제 체결 원장 기준 · USD</p>
-      <Row label="운용자금">{portfolio ? usd(portfolio.capital) : fallback}</Row>
-      <Row label="보유 종목수">
-        {portfolio ? `${portfolio.summary.openPositions}종목` : fallback}
-      </Row>
-      <Row label="평가손익">{portfolio ? usd(portfolio.summary.unrealizedPnl) : fallback}</Row>
-      <Row label="실현손익">{portfolio ? usd(portfolio.summary.realizedPnl) : fallback}</Row>
-      {portfolio?.unpricedPositions ? (
-        <p className="mt-2 text-[10px] text-warn">
-          {portfolio.unpricedPositions}종목은 최신 평가가격을 확인하지 못해 기존 원장 가격을
-          사용했습니다.
-        </p>
-      ) : null}
-      <Link
-        to="/us/portfolio"
-        className="mt-3 inline-flex text-[11px] font-medium text-primary hover:underline"
+    <div className="min-w-0 space-y-4">
+      <section
+        className="rounded-lg border border-border bg-card p-4"
+        aria-label="미국주식 A0 포트폴리오"
       >
-        포트폴리오 상세 보기 →
-      </Link>
-    </section>
+        <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold">
+          <ShieldCheck className="size-4 text-primary" />
+          미국주식 A0 포트폴리오
+        </h2>
+        <p className="mb-2 text-[10px] text-muted-foreground">실제 체결 원장 기준 · USD</p>
+        <Row label="운용자금">{portfolio ? usd(portfolio.capital) : fallback}</Row>
+        <Row label="보유 종목수">
+          {portfolio ? `${portfolio.summary.openPositions}종목` : fallback}
+        </Row>
+        <Row label="평가손익">{portfolio ? usd(portfolio.summary.unrealizedPnl) : fallback}</Row>
+        <Row label="실현손익">{portfolio ? usd(portfolio.summary.realizedPnl) : fallback}</Row>
+        {portfolio?.unpricedPositions ? (
+          <p className="mt-2 text-[10px] text-warn">
+            {portfolio.unpricedPositions}종목은 최신 평가가격을 확인하지 못해 기존 원장 가격을
+            사용했습니다.
+          </p>
+        ) : null}
+        <Link
+          to="/us/portfolio"
+          className="mt-3 inline-flex text-[11px] font-medium text-primary hover:underline"
+        >
+          포트폴리오 상세 보기 →
+        </Link>
+      </section>
+      <UsOrderPreview
+        bundle={query.data?.usOrderPreview ?? null}
+        compact
+        isPending={query.isPending}
+        error={previewError ?? null}
+      />
+    </div>
   );
 }
 

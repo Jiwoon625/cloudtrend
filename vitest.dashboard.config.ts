@@ -8,6 +8,10 @@ export default defineConfig({
     include: [
       "src/components/KospiEntryDetails.test.tsx",
       "src/components/DashboardOperations.test.tsx",
+      "src/components/UsOrderPreview.test.tsx",
+      "src/lib/engine/usProspectiveOrderPreview.test.ts",
+      "src/lib/usOrderPreview*.test.ts",
+      "tests/us-order-preview*.test.ts",
       "tests/dashboard-operations.test.ts",
       "tests/dashboard-operations-server.test.ts",
       "src/lib/dashboardHoldingSignals.test.ts",

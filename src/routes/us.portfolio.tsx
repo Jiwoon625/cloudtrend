@@ -6,12 +6,13 @@ import { useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { UsOrderPreview } from "@/components/UsOrderPreview";
+import type { UsOrderPreviewBundle } from "@/lib/engine/usProspectiveOrderPreview";
 import {
   loadUsPortfolioSnapshots,
   loadUsPortfolioTrades,
   loadUsStrategyRegistry,
   type UsPortfolioSnapshotRecord,
-  type UsPortfolioTradeRecord,
 } from "@/lib/usProspectiveCloud";
 
 export const Route = createFileRoute("/us/portfolio")({
@@ -94,9 +95,12 @@ function UsPortfolioPage() {
       }
     )?.positions ?? {},
   );
-  const pending = (trades.data ?? [])
-    .filter((t) => t.status === "PENDING" && t.strategy_id === selectedStrategy)
-    .slice(0, 50);
+  const orderPreview = currentPrimary?.state["orderPreview"] as UsOrderPreviewBundle | undefined;
+  const orderPreviewError = snapshots.isError
+    ? "저장된 미국 모델 자료를 불러오지 못했습니다."
+    : typeof currentPrimary?.state["orderPreviewError"] === "string"
+      ? currentPrimary.state["orderPreviewError"]
+      : null;
   const executed = (trades.data ?? []).filter(
     (t) =>
       (t.status === "EXECUTED" || t.status === "PARTIAL") && t.strategy_id === selectedStrategy,
@@ -185,7 +189,7 @@ function UsPortfolioPage() {
         </section>
 
         <label className="text-xs">
-          모델 보유·대기 주문 전략{" "}
+          모델 보유·조정 계획 전략{" "}
           <select
             value={selectedStrategy}
             onChange={(e) => setSelectedStrategy(e.target.value)}
@@ -198,8 +202,14 @@ function UsPortfolioPage() {
             ))}
           </select>
         </label>
-        <section className="grid gap-4 xl:grid-cols-2">
-          <div className="rounded-lg border border-border bg-card">
+        <UsOrderPreview
+          bundle={orderPreview ?? null}
+          error={orderPreviewError}
+          isPending={snapshots.isPending}
+          strategyLabel={LABEL[selectedStrategy] ?? selectedStrategy}
+        />
+        <section className="min-w-0">
+          <div className="min-w-0 rounded-lg border border-border bg-card">
             <div className="border-b p-3">
               <h2 className="text-sm font-semibold">{LABEL[selectedStrategy]} 모델 보유</h2>
               <p className="text-[10px] text-muted-foreground">
@@ -239,15 +249,6 @@ function UsPortfolioPage() {
                 </p>
               ) : null}
             </div>
-          </div>
-          <div className="rounded-lg border border-border bg-card">
-            <div className="border-b p-3">
-              <h2 className="text-sm font-semibold">다음 정규장 모델 주문 대기</h2>
-              <p className="text-[10px] text-muted-foreground">
-                오늘 종가 신호 → 다음 미국 정규장 시가 모델
-              </p>
-            </div>
-            <TradeTable rows={pending} compact />
           </div>
         </section>
 
@@ -317,40 +318,6 @@ function Mini({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-function TradeTable({ rows }: { rows: UsPortfolioTradeRecord[]; compact?: boolean }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[700px] text-[10px]">
-        <thead>
-          <tr className="border-b text-muted-foreground [&>th]:px-2 [&>th]:py-2">
-            <th>신호일</th>
-            <th>종목</th>
-            <th>Side</th>
-            <th>사유</th>
-            <th className="text-right">목표금액</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((t) => (
-            <tr key={t.trade_key} className="border-b last:border-0 [&>td]:px-2 [&>td]:py-2">
-              <td>{t.signal_date}</td>
-              <td className="font-medium">{t.symbol}</td>
-              <td>{t.side}</td>
-              <td>{t.reason}</td>
-              <td className="num text-right">{usd(t.model_notional)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {rows.length === 0 ? (
-        <p className="p-6 text-center text-[11px] text-muted-foreground">
-          현재 대기 주문이 없습니다.
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
 function NavChart({ series }: { series: Map<string, UsPortfolioSnapshotRecord[]> }) {
   const dates = Array.from(
     new Set(Array.from(series.values()).flatMap((x) => x.map((r) => r.date))),

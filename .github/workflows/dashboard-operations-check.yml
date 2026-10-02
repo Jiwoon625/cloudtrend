@@ -5,8 +5,12 @@ on:
     paths:
       - src/routes/index.tsx
       - src/components/DashboardOperations.tsx
+      - src/components/UsOrderPreview*
+      - src/lib/usOrderPreview*
+      - src/lib/engine/usProspectiveOrderPreview*
       - src/lib/dashboardOperations*.ts
       - tests/dashboard-operations*.test.ts
+      - tests/us-order-preview*.test.ts
       - vitest.dashboard.config.ts
       - .github/workflows/dashboard-operations-check.yml
   workflow_dispatch:
