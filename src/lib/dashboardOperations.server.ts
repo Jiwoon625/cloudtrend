@@ -22,8 +22,10 @@ import {
   type DashboardOperations,
 } from "./dashboardOperations";
 
+import { projectDashboardSectorContext } from "./dashboardOperationsSectorLimits";
+
 const BUCKET = "cloudtrend-data";
-const VERSION = "dashboard-operations-kospi-confirm1-v4";
+const VERSION = "dashboard-operations-sector-codes-v5";
 const memory = new Map<string, { expires: number; index: DashboardIndex }>();
 const inFlight = new Map<string, Promise<DashboardIndex>>();
 
@@ -80,10 +82,14 @@ export async function projection(client: SupabaseClient, uid: string, kind: "kr"
       ? (meta as DashboardSummary).resultDigest
       : `${(meta as UsProspectiveCache).dataHash}:${(meta as UsProspectiveCache).generatedAt}`;
   const key = `${uid}:${kind}:${VERSION}:${digest}`;
+  // Always use freshly read generation metadata, even for the same result digest.
+  // Keep it out of the reusable projection so a same-day re-screen cannot reuse an old timestamp.
+  const observed = (index: DashboardIndex): DashboardIndex =>
+    kind === "kr" ? { ...index, screeningCreatedAt: (meta as DashboardSummary).createdAt } : index;
   const cached = memory.get(key);
-  if (cached && cached.expires > Date.now()) return cached.index;
+  if (cached && cached.expires > Date.now()) return observed(cached.index);
   const pending = inFlight.get(key);
-  if (pending) return pending;
+  if (pending) return observed(await pending);
   const promise = (async () => {
     const path = `${uid}/cache/dashboard-operations/${kind}-v1.json`;
     const sidecar = await readJson<{ key: string; index: DashboardIndex }>(client, path);
@@ -124,7 +130,7 @@ export async function projection(client: SupabaseClient, uid: string, kind: "kr"
     const index = await promise;
     if (memory.size >= 8) memory.delete(memory.keys().next().value!);
     memory.set(key, { expires: Date.now() + 5 * 60_000, index });
-    return index;
+    return observed(index);
   } finally {
     inFlight.delete(key);
   }
@@ -233,6 +239,7 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
   const etfPositions = etfActual
     ? [...etfActual.positions, ...(etf ?? []).filter((p) => !enteredEtfs.has(p.symbol))]
     : etf;
+  const sectorContext = projectDashboardSectorContext(krDoc, kr?.screeningCreatedAt);
   const markets = DASHBOARD_MARKETS.map((market) =>
     marketSignals(
       market === "US" ? us : kr,
@@ -247,6 +254,7 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
         : market === "ETF"
           ? (etfActual?.executions ?? [])
           : (krActual?.executions ?? []),
+      sectorContext,
     ),
   );
   if (!krDoc)

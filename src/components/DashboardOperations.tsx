@@ -319,6 +319,33 @@ function SignalLink({ row }: { row: DashboardSignal }) {
     </Link>
   );
 }
+export function DashboardSectorLimitBadge({ row }: { row: DashboardSignal }) {
+  if (row.market !== "KOSPI" && row.market !== "KOSDAQ") return null;
+  const limit = row.sectorLimit;
+  const status = limit?.status ?? "unknown";
+  const countLabel = `${limit?.count ?? "—"}/${limit?.limit ?? "—"}`;
+  const label =
+    status === "blocked" ? "섹터 제한" : status === "room" ? "섹터 여유" : "섹터 미확인";
+  return (
+    <div className="mt-1.5 max-w-[240px] text-[10px] leading-relaxed" data-sector-status={status}>
+      <span
+        className={`inline-flex flex-wrap items-center gap-x-1 rounded border px-1.5 py-0.5 font-medium ${status === "blocked" ? "border-destructive/30 bg-destructive/10 text-destructive" : status === "room" ? "border-border bg-muted text-foreground" : "border-warn/30 bg-warn/10 text-warn"}`}
+      >
+        {label} · {countLabel}종목
+      </span>
+      <span className="mt-0.5 block text-muted-foreground">
+        {status === "blocked" ? "추가 진입 제한 · " : ""}
+        {status === "unknown" ? `${limit?.issue ?? "전략 장부 미수신"} · ` : ""}
+        전략 장부 기준 {limit?.asOfDate ?? "미확인"}
+      </span>
+      {limit?.limit != null ? (
+        <span className="block text-muted-foreground">
+          {row.market} 한도 {Math.round(limit.cap * 100)}% · 국내 {limit.maxPositions}슬롯
+        </span>
+      ) : null}
+    </div>
+  );
+}
 export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
   const [tab, setTab] = useState<"onsets" | "pending" | "exits">("onsets");
   const [market, setMarket] = useState<DashboardMarket | "ALL">("ALL");
@@ -377,6 +404,13 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
           종목이며, 자료 미수신·확인 탈락은 포함하지 않습니다. 진입 준비는 시장별 우선순위 순,
           EXIT는 실제 보유종목 기준입니다. ETF 진입 준비·EXIT는 ETF 조건 상세에서 확인합니다.
         </p>
+        {tab !== "exits" && selectedMarkets.some((m) => m === "KOSPI" || m === "KOSDAQ") ? (
+          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+            섹터 보유 수는 전략 장부의 KOSPI+KOSDAQ 합산입니다. 제한 종목도 Onset·확인 신호는
+            유지합니다. 여유는 기준일 현재 수량이며 진입을 보장하지 않습니다. 예정 청산은 미차감,
+            같은 날 다른 진입 후보의 슬롯은 미예약 상태입니다.
+          </p>
+        ) : null}
         <div className="mt-3 flex flex-wrap gap-2" role="tablist" aria-label="신호 종류">
           {(["onsets", "pending", "exits"] as const).map((kind) => (
             <Button
@@ -454,6 +488,7 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
                     </td>
                     <td className={`px-3 py-3 ${tab === "onsets" ? "text-up" : "text-warn"}`}>
                       {row.reason}
+                      {tab !== "exits" ? <DashboardSectorLimitBadge row={row} /> : null}
                     </td>
                   </tr>
                 ))}
