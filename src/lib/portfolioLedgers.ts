@@ -1,3 +1,5 @@
+import { decimal, divide, format, fromLegacyNumber, integerBudgetQuantity } from "./ledger/decimal";
+import { validDate } from "./ledger/validation";
 import type { KospiMarketGateEvidence } from "./engine/kospiMarketGate";
 import type { DailyPrice, Market } from "./engine/types";
 import type { ScreeningSnapshot } from "./screeningSnapshot";
@@ -47,6 +49,13 @@ export interface StrategyLedger {
   quotes: Record<string, Quote>;
   fingerprint: string;
   calculatedAt: string;
+  modelAccounting?: {
+    cash: string;
+    nav: string | null;
+    valuationStatus: "COMPLETE" | "STALE" | "MISSING";
+    fees: Record<string, { entry: string; exit: string | null }>;
+    realizedPnl: string;
+  };
 }
 export interface ActualExecution<M extends string = Market> {
   id: string;
@@ -129,6 +138,14 @@ function summary(
   };
 }
 
+/** Explicit new-series opt-in. Historical callers keep the original execution contract. */
+export interface ProspectiveKrReplayPolicy {
+  version: "kr-adopted-shadow-20261005-v1";
+  startDate: "2026-10-05";
+  throughDate: string;
+  scope: "MIXED" | "KOSPI" | "KOSDAQ";
+}
+
 /** Deterministic strategy replay. No personal executions, exclusions or edited legacy fills enter here. */
 export function simulateStrategy(
   settings: PortfolioSettings,
@@ -138,7 +155,44 @@ export function simulateStrategy(
   fingerprint = "",
   marketDates: string[] = [],
   marketGates: Record<string, KospiMarketGateEvidence> = {},
+  prospective?: ProspectiveKrReplayPolicy,
 ): StrategyLedger {
+  if (prospective) {
+    if (
+      prospective.version !== "kr-adopted-shadow-20261005-v1" ||
+      prospective.startDate !== "2026-10-05" ||
+      !validDate(prospective.throughDate) ||
+      prospective.throughDate < prospective.startDate ||
+      prospective.throughDate >= "2027-10-05" ||
+      settings.initialCapital !== 100_000_000 ||
+      settings.maxPositions !== 30 ||
+      settings.roundTripCostRate !== 0.003
+    )
+      throw new Error("Invalid frozen first-year KR series contract");
+    const inScope = (symbol: string) =>
+      prospective.scope === "MIXED"
+        ? markets[symbol] === "KOSPI" || markets[symbol] === "KOSDAQ"
+        : markets[symbol] === prospective.scope;
+    input = input
+      .filter((s) => s.asOfDate >= prospective.startDate && s.asOfDate <= prospective.throughDate)
+      .map((s) => ({
+        ...s,
+        entries: s.entries.filter(
+          (e) =>
+            inScope(e.symbol) &&
+            (!e.kospiEntry?.originDate || e.kospiEntry.originDate >= prospective.startDate),
+        ),
+      }));
+    bars = Object.fromEntries(
+      Object.entries(bars)
+        .filter(([symbol]) => inScope(symbol))
+        .map(([symbol, series]) => [
+          symbol,
+          series.filter((b) => b.tradeDate <= prospective.throughDate),
+        ]),
+    );
+    marketDates = marketDates.filter((date) => date <= prospective.throughDate);
+  }
   const snapshots = normalizeSnapshots(input);
   const entryBars = bars;
   // Source loading historically excluded invalid opens/closes. Keep that exact replay/quote
@@ -257,6 +311,12 @@ export function simulateStrategy(
   const trades: PortfolioTrade[] = [];
   const half = settings.roundTripCostRate / 2;
   let cash = settings.initialCapital;
+  let exactCash = prospective ? decimal(fromLegacyNumber(settings.initialCapital)) : 0n,
+    exactRealized = 0n;
+  const exactBasis = new Map<string, bigint>();
+  const modelFees: Record<string, { entry: string; exit: string | null }> = {};
+  const exactFee = (gross: bigint) =>
+    (gross * decimal("0.0015") + decimal("1") - 1n) / decimal("1");
   const closeDue = (cutoff: string, beforeEntry: boolean) => {
     for (const t of trades) {
       if (t.status !== "OPEN" || !latest) continue;
@@ -267,8 +327,20 @@ export function simulateStrategy(
         (beforeEntry && plan.exitDate === cutoff && plan.timing === "CLOSE")
       )
         continue;
-      const fee = money(t.shares * plan.exitPrice * half),
-        pnl = money(t.shares * plan.exitPrice - fee - t.buyAmount - t.entryFee);
+      const grossExact = prospective
+        ? decimal(fromLegacyNumber(plan.exitPrice)) * BigInt(t.shares)
+        : 0n;
+      const feeExact = prospective ? exactFee(grossExact) : 0n;
+      const pnlExact = prospective ? grossExact - feeExact - exactBasis.get(t.id)! : 0n;
+      const fee = prospective ? Number(format(feeExact)) : money(t.shares * plan.exitPrice * half),
+        pnl = prospective
+          ? Number(format(pnlExact))
+          : money(t.shares * plan.exitPrice - fee - t.buyAmount - t.entryFee);
+      if (prospective) {
+        exactCash += grossExact - feeExact;
+        exactRealized += pnlExact;
+        modelFees[t.id]!.exit = format(feeExact);
+      }
       Object.assign(t, {
         status: "CLOSED",
         exitSignalDate: plan.signalDate,
@@ -285,7 +357,7 @@ export function simulateStrategy(
           (b) => b.tradeDate >= t.entryDate && b.tradeDate <= plan.exitDate,
         ).length,
       });
-      cash += t.shares * plan.exitPrice - fee;
+      cash = prospective ? Number(format(exactCash)) : cash + t.shares * plan.exitPrice - fee;
     }
   };
   for (const candidate of rawCandidates) {
@@ -348,14 +420,35 @@ export function simulateStrategy(
     }
     const target = settings.initialCapital / settings.maxPositions;
     const affordable = Math.floor(cash / (c.price * (1 + half)));
-    if (affordable < 1) {
+    if (!prospective && affordable < 1) {
       c.decision = "현금 부족";
       continue;
     }
-    const shares = Math.min(Math.max(1, Math.round(target / c.price)), affordable),
-      amount = money(shares * c.price),
-      fee = money(amount * half);
-    cash -= amount + fee;
+    const shares = prospective
+      ? Number(
+          integerBudgetQuantity(
+            format(divide(decimal(fromLegacyNumber(settings.initialCapital)), decimal("30"))),
+            format(exactCash),
+            fromLegacyNumber(c.price),
+            "0.0015",
+          ),
+        )
+      : Math.min(Math.max(1, Math.round(target / c.price)), affordable);
+    if (shares < 1) {
+      c.decision = "목표예산 내 정수 수량 없음";
+      continue;
+    }
+    const grossExact = prospective ? decimal(fromLegacyNumber(c.price)) * BigInt(shares) : 0n;
+    const feeExact = prospective ? exactFee(grossExact) : 0n;
+    const amount = prospective ? Number(format(grossExact)) : money(shares * c.price),
+      fee = prospective ? Number(format(feeExact)) : money(amount * half);
+    if (prospective) {
+      exactCash -= grossExact + feeExact;
+      if (exactCash < 0n) throw new Error("Exact KR model cash overspend");
+      exactBasis.set(c.key, grossExact + feeExact);
+      modelFees[c.key] = { entry: format(feeExact), exit: null };
+      cash = Number(format(exactCash));
+    } else cash -= amount + fee;
     c.decision = "전략 진입";
     trades.push({
       id: c.key,
@@ -445,6 +538,37 @@ export function simulateStrategy(
     quotes,
     fingerprint,
     calculatedAt: new Date().toISOString(),
+    ...(prospective
+      ? {
+          modelAccounting: {
+            cash: format(exactCash),
+            nav: trades.filter((t) => t.status === "OPEN").some((t) => !quotes[t.symbol])
+              ? null
+              : format(
+                  exactCash +
+                    trades
+                      .filter((t) => t.status === "OPEN")
+                      .reduce(
+                        (sum, t) =>
+                          sum +
+                          decimal(fromLegacyNumber(quotes[t.symbol]!.price)) * BigInt(t.shares),
+                        0n,
+                      ),
+                ),
+            valuationStatus: trades
+              .filter((t) => t.status === "OPEN")
+              .some((t) => !quotes[t.symbol])
+              ? ("MISSING" as const)
+              : trades
+                    .filter((t) => t.status === "OPEN")
+                    .some((t) => quotes[t.symbol]!.date !== prospective.throughDate)
+                ? ("STALE" as const)
+                : ("COMPLETE" as const),
+            fees: modelFees,
+            realizedPnl: format(exactRealized),
+          },
+        }
+      : {}),
   };
 }
 

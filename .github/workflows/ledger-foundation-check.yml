@@ -1,0 +1,34 @@
+name: Ledger foundation check
+on:
+  pull_request:
+    paths:
+      - src/lib/ledger/**
+      - src/lib/portfolioLedgers.ts
+      - src/lib/engine/usProspectivePortfolio.ts
+      - src/lib/engine/usProspectiveModelPolicy.test.ts
+      - scripts/plan-ledger-migration.ts
+      - docs/ledger-foundation*
+      - docs/model-series-foundation.md
+      - docs/etf-adopted-shadow.md
+      - vitest.ledger.config.ts
+      - .github/workflows/ledger-foundation-check.yml
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --config vitest.ledger.config.ts
+      - run: npx vitest run --config vitest.portfolio.config.ts
+      - run: npx vitest run --config vitest.shadow.config.ts
+      - run: npx vitest run --config vitest.dashboard.config.ts
+      - run: |
+          npx eslint src/lib/ledger scripts/plan-ledger-migration.ts src/lib/portfolioLedgers.ts src/lib/engine/usProspectivePortfolio.ts src/lib/engine/usProspectiveModelPolicy.test.ts vitest.ledger.config.ts --rule 'prettier/prettier: off'
+      - run: npm run build
