@@ -1,0 +1,41 @@
+name: US tax estimate check
+on:
+  pull_request:
+    paths:
+      - src/lib/engine/usCapitalGainsTax*
+      - src/lib/engine/usModelTaxProjection*
+      - src/lib/usModelTax*
+      - src/lib/usTaxOverlay*
+      - src/lib/usActualLedger.ts
+      - src/lib/usProspectiveCloud.ts
+      - src/components/UsTaxEstimatePanel.tsx
+      - src/components/UsModelTaxEstimatePanel.tsx
+      - src/components/UsPortfolioLedgers.tsx
+      - src/components/UsPortfolioView.tsx
+      - tests/us-tax-*
+      - tests/us-order-preview-cloud.test.ts
+      - tests/fixtures/usTaxEvidence.ts
+      - tests/fixtures/usModelTaxSource.ts
+      - docs/us-capital-gains-tax.md
+      - vitest.us-tax.config.ts
+      - .github/workflows/us-tax-estimate-check.yml
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --config vitest.us-tax.config.ts
+      - run: npx vitest run --config vitest.portfolio.config.ts
+      - run: npx vitest run --config vitest.shadow.config.ts
+      - run: npx vitest run tests/us-order-preview-cloud.test.ts src/lib/engine/usProspective.test.ts src/lib/engine/usProspectiveModelPolicy.test.ts
+      - run: |
+          npx eslint src/lib/engine/usCapitalGainsTax* src/lib/engine/usModelTaxProjection* src/lib/usModelTax* src/components/UsModelTaxEstimatePanel.tsx tests/fixtures/usModelTaxSource.ts src/lib/usTaxOverlay* src/lib/usActualLedger.ts src/lib/usProspectiveCloud.ts src/components/UsTaxEstimatePanel.tsx src/components/UsPortfolioLedgers.tsx src/components/UsPortfolioView.tsx tests/us-tax-ui.test.tsx tests/fixtures/usTaxEvidence.ts tests/us-order-preview-cloud.test.ts vitest.us-tax.config.ts
+      - run: npm run build

@@ -162,7 +162,7 @@ export async function loadUsPortfolioSnapshots(limitPerStrategy = 370) {
       if (!row) return null;
       const { data, error } = await supabase
         .from("us_portfolio_snapshots")
-        .select("positions:state->positions")
+        .select("positions:state->positions,initialCapital:state->initialCapital")
         .eq("user_id", uid)
         .eq("strategy_id", row.strategy_id)
         .eq("date", row.date)
@@ -222,6 +222,7 @@ export async function loadUsPortfolioSnapshots(limitPerStrategy = 370) {
           rowIndex === 0
             ? {
                 positions: latest[index]?.positions ?? [],
+                initialCapital: latest[index]?.initialCapital ?? null,
                 ...(row.strategy_id !== "SPY_BENCHMARK"
                   ? {
                       orderPreview: previews.get(row.strategy_id)?.preview ?? null,

@@ -15,6 +15,8 @@ export interface UsCandidate {
   date: string;
 }
 export interface UsActualDocument {
+  /** Optional verified reporting projection. No inference from execution-date/USD P&L. */
+  taxEvidence?: import("./usTaxOverlay").ActualTaxEvidence;
   capital: number;
   executions: UsExecution[];
   excluded: Record<string, string>;
