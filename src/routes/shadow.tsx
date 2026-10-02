@@ -23,38 +23,38 @@ export function ShadowPage() {
             USD 금액을 합산하지 않습니다.
           </p>
         </header>
-        <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-4">
-          <label className="text-sm">
+        <div className="grid min-w-0 items-end gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <label className="min-w-0 text-sm">
             Shadow 모델
             <select
               aria-label="Shadow 모델"
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              className="ml-2 rounded border bg-background p-2"
+              className="mt-1 block w-full min-w-0 max-w-full rounded border bg-background p-2"
             >
               <option value="KOSPI">KOSPI 하루확인·불황 시 RSAccel 필터 · KRW</option>
               <option value="A2_QUARTER_SHADOW">미국 A2 분기 · USD</option>
               <option value="B3_BETA_SHADOW">미국 B3 Beta · USD</option>
             </select>
           </label>
-          <label className="text-sm">
+          <label className="min-w-0 text-sm">
             시작일
             <input
               aria-label="시작일"
               type="date"
               value={fromDate}
               onChange={(e) => setFromDate(e.target.value)}
-              className="ml-2 rounded border bg-background p-2"
+              className="mt-1 block w-full min-w-0 max-w-full rounded border bg-background p-2"
             />
           </label>
-          <label className="text-sm">
+          <label className="min-w-0 text-sm">
             종료일
             <input
               aria-label="종료일"
               type="date"
               value={toDate}
               onChange={(e) => setToDate(e.target.value)}
-              className="ml-2 rounded border bg-background p-2"
+              className="mt-1 block w-full min-w-0 max-w-full rounded border bg-background p-2"
             />
           </label>
           <button
