@@ -1,6 +1,7 @@
 import { gunzipSync } from "node:zlib";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
+import { loadUsOrderPreview } from "./usOrderPreview.server";
 import { calculateActual, type LedgerDocument, type Quote } from "./portfolioLedgers";
 import type { UsActualDocument } from "./usActualLedger";
 import type { AnalysisResult } from "./engine/pipeline";
@@ -171,7 +172,7 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
       return null;
     }
   }
-  const [kr, us, krDoc, usDoc, etfHoldings] = await Promise.all([
+  const [kr, us, krDoc, usDoc, etfHoldings, usOrderPreview] = await Promise.all([
     safe("국내 신호", () => projection(client, uid, "kr")),
     safe("미국 신호", () => projection(client, uid, "us")),
     safe("국내 실제 보유", () => documentFor<LedgerDocument>(client, uid, "portfolio_ledgers")),
@@ -184,6 +185,7 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
         `${uid}/${ETF_HOLDINGS_PATH}`,
       ),
     ),
+    safe("US 주문 미리보기", () => loadUsOrderPreview(client, uid, "A0_QUARTER_PRIMARY")),
   ]);
   if (kr?.rows.some((r) => r.market === "ETF" && r.etfEntry?.dataStatus === "krx_batch_pending")) {
     warnings.push(
@@ -267,6 +269,7 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
   }
   return {
     markets,
+    usOrderPreview,
     usPortfolio:
       usDoc && usActual
         ? {

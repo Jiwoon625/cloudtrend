@@ -12,6 +12,10 @@ on:
     paths:
       - "src/lib/engine/usProspective*.ts"
       - "src/lib/usProspectiveCloud.ts"
+      - "src/lib/usOrderPreview*.ts"
+      - "src/components/UsOrderPreview*"
+      - "tests/us-order-preview*.test.ts"
+      - "vitest.dashboard.config.ts"
       - "src/routes/us*.tsx"
       - "scripts/run-us-screening.ts"
       - "scripts/test-us-collector.py"
@@ -22,6 +26,10 @@ on:
     paths:
       - "src/lib/engine/usProspective*.ts"
       - "src/lib/usProspectiveCloud.ts"
+      - "src/lib/usOrderPreview*.ts"
+      - "src/components/UsOrderPreview*"
+      - "tests/us-order-preview*.test.ts"
+      - "vitest.dashboard.config.ts"
       - "src/routes/us*.tsx"
       - "scripts/run-us-screening.ts"
       - "scripts/test-us-collector.py"
@@ -46,6 +54,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:us
+      - run: npx vitest run --config vitest.dashboard.config.ts
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"

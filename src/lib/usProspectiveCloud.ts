@@ -1,4 +1,6 @@
 import { usBrowserViews, type UsProspectiveSummary } from "./usBrowserViews";
+import { usOrderPreviewsServer } from "./usOrderPreview.functions";
+import type { UsOrderPreviewBundle } from "./engine/usProspectiveOrderPreview";
 import { ownerPath, readObject, readBinaryObject, supabase, userId } from "@/lib/cloud";
 
 export interface UsProspectiveCacheRow {
@@ -64,7 +66,10 @@ export interface UsPortfolioSnapshotRecord {
   turnover: number;
   fees_usd: number;
   positions_count: number;
-  state: Record<string, unknown>;
+  state: Record<string, unknown> & {
+    orderPreview?: UsOrderPreviewBundle | null;
+    orderPreviewError?: string | null;
+  };
 }
 
 export interface UsPortfolioTradeRecord {
@@ -166,11 +171,65 @@ export async function loadUsPortfolioSnapshots(limitPerStrategy = 370) {
       return data;
     }),
   );
+  // Preview failure is independent of holdings. The endpoint authenticates with
+  // getUser and returns only compact previews, never full saved engine state.
+  const requests = results.flatMap((result) => {
+    const row = result.data?.[0];
+    return row && row.strategy_id !== "SPY_BENCHMARK"
+      ? [{ strategyId: row.strategy_id, sourceDate: row.date }]
+      : [];
+  });
+  const previews = new Map<
+    string,
+    { preview: UsOrderPreviewBundle | null; error: string | null }
+  >();
+  if (requests.length) {
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      if (error || !data.session) throw new Error("로그인 세션을 확인해 주세요.");
+      const response = await usOrderPreviewsServer({
+        data: { accessToken: data.session.access_token, requests },
+      });
+      for (const request of requests) {
+        const result = response.find((item) => item.strategyId === request.strategyId);
+        if (
+          !result ||
+          result.sourceDate !== request.sourceDate ||
+          (result.preview && result.preview.sourceDate !== request.sourceDate)
+        ) {
+          previews.set(request.strategyId, {
+            preview: null,
+            error: "미국 모형 스냅샷이 갱신 중입니다. 새로고침해 주세요.",
+          });
+          continue;
+        }
+        previews.set(request.strategyId, {
+          preview: result.error ? null : result.preview,
+          error: result.error ?? (!result.preview ? "저장된 미국 주문 미리보기가 없습니다." : null),
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "미국 주문 미리보기 조회 실패";
+      for (const request of requests)
+        previews.set(request.strategyId, { preview: null, error: message });
+    }
+  }
   return results
     .flatMap((result, index) =>
       (result.data ?? []).map((row, rowIndex) => ({
         ...row,
-        state: rowIndex === 0 ? { positions: latest[index]?.positions ?? [] } : {},
+        state:
+          rowIndex === 0
+            ? {
+                positions: latest[index]?.positions ?? [],
+                ...(row.strategy_id !== "SPY_BENCHMARK"
+                  ? {
+                      orderPreview: previews.get(row.strategy_id)?.preview ?? null,
+                      orderPreviewError: previews.get(row.strategy_id)?.error ?? null,
+                    }
+                  : {}),
+              }
+            : {},
       })),
     )
     .sort((a, b) => b.date.localeCompare(a.date)) as UsPortfolioSnapshotRecord[];

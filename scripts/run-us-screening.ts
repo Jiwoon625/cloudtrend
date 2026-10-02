@@ -1,4 +1,5 @@
 import { gzipSync } from "node:zlib";
+import { buildUsOrderPreview } from "../src/lib/engine/usProspectiveOrderPreview";
 import { usBrowserViews } from "../src/lib/usBrowserViews";
 import type { UsProspectiveCache } from "../src/lib/usProspectiveCloud";
 import process from "node:process";
@@ -303,7 +304,10 @@ async function main() {
         turnover: stepped.turnover,
         fees_usd: stepped.feesUsd,
         positions_count: stepped.positionsCount,
-        state: stepped.state,
+        state: {
+          ...stepped.state,
+          orderPreview: buildUsOrderPreview(strategy, stepped.state, analysis.rows),
+        },
       },
       { onConflict: "user_id,strategy_id,date" },
     );

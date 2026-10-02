@@ -64,6 +64,7 @@ export interface DashboardMarketSignals {
   exits: DashboardSignal[];
 }
 export interface DashboardOperations {
+  usOrderPreview?: import("./engine/usProspectiveOrderPreview").UsOrderPreviewBundle | null;
   markets: DashboardMarketSignals[];
   usPortfolio: { capital: number; summary: PortfolioSummary; unpricedPositions: number } | null;
   etfHoldings: { symbols: string[]; updatedAt: string } | null;
