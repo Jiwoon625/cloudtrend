@@ -1,3 +1,6 @@
+import { parseManualMarketData } from "./engine/manualDataset";
+import { evaluateKospiMarketGateAtDate } from "./engine/kospiMarketGate";
+import { NO_CAPABILITIES, type MarketDataset } from "./engine/dataset";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { listActiveSources, type ActiveSourceRecord } from "./screeningSources.server";
@@ -132,9 +135,10 @@ async function priceInputs(
   const bySymbol = new Map<string, Map<string, DailyPrice>>();
   const markets: Record<string, Market> = {};
   const kospiDates = new Set<string>();
+  const indexTexts: string[] = [];
   const observedDates = new Set<string>();
   for (const source of sources) {
-    if (source.max_date && source.max_date < from) continue;
+    // Earlier index rows are still needed for MA60/cloud/volatility warmup; stock rows stay bounded.
     const { data, error } = await client.storage
       .from(source.storage_bucket)
       .download(source.storage_path);
@@ -150,8 +154,12 @@ async function priceInputs(
       text = new TextDecoder("euc-kr").decode(bytes);
     }
     let header: Record<string, number> = {};
+    const indexRows: string[] = [];
+    const csvRow = (cells: string[]) =>
+      cells.map((value) => `"${value.replaceAll('"', '""')}"`).join(",");
     visitDelimitedRows(text, (cells, index) => {
       if (index === 0) {
+        indexRows.push(csvRow(cells));
         header = Object.fromEntries(
           cells.map((v, i) => [
             v
@@ -166,16 +174,18 @@ async function priceInputs(
       const cell = (key: string) => cells[header[key]!] ?? "";
       const symbol = cell("symbol"),
         date = cell("date");
-      if (date < from || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
       const market = cell("market");
-      if (symbol === "KOSPI") kospiDates.add(date);
-      if (market === "KOSPI" || market === "KOSDAQ" || symbol === "KOSPI") observedDates.add(date);
-      if (!symbols.has(symbol)) return;
-      if (market !== "KOSPI" && market !== "KOSDAQ" && market !== "ETF") return;
       const number = (key: string) => {
         const raw = cell(key).replaceAll(",", "").trim();
         return raw ? Number(raw) : Number.NaN;
       };
+      if (["KOSPI", "KOSDAQ", "VKOSPI"].includes(symbol)) indexRows.push(csvRow(cells));
+      if (symbol === "KOSPI") kospiDates.add(date);
+      if (market === "KOSPI" || market === "KOSDAQ" || symbol === "KOSPI") observedDates.add(date);
+      if (date < from) return;
+      if (!symbols.has(symbol)) return;
+      if (market !== "KOSPI" && market !== "KOSDAQ" && market !== "ETF") return;
       // Only the new KOSPI entry path needs raw suspension/invalid rows. Other markets retain
       // their original price filtering; simulateStrategy separates raw entry bars from replay quotes.
       if (market !== "KOSPI" && (number("open") <= 0 || number("close") <= 0)) return;
@@ -196,6 +206,7 @@ async function priceInputs(
       bySymbol.set(symbol, series);
       markets[symbol] = market;
     });
+    if (indexRows.length > 1) indexTexts.push(indexRows.join("\n"));
   }
   const bars = Object.fromEntries(
     [...bySymbol].map(([s, b]) => [
@@ -203,7 +214,37 @@ async function priceInputs(
       [...b.values()].sort((a, b) => a.tradeDate.localeCompare(b.tradeDate)),
     ]),
   );
-  return { bars, markets, marketDates: [...new Set([...kospiDates, ...observedDates])].sort() };
+  const marketDates = [...new Set([...kospiDates, ...observedDates])].sort();
+  // Parse only the small index subset with the same non-null merge, source quality,
+  // and dated volatility rules as screening. Never silently erase flow on overlaps.
+  let gateDataset: MarketDataset;
+  try {
+    gateDataset = parseManualMarketData(indexTexts, { allowIndexOnly: true }).dataset;
+    gateDataset.kospiGateDates = [
+      ...new Set([...(gateDataset.kospiGateDates ?? gateDataset.tradeDates), ...marketDates]),
+    ].sort();
+  } catch {
+    gateDataset = {
+      provider: "MANUAL_INPUT",
+      version: KOSPI_ENTRY_POLICY.version,
+      asOfDate: marketDates.at(-1) ?? "",
+      isLive: true,
+      capabilities: NO_CAPABILITIES,
+      notes: ["시장 입력 파싱 불가"],
+      sectors: [],
+      tradeDates: marketDates,
+      instruments: [],
+      bars: {},
+      indexSeries: [],
+      financials: {},
+      etfFacts: {},
+      vkospiSeries: [],
+    };
+  }
+  const marketGates = Object.fromEntries(
+    marketDates.map((date) => [date, evaluateKospiMarketGateAtDate(gateDataset, date)]),
+  );
+  return { bars, markets, marketDates, marketGates };
 }
 
 async function refreshStrategy(client: SupabaseClient, uid: string, doc: LedgerDocument) {
@@ -246,8 +287,21 @@ async function refreshStrategy(client: SupabaseClient, uid: string, doc: LedgerD
     [...snapshots.map((s) => s.asOfDate), ...doc.executions.map((e) => e.date)]
       .filter(Boolean)
       .sort()[0] ?? "9999-12-31";
-  const { bars, markets, marketDates } = await priceInputs(client, sources, symbols, from);
-  doc.strategy = simulateStrategy(doc.settings, snapshots, bars, markets, fingerprint, marketDates);
+  const { bars, markets, marketDates, marketGates } = await priceInputs(
+    client,
+    sources,
+    symbols,
+    from,
+  );
+  doc.strategy = simulateStrategy(
+    doc.settings,
+    snapshots,
+    bars,
+    markets,
+    fingerprint,
+    marketDates,
+    marketGates,
+  );
   return true;
 }
 

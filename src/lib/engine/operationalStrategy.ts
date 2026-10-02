@@ -11,12 +11,13 @@ import {
 
 /** Separates executable KOSPI signals from pre-adoption informational snapshots. */
 export const LEGACY_OPERATIONAL_SIGNAL_VERSION = "kospi-e8-u95-dx-v1";
+export const PREVIOUS_KOSPI_ENTRY_POLICY_VERSION = "kospi-e8-confirm1-rsaccel-v2";
 export const OPERATIONAL_SIGNAL_VERSION = KOSPI_ENTRY_POLICY.version;
 export const STRATEGY_CONFIG = {
   KOSPI: {
     pl: "ETF PL 84 우선 / Stock PL 80 fallback",
     summary:
-      "KOSPI: ETF PL 84 우선 / Stock PL 80 fallback · 8.0 Onset → 다음 거래일 종가 8점 이상·청산 없음·RSAccel > 0 확인 → 다음 거래 가능 시가 진입 · U9.5 상향돌파 청산 · Downside Exit 없음(DX) · H60",
+      "KOSPI: ETF PL 84 우선 / Stock PL 80 fallback · 8.0 Onset → 다음 KOSPI 거래일 종가 8점 이상·U9.5 청산 없음·유한한 RSAccel > 0 확인 → 다음 거래 가능 시가 진입 · Onset일·체결 직전 마지막 완료 거래일 시장국면 non-bear 필수 · 하락장/시장자료 미확인 시 신규 진입 제외 · U9.5 상향돌파 청산 · Downside Exit 없음(DX) · H60",
     maxHoldingDays: 60,
     sectorCap: 0.1,
   },
@@ -121,7 +122,8 @@ export function getStoredOperationalExit(
 ): "UP95" | "UP90" | "DOWN30" | null {
   if (market === "KOSPI")
     return (row.operationalSignalVersion === OPERATIONAL_SIGNAL_VERSION ||
-      row.operationalSignalVersion === LEGACY_OPERATIONAL_SIGNAL_VERSION) &&
+      row.operationalSignalVersion === LEGACY_OPERATIONAL_SIGNAL_VERSION ||
+      row.operationalSignalVersion === PREVIOUS_KOSPI_ENTRY_POLICY_VERSION) &&
       row.exitSignal === "UP95"
       ? "UP95"
       : null;
@@ -136,13 +138,19 @@ export function getOperationalStatus(row: Signals, market: string): string {
   if (exit === "DOWN30") return "KOSDAQ 청산 · 3.0점 하향 이탈";
   if (market === "KOSPI" && row.kospiEntry) {
     const s = row.kospiEntry;
-    if (isOperationalEntry(row)) return "KOSPI 하루·RS 확인 완료 · 다음 거래 가능 시가 진입 대기";
-    if (s.state === "confirmed") return "KOSPI 과거 확인 참고 · 운영 진입 제외";
+    if (isOperationalEntry(row))
+      return "KOSPI 하루·RS·시장국면 확인 완료 · 체결 전 시장 재확인 대기";
+    if (s.state === "confirmed")
+      return s.date < KOSPI_ENTRY_POLICY.effectiveConfirmationDate ||
+        s.version !== KOSPI_ENTRY_POLICY.version
+        ? "KOSPI 과거 확인 참고 · 운영 진입 제외"
+        : `KOSPI 확인 기록 미충족 · 진입 제외${s.issues.length ? ` · ${s.issues.join(" · ")}` : ""}`;
     if (s.state === "pending") return "KOSPI 8.0 Onset · 다음 거래일 확인 대기";
-    if (s.state === "rejected") return `KOSPI 확인 실패 · ${s.issues.join(" · ")}`;
-    if (s.state === "unobservable") return "KOSPI 확인 자료 미확인 · 진입 제외";
+    if (s.state === "rejected") return `KOSPI 확인 실패 · 진입 제외 · ${s.issues.join(" · ")}`;
+    if (s.state === "unobservable")
+      return `KOSPI 확인 자료 미확인 · 진입 제외${s.issues.length ? ` · ${s.issues.join(" · ")}` : ""}`;
   }
-  if (market === "KOSPI" && row.kospi80Onset) return "KOSPI 8.0 Onset · 확인 기록 없음";
+  if (market === "KOSPI" && row.kospi80Onset) return "KOSPI 8.0 Onset · 확인 기록 없음 · 진입 제외";
   if (isOperationalEntry(row)) return `${market} 8.0 Onset · 신규 진입`;
   return "관찰";
 }

@@ -4,30 +4,8 @@ import { NO_CAPABILITIES, type MarketDataset } from "./dataset";
 import { resolveSectorCode, resolveCuratedEtfSectorCode, THEME_SECTORS } from "./sectors";
 import type { DailyPrice, EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
 import { visitDelimitedRows } from "../sourceData";
-
-/** 실현변동성(연환산 %) 시계열. VKOSPI가 없을 때 대체 지표로 쓴다. */
-export function realizedVolatilitySeries(closes: number[], window = 20): number[] {
-  const rets: number[] = [];
-  for (let i = 1; i < closes.length; i++) {
-    const p0 = closes[i - 1]!;
-    const p1 = closes[i]!;
-    rets.push(p0 > 0 && p1 > 0 ? Math.log(p1 / p0) : 0);
-  }
-  const out: number[] = [];
-  for (let i = 0; i < closes.length; i++) {
-    // i번째 종가까지의 과거 수익률만 사용한다(미래 데이터 미사용).
-    const end = i; // rets[0..i-1]
-    if (end < window) {
-      out.push(Number.NaN);
-      continue;
-    }
-    const slice = rets.slice(end - window, end);
-    const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
-    const variance = slice.reduce((a, b) => a + (b - mean) ** 2, 0) / (slice.length - 1);
-    out.push(Math.sqrt(variance * 252) * 100);
-  }
-  return out;
-}
+import { buildDatedVolatilityObservations } from "./kospiVolatility";
+export { realizedVolatilitySeries } from "./kospiVolatility";
 
 export interface ManualParseStats {
   stocks: number;
@@ -231,8 +209,13 @@ interface Series {
  * 붙여넣기/업로드한 텍스트를 MarketDataset으로 변환한다. 형식 오류는 Error로 던진다.
  * 여러 파일을 배열로 넘기면 하나의 데이터셋으로 합쳐서 해석한다(같은 종목·같은 날짜는 1건만 사용).
  */
-export function parseManualMarketData(input: string | string[]): ManualParseResult {
+export function parseManualMarketData(
+  input: string | string[],
+  options: { allowIndexOnly?: boolean } = {},
+): ManualParseResult {
   const map = new Map<string, Series>();
+  const kospiPriceInputIssues: Record<string, string[]> = {};
+  const kospiGateDates = new Set<string>();
   const warnings: string[] = [];
   let skipped = 0;
   let recordCount = 0;
@@ -240,16 +223,49 @@ export function parseManualMarketData(input: string | string[]): ManualParseResu
     const symbol = normalizeKrxSymbol(pick(rec, "symbol"));
     const date = normalizeDate(pick(rec, "date"));
     const close = num(pick(rec, "close"));
-    if (!symbol || !date || close === null || close <= 0) {
-      skipped++;
-      return;
-    }
     const rawType = String(pick(rec, "type") ?? "")
       .trim()
       .toUpperCase();
     const rawMarket = String(pick(rec, "market") ?? "")
       .trim()
       .toUpperCase();
+    // Retain independent session evidence even when a KOSPI price row is absent
+    // or rejected. Do not promote ETF/overseas dates into the Korean calendar.
+    if (
+      date &&
+      symbol &&
+      (symbol === "KOSPI" ||
+        symbol === "KOSDAQ" ||
+        (rawType !== "ETF" &&
+          rawType !== "INDEX" &&
+          ["KOSPI", "KOSDAQ", "코스피", "코스닥"].includes(rawMarket)))
+    )
+      kospiGateDates.add(date);
+    if (!symbol || !date || close === null || close <= 0) {
+      // A rejected duplicate does not replace an earlier usable price row.
+      if (symbol === "KOSPI" && date && !map.get(symbol)?.dates.has(date)) {
+        kospiPriceInputIssues[date] = ["close"];
+      }
+      skipped++;
+      return;
+    }
+    if (symbol === "KOSPI") {
+      const fields = ["open", "high", "low"];
+      const missing = fields.filter((field) => {
+        const value = num(pick(rec, field));
+        return value === null || value <= 0;
+      });
+      if (missing.length === 0) {
+        const sourceOpen = num(pick(rec, "open"))!;
+        const sourceHigh = num(pick(rec, "high"))!;
+        const sourceLow = num(pick(rec, "low"))!;
+        if (sourceHigh < Math.max(sourceOpen, close) || sourceLow > Math.min(sourceOpen, close)) {
+          missing.push("ohlc_range");
+        }
+      }
+      if (missing.length > 0) kospiPriceInputIssues[date] = missing;
+      else delete kospiPriceInputIssues[date];
+    }
     const isIndex =
       rawType === "INDEX" ||
       rawMarket === "INDEX" ||
@@ -307,7 +323,9 @@ export function parseManualMarketData(input: string | string[]): ManualParseResu
         if (index >= 0) {
           const previous = existing.bars[index]!;
           const enriched = Object.fromEntries(
-            Object.entries(bar).filter(([, value]) => value !== null && value !== undefined && value !== ""),
+            Object.entries(bar).filter(
+              ([, value]) => value !== null && value !== undefined && value !== "",
+            ),
           ) as Partial<DailyPrice>;
           existing.bars[index] = { ...previous, ...enriched };
         }
@@ -349,26 +367,17 @@ export function parseManualMarketData(input: string | string[]): ManualParseResu
     indexSeries.push({ indexCode: "KOSDAQ", indexName: "코스닥", bars: kosdaq.bars });
   const vkospi = map.get("VKOSPI");
 
-  // VKOSPI가 없으면 KOSPI(및 KOSDAQ) 종가의 20일 실현변동성(연환산 %)으로 대체한다.
-  let volatilitySeries: number[] = [];
-  let volatilityIsProxy = false;
-  if (vkospi && vkospi.bars.length > 0) {
-    volatilitySeries = vkospi.bars.map((b) => b.close);
-  } else {
-    const kospiVol = realizedVolatilitySeries(kospi.bars.map((b) => b.close));
-    const kosdaqCloses =
-      kosdaq && kosdaq.bars.length >= 21 ? kosdaq.bars.map((b) => b.close) : null;
-    const kosdaqVol = kosdaqCloses ? realizedVolatilitySeries(kosdaqCloses) : null;
-    const offset = kosdaqVol ? kosdaqVol.length - kospiVol.length : 0;
-    volatilitySeries = kospiVol
-      .map((v, i) => {
-        const kq = kosdaqVol?.[i + offset];
-        if (!Number.isFinite(v)) return Number.NaN;
-        return kq !== undefined && Number.isFinite(kq) ? 0.7 * v + 0.3 * kq : v;
-      })
-      .filter((v) => Number.isFinite(v));
-    volatilityIsProxy = volatilitySeries.length > 0;
-  }
+  // Preserve actual row dates before dropping warmup values from the legacy array.
+  // KOSDAQ blend windows are joined by date; equal array length is not provenance.
+  const vkospiObservations = buildDatedVolatilityObservations(
+    kospi.bars,
+    kosdaq?.bars ?? [],
+    vkospi?.bars ?? [],
+  );
+  const volatilitySeries = vkospiObservations
+    .map((point) => point.value)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  const volatilityIsProxy = !vkospi && volatilitySeries.length > 0;
 
   const instruments: Instrument[] = [];
   const bars: Record<string, DailyPrice[]> = {};
@@ -422,7 +431,7 @@ export function parseManualMarketData(input: string | string[]): ManualParseResu
     bars[s.symbol] = s.bars;
   }
 
-  if (instruments.length === 0) {
+  if (instruments.length === 0 && !options.allowIndexOnly) {
     throw new Error("분석할 종목 일봉이 없습니다. 지수 외에 개별 종목 행을 포함해 주세요.");
   }
 
@@ -473,12 +482,15 @@ export function parseManualMarketData(input: string | string[]): ManualParseResu
     ],
     sectors: THEME_SECTORS.filter((s) => usedSectors.has(s.code)),
     tradeDates,
+    kospiGateDates: [...kospiGateDates].sort(),
     instruments,
     bars,
     indexSeries,
     financials: {} as Record<string, FinancialFacts>,
     etfFacts: {} as Record<string, EtfFacts>,
     vkospiSeries: volatilitySeries,
+    vkospiObservations,
+    kospiPriceInputIssues,
   };
 
   return {

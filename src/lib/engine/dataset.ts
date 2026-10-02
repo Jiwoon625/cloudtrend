@@ -23,6 +23,18 @@ export interface DatasetCapabilities {
   exactTradingValue: boolean;
 }
 
+/** Provenance of the existing market-gate volatility input, never a new proxy. */
+export type KospiVolatilitySource =
+  "VKOSPI" | "REALIZED_VOLATILITY_KOSPI" | "REALIZED_VOLATILITY_KOSPI_KOSDAQ_70_30" | "MOCK_VKOSPI";
+
+export interface KospiVolatilityObservation {
+  date: string;
+  value: number | null;
+  source: KospiVolatilitySource;
+  /** A provider can explicitly retain an unusable dated observation. */
+  issues?: string[];
+}
+
 export interface MarketDataset {
   provider: string;
   version: string;
@@ -34,12 +46,19 @@ export interface MarketDataset {
   notes: string[];
   sectors: Array<{ code: string; name: string }>;
   tradeDates: string[];
+  /** Strict KOSPI session evidence from Korean stocks / KOSPI / KOSDAQ, never ETFs or US rows. */
+  kospiGateDates?: string[];
   instruments: Instrument[];
   bars: Record<string, DailyPrice[]>;
   indexSeries: IndexSeries[];
   financials: Record<string, FinancialFacts>;
   etfFacts: Record<string, EtfFacts>;
+  /** Legacy display series; its array position does NOT establish a trading date. */
   vkospiSeries: number[];
+  /** Optional for old saved datasets. Missing metadata means UNKNOWN, not alignment by length. */
+  vkospiObservations?: KospiVolatilityObservation[];
+  /** Raw KOSPI OHLC defects retained before the legacy parser fills/normalizes price bars. */
+  kospiPriceInputIssues?: Record<string, string[]>;
 }
 
 export const NO_CAPABILITIES: DatasetCapabilities = {

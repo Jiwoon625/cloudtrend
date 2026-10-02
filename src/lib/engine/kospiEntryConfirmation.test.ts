@@ -1,3 +1,4 @@
+import { kospiGate } from "../../../tests/kospi-policy-fixtures";
 import { describe, expect, it } from "vitest";
 import {
   kospiEntryConfirmation,
@@ -13,7 +14,14 @@ const o = (
   date: string,
   score: number | null,
   rsAccel: number | null = 1,
-): KospiEntryObservation => ({ date, score, rsAccel, observed: true, eligible: true });
+): KospiEntryObservation => ({
+  date,
+  score,
+  rsAccel,
+  observed: true,
+  eligible: true,
+  marketGate: kospiGate(date),
+});
 const before = o("2026-10-01", 7.5),
   onset = o("2026-10-02", 8, -2),
   confirm = o("2026-10-05", 8.5);
@@ -118,5 +126,79 @@ describe("KOSPI dated source reconstruction", () => {
       ).rsAccel,
     ).toBeNull();
     expect(kospiRelativeReturns(bars, index.slice(0, -1), dates, "060").rsAccel).toBeNull();
+  });
+});
+
+describe("prospective KOSPI bear entry pause", () => {
+  it("rejects a bear Onset even when confirmation turns bullish", () => {
+    const bearOnset = { ...onset, marketGate: kospiGate(onset.date, "RISK_OFF") };
+    const pending = kospiEntryConfirmation(bearOnset, before, o("2026-09-30", 7));
+    expect(pending).toMatchObject({ state: "rejected", eligible: false, originDate: onset.date });
+    const assessed = kospiEntryConfirmation(confirm, bearOnset, before);
+    expect(assessed.state).toBe("rejected");
+    expect(assessed.issues.join(" ")).toContain("발생일 불황");
+    expect(isKospiEntryReady(assessed)).toBe(false);
+  });
+  it("cancels a pending Onset if its confirmation session becomes bear", () => {
+    const bearish = { ...confirm, marketGate: kospiGate(confirm.date, "RISK_OFF") };
+    const assessed = kospiEntryConfirmation(bearish, onset, before);
+    expect(assessed.state).toBe("rejected");
+    expect(assessed.issues.join(" ")).toContain("확인일 불황");
+    expect(kospiEntryConfirmation(o("2026-10-06", 8.5), bearish, onset).state).toBe("none");
+  });
+  it.each(["RISK_ON", "NEUTRAL"] as const)(
+    "allows observed %s without changing score or RS gates",
+    (status) => {
+      const assessed = kospiEntryConfirmation(
+        { ...confirm, marketGate: kospiGate(confirm.date, status) },
+        { ...onset, marketGate: kospiGate(onset.date, status) },
+        before,
+      );
+      expect(isKospiEntryReady(assessed)).toBe(true);
+      expect(kospiEntryConfirmation({ ...confirm, rsAccel: null }, onset, before).state).toBe(
+        "unobservable",
+      );
+      expect(kospiEntryConfirmation({ ...confirm, score: 9.5 }, onset, before).state).toBe(
+        "rejected",
+      );
+    },
+  );
+  it("fails closed on missing, unknown, stale, future or inconsistent dated evidence", () => {
+    for (const gate of [
+      undefined,
+      kospiGate(confirm.date, "UNKNOWN"),
+      kospiGate(onset.date),
+      kospiGate("2026-10-06"),
+      { ...kospiGate(confirm.date), evaluatedCount: 3 },
+      { ...kospiGate(confirm.date), issues: ["STALE"] },
+    ]) {
+      const assessed = kospiEntryConfirmation({ ...confirm, marketGate: gate }, onset, before);
+      expect(assessed.state).toBe("unobservable");
+      expect(isKospiEntryReady(assessed)).toBe(false);
+    }
+  });
+  it("does not allow forged or old-policy confirmations through the live gate", () => {
+    const valid = kospiEntryConfirmation(confirm, onset, before);
+    expect(isKospiEntryReady({ ...valid, marketGate: undefined })).toBe(false);
+    expect(isKospiEntryReady({ ...valid, version: "kospi-e8-confirm1-rsaccel-v2" })).toBe(false);
+    expect(
+      isKospiEntryReady({
+        ...valid,
+        marketGate: {
+          ...valid.marketGate!,
+          confirmation: { ...kospiGate(confirm.date), issues: ["STALE"] },
+        },
+      }),
+    ).toBe(false);
+  });
+  it("keeps pre-adoption reconstructed states informational even under bear", () => {
+    const past = kospiEntryConfirmation(
+      { ...o("2026-10-01", 8.5), marketGate: kospiGate("2026-10-01", "RISK_OFF") },
+      o("2026-09-30", 8),
+      o("2026-09-29", 7),
+    );
+    expect(past.state).toBe("confirmed");
+    expect(past.eligible).toBe(false);
+    expect(isKospiEntryReady(past)).toBe(false);
   });
 });

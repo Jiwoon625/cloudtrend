@@ -266,7 +266,7 @@ export function marketSignals(
             : market === "ETF"
               ? "하루 확인 완료 · 다음 거래일 시가 진입"
               : market === "KOSPI"
-                ? "하루·RS 확인 완료 · 다음 거래 가능 시가 진입 대기"
+                ? "하루·RS·시장국면 확인 완료 · 체결 전 불황 재확인 후 다음 거래 가능 시가 진입 대기"
                 : "8.0 Onset",
       });
     }

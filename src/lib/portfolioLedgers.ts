@@ -1,3 +1,4 @@
+import type { KospiMarketGateEvidence } from "./engine/kospiMarketGate";
 import type { DailyPrice, Market } from "./engine/types";
 import type { ScreeningSnapshot } from "./screeningSnapshot";
 import type { PortfolioSettings, PortfolioSummary, PortfolioTrade } from "./portfolioStoreCore";
@@ -7,7 +8,7 @@ import {
   normalizeSnapshots,
   isEntryOnset,
   isLegacyReplayEntry,
-  nextConfirmedEntry,
+  nextKospiConfirmedEntry,
   heldDuringEntryWindow,
   firstBarAfter,
   deriveExitPlan,
@@ -15,7 +16,7 @@ import {
   operationalExit,
 } from "./portfolioStrategyRules";
 
-export const LEDGER_VERSION = 2;
+export const LEDGER_VERSION = 3;
 export interface Quote {
   price: number;
   date: string;
@@ -136,6 +137,7 @@ export function simulateStrategy(
   markets: Record<string, Market>,
   fingerprint = "",
   marketDates: string[] = [],
+  marketGates: Record<string, KospiMarketGateEvidence> = {},
 ): StrategyLedger {
   const snapshots = normalizeSnapshots(input);
   const entryBars = bars;
@@ -186,10 +188,11 @@ export function simulateStrategy(
       let decision = "다음 거래일 대기";
       if (confirmedPolicy) {
         if (executable) {
-          const execution = nextConfirmedEntry(
+          const execution = nextKospiConfirmedEntry(
             entryBars[entry.symbol] ?? [],
-            signalDate,
+            confirmation!,
             observedDates,
+            marketGates,
           );
           next = execution.bar;
           decision = execution.reason;

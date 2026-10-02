@@ -2,6 +2,13 @@ import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { KospiMarketGateEvidence } from "@/lib/engine/kospiMarketGate";
+import {
+  kospiMarketGateDisplay,
+  kospiMarketGateLabel,
+  kospiVolatilitySourceLabel,
+} from "./kospiEntryPresentation";
+import { StrategyDescription } from "./StrategyDescription";
 import { KospiEntryDetails } from "./KospiEntryDetails";
 import { ScreenerTable } from "./ScreenerTable";
 import { ScreenerView } from "./ScreenerView";
@@ -24,6 +31,27 @@ vi.mock("@/lib/dashboardOperations.functions", () => ({
 vi.mock("@/lib/cloud", () => ({ supabase: {} }));
 
 const date = "2026-10-02";
+const gate = (
+  date: string,
+  changes: Partial<KospiMarketGateEvidence> = {},
+): KospiMarketGateEvidence => ({
+  date,
+  status: "NEUTRAL",
+  issues: [],
+  benchmarkAboveMa60: true,
+  benchmarkAboveCloud: true,
+  vkospiBelow30: false,
+  foreignNet5dPositive: false,
+  metCount: 2,
+  evaluatedCount: 4,
+  incomplete: false,
+  benchmarkDate: date,
+  vkospi: 31,
+  volatilitySource: "VKOSPI",
+  marketForeignNet5d: -100,
+  marketForeignDates: [],
+  ...changes,
+});
 const confirmation = (changes: Partial<KospiEntrySnapshot> = {}): KospiEntrySnapshot => ({
   version: KOSPI_ENTRY_POLICY.version,
   date,
@@ -35,6 +63,7 @@ const confirmation = (changes: Partial<KospiEntrySnapshot> = {}): KospiEntrySnap
   score: 8.5,
   originScore: 8,
   eligible: true,
+  marketGate: { origin: gate("2026-10-01"), confirmation: gate(date) },
   ...changes,
 });
 const row = (entry?: KospiEntrySnapshot): ScreeningRow =>
@@ -79,12 +108,58 @@ describe("KOSPI confirmation UI", () => {
     expect(html).toContain("확인 기록 없음 · 진입 판정 제외");
     expect(html).not.toContain("하루 확인 완료");
   });
+  it.each([false, true])("shows dated market evidence in compact=%s mode", (compact) => {
+    const html = renderToStaticMarkup(
+      <KospiEntryDetails entry={confirmation()} compact={compact} />,
+    );
+    expect(html).toContain("Onset일 시장 2026-10-01");
+    expect(html).toContain("확인일 시장 2026-10-02");
+    expect(html).toContain("Neutral");
+    expect(html).not.toContain("신규 진입 제외");
+  });
+  it.each([false, true])("keeps bear-blocked raw onset excluded in compact=%s mode", (compact) => {
+    const entry = confirmation({
+      originDate: date,
+      confirmationDate: null,
+      state: "rejected",
+      eligible: false,
+      marketGate: { origin: gate(date, { status: "RISK_OFF", metCount: 1 }), confirmation: null },
+      issues: ["발생일 불황(RISK_OFF) · 신규매수 제한 · 새 Onset 필요"],
+    });
+    const html = renderToStaticMarkup(
+      <KospiEntryDetails entry={entry} compact={compact} showState />,
+    );
+    expect(html).toContain("확인 탈락 · 진입 제외 · 새 Onset 필요");
+    expect(html).toContain("Onset일 시장 2026-10-02 · Risk-Off(하락장) · 신규 진입 제외");
+    expect(html).toContain("발생일 불황");
+    expect(html).not.toContain("하루 확인 대기");
+    expect(table(entry)).not.toContain("확인일 RS 통과");
+  });
+  it.each([
+    null,
+    gate("2026-09-30"),
+    gate("2026-10-01", { status: "UNKNOWN", issues: ["STALE_VOLATILITY_INPUT"], incomplete: true }),
+  ])("shows missing, stale or unknown origin evidence as excluded", (origin) => {
+    const entry = confirmation({ marketGate: { origin, confirmation: gate(date) } });
+    const html = renderToStaticMarkup(<KospiEntryDetails entry={entry} showState />);
+    expect(html).toContain("진입 제외");
+    expect(html).not.toContain("하루 확인 완료");
+    expect(table(entry)).not.toContain("확인일 RS 통과");
+  });
+  it("keeps older policy confirmation informational", () => {
+    const entry = confirmation({ version: "kospi-e8-confirm1-rsaccel-v2" });
+    const html = renderToStaticMarkup(<KospiEntryDetails entry={entry} showState />);
+    expect(html).toContain("과거 확인 참고 · 운영 진입 제외");
+    expect(html).not.toContain("하루 확인 완료");
+    expect(table(entry)).not.toContain("확인일 RS 통과");
+  });
   it("shows raw onset pending, with RS labeled as pre-confirmation reference", () => {
     const entry = confirmation({
       state: "pending",
       originDate: date,
       confirmationDate: null,
       eligible: false,
+      marketGate: { origin: gate(date), confirmation: null },
     });
     const html = renderToStaticMarkup(<KospiEntryDetails entry={entry} showState />);
     expect(html).toContain("하루 확인 대기");
@@ -153,9 +228,21 @@ describe("KOSPI confirmation UI", () => {
     );
     const ready = row(confirmation());
     ready.instrument = { ...ready.instrument, symbol: "000660", name: "확인 종목" };
+    const blocked = row(
+      confirmation({
+        originDate: date,
+        confirmationDate: null,
+        state: "rejected",
+        eligible: false,
+        marketGate: { origin: gate(date, { status: "RISK_OFF", metCount: 1 }), confirmation: null },
+        issues: ["발생일 불황(RISK_OFF) · 신규매수 제한 · 새 Onset 필요"],
+      }),
+    );
+    blocked.instrument = { ...blocked.instrument, symbol: "005380", name: "하락장 제외 종목" };
+    blocked.kospi80Onset = true;
     const analysis = {
       asOfDate: date,
-      rows: [pending, ready],
+      rows: [pending, ready, blocked],
       marketGate: { status: "NEUTRAL", metCount: 2 },
     } as unknown as AnalysisResult;
     const html = renderToStaticMarkup(
@@ -163,7 +250,7 @@ describe("KOSPI confirmation UI", () => {
         <ScreenerView mode="STOCK" analysis={analysis} />
       </QueryClientProvider>,
     );
-    expect(html).toContain("KOSPI 원시 Onset (1)");
+    expect(html).toContain("KOSPI 원시 Onset (2)");
     expect(html).toContain("KOSPI 하루 확인 대기 (1)");
     expect(html).toContain("KOSPI 확인 완료 · 진입 준비 (1)");
     expect(html).toContain(">진입 준비 (1)<");
@@ -221,5 +308,60 @@ describe("KOSPI confirmation UI", () => {
     expect(html).toContain("확인대기 (2)");
     expect(html).toContain("확인 준비 종목");
     expect(html).not.toContain("원시 대기 종목");
+  });
+});
+
+describe("KOSPI market gate presentation", () => {
+  it.each([undefined, null, gate("2026-10-01")])(
+    "does not present undated or stale evidence as a known regime",
+    (evidence) => {
+      const display = kospiMarketGateDisplay(evidence, date);
+      expect(display.status).toBe("UNKNOWN");
+      expect(display.date).toBe(date);
+      expect(display.vkospi).toBeNull();
+      expect(display.marketForeignNet5d).toBeNull();
+      expect(display.issues.length).toBeGreaterThan(0);
+      expect(kospiMarketGateLabel(display.status)).toBe("Unknown(미확인)");
+    },
+  );
+  it("distinguishes incomplete evidence from Risk-Off", () => {
+    expect(kospiMarketGateDisplay(gate(date, { incomplete: true }), date).status).toBe("UNKNOWN");
+    expect(kospiMarketGateDisplay(gate(date, { status: "RISK_OFF" }), date).status).toBe(
+      "RISK_OFF",
+    );
+    expect(kospiMarketGateDisplay(gate(date), date).status).toBe("NEUTRAL");
+  });
+  it("renders UNKNOWN explicitly in the stock screener when dated evidence is missing", () => {
+    const client = new QueryClient();
+    client.setQueryData(["domestic-position-context"], emptyContext);
+    const analysis = {
+      asOfDate: date,
+      rows: [],
+      marketGate: { status: "RISK_ON", metCount: 4 },
+    } as unknown as AnalysisResult;
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={client}>
+        <ScreenerView mode="STOCK" analysis={analysis} />
+      </QueryClientProvider>,
+    );
+    expect(html).toContain("Unknown(미확인)");
+    expect(html).toContain("KOSPI 신규 진입 제외");
+  });
+  it("names realized volatility as a proxy instead of VKOSPI", () => {
+    expect(kospiVolatilitySourceLabel("REALIZED_VOLATILITY_KOSPI")).toBe("KOSPI 실현변동성 대용치");
+    expect(kospiVolatilitySourceLabel("REALIZED_VOLATILITY_KOSPI_KOSDAQ_70_30")).toContain(
+      "70:30 실현변동성 대용치",
+    );
+    expect(kospiVolatilitySourceLabel(null)).toBe("출처 미확인");
+  });
+  it("explains prospective bear exclusion without changing held exits or KOSDAQ rules", () => {
+    const html = renderToStaticMarkup(<StrategyDescription />);
+    expect(html).toContain("체결 직전 마지막 완료 KOSPI");
+    expect(html).toContain("2026-10-02");
+    expect(html).toContain("새 Onset이 필요");
+    expect(html).toContain("U9.5·H60 청산은 유지");
+    expect(html).toContain(
+      "KOSDAQ: Stock PL 80 · 8.0 Onset 진입 · U9.0 상향 재돌파 / D3.0 하향 이탈",
+    );
   });
 });

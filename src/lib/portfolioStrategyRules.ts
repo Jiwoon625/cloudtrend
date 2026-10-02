@@ -5,7 +5,8 @@ import {
   LEGACY_OPERATIONAL_SIGNAL_VERSION,
   STRATEGY_CONFIG,
 } from "./engine/operationalStrategy";
-import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
+import { type KospiMarketGateEvidence } from "./engine/kospiMarketGate";
+import { KOSPI_ENTRY_POLICY, type KospiEntrySnapshot } from "./engine/kospiEntryConfirmation";
 import type { ScreeningSnapshot, SnapshotEntry } from "./screeningSnapshot";
 import type { DailyPrice, Market } from "./engine/types";
 import type { MarketDataset } from "./engine/dataset";
@@ -75,7 +76,7 @@ export function isLegacyReplayEntry(entry: SnapshotEntry, market: Market, asOfDa
 
 export interface EntryExecution {
   bar: DailyPrice | null;
-  state: "ready" | "waiting" | "unobservable";
+  state: "ready" | "waiting" | "unobservable" | "blocked";
   reason: string;
 }
 
@@ -110,6 +111,61 @@ export function nextConfirmedEntry(
     return { bar, state: "ready", reason: "다음 거래가능일 대기" };
   }
   return { bar: null, state: "waiting", reason: "다음 거래가능일 대기" };
+}
+
+/** Check the original Onset and the last completed session before the first tradable fill.
+ * Never substitute a current gate for a historical session, or search for a later bull fill.
+ * The underlying executor retains observed suspension versus missing-bar semantics.
+ */
+export function nextKospiConfirmedEntry(
+  bars: DailyPrice[],
+  entry: KospiEntrySnapshot,
+  marketDates: string[],
+  gates: Record<string, KospiMarketGateEvidence> = {},
+): EntryExecution {
+  const execution = nextConfirmedEntry(bars, entry.confirmationDate ?? entry.date, marketDates);
+  if (execution.state === "unobservable") return execution;
+  const dates = [...new Set(marketDates)].sort();
+  const priorDate = execution.bar
+    ? dates.filter((date) => date < execution.bar!.tradeDate).at(-1)
+    : (dates
+        .filter((date) => date >= entry.date && date <= (bars.at(-1)?.tradeDate ?? entry.date))
+        .at(-1) ?? entry.date);
+  const origin = entry.marketGate?.origin;
+  const prior = priorDate
+    ? (gates[priorDate] ??
+      (entry.marketGate?.confirmation?.date === priorDate
+        ? entry.marketGate.confirmation
+        : undefined))
+    : undefined;
+  for (const [label, date, gate] of [
+    ["발생일", entry.originDate, origin],
+    ...(execution.bar ? [["체결 전 완료일", priorDate, prior] as const] : []),
+  ] as const) {
+    if (
+      !date ||
+      !gate ||
+      gate.date !== date ||
+      gate.incomplete ||
+      gate.evaluatedCount !== 4 ||
+      gate.issues.length > 0 ||
+      gate.status === "UNKNOWN"
+    )
+      return {
+        bar: null,
+        state: "unobservable",
+        reason: `${label} 시장국면 미확인 · 신규매수 제한${date ? ` (${date})` : ""}`,
+      };
+    if (gate.status === "RISK_OFF")
+      return {
+        bar: null,
+        state: "blocked",
+        reason: `${label} 불황(RISK_OFF) · 신규매수 제한 · 새 Onset 필요 (${date})`,
+      };
+  }
+  return execution.state === "waiting"
+    ? { ...execution, reason: `${execution.reason} · 체결 전 완료일 시장국면 재확인 필요` }
+    : execution;
 }
 
 /** Any holding during the origin-to-execution window (including a same-day sale) blocks re-entry. */

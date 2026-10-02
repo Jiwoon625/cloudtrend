@@ -267,8 +267,8 @@ function HistoryPage() {
                     KOSPI / KOSDAQ 진입 준비 ({entryOnsets.length})
                   </h3>
                   <p className="mb-2 text-[11px] text-muted-foreground">
-                    저장된 KOSPI 하루 확인·RSAccel 조건 통과와 KOSDAQ 8.0 Onset 신호입니다. KOSPI
-                    원시 Onset과 과거 운영 기록은 현재 진입 준비로 집계하지 않습니다.
+                    저장된 KOSPI 하루 확인·RSAccel·시장국면 조건 통과와 KOSDAQ 8.0 Onset 신호입니다.
+                    KOSPI 원시 Onset과 과거 운영 기록은 현재 진입 준비로 집계하지 않습니다.
                   </p>
                   <EntryList entries={entryOnsets} empty="해당 종목 없음" />
                 </section>
@@ -291,7 +291,8 @@ function HistoryPage() {
                 </h3>
                 <p className="mb-3 text-[11px] text-muted-foreground">
                   해당 날짜에 저장된 상태·Onset일·확인일을 표시합니다. 확인 기록이 없는 이전 이력은
-                  가격이나 RSAccel만으로 확인 완료를 추정하지 않습니다.
+                  가격이나 RSAccel만으로 확인 완료를 추정하지 않습니다. 하락장·시장자료 미확인으로
+                  제외된 원시 Onset은 진입 신호가 아닙니다.
                 </p>
                 {kospiAssessments.length ? (
                   <div className="divide-y divide-border">

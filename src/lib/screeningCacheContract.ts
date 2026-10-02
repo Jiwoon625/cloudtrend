@@ -3,9 +3,10 @@ import { compactDashboardRow } from "@/lib/dashboardRow";
 import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
 import { isKospiRelativeMomentumConfirmed } from "@/lib/kospiRelativeQuality";
 
-export const SCREENING_CACHE_VERSION = "screening-cache-v8-kospi-confirm1-rsaccel-v5" as const;
-export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-kospi-confirm1-rsaccel-v5" as const;
-export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-kospi-confirm1-rsaccel-v5" as const;
+export const SCREENING_CACHE_VERSION = "screening-cache-v8-kospi-confirm1-rsaccel-bear-v6" as const;
+export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-kospi-confirm1-rsaccel-bear-v6" as const;
+export const INSTRUMENT_CACHE_VERSION =
+  "instrument-cache-v8-kospi-confirm1-rsaccel-bear-v6" as const;
 
 export interface DashboardSummary {
   version: typeof DASHBOARD_CACHE_VERSION;
@@ -17,6 +18,7 @@ export interface DashboardSummary {
   dataVersion: string;
   calculatedAt: string;
   marketGate: AnalysisResult["marketGate"];
+  kospiMarketGate?: AnalysisResult["kospiMarketGate"];
   kospi: AnalysisResult["kospi"];
   kosdaq: AnalysisResult["kosdaq"];
   vkospi: number | null;
@@ -154,6 +156,7 @@ export function buildDashboardSummary(
     dataVersion: analysis.dataVersion,
     calculatedAt: analysis.calculatedAt,
     marketGate: analysis.marketGate,
+    kospiMarketGate: analysis.kospiMarketGate,
     kospi: analysis.kospi,
     kosdaq: analysis.kosdaq,
     vkospi: analysis.vkospi,

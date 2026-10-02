@@ -1,3 +1,4 @@
+import { kospiGate } from "./kospi-policy-fixtures";
 import { buildScreeningSummary } from "../src/lib/analysisRunBundle";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -32,6 +33,7 @@ const obs = (date: string, score: number) => ({
   eligible: true,
   observed: true,
   rsAccel: 1,
+  marketGate: kospiGate(date),
 });
 const state = kospiEntryConfirmation(
   obs("2026-10-05", 8.5),
@@ -136,6 +138,8 @@ describe("pre-adoption persistence", () => {
   };
   it("retains the existing legacy snapshot rather than fabricating new historical trades", () => {
     expect(preservePreAdoptionSnapshot(incoming, legacy)).toBe(legacy);
+    const oldV2 = { ...incoming, savedAt: "2026-10-01T00:00:00Z" };
+    expect(preservePreAdoptionSnapshot(incoming, oldV2)).toBe(oldV2);
     expect(preservePreAdoptionSnapshot(incoming, null)).toBe(incoming);
     expect(
       preservePreAdoptionSnapshot({ ...incoming, asOfDate: "2026-10-05" }, legacy).asOfDate,

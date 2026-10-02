@@ -1,3 +1,4 @@
+import { kospiMarketGateDisplay, kospiMarketGateLabel } from "./kospiEntryPresentation";
 import { StrategyDescription } from "@/components/StrategyDescription";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -103,6 +104,10 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
     }>
   >([]);
 
+  const gate =
+    mode === "STOCK"
+      ? kospiMarketGateDisplay(analysis.kospiMarketGate, analysis.asOfDate)
+      : analysis.marketGate;
   const base = analysis.rows.filter((r) => r.instrument.instrumentType === mode);
   const sectors = [...new Set(base.map((r) => r.instrument.sectorName))];
   const presetMatches = (r: ScreeningRow, id: PresetId) => {
@@ -181,13 +186,19 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
             {mode === "STOCK" ? "주식 스크리너" : "ETF 스크리너"}
           </h1>
           <p className="text-[12px] text-muted-foreground">
-            기준일 {analysis.asOfDate} · 시장 게이트{" "}
-            {analysis.marketGate.status === "RISK_ON"
-              ? "Risk-On"
-              : analysis.marketGate.status === "NEUTRAL"
-                ? "Neutral"
-                : "Risk-Off"}{" "}
-            ({analysis.marketGate.metCount}/4)
+            기준일 {analysis.asOfDate} ·{" "}
+            {mode === "STOCK" ? "KOSPI 신규진입 시장국면" : "시장 게이트"}{" "}
+            {mode === "STOCK"
+              ? kospiMarketGateLabel(gate.status)
+              : gate.status === "RISK_ON"
+                ? "Risk-On"
+                : gate.status === "NEUTRAL"
+                  ? "Neutral"
+                  : "Risk-Off"}{" "}
+            ({gate.metCount}/4)
+            {mode === "STOCK" && (gate.status === "RISK_OFF" || gate.status === "UNKNOWN")
+              ? " · KOSPI 신규 진입 제외"
+              : ""}
           </p>
           <p className="text-[12px] text-muted-foreground">
             분석 종목 {base.length}건 중{" "}

@@ -13,6 +13,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import {
+  kospiMarketGateDisplay,
+  kospiMarketGateLabel,
+  kospiVolatilitySourceLabel,
+} from "@/components/kospiEntryPresentation";
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
 import { PdfExportButton } from "@/components/PdfExportButton";
@@ -47,7 +52,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "CloudTrend V8 Final 10점 기술점수의 KOSPI 하루 확인·RSAccel 진입, KOSDAQ 8.0 Onset, KOSPI U9.5 / DX, KOSDAQ U9.0 / D3.0 Exit, 섹터 로테이션과 시장 상태를 한 화면에서 확인합니다.",
+          "CloudTrend V8 Final 10점 기술점수의 KOSPI 하루 확인·RSAccel·하락장 신규진입 차단, KOSDAQ 8.0 Onset, KOSPI U9.5 / DX, KOSDAQ U9.0 / D3.0 Exit, 섹터 로테이션과 시장 상태를 한 화면에서 확인합니다.",
       },
       { property: "og:title", content: "대시보드 | CloudTrend V8 Final" },
       {
@@ -154,7 +159,7 @@ function Dashboard() {
         <div>
           <h1 className="text-xl font-bold tracking-tight">대시보드 · V8 Final</h1>
           <p className="text-[12px] text-muted-foreground">
-            KOSPI 하루 확인 대기·진입 준비, KOSDAQ 8.0 Onset, 점수 Exit와 섹터 Rotation을
+            KOSPI 하루·시장국면 확인 대기·진입 준비, KOSDAQ 8.0 Onset, 점수 Exit와 섹터 Rotation을
             확인합니다.
           </p>
         </div>
@@ -232,11 +237,10 @@ function DashboardContent({
   portfolioPending: boolean;
   operations: ReturnType<typeof useDashboardOperations>;
 }) {
-  const gate = summary.marketGate;
+  const gate = kospiMarketGateDisplay(summary.kospiMarketGate, summary.asOfDate);
   const gateColor =
-    gate.status === "RISK_ON" ? "text-up" : gate.status === "NEUTRAL" ? "text-warn" : "text-down";
-  const gateLabel =
-    gate.status === "RISK_ON" ? "Risk-On" : gate.status === "NEUTRAL" ? "Neutral" : "Risk-Off";
+    gate.status === "RISK_ON" ? "text-up" : gate.status === "RISK_OFF" ? "text-down" : "text-warn";
+  const gateLabel = kospiMarketGateLabel(gate.status);
   const portfolioFallback = portfolioPending ? "불러오는 중…" : "-";
 
   return (
@@ -298,10 +302,15 @@ function DashboardContent({
           <DashboardStrategyRules />
         </Card>
 
-        <Card title="시장 상태 · 참고" icon={<Activity className="size-4 text-primary" />}>
+        <Card
+          title="KOSPI 시장 상태 · 신규 진입 조건"
+          icon={<Activity className="size-4 text-primary" />}
+        >
           <div className={`mb-2 flex items-center gap-2 text-lg font-bold ${gateColor}`}>
             {gate.status === "RISK_OFF" ? (
               <ArrowDown className="size-5" />
+            ) : gate.status === "UNKNOWN" ? (
+              <ShieldCheck className="size-5" />
             ) : (
               <ArrowUp className="size-5" />
             )}
@@ -309,11 +318,12 @@ function DashboardContent({
             <span className="num text-xs font-normal text-muted-foreground">{gate.metCount}/4</span>
           </div>
           <p className="mb-2 text-[10px] text-muted-foreground">
-            Risk-On 4/4 · Neutral 2–3/4 · Risk-Off 0–1/4
+            기준일 {gate.date} · Risk-On 4/4 · Neutral 2–3/4 · Risk-Off 0–1/4 · 결측/오래된 자료
+            Unknown
           </p>
           {gate.incomplete ? (
             <p className="mb-2 text-[11px] text-warn">
-              일부 시장 데이터가 없어 판정이 불완전합니다.
+              시장국면 미확인 · KOSPI 신규 진입 제외 · {gate.issues.join(" · ")}
             </p>
           ) : null}
           <KeyValue
@@ -343,13 +353,13 @@ function DashboardContent({
             }
           />
           <KeyValue
-            label="변동성 (VKOSPI)"
+            label={`변동성 (${kospiVolatilitySourceLabel(gate.volatilitySource)})`}
             value={
               <GateConditionValue
                 comparison={
                   gate.vkospiBelow30 === null
                     ? "데이터 없음"
-                    : `${formatNumber(summary.vkospi, 2)} ${gate.vkospiBelow30 ? "<" : "≥"} 30`
+                    : `${formatNumber(gate.vkospi, 2)} ${gate.vkospiBelow30 ? "<" : "≥"} 30`
                 }
                 met={gate.vkospiBelow30}
               />
@@ -360,14 +370,10 @@ function DashboardContent({
             value={
               <GateConditionValue
                 comparison={
-                  summary.marketForeignNet5d === null
+                  gate.marketForeignNet5d === null
                     ? "데이터 없음"
-                    : `${formatWon(summary.marketForeignNet5d)} ${
-                        summary.marketForeignNet5d > 0
-                          ? ">"
-                          : summary.marketForeignNet5d < 0
-                            ? "<"
-                            : "="
+                    : `${formatWon(gate.marketForeignNet5d)} ${
+                        gate.marketForeignNet5d > 0 ? ">" : gate.marketForeignNet5d < 0 ? "<" : "="
                       } 0`
                 }
                 met={gate.foreignNet5dPositive}
@@ -380,8 +386,9 @@ function DashboardContent({
             hint="참고 · Gate 기준 없음"
           />
           <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
-            Market Gate는 참고정보이며 진입·Exit를 차단하지 않습니다. KOSPI는 별도 하루 확인·RSAccel
-            조건을 적용합니다.
+            KOSPI 신규 진입은 Onset일과 체결 직전 마지막 완료 거래일이 모두 Risk-On/Neutral이어야
+            합니다. Risk-Off·Unknown이면 후보를 취소하며 새 Onset이 필요합니다. 기존 보유종목의
+            U9.5·H60 청산과 KOSDAQ·ETF 규칙은 유지합니다.
           </p>
         </Card>
       </div>
