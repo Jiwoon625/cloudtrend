@@ -1,0 +1,183 @@
+import { simulateStrategy, type StrategyLedger } from "../portfolioLedgers";
+import type { DailyPrice, Market } from "../engine/types";
+import type { KospiMarketGateEvidence } from "../engine/kospiMarketGate";
+import type { ScreeningSnapshot } from "../screeningSnapshot";
+import {
+  assertModelSeriesIsolation,
+  assertModelCalendarContinuation,
+  firstModelSession,
+  guardModelRun,
+  hashSeriesValue,
+  verifyFrozenSeries,
+  type FrozenModelSeries,
+  type ModelCalendar,
+  type ModelRunReceipt,
+  type SeriesHash,
+} from "./modelSeries";
+export interface KrSeriesInputs {
+  date: string;
+  codeHash: string;
+  configHash: string;
+  sourceHash: string;
+  availableAt: string;
+  decisionAt: string;
+  confirmedClose: boolean;
+  snapshots: ScreeningSnapshot[];
+  bars: Record<string, DailyPrice[]>;
+  markets: Record<string, Market>;
+  marketGates: Record<string, KospiMarketGateEvidence>;
+  calendar: ModelCalendar;
+}
+export interface AdoptedKrRun {
+  book: "MODEL";
+  bookId: string;
+  contractHash: SeriesHash;
+  receipt: ModelRunReceipt;
+  previousStateHash: SeriesHash | null;
+  calendar: ModelCalendar;
+  frozenInputs: Pick<KrSeriesInputs, "snapshots" | "bars" | "markets" | "marketGates">;
+  result: StrategyLedger;
+  stateHash: SeriesHash;
+}
+const localDate = (value: string) =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(value));
+function prefix(input: AdoptedKrRun["frozenInputs"], date: string): AdoptedKrRun["frozenInputs"] {
+  const snapshots = input.snapshots
+    .filter((s) => s.asOfDate <= date)
+    .sort((a, b) => a.asOfDate.localeCompare(b.asOfDate));
+  const bars = Object.fromEntries(
+    Object.entries(input.bars)
+      .map(([symbol, rows]) => [
+        symbol,
+        rows
+          .filter((r) => r.tradeDate <= date)
+          .sort((a, b) => a.tradeDate.localeCompare(b.tradeDate)),
+      ])
+      .filter(([, rows]) => (rows as DailyPrice[]).length),
+  );
+  const symbols = new Set([
+    ...Object.keys(bars),
+    ...snapshots.flatMap((s) => s.entries.map((e) => e.symbol)),
+  ]);
+  return {
+    snapshots,
+    bars,
+    markets: Object.fromEntries(
+      Object.entries(input.markets).filter(([symbol]) => symbols.has(symbol)),
+    ),
+    marketGates: Object.fromEntries(
+      Object.entries(input.marketGates).filter(([key]) => key <= date),
+    ),
+  };
+}
+/** Replays only immutable archived prefixes under a new policy. Existing KR callers are untouched. */
+export async function stepAdoptedKrSeries(
+  series: FrozenModelSeries,
+  input: KrSeriesInputs,
+  previous: AdoptedKrRun | null = null,
+): Promise<{ status: "NEW" | "REUSE"; run: AdoptedKrRun }> {
+  await verifyFrozenSeries(series);
+  if (!["KR_MIXED", "KR_KOSPI", "KR_KOSDAQ"].includes(series.policy.kind))
+    throw new Error("KR adopted series required");
+  if (
+    !input.confirmedClose ||
+    !Number.isFinite(Date.parse(input.availableAt)) ||
+    !Number.isFinite(Date.parse(input.decisionAt)) ||
+    Date.parse(input.availableAt) > Date.parse(input.decisionAt) ||
+    localDate(input.availableAt) !== input.date ||
+    localDate(input.decisionAt) !== input.date
+  )
+    throw new Error("Exact-session completed data must be available before the decision");
+  const first = firstModelSession(series, input.calendar);
+  const sessions = [...input.calendar.regularSessions].sort();
+  if (!sessions.includes(input.date)) throw new Error("Verified KR regular session required");
+  if (
+    input.snapshots.some(
+      (s) =>
+        s.asOfDate > input.date ||
+        localDate(s.savedAt) !== s.asOfDate ||
+        Date.parse(s.savedAt) > Date.parse(input.decisionAt),
+    ) ||
+    new Set(input.snapshots.map((s) => s.asOfDate)).size !== input.snapshots.length
+  )
+    throw new Error("Snapshot dates/availability are not point-in-time");
+  if (!input.snapshots.some((s) => s.asOfDate === input.date))
+    throw new Error("Current completed snapshot is required");
+  for (const rows of Object.values(input.bars))
+    if (
+      rows.some((r) => r.tradeDate > input.date) ||
+      new Set(rows.map((r) => r.tradeDate)).size !== rows.length
+    )
+      throw new Error("Future or duplicate price rows cannot enter a frozen run");
+  if (previous) {
+    assertModelSeriesIsolation(series, previous);
+    assertModelCalendarContinuation(series, previous.calendar, input.calendar);
+    const { stateHash, ...body } = previous;
+    if ((await hashSeriesValue(body)) !== stateHash) throw new Error("Previous KR run has changed");
+    if (
+      (await hashSeriesValue(prefix(input, previous.receipt.date))) !==
+      (await hashSeriesValue(previous.frozenInputs))
+    )
+      throw new Error("Archived historical inputs changed; never rewrite a completed series");
+  }
+  const sameDate = previous?.receipt.date === input.date;
+  const previousStateHash = sameDate ? previous.previousStateHash : (previous?.stateHash ?? null);
+  const frozenInputs = prefix(input, input.date);
+  const manifest = await hashSeriesValue({
+    upstream: input.sourceHash,
+    frozenInputs,
+    availableAt: input.availableAt,
+    calendar: input.calendar,
+    previousStateHash,
+  });
+  const guard = await guardModelRun(
+    series,
+    {
+      date: input.date,
+      codeHash: input.codeHash,
+      configHash: input.configHash,
+      sourceHash: manifest,
+    },
+    sameDate ? previous.receipt : undefined,
+  );
+  if (guard.status === "REUSE" && previous) return { status: "REUSE", run: previous };
+  const expected = previous ? sessions.find((s) => s > previous.receipt.date) : first;
+  if (input.date !== expected) throw new Error("Missing regular KR sessions cannot be skipped");
+  const result = simulateStrategy(
+    { initialCapital: 100_000_000, maxPositions: 30, sectorCap: 0.3, roundTripCostRate: 0.003 },
+    frozenInputs.snapshots,
+    frozenInputs.bars,
+    frozenInputs.markets,
+    manifest,
+    sessions.filter((s) => s <= input.date),
+    frozenInputs.marketGates,
+    {
+      version: "kr-adopted-shadow-20261005-v1",
+      startDate: "2026-10-05",
+      throughDate: input.date,
+      scope:
+        series.policy.kind === "KR_MIXED"
+          ? "MIXED"
+          : series.policy.kind === "KR_KOSPI"
+            ? "KOSPI"
+            : "KOSDAQ",
+    },
+  );
+  result.calculatedAt = input.decisionAt;
+  const body = {
+    book: "MODEL" as const,
+    bookId: series.bookId,
+    contractHash: series.contractHash,
+    receipt: guard.receipt,
+    previousStateHash,
+    calendar: structuredClone(input.calendar),
+    frozenInputs,
+    result,
+  };
+  return { status: "NEW", run: { ...body, stateHash: await hashSeriesValue(body) } };
+}

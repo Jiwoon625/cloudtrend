@@ -1,3 +1,4 @@
+import { decimal, format, fromLegacyNumber, integerBudgetQuantity } from "../ledger/decimal";
 import type {
   UsProspectiveAnalysis,
   UsProspectiveRow,
@@ -73,7 +74,20 @@ export interface UsPendingExit {
   signalDate: string;
   reason: string;
 }
+/** Opt-in model-only execution boundary. Omitted options preserve all historical defaults. */
+export interface UsModelExecutionPolicy {
+  version: "isolated-us-model-v1";
+  bookId: string;
+  contractHash: string;
+  accountingStartDate: string;
+  initialCapital: string;
+  oneWayCost: string;
+}
 export interface UsPortfolioState {
+  executionPolicy?: UsModelExecutionPolicy;
+  /** Exact cash/fees exist only on the opt-in path; NAV remains the existing engine's number output. */
+  modelCashExact?: string;
+  modelFeesExact?: string;
   lastDate?: string;
   adv20BySymbol?: Record<string, number>;
   initializedDate: string;
@@ -133,11 +147,22 @@ const tkey = (
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const maps = (analysis: UsProspectiveAnalysis) => new Map(analysis.rows.map((r) => [r.symbol, r]));
 
-function fresh(date: string, spy: number | null): UsPortfolioState {
+function fresh(
+  date: string,
+  spy: number | null,
+  policy?: UsModelExecutionPolicy,
+): UsPortfolioState {
   return {
-    initializedDate: date,
-    initialCapital: US_PROSPECTIVE_INITIAL_CAPITAL,
-    cash: US_PROSPECTIVE_INITIAL_CAPITAL,
+    ...(policy
+      ? {
+          executionPolicy: clone(policy),
+          modelCashExact: policy.initialCapital,
+          modelFeesExact: "0",
+        }
+      : {}),
+    initializedDate: policy?.accountingStartDate ?? date,
+    initialCapital: policy ? Number(policy.initialCapital) : US_PROSPECTIVE_INITIAL_CAPITAL,
+    cash: policy ? Number(policy.initialCapital) : US_PROSPECTIVE_INITIAL_CAPITAL,
     positions: {},
     pendingTargets: {},
     pendingExits: {},
@@ -184,10 +209,84 @@ export function stepUsProspectivePortfolio(
   analysis: UsProspectiveAnalysis,
   previous: UsPortfolioState | null,
   previousNav: number | null,
+  executionPolicy?: UsModelExecutionPolicy,
 ): UsPortfolioStepResult {
+  if (previous?.executionPolicy && !executionPolicy)
+    throw new Error("Isolated model state cannot enter the legacy engine path");
+  if (executionPolicy) {
+    const p = executionPolicy;
+    const validDate = (value: string) =>
+      /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+      Number.isFinite(Date.parse(`${value}T00:00:00Z`)) &&
+      new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+    if (
+      p.version !== "isolated-us-model-v1" ||
+      !p.bookId ||
+      p.bookId === "ACTUAL" ||
+      !/^sha256:[a-f0-9]{64}$/.test(p.contractHash) ||
+      !validDate(p.accountingStartDate) ||
+      !validDate(analysis.date) ||
+      analysis.date < p.accountingStartDate ||
+      decimal(p.initialCapital) <= 0n ||
+      decimal(p.oneWayCost) < 0n ||
+      decimal(p.oneWayCost) >= decimal("1") ||
+      !Number.isFinite(Number(p.initialCapital)) ||
+      Number(p.initialCapital) > Number.MAX_SAFE_INTEGER
+    )
+      throw new Error("Invalid isolated US model execution policy or start boundary");
+    const adopted = US_PROSPECTIVE_STRATEGIES.find(
+      (strategy) => strategy.id === "A0_QUARTER_PRIMARY",
+    );
+    if (!adopted || JSON.stringify(config) !== JSON.stringify(adopted))
+      throw new Error(
+        "Isolated US execution is restricted to unchanged adopted A0 quarterly rules",
+      );
+    const identity = (value: UsModelExecutionPolicy) =>
+      JSON.stringify([
+        value.version,
+        value.bookId,
+        value.contractHash,
+        value.accountingStartDate,
+        value.initialCapital,
+        value.oneWayCost,
+      ]);
+    if (previous) {
+      if (
+        !previous.executionPolicy ||
+        identity(previous.executionPolicy) !== identity(p) ||
+        previous.initialCapital !== Number(p.initialCapital) ||
+        previous.initializedDate !== p.accountingStartDate ||
+        previous.modelCashExact === undefined ||
+        previous.modelFeesExact === undefined ||
+        Number(previous.modelCashExact) !== previous.cash ||
+        Number(previous.modelFeesExact) !== previous.totalFees
+      )
+        throw new Error("US model state does not match its frozen execution policy");
+      if (
+        (previous.lastDate && previous.lastDate < p.accountingStartDate) ||
+        Object.values(previous.pendingTargets).some(
+          (order) => order.signalDate < p.accountingStartDate,
+        ) ||
+        Object.values(previous.pendingExits).some(
+          (order) => order.signalDate < p.accountingStartDate,
+        ) ||
+        Object.values(previous.positions).some(
+          (position) =>
+            position.entryDate < p.accountingStartDate ||
+            !Number.isSafeInteger(position.shares) ||
+            position.shares < 0,
+        )
+      )
+        throw new Error(
+          "Pre-start pending trades or invalid positions cannot enter the isolated US model",
+        );
+      if (decimal(previous.modelCashExact) < 0n || decimal(previous.modelFeesExact) < 0n)
+        throw new Error("Negative isolated model cash/fees");
+    }
+  }
   const rows = maps(analysis);
   const spy = rows.get("SPY")?.close ?? null;
-  const state = previous ? clone(previous) : fresh(analysis.date, spy);
+  const state = previous ? clone(previous) : fresh(analysis.date, spy, executionPolicy);
   if (state.lastDate && analysis.date <= state.lastDate)
     throw new Error(
       "Portfolio step requires a later trading date; replay from the preceding snapshot.",
@@ -195,6 +294,35 @@ export function stepUsProspectivePortfolio(
   const trades: UsModelTrade[] = [];
   let turnover = 0;
   let fees = 0;
+  let modelCash = executionPolicy ? decimal(state.modelCashExact!) : 0n;
+  let modelFees = executionPolicy ? decimal(state.modelFeesExact!) : 0n;
+  let dayModelFees = 0n;
+  const bookFill = (shares: number, price: number, side: "BUY" | "SELL") => {
+    if (executionPolicy) {
+      if (!Number.isSafeInteger(shares) || shares <= 0)
+        throw new Error("Model fills require positive safe integer shares");
+      const gross = decimal(fromLegacyNumber(price)) * BigInt(shares);
+      const scale = decimal("1");
+      const exactFee = (gross * decimal(executionPolicy.oneWayCost) + scale - 1n) / scale;
+      modelCash += (side === "BUY" ? -gross : gross) - exactFee;
+      if (modelCash < 0n) throw new Error("Isolated model fill exceeds exact cash");
+      modelFees += exactFee;
+      dayModelFees += exactFee;
+      state.modelCashExact = format(modelCash);
+      state.modelFeesExact = format(modelFees);
+      state.cash = Number(state.modelCashExact);
+      state.totalFees = Number(state.modelFeesExact);
+      fees = Number(format(dayModelFees));
+      return { notional: Number(format(gross)), fee: Number(format(exactFee)) };
+    }
+    const notional = shares * price,
+      fee = notional * US_PROSPECTIVE_ONE_WAY_COST;
+    if (side === "BUY") state.cash -= notional + fee;
+    else state.cash += notional - fee;
+    state.totalFees += fee;
+    fees += fee;
+    return { notional, fee };
+  };
 
   const record = (t: UsModelTrade) => trades.push(t);
   // Capacity is known at the preceding close, never today's ADV containing future volume.
@@ -238,15 +366,11 @@ export function stepUsProspectivePortfolio(
     if (!row || !px || px <= 0 || pending.signalDate >= analysis.date) continue;
     const shares = Math.min(p.shares, capacity(row, px));
     if (shares <= 0) continue;
-    const notional = shares * px;
+    const { notional, fee } = bookFill(shares, px, "SELL");
     consume(symbol, notional);
-    const fee = notional * US_PROSPECTIVE_ONE_WAY_COST;
     p.shares -= shares;
     p.lastPrice = px;
-    state.cash += notional - fee;
-    state.totalFees += fee;
     turnover += notional;
-    fees += fee;
     const partial = p.shares > 0;
     record({
       tradeKey: tkey(config.id, pending.signalDate, analysis.date, symbol, "SELL", pending.reason),
@@ -298,15 +422,11 @@ export function stepUsProspectivePortfolio(
     if (!p) continue;
     const shares = Math.min(-o.delta, capacity(o.row, o.px));
     if (shares <= 0) continue;
-    const notional = shares * o.px,
-      fee = notional * US_PROSPECTIVE_ONE_WAY_COST;
+    const { notional, fee } = bookFill(shares, o.px, "SELL");
     consume(o.row.symbol, notional);
     p.shares -= shares;
     p.lastPrice = o.px;
-    state.cash += notional - fee;
-    state.totalFees += fee;
     turnover += notional;
-    fees += fee;
     const partial = p.shares > o.desired;
     record({
       tradeKey: tkey(
@@ -347,19 +467,21 @@ export function stepUsProspectivePortfolio(
       )
         continue;
     }
-    const affordable = Math.max(
-      0,
-      Math.floor(state.cash / (o.px * (1 + US_PROSPECTIVE_ONE_WAY_COST))),
-    );
+    const affordable = executionPolicy
+      ? Number(
+          integerBudgetQuantity(
+            format(modelCash),
+            format(modelCash),
+            fromLegacyNumber(o.px),
+            executionPolicy.oneWayCost,
+          ),
+        )
+      : Math.max(0, Math.floor(state.cash / (o.px * (1 + US_PROSPECTIVE_ONE_WAY_COST))));
     const shares = Math.min(o.delta, capacity(o.row, o.px), affordable);
     if (shares <= 0) continue;
-    const notional = shares * o.px,
-      fee = notional * US_PROSPECTIVE_ONE_WAY_COST;
+    const { notional, fee } = bookFill(shares, o.px, "BUY");
     consume(o.row.symbol, notional);
-    state.cash -= notional + fee;
-    state.totalFees += fee;
     turnover += notional;
-    fees += fee;
     const p = state.positions[o.row.symbol];
     if (p) {
       p.shares += shares;
