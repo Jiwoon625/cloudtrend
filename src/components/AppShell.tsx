@@ -21,6 +21,7 @@ const NAV = [
   { to: "/position-sizing", label: "포지션 사이징" },
   { to: "/history", label: "스크리닝 이력" },
   { to: "/portfolio", label: "포트폴리오" },
+  { to: "/shadow", label: "Shadow" },
   { to: "/data-status", label: "데이터 상태" },
 ] as const;
 

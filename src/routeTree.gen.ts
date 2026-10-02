@@ -18,6 +18,7 @@ import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as PositionSizingRouteImport } from './routes/position-sizing'
 import { Route as ScoringRouteImport } from './routes/scoring'
 import { Route as SectorsRouteImport } from './routes/sectors'
+import { Route as ShadowRouteImport } from './routes/shadow'
 import { Route as InstrumentSymbolRouteImport } from './routes/instrument.$symbol'
 import { Route as ScreenerEtfsRouteImport } from './routes/screener.etfs'
 import { Route as ScreenerStocksRouteImport } from './routes/screener.stocks'
@@ -72,6 +73,11 @@ const SectorsRoute = SectorsRouteImport.update({
   path: '/sectors',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ShadowRoute = ShadowRouteImport.update({
+  id: '/shadow',
+  path: '/shadow',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InstrumentSymbolRoute = InstrumentSymbolRouteImport.update({
   id: '/instrument/$symbol',
   path: '/instrument/$symbol',
@@ -123,6 +129,7 @@ export interface FileRoutesByFullPath {
   '/position-sizing': typeof PositionSizingRoute
   '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
+  '/shadow': typeof ShadowRoute
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
   '/screener/stocks': typeof ScreenerStocksRoute
@@ -142,6 +149,7 @@ export interface FileRoutesByTo {
   '/position-sizing': typeof PositionSizingRoute
   '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
+  '/shadow': typeof ShadowRoute
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
   '/screener/stocks': typeof ScreenerStocksRoute
@@ -162,6 +170,7 @@ export interface FileRoutesById {
   '/position-sizing': typeof PositionSizingRoute
   '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
+  '/shadow': typeof ShadowRoute
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
   '/screener/stocks': typeof ScreenerStocksRoute
@@ -183,6 +192,7 @@ export interface FileRouteTypes {
     | '/position-sizing'
     | '/scoring'
     | '/sectors'
+    | '/shadow'
     | '/instrument/$symbol'
     | '/screener/etfs'
     | '/screener/stocks'
@@ -202,6 +212,7 @@ export interface FileRouteTypes {
     | '/position-sizing'
     | '/scoring'
     | '/sectors'
+    | '/shadow'
     | '/instrument/$symbol'
     | '/screener/etfs'
     | '/screener/stocks'
@@ -221,6 +232,7 @@ export interface FileRouteTypes {
     | '/position-sizing'
     | '/scoring'
     | '/sectors'
+    | '/shadow'
     | '/instrument/$symbol'
     | '/screener/etfs'
     | '/screener/stocks'
@@ -241,6 +253,7 @@ export interface RootRouteChildren {
   PositionSizingRoute: typeof PositionSizingRoute
   ScoringRoute: typeof ScoringRoute
   SectorsRoute: typeof SectorsRoute
+  ShadowRoute: typeof ShadowRoute
   InstrumentSymbolRoute: typeof InstrumentSymbolRoute
   ScreenerEtfsRoute: typeof ScreenerEtfsRoute
   ScreenerStocksRoute: typeof ScreenerStocksRoute
@@ -316,6 +329,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SectorsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/shadow': {
+      id: '/shadow'
+      path: '/shadow'
+      fullPath: '/shadow'
+      preLoaderRoute: typeof ShadowRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/instrument/$symbol': {
       id: '/instrument/$symbol'
       path: '/instrument/$symbol'
@@ -385,6 +405,7 @@ const rootRouteChildren: RootRouteChildren = {
   PositionSizingRoute: PositionSizingRoute,
   ScoringRoute: ScoringRoute,
   SectorsRoute: SectorsRoute,
+  ShadowRoute: ShadowRoute,
   InstrumentSymbolRoute: InstrumentSymbolRoute,
   ScreenerEtfsRoute: ScreenerEtfsRoute,
   ScreenerStocksRoute: ScreenerStocksRoute,
