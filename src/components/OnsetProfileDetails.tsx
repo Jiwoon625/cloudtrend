@@ -19,7 +19,11 @@ export function OnsetProfileDetails({
   if (!profile) return null;
   return (
     <div
-      className={compact ? "mt-1 text-[10px] leading-relaxed text-muted-foreground" : "text-[12px] leading-relaxed"}
+      className={
+        compact
+          ? "mt-1 text-[10px] leading-relaxed text-muted-foreground"
+          : "text-[12px] leading-relaxed"
+      }
       data-onset-profile={profile.type}
     >
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
@@ -27,7 +31,10 @@ export function OnsetProfileDetails({
           {profile.label} ({profile.type})
         </span>
         <span>
-          새 점수 {profile.addedFeatures.map((item) => `${item.label} ${points(item.points)}`).join(" · ")}
+          새 점수{" "}
+          {profile.addedFeatures
+            .map((item) => `${item.label} ${points(item.points)}`)
+            .join(" · ")}
         </span>
         <span className="num">MA20 이격 {extension(profile.ma20Extension)}</span>
       </div>
