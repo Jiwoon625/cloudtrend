@@ -132,6 +132,8 @@ export interface ScreeningRow {
   /** Dated indicator warmup only; does not represent a prior model signal or holding. */
   previousOperatingScore10?: number | null;
   previousOperatingScoreDate?: string | null;
+  /** Display-only provenance for how the stock crossed into an Onset. Trading rules never read this field. */
+  onsetProfile?: import("../onsetProfile").OnsetProfile | null;
   kosdaq80Onset: boolean;
   kospi80Onset?: boolean;
   operationalSignalVersion?: string;
