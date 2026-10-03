@@ -1,0 +1,51 @@
+{
+  "manifest": {
+    "version": "october-shadow-engine-manifest-v2",
+    "files": {
+      "src/lib/engine/additionalStockSectorMaster.ts": "sha256:654fbd023fe4c5b32b946c199d3db4c06259c32f77a90befb0fd35c7894ea378",
+      "src/lib/engine/dataset.ts": "sha256:784821737f364dd422d085b88ecef922cce15e7fe4c3b89b0ae87851e4f97c87",
+      "src/lib/engine/etfResearchMapping.json": "sha256:64f1c2583e55a5acef61e8a0ef79e3dcf3c34e2483770053a064f00bdbd1ba06",
+      "src/lib/engine/etfStrategy.ts": "sha256:1bb6b888e83852b9b11ab3b0741fdd31ed8b1b6a4f1f5da3e4ed93514d82f07d",
+      "src/lib/engine/fullMarketAnalysis.ts": "sha256:e07951891f14bbb6a0a81744f921b3f6fd27c794ff77186d67594dbe80e03f4a",
+      "src/lib/engine/historicalInstrumentScore.ts": "sha256:f25068a6e9070b79cf454f189d130d12c8a5bc082ab0f11f2ef774d308956ee9",
+      "src/lib/engine/indicators.ts": "sha256:4862c805f7c1c3731fdeb60c08ab9ba47baaa37983aa408c2483346ef9e8032b",
+      "src/lib/engine/kospiEntryConfirmation.ts": "sha256:9c9014ffa4f669b2baee368971ac4728100282868da0b533d062b8fabd1f5314",
+      "src/lib/engine/kospiMarketGate.ts": "sha256:4187e60af90fa66cfc922c73003491efc0c5f01e63d64c57742960885aa8907a",
+      "src/lib/engine/kospiShadow.ts": "sha256:58adf84f5bbae9d42b9149881791ba7b96d0b406fe1c282147d45e20bd1fdee3",
+      "src/lib/engine/kospiShadowDataset.ts": "sha256:82d6f9cfcb8e622b57bff5f27ea1f3dedb1d8e46039f655a75c98136b5c5960d",
+      "src/lib/engine/kospiVolatility.ts": "sha256:7c4d43f18ceef204c638274cb5e60f6dcb33f2a8f7b9ed565ee3d43f2f370585",
+      "src/lib/engine/manualDataset.ts": "sha256:1d0904fbaf245e5c797539ec5cae8a3fc818509cc6f2048d64e5ce6eff588ff1",
+      "src/lib/engine/operationalStrategy.ts": "sha256:877c08179731afa7103f630d945d828ae55ff9639a18f1deb841b6c9fdabb349",
+      "src/lib/engine/pipeline.ts": "sha256:f3f351a4d8d467548ddbd30959c71ed58fc1bffe74b93ebbf124d394cbe70105",
+      "src/lib/engine/priorityScoreV8.ts": "sha256:9a263d860f1dcafc68f2168c35d4191158ffdaf7b3edf33f688948a95ee9418f",
+      "src/lib/engine/scoring.ts": "sha256:4010ca23f1e412b1462e44dc6a823b3e06ccae71c2566ae998dfc1d218f957b0",
+      "src/lib/engine/sectorRotation.ts": "sha256:cc9545805ff753a494c71b9f4d9d3ec2b63023f14679926164ab17339574b33c",
+      "src/lib/engine/sectorRotationFullUniverse.ts": "sha256:bf5fd12bef69b784c9a886876d6655762b6afe7fcbd8f73a186950d56b5f16c3",
+      "src/lib/engine/sectors.ts": "sha256:ff9407588cc71573c0c065b2a25fc0bf9eb28ebbaa3a6fa15d618bfad1df5d02",
+      "src/lib/engine/sectorScoreAdjustment.ts": "sha256:810cc969c35b129600bbc4ba3c243840def8bbb854bff9c2511ffd30a7753838",
+      "src/lib/engine/stockSectorMaster.ts": "sha256:56485e45637b3b00423a9c98da6ed7410cbdd74aebd66baf4676b2270583090f",
+      "src/lib/engine/usProspective.ts": "sha256:714ba66fabe36f856e886fa890075a64301aafe61ad07a063ab2eaee1e403138",
+      "src/lib/engine/usProspectivePortfolio.ts": "sha256:c543c9701a3d6df5c80e45e9263e2e7bda6213a08d1e488187a5ed25b98e4c93",
+      "src/lib/engine/v8SectorPriceLeadership.ts": "sha256:1161aca2b8219712ce27df35a051f13a2177c3c965db34f163b204eaa1643078",
+      "src/lib/engine/v8SectorPriceLeadershipPolicy.ts": "sha256:a20de64beb856963b466aaacbf5613a58d4d179ad076df7002171fb859b99fb6",
+      "src/lib/engine/vfConfig.ts": "sha256:d5b6fa115ff765785ead12764a29f10df2da80833de63f68af48f97d76e77573",
+      "src/lib/ledger/date.ts": "sha256:81b0ae4d40041a75f9fe940914a4aa7bd3db71ce8b152e73b152a5642014a9e0",
+      "src/lib/ledger/decimal.ts": "sha256:a1cf43f22b0cf98287fc208cb3c058993d947c6d794f5bd7be540f5ba445f8e5",
+      "src/lib/ledger/etfAdoptedShadow.ts": "sha256:6de290edc14906ae0b88010ac77156f8bd4a941ca3417890a2340bd35b4ce873",
+      "src/lib/ledger/kospiAdoptedShadow.ts": "sha256:2338238b06948444920ab07c1248d5c38936e7dd3133e9addfa9dbca85c6f782",
+      "src/lib/ledger/krAdoptedShadow.ts": "sha256:2a56087ce40a7ac581a5327d56678340bc812d261018e2f1d153e5892a7cb304",
+      "src/lib/ledger/modelSeries.ts": "sha256:1f64683a9e0c8e0908888b65878508b8d0069f9b91de4aaf614cc2cf61c2e184",
+      "src/lib/ledger/octoberShadowArchive.ts": "sha256:0144adfe359c99c7425e792487fff4f90981c7dd571a2ad458acb0896bffc295",
+      "src/lib/ledger/octoberShadowCalendar.ts": "sha256:9c8b5e98035e53d81dedc58c43f7ddf8678ad835bbe449a21d63088dabd76a32",
+      "src/lib/ledger/octoberShadowPipeline.ts": "sha256:133fd02ceed6606c2f18dd82f9c7dcdbb82215ca4e968f217899b37defb65738",
+      "src/lib/portfolioLedgers.ts": "sha256:90aedbbb1b005c97464819775936eb54c02690b4e851f1e4547b1401b60ab64f",
+      "src/lib/portfolioStrategyRules.ts": "sha256:2381d44003618c1edb8f916248df887e1ef0631e3850ad301fcfc649cc4dac27",
+      "src/lib/sourceData.ts": "sha256:b1e84d0b96523d2fc712c28749bcee80ebbdd3275213e35e9522d5608d51bd61"
+    },
+    "dependencies": {
+      "typescript": "5.9.3"
+    },
+    "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
+  },
+  "codeHash": "sha256:ca565a5ec7bff10815a4943989ae3b02fd52fd508bbd283ae5c4d23eb79607c6"
+}

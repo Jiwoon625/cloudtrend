@@ -1,15 +1,10 @@
+import { validDate } from "./date";
+export { validDate } from "./date";
 import { validateExecutionSourceLinks } from "./executionMemo";
 import { decimal, fromLegacyNumber, multiply, representedLegacyNumber } from "./decimal";
 import type { ActualExecution } from "../portfolioLedgers";
 import type { LedgerEvent, Security, SourceRef } from "./types";
-export function validDate(date: string): boolean {
-  const time = Date.parse(`${date}T00:00:00Z`);
-  return (
-    /^\d{4}-\d{2}-\d{2}$/.test(date) &&
-    Number.isFinite(time) &&
-    new Date(time).toISOString().slice(0, 10) === date
-  );
-}
+
 export function validateSource(source: SourceRef) {
   if (
     !["portfolio_ledgers", "us_actual_portfolio_ledgers", "notion", "broker", "model"].includes(

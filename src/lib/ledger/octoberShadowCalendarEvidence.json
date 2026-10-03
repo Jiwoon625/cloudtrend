@@ -1,0 +1,21 @@
+{
+  "version": "exchange-calendar-2026-q4-v1",
+  "verifiedAt": "2026-10-03T01:10:00Z",
+  "coverageStart": "2026-10-05",
+  "coverageEnd": "2026-12-31",
+  "KR": {
+    "holidays": ["2026-10-05", "2026-10-09", "2026-12-25", "2026-12-31"],
+    "sources": [
+      "https://trn.krx.co.kr/index.jsp",
+      "https://global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T1.jsp"
+    ],
+    "pendingHoursDates": ["2026-11-19"],
+    "pendingHoursReason": "CSAT special-session hours require the exchange notice before recording",
+    "specialHours": {}
+  },
+  "US": {
+    "holidays": ["2026-11-26", "2026-12-25"],
+    "earlyCloses": ["2026-11-27", "2026-12-24"],
+    "sources": ["https://www.nyse.com/trade/hours-calendars"]
+  }
+}

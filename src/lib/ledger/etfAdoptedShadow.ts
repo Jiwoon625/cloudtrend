@@ -14,7 +14,7 @@ import {
   type ModelRunReceipt,
   type SeriesHash,
 } from "./modelSeries";
-import { validDate } from "./validation";
+import { validDate } from "./date";
 
 /** An opt-in MODEL executor. It has no persistence, scheduler, broker, or real-holdings access. */
 export interface EtfShadowPrice {

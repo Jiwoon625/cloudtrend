@@ -14,6 +14,7 @@ export async function appendFrozenModelRun<T extends ModelJournalRun>(
   series: FrozenModelSeries,
   run: T,
   previous: T | null,
+  mode: "service" | "authenticated-owner" = "service",
 ) {
   if (!/^[a-f\d-]{36}$/i.test(userId)) throw new Error("Verified model owner required");
   await verifyFrozenSeries(series);
@@ -32,13 +33,19 @@ export async function appendFrozenModelRun<T extends ModelJournalRun>(
     if ((await hashSeriesValue(previousBody)) !== previousHash)
       throw new Error("Previous model state changed");
   }
-  const { data, error } = await client.rpc("ledger_append_model_session", {
-    p_user_id: userId,
-    p_series: series,
+  const args = {
     p_run: run,
     p_previous_date: previous?.receipt.date ?? null,
     p_previous_hash: previous?.stateHash ?? null,
-  });
+  };
+  const { data, error } =
+    mode === "authenticated-owner"
+      ? await client.rpc("ledger_append_own_october_model_session", args)
+      : await client.rpc("ledger_append_model_session", {
+          p_user_id: userId,
+          p_series: series,
+          ...args,
+        });
   if (error) throw new Error(`Frozen model append failed: ${error.message}`);
   if (!data || typeof data.reused !== "boolean" || data.stateHash !== run.stateHash)
     throw new Error("Model persistence acknowledgement mismatch");

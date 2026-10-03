@@ -1,3 +1,8 @@
+import {
+  octoberShadowAlreadyRecorded,
+  publishOctoberShadow,
+  sourceSeriesHash,
+} from "./october-shadow-publication";
 import { gzipSync } from "node:zlib";
 import { buildUsOrderPreview } from "../src/lib/engine/usProspectiveOrderPreview";
 import { usBrowserViews } from "../src/lib/usBrowserViews";
@@ -19,7 +24,7 @@ import {
   type UsProspectiveAnalysis,
 } from "../src/lib/engine/usProspective";
 import {
-  stepUsProspectivePortfolio,
+  stepUsProspectiveOperatingPortfolio,
   US_PROSPECTIVE_STRATEGIES,
   type UsPortfolioState,
 } from "../src/lib/engine/usProspectivePortfolio";
@@ -117,6 +122,27 @@ async function main() {
   }
   if (ingest.storage_bucket !== ANALYSIS_BUCKET) throw new Error("Unexpected US storage bucket");
 
+  async function recordOctoberUs(analysis: UsProspectiveAnalysis) {
+    const metadata = ingest.metadata as {
+      previousSessionDate?: string;
+      confirmedRegularClose?: boolean;
+      failedSymbols?: number;
+      marketCalendarOk?: boolean;
+    };
+    const octoberShadow = await publishOctoberShadow(client, userId!, {
+      market: "US",
+      analysis,
+      sourceHash: sourceSeriesHash(String(ingest.data_hash)),
+      availableAt: String(ingest.collected_at),
+      decisionAt: new Date().toISOString(),
+      confirmedRegularClose: metadata.confirmedRegularClose === true,
+      failedSymbols: metadata.failedSymbols ?? -1,
+      previousSessionDate: metadata.previousSessionDate ?? "",
+      marketCalendarOk: metadata.marketCalendarOk === true,
+    });
+    console.log(JSON.stringify({ octoberShadow }));
+  }
+
   const { data: lastHistory, error: lastError } = await client
     .from("us_screening_history")
     .select("date,data_hash,rule_version")
@@ -127,7 +153,7 @@ async function main() {
   if (lastError) throw lastError;
   if (lastHistory && lastHistory.date > ingest.as_of_date)
     throw new Error("Past US history cannot be replaced");
-  if (lastHistory?.date === ingest.as_of_date) {
+  if (lastHistory && lastHistory.date === ingest.as_of_date) {
     if (
       lastHistory.data_hash !== ingest.data_hash ||
       lastHistory.rule_version !== US_PROSPECTIVE_RULE_VERSION
@@ -138,6 +164,42 @@ async function main() {
       `${userId}/results/us-screening/${ingest.as_of_date}.json`,
     );
     if (!completed) throw new Error("Completed US result is missing");
+    if (
+      !(await octoberShadowAlreadyRecorded(
+        client,
+        userId,
+        "US",
+        String(ingest.as_of_date),
+        String(ingest.data_hash),
+      ))
+    ) {
+      const { data: prior, error: priorError } = await client
+        .from("us_screening_history")
+        .select("date")
+        .eq("user_id", userId)
+        .lt("date", ingest.as_of_date)
+        .order("date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (priorError) throw priorError;
+      const earlier = prior
+        ? await maybeDownloadJson<{
+            analysis?: {
+              state?: import("../src/lib/engine/usProspective").UsProspectivePreviousState;
+            };
+          }>(client, `${userId}/results/us-screening/${prior.date}.json`)
+        : null;
+      if (prior && !earlier?.analysis?.state)
+        throw new Error("Previous rank state missing for October recovery");
+      const csv = await downloadText(client, String(ingest.storage_path));
+      if (`sha256:${sha256(Buffer.from(csv, "utf8"))}` !== ingest.data_hash)
+        throw new Error("October recovery source hash mismatch");
+      const recovered = runUsProspectiveAnalysis(
+        parseUsProspectiveCsv(csv),
+        earlier?.analysis?.state ?? {},
+      );
+      await recordOctoberUs(recovered);
+    }
     await uploadJson(client, `${userId}/cache/us-screening/latest.json`, completed);
     await publishBrowserViews(client, userId, completed);
     console.log("US date already completed; portfolio and streak unchanged.");
@@ -244,6 +306,8 @@ async function main() {
     signals: usProspectiveCompactSignals(analysis),
   };
 
+  await recordOctoberUs(analysis);
+
   for (const strategy of US_PROSPECTIVE_STRATEGIES) {
     const { data: frozen, error: frozenError } = await client
       .from("us_strategy_registry")
@@ -288,7 +352,12 @@ async function main() {
       throw new Error(`Previous portfolio state is missing: ${strategy.id}`);
     const previousState = (prev?.state as UsPortfolioState | null) ?? null;
     const previousNav = prev ? Number(prev.nav_usd) : null;
-    const stepped = stepUsProspectivePortfolio(strategy, analysis, previousState, previousNav);
+    const stepped = stepUsProspectiveOperatingPortfolio(
+      strategy,
+      analysis,
+      previousState,
+      previousNav,
+    );
 
     const { error: snapshotError } = await client.from("us_portfolio_snapshots").upsert(
       {

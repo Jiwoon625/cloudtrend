@@ -21,23 +21,36 @@ vi.mock("../src/lib/instrumentChartStore.server", () => ({
   warmRecentCharts: mocks.warm,
 }));
 vi.mock("../scripts/analysis-run-store", async (original) => ({
-  ...(await original<any>()),
+  ...(await original<typeof import("../scripts/analysis-run-store")>()),
   trustedSupabaseClient: mocks.trusted,
   codeVersion: () => "code",
   findReusableRun: mocks.reused,
 }));
 import { runScreening } from "../scripts/run-screening";
 let dir: string;
-let inputs: any[];
+let inputs: Array<{
+  text: string;
+  validation: { canonicalCsv: string; rows: unknown[]; stats: { maxDate: string } };
+  [key: string]: unknown;
+}>;
 let uploaded: Map<string, string>;
-let upserts: Array<{ table: string; record: any; options: any }>;
+let upserts: Array<{ table: string; record: unknown; options: unknown }>;
+interface MockQuery {
+  maybeSingle(): Promise<{ data: null; error: null }>;
+  upsert(record: unknown, options: unknown): Promise<{ error: null }>;
+  select(): MockQuery;
+  eq(): MockQuery;
+  lt(): MockQuery;
+  order(): MockQuery;
+  limit(): MockQuery;
+}
 beforeEach(async () => {
   vi.resetAllMocks();
   dir = await mkdtemp(path.join(tmpdir(), "screening-cli-"));
   uploaded = new Map();
   upserts = [];
   const storage = {
-    upload: async (key: string, body: any) => {
+    upload: async (key: string, body: string | AsyncIterable<{ toString(): string }>) => {
       let text = "";
       if (typeof body === "string") text = body;
       else for await (const chunk of body) text += chunk.toString();
@@ -48,14 +61,18 @@ beforeEach(async () => {
   mocks.trusted.mockReturnValue({
     storage: { from: () => storage },
     from: (table: string) => {
-      const query: any = {
+      const query: MockQuery = {
         maybeSingle: async () => ({ data: null, error: null }),
-        upsert: async (record: any, options: any) => {
+        upsert: async (record: unknown, options: unknown) => {
           upserts.push({ table, record, options });
           return { error: null };
         },
+        select: () => query,
+        eq: () => query,
+        lt: () => query,
+        order: () => query,
+        limit: () => query,
       };
-      for (const method of ["select", "eq", "lt", "order", "limit"]) query[method] = () => query;
       return query;
     },
   });
@@ -70,7 +87,11 @@ beforeEach(async () => {
       dataHash: "data",
       schemaHash: "schema",
       sourceRecord: null,
-      validation: { canonicalCsv: "source", rows: [{ test: true }] },
+      validation: {
+        canonicalCsv: "source",
+        rows: [{ test: true }],
+        stats: { maxDate: getMockDataset().asOfDate },
+      },
     },
   ];
   mocks.load.mockResolvedValue(inputs);
@@ -102,10 +123,14 @@ for (const phase of ["prices", "warm"] as const) {
     expect(mocks.load).toHaveBeenCalledWith(expect.anything(), expect.any(String), "screening", {
       compact: true,
     });
-    const history = upserts.find((v) => v.table === "screening_history")!;
+    const history = upserts.find((v) => v.table === "screening_history")! as {
+      options: unknown;
+      record: { snapshot: { date: string }; date: string };
+    };
     expect(history.options).toEqual({ onConflict: "user_id,date" });
     expect(history.record.snapshot.date).toBe(history.record.date);
-    const run = upserts.find((v) => v.table === "analysis_runs")!.record;
+    const run = upserts.find((v) => v.table === "analysis_runs")!
+      .record as import("../src/lib/analysisRunBundle").AnalysisRunSummaryRecord;
     expect(run.status).toBe("COMPLETED");
     expect(mocks.cache).toHaveBeenCalledTimes(1);
     const bundle = JSON.parse(uploaded.get(run.result_path)!);
@@ -146,5 +171,12 @@ test("completed identical run is reused without analysis, publishing or warming"
   expect(mocks.parse).not.toHaveBeenCalled();
   expect(mocks.cache).not.toHaveBeenCalled();
   expect(mocks.prices).not.toHaveBeenCalled();
+  expect(upserts).toEqual([]);
+});
+
+test("a legacy completed run with no as_of_date reuses a verified pre-start source date without model reads", async () => {
+  mocks.reused.mockResolvedValue({ id: "old-existing", as_of_date: null });
+  await runScreening(args().filter((value) => value !== "--force"));
+  expect(mocks.parse).not.toHaveBeenCalled();
   expect(upserts).toEqual([]);
 });

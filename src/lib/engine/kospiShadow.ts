@@ -1,3 +1,11 @@
+import {
+  decimal,
+  divide,
+  format,
+  fromLegacyNumber,
+  integerBudgetQuantity,
+} from "../ledger/decimal";
+
 /** Research-policy model only. Never import this into operational entry/actual-ledger code. */
 export const KOSPI_SHADOW_POLICY = {
   id: "KOSPI_CONFIRM1_BEAR_RSACCEL_SHADOW",
@@ -13,7 +21,6 @@ export const KOSPI_SHADOW_POLICY = {
   upsideExitScore: 9.5,
   maxHoldingSessions: 60,
   priceBasis: "SOURCE_OHLC_REFERENCE_NOT_ACTUAL_EXECUTION",
-  researchReference: "https://app.notion.com/p/3edd908cac2f812c9c8ae19e2a242776?pvs=204",
 } as const;
 export type ShadowRegime = "RISK_ON" | "NEUTRAL" | "RISK_OFF" | "UNKNOWN";
 export interface ShadowGate {
@@ -47,6 +54,8 @@ export interface KospiShadowSession {
   benchmarkClose: number;
   gate: ShadowGate;
   rows: KospiShadowRow[];
+  /** Optional final pre-start observations only; never legacy positions or pending signals. */
+  warmupRows?: KospiShadowRow[];
 }
 export interface ShadowCandidate {
   key: string;
@@ -74,6 +83,8 @@ export interface ShadowPosition {
   entryPrice: number;
   entryDate: string;
   basisKrw: number;
+  /** Present only for the explicitly isolated October model. */
+  modelBasisExact?: string;
   lastPrice: number;
   lastPriceDate: string;
   lastPriceBasis: "OPEN" | "CLOSE";
@@ -116,7 +127,22 @@ export interface ShadowDaily {
   turnover: number;
   staleMarks: string[];
 }
+/** Additive sizing/accounting boundary; omission preserves the existing research series. */
+export interface KospiModelExecutionPolicy {
+  version: "isolated-kospi-model-v1";
+  bookId: string;
+  contractHash: string;
+  codeHash: string;
+  configHash: string;
+  accountingStartDate: "2026-10-05";
+  fixedBudgetEndExclusive: "2027-10-05";
+  initialCapitalKrw: "100000000";
+  oneWayCost: "0.0015";
+}
 export interface KospiShadowState {
+  executionPolicy?: KospiModelExecutionPolicy;
+  modelCashExact?: string;
+  modelFeesExact?: string;
   strategyId: typeof KOSPI_SHADOW_POLICY.id;
   ruleVersion: string;
   configHash: string;
@@ -188,8 +214,93 @@ export function validateShadowSession(session: KospiShadowSession) {
 export function stepKospiShadow(
   session: KospiShadowSession,
   previous: KospiShadowState | null,
+  executionPolicy?: KospiModelExecutionPolicy,
 ): KospiShadowSnapshot {
   validateShadowSession(session);
+  if (previous?.executionPolicy && !executionPolicy)
+    throw new Error("Isolated KOSPI state cannot enter the legacy Shadow engine path");
+  if (executionPolicy) {
+    const p = executionPolicy;
+    if (
+      p.version !== "isolated-kospi-model-v1" ||
+      p.bookId !== "adopted-shadow-2026-10-05-v1:KR_KOSPI_CONFIRM1_BEAR" ||
+      ![p.contractHash, p.codeHash, p.configHash].every((hash) =>
+        /^sha256:[a-f0-9]{64}$/.test(hash),
+      ) ||
+      p.accountingStartDate !== "2026-10-05" ||
+      p.fixedBudgetEndExclusive !== "2027-10-05" ||
+      p.initialCapitalKrw !== "100000000" ||
+      p.oneWayCost !== "0.0015" ||
+      session.configHash !== p.configHash ||
+      session.codeVersion !== p.codeHash ||
+      session.date < p.accountingStartDate ||
+      session.date >= p.fixedBudgetEndExclusive
+    )
+      throw new Error("Invalid isolated KOSPI execution policy or first-year boundary");
+    if (
+      session.warmupRows &&
+      (previous !== null ||
+        session.date !== "2026-10-06" ||
+        new Set(session.warmupRows.map((row) => row.symbol)).size !== session.warmupRows.length ||
+        session.warmupRows.some((row) => row.date !== "2026-10-02" || !row.symbol || !row.sector))
+    )
+      throw new Error("KOSPI warmup permits only final pre-start observations at initialization");
+    const identity = (value: KospiModelExecutionPolicy) =>
+      JSON.stringify([
+        value.version,
+        value.bookId,
+        value.contractHash,
+        value.codeHash,
+        value.configHash,
+        value.accountingStartDate,
+        value.fixedBudgetEndExclusive,
+        value.initialCapitalKrw,
+        value.oneWayCost,
+      ]);
+    if (previous) {
+      if (
+        !previous.executionPolicy ||
+        identity(previous.executionPolicy) !== identity(p) ||
+        previous.initializedDate !== p.accountingStartDate ||
+        previous.initialCapitalKrw !== Number(p.initialCapitalKrw) ||
+        previous.modelCashExact === undefined ||
+        previous.modelFeesExact === undefined ||
+        Number(previous.modelCashExact) !== previous.cashKrw ||
+        Number(previous.modelFeesExact) !== previous.totalFeesKrw ||
+        decimal(previous.modelCashExact) < 0n ||
+        decimal(previous.modelFeesExact) < 0n
+      )
+        throw new Error("KOSPI state does not match its frozen execution policy");
+      const candidates = [
+        ...previous.awaiting,
+        ...previous.pendingEntries,
+        ...Object.values(previous.positions).map((position) => position.candidate),
+      ];
+      if (
+        previous.lastDate < p.accountingStartDate ||
+        candidates.some(
+          (candidate) =>
+            candidate.originDate < p.accountingStartDate ||
+            (candidate.confirmationDate !== null &&
+              candidate.confirmationDate < candidate.originDate),
+        ) ||
+        Object.values(previous.pendingExits).some(
+          (order) => order.signalDate < p.accountingStartDate,
+        ) ||
+        Object.values(previous.previousRows).some((row) => row.date < p.accountingStartDate) ||
+        Object.values(previous.positions).some(
+          (position) =>
+            position.entryDate < p.accountingStartDate ||
+            !Number.isSafeInteger(position.shares) ||
+            position.shares <= 0 ||
+            position.modelBasisExact === undefined ||
+            decimal(position.modelBasisExact) <= 0n ||
+            Number(position.modelBasisExact) !== position.basisKrw,
+        )
+      )
+        throw new Error("Pre-start signals or invalid positions cannot enter isolated KOSPI state");
+    }
+  }
   if (
     previous &&
     (previous.strategyId !== KOSPI_SHADOW_POLICY.id ||
@@ -208,15 +319,24 @@ export function stepKospiShadow(
   const state: KospiShadowState = previous
     ? clone(previous)
     : {
+        ...(executionPolicy
+          ? {
+              executionPolicy: clone(executionPolicy),
+              modelCashExact: executionPolicy.initialCapitalKrw,
+              modelFeesExact: "0",
+            }
+          : {}),
         strategyId: KOSPI_SHADOW_POLICY.id,
         ruleVersion: KOSPI_SHADOW_POLICY.version,
         configHash: session.configHash,
-        initializedDate: session.date,
+        initializedDate: executionPolicy?.accountingStartDate ?? session.date,
         lastDate: session.date,
         initialCapitalKrw: KOSPI_SHADOW_POLICY.initialCapitalKrw,
         cashKrw: KOSPI_SHADOW_POLICY.initialCapitalKrw,
         benchmarkBase: session.benchmarkClose,
-        previousRows: {},
+        previousRows: executionPolicy
+          ? Object.fromEntries((session.warmupRows ?? []).map((row) => [row.symbol, clone(row)]))
+          : {},
         awaiting: [],
         pendingEntries: [],
         pendingExits: {},
@@ -234,8 +354,14 @@ export function stepKospiShadow(
     trades: ShadowTrade[] = [];
   let fees = 0,
     notional = 0;
-  // Allocation uses only the preceding close, before today's open marks or exits.
+  // Legacy allocation retains prior NAV/30; the opt-in October contract uses fixed capital/30.
   const targetTicket = state.lastNavKrw / KOSPI_SHADOW_POLICY.slots;
+  const fixedBudget = executionPolicy
+    ? format(divide(decimal(executionPolicy.initialCapitalKrw), decimal("30")))
+    : null;
+  let modelCash = executionPolicy ? decimal(state.modelCashExact!) : 0n;
+  let modelFees = executionPolicy ? decimal(state.modelFeesExact!) : 0n;
+  let dayModelFees = 0n;
   const record = (
     position: ShadowPosition,
     side: "BUY" | "SELL",
@@ -243,11 +369,32 @@ export function stepKospiShadow(
     reason: string,
     signalDate: string,
   ) => {
-    const gross = price * position.shares,
+    let gross = price * position.shares,
       fee = gross * KOSPI_SHADOW_POLICY.oneWayCost;
-    fees += fee;
+    let pnl = side === "SELL" ? gross - fee - position.basisKrw : null;
+    if (executionPolicy) {
+      if (!Number.isSafeInteger(position.shares) || position.shares <= 0)
+        throw new Error("KOSPI model fills require positive safe integer shares");
+      const exactGross = decimal(fromLegacyNumber(price)) * BigInt(position.shares);
+      const scale = decimal("1");
+      const exactFee = (exactGross * decimal(executionPolicy.oneWayCost) + scale - 1n) / scale;
+      modelCash += (side === "BUY" ? -exactGross : exactGross) - exactFee;
+      if (modelCash < 0n) throw new Error("Isolated KOSPI fill exceeds exact cash");
+      modelFees += exactFee;
+      dayModelFees += exactFee;
+      state.modelCashExact = format(modelCash);
+      state.modelFeesExact = format(modelFees);
+      state.cashKrw = Number(state.modelCashExact);
+      state.totalFeesKrw = Number(state.modelFeesExact);
+      fees = Number(format(dayModelFees));
+      gross = Number(format(exactGross));
+      fee = Number(format(exactFee));
+      if (side === "BUY") {
+        position.modelBasisExact = format(exactGross + exactFee);
+        position.basisKrw = Number(position.modelBasisExact);
+      } else pnl = Number(format(exactGross - exactFee - decimal(position.modelBasisExact!)));
+    } else fees += fee;
     notional += gross;
-    const pnl = side === "SELL" ? gross - fee - position.basisKrw : null;
     trades.push({
       key: [KOSPI_SHADOW_POLICY.id, position.candidate.key, session.date, side, reason].join("|"),
       strategyId: KOSPI_SHADOW_POLICY.id,
@@ -272,7 +419,7 @@ export function stepKospiShadow(
   };
   const close = (position: ShadowPosition, price: number, reason: string, signalDate: string) => {
     const { gross, fee } = record(position, "SELL", price, reason, signalDate);
-    state.cashKrw += gross - fee;
+    if (!executionPolicy) state.cashKrw += gross - fee;
     state.totalClosedTrades++;
     delete state.positions[position.symbol];
     delete state.pendingExits[position.symbol];
@@ -309,10 +456,19 @@ export function stepKospiShadow(
     else if (!positive(row?.open) || !positive(row?.volume))
       reason = "NO_EXECUTABLE_OPEN_NO_LATE_RETRY";
     else {
-      const shares = Math.min(
-        Math.max(1, Math.floor(targetTicket / row.open + 0.5)),
-        Math.floor(state.cashKrw / (row.open * (1 + KOSPI_SHADOW_POLICY.oneWayCost))),
-      );
+      const shares = executionPolicy
+        ? Number(
+            integerBudgetQuantity(
+              fixedBudget!,
+              format(modelCash),
+              fromLegacyNumber(row.open),
+              executionPolicy.oneWayCost,
+            ),
+          )
+        : Math.min(
+            Math.max(1, Math.floor(targetTicket / row.open + 0.5)),
+            Math.floor(state.cashKrw / (row.open * (1 + KOSPI_SHADOW_POLICY.oneWayCost))),
+          );
       if (shares < 1) reason = "INSUFFICIENT_MODEL_CASH";
       else {
         const p: ShadowPosition = {
@@ -336,7 +492,7 @@ export function stepKospiShadow(
           "CONFIRMED_RESEARCH_ENTRY",
           c.confirmationDate!,
         );
-        state.cashKrw -= gross + fee;
+        if (!executionPolicy) state.cashKrw -= gross + fee;
         state.positions[c.symbol] = p;
         state.totalEntries++;
         c.status = "MODEL_FILLED";
@@ -403,8 +559,8 @@ export function stepKospiShadow(
     candidates.push(c);
   }
   state.awaiting = [];
-  // The initialization close establishes observations only, never reconstructed pre-start trades.
-  if (previous)
+  // Optional warmup only detects an onset at this first post-start close. No earlier intent is imported.
+  if (previous || (executionPolicy && session.warmupRows?.length))
     for (const row of session.rows) {
       const old = state.previousRows[row.symbol];
       if (
@@ -447,7 +603,7 @@ export function stepKospiShadow(
   state.mdd = Math.min(state.mdd, nav / state.peakNavKrw - 1);
   state.sessions++;
   state.exposureSum += exposure;
-  state.totalFeesKrw += fees;
+  if (!executionPolicy) state.totalFeesKrw += fees;
   const elapsed = state.sessions - 1;
   const daily: ShadowDaily = {
     date: session.date,

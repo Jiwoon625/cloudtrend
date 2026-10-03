@@ -38,6 +38,12 @@ export interface AdoptedKrRun {
   frozenInputs: Pick<KrSeriesInputs, "snapshots" | "bars" | "markets" | "marketGates">;
   result: StrategyLedger;
   stateHash: SeriesHash;
+  /** Compact persistence resolves exact content-addressed daily inputs before replay. */
+  frozenInputArchive?: {
+    version: "kr-daily-inputs-v1";
+    days: Array<{ date: string; hash: SeriesHash }>;
+    prefixHash: SeriesHash;
+  };
 }
 const localDate = (value: string) =>
   new Intl.DateTimeFormat("en-CA", {
@@ -80,6 +86,7 @@ export async function stepAdoptedKrSeries(
   series: FrozenModelSeries,
   input: KrSeriesInputs,
   previous: AdoptedKrRun | null = null,
+  resolvedPreviousInputs?: AdoptedKrRun["frozenInputs"],
 ): Promise<{ status: "NEW" | "REUSE"; run: AdoptedKrRun }> {
   await verifyFrozenSeries(series);
   if (!["KR_MIXED", "KR_KOSPI", "KR_KOSDAQ"].includes(series.policy.kind))
@@ -119,9 +126,18 @@ export async function stepAdoptedKrSeries(
     assertModelCalendarContinuation(series, previous.calendar, input.calendar);
     const { stateHash, ...body } = previous;
     if ((await hashSeriesValue(body)) !== stateHash) throw new Error("Previous KR run has changed");
+    const previousInputs = previous.frozenInputArchive
+      ? resolvedPreviousInputs
+      : previous.frozenInputs;
+    if (
+      !previousInputs ||
+      (previous.frozenInputArchive &&
+        (await hashSeriesValue(previousInputs)) !== previous.frozenInputArchive.prefixHash)
+    )
+      throw new Error("Archived KR input prefix is missing or changed");
     if (
       (await hashSeriesValue(prefix(input, previous.receipt.date))) !==
-      (await hashSeriesValue(previous.frozenInputs))
+      (await hashSeriesValue(previousInputs))
     )
       throw new Error("Archived historical inputs changed; never rewrite a completed series");
   }

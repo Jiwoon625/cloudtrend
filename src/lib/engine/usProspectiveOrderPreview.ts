@@ -1,7 +1,11 @@
+import { decimal, format, fromLegacyNumber } from "../ledger/decimal";
 import {
   US_PROSPECTIVE_MAX_POSITIONS,
   US_PROSPECTIVE_ONE_WAY_COST,
   US_PROSPECTIVE_PARTICIPATION,
+  usFixedSlotPendingTargets,
+  usFixedSlotBudget,
+  type UsFixedSlotAllocationPolicy,
   type UsPendingTarget,
   type UsPortfolioState,
   type UsStrategyConfig,
@@ -50,6 +54,7 @@ export interface UsOrderPreviewBundle {
   sourceDate: string;
   nextSession: UsOrderPlan;
   nextQuarter: UsOrderPlan | null;
+  allocationPolicy?: UsFixedSlotAllocationPolicy;
 }
 const iso = (date: Date) => date.toISOString().slice(0, 10);
 const day = (date: string, offset = 0) => {
@@ -135,7 +140,12 @@ function plan(
   executionDate: string,
   kind: UsOrderPlan["kind"],
   quarterKey: string | null,
+  allocationPolicy?: UsFixedSlotAllocationPolicy,
 ): UsOrderPlan {
+  const fixedSlots = allocationPolicy && executionDate >= allocationPolicy.effectiveDate;
+  const oneWayCost = state.executionPolicy
+    ? Number(state.executionPolicy.oneWayCost)
+    : US_PROSPECTIVE_ONE_WAY_COST;
   const sourceDate = state.lastDate!;
   const confirmationDate = nextScheduledUsSession(executionDate, -1);
   const result: UsOrderPlan = {
@@ -232,7 +242,18 @@ function plan(
     r.estimatedNotionalUsd = shares * r.referencePrice!;
     r.status = requested === 0 ? "NO_CHANGE" : shares < requested ? "PARTIAL" : "ESTIMATED";
     r.limitReason = limit;
-    const fee = r.estimatedNotionalUsd * US_PROSPECTIVE_ONE_WAY_COST;
+    const fee = state.executionPolicy
+      ? Number(
+          format(
+            (decimal(fromLegacyNumber(r.referencePrice!)) *
+              BigInt(shares) *
+              decimal(state.executionPolicy.oneWayCost) +
+              decimal("1") -
+              1n) /
+              decimal("1"),
+          ),
+        )
+      : r.estimatedNotionalUsd * oneWayCost;
     fees += fee;
     cash += r.side === "BUY" ? -r.estimatedNotionalUsd - fee : r.estimatedNotionalUsd - fee;
     result.rows.push(r);
@@ -259,11 +280,29 @@ function plan(
   const orders = entries
     .map((t) => {
       const current = holdings[t.symbol]?.shares ?? 0;
-      const desired = Math.max(0, Math.floor((t.targetWeight * targetNav) / price(t.symbol)!));
-      return { t, current, desired, delta: desired - current };
+      const desired = fixedSlots
+        ? Math.max(
+            current,
+            t.fixedTargetShares ??
+              Number(decimal(t.fixedBudgetUsd!) / decimal(fromLegacyNumber(price(t.symbol)!))),
+          )
+        : Math.max(0, Math.floor((t.targetWeight * targetNav) / price(t.symbol)!));
+      const budget = fixedSlots ? decimal(t.remainingBudgetUsd ?? t.fixedBudgetUsd!) : 0n;
+      const reserved =
+        fixedSlots && t.fixedTargetShares === undefined
+          ? decimal(fromLegacyNumber(price(t.symbol)!)) * BigInt(current)
+          : 0n;
+      const remainingBudget = budget > reserved ? budget - reserved : 0n;
+      return {
+        t,
+        current,
+        desired,
+        delta: fixedSlots ? Math.max(0, desired - current) : desired - current,
+        remainingBudget,
+      };
     })
     .sort((a, b) => a.delta - b.delta);
-  for (const { t, current, desired, delta } of orders) {
+  for (const { t, current, desired, delta, remainingBudget } of orders) {
     const r = makeRow(t.symbol, t.reason, t.targetWeight);
     r.side = delta < 0 ? "SELL" : delta > 0 ? "BUY" : "HOLD";
     const requested = Math.abs(delta);
@@ -271,12 +310,14 @@ function plan(
     const reasons: string[] = [];
     if (shares < requested) reasons.push("직전 ADV20 1% 한도");
     if (delta > 0) {
-      const affordable = Math.max(
-        0,
-        Math.floor(cash / (price(t.symbol)! * (1 + US_PROSPECTIVE_ONE_WAY_COST))),
-      );
+      const affordable = Math.max(0, Math.floor(cash / (price(t.symbol)! * (1 + oneWayCost))));
       if (affordable < shares) reasons.push("현금·비용 한도");
       shares = Math.min(shares, affordable);
+      if (fixedSlots) {
+        const budgetShares = Number(remainingBudget / decimal(fromLegacyNumber(price(t.symbol)!)));
+        if (budgetShares < shares) reasons.push("초기자본 고정 매입예산 한도");
+        shares = Math.min(shares, budgetShares);
+      }
       if (!holdings[t.symbol]) {
         const held = Object.values(holdings);
         const sector = quotes.get(t.symbol)?.sector ?? "UNKNOWN";
@@ -318,7 +359,13 @@ export function buildUsOrderPreview(
   config: UsStrategyConfig,
   state: UsPortfolioState,
   sourceQuotes: UsOrderPreviewQuote[],
+  requestedAllocationPolicy?: UsFixedSlotAllocationPolicy,
 ): UsOrderPreviewBundle | null {
+  const allocationPolicy = requestedAllocationPolicy ?? state.allocationPolicy;
+  if (allocationPolicy) {
+    usFixedSlotBudget(allocationPolicy);
+    if (Number(allocationPolicy.initialCapitalUsd) !== state.initialCapital) return null;
+  }
   if (
     !state.lastDate ||
     !validDate(state.lastDate) ||
@@ -358,15 +405,43 @@ export function buildUsOrderPreview(
       signalDate: state.lastDate,
       reason: "QUARTER_EQUAL_WEIGHT",
     };
-  const nextQuarter = config.quarterlyRebalance
-    ? plan(config, state, quotes, quarterTargets, executionDate, "QUARTER", quarter(start))
-    : null;
+  const nextQuarter =
+    config.quarterlyRebalance &&
+    !(allocationPolicy && executionDate >= allocationPolicy.effectiveDate)
+      ? plan(
+          config,
+          state,
+          quotes,
+          quarterTargets,
+          executionDate,
+          "QUARTER",
+          quarter(start),
+          allocationPolicy,
+        )
+      : null;
   const nextDate = nextScheduledUsSession(state.lastDate);
   const nextSession =
     nextQuarter?.executionDate === nextDate
       ? { ...nextQuarter, kind: "PENDING" as const }
-      : plan(config, state, quotes, state.pendingTargets, nextDate, "PENDING", null);
-  return { version: 1, sourceDate: state.lastDate, nextSession, nextQuarter };
+      : plan(
+          config,
+          state,
+          quotes,
+          allocationPolicy && nextDate >= allocationPolicy.effectiveDate
+            ? usFixedSlotPendingTargets(state, allocationPolicy)
+            : state.pendingTargets,
+          nextDate,
+          "PENDING",
+          null,
+          allocationPolicy,
+        );
+  return {
+    version: 1,
+    sourceDate: state.lastDate,
+    nextSession,
+    nextQuarter,
+    ...(allocationPolicy ? { allocationPolicy: { ...allocationPolicy } } : {}),
+  };
 }
 
 /** Reject stale/partial persisted presentation payloads rather than displaying fabricated zeros. */

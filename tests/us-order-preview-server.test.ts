@@ -287,3 +287,48 @@ it("persists only a presentation sibling after a new session step, never in comp
   );
   expect(read).not.toContain("cache/us-screening/latest");
 });
+
+it("reprojects a pre-cutover snapshot read-only once its next session uses fixed20, ignoring saved quarterly preview", async () => {
+  const at = "2026-10-02";
+  const fixedSource = {
+    ...structuredClone(state),
+    lastDate: at,
+    adv20BySymbol: { ABC: 10000000, NEW: 10000000 },
+    pendingTargets: {
+      NEW: { symbol: "NEW", targetWeight: 1, signalDate: at, reason: "ENTRY_ONSET80" },
+      ABC: {
+        symbol: "ABC",
+        targetWeight: 0.2,
+        signalDate: at,
+        reason: "ENTRY_MINIMUM_PROPORTIONAL_FUNDING",
+      },
+    },
+  };
+  const fixedQuotes = ["ABC", "NEW"].map((symbol) => ({
+    symbol,
+    name: symbol,
+    sector: "Tech",
+    close: 100,
+    date: at,
+  }));
+  const saved = buildUsOrderPreview(config, fixedSource, fixedQuotes)!;
+  expect(saved.nextQuarter).not.toBeNull();
+  const value = { ...snapshot(), date: at, state: { ...fixedSource, orderPreview: saved } };
+  const before = structuredClone(value);
+  const { client } = mockClient({ snapshot: value, history: { ...history(), date: at } });
+  source(fixedQuotes, { date: at });
+  const preview = await loadUsOrderPreview(client, "owner", strategyId, at);
+  expect(preview?.nextQuarter).toBeNull();
+  expect(preview?.nextSession.rows).toHaveLength(1);
+  expect(preview?.nextSession.rows[0]).toMatchObject({
+    symbol: "NEW",
+    estimatedShares: 50,
+    targetShares: 50,
+  });
+  expect(downloadFreshObject).toHaveBeenCalledExactlyOnceWith(
+    client,
+    "cloudtrend-data",
+    `owner/results/us-screening/${at}.json`,
+  );
+  expect(value).toEqual(before);
+});

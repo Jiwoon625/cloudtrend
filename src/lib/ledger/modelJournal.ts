@@ -26,7 +26,9 @@ export interface ImmutableModelStore {
 export function modelJournalPath(userId: string, seriesId: string, suffix: string) {
   if (
     !/^[a-f\d-]{36}$/i.test(userId) ||
-    !/^adopted-shadow-2026-10-05-v1:(KR_MIXED|KR_KOSPI|KR_KOSDAQ|US_A0|ETF_V02)$/.test(seriesId) ||
+    !/^adopted-shadow-2026-10-05-v1:(KR_MIXED|KR_KOSPI|KR_KOSDAQ|US_A0|ETF_V02|US_A2|US_B3|KR_KOSPI_CONFIRM1_BEAR)$/.test(
+      seriesId,
+    ) ||
     !/^(registry\.json|sessions|sessions\/\d{4}-\d{2}-\d{2}\.json)$/.test(suffix)
   )
     throw new Error("Invalid private model journal path");

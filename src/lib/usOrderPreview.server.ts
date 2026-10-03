@@ -1,10 +1,16 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
 import { US_PROSPECTIVE_RULE_VERSION } from "./engine/usProspective";
-import { US_PROSPECTIVE_STRATEGIES, type UsPortfolioState } from "./engine/usProspectivePortfolio";
+import {
+  US_PROSPECTIVE_STRATEGIES,
+  US_FIXED_SLOT_EFFECTIVE_DATE,
+  usFixedSlotAllocationPolicy,
+  type UsPortfolioState,
+} from "./engine/usProspectivePortfolio";
 import {
   buildUsOrderPreview,
   isUsOrderPreviewBundle,
+  nextScheduledUsSession,
   type UsOrderPreviewBundle,
   type UsOrderPreviewQuote,
 } from "./engine/usProspectiveOrderPreview";
@@ -73,8 +79,12 @@ export async function loadUsOrderPreview(
   const state = snapshot.state as unknown;
   if (!record(state) || state["lastDate"] !== snapshot.date)
     throw new Error("미국 모형 상태의 기준일이 일치하지 않습니다.");
+  const prospectiveFixedSlots =
+    !!state["allocationPolicy"] ||
+    nextScheduledUsSession(snapshot.date) >= US_FIXED_SLOT_EFFECTIVE_DATE;
   const saved = state["orderPreview"];
   if (
+    !prospectiveFixedSlots &&
     isUsOrderPreviewBundle(saved, snapshot.date) &&
     Boolean(saved.nextQuarter) === config.quarterlyRebalance
   )
@@ -112,7 +122,15 @@ export async function loadUsOrderPreview(
           : null,
       date: snapshot.date as string,
     }));
-  const preview = buildUsOrderPreview(config, state as unknown as UsPortfolioState, quotes);
+  const portfolio = state as unknown as UsPortfolioState;
+  const preview = buildUsOrderPreview(
+    config,
+    portfolio,
+    quotes,
+    prospectiveFixedSlots
+      ? (portfolio.allocationPolicy ?? usFixedSlotAllocationPolicy(portfolio.initialCapital))
+      : undefined,
+  );
   if (!preview || !isUsOrderPreviewBundle(preview, snapshot.date))
     throw new Error("저장된 미국 모형 상태로 주문 미리보기를 만들 수 없습니다.");
   return preview;

@@ -49,6 +49,7 @@ export function buildKospiShadowSession(
     now?: string;
   },
   date = raw.asOfDate,
+  completedAnalysis?: ReturnType<typeof runFullMarketAnalysis>["analysis"],
 ): KospiShadowSession {
   if (!raw.isLive)
     throw new Error("Synthetic data cannot initialize or advance a prospective Shadow");
@@ -71,7 +72,8 @@ export function buildKospiShadowSession(
     throw new Error("Invalid or stale KOSPI session calendar");
   const close = benchmark[0]!.bars.find((b) => b.tradeDate === date)?.close;
   if (!positive(close)) throw new Error("Exact-date KOSPI close required");
-  const { analysis } = runFullMarketAnalysis(ds, cfg);
+  const analysis = completedAnalysis ?? runFullMarketAnalysis(ds, cfg).analysis;
+  if (analysis.asOfDate !== date) throw new Error("Completed Shadow analysis date mismatch");
   const latest = new Map(analysis.rows.map((r) => [r.instrument.symbol, r]));
   const kospi = ds.instruments.filter((i) => i.market === "KOSPI" && i.instrumentType === "STOCK");
   if (new Set(kospi.map((i) => i.symbol)).size !== kospi.length)
