@@ -114,10 +114,11 @@ function view(): KospiShadowView {
   };
 }
 describe("unified Shadow UI", () => {
-  it("uses descriptive KOSPI terminology, distinct currencies and all three models", () => {
+  it("uses descriptive KOSPI terminology, distinct currencies and all four historical models", () => {
     const html = renderToStaticMarkup(<ShadowPage />);
     expect(html).toContain("KOSPI 하루확인·불황 시 RSAccel 필터");
-    expect(html).toContain("미국 A2 분기 · USD");
+    expect(html).toContain("미국 A0 모델 기록 · USD");
+    expect(html).toContain("미국 A2 모델 기록 · USD");
     expect(html).toContain("미국 B3 Beta · USD");
     expect(html).toContain("KRW와 USD 금액을 합산하지 않습니다");
     expect(html).not.toContain("223");

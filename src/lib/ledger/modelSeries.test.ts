@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { decimal } from "./decimal";
+import { modelJournalPath } from "./modelJournal";
+import { KOSPI_SHADOW_POLICY } from "../engine/kospiShadow";
 import { ETF_POLICY, type EtfStrategySnapshot } from "../engine/etfStrategy";
 import {
   US_PROSPECTIVE_INITIAL_CAPITAL,
@@ -18,6 +20,7 @@ import {
   guardModelRun,
   hashSeriesValue,
   initializeModelSeries,
+  isAdoptedUsSeriesKind,
   isActionableModelSignal,
   krInitialSlotBudget,
   krSlotCapacity,
@@ -42,7 +45,7 @@ const create = (kind: AdoptedSeriesKind = "KR_MIXED") =>
   freezeAdoptedSeries({
     ...base,
     kind,
-    ...(kind === "US_A0" ? { initialFx: VERIFIED_INITIAL_FX } : {}),
+    ...(isAdoptedUsSeriesKind(kind) ? { initialFx: VERIFIED_INITIAL_FX } : {}),
   });
 const calendar = (market: "KR" | "US" = "KR"): ModelCalendar => ({
   market,
@@ -97,9 +100,9 @@ const etfSnapshot = (): EtfStrategySnapshot => ({
 });
 
 describe("new adopted series, never historical book rewrites", () => {
-  it("creates five separately funded series with frozen costs and independent identities", async () => {
+  it("creates eight separately funded series with frozen costs and independent identities", async () => {
     const series = await Promise.all(ADOPTED_SERIES_KINDS.map(create));
-    expect(new Set(series.map((s) => s.bookId)).size).toBe(5);
+    expect(new Set(series.map((s) => s.bookId)).size).toBe(8);
     for (const s of series) {
       expect(s).toMatchObject({
         book: "MODEL",
@@ -120,9 +123,87 @@ describe("new adopted series, never historical book rewrites", () => {
     });
     expect(series[1]!.policy.allowedMarkets).toEqual(["KOSPI"]);
     expect(series[2]!.policy.allowedMarkets).toEqual(["KOSDAQ"]);
-    expect(series[3]!.policy.allocation).toBe("US_A0_QUARTERLY_UNCHANGED");
+    expect(series[3]!.policy.allocation).toBe("US_INITIAL_CAPITAL_DIV_TARGET_POSITIONS");
     expect(series[4]!.policy.allocation).toBe("ETF_V02_VOLATILITY_UNCHANGED");
   });
+
+  it("preserves the exact KR/ETF frozen contracts while changing only approved US allocation", async () => {
+    const originalHashes = {
+      KR_MIXED: "7ee1fdd09122c1c3de674ba7e3ffe68e694f1cdb59b54c3ce73bb88d22ef731b",
+      KR_KOSPI: "65661e9f0387015040f5201cab372ffaf53dca967f2c0b3ea01a72f67b26e795",
+      KR_KOSDAQ: "e2485190b253a46b19c5f9db410e5737b74188fd501400c889f756f8f415f049",
+      ETF_V02: "b1d278500c09ff757858afb27d0d67014c139c19e9e6cab728b49be10d4d069b",
+    };
+    for (const [kind, expected] of Object.entries(originalHashes))
+      expect((await create(kind as AdoptedSeriesKind)).contractHash).toBe(`sha256:${expected}`);
+    const a2 = await create("US_A2"),
+      b3 = await create("US_B3"),
+      kospi = await create("KR_KOSPI_CONFIRM1_BEAR");
+    expect(a2.policy.allocation).toBe("US_INITIAL_CAPITAL_DIV_TARGET_POSITIONS");
+    expect(a2.policy.usAllocationPolicy).toMatchObject({
+      targetPositions: 20,
+      initialCapitalUsd: "73551.04",
+      effectiveDate: "2026-10-05",
+    });
+    expect((await create("US_A0")).contractHash).not.toBe(
+      "sha256:9474c343941715c35ba50e7cdf3de907c6ec5b22846dad1893d0908b71d9af02",
+    );
+    expect(a2.policy.enginePolicy).toEqual(US_PROSPECTIVE_STRATEGIES[1]);
+    expect(b3.policy.allocation).toBe("US_INITIAL_CAPITAL_DIV_TARGET_POSITIONS");
+    expect(b3.policy.enginePolicy).toEqual(US_PROSPECTIVE_STRATEGIES[2]);
+    expect(b3.policy.enginePolicy).toMatchObject({ quarterlyRebalance: false });
+    expect(kospi.policy.enginePolicy).toEqual(KOSPI_SHADOW_POLICY);
+    expect(kospi.policy.enginePolicy).toMatchObject({
+      label: "KOSPI 하루확인·불황 시 RSAccel 필터",
+    });
+    expect(kospi.policy.enginePolicy).not.toEqual((await create("KR_KOSPI")).policy.enginePolicy);
+    expect(kospi.policy.allowedMarkets).toEqual(["KOSPI"]);
+    for (const series of [a2, b3]) {
+      const opening = initializeModelSeries(series);
+      expect(opening.cash).toEqual({ KRW: "6.016", USD: "73551.04" });
+      expect(opening.positions).toEqual({});
+      expect(opening.pendingSignals).toEqual([]);
+      await expect(freezeAdoptedSeries({ ...base, kind: series.policy.kind })).rejects.toThrow(
+        "FX missing",
+      );
+      expect(() => assertModelSeriesIsolation(series, initializeModelSeries(kospi))).toThrow(
+        "other model",
+      );
+    }
+    for (const series of [a2, b3, kospi]) {
+      expect(
+        modelJournalPath("00000000-0000-0000-0000-000000000000", series.bookId, "registry.json"),
+      ).toContain(encodeURIComponent(series.bookId));
+      expect(modelEngineAdapterStatus(series).status).toBe("PURE_EXECUTOR");
+    }
+  });
+
+  it.each(["US_A0", "US_A2", "US_B3"] as const)(
+    "%s freezes historical signal-base identity separately from effective fixed-slot prohibitions",
+    async (kind) => {
+      const originalCatalog = structuredClone(US_PROSPECTIVE_STRATEGIES);
+      const series = await create(kind);
+      expect(series.policy.enginePolicyRole).toBe("HISTORICAL_SIGNAL_STRATEGY_BASE");
+      expect(series.policy.usAllocationPolicy).toEqual({
+        version: "us-initial-capital-slots-v1",
+        effectiveDate: "2026-10-05",
+        targetPositions: 20,
+        initialCapitalUsd: "73551.04",
+        quarterlyRebalance: false,
+        fundingOnlySales: false,
+      });
+      expect(series.policy.enginePolicy).toEqual(
+        originalCatalog.find((strategy) => strategy.id.startsWith(kind.slice(3))),
+      );
+      expect(series.policy.enginePolicy).toMatchObject({ quarterlyRebalance: kind !== "US_B3" });
+      expect(Object.isFrozen(series.policy.usAllocationPolicy)).toBe(true);
+      expect(US_PROSPECTIVE_STRATEGIES).toEqual(originalCatalog);
+      await verifyFrozenSeries(series);
+      const changed = structuredClone(series);
+      delete changed.policy.enginePolicyRole;
+      await expect(verifyFrozenSeries(changed)).rejects.toThrow("Frozen model contract mismatch");
+    },
+  );
 
   it.each(["A2_QUARTER_SHADOW", "B3_BETA_SHADOW", "KOSPI_LEGACY"])(
     "rejects reset of %s",

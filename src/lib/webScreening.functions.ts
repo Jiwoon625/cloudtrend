@@ -1,3 +1,4 @@
+import { recordWebOctoberShadow } from "./octoberShadowPublication.server";
 import { inputFingerprint, loadActiveSources, listActiveSources } from "./screeningSources.server";
 import { primeChartContext, publishRecentPrices } from "./instrumentChartStore.server";
 import { createHash } from "node:crypto";
@@ -87,6 +88,21 @@ export const runWebScreeningServer = createServerFn({ method: "POST" })
       uploadJson(client, dashboardPath, dashboard),
     ]);
 
+    const shadowSnapshot = buildSnapshot(
+      analysis,
+      latestSourceRegistration(sources, analysis.asOfDate),
+    );
+    const octoberShadow = await recordWebOctoberShadow({
+      client,
+      userId: authData.user.id,
+      dataset,
+      analysis,
+      config: data.config,
+      snapshot: shadowSnapshot,
+      sources,
+      decisionAt: screening.createdAt,
+    });
+
     try {
       const snapshot = buildSnapshot(
         analysis,
@@ -131,6 +147,7 @@ export const runWebScreeningServer = createServerFn({ method: "POST" })
     }
     return {
       ok: true as const,
+      octoberShadow,
       asOfDate: analysis.asOfDate,
       rows: analysis.rows.length,
       sources: sources.length,

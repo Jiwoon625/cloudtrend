@@ -1,5 +1,5 @@
 import { decimal, divide, format, fromLegacyNumber, integerBudgetQuantity } from "./ledger/decimal";
-import { validDate } from "./ledger/validation";
+import { validDate } from "./ledger/date";
 import type { KospiMarketGateEvidence } from "./engine/kospiMarketGate";
 import type { DailyPrice, Market } from "./engine/types";
 import type { ScreeningSnapshot } from "./screeningSnapshot";

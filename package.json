@@ -13,7 +13,9 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "us:screening": "vite-node --script scripts/run-us-screening.ts",
-    "test:us": "vitest run src/lib/engine/usProspective.test.ts"
+    "test:us": "vitest run src/lib/engine/usProspective.test.ts",
+    "prebuild": "vite-node --script scripts/build-october-shadow-manifest.ts",
+    "predev": "vite-node --script scripts/build-october-shadow-manifest.ts"
   },
   "overrides": {
     "rolldown": "1.2.1"

@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "scripts/initialize-october-shadow.ts",
+    "scripts/october-shadow-*.ts",
+    "scripts/run-screening.ts",
+    "scripts/run-us-screening.ts",
+    "src/lib/ledger/october*.ts"
+  ]
+}

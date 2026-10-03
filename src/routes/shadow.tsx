@@ -3,6 +3,7 @@ import { useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { KospiShadowPanel } from "@/components/KospiShadowPanel";
 import { UsPortfolioView } from "@/components/UsPortfolioView";
+import { OctoberShadowSummary } from "@/components/OctoberShadowSummary";
 export const Route = createFileRoute("/shadow")({
   ssr: false,
   head: () => ({ meta: [{ title: "Shadow 연구 관찰 | CloudTrend" }] }),
@@ -23,6 +24,8 @@ export function ShadowPage() {
             USD 금액을 합산하지 않습니다.
           </p>
         </header>
+        <OctoberShadowSummary />
+        <h2 className="text-lg font-semibold">기존 Shadow 연구 이력</h2>
         <div className="grid min-w-0 items-end gap-3 rounded-lg border bg-card p-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
           <label className="min-w-0 text-sm">
             Shadow 모델
@@ -33,7 +36,8 @@ export function ShadowPage() {
               className="mt-1 block w-full min-w-0 max-w-full rounded border bg-background p-2"
             >
               <option value="KOSPI">KOSPI 하루확인·불황 시 RSAccel 필터 · KRW</option>
-              <option value="A2_QUARTER_SHADOW">미국 A2 분기 · USD</option>
+              <option value="A0_QUARTER_PRIMARY">미국 A0 모델 기록 · USD</option>
+              <option value="A2_QUARTER_SHADOW">미국 A2 모델 기록 · USD</option>
               <option value="B3_BETA_SHADOW">미국 B3 Beta · USD</option>
             </select>
           </label>

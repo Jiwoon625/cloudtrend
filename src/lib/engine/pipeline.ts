@@ -129,6 +129,9 @@ export interface ScreeningRow {
   actionLabelText: string;
   /** Strict raw 0~10 score. null when any core feature is unavailable. */
   operatingScore10: number | null;
+  /** Dated indicator warmup only; does not represent a prior model signal or holding. */
+  previousOperatingScore10?: number | null;
+  previousOperatingScoreDate?: string | null;
   kosdaq80Onset: boolean;
   kospi80Onset?: boolean;
   operationalSignalVersion?: string;
@@ -542,6 +545,8 @@ export function runAnalysis(
           ? getOperationalStatus(signals, inst.market)
           : actionLabel(modelGrade, gate.status),
       operatingScore10,
+      previousOperatingScore10,
+      previousOperatingScoreDate: previousSnap?.tradeDate ?? null,
       ...signals,
       sectorPriceLeadership: currentPl,
       sectorRotationScore: rotationScore,

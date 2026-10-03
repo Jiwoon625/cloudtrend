@@ -9,6 +9,8 @@ import {
 import {
   stepUsProspectivePortfolio,
   US_PROSPECTIVE_STRATEGIES,
+  stepUsProspectiveOperatingPortfolio,
+  usFixedSlotAllocationPolicy,
   type UsPortfolioState,
 } from "./usProspectivePortfolio";
 import type { UsProspectiveAnalysis } from "./usProspective";
@@ -350,5 +352,114 @@ describe("read-only model order preview", () => {
     expect(isUsOrderPreviewBundle(preview, "2027-01-04")).toBe(false);
     expect(isUsOrderPreviewBundle({ ...preview, nextSession: {} }, preview.sourceDate)).toBe(false);
     expect(isUsOrderPreviewBundle(null, preview.sourceDate)).toBe(false);
+  });
+});
+
+describe("fixed20 prospective order previews", () => {
+  it("projects cutover entries without old funding or quarterly targets and matches operating fills", () => {
+    const s = state("2026-10-02");
+    s.cash = 10000;
+    s.pendingTargets = {
+      A: {
+        symbol: "A",
+        targetWeight: 0.1,
+        signalDate: s.lastDate!,
+        reason: "ENTRY_MINIMUM_PROPORTIONAL_FUNDING",
+      },
+      B: {
+        symbol: "B",
+        targetWeight: 0.9,
+        signalDate: s.lastDate!,
+        reason: "QUARTER_EQUAL_WEIGHT",
+      },
+      C: { symbol: "C", targetWeight: 1, signalDate: s.lastDate!, reason: "ENTRY_ONSET80" },
+    };
+    const before = structuredClone(s);
+    const preview = buildUsOrderPreview(
+      a0!,
+      s,
+      quotes(s.lastDate),
+      usFixedSlotAllocationPolicy(s.initialCapital),
+    )!;
+    expect(preview.nextQuarter).toBeNull();
+    expect(preview.nextSession.rows).toHaveLength(1);
+    expect(preview.nextSession.rows[0]).toMatchObject({
+      symbol: "C",
+      targetShares: 50,
+      estimatedShares: 50,
+      side: "BUY",
+    });
+    expect(isUsOrderPreviewBundle(preview, s.lastDate!)).toBe(true);
+    const actual = stepUsProspectiveOperatingPortfolio(a0!, analysis("2026-10-05"), s, 19000);
+    expect(preview.nextSession.cashAfterUsd).toBeCloseTo(actual.cash);
+    expect(preview.nextSession.feesUsd).toBeCloseTo(actual.feesUsd);
+    expect(s).toEqual(before);
+  });
+
+  it("preserves oversized inherited positions and exit priority under fixed allocation", () => {
+    const s = state("2026-10-02");
+    s.pendingTargets["A"] = {
+      symbol: "A",
+      targetWeight: 1,
+      signalDate: s.lastDate!,
+      reason: "ENTRY_ONSET80",
+    };
+    s.pendingExits["B"] = { symbol: "B", signalDate: s.lastDate!, reason: "A0_BETA_ANCHOR_3D" };
+    const preview = buildUsOrderPreview(
+      a0!,
+      s,
+      quotes(s.lastDate),
+      usFixedSlotAllocationPolicy(s.initialCapital),
+    )!;
+    expect(preview.nextSession.rows.find((r) => r.symbol === "A")).toMatchObject({
+      side: "HOLD",
+      targetShares: 70,
+      estimatedShares: 0,
+    });
+    expect(preview.nextSession.rows.find((r) => r.symbol === "B")).toMatchObject({
+      side: "EXIT",
+      estimatedShares: 20,
+    });
+    expect(preview.nextQuarter).toBeNull();
+  });
+
+  it("uses isolated cash/costs and cumulative remaining fixed budget for partial orders", () => {
+    const s = state("2026-10-06");
+    s.initialCapital = 73551.04;
+    s.cash = 73050.29;
+    s.positions = { A: { ...s.positions["A"]!, shares: 5 } };
+    s.executionPolicy = {
+      version: "isolated-us-model-v1",
+      bookId: "adopted-shadow-2026-10-05-v1:US_A0",
+      contractHash: `sha256:${"a".repeat(64)}`,
+      accountingStartDate: "2026-10-05",
+      initialCapital: "73551.04",
+      oneWayCost: "0.0015",
+    };
+    s.allocationPolicy = usFixedSlotAllocationPolicy(s.initialCapital);
+    s.pendingTargets = {
+      A: {
+        symbol: "A",
+        targetWeight: 0.05,
+        fixedBudgetUsd: "3677.552",
+        remainingBudgetUsd: "3177.552",
+        fixedTargetShares: 36,
+        signalDate: "2026-10-05",
+        reason: "ENTRY_ONSET80",
+      },
+    };
+    const preview = buildUsOrderPreview(
+      a0!,
+      s,
+      quotes(s.lastDate).map((r) => ({ ...r, close: 200 })),
+    )!;
+    expect(preview.nextQuarter).toBeNull();
+    expect(preview.nextSession.rows[0]).toMatchObject({
+      estimatedShares: 15,
+      remainingShares: 16,
+      targetShares: 36,
+    });
+    expect(preview.nextSession.feesUsd).toBe(4.5);
+    expect(isUsOrderPreviewBundle(preview, s.lastDate!)).toBe(true);
   });
 });

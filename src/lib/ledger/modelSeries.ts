@@ -1,12 +1,15 @@
 import { decimal, divide, format, integerBudgetQuantity, multiply } from "./decimal";
 import type { Currency, OpeningBalance } from "./types";
-import { validDate } from "./validation";
+import { validDate } from "./date";
 import { ETF_POLICY, etfEntryWeight, type EtfStrategySnapshot } from "../engine/etfStrategy";
 import { KOSPI_ENTRY_POLICY } from "../engine/kospiEntryConfirmation";
+import { KOSPI_SHADOW_POLICY } from "../engine/kospiShadow";
 import { STRATEGY_CONFIG } from "../engine/operationalStrategy";
 import {
   US_PROSPECTIVE_STRATEGIES,
   stepUsProspectivePortfolio,
+  usFixedSlotAllocationPolicy,
+  type UsFixedSlotAllocationPolicy,
   type UsModelExecutionPolicy,
   type UsPortfolioStepResult,
   type UsStrategyConfig,
@@ -26,6 +29,9 @@ export const ADOPTED_SERIES_KINDS = [
   "KR_KOSDAQ",
   "US_A0",
   "ETF_V02",
+  "US_A2",
+  "US_B3",
+  "KR_KOSPI_CONFIRM1_BEAR",
 ] as const;
 export type AdoptedSeriesKind = (typeof ADOPTED_SERIES_KINDS)[number];
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -71,12 +77,16 @@ export interface AdoptedSeriesPolicy {
   maxPositions: number;
   allocation:
     | "KR_INITIAL_CAPITAL_DIV_30_FIRST_YEAR"
-    | "US_A0_QUARTERLY_UNCHANGED"
+    | "US_INITIAL_CAPITAL_DIV_TARGET_POSITIONS"
     | "ETF_V02_VOLATILITY_UNCHANGED";
   /** Mixed book counts all positions in a sector against the candidate market's cap. */
   sectorCapByCandidateMarket: { KOSPI: number; KOSDAQ: number } | null;
   allowedMarkets: string[];
   enginePolicy: Json;
+  /** US catalog labels/settings describe the historical signal base, not effective allocation. */
+  enginePolicyRole?: "HISTORICAL_SIGNAL_STRATEGY_BASE";
+  /** Separate prospective allocation override; underlying selection/exit configs are unchanged. */
+  usAllocationPolicy?: UsFixedSlotAllocationPolicy;
 }
 export interface FrozenModelSeries {
   book: "MODEL";
@@ -139,25 +149,52 @@ function freeze<T>(value: T): T {
   }
   return value;
 }
+export const ADOPTED_US_STRATEGY_IDS = {
+  US_A0: "A0_QUARTER_PRIMARY",
+  US_A2: "A2_QUARTER_SHADOW",
+  US_B3: "B3_BETA_SHADOW",
+} as const;
+export type AdoptedUsSeriesKind = keyof typeof ADOPTED_US_STRATEGY_IDS;
+export function isAdoptedUsSeriesKind(kind: AdoptedSeriesKind): kind is AdoptedUsSeriesKind {
+  return Object.hasOwn(ADOPTED_US_STRATEGY_IDS, kind);
+}
 function policyFor(kind: AdoptedSeriesKind): AdoptedSeriesPolicy {
   if (!(ADOPTED_SERIES_KINDS as readonly string[]).includes(kind))
     throw new Error(
       "Only newly adopted series may be initialized; alternative and historical series are immutable",
     );
-  if (kind === "US_A0") {
-    const a0 = US_PROSPECTIVE_STRATEGIES.find((strategy) => strategy.id === "A0_QUARTER_PRIMARY");
-    if (!a0 || !a0.quarterlyRebalance) throw new Error("Adopted A0 quarterly policy unavailable");
+  if (isAdoptedUsSeriesKind(kind)) {
+    const strategy = US_PROSPECTIVE_STRATEGIES.find(
+      (candidate) => candidate.id === ADOPTED_US_STRATEGY_IDS[kind],
+    );
+    if (!strategy || strategy.quarterlyRebalance !== (kind !== "US_B3"))
+      throw new Error("Adopted US strategy policy unavailable or allocation changed");
     return {
       kind,
       market: "US",
       currency: "USD",
       maxPositions: 20,
-      allocation: "US_A0_QUARTERLY_UNCHANGED",
+      allocation: "US_INITIAL_CAPITAL_DIV_TARGET_POSITIONS",
+      usAllocationPolicy: usFixedSlotAllocationPolicy(
+        convertOfficialInitialFx(VERIFIED_INITIAL_FX).usdCash,
+      ),
       sectorCapByCandidateMarket: null,
       allowedMarkets: ["US"],
-      enginePolicy: JSON.parse(JSON.stringify(a0)) as Json,
+      enginePolicy: JSON.parse(JSON.stringify(strategy)) as Json,
+      enginePolicyRole: "HISTORICAL_SIGNAL_STRATEGY_BASE",
     };
   }
+  if (kind === "KR_KOSPI_CONFIRM1_BEAR")
+    return {
+      kind,
+      market: "KR",
+      currency: "KRW",
+      maxPositions: KOSPI_SHADOW_POLICY.slots,
+      allocation: "KR_INITIAL_CAPITAL_DIV_30_FIRST_YEAR",
+      sectorCapByCandidateMarket: { KOSPI: KOSPI_SHADOW_POLICY.maxPerSector, KOSDAQ: 6 },
+      allowedMarkets: ["KOSPI"],
+      enginePolicy: JSON.parse(JSON.stringify(KOSPI_SHADOW_POLICY)) as Json,
+    };
   if (kind === "ETF_V02")
     return {
       kind,
@@ -235,9 +272,9 @@ export async function freezeAdoptedSeries(input: {
   if (timestamp(input.frozenAt) >= Date.parse(`${MODEL_ACCOUNTING_START}T00:00:00Z`))
     throw new Error("New series contract must be frozen before accounting start");
   const policy = policyFor(input.kind);
-  if (input.kind === "US_A0" && !input.initialFx)
+  if (isAdoptedUsSeriesKind(input.kind) && !input.initialFx)
     throw new Error("US initial FX missing; fail closed");
-  if (input.kind !== "US_A0" && input.initialFx)
+  if (!isAdoptedUsSeriesKind(input.kind) && input.initialFx)
     throw new Error("FX baseline only belongs to the US series");
   const fx = input.initialFx ? convertOfficialInitialFx(input.initialFx) : null;
   if (fx && timestamp(fx.evidence.verifiedAt) > timestamp(input.frozenAt))
@@ -645,11 +682,11 @@ export function modelEngineAdapterStatus(series: FrozenModelSeries): {
   status: "BLOCKED" | "SIZING_ONLY" | "PURE_EXECUTOR";
   reasons: string[];
 } {
-  if (series.policy.kind === "US_A0")
+  if (isAdoptedUsSeriesKind(series.policy.kind))
     return {
       status: "PURE_EXECUTOR",
       reasons: [
-        "Opt-in A0 executor uses frozen cash/costs, exact cash/fees and provenance guards; legacy defaults are unchanged",
+        "Opt-in US executor uses frozen strategy/cash/costs, exact cash/fees and provenance guards; legacy defaults are unchanged",
         "Persistence, production scheduling and journal projection are not wired",
       ],
     };
@@ -679,7 +716,7 @@ export interface AdoptedUsRun {
   result: UsPortfolioStepResult;
   stateHash: SeriesHash;
 }
-/** Reusable pure A0 executor. The caller supplies point-in-time analysis and a complete US calendar.
+/** Reusable pure US executor for the frozen A0/A2/B3 variants. The caller supplies point-in-time analysis and a complete US calendar.
  * No network, database writes, scheduler, historical replay rewrite, or execution venue is involved.
  */
 export async function stepAdoptedUsSeries(
@@ -696,8 +733,20 @@ export async function stepAdoptedUsSeries(
   previous: AdoptedUsRun | null = null,
 ): Promise<{ status: "NEW" | "REUSE"; run: AdoptedUsRun }> {
   await verifyFrozenSeries(series);
-  if (series.policy.kind !== "US_A0" || !series.fx)
-    throw new Error("Only the isolated adopted US A0 series may use this executor");
+  if (!isAdoptedUsSeriesKind(series.policy.kind) || !series.fx)
+    throw new Error("Only isolated adopted US A0/A2/B3 series may use this executor");
+  if (series.policy.enginePolicyRole !== "HISTORICAL_SIGNAL_STRATEGY_BASE")
+    throw new Error("US engine policy historical signal-base role changed since freeze");
+  if (
+    series.policy.allocation !== "US_INITIAL_CAPITAL_DIV_TARGET_POSITIONS" ||
+    canonicalSeriesJson(series.policy.usAllocationPolicy) !==
+      canonicalSeriesJson(usFixedSlotAllocationPolicy(series.fx.usdCash))
+  )
+    throw new Error("US fixed initial-capital slot allocation changed since freeze");
+  const strategyId = ADOPTED_US_STRATEGY_IDS[series.policy.kind];
+  const frozenStrategy = US_PROSPECTIVE_STRATEGIES.find((strategy) => strategy.id === strategyId);
+  if (canonicalSeriesJson(series.policy.enginePolicy) !== canonicalSeriesJson(frozenStrategy))
+    throw new Error("US engine policy changed since freeze");
   assertHash(input.sourceHash);
   const date = input.analysis.date;
   assertDate(date);
@@ -761,6 +810,7 @@ export async function stepAdoptedUsSeries(
     accountingStartDate: series.accountingStartDate,
     initialCapital: series.fx.usdCash,
     oneWayCost: series.oneWayCost,
+    ...(series.policy.kind === "US_A0" ? {} : { strategyId }),
   };
   const config = series.policy.enginePolicy as unknown as UsStrategyConfig;
   const result = stepUsProspectivePortfolio(
@@ -769,6 +819,7 @@ export async function stepAdoptedUsSeries(
     previous?.result.state ?? null,
     previous?.result.nav ?? null,
     policy,
+    series.policy.usAllocationPolicy,
   );
   const body = {
     book: "MODEL" as const,

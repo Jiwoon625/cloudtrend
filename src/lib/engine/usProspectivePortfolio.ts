@@ -1,4 +1,10 @@
-import { decimal, format, fromLegacyNumber, integerBudgetQuantity } from "../ledger/decimal";
+import {
+  decimal,
+  divide,
+  format,
+  fromLegacyNumber,
+  integerBudgetQuantity,
+} from "../ledger/decimal";
 import type {
   UsProspectiveAnalysis,
   UsProspectiveRow,
@@ -63,9 +69,52 @@ export interface UsPortfolioPosition {
   entryDate: string;
   entryCoreRank: number | null;
 }
+export const US_FIXED_SLOT_EFFECTIVE_DATE = "2026-10-05";
+export interface UsFixedSlotAllocationPolicy {
+  version: "us-initial-capital-slots-v1";
+  effectiveDate: typeof US_FIXED_SLOT_EFFECTIVE_DATE;
+  targetPositions: 20;
+  initialCapitalUsd: string;
+  quarterlyRebalance: false;
+  fundingOnlySales: false;
+}
+export function usFixedSlotAllocationPolicy(
+  initialCapital: string | number,
+): UsFixedSlotAllocationPolicy {
+  const initialCapitalUsd =
+    typeof initialCapital === "number"
+      ? fromLegacyNumber(initialCapital)
+      : format(decimal(initialCapital));
+  if (decimal(initialCapitalUsd) <= 0n)
+    throw new Error("Positive initial US allocation capital required");
+  return Object.freeze({
+    version: "us-initial-capital-slots-v1",
+    effectiveDate: US_FIXED_SLOT_EFFECTIVE_DATE,
+    targetPositions: 20,
+    initialCapitalUsd,
+    quarterlyRebalance: false,
+    fundingOnlySales: false,
+  });
+}
+export function usFixedSlotBudget(policy: UsFixedSlotAllocationPolicy): string {
+  if (
+    policy.version !== "us-initial-capital-slots-v1" ||
+    policy.effectiveDate !== US_FIXED_SLOT_EFFECTIVE_DATE ||
+    policy.targetPositions !== 20 ||
+    policy.quarterlyRebalance !== false ||
+    policy.fundingOnlySales !== false
+  )
+    throw new Error("Invalid frozen US fixed-slot allocation policy");
+  return format(divide(decimal(policy.initialCapitalUsd), decimal(String(policy.targetPositions))));
+}
 export interface UsPendingTarget {
   symbol: string;
   targetWeight: number;
+  /** Fixed entry budget excludes fees; cash affordability still includes them. */
+  fixedBudgetUsd?: string;
+  remainingBudgetUsd?: string;
+  /** Frozen at its first executable open. Partial fills cannot turn into rebalancing. */
+  fixedTargetShares?: number;
   signalDate: string;
   reason: string;
 }
@@ -77,6 +126,8 @@ export interface UsPendingExit {
 /** Opt-in model-only execution boundary. Omitted options preserve all historical defaults. */
 export interface UsModelExecutionPolicy {
   version: "isolated-us-model-v1";
+  /** Omitted only for the original isolated A0 contract. */
+  strategyId?: UsProspectiveStrategyId;
   bookId: string;
   contractHash: string;
   accountingStartDate: string;
@@ -84,6 +135,7 @@ export interface UsModelExecutionPolicy {
   oneWayCost: string;
 }
 export interface UsPortfolioState {
+  allocationPolicy?: UsFixedSlotAllocationPolicy;
   executionPolicy?: UsModelExecutionPolicy;
   /** Exact cash/fees exist only on the opt-in path; NAV remains the existing engine's number output. */
   modelCashExact?: string;
@@ -210,7 +262,24 @@ export function stepUsProspectivePortfolio(
   previous: UsPortfolioState | null,
   previousNav: number | null,
   executionPolicy?: UsModelExecutionPolicy,
+  requestedAllocationPolicy?: UsFixedSlotAllocationPolicy,
 ): UsPortfolioStepResult {
+  const allocationPolicy = requestedAllocationPolicy ?? previous?.allocationPolicy;
+  const fixedSlots = allocationPolicy && analysis.date >= allocationPolicy.effectiveDate;
+  if (allocationPolicy) {
+    usFixedSlotBudget(allocationPolicy);
+    const initialCapital =
+      previous?.initialCapital ??
+      (executionPolicy ? Number(executionPolicy.initialCapital) : US_PROSPECTIVE_INITIAL_CAPITAL);
+    if (
+      Number(allocationPolicy.initialCapitalUsd) !== initialCapital ||
+      (previous?.allocationPolicy &&
+        JSON.stringify(previous.allocationPolicy) !== JSON.stringify(allocationPolicy))
+    )
+      throw new Error(
+        "US fixed-slot policy must preserve this portfolio's initial capital and identity",
+      );
+  }
   if (previous?.executionPolicy && !executionPolicy)
     throw new Error("Isolated model state cannot enter the legacy engine path");
   if (executionPolicy) {
@@ -234,16 +303,25 @@ export function stepUsProspectivePortfolio(
       Number(p.initialCapital) > Number.MAX_SAFE_INTEGER
     )
       throw new Error("Invalid isolated US model execution policy or start boundary");
-    const adopted = US_PROSPECTIVE_STRATEGIES.find(
-      (strategy) => strategy.id === "A0_QUARTER_PRIMARY",
-    );
-    if (!adopted || JSON.stringify(config) !== JSON.stringify(adopted))
+    const strategyId = p.strategyId ?? "A0_QUARTER_PRIMARY";
+    const adopted = US_PROSPECTIVE_STRATEGIES.find((strategy) => strategy.id === strategyId);
+    const seriesKind = {
+      A0_QUARTER_PRIMARY: "US_A0",
+      A2_QUARTER_SHADOW: "US_A2",
+      B3_BETA_SHADOW: "US_B3",
+    }[strategyId];
+    if (
+      !adopted ||
+      JSON.stringify(config) !== JSON.stringify(adopted) ||
+      p.bookId !== `adopted-shadow-2026-10-05-v1:${seriesKind}`
+    )
       throw new Error(
-        "Isolated US execution is restricted to unchanged adopted A0 quarterly rules",
+        "Isolated US execution requires unchanged adopted strategy and matching series",
       );
     const identity = (value: UsModelExecutionPolicy) =>
       JSON.stringify([
         value.version,
+        value.strategyId ?? "A0_QUARTER_PRIMARY",
         value.bookId,
         value.contractHash,
         value.accountingStartDate,
@@ -291,6 +369,10 @@ export function stepUsProspectivePortfolio(
     throw new Error(
       "Portfolio step requires a later trading date; replay from the preceding snapshot.",
     );
+  if (fixedSlots) {
+    state.allocationPolicy = clone(allocationPolicy);
+    state.pendingTargets = usFixedSlotPendingTargets(state, allocationPolicy);
+  }
   const trades: UsModelTrade[] = [];
   let turnover = 0;
   let fees = 0;
@@ -340,7 +422,12 @@ export function stepUsProspectivePortfolio(
     used.set(symbol, (used.get(symbol) ?? 0) + notional);
   // On a quarter boundary, rebalance at this open using only the preceding close's holdings/signals.
   const quarter = qkey(analysis.date);
-  if (config.quarterlyRebalance && state.lastDate && qkey(state.lastDate) !== quarter) {
+  if (
+    !fixedSlots &&
+    config.quarterlyRebalance &&
+    state.lastDate &&
+    qkey(state.lastDate) !== quarter
+  ) {
     const symbols = Array.from(
       new Set([...Object.keys(state.positions), ...Object.keys(state.pendingTargets)]),
     ).filter((symbol) => !state.pendingExits[symbol]);
@@ -412,8 +499,29 @@ export function stepUsProspectivePortfolio(
       )
         return [];
       const current = state.positions[pending.symbol]?.shares ?? 0;
-      const desired = Math.max(0, Math.floor((pending.targetWeight * openNav) / px));
-      return [{ pending, row, px, current, desired, delta: desired - current }];
+      if (fixedSlots && pending.fixedTargetShares === undefined) {
+        const budget = decimal(pending.fixedBudgetUsd!);
+        const unit = decimal(fromLegacyNumber(px));
+        pending.fixedTargetShares = Math.max(current, Number(budget / unit));
+        // An inherited, partially filled entry reserves its existing shares at the cutover open.
+        // This is only an allocation reservation; historical fills/cost basis remain untouched.
+        pending.remainingBudgetUsd = format(
+          budget > unit * BigInt(current) ? budget - unit * BigInt(current) : 0n,
+        );
+      }
+      const desired = fixedSlots
+        ? pending.fixedTargetShares!
+        : Math.max(0, Math.floor((pending.targetWeight * openNav) / px));
+      return [
+        {
+          pending,
+          row,
+          px,
+          current,
+          desired,
+          delta: fixedSlots ? Math.max(0, desired - current) : desired - current,
+        },
+      ];
     })
     .sort((a, b) => a.delta - b.delta);
 
@@ -477,9 +585,16 @@ export function stepUsProspectivePortfolio(
           ),
         )
       : Math.max(0, Math.floor(state.cash / (o.px * (1 + US_PROSPECTIVE_ONE_WAY_COST))));
-    const shares = Math.min(o.delta, capacity(o.row, o.px), affordable);
+    const budgetCapacity = fixedSlots
+      ? Number(decimal(o.pending.remainingBudgetUsd!) / decimal(fromLegacyNumber(o.px)))
+      : Infinity;
+    const shares = Math.min(o.delta, capacity(o.row, o.px), affordable, budgetCapacity);
     if (shares <= 0) continue;
     const { notional, fee } = bookFill(shares, o.px, "BUY");
+    if (fixedSlots)
+      o.pending.remainingBudgetUsd = format(
+        decimal(o.pending.remainingBudgetUsd!) - decimal(fromLegacyNumber(o.px)) * BigInt(shares),
+      );
     consume(o.row.symbol, notional);
     turnover += notional;
     const p = state.positions[o.row.symbol];
@@ -496,7 +611,9 @@ export function stepUsProspectivePortfolio(
         entryDate: analysis.date,
         entryCoreRank: o.row.coreRank,
       };
-    const partial = state.positions[o.row.symbol]!.shares < o.desired;
+    const partial =
+      state.positions[o.row.symbol]!.shares < o.desired &&
+      (!fixedSlots || decimal(o.pending.remainingBudgetUsd!) > 0n);
     record({
       tradeKey: tkey(
         config.id,
@@ -582,12 +699,18 @@ export function stepUsProspectivePortfolio(
 
   const desired = [...retained.map((p) => p.symbol), ...reserved, ...entries.map((r) => r.symbol)];
   if (desired.length > 0 && entries.length > 0) {
-    const target = 1 / desired.length;
+    const target = fixedSlots ? 1 / allocationPolicy.targetPositions : 1 / desired.length;
     entries.forEach(
       (r) =>
         (state.pendingTargets[r.symbol] = {
           symbol: r.symbol,
           targetWeight: target,
+          ...(fixedSlots
+            ? {
+                fixedBudgetUsd: usFixedSlotBudget(allocationPolicy),
+                remainingBudgetUsd: usFixedSlotBudget(allocationPolicy),
+              }
+            : {}),
           signalDate: analysis.date,
           reason: "ENTRY_ONSET80",
         }),
@@ -600,7 +723,7 @@ export function stepUsProspectivePortfolio(
     const need = entries.length * target * nav;
     const shortage = Math.max(0, need - state.cash - plannedExit);
     const retainedValue = retained.reduce((sum, p) => sum + p.shares * p.lastPrice, 0);
-    if (shortage > 0 && retainedValue > 0) {
+    if (!fixedSlots && shortage > 0 && retainedValue > 0) {
       const scale = Math.max(0, 1 - shortage / retainedValue);
       retained.forEach(
         (p) =>
@@ -639,7 +762,9 @@ export function stepUsProspectivePortfolio(
   for (const pending of Object.values(state.pendingTargets)) {
     const row = rows.get(pending.symbol);
     const held = state.positions[pending.symbol];
-    const deltaNotional = pending.targetWeight * nav - (held ? held.shares * held.lastPrice : 0);
+    const deltaNotional = fixedSlots
+      ? Math.max(0, Number(pending.remainingBudgetUsd ?? pending.fixedBudgetUsd))
+      : pending.targetWeight * nav - (held ? held.shares * held.lastPrice : 0);
     const side =
       deltaNotional < 0
         ? "REBALANCE_SELL"
@@ -690,4 +815,59 @@ export function stepUsProspectivePortfolio(
     feesUsd: fees,
     positionsCount: Object.keys(state.positions).length,
   };
+}
+
+/** Convert only unfinished entry intent; quarterly/funding-only targets must never cross the cutover. */
+export function usFixedSlotPendingTargets(
+  state: UsPortfolioState,
+  policy: UsFixedSlotAllocationPolicy,
+): Record<string, UsPendingTarget> {
+  const budget = usFixedSlotBudget(policy);
+  return Object.fromEntries(
+    Object.entries(state.pendingTargets)
+      .filter(([, pending]) => pending.reason === "ENTRY_ONSET80")
+      .map(([symbol, pending]) => {
+        if (pending.fixedBudgetUsd !== undefined && pending.fixedBudgetUsd !== budget)
+          throw new Error("US pending fixed entry budget changed");
+        if (
+          pending.remainingBudgetUsd !== undefined &&
+          (decimal(pending.remainingBudgetUsd) < 0n ||
+            decimal(pending.remainingBudgetUsd) > decimal(budget))
+        )
+          throw new Error("Invalid remaining fixed US entry budget");
+        if (
+          pending.fixedTargetShares !== undefined &&
+          (!Number.isSafeInteger(pending.fixedTargetShares) || pending.fixedTargetShares < 0)
+        )
+          throw new Error("Invalid fixed US entry quantity");
+        return [
+          symbol,
+          {
+            ...pending,
+            targetWeight: 1 / policy.targetPositions,
+            fixedBudgetUsd: budget,
+            remainingBudgetUsd: pending.remainingBudgetUsd ?? budget,
+          },
+        ];
+      }),
+  );
+}
+
+/** Approved prospective cutover for existing operating books; legacy history is neither reset nor rewritten. */
+export function stepUsProspectiveOperatingPortfolio(
+  config: UsStrategyConfig,
+  analysis: UsProspectiveAnalysis,
+  previous: UsPortfolioState | null,
+  previousNav: number | null,
+): UsPortfolioStepResult {
+  return stepUsProspectivePortfolio(
+    config,
+    analysis,
+    previous,
+    previousNav,
+    undefined,
+    analysis.date >= US_FIXED_SLOT_EFFECTIVE_DATE
+      ? usFixedSlotAllocationPolicy(previous?.initialCapital ?? US_PROSPECTIVE_INITIAL_CAPITAL)
+      : undefined,
+  );
 }

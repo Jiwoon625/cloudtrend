@@ -1,3 +1,9 @@
+import { hashSeriesValue, MODEL_ACCOUNTING_START } from "../src/lib/ledger/modelSeries";
+import {
+  octoberShadowAlreadyRecorded,
+  publishOctoberShadow,
+  sourceSeriesHash,
+} from "./october-shadow-publication";
 import { memory } from "./screening-memory";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -142,7 +148,25 @@ export async function runScreening(argv = process.argv.slice(2)) {
   });
   if (!options.force) {
     const reusable = await findReusableRun(client, options.supabaseUserId, "SCREENING", runKey);
-    if (reusable) {
+    const reusableDate =
+      reusable?.as_of_date ??
+      inputs
+        .map((input) => input.validation.stats?.maxDate)
+        .filter((date): date is string => typeof date === "string")
+        .sort()
+        .at(-1);
+    if (
+      reusable &&
+      (!options.upload ||
+        (reusableDate &&
+          (await octoberShadowAlreadyRecorded(
+            client,
+            options.supabaseUserId,
+            "KR",
+            reusableDate,
+            dataVersion,
+          ))))
+    ) {
       process.stdout.write(`${JSON.stringify({ reused: true, run: reusable }, null, 2)}\n`);
       return;
     }
@@ -228,6 +252,40 @@ export async function runScreening(argv = process.argv.slice(2)) {
     });
 
     memory("cache-publish-end");
+    if (analysis.asOfDate >= MODEL_ACCOUNTING_START) {
+      const currentSources = inputs.filter((i) => i.validation.stats.maxDate === analysis.asOfDate);
+      const availableAt = inputs
+        .map((i) => i.savedAt)
+        .sort((a, b) => Date.parse(a) - Date.parse(b))
+        .at(-1);
+      const octoberShadow = await publishOctoberShadow(client, options.supabaseUserId, {
+        market: "KR",
+        dataset,
+        analysis,
+        snapshot,
+        config,
+        sourceHash: sourceSeriesHash(dataVersion),
+        availableAt: availableAt ?? "",
+        decisionAt: createdAt,
+        confirmedRegularClose: currentSources.length > 0,
+        failedSymbols: previous
+          ? previous.entries.filter(
+              (entry) => !analysis.rows.some((row) => row.instrument.symbol === entry.symbol),
+            ).length
+          : -1,
+        universeEvidence: {
+          asOfDate: previous?.asOfDate ?? "",
+          sourceHash: await hashSeriesValue(previous),
+          symbols: [...new Set(previous?.entries.map((entry) => entry.symbol) ?? [])].sort(),
+        },
+        sourceEvidence: inputs.map((source) => ({
+          sourceHash: sourceSeriesHash(source.dataHash),
+          asOfDate: source.validation.stats.maxDate ?? "",
+          registeredAt: source.savedAt,
+        })),
+      });
+      process.stdout.write(`${JSON.stringify({ octoberShadow })}\n`);
+    }
     releaseSourcePayloads(inputs);
     await Promise.all([
       uploadScreeningJsonFile(client, resultPath, bundleFile),
