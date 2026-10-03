@@ -1,3 +1,5 @@
+import { usePortfolioModelConsolidation } from "@/lib/usePortfolioModelConsolidation";
+import { UsModelExecutionJournal } from "./UsModelExecutionJournal";
 import {
   projectExecutionMemo,
   rejectExecutionMemoUrls,
@@ -136,6 +138,7 @@ export function PortfolioAssetHub({
   });
   const [localAsset, setLocalAsset] = useState<Asset>("KR");
   const asset = selectedAsset ?? localAsset;
+  const modelComparison = usePortfolioModelConsolidation(asset === "US");
   function selectAsset(next: PortfolioAsset) {
     if (onAssetChange) onAssetChange(next);
     else setLocalAsset(next);
@@ -452,27 +455,65 @@ export function PortfolioAssetHub({
       <div role="tabpanel" aria-label={label[asset]}>
         {asset === "KR" ? domestic : null}
         {asset === "US" ? (
-          <UsPortfolioLedgers model={model} hideHistory initialTab="actual">
-            <Table
-              title="A0 전략 보유 · USD"
-              heads={["종목", "수량", "현재가 USD", "진입일"]}
-              empty={!modelPositions.length}
+          <div className="min-w-0 space-y-4">
+            {!modelComparison.ready ? (
+              <div className="rounded-lg border bg-card p-3 text-xs text-muted-foreground">
+                <p role={modelComparison.error ? "status" : undefined}>
+                  {modelComparison.checking
+                    ? "Shadow 비교 화면의 준비 상태를 확인하고 있습니다. 확인 전에는 기존 모델 카드를 유지합니다."
+                    : modelComparison.error
+                      ? "Shadow 비교 화면을 확인하지 못해 기존 모델 카드를 유지합니다."
+                      : "신규 Shadow의 모든 비교 자료가 준비되기 전까지 기존 모델 카드를 유지합니다."}
+                </p>
+                {!modelComparison.checking ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-2"
+                    disabled={modelComparison.refreshing}
+                    onClick={() => void modelComparison.refresh()}
+                  >
+                    Shadow 준비 상태 다시 확인
+                  </Button>
+                ) : null}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                모델 보유·성과·세금 비교는{" "}
+                <Link to="/shadow" className="text-primary underline">
+                  Shadow
+                </Link>
+                에서 확인합니다. A0 모델 체결 원장은 아래에 유지합니다.
+              </p>
+            )}
+            <UsPortfolioLedgers
+              model={model}
+              hideHistory
+              initialTab="actual"
+              modelComparisonMoved={modelComparison.ready}
+              modelJournal={<UsModelExecutionJournal />}
             >
-              {modelPositions.map((p) => (
-                <tr key={p.symbol} className="border-t">
-                  <td className={td}>
-                    {p.symbol} · {p.name}
-                  </td>
-                  <td className={td}>{p.shares}주</td>
-                  <td className={td}>{usd(p.lastPrice)}</td>
-                  <td className={td}>{p.entryDate}</td>
-                </tr>
-              ))}
-            </Table>
-            <Link to="/us/portfolio" className="text-sm text-primary underline">
-              미국 전략 성과·모델 체결 상세
-            </Link>
-          </UsPortfolioLedgers>
+              <Table
+                title="A0 전략 보유 · USD"
+                heads={["종목", "수량", "현재가 USD", "진입일"]}
+                empty={!modelPositions.length}
+              >
+                {modelPositions.map((p) => (
+                  <tr key={p.symbol} className="border-t">
+                    <td className={td}>
+                      {p.symbol} · {p.name}
+                    </td>
+                    <td className={td}>{p.shares}주</td>
+                    <td className={td}>{usd(p.lastPrice)}</td>
+                    <td className={td}>{p.entryDate}</td>
+                  </tr>
+                ))}
+              </Table>
+              <Link to="/shadow" className="text-sm text-primary underline">
+                미국 모델 성과·보유·세금 및 이전 기록
+              </Link>
+            </UsPortfolioLedgers>
+          </div>
         ) : null}
         {asset === "ETF" ? (
           <>

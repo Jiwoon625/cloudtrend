@@ -114,6 +114,33 @@ export async function loadUsProspectiveSummary() {
   return legacy ? usBrowserViews(legacy).summary : null;
 }
 
+/** Data-status-only fallback enriches older small summaries from the existing browser cache. */
+export async function loadUsMarketDataSummary(): Promise<UsProspectiveSummary | null> {
+  const summary = await loadUsProspectiveSummary();
+  if (!summary || summary.quality) return summary;
+  try {
+    const cache = await loadUsProspectiveCache();
+    if (
+      cache &&
+      cache.dataHash === summary.dataHash &&
+      cache.analysis.date === summary.analysis.date &&
+      cache.analysis.ruleVersion === summary.analysis.ruleVersion &&
+      cache.analysis.rows.length === summary.analysis.rowCount
+    ) {
+      return { ...summary, quality: usBrowserViews(cache).summary.quality };
+    }
+    return {
+      ...summary,
+      qualityNote: "요약과 상세 자료의 기준이 일치하지 않아 항목별 검증을 보류합니다.",
+    };
+  } catch {
+    return {
+      ...summary,
+      qualityNote: "상세 자료를 불러오지 못해 항목별 검증을 확인할 수 없습니다.",
+    };
+  }
+}
+
 export async function loadUsScreeningHistory(limit = 370) {
   const uid = await userId();
   const { data, error } = await supabase

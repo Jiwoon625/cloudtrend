@@ -1,7 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { UsPortfolioView } from "@/components/UsPortfolioView";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+
+/** Old portfolio links land on the unified portfolio's US asset panel. */
 export const Route = createFileRoute("/us/portfolio")({
-  ssr: false,
-  head: () => ({ meta: [{ title: "US A0 Primary | CloudTrend" }] }),
-  component: UsPortfolioView,
+  beforeLoad: () => {
+    throw redirect({ to: "/portfolio", search: { asset: "US" }, replace: true });
+  },
 });

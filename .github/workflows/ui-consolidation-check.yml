@@ -1,0 +1,51 @@
+name: Consolidated UI regression
+on:
+  pull_request:
+    paths:
+      - src/components/**
+      - src/routes/**
+      - src/lib/usBrowserViews.ts
+      - src/lib/usProspectiveCloud.ts
+      - src/lib/usDataQuality.ts
+      - src/lib/navSeries.ts
+      - src/lib/portfolioModelConsolidation.ts
+      - src/lib/usePortfolioModelConsolidation.ts
+      - src/lib/octoberShadowSummary*
+      - tests/*ui*.test.tsx
+      - tests/portfolio*consolidation*.test.ts
+      - tests/us-data-quality.test.ts
+      - tests/us-market-data-loader.test.ts
+      - tests/us-browser-views.test.ts
+      - vitest.ui-reorg.config.ts
+      - package.json
+      - package-lock.json
+      - .github/workflows/ui-consolidation-check.yml
+permissions:
+  contents: read
+jobs:
+  ui-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify consolidated navigation, content, tax, owner changes and fallback states
+        run: npx vitest run --config vitest.ui-reorg.config.ts
+      - name: Verify actual-ledger editing remains safe
+        run: npx vitest run --config vitest.ledger-ui.config.ts
+      - name: Lint consolidation components and contracts
+        run: >-
+          npx eslint
+          src/components/AppShell.tsx src/components/MarketDataPage.tsx
+          src/components/KrMarketDataPanel.tsx src/components/UsMarketDataPanel.tsx
+          src/components/UsDataQualityPanel.tsx src/components/NavSeriesLegend.tsx
+          src/components/UsPortfolioView.tsx src/components/UsModelExecutionJournal.tsx
+          src/components/PortfolioAssetHub.tsx src/components/UsPortfolioLedgers.tsx
+          src/lib/navSeries.ts src/lib/usDataQuality.ts src/lib/portfolioModelConsolidation.ts
+          src/lib/usePortfolioModelConsolidation.ts src/lib/usBrowserViews.ts
+          src/lib/usProspectiveCloud.ts vitest.ui-reorg.config.ts
+      - run: npm run build

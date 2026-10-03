@@ -78,7 +78,9 @@ export function ShadowPage() {
         ) : (
           <UsPortfolioView
             key={model}
-            shadowStrategyId={model as "A2_QUARTER_SHADOW" | "B3_BETA_SHADOW"}
+            shadowStrategyId={
+              model as "A0_QUARTER_PRIMARY" | "A2_QUARTER_SHADOW" | "B3_BETA_SHADOW"
+            }
             fromDate={fromDate}
             toDate={toDate}
           />

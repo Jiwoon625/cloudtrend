@@ -186,7 +186,7 @@ describe("unified Shadow UI", () => {
       expect(html).not.toContain(`${id}-2026-10-01`);
       expect(html).not.toContain("A0_QUARTER_PRIMARY-2026");
       expect(html).toContain("USsaved");
-      expect(html).toContain("상단 요약·보유·조정 계획은 최신 스냅샷");
+      expect(html).toContain("상단 요약·보유는 최신 스냅샷");
     }
   });
 });
