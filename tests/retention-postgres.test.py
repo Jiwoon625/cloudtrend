@@ -5,6 +5,7 @@ All records are synthetic. This script accepts only local binary/share paths,
 never a database URL, existing data directory, or production connection.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -22,6 +23,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pg-bin-dir", type=Path, required=True)
     parser.add_argument("--pg-share-dir", type=Path)
+    parser.add_argument("--migration-chain", action="store_true",
+                        help="Replay the authentic historical schema on synthetic platform tables")
     args = parser.parse_args()
     binaries = args.pg_bin_dir.resolve()
     env = {key: value for key, value in os.environ.items() if not key.startswith("PG")}
@@ -62,9 +65,32 @@ def main():
               grant usage on schema public,auth to authenticated,anon;
               grant execute on function auth.uid() to authenticated,anon;
             """)
-            historical = (ROOT / "docs/cloud-schema.sql").read_text().split(
-                "insert into storage.buckets", 1)[0]
-            sql(historical)
+            if args.migration_chain:
+                sql("""
+                  create role service_role bypassrls;
+                  grant usage on schema public,auth to service_role;
+                  create schema storage;
+                  create table storage.buckets(id text primary key,name text,public boolean,
+                    file_size_limit bigint,allowed_mime_types text[]);
+                  create table storage.objects(id uuid primary key default gen_random_uuid(),
+                    bucket_id text,name text);
+                  alter table storage.objects enable row level security;
+                  create function storage.foldername(text) returns text[] language sql immutable as
+                    'select string_to_array(regexp_replace($1,''/[^/]*$'',''''),''/'')';
+                  grant usage on schema storage to authenticated,anon,service_role;
+                """)
+                manifest = json.loads((ROOT / "tests/migration-history-manifest.json").read_text())
+                for filename, expected_hash in manifest.items():
+                    path = ROOT / "supabase/migrations" / filename
+                    body = path.read_bytes()
+                    assert hashlib.sha256(body).hexdigest() == expected_hash, filename
+                    sql(body.decode())
+                assert len(manifest) == 20
+                print("PASS: 20 authentic historical schema migrations replay without user data")
+            else:
+                historical = (ROOT / "docs/cloud-schema.sql").read_text().split(
+                    "insert into storage.buckets", 1)[0]
+                sql(historical)
             sql(f"insert into public.screening_history values ('{A}','2026-01-01','{{\"original\":true}}');")
             security = """select jsonb_build_object('acl',c.relacl::text,'rls',c.relrowsecurity,
               'policies',(select jsonb_agg(to_jsonb(p) order by policyname) from pg_policies p

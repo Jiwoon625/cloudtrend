@@ -129,6 +129,49 @@ describe("US actual ledger isolation", () => {
       ).toThrow();
     }
   });
+  it("separates historic Notion URLs on a clean save and rejects new pasted links without losing state", () => {
+    const doc = migrateUsActual([]);
+    const url = "https://notion.so/synthetic-us-source";
+    const original = fill({ id: "existing", note: `원본\n${url}` });
+    doc.executions = [original];
+    changeUsActual(
+      doc,
+      { action: "execution", execution: { ...original, note: "정정" } },
+      [candidate],
+      "2026-09-28",
+    );
+    expect(original.note).toContain(url);
+    expect(doc.executions[0]).toMatchObject({
+      note: "정정",
+      sourceLinks: [{ system: "notion", url }],
+    });
+    const before = structuredClone(doc);
+    expect(() =>
+      changeUsActual(
+        doc,
+        { action: "execution", execution: { ...original, note: url } },
+        [candidate],
+        "2026-09-28",
+      ),
+    ).toThrow("Notion URL");
+    expect(doc).toEqual(before);
+    expect(() =>
+      changeUsActual(
+        doc,
+        { action: "exclude", executionId: original.id, signalKey: candidate.key, note: url },
+        [candidate],
+        "2026-09-28",
+      ),
+    ).toThrow("Notion URL");
+    expect(doc).toEqual(before);
+    changeUsActual(
+      doc,
+      { action: "exclude", executionId: original.id, signalKey: candidate.key, note: "미매수" },
+      [candidate],
+      "2026-09-28",
+    );
+    expect(doc.excludedSourceLinks?.[candidate.key]).toEqual([{ system: "notion", url }]);
+  });
   it("uses a separate actual 30-symbol capacity without changing the US model 20-symbol rule", () => {
     const events = Array.from({ length: 30 }, (_, i) =>
       fill({ id: String(i), symbol: String(i), order: i }),

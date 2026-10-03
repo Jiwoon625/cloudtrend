@@ -1,3 +1,8 @@
+import {
+  projectExecutionMemo,
+  rejectExecutionMemoUrls,
+  splitExecutionMemo,
+} from "@/lib/ledger/executionMemo";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -141,7 +146,7 @@ export function UsPortfolioLedgers({
       return;
     }
     editSession.current = createLedgerEditSession(data?.revision);
-    setEdit(next);
+    setEdit(projectExecutionMemo(next));
   }
   function closeEditor() {
     if (writeGuard.current.pending) return;
@@ -181,11 +186,18 @@ export function UsPortfolioLedgers({
       shares: "0",
       fee: "0",
       note: doc?.excluded[c.key] ?? "",
+      sourceLinks: doc?.excludedSourceLinks?.[c.key],
       order: 0,
     });
   }
   async function save() {
     if (!edit || !editSession.current || writeGuard.current.pending) return;
+    try {
+      rejectExecutionMemoUrls(edit.note);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "메모를 확인해 주세요.");
+      return;
+    }
     const shares = Number(edit.shares),
       price = Number(edit.price),
       fee = Number(edit.fee);
@@ -205,6 +217,7 @@ export function UsPortfolioLedgers({
             executionId: edit.id || undefined,
             signalKey: edit.signalKey,
             note: edit.note || "미매수 · 0주",
+            sourceLinks: edit.sourceLinks,
           },
           editSession.current,
         )
@@ -550,7 +563,7 @@ export function UsPortfolioLedgers({
                     <td className={td}>{e.shares}주</td>
                     <td className={td}>{usd(e.fee)}</td>
                     <td className={td}>{e.realizedPnl === null ? "-" : usd(e.realizedPnl)}</td>
-                    <td className="max-w-[220px] p-3">{e.note}</td>
+                    <td className="max-w-[220px] p-3">{splitExecutionMemo(e.note).note}</td>
                     <td className={td}>
                       <Button
                         size="sm"
@@ -608,7 +621,7 @@ export function UsPortfolioLedgers({
               <td className={td}>
                 {buys.has(c.key)
                   ? "실제 체결 기록됨"
-                  : (doc?.excluded[c.key] ?? "미체결 · 확인 대기")}
+                  : splitExecutionMemo(doc?.excluded[c.key] ?? "미체결 · 확인 대기").note}
               </td>
               <td className={td}>
                 <Button size="sm" variant="outline" disabled={busy} onClick={() => beginBuy(c)}>

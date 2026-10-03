@@ -79,6 +79,8 @@ export interface LedgerEvent {
   positionLegs: PositionLeg[];
   source: SourceRef;
   evidence: EvidenceRef[];
+  /** Inert user-supplied provenance; not broker verification or fetched evidence. */
+  sourceLinks?: import("./executionMemo").ExecutionSourceLink[] | undefined;
   brokerEventId: string | null;
   strategyId: string | null;
   signalId: string | null;

@@ -1,3 +1,4 @@
+import { savedExecutionMemo } from "./ledger/executionMemo";
 import { readWebsiteDocument } from "./ledger/websiteRepository.server";
 import { parseManualMarketData } from "./engine/manualDataset";
 import { evaluateKospiMarketGateAtDate } from "./engine/kospiMarketGate";
@@ -32,6 +33,7 @@ export interface LedgerRequest {
   executionId?: string | undefined;
   signalKey?: string | undefined;
   note?: string | undefined;
+  sourceLinks?: import("./ledger/executionMemo").ExecutionSourceLink[] | undefined;
 }
 async function readDocument(client: SupabaseClient, uid: string): Promise<Row> {
   const canonical = await readWebsiteDocument<LedgerDocument>(client, uid, TABLE);
@@ -359,7 +361,7 @@ export async function operateLedgers(
       price: e.price,
       shares: e.shares,
       fee: e.fee,
-      note: String(e.note ?? "").slice(0, 300),
+      ...savedExecutionMemo({ ...e, note: String(e.note ?? "").slice(0, 300) }, existing),
       order: existing?.order ?? Math.max(-1, ...doc.executions.map((x) => x.order)) + 1,
     };
     doc.executions = doc.executions.filter((x) => x.id !== event.id);
@@ -380,10 +382,17 @@ export async function operateLedgers(
       throw new Error("미매수로 변경할 매수 기록을 확인하세요.");
     if (!key || (!existing && !doc.strategy?.candidates.some((c) => c.key === key)))
       throw new Error("Onset 신호를 확인하세요.");
-    if (existing) doc.executions = doc.executions.filter((e) => e.id !== existing.id);
-    if (doc.executions.some((e) => e.signalKey === key))
+    if (doc.executions.some((e) => e.signalKey === key && e.id !== existing?.id))
       throw new Error("실제 체결 기록이 있습니다. 체결 내역에서 수정하세요.");
-    doc.excluded[key] = String(input.note ?? "미매수 · 0주").slice(0, 300);
+    const memo = savedExecutionMemo(
+      { note: input.note?.slice(0, 300) || "미매수 · 0주", sourceLinks: input.sourceLinks },
+      existing ?? { note: doc.excluded[key] ?? "", sourceLinks: doc.excludedSourceLinks?.[key] },
+    );
+    if (existing) doc.executions = doc.executions.filter((e) => e.id !== existing.id);
+    doc.excluded[key] = memo.note;
+    if (memo.sourceLinks?.length) {
+      doc.excludedSourceLinks = { ...doc.excludedSourceLinks, [key]: memo.sourceLinks };
+    }
     changed = true;
   }
   if (input.action === "sync" || input.action === "capital" || !doc.strategy)

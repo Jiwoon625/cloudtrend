@@ -1,3 +1,4 @@
+import { savedExecutionMemo } from "./ledger/executionMemo";
 import {
   calculateActual,
   keyFor,
@@ -20,6 +21,7 @@ export interface UsActualDocument {
   capital: number;
   executions: UsExecution[];
   excluded: Record<string, string>;
+  excludedSourceLinks?: Record<string, import("./ledger/executionMemo").ExecutionSourceLink[]>;
   migratedAt: string;
 }
 export interface UsActualState {
@@ -37,6 +39,7 @@ export interface UsActualRequest {
   executionId?: string | undefined;
   signalKey?: string | undefined;
   note?: string | undefined;
+  sourceLinks?: import("./ledger/executionMemo").ExecutionSourceLink[] | undefined;
 }
 export function migrateUsActual(trades: UsPortfolioTradeRecord[]): UsActualDocument {
   const doc: UsActualDocument = {
@@ -113,7 +116,7 @@ export function changeUsActual(
       market: "US",
       signalKey: existing?.signalKey ?? candidate?.key ?? null,
       order: existing?.order ?? Math.max(-1, ...doc.executions.map((x) => x.order)) + 1,
-      note: e.note.slice(0, 300),
+      ...savedExecutionMemo({ ...e, note: e.note.slice(0, 300) }, existing),
     };
     doc.executions = doc.executions.filter((x) => x.id !== event.id);
     doc.executions.push(event);
@@ -131,10 +134,17 @@ export function changeUsActual(
       throw new Error("미매수로 변경할 매수 기록을 확인하세요.");
     if (!key || (!existing && !candidates.some((c) => c.key === key)))
       throw new Error("A0 신호를 확인하세요.");
-    if (existing) doc.executions = doc.executions.filter((e) => e.id !== existing.id);
-    if (doc.executions.some((e) => e.signalKey === key))
+    if (doc.executions.some((e) => e.signalKey === key && e.id !== existing?.id))
       throw new Error("해당 신호의 다른 체결 기록이 있습니다. 체결 내역에서 수정하세요.");
-    doc.excluded[key] = input.note?.slice(0, 300) || "미매수 · 0주";
+    const memo = savedExecutionMemo(
+      { note: input.note?.slice(0, 300) || "미매수 · 0주", sourceLinks: input.sourceLinks },
+      existing ?? { note: doc.excluded[key] ?? "", sourceLinks: doc.excludedSourceLinks?.[key] },
+    );
+    if (existing) doc.executions = doc.executions.filter((e) => e.id !== existing.id);
+    doc.excluded[key] = memo.note;
+    if (memo.sourceLinks?.length) {
+      doc.excludedSourceLinks = { ...doc.excludedSourceLinks, [key]: memo.sourceLinks };
+    }
   }
   calculateActual(doc.capital, doc.executions, {}, null);
 }

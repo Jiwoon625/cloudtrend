@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ActualExecution } from "../portfolioLedgers";
 import { correctEvent, normalizeLegacyExecution } from "./migration";
 import type { Security } from "./types";
+import { projectExecutionMemo, savedExecutionMemo } from "./executionMemo";
 import { readWebsiteDocument } from "./websiteRepository.server";
 
 const uid = "00000000-0000-4000-8000-000000000001";
@@ -97,6 +98,34 @@ describe("canonical website repository", () => {
     expect(result!.payload.executions.map((e) => e.id)).toEqual(["synthetic-1", "synthetic-2"]);
     expect(result!.payload.executions[0]).not.toBe(snapshot.payload.executions[0]);
     expect(snapshot).toEqual(before);
+  });
+
+  it("keeps raw Notion memo integrity on read, then accepts a source-separated append-only correction", async () => {
+    const snapshot = fixture();
+    const url = "https://notion.so/synthetic-original";
+    snapshot.payload.executions[0]!.note = `원본 메모\n${url}`;
+    snapshot.events[0]!.legacyExecution!.note = snapshot.payload.executions[0]!.note;
+    const original = structuredClone(snapshot.events[0]!);
+    const first = await readWebsiteDocument(clientWith(snapshot).client, uid, "portfolio_ledgers");
+    expect(first!.payload.executions[0]!.note).toContain(url);
+    const edited = {
+      ...projectExecutionMemo(first!.payload.executions[0]!),
+      ...savedExecutionMemo({ note: "메모 정정" }, first!.payload.executions[0]!),
+    };
+    const correction = correctEvent(
+      original,
+      { ...original, appExecution: edited, sourceLinks: edited.sourceLinks },
+      "Separate source from memo",
+    );
+    snapshot.events.push(correction);
+    snapshot.payload.executions[0] = edited;
+    const second = await readWebsiteDocument(clientWith(snapshot).client, uid, "portfolio_ledgers");
+    expect(second!.payload.executions[0]!.note).toBe("메모 정정");
+    expect(second!.payload.executions[0]!.sourceLinks).toEqual([{ system: "notion", url }]);
+    expect(snapshot.events[0]).toEqual(original);
+    expect(correction.legacyExecution).toEqual(original.legacyExecution);
+    for (const field of ["tax", "settlementDate", "cashLegs", "positionLegs"] as const)
+      expect(correction[field]).toEqual(original[field]);
   });
 
   it("accepts reordered JSON keys semantically and does not round a retained average", async () => {

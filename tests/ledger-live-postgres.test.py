@@ -88,7 +88,7 @@ class LiveSuite(foundation.Suite):
     database = "cloudtrend_ledger_test"
 
     def sql(self, sql, role=None, user=None, database=None, error=None):
-        return super().sql(sql, role, user, database or self.database, error)
+        return super().sql(sql if database == "postgres" else "SET extra_float_digits=0; " + sql, role, user, database or self.database, error)
 
     def query(self, sql, role=None, user=None):
         output = self.sql(sql, role, user)
@@ -340,6 +340,32 @@ class LiveSuite(foundation.Suite):
         self.capture("notes-only")
         assert self.versions("migrated-kr")[-1]["appExecution"]["note"] == "Synthetic note-only update"
         self.check("Note-only edit appends audited execution revision and round-trips in the compatibility envelope")
+        before = copy.deepcopy(self.versions("migrated-kr"))
+        link = dict(system="notion", url="https://notion.so:443/synthetic-source", label="합성 원본")
+        kr["executions"][0].update(note="출처를 분리한 메모", sourceLinks=[link])
+        self.save(kr)
+        chain = self.versions("migrated-kr")
+        assert chain[:-1] == before
+        assert chain[-1]["legacyExecution"] == original["legacyExecution"]
+        assert chain[-1]["sourceLinks"] == [link]
+        assert chain[-1]["appExecution"] == kr["executions"][0]
+        for field in ["evidence", "brokerEventId", "strategyId", "orderId", "tax", "settlementDate", "cashLegs", "positionLegs"]:
+            assert chain[-1][field] == before[-1][field], field
+        self.capture("memo-source-separated")
+        self.check("Memo source separation appends structured inert links and preserves every prior revision and unknown economics")
+        before = copy.deepcopy(chain)
+        del kr["executions"][0]["sourceLinks"]
+        kr["executions"][0]["note"] = "Older client memo update"
+        self.save(kr)
+        chain = self.versions("migrated-kr")
+        assert chain[:-1] == before and chain[-1]["sourceLinks"] == [link]
+        self.capture("memo-old-client-retains-source")
+        self.check("Older clients cannot drop canonical source metadata when their input omits optional source links")
+        for bad_url in ["https://notion.so.evil.test/a", "https://user:password@notion.so/a", "https://my_team.notion.so/a", "http://notion.so:443/a", "https://notion.so:80/a", "javascript:alert(1)"]:
+            bad = copy.deepcopy(kr)
+            bad["executions"][0]["sourceLinks"] = [dict(system="notion", url=bad_url)]
+            self.reject_atomically(self.update_sql(USER_A,bad), error="Invalid execution source link")
+        self.check("Forged, credential-bearing and unsupported Notion source references reject atomically")
         self.kr, self.us = kr, us
 
     def invalid_tests(self):
@@ -517,6 +543,9 @@ class LiveSuite(foundation.Suite):
         self.setup()
         self.activation_tests()
         self.rounding_tests()
+        self.sql(f"SELECT cloudtrend_ledger_private.validate_document({json_literal(document([execution('caller-float-setting', price=100/3)]))},{literal(KR)})")
+        assert self.sql("SELECT current_setting('extra_float_digits')") == "0"
+        self.check("Numeric validation survives caller extra_float_digits=0 without changing caller settings or source values")
         self.authorization_tests()
         self.live_tests()
         self.invalid_tests()

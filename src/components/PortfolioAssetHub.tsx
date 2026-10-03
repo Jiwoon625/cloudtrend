@@ -1,3 +1,8 @@
+import {
+  projectExecutionMemo,
+  rejectExecutionMemoUrls,
+  splitExecutionMemo,
+} from "@/lib/ledger/executionMemo";
 import { useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -27,7 +32,8 @@ import {
   type LedgerEditSession,
 } from "@/lib/ledgerUiMutation";
 
-type Asset = "KR" | "US" | "ETF";
+export type PortfolioAsset = "KR" | "US" | "ETF";
+type Asset = PortfolioAsset;
 type Execution = ActualExecution<"KOSPI" | "KOSDAQ" | "ETF" | "US">;
 type Editor = Omit<Execution, "price" | "shares" | "fee"> & {
   price: string;
@@ -97,7 +103,15 @@ function Table({
 }
 const td = "whitespace-nowrap px-3 py-3";
 
-export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
+export function PortfolioAssetHub({
+  domestic,
+  selectedAsset,
+  onAssetChange,
+}: {
+  domestic: ReactNode;
+  selectedAsset?: PortfolioAsset;
+  onAssetChange?: (asset: PortfolioAsset) => void;
+}) {
   const qc = useQueryClient();
   const kr = useQuery({
     queryKey: ["portfolio-ledgers"],
@@ -120,7 +134,12 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
     staleTime: 60_000,
     retry: false,
   });
-  const [asset, setAsset] = useState<Asset>("KR");
+  const [localAsset, setLocalAsset] = useState<Asset>("KR");
+  const asset = selectedAsset ?? localAsset;
+  function selectAsset(next: PortfolioAsset) {
+    if (onAssetChange) onAssetChange(next);
+    else setLocalAsset(next);
+  }
   const [historyAsset, setHistoryAsset] = useState<Asset | "ALL">("ALL");
   const [search, setSearch] = useState("");
   const [edit, setEdit] = useState<Editor | null>(null);
@@ -198,7 +217,7 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
     editSession.current = createLedgerEditSession(
       next.market === "US" ? us.data?.revision : kr.data?.revision,
     );
-    setEdit(next);
+    setEdit(projectExecutionMemo(next));
   }
   function closeEditor() {
     if (writeGuard.current.pending) return;
@@ -236,6 +255,12 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
   }
   async function save() {
     if (!edit || !editSession.current || writeGuard.current.pending) return;
+    try {
+      rejectExecutionMemoUrls(edit.note);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "메모를 확인해 주세요.");
+      return;
+    }
     const shares = Number(edit.shares),
       price = Number(edit.price),
       fee = Number(edit.fee);
@@ -262,6 +287,7 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
             executionId: edit.id,
             signalKey: edit.signalKey!,
             note: edit.note || "미매수 · 0주",
+            sourceLinks: edit.sourceLinks,
           }
         : {
             action: "execution" as const,
@@ -417,7 +443,7 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
             role="tab"
             aria-selected={asset === key}
             variant={asset === key ? "default" : "outline"}
-            onClick={() => setAsset(key)}
+            onClick={() => selectAsset(key)}
           >
             {label[key]}
           </Button>
@@ -776,7 +802,7 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
             <td className={`${td} ${color(e.realizedPnl ?? 0)}`}>
               {e.realizedPnl === null ? "-" : amount(e.realizedPnl, e.asset)}
             </td>
-            <td className="max-w-[240px] px-3 py-3">{e.note}</td>
+            <td className="max-w-[240px] px-3 py-3">{splitExecutionMemo(e.note).note}</td>
             <td className={td}>
               <Button
                 variant="ghost"

@@ -1,3 +1,4 @@
+import { validateExecutionSourceLinks } from "./executionMemo";
 import { decimal, fromLegacyNumber, multiply, representedLegacyNumber } from "./decimal";
 import type { ActualExecution } from "../portfolioLedgers";
 import type { LedgerEvent, Security, SourceRef } from "./types";
@@ -33,6 +34,7 @@ export function validateSecurity(s: Security) {
 }
 /** A website snapshot must represent this revision, including the original binary average price. */
 export function validateWebsiteExecution(e: LedgerEvent, execution: ActualExecution<string>) {
+  validateExecutionSourceLinks(execution.sourceLinks);
   if (
     e.book !== "ACTUAL" ||
     e.bookId !== "ACTUAL" ||
@@ -75,6 +77,7 @@ export function validateWebsiteExecution(e: LedgerEvent, execution: ActualExecut
     throw new Error("Website snapshot disagrees with canonical execution");
 }
 export function validateEvent(e: LedgerEvent) {
+  validateExecutionSourceLinks(e.sourceLinks);
   if (
     !["ACTUAL", "MODEL"].includes(e.book) ||
     !["KRW", "USD"].includes(e.currency) ||

@@ -4,7 +4,8 @@ import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { PortfolioAssetHub } from "./PortfolioAssetHub";
 import { UsPortfolioLedgers } from "./UsPortfolioLedgers";
-import { KoreaPortfolioContent } from "@/routes/portfolio";
+import { toast } from "sonner";
+import { KoreaPortfolioContent, Route } from "@/routes/portfolio";
 import { calculateActual, type DualPortfolioState } from "@/lib/portfolioLedgers";
 import type { UsActualState } from "@/lib/usActualLedger";
 import { portfolioLedgersServer } from "@/lib/portfolioLedgers.functions";
@@ -254,6 +255,106 @@ describe("portfolio ledger UI wiring", () => {
     const krMarkup = render(koreaElement());
     expect(krMarkup).toContain("운용자금 기준 계산 현금");
     expect(krMarkup).toContain("운용자금 기준 평가자산");
+    expect(portfolioLedgersServer).not.toHaveBeenCalled();
+    expect(usActualLedgerServer).not.toHaveBeenCalled();
+  });
+
+  it.each(["hub", "US"])(
+    "%s displays and edits cleaned memos while preserving source references",
+    async (surface) => {
+      const url = "https://notion.so/synthetic-memo-source";
+      const key = surface === "US" ? "us-actual-ledger" : "portfolio-ledgers";
+      const state = structuredClone(surface === "US" ? us() : domestic());
+      state.document.executions[0]!.note = `한글 메모\n[원본](${url})`;
+      state.actual.executions[0]!.note = state.document.executions[0]!.note;
+      harness.client.setQueryData([key], state);
+      const element =
+        surface === "US" ? (
+          <UsPortfolioLedgers model={undefined} initialTab="actual">
+            모델
+          </UsPortfolioLedgers>
+        ) : (
+          <PortfolioAssetHub domestic={<p>국내</p>} />
+        );
+      const markup = render(element);
+      expect(markup).toContain("한글 메모");
+      expect(markup).not.toContain(url);
+      button("수정").onClick!();
+      render(element);
+      expect(harness.inputs.some((input) => input.value === "한글 메모\n원본")).toBe(true);
+      expect(harness.inputs.some((input) => input.value?.includes("notion.so"))).toBe(false);
+      if (surface === "US") button("실제 원장에 저장").onClick!();
+      else harness.submit!({ preventDefault: vi.fn() });
+      const server =
+        surface === "US" ? vi.mocked(usActualLedgerServer) : vi.mocked(portfolioLedgersServer);
+      await vi.waitFor(() => expect(server).toHaveBeenCalledOnce());
+      const data = (
+        server.mock.lastCall![0] as {
+          data: { execution: { note: string; sourceLinks: unknown[] } };
+        }
+      ).data;
+      expect(data.execution.note).toBe("한글 메모\n원본");
+      expect(data.execution.sourceLinks).toEqual([{ system: "notion", url, label: "원본" }]);
+      expect(state.document.executions[0]!.note).toContain(url);
+    },
+  );
+
+  it("rejects a newly pasted Notion memo URL without saving or discarding the draft", () => {
+    const element = <PortfolioAssetHub domestic={<p>국내</p>} />;
+    render(element);
+    button("수정").onClick!();
+    render(element);
+    const note = "keep https://notion.so/new-source";
+    harness.inputs.find((input) => input.value === execution.note)!.onChange!({
+      target: { value: note },
+    });
+    render(element);
+    harness.submit!({ preventDefault: vi.fn() });
+    expect(portfolioLedgersServer).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("Notion URL"));
+    render(element);
+    expect(harness.inputs.some((input) => input.value === note)).toBe(true);
+  });
+
+  it("uses the URL asset for initial selection and Back/Forward without any writes", () => {
+    const validate = (
+      Route as unknown as {
+        options: { validateSearch: (value: Record<string, unknown>) => { asset: string } };
+      }
+    ).options.validateSearch;
+    expect(validate({ asset: "US" })).toEqual({ asset: "US" });
+    expect(validate({ asset: "ETF" })).toEqual({ asset: "ETF" });
+    expect(validate({ asset: "unknown" })).toEqual({ asset: "KR" });
+    const onAssetChange = vi.fn();
+    expect(
+      render(
+        <PortfolioAssetHub
+          domestic={<p>국내</p>}
+          selectedAsset="ETF"
+          onAssetChange={onAssetChange}
+        />,
+      ),
+    ).toContain('aria-label="ETF"');
+    button("한국주식").onClick!();
+    expect(onAssetChange).toHaveBeenCalledWith("KR");
+    expect(
+      render(
+        <PortfolioAssetHub
+          domestic={<p>국내</p>}
+          selectedAsset="KR"
+          onAssetChange={onAssetChange}
+        />,
+      ),
+    ).toContain('aria-label="한국주식"');
+    expect(
+      render(
+        <PortfolioAssetHub
+          domestic={<p>국내</p>}
+          selectedAsset="ETF"
+          onAssetChange={onAssetChange}
+        />,
+      ),
+    ).toContain('aria-label="ETF"');
     expect(portfolioLedgersServer).not.toHaveBeenCalled();
     expect(usActualLedgerServer).not.toHaveBeenCalled();
   });

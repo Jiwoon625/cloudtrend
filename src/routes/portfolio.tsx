@@ -1,9 +1,14 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import {
+  projectExecutionMemo,
+  rejectExecutionMemoUrls,
+  splitExecutionMemo,
+} from "@/lib/ledger/executionMemo";
+import { createFileRoute, Link, type SearchSchemaInput } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BriefcaseBusiness, Loader2, RefreshCw, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { PortfolioAssetHub } from "@/components/PortfolioAssetHub";
+import { PortfolioAssetHub, type PortfolioAsset } from "@/components/PortfolioAssetHub";
 import { StrategyDescription } from "@/components/StrategyDescription";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +30,11 @@ import {
 
 export const Route = createFileRoute("/portfolio")({
   ssr: false,
+  validateSearch: (
+    search: Record<string, unknown> & SearchSchemaInput,
+  ): { asset: PortfolioAsset } => ({
+    asset: search["asset"] === "US" || search["asset"] === "ETF" ? search["asset"] : "KR",
+  }),
   head: () => ({ meta: [{ title: "포트폴리오 | 전략 성과 · 실제 투자" }] }),
   component: PortfolioPage,
 });
@@ -144,10 +154,21 @@ type Edit = {
   shares: string;
   fee: string;
   note: string;
+  sourceLinks?: ActualExecution["sourceLinks"];
 };
 
 function PortfolioPage() {
-  return <PortfolioAssetHub domestic={<KoreaPortfolioContent />} />;
+  const { asset } = Route.useSearch();
+  const navigate = Route.useNavigate();
+  return (
+    <PortfolioAssetHub
+      domestic={<KoreaPortfolioContent />}
+      selectedAsset={asset}
+      onAssetChange={(next) => {
+        void navigate({ search: { asset: next } });
+      }}
+    />
+  );
 }
 
 export function KoreaPortfolioContent() {
@@ -186,7 +207,7 @@ export function KoreaPortfolioContent() {
       return;
     }
     editSession.current = createLedgerEditSession(state?.revision);
-    setEdit(next);
+    setEdit(projectExecutionMemo(next));
   }
   function closeEditor() {
     if (writeGuard.current.pending) return;
@@ -226,10 +247,17 @@ export function KoreaPortfolioContent() {
       shares: "0",
       fee: "0",
       note: doc?.excluded[c.key] ?? "",
+      sourceLinks: doc?.excludedSourceLinks?.[c.key],
     });
   }
   async function saveExecution() {
     if (!edit || !editSession.current || writeGuard.current.pending) return;
+    try {
+      rejectExecutionMemoUrls(edit.note);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "메모를 확인해 주세요.");
+      return;
+    }
     const shares = Number(edit.shares),
       price = Number(edit.price),
       fee = Number(edit.fee);
@@ -249,6 +277,7 @@ export function KoreaPortfolioContent() {
             signalKey: edit.signalKey,
             executionId: edit.id || undefined,
             note: edit.note || "미매수 · 0주",
+            sourceLinks: edit.sourceLinks,
           },
           editSession.current,
         )
@@ -716,7 +745,7 @@ export function KoreaPortfolioContent() {
                   <td className={td}>
                     {bought.has(c.key)
                       ? "실제 체결 기록됨"
-                      : (doc.excluded[c.key] ?? "미체결 · 확인 대기")}
+                      : splitExecutionMemo(doc.excluded[c.key] ?? "미체결 · 확인 대기").note}
                   </td>
                   <td className={td}>
                     <Button variant="outline" size="sm" disabled={busy} onClick={() => beginBuy(c)}>

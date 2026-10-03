@@ -1,3 +1,4 @@
+import { validateExecutionSourceLinks } from "./ledger/executionMemo";
 import { readWebsiteDocument } from "./ledger/websiteRepository.server";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
@@ -6,6 +7,18 @@ import { operateLedgers } from "./portfolioLedgers.server";
 import { calculateActual, type LedgerDocument } from "./portfolioLedgers";
 import type { DomesticPositionContext } from "./positionSignalContext";
 
+const sourceLinks = z
+  .unknown()
+  .superRefine((value, context) => {
+    try {
+      validateExecutionSourceLinks(value);
+    } catch {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid execution source links" });
+    }
+  })
+  .transform(
+    (value) => value as import("./ledger/executionMemo").ExecutionSourceLink[] | undefined,
+  );
 const request = z.object({
   accessToken: z.string().min(1),
   action: z.enum(["load", "sync", "capital", "execution", "remove", "exclude"]),
@@ -16,6 +29,7 @@ const request = z.object({
   executionId: z.string().optional(),
   signalKey: z.string().optional(),
   note: z.string().max(300).optional(),
+  sourceLinks: sourceLinks.optional(),
   execution: z
     .object({
       id: z.string(),
@@ -29,6 +43,7 @@ const request = z.object({
       shares: z.number().int().positive(),
       fee: z.number().nonnegative(),
       note: z.string().max(300),
+      sourceLinks: sourceLinks.optional(),
     })
     .optional(),
 });
@@ -54,7 +69,6 @@ export const portfolioLedgersServer = createServerFn({ method: "POST" })
     return operateLedgers(client, uid, data);
   });
 
-
 export const portfolioPositionContextServer = createServerFn({ method: "POST" })
   .inputValidator((input: { accessToken: string }) => ({
     accessToken: String(input.accessToken ?? ""),
@@ -71,7 +85,8 @@ export const portfolioPositionContextServer = createServerFn({ method: "POST" })
     for (const execution of executions) {
       if (execution.side !== "SELL" || execution.shares <= 0) continue;
       const previous = lastSellDateBySymbol[execution.symbol];
-      if (!previous || execution.date > previous) lastSellDateBySymbol[execution.symbol] = execution.date;
+      if (!previous || execution.date > previous)
+        lastSellDateBySymbol[execution.symbol] = execution.date;
     }
     return {
       heldSymbols: actual.positions.map((position) => position.symbol).sort(),

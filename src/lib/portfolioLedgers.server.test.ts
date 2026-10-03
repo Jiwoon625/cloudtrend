@@ -1,6 +1,10 @@
 vi.mock("./ledger/websiteRepository.server", () => ({
   readWebsiteDocument: async (client: SupabaseClient, uid: string, source: string) => {
-    const result = await client.from(source).select("revision,payload").eq("user_id", uid).maybeSingle();
+    const result = await client
+      .from(source)
+      .select("revision,payload")
+      .eq("user_id", uid)
+      .maybeSingle();
     if (result.error) throw new Error(result.error.message);
     return result.data;
   },
@@ -201,6 +205,35 @@ describe("ledger persistence", () => {
     expect(
       (await operateLedgers(db.client, "owner", { action: "load" })).actual.positions,
     ).toHaveLength(0);
+  });
+  it("retains historic sources independently of editor metadata and rejects newly pasted Notion URLs", async () => {
+    const db = database();
+    await operateLedgers(db.client, "owner", { action: "load" });
+    const stored = db.tables["portfolio_ledgers"]![0]!["payload"] as LedgerDocument;
+    const url = "https://notion.so/synthetic-kr-source";
+    stored.executions[0]!.note = `한글 원본\n${url}`;
+    const loaded = await operateLedgers(db.client, "owner", { action: "load" });
+    const original = structuredClone(loaded.document.executions[0]!);
+    expect(original.note).toContain(url);
+    const edited = await operateLedgers(db.client, "owner", {
+      action: "execution",
+      revision: loaded.revision,
+      execution: { ...original, note: "메모만 정정" },
+    });
+    expect(edited.document.executions[0]).toEqual({
+      ...original,
+      note: "메모만 정정",
+      sourceLinks: [{ system: "notion", url }],
+    });
+    const before = structuredClone(db.tables);
+    await expect(
+      operateLedgers(db.client, "owner", {
+        action: "execution",
+        revision: edited.revision,
+        execution: { ...original, note: url },
+      }),
+    ).rejects.toThrow("Notion URL");
+    expect(db.tables).toEqual(before);
   });
   it("rejects stale revisions, unknown edits, and write conflicts without changing saved trades", async () => {
     const db = database();

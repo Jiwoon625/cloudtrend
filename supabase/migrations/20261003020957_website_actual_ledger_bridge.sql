@@ -57,9 +57,34 @@ begin
 end;
 $$;
 
-create function cloudtrend_ledger_private.validate_document(p_document jsonb, p_system text) returns void
+-- Only inert provenance references are accepted; no URL is fetched or trusted as evidence.
+create function cloudtrend_ledger_private.validate_source_links(p_links jsonb) returns void
 language plpgsql immutable security invoker set search_path = '' as $$
-declare e jsonb; n text; v numeric; d date;
+declare link jsonb;
+begin
+  if p_links is null then return; end if;
+  if pg_catalog.jsonb_typeof(p_links) is distinct from 'array' or pg_catalog.jsonb_array_length(p_links)>50 then
+    raise exception 'Invalid execution source links';
+  end if;
+  for link in select value from pg_catalog.jsonb_array_elements(p_links) loop
+    if pg_catalog.jsonb_typeof(link) is distinct from 'object' or
+       not (link ?& array['system','url']) or
+       (link - array['system','url','label']) <> '{}'::jsonb or
+       link->>'system' is distinct from 'notion' or
+       pg_catalog.jsonb_typeof(link->'url') is distinct from 'string' or
+       pg_catalog.length(link->>'url') not between 1 and 2048 or
+       link->>'url' !~* '^((https://)?([a-z0-9-]+\.)*notion\.(so|site|com)\.?(:443)?|http://([a-z0-9-]+\.)*notion\.(so|site|com)\.?(:80)?)([/?#][^[:space:]<>"'']*)?$' or
+       (link ? 'label' and (pg_catalog.jsonb_typeof(link->'label') is distinct from 'string' or pg_catalog.length(link->>'label')>300)) then
+      raise exception 'Invalid execution source link';
+    end if;
+  end loop;
+end;
+$$;
+
+-- Pin shortest float rendering locally; caller output settings must not reject lossless source prices.
+create function cloudtrend_ledger_private.validate_document(p_document jsonb, p_system text) returns void
+language plpgsql immutable security invoker set search_path = '' set extra_float_digits = 1 as $$
+declare e jsonb; n text; v numeric; d date; refs jsonb;
 begin
   if p_system not in ('portfolio_ledgers','us_actual_portfolio_ledgers') or
      pg_catalog.jsonb_typeof(p_document) is distinct from 'object' or
@@ -67,7 +92,14 @@ begin
      pg_catalog.jsonb_array_length(p_document->'executions') > 100000 then
     raise exception 'Invalid website document/executions';
   end if;
+  if p_document ? 'excludedSourceLinks' then
+    if pg_catalog.jsonb_typeof(p_document->'excludedSourceLinks') is distinct from 'object' then raise exception 'Invalid exclusion source links'; end if;
+    for refs in select value from pg_catalog.jsonb_each(p_document->'excludedSourceLinks') loop
+      perform cloudtrend_ledger_private.validate_source_links(refs);
+    end loop;
+  end if;
   for e in select value from pg_catalog.jsonb_array_elements(p_document->'executions') loop
+    perform cloudtrend_ledger_private.validate_source_links(e->'sourceLinks');
     if pg_catalog.jsonb_typeof(e) is distinct from 'object' or
        not (e ?& array['id','symbol','name','market','signalKey','side','date','price','shares','fee','note','order']) then
       raise exception 'Execution must contain every source field';
@@ -323,6 +355,17 @@ begin
          p->'settlementDate' is distinct from 'null'::jsonb or p#>'{positionLegs,0,basisAdjustment}' is distinct from 'null'::jsonb then
         raise exception 'Broker-enriched execution requires a reviewed correction';
       end if;
+    end if;
+    -- Preserve prior source references even when an older client omits the optional field.
+    -- Original legacyExecution and every previous event payload remain untouched.
+    if p ? 'sourceLinks' or e ? 'sourceLinks' then
+      p := p || pg_catalog.jsonb_build_object('sourceLinks', (
+        select coalesce(pg_catalog.jsonb_agg(value order by first_seen),'[]'::jsonb)
+        from (select value,min(ordinality) as first_seen
+          from pg_catalog.jsonb_array_elements(coalesce(p->'sourceLinks','[]'::jsonb) || coalesce(e->'sourceLinks','[]'::jsonb)) with ordinality
+          group by value) links
+      ));
+      perform cloudtrend_ledger_private.validate_source_links(p->'sourceLinks');
     end if;
     event_hash := cloudtrend_ledger_private.json_hash(pg_catalog.jsonb_build_object('sourceSystem',system_name,'documentRevision',new.revision,'execution',e));
     p := p || pg_catalog.jsonb_build_object('appExecution',e,'revision',event_revision,'previousRevision',prior.revision,
