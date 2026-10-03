@@ -13,8 +13,7 @@ import { selectV8SectorPriceLeadership } from "./engine/v8SectorPriceLeadershipP
 
 export type OnsetPathType = "A" | "B" | "C";
 export type OnsetFeatureKey =
-  | "cloud" | "TK" | "BB" | "MA" | "volume" | "nearHigh" | "foreign"
-  | "PL";
+  "cloud" | "TK" | "BB" | "MA" | "volume" | "nearHigh" | "foreign" | "PL";
 
 export interface OnsetAddedFeature {
   key: OnsetFeatureKey;
@@ -96,8 +95,7 @@ export function buildOnsetProfile(
     label,
     originDate,
     addedFeatures,
-    addedPoints:
-      Math.round(addedFeatures.reduce((sum, item) => sum + item.points, 0) * 100) / 100,
+    addedPoints: Math.round(addedFeatures.reduce((sum, item) => sum + item.points, 0) * 100) / 100,
     ma20Extension: ma20Extension !== null && Number.isFinite(ma20Extension) ? ma20Extension : null,
   };
 }
