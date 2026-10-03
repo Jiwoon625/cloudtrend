@@ -25,6 +25,12 @@ export function fromLegacyNumber(value: number): string {
     throw new Error("Legacy number needs more than eight decimal places");
   return format(decimal(exact));
 }
+/** Journal representation only; retain the original legacy observation separately. */
+export function representedLegacyNumber(value: number): string {
+  if (!Number.isFinite(value) || Math.abs(value) > Number.MAX_SAFE_INTEGER)
+    throw new Error("Legacy number is not safely representable");
+  return format(decimal(value.toFixed(8)));
+}
 export function integerBudgetQuantity(
   budget: string,
   cash: string,

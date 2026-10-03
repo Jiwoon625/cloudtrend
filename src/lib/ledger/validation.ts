@@ -1,4 +1,5 @@
-import { decimal, multiply } from "./decimal";
+import { decimal, fromLegacyNumber, multiply, representedLegacyNumber } from "./decimal";
+import type { ActualExecution } from "../portfolioLedgers";
 import type { LedgerEvent, Security, SourceRef } from "./types";
 export function validDate(date: string): boolean {
   const time = Date.parse(`${date}T00:00:00Z`);
@@ -30,6 +31,49 @@ export function validateSecurity(s: Security) {
   if (s.market !== "US" && !/^[A-Z0-9]{6}$/.test(s.symbol))
     throw new Error("Preserve six-character Korean security code");
 }
+/** A website snapshot must represent this revision, including the original binary average price. */
+export function validateWebsiteExecution(e: LedgerEvent, execution: ActualExecution<string>) {
+  if (
+    e.book !== "ACTUAL" ||
+    e.bookId !== "ACTUAL" ||
+    !["BUY", "SELL"].includes(e.kind) ||
+    !["portfolio_ledgers", "us_actual_portfolio_ledgers"].includes(e.source.system) ||
+    typeof execution.id !== "string" ||
+    !execution.id ||
+    execution.id !== e.source.recordId ||
+    typeof execution.symbol !== "string" ||
+    !execution.symbol ||
+    typeof execution.name !== "string" ||
+    !execution.name ||
+    typeof execution.note !== "string" ||
+    (execution.signalKey !== null && typeof execution.signalKey !== "string") ||
+    !["KOSPI", "KOSDAQ", "ETF", "US"].includes(execution.market) ||
+    (e.source.system === "us_actual_portfolio_ledgers") !== (execution.market === "US") ||
+    e.currency !== (execution.market === "US" ? "USD" : "KRW") ||
+    !Number.isFinite(execution.price) ||
+    execution.price <= 0 ||
+    !Number.isFinite(execution.shares) ||
+    execution.shares <= 0 ||
+    !Number.isFinite(execution.fee) ||
+    execution.fee < 0
+  )
+    throw new Error("Invalid website source execution snapshot");
+  if (
+    e.quantity === null ||
+    e.price === null ||
+    e.gross === null ||
+    e.fee === null ||
+    decimal(fromLegacyNumber(execution.shares)) !== decimal(e.quantity) ||
+    decimal(representedLegacyNumber(execution.price)) !== decimal(e.price) ||
+    decimal(representedLegacyNumber(execution.price * execution.shares)) !== decimal(e.gross) ||
+    decimal(fromLegacyNumber(execution.fee)) !== decimal(e.fee) ||
+    execution.side !== e.kind ||
+    execution.date !== e.effectiveDate ||
+    execution.order !== e.effectiveSequence ||
+    execution.signalKey !== e.signalId
+  )
+    throw new Error("Website snapshot disagrees with canonical execution");
+}
 export function validateEvent(e: LedgerEvent) {
   if (
     !["ACTUAL", "MODEL"].includes(e.book) ||
@@ -49,8 +93,16 @@ export function validateEvent(e: LedgerEvent) {
     ].includes(e.kind)
   )
     throw new Error("Unsupported journal book/currency/event type");
-  if (!e.id || !e.bookId) throw new Error("Event identity is required");
+  if (!e.id || !e.bookId || typeof e.voided !== "boolean")
+    throw new Error("Event identity and void status are required");
   validateSource(e.source);
+  if (e.legacyExecution && (e.book !== "ACTUAL" || !["BUY", "SELL"].includes(e.kind)))
+    throw new Error("Legacy execution metadata is only valid on source fills");
+  if (e.appExecution !== undefined) {
+    if (!e.appExecution || typeof e.appExecution !== "object" || Array.isArray(e.appExecution))
+      throw new Error("Invalid website source execution snapshot");
+    validateWebsiteExecution(e, e.appExecution);
+  }
   if (e.book === "ACTUAL" && e.bookId !== "ACTUAL")
     throw new Error("Actual events use one logical book");
   if (e.book === "MODEL" && e.bookId === "ACTUAL")
@@ -80,6 +132,11 @@ export function validateEvent(e: LedgerEvent) {
   for (const field of [e.quantity, e.price, e.gross, e.fee, e.tax])
     if (field !== null && decimal(field) < 0n)
       throw new Error("Trade quantities and amounts cannot be negative");
+  if (
+    [...e.cashLegs, ...e.positionLegs].some((leg) => leg.accountId.startsWith("UNASSIGNED:")) &&
+    !e.issues.includes("account_mapping_unverified")
+  )
+    throw new Error("Unassigned account attribution must remain explicit");
   for (const leg of e.cashLegs) {
     if (!leg.accountId || !["KRW", "USD"].includes(leg.currency))
       throw new Error("Cash account/currency required");
@@ -115,7 +172,40 @@ export function validateEvent(e: LedgerEvent) {
       throw new Error("Fill legs disagree with execution");
   }
   if (["BUY", "SELL"].includes(e.kind) && e.gross !== null) {
-    if (decimal(e.gross) !== multiply(decimal(e.quantity!), decimal(e.price!)))
+    const legacy = e.legacyExecution;
+    if (
+      legacy &&
+      (!["portfolio_ledgers", "us_actual_portfolio_ledgers"].includes(e.source.system) ||
+        legacy.id !== e.source.recordId ||
+        !Number.isFinite(legacy.price) ||
+        legacy.price <= 0 ||
+        !Number.isFinite(legacy.shares) ||
+        legacy.shares <= 0 ||
+        !Number.isFinite(legacy.fee) ||
+        legacy.fee < 0)
+    )
+      throw new Error("Invalid retained legacy source execution");
+    const legacyEconomicValuesMatch =
+      legacy !== undefined &&
+      fromLegacyNumber(legacy.shares) === e.quantity &&
+      representedLegacyNumber(legacy.price) === e.price &&
+      representedLegacyNumber(legacy.price * legacy.shares) === e.gross;
+    if (
+      legacy &&
+      e.revision === 1 &&
+      (!legacyEconomicValuesMatch ||
+        legacy.side !== e.kind ||
+        legacy.date !== e.effectiveDate ||
+        legacy.order !== e.effectiveSequence ||
+        fromLegacyNumber(legacy.fee) !== e.fee ||
+        legacy.signalKey !== e.signalId)
+    )
+      throw new Error("Legacy projection disagrees with source execution");
+    if (
+      !legacyEconomicValuesMatch &&
+      !e.appExecution &&
+      decimal(e.gross) !== multiply(decimal(e.quantity!), decimal(e.price!))
+    )
       throw new Error("Fill gross disagrees with quantity/price");
     const net = e.cashLegs[0]!.amount;
     if (net !== null) {
@@ -186,6 +276,12 @@ export function currentEvents(events: LedgerEvent[]): LedgerEvent[] {
         if (e.revision !== i + 1) throw new Error("Missing or duplicate event revision");
         if (e.source.system !== first.source.system || e.source.recordId !== first.source.recordId)
           throw new Error("Correction changed original source identity");
+        const sortedLegacy = (value: LedgerEvent["legacyExecution"]) =>
+          value
+            ? JSON.stringify(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)))
+            : "null";
+        if (sortedLegacy(e.legacyExecution) !== sortedLegacy(first.legacyExecution))
+          throw new Error("Correction changed retained legacy source metadata");
       });
       return versions.at(-1)!;
     })

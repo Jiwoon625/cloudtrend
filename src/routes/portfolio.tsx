@@ -13,6 +13,15 @@ import { portfolioLedgersServer } from "@/lib/portfolioLedgers.functions";
 import type { ActualExecution, Candidate, DualPortfolioState } from "@/lib/portfolioLedgers";
 import type { PortfolioSummary } from "@/lib/portfolioStoreCore";
 import type { LedgerRequest } from "@/lib/portfolioLedgers.server";
+import {
+  acknowledgeLedgerReload,
+  createLedgerEditSession,
+  createLedgerWriteGuard,
+  LEDGER_CASH_NOTE,
+  LEDGER_RECONCILE_MESSAGE,
+  runLedgerWrite,
+  type LedgerEditSession,
+} from "@/lib/ledgerUiMutation";
 
 export const Route = createFileRoute("/portfolio")({
   ssr: false,
@@ -32,11 +41,13 @@ function SummaryCard({
   caption,
   s,
   capital,
+  actual = false,
 }: {
   title: string;
   caption: string;
   s: PortfolioSummary;
   capital: number;
+  actual?: boolean;
 }) {
   return (
     <section className="rounded-xl border border-border bg-card p-4" aria-label={title}>
@@ -52,8 +63,8 @@ function SummaryCard({
       <p className="text-xs text-muted-foreground">누적손익 · 기준자금 {formatWon(capital)}</p>
       <dl className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
         {[
-          ["총 평가자산", s.equity],
-          ["현금", s.cash],
+          [actual ? "운용자금 기준 평가자산" : "총 평가자산", s.equity],
+          [actual ? "운용자금 기준 계산 현금" : "현금", s.cash],
           ["실현손익", s.realizedPnl],
           ["평가손익", s.unrealizedPnl],
         ].map(([label, value]) => (
@@ -139,11 +150,11 @@ function PortfolioPage() {
   return <PortfolioAssetHub domestic={<KoreaPortfolioContent />} />;
 }
 
-function KoreaPortfolioContent() {
+export function KoreaPortfolioContent() {
   const qc = useQueryClient();
   const query = useQuery({
     queryKey: QUERY,
-    queryFn: () => request({ action: "sync" }),
+    queryFn: () => request({ action: "load" }),
     staleTime: Infinity,
     gcTime: Infinity,
     refetchOnWindowFocus: false,
@@ -158,26 +169,52 @@ function KoreaPortfolioContent() {
   const [capitals, setCapitals] = useState<{ strategy: string; actual: string } | null>(null);
   const [filter, setFilter] = useState("");
   const editPanel = useRef<HTMLElement>(null);
+  const editorOpen = edit !== null;
   useEffect(() => {
-    if (!edit) return;
+    if (!editorOpen) return;
     editPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     editPanel.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
-  }, [edit?.id, edit?.symbol, edit?.side]);
-  async function mutate(input: LedgerRequest) {
-    setBusy(true);
-    try {
-      const next = await request({ ...input, revision: state?.revision });
-      qc.setQueryData(QUERY, next);
-      return true;
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "저장에 실패했습니다.");
-      return false;
-    } finally {
-      setBusy(false);
+  }, [editorOpen, edit?.id, edit?.symbol, edit?.side]);
+  const writeGuard = useRef(createLedgerWriteGuard());
+  const editSession = useRef<LedgerEditSession | null>(null);
+  const capitalSession = useRef<LedgerEditSession | null>(null);
+  const [writeError, setWriteError] = useState<string | null>(null);
+  function openEditor(next: Edit) {
+    if (writeGuard.current.pending || writeGuard.current.needsReload) return;
+    if (edit && editSession.current?.needsReview) {
+      toast.error("저장 내용을 확인한 뒤 현재 입력을 닫고 다시 열어 주세요.");
+      return;
     }
+    editSession.current = createLedgerEditSession(state?.revision);
+    setEdit(next);
+  }
+  function closeEditor() {
+    if (writeGuard.current.pending) return;
+    setEdit(null);
+    editSession.current = null;
+  }
+  async function refresh() {
+    if (writeGuard.current.pending) return;
+    const result = await query.refetch();
+    acknowledgeLedgerReload(writeGuard.current, !result.isError);
+    if (!result.isError) setWriteError(null);
+  }
+  async function mutate(input: LedgerRequest, session = createLedgerEditSession(state?.revision)) {
+    return runLedgerWrite({
+      guard: writeGuard.current,
+      session,
+      client: qc,
+      queryKey: QUERY,
+      request: (revision) => request({ ...input, revision }),
+      onBusy: setBusy,
+      onError: (message) => {
+        setWriteError(message);
+        toast.error(message);
+      },
+    });
   }
   function beginBuy(c: Candidate) {
-    setEdit({
+    openEditor({
       id: "",
       symbol: c.symbol,
       name: c.name,
@@ -192,7 +229,7 @@ function KoreaPortfolioContent() {
     });
   }
   async function saveExecution() {
-    if (!edit) return;
+    if (!edit || !editSession.current || writeGuard.current.pending) return;
     const shares = Number(edit.shares),
       price = Number(edit.price),
       fee = Number(edit.fee);
@@ -206,12 +243,15 @@ function KoreaPortfolioContent() {
         return;
       }
       if (
-        await mutate({
-          action: "exclude",
-          signalKey: edit.signalKey,
-          executionId: edit.id || undefined,
-          note: edit.note || "미매수 · 0주",
-        })
+        await mutate(
+          {
+            action: "exclude",
+            signalKey: edit.signalKey,
+            executionId: edit.id || undefined,
+            note: edit.note || "미매수 · 0주",
+          },
+          editSession.current,
+        )
       ) {
         setEdit(null);
         toast.success("미매수 0주로 저장했습니다. 전략 원장은 유지됩니다.");
@@ -222,7 +262,12 @@ function KoreaPortfolioContent() {
       toast.error("체결가격과 수수료·세금을 확인하세요.");
       return;
     }
-    if (await mutate({ action: "execution", execution: { ...edit, shares, price, fee } })) {
+    if (
+      await mutate(
+        { action: "execution", execution: { ...edit, shares, price, fee } },
+        editSession.current,
+      )
+    ) {
       setEdit(null);
       toast.success("실제 체결만 반영했습니다. 전략 원장은 변경되지 않습니다.");
     }
@@ -258,20 +303,36 @@ function KoreaPortfolioContent() {
           variant="outline"
           size="sm"
           disabled={query.isFetching || busy}
-          onClick={() => void query.refetch()}
+          onClick={() => void mutate({ action: "sync" })}
         >
           {query.isFetching ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
             <RefreshCw className="size-4" />
           )}
-          이력 동기화
+          전략·시세 동기화
         </Button>
       </div>
+      <p className="mb-3 text-xs text-muted-foreground">
+        통합 원장 · 실제 체결을 기준으로 보유·손익을 조회합니다. {LEDGER_CASH_NOTE}
+      </p>
+      {writeError ? (
+        <div role="alert" className="mb-3 rounded border border-destructive p-3 text-sm">
+          {writeError}
+          <Button
+            className="ml-2"
+            variant="outline"
+            disabled={busy || query.isFetching}
+            onClick={() => void refresh()}
+          >
+            실제 원장 새로고침
+          </Button>
+        </div>
+      ) : null}
       {query.error ? (
         <div role="alert" className="mb-4 rounded-lg border border-destructive/30 p-4 text-sm">
           {query.error instanceof Error ? query.error.message : "원장을 불러오지 못했습니다."}
-          <Button className="ml-3" variant="outline" onClick={() => void query.refetch()}>
+          <Button className="ml-3" variant="outline" disabled={busy} onClick={() => void refresh()}>
             다시 시도
           </Button>
         </div>
@@ -293,6 +354,7 @@ function KoreaPortfolioContent() {
             />
             <SummaryCard
               title="실제 투자"
+              actual
               caption="입력한 매수·매도 체결만 반영 · 미매수 0주는 보유 상한에서 제외"
               s={state.actual.summary}
               capital={doc.actualCapital}
@@ -306,12 +368,15 @@ function KoreaPortfolioContent() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() =>
+              disabled={busy}
+              onClick={() => {
+                if (writeGuard.current.pending || writeGuard.current.needsReload) return;
+                capitalSession.current = createLedgerEditSession(state.revision);
                 setCapitals({
                   strategy: String(doc.settings.initialCapital),
                   actual: String(doc.actualCapital),
-                })
-              }
+                });
+              }}
             >
               운용자금 설정
             </Button>
@@ -325,6 +390,7 @@ function KoreaPortfolioContent() {
                     className="mt-1"
                     type="number"
                     min="1"
+                    disabled={busy}
                     value={capitals.strategy}
                     onChange={(e) => setCapitals({ ...capitals, strategy: e.target.value })}
                   />
@@ -335,29 +401,47 @@ function KoreaPortfolioContent() {
                     className="mt-1"
                     type="number"
                     min="1"
+                    disabled={busy}
                     value={capitals.actual}
                     onChange={(e) => setCapitals({ ...capitals, actual: e.target.value })}
                   />
                 </label>
                 <Button
-                  disabled={busy}
+                  disabled={
+                    busy || writeGuard.current.needsReload || capitalSession.current?.needsReview
+                  }
                   onClick={async () => {
                     if (
-                      await mutate({
-                        action: "capital",
-                        strategyCapital: Number(capitals.strategy),
-                        actualCapital: Number(capitals.actual),
-                      })
+                      capitalSession.current &&
+                      (await mutate(
+                        {
+                          action: "capital",
+                          strategyCapital: Number(capitals.strategy),
+                          actualCapital: Number(capitals.actual),
+                        },
+                        capitalSession.current,
+                      ))
                     )
                       setCapitals(null);
                   }}
                 >
                   저장
                 </Button>
-                <Button variant="ghost" onClick={() => setCapitals(null)}>
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    if (!writeGuard.current.pending) setCapitals(null);
+                  }}
+                >
                   취소
                 </Button>
               </div>
+              {capitalSession.current?.needsReview ? (
+                <p role="alert" className="mt-2 text-sm text-down">
+                  {LEDGER_RECONCILE_MESSAGE}
+                </p>
+              ) : null}
               <p className="mt-2 text-xs text-muted-foreground">
                 전략 기준자금 변경 시 저장된 신호부터 전략 수량을 다시 계산합니다. 실제 체결 수량은
                 유지됩니다.
@@ -379,8 +463,8 @@ function KoreaPortfolioContent() {
           </details>
           {state.actual.summary.cash < 0 ? (
             <p className="mb-3 text-sm text-down">
-              실제 체결금액이 운용자금을 초과했습니다. 추가 입금이 있었다면 실제 운용자금을 맞춰
-              주세요.
+              운용자금 기준 계산 현금이 음수입니다. 기초 현금·입출금과 설정 자금을 확인하세요.
+              증권사 잔고 부족을 뜻하지는 않습니다.
             </p>
           ) : null}
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -433,7 +517,8 @@ function KoreaPortfolioContent() {
                   aria-label="체결 입력 닫기"
                   variant="ghost"
                   size="sm"
-                  onClick={() => setEdit(null)}
+                  disabled={busy}
+                  onClick={closeEditor}
                 >
                   <X className="size-4" />
                 </Button>
@@ -451,6 +536,7 @@ function KoreaPortfolioContent() {
                       className="mt-1"
                       type={type}
                       min={type === "number" ? "0" : undefined}
+                      disabled={busy}
                       value={edit[field as "date" | "price" | "shares" | "fee"]}
                       onChange={(e) => setEdit({ ...edit, [field!]: e.target.value })}
                     />
@@ -462,12 +548,23 @@ function KoreaPortfolioContent() {
                 <Input
                   className="mt-1"
                   placeholder="예: 독립성 정책으로 미매수"
+                  disabled={busy}
                   value={edit.note}
                   onChange={(e) => setEdit({ ...edit, note: e.target.value })}
                 />
               </label>
+              {editSession.current?.needsReview ? (
+                <p role="alert" className="mt-3 text-sm text-down">
+                  {LEDGER_RECONCILE_MESSAGE}
+                </p>
+              ) : null}
               <div className="mt-3 flex items-center gap-3">
-                <Button disabled={busy} onClick={() => void saveExecution()}>
+                <Button
+                  disabled={
+                    busy || writeGuard.current.needsReload || editSession.current?.needsReview
+                  }
+                  onClick={() => void saveExecution()}
+                >
                   {busy ? <Loader2 className="size-4 animate-spin" /> : null}실제 원장에 저장
                 </Button>
                 <p className="text-xs text-muted-foreground">
@@ -569,7 +666,7 @@ function KoreaPortfolioContent() {
                         variant="outline"
                         disabled={busy}
                         onClick={() =>
-                          setEdit({
+                          openEditor({
                             id: "",
                             symbol: p.symbol,
                             name: p.name,

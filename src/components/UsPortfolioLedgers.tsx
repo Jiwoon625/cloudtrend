@@ -15,6 +15,15 @@ import type {
 } from "@/lib/usActualLedger";
 import type { UsPortfolioSnapshotRecord } from "@/lib/usProspectiveCloud";
 import { actualUsTaxOverlay } from "@/lib/usTaxOverlay";
+import {
+  acknowledgeLedgerReload,
+  createLedgerEditSession,
+  createLedgerWriteGuard,
+  LEDGER_CASH_NOTE,
+  LEDGER_RECONCILE_MESSAGE,
+  runLedgerWrite,
+  type LedgerEditSession,
+} from "@/lib/ledgerUiMutation";
 
 const QUERY = ["us-actual-ledger"];
 const usd = (v: number) =>
@@ -109,32 +118,58 @@ export function UsPortfolioLedgers({
     [capital, setCapital] = useState<string | null>(null),
     [filter, setFilter] = useState("");
   const editPanel = useRef<HTMLElement>(null);
+  const editorOpen = edit !== null;
   useEffect(() => {
-    if (!edit) return;
+    if (!editorOpen) return;
     editPanel.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     editPanel.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
-  }, [edit?.id, edit?.symbol, edit?.side]);
+  }, [editorOpen, edit?.id, edit?.symbol, edit?.side]);
   const matches = (x: { symbol: string; name: string }) =>
     `${x.symbol} ${x.name}`.toLowerCase().includes(filter.toLowerCase());
   const buys = new Map<string, number>();
   for (const e of doc?.executions ?? [])
     if (e.side === "BUY" && e.signalKey)
       buys.set(e.signalKey, (buys.get(e.signalKey) ?? 0) + e.shares);
-  async function mutate(input: UsActualRequest) {
-    if (!data || busy) return false;
-    setBusy(true);
-    try {
-      qc.setQueryData(QUERY, await request({ ...input, revision: data.revision }));
-      return true;
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "저장 실패");
-      return false;
-    } finally {
-      setBusy(false);
+  const writeGuard = useRef(createLedgerWriteGuard());
+  const editSession = useRef<LedgerEditSession | null>(null);
+  const capitalSession = useRef<LedgerEditSession | null>(null);
+  const [writeError, setWriteError] = useState<string | null>(null);
+  function openEditor(next: Editor) {
+    if (writeGuard.current.pending || writeGuard.current.needsReload) return;
+    if (edit && editSession.current?.needsReview) {
+      toast.error("저장 내용을 확인한 뒤 현재 입력을 닫고 다시 열어 주세요.");
+      return;
     }
+    editSession.current = createLedgerEditSession(data?.revision);
+    setEdit(next);
+  }
+  function closeEditor() {
+    if (writeGuard.current.pending) return;
+    setEdit(null);
+    editSession.current = null;
+  }
+  async function refresh() {
+    if (writeGuard.current.pending) return;
+    const result = await query.refetch();
+    acknowledgeLedgerReload(writeGuard.current, !result.isError);
+    if (!result.isError) setWriteError(null);
+  }
+  async function mutate(input: UsActualRequest, session = createLedgerEditSession(data?.revision)) {
+    return runLedgerWrite({
+      guard: writeGuard.current,
+      session,
+      client: qc,
+      queryKey: QUERY,
+      request: (revision) => request({ ...input, revision }),
+      onBusy: setBusy,
+      onError: (message) => {
+        setWriteError(message);
+        toast.error(message);
+      },
+    });
   }
   function beginBuy(c: UsCandidate) {
-    setEdit({
+    openEditor({
       id: "",
       symbol: c.symbol,
       name: c.name,
@@ -150,7 +185,7 @@ export function UsPortfolioLedgers({
     });
   }
   async function save() {
-    if (!edit) return;
+    if (!edit || !editSession.current || writeGuard.current.pending) return;
     const shares = Number(edit.shares),
       price = Number(edit.price),
       fee = Number(edit.fee);
@@ -164,12 +199,15 @@ export function UsPortfolioLedgers({
         return;
       }
       if (
-        await mutate({
-          action: "exclude",
-          executionId: edit.id || undefined,
-          signalKey: edit.signalKey,
-          note: edit.note || "미매수 · 0주",
-        })
+        await mutate(
+          {
+            action: "exclude",
+            executionId: edit.id || undefined,
+            signalKey: edit.signalKey,
+            note: edit.note || "미매수 · 0주",
+          },
+          editSession.current,
+        )
       ) {
         setEdit(null);
         toast.success("미매수로 저장했습니다. 모델 성과는 유지됩니다.");
@@ -180,7 +218,12 @@ export function UsPortfolioLedgers({
       toast.error("실제 가격·수수료를 확인하세요.");
       return;
     }
-    if (await mutate({ action: "execution", execution: { ...edit, price, shares, fee } })) {
+    if (
+      await mutate(
+        { action: "execution", execution: { ...edit, price, shares, fee } },
+        editSession.current,
+      )
+    ) {
       setEdit(null);
       toast.success("실제 원장에 저장했습니다. 모델 체결은 유지됩니다.");
     }
@@ -193,7 +236,7 @@ export function UsPortfolioLedgers({
           size="sm"
           variant="outline"
           disabled={busy || query.isFetching}
-          onClick={() => void query.refetch()}
+          onClick={() => void refresh()}
         >
           실제 원장 새로고침
         </Button>
@@ -230,8 +273,8 @@ export function UsPortfolioLedgers({
           {actual ? (
             <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
               {[
-                ["평가자산", actual.summary.equity],
-                ["현금", actual.summary.cash],
+                ["운용자금 기준 평가자산", actual.summary.equity],
+                ["운용자금 기준 계산 현금", actual.summary.cash],
                 ["실현손익", actual.summary.realizedPnl],
                 ["평가손익", actual.summary.unrealizedPnl],
               ].map(([k, v]) => (
@@ -246,7 +289,11 @@ export function UsPortfolioLedgers({
             size="sm"
             variant="ghost"
             disabled={!doc || busy}
-            onClick={() => setCapital(String(doc?.capital ?? 100000))}
+            onClick={() => {
+              if (writeGuard.current.pending || writeGuard.current.needsReload) return;
+              capitalSession.current = createLedgerEditSession(data?.revision);
+              setCapital(String(doc?.capital ?? 100000));
+            }}
           >
             실제 운용자금 설정
           </Button>
@@ -261,6 +308,15 @@ export function UsPortfolioLedgers({
         수수료·세금으로 계산하며, 환차손익·배당·미체결 매도비용은 포함하지 않습니다. 체결일은 미국
         현지 날짜입니다.
       </p>
+      <p className="text-xs text-muted-foreground">
+        통합 원장 · 저장한 실제 체결을 기준으로 보유·손익을 조회하며, 삭제는 취소 이력으로 남습니다.{" "}
+        {LEDGER_CASH_NOTE}
+      </p>
+      {writeError ? (
+        <p role="alert" className="rounded border border-destructive p-3 text-sm">
+          {writeError}
+        </p>
+      ) : null}
       {query.error ? (
         <p role="alert" className="rounded border border-destructive p-3 text-sm">
           {query.error instanceof Error ? query.error.message : "실제 원장 조회 실패"}
@@ -269,7 +325,8 @@ export function UsPortfolioLedgers({
       {query.isPending ? <p role="status">실제 원장을 불러오는 중입니다.</p> : null}
       {actual && actual.summary.cash < 0 ? (
         <p className="text-sm text-down">
-          실제 체결금액이 운용자금을 초과했습니다. 추가 입금이 있었다면 실제 운용자금을 맞춰 주세요.
+          운용자금 기준 계산 현금이 음수입니다. 기초 현금·입출금과 설정 자금을 확인하세요. 증권사
+          잔고 부족을 뜻하지는 않습니다.
         </p>
       ) : null}
       {capital !== null ? (
@@ -279,23 +336,39 @@ export function UsPortfolioLedgers({
             <Input
               type="number"
               min="1"
+              disabled={busy}
               value={capital}
               onChange={(e) => setCapital(e.target.value)}
             />
           </label>
           <Button
-            disabled={busy}
+            disabled={busy || writeGuard.current.needsReload || capitalSession.current?.needsReview}
             onClick={async () => {
-              if (await mutate({ action: "capital", capital: Number(capital) })) setCapital(null);
+              if (
+                capitalSession.current &&
+                (await mutate(
+                  { action: "capital", capital: Number(capital) },
+                  capitalSession.current,
+                ))
+              )
+                setCapital(null);
             }}
           >
             운용자금 저장
           </Button>
-          <Button variant="ghost" onClick={() => setCapital(null)}>
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onClick={() => {
+              if (!writeGuard.current.pending) setCapital(null);
+            }}
+          >
             취소
           </Button>
           <p className="w-full text-xs text-muted-foreground">
-            모델 기준자금과 체결 수량은 바뀌지 않습니다.
+            {capitalSession.current?.needsReview
+              ? LEDGER_RECONCILE_MESSAGE
+              : "모델 기준자금과 체결 수량은 바뀌지 않습니다."}
           </p>
         </div>
       ) : null}
@@ -340,7 +413,7 @@ export function UsPortfolioLedgers({
             <h3 className="font-semibold">
               실제 {edit.side === "BUY" ? "매수" : "매도"} · {edit.symbol}
             </h3>
-            <Button variant="ghost" onClick={() => setEdit(null)}>
+            <Button variant="ghost" disabled={busy} onClick={closeEditor}>
               체결 입력 닫기
             </Button>
           </div>
@@ -359,6 +432,7 @@ export function UsPortfolioLedgers({
                   type={type}
                   min={type === "number" ? 0 : undefined}
                   step={key === "shares" ? 1 : "any"}
+                  disabled={busy}
                   value={edit[key]}
                   onChange={(e) => setEdit({ ...edit, [key]: e.target.value })}
                 />
@@ -369,11 +443,21 @@ export function UsPortfolioLedgers({
             메모 / 미매수 사유
             <Input
               maxLength={300}
+              disabled={busy}
               value={edit.note}
               onChange={(e) => setEdit({ ...edit, note: e.target.value })}
             />
           </label>
-          <Button className="mt-3" disabled={busy} onClick={() => void save()}>
+          {editSession.current?.needsReview ? (
+            <p role="alert" className="mt-3 text-sm text-down">
+              {LEDGER_RECONCILE_MESSAGE}
+            </p>
+          ) : null}
+          <Button
+            className="mt-3"
+            disabled={busy || writeGuard.current.needsReload || editSession.current?.needsReview}
+            onClick={() => void save()}
+          >
             실제 원장에 저장
           </Button>
           <p className="mt-2 text-xs text-muted-foreground">
@@ -426,7 +510,7 @@ export function UsPortfolioLedgers({
                     variant="outline"
                     disabled={busy}
                     onClick={() =>
-                      setEdit({
+                      openEditor({
                         id: "",
                         symbol: p.symbol,
                         name: p.name,
@@ -473,7 +557,7 @@ export function UsPortfolioLedgers({
                         variant="ghost"
                         disabled={busy}
                         onClick={() =>
-                          setEdit({
+                          openEditor({
                             ...e,
                             price: String(e.price),
                             shares: String(e.shares),
@@ -488,6 +572,7 @@ export function UsPortfolioLedgers({
                         variant="ghost"
                         disabled={busy}
                         onClick={async () => {
+                          if (writeGuard.current.pending || writeGuard.current.needsReload) return;
                           if (
                             window.confirm(
                               "잘못 입력한 실제 체결을 삭제할까요? 모델 원장은 유지됩니다.",

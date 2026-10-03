@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -17,6 +17,15 @@ import type { ActualExecution, ActualLedger } from "@/lib/portfolioLedgers";
 import { exitLabel, soldSymbolsSinceSignal } from "@/lib/dashboardOperations";
 import { ETF_POLICY } from "@/lib/engine/etfStrategy";
 import { formatWon } from "@/lib/format";
+import {
+  acknowledgeLedgerReload,
+  createLedgerEditSession,
+  createLedgerWriteGuard,
+  LEDGER_CASH_NOTE,
+  LEDGER_RECONCILE_MESSAGE,
+  runLedgerWrite,
+  type LedgerEditSession,
+} from "@/lib/ledgerUiMutation";
 
 type Asset = "KR" | "US" | "ETF";
 type Execution = ActualExecution<"KOSPI" | "KOSDAQ" | "ETF" | "US">;
@@ -92,7 +101,7 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
   const qc = useQueryClient();
   const kr = useQuery({
     queryKey: ["portfolio-ledgers"],
-    queryFn: () => krRequest({ action: "sync" }),
+    queryFn: () => krRequest({ action: "load" }),
     staleTime: Infinity,
     gcTime: Infinity,
     retry: false,
@@ -176,15 +185,57 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
         | undefined
     )?.positions ?? {},
   );
-  async function mutateKr(input: LedgerRequest) {
-    qc.setQueryData(
-      ["portfolio-ledgers"],
-      await krRequest({ ...input, revision: kr.data?.revision }),
+  const writeGuard = useRef(createLedgerWriteGuard());
+  const editSession = useRef<LedgerEditSession | null>(null);
+  const capitalSession = useRef<LedgerEditSession | null>(null);
+  const [writeError, setWriteError] = useState<string | null>(null);
+  function openEditor(next: Editor) {
+    if (writeGuard.current.pending || writeGuard.current.needsReload) return;
+    if (edit && editSession.current?.needsReview) {
+      toast.error("저장 내용을 확인한 뒤 현재 입력을 닫고 다시 열어 주세요.");
+      return;
+    }
+    editSession.current = createLedgerEditSession(
+      next.market === "US" ? us.data?.revision : kr.data?.revision,
     );
-    void qc.invalidateQueries({ queryKey: ["dashboard-operations"] });
+    setEdit(next);
+  }
+  function closeEditor() {
+    if (writeGuard.current.pending) return;
+    setEdit(null);
+    editSession.current = null;
+  }
+  async function refresh() {
+    if (writeGuard.current.pending) return;
+    const [krResult, usResult] = await Promise.all([kr.refetch(), us.refetch()]);
+    const succeeded = !krResult.isError && !usResult.isError;
+    acknowledgeLedgerReload(writeGuard.current, succeeded);
+    if (succeeded) setWriteError(null);
+    void snapshots.refetch();
+  }
+  async function mutate(
+    input: LedgerRequest | UsActualRequest,
+    target: Asset,
+    session = createLedgerEditSession(target === "US" ? us.data?.revision : kr.data?.revision),
+  ) {
+    return runLedgerWrite<{ revision: number }>({
+      guard: writeGuard.current,
+      session,
+      client: qc,
+      queryKey: target === "US" ? ["us-actual-ledger"] : ["portfolio-ledgers"],
+      request: (revision) =>
+        target === "US"
+          ? usRequest({ ...input, revision } as UsActualRequest)
+          : krRequest({ ...input, revision } as LedgerRequest),
+      onBusy: setBusy,
+      onError: (message) => {
+        setWriteError(message);
+        toast.error(message);
+      },
+    });
   }
   async function save() {
-    if (!edit || busy) return;
+    if (!edit || !editSession.current || writeGuard.current.pending) return;
     const shares = Number(edit.shares),
       price = Number(edit.price),
       fee = Number(edit.fee);
@@ -200,45 +251,31 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
       toast.error("체결가격·수량·수수료를 확인해 주세요.");
       return;
     }
-    setBusy(true);
-    try {
-      if (shares === 0) {
-        if (edit.side !== "BUY" || !edit.signalKey)
-          throw new Error("수량은 1주 이상이어야 합니다.");
-        const input = {
-          action: "exclude" as const,
-          executionId: edit.id,
-          signalKey: edit.signalKey,
-          note: edit.note || "미매수 · 0주",
-        };
-        if (edit.market === "US")
-          qc.setQueryData(
-            ["us-actual-ledger"],
-            await usRequest({ ...input, revision: us.data?.revision }),
-          );
-        else await mutateKr(input);
-      } else if (edit.market === "US") {
-        qc.setQueryData(
-          ["us-actual-ledger"],
-          await usRequest({
-            action: "execution",
-            revision: us.data?.revision,
-            execution: { ...edit, market: "US", shares, price, fee },
-          }),
-        );
-      } else {
-        await mutateKr({
-          action: "execution",
-          execution: { ...edit, market: edit.market, shares, price, fee },
-        });
-      }
-      void qc.invalidateQueries({ queryKey: ["dashboard-operations"] });
-      setEdit(null);
+    if (shares === 0 && (edit.side !== "BUY" || !edit.signalKey)) {
+      toast.error("수량은 1주 이상이어야 합니다.");
+      return;
+    }
+    const input =
+      shares === 0
+        ? {
+            action: "exclude" as const,
+            executionId: edit.id,
+            signalKey: edit.signalKey!,
+            note: edit.note || "미매수 · 0주",
+          }
+        : {
+            action: "execution" as const,
+            execution: { ...edit, shares, price, fee },
+          };
+    if (
+      await mutate(
+        input as LedgerRequest | UsActualRequest,
+        assetOf(edit.market),
+        editSession.current,
+      )
+    ) {
+      closeEditor();
       toast.success("실제 체결을 저장했습니다.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "저장 실패");
-    } finally {
-      setBusy(false);
     }
   }
   function beginEtf(symbol: string, side: "BUY" | "SELL" = "BUY") {
@@ -248,7 +285,7 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
       toast.error("최신 스크리닝에서 ETF를 찾지 못했습니다.");
       return;
     }
-    setEdit({
+    openEditor({
       id: "",
       symbol,
       name: row?.name ?? position!.name,
@@ -264,21 +301,14 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
     });
   }
   async function remove(e: { id: string; asset: Asset }) {
-    if (!window.confirm("실제 체결 기록을 삭제할까요? 전략 원장은 유지됩니다.")) return;
-    setBusy(true);
-    try {
-      if (e.asset === "US")
-        qc.setQueryData(
-          ["us-actual-ledger"],
-          await usRequest({ action: "remove", executionId: e.id, revision: us.data?.revision }),
-        );
-      else await mutateKr({ action: "remove", executionId: e.id });
-      void qc.invalidateQueries({ queryKey: ["dashboard-operations"] });
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "삭제 실패");
-    } finally {
-      setBusy(false);
-    }
+    if (writeGuard.current.pending || writeGuard.current.needsReload) return;
+    if (
+      !window.confirm(
+        "실제 체결 기록을 삭제할까요? 통합 원장에는 취소 이력이 남고 전략 원장은 유지됩니다.",
+      )
+    )
+      return;
+    await mutate({ action: "remove", executionId: e.id }, e.asset);
   }
   return (
     <AppShell loadAnalysis={false}>
@@ -292,15 +322,21 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
         <Button
           variant="outline"
           disabled={busy || kr.isFetching || us.isFetching}
-          onClick={() => {
-            void kr.refetch();
-            void us.refetch();
-            void snapshots.refetch();
-          }}
+          onClick={() => void refresh()}
         >
           새로고침
         </Button>
       </header>
+      <p className="mb-3 text-sm text-muted-foreground">
+        통합 원장 · 실제 체결을 저장하면 보유·거래내역·손익에 함께 반영됩니다. 체결 삭제는 취소
+        이력으로 남습니다.
+      </p>
+      <p className="mb-3 text-xs text-muted-foreground">{LEDGER_CASH_NOTE}</p>
+      {writeError ? (
+        <p role="alert" className="mb-3 rounded border border-destructive p-3 text-sm">
+          {writeError}
+        </p>
+      ) : null}
       <div className="mb-4 rounded-lg border bg-card p-4" aria-label="전체 실제 투자 요약">
         <h2 className="font-semibold">전체 실제 투자 · 통화별</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -478,7 +514,12 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => setEtfCapital(String(kr.data?.document.etfCapital ?? 10_000_000))}
+                disabled={busy}
+                onClick={() => {
+                  if (writeGuard.current.pending || writeGuard.current.needsReload) return;
+                  capitalSession.current = createLedgerEditSession(kr.data?.revision);
+                  setEtfCapital(String(kr.data?.document.etfCapital ?? 10_000_000));
+                }}
               >
                 ETF 운용자금 설정
               </Button>
@@ -490,29 +531,43 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
                   <Input
                     type="number"
                     min="1"
+                    disabled={busy}
                     value={etfCapital}
                     onChange={(e) => setEtfCapital(e.target.value)}
                   />
                 </label>
                 <Button
-                  disabled={busy}
+                  disabled={
+                    busy || writeGuard.current.needsReload || capitalSession.current?.needsReview
+                  }
                   onClick={async () => {
-                    setBusy(true);
-                    try {
-                      await mutateKr({ action: "capital", etfCapital: Number(etfCapital) });
+                    if (
+                      capitalSession.current &&
+                      (await mutate(
+                        { action: "capital", etfCapital: Number(etfCapital) },
+                        "ETF",
+                        capitalSession.current,
+                      ))
+                    )
                       setEtfCapital(null);
-                    } catch (e) {
-                      toast.error(e instanceof Error ? e.message : "저장 실패");
-                    } finally {
-                      setBusy(false);
-                    }
                   }}
                 >
                   저장
                 </Button>
-                <Button variant="ghost" onClick={() => setEtfCapital(null)}>
+                <Button
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={() => {
+                    if (!writeGuard.current.pending) setEtfCapital(null);
+                  }}
+                >
                   취소
                 </Button>
+                {capitalSession.current?.needsReview ? (
+                  <p role="alert" className="w-full text-sm text-down">
+                    {LEDGER_RECONCILE_MESSAGE}
+                  </p>
+                ) : null}
                 <p className="w-full text-sm text-muted-foreground">
                   초기 기준자금은 1,000만원입니다. 실제 배정한 ETF 자금으로 맞춰 주세요.
                 </p>
@@ -727,7 +782,7 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
                 variant="ghost"
                 disabled={busy}
                 onClick={() =>
-                  setEdit({
+                  openEditor({
                     ...e,
                     market: e.market as Execution["market"],
                     price: String(e.price),
@@ -751,7 +806,7 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
       <Dialog
         open={edit !== null}
         onOpenChange={(open) => {
-          if (!open && !busy) setEdit(null);
+          if (!open) closeEditor();
         }}
       >
         <DialogContent className="max-h-[90vh] overflow-y-auto">
@@ -790,6 +845,7 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
                     type={type}
                     min={type === "number" ? 0 : undefined}
                     step={key === "shares" ? 1 : "any"}
+                    disabled={busy}
                     value={edit[key]}
                     onChange={(e) => setEdit({ ...edit, [key]: e.target.value })}
                   />
@@ -799,11 +855,30 @@ export function PortfolioAssetHub({ domestic }: { domestic: ReactNode }) {
                 메모
                 <Input
                   maxLength={300}
+                  disabled={busy}
                   value={edit.note}
                   onChange={(e) => setEdit({ ...edit, note: e.target.value })}
                 />
               </label>
-              <Button type="submit" disabled={busy}>
+              {editSession.current?.needsReview ? (
+                <div role="alert" className="text-sm text-down">
+                  <p>{LEDGER_RECONCILE_MESSAGE}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busy || kr.isFetching || us.isFetching}
+                    onClick={() => void refresh()}
+                  >
+                    실제 원장 새로고침
+                  </Button>
+                </div>
+              ) : null}
+              <Button
+                type="submit"
+                disabled={
+                  busy || writeGuard.current.needsReload || editSession.current?.needsReview
+                }
+              >
                 실제 원장에 저장
               </Button>
             </form>

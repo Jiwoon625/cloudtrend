@@ -1,4 +1,11 @@
-import { describe, expect, it } from "vitest";
+vi.mock("./ledger/websiteRepository.server", () => ({
+  readWebsiteDocument: async (client: SupabaseClient, uid: string, source: string) => {
+    const result = await client.from(source).select("revision,payload").eq("user_id", uid).maybeSingle();
+    if (result.error) throw new Error(result.error.message);
+    return result.data;
+  },
+}));
+import { describe, expect, it, vi } from "vitest";
 import { gzipSync } from "node:zlib";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { operateUsActual } from "./usActualLedger.server";

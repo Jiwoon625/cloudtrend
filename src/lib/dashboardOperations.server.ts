@@ -1,3 +1,4 @@
+import { readWebsiteDocument } from "./ledger/websiteRepository.server";
 import { gunzipSync } from "node:zlib";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
@@ -146,18 +147,12 @@ export async function portfolioEtfContext(client: SupabaseClient, uid: string) {
     date: index?.date ?? null,
   };
 }
-async function documentFor<T>(
+async function documentFor<T extends LedgerDocument | UsActualDocument>(
   client: SupabaseClient,
   uid: string,
-  table: string,
+  table: "portfolio_ledgers" | "us_actual_portfolio_ledgers",
 ): Promise<T | null> {
-  const { data, error } = await client
-    .from(table)
-    .select("payload")
-    .eq("user_id", uid)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return (data?.payload as T | undefined) ?? null;
+  return (await readWebsiteDocument<T>(client, uid, table))?.payload ?? null;
 }
 function quotesFor(index: DashboardIndex | null): Record<string, Quote> {
   return Object.fromEntries(

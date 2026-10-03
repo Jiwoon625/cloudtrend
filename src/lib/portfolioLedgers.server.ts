@@ -1,3 +1,4 @@
+import { readWebsiteDocument } from "./ledger/websiteRepository.server";
 import { parseManualMarketData } from "./engine/manualDataset";
 import { evaluateKospiMarketGateAtDate } from "./engine/kospiMarketGate";
 import { NO_CAPABILITIES, type MarketDataset } from "./engine/dataset";
@@ -33,13 +34,8 @@ export interface LedgerRequest {
   note?: string | undefined;
 }
 async function readDocument(client: SupabaseClient, uid: string): Promise<Row> {
-  const { data, error } = await client
-    .from(TABLE)
-    .select("revision,payload")
-    .eq("user_id", uid)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (data) return data as Row;
+  const canonical = await readWebsiteDocument<LedgerDocument>(client, uid, TABLE);
+  if (canonical) return canonical;
   const [{ data: settings, error: se }, { data: legacy, error: le }] = await Promise.all([
     client.from("portfolio_settings").select("*").eq("user_id", uid).maybeSingle(),
     client
@@ -107,7 +103,9 @@ async function readDocument(client: SupabaseClient, uid: string): Promise<Row> {
     .insert({ user_id: uid, payload, revision: 1 });
   if (insertError?.code === "23505") return readDocument(client, uid);
   if (insertError) throw new Error(insertError.message);
-  return { revision: 1, payload };
+  const created = await readWebsiteDocument<LedgerDocument>(client, uid, TABLE);
+  if (!created) throw new Error("통합 실제 원장 생성을 확인하지 못했습니다.");
+  return created;
 }
 async function snapshotsFor(client: SupabaseClient, uid: string) {
   const result: ScreeningSnapshot[] = [];
@@ -318,12 +316,6 @@ export async function operateLedgers(
     return { rows: [], trackedSymbols: [], date: null };
   });
   let changed = false;
-  for (const execution of doc.executions) {
-    if (execution.note === "기존 0주 초과 기록 이관 · 기존 비용 유지") {
-      execution.note = "";
-      changed = true;
-    }
-  }
   if (input.action !== "load" && input.action !== "sync" && input.revision !== row.revision)
     throw new Error("다른 화면에서 원장이 변경됐습니다. 새로고침 후 다시 저장하세요.");
   if (input.action === "capital") {

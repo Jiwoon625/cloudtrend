@@ -1,3 +1,4 @@
+import { readWebsiteDocument } from "./ledger/websiteRepository.server";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
@@ -60,13 +61,8 @@ export const portfolioPositionContextServer = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }): Promise<DomesticPositionContext> => {
     const { client, uid } = await authenticate(data.accessToken);
-    const { data: row, error } = await client
-      .from("portfolio_ledgers")
-      .select("payload")
-      .eq("user_id", uid)
-      .maybeSingle();
-    if (error) throw new Error(error.message);
-    const doc = row?.payload as LedgerDocument | undefined;
+    const row = await readWebsiteDocument<LedgerDocument>(client, uid, "portfolio_ledgers");
+    const doc = row?.payload;
     if (!doc) return { heldSymbols: [], lastSellDateBySymbol: {} };
 
     const executions = doc.executions.filter((e) => e.market !== "ETF");
