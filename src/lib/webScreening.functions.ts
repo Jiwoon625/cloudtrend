@@ -11,6 +11,7 @@ import { parseManualMarketData } from "@/lib/engine/manualDataset";
 import { runFullMarketAnalysis } from "@/lib/engine/fullMarketAnalysis";
 import { mergeScoringConfig, type ScoringConfig } from "@/lib/engine/scoring";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
+import { withOnsetProfiles } from "@/lib/onsetProfile";
 import {
   latestSourceRegistration,
   buildSnapshot,
@@ -68,7 +69,8 @@ export const runWebScreeningServer = createServerFn({ method: "POST" })
 
     const { sources, texts } = await loadActiveSources(client, authData.user.id);
     const parsed = parseManualMarketData(texts);
-    const { analysis, dataset } = runFullMarketAnalysis(parsed.dataset, data.config);
+    const { analysis: engineAnalysis, dataset } = runFullMarketAnalysis(parsed.dataset, data.config);
+    const analysis = withOnsetProfiles(engineAnalysis, dataset, data.config);
     const fingerprint = inputFingerprint(sources, data.config);
     const digest = resultDigest(analysis);
     const source = { live: true, credentialsConfigured: true, fallbackReason: null };
@@ -88,15 +90,16 @@ export const runWebScreeningServer = createServerFn({ method: "POST" })
       uploadJson(client, dashboardPath, dashboard),
     ]);
 
+    // Keep the frozen October model on the untouched engine payload. Onset profiles are display-only.
     const shadowSnapshot = buildSnapshot(
-      analysis,
-      latestSourceRegistration(sources, analysis.asOfDate),
+      engineAnalysis,
+      latestSourceRegistration(sources, engineAnalysis.asOfDate),
     );
     const octoberShadow = await recordWebOctoberShadow({
       client,
       userId: authData.user.id,
       dataset,
-      analysis,
+      analysis: engineAnalysis,
       config: data.config,
       snapshot: shadowSnapshot,
       sources,
