@@ -1,0 +1,2 @@
+revoke insert, delete, truncate, references, trigger on public.us_screening_ingest, public.us_screening_history, public.us_strategy_registry, public.us_portfolio_snapshots, public.us_portfolio_trades from authenticated, anon;
+revoke update on public.us_screening_ingest, public.us_screening_history, public.us_strategy_registry, public.us_portfolio_snapshots from authenticated, anon;
