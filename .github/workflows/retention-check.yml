@@ -2,21 +2,23 @@ name: Indefinite retention check
 on:
   pull_request:
     paths:
-      - "supabase/migrations/*indefinite_screening_retention.sql"
+      - "supabase/migrations/*.sql"
       - "src/lib/screeningHistory.ts"
       - "src/lib/screeningSnapshot.ts"
       - "tests/history-retention.test.ts"
       - "tests/retention-postgres.test.py"
+      - "tests/migration-history-manifest.json"
       - "vitest.history.config.ts"
       - ".github/workflows/retention-check.yml"
   push:
     branches: [main]
     paths:
-      - "supabase/migrations/*indefinite_screening_retention.sql"
+      - "supabase/migrations/*.sql"
       - "src/lib/screeningHistory.ts"
       - "src/lib/screeningSnapshot.ts"
       - "tests/history-retention.test.ts"
       - "tests/retention-postgres.test.py"
+      - "tests/migration-history-manifest.json"
       - "vitest.history.config.ts"
       - ".github/workflows/retention-check.yml"
 permissions:
@@ -37,4 +39,5 @@ jobs:
         run: |
           bin="$(pg_config --bindir)"
           python3 tests/retention-postgres.test.py --pg-bin-dir "$bin"
+          python3 tests/retention-postgres.test.py --pg-bin-dir "$bin" --migration-chain
       - run: npm run build

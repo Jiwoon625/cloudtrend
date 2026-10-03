@@ -1,0 +1,22 @@
+{
+  "20260907063213_cloudtrend_private_files_and_history.sql": "0e069f75a3a33f716d6fdd49972ca03c7e7f8758148e8aae1c2f7582ddecd51e",
+  "20260907154838_allow_owner_backtest_multi_files.sql": "a7c377d98103ddf5158a43a93f42773be4c8bbe06d01b0943b4cbf202d4f0e0d",
+  "20260910170306_create_cloudtrend_analysis_runs.sql": "7e2861e0214e7ad3845bb7f22b9123412e19a7b78ac7897a640d39f48b4b6468",
+  "20260910182823_add_analysis_source_files.sql": "40e6f67d558139a50d28a2f1a41083eed2d381a47734d02f5810eb4894bd5793",
+  "20260910182933_index_source_superseded_by.sql": "fe7e2b485c458276acf052198fe0cacc9829f87dcdce18d3db63351eadac462a",
+  "20260910183418_store_original_source_files.sql": "5c471e82905c9e28686ef9e5b2ae34e0dd1677040256c8393d531b38747f7fff",
+  "20260910234943_harden_source_activation_and_add_merge.sql": "365cf21a3221f2af7f06c43f29a7428c7b68574cc21e8d50dbe83cbdadbdfa72",
+  "20260913054221_add_stock_lifecycle_metadata.sql": "5f0f19f34717027f996322d0e317b9bad740eac9106dea44f5fc4fb7d10071b1",
+  "20260913081534_allow_owner_screening_dashboard_cache_upsert.sql": "9e06862f4dd05cb9e0ee4bbb2198d83ed01aa49cb30ea6cfc913bca09ee7b9e9",
+  "20260917082426_create_operational_portfolio_tables.sql": "77c959f3a187e38798c4ded59c0a9de0a795d945316fcf054dd301ecb068f4db",
+  "20260917083137_add_portfolio_signal_log.sql": "a58b2b5e2c5ff68d228cb9e06d1b2514527631c919970cc4c3bb644316ecb940",
+  "20260921090217_allow_zero_share_portfolio_no_fill.sql": "bc4c35ff1c812a92277d36deee2b58918e5cd1c291abac70c337eba9da04a665",
+  "20260923153841_create_temp_drive_screening_ingest_chunks.sql": "c5811fe480a9ac1fc014b5ca56bb3b34c7a1bf5b10e923755eecddb0cbe676bc",
+  "20260928064908_us_prospective_pipeline_v1.sql": "f5b5ebfbcb3a46a81e3ba8e7eeb2bd434e1c683f592845766b9f7e52b3355f8a",
+  "20260928083451_restrict_us_actual_execution_updates.sql": "73b9439923498f2304ba07c4ed27200bae91edaabb9aa8f86caccbc4d7f2ef49",
+  "20260928085005_restrict_us_model_ledger_grants.sql": "11ecc898948c25638d6424386c54810e4b797760c53780be285de6b6fb6dee88",
+  "20260928161428_separate_strategy_actual_portfolio_ledgers.sql": "7c836374a4757c5fc208263c68c27f4f177a1d156c12b6f8053181af1bc5d6ea",
+  "20260928162635_separate_us_actual_portfolio_ledger.sql": "3ae82e3166b919c87073001b4e85181d87c48e546461f562fbd3e40181d9201b",
+  "20260930020110_allow_dashboard_etf_holdings_and_runtime_cache.sql": "c6b5eadb6158885b06f2e1a883c978b6aa1fb3a472d76f6ac1c4dd0ce180a9bf",
+  "20261002213815_unified_ledger_foundation.sql": "f82a66ae18cfcfc3d8cff40707da003b79ac9f7b2cfbdd1bc2b3c402d486206a"
+}
