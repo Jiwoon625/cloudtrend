@@ -1,4 +1,5 @@
 /** New journal contracts. Existing app documents remain authoritative until an audited cutover. */
+import type { ActualExecution } from "../portfolioLedgers";
 export type Decimal = string;
 export type Currency = "KRW" | "USD";
 export type EventKind =
@@ -49,6 +50,10 @@ export interface PositionLeg {
   basisAdjustment: Decimal | null;
 }
 export interface LedgerEvent {
+  /** Lossless legacy observation, not proof of broker settlement or fees. */
+  legacyExecution?: ActualExecution<string>;
+  /** Lossless website input for this revision; never overwrites the initial legacy observation. */
+  appExecution?: ActualExecution<string>;
   id: string;
   revision: number;
   previousRevision: number | null;
@@ -74,6 +79,8 @@ export interface LedgerEvent {
   positionLegs: PositionLeg[];
   source: SourceRef;
   evidence: EvidenceRef[];
+  /** Inert user-supplied provenance; not broker verification or fetched evidence. */
+  sourceLinks?: import("./executionMemo").ExecutionSourceLink[] | undefined;
   brokerEventId: string | null;
   strategyId: string | null;
   signalId: string | null;

@@ -14,6 +14,8 @@ interface Input {
   securities: Security[];
   /** `${table}:${execution.id}` -> confirmed broker/account ID. Never infer these from market. */
   accountMapping: Record<string, string>;
+  /** Explicitly approved source preservation only; never treated as a real broker account. */
+  unassignedSourceKeys?: string[];
   existingEvents: LedgerEvent[];
 }
 export function planLegacyDocuments(input: Input) {
@@ -26,7 +28,9 @@ export function planLegacyDocuments(input: Input) {
       throw new Error("Original document revision required");
     for (const execution of doc.executions) {
       const sourceKey = `${doc.table}:${execution.id}`;
-      const accountId = input.accountMapping[sourceKey];
+      const accountId =
+        input.accountMapping[sourceKey] ||
+        (input.unassignedSourceKeys?.includes(sourceKey) ? `UNASSIGNED:${doc.table}` : undefined);
       const matching = input.securities.filter(
         (s) =>
           s.symbol === execution.symbol &&
@@ -71,6 +75,9 @@ export function planLegacyDocuments(input: Input) {
     })),
     decisions,
     unmapped,
+    unassignedAccountRecords: decisions.filter((d) =>
+      d.event.issues.includes("account_mapping_unverified"),
+    ).length,
     canApply: false,
     warnings: [
       "No production mutation is implemented by this command",
@@ -93,6 +100,7 @@ if (args.length) {
       mode: plan.mode,
       sources: plan.sources,
       unresolvedMappings: plan.unmapped.length,
+      unassignedAccountRecords: plan.unassignedAccountRecords,
       inserts: plan.decisions.filter((d) => d.status === "INSERT").length,
       quarantined: plan.decisions.filter((d) => d.status === "QUARANTINE").length,
       canApply: false,

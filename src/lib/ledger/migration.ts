@@ -1,6 +1,6 @@
 import type { ActualExecution } from "../portfolioLedgers";
 import type { Security, LedgerEvent, SourceRef } from "./types";
-import { decimal, format, fromLegacyNumber, multiply } from "./decimal";
+import { decimal, format, fromLegacyNumber, representedLegacyNumber } from "./decimal";
 import { validateEvent, validateSecurity } from "./validation";
 export function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
@@ -13,7 +13,7 @@ export function canonicalJson(value: unknown): string {
     throw new Error("Non-JSON source content");
   return JSON.stringify(value);
 }
-/** No account inference from symbol/market. One confirmed map is required for every source record. */
+/** No account inference. An explicitly UNASSIGNED bucket is allowed but never a verified account. */
 export function normalizeLegacyExecution(input: {
   execution: ActualExecution<string>;
   accountId: string;
@@ -33,11 +33,16 @@ export function normalizeLegacyExecution(input: {
     (["KOSPI", "KOSDAQ"].includes(e.market) && e.market !== security.market)
   )
     throw new Error("Explicit account/security mapping does not match source fill");
+  if (!Number.isFinite(e.price) || e.price <= 0 || e.price > Number.MAX_SAFE_INTEGER)
+    throw new Error("Legacy price is not safely representable");
   const quantity = fromLegacyNumber(e.shares),
-    price = fromLegacyNumber(e.price),
+    price = representedLegacyNumber(e.price),
     fee = fromLegacyNumber(e.fee);
-  const gross = format(multiply(decimal(quantity), decimal(price)));
+  // An aggregate average price can be repeating. Preserve the original app gross,
+  // not quantity multiplied by an already rounded journal display price.
+  const gross = representedLegacyNumber(e.price * e.shares);
   const result: LedgerEvent = {
+    legacyExecution: { ...e },
     id: `${source.system}:${e.id}`,
     revision: 1,
     previousRevision: null,
@@ -75,6 +80,8 @@ export function normalizeLegacyExecution(input: {
     signalId: e.signalKey,
     orderId: null,
     issues: [
+      ...(input.accountId.startsWith("UNASSIGNED:") ? ["account_mapping_unverified"] : []),
+      ...(Number(price) !== e.price ? ["legacy_average_price_precision_preserved_in_source"] : []),
       "legacy_settlement_unknown",
       "legacy_tax_unverified",
       "broker_net_cash_unverified",
@@ -83,6 +90,45 @@ export function normalizeLegacyExecution(input: {
   };
   validateEvent(result);
   return result;
+}
+/** Lossless compatibility read for a source-only migration. No canonical record is invented. */
+export function projectLegacyExecutions(
+  events: LedgerEvent[],
+  verifiedSource: {
+    system: SourceRef["system"];
+    revision: string;
+    executions: ActualExecution<string>[];
+  },
+  securities: Security[],
+): ActualExecution<string>[] {
+  if (
+    events.length !== verifiedSource.executions.length ||
+    new Set(events.map((e) => e.source.recordId)).size !== events.length
+  )
+    throw new Error("Legacy projection requires complete unique source coverage");
+  return events.map((event) => {
+    validateEvent(event);
+    if (event.book !== "ACTUAL" || event.revision !== 1 || event.voided || !event.legacyExecution)
+      throw new Error(
+        "Only unchanged migrated actual source records can use the legacy projection",
+      );
+    const originals = verifiedSource.executions.filter((e) => e.id === event.source.recordId);
+    const identities = securities.filter((s) => s.id === event.securityId);
+    if (
+      event.source.system !== verifiedSource.system ||
+      event.source.revision !== verifiedSource.revision ||
+      originals.length !== 1 ||
+      canonicalJson(originals[0]) !== canonicalJson(event.legacyExecution) ||
+      identities.length !== 1 ||
+      identities[0]!.symbol !== event.legacyExecution.symbol ||
+      identities[0]!.currency !== event.currency ||
+      (event.legacyExecution.market === "ETF"
+        ? identities[0]!.assetType !== "ETF" || identities[0]!.market === "US"
+        : identities[0]!.market !== event.legacyExecution.market)
+    )
+      throw new Error("Legacy projection requires matching verified source and security identity");
+    return { ...event.legacyExecution };
+  });
 }
 export interface ImportDecision {
   event: LedgerEvent;
@@ -123,6 +169,7 @@ const normalizedFacts = (e: LedgerEvent) =>
     orderId: e.orderId,
     evidence: e.evidence,
     issues: [...e.issues].sort(),
+    legacyExecution: e.legacyExecution ?? null,
   });
 const economicKey = (e: LedgerEvent) =>
   canonicalJson({
@@ -210,6 +257,11 @@ export function correctEvent(
     sourceKey(corrected) !== sourceKey(previous)
   )
     throw new Error("Correction must preserve identity and explain the change");
+  if (
+    canonicalJson(previous.legacyExecution ?? null) !==
+    canonicalJson(corrected.legacyExecution ?? null)
+  )
+    throw new Error("Correction must preserve original legacy execution metadata");
   const next = {
     ...corrected,
     revision: previous.revision + 1,

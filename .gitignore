@@ -32,3 +32,7 @@ analysis-runs/
 *.njsproj
 *.sln
 *.sw?
+
+# Local database tooling and Python caches
+supabase/.temp/
+__pycache__/

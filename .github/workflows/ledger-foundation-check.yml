@@ -3,10 +3,22 @@ on:
   pull_request:
     paths:
       - src/lib/ledger/**
-      - src/lib/portfolioLedgers.ts
+      - src/lib/portfolioLedgers*
+      - src/lib/usActualLedger*
+      - src/lib/dashboardOperations.server.ts
+      - src/lib/ledgerUiMutation*
+      - src/components/PortfolioAssetHub.tsx
+      - src/components/UsPortfolioLedgers.tsx
+      - src/routes/portfolio.tsx
+      - src/components/PortfolioLedgerSafety.test.tsx
+      - vitest.ledger-ui.config.ts
+      - supabase/migrations/**
+      - tests/ledger*-postgres.test.py
+      - docs/ledger-website*
       - src/lib/engine/usProspectivePortfolio.ts
       - src/lib/engine/usProspectiveModelPolicy.test.ts
       - scripts/plan-ledger-migration.ts
+      - scripts/verify-ledger-sql-snapshots.ts
       - docs/ledger-foundation*
       - docs/model-series-foundation.md
       - docs/etf-adopted-shadow.md
@@ -27,8 +39,16 @@ jobs:
       - run: npm ci
       - run: npx vitest run --config vitest.ledger.config.ts
       - run: npx vitest run --config vitest.portfolio.config.ts
+      - run: npx vitest run --config vitest.ledger-ui.config.ts
       - run: npx vitest run --config vitest.shadow.config.ts
       - run: npx vitest run --config vitest.dashboard.config.ts
       - run: |
           npx eslint src/lib/ledger scripts/plan-ledger-migration.ts src/lib/portfolioLedgers.ts src/lib/engine/usProspectivePortfolio.ts src/lib/engine/usProspectiveModelPolicy.test.ts vitest.ledger.config.ts --rule 'prettier/prettier: off'
+      - name: Verify atomic database bridge
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql
+          python3 tests/ledger-postgres.test.py --pg-bin-dir "$(pg_config --bindir)" --pg-share-dir "$(pg_config --sharedir)"
+          CLOUDTREND_LEDGER_SNAPSHOT_PATH=/tmp/cloudtrend-ledger-snapshots.json python3 tests/ledger-live-postgres.test.py --pg-bin-dir "$(pg_config --bindir)" --pg-share-dir "$(pg_config --sharedir)"
+      - run: npx vite-node --config vitest.ledger.config.ts scripts/verify-ledger-sql-snapshots.ts /tmp/cloudtrend-ledger-snapshots.json
       - run: npm run build

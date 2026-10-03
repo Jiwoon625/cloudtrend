@@ -69,6 +69,8 @@ export interface ActualExecution<M extends string = Market> {
   shares: number;
   fee: number;
   note: string;
+  /** Inert source references kept separate from the user-facing execution memo. */
+  sourceLinks?: import("./ledger/executionMemo").ExecutionSourceLink[] | undefined;
   order: number;
 }
 export interface LedgerDocument {
@@ -78,6 +80,7 @@ export interface LedgerDocument {
   etfCapital?: number;
   executions: ActualExecution[];
   excluded: Record<string, string>;
+  excludedSourceLinks?: Record<string, import("./ledger/executionMemo").ExecutionSourceLink[]>;
   strategy: StrategyLedger | null;
   migratedAt: string;
 }

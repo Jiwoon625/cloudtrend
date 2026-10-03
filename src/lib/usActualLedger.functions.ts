@@ -1,7 +1,20 @@
+import { validateExecutionSourceLinks } from "./ledger/executionMemo";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { operateUsActual } from "./usActualLedger.server";
+const sourceLinks = z
+  .unknown()
+  .superRefine((value, context) => {
+    try {
+      validateExecutionSourceLinks(value);
+    } catch {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid execution source links" });
+    }
+  })
+  .transform(
+    (value) => value as import("./ledger/executionMemo").ExecutionSourceLink[] | undefined,
+  );
 const request = z.object({
   accessToken: z.string().min(1),
   action: z.enum(["load", "capital", "execution", "remove", "exclude"]),
@@ -10,6 +23,7 @@ const request = z.object({
   executionId: z.string().optional(),
   signalKey: z.string().optional(),
   note: z.string().max(300).optional(),
+  sourceLinks: sourceLinks.optional(),
   execution: z
     .object({
       id: z.string(),
@@ -23,6 +37,7 @@ const request = z.object({
       shares: z.number().int().positive(),
       fee: z.number().nonnegative(),
       note: z.string().max(300),
+      sourceLinks: sourceLinks.optional(),
       order: z.number().int(),
     })
     .optional(),

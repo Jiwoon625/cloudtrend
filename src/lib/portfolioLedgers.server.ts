@@ -1,3 +1,5 @@
+import { savedExecutionMemo } from "./ledger/executionMemo";
+import { readWebsiteDocument } from "./ledger/websiteRepository.server";
 import { parseManualMarketData } from "./engine/manualDataset";
 import { evaluateKospiMarketGateAtDate } from "./engine/kospiMarketGate";
 import { NO_CAPABILITIES, type MarketDataset } from "./engine/dataset";
@@ -31,15 +33,11 @@ export interface LedgerRequest {
   executionId?: string | undefined;
   signalKey?: string | undefined;
   note?: string | undefined;
+  sourceLinks?: import("./ledger/executionMemo").ExecutionSourceLink[] | undefined;
 }
 async function readDocument(client: SupabaseClient, uid: string): Promise<Row> {
-  const { data, error } = await client
-    .from(TABLE)
-    .select("revision,payload")
-    .eq("user_id", uid)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (data) return data as Row;
+  const canonical = await readWebsiteDocument<LedgerDocument>(client, uid, TABLE);
+  if (canonical) return canonical;
   const [{ data: settings, error: se }, { data: legacy, error: le }] = await Promise.all([
     client.from("portfolio_settings").select("*").eq("user_id", uid).maybeSingle(),
     client
@@ -107,7 +105,9 @@ async function readDocument(client: SupabaseClient, uid: string): Promise<Row> {
     .insert({ user_id: uid, payload, revision: 1 });
   if (insertError?.code === "23505") return readDocument(client, uid);
   if (insertError) throw new Error(insertError.message);
-  return { revision: 1, payload };
+  const created = await readWebsiteDocument<LedgerDocument>(client, uid, TABLE);
+  if (!created) throw new Error("통합 실제 원장 생성을 확인하지 못했습니다.");
+  return created;
 }
 async function snapshotsFor(client: SupabaseClient, uid: string) {
   const result: ScreeningSnapshot[] = [];
@@ -318,12 +318,6 @@ export async function operateLedgers(
     return { rows: [], trackedSymbols: [], date: null };
   });
   let changed = false;
-  for (const execution of doc.executions) {
-    if (execution.note === "기존 0주 초과 기록 이관 · 기존 비용 유지") {
-      execution.note = "";
-      changed = true;
-    }
-  }
   if (input.action !== "load" && input.action !== "sync" && input.revision !== row.revision)
     throw new Error("다른 화면에서 원장이 변경됐습니다. 새로고침 후 다시 저장하세요.");
   if (input.action === "capital") {
@@ -367,7 +361,7 @@ export async function operateLedgers(
       price: e.price,
       shares: e.shares,
       fee: e.fee,
-      note: String(e.note ?? "").slice(0, 300),
+      ...savedExecutionMemo({ ...e, note: String(e.note ?? "").slice(0, 300) }, existing),
       order: existing?.order ?? Math.max(-1, ...doc.executions.map((x) => x.order)) + 1,
     };
     doc.executions = doc.executions.filter((x) => x.id !== event.id);
@@ -388,10 +382,17 @@ export async function operateLedgers(
       throw new Error("미매수로 변경할 매수 기록을 확인하세요.");
     if (!key || (!existing && !doc.strategy?.candidates.some((c) => c.key === key)))
       throw new Error("Onset 신호를 확인하세요.");
-    if (existing) doc.executions = doc.executions.filter((e) => e.id !== existing.id);
-    if (doc.executions.some((e) => e.signalKey === key))
+    if (doc.executions.some((e) => e.signalKey === key && e.id !== existing?.id))
       throw new Error("실제 체결 기록이 있습니다. 체결 내역에서 수정하세요.");
-    doc.excluded[key] = String(input.note ?? "미매수 · 0주").slice(0, 300);
+    const memo = savedExecutionMemo(
+      { note: input.note?.slice(0, 300) || "미매수 · 0주", sourceLinks: input.sourceLinks },
+      existing ?? { note: doc.excluded[key] ?? "", sourceLinks: doc.excludedSourceLinks?.[key] },
+    );
+    if (existing) doc.executions = doc.executions.filter((e) => e.id !== existing.id);
+    doc.excluded[key] = memo.note;
+    if (memo.sourceLinks?.length) {
+      doc.excludedSourceLinks = { ...doc.excludedSourceLinks, [key]: memo.sourceLinks };
+    }
     changed = true;
   }
   if (input.action === "sync" || input.action === "capital" || !doc.strategy)

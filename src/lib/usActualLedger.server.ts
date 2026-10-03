@@ -1,3 +1,4 @@
+import { readWebsiteDocument } from "./ledger/websiteRepository.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { gunzipSync } from "node:zlib";
 import { downloadFreshObject } from "./freshStorage";
@@ -17,13 +18,8 @@ async function read(
   client: SupabaseClient,
   uid: string,
 ): Promise<{ revision: number; payload: UsActualDocument }> {
-  const result = await client
-    .from(TABLE)
-    .select("revision,payload")
-    .eq("user_id", uid)
-    .maybeSingle();
-  if (result.error) throw new Error(result.error.message);
-  if (result.data) return result.data;
+  const canonical = await readWebsiteDocument<UsActualDocument>(client, uid, TABLE);
+  if (canonical) return canonical;
   const trades: UsPortfolioTradeRecord[] = [];
   for (let start = 0; ; start += 500) {
     const page = await client
@@ -42,7 +38,9 @@ async function read(
   const inserted = await client.from(TABLE).insert({ user_id: uid, revision: 1, payload });
   if (inserted.error?.code === "23505") return read(client, uid);
   if (inserted.error) throw new Error(inserted.error.message);
-  return { revision: 1, payload };
+  const created = await readWebsiteDocument<UsActualDocument>(client, uid, TABLE);
+  if (!created) throw new Error("통합 실제 원장 생성을 확인하지 못했습니다.");
+  return created;
 }
 async function candidatesFor(client: SupabaseClient, uid: string) {
   const candidates: UsCandidate[] = [];
@@ -103,13 +101,6 @@ export async function operateUsActual(
 ): Promise<UsActualState> {
   const [row, candidates] = await Promise.all([read(client, uid), candidatesFor(client, uid)]);
   const doc = structuredClone(row.payload);
-  let cleaned = false;
-  for (const e of doc.executions) {
-    if (e.note === "기존 실제 체결값 이관") {
-      e.note = "";
-      cleaned = true;
-    }
-  }
   if (input.action !== "load") {
     if (input.revision !== row.revision)
       throw new Error("다른 화면에서 원장이 변경됐습니다. 새로고침 후 다시 저장하세요.");
@@ -132,7 +123,7 @@ export async function operateUsActual(
       .at(-1) ?? null;
   const actual = calculateActual(doc.capital, doc.executions, quotes, latest);
   let revision = row.revision;
-  if (input.action !== "load" || cleaned) {
+  if (input.action !== "load") {
     const result = await client
       .from(TABLE)
       .update({ payload: doc, revision: revision + 1, updated_at: new Date().toISOString() })
