@@ -32,9 +32,7 @@ export function OnsetProfileDetails({
         </span>
         <span>
           새 점수{" "}
-          {profile.addedFeatures
-            .map((item) => `${item.label} ${points(item.points)}`)
-            .join(" · ")}
+          {profile.addedFeatures.map((item) => `${item.label} ${points(item.points)}`).join(" · ")}
         </span>
         <span className="num">MA20 이격 {extension(profile.ma20Extension)}</span>
       </div>
