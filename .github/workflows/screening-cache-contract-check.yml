@@ -48,9 +48,9 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Test dashboard cache recovery and confirmed strategies
-        run: npx vitest run src/lib/cloud.test.ts tests/us-browser-views.test.ts tests/web-screening-server-only.test.ts src/lib/portfolioStrategy.test.ts tests/fast-chart.test.ts tests/instrument-chart-cache.test.ts tests/dashboard-cache.test.ts src/lib/engine/operationalStrategy.test.ts src/lib/engine/etfStrategy.test.ts
+        run: npx vitest run src/lib/cloud.test.ts tests/us-browser-views.test.ts tests/web-screening-server-only.test.ts src/lib/portfolioStrategy.test.ts tests/fast-chart.test.ts tests/instrument-chart-cache.test.ts tests/dashboard-cache.test.ts tests/onset-profile.test.tsx src/lib/engine/operationalStrategy.test.ts src/lib/engine/etfStrategy.test.ts
       - name: Lint changed cache files
-        run: npx eslint src/lib/screeningCache.ts src/lib/webScreening.functions.ts src/lib/screeningCacheContract.ts
+        run: npx eslint src/lib/screeningCache.ts src/lib/webScreening.functions.ts src/lib/screeningCacheContract.ts src/lib/onsetProfile.ts src/components/OnsetProfileDetails.tsx tests/onset-profile.test.tsx
       - name: Test independent portfolio ledgers
         run: npx vitest run --config vitest.portfolio.config.ts
       - name: Build
