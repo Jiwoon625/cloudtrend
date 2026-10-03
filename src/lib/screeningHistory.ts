@@ -1,4 +1,4 @@
-// 계정별 일별 스냅샷. Supabase에서 최근 90개 날짜를 보관한다.
+// 계정별 일별 스냅샷은 기한 없이 보관하고, 화면 조회만 최근 90개 날짜로 제한한다.
 import { useCallback, useEffect, useState } from "react";
 
 import { supabase, userId } from "@/lib/cloud";

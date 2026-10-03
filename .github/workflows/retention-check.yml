@@ -1,0 +1,40 @@
+name: Indefinite retention check
+on:
+  pull_request:
+    paths:
+      - "supabase/migrations/*indefinite_screening_retention.sql"
+      - "src/lib/screeningHistory.ts"
+      - "src/lib/screeningSnapshot.ts"
+      - "tests/history-retention.test.ts"
+      - "tests/retention-postgres.test.py"
+      - "vitest.history.config.ts"
+      - ".github/workflows/retention-check.yml"
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/*indefinite_screening_retention.sql"
+      - "src/lib/screeningHistory.ts"
+      - "src/lib/screeningSnapshot.ts"
+      - "tests/history-retention.test.ts"
+      - "tests/retention-postgres.test.py"
+      - "vitest.history.config.ts"
+      - ".github/workflows/retention-check.yml"
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --config vitest.history.config.ts
+      - run: npx eslint src/lib/screeningHistory.ts tests/history-retention.test.ts
+      - name: Test real PostgreSQL without touching production
+        run: |
+          bin="$(pg_config --bindir)"
+          python3 tests/retention-postgres.test.py --pg-bin-dir "$bin"
+      - run: npm run build

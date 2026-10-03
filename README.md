@@ -68,7 +68,7 @@ CloudTrend는 사용자가 직접 준비한 일봉 데이터를 브라우저에�
 SHA-256과 중복·충돌 결과를 기록합니다. 자연어 요청별 `replace`·`append`·`merge`·`add`·
 `replace_all`·`validate_only` 동작과 CLI는 [`docs/data-ingestion.md`](docs/data-ingestion.md)를 참고하세요.
 
-국내 스크리닝 이력은 Supabase `screening_history` 테이블에 날짜별 마지막 결과로 저장됩니다. 최근 90개 날짜를 유지하며 날짜당 1MB를 넘는 결과는 오류로 표시합니다. RLS로 본인 계정의 파일과 이력만 접근할 수 있습니다. 기존 브라우저 데이터는 자동 이전하지 않으므로 원본 CSV를 다시 업로드해야 합니다.
+국내 스크리닝 이력은 Supabase `screening_history` 테이블에 날짜별 마지막 결과로 기한 없이 저장됩니다. 홈페이지 조회는 기존처럼 최근 90개 날짜만 표시하며, 보관된 오래된 날짜를 자동 삭제하지 않습니다. 날짜당 1MB를 넘는 결과는 오류로 표시합니다. RLS로 본인 계정의 파일과 이력만 접근할 수 있습니다. 원천·결과와 표시용 캐시의 구분 및 적용·검증 방법은 [`docs/indefinite-retention.md`](docs/indefinite-retention.md)를 참고하세요. 기존 브라우저 데이터는 자동 이전하지 않으므로 원본 CSV를 다시 업로드해야 합니다.
 
 Supabase Free 플랜을 유지합니다. 유료 기능·브랜치는 사용하지 않습니다. Free의 전체 프로젝트 한도(Storage 1GB, DB 500MB, 일반 egress 5GB)는 계정별 앱 제한과 별개입니다. 한도 도달 시 서비스 제한이 발생할 수 있으며 유료 전환은 자동으로 수행하지 않습니다. https://supabase.com/pricing
 

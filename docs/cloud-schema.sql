@@ -1,5 +1,8 @@
 -- Reference copy of remote migration cloudtrend_private_files_and_history.
 -- Already applied to cloudtrend. Do not reapply to an initialized database.
+-- Historical reference only: keep_90_snapshots below was retired by
+-- supabase/migrations/20261003011711_indefinite_screening_retention.sql.
+-- New installations must apply that migration too; 90 is a UI limit, not TTL.
 create table public.screening_history (
  user_id uuid not null references auth.users(id) on delete cascade,
  date date not null,
