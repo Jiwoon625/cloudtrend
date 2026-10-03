@@ -1,10 +1,12 @@
 name: Screening memory regression
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main]
     paths:
       - scripts/**
       - tests/screening-memory*.ts
+      - tests/ci-source-privacy.test.ts
       - vitest.screening-memory.config.ts
       - scripts/run-screening.ts
       - scripts/source-registry-store.ts
@@ -13,8 +15,22 @@ on:
 permissions:
   contents: read
 jobs:
-  screening:
-    if: github.head_ref == 'fix/screening-oom-20260930' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == github.repository_owner
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Regression contracts
+        run: |
+          npx vitest run --config vitest.screening-memory.config.ts
+          npx vitest run tests/ci-source-privacy.test.ts
+  manual_source:
+    if: github.event_name == 'workflow_dispatch'
+    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -29,13 +45,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Regression contracts
-        run: npx vitest run --config vitest.screening-memory.config.ts
       - name: Run screening and dashboard snapshot
-        run: npm run screening:run -- --supabase-user-id "$SUPABASE_USER_ID" --upload --force
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: screening-memory-${{ github.run_id }}
-          path: analysis-runs/
-          if-no-files-found: warn
+        run: |
+          mkdir -p analysis-runs
+          if ! npm run screening:run -- --supabase-user-id "$SUPABASE_USER_ID" --upload --force > analysis-runs/manual-screening.log 2>&1; then
+            echo "Manual screening failed; private source details were not published."
+            exit 1
+          fi
+          echo "Explicit manual screening completed; no source artifacts were uploaded."
