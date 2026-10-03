@@ -92,8 +92,12 @@ export function UsPortfolioLedgers({
   model,
   hideHistory = false,
   initialTab = "model",
+  modelComparisonMoved = false,
+  modelJournal,
 }: {
   hideHistory?: boolean;
+  modelComparisonMoved?: boolean;
+  modelJournal?: ReactNode;
   initialTab?: "model" | "actual" | "signals";
   children: ReactNode;
   model: UsPortfolioSnapshotRecord | undefined;
@@ -118,6 +122,7 @@ export function UsPortfolioLedgers({
     asOf: taxToday(),
   });
   const [tab, setTab] = useState<"model" | "actual" | "signals">(initialTab);
+  const activeTab = modelComparisonMoved && tab === "model" ? "actual" : tab;
   const [edit, setEdit] = useState<Editor | null>(null),
     [busy, setBusy] = useState(false),
     [capital, setCapital] = useState<string | null>(null),
@@ -242,9 +247,11 @@ export function UsPortfolioLedgers({
     }
   }
   return (
-    <section className="space-y-4" aria-label="US 모델·실제 투자 원장">
+    <section className="min-w-0 space-y-4" aria-label="US 모델·실제 투자 원장">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-semibold">모델 성과와 실제 투자</h2>
+        <h2 className="text-base font-semibold">
+          {modelComparisonMoved ? "미국주식 · 실제 투자" : "모델 성과와 실제 투자"}
+        </h2>
         <Button
           size="sm"
           variant="outline"
@@ -254,24 +261,29 @@ export function UsPortfolioLedgers({
           실제 원장 새로고침
         </Button>
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
-        <section className="rounded-lg border bg-card p-4" aria-label="A0 모델 성과">
-          <h3 className="text-sm font-semibold">A0 모델 포트폴리오 · 최대 20종목</h3>
-          <p className="mt-3 text-xl font-bold">
-            {model ? usd(Number(model.nav_usd) - 100000) : "-"}{" "}
-            <span className="text-sm">
-              (
-              {model?.cumulative_return == null
-                ? "-"
-                : `${(model.cumulative_return * 100).toFixed(2)}%`}
-              )
-            </span>
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            모델 누적손익 · 기준자금 $100,000.00 · 보유 {model?.positions_count ?? 0}/20
-          </p>
-          <p className="mt-2 text-xs">Onset 진입 · 분기 조정 · A0/Beta Anchor 청산 규칙 유지</p>
-        </section>
+      <div className={`grid gap-3 ${modelComparisonMoved ? "" : "md:grid-cols-2"}`}>
+        {!modelComparisonMoved ? (
+          <section className="rounded-lg border bg-card p-4" aria-label="A0 모델 성과">
+            <h3 className="text-sm font-semibold">A0 모델 포트폴리오 · 최대 20종목</h3>
+            <p className="mt-3 text-xl font-bold">
+              {model ? usd(Number(model.nav_usd) - 100000) : "-"}{" "}
+              <span className="text-sm">
+                (
+                {model?.cumulative_return == null
+                  ? "-"
+                  : `${(model.cumulative_return * 100).toFixed(2)}%`}
+                )
+              </span>
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              모델 누적손익 · 기준자금 $100,000.00 · 보유 {model?.positions_count ?? 0}/20
+            </p>
+            <p className="mt-2 text-xs">
+              2026-10-05부터 초기자금 ÷ 목표 20종목 고정 매입 예산 · Onset/A0/Beta Anchor 청산 규칙
+              유지
+            </p>
+          </section>
+        ) : null}
         <section className="rounded-lg border bg-card p-4" aria-label="US 실제 투자">
           <h3 className="text-sm font-semibold">실제 투자 · 최대 30종목</h3>
           <p className="mt-3 text-xl font-bold">
@@ -312,8 +324,11 @@ export function UsPortfolioLedgers({
           </Button>
         </section>
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
-        <UsModelTaxEstimatePanel snapshot={model} title="A0 모델 · 양도소득세 추정" />
+      {modelJournal}
+      <div className={`grid gap-3 ${modelComparisonMoved ? "" : "md:grid-cols-2"}`}>
+        {!modelComparisonMoved ? (
+          <UsModelTaxEstimatePanel snapshot={model} title="A0 모델 · 양도소득세 추정" />
+        ) : null}
         <UsTaxEstimatePanel estimate={actualTaxEstimate} title="실제 투자 · 양도소득세 추정" />
       </div>
       <p className="text-xs text-muted-foreground">
@@ -386,27 +401,29 @@ export function UsPortfolioLedgers({
         </div>
       ) : null}
       <div className="flex flex-wrap justify-between gap-3">
-        <div className="flex gap-1" role="tablist" aria-label="US 포트폴리오 원장">
+        <div className="flex flex-wrap gap-1" role="tablist" aria-label="US 포트폴리오 원장">
           {(
             [
-              ["model", "모델 체결 원장"],
+              ["model", "모델 보유·비교"],
               ["actual", "실제 보유·거래"],
               ["signals", "A0 신호 · 미매수"],
             ] as const
-          ).map(([v, label]) => (
-            <Button
-              key={v}
-              size="sm"
-              role="tab"
-              aria-selected={tab === v}
-              variant={tab === v ? "default" : "outline"}
-              onClick={() => setTab(v)}
-            >
-              {label}
-            </Button>
-          ))}
+          )
+            .filter(([v]) => !modelComparisonMoved || v !== "model")
+            .map(([v, label]) => (
+              <Button
+                key={v}
+                size="sm"
+                role="tab"
+                aria-selected={activeTab === v}
+                variant={activeTab === v ? "default" : "outline"}
+                onClick={() => setTab(v)}
+              >
+                {label}
+              </Button>
+            ))}
         </div>
-        {tab !== "model" ? (
+        {activeTab !== "model" ? (
           <Input
             className="max-w-xs"
             aria-label="US 실제 원장 종목 검색"
@@ -479,8 +496,8 @@ export function UsPortfolioLedgers({
           </p>
         </section>
       ) : null}
-      {tab === "model" ? children : null}
-      {tab === "actual" && actual ? (
+      {activeTab === "model" ? children : null}
+      {activeTab === "actual" && actual ? (
         <>
           <Table
             title={`실제 보유 종목 · ${actual.positions.length}/30`}
@@ -603,7 +620,7 @@ export function UsPortfolioLedgers({
           ) : null}
         </>
       ) : null}
-      {tab === "signals" && data ? (
+      {activeTab === "signals" && data ? (
         <Table
           title="전체 A0 진입 신호 · 실제 매수 여부"
           heads={["신호일", "종목", "실제 매수 누계", "실제 상태 / 사유", "체결 입력"]}
@@ -632,7 +649,7 @@ export function UsPortfolioLedgers({
           ))}
         </Table>
       ) : null}
-      {tab === "signals" ? (
+      {activeTab === "signals" ? (
         <p className="text-xs text-muted-foreground">
           모델 보유 한도와 관계없이 전체 A0 진입 신호를 표시합니다. 새 신호의 실제 수량은 0주이며
           직접 체결을 입력해야 보유로 반영됩니다.

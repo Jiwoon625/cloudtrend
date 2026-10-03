@@ -95,6 +95,18 @@ vi.mock("@/lib/cloud", () => ({
 }));
 vi.mock("@/lib/portfolioLedgers.functions", () => ({ portfolioLedgersServer: vi.fn() }));
 vi.mock("@/lib/usActualLedger.functions", () => ({ usActualLedgerServer: vi.fn() }));
+vi.mock("@/lib/usePortfolioModelConsolidation", () => ({
+  usePortfolioModelConsolidation: () => ({
+    ready: false,
+    checking: false,
+    error: null,
+    refresh: vi.fn(),
+    refreshing: false,
+  }),
+}));
+vi.mock("./UsModelExecutionJournal", () => ({
+  UsModelExecutionJournal: () => <section>A0 모델 체결 원장</section>,
+}));
 vi.mock("@/lib/usProspectiveCloud", () => ({ loadUsPortfolioSnapshots: vi.fn(async () => []) }));
 vi.mock("@/lib/usTaxOverlay", () => ({ actualUsTaxOverlay: vi.fn(() => ({})) }));
 vi.mock("./UsTaxEstimatePanel", () => ({ UsTaxEstimatePanel: () => null }));

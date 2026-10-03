@@ -13,23 +13,16 @@ export interface AppShellSource {
 }
 
 const NAV = [
-  { to: "/scoring", label: "데이터·산식" },
+  { to: "/scoring", label: "데이터/산식" },
   { to: "/", label: "대시보드" },
-  { to: "/screener/stocks", label: "주식 스크리너" },
-  { to: "/screener/etfs", label: "ETF 스크리너" },
-  { to: "/sectors", label: "섹터" },
-  { to: "/position-sizing", label: "포지션 사이징" },
-  { to: "/history", label: "스크리닝 이력" },
   { to: "/portfolio", label: "포트폴리오" },
+  { to: "/screener/stocks", label: "주식스크리너" },
+  { to: "/screener/etfs", label: "ETF스크리너" },
+  { to: "/us/screener", label: "US스크리너" },
+  { to: "/sectors", label: "섹터" },
+  { to: "/history", label: "스크리닝 이력" },
   { to: "/shadow", label: "Shadow" },
-  { to: "/data-status", label: "데이터 상태" },
-] as const;
-
-/** 미국 시장은 데이터·규칙이 다르므로 탭을 분리한다. */
-const US_NAV = [
-  { to: "/us", label: "US 시장·데이터" },
-  { to: "/us/screener", label: "US 스크리너" },
-  { to: "/us/portfolio", label: "US 포트폴리오" },
+  { to: "/data-status", label: "데이터상태" },
 ] as const;
 
 const THEME_STORAGE_KEY = "cloudtrend-theme";
@@ -53,7 +46,7 @@ function ThemeToggle() {
       onClick={() => setDark((d) => !d)}
       aria-label={dark ? "라이트 모드로 전환" : "다크 모드로 전환"}
       aria-pressed={dark}
-      className="inline-flex size-8 items-center justify-center rounded-md border border-border bg-surface text-muted-foreground transition-colors hover:text-foreground"
+      className="inline-flex size-11 items-center justify-center rounded-md border border-border bg-surface text-muted-foreground transition-colors hover:text-foreground"
     >
       {dark ? <Sun className="size-4" /> : <Moon className="size-4" />}
     </button>
@@ -100,24 +93,13 @@ export function AppShell({
               </span>
             </Link>
           </div>
-          <nav className="flex flex-wrap items-center gap-1">
+          <nav aria-label="주 메뉴" className="flex flex-wrap items-center gap-1">
             {NAV.map((item) => (
               <Link
                 key={item.to}
                 to={item.to}
-                activeOptions={{ exact: item.to === "/" }}
-                className="rounded-md px-2.5 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[status=active]:bg-primary data-[status=active]:text-primary-foreground"
-              >
-                {item.label}
-              </Link>
-            ))}
-            <span className="mx-1 h-4 w-px bg-border" aria-hidden />
-            {US_NAV.map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                activeOptions={{ exact: item.to === "/us" }}
-                className="rounded-md border border-border px-2.5 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[status=active]:border-primary data-[status=active]:bg-primary data-[status=active]:text-primary-foreground"
+                activeOptions={{ exact: item.to === "/", includeSearch: false }}
+                className="inline-flex min-h-11 items-center rounded-md px-2.5 py-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground data-[status=active]:bg-primary data-[status=active]:text-primary-foreground"
               >
                 {item.label}
               </Link>
@@ -143,7 +125,10 @@ export function AppShell({
         ) : null}
       </header>
       <main className="mx-auto max-w-[1500px] px-4 py-6">{children}</main>
-      <footer data-no-print className="mx-auto max-w-[1500px] px-4 pb-10 text-[11px] leading-relaxed text-muted-foreground">
+      <footer
+        data-no-print
+        className="mx-auto max-w-[1500px] px-4 pb-10 text-[11px] leading-relaxed text-muted-foreground"
+      >
         본 서비스는 규칙 기반 스크리닝 결과와 계산 근거만 제공합니다. “관심 후보”, “리테스트 대기”,
         “관망”, “청산 점검” 등의 라벨은 매수·매도 권유가 아니며, 최종 판단과 책임은 이용자에게
         있습니다.

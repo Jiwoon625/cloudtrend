@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { UsOrderPreview } from "./UsOrderPreview";
 import { UsDashboardPortfolio } from "./DashboardOperations";
 import { Route } from "@/routes/us.portfolio";
+import { UsPortfolioView } from "./UsPortfolioView";
 import type { DashboardOperations } from "@/lib/dashboardOperations";
 import type {
   UsOrderPlan,
@@ -14,6 +15,7 @@ import type {
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: unknown) => ({ options }),
+  redirect: (options: unknown) => options,
   Link: ({ children, to }: { children: React.ReactNode; to: string }) => (
     <a href={to}>{children}</a>
   ),
@@ -339,7 +341,7 @@ describe("dashboard portfolio without the model preview card", () => {
       ...flags,
     }) as Parameters<typeof UsDashboardPortfolio>[0]["query"];
 
-  it("keeps the actual account summary and link while leaving model plans to the US portfolio", () => {
+  it("keeps the actual account summary and legacy link into the unified portfolio", () => {
     const html = renderToStaticMarkup(<UsDashboardPortfolio query={query()} />);
     expect(html).toContain('aria-label="미국주식 A0 포트폴리오"');
     expect(html).toContain("실제 체결 원장 기준 · USD");
@@ -396,7 +398,7 @@ describe("portfolio saved snapshot preview integration", () => {
         },
       ],
     );
-    const Page = Route.options.component as React.ComponentType;
+    const Page = UsPortfolioView;
     return renderToStaticMarkup(
       <QueryClientProvider client={client}>
         <Page />
@@ -404,37 +406,18 @@ describe("portfolio saved snapshot preview integration", () => {
     );
   };
 
-  it("renders the selected model snapshot preview and removes the conflicting target-notional table", () => {
+  it("retains historical model data but removes adjustment plans from portfolio history", () => {
     const html = renderPortfolio();
-    expect(html).toContain("A0 분기 · β Anchor 모델 조정 미리보기");
-    for (const text of [
-      "다음 분기 비중조정 · 2027Q1",
-      "2026-12-30",
-      "2026-12-31",
-      "2027-01-04",
-      "가정 미리보기 · 확정 전",
-      "BUY1",
-      "10주 → 25주",
-      "15주 추정",
-      "다음 정규장 대기 조정",
-      "FUND1",
-      "50주 → 45주",
-      "5주 추정",
-      "신규 진입 자금 마련 · 기존 보유 축소",
-      "예상 조정수량",
-      "실계좌 권장수량: 미산출",
-      "overflow-x-auto",
-      "min-w-0",
-    ])
-      expect(html).toContain(text);
-    expect(html).not.toContain("다음 정규장 모델 주문 대기</h2>");
-    expect(html).not.toContain("목표금액</th>");
-  });
-
-  it("hides selected snapshot quantities when the transport reports a preview error", () => {
-    const html = renderPortfolio("동일 확정일 모델 자료 미확인");
-    expect(html).toContain("동일 확정일 모델 자료 미확인");
+    expect(html).toContain("모델 체결 원장");
+    expect(html).toContain("정규화 NAV 추적");
+    expect(html).not.toContain("모델 조정 미리보기");
     expect(html).not.toContain("BUY1");
     expect(html).not.toContain("FUND1");
+  });
+  it("redirects the separate US portfolio route to the unified US subtab", () => {
+    const beforeLoad = (Route.options as unknown as { beforeLoad: () => void }).beforeLoad;
+    expect(beforeLoad).toThrow(
+      expect.objectContaining({ to: "/portfolio", search: { asset: "US" }, replace: true }),
+    );
   });
 });

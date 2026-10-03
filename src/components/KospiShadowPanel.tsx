@@ -1,3 +1,5 @@
+import { NavSeriesLegend } from "@/components/NavSeriesLegend";
+import { navSeriesStyle } from "@/lib/navSeries";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { loadKospiShadow } from "@/lib/kospiShadowCloud";
 import { KOSPI_SHADOW_POLICY, type ShadowDaily } from "@/lib/engine/kospiShadow";
@@ -280,12 +282,20 @@ export function KospiShadowContent({
     </div>
   );
 }
-function ShadowNavChart({ rows }: { rows: ShadowDaily[] }) {
+export function ShadowNavChart({ rows }: { rows: ShadowDaily[] }) {
   if (rows.length < 2)
     return (
-      <p className="p-6 text-sm text-muted-foreground">
-        선택한 기간에 2거래일 이상 기록이 쌓이면 추이를 표시합니다.
-      </p>
+      <div>
+        <p className="p-6 text-sm text-muted-foreground">
+          선택한 기간에 2거래일 이상 기록이 쌓이면 추이를 표시합니다.
+        </p>
+        <NavSeriesLegend
+          series={[
+            { id: "KOSPI_SHADOW", label: "KOSPI Shadow", status: "추이 대기" },
+            { id: "KOSPI_BENCHMARK", label: "KOSPI 가격지수", status: "추이 대기" },
+          ]}
+        />
+      </div>
     );
   const values = rows.flatMap((r) => [r.navKrw, r.benchmarkNavKrw]),
     min = Math.min(...values),
@@ -299,15 +309,22 @@ function ShadowNavChart({ rows }: { rows: ShadowDaily[] }) {
         role="img"
         aria-label="KOSPI Shadow와 KOSPI 가격지수 NAV 추이"
         viewBox="0 0 1000 200"
+        preserveAspectRatio="none"
         className="h-52 w-full"
       >
-        <polyline fill="none" stroke="currentColor" strokeWidth="2" points={points("navKrw")} />
         <polyline
           fill="none"
-          stroke="currentColor"
-          opacity="0.35"
+          stroke={navSeriesStyle("KOSPI_SHADOW").color}
+          strokeWidth="2.5"
+          vectorEffect="non-scaling-stroke"
+          points={points("navKrw")}
+        />
+        <polyline
+          fill="none"
+          stroke={navSeriesStyle("KOSPI_BENCHMARK").color}
           strokeWidth="2"
-          strokeDasharray="5 4"
+          strokeDasharray={navSeriesStyle("KOSPI_BENCHMARK").dash}
+          vectorEffect="non-scaling-stroke"
           points={points("benchmarkNavKrw")}
         />
       </svg>
@@ -315,6 +332,12 @@ function ShadowNavChart({ rows }: { rows: ShadowDaily[] }) {
         <span>{rows[0]!.date}</span>
         <span>{rows.at(-1)!.date}</span>
       </p>
+      <NavSeriesLegend
+        series={[
+          { id: "KOSPI_SHADOW", label: "KOSPI Shadow" },
+          { id: "KOSPI_BENCHMARK", label: "KOSPI 가격지수" },
+        ]}
+      />
     </>
   );
 }
