@@ -70,7 +70,11 @@ export const runWebScreeningServer = createServerFn({ method: "POST" })
     const { sources, texts } = await loadActiveSources(client, authData.user.id);
     const parsed = parseManualMarketData(texts);
     const { analysis: engineAnalysis, dataset } = runFullMarketAnalysis(parsed.dataset, data.config);
-    const analysis = withOnsetProfiles(engineAnalysis, dataset, data.config);
+    const analysis = withOnsetProfiles(
+      engineAnalysis,
+      dataset,
+      data.config,
+    );
     const fingerprint = inputFingerprint(sources, data.config);
     const digest = resultDigest(analysis);
     const source = { live: true, credentialsConfigured: true, fallbackReason: null };
