@@ -12,6 +12,7 @@ import {
   type BacktestResult,
 } from "@/lib/engine/backtest";
 import { mergeScoringConfig, type ScoringConfig } from "@/lib/engine/scoring";
+import { withOnsetProfiles } from "@/lib/onsetProfile";
 import {
   chartSeries,
   runAnalysis,
@@ -64,7 +65,8 @@ export const getMarketAnalysis = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<MarketAnalysisPayload> => {
     try {
       const { dataset, status } = await loadDataset();
-      return { analysis: runAnalysis(dataset, data.config), source: status };
+      const analysis = runAnalysis(dataset, data.config);
+      return { analysis: withOnsetProfiles(analysis, dataset, data.config), source: status };
     } catch (error) {
       // IP 허용목록·인증 오류는 사용자가 조치할 수 있는 정상적인 연결 실패다.
       // server function 밖으로 reject하면 브라우저 런타임 오류로 수집되므로,
@@ -263,7 +265,8 @@ export const getInstrumentDetail = createServerFn({ method: "GET" })
   }))
   .handler(async ({ data }): Promise<InstrumentDetailPayload> => {
     const { dataset, status } = await loadDataset();
-    const analysis = runAnalysis(dataset, data.config as ScoringConfig);
+    const baseAnalysis = runAnalysis(dataset, data.config as ScoringConfig);
+    const analysis = withOnsetProfiles(baseAnalysis, dataset, data.config as ScoringConfig);
     const row = analysis.rows.find((r) => r.instrument.symbol === data.symbol) ?? null;
     return {
       source: status,
