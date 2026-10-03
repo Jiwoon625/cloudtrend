@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { KospiEntryDetails } from "@/components/KospiEntryDetails";
+import { OnsetProfileDetails } from "@/components/OnsetProfileDetails";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
 import { getKospiRsAccel } from "@/lib/kospiRelativeQuality";
@@ -417,6 +418,7 @@ export function ScreenerTable({
                     {r.instrument.instrumentType === "STOCK" && r.instrument.market === "KOSPI" ? (
                       <KospiEntryDetails entry={r.kospiEntry} compact />
                     ) : null}
+                    <OnsetProfileDetails profile={r.onsetProfile} compact />
                     {!r.hardFilterPassed ? (
                       <span className="text-[10px] text-down">실격: {r.failedRules[0]}</span>
                     ) : null}

@@ -42,6 +42,7 @@ export interface ScreeningCandidateSummary {
   status: string;
   hardFilterPassed: boolean;
   kospiEntry?: ScreeningRow["kospiEntry"];
+  onsetProfile?: ScreeningRow["onsetProfile"];
   rs20: number | null;
   rs60: number | null;
   marketCap: number | null;
@@ -67,6 +68,7 @@ function candidate(row: ScreeningRow, rank: number): ScreeningCandidateSummary {
     status: row.actionLabelText,
     hardFilterPassed: row.hardFilterPassed,
     kospiEntry: row.kospiEntry,
+    onsetProfile: row.onsetProfile,
     rs20: row.rs20,
     rs60: row.rs60,
     marketCap: row.marketCap,

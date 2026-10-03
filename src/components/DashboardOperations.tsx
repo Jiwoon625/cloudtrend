@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { StrategyDescription } from "./StrategyDescription";
+import { OnsetProfileDetails } from "./OnsetProfileDetails";
 import { supabase } from "@/lib/cloud";
 import { formatCount, formatKstDateTime } from "@/lib/format";
 import {
@@ -479,7 +480,10 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
                           : `${row.price.toLocaleString("ko-KR")}원`}
                     </td>
                     <td className={`px-3 py-3 ${tab === "onsets" ? "text-up" : "text-warn"}`}>
-                      {row.reason}
+                      <div>{row.reason}</div>
+                      {tab !== "exits" ? (
+                        <OnsetProfileDetails profile={row.onsetProfile} compact />
+                      ) : null}
                       {tab !== "exits" ? <DashboardSectorLimitBadge row={row} /> : null}
                     </td>
                   </tr>

@@ -27,6 +27,7 @@ export interface DashboardSignal {
   score: number | null;
   priority: number;
   reason: string;
+  onsetProfile?: import("./onsetProfile").OnsetProfile | null;
 }
 export interface DashboardIndexRow extends Omit<DashboardSignal, "reason"> {
   onset: boolean;
@@ -103,6 +104,7 @@ export function projectKrDashboard(analysis: AnalysisResult): DashboardIndex {
         ? (strategy?.date ?? analysis.asOfDate)
         : (r.snapshot.tradeDate ?? analysis.asOfDate),
       kospiEntry: r.kospiEntry,
+      onsetProfile: etf ? null : (r.onsetProfile ?? null),
       price: finite(r.snapshot.close),
       score: finite(etf ? strategy?.score : r.operatingScore10),
       priority: finite(etf ? strategy?.averageTradingValue20 : r.priority.points) ?? 0,

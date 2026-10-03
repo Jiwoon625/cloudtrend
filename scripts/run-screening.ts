@@ -10,6 +10,7 @@ import path from "node:path";
 import process from "node:process";
 
 import { buildScreeningSummary } from "../src/lib/analysisRunBundle";
+import { withOnsetProfiles } from "../src/lib/onsetProfile";
 import { runFullMarketAnalysis } from "../src/lib/engine/fullMarketAnalysis";
 import { parseManualMarketData } from "../src/lib/engine/manualDataset";
 import {
@@ -173,14 +174,15 @@ export async function runScreening(argv = process.argv.slice(2)) {
   }
 
   memory("parse-start");
-  const { analysis, dataset, stats } = analyzeInputs(inputs, config);
-  const snapshot = buildSnapshot(
-    analysis,
-    latestSourceRegistration(
-      inputs.flatMap((input) => (input.sourceRecord ? [input.sourceRecord] : [])),
-      analysis.asOfDate,
-    ),
+  const { analysis: engineAnalysis, dataset, stats } = analyzeInputs(inputs, config);
+  const analysis = withOnsetProfiles(engineAnalysis, dataset, config);
+  const sourceRegisteredAt = latestSourceRegistration(
+    inputs.flatMap((input) => (input.sourceRecord ? [input.sourceRecord] : [])),
+    analysis.asOfDate,
   );
+  const snapshot = buildSnapshot(analysis, sourceRegisteredAt);
+  // The October Shadow code/config contract remains bound to the untouched frozen engine payload.
+  const shadowSnapshot = buildSnapshot(engineAnalysis, sourceRegisteredAt);
   const previous = await loadPreviousSnapshot(client, options.supabaseUserId, snapshot.date);
   const summary = buildScreeningSummary(analysis, snapshot, previous);
   const createdAt = new Date().toISOString();
@@ -261,8 +263,8 @@ export async function runScreening(argv = process.argv.slice(2)) {
       const octoberShadow = await publishOctoberShadow(client, options.supabaseUserId, {
         market: "KR",
         dataset,
-        analysis,
-        snapshot,
+        analysis: engineAnalysis,
+        snapshot: shadowSnapshot,
         config,
         sourceHash: sourceSeriesHash(dataVersion),
         availableAt: availableAt ?? "",

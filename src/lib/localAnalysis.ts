@@ -11,6 +11,7 @@ import {
 } from "@/lib/engine/sectorRotationBacktest";
 import { getManualDataset, MANUAL_DATA_MISSING_MESSAGE } from "@/lib/manualDataStore";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
+import { withOnsetProfiles } from "@/lib/onsetProfile";
 import type {
   DataStatusPayload,
   DataSourceStatus,
@@ -32,7 +33,11 @@ function runLocalMarketAnalysis(
   rawDataset: MarketDataset,
   config: ReturnType<typeof getActiveScoringConfig>,
 ) {
-  return runFullMarketAnalysis(rawDataset, config);
+  const result = runFullMarketAnalysis(rawDataset, config);
+  return {
+    ...result,
+    analysis: withOnsetProfiles(result.analysis, result.dataset, config),
+  };
 }
 
 export function computeLocalAnalysis(): MarketAnalysisPayload {

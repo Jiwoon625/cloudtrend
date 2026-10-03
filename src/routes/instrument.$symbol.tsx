@@ -1,6 +1,7 @@
 import { loadDomesticPositionContext } from "@/lib/portfolioPositionContext";
 import { StrategyDescription } from "@/components/StrategyDescription";
 import { KospiEntryDetails } from "@/components/KospiEntryDetails";
+import { OnsetProfileDetails } from "@/components/OnsetProfileDetails";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
@@ -137,6 +138,7 @@ function InstrumentDetail() {
       kospiEightPointEntry: row.kospiEightPointEntry,
       kospi80Onset: row.kospi80Onset,
       kospiEntry: row.kospiEntry,
+      onsetProfile: row.onsetProfile,
       operationalSignalVersion: row.operationalSignalVersion,
       exitSignal: row.exitSignal,
     },
@@ -358,6 +360,16 @@ function InstrumentDetail() {
           </div>
         </section>
       </div>
+
+      {row.onsetProfile ? (
+        <section className="mt-5 rounded-lg border border-border bg-card p-4">
+          <h2 className="mb-1 text-sm font-semibold">Onset 발생 경로</h2>
+          <OnsetProfileDetails profile={row.onsetProfile} />
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            유형·신규 획득 점수·MA20 이격은 신호 설명 정보이며 진입 점수나 매매규칙을 변경하지 않습니다.
+          </p>
+        </section>
+      ) : null}
 
       <section className="mt-5 rounded-lg border border-border bg-card p-4">
         <h2 className="mb-2 text-sm font-semibold">설명 문장 (규칙 기반 템플릿)</h2>

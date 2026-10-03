@@ -20,6 +20,7 @@ export interface SnapshotEntry {
   kospiEightPointEntry?: boolean;
   kospi80Onset?: boolean;
   kospiEntry?: import("./engine/kospiEntryConfirmation").KospiEntrySnapshot | undefined;
+  onsetProfile?: import("./onsetProfile").OnsetProfile | null;
   operationalSignalVersion?: string;
   exitSignal?: V8ExitSignal;
 }
@@ -99,6 +100,7 @@ export function buildSnapshot(
     kosdaq80Onset: row.kosdaq80Onset,
     kospiEightPointEntry: row.kospiEightPointEntry,
     kospiEntry: row.kospiEntry,
+    ...(row.onsetProfile ? { onsetProfile: row.onsetProfile } : {}),
     kospi80Onset: row.kospi80Onset ?? false,
     ...(row.operationalSignalVersion
       ? { operationalSignalVersion: row.operationalSignalVersion }

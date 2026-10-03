@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { KospiEntryDetails } from "@/components/KospiEntryDetails";
+import { OnsetProfileDetails } from "@/components/OnsetProfileDetails";
 import { kospiEntryStateLabel } from "@/components/kospiEntryPresentation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,13 +60,16 @@ function historyStatus(entry: SnapshotEntry): string {
 function EntryList({ entries, empty }: { entries: SnapshotEntry[]; empty: string }) {
   if (entries.length === 0) return <p className="text-[11px] text-muted-foreground">{empty}</p>;
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
       {entries.map((e) => (
-        <Link key={e.symbol} to="/instrument/$symbol" params={{ symbol: e.symbol }}>
-          <Badge variant="outline" className="text-[10px]">
-            {e.name}
-          </Badge>
-        </Link>
+        <div key={e.symbol} className="rounded-md border border-border/60 p-2">
+          <Link to="/instrument/$symbol" params={{ symbol: e.symbol }}>
+            <Badge variant="outline" className="text-[10px]">
+              {e.name}
+            </Badge>
+          </Link>
+          <OnsetProfileDetails profile={e.onsetProfile} compact />
+        </div>
       ))}
     </div>
   );
@@ -117,7 +121,10 @@ function TopEntriesTable({
                 </td>
                 <td className="num py-1.5 pr-2 text-right">{formatNumber(e.priorityPoints, 1)}</td>
                 <td className="py-1.5 pr-2 font-semibold">{e.grade}</td>
-                <td className="py-1.5 font-medium">{historyStatus(e)}</td>
+                <td className="py-1.5 font-medium">
+                  <div>{historyStatus(e)}</div>
+                  <OnsetProfileDetails profile={e.onsetProfile} compact />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -309,7 +316,10 @@ function HistoryPage() {
                           {entry.name}{" "}
                           <span className="text-[10px] text-muted-foreground">{entry.symbol}</span>
                         </Link>
-                        <KospiEntryDetails entry={entry.kospiEntry} showState />
+                        <div className="max-w-[520px] text-right">
+                          <KospiEntryDetails entry={entry.kospiEntry} showState />
+                          <OnsetProfileDetails profile={entry.onsetProfile} compact />
+                        </div>
                       </div>
                     ))}
                   </div>
