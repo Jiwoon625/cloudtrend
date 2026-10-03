@@ -13,13 +13,7 @@ import { selectV8SectorPriceLeadership } from "./engine/v8SectorPriceLeadershipP
 
 export type OnsetPathType = "A" | "B" | "C";
 export type OnsetFeatureKey =
-  | "cloud"
-  | "TK"
-  | "BB"
-  | "MA"
-  | "volume"
-  | "nearHigh"
-  | "foreign"
+  | "cloud" | "TK" | "BB" | "MA" | "volume" | "nearHigh" | "foreign"
   | "PL";
 
 export interface OnsetAddedFeature {
@@ -84,7 +78,8 @@ export function buildOnsetProfile(
   const now = scoreMap(current);
   const addedFeatures = ([...now.keys()] as OnsetFeatureKey[])
     .map((key) => {
-      const points = Math.round(Math.max(0, (now.get(key) ?? 0) - (before.get(key) ?? 0)) * 100) / 100;
+      const points =
+        Math.round(Math.max(0, (now.get(key) ?? 0) - (before.get(key) ?? 0)) * 100) / 100;
       if (points <= 0) return null;
       return { key, label: FEATURE_META[key].label, points, category: FEATURE_META[key].category };
     })
@@ -101,9 +96,9 @@ export function buildOnsetProfile(
     label,
     originDate,
     addedFeatures,
-    addedPoints: Math.round(addedFeatures.reduce((sum, item) => sum + item.points, 0) * 100) / 100,
-    ma20Extension:
-      ma20Extension !== null && Number.isFinite(ma20Extension) ? ma20Extension : null,
+    addedPoints:
+      Math.round(addedFeatures.reduce((sum, item) => sum + item.points, 0) * 100) / 100,
+    ma20Extension: ma20Extension !== null && Number.isFinite(ma20Extension) ? ma20Extension : null,
   };
 }
 
@@ -149,14 +144,18 @@ function scoreAt(
 
 function originDateFor(row: ScreeningRow): string | null {
   if (row.instrument.instrumentType !== "STOCK") return null;
-  if (row.instrument.market === "KOSDAQ")
-    return row.kosdaq80Onset ? row.snapshot.tradeDate : null;
+  if (row.instrument.market === "KOSDAQ") return row.kosdaq80Onset ? row.snapshot.tradeDate : null;
   if (row.instrument.market !== "KOSPI") return null;
-  if (row.kospiEntry?.originDate && row.kospiEntry.state !== "none") return row.kospiEntry.originDate;
+  if (row.kospiEntry?.originDate && row.kospiEntry.state !== "none")
+    return row.kospiEntry.originDate;
   return row.kospi80Onset ? row.snapshot.tradeDate : null;
 }
 
-function previousDateFor(dataset: MarketDataset, row: ScreeningRow, originDate: string): string | null {
+function previousDateFor(
+  dataset: MarketDataset,
+  row: ScreeningRow,
+  originDate: string,
+): string | null {
   if (row.instrument.market === "KOSPI") {
     const benchmark = dataset.indexSeries.find((series) => series.indexCode === "KOSPI");
     const dates = benchmark?.bars.map((bar) => bar.tradeDate) ?? [];
@@ -190,12 +189,7 @@ export function withOnsetProfiles(
       if (!current || !previous) return row;
       const previousScore = strictRawTechnicalScore(previous.block);
       const currentScore = strictRawTechnicalScore(current.block);
-      if (
-        previousScore === null ||
-        currentScore === null ||
-        previousScore >= 8 ||
-        currentScore < 8
-      )
+      if (previousScore === null || currentScore === null || previousScore >= 8 || currentScore < 8)
         return row;
       const onsetProfile = buildOnsetProfile(
         previous.block,
