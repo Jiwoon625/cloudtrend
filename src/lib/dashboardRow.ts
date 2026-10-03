@@ -45,6 +45,7 @@ export function compactDashboardRow(row: ScreeningRow): ScreeningRow {
     kosdaq80Onset: row.kosdaq80Onset,
     kospiEightPointEntry: row.kospiEightPointEntry,
     kospiEntry: row.kospiEntry,
+    onsetProfile: row.onsetProfile,
     kospi80Onset: row.kospi80Onset,
     operationalSignalVersion: row.operationalSignalVersion,
     exitSignal: row.exitSignal,
