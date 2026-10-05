@@ -38,7 +38,7 @@ class MonthlyPanelFastPathTests(unittest.TestCase):
             frame=pd.DataFrame([
                 {"session_date":"2020-01-02","symbol":"A","available_at":"2020-01-02T07:00:00+00:00","comparison_open":10.0,"comparison_close":11.0,"market":"US","currency":"USD"},
                 {"session_date":"2020-01-02","symbol":"B","available_at":"2020-01-02T07:00:00+00:00","comparison_open":20.0,"comparison_close":None,"market":"US","currency":"USD"},
-                {"session_date":"2020-01-03","symbol":"A","available_at":"2020-01-03T07:00:00+00:00","comparison_open":12.0,"comparison_close":13.0,"market":"US","currency":"USD"},
+                {"session_date":"2020-01-03","symbol":"A","available_at":"2020-01-03 07:00:00+00:00","comparison_open":12.0,"comparison_close":13.0,"market":"US","currency":"USD"},
                 {"session_date":"2020-01-03","symbol":"B","available_at":"2020-01-03T07:00:00+00:00","comparison_open":21.0,"comparison_close":22.0,"market":"US","currency":"USD"},
             ])
             with patch("cm06_comparison_panels.pd.read_parquet",return_value=frame) as read:
@@ -52,6 +52,7 @@ class MonthlyPanelFastPathTests(unittest.TestCase):
                 self.assertEqual(panels.loads,1)
                 other=panel_records(panels,"2020-01-03")
                 self.assertEqual(len(other),2)
+                self.assertEqual(other[0]["available_at"],"2020-01-03T07:00:00+00:00")
                 self.assertEqual(read.call_count,1)
 
 
