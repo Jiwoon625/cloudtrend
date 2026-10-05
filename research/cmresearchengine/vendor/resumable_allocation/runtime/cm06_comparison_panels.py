@@ -83,7 +83,7 @@ class MonthlyDayPanels(Mapping):
             raise ValueError("Split-KR panel contains the other market")
         if "market_gate" in frame:
             frame["market_gate"] = frame.market_gate.map(clean)
-        times = pd.to_datetime(frame.available_at, utc=True, errors="raise")
+        times = pd.to_datetime(frame.available_at, utc=True, errors="raise", format="mixed")
         frame["available_at"] = times.map(lambda x: x.isoformat())
         # Frozen signal predicates require absent numeric fields to be None.
         # Normalize once per loaded month instead of once per OPEN/CLOSE access.
@@ -133,5 +133,5 @@ def normalized_day_panels(panel, engine, structural_split):
         raise ValueError("Split-KR panel contains the other market")
     if frame.duplicated(["session_date", "symbol"]).any():
         raise ValueError(f"Duplicate symbol/date in {engine}")
-    frame["available_at"] = pd.to_datetime(frame.available_at, utc=True, errors="raise").map(lambda x: x.isoformat())
+    frame["available_at"] = pd.to_datetime(frame.available_at, utc=True, errors="raise", format="mixed").map(lambda x: x.isoformat())
     return {d: g for d, g in frame.groupby("session_date", sort=True)}
