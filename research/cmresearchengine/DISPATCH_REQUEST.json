@@ -1,8 +1,8 @@
 {
-  "request_id": "s05-gate-jsonfix-20261005-002",
+  "request_id": "s05-gate-linearmeta-20261005-001",
   "mode": "run",
   "stage": "base",
   "offset": 4,
   "count": 1,
-  "max_seconds": 3000
+  "max_seconds": 6000
 }
