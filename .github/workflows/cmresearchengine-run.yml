@@ -22,7 +22,7 @@ on:
         description: 'Execution time cap after input preflight (60..6300)'
         default: '3000'
       workers:
-        description: 'Independent strategy worker processes (1..2)'
+        description: 'Independent strategy worker processes (1..4)'
         default: '1'
   push:
     branches: [main]

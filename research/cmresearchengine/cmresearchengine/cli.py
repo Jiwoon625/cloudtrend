@@ -58,7 +58,7 @@ def main(argv=None):
     args=parser.parse_args(argv)
     if not 1<=args.count<=16:parser.error('--count must be 1..16')
     if not 60<=args.max_seconds<=6300:parser.error('--max-seconds must be 60..6300')
-    if not 1<=args.workers<=2:parser.error('--workers must be 1..2')
+    if not 1<=args.workers<=4:parser.error('--workers must be 1..4')
     if args.workers>args.count:parser.error('--workers cannot exceed --count')
     if args.event_limit is not None and args.event_limit<1:parser.error('--event-limit must be positive')
     plan=manifest();plan_hash=plan['definition_sha256']
