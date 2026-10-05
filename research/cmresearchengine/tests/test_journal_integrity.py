@@ -10,6 +10,18 @@ from cm06_fresh_journal_v1 import CandidateJournal
 from cm06_checkpoint_store import DirectoryStore
 
 class JournalIntegrityTests(unittest.TestCase):
+    def test_json_roundtrip_identity_with_tuples_resumes(self):
+        with tempfile.TemporaryDirectory() as root:
+            store=DirectoryStore(root)
+            runner=make()
+            bound=identity(runner)
+            bound=dict(bound,json_roundtrip_tuple=('K','E','U'))
+            first='first-json-roundtrip'
+            journal=CandidateJournal(store,first,'complete-json-roundtrip',bound)
+            journal.commit(runner)
+            restored=CandidateJournal(store,first,'complete-json-roundtrip',bound).load(make())
+            self.assertEqual(restored._resume_events,0)
+
     def test_load_uses_exact_payload_verified_during_scan(self):
         with tempfile.TemporaryDirectory() as root:
             store=DirectoryStore(root);first=make();bound=identity(first)
