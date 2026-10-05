@@ -7,6 +7,7 @@ PIT availability, vendor universes or production performance parity.
 
 ## Reproduced and corrected in this revision
 
+| Sequential bounded batches let one long candidate consume nearly the whole job, preventing later candidates from starting | Add explicit `workers=1..2`; static non-reference candidates may run in isolated child processes after one shared input restore/preflight, while each keeps its own ledger/checkpoint scope | `DispatchRequestTests.test_two_workers_are_explicitly_bounded` + full synthetic suite |
 | S05 completed and wrote a valid completion marker/output, but runner compared the in-memory completion document to its JSON round-trip with Python `==`; tuple/list normalization could raise a false RuntimeError after completion | Compare completion readback using canonical JSON bytes, matching the checkpoint identity contract | `RunnerTests.test_completion_readback_tolerates_json_tuple_normalization` |
 | Repeated OPEN/CLOSE/proxy reads rebuilt the same session DataFrame and row dictionaries several times | Keep a bounded one-session/month cache and reuse explicit row-record snapshots through panel wrappers; strategy logic and row values are unchanged | `MonthlyPanelFastPathTests` + full synthetic suite |
 | Full checkpoint snapshots were emitted roughly every 180s/63 snapshots even though bounded-stop always forces a final checkpoint | Increase periodic checkpoint spacing to 600s/252 snapshots while preserving forced checkpoint on pause/stop and final completion | existing pause/resume/idempotence regressions |
