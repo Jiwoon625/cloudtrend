@@ -9,7 +9,7 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -30,3 +30,5 @@ jobs:
             --plan-hash ce6be8c497e45fa22a41d3a7b924913a23b18588fd05efd33ee14eb961ec7c2c \
             --candidate S05 \
             --first-id first_ab9b61431433ea1786bf8ba16b2ec7a21f2c64b48aae93b8e1d79e0e1c1fc24b
+      - name: Deep read-only resume verification
+        run: python scripts/cm_checkpoint_resume_diagnose.py
