@@ -128,6 +128,9 @@ caches. Completed result ZIPs contain NAV, orders, ledger events, demands,
 reviews, metrics and the explicit proxy audit. Private `results/` summary and
 completion indexes point to the verified output blobs.
 
+See [REGRESSION_COVERAGE.md](REGRESSION_COVERAGE.md) for the source-grounded
+development-note checks and the two reproduced fixes.
+
 ## Verification
 
 ```sh
@@ -141,9 +144,12 @@ I/O; production preflight requires the pinned real package. Actual full-input
 preflight and historical runs remain separate, observable verification stages.
 
 `UPSTREAM_SOURCE_MANIFEST.json` records the unmodified source hashes copied
-from the reviewed fresh-v11 payload. Vendored changes remove the S05-only host restriction and make checkpoint
-restore reuse the exact verified state bytes, avoiding an unchecked second
-read. New policy behavior is isolated in
+from the reviewed fresh-v11 payload. Vendored changes remove the S05-only host restriction, make checkpoint
+restore reuse the exact verified state bytes, and restore the documented ETF
+rule preventing reuse of an Onset observed while already held after an interim
+sale. CM modules preloaded before controlled initialization are rejected, reviewed
+import roots move ahead of cwd, and later source changes require a fresh process.
+New missing-price policy behavior is isolated in
 `cmresearchengine/replay.py`. Every actual run also binds current code hashes.
 
 ## Storage documentation consulted

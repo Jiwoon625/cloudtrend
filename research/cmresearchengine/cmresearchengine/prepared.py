@@ -12,12 +12,14 @@ from cm06_exact_units_resume_state_v1 import frame_fingerprint
 
 class PreparedResearch(PreparedFreshDiagnostic):
     def __init__(self, config, candidate, references=None):
+        runtime.activate()
         self.research_candidate=candidate
         self.references=references or {}
         super().__init__(config)
         self._bind_research_identity()
 
     def _bind_research_identity(self):
+        runtime.activate()
         candidate=self.research_candidate
         self.base_identity=dict(self.base_identity)
         self.base_identity.update(schema='CM_RESEARCH_STRATEGY_V1',scope='CM_RESEARCH_ONLY',
@@ -46,6 +48,7 @@ class PreparedResearch(PreparedFreshDiagnostic):
         return self.contract
 
     def factory(self):
+        runtime.activate()
         if source_hashes()!=self.sources:raise ValueError('Source changed after preflight')
         panels={e:MonthlyDayPanels(self.inputs/e/'manifest.json',self.prep['engines'][e]['sha256']) for e in 'KEU'}
         calendars=self.calendars

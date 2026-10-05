@@ -31,3 +31,17 @@ class RuntimeIdentityTests(unittest.TestCase):
         root=Path(__file__).resolve().parents[3]
         for name in ('cmresearchengine-run.yml','cmresearchengine-check.yml'):
             self.assertIn("python-version: '3.12.14'",(root/'.github/workflows'/name).read_text())
+
+    def test_clone_cannot_relabel_loaded_classes_with_changed_source_hash(self):
+        p=self.prepared()
+        with patch('cmresearchengine.runtime.fingerprint',return_value={'python':'3.12.14','pyarrow':'23.0.1'}):
+            p._bind_research_identity()
+            with patch('cmresearchengine.runtime.code_hashes',return_value={'cmresearchengine/replay.py':'f'*64}):
+                with self.assertRaisesRegex(RuntimeError,'source changed after controlled'):
+                    p.clone(candidate_by_id('S05'))
+
+    def test_new_runner_factory_checks_controlled_sources_first(self):
+        p=object.__new__(PreparedResearch)
+        with patch('cmresearchengine.runtime.activate',side_effect=RuntimeError('source guard first')):
+            with self.assertRaisesRegex(RuntimeError,'source guard first'):
+                PreparedResearch.factory(p)

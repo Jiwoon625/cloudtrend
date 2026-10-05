@@ -24,6 +24,10 @@ this template contains no historical performance results.
 
 Definitions and exact sources:
 
+- When reading result CSVs, preserve identifiers with `keep_default_na=False`
+  and string dtypes for ticker/code columns, then explicitly parse numeric/time
+  fields. Literal ticker `NA` is a real identifier, not a missing value
+
 - Total return/CAGR/MDD: `summary.json → performance`; includes the initial
   capital baseline and modeled transaction costs. CAGR is annualized over
   elapsed calendar time; report the exact period alongside it

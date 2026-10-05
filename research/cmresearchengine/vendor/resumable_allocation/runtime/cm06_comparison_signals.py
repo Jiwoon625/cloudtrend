@@ -271,6 +271,11 @@ class FrozenIntentAdapter:
                     def obs(x):
                         return None if not x else dict(date=x['session_date'],score=x.get('score'),eligible=bool(x.get('eligible',False)),underlyingClose=x.get('underlying_close'),underlyingMa60=x.get('underlying_ma60'))
                     c=etf_confirmation(obs(row),obs(p),obs(b))
+                    # An Onset observed while held is not a fresh entry after
+                    # that position is sold during its confirmation window.
+                    if c['rawOnset'] and s in holdings:self.blocked_origins.add((s,c['originDate']))
+                    origin_blocked=bool(c['originDate'] and ((s,c['originDate']) in self.blocked_origins or
+                        any(sym==s and entered<=date and exited>=c['originDate'] for sym,entered,exited in self.holding_spans)))
                     # A batch-pending flag cannot create exits or actionable entries.
                     ready=not row.get('krx_batch_pending',False)
                     if s in holdings and ready and positive(row.get('underlying_close')) and positive(row.get('underlying_ma60')) and row['underlying_close']<row['underlying_ma60']:
@@ -278,7 +283,7 @@ class FrozenIntentAdapter:
                             it=self._intent(row,'SELL',known_at,next_open_at,'MA60',date,priority=(0,s),expiry='UNTIL_EXECUTABLE_OPEN');self.pending[it['signal_id']]=it;emitted.append(it)
                     volweight=etf_entry_weight(row.get('annual_volatility'))
                     adv=row.get('average_trading_value20')
-                    if ready and c['onset'] and (not self.research_start_date or c['originDate']>=self.research_start_date) and s not in holdings and volweight is not None and finite(adv) and adv>=0 and nav_complete:
+                    if ready and c['onset'] and not origin_blocked and (not self.research_start_date or c['originDate']>=self.research_start_date) and s not in holdings and volweight is not None and finite(adv) and adv>=0 and nav_complete:
                         # Frozen exact ETF executor stores weight to eight decimals.
                         weight=Decimal(str(floor(volweight*1e8)/1e8))
                         budget=float((Decimal(str(sleeve_nav))*weight).quantize(QUANTUM,rounding=ROUND_DOWN))
