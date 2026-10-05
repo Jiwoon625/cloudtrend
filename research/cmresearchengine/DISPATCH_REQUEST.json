@@ -1,0 +1,8 @@
+{
+  "request_id": "s05-gate-20261005-001",
+  "mode": "run",
+  "stage": "base",
+  "offset": 4,
+  "count": 1,
+  "max_seconds": 3000
+}
