@@ -1,0 +1,26 @@
+name: CMresearchengine S05 parity
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/CM_S05_PARITY_REQUEST.json'
+permissions:
+  contents: read
+jobs:
+  parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      PYTHONPATH: research/cmresearchengine
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.14'
+      - name: Compare baseline and optimized S05 outputs
+        run: python scripts/cm_s05_output_parity.py
