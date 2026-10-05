@@ -47,8 +47,8 @@ def validate_request(raw):
         raise ValueError("count must be 1..16")
     if not 60 <= max_seconds <= 6300:
         raise ValueError("max_seconds must be 60..6300")
-    if not 1 <= workers <= 2:
-        raise ValueError("workers must be 1..2")
+    if not 1 <= workers <= 4:
+        raise ValueError("workers must be 1..4")
     if workers > count:
         raise ValueError("workers cannot exceed count")
 
