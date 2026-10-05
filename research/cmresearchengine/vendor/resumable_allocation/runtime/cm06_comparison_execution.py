@@ -307,8 +307,9 @@ class Replay:
         self._reserve_pending_cash(e)
 
     def _close(self,e,s):
-        day=s["session_date"];frame=self.panels[e][day]
-        if any(utc(t)>self.ledger.at for t in frame["available_at"]):
+        day=s["session_date"]
+        records=panel_records(self.panels[e],day)
+        if any(utc(r["available_at"])>self.ledger.at for r in records):
             raise ValueError("Features unavailable at session decision")
         rows={r["symbol"]:r for r in records}
         if day>=self.contract.start_date:
