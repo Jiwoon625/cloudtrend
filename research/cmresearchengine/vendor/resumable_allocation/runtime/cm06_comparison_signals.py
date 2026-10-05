@@ -8,7 +8,6 @@ from __future__ import annotations
 from decimal import Decimal, ROUND_CEILING, ROUND_DOWN
 from math import isfinite, floor
 from typing import Any, Mapping
-import numpy as np
 
 FROZEN_SHA = 'a844945f62fa7ea60f4b497b4e66e408d891ebfd'
 KOSPI_VERSION = 'kospi-e8-confirm1-rsaccel-bear-v3'
@@ -23,8 +22,7 @@ def finite(x):
 def positive(x):
     return finite(x) and x > 0
 
-def _percentile_rank_reference(pairs):
-    """Original exact implementation retained as the semantic fallback/reference."""
+def percentile_rank(pairs):
     ordered = sorted(pairs, key=lambda x: (x[1], x[0]))
     if len(ordered) == 1:
         return {ordered[0][0]: 1.0}
@@ -37,40 +35,6 @@ def _percentile_rank_reference(pairs):
         for k in range(i, j): out[ordered[k][0]] = value
         i = j
     return out
-
-
-def percentile_rank(pairs):
-    """Exact tie-average ranks with a NumPy sort fast-path.
-
-    Engine inputs are finite Python ints/floats. Secondary symbol ordering
-    inside an equal-value tie cannot change that tie's average rank. Values
-    outside that safe numeric contract fall back to the frozen implementation.
-    """
-    n = len(pairs)
-    if n <= 1:
-        return _percentile_rank_reference(pairs)
-    symbols, values = [], []
-    for symbol, value in pairs:
-        if (type(value) not in (int, float) or isinstance(value, bool)
-                or not isfinite(value)
-                or (type(value) is int and abs(value) > 2**53)):
-            return _percentile_rank_reference(pairs)
-        symbols.append(symbol)
-        values.append(value)
-    numeric = np.asarray(values, dtype=np.float64)
-    order = np.argsort(numeric, kind="stable")
-    sorted_values = numeric[order]
-    ranks = np.empty(n, dtype=np.float64)
-    i = 0
-    denominator = n - 1
-    while i < n:
-        j = i + 1
-        while j < n and sorted_values[j] == sorted_values[i]:
-            j += 1
-        rank = ((i + j - 1) / 2) / denominator
-        ranks[order[i:j]] = rank
-        i = j
-    return {symbol: float(ranks[index]) for index, symbol in enumerate(symbols)}
 
 def us_analysis(input_rows, previous=None):
     """Frozen ranking formulas with explicitly named research-universe inputs; not broker/PIT certification."""
