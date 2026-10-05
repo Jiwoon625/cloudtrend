@@ -171,6 +171,24 @@ def _zero(staged, event, context, registry):
 
 HANDLERS = {'CASH_MERGER': _cash, 'LINEAR_EXCHANGE': _linear, 'ZERO_RECOVERY': _zero}
 
+def _bind_successor_entry_meta(staged, event):
+    """Start successor holding metadata only when a terminal exchange creates it.
+
+    A pre-existing successor keeps its earlier entry metadata. A newly created
+    successor begins at the legal effective date with zero valid bars, matching
+    the separately approved stock-entitlement bridge convention.
+    """
+    if event.kind != 'LINEAR_EXCHANGE' or not event.successor:
+        return
+    key = ('U', event.successor)
+    if key not in staged.ledger.positions:
+        raise ValueError('Linear exchange successor position missing after committed handler')
+    staged.entry_meta.setdefault(key, dict(
+        entry_date=event.legal_effective_date,
+        valid_bar_count=0,
+        market='US',
+    ))
+
 
 def plan_open(replay, registry, session, *, contexts=None, pending_entitlements=frozenset()):
     """Return a validated, uncommitted OPEN plan; failure never changes replay.
@@ -252,6 +270,7 @@ def plan_open(replay, registry, session, *, contexts=None, pending_entitlements=
             if key in staged.ledger.positions:
                 raise ValueError('Terminal handler failed to remove predecessor')
             meta = staged.entry_meta.pop(key, {})
+            _bind_successor_entry_meta(staged, event)
             entry = meta.get('entry_date', event.legal_effective_date)
             # Date-only legal close and execution recognition stay distinct.
             span = dict(engine='U', symbol=event.predecessor, entry_date=entry,
