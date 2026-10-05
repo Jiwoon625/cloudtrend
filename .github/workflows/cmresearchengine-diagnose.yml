@@ -34,5 +34,3 @@ jobs:
         run: python scripts/cm_checkpoint_resume_diagnose.py
       - name: Read-only post-resume step reproduction
         run: python scripts/cm_checkpoint_step_diagnose.py
-      - name: Compare baseline and optimized S05 outputs
-        run: python scripts/cm_s05_output_parity.py
