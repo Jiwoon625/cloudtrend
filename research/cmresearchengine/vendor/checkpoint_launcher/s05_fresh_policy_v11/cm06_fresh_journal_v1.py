@@ -11,6 +11,16 @@ from cm06_fresh_codec_v1 import pack, restore
 JOURNAL_SCHEMA='CM06_FRESH_COMMIT_CHAIN_V1'
 class CheckpointCorruption(RuntimeError): pass
 
+def _same_json(left,right):
+    """Compare identity documents by canonical JSON semantics.
+
+    JSON persistence normalizes tuples to arrays/lists. Resume identity is
+    already bound by canonical JSON hashing, so direct Python object equality
+    must not reject an otherwise byte-equivalent identity after round-trip.
+    """
+    try:return canonical(left)==canonical(right)
+    except Exception:return False
+
 class CandidateJournal:
     def __init__(self,store,first_commit_id,completed_id,identity):
         self.store=store;self.first=first_commit_id;self.completed_id=completed_id;self.identity=identity
@@ -34,7 +44,7 @@ class CandidateJournal:
             if raw is None:break
             try:doc=json.loads(raw)
             except Exception as exc:raise CheckpointCorruption('Committed manifest is unreadable') from exc
-            if (doc.get('schema')!=JOURNAL_SCHEMA or doc.get('identity')!=self.identity
+            if (doc.get('schema')!=JOURNAL_SCHEMA or not _same_json(doc.get('identity'),self.identity)
                 or doc.get('sequence')!=self.sequence+1 or doc.get('previous_sha256')!=previous_hash
                 or not isinstance(doc.get('next_commit_id'),str) or doc['next_commit_id']==ident):
                 raise CheckpointCorruption('Checkpoint chain identity/order mismatch')
@@ -101,7 +111,7 @@ class CandidateJournal:
         if raw is None:return None
         try:doc=json.loads(raw)
         except Exception as exc:raise CheckpointCorruption('Completion marker unreadable') from exc
-        if doc.get('schema')!='CM06_FRESH_COMPLETED_V1' or doc.get('identity')!=self.identity:
+        if doc.get('schema')!='CM06_FRESH_COMPLETED_V1' or not _same_json(doc.get('identity'),self.identity):
             raise CheckpointCorruption('Completed strategy identity mismatch')
         self.scan()
         if self.head_id!=doc['final_commit_id'] or not self.head or not self.head['finished']:
@@ -112,7 +122,7 @@ class CandidateJournal:
         if final_raw is None or hashlib.sha256(final_raw).hexdigest()!=doc['final_commit_sha256']:
             raise CheckpointCorruption('Final state commit missing/corrupted')
         final=json.loads(final_raw)
-        if final.get('identity')!=self.identity or not final.get('finished'):
+        if not _same_json(final.get('identity'),self.identity) or not final.get('finished'):
             raise CheckpointCorruption('Completion points at unfinished strategy')
         if outputs is None or len(outputs)!=doc['outputs_size'] or hashlib.sha256(outputs).hexdigest()!=doc['outputs_sha256']:
             raise CheckpointCorruption('Completed outputs missing/corrupted')

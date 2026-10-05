@@ -9,6 +9,9 @@ PIT availability, vendor universes or production performance parity.
 
 | Finding | Correction | Focused regression |
 | --- | --- | --- |
+| A persisted checkpoint identity containing tuples is JSON-normalized to lists, so direct Python equality falsely rejects the first commit on a fresh process even though the canonical identity hash is unchanged | Compare persisted identity/host-binding documents by canonical JSON bytes at journal and codec restore boundaries | `JournalIntegrityTests.test_json_roundtrip_identity_with_tuples_resumes` |
+| Finding | Correction | Focused regression |
+| --- | --- | --- |
 | ETF Onset observed while held could be reused after a sale during its confirmation window | Record the blocked origin and consult holding spans before admitting that confirmation; a later fresh Onset remains usable | `ETFLifecycleNoteTests.test_onset_while_held_cannot_be_reused_after_next_open_sale` |
 | A preloaded/stale `cm06` module, or a cwd module ahead of an already-present reviewed root, could survive import setup | Reject CM preloads before controlled initialization, pin initialized source hashes, and move all reviewed roots ahead of cwd; use a fresh process | `ImportIsolationNoteTests.test_preloaded_foreign_cm06_is_rejected_not_silently_reused` |
 

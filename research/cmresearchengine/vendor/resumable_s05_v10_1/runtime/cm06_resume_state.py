@@ -126,7 +126,7 @@ def pack(runner,identity):
 def restore(runner,payload,identity):
     # Integrity must also be checked by the storage manifest before this call.
     doc=json.loads(gzip.decompress(payload))
-    if doc.get('schema')!=SCHEMA or doc.get('identity')!=identity: raise ValueError('Checkpoint identity/config/input/code mismatch')
+    if doc.get('schema')!=SCHEMA or canonical(doc.get('identity'))!=canonical(identity): raise ValueError('Checkpoint identity/config/input/code mismatch')
     if doc.get('versions')!=versions(): raise ValueError('Checkpoint dependency/runtime version mismatch')
     if canonical(doc.get('static_binding'))!=canonical(static_binding(runner)):raise ValueError('Checkpoint candidate/contract/reference/calendar mismatch')
     settings=dict(doc['decimal_context'])
