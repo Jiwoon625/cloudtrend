@@ -93,6 +93,15 @@ class RunnerTests(unittest.TestCase):
             files=read_result(result['completion'],store)
             self.assertIn('retrospective_exit_proxy_audit.csv',files)
             self.assertIn('exposure_diagnostics.csv',files)
+    def test_completion_readback_tolerates_json_tuple_normalization(self):
+        with tempfile.TemporaryDirectory() as d:
+            store=DirectoryStore(d);p=self.prepared()
+            p.identity=dict(p.identity,completion_tuple=('K','E','U'))
+            result=run_strategy(p,store)
+            self.assertEqual(result['status'],'COMPLETED_VERIFIED')
+            again=run_strategy(p,store)
+            self.assertTrue(again['already_complete'])
+
     def test_changed_identity_starts_separate_chain(self):
         with tempfile.TemporaryDirectory() as d:
             store=DirectoryStore(d);p=self.prepared();a=run_strategy(p,store,event_limit=3)
