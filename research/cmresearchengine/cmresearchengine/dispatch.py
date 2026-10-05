@@ -12,7 +12,7 @@ from pathlib import Path
 
 ALLOWED_MODES = {"preflight", "run"}
 ALLOWED_STAGES = {"base", "fine", "split25", "split10", "references"}
-ALLOWED_KEYS = {"request_id", "mode", "stage", "offset", "count", "max_seconds"}
+ALLOWED_KEYS = {"request_id", "mode", "stage", "offset", "count", "max_seconds", "workers"}
 
 
 def validate_request(raw):
@@ -37,8 +37,9 @@ def validate_request(raw):
         offset = int(raw.get("offset"))
         count = int(raw.get("count"))
         max_seconds = int(raw.get("max_seconds"))
+        workers = int(raw.get("workers", 1))
     except (TypeError, ValueError) as exc:
-        raise ValueError("offset/count/max_seconds must be integers") from exc
+        raise ValueError("offset/count/max_seconds/workers must be integers") from exc
 
     if offset < 0:
         raise ValueError("offset must be nonnegative")
@@ -46,6 +47,10 @@ def validate_request(raw):
         raise ValueError("count must be 1..16")
     if not 60 <= max_seconds <= 6300:
         raise ValueError("max_seconds must be 60..6300")
+    if not 1 <= workers <= 2:
+        raise ValueError("workers must be 1..2")
+    if workers > count:
+        raise ValueError("workers cannot exceed count")
 
     return {
         "request_id": request_id,
@@ -54,12 +59,13 @@ def validate_request(raw):
         "offset": offset,
         "count": count,
         "max_seconds": max_seconds,
+        "workers": workers,
     }
 
 
 def _write_github_output(path, request):
     with open(path, "a", encoding="utf-8") as stream:
-        for key in ("request_id", "mode", "stage", "offset", "count", "max_seconds"):
+        for key in ("request_id", "mode", "stage", "offset", "count", "max_seconds", "workers"):
             stream.write(f"{key}={request[key]}\n")
 
 
@@ -72,12 +78,14 @@ def main(argv=None):
     parser.add_argument("--offset")
     parser.add_argument("--count")
     parser.add_argument("--max-seconds")
+    parser.add_argument("--workers", default="1")
     parser.add_argument("--github-output")
     args = parser.parse_args(argv)
 
     if args.request_file:
         if any(v is not None for v in (
-            args.request_id, args.mode, args.stage, args.offset, args.count, args.max_seconds
+            args.request_id, args.mode, args.stage, args.offset, args.count, args.max_seconds,
+            None if args.workers == "1" else args.workers
         )):
             raise ValueError("Use either --request-file or explicit request fields")
         raw = json.loads(Path(args.request_file).read_text(encoding="utf-8"))
@@ -89,6 +97,7 @@ def main(argv=None):
             "offset": args.offset,
             "count": args.count,
             "max_seconds": args.max_seconds,
+            "workers": args.workers,
         }
 
     request = validate_request(raw)
