@@ -1,8 +1,9 @@
 {
-  "request_id": "s05-fastpath-v1-20261005-002",
+  "request_id": "base-s01-s02-parallel-v1-20261006-001",
   "mode": "run",
   "stage": "base",
-  "offset": 4,
-  "count": 1,
-  "max_seconds": 6000
+  "offset": 0,
+  "count": 2,
+  "max_seconds": 6000,
+  "workers": 2
 }
