@@ -21,17 +21,17 @@ class DispatchRequestTests(unittest.TestCase):
         self.assertEqual(request["count"], 1)
         self.assertEqual(request["workers"], 1)
 
-    def test_two_workers_are_explicitly_bounded(self):
+    def test_four_workers_are_explicitly_bounded(self):
         request = validate_request({
-            "request_id": "parallel-2",
+            "request_id": "parallel-4",
             "mode": "run",
             "stage": "base",
             "offset": 0,
-            "count": 2,
+            "count": 4,
             "max_seconds": 6000,
-            "workers": 2,
+            "workers": 4,
         })
-        self.assertEqual(request["workers"], 2)
+        self.assertEqual(request["workers"], 4)
         with self.assertRaises(ValueError):
             validate_request({
                 "request_id": "parallel-bad",
@@ -44,13 +44,13 @@ class DispatchRequestTests(unittest.TestCase):
             })
         with self.assertRaises(ValueError):
             validate_request({
-                "request_id": "parallel-bad",
+                "request_id": "parallel-too-many-workers",
                 "mode": "run",
                 "stage": "base",
                 "offset": 0,
-                "count": 3,
+                "count": 5,
                 "max_seconds": 6000,
-                "workers": 3,
+                "workers": 5,
             })
 
     def test_bounds_and_unknown_fields_fail_closed(self):
