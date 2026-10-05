@@ -153,7 +153,7 @@ def restore(runner,payload,identity):
     if identity != bind_identity(identity):raise ValueError('Exact source-bound identity required')
     if doc.get('codec_version')!=CODEC_VERSION or doc.get('source_binding')!=source_binding():
         raise ValueError('Checkpoint exact source identity mismatch')
-    if doc.get('schema')!=SCHEMA or doc.get('identity')!=identity: raise ValueError('Checkpoint identity/config/input/code mismatch')
+    if doc.get('schema')!=SCHEMA or canonical(doc.get('identity'))!=canonical(identity): raise ValueError('Checkpoint identity/config/input/code mismatch')
     if doc.get('versions')!=versions(): raise ValueError('Checkpoint dependency/runtime version mismatch')
     if canonical(doc.get('static_binding'))!=canonical(static_binding(runner)):raise ValueError('Checkpoint candidate/contract/reference/calendar mismatch')
     settings=dict(doc['decimal_context'])
