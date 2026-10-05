@@ -21,6 +21,10 @@ on:
       max_seconds:
         description: 'Execution time cap after input preflight (60..6300)'
         default: '3000'
+  push:
+    branches: [main]
+    paths:
+      - 'research/cmresearchengine/DISPATCH_REQUEST.json'
 permissions:
   contents: read
 concurrency:
@@ -46,13 +50,36 @@ jobs:
           python-version: '3.12.14'
       - name: Install pinned dependencies
         run: python -m pip install --disable-pip-version-check -r research/cmresearchengine/requirements.txt
+      - name: Resolve bounded research request
+        id: request
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_MODE: ${{ github.event.inputs.mode }}
+          MANUAL_STAGE: ${{ github.event.inputs.stage }}
+          MANUAL_OFFSET: ${{ github.event.inputs.offset }}
+          MANUAL_COUNT: ${{ github.event.inputs.count }}
+          MANUAL_MAX_SECONDS: ${{ github.event.inputs.max_seconds }}
+          MANUAL_REQUEST_ID: manual-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ]; then
+            python -m cmresearchengine.dispatch \
+              --request-file research/cmresearchengine/DISPATCH_REQUEST.json \
+              --github-output "$GITHUB_OUTPUT"
+          else
+            python -m cmresearchengine.dispatch \
+              --request-id "$MANUAL_REQUEST_ID" \
+              --mode "$MANUAL_MODE" --stage "$MANUAL_STAGE" \
+              --offset "$MANUAL_OFFSET" --count "$MANUAL_COUNT" \
+              --max-seconds "$MANUAL_MAX_SECONDS" \
+              --github-output "$GITHUB_OUTPUT"
+          fi
       - name: Validate and optionally run bounded research
         env:
-          CM_MODE: ${{ inputs.mode }}
-          CM_STAGE: ${{ inputs.stage }}
-          CM_OFFSET: ${{ inputs.offset }}
-          CM_COUNT: ${{ inputs.count }}
-          CM_MAX_SECONDS: ${{ inputs.max_seconds }}
+          CM_MODE: ${{ steps.request.outputs.mode }}
+          CM_STAGE: ${{ steps.request.outputs.stage }}
+          CM_OFFSET: ${{ steps.request.outputs.offset }}
+          CM_COUNT: ${{ steps.request.outputs.count }}
+          CM_MAX_SECONDS: ${{ steps.request.outputs.max_seconds }}
         run: |
           df -PB1 "$RUNNER_TEMP"
           /usr/bin/time -v python -m cmresearchengine.cli "$CM_MODE" \
