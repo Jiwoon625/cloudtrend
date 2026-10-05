@@ -7,6 +7,7 @@ import json
 import os
 import signal
 import time
+from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 from .plan import manifest, candidates, choose
 
 
@@ -14,6 +15,33 @@ def emit(status, **details):
     # No positions, private filenames, storage credentials or result data in
     # public GitHub Actions logs. Complete details live in private Storage only.
     print(json.dumps({'status':status,**details},sort_keys=True),flush=True)
+
+def _parallel_static_worker(config, candidate, plan_hash, max_seconds, event_limit):
+    """Run exactly one static candidate in an isolated child process.
+
+    The parent has already restored and verified private inputs. The child only
+    reads those local files and owns a candidate-specific ledger/checkpoint scope.
+    """
+    from .storage import SupabaseCMStore
+    from .prepared import PreparedResearch
+    from .runner import run_strategy, read_result
+    from cm06.registry import candidate_by_id
+    from cm06_fresh_host_v1 import canonical, digest
+
+    if candidate.policy_id or candidate.stage == 'references':
+        raise ValueError('Parallel worker accepts static non-reference candidates only')
+    store=SupabaseCMStore.from_env()
+    prototype=PreparedResearch(config,candidate_by_id('S05'))
+    prepared=prototype.clone(candidate,None)
+    scoped=store.scoped_checkpoints(plan_hash,candidate.candidate_id)
+    receipt=run_strategy(prepared,scoped,max_seconds=max_seconds,event_limit=event_limit)
+    store.put_object('results/'+plan_hash+'/'+candidate.candidate_id+'/attempts/'+digest(receipt)+'.json',canonical(receipt))
+    if receipt['status']=='COMPLETED_VERIFIED':
+        files=read_result(receipt['completion'],scoped)
+        key='results/'+plan_hash+'/'+candidate.candidate_id+'/'+digest(prepared.identity)
+        store.put_object(key+'/summary.json',files['summary.json'])
+        store.put_object(key+'/completion.json',canonical(receipt['completion']))
+    return receipt
 
 
 def main(argv=None):
@@ -24,11 +52,14 @@ def main(argv=None):
     parser.add_argument('--count',type=int,default=1)
     parser.add_argument('--ids',help='Comma-separated exact registered strategy IDs')
     parser.add_argument('--max-seconds',type=int,default=3000)
+    parser.add_argument('--workers',type=int,default=1)
     parser.add_argument('--event-limit',type=int)
     parser.add_argument('--work',default='.cm-private/work')
     args=parser.parse_args(argv)
     if not 1<=args.count<=16:parser.error('--count must be 1..16')
     if not 60<=args.max_seconds<=6300:parser.error('--max-seconds must be 60..6300')
+    if not 1<=args.workers<=2:parser.error('--workers must be 1..2')
+    if args.workers>args.count:parser.error('--workers cannot exceed --count')
     if args.event_limit is not None and args.event_limit<1:parser.error('--event-limit must be positive')
     plan=manifest();plan_hash=plan['definition_sha256']
     if args.mode=='plan':
@@ -83,6 +114,40 @@ def main(argv=None):
             store.put_object(key+'/completion.json',canonical(receipt['completion']))
             return receipt,files
         return receipt,None
+    if args.workers>1:
+        if args.stage=='references' or any(candidate.policy_id for candidate in selected):
+            raise ValueError('Parallel workers are limited to static non-reference candidates')
+        pending=list(selected)
+        active={}
+        receipts_by_id={}
+        with ProcessPoolExecutor(max_workers=args.workers) as pool:
+            while pending or active:
+                while pending and len(active)<args.workers:
+                    remaining=int(deadline-time.monotonic())
+                    if stop[0] or remaining<=45:break
+                    candidate=pending.pop(0)
+                    future=pool.submit(_parallel_static_worker,config,candidate,plan_hash,
+                        max(1,remaining-25),args.event_limit)
+                    active[future]=candidate
+                if not active:break
+                done,_=wait(tuple(active),return_when=FIRST_COMPLETED)
+                for future in done:
+                    candidate=active.pop(future)
+                    receipt=future.result()
+                    receipts_by_id[candidate.candidate_id]=receipt
+                    emit(receipt['status'],candidate_id=candidate.candidate_id,
+                        processed_events=receipt.get('processed_events'),
+                        checkpoint_sequence=receipt.get('checkpoint_sequence'),
+                        worker_mode='PROCESS_ISOLATED')
+                if stop[0] or time.monotonic()>=deadline-45:
+                    break
+        receipts=[receipts_by_id[c.candidate_id] for c in selected if c.candidate_id in receipts_by_id]
+        completed=sum(x['status']=='COMPLETED_VERIFIED' for x in receipts)
+        emit('BATCH_VERIFIED',selected_count=len(selected),completed_in_selected_batch=completed,
+            remaining_in_selected_batch=len(selected)-completed,
+            all_planned_strategies_completion_checked=False,parallel_workers=args.workers)
+        return 0
+
     if any(c.policy_id for c in selected):
         source_results={}
         for candidate in candidates('references'):
