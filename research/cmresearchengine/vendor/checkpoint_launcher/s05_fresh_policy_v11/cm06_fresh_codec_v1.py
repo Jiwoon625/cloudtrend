@@ -25,7 +25,7 @@ def pack(runner,identity):
 
 def restore(runner,payload,identity):
     doc=json.loads(gzip.decompress(payload))
-    if identity!=bind_identity(identity,runner) or doc.get('schema')!=SCHEMA or doc.get('host_binding')!=runner.host_binding or doc.get('identity_sha256')!=digest(identity):
+    if identity!=bind_identity(identity,runner) or doc.get('schema')!=SCHEMA or canonical(doc.get('host_binding'))!=canonical(runner.host_binding) or doc.get('identity_sha256')!=digest(identity):
         raise ValueError('Fresh checkpoint identity mismatch; legacy seq8 seeds are forbidden')
     proxy=_proxy(runner)
     exact.restore(proxy,gzip.compress(canonical(doc['inner']),mtime=0),identity)
