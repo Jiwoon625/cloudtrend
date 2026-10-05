@@ -21,7 +21,6 @@ class DatedActionPanels(Mapping):
     def __init__(self, panels, registry, identity_for_row=None):
         self.panels, self.registry = panels, registry
         self.identity_for_row = identity_for_row
-        self._records_day, self._records_cache = None, None
     def __len__(self): return len(self.panels)
     def __iter__(self): return iter(self.panels)
     def __contains__(self, day): return day in self.panels
@@ -43,11 +42,6 @@ class DatedActionPanels(Mapping):
             keep.append(not any(e.predecessor == row['symbol'] and e.predecessor_identity == str(identity)
                                 for e in active_events))
         return frame.loc[keep].copy()
-    def records(self, day):
-        if self._records_day != day:
-            self._records_cache = self[day].to_dict('records')
-            self._records_day = day
-        return self._records_cache
     def __getattr__(self, name): return getattr(self.panels, name)
 
 
