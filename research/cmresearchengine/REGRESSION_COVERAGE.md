@@ -7,6 +7,7 @@ PIT availability, vendor universes or production performance parity.
 
 ## Reproduced and corrected in this revision
 
+| Real S05 resume reached a held successor created by a documented LINEAR_EXCHANGE with no `entry_meta`; the next ordinary CLOSE indexed `entry_meta[(U,symbol)]` and raised KeyError | When a terminal linear exchange creates a successor, initialize successor metadata at the legal effective date with zero valid bars; preserve existing successor metadata if already held | `LinearExchangeEntryMetaTests` |
 | Finding | Correction | Focused regression |
 | --- | --- | --- |
 | A persisted checkpoint identity containing tuples is JSON-normalized to lists, so direct Python equality falsely rejects the first commit on a fresh process even though the canonical identity hash is unchanged | Compare persisted identity/host-binding documents by canonical JSON bytes at journal and codec restore boundaries | `JournalIntegrityTests.test_json_roundtrip_identity_with_tuples_resumes` |
