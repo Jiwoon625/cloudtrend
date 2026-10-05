@@ -43,8 +43,6 @@ class SplitMarketPanels(MonthlyDayPanels):
     def __getitem__(self, day):
         frame=self.base[day]
         return frame.loc[frame.market.eq(self.market)].copy()
-    def records(self, day):
-        return self[day].to_dict('records')
     def __getattr__(self,name):return getattr(self.base,name)
 
 class ResearchReplay(FreshPolicyReplay):
