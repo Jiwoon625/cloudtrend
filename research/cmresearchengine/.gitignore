@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.cm-private/
+*.tar
+*.zip
+*.parquet
+*.csv
+*.jsonl
+.env*
+# Private known-event evidence is overlaid only at runtime.
+vendor/**/*.json
+vendor/reference_parts/
+vendor/evidence/
