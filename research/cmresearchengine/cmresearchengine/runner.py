@@ -50,6 +50,9 @@ def serialize_result(runner):
     return output.getvalue()
 
 
+CHECKPOINT_SECONDS=600
+CHECKPOINT_SNAPSHOTS=252
+
 def run_strategy(prepared, store, *, max_seconds=3000, event_limit=None, stop_requested=None):
     if not 1<=max_seconds<=19800:raise ValueError('Time cap must be 1..19800 seconds')
     if event_limit is not None and event_limit<1:raise ValueError('Event limit must be positive')
@@ -67,7 +70,7 @@ def run_strategy(prepared, store, *, max_seconds=3000, event_limit=None, stop_re
         journal.commit(runner,False)
     if journal.head['finished']:
         completed=journal.complete(serialize_result(runner))
-        if journal.completed()!=completed:raise RuntimeError('Completion verification mismatch')
+        if canonical(journal.completed())!=canonical(completed):raise RuntimeError('Completion verification mismatch')
         return {'status':'COMPLETED_VERIFIED','trial_key':prepared.trial_key,'completion':completed}
     start=time.monotonic();initial_events=runner._resume_events
     def stop():
@@ -75,12 +78,12 @@ def run_strategy(prepared, store, *, max_seconds=3000, event_limit=None, stop_re
             (event_limit is not None and runner._resume_events-initial_events>=event_limit) or
             (stop_requested is not None and stop_requested()))
     def checkpoint(obj,finished):journal.commit(obj,finished)
-    result=runner.run(checkpoint,seconds=180,sessions=63,stop_requested=stop)
+    result=runner.run(checkpoint,seconds=CHECKPOINT_SECONDS,sessions=CHECKPOINT_SNAPSHOTS,stop_requested=stop)
     if result is None:
         return {'status':'PAUSED_VERIFIED','trial_key':prepared.trial_key,'processed_events':runner._resume_events,
             'checkpoint_sequence':journal.sequence,'processed_at':runner.ledger.at.isoformat()}
     completed=journal.complete(serialize_result(runner))
-    if journal.completed()!=completed:raise RuntimeError('Completion readback mismatch')
+    if canonical(journal.completed())!=canonical(completed):raise RuntimeError('Completion readback mismatch')
     return {'status':'COMPLETED_VERIFIED','trial_key':prepared.trial_key,'completion':completed}
 
 

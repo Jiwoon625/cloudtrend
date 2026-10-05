@@ -15,7 +15,7 @@ from cm06.accounting import Ledger, dec, utc, ZERO
 from cm06.allocation import move_idle_cash
 from cm06.policies import policy_target
 from cm06_comparison_signals import FrozenIntentAdapter
-from cm06_comparison_panels import normalized_day_panels
+from cm06_comparison_panels import normalized_day_panels, panel_records
 
 ENGINE_ADAPTER = {"K":"KR_MIXED", "E":"ETF_V02", "U":"US_A0"}
 CURRENCY = {"K":"KRW", "E":"KRW", "U":"USD"}
@@ -219,7 +219,8 @@ class Replay:
         self._start()
         batch_key=f"pending-batch:{e}"
         if batch_key in self.ledger.reservations:self.ledger.release(batch_key,"EXECUTE_MARKET_ORDER_BATCH")
-        rows={r["symbol"]:r for r in self.panels[e][day].to_dict("records")}
+        records=panel_records(self.panels[e],day)
+        rows={r["symbol"]:r for r in records}
         sold,used=set(),{}
         for symbol,h in self._holdings(e).items():
             row=rows.get(symbol)
@@ -306,10 +307,11 @@ class Replay:
         self._reserve_pending_cash(e)
 
     def _close(self,e,s):
-        day=s["session_date"];frame=self.panels[e][day]
-        if any(utc(t)>self.ledger.at for t in frame["available_at"]):
+        day=s["session_date"]
+        records=panel_records(self.panels[e],day)
+        if any(utc(r["available_at"])>self.ledger.at for r in records):
             raise ValueError("Features unavailable at session decision")
-        rows={r["symbol"]:r for r in frame.to_dict("records")}
+        rows={r["symbol"]:r for r in records}
         if day>=self.contract.start_date:
             for symbol,h in list(self._holdings(e).items()):
                 row=rows.get(symbol)
@@ -344,7 +346,7 @@ class Replay:
         if day<self.contract.start_date:
             initial=dec(self.contract.initial_capital_krw)*dec(self.candidate.initial_weights[e])
             if e=="U" and "USD" in self.ledger.fx:initial/=self.ledger.rate("USD")
-        emitted=self.adapters[e].on_close(frame,self._holdings(e),self.ledger.available(e,self.currency[e]),
+        emitted=self.adapters[e].on_close(records,self._holdings(e),self.ledger.available(e,self.currency[e]),
             float(initial),float(self.ledger.sleeve_nav(e)),next_open,self.ledger.at.isoformat())
         if day<self.contract.start_date:
             for it in self.adapters[e].pending_intents():self.adapters[e].cancel(it["signal_id"])

@@ -15,7 +15,7 @@ from cm06_comparison_execution import Replay as BaseReplay
 from cm06_verified_reference_adapter_v1 import dispatch_verified_open
 from cm06_exact_units_accounting_v1 import ExactComparisonEntitlementPosition
 from cm06_fractional_signals_v1 import promote_us_adapter
-from cm06_comparison_panels import MonthlyDayPanels
+from cm06_comparison_panels import MonthlyDayPanels, panel_records
 
 POLICY_ID='RETROSPECTIVE_LAST_VALID_CLOSE_EXIT_V1'
 POLICY={
@@ -36,13 +36,23 @@ def valid_price(value):
 
 class SplitMarketPanels(MonthlyDayPanels):
     """Independent views of the same verified K panel, without data rewriting."""
-    def __init__(self, base, market):self.base=base;self.market=market
+    def __init__(self, base, market):
+        self.base=base;self.market=market
+        self.immutable_session_cache=bool(getattr(base,'immutable_session_cache',False))
+        self._records_day=None;self._records_cache=None
     def __iter__(self):return iter(self.base)
     def __len__(self):return len(self.base)
     def __contains__(self, day):return day in self.base
     def __getitem__(self, day):
         frame=self.base[day]
         return frame.loc[frame.market.eq(self.market)].copy()
+    def records(self, day):
+        if not self.immutable_session_cache:
+            return self[day].to_dict('records')
+        if self._records_day!=day:
+            self._records_cache=self[day].to_dict('records')
+            self._records_day=day
+        return self._records_cache
     def __getattr__(self,name):return getattr(self.base,name)
 
 class ResearchReplay(FreshPolicyReplay):
@@ -153,8 +163,8 @@ class ResearchReplay(FreshPolicyReplay):
             self.entitlement_bridge.resolve_close(self,session)
             if any(type(p) is ExactComparisonEntitlementPosition for (e,_),p in self.ledger.positions.items() if e=='U'):
                 self.adapters['U']=promote_us_adapter(self.adapters['U'])
-        frame=self.panels[engine][day] if day in self.panels[engine] else None
-        rows={} if frame is None else {r['symbol']:r for r in frame.to_dict('records')}
+        records=panel_records(self.panels[engine],day) if day in self.panels[engine] else None
+        rows={} if records is None else {r['symbol']:r for r in records}
         if any(utc(r['available_at'])>self.ledger.at for r in rows.values()):
             raise ValueError('Features unavailable at close')
         for symbol,row in rows.items():
