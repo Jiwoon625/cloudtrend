@@ -67,7 +67,7 @@ def run_strategy(prepared, store, *, max_seconds=3000, event_limit=None, stop_re
         journal.commit(runner,False)
     if journal.head['finished']:
         completed=journal.complete(serialize_result(runner))
-        if journal.completed()!=completed:raise RuntimeError('Completion verification mismatch')
+        if canonical(journal.completed())!=canonical(completed):raise RuntimeError('Completion verification mismatch')
         return {'status':'COMPLETED_VERIFIED','trial_key':prepared.trial_key,'completion':completed}
     start=time.monotonic();initial_events=runner._resume_events
     def stop():
@@ -80,7 +80,7 @@ def run_strategy(prepared, store, *, max_seconds=3000, event_limit=None, stop_re
         return {'status':'PAUSED_VERIFIED','trial_key':prepared.trial_key,'processed_events':runner._resume_events,
             'checkpoint_sequence':journal.sequence,'processed_at':runner.ledger.at.isoformat()}
     completed=journal.complete(serialize_result(runner))
-    if journal.completed()!=completed:raise RuntimeError('Completion readback mismatch')
+    if canonical(journal.completed())!=canonical(completed):raise RuntimeError('Completion readback mismatch')
     return {'status':'COMPLETED_VERIFIED','trial_key':prepared.trial_key,'completion':completed}
 
 
