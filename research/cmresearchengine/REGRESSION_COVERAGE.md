@@ -7,6 +7,9 @@ PIT availability, vendor universes or production performance parity.
 
 ## Reproduced and corrected in this revision
 
+| S05 completed and wrote a valid completion marker/output, but runner compared the in-memory completion document to its JSON round-trip with Python `==`; tuple/list normalization could raise a false RuntimeError after completion | Compare completion readback using canonical JSON bytes, matching the checkpoint identity contract | `RunnerTests.test_completion_readback_tolerates_json_tuple_normalization` |
+| Repeated OPEN/CLOSE/proxy reads rebuilt the same session DataFrame and row dictionaries several times | Keep a bounded one-session/month cache and reuse explicit row-record snapshots through panel wrappers; strategy logic and row values are unchanged | `MonthlyPanelFastPathTests` + full synthetic suite |
+| Full checkpoint snapshots were emitted roughly every 180s/63 snapshots even though bounded-stop always forces a final checkpoint | Increase periodic checkpoint spacing to 600s/252 snapshots while preserving forced checkpoint on pause/stop and final completion | existing pause/resume/idempotence regressions |
 | Real S05 resume reached a held successor created by a documented LINEAR_EXCHANGE with no `entry_meta`; the next ordinary CLOSE indexed `entry_meta[(U,symbol)]` and raised KeyError | When a terminal linear exchange creates a successor, initialize successor metadata at the legal effective date with zero valid bars; preserve existing successor metadata if already held | `LinearExchangeEntryMetaTests` |
 | Finding | Correction | Focused regression |
 | --- | --- | --- |
