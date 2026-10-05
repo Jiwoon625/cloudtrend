@@ -32,3 +32,5 @@ jobs:
             --first-id first_ab9b61431433ea1786bf8ba16b2ec7a21f2c64b48aae93b8e1d79e0e1c1fc24b
       - name: Deep read-only resume verification
         run: python scripts/cm_checkpoint_resume_diagnose.py
+      - name: Read-only post-resume step reproduction
+        run: python scripts/cm_checkpoint_step_diagnose.py
