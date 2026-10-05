@@ -24,7 +24,7 @@ def file_hash(path):
 
 
 class MonthlyDayPanels(Mapping):
-    """Loads at most one engine-month; verifies each file before its first use."""
+    """Loads at most one engine-month and caches one normalized session."""
 
     def __init__(self, manifest_path, expected_manifest_sha256, *, market=None):
         path = Path(manifest_path).resolve()
@@ -43,6 +43,8 @@ class MonthlyDayPanels(Mapping):
                 self.days[day] = month
         self._month, self._frame = None, None
         self._verified = set()
+        self._day_cache_day, self._day_cache_frame = None, None
+        self._records_cache_day, self._records_cache = None, None
         self.loads = 0
         self.peak_cached_rows = 0
 
@@ -55,42 +57,66 @@ class MonthlyDayPanels(Mapping):
     def __contains__(self, day):
         return day in self.days
 
+    def _load_month(self, month):
+        self._frame, self._month = None, None
+        self._day_cache_day, self._day_cache_frame = None, None
+        self._records_cache_day, self._records_cache = None, None
+        part = self.parts[month]
+        path = (self.root / part["path"]).resolve()
+        if not path.is_relative_to(self.root):
+            raise ValueError("Monthly panel escapes manifest directory")
+        if month not in self._verified:
+            if file_hash(path) != part["sha256"]:
+                raise ValueError("Monthly panel file hash mismatch")
+            self._verified.add(month)
+        frame = pd.read_parquet(path)
+        if len(frame) != part["rows"] or not REQUIRED.issubset(frame.columns):
+            raise ValueError("Monthly panel row count or schema mismatch")
+        if frame.duplicated(["session_date", "symbol"]).any():
+            raise ValueError("Duplicate symbol/date in monthly panel")
+        if frame[list(REQUIRED - {"comparison_open", "comparison_close"})].isna().any().any():
+            raise ValueError("Missing normalized panel identity/time fields")
+        if set(frame.session_date) != set(part["sessions"]):
+            raise ValueError("Monthly panel session coverage mismatch")
+        if self.market and not frame.market.eq(self.market).all():
+            raise ValueError("Split-KR panel contains the other market")
+        if "market_gate" in frame:
+            frame["market_gate"] = frame.market_gate.map(clean)
+        times = pd.to_datetime(frame.available_at, utc=True, errors="raise")
+        frame["available_at"] = times.map(lambda x: x.isoformat())
+        # Frozen signal predicates require absent numeric fields to be None.
+        # Normalize once per loaded month instead of once per OPEN/CLOSE access.
+        frame = frame.astype(object).where(frame.notna(), None)
+        self._frame, self._month = frame, month
+        self.loads += 1
+        self.peak_cached_rows = max(self.peak_cached_rows, len(frame))
+
     def __getitem__(self, day):
         month = self.days[day]
         if self._month != month:
-            # Release the previous month before allocating the next one.
-            self._frame, self._month = None, None
-            part = self.parts[month]
-            path = (self.root / part["path"]).resolve()
-            if not path.is_relative_to(self.root):
-                raise ValueError("Monthly panel escapes manifest directory")
-            if month not in self._verified:
-                if file_hash(path) != part["sha256"]:
-                    raise ValueError("Monthly panel file hash mismatch")
-                self._verified.add(month)
-            frame = pd.read_parquet(path)
-            if len(frame) != part["rows"] or not REQUIRED.issubset(frame.columns):
-                raise ValueError("Monthly panel row count or schema mismatch")
-            if frame.duplicated(["session_date", "symbol"]).any():
-                raise ValueError("Duplicate symbol/date in monthly panel")
-            if frame[list(REQUIRED - {"comparison_open", "comparison_close"})].isna().any().any():
-                raise ValueError("Missing normalized panel identity/time fields")
-            if set(frame.session_date) != set(part["sessions"]):
-                raise ValueError("Monthly panel session coverage mismatch")
-            if self.market and not frame.market.eq(self.market).all():
-                raise ValueError("Split-KR panel contains the other market")
-            if "market_gate" in frame:
-                frame["market_gate"] = frame.market_gate.map(clean)
-            times = pd.to_datetime(frame.available_at, utc=True, errors="raise")
-            frame["available_at"] = times.map(lambda x: x.isoformat())
-            self._frame, self._month = frame, month
-            self.loads += 1
-            self.peak_cached_rows = max(self.peak_cached_rows, len(frame))
-        # Each consumer receives its own one-day frame; ledgers never share state.
-        result = self._frame.loc[self._frame.session_date.eq(day)].copy()
-        # Frozen signal predicates require absent numeric fields to be None.
-        # A NaN return must not enter the tradable ranking population.
-        return result.astype(object).where(result.notna(), None)
+            self._load_month(month)
+        if self._day_cache_day != day:
+            self._day_cache_frame = self._frame.loc[self._frame.session_date.eq(day)].copy()
+            self._day_cache_day = day
+            self._records_cache_day, self._records_cache = None, None
+        # Consumers receive a separate DataFrame shell while the immutable
+        # normalized values remain shared for this one-session cache.
+        return self._day_cache_frame.copy(deep=False)
+
+    def records(self, day):
+        """Stable row dictionaries reused by repeated same-session readers."""
+        if self._records_cache_day != day:
+            self._records_cache = self[day].to_dict("records")
+            self._records_cache_day = day
+        return self._records_cache
+
+
+def panel_records(panel, day):
+    """Use a wrapper's explicit records fast-path, otherwise preserve old behavior."""
+    method = getattr(type(panel), "records", None)
+    if method is not None:
+        return method(panel, day)
+    return panel[day].to_dict("records")
 
 
 def normalized_day_panels(panel, engine, structural_split):
