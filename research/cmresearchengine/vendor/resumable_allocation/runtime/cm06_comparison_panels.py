@@ -25,6 +25,7 @@ def file_hash(path):
 
 class MonthlyDayPanels(Mapping):
     """Loads at most one engine-month and caches one normalized session."""
+    immutable_session_cache = True
 
     def __init__(self, manifest_path, expected_manifest_sha256, *, market=None):
         path = Path(manifest_path).resolve()
