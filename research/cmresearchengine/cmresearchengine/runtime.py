@@ -1,5 +1,7 @@
 """Load only the reviewed source tree. Input archives can never supply code."""
 import hashlib
+import importlib.metadata
+import platform
 import json
 from pathlib import Path
 import sys
@@ -16,5 +18,11 @@ def activate():
 def code_hashes():
     return {p.relative_to(ROOT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
             for folder in ('vendor', 'cmresearchengine') for p in sorted((ROOT / folder).rglob('*.py'))}
+
+def fingerprint():
+    """Patch-level runtime changes must never reuse an old resume identity."""
+    names=('numpy','pandas','scipy','pyarrow','python-dateutil','pytz','tzdata','six')
+    return {'python':platform.python_version(),
+            **{name:importlib.metadata.version(name) for name in names}}
 
 activate()

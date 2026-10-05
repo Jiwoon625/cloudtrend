@@ -15,6 +15,8 @@ class CandidateJournal:
     def __init__(self,store,first_commit_id,completed_id,identity):
         self.store=store;self.first=first_commit_id;self.completed_id=completed_id;self.identity=identity
         self.head=None;self.head_id=None;self.next_id=first_commit_id;self.sequence=0
+        self._verified_state_payload=None
+        self._verified_head_raw=None
 
     def _get(self,ident):
         try:return self.store.get_bytes(ident)
@@ -22,6 +24,8 @@ class CandidateJournal:
 
     def scan(self):
         self.head=None;self.head_id=None;self.next_id=self.first;self.sequence=0
+        self._verified_state_payload=None
+        self._verified_head_raw=None
         seen=set();previous_hash=None
         while True:
             ident=self.next_id
@@ -35,6 +39,7 @@ class CandidateJournal:
                 or not isinstance(doc.get('next_commit_id'),str) or doc['next_commit_id']==ident):
                 raise CheckpointCorruption('Checkpoint chain identity/order mismatch')
             self.head=doc;self.head_id=ident;self.sequence=doc['sequence'];self.next_id=doc['next_commit_id']
+            self._verified_head_raw=raw
             previous_hash=hashlib.sha256(raw).hexdigest()
         if self.head:
             # Full snapshots supersede prior payloads. Verify all small commit
@@ -42,12 +47,16 @@ class CandidateJournal:
             payload=self._get(self.head['state_id'])
             if payload is None or len(payload)!=self.head['state_size'] or hashlib.sha256(payload).hexdigest()!=self.head['state_sha256']:
                 raise CheckpointCorruption('Committed state blob missing/corrupted; prior valid checkpoint preserved')
+            self._verified_state_payload=payload
         return self.head
 
     def load(self,runner):
         self.scan()
         if self.head:
-            restore(runner,self.store.get_bytes(self.head['state_id']),self.identity)
+            # Restore exactly the bytes verified against the reachable head.
+            # A second unchecked network read could change between validation
+            # and restore even when its inner identity remains valid.
+            restore(runner,self._verified_state_payload,self.identity)
         return runner
 
     def commit(self,runner,finished=False):
@@ -61,7 +70,7 @@ class CandidateJournal:
         if self.store.get_bytes(state_id)!=payload:raise CheckpointCorruption('State readback verification failed')
         previous_sha=None
         if self.head_id:
-            previous_sha=hashlib.sha256(self.store.get_bytes(self.head_id)).hexdigest()
+            previous_sha=hashlib.sha256(self._verified_head_raw).hexdigest()
         doc={'schema':JOURNAL_SCHEMA,'identity':self.identity,'sequence':self.sequence+1,
              'previous_sha256':previous_sha,'state_id':state_id,'state_size':len(payload),
              'state_sha256':state_sha,'next_commit_id':self.store.generate_id(),
@@ -71,6 +80,7 @@ class CandidateJournal:
         self.store.put_bytes(published_id,'CM06_commit_'+digest(self.identity)[:16]+'_'+str(doc['sequence'])+'.json',raw)
         if self.store.get_bytes(published_id)!=raw:raise CheckpointCorruption('Commit readback verification failed')
         self.head=doc;self.head_id=published_id;self.next_id=doc['next_commit_id'];self.sequence=doc['sequence']
+        self._verified_head_raw=raw;self._verified_state_payload=payload
         return doc
 
     def complete(self,output_blob):
@@ -79,7 +89,7 @@ class CandidateJournal:
         self.store.put_bytes(ident,'CM06_outputs_'+sha+'.zip',output_blob)
         if self.store.get_bytes(ident)!=output_blob:raise CheckpointCorruption('Output verification failed')
         doc={'schema':'CM06_FRESH_COMPLETED_V1','identity':self.identity,'final_commit_id':self.head_id,
-             'final_commit_sha256':hashlib.sha256(self.store.get_bytes(self.head_id)).hexdigest(),
+             'final_commit_sha256':hashlib.sha256(self._verified_head_raw).hexdigest(),
              'outputs_id':ident,'outputs_sha256':sha,'outputs_size':len(output_blob)}
         raw=canonical(doc)
         self.store.put_bytes(self.completed_id,'CM06_completed_'+digest(self.identity)[:16]+'.json',raw)
@@ -96,7 +106,9 @@ class CandidateJournal:
         self.scan()
         if self.head_id!=doc['final_commit_id'] or not self.head or not self.head['finished']:
             raise CheckpointCorruption('Completion is not the reachable final checkpoint')
-        final_raw=self._get(doc['final_commit_id']);outputs=self._get(doc['outputs_id'])
+        # The completion marker must describe the same head whose referenced
+        # state was just verified by scan, not a second mutable backend read.
+        final_raw=self._verified_head_raw;outputs=self._get(doc['outputs_id'])
         if final_raw is None or hashlib.sha256(final_raw).hexdigest()!=doc['final_commit_sha256']:
             raise CheckpointCorruption('Final state commit missing/corrupted')
         final=json.loads(final_raw)

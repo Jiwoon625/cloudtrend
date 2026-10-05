@@ -1,0 +1,758 @@
+{
+  "schema": "CM_MANUAL_DISPATCH_RUNBOOK_V1",
+  "workflow_file": "cmresearchengine-run.yml",
+  "source_plan_sha256": "ce6be8c497e45fa22a41d3a7b924913a23b18588fd05efd33ee14eb961ec7c2c",
+  "dispatch_policy": "SEQUENTIAL_ONLY; wait for terminal workflow result; retry same selection on PAUSED_VERIFIED",
+  "actual_dispatches_performed": 0,
+  "gate_sequence": [
+    {
+      "label": "Input/evidence preflight",
+      "mode": "preflight",
+      "stage": "base",
+      "offset": 0,
+      "count": 1,
+      "max_seconds": 3000
+    },
+    {
+      "label": "S05 measurement and correctness gate",
+      "mode": "run",
+      "stage": "base",
+      "offset": 4,
+      "count": 1,
+      "max_seconds": 3000
+    }
+  ],
+  "base_sequence": [
+    {
+      "label": "Base static batch",
+      "mode": "run",
+      "stage": "base",
+      "offset": 0,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "Base static batch",
+      "mode": "run",
+      "stage": "base",
+      "offset": 16,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "Base static batch",
+      "mode": "run",
+      "stage": "base",
+      "offset": 32,
+      "count": 8,
+      "max_seconds": 3000
+    },
+    {
+      "label": "Independent fixed-budget references",
+      "mode": "run",
+      "stage": "references",
+      "offset": 0,
+      "count": 3,
+      "max_seconds": 3000
+    },
+    {
+      "label": "Base dynamic policies",
+      "mode": "run",
+      "stage": "base",
+      "offset": 40,
+      "count": 12,
+      "max_seconds": 3000
+    }
+  ],
+  "expanded_sequence": [
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 0,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 16,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 32,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 48,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 64,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 80,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 96,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 112,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 128,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 144,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 160,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 176,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 192,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 208,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 224,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 240,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 256,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "fine batch",
+      "mode": "run",
+      "stage": "fine",
+      "offset": 272,
+      "count": 14,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split25 batch",
+      "mode": "run",
+      "stage": "split25",
+      "offset": 0,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split25 batch",
+      "mode": "run",
+      "stage": "split25",
+      "offset": 16,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split25 batch",
+      "mode": "run",
+      "stage": "split25",
+      "offset": 32,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split25 batch",
+      "mode": "run",
+      "stage": "split25",
+      "offset": 48,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split25 batch",
+      "mode": "run",
+      "stage": "split25",
+      "offset": 64,
+      "count": 6,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 0,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 16,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 32,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 48,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 64,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 80,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 96,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 112,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 128,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 144,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 160,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 176,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 192,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 208,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 224,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 240,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 256,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 272,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 288,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 304,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 320,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 336,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 352,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 368,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 384,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 400,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 416,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 432,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 448,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 464,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 480,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 496,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 512,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 528,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 544,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 560,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 576,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 592,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 608,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 624,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 640,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 656,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 672,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 688,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 704,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 720,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 736,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 752,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 768,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 784,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 800,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 816,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 832,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 848,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 864,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 880,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 896,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 912,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 928,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 944,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 960,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 976,
+      "count": 16,
+      "max_seconds": 3000
+    },
+    {
+      "label": "split10 batch",
+      "mode": "run",
+      "stage": "split10",
+      "offset": 992,
+      "count": 9,
+      "max_seconds": 3000
+    }
+  ],
+  "minimum_fresh_jobs_if_each_batch_completes": 93
+}

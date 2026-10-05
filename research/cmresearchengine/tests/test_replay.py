@@ -92,6 +92,7 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(again['completion'],result['completion'])
             files=read_result(result['completion'],store)
             self.assertIn('retrospective_exit_proxy_audit.csv',files)
+            self.assertIn('exposure_diagnostics.csv',files)
     def test_changed_identity_starts_separate_chain(self):
         with tempfile.TemporaryDirectory() as d:
             store=DirectoryStore(d);p=self.prepared();a=run_strategy(p,store,event_limit=3)

@@ -43,7 +43,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
-          python-version: '3.12'
+          python-version: '3.12.14'
       - name: Install pinned dependencies
         run: python -m pip install --disable-pip-version-check -r research/cmresearchengine/requirements.txt
       - name: Validate and optionally run bounded research
@@ -53,9 +53,11 @@ jobs:
           CM_OFFSET: ${{ inputs.offset }}
           CM_COUNT: ${{ inputs.count }}
           CM_MAX_SECONDS: ${{ inputs.max_seconds }}
-        run: >-
-          python -m cmresearchengine.cli "$CM_MODE"
-          --stage "$CM_STAGE" --offset "$CM_OFFSET" --count "$CM_COUNT"
-          --max-seconds "$CM_MAX_SECONDS" --work "$RUNNER_TEMP/cm-private/work"
+        run: |
+          df -PB1 "$RUNNER_TEMP"
+          /usr/bin/time -v python -m cmresearchengine.cli "$CM_MODE" \
+            --stage "$CM_STAGE" --offset "$CM_OFFSET" --count "$CM_COUNT" \
+            --max-seconds "$CM_MAX_SECONDS" --work "$RUNNER_TEMP/cm-private/work"
+          df -PB1 "$RUNNER_TEMP"
       # Private inputs, NAV, holdings, evidence, and checkpoints never enter
       # public Actions artifacts or public caches. Storage alone persists them.

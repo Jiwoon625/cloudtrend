@@ -34,6 +34,8 @@ def main(argv=None):
     if args.mode=='plan':
         emit('PLAN_ONLY_NO_HISTORICAL_EXECUTION',stage_counts=plan['stage_counts'],plan_sha256=plan_hash)
         return 0
+    selected=choose(args.stage,args.offset,args.count,args.ids.split(',') if args.ids else None)
+    if not selected:raise ValueError('Batch offset is outside selected stage')
     from .storage import SupabaseCMStore
     from .ingest import restore_archives, restore_evidence
     from .prepared import PreparedResearch, configuration
@@ -58,8 +60,6 @@ def main(argv=None):
     signal.signal(signal.SIGTERM,lambda *_:stop.__setitem__(0,True))
     signal.signal(signal.SIGINT,lambda *_:stop.__setitem__(0,True))
     deadline=time.monotonic()+args.max_seconds
-    selected=choose(args.stage,args.offset,args.count,args.ids.split(',') if args.ids else None)
-    if not selected:raise ValueError('Batch offset is outside selected stage')
     store.put_object('results/plans/'+plan_hash+'.json',canonical(plan))
     references=None
     receipts=[]

@@ -193,5 +193,6 @@ class ResearchReplay(FreshPolicyReplay):
         result=super().result()
         result['retrospective_exit_proxy_audit']=pd.DataFrame(self.proxy_exits)
         result['unresolved_rights_encounters']=pd.DataFrame(self.proxy_unresolved_observations)
+        result['exposure_diagnostics']=pd.DataFrame(self.exposure_records)
         result['research_policy']=POLICY
         return result

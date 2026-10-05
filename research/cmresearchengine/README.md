@@ -89,9 +89,12 @@ frozen native budget. Cutoff grids must match exactly, with no filling or
 interpolation. References never consume an allocation candidate's NAV, orders or
 cash. The entire reference contract is part of the preregistration identity.
 
+See [RUNBOOK.md](RUNBOOK.md) for dry-checked dispatch rows and measurement gates;
+[REPORT_TEMPLATE.md](REPORT_TEMPLATE.md) defines the private result summary.
+
 ## Run and resume
 
-Python 3.12 and the pinned requirements are required. Existing backend-only
+Python 3.12.14 and the pinned requirements are required. Existing backend-only
 GitHub secrets are referenced by name: `SUPABASE_URL`,
 `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_USER_ID`. Do not paste keys into code,
 logs, issues or chat. No new credentials, grants or bucket policies are created.
@@ -138,8 +141,9 @@ I/O; production preflight requires the pinned real package. Actual full-input
 preflight and historical runs remain separate, observable verification stages.
 
 `UPSTREAM_SOURCE_MANIFEST.json` records the unmodified source hashes copied
-from the reviewed fresh-v11 payload. The single initial vendored host change
-removes the S05-only candidate restriction; new policy behavior is isolated in
+from the reviewed fresh-v11 payload. Vendored changes remove the S05-only host restriction and make checkpoint
+restore reuse the exact verified state bytes, avoiding an unchecked second
+read. New policy behavior is isolated in
 `cmresearchengine/replay.py`. Every actual run also binds current code hashes.
 
 ## Storage documentation consulted

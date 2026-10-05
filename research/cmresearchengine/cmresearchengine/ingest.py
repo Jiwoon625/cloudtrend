@@ -324,8 +324,15 @@ def restore_archives(store, workdir):
     # Detect local collisions before transferring any large archive.
     existing = {name: match(safe(root, name), record) for name, record in outputs.items()}
     pending_bytes = sum(record["size"] for name, record in outputs.items() if not existing[name])
+    # An incomplete TAR must stage every listed member, including members
+    # already present in a reused workdir. Budget full selected-archive staging
+    # plus missing-file publication, not merely twice the missing subset.
+    staging_bytes = sum(records[name]["size"] for _, doc, records in stages
+                        for archive in doc["archives"]
+                        if any(not existing[name] for name in archive["members"])
+                        for name in archive["members"])
     largest_archive = max(a["size"] for _, doc, _ in stages for a in doc["archives"])
-    if shutil.disk_usage(root).free < pending_bytes * 2 + largest_archive * 2 + 32 * BLOCK:
+    if shutil.disk_usage(root).free < staging_bytes + pending_bytes + largest_archive * 2 + 32 * BLOCK:
         raise IngestionError("Insufficient disk space for verified no-overwrite restore")
     with tempfile.TemporaryDirectory(prefix=".cm-inputs-", dir=root.parent) as temporary:
         staging = Path(temporary)

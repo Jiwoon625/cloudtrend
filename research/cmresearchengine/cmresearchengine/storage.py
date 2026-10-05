@@ -294,8 +294,14 @@ class SupabaseCMStore:
                                 raise StorageError("Downloaded object exceeds pinned size")
                             digest.update(chunk)
                             output.write(chunk)
-                        if size != expected_size or digest.hexdigest() != expected_sha256:
-                            raise StorageError("Downloaded object SHA256/size mismatch")
+                        if size < expected_size:
+                            # read(n) can return a clean early EOF even when a
+                            # Content-Length body was truncated. Treat only the
+                            # short transport as retryable; reset/truncate the
+                            # same temporary file before the bounded next try.
+                            raise http.client.IncompleteRead(b"", expected_size - size)
+                        if digest.hexdigest() != expected_sha256:
+                            raise StorageError("Downloaded object SHA256 mismatch")
                         output.flush()
                         os.fsync(output.fileno())
                     self._request("GET", route, consume)

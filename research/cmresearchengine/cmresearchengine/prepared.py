@@ -23,7 +23,7 @@ class PreparedResearch(PreparedFreshDiagnostic):
         self.base_identity.update(schema='CM_RESEARCH_STRATEGY_V1',scope='CM_RESEARCH_ONLY',
             candidate=candidate.to_dict(),execution=asdict(self.research_contract()),
             batch_execution_authorized=True,plan_sha256=manifest()['definition_sha256'],
-            code_hashes=runtime.code_hashes(),exception_policy=POLICY,
+            code_hashes=runtime.code_hashes(),runtime_versions=runtime.fingerprint(),exception_policy=POLICY,
             reference_contract=REFERENCE_CONTRACT,
             reference_nav_fingerprint=frame_fingerprint(self.references.get('nav')),
             reference_demands_fingerprint=frame_fingerprint(self.references.get('demands')),

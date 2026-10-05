@@ -97,6 +97,34 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(),data)
             self.store.download_object('inputs/archive.tar',path,**args)
             self.assertEqual(path.stat().st_mode&0o111,0)
+    def test_short_clean_eof_retries_without_publishing_partial_file(self):
+        import http.client
+        class Socket:
+            def __init__(self,data):self.data=data
+            def makefile(self,mode):return io.BytesIO(self.data)
+        class HTTPBody:
+            def __init__(self,url,data,declared):
+                self.url=url
+                wire=b'HTTP/1.1 200 OK\r\nContent-Length: '+str(declared).encode()+b'\r\n\r\n'+data
+                self.response=http.client.HTTPResponse(Socket(wire));self.response.begin()
+            def geturl(self):return self.url
+            def getcode(self):return self.response.status
+            def read(self,n):return self.response.read(n)
+            def __enter__(self):return self
+            def __exit__(self,*args):self.response.close()
+        class FirstShort(FakeHTTP):
+            def __init__(self,data):super().__init__();self.data=data;self.downloads=0
+            def open(self,request,timeout):
+                if '/bucket/' in request.full_url:return super().open(request,timeout)
+                self.downloads+=1
+                return HTTPBody(request.full_url,self.data[:3] if self.downloads==1 else self.data,len(self.data))
+        data=b'synthetic pinned complete content';remote=FirstShort(data);sleeps=[]
+        store=SupabaseCMStore(URL,KEY,USER,opener=remote,sleep=sleeps.append)
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'archive.tar'
+            store.download_object('inputs/archive.tar',path,expected_size=len(data),expected_sha256=hashlib.sha256(data).hexdigest())
+            self.assertEqual(path.read_bytes(),data);self.assertEqual(remote.downloads,2);self.assertEqual(sleeps,[0.5])
+
     def test_corrupt_download_not_published(self):
         self.http.objects[self.store.object_key('inputs/archive.tar')]=b'bad'
         with tempfile.TemporaryDirectory() as directory:

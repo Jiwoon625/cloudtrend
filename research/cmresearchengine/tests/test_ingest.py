@@ -63,6 +63,25 @@ class IngestTests(unittest.TestCase):
             self.assertEqual(len([p for p in root.rglob('*') if p.is_file()]),401)
             self.assertTrue(all(not(p.stat().st_mode&0o111) for p in root.rglob('*') if p.is_file()))
             self.assertEqual(ingest.restore_archives(store,root),manifest);self.assertEqual(len(store.downloaded),24);self.assertEqual(store.verified,2)
+    def test_partial_restore_budgets_whole_needed_archives(self):
+        from types import SimpleNamespace
+        store,expected=full_contract();missing=[];existing=[];sizes=[]
+        for frozen in expected:
+            doc=json.loads(store.objects['inputs/cm06.batched.stage.'+frozen['stage']+'.json'])
+            for archive in doc['archives']:
+                sizes.append(archive['size']);missing.append(archive['members'][0])
+                existing.extend(archive['members'][1:])
+        old_underestimate=2*sum(len(('synthetic:'+n).encode()) for n in missing)+2*max(sizes)+32*ingest.BLOCK
+        with tempfile.TemporaryDirectory() as directory,patch.object(ingest,'FROZEN_STAGES',expected):
+            root=Path(directory)/'work'
+            for name in existing:
+                target=root/name;target.parent.mkdir(parents=True,exist_ok=True)
+                target.write_bytes(('synthetic:'+name).encode())
+            with patch.object(ingest.shutil,'disk_usage',return_value=SimpleNamespace(free=old_underestimate)):
+                with self.assertRaisesRegex(ingest.IngestionError,'Insufficient disk'):
+                    ingest.restore_archives(store,root)
+            self.assertFalse(store.downloaded)
+
     def test_frozen_hash_before_archive_download(self):
         store,expected=full_contract();store.objects['inputs/cm06.batched.stage.CloseadjInputsV2.json']+=b' '
         with tempfile.TemporaryDirectory() as directory,patch.object(ingest,'FROZEN_STAGES',expected):

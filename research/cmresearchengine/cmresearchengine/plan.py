@@ -46,7 +46,9 @@ def manifest():
 
 def choose(stage, offset=0, count=1, ids=None):
     rows=candidates(stage)
+    if offset<0 or not 1<=count<=16:raise ValueError('Batch bounds must use nonnegative offset and count1..16')
     if ids:
+        if len(ids)>16:raise ValueError('At most16 strategy IDs per bounded batch')
         by_id={c.candidate_id:c for c in rows}
         if len(ids)!=len(set(ids)): raise ValueError('Duplicate strategy request')
         unknown=set(ids)-set(by_id)
