@@ -42,9 +42,9 @@ workflow-dispatch API, update this public, non-secret control file on `main`:
 `research/cmresearchengine/DISPATCH_REQUEST.json`
 
 A push that changes only that path triggers the same
-`CMresearchengine manual research` workflow. The request must contain only
-`request_id`, `mode`, `stage`, `offset`, `count`, and `max_seconds`.
-The workflow validates the same bounds before the research CLI starts. Change
+`CMresearchengine manual research` workflow. The request may contain only
+`request_id`, `mode`, `stage`, `offset`, `count`, `max_seconds`, and optional `workers`.
+The workflow validates the same bounds before the research CLI starts. `workers` defaults to 1 and is bounded to 1..2; v1 parallel execution is limited to static non-reference candidates. Change
 `request_id` for an intentional retry/resume of the same selection. Never put
 credentials, data paths, holdings, prices, or result content in this file.
 
@@ -94,6 +94,22 @@ matching state hash, matching result ZIP hash and matching final completion
 marker. Review balance/fee/settlement/proxy audits and the report template before
 starting the wider plan. Do not interpret this as historical actual-fill or PIT
 certification.
+
+## 3A. Parallel static-batch optimization
+
+After S05 fast-path parity is verified, static candidates may use `workers=2`.
+The parent job still restores inputs/evidence and completes preflight exactly once.
+Each child process reconstructs reviewed runtime state from the verified local
+overlay but owns a completely independent candidate ledger, adapter state,
+orders, cash, settlements and private checkpoint scope.
+
+This is a wall-time optimization only. It does **not** share candidate trading
+state or permit portfolio feedback across strategies. Reference runs and dynamic
+policy candidates remain `workers=1` until separately validated.
+
+For the first benchmark, use two static base candidates with `count=2`,
+`workers=2`, `max_seconds=6000`, and compare both completed outputs against
+their sequential equivalents before widening any batch.
 
 ## 4. Base, reference and expanded sequence
 
