@@ -33,6 +33,21 @@ verify all 1,409 candidate slots without contacting GitHub or Supabase.
 
 ## 2. Exact first dispatches
 
+### Assistant-operated bounded dispatch
+
+The existing manual `workflow_dispatch` remains available. For an assistant or
+automation client that can write repository files but cannot call GitHub's
+workflow-dispatch API, update this public, non-secret control file on `main`:
+
+`research/cmresearchengine/DISPATCH_REQUEST.json`
+
+A push that changes only that path triggers the same
+`CMresearchengine manual research` workflow. The request must contain only
+`request_id`, `mode`, `stage`, `offset`, `count`, and `max_seconds`.
+The workflow validates the same bounds before the research CLI starts. Change
+`request_id` for an intentional retry/resume of the same selection. Never put
+credentials, data paths, holdings, prices, or result content in this file.
+
 Workflow: **CMresearchengine manual research**
 File: `.github/workflows/cmresearchengine-run.yml`
 Use the reviewed branch/commit available after authorized merge. Keep
