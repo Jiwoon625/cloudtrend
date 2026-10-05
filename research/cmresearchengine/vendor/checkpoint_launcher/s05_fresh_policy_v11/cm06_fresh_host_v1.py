@@ -35,7 +35,6 @@ class DocumentedQuotePanels(Mapping):
     """
     def __init__(self,panels,rules):
         self.panels=panels;self.rules=tuple(rules)
-        self._records_day=None;self._records_cache=None
         if any(type(rule) is not QuoteRule for rule in self.rules):
             raise TypeError('Immutable documented quote rules required')
     def __len__(self):return len(self.panels)
@@ -55,12 +54,6 @@ class DocumentedQuotePanels(Mapping):
                 raise ValueError('DOCUMENTED_QUOTE_FILTER_IDENTITY_REQUIRED: '+row['symbol'])
             keep.append(not any(str(identity)==r.permaticker for r in relevant))
         return frame.loc[keep].copy()
-    def records(self,day):
-        if self._records_day!=day:
-            self._records_cache=self[day].to_dict('records')
-            self._records_day=day
-        return self._records_cache
-
 @dataclass(frozen=True)
 class CandidateHazard:
     event_id:str
