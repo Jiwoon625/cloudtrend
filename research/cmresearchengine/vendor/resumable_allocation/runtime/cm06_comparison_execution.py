@@ -219,7 +219,8 @@ class Replay:
         self._start()
         batch_key=f"pending-batch:{e}"
         if batch_key in self.ledger.reservations:self.ledger.release(batch_key,"EXECUTE_MARKET_ORDER_BATCH")
-        records=panel_records(self.panels[e],day)\n        rows={r["symbol"]:r for r in records}
+        records=panel_records(self.panels[e],day)
+        rows={r["symbol"]:r for r in records}
         sold,used=set(),{}
         for symbol,h in self._holdings(e).items():
             row=rows.get(symbol)
