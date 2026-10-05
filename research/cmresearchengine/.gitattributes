@@ -1,0 +1,2 @@
+# Preserve vendored source bytes: private recipe provenance pins exact SHA256s.
+vendor/** -text whitespace=-blank-at-eol,-blank-at-eof
