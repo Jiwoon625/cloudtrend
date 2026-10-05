@@ -36,13 +36,23 @@ def valid_price(value):
 
 class SplitMarketPanels(MonthlyDayPanels):
     """Independent views of the same verified K panel, without data rewriting."""
-    def __init__(self, base, market):self.base=base;self.market=market
+    def __init__(self, base, market):
+        self.base=base;self.market=market
+        self.immutable_session_cache=bool(getattr(base,'immutable_session_cache',False))
+        self._records_day=None;self._records_cache=None
     def __iter__(self):return iter(self.base)
     def __len__(self):return len(self.base)
     def __contains__(self, day):return day in self.base
     def __getitem__(self, day):
         frame=self.base[day]
         return frame.loc[frame.market.eq(self.market)].copy()
+    def records(self, day):
+        if not self.immutable_session_cache:
+            return self[day].to_dict('records')
+        if self._records_day!=day:
+            self._records_cache=self[day].to_dict('records')
+            self._records_day=day
+        return self._records_cache
     def __getattr__(self,name):return getattr(self.base,name)
 
 class ResearchReplay(FreshPolicyReplay):
