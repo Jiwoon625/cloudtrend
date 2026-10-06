@@ -143,7 +143,7 @@ describe("new adopted series, never historical book rewrites", () => {
     expect(a2.policy.usAllocationPolicy).toMatchObject({
       targetPositions: 20,
       initialCapitalUsd: "73551.04",
-      effectiveDate: "2026-10-12",
+      effectiveDate: "2026-10-05",
     });
     expect((await create("US_A0")).contractHash).not.toBe(
       "sha256:9474c343941715c35ba50e7cdf3de907c6ec5b22846dad1893d0908b71d9af02",
@@ -186,7 +186,7 @@ describe("new adopted series, never historical book rewrites", () => {
       expect(series.policy.enginePolicyRole).toBe("HISTORICAL_SIGNAL_STRATEGY_BASE");
       expect(series.policy.usAllocationPolicy).toEqual({
         version: "us-initial-capital-slots-v1",
-        effectiveDate: "2026-10-12",
+        effectiveDate: "2026-10-05",
         targetPositions: 20,
         initialCapitalUsd: "73551.04",
         quarterlyRebalance: false,
