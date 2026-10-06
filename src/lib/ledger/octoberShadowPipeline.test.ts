@@ -403,8 +403,12 @@ describe("KR five-book complete publication", () => {
     const bad = krSource("2026-10-12");
     bad.dataset.isLive = false;
     await expect(recordOctoberPublication(f.store, bad)).rejects.toThrow("synthetic");
-    await expect(recordOctoberPublication(f.store, krSource("2026-10-05"))).rejects.toThrow(
-      "finalized",
+    const sameDayPreview = krSource("2026-10-12");
+    sameDayPreview.availableAt = "2026-10-12T11:10:00Z";
+    sameDayPreview.decisionAt = "2026-10-12T11:20:00Z";
+    sameDayPreview.sourceEvidence[0]!.registeredAt = sameDayPreview.availableAt;
+    await expect(recordOctoberPublication(f.store, sameDayPreview)).rejects.toThrow(
+      "T+1 pre-open",
     );
     expect(f.appends()).toBe(0);
   });
