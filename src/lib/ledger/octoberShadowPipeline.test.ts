@@ -339,12 +339,15 @@ function krSource(date: string): KrModelPublication {
     etfFacts: {},
     vkospiSeries: [],
   } as unknown as MarketDataset;
+  const next = nextKrRegularSession(date);
+  const availableAt = next ? `${next}T08:00:00+09:00` : `${date}T23:50:00+09:00`;
+  const decisionAt = next ? `${next}T08:10:00+09:00` : `${date}T23:55:00+09:00`;
   return {
     market: "KR",
     codeHash,
     sourceHash,
-    availableAt: `${date}T07:00:00Z`,
-    decisionAt: `${date}T08:00:00Z`,
+    availableAt,
+    decisionAt,
     confirmedRegularClose: true,
     failedSymbols: 0,
     dataset,
