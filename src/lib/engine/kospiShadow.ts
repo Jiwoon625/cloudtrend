@@ -506,8 +506,6 @@ export function stepKospiShadow(
     candidates.push(c);
   }
   state.pendingEntries = [];
-  // Capture held status before H60 closes, matching the confirmation-UP95 research exception.
-  const heldOnConfirmationClose = new Set(Object.keys(state.positions));
   for (const p of Object.values(state.positions)) {
     const row = rows.get(p.symbol);
     if (positive(row?.close)) {
@@ -540,14 +538,14 @@ export function stepKospiShadow(
     if (c.onsetRegime === "UNKNOWN") reason = "ONSET_REGIME_UNOBSERVABLE";
     else if (!row || !finite(row.score)) reason = "CONFIRMATION_SCORE_MISSING";
     else if (row.score < KOSPI_SHADOW_POLICY.entryScore) reason = "CONFIRMATION_SCORE_BELOW_8";
+    else if (row.score >= KOSPI_SHADOW_POLICY.upsideExitScore)
+      reason = "CONFIRMATION_AT_OR_ABOVE_UPSIDE_EXIT";
     else if (!row.commonHistory || !positive(row.open))
       reason = "COMMON_HISTORY_OR_SIGNAL_OPEN_INELIGIBLE";
     else if (c.requiresRsAccel && !finite(row.rsAccel))
       reason = "BEAR_CONFIRMATION_RSACCEL_MISSING";
     else if (c.requiresRsAccel && row.rsAccel! <= 0)
       reason = "BEAR_CONFIRMATION_RSACCEL_NONPOSITIVE";
-    else if (c.confirmationUp95 && heldOnConfirmationClose.has(c.symbol))
-      reason = "HELD_UP95_EXCEPTION_BLOCKED";
     if (reason) {
       c.status = "EXCLUDED";
       c.reason = reason;

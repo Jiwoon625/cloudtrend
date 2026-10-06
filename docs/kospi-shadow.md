@@ -10,9 +10,9 @@ Rule version: `kospi-confirm1-bear-rsaccel-shadow-v1`
 This is a research-policy virtual ledger. It does **not** create operational buy-ready signals, actual transactions, or actual investment capital. Its module is not imported by operational entry or actual-ledger code.
 
 1. Start from the original raw V8 E8 cross (previous score <8, current score ≥8), without Primary entry vetoes. Freeze the exact original Onset date's complete KOSPI regime evidence.
-2. At the exact next KOSPI session close, require V8 ≥8 and the research common-history/signal-open condition. Common history means 253 valid session-aligned closes, with at least two paired eligible stocks. Missing confirmation is excluded without later retry.
+2. At the exact next KOSPI session close, require V8 ≥8 but strictly below the 9.5 upside-exit score, plus the research common-history/signal-open condition. Common history means 253 valid session-aligned closes, with at least two paired eligible stocks. Missing confirmation is excluded without later retry.
 3. An original bullish/neutral regime imposes no RS condition. An original bearish regime requires confirmation-day RSAccel >0. Unknown onset regime is excluded, never backfilled or reclassified from a later regime.
-4. Confirmation-day UP95 is allowed for a new unheld entry. For an already-held position, its UP95 exit remains authoritative; the exception is also blocked if the position was held at confirmation close before an H60 close exit.
+4. A confirmation-day V8 score ≥9.5 is excluded from every new entry, even when 9.5 was already reached on the Onset day and there is no fresh UP95 crossing on confirmation. Existing held-position UP95 exits remain authoritative.
 5. Model entry uses the next session's executable open. No late retry after an unavailable entry open. Existing exits use UP95 at next executable open, H60 at an executable close or deferred open when halted; no downside exit and no regime-forced liquidation.
 6. Baseline: KRW 100,000,000; 30 slots; max 3 per sector; previous-close NAV / 30 target; nearest integer shares capped by available cash; 0.15% per side (0.30% round trip). Priority is confirmation V8 descending, confirmation priority descending, symbol ascending.
 
