@@ -169,7 +169,7 @@ export const list = [
 
 it("freezes calculation sources independently of deployment/UI/docs while detecting engine changes", async () => {
   const original = await shadowEngineManifest();
-  expect(Object.keys(original.manifest.files)).toHaveLength(39);
+  expect(Object.keys(original.manifest.files)).toHaveLength(40);
   expect(original).toEqual(
     JSON.parse(await readFile("src/lib/ledger/octoberShadowEngineManifest.generated.json", "utf8")),
   );
