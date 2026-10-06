@@ -45,8 +45,7 @@ const row = (date: string, score = 7, patch: Partial<KospiShadowRow> = {}): Kosp
   ...patch,
 });
 function input(date: string, configHash: string, score = 7): AdoptedKospiShadowInput {
-  const next = nextKrRegularSession(date);
-  if (!next) throw new Error("Missing reviewed next KOSPI session");
+  const next = nextKrRegularSession(date) ?? date;
   return {
     calendar,
     decisionAt: `${next}T08:10:00+09:00`,
