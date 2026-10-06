@@ -1,6 +1,7 @@
 import { simulateStrategy, type StrategyLedger } from "../portfolioLedgers";
 import type { DailyPrice, Market } from "../engine/types";
 import type { KospiMarketGateEvidence } from "../engine/kospiMarketGate";
+import { isKrOfficialShadowDecision } from "./krShadowDecision";
 import type { ScreeningSnapshot } from "../screeningSnapshot";
 import {
   assertModelSeriesIsolation,
@@ -96,10 +97,11 @@ export async function stepAdoptedKrSeries(
     !Number.isFinite(Date.parse(input.availableAt)) ||
     !Number.isFinite(Date.parse(input.decisionAt)) ||
     Date.parse(input.availableAt) > Date.parse(input.decisionAt) ||
-    localDate(input.availableAt) !== input.date ||
-    localDate(input.decisionAt) !== input.date
+    !isKrOfficialShadowDecision(input.date, input.availableAt, input.decisionAt)
   )
-    throw new Error("Exact-session completed data must be available before the decision");
+    throw new Error(
+      "KR Shadow requires the full next-session-morning refresh before that session opens",
+    );
   const first = firstModelSession(series, input.calendar);
   const sessions = [...input.calendar.regularSessions].sort();
   if (!sessions.includes(input.date)) throw new Error("Verified KR regular session required");
