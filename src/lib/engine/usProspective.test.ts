@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { runUsProspectiveAnalysis, type UsProspectiveInputRow } from "./usProspective";
 import { stepUsProspectivePortfolio, US_PROSPECTIVE_STRATEGIES } from "./usProspectivePortfolio";
+import { resolveUsProspectiveDecisionAt } from "./usProspectiveRecovery";
 
 function row(symbol: string, x: number): UsProspectiveInputRow {
   return {
@@ -221,5 +222,63 @@ describe("A0 Anchor and execution invariants", () => {
     const first = runUsProspectiveAnalysis(rows);
     expect(() => runUsProspectiveAnalysis(rows, first.state)).toThrow(/later trading date/);
     expect(() => runUsProspectiveAnalysis([...rows, rows[0]!])).toThrow(/unique symbols/);
+  });
+});
+
+
+describe("US October retry decision evidence", () => {
+  const availableAt = "2026-10-06T01:13:58.237Z"; // 2026-10-05 21:13 ET
+
+  it("uses the live attempt while it is still the same US market date", () => {
+    expect(
+      resolveUsProspectiveDecisionAt({
+        analysisDate: "2026-10-05",
+        availableAt,
+        attemptedAt: "2026-10-06T01:15:28.000Z",
+      }),
+    ).toEqual({
+      decisionAt: "2026-10-06T01:15:28.000Z",
+      evidence: "CURRENT_ATTEMPT",
+    });
+  });
+
+  it("recovers a late retry only from the original same-session manifest timestamp", () => {
+    expect(
+      resolveUsProspectiveDecisionAt({
+        analysisDate: "2026-10-05",
+        availableAt,
+        attemptedAt: "2026-10-06T04:20:42.000Z",
+        lockedManifestLastModified: "2026-10-06T01:15:24.000Z",
+      }),
+    ).toEqual({
+      decisionAt: "2026-10-06T01:15:24.000Z",
+      evidence: "LOCKED_SAME_SESSION_MANIFEST",
+    });
+  });
+
+  it("rejects retrospective recovery without valid same-session locked evidence", () => {
+    expect(() =>
+      resolveUsProspectiveDecisionAt({
+        analysisDate: "2026-10-05",
+        availableAt,
+        attemptedAt: "2026-10-06T04:20:42.000Z",
+      }),
+    ).toThrow(/immutable same-session manifest/);
+    expect(() =>
+      resolveUsProspectiveDecisionAt({
+        analysisDate: "2026-10-05",
+        availableAt,
+        attemptedAt: "2026-10-06T04:20:42.000Z",
+        lockedManifestLastModified: "2026-10-06T04:19:00.000Z",
+      }),
+    ).toThrow(/cannot prove a same-session decision/);
+    expect(() =>
+      resolveUsProspectiveDecisionAt({
+        analysisDate: "2026-10-05",
+        availableAt,
+        attemptedAt: "2026-10-06T04:20:42.000Z",
+        lockedManifestLastModified: "2026-10-06T01:10:00.000Z",
+      }),
+    ).toThrow(/cannot prove a same-session decision/);
   });
 });

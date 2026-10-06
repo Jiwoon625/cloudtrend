@@ -28,6 +28,7 @@ import {
   US_PROSPECTIVE_STRATEGIES,
   type UsPortfolioState,
 } from "../src/lib/engine/usProspectivePortfolio";
+import { resolveUsProspectiveDecisionAt } from "../src/lib/engine/usProspectiveRecovery";
 
 async function publishBrowserViews(
   client: ReturnType<typeof trustedSupabaseClient>,
@@ -129,18 +130,52 @@ async function main() {
       failedSymbols?: number;
       marketCalendarOk?: boolean;
     };
+    const attemptedAt = new Date().toISOString();
+    let lockedManifestLastModified: string | null = null;
+    const manifestPath = `${userId}/results/us-screening/${analysis.date}.manifest.json`;
+    const expectedManifest = {
+      dataHash: ingest.data_hash,
+      ruleVersion: US_PROSPECTIVE_RULE_VERSION,
+    };
+
+    // A retry after the US market date has rolled over must prove that the exact input
+    // was already locked during the original session. Never substitute the retry time.
+    const attemptedMarketDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/New_York",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(attemptedAt));
+    if (attemptedMarketDate !== analysis.date) {
+      const frozenManifest = await maybeDownloadJson<typeof expectedManifest>(client, manifestPath);
+      if (!frozenManifest || stableJson(frozenManifest) !== stableJson(expectedManifest))
+        throw new Error("Late US October recovery requires the original immutable manifest");
+      const { data: info, error: infoError } = await client.storage
+        .from(ANALYSIS_BUCKET)
+        .info(manifestPath);
+      if (infoError)
+        throw new Error(`US manifest metadata lookup failed: ${infoError.message}`);
+      lockedManifestLastModified = info.lastModified ?? null;
+    }
+
+    const decision = resolveUsProspectiveDecisionAt({
+      analysisDate: analysis.date,
+      availableAt: String(ingest.collected_at),
+      attemptedAt,
+      lockedManifestLastModified,
+    });
     const octoberShadow = await publishOctoberShadow(client, userId!, {
       market: "US",
       analysis,
       sourceHash: sourceSeriesHash(String(ingest.data_hash)),
       availableAt: String(ingest.collected_at),
-      decisionAt: new Date().toISOString(),
+      decisionAt: decision.decisionAt,
       confirmedRegularClose: metadata.confirmedRegularClose === true,
       failedSymbols: metadata.failedSymbols ?? -1,
       previousSessionDate: metadata.previousSessionDate ?? "",
       marketCalendarOk: metadata.marketCalendarOk === true,
     });
-    console.log(JSON.stringify({ octoberShadow }));
+    console.log(JSON.stringify({ octoberShadow, decisionEvidence: decision.evidence }));
   }
 
   const { data: lastHistory, error: lastError } = await client
