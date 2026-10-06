@@ -223,7 +223,7 @@ export function stepKospiShadow(
     const p = executionPolicy;
     if (
       p.version !== "isolated-kospi-model-v1" ||
-      p.bookId !== "adopted-shadow-2026-10-05-v1:KR_KOSPI_CONFIRM1_BEAR" ||
+      p.bookId !== "adopted-shadow-2026-10-12-v2:KR_KOSPI_CONFIRM1_BEAR" ||
       ![p.contractHash, p.codeHash, p.configHash].every((hash) =>
         /^sha256:[a-f0-9]{64}$/.test(hash),
       ) ||
