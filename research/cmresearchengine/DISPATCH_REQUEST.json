@@ -1,9 +1,9 @@
 {
-  "request_id": "base-s01-s04-workers4-exact-20261006-001",
+  "request_id": "s03-s04-nullopenfix-20261006-001",
   "mode": "run",
   "stage": "base",
-  "offset": 0,
-  "count": 4,
+  "offset": 2,
+  "count": 2,
   "max_seconds": 6000,
-  "workers": 4
+  "workers": 2
 }
