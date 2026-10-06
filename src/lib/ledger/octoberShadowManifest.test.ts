@@ -5,6 +5,9 @@ import path from "node:path";
 import os from "node:os";
 import { format } from "prettier";
 import {
+  ADOPTED_SHADOW_FROZEN_CODE_HASH,
+  adoptedShadowFrozenCodeHash,
+  REVIEWED_SHADOW_RUNTIME_CODE_HASHES,
   shadowEngineManifest,
   shadowExecutableSyntax,
 } from "../../../scripts/october-shadow-code-manifest";
@@ -165,6 +168,23 @@ export const list = [
       executableHash("export function value() { return a ?? b; }"),
     );
   });
+});
+
+it("keeps PR195 runtime provenance compatible with the eight frozen Shadow contracts", async () => {
+  const runtime = await shadowEngineManifest();
+  expect(runtime.codeHash).toBe(
+    "sha256:ffd26d07d50564c6c734dc9c96ede00f7786e1122df3eb373ad56a4648929033",
+  );
+  expect(REVIEWED_SHADOW_RUNTIME_CODE_HASHES).toContain(runtime.codeHash);
+  expect(adoptedShadowFrozenCodeHash(runtime.codeHash)).toBe(
+    ADOPTED_SHADOW_FROZEN_CODE_HASH,
+  );
+  expect(ADOPTED_SHADOW_FROZEN_CODE_HASH).toBe(
+    "sha256:ca565a5ec7bff10815a4943989ae3b02fd52fd508bbd283ae5c4d23eb79607c6",
+  );
+  expect(() =>
+    adoptedShadowFrozenCodeHash(`sha256:${"f".repeat(64)}`),
+  ).toThrow(/Unreviewed October Shadow runtime hash/);
 });
 
 it("freezes calculation sources independently of deployment/UI/docs while detecting engine changes", async () => {

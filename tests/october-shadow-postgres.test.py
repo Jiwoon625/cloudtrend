@@ -200,7 +200,7 @@ class Suite:
             body = "create or replace function public.ledger_append_own_october_model_session" + body
         body = body.replace(marker, "v_now timestamptz := " + literal(instant) + "::timestamptz;")
         self.sql(body)
-        generic_source = getattr(self, "timing_migration", self.migration)
+        generic_source = getattr(self, "runtime_hash_migration", getattr(self, "timing_migration", self.migration))
         generic_marker = "create or replace function public.ledger_append_model_session"
         assert generic_marker in generic_source
         generic_tail = generic_source.split(generic_marker, 1)[1]
@@ -300,9 +300,14 @@ class Suite:
         assert len(timing_migrations) == 1
         self.timing_migration = timing_migrations[0].read_text()
         self.sql(self.timing_migration)
+        runtime_hash_migrations = list((ROOT / "supabase/migrations").glob("*_shadow_runtime_hash_provenance.sql"))
+        assert len(runtime_hash_migrations) == 1
+        self.runtime_hash_migration = runtime_hash_migrations[0].read_text()
+        self.sql(self.runtime_hash_migration)
         assert self.sql(catalog) == before_catalog
+        assert self.sql("SELECT proacl FROM pg_proc WHERE oid='public.ledger_append_model_session(uuid,jsonb,jsonb,date,text)'::regprocedure") == generic_acl
         assert self.sql("SELECT prosecdef::text || ':' || pg_get_userbyid(proowner) || ':' || proconfig[1] FROM pg_proc WHERE oid=" + literal(SIGNATURE) + "::regprocedure") == 'true:postgres:search_path=""'
-        self.check("Migration fails closed on changed prerequisite; timing update preserves postgres ownership, ACLs, tables, RLS and triggers")
+        self.check("Migration fails closed on changed prerequisite; timing/runtime provenance updates preserve ownership, ACLs, tables, RLS and triggers")
 
         specs = {kind: series(kind) for kind in KINDS}
         for spec in specs.values():
@@ -554,9 +559,12 @@ class Suite:
         def prepared(market):
             session = "2026-10-05" if market == "US" else "2026-10-06"
             kinds = ["US_A0", "US_A2", "US_B3"] if market == "US" else ["KR_MIXED", "KR_KOSPI", "KR_KOSDAQ", "ETF_V02", "KR_KOSPI_CONFIRM1_BEAR"]
+            runtime_code_hash = digest("reviewed-runtime")
             entries = []
             for kind in kinds:
                 value = run_for(specs[kind], session)
+                value["publication"]["runtimeCodeHash"] = runtime_code_hash
+                sign(value)
                 if kind in ["KR_MIXED", "KR_KOSPI", "KR_KOSDAQ"]:
                     value.update(frozenInputs=dict(snapshots=[], bars={}, markets={}, marketGates={}),
                                  frozenInputArchive=dict(version="kr-daily-inputs-v1", days=[dict(date=session, hash=digest(daily))], prefixHash=digest(daily["inputs"])))
@@ -565,7 +573,8 @@ class Suite:
             first_run = entries[0]["run"]
             result = dict(version="october-prepared-publication-v1", market=market, date=session,
                           sourceHash=first_run["publication"]["sourceHash"], codeHash=first_run["receipt"]["codeHash"],
-                          inputHash=first_run["publication"]["inputHash"], preparedAt=first_run["publication"]["decisionAt"], entries=entries)
+                          runtimeCodeHash=runtime_code_hash, inputHash=first_run["publication"]["inputHash"],
+                          preparedAt=first_run["publication"]["decisionAt"], entries=entries)
             result["preparedHash"] = digest(result)
             return result
 
@@ -586,6 +595,17 @@ class Suite:
             for entry in payload["entries"]:
                 assert self.record(entry["run"], user=USER_D)["reused"] is False
         self.check("Prepared KR/US artifacts stage complete owner-bound sets; same input identity returns the original decision; changed input conflicts; all eight stored runs append successfully")
+
+        missing_runtime = copy.deepcopy(kr_prepared)
+        del missing_runtime["runtimeCodeHash"]
+        self.reject(call(envelope(missing_runtime, "PREPARED_PUBLICATION")), "Invalid prepared October hash", user=USER_D)
+        bad_runtime = copy.deepcopy(kr_prepared)
+        bad_runtime["runtimeCodeHash"] = "not-a-hash"
+        self.reject(call(envelope(bad_runtime, "PREPARED_PUBLICATION")), "Invalid prepared October hash", user=USER_D)
+        mismatched_runtime = copy.deepcopy(kr_prepared)
+        mismatched_runtime["entries"][0]["run"]["publication"]["runtimeCodeHash"] = digest("other-runtime")
+        sign(mismatched_runtime["entries"][0]["run"])
+        self.reject(call(envelope(mismatched_runtime, "PREPARED_PUBLICATION")), "run/owner registry identity mismatch", user=USER_D)
 
         for mutation in [
             lambda p: p["entries"].pop(),

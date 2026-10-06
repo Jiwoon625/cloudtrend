@@ -19,6 +19,33 @@ export const SHADOW_ENGINE_ROOTS = [
 
 type ExecutableSyntax = [kind: number, value: string | ExecutableSyntax[]];
 
+
+export const ADOPTED_SHADOW_FROZEN_CODE_HASH =
+  "sha256:ca565a5ec7bff10815a4943989ae3b02fd52fd508bbd283ae5c4d23eb79607c6" as const;
+export const REVIEWED_SHADOW_RUNTIME_CODE_HASHES = Object.freeze([
+  ADOPTED_SHADOW_FROZEN_CODE_HASH,
+  "sha256:ffd26d07d50564c6c734dc9c96ede00f7786e1122df3eb373ad56a4648929033",
+  "sha256:7986793771f362aaede80425f9259254035443dce0eb67e134ded9271241354d",
+  "sha256:a321c97e37a3b55249b23597e811997b089943d8c56cb27088c60a2806691a80",
+] as const);
+
+/**
+ * The eight already-frozen MODEL contracts keep their original calculation identity.
+ * Reviewed publication/runtime-only changes may have a different transitive runtime hash,
+ * which is recorded separately on each publication. Any unreviewed runtime hash fails closed.
+ */
+export function adoptedShadowFrozenCodeHash(runtimeCodeHash: string) {
+  if (
+    !REVIEWED_SHADOW_RUNTIME_CODE_HASHES.includes(
+      runtimeCodeHash as (typeof REVIEWED_SHADOW_RUNTIME_CODE_HASHES)[number],
+    )
+  )
+    throw new Error(
+      `Unreviewed October Shadow runtime hash: ${runtimeCodeHash}; frozen contracts cannot advance`,
+    );
+  return ADOPTED_SHADOW_FROZEN_CODE_HASH;
+}
+
 /**
  * Parse executable output rather than stripping whitespace or scanning without
  * parser context: regexes, template chunks and ASI must retain their meaning.

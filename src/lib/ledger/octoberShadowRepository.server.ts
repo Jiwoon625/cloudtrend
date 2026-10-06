@@ -122,6 +122,7 @@ export function octoberShadowStore(
         !saved ||
         saved.inputHash !== prepared.inputHash ||
         saved.codeHash !== prepared.codeHash ||
+        saved.runtimeCodeHash !== prepared.runtimeCodeHash ||
         saved.sourceHash !== prepared.sourceHash
       )
         throw new Error("Prepared model conflict/readback failure");

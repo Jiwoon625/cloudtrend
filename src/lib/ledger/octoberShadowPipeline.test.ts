@@ -434,6 +434,15 @@ it("exports synthetic application-shaped payloads only for optional local Postgr
   await recordOctoberPublication(f.store, source("2026-10-05"));
   await recordOctoberPublication(f.store, krSource("2026-10-06"));
   const prepared = [...f.prepared.values()];
+  expect(
+    prepared.every(
+      (item) =>
+        /^sha256:[a-f0-9]{64}$/.test(item.runtimeCodeHash) &&
+        item.entries.every(
+          (entry) => entry.run.publication.runtimeCodeHash === item.runtimeCodeHash,
+        ),
+    ),
+  ).toBe(true);
   const value = {
     series: [...f.registry.values()],
     archives: [...f.archives].map(([hash, payload]) => ({ date: payload.date, hash, payload })),
