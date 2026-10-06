@@ -19,8 +19,9 @@ import {
   type ModelCalendar,
 } from "./modelSeries";
 import { validDate } from "./date";
+import { assertKrShadowDecisionWindow } from "./octoberShadowCalendar";
 
-export const ADOPTED_KOSPI_FIRST_SESSION = "2026-10-06";
+export const ADOPTED_KOSPI_FIRST_SESSION = "2026-10-12";
 export interface AdoptedKospiShadowRun extends ModelJournalRun {
   firstValidSessionDate: typeof ADOPTED_KOSPI_FIRST_SESSION;
   calendar: ModelCalendar;
@@ -40,23 +41,6 @@ const freeze = <T>(value: T): T => {
   }
   return value;
 };
-function time(value: string) {
-  if (
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) ||
-    !validDate(value.slice(0, 10)) ||
-    !Number.isFinite(Date.parse(value))
-  )
-    throw new Error("Explicit KOSPI timestamp with timezone required");
-  return Date.parse(value);
-}
-function marketDate(value: string) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(time(value)));
-}
 /** Pure wrapper: the existing confirm1/bear-only-RSAccel rules remain unchanged.
  * The optional execution policy creates a separate cash-only October model and never
  * consumes the legacy research history, pre-start candidates, actual holdings or orders.
@@ -88,16 +72,9 @@ export async function stepAdoptedKospiShadowSeries(
     throw new Error("KOSPI model requires a post-start session within its fixed-budget first year");
   if (!/^sha256:[a-f0-9]{64}$/.test(session.sourceHash))
     throw new Error("KOSPI source manifest requires a SHA-256 hash");
-  if (
-    !session.confirmedClose ||
-    time(session.sourceCollectedAt) < Date.parse(`${date}T06:30:00Z`) ||
-    time(session.sourceCollectedAt) > time(input.decisionAt) ||
-    marketDate(session.sourceCollectedAt) !== date ||
-    marketDate(input.decisionAt) !== date
-  )
-    throw new Error(
-      "KOSPI completed close and decision must be available on the same market session",
-    );
+  if (!session.confirmedClose)
+    throw new Error("KOSPI completed close confirmation is required");
+  assertKrShadowDecisionWindow(date, session.sourceCollectedAt, input.decisionAt);
   if (session.codeVersion !== input.codeHash || session.configHash !== input.configHash)
     throw new Error("KOSPI session code/config must match the frozen run provenance");
   const first = firstModelSession(series, input.calendar);
