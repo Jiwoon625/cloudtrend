@@ -1,8 +1,11 @@
+import { US_PROSPECTIVE_STRATEGIES } from "../engine/usProspectivePortfolio";
 import type { KrDailyInputArchive } from "./octoberShadowArchive";
 import type { PreparedOctoberPublication } from "./octoberShadowPipeline";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   hashSeriesValue,
+  ADOPTED_US_STRATEGY_IDS,
+  isAdoptedUsSeriesKind,
   type SeriesHash,
   canonicalSeriesJson,
   verifyFrozenSeries,
@@ -133,7 +136,31 @@ export function octoberShadowStore(
         .maybeSingle();
       if (error) throw new Error(`Model registry read failed: ${error.message}`);
       const series = data?.payload as FrozenModelSeries | undefined;
-      if (series) await verifyFrozenSeries(series);
+      if (series) {
+        await verifyFrozenSeries(series);
+        if (isAdoptedUsSeriesKind(series.policy.kind)) {
+          const adoptedStrategyId = ADOPTED_US_STRATEGY_IDS[series.policy.kind];
+          const adopted = US_PROSPECTIVE_STRATEGIES.find(
+            (strategy) => strategy.id === adoptedStrategyId,
+          );
+          if (
+            !adopted ||
+            canonicalSeriesJson(series.policy.enginePolicy) !== canonicalSeriesJson(adopted)
+          )
+            throw new Error("US registry strategy differs from the adopted strategy");
+          // JSONB preserves values, not insertion order. Restore the already-verified
+          // strategy's engine order without changing any frozen contract/policy value.
+          return {
+            ...series,
+            policy: {
+              ...series.policy,
+              enginePolicy: structuredClone(
+                adopted,
+              ) as unknown as FrozenModelSeries["policy"]["enginePolicy"],
+            },
+          };
+        }
+      }
       return series ?? null;
     },
     async insertSeries(series) {
