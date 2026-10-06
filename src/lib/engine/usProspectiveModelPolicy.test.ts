@@ -86,14 +86,13 @@ const calendar: ModelCalendar = {
   coverageStart: "2026-10-01",
   coverageEnd: "2026-10-20",
   regularSessions: [
-    "2026-10-01",
-    "2026-10-02",
     "2026-10-12",
     "2026-10-13",
     "2026-10-14",
     "2026-10-15",
     "2026-10-16",
-    "2026-10-12",
+    "2026-10-19",
+    "2026-10-20",
   ],
 };
 const input = (date: string, configHash: string) => ({
