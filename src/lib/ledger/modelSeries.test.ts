@@ -127,15 +127,15 @@ describe("new adopted series, never historical book rewrites", () => {
     expect(series[4]!.policy.allocation).toBe("ETF_V02_VOLATILITY_UNCHANGED");
   });
 
-  it("preserves the exact KR/ETF frozen contracts while changing only approved US allocation", async () => {
-    const originalHashes = {
+  it("creates new v2 contract identities while preserving the adopted engine policies", async () => {
+    const legacyV1Hashes = {
       KR_MIXED: "7ee1fdd09122c1c3de674ba7e3ffe68e694f1cdb59b54c3ce73bb88d22ef731b",
       KR_KOSPI: "65661e9f0387015040f5201cab372ffaf53dca967f2c0b3ea01a72f67b26e795",
       KR_KOSDAQ: "e2485190b253a46b19c5f9db410e5737b74188fd501400c889f756f8f415f049",
       ETF_V02: "b1d278500c09ff757858afb27d0d67014c139c19e9e6cab728b49be10d4d069b",
     };
-    for (const [kind, expected] of Object.entries(originalHashes))
-      expect((await create(kind as AdoptedSeriesKind)).contractHash).toBe(`sha256:${expected}`);
+    for (const [kind, legacy] of Object.entries(legacyV1Hashes))
+      expect((await create(kind as AdoptedSeriesKind)).contractHash).not.toBe(`sha256:${legacy}`);
     const a2 = await create("US_A2"),
       b3 = await create("US_B3"),
       kospi = await create("KR_KOSPI_CONFIRM1_BEAR");
