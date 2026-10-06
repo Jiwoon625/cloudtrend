@@ -31,7 +31,7 @@ class PreparedResearch(PreparedFreshDiagnostic):
             reference_nav_fingerprint=frame_fingerprint(self.references.get('nav')),
             reference_demands_fingerprint=frame_fingerprint(self.references.get('demands')),
             reference_capital=self.references.get('capital'),
-            execution_optimization=self.execution_optimization,
+            execution_optimization=getattr(self,'execution_optimization',None),
             evaluation_completed=False)
         self.identity=bind_identity(self.base_identity,self.factory())
         self.trial_key='cm-'+candidate.candidate_id+'-'+digest(self.identity)
