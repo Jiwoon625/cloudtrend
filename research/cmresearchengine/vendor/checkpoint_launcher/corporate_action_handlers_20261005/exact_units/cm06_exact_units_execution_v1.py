@@ -33,7 +33,8 @@ class ExactEntitlementExecutionReplay(BaseReplay):
         # Lock all current US target quantities before ordering them by share delta.
         for it in pending:
             row=rows.get(it["symbol"])
-            if (e=="U" and it["side"]=="BUY" and row and pd.notna(row.get("comparison_open"))\n                    and row["comparison_open"]>0):
+            if (e=="U" and it["side"]=="BUY" and row and pd.notna(row.get("comparison_open"))
+                    and row["comparison_open"]>0):
                 it["delta"]=self.adapters[e].on_execution_open(it["signal_id"],row["comparison_open"],
                     self.ledger.positions.get((e,it["symbol"])).quantity if (e,it["symbol"]) in self.ledger.positions else 0)
         pending.sort(key=lambda it:(0 if it["side"]=="SELL" else 1,
