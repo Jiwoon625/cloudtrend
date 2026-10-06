@@ -12,6 +12,7 @@ import { DEFAULT_SCORING_CONFIG } from "../src/lib/engine/scoring";
 import { KOSPI_SHADOW_POLICY } from "../src/lib/engine/kospiShadow";
 import { buildKospiShadowSession } from "../src/lib/engine/kospiShadowDataset";
 import { persistKospiShadow, type ShadowObjectStore } from "../src/lib/kospiShadowStore";
+import { isKrOfficialShadowDecision } from "../src/lib/ledger/krShadowDecision";
 function arg(name: string) {
   const i = process.argv.indexOf(name);
   return i < 0 ? undefined : process.argv[i + 1];
@@ -83,11 +84,28 @@ export async function runKospiShadow() {
     console.log("Shadow awaiting first prospective source close; older research is not imported.");
     return;
   }
-  // Use the oldest source's registration timestamp to avoid treating one newly uploaded file as
-  // confirmation that all constituent files contain completed same-day data.
+  // The complete source set becomes decision-ready only when its latest required
+  // constituent has been registered. Same-evening data remains preview-only.
   const relevant = inputs.filter((i) => i.validation.stats.maxDate === date);
   if (!relevant.length) throw new Error("No registered source declares the requested close date");
-  const sourceCollectedAt = relevant.map((i) => i.savedAt).sort()[0]!;
+  const sourceCollectedAt = relevant
+    .map((i) => i.savedAt)
+    .sort((a, b) => Date.parse(a) - Date.parse(b))
+    .at(-1)!;
+  const decisionAt = new Date().toISOString();
+  const official = isKrOfficialShadowDecision(date, sourceCollectedAt, decisionAt);
+  if (!dryRun && !official) {
+    console.log(
+      JSON.stringify({
+        strategy: KOSPI_SHADOW_POLICY.label,
+        role: "SHADOW",
+        date,
+        status: "PREVIEW_ONLY",
+        reason: "KR Shadow waits for the next regular-session morning KRX refresh",
+      }),
+    );
+    return;
+  }
   const frozenConfig = { policy: KOSPI_SHADOW_POLICY, scoring: DEFAULT_SCORING_CONFIG };
   const session = buildKospiShadowSession(
     dataset,
@@ -102,6 +120,7 @@ export async function runKospiShadow() {
       configHash: `sha256:${sha256(stableJson(frozenConfig))}`,
       codeVersion: codeVersion(),
       sourceCollectedAt,
+      now: decisionAt,
     },
     date,
   );
@@ -112,6 +131,7 @@ export async function runKospiShadow() {
         rows: session.rows.length,
         gate: session.gate.status,
         sourceHash: session.sourceHash,
+        officialDecisionWindow: official,
         dryRun: true,
       }),
     );
