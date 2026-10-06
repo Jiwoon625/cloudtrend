@@ -7,7 +7,7 @@ import { ADOPTED_SERIES_KINDS, ADOPTED_SERIES_VERSION } from "@/lib/ledger/model
 import { fixtureSeries, registry, sessionRow, usRun } from "../../tests/october-shadow-fixtures";
 vi.mock("@/lib/octoberShadowSummary.functions", () => ({ octoberShadowSummaryServer: vi.fn() }));
 vi.mock("@/lib/cloud", () => ({ supabase: {} }));
-const checkedAt = "2026-10-07T21:00:00Z";
+const checkedAt = "2026-10-14T21:00:00Z";
 const render = (
   summary: Parameters<typeof OctoberShadowSummaryContent>[0]["summary"],
   options = {},
@@ -61,7 +61,7 @@ describe("October Shadow registry cards", () => {
       books: [book],
     });
     expect(html).toContain("실제 세션 기록 연결됨");
-    expect(html).toContain("최초 실제 기록 세션</dt><dd>2026-10-05");
+    expect(html).toContain("최초 실제 기록 세션</dt><dd>2026-10-12");
     expect(html).toContain("가상 납세자");
   });
   it("renders loading, retry button disabled during fetching, and explicit read failure", () => {
@@ -85,7 +85,7 @@ it("shows the independent holdings table and fixed-budget rule without actual-ac
       quantity: "10",
       price: "100",
       value: "1000",
-      entryDate: "2026-10-06",
+      entryDate: "2026-10-13",
     },
   ];
   const html = render({
