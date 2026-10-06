@@ -102,7 +102,7 @@ describe("private immutable model journal", () => {
   it("rejects arbitrary paths, actual books and historical alternative namespaces", () => {
     expect(() => modelJournalPath(uid, "ACTUAL", "registry.json")).toThrow();
     expect(() =>
-      modelJournalPath(uid, "adopted-shadow-2026-10-05-v1:US_A0", "../../secret"),
+      modelJournalPath(uid, "adopted-shadow-2026-10-12-v2:US_A0", "../../secret"),
     ).toThrow();
   });
 });
