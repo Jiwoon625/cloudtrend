@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { octoberShadowTax } from "./octoberShadowTax";
 import { hashSeriesValue, type AdoptedUsRun } from "./modelSeries";
 import { fixtureSeries, usRun } from "../../../tests/october-shadow-fixtures";
-const asOf = "2026-10-05";
+const asOf = "2026-10-12";
 async function input() {
   const series = await fixtureSeries();
   return {
@@ -48,19 +48,19 @@ describe("October independent counterfactual US tax", () => {
     expect((await octoberShadowTax({ ...i, historyComplete: false })).currentYearTaxKrw).toBeNull();
     const next = (await usRun(
       i.series,
-      "2026-10-06",
+      "2026-10-13",
       i.runs[0] as Awaited<ReturnType<typeof usRun>>,
     )) as AdoptedUsRun;
-    expect((await octoberShadowTax({ ...i, runs: [next], asOf: "2026-10-06" })).status).toBe(
+    expect((await octoberShadowTax({ ...i, runs: [next], asOf: "2026-10-13" })).status).toBe(
       "UNAVAILABLE",
     );
     const skip = (await usRun(
       i.series,
-      "2026-10-07",
+      "2026-10-14",
       i.runs[0] as Awaited<ReturnType<typeof usRun>>,
     )) as AdoptedUsRun;
     expect(
-      (await octoberShadowTax({ ...i, runs: [...i.runs, skip], asOf: "2026-10-07" })).status,
+      (await octoberShadowTax({ ...i, runs: [...i.runs, skip], asOf: "2026-10-14" })).status,
     ).toBe("UNAVAILABLE");
     i.runs[0]!.result.cash = 0;
     expect((await octoberShadowTax(i)).status).toBe("UNAVAILABLE");
