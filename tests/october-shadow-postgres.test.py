@@ -200,7 +200,7 @@ class Suite:
             body = "create or replace function public.ledger_append_own_october_model_session" + body
         body = body.replace(marker, "v_now timestamptz := " + literal(instant) + "::timestamptz;")
         self.sql(body)
-        generic_source = getattr(self, "timing_migration", self.migration)
+        generic_source = getattr(self, "runtime_hash_migration", getattr(self, "timing_migration", self.migration))
         generic_marker = "create or replace function public.ledger_append_model_session"
         assert generic_marker in generic_source
         generic_tail = generic_source.split(generic_marker, 1)[1]
@@ -300,9 +300,14 @@ class Suite:
         assert len(timing_migrations) == 1
         self.timing_migration = timing_migrations[0].read_text()
         self.sql(self.timing_migration)
+        runtime_hash_migrations = list((ROOT / "supabase/migrations").glob("*_shadow_runtime_hash_provenance.sql"))
+        assert len(runtime_hash_migrations) == 1
+        self.runtime_hash_migration = runtime_hash_migrations[0].read_text()
+        self.sql(self.runtime_hash_migration)
         assert self.sql(catalog) == before_catalog
+        assert self.sql("SELECT proacl FROM pg_proc WHERE oid='public.ledger_append_model_session(uuid,jsonb,jsonb,date,text)'::regprocedure") == generic_acl
         assert self.sql("SELECT prosecdef::text || ':' || pg_get_userbyid(proowner) || ':' || proconfig[1] FROM pg_proc WHERE oid=" + literal(SIGNATURE) + "::regprocedure") == 'true:postgres:search_path=""'
-        self.check("Migration fails closed on changed prerequisite; timing update preserves postgres ownership, ACLs, tables, RLS and triggers")
+        self.check("Migration fails closed on changed prerequisite; timing/runtime provenance updates preserve ownership, ACLs, tables, RLS and triggers")
 
         specs = {kind: series(kind) for kind in KINDS}
         for spec in specs.values():
