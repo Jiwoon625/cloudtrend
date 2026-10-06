@@ -448,6 +448,7 @@ export async function recordOctoberPublication(
             previousSessionDate: previous?.receipt.date ?? null,
             openAt,
             closeAt: regularCloseAt("KR", date),
+            finalizedAt: input.availableAt,
             decisionAt: input.decisionAt,
             calendar,
             codeHash: input.codeHash,
