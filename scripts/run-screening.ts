@@ -1,4 +1,3 @@
-import { octoberShadowAlreadyRecorded } from "./october-shadow-publication";
 import { replayKrShadow } from "../src/lib/shadowReplay.server";
 import { memory } from "./screening-memory";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -145,25 +144,9 @@ export async function runScreening(argv = process.argv.slice(2)) {
   });
   if (!options.force) {
     const reusable = await findReusableRun(client, options.supabaseUserId, "SCREENING", runKey);
-    const reusableDate =
-      reusable?.as_of_date ??
-      inputs
-        .map((input) => input.validation.stats?.maxDate)
-        .filter((date): date is string => typeof date === "string")
-        .sort()
-        .at(-1);
-    if (
-      reusable &&
-      (!options.upload ||
-        (reusableDate &&
-          (await octoberShadowAlreadyRecorded(
-            client,
-            options.supabaseUserId,
-            "KR",
-            reusableDate,
-            dataVersion,
-          ))))
-    ) {
+    // A reusable latest-screen result may still have missing Shadow dates.
+    // Only read-only/non-upload runs can return before the date-sequential replay.
+    if (reusable && !options.upload) {
       process.stdout.write(`${JSON.stringify({ reused: true, run: reusable }, null, 2)}\n`);
       return;
     }
