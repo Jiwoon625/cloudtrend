@@ -26,10 +26,19 @@ import {
 } from "./modelSeries";
 import { stepAdoptedKrSeries, type AdoptedKrRun } from "./krAdoptedShadow";
 import { stepAdoptedEtfSeries, type AdoptedEtfRun } from "./etfAdoptedShadow";
-import { stepAdoptedKospiShadowSeries, type AdoptedKospiShadowRun } from "./kospiAdoptedShadow";
+import {
+  ADOPTED_KOSPI_FIRST_SESSION,
+  stepAdoptedKospiShadowSeries,
+  type AdoptedKospiShadowRun,
+} from "./kospiAdoptedShadow";
 import type { OctoberShadowStore } from "./octoberShadowRepository.server";
 import type { ModelJournalRun } from "./modelJournal";
-import { octoberModelCalendar, regularCloseAt, regularOpenAt } from "./octoberShadowCalendar";
+import {
+  assertKrShadowDecisionWindow,
+  octoberModelCalendar,
+  regularCloseAt,
+  regularOpenAt,
+} from "./octoberShadowCalendar";
 import { fromLegacyNumber } from "./decimal";
 
 export interface PublicationProof {
@@ -89,11 +98,18 @@ function verifyPublication(input: OctoberPublication, calendar: ModelCalendar) {
     !Number.isFinite(Date.parse(input.decisionAt)) ||
     Date.parse(input.availableAt) > Date.parse(input.decisionAt) ||
     Date.parse(input.availableAt) < Date.parse(regularCloseAt(input.market, date)) ||
-    marketDate(input.market, input.availableAt) !== date ||
-    marketDate(input.market, input.decisionAt) !== date ||
     !calendar.regularSessions.includes(date)
   )
-    throw new Error("Only a complete same-session regular close can enter the October journal");
+    throw new Error("Only a complete finalized regular close can enter the Shadow journal");
+  if (input.market === "US") {
+    if (
+      marketDate("US", input.availableAt) !== date ||
+      marketDate("US", input.decisionAt) !== date
+    )
+      throw new Error("US Shadow requires same-session finalized close evidence");
+  } else {
+    assertKrShadowDecisionWindow(date, input.availableAt, input.decisionAt);
+  }
   const symbols =
     input.market === "US"
       ? input.analysis.rows.map((row) => row.symbol)
@@ -369,25 +385,27 @@ export async function recordOctoberPublication(
         input.analysis,
       );
       session.previousSessionDate = calendar.regularSessions.filter((d) => d < date).at(-1) ?? null;
-      if (!previous && date === "2026-10-06") {
-        // Read-only warmup produced by the same point-in-time calculation, with its exact date.
-        // It can establish an Oct6 onset; it cannot import Oct2 orders or candidate state.
+      if (!previous && date === ADOPTED_KOSPI_FIRST_SESSION) {
+        // Read-only warmup uses only the exact preceding reviewed KR session.
+        // It can establish the first v2 onset; it never imports old model orders or holdings.
         const analysisRows = new Map(
           input.analysis.rows.map((row) => [row.instrument.symbol, row]),
         );
-        session.warmupRows = session.rows.flatMap((row) => {
-          const observed = analysisRows.get(row.symbol);
-          const bar = input.dataset.bars[row.symbol]?.find((b) => b.tradeDate === "2026-10-02");
-          if (
-            !bar ||
-            observed?.previousOperatingScoreDate !== "2026-10-02" ||
-            observed.previousOperatingScore10 == null
-          )
-            return [];
-          return [
-            {
-              ...row,
-              date: "2026-10-02",
+        const warmupDate = session.previousSessionDate;
+        session.warmupRows = warmupDate
+          ? session.rows.flatMap((row) => {
+              const observed = analysisRows.get(row.symbol);
+              const bar = input.dataset.bars[row.symbol]?.find((b) => b.tradeDate === warmupDate);
+              if (
+                !bar ||
+                observed?.previousOperatingScoreDate !== warmupDate ||
+                observed.previousOperatingScore10 == null
+              )
+                return [];
+              return [
+                {
+                  ...row,
+                  date: warmupDate,
               open: bar.open,
               close: bar.close,
               volume: bar.volume,
@@ -396,9 +414,10 @@ export async function recordOctoberPublication(
               rsAccel: null,
               commonHistory: false,
               onsetEligible: false,
-            },
-          ];
-        });
+                },
+              ];
+            })
+          : [];
       }
       stepped = (
         await stepAdoptedKospiShadowSeries(
@@ -428,7 +447,8 @@ export async function recordOctoberPublication(
             sessionDate: date,
             previousSessionDate: previous?.receipt.date ?? null,
             openAt,
-            closeAt: input.decisionAt,
+            closeAt: regularCloseAt("KR", date),
+            decisionAt: input.decisionAt,
             calendar,
             codeHash: input.codeHash,
             configHash: series.configHash,
