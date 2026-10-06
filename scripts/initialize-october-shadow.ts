@@ -13,7 +13,10 @@ import {
 } from "../src/lib/ledger/modelSeries";
 import { OCTOBER_CALENDAR_EVIDENCE } from "../src/lib/ledger/octoberShadowCalendar";
 import { DEFAULT_SCORING_CONFIG } from "../src/lib/engine/scoring";
-import { shadowEngineManifest } from "./october-shadow-code-manifest";
+import {
+  adoptedShadowFrozenCodeHash,
+  shadowEngineManifest,
+} from "./october-shadow-code-manifest";
 import {
   octoberShadowStore,
   type OctoberShadowStore,
@@ -21,7 +24,8 @@ import {
 import { trustedSupabaseClient } from "./analysis-run-store";
 
 export async function planOctoberShadowInitialization(frozenAt = new Date().toISOString()) {
-  const { manifest, codeHash } = await shadowEngineManifest();
+  const { manifest, codeHash: runtimeCodeHash } = await shadowEngineManifest();
+  const codeHash = adoptedShadowFrozenCodeHash(runtimeCodeHash);
   const sourceManifest = {
     version: "october-shadow-opening-v1",
     source: "AUTHORIZED_FRESH_CASH_ONLY",
@@ -41,7 +45,14 @@ export async function planOctoberShadowInitialization(frozenAt = new Date().toIS
       }),
     ),
   );
-  return { manifest, sourceManifest, series, openingStates: series.map(initializeModelSeries) };
+  return {
+    manifest,
+    runtimeCodeHash,
+    frozenCodeHash: codeHash,
+    sourceManifest,
+    series,
+    openingStates: series.map(initializeModelSeries),
+  };
 }
 export type OctoberShadowInitializationPlan = Awaited<
   ReturnType<typeof planOctoberShadowInitialization>
