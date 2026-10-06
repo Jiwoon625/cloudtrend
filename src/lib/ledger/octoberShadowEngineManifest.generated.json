@@ -31,13 +31,14 @@
       "src/lib/engine/vfConfig.ts": "sha256:d5b6fa115ff765785ead12764a29f10df2da80833de63f68af48f97d76e77573",
       "src/lib/ledger/date.ts": "sha256:81b0ae4d40041a75f9fe940914a4aa7bd3db71ce8b152e73b152a5642014a9e0",
       "src/lib/ledger/decimal.ts": "sha256:a1cf43f22b0cf98287fc208cb3c058993d947c6d794f5bd7be540f5ba445f8e5",
-      "src/lib/ledger/etfAdoptedShadow.ts": "sha256:6de290edc14906ae0b88010ac77156f8bd4a941ca3417890a2340bd35b4ce873",
-      "src/lib/ledger/kospiAdoptedShadow.ts": "sha256:2338238b06948444920ab07c1248d5c38936e7dd3133e9addfa9dbca85c6f782",
-      "src/lib/ledger/krAdoptedShadow.ts": "sha256:2a56087ce40a7ac581a5327d56678340bc812d261018e2f1d153e5892a7cb304",
+      "src/lib/ledger/etfAdoptedShadow.ts": "sha256:448f4460c542d5ea4e3dc1299102bf8ede1dff021d18c9a855e1919014e6f90b",
+      "src/lib/ledger/kospiAdoptedShadow.ts": "sha256:453275c027ee636c5cd4fb4d2d145beb9d8b7ed67f4fe4ffc6d94c896900b218",
+      "src/lib/ledger/krAdoptedShadow.ts": "sha256:4cb6fcffc15d3ac4c22b2439a4f61c30f8a60c44be1dd0a9faf041487b28620d",
+      "src/lib/ledger/krShadowDecision.ts": "sha256:119a087fa3d90b05ac0fa183ab9b40e4acbb6495871dd511d11a220c7bd180fc",
       "src/lib/ledger/modelSeries.ts": "sha256:1f64683a9e0c8e0908888b65878508b8d0069f9b91de4aaf614cc2cf61c2e184",
       "src/lib/ledger/octoberShadowArchive.ts": "sha256:0144adfe359c99c7425e792487fff4f90981c7dd571a2ad458acb0896bffc295",
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:9c8b5e98035e53d81dedc58c43f7ddf8678ad835bbe449a21d63088dabd76a32",
-      "src/lib/ledger/octoberShadowPipeline.ts": "sha256:133fd02ceed6606c2f18dd82f9c7dcdbb82215ca4e968f217899b37defb65738",
+      "src/lib/ledger/octoberShadowPipeline.ts": "sha256:ebed1ae152db480a5e4650f6ed7bab18b73eeaec2551197c2f7a77bbabba2ce4",
       "src/lib/portfolioLedgers.ts": "sha256:90aedbbb1b005c97464819775936eb54c02690b4e851f1e4547b1401b60ab64f",
       "src/lib/portfolioStrategyRules.ts": "sha256:2381d44003618c1edb8f916248df887e1ef0631e3850ad301fcfc649cc4dac27",
       "src/lib/sourceData.ts": "sha256:b1e84d0b96523d2fc712c28749bcee80ebbdd3275213e35e9522d5608d51bd61"
@@ -47,5 +48,5 @@
     },
     "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
   },
-  "codeHash": "sha256:ca565a5ec7bff10815a4943989ae3b02fd52fd508bbd283ae5c4d23eb79607c6"
+  "codeHash": "sha256:c085f43a86eb198ddd2576a8b122954abcfdbe912a1a859a91386a27112fc44b"
 }
