@@ -223,3 +223,66 @@ describe("KOSPI held entry and exit remain distinct", () => {
     expect(getPortfolioAwareDisplayStatus(candidate(9.5, 9.5), held, "2026-10-02")).toBe("보유");
   });
 });
+
+describe("unheld exit conditions are not actual sell instructions", () => {
+  const empty: DomesticPositionContext = { heldSymbols: [], lastSellDateBySymbol: {} };
+  const rejected = row({
+    instrument: { ...instrument("KOSPI"), symbol: "008930" },
+    operationalSignalVersion: OPERATIONAL_SIGNAL_VERSION,
+    operatingScore10: 9.5,
+    scoreDelta1d: 10,
+    exitSignal: "UP95",
+    kospiEntry: {
+      ...kospiEntryConfirmation(
+        { date: "2026-10-02", score: 9.5, rsAccel: 1, eligible: true, observed: true },
+        { date: "2026-10-01", score: 8.5, rsAccel: 1, eligible: true, observed: true },
+        { date: "2026-09-30", score: 7.5, rsAccel: 1, eligible: true, observed: true },
+      ),
+      state: "rejected",
+      eligible: false,
+      issues: ["확인일 U9.5 청산신호"],
+    },
+  });
+
+  it("labels the unheld condition while retaining confirmation rejection and immutable raw status", () => {
+    const original = structuredClone(rejected);
+    expect(getPortfolioAwareDisplayStatus(rejected, empty, "2026-10-02")).toBe(
+      "미보유 · KOSPI 9.5점 상향돌파 조건 충족",
+    );
+    expect(isPortfolioAwareOperationalEntry(rejected, empty, "2026-10-02")).toBe(false);
+    expect(getDisplayStatus(rejected)).toBe("KOSPI 청산 · 9.5점 상향돌파");
+    expect(rejected).toEqual(original);
+  });
+
+  it("does not claim a holding or a sell action while actual holdings are unavailable", () => {
+    expect(getPortfolioAwareDisplayStatus(rejected, undefined, "2026-10-02")).toBe(
+      "보유 미확인 · KOSPI 9.5점 상향돌파 조건 충족",
+    );
+  });
+
+  it("preserves actual held-position exit priority", () => {
+    expect(
+      getPortfolioAwareDisplayStatus(
+        rejected,
+        {
+          heldSymbols: ["008930"],
+          lastSellDateBySymbol: {},
+        },
+        "2026-10-02",
+      ),
+    ).toBe("청산 대기 · KOSPI 9.5점 상향돌파");
+  });
+
+  it.each([
+    ["UP90", "KOSDAQ 9.0점 상향 재돌파"],
+    ["DOWN30", "KOSDAQ 3.0점 하향 이탈"],
+  ] as const)("also labels unheld %s as a condition", (exitSignal, condition) => {
+    expect(
+      getPortfolioAwareDisplayStatus(
+        row({ instrument: instrument("KOSDAQ"), exitSignal }),
+        empty,
+        "2026-10-02",
+      ),
+    ).toBe(`미보유 · ${condition} 조건 충족`);
+  });
+});

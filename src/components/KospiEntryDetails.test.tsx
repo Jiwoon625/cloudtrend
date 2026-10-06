@@ -447,3 +447,20 @@ describe("holding-aware KOSPI candidate reference", () => {
     expect(html).not.toContain("확인일 RS 통과");
   });
 });
+
+it("shows an unheld confirmation-UP95 condition without an actual sell label in the screener", () => {
+  const candidate = {
+    ...row(confirmation({ state: "rejected", eligible: false, issues: ["확인일 U9.5 청산신호"] })),
+    operatingScore10: 9.5,
+    scoreDelta1d: 10,
+    exitSignal: "UP95" as const,
+  };
+  const html = renderToStaticMarkup(
+    <ScreenerTable rows={[candidate]} positionContext={emptyContext} signalDate={date} />,
+  );
+  expect(html).toContain("미보유 · KOSPI 9.5점 상향돌파 조건 충족");
+  expect(html).toContain("확인일 U9.5 청산신호");
+  expect(html).not.toContain("KOSPI 청산 ·");
+  expect(html).not.toContain("청산 대기");
+  expect(html).not.toContain("확인일 RS 통과");
+});
