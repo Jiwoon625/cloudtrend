@@ -36,7 +36,7 @@ describe("private immutable model journal", () => {
       frozenAt: "2026-10-02T12:00:00Z",
     });
     const { receipt } = await guardModelRun(series, {
-      date: "2026-10-06",
+      date: "2026-10-12",
       codeHash: h,
       configHash: series.configHash,
       sourceHash: h,
@@ -75,7 +75,7 @@ describe("private immutable model journal", () => {
       ...body,
       receipt: (
         await guardModelRun(series, {
-          date: "2026-10-07",
+          date: "2026-10-13",
           codeHash: h,
           configHash: series.configHash,
           sourceHash: h,
