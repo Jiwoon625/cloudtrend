@@ -69,7 +69,7 @@ export interface UsPortfolioPosition {
   entryDate: string;
   entryCoreRank: number | null;
 }
-export const US_FIXED_SLOT_EFFECTIVE_DATE = "2026-10-12";
+export const US_FIXED_SLOT_EFFECTIVE_DATE = "2026-10-05";
 export interface UsFixedSlotAllocationPolicy {
   version: "us-initial-capital-slots-v1";
   effectiveDate: typeof US_FIXED_SLOT_EFFECTIVE_DATE;
