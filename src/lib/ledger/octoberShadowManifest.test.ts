@@ -7,6 +7,7 @@ import { format } from "prettier";
 import {
   ADOPTED_SHADOW_FROZEN_CODE_HASH,
   adoptedShadowFrozenCodeHash,
+  PRE_FIRST_SESSION_KOSPI_CONFIRMATION_FIX_RUNTIME_HASH,
   REVIEWED_SHADOW_RUNTIME_CODE_HASHES,
   shadowEngineManifest,
   shadowExecutableSyntax,
@@ -170,11 +171,9 @@ export const list = [
   });
 });
 
-it("keeps PR195 runtime provenance compatible with the eight frozen Shadow contracts", async () => {
+it("keeps reviewed runtime provenance compatible with the eight frozen Shadow contracts", async () => {
   const runtime = await shadowEngineManifest();
-  expect(runtime.codeHash).toBe(
-    "sha256:ffd26d07d50564c6c734dc9c96ede00f7786e1122df3eb373ad56a4648929033",
-  );
+  expect(runtime.codeHash).toBe(PRE_FIRST_SESSION_KOSPI_CONFIRMATION_FIX_RUNTIME_HASH);
   expect(REVIEWED_SHADOW_RUNTIME_CODE_HASHES).toContain(runtime.codeHash);
   expect(adoptedShadowFrozenCodeHash(runtime.codeHash)).toBe(
     ADOPTED_SHADOW_FROZEN_CODE_HASH,

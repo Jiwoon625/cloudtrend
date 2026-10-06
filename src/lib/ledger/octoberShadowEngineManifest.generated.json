@@ -11,7 +11,7 @@
       "src/lib/engine/indicators.ts": "sha256:4862c805f7c1c3731fdeb60c08ab9ba47baaa37983aa408c2483346ef9e8032b",
       "src/lib/engine/kospiEntryConfirmation.ts": "sha256:9c9014ffa4f669b2baee368971ac4728100282868da0b533d062b8fabd1f5314",
       "src/lib/engine/kospiMarketGate.ts": "sha256:4187e60af90fa66cfc922c73003491efc0c5f01e63d64c57742960885aa8907a",
-      "src/lib/engine/kospiShadow.ts": "sha256:58adf84f5bbae9d42b9149881791ba7b96d0b406fe1c282147d45e20bd1fdee3",
+      "src/lib/engine/kospiShadow.ts": "sha256:22e35a41834b994faf50e12c1efc7a56dbbd172afffe382b7cfb93bb69f39e21",
       "src/lib/engine/kospiShadowDataset.ts": "sha256:82d6f9cfcb8e622b57bff5f27ea1f3dedb1d8e46039f655a75c98136b5c5960d",
       "src/lib/engine/kospiVolatility.ts": "sha256:7c4d43f18ceef204c638274cb5e60f6dcb33f2a8f7b9ed565ee3d43f2f370585",
       "src/lib/engine/manualDataset.ts": "sha256:1d0904fbaf245e5c797539ec5cae8a3fc818509cc6f2048d64e5ce6eff588ff1",
@@ -48,5 +48,5 @@
     },
     "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
   },
-  "codeHash": "sha256:ffd26d07d50564c6c734dc9c96ede00f7786e1122df3eb373ad56a4648929033"
+  "codeHash": "sha256:23f73782cb5646002b80b78c027168bb238ec338da87bd247ef1686794c5aa84"
 }

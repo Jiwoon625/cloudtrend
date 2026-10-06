@@ -22,17 +22,28 @@ type ExecutableSyntax = [kind: number, value: string | ExecutableSyntax[]];
 
 export const ADOPTED_SHADOW_FROZEN_CODE_HASH =
   "sha256:ca565a5ec7bff10815a4943989ae3b02fd52fd508bbd283ae5c4d23eb79607c6" as const;
+/**
+ * The 2026-10-07 KOSPI confirmation-threshold correction was reviewed before
+ * KR_KOSPI_CONFIRM1_BEAR had any persisted model session. Its runtime hash is
+ * therefore admitted as the intended first-record implementation while the
+ * already-registered eight-series contract identity remains unchanged.
+ */
+export const PRE_FIRST_SESSION_KOSPI_CONFIRMATION_FIX_RUNTIME_HASH =
+  "sha256:23f73782cb5646002b80b78c027168bb238ec338da87bd247ef1686794c5aa84" as const;
+
 export const REVIEWED_SHADOW_RUNTIME_CODE_HASHES = Object.freeze([
   ADOPTED_SHADOW_FROZEN_CODE_HASH,
   "sha256:ffd26d07d50564c6c734dc9c96ede00f7786e1122df3eb373ad56a4648929033",
+  PRE_FIRST_SESSION_KOSPI_CONFIRMATION_FIX_RUNTIME_HASH,
   "sha256:7986793771f362aaede80425f9259254035443dce0eb67e134ded9271241354d",
   "sha256:a321c97e37a3b55249b23597e811997b089943d8c56cb27088c60a2806691a80",
 ] as const);
 
 /**
  * The eight already-frozen MODEL contracts keep their original calculation identity.
- * Reviewed publication/runtime-only changes may have a different transitive runtime hash,
- * which is recorded separately on each publication. Any unreviewed runtime hash fails closed.
+ * Reviewed runtime changes may have a different transitive runtime hash, which is recorded
+ * separately on each publication. Calculation changes are admitted only by an explicit reviewed
+ * exception established before that model's first persisted session. Any unreviewed runtime hash fails closed.
  */
 export function adoptedShadowFrozenCodeHash(runtimeCodeHash: string) {
   if (
