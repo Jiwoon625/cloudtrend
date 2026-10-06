@@ -211,7 +211,6 @@ export interface PreparedOctoberPublication {
   date: string;
   sourceHash: SeriesHash;
   codeHash: SeriesHash;
-  runtimeCodeHash: SeriesHash;
   inputHash: SeriesHash;
   preparedAt: string;
   entries: Array<{
@@ -248,8 +247,8 @@ async function persistPreparedOctober(
       item.run.receipt.date !== prepared.date ||
       item.run.publication.inputHash !== prepared.inputHash ||
       item.run.publication.sourceHash !== prepared.sourceHash ||
-      (item.run.publication.runtimeCodeHash ?? item.run.receipt.codeHash) !==
-        prepared.runtimeCodeHash ||
+      (item.run.publication.runtimeCodeHash !== undefined &&
+        !/^sha256:[a-f0-9]{64}$/.test(item.run.publication.runtimeCodeHash)) ||
       item.run.receipt.codeHash !== prepared.codeHash
     )
       throw new Error("Prepared October input identity mismatch");
@@ -561,7 +560,6 @@ export async function recordOctoberPublication(
     date,
     sourceHash: input.sourceHash,
     codeHash: input.codeHash,
-    runtimeCodeHash: input.runtimeCodeHash ?? input.codeHash,
     inputHash,
     preparedAt: input.decisionAt,
     entries: prepared.map((item) => ({
