@@ -14,6 +14,7 @@ import {
   type ModelRunReceipt,
   type SeriesHash,
 } from "./modelSeries";
+import { assertKrShadowDecisionWindow, krShadowDecisionWindow } from "./octoberShadowCalendar";
 export interface KrSeriesInputs {
   date: string;
   codeHash: string;
@@ -45,13 +46,6 @@ export interface AdoptedKrRun {
     prefixHash: SeriesHash;
   };
 }
-const localDate = (value: string) =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(value));
 function prefix(input: AdoptedKrRun["frozenInputs"], date: string): AdoptedKrRun["frozenInputs"] {
   const snapshots = input.snapshots
     .filter((s) => s.asOfDate <= date)
@@ -91,15 +85,9 @@ export async function stepAdoptedKrSeries(
   await verifyFrozenSeries(series);
   if (!["KR_MIXED", "KR_KOSPI", "KR_KOSDAQ"].includes(series.policy.kind))
     throw new Error("KR adopted series required");
-  if (
-    !input.confirmedClose ||
-    !Number.isFinite(Date.parse(input.availableAt)) ||
-    !Number.isFinite(Date.parse(input.decisionAt)) ||
-    Date.parse(input.availableAt) > Date.parse(input.decisionAt) ||
-    localDate(input.availableAt) !== input.date ||
-    localDate(input.decisionAt) !== input.date
-  )
-    throw new Error("Exact-session completed data must be available before the decision");
+  if (!input.confirmedClose)
+    throw new Error("Completed KR close confirmation is required");
+  assertKrShadowDecisionWindow(input.date, input.availableAt, input.decisionAt);
   const first = firstModelSession(series, input.calendar);
   const sessions = [...input.calendar.regularSessions].sort();
   if (!sessions.includes(input.date)) throw new Error("Verified KR regular session required");
@@ -107,12 +95,12 @@ export async function stepAdoptedKrSeries(
     input.snapshots.some(
       (s) =>
         s.asOfDate > input.date ||
-        localDate(s.savedAt) !== s.asOfDate ||
-        Date.parse(s.savedAt) > Date.parse(input.decisionAt),
+        Date.parse(s.savedAt) > Date.parse(input.decisionAt) ||
+        !krShadowDecisionWindow(s.asOfDate, s.savedAt, s.savedAt).eligible,
     ) ||
     new Set(input.snapshots.map((s) => s.asOfDate)).size !== input.snapshots.length
   )
-    throw new Error("Snapshot dates/availability are not point-in-time");
+    throw new Error("Snapshot dates/availability are not T+1 pre-open point-in-time evidence");
   if (!input.snapshots.some((s) => s.asOfDate === input.date))
     throw new Error("Current completed snapshot is required");
   for (const rows of Object.values(input.bars))

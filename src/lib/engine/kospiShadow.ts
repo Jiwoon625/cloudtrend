@@ -134,8 +134,8 @@ export interface KospiModelExecutionPolicy {
   contractHash: string;
   codeHash: string;
   configHash: string;
-  accountingStartDate: "2026-10-05";
-  fixedBudgetEndExclusive: "2027-10-05";
+  accountingStartDate: "2026-10-12";
+  fixedBudgetEndExclusive: "2027-10-12";
   initialCapitalKrw: "100000000";
   oneWayCost: "0.0015";
 }
@@ -223,12 +223,12 @@ export function stepKospiShadow(
     const p = executionPolicy;
     if (
       p.version !== "isolated-kospi-model-v1" ||
-      p.bookId !== "adopted-shadow-2026-10-05-v1:KR_KOSPI_CONFIRM1_BEAR" ||
+      p.bookId !== "adopted-shadow-2026-10-12-v2:KR_KOSPI_CONFIRM1_BEAR" ||
       ![p.contractHash, p.codeHash, p.configHash].every((hash) =>
         /^sha256:[a-f0-9]{64}$/.test(hash),
       ) ||
-      p.accountingStartDate !== "2026-10-05" ||
-      p.fixedBudgetEndExclusive !== "2027-10-05" ||
+      p.accountingStartDate !== "2026-10-12" ||
+      p.fixedBudgetEndExclusive !== "2027-10-12" ||
       p.initialCapitalKrw !== "100000000" ||
       p.oneWayCost !== "0.0015" ||
       session.configHash !== p.configHash ||
@@ -240,9 +240,9 @@ export function stepKospiShadow(
     if (
       session.warmupRows &&
       (previous !== null ||
-        session.date !== "2026-10-06" ||
+        session.date !== "2026-10-12" ||
         new Set(session.warmupRows.map((row) => row.symbol)).size !== session.warmupRows.length ||
-        session.warmupRows.some((row) => row.date !== "2026-10-02" || !row.symbol || !row.sector))
+        session.warmupRows.some((row) => row.date !== "2026-10-08" || !row.symbol || !row.sector))
     )
       throw new Error("KOSPI warmup permits only final pre-start observations at initialization");
     const identity = (value: KospiModelExecutionPolicy) =>

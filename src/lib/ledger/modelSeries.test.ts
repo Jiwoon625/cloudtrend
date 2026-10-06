@@ -51,27 +51,27 @@ const calendar = (market: "KR" | "US" = "KR"): ModelCalendar => ({
   market,
   sourceHash,
   coverageStart: "2026-10-01",
-  coverageEnd: "2026-10-12",
+  coverageEnd: "2026-10-20",
   regularSessions: [
-    "2026-10-01",
-    "2026-10-02",
-    "2026-10-05",
-    "2026-10-06",
-    "2026-10-07",
-    "2026-10-08",
     "2026-10-12",
+    "2026-10-13",
+    "2026-10-14",
+    "2026-10-15",
+    "2026-10-16",
+    "2026-10-19",
+    "2026-10-20",
   ],
 });
 const signal = {
-  originDate: "2026-10-05",
-  signalDate: "2026-10-06",
-  availableAt: "2026-10-06T07:00:00Z",
+  originDate: "2026-10-12",
+  signalDate: "2026-10-13",
+  availableAt: "2026-10-13T07:00:00Z",
 };
-const decisionAt = "2026-10-06T08:00:00Z";
+const decisionAt = "2026-10-13T08:00:00Z";
 const etfSnapshot = (): EtfStrategySnapshot => ({
   version: ETF_POLICY.version,
-  date: "2026-10-06",
-  previousDate: "2026-10-05",
+  date: "2026-10-13",
+  previousDate: "2026-10-12",
   eligible: true,
   score: 85,
   previousScore: 81,
@@ -89,12 +89,12 @@ const etfSnapshot = (): EtfStrategySnapshot => ({
   onset: true,
   rawOnset: false,
   entryState: "confirmed",
-  originDate: "2026-10-05",
-  confirmationDate: "2026-10-06",
+  originDate: "2026-10-12",
+  confirmationDate: "2026-10-13",
   confirmationIssues: [],
   averageTradingValue20: 1e9,
   dataStatus: "ready",
-  krxReferenceDate: "2026-10-06",
+  krxReferenceDate: "2026-10-13",
   exit: null,
   issues: [],
 });
@@ -107,7 +107,7 @@ describe("new adopted series, never historical book rewrites", () => {
       expect(s).toMatchObject({
         book: "MODEL",
         version: ADOPTED_SERIES_VERSION,
-        accountingStartDate: "2026-10-05",
+        accountingStartDate: "2026-10-12",
         initialKrw: "100000000",
         roundTripCost: "0.003",
         oneWayCost: "0.0015",
@@ -127,15 +127,15 @@ describe("new adopted series, never historical book rewrites", () => {
     expect(series[4]!.policy.allocation).toBe("ETF_V02_VOLATILITY_UNCHANGED");
   });
 
-  it("preserves the exact KR/ETF frozen contracts while changing only approved US allocation", async () => {
-    const originalHashes = {
+  it("creates new v2 contract identities while preserving the adopted engine policies", async () => {
+    const legacyV1Hashes = {
       KR_MIXED: "7ee1fdd09122c1c3de674ba7e3ffe68e694f1cdb59b54c3ce73bb88d22ef731b",
       KR_KOSPI: "65661e9f0387015040f5201cab372ffaf53dca967f2c0b3ea01a72f67b26e795",
       KR_KOSDAQ: "e2485190b253a46b19c5f9db410e5737b74188fd501400c889f756f8f415f049",
       ETF_V02: "b1d278500c09ff757858afb27d0d67014c139c19e9e6cab728b49be10d4d069b",
     };
-    for (const [kind, expected] of Object.entries(originalHashes))
-      expect((await create(kind as AdoptedSeriesKind)).contractHash).toBe(`sha256:${expected}`);
+    for (const [kind, legacy] of Object.entries(legacyV1Hashes))
+      expect((await create(kind as AdoptedSeriesKind)).contractHash).not.toBe(`sha256:${legacy}`);
     const a2 = await create("US_A2"),
       b3 = await create("US_B3"),
       kospi = await create("KR_KOSPI_CONFIRM1_BEAR");
@@ -224,7 +224,7 @@ describe("new adopted series, never historical book rewrites", () => {
       freezeAdoptedSeries({ ...base, kind: "KR_MIXED", existing: s, codeHash: hash("c") }),
     ).rejects.toThrow("immutable");
     await expect(
-      freezeAdoptedSeries({ ...base, kind: "KR_MIXED", frozenAt: "2026-10-05T00:00:00Z" }),
+      freezeAdoptedSeries({ ...base, kind: "KR_MIXED", frozenAt: "2026-10-12T00:00:00Z" }),
     ).rejects.toThrow("before accounting start");
     await expect(
       freezeAdoptedSeries({ ...base, kind: "KR_MIXED", codeHash: "unhashed" }),
@@ -242,14 +242,14 @@ describe("new adopted series, never historical book rewrites", () => {
       cash: { KRW: "100000000", USD: "0" },
       positions: {},
       pendingSignals: [],
-      accountingStartDate: "2026-10-05",
+      accountingStartDate: "2026-10-12",
       firstValidSessionDate: null,
     });
     expect(state.openingBalances).toHaveLength(1);
     expect(state.openingBalances[0]).toMatchObject({
       book: "MODEL",
       bookId: mixed.bookId,
-      date: "2026-10-05",
+      date: "2026-10-12",
       cash: "100000000",
       complete: true,
     });
@@ -327,72 +327,72 @@ describe("official initial FX and explicit rounding residual", () => {
 });
 
 describe("accounting, signal, execution, and point-in-time boundaries", () => {
-  it("keeps Oct 5 accounting start separate from the first valid market session", async () => {
+  it("keeps Oct 12 accounting start separate from the first valid market session", async () => {
     const s = await create();
     const holidayCalendar = {
       ...calendar(),
-      regularSessions: ["2026-10-01", "2026-10-02", "2026-10-06", "2026-10-07"],
+      regularSessions: ["2026-10-01", "2026-10-02", "2026-10-13", "2026-10-14"],
     };
-    expect(firstModelSession(s, holidayCalendar)).toBe("2026-10-06");
-    expect(initializeModelSeries(s).accountingStartDate).toBe("2026-10-05");
+    expect(firstModelSession(s, holidayCalendar)).toBe("2026-10-13");
+    expect(initializeModelSeries(s).accountingStartDate).toBe("2026-10-12");
     expect(firstModelSession(s, { ...holidayCalendar, regularSessions: [] })).toBeNull();
     expect(() => firstModelSession(s, calendar("US"))).toThrow("calendar");
-    expect(() => firstModelSession(s, { ...calendar(), coverageStart: "2026-10-06" })).toThrow(
+    expect(() => firstModelSession(s, { ...calendar(), coverageStart: "2026-10-13" })).toThrow(
       "cover",
     );
     expect(() =>
-      firstModelSession(s, { ...calendar(), regularSessions: ["2026-10-05", "2026-10-05"] }),
+      firstModelSession(s, { ...calendar(), regularSessions: ["2026-10-12", "2026-10-12"] }),
     ).toThrow("Duplicate");
   });
 
   it("lets old observations warm indicators while excluding future-date and late-published data", async () => {
     const s = await create();
     const old = { date: "2026-10-02", availableAt: "2026-10-02T08:00:00Z", sourceHash };
-    const active = { date: "2026-10-06", availableAt: "2026-10-06T07:00:00Z", sourceHash };
-    const future = { date: "2026-10-07", availableAt: "2026-10-07T07:00:00Z", sourceHash };
-    const late = { date: "2026-10-05", availableAt: "2026-10-06T09:00:00Z", sourceHash };
+    const active = { date: "2026-10-13", availableAt: "2026-10-13T07:00:00Z", sourceHash };
+    const future = { date: "2026-10-14", availableAt: "2026-10-14T07:00:00Z", sourceHash };
+    const late = { date: "2026-10-12", availableAt: "2026-10-13T09:00:00Z", sourceHash };
     expect(
-      partitionModelObservations(s, [old, active, future, late], "2026-10-06", decisionAt),
+      partitionModelObservations(s, [old, active, future, late], "2026-10-13", decisionAt),
     ).toEqual({ warmup: [old], active: [active], excludedFuture: [future, late] });
     expect(initializeModelSeries(s).pendingSignals).toEqual([]);
   });
 
   it("never carries pre-start onset into an actionable confirmation", async () => {
     const s = await create();
-    expect(isActionableModelSignal(s, signal, "2026-10-06", decisionAt)).toBe(true);
+    expect(isActionableModelSignal(s, signal, "2026-10-13", decisionAt)).toBe(true);
     expect(
-      isActionableModelSignal(s, { ...signal, originDate: "2026-10-02" }, "2026-10-06", decisionAt),
+      isActionableModelSignal(s, { ...signal, originDate: "2026-10-02" }, "2026-10-13", decisionAt),
     ).toBe(false);
-    expect(isActionableModelSignal(s, signal, "2026-10-05", decisionAt)).toBe(false);
+    expect(isActionableModelSignal(s, signal, "2026-10-12", decisionAt)).toBe(false);
     expect(
       isActionableModelSignal(
         s,
-        { ...signal, availableAt: "2026-10-06T09:00:00Z" },
-        "2026-10-06",
+        { ...signal, availableAt: "2026-10-13T09:00:00Z" },
+        "2026-10-13",
         decisionAt,
       ),
     ).toBe(false);
-    expect(nextModelExecutionSession(s, signal, calendar(), "2026-10-06", decisionAt)).toBe(
-      "2026-10-07",
+    expect(nextModelExecutionSession(s, signal, calendar(), "2026-10-13", decisionAt)).toBe(
+      "2026-10-14",
     );
     expect(
       nextModelExecutionSession(
         s,
-        { ...signal, availableAt: "2026-10-08T08:00:00Z" },
+        { ...signal, availableAt: "2026-10-15T08:00:00Z" },
         calendar(),
-        "2026-10-08",
-        "2026-10-08T09:00:00Z",
+        "2026-10-15",
+        "2026-10-15T09:00:00Z",
       ),
     ).toBeNull();
     expect(
-      nextModelExecutionSession(s, signal, calendar(), "2026-10-06", "2026-10-08T09:00:00Z"),
+      nextModelExecutionSession(s, signal, calendar(), "2026-10-13", "2026-10-15T09:00:00Z"),
     ).toBeNull();
     expect(
       nextModelExecutionSession(
         s,
         { ...signal, originDate: "2026-10-02" },
         calendar(),
-        "2026-10-06",
+        "2026-10-13",
         decisionAt,
       ),
     ).toBeNull();
@@ -400,8 +400,8 @@ describe("accounting, signal, execution, and point-in-time boundaries", () => {
       nextModelExecutionSession(
         s,
         signal,
-        { ...calendar(), coverageEnd: "2026-10-06", regularSessions: ["2026-10-05", "2026-10-06"] },
-        "2026-10-06",
+        { ...calendar(), coverageEnd: "2026-10-13", regularSessions: ["2026-10-12", "2026-10-13"] },
+        "2026-10-13",
         decisionAt,
       ),
     ).toBeNull();
@@ -410,17 +410,17 @@ describe("accounting, signal, execution, and point-in-time boundaries", () => {
         s,
         { ...signal, originDate: "2026-10-04" },
         calendar(),
-        "2026-10-06",
+        "2026-10-13",
         decisionAt,
       ),
     ).not.toThrow();
     expect(() =>
       nextModelExecutionSession(
         s,
-        { ...signal, signalDate: "2026-10-09", availableAt: "2026-10-09T07:00:00Z" },
+        { ...signal, signalDate: "2026-10-18", availableAt: "2026-10-18T07:00:00Z" },
         calendar(),
-        "2026-10-09",
-        "2026-10-09T08:00:00Z",
+        "2026-10-18",
+        "2026-10-18T08:00:00Z",
       ),
     ).toThrow("regular market");
   });
@@ -429,9 +429,9 @@ describe("accounting, signal, execution, and point-in-time boundaries", () => {
 describe("exact allocation boundary without replacing adopted engine rules", () => {
   it("uses first-year KR initial capital / 30, fee-inclusive and integer only", async () => {
     const s = await create();
-    expect(krInitialSlotBudget(s, "2026-10-05")).toBe("3333333.33333333");
+    expect(krInitialSlotBudget(s, "2026-10-12")).toBe("3333333.33333333");
     expect(krInitialSlotBudget(s, "2027-10-04")).toBe("3333333.33333333");
-    const quote = quoteKrModelEntry(s, { date: "2026-10-05", cash: "100000000", price: "100000" });
+    const quote = quoteKrModelEntry(s, { date: "2026-10-12", cash: "100000000", price: "100000" });
     expect(quote).toMatchObject({
       quantity: "33",
       gross: "3300000",
@@ -445,7 +445,7 @@ describe("exact allocation boundary without replacing adopted engine rules", () 
     expect(quoteModelBudget("1000", "100.15", "100").quantity).toBe("1");
     expect(quoteModelBudget("1", "1", "0.00000001").remainingCash).not.toMatch(/^-/);
     expect(() => krInitialSlotBudget(s, "2026-10-04")).toThrow("boundary");
-    expect(() => krInitialSlotBudget(s, "2027-10-05")).toThrow("boundary");
+    expect(() => krInitialSlotBudget(s, "2027-10-12")).toThrow("boundary");
     expect(() => quoteModelBudget("100", "100", "0")).toThrow();
     expect(() => quoteModelBudget("100", "-1", "1")).toThrow();
   });
@@ -453,7 +453,7 @@ describe("exact allocation boundary without replacing adopted engine rules", () 
   it("never applies the KR first-year rule to US A0 or ETF", async () => {
     for (const kind of ["US_A0", "ETF_V02"] as const) {
       const s = await create(kind);
-      expect(() => krInitialSlotBudget(s, "2026-10-05")).toThrow("must not replace");
+      expect(() => krInitialSlotBudget(s, "2026-10-12")).toThrow("must not replace");
     }
   });
 
@@ -482,7 +482,7 @@ describe("exact allocation boundary without replacing adopted engine rules", () 
   it("reuses ETF v0.2 volatility sizing and rejects pre-start confirmation state", async () => {
     const s = await create("ETF_V02");
     const input = {
-      asOfDate: "2026-10-06",
+      asOfDate: "2026-10-13",
       decisionAt,
       availableAt: signal.availableAt,
       equity: "100000000",
@@ -515,7 +515,7 @@ describe("exact allocation boundary without replacing adopted engine rules", () 
         strategy: { ...input.strategy, dataStatus: "krx_batch_pending" },
       }),
     ).toBeNull();
-    expect(quoteEtfModelEntry(s, { ...input, availableAt: "2026-10-06T09:00:00Z" })).toBeNull();
+    expect(quoteEtfModelEntry(s, { ...input, availableAt: "2026-10-13T09:00:00Z" })).toBeNull();
   });
 });
 
@@ -531,7 +531,7 @@ describe("deterministic hashes and date-bound immutable reuse", () => {
 
   it("reuses identical runs but rejects a changed same-date source/config/code", async () => {
     const s = await create();
-    const input = { date: "2026-10-05", sourceHash, codeHash, configHash: s.configHash };
+    const input = { date: "2026-10-12", sourceHash, codeHash, configHash: s.configHash };
     const first = await guardModelRun(s, input);
     expect(first.status).toBe("NEW");
     expect((await guardModelRun(s, input, first.receipt)).status).toBe("REUSE");
@@ -545,7 +545,7 @@ describe("deterministic hashes and date-bound immutable reuse", () => {
       "Frozen code/config",
     );
     await expect(guardModelRun(s, { ...input, date: "2026-10-02" })).rejects.toThrow("warmup");
-    const second = await guardModelRun(s, { ...input, date: "2026-10-06", sourceHash: hash("c") });
+    const second = await guardModelRun(s, { ...input, date: "2026-10-13", sourceHash: hash("c") });
     expect(second.status).toBe("NEW");
     expect(second.receipt.runHash).not.toBe(first.receipt.runHash);
     expect((await create()).sourceHash).toBe(sourceHash);

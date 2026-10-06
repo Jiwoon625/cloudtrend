@@ -76,15 +76,15 @@ function input(date: string, series: FrozenModelSeries) {
       market: "US" as const,
       sourceHash: hash("d"),
       coverageStart: "2026-10-01",
-      coverageEnd: "2026-10-09",
+      coverageEnd: "2026-10-16",
       regularSessions: [
         "2026-10-01",
         "2026-10-02",
-        "2026-10-05",
-        "2026-10-06",
-        "2026-10-07",
-        "2026-10-08",
-        "2026-10-09",
+        "2026-10-12",
+        "2026-10-13",
+        "2026-10-14",
+        "2026-10-15",
+        "2026-10-16",
       ],
     },
     availableAt: `${date}T21:00:00Z`,
@@ -100,7 +100,7 @@ describe("JSONB registry strategy hydration preserves frozen values and engine g
         stored = jsonbRoundTrip(original);
       const before = JSON.stringify(stored),
         originalCatalog = structuredClone(US_PROSPECTIVE_STRATEGIES);
-      const firstInput = input("2026-10-05", original);
+      const firstInput = input("2026-10-12", original);
       // Reproduce the production failure without any strategy/value mismatch.
       expect(canonicalSeriesJson(stored)).toBe(canonicalSeriesJson(original));
       await expect(stepAdoptedUsSeries(stored, firstInput, null)).rejects.toThrow(
@@ -121,7 +121,7 @@ describe("JSONB registry strategy hydration preserves frozen values and engine g
       const reopened = (await reader(jsonbRoundTrip(original)).store.readSeries(original.bookId))!;
       const retry = await stepAdoptedUsSeries(reopened, firstInput, persisted);
       expect(retry.status).toBe("REUSE");
-      const nextInput = input("2026-10-06", original);
+      const nextInput = input("2026-10-13", original);
       const expectedNext = await stepAdoptedUsSeries(original, nextInput, expectedFirst.run);
       const next = await stepAdoptedUsSeries(reopened, nextInput, persisted);
       expect(canonicalSeriesJson(next)).toBe(canonicalSeriesJson(expectedNext));
@@ -136,7 +136,7 @@ describe("JSONB registry strategy hydration preserves frozen values and engine g
     async (field) => {
       const stored = jsonbRoundTrip(await fixtureSeries());
       const policy = stored.policy.enginePolicy as Record<string, unknown>;
-      if (field === "bookId") stored.bookId = "adopted-shadow-2026-10-05-v1:US_A2";
+      if (field === "bookId") stored.bookId = "adopted-shadow-2026-10-12-v2:US_A2";
       else if (field === "betaExit") policy[field] = { rankBelow: 0.61, consecutiveDays: 3 };
       else policy[field] = field === "exitCore" ? 0.5 : true;
       await expect(reader(stored).store.readSeries(stored.bookId)).rejects.toThrow();

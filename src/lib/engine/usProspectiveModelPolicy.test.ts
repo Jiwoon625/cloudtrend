@@ -23,9 +23,9 @@ const sourceHash = `sha256:${"b".repeat(64)}` as const;
 const a0 = US_PROSPECTIVE_STRATEGIES[0]!;
 const policy: UsModelExecutionPolicy = {
   version: "isolated-us-model-v1",
-  bookId: "adopted-shadow-2026-10-05-v1:US_A0",
+  bookId: "adopted-shadow-2026-10-12-v2:US_A0",
   contractHash: codeHash,
-  accountingStartDate: "2026-10-05",
+  accountingStartDate: "2026-10-12",
   initialCapital: "73551.04",
   oneWayCost: "0.0015",
 };
@@ -84,16 +84,15 @@ const calendar: ModelCalendar = {
   market: "US",
   sourceHash,
   coverageStart: "2026-10-01",
-  coverageEnd: "2026-10-12",
+  coverageEnd: "2026-10-20",
   regularSessions: [
-    "2026-10-01",
-    "2026-10-02",
-    "2026-10-05",
-    "2026-10-06",
-    "2026-10-07",
-    "2026-10-08",
-    "2026-10-09",
     "2026-10-12",
+    "2026-10-13",
+    "2026-10-14",
+    "2026-10-15",
+    "2026-10-16",
+    "2026-10-19",
+    "2026-10-20",
   ],
 };
 const input = (date: string, configHash: string) => ({
@@ -108,12 +107,12 @@ const input = (date: string, configHash: string) => ({
 
 describe("opt-in US model execution policy", () => {
   it("preserves unconfigured legacy defaults and cash-only configured start", () => {
-    const legacy = stepUsProspectivePortfolio(a0, analysis("2026-10-05"), null, null);
-    const model = stepUsProspectivePortfolio(a0, analysis("2026-10-05"), null, null, policy);
+    const legacy = stepUsProspectivePortfolio(a0, analysis("2026-10-12"), null, null);
+    const model = stepUsProspectivePortfolio(a0, analysis("2026-10-12"), null, null, policy);
     expect(legacy.state.initialCapital).toBe(100000);
     expect(legacy.state.executionPolicy).toBeUndefined();
     expect(model.state).toMatchObject({
-      initializedDate: "2026-10-05",
+      initializedDate: "2026-10-12",
       initialCapital: 73551.04,
       cash: 73551.04,
       modelCashExact: "73551.04",
@@ -127,10 +126,10 @@ describe("opt-in US model execution policy", () => {
   });
 
   it("uses fee-aware integer shares and exact cash/fees at 0.15% on both sides", () => {
-    const first = stepUsProspectivePortfolio(a0, analysis("2026-10-05"), null, null, policy);
+    const first = stepUsProspectivePortfolio(a0, analysis("2026-10-12"), null, null, policy);
     const buy = stepUsProspectivePortfolio(
       a0,
-      analysis("2026-10-06"),
+      analysis("2026-10-13"),
       first.state,
       first.nav,
       policy,
@@ -145,21 +144,21 @@ describe("opt-in US model execution policy", () => {
       feeUsd: 110.1,
     });
     expect(first.state.positions).toEqual({});
-    const exitSignal = analysis("2026-10-07");
+    const exitSignal = analysis("2026-10-14");
     exitSignal.rows[0]!.a0Entry = false;
     exitSignal.rows[0]!.a0Exit = true;
     const exit = stepUsProspectivePortfolio(a0, exitSignal, buy.state, buy.nav, policy);
-    const exitFill = analysis("2026-10-08");
+    const exitFill = analysis("2026-10-15");
     exitFill.rows[0]!.a0Entry = false;
     const sell = stepUsProspectivePortfolio(a0, exitFill, exit.state, exit.nav, policy);
     expect(sell.state.positions).toEqual({});
     expect(sell.state.modelCashExact).toBe("73330.84");
     expect(sell.state.modelFeesExact).toBe("220.2");
     expect(sell.feesUsd).toBe(110.1);
-    const legacyFirst = stepUsProspectivePortfolio(a0, analysis("2026-10-05"), null, null);
+    const legacyFirst = stepUsProspectivePortfolio(a0, analysis("2026-10-12"), null, null);
     const legacyBuy = stepUsProspectivePortfolio(
       a0,
-      analysis("2026-10-06"),
+      analysis("2026-10-13"),
       legacyFirst.state,
       legacyFirst.nav,
     );
@@ -169,10 +168,10 @@ describe("opt-in US model execution policy", () => {
   });
 
   it("uses preceding ADV rather than today's volume for configured fills", () => {
-    const firstInput = analysis("2026-10-05");
+    const firstInput = analysis("2026-10-12");
     firstInput.rows[0]!.adv20Usd = 500000;
     const first = stepUsProspectivePortfolio(a0, firstInput, null, null, policy);
-    const secondInput = analysis("2026-10-06");
+    const secondInput = analysis("2026-10-13");
     secondInput.rows[0]!.open = 125;
     secondInput.rows[0]!.close = 200;
     const second = stepUsProspectivePortfolio(a0, secondInput, first.state, first.nav, policy);
@@ -183,10 +182,10 @@ describe("opt-in US model execution policy", () => {
   });
 
   it("preserves quarterly equal-weight rebalancing and adopted A0 exits", () => {
-    const seed = stepUsProspectivePortfolio(a0, analysis("2026-10-05", 2), null, null, policy);
+    const seed = stepUsProspectivePortfolio(a0, analysis("2026-10-12", 2), null, null, policy);
     const held = stepUsProspectivePortfolio(
       a0,
-      analysis("2026-10-06", 2),
+      analysis("2026-10-13", 2),
       seed.state,
       seed.nav,
       policy,
@@ -217,9 +216,9 @@ describe("opt-in US model execution policy", () => {
   });
 
   it("rejects legacy/alternative mixing, altered policy, pre-start pending trades and missing policy", () => {
-    const first = stepUsProspectivePortfolio(a0, analysis("2026-10-05"), null, null, policy);
-    const next = analysis("2026-10-06");
-    const legacy = stepUsProspectivePortfolio(a0, analysis("2026-10-05"), null, null);
+    const first = stepUsProspectivePortfolio(a0, analysis("2026-10-12"), null, null, policy);
+    const next = analysis("2026-10-13");
+    const legacy = stepUsProspectivePortfolio(a0, analysis("2026-10-12"), null, null);
     expect(() => stepUsProspectivePortfolio(a0, next, first.state, first.nav)).toThrow(
       "legacy engine",
     );
@@ -249,7 +248,7 @@ describe("opt-in US model execution policy", () => {
 describe("adopted A0 session and state-provenance adapter", () => {
   it("executes sequential frozen sessions and deterministically reuses identical same-date payloads", async () => {
     const series = await createSeries();
-    const firstInput = input("2026-10-05", series.configHash);
+    const firstInput = input("2026-10-12", series.configHash);
     const first = await stepAdoptedUsSeries(series, firstInput);
     expect(first.status).toBe("NEW");
     expect(first.run.result.state.initialCapital).toBe(73551.04);
@@ -258,7 +257,7 @@ describe("adopted A0 session and state-provenance adapter", () => {
     expect(reused.run).toBe(first.run);
     const second = await stepAdoptedUsSeries(
       series,
-      input("2026-10-06", series.configHash),
+      input("2026-10-13", series.configHash),
       first.run,
     );
     expect(second.run.result.state.positions["T0"]!.shares).toBe(36);
@@ -269,7 +268,7 @@ describe("adopted A0 session and state-provenance adapter", () => {
 
   it("rejects changed same-date actual payload, changed provenance, tampered state and skipped sessions", async () => {
     const series = await createSeries();
-    const firstInput = input("2026-10-05", series.configHash);
+    const firstInput = input("2026-10-12", series.configHash);
     const first = await stepAdoptedUsSeries(series, firstInput);
     const changed = structuredClone(firstInput);
     changed.analysis.rows[0]!.close = 101;
@@ -281,15 +280,15 @@ describe("adopted A0 session and state-provenance adapter", () => {
       stepAdoptedUsSeries(series, { ...firstInput, configHash: codeHash }, first.run),
     ).rejects.toThrow("Frozen code/config");
     await expect(
-      stepAdoptedUsSeries(series, input("2026-10-07", series.configHash), first.run),
+      stepAdoptedUsSeries(series, input("2026-10-14", series.configHash), first.run),
     ).rejects.toThrow("missing sessions");
     const dirty = structuredClone(first.run);
     dirty.result.state.cash += 10;
     await expect(
-      stepAdoptedUsSeries(series, input("2026-10-06", series.configHash), dirty),
+      stepAdoptedUsSeries(series, input("2026-10-13", series.configHash), dirty),
     ).rejects.toThrow("provenance mismatch");
     await expect(
-      stepAdoptedUsSeries(series, input("2026-10-06", series.configHash), {
+      stepAdoptedUsSeries(series, input("2026-10-13", series.configHash), {
         ...first.run,
         book: "ACTUAL" as "MODEL",
       }),
@@ -298,19 +297,19 @@ describe("adopted A0 session and state-provenance adapter", () => {
 
   it("does not retroactively trade on late available analysis or a later decision day", async () => {
     const series = await createSeries();
-    const current = input("2026-10-05", series.configHash);
+    const current = input("2026-10-12", series.configHash);
     await expect(
       stepAdoptedUsSeries(series, {
         ...current,
-        availableAt: "2026-10-08T21:00:00Z",
-        decisionAt: "2026-10-08T22:00:00Z",
+        availableAt: "2026-10-15T21:00:00Z",
+        decisionAt: "2026-10-15T22:00:00Z",
       }),
     ).rejects.toThrow("retrospective");
     await expect(
-      stepAdoptedUsSeries(series, { ...current, decisionAt: "2026-10-06T22:00:00Z" }),
+      stepAdoptedUsSeries(series, { ...current, decisionAt: "2026-10-13T22:00:00Z" }),
     ).rejects.toThrow("retrospective");
     await expect(
-      stepAdoptedUsSeries(series, { ...current, decisionAt: "2026-10-05T20:00:00Z" }),
+      stepAdoptedUsSeries(series, { ...current, decisionAt: "2026-10-12T20:00:00Z" }),
     ).rejects.toThrow("not yet available");
     await expect(
       stepAdoptedUsSeries(series, { ...current, calendar: { ...calendar, market: "KR" } }),
@@ -321,14 +320,14 @@ describe("adopted A0 session and state-provenance adapter", () => {
     const series = await createSeries();
     const holiday = {
       ...calendar,
-      regularSessions: calendar.regularSessions.filter((date) => date !== "2026-10-05"),
+      regularSessions: calendar.regularSessions.filter((date) => date !== "2026-10-12"),
     };
     const first = await stepAdoptedUsSeries(series, {
-      ...input("2026-10-06", series.configHash),
+      ...input("2026-10-13", series.configHash),
       calendar: holiday,
     });
-    expect(first.run.result.state.initializedDate).toBe("2026-10-05");
-    expect(first.run.result.state.lastDate).toBe("2026-10-06");
+    expect(first.run.result.state.initializedDate).toBe("2026-10-12");
+    expect(first.run.result.state.lastDate).toBe("2026-10-13");
     expect(first.run.result.positionsCount).toBe(0);
     expect(first.run.result.state.modelCashExact).toBe("73551.04");
   });
@@ -339,11 +338,11 @@ describe("isolated A2 and B3 variants", () => {
     "runs %s with its frozen allocation, exact cash and independent state",
     async (kind) => {
       const series = await createSeries(kind);
-      const first = await stepAdoptedUsSeries(series, input("2026-10-05", series.configHash));
+      const first = await stepAdoptedUsSeries(series, input("2026-10-12", series.configHash));
       const original = structuredClone(first.run);
       const second = await stepAdoptedUsSeries(
         series,
-        input("2026-10-06", series.configHash),
+        input("2026-10-13", series.configHash),
         first.run,
       );
       expect(second.run.result.state.modelCashExact).toBe("69945.64");
@@ -351,12 +350,12 @@ describe("isolated A2 and B3 variants", () => {
       expect(second.run.result.state.positions["T0"]?.shares).toBe(36);
       expect(first.run).toEqual(original);
       expect(
-        (await stepAdoptedUsSeries(series, input("2026-10-06", series.configHash), second.run))
+        (await stepAdoptedUsSeries(series, input("2026-10-13", series.configHash), second.run))
           .status,
       ).toBe("REUSE");
       const other = await createSeries(kind === "US_A2" ? "US_B3" : "US_A2");
       await expect(
-        stepAdoptedUsSeries(other, input("2026-10-07", other.configHash), second.run),
+        stepAdoptedUsSeries(other, input("2026-10-14", other.configHash), second.run),
       ).rejects.toThrow("other model");
       const config = US_PROSPECTIVE_STRATEGIES.find(
         (strategy) => strategy.id === second.run.result.state.executionPolicy!.strategyId,
@@ -364,16 +363,16 @@ describe("isolated A2 and B3 variants", () => {
       expect(() =>
         stepUsProspectivePortfolio(
           a0,
-          analysis("2026-10-07"),
+          analysis("2026-10-14"),
           second.run.result.state,
           second.run.result.nav,
           second.run.result.state.executionPolicy,
         ),
       ).toThrow("unchanged adopted strategy");
-      const legacy = stepUsProspectivePortfolio(config, analysis("2026-10-05"), null, null);
+      const legacy = stepUsProspectivePortfolio(config, analysis("2026-10-12"), null, null);
       const legacyFill = stepUsProspectivePortfolio(
         config,
-        analysis("2026-10-06"),
+        analysis("2026-10-13"),
         legacy.state,
         legacy.nav,
       );
@@ -384,7 +383,7 @@ describe("isolated A2 and B3 variants", () => {
       expect(() =>
         stepUsProspectivePortfolio(
           config,
-          analysis("2026-10-07"),
+          analysis("2026-10-14"),
           legacyFill.state,
           legacyFill.nav,
           second.run.result.state.executionPolicy,
@@ -398,18 +397,18 @@ describe("isolated A2 and B3 variants", () => {
       const executionPolicy: UsModelExecutionPolicy = {
         ...policy,
         strategyId: config.id,
-        bookId: `adopted-shadow-2026-10-05-v1:${config.id === "A2_QUARTER_SHADOW" ? "US_A2" : "US_B3"}`,
+        bookId: `adopted-shadow-2026-10-12-v2:${config.id === "A2_QUARTER_SHADOW" ? "US_A2" : "US_B3"}`,
       };
       const first = stepUsProspectivePortfolio(
         config,
-        analysis("2026-10-05", 2),
+        analysis("2026-10-12", 2),
         null,
         null,
         executionPolicy,
       );
       const held = stepUsProspectivePortfolio(
         config,
-        analysis("2026-10-06", 2),
+        analysis("2026-10-13", 2),
         first.state,
         first.nav,
         executionPolicy,
@@ -453,7 +452,7 @@ describe("approved initial-capital/20 prospective US allocation", () => {
     expect(() =>
       stepUsProspectivePortfolio(
         a0,
-        analysis("2026-10-05"),
+        analysis("2026-10-12"),
         null,
         null,
         undefined,
@@ -470,7 +469,7 @@ describe("approved initial-capital/20 prospective US allocation", () => {
       delete body.policy.enginePolicyRole;
       const changed = { ...body, contractHash: await hashSeriesValue(body) };
       await expect(
-        stepAdoptedUsSeries(changed, input("2026-10-05", changed.configHash)),
+        stepAdoptedUsSeries(changed, input("2026-10-12", changed.configHash)),
       ).rejects.toThrow("historical signal-base role changed");
     },
   );
@@ -480,23 +479,23 @@ describe("approved initial-capital/20 prospective US allocation", () => {
     expect(usFixedSlotBudget(usFixedSlotAllocationPolicy(100000))).toBe("5000");
     for (const kind of ["US_A0", "US_A2", "US_B3"] as const) {
       const series = await createSeries(kind);
-      const first = await stepAdoptedUsSeries(series, input("2026-10-05", series.configHash));
+      const first = await stepAdoptedUsSeries(series, input("2026-10-12", series.configHash));
       expect(first.run.result.state.pendingTargets["T0"]).toMatchObject({
         targetWeight: 0.05,
         fixedBudgetUsd: "3677.552",
       });
       const second = await stepAdoptedUsSeries(
         series,
-        input("2026-10-06", series.configHash),
+        input("2026-10-13", series.configHash),
         first.run,
       );
       expect(second.run.result.state.positions["T0"]!.shares).toBe(36);
       expect(second.run.result.feesUsd).toBe(5.4);
     }
-    const initial = stepUsProspectiveOperatingPortfolio(a0, analysis("2026-10-05", 4), null, null);
+    const initial = stepUsProspectiveOperatingPortfolio(a0, analysis("2026-10-12", 4), null, null);
     const filled = stepUsProspectiveOperatingPortfolio(
       a0,
-      analysis("2026-10-06", 4),
+      analysis("2026-10-13", 4),
       initial.state,
       initial.nav,
     );
@@ -506,10 +505,10 @@ describe("approved initial-capital/20 prospective US allocation", () => {
     const lowCash = structuredClone(initial.state);
     lowCash.cash = 100;
     expect(
-      stepUsProspectiveOperatingPortfolio(a0, analysis("2026-10-06", 4), lowCash, initial.nav)
+      stepUsProspectiveOperatingPortfolio(a0, analysis("2026-10-13", 4), lowCash, initial.nav)
         .positionsCount,
     ).toBe(0);
-    const expensive = analysis("2026-10-06", 4);
+    const expensive = analysis("2026-10-13", 4);
     expensive.rows.forEach((row) => {
       row.open = 5000;
       row.close = 5000;
@@ -545,7 +544,7 @@ describe("approved initial-capital/20 prospective US allocation", () => {
       reason: "QUARTER_EQUAL_WEIGHT",
     };
     const saved = structuredClone(legacy);
-    const next = analysis("2026-10-05");
+    const next = analysis("2026-10-12");
     next.rows.push({ ...next.rows[0]!, symbol: "HELD", a0Entry: false });
     const result = stepUsProspectiveOperatingPortfolio(a0, next, legacy, 100000);
     expect(result.state.initialCapital).toBe(100000);
@@ -574,7 +573,7 @@ describe("approved initial-capital/20 prospective US allocation", () => {
       entryCoreRank: 0.9,
     };
     previous.cash = 90000;
-    const next = analysis("2026-10-05");
+    const next = analysis("2026-10-12");
     const after = stepUsProspectiveOperatingPortfolio(a0, next, previous, 100000);
     expect(after.state.positions["T0"]!.shares).toBe(100);
     expect(after.state.cash).toBe(90000);
@@ -583,10 +582,10 @@ describe("approved initial-capital/20 prospective US allocation", () => {
   });
 
   it("preserves pending beta exits and never quarterly-rebalances or sells solely to fund a new entry", () => {
-    const first = stepUsProspectiveOperatingPortfolio(a0, analysis("2026-10-05"), null, null);
+    const first = stepUsProspectiveOperatingPortfolio(a0, analysis("2026-10-12"), null, null);
     const held = stepUsProspectiveOperatingPortfolio(
       a0,
-      analysis("2026-10-06"),
+      analysis("2026-10-13"),
       first.state,
       first.nav,
     );
@@ -612,12 +611,12 @@ describe("approved initial-capital/20 prospective US allocation", () => {
   });
 
   it("caps partial fills by original gross budget and prior ADV without reallocating after price changes", () => {
-    const firstInput = analysis("2026-10-05");
+    const firstInput = analysis("2026-10-12");
     firstInput.rows[0]!.adv20Usd = 50000;
     const first = stepUsProspectiveOperatingPortfolio(a0, firstInput, null, null);
     const partial = stepUsProspectiveOperatingPortfolio(
       a0,
-      analysis("2026-10-06"),
+      analysis("2026-10-13"),
       first.state,
       first.nav,
     );
@@ -626,13 +625,13 @@ describe("approved initial-capital/20 prospective US allocation", () => {
       fixedTargetShares: 50,
       remainingBudgetUsd: "4500",
     });
-    const gap = analysis("2026-10-07");
+    const gap = analysis("2026-10-14");
     gap.rows[0]!.open = 200;
     gap.rows[0]!.close = 200;
     const second = stepUsProspectiveOperatingPortfolio(a0, gap, partial.state, partial.nav);
     expect(second.state.positions["T0"]!.shares).toBe(27);
     expect(second.state.pendingTargets["T0"]!.remainingBudgetUsd).toBe("100");
-    const exactBudget = analysis("2026-10-07");
+    const exactBudget = analysis("2026-10-14");
     exactBudget.rows[0]!.open = 150;
     exactBudget.rows[0]!.close = 150;
     const exhausted = stepUsProspectiveOperatingPortfolio(
@@ -648,7 +647,7 @@ describe("approved initial-capital/20 prospective US allocation", () => {
     expect(() =>
       stepUsProspectivePortfolio(
         a0,
-        analysis("2026-10-08"),
+        analysis("2026-10-15"),
         second.state,
         second.nav,
         undefined,

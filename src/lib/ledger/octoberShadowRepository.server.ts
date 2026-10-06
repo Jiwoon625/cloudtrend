@@ -101,7 +101,7 @@ export function octoberShadowStore(
       const saved = await stageArtifact(
         "KR_DAILY_INPUT",
         value,
-        "adopted-shadow-2026-10-05-v1:KR_MIXED",
+        "adopted-shadow-2026-10-12-v2:KR_MIXED",
       );
       if (canonicalSeriesJson(saved) !== canonicalSeriesJson(value))
         throw new Error("Immutable KR archive acknowledgement mismatch");

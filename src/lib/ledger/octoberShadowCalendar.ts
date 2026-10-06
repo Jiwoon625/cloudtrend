@@ -83,3 +83,131 @@ export function regularCloseAt(market: "KR" | "US", date: string) {
         : "16:00";
   return exchangeTimeAt(market, date, time);
 }
+
+function localMarketDate(market: "KR" | "US", at: string) {
+  if (!Number.isFinite(Date.parse(at))) throw new Error("Explicit market timestamp required");
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: market === "KR" ? "Asia/Seoul" : "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(at));
+}
+
+export function nextReviewedRegularSession(market: "KR" | "US", date: string): string | null {
+  if (!validDate(date)) throw new Error("Invalid prior market session date");
+  const holidays: readonly string[] = OCTOBER_CALENDAR_EVIDENCE[market].holidays;
+  for (
+    let at = Date.parse(`${date}T00:00:00Z`) + 86400000;
+    at <= Date.parse(`${OCTOBER_CALENDAR_EVIDENCE.coverageEnd}T00:00:00Z`);
+    at += 86400000
+  ) {
+    const candidate = new Date(at).toISOString().slice(0, 10);
+    const day = new Date(at).getUTCDay();
+    if (day !== 0 && day !== 6 && !holidays.includes(candidate)) return candidate;
+  }
+  return null;
+}
+
+export function previousReviewedRegularSession(
+  market: "KR" | "US",
+  date: string,
+): string | null {
+  if (!validDate(date)) throw new Error("Invalid market session date");
+  const holidays: readonly string[] = OCTOBER_CALENDAR_EVIDENCE[market].holidays;
+  for (let at = Date.parse(`${date}T00:00:00Z`) - 86400000; at >= Date.parse("2026-01-01T00:00:00Z"); at -= 86400000) {
+    const candidate = new Date(at).toISOString().slice(0, 10);
+    const day = new Date(at).getUTCDay();
+    if (day !== 0 && day !== 6 && !holidays.includes(candidate)) return candidate;
+  }
+  return null;
+}
+
+export type KrShadowDecisionWindowReason =
+  | "ELIGIBLE"
+  | "INVALID_TIMESTAMP"
+  | "SOURCE_BEFORE_CLOSE"
+  | "SOURCE_NOT_REFRESHED_AFTER_SESSION"
+  | "SOURCE_AFTER_DECISION"
+  | "NEXT_SESSION_UNAVAILABLE"
+  | "DECISION_NOT_NEXT_SESSION"
+  | "DECISION_AFTER_NEXT_OPEN";
+
+export function krShadowDecisionWindow(
+  sessionDate: string,
+  availableAt: string,
+  decisionAt: string,
+): {
+  eligible: boolean;
+  reason: KrShadowDecisionWindowReason;
+  nextSessionDate: string | null;
+  nextOpenAt: string | null;
+} {
+  if (
+    !validDate(sessionDate) ||
+    !Number.isFinite(Date.parse(availableAt)) ||
+    !Number.isFinite(Date.parse(decisionAt))
+  )
+    return {
+      eligible: false,
+      reason: "INVALID_TIMESTAMP",
+      nextSessionDate: null,
+      nextOpenAt: null,
+    };
+  const nextSessionDate = nextReviewedRegularSession("KR", sessionDate);
+  if (!nextSessionDate)
+    return {
+      eligible: false,
+      reason: "NEXT_SESSION_UNAVAILABLE",
+      nextSessionDate: null,
+      nextOpenAt: null,
+    };
+  let nextOpenAt: string;
+  try {
+    nextOpenAt = regularOpenAt("KR", nextSessionDate);
+  } catch {
+    return {
+      eligible: false,
+      reason: "NEXT_SESSION_UNAVAILABLE",
+      nextSessionDate,
+      nextOpenAt: null,
+    };
+  }
+  if (Date.parse(availableAt) < Date.parse(regularCloseAt("KR", sessionDate)))
+    return { eligible: false, reason: "SOURCE_BEFORE_CLOSE", nextSessionDate, nextOpenAt };
+  if (localMarketDate("KR", availableAt) <= sessionDate)
+    return {
+      eligible: false,
+      reason: "SOURCE_NOT_REFRESHED_AFTER_SESSION",
+      nextSessionDate,
+      nextOpenAt,
+    };
+  if (Date.parse(availableAt) > Date.parse(decisionAt))
+    return { eligible: false, reason: "SOURCE_AFTER_DECISION", nextSessionDate, nextOpenAt };
+  if (localMarketDate("KR", decisionAt) !== nextSessionDate)
+    return {
+      eligible: false,
+      reason: "DECISION_NOT_NEXT_SESSION",
+      nextSessionDate,
+      nextOpenAt,
+    };
+  if (Date.parse(decisionAt) >= Date.parse(nextOpenAt))
+    return {
+      eligible: false,
+      reason: "DECISION_AFTER_NEXT_OPEN",
+      nextSessionDate,
+      nextOpenAt,
+    };
+  return { eligible: true, reason: "ELIGIBLE", nextSessionDate, nextOpenAt };
+}
+
+export function assertKrShadowDecisionWindow(
+  sessionDate: string,
+  availableAt: string,
+  decisionAt: string,
+) {
+  const window = krShadowDecisionWindow(sessionDate, availableAt, decisionAt);
+  if (!window.eligible)
+    throw new Error(`KR Shadow requires T+1 pre-open finalized KRX data: ${window.reason}`);
+  return window;
+}

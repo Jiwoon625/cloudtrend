@@ -430,9 +430,9 @@ describe("fixed20 prospective order previews", () => {
     s.positions = { A: { ...s.positions["A"]!, shares: 5 } };
     s.executionPolicy = {
       version: "isolated-us-model-v1",
-      bookId: "adopted-shadow-2026-10-05-v1:US_A0",
+      bookId: "adopted-shadow-2026-10-12-v2:US_A0",
       contractHash: `sha256:${"a".repeat(64)}`,
-      accountingStartDate: "2026-10-05",
+      accountingStartDate: "2026-10-12",
       initialCapital: "73551.04",
       oneWayCost: "0.0015",
     };

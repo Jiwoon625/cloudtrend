@@ -113,7 +113,7 @@ export function OctoberShadowSummaryContent({
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="october-shadow-title" className="text-lg font-semibold">
-            2026-10-05 신규 Shadow · 독립 장부
+            2026-10-12 Shadow v2 · 독립 장부
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             장부당 시작자본 1억원 · 기존 연구 이력과 분리 · 읽기 전용
@@ -129,7 +129,7 @@ export function OctoberShadowSummaryContent({
         </button>
       </header>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        초기화는 거래일 기록이 아닙니다. 최초·최근 세션은 정규장 데이터가 저장된 후 표시합니다. 실제
+        초기화는 거래일 기록이 아닙니다. 한국·ETF는 T일 종가와 T+1 개장 전 KRX 확정자료가 모두 반영된 뒤 기록하고, 미국은 정규장 종료 후 같은 뉴욕 거래일에 기록합니다. 실제
         계좌·주문과 연결되지 않는 비교 모델이며, KRW와 USD는 합산하지 않습니다.
       </p>
       {loading ? (
@@ -236,7 +236,7 @@ export function OctoberShadowSummaryContent({
                 )}
                 {book.currency === "USD" ? (
                   <p className="text-xs text-muted-foreground">
-                    10월 5일 신규 장부: 초기자금 ÷ 목표 20종목 고정 매입 예산. 정수
+                    10월 12일 v2 장부: 초기자금 ÷ 목표 20종목 고정 매입 예산. 정수
                     수량·현금·비용·거래대금 한도를 적용합니다
                   </p>
                 ) : null}
@@ -274,7 +274,7 @@ export function OctoberShadowSummaryContent({
       >
         <h3 className="font-semibold">자산배분 통합 Shadow</h3>
         <p role="status" className="text-sm">
-          배분전략 확정 대기 · CM6
+          배분전략 확정 대기 · CM6 · v2 기준 2026-10-12 이후
         </p>
         <p className="text-xs leading-relaxed text-muted-foreground">
           가상 총자금 1억원을 한국·미국·ETF·현금에 나누는 별도 통합 장부입니다. 위 8개 독립 장부의
