@@ -1,8 +1,4 @@
-import {
-  octoberShadowAlreadyRecorded,
-  publishOctoberShadow,
-  sourceSeriesHash,
-} from "./october-shadow-publication";
+import { replayUsShadow } from "../src/lib/shadowReplay.server";
 import { gzipSync } from "node:zlib";
 import { buildUsOrderPreview } from "../src/lib/engine/usProspectiveOrderPreview";
 import { usBrowserViews } from "../src/lib/usBrowserViews";
@@ -28,7 +24,6 @@ import {
   US_PROSPECTIVE_STRATEGIES,
   type UsPortfolioState,
 } from "../src/lib/engine/usProspectivePortfolio";
-import { resolveUsProspectiveDecisionAt } from "../src/lib/engine/usProspectiveRecovery";
 
 async function publishBrowserViews(
   client: ReturnType<typeof trustedSupabaseClient>,
@@ -123,60 +118,29 @@ async function main() {
   }
   if (ingest.storage_bucket !== ANALYSIS_BUCKET) throw new Error("Unexpected US storage bucket");
 
-  async function recordOctoberUs(analysis: UsProspectiveAnalysis) {
-    const metadata = ingest.metadata as {
-      previousSessionDate?: string;
-      confirmedRegularClose?: boolean;
-      failedSymbols?: number;
-      marketCalendarOk?: boolean;
-    };
-    const attemptedAt = new Date().toISOString();
-    let lockedManifestLastModified: string | null = null;
-    const manifestPath = `${userId}/results/us-screening/${analysis.date}.manifest.json`;
-    const expectedManifest = {
-      dataHash: ingest.data_hash,
-      ruleVersion: US_PROSPECTIVE_RULE_VERSION,
-    };
+  const csv = await downloadText(client, String(ingest.storage_path));
+  const actualHash = `sha256:${sha256(Buffer.from(csv, "utf8"))}`;
+  if (actualHash !== String(ingest.data_hash))
+    throw new Error(`US 입력 해시 불일치: DB ${ingest.data_hash} / Storage ${actualHash}`);
+  const allParsed = parseUsProspectiveCsv(csv);
+  const sourceDates = [...new Set(allParsed.map((row) => row.date))].sort();
+  const latestSourceDate = sourceDates.at(-1);
+  if (
+    allParsed.length !== ingest.row_count ||
+    new Set(allParsed.map((row) => row.symbol)).size !== ingest.symbol_count ||
+    latestSourceDate !== String(ingest.as_of_date)
+  )
+    throw new Error("US source row count, symbol count or latest date mismatch");
 
-    // A retry after the US market date has rolled over must prove that the exact input
-    // was already locked during the original session. Never substitute the retry time.
-    const attemptedMarketDate = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "America/New_York",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(new Date(attemptedAt));
-    if (attemptedMarketDate !== analysis.date) {
-      const frozenManifest = await maybeDownloadJson<typeof expectedManifest>(client, manifestPath);
-      if (!frozenManifest || stableJson(frozenManifest) !== stableJson(expectedManifest))
-        throw new Error("Late US October recovery requires the original immutable manifest");
-      const { data: info, error: infoError } = await client.storage
-        .from(ANALYSIS_BUCKET)
-        .info(manifestPath);
-      if (infoError)
-        throw new Error(`US manifest metadata lookup failed: ${infoError.message}`);
-      lockedManifestLastModified = info.lastModified ?? null;
-    }
-
-    const decision = resolveUsProspectiveDecisionAt({
-      analysisDate: analysis.date,
-      availableAt: String(ingest.collected_at),
-      attemptedAt,
-      lockedManifestLastModified,
-    });
-    const octoberShadow = await publishOctoberShadow(client, userId!, {
-      market: "US",
-      analysis,
-      sourceHash: sourceSeriesHash(String(ingest.data_hash)),
-      availableAt: String(ingest.collected_at),
-      decisionAt: decision.decisionAt,
-      confirmedRegularClose: metadata.confirmedRegularClose === true,
-      failedSymbols: metadata.failedSymbols ?? -1,
-      previousSessionDate: metadata.previousSessionDate ?? "",
-      marketCalendarOk: metadata.marketCalendarOk === true,
-    });
-    console.log(JSON.stringify({ octoberShadow, decisionEvidence: decision.evidence }));
-  }
+  const shadowReplay = await replayUsShadow({
+    client,
+    userId,
+    rows: allParsed,
+    sourceCapturedAt: String(ingest.collected_at),
+    calculatedAt: new Date().toISOString(),
+    mode: "service",
+  });
+  console.log(JSON.stringify({ shadowReplay }));
 
   const { data: lastHistory, error: lastError } = await client
     .from("us_screening_history")
@@ -199,42 +163,6 @@ async function main() {
       `${userId}/results/us-screening/${ingest.as_of_date}.json`,
     );
     if (!completed) throw new Error("Completed US result is missing");
-    if (
-      !(await octoberShadowAlreadyRecorded(
-        client,
-        userId,
-        "US",
-        String(ingest.as_of_date),
-        String(ingest.data_hash),
-      ))
-    ) {
-      const { data: prior, error: priorError } = await client
-        .from("us_screening_history")
-        .select("date")
-        .eq("user_id", userId)
-        .lt("date", ingest.as_of_date)
-        .order("date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (priorError) throw priorError;
-      const earlier = prior
-        ? await maybeDownloadJson<{
-            analysis?: {
-              state?: import("../src/lib/engine/usProspective").UsProspectivePreviousState;
-            };
-          }>(client, `${userId}/results/us-screening/${prior.date}.json`)
-        : null;
-      if (prior && !earlier?.analysis?.state)
-        throw new Error("Previous rank state missing for October recovery");
-      const csv = await downloadText(client, String(ingest.storage_path));
-      if (`sha256:${sha256(Buffer.from(csv, "utf8"))}` !== ingest.data_hash)
-        throw new Error("October recovery source hash mismatch");
-      const recovered = runUsProspectiveAnalysis(
-        parseUsProspectiveCsv(csv),
-        earlier?.analysis?.state ?? {},
-      );
-      await recordOctoberUs(recovered);
-    }
     await uploadJson(client, `${userId}/cache/us-screening/latest.json`, completed);
     await publishBrowserViews(client, userId, completed);
     console.log("US date already completed; portfolio and streak unchanged.");
@@ -247,8 +175,8 @@ async function main() {
   };
   if (!sourceMetadata.confirmedRegularClose || sourceMetadata.failedSymbols !== 0)
     throw new Error("US source is not a complete confirmed session");
-  if (lastHistory && sourceMetadata.previousSessionDate !== lastHistory.date)
-    throw new Error("Missing US session; collect the gap before advancing streak/portfolio");
+  const portfolioGap =
+    Boolean(lastHistory) && sourceMetadata.previousSessionDate !== lastHistory?.date;
 
   const latestCachePath = `${userId}/cache/us-screening/latest.json`;
   // 같은 기준일을 재실행해도 Onset 상태가 바뀌지 않도록, "현재 latest"가 아니라
@@ -273,18 +201,15 @@ async function main() {
   if (previousHistory && !previousResult?.analysis?.state)
     throw new Error("Previous US rank state is missing");
 
-  const csv = await downloadText(client, String(ingest.storage_path));
-  const actualHash = `sha256:${sha256(Buffer.from(csv, "utf8"))}`;
-  if (actualHash !== String(ingest.data_hash))
-    throw new Error(`US 입력 해시 불일치: DB ${ingest.data_hash} / Storage ${actualHash}`);
-  const parsed = parseUsProspectiveCsv(csv);
-  if (
-    parsed.length !== ingest.row_count ||
-    new Set(parsed.map((r) => r.symbol)).size !== ingest.symbol_count ||
-    parsed.some((r) => r.date !== ingest.as_of_date)
-  )
-    throw new Error("US source row count, symbol count or dates mismatch");
-  const analysis = runUsProspectiveAnalysis(parsed, previousResult?.analysis?.state ?? {});
+  const latestRows = allParsed.filter((row) => row.date === String(ingest.as_of_date));
+  if (!latestRows.length) throw new Error("US latest-date rows are missing");
+  const analysis =
+    shadowReplay.latestAnalysis?.date === String(ingest.as_of_date)
+      ? shadowReplay.latestAnalysis
+      : runUsProspectiveAnalysis(
+          latestRows,
+          portfolioGap ? {} : (previousResult?.analysis?.state ?? {}),
+        );
   if (analysis.date !== String(ingest.as_of_date)) {
     throw new Error(`입력 기준일 불일치: DB ${ingest.as_of_date} / CSV ${analysis.date}`);
   }
@@ -341,9 +266,13 @@ async function main() {
     signals: usProspectiveCompactSignals(analysis),
   };
 
-  await recordOctoberUs(analysis);
 
-  for (const strategy of US_PROSPECTIVE_STRATEGIES) {
+  if (portfolioGap) {
+    console.warn(
+      "US operating portfolio snapshot gap detected; latest investment screen is refreshed, while the independent Shadow ledger was replayed date-by-date.",
+    );
+  }
+  for (const strategy of portfolioGap ? [] : US_PROSPECTIVE_STRATEGIES) {
     const { data: frozen, error: frozenError } = await client
       .from("us_strategy_registry")
       .select("rule_version,config")
@@ -462,7 +391,7 @@ async function main() {
 
   // SPY benchmark gets its own daily snapshot for easy charting/comparison.
   const spy = analysis.rows.find((row) => row.symbol === "SPY");
-  if (spy?.close) {
+  if (!portfolioGap && spy?.close) {
     const { data: firstSpy, error: firstSpyError } = await client
       .from("us_portfolio_snapshots")
       .select("state")
