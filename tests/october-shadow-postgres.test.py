@@ -414,10 +414,11 @@ class Suite:
         self.check("A previously prepared original decision can be appended after the session, without relabeling date or decision evidence")
 
         for kind in KINDS:
-            if kind in ["US_A0", "US_A2"]:
+            if kind in ["US_A0", "US_A2", "KR_KOSPI"]:
                 continue
             initial = run_for(specs[kind], "2026-10-05" if kind.startswith("US_") else "2026-10-06")
             assert self.record(initial)["reused"] is False
+        assert self.record(run_for(specs["KR_KOSPI"], "2026-10-06"))["reused"] is True
         assert self.sql("SELECT count(distinct series_id) FROM public.ledger_model_sessions") == "8"
         self.register(spec, USER_B)
         assert self.record(first, user=USER_B)["reused"] is False
