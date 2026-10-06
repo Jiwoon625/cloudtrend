@@ -291,7 +291,7 @@ describe("isolated October KOSPI confirm1/bear-only journal adapter", () => {
       },
     ])
       await expect(stepAdoptedKospiShadowSeries(series, source, first.run)).rejects.toThrow(
-        "same market session",
+        "T+1 pre-open",
       );
     await expect(
       stepAdoptedKospiShadowSeries(series, input("2026-10-08", series.configHash)),
