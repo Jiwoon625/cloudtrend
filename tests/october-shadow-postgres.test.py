@@ -200,8 +200,19 @@ class Suite:
             body = "create or replace function public.ledger_append_own_october_model_session" + body
         body = body.replace(marker, "v_now timestamptz := " + literal(instant) + "::timestamptz;")
         self.sql(body)
-        generic = self.migration.split("create or replace function public.ledger_append_model_session", 1)[1].split("create function public.ledger_append_own_october_model_session", 1)[0]
-        generic = "create or replace function public.ledger_append_model_session" + generic
+        generic_source = getattr(self, "timing_migration", self.migration)
+        generic_marker = "create or replace function public.ledger_append_model_session"
+        assert generic_marker in generic_source
+        generic_tail = generic_source.split(generic_marker, 1)[1]
+        owner_markers = [
+            "create or replace function public.ledger_append_own_october_model_session",
+            "create function public.ledger_append_own_october_model_session",
+        ]
+        generic_end = len(generic_tail)
+        for owner_marker in owner_markers:
+            if owner_marker in generic_tail:
+                generic_end = min(generic_end, generic_tail.index(owner_marker))
+        generic = generic_marker + generic_tail[:generic_end]
         marker = "v_artifact_now timestamptz := pg_catalog.statement_timestamp();"
         assert generic.count(marker) == 1
         self.sql(generic.replace(marker, "v_artifact_now timestamptz := " + literal(instant) + "::timestamptz;"))
