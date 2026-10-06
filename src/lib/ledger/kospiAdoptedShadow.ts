@@ -19,7 +19,10 @@ import {
   type ModelCalendar,
 } from "./modelSeries";
 import { validDate } from "./date";
-import { assertKrShadowDecisionWindow } from "./octoberShadowCalendar";
+import {
+  assertKrShadowDecisionWindow,
+  previousReviewedRegularSession,
+} from "./octoberShadowCalendar";
 
 export const ADOPTED_KOSPI_FIRST_SESSION = "2026-10-12";
 export interface AdoptedKospiShadowRun extends ModelJournalRun {
@@ -81,7 +84,9 @@ export async function stepAdoptedKospiShadowSeries(
   const sessions = [...input.calendar.regularSessions].sort();
   if (first !== ADOPTED_KOSPI_FIRST_SESSION || !sessions.includes(date))
     throw new Error("KOSPI calendar must contain the verified first v2 regular session on 2026-10-12");
-  const preceding = sessions.filter((day) => day < date).at(-1) ?? null;
+  const preceding =
+    sessions.filter((day) => day < date).at(-1) ??
+    previousReviewedRegularSession("KR", date);
   if (session.previousSessionDate !== preceding)
     throw new Error("KOSPI source must identify the exact previous regular calendar session");
   if (previous) {
