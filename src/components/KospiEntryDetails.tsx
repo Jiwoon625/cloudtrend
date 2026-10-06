@@ -38,21 +38,23 @@ export function KospiEntryDetails({
   entry,
   compact = false,
   showState = false,
+  entrySuppression = null,
 }: {
   entry: Entry;
   compact?: boolean;
   showState?: boolean;
+  entrySuppression?: "held" | "sold" | null;
 }) {
   if (!entry)
     return (
       <span className="text-[10px] text-muted-foreground">확인 기록 없음 · 진입 판정 제외</span>
     );
   if (entry.state === "none" && !showState) return null;
-  return (
+  const record = (
     <div className={`${compact ? "text-[10px]" : "text-[11px]"} space-y-0.5 text-muted-foreground`}>
       {showState ? (
         <p className="font-medium">
-          저장 상태: {kospiEntryStateLabel(entry)} · 판정일 {entry.date}
+          종목 공통 저장 상태: {kospiEntryStateLabel(entry)} · 판정일 {entry.date}
         </p>
       ) : null}
       {entry.originDate ? (
@@ -89,6 +91,21 @@ export function KospiEntryDetails({
         </p>
       ) : null}
       {entry.issues.length ? <p className="text-warn">{entry.issues.join(" · ")}</p> : null}
+    </div>
+  );
+  if (!entrySuppression) return record;
+  return (
+    <div className={`${compact ? "text-[10px]" : "text-[11px]"} space-y-1 text-muted-foreground`}>
+      <p className="font-medium">
+        {entrySuppression === "held" ? "보유 중 · 추가 진입 제외" : "매도한 신호 · 재진입 제외"}
+      </p>
+      {entrySuppression === "held" && !compact ? (
+        <p>청산 여부는 보유종목 청산 규칙으로 판단합니다.</p>
+      ) : null}
+      <details>
+        <summary className="cursor-pointer">종목 공통 확인 기록 (참고)</summary>
+        {record}
+      </details>
     </div>
   );
 }

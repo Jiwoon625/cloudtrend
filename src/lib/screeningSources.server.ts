@@ -14,6 +14,7 @@ export interface ActiveSourceRecord {
   max_date: string | null;
   activated_at: string | null;
   created_at: string;
+  validation_result?: unknown;
 }
 
 function sha256Text(text: string) {
@@ -50,7 +51,7 @@ export async function listActiveSources(client: SupabaseClient, userId: string) 
   const { data, error } = await client
     .from("analysis_source_files")
     .select(
-      "id,original_filename,storage_bucket,storage_path,file_hash,data_hash,schema_hash,min_date,max_date,activated_at,created_at",
+      "id,original_filename,storage_bucket,storage_path,file_hash,data_hash,schema_hash,min_date,max_date,activated_at,created_at,validation_result",
     )
     .eq("user_id", userId)
     .eq("source_type", "screening")

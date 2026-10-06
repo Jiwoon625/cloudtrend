@@ -364,4 +364,103 @@ describe("KOSPI market gate presentation", () => {
       "KOSDAQ: Stock PL 80 · 8.0 Onset 진입 · U9.0 상향 재돌파 / D3.0 하향 이탈",
     );
   });
+
+  it("shows only concise KOSPI rules on a KOSPI instrument", () => {
+    const html = renderToStaticMarkup(<StrategyDescription market="KOSPI" />);
+    expect(html).toContain(">KOSPI</h3>");
+    expect(html).not.toContain("KOSDAQ");
+    expect(html).toContain("다음 거래일 종가에 8점 이상·RSAccel");
+    expect(html).toContain("&gt; 0·9.5 상향돌파 없음 확인, 그다음 거래 가능 시가 진입");
+    expect(html).toContain("돌파일·체결 직전 완료 거래일 모두 Risk-On 또는 Neutral 필수");
+    expect(html).toContain("하락장·시장자료 미확인 시 제외, 새 돌파 필요");
+    expect(html).toContain("9.5 상향돌파 또는 60거래일 만기 청산");
+    expect(html).toContain("점수 하락 청산 없음 · 섹터 한도 10%");
+    expect(html).toContain("점수 청산은 다음 거래일 시가, 만기는 당일 종가");
+    expect(html.replace(/<[^>]+>/g, "").length).toBeLessThan(340);
+  });
+
+  it("shows only concise KOSDAQ rules on a KOSDAQ instrument", () => {
+    const html = renderToStaticMarkup(<StrategyDescription market="KOSDAQ" />);
+    expect(html).toContain(">KOSDAQ</h3>");
+    expect(html).not.toContain("KOSPI");
+    expect(html).not.toContain("RSAccel");
+    expect(html).toContain("Stock PL 80 · 8.0 신규 돌파 진입");
+    expect(html).toContain("9.0 상향 재돌파·3.0 하향 이탈·60거래일 만기 청산");
+    expect(html).toContain("미보유 종목의 동시 돌파는 진입 우선");
+    expect(html).toContain("섹터 한도 20%");
+    expect(html).toContain("보유 종목·청산한 동일 신호는 진입 제외, 보유 중 청산 우선");
+    expect(html.replace(/<[^>]+>/g, "").length).toBeLessThan(220);
+  });
+
+  it("keeps the existing full reference for other consumers and non-stock detail", () => {
+    expect(renderToStaticMarkup(<StrategyDescription market="ETF" />)).toBe(
+      renderToStaticMarkup(<StrategyDescription />),
+    );
+  });
+});
+
+describe("holding-aware KOSPI candidate reference", () => {
+  it.each(["pending", "confirmed", "rejected"] as const)(
+    "keeps a held %s candidate under a closed reference disclosure",
+    (state) => {
+      const entry = confirmation({ state });
+      const original = structuredClone(entry);
+      const html = renderToStaticMarkup(
+        <KospiEntryDetails entry={entry} showState entrySuppression="held" />,
+      );
+      expect(html).toContain("보유 중 · 추가 진입 제외");
+      expect(html).toContain("청산 여부는 보유종목 청산 규칙으로 판단합니다.");
+      expect(html).toContain("<details>");
+      expect(html).not.toContain("<details open");
+      expect(html).toContain("종목 공통 확인 기록 (참고)");
+      expect(html).toContain("종목 공통 저장 상태:");
+      expect(entry).toEqual(original);
+    },
+  );
+
+  it("keeps an unheld confirmation visible without a holding claim", () => {
+    const html = renderToStaticMarkup(<KospiEntryDetails entry={confirmation()} showState />);
+    expect(html).toContain("하루 확인 완료");
+    expect(html).not.toContain("보유 중");
+    expect(html).not.toContain("<details>");
+  });
+
+  it("uses actual holdings in the screener to subordinate rejected candidate evidence", () => {
+    const html = table(confirmation({ state: "rejected", issues: ["새 Onset 필요"] }), {
+      heldSymbols: ["005930"],
+      lastSellDateBySymbol: {},
+    });
+    expect(html).toContain("보유 중 · 추가 진입 제외");
+    expect(html).toContain("<details>");
+    expect(html).toContain("종목 공통 확인 기록 (참고)");
+    expect(html).not.toContain("확인일 RS 통과");
+  });
+
+  it("labels a consumed signal after a sale without hiding the stored evidence", () => {
+    const html = table(confirmation(), {
+      heldSymbols: [],
+      lastSellDateBySymbol: { "005930": date },
+    });
+    expect(html).toContain("매도한 신호 · 재진입 제외");
+    expect(html).toContain("종목 공통 확인 기록 (참고)");
+    expect(html).not.toContain("보유 중");
+    expect(html).not.toContain("확인일 RS 통과");
+  });
+});
+
+it("shows an unheld confirmation-UP95 condition without an actual sell label in the screener", () => {
+  const candidate = {
+    ...row(confirmation({ state: "rejected", eligible: false, issues: ["확인일 U9.5 청산신호"] })),
+    operatingScore10: 9.5,
+    scoreDelta1d: 10,
+    exitSignal: "UP95" as const,
+  };
+  const html = renderToStaticMarkup(
+    <ScreenerTable rows={[candidate]} positionContext={emptyContext} signalDate={date} />,
+  );
+  expect(html).toContain("미보유 · KOSPI 9.5점 상향돌파 조건 충족");
+  expect(html).toContain("확인일 U9.5 청산신호");
+  expect(html).not.toContain("KOSPI 청산 ·");
+  expect(html).not.toContain("청산 대기");
+  expect(html).not.toContain("확인일 RS 통과");
 });

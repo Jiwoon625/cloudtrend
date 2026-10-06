@@ -5,7 +5,7 @@ import { ShieldCheck, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { StrategyDescription } from "./StrategyDescription";
+import { DomesticStrategyRules } from "./DomesticStrategyRules";
 import { OnsetProfileDetails } from "./OnsetProfileDetails";
 import { supabase } from "@/lib/cloud";
 import { formatCount, formatKstDateTime } from "@/lib/format";
@@ -264,11 +264,7 @@ export function UsDashboardPortfolio({ query }: { query: OperationsQuery }) {
 export function DashboardStrategyRules() {
   return (
     <div className="space-y-3 text-[11px] leading-relaxed text-muted-foreground">
-      <StrategyDescription />
-      <p>
-        이미 보유한 종목과 Onset 이후 청산한 같은 신호는 신규 진입에서 제외하며, 보유 중 상단 점수
-        돌파 시 EXIT를 우선합니다.
-      </p>
+      <DomesticStrategyRules />
       <div className="border-t border-border pt-2">
         <h3 className="font-semibold text-foreground">ETF · M0</h3>
         <p>M0 80점 신규 돌파 진입 · 기초지수 MA60 하회 시 청산 · 데이터 오류 시 청산 점검.</p>

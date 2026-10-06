@@ -1,6 +1,11 @@
 import { STRATEGY_CONFIG } from "@/lib/engine/operationalStrategy";
+import { DomesticStrategyRules } from "./DomesticStrategyRules";
 
-export function StrategyDescription() {
+export function StrategyDescription({ market }: { market?: string | undefined } = {}) {
+  if (market === "KOSPI" || market === "KOSDAQ") {
+    return <DomesticStrategyRules market={market} />;
+  }
+
   return (
     <div className="space-y-1 text-[11px] leading-relaxed text-muted-foreground">
       <p>{STRATEGY_CONFIG.KOSPI.summary}</p>

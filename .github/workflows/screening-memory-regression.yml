@@ -7,6 +7,17 @@ on:
       - scripts/**
       - tests/screening-memory*.ts
       - tests/ci-source-privacy.test.ts
+      - tests/source-validation-cache.test.ts
+      - tests/source-registration-cache.test.ts
+      - tests/storage-upload-retry.test.ts
+      - tests/analysis-run-store-upload.test.ts
+      - vitest.source-pipeline.config.ts
+      - vitest.compaction.config.ts
+      - tests/screening-compaction*
+      - tests/compaction-command.test.mjs
+      - tests/test_colab_screening_compaction.py
+      - src/lib/sourceTimingEvidence.ts
+      - .github/workflows/screening-source-compaction.yml
       - vitest.screening-memory.config.ts
       - scripts/run-screening.ts
       - scripts/source-registry-store.ts
@@ -27,6 +38,10 @@ jobs:
       - name: Regression contracts
         run: |
           npx vitest run --config vitest.screening-memory.config.ts
+          npx vitest run --config vitest.source-pipeline.config.ts
+          npx vitest run --config vitest.compaction.config.ts
+          node --test tests/compaction-command.test.mjs
+          python3 -m unittest discover -s tests -p test_colab_screening_compaction.py
           npx vitest run tests/ci-source-privacy.test.ts
   manual_source:
     if: github.event_name == 'workflow_dispatch'

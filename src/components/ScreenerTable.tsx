@@ -13,7 +13,7 @@ import {
   getPortfolioAwareDisplayStatus,
   isPortfolioAwareOperationalEntry,
 } from "@/lib/statusDisplay";
-import type { DomesticPositionContext } from "@/lib/positionSignalContext";
+import { entrySuppressionReason, type DomesticPositionContext } from "@/lib/positionSignalContext";
 import { getDisplayWarnings } from "@/lib/warningDisplay";
 
 export function GradeBadge({ grade }: { grade: "A" | "B" | "C" }) {
@@ -416,7 +416,15 @@ export function ScreenerTable({
                       {displayStatus}
                     </Badge>
                     {r.instrument.instrumentType === "STOCK" && r.instrument.market === "KOSPI" ? (
-                      <KospiEntryDetails entry={r.kospiEntry} compact />
+                      <KospiEntryDetails
+                        entry={r.kospiEntry}
+                        compact
+                        entrySuppression={entrySuppressionReason(
+                          positionContext,
+                          r.instrument.symbol,
+                          r.kospiEntry?.originDate ?? signalDate,
+                        )}
+                      />
                     ) : null}
                     <OnsetProfileDetails profile={r.onsetProfile} compact />
                     {!r.hardFilterPassed ? (

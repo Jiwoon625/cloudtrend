@@ -248,11 +248,13 @@ export async function runScreening(argv = process.argv.slice(2)) {
       calculatedAt: createdAt,
       mode: "service",
       sources: inputs.map((source) => ({
+        id: source.id,
         min_date: source.validation.stats.minDate,
         max_date: source.validation.stats.maxDate,
         activated_at: source.sourceRecord?.activated_at ?? null,
         created_at: source.sourceRecord?.created_at ?? source.savedAt,
         savedAt: source.savedAt,
+        validation_result: source.sourceRecord?.validation_result,
       })),
     });
     process.stdout.write(`${JSON.stringify({ octoberShadow })}\n`);

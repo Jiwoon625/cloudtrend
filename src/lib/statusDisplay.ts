@@ -2,6 +2,7 @@ import type { ScreeningRow } from "@/lib/engine/pipeline";
 import {
   getHeldOperationalExitSignal,
   getOperationalStatus,
+  getStoredOperationalExit,
   isOperationalEntry,
 } from "@/lib/engine/operationalStrategy";
 import { isOnsetSuppressed, type DomesticPositionContext } from "@/lib/positionSignalContext";
@@ -31,6 +32,23 @@ function heldExitStatus(row: ScreeningRow): string | null {
   return null;
 }
 
+/** A threshold in generic screening is not a sell instruction for an unheld stock. */
+function exitConditionStatus(
+  row: ScreeningRow,
+  holdingLabel: "미보유" | "보유 미확인",
+): string | null {
+  const exit = getStoredOperationalExit(row, row.instrument.market);
+  const condition =
+    exit === "UP95"
+      ? "KOSPI 9.5점 상향돌파"
+      : exit === "UP90"
+        ? "KOSDAQ 9.0점 상향 재돌파"
+        : exit === "DOWN30"
+          ? "KOSDAQ 3.0점 하향 이탈"
+          : null;
+  return condition ? `${holdingLabel} · ${condition} 조건 충족` : null;
+}
+
 export function isPortfolioAwareOperationalEntry(
   row: ScreeningRow,
   context: DomesticPositionContext | null | undefined,
@@ -55,7 +73,7 @@ export function getPortfolioAwareDisplayStatus(
     !context?.heldSymbols.includes(row.instrument.symbol)
   )
     return "기한 지난 확인 · 진입 제외";
-  if (!context) return getDisplayStatus(row);
+  if (!context) return exitConditionStatus(row, "보유 미확인") ?? getDisplayStatus(row);
   const symbol = row.instrument.symbol;
   if (context.heldSymbols.includes(symbol)) return heldExitStatus(row) ?? "보유";
   if (
@@ -65,5 +83,5 @@ export function getPortfolioAwareDisplayStatus(
     return "당일 매도 · 재진입 제외";
   if (row.kospiEntry?.state === "confirmed" && row.kospiEntry.date !== signalDate)
     return "기한 지난 확인 · 진입 제외";
-  return getDisplayStatus(row);
+  return exitConditionStatus(row, "미보유") ?? getDisplayStatus(row);
 }

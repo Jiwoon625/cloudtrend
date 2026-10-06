@@ -5,6 +5,7 @@ import process from "node:process";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import type { AnalysisRunKind, AnalysisRunSummaryRecord } from "../src/lib/analysisRunBundle";
+import { retryIdempotentStorageUpload } from "./storage-upload-retry";
 
 export const ANALYSIS_BUCKET = "cloudtrend-data";
 
@@ -62,12 +63,20 @@ export async function downloadJson<T>(client: SupabaseClient, objectPath: string
 
 export async function uploadJson(client: SupabaseClient, objectPath: string, value: unknown) {
   const body = JSON.stringify(value, null, 2);
-  const { error } = await client.storage.from(ANALYSIS_BUCKET).upload(objectPath, body, {
+  const options = {
     contentType: "application/json",
     upsert: true,
     ...(objectPath.endsWith("/latest.json") ? { cacheControl: "0" } : {}),
-  });
-  if (error) throw new Error(`Supabase 업로드 실패 (${objectPath}): ${error.message}`);
+  };
+  await retryIdempotentStorageUpload(
+    async () => {
+      const { error } = await client.storage
+        .from(ANALYSIS_BUCKET)
+        .upload(objectPath, body, options);
+      if (error) throw error;
+    },
+    { bucket: ANALYSIS_BUCKET, objectPath, bytes: Buffer.byteLength(body, "utf8") },
+  );
   return { objectPath, body };
 }
 

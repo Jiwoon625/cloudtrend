@@ -48,6 +48,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y postgresql
+          python3 tests/screening-compaction-postgres.test.py --pg-bin-dir "$(pg_config --bindir)" --pg-share-dir "$(pg_config --sharedir)"
           python3 tests/ledger-postgres.test.py --pg-bin-dir "$(pg_config --bindir)" --pg-share-dir "$(pg_config --sharedir)"
           CLOUDTREND_LEDGER_SNAPSHOT_PATH=/tmp/cloudtrend-ledger-snapshots.json python3 tests/ledger-live-postgres.test.py --pg-bin-dir "$(pg_config --bindir)" --pg-share-dir "$(pg_config --sharedir)"
       - run: npx vite-node --config vitest.ledger.config.ts scripts/verify-ledger-sql-snapshots.ts /tmp/cloudtrend-ledger-snapshots.json
