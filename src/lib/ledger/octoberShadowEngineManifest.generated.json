@@ -38,7 +38,7 @@
       "src/lib/ledger/modelSeries.ts": "sha256:1f64683a9e0c8e0908888b65878508b8d0069f9b91de4aaf614cc2cf61c2e184",
       "src/lib/ledger/octoberShadowArchive.ts": "sha256:0144adfe359c99c7425e792487fff4f90981c7dd571a2ad458acb0896bffc295",
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:9c8b5e98035e53d81dedc58c43f7ddf8678ad835bbe449a21d63088dabd76a32",
-      "src/lib/ledger/octoberShadowPipeline.ts": "sha256:a713fbe9c5c392190f63599b80cb00f6bfc217818b32f37f3840aea0adb1cf93",
+      "src/lib/ledger/octoberShadowPipeline.ts": "sha256:6a5c6c78c1c6b4985991b895908e0dac7e6f0cfd05582d72137a952a0e1ee105",
       "src/lib/portfolioLedgers.ts": "sha256:90aedbbb1b005c97464819775936eb54c02690b4e851f1e4547b1401b60ab64f",
       "src/lib/portfolioStrategyRules.ts": "sha256:2381d44003618c1edb8f916248df887e1ef0631e3850ad301fcfc649cc4dac27",
       "src/lib/sourceData.ts": "sha256:b1e84d0b96523d2fc712c28749bcee80ebbdd3275213e35e9522d5608d51bd61"
