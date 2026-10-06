@@ -7,7 +7,7 @@ import {
 } from "./octoberShadowSummary.server";
 import { ADOPTED_SERIES_KINDS } from "./ledger/modelSeries";
 import { fixtureSeries, registry, sessionRow, usRun } from "../../tests/october-shadow-fixtures";
-const now = "2026-10-07T21:00:00Z";
+const now = "2026-10-14T21:00:00Z";
 describe("October Shadow read-only summary", () => {
   it("distinguishes absent registration from initialized cash-only waiting", async () => {
     expect((await summarizeOctoberShadowBook("US_A0", null, [], true, now)).status).toBe(
@@ -45,7 +45,7 @@ describe("October Shadow read-only summary", () => {
   it("uses actual persisted sessions for first/latest dates", async () => {
     const series = await fixtureSeries(),
       first = await usRun(series);
-    const next = await usRun(series, "2026-10-06", first);
+    const next = await usRun(series, "2026-10-13", first);
     const result = await summarizeOctoberShadowBook(
       "US_A0",
       registry(series),
@@ -55,8 +55,8 @@ describe("October Shadow read-only summary", () => {
     );
     expect(result).toMatchObject({
       status: "RECORDED",
-      firstSessionDate: "2026-10-05",
-      latestSessionDate: "2026-10-06",
+      firstSessionDate: "2026-10-12",
+      latestSessionDate: "2026-10-13",
       nav: "73551.04",
     });
     expect(result.tax?.currentYearTaxKrw).toBe(0);
@@ -79,7 +79,7 @@ describe("October Shadow read-only summary", () => {
         )
       ).status,
     ).toBe("UNAVAILABLE");
-    const next = await usRun(series, "2026-10-06", first);
+    const next = await usRun(series, "2026-10-13", first);
     expect(
       (await summarizeOctoberShadowBook("US_A0", row, [sessionRow(next, first)], true, now)).status,
     ).toBe("UNAVAILABLE");
