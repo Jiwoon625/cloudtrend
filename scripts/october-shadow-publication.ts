@@ -1,6 +1,9 @@
 import { validDate } from "../src/lib/ledger/date";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { shadowEngineManifest } from "./october-shadow-code-manifest";
+import {
+  adoptedShadowFrozenCodeHash,
+  shadowEngineManifest,
+} from "./october-shadow-code-manifest";
 import { octoberShadowStore } from "../src/lib/ledger/octoberShadowRepository.server";
 import {
   recordOctoberPublication,
@@ -22,10 +25,12 @@ export async function publishOctoberShadow(
 ) {
   const date = input.market === "US" ? input.analysis.date : input.analysis.asOfDate;
   if (date < MODEL_ACCOUNTING_START) return { status: "WAITING_START", date, records: [] };
-  const { codeHash } = await shadowEngineManifest();
+  const { codeHash: runtimeCodeHash } = await shadowEngineManifest();
+  const codeHash = adoptedShadowFrozenCodeHash(runtimeCodeHash);
   return recordOctoberPublication(octoberShadowStore(client, userId), {
     ...input,
     codeHash,
+    runtimeCodeHash,
   } as OctoberPublication);
 }
 
@@ -40,7 +45,8 @@ export async function octoberShadowAlreadyRecorded(
   if (!validDate(date)) return false;
   if (date < MODEL_ACCOUNTING_START) return true;
   const store = octoberShadowStore(client, userId),
-    { codeHash } = await shadowEngineManifest();
+    { codeHash: runtimeCodeHash } = await shadowEngineManifest(),
+    codeHash = adoptedShadowFrozenCodeHash(runtimeCodeHash);
   const kinds =
     market === "US"
       ? ["US_A0", "US_A2", "US_B3"]
