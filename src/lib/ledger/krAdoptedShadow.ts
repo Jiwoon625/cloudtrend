@@ -109,7 +109,7 @@ export async function stepAdoptedKrSeries(
     input.snapshots.some(
       (s) =>
         s.asOfDate > input.date ||
-        localDate(s.savedAt) !== s.asOfDate ||
+        !isKrOfficialShadowDecision(s.asOfDate, s.savedAt, s.savedAt) ||
         Date.parse(s.savedAt) > Date.parse(input.decisionAt),
     ) ||
     new Set(input.snapshots.map((s) => s.asOfDate)).size !== input.snapshots.length
