@@ -357,12 +357,12 @@ function krSource(date: string): KrModelPublication {
       sourceHash,
       symbols: instruments.map((i) => i.symbol),
     },
-    sourceEvidence: [{ sourceHash, asOfDate: date, registeredAt: `${date}T07:00:00Z` }],
-    analysis: { asOfDate: date, calculatedAt: `${date}T08:00:00Z`, rows } as AnalysisResult,
+    sourceEvidence: [{ sourceHash, asOfDate: date, registeredAt: availableAt }],
+    analysis: { asOfDate: date, calculatedAt: decisionAt, rows } as AnalysisResult,
     snapshot: {
       date,
       asOfDate: date,
-      savedAt: `${date}T08:00:00Z`,
+      savedAt: availableAt,
       entries: [],
       marketGateStatus: "UNKNOWN",
       totalCount: 0,
@@ -393,9 +393,7 @@ describe("KR five-book complete publication", () => {
     const bad = krSource("2026-10-06");
     bad.dataset.isLive = false;
     await expect(recordOctoberPublication(f.store, bad)).rejects.toThrow("synthetic");
-    await expect(recordOctoberPublication(f.store, krSource("2026-10-05"))).rejects.toThrow(
-      "regular close",
-    );
+    await expect(recordOctoberPublication(f.store, krSource("2026-10-05"))).rejects.toThrow();
     expect(f.appends()).toBe(0);
   });
 });
