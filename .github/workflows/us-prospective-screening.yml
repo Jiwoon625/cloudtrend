@@ -8,8 +8,6 @@ on:
         description: "CloudTrend Supabase user id (optional when secret is set)"
         required: false
         type: string
-  issue_comment:
-    types: [created]
   pull_request:
     paths:
       - "src/lib/engine/usProspective*.ts"
@@ -47,11 +45,6 @@ concurrency:
 
 jobs:
   validate:
-    if: >-
-      github.event_name != 'issue_comment' ||
-      (github.event.issue.pull_request == null &&
-       github.actor == github.repository_owner &&
-       startsWith(github.event.comment.body, '/us-screening run'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -70,12 +63,7 @@ jobs:
       - run: npm run build
 
   screen:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'issue_comment' &&
-       github.event.issue.pull_request == null &&
-       github.actor == github.repository_owner &&
-       startsWith(github.event.comment.body, '/us-screening run'))
+    if: github.event_name == 'workflow_dispatch'
     needs: validate
     runs-on: ubuntu-latest
     env:
