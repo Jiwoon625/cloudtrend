@@ -51,27 +51,27 @@ const calendar = (market: "KR" | "US" = "KR"): ModelCalendar => ({
   market,
   sourceHash,
   coverageStart: "2026-10-01",
-  coverageEnd: "2026-10-12",
+  coverageEnd: "2026-10-20",
   regularSessions: [
     "2026-10-01",
     "2026-10-02",
-    "2026-10-05",
-    "2026-10-06",
-    "2026-10-07",
-    "2026-10-08",
+    "2026-10-12",
+    "2026-10-13",
+    "2026-10-14",
+    "2026-10-15",
     "2026-10-12",
   ],
 });
 const signal = {
-  originDate: "2026-10-05",
-  signalDate: "2026-10-06",
-  availableAt: "2026-10-06T07:00:00Z",
+  originDate: "2026-10-12",
+  signalDate: "2026-10-13",
+  availableAt: "2026-10-13T07:00:00Z",
 };
-const decisionAt = "2026-10-06T08:00:00Z";
+const decisionAt = "2026-10-13T08:00:00Z";
 const etfSnapshot = (): EtfStrategySnapshot => ({
   version: ETF_POLICY.version,
-  date: "2026-10-06",
-  previousDate: "2026-10-05",
+  date: "2026-10-13",
+  previousDate: "2026-10-12",
   eligible: true,
   score: 85,
   previousScore: 81,
@@ -89,12 +89,12 @@ const etfSnapshot = (): EtfStrategySnapshot => ({
   onset: true,
   rawOnset: false,
   entryState: "confirmed",
-  originDate: "2026-10-05",
-  confirmationDate: "2026-10-06",
+  originDate: "2026-10-12",
+  confirmationDate: "2026-10-13",
   confirmationIssues: [],
   averageTradingValue20: 1e9,
   dataStatus: "ready",
-  krxReferenceDate: "2026-10-06",
+  krxReferenceDate: "2026-10-13",
   exit: null,
   issues: [],
 });
@@ -107,7 +107,7 @@ describe("new adopted series, never historical book rewrites", () => {
       expect(s).toMatchObject({
         book: "MODEL",
         version: ADOPTED_SERIES_VERSION,
-        accountingStartDate: "2026-10-05",
+        accountingStartDate: "2026-10-12",
         initialKrw: "100000000",
         roundTripCost: "0.003",
         oneWayCost: "0.0015",
@@ -143,7 +143,7 @@ describe("new adopted series, never historical book rewrites", () => {
     expect(a2.policy.usAllocationPolicy).toMatchObject({
       targetPositions: 20,
       initialCapitalUsd: "73551.04",
-      effectiveDate: "2026-10-05",
+      effectiveDate: "2026-10-12",
     });
     expect((await create("US_A0")).contractHash).not.toBe(
       "sha256:9474c343941715c35ba50e7cdf3de907c6ec5b22846dad1893d0908b71d9af02",
@@ -186,7 +186,7 @@ describe("new adopted series, never historical book rewrites", () => {
       expect(series.policy.enginePolicyRole).toBe("HISTORICAL_SIGNAL_STRATEGY_BASE");
       expect(series.policy.usAllocationPolicy).toEqual({
         version: "us-initial-capital-slots-v1",
-        effectiveDate: "2026-10-05",
+        effectiveDate: "2026-10-12",
         targetPositions: 20,
         initialCapitalUsd: "73551.04",
         quarterlyRebalance: false,
@@ -224,7 +224,7 @@ describe("new adopted series, never historical book rewrites", () => {
       freezeAdoptedSeries({ ...base, kind: "KR_MIXED", existing: s, codeHash: hash("c") }),
     ).rejects.toThrow("immutable");
     await expect(
-      freezeAdoptedSeries({ ...base, kind: "KR_MIXED", frozenAt: "2026-10-05T00:00:00Z" }),
+      freezeAdoptedSeries({ ...base, kind: "KR_MIXED", frozenAt: "2026-10-12T00:00:00Z" }),
     ).rejects.toThrow("before accounting start");
     await expect(
       freezeAdoptedSeries({ ...base, kind: "KR_MIXED", codeHash: "unhashed" }),
@@ -242,14 +242,14 @@ describe("new adopted series, never historical book rewrites", () => {
       cash: { KRW: "100000000", USD: "0" },
       positions: {},
       pendingSignals: [],
-      accountingStartDate: "2026-10-05",
+      accountingStartDate: "2026-10-12",
       firstValidSessionDate: null,
     });
     expect(state.openingBalances).toHaveLength(1);
     expect(state.openingBalances[0]).toMatchObject({
       book: "MODEL",
       bookId: mixed.bookId,
-      date: "2026-10-05",
+      date: "2026-10-12",
       cash: "100000000",
       complete: true,
     });
@@ -331,68 +331,68 @@ describe("accounting, signal, execution, and point-in-time boundaries", () => {
     const s = await create();
     const holidayCalendar = {
       ...calendar(),
-      regularSessions: ["2026-10-01", "2026-10-02", "2026-10-06", "2026-10-07"],
+      regularSessions: ["2026-10-01", "2026-10-02", "2026-10-13", "2026-10-14"],
     };
-    expect(firstModelSession(s, holidayCalendar)).toBe("2026-10-06");
-    expect(initializeModelSeries(s).accountingStartDate).toBe("2026-10-05");
+    expect(firstModelSession(s, holidayCalendar)).toBe("2026-10-13");
+    expect(initializeModelSeries(s).accountingStartDate).toBe("2026-10-12");
     expect(firstModelSession(s, { ...holidayCalendar, regularSessions: [] })).toBeNull();
     expect(() => firstModelSession(s, calendar("US"))).toThrow("calendar");
-    expect(() => firstModelSession(s, { ...calendar(), coverageStart: "2026-10-06" })).toThrow(
+    expect(() => firstModelSession(s, { ...calendar(), coverageStart: "2026-10-13" })).toThrow(
       "cover",
     );
     expect(() =>
-      firstModelSession(s, { ...calendar(), regularSessions: ["2026-10-05", "2026-10-05"] }),
+      firstModelSession(s, { ...calendar(), regularSessions: ["2026-10-12", "2026-10-12"] }),
     ).toThrow("Duplicate");
   });
 
   it("lets old observations warm indicators while excluding future-date and late-published data", async () => {
     const s = await create();
     const old = { date: "2026-10-02", availableAt: "2026-10-02T08:00:00Z", sourceHash };
-    const active = { date: "2026-10-06", availableAt: "2026-10-06T07:00:00Z", sourceHash };
-    const future = { date: "2026-10-07", availableAt: "2026-10-07T07:00:00Z", sourceHash };
-    const late = { date: "2026-10-05", availableAt: "2026-10-06T09:00:00Z", sourceHash };
+    const active = { date: "2026-10-13", availableAt: "2026-10-13T07:00:00Z", sourceHash };
+    const future = { date: "2026-10-14", availableAt: "2026-10-14T07:00:00Z", sourceHash };
+    const late = { date: "2026-10-12", availableAt: "2026-10-13T09:00:00Z", sourceHash };
     expect(
-      partitionModelObservations(s, [old, active, future, late], "2026-10-06", decisionAt),
+      partitionModelObservations(s, [old, active, future, late], "2026-10-13", decisionAt),
     ).toEqual({ warmup: [old], active: [active], excludedFuture: [future, late] });
     expect(initializeModelSeries(s).pendingSignals).toEqual([]);
   });
 
   it("never carries pre-start onset into an actionable confirmation", async () => {
     const s = await create();
-    expect(isActionableModelSignal(s, signal, "2026-10-06", decisionAt)).toBe(true);
+    expect(isActionableModelSignal(s, signal, "2026-10-13", decisionAt)).toBe(true);
     expect(
-      isActionableModelSignal(s, { ...signal, originDate: "2026-10-02" }, "2026-10-06", decisionAt),
+      isActionableModelSignal(s, { ...signal, originDate: "2026-10-02" }, "2026-10-13", decisionAt),
     ).toBe(false);
-    expect(isActionableModelSignal(s, signal, "2026-10-05", decisionAt)).toBe(false);
+    expect(isActionableModelSignal(s, signal, "2026-10-12", decisionAt)).toBe(false);
     expect(
       isActionableModelSignal(
         s,
-        { ...signal, availableAt: "2026-10-06T09:00:00Z" },
-        "2026-10-06",
+        { ...signal, availableAt: "2026-10-13T09:00:00Z" },
+        "2026-10-13",
         decisionAt,
       ),
     ).toBe(false);
-    expect(nextModelExecutionSession(s, signal, calendar(), "2026-10-06", decisionAt)).toBe(
-      "2026-10-07",
+    expect(nextModelExecutionSession(s, signal, calendar(), "2026-10-13", decisionAt)).toBe(
+      "2026-10-14",
     );
     expect(
       nextModelExecutionSession(
         s,
-        { ...signal, availableAt: "2026-10-08T08:00:00Z" },
+        { ...signal, availableAt: "2026-10-15T08:00:00Z" },
         calendar(),
-        "2026-10-08",
-        "2026-10-08T09:00:00Z",
+        "2026-10-15",
+        "2026-10-15T09:00:00Z",
       ),
     ).toBeNull();
     expect(
-      nextModelExecutionSession(s, signal, calendar(), "2026-10-06", "2026-10-08T09:00:00Z"),
+      nextModelExecutionSession(s, signal, calendar(), "2026-10-13", "2026-10-15T09:00:00Z"),
     ).toBeNull();
     expect(
       nextModelExecutionSession(
         s,
         { ...signal, originDate: "2026-10-02" },
         calendar(),
-        "2026-10-06",
+        "2026-10-13",
         decisionAt,
       ),
     ).toBeNull();
@@ -400,8 +400,8 @@ describe("accounting, signal, execution, and point-in-time boundaries", () => {
       nextModelExecutionSession(
         s,
         signal,
-        { ...calendar(), coverageEnd: "2026-10-06", regularSessions: ["2026-10-05", "2026-10-06"] },
-        "2026-10-06",
+        { ...calendar(), coverageEnd: "2026-10-13", regularSessions: ["2026-10-12", "2026-10-13"] },
+        "2026-10-13",
         decisionAt,
       ),
     ).toBeNull();
@@ -410,17 +410,17 @@ describe("accounting, signal, execution, and point-in-time boundaries", () => {
         s,
         { ...signal, originDate: "2026-10-04" },
         calendar(),
-        "2026-10-06",
+        "2026-10-13",
         decisionAt,
       ),
     ).not.toThrow();
     expect(() =>
       nextModelExecutionSession(
         s,
-        { ...signal, signalDate: "2026-10-09", availableAt: "2026-10-09T07:00:00Z" },
+        { ...signal, signalDate: "2026-10-16", availableAt: "2026-10-16T07:00:00Z" },
         calendar(),
-        "2026-10-09",
-        "2026-10-09T08:00:00Z",
+        "2026-10-16",
+        "2026-10-16T08:00:00Z",
       ),
     ).toThrow("regular market");
   });
@@ -429,9 +429,9 @@ describe("accounting, signal, execution, and point-in-time boundaries", () => {
 describe("exact allocation boundary without replacing adopted engine rules", () => {
   it("uses first-year KR initial capital / 30, fee-inclusive and integer only", async () => {
     const s = await create();
-    expect(krInitialSlotBudget(s, "2026-10-05")).toBe("3333333.33333333");
+    expect(krInitialSlotBudget(s, "2026-10-12")).toBe("3333333.33333333");
     expect(krInitialSlotBudget(s, "2027-10-04")).toBe("3333333.33333333");
-    const quote = quoteKrModelEntry(s, { date: "2026-10-05", cash: "100000000", price: "100000" });
+    const quote = quoteKrModelEntry(s, { date: "2026-10-12", cash: "100000000", price: "100000" });
     expect(quote).toMatchObject({
       quantity: "33",
       gross: "3300000",
@@ -453,7 +453,7 @@ describe("exact allocation boundary without replacing adopted engine rules", () 
   it("never applies the KR first-year rule to US A0 or ETF", async () => {
     for (const kind of ["US_A0", "ETF_V02"] as const) {
       const s = await create(kind);
-      expect(() => krInitialSlotBudget(s, "2026-10-05")).toThrow("must not replace");
+      expect(() => krInitialSlotBudget(s, "2026-10-12")).toThrow("must not replace");
     }
   });
 
@@ -482,7 +482,7 @@ describe("exact allocation boundary without replacing adopted engine rules", () 
   it("reuses ETF v0.2 volatility sizing and rejects pre-start confirmation state", async () => {
     const s = await create("ETF_V02");
     const input = {
-      asOfDate: "2026-10-06",
+      asOfDate: "2026-10-13",
       decisionAt,
       availableAt: signal.availableAt,
       equity: "100000000",
@@ -515,7 +515,7 @@ describe("exact allocation boundary without replacing adopted engine rules", () 
         strategy: { ...input.strategy, dataStatus: "krx_batch_pending" },
       }),
     ).toBeNull();
-    expect(quoteEtfModelEntry(s, { ...input, availableAt: "2026-10-06T09:00:00Z" })).toBeNull();
+    expect(quoteEtfModelEntry(s, { ...input, availableAt: "2026-10-13T09:00:00Z" })).toBeNull();
   });
 });
 
@@ -531,7 +531,7 @@ describe("deterministic hashes and date-bound immutable reuse", () => {
 
   it("reuses identical runs but rejects a changed same-date source/config/code", async () => {
     const s = await create();
-    const input = { date: "2026-10-05", sourceHash, codeHash, configHash: s.configHash };
+    const input = { date: "2026-10-12", sourceHash, codeHash, configHash: s.configHash };
     const first = await guardModelRun(s, input);
     expect(first.status).toBe("NEW");
     expect((await guardModelRun(s, input, first.receipt)).status).toBe("REUSE");
@@ -545,7 +545,7 @@ describe("deterministic hashes and date-bound immutable reuse", () => {
       "Frozen code/config",
     );
     await expect(guardModelRun(s, { ...input, date: "2026-10-02" })).rejects.toThrow("warmup");
-    const second = await guardModelRun(s, { ...input, date: "2026-10-06", sourceHash: hash("c") });
+    const second = await guardModelRun(s, { ...input, date: "2026-10-13", sourceHash: hash("c") });
     expect(second.status).toBe("NEW");
     expect(second.receipt.runHash).not.toBe(first.receipt.runHash);
     expect((await create()).sourceHash).toBe(sourceHash);
