@@ -59,17 +59,17 @@ describe("public PR validation source privacy", () => {
     expect(readWorkflow(name)).not.toMatch(/secrets\.SUPABASE|secrets\.SUPABASE_USER_ID/);
   });
 
-  it("keeps existing US screening and KOSPI advancement outside pull requests", () => {
+  it("keeps US live screening manual-only and legacy KOSPI Shadow validation-only", () => {
     const [usValidate, usScreen] = readWorkflow("us-prospective-screening.yml").split(
       "  screen:\n",
     );
     expect(usValidate).not.toContain("secrets.SUPABASE");
     expect(usScreen).toContain("if: github.event_name == 'workflow_dispatch'");
-    const [kospiVerify, kospiAdvance] = readWorkflow("kospi-shadow.yml").split("  advance:\n");
-    expect(kospiVerify).not.toContain("secrets.SUPABASE");
-    expect(kospiAdvance).toContain("github.event_name == 'workflow_dispatch'");
-    expect(kospiAdvance).toContain("github.event_name == 'workflow_run'");
-    expect(kospiAdvance).toContain("github.event.workflow_run.event != 'pull_request'");
+    const kospi = readWorkflow("kospi-shadow.yml");
+    expect(kospi).not.toContain("secrets.SUPABASE");
+    expect(kospi).not.toContain("  workflow_run:");
+    expect(kospi).not.toContain("  advance:");
+    expect(kospi).not.toContain("run-kospi-shadow.ts --");
   });
 
   it("keeps ETF research downloads and production persistence push-only", () => {
