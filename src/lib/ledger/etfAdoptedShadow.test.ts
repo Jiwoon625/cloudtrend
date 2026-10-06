@@ -20,15 +20,9 @@ const hash = (digit: string): SeriesHash => `sha256:${digit.repeat(64)}`;
 const calendar: ModelCalendar = {
   market: "KR",
   sourceHash: hash("c"),
-  coverageStart: "2026-10-01",
-  coverageEnd: "2026-10-20",
-  // Explicit fixture calendar: do not infer sessions from calendar weekdays or symbol bars.
+  coverageStart: "2026-10-12",
+  coverageEnd: "2026-10-26",
   regularSessions: [
-    "2026-10-01",
-    "2026-10-02",
-    "2026-10-06",
-    "2026-10-07",
-    "2026-10-08",
     "2026-10-12",
     "2026-10-13",
     "2026-10-14",
@@ -36,12 +30,26 @@ const calendar: ModelCalendar = {
     "2026-10-16",
     "2026-10-19",
     "2026-10-20",
+    "2026-10-21",
+    "2026-10-22",
+    "2026-10-23",
+    "2026-10-26",
   ],
 };
+function nextSession(date: string) {
+  return calendar.regularSessions.find((session) => session > date) ?? null;
+}
+function beforeNextOpen(date: string, minutes: number) {
+  const next = nextSession(date);
+  if (!next) return new Date(Date.parse(`${date}T06:30:00Z`) + 60 * 60 * 1000).toISOString();
+  return new Date(Date.parse(`${next}T00:00:00Z`) - minutes * 60 * 1000).toISOString();
+}
+const finalizedAt = (date: string) => beforeNextOpen(date, 70);
+const decisionAt = (date: string) => beforeNextOpen(date, 50);
 const create = () =>
   freezeAdoptedSeries({
     kind: "ETF_V02",
-    frozenAt: "2026-10-02T15:37:00Z",
+    frozenAt: "2026-10-08T15:37:00Z",
     codeHash: hash("a"),
     sourceHash: hash("b"),
   });
@@ -54,7 +62,7 @@ function signal(
 ): EtfShadowSignal {
   return {
     symbol,
-    availableAt: `${date}T06:40:00Z`,
+    availableAt: finalizedAt(date),
     sourceHash: hash("d"),
     strategy: {
       version: ETF_POLICY.version,
@@ -96,7 +104,7 @@ function price(
 ): EtfShadowPrice {
   return {
     asOfDate: date,
-    availableAt: `${date}T${phase === "open" ? "00:00" : "06:30"}:00Z`,
+    availableAt: phase === "open" ? `${date}T00:00:00Z` : finalizedAt(date),
     sourceHash: hash("e"),
     price: value,
   };
@@ -112,7 +120,8 @@ function input(
     sessionDate: date,
     previousSessionDate,
     openAt: `${date}T00:00:00Z`,
-    closeAt: `${date}T07:00:00Z`,
+    closeAt: `${date}T06:30:00Z`,
+    decisionAt: decisionAt(date),
     calendar,
     codeHash: series.codeHash,
     configHash: series.configHash,
@@ -129,9 +138,9 @@ async function confirmed(symbols = ["360750"], annualVolatility = 0.3) {
     initial,
     input(
       series,
-      "2026-10-06",
+      "2026-10-12",
       null,
-      symbols.map((s) => signal(s, "2026-10-06", "2026-10-02", "pending", { annualVolatility })),
+      symbols.map((s) => signal(s, "2026-10-12", "2026-10-08", "pending", { annualVolatility })),
     ),
   );
   const second = await stepEtfAdoptedShadow(
@@ -139,9 +148,9 @@ async function confirmed(symbols = ["360750"], annualVolatility = 0.3) {
     first.state,
     input(
       series,
-      "2026-10-07",
-      "2026-10-06",
-      symbols.map((s) => signal(s, "2026-10-07", "2026-10-06", "confirmed", { annualVolatility })),
+      "2026-10-13",
+      "2026-10-12",
+      symbols.map((s) => signal(s, "2026-10-13", "2026-10-12", "confirmed", { annualVolatility })),
     ),
   );
   return { series, initial, first, second };
@@ -153,14 +162,14 @@ async function holding(close: string | null = "10000") {
     ready.second.state,
     input(
       ready.series,
-      "2026-10-08",
-      "2026-10-07",
-      [signal("360750", "2026-10-08", "2026-10-07")],
+      "2026-10-14",
+      "2026-10-13",
+      [signal("360750", "2026-10-14", "2026-10-13")],
       [
         {
           symbol: "360750",
-          open: price("2026-10-08", "10000"),
-          close: price("2026-10-08", close, "close"),
+          open: price("2026-10-14", "10000"),
+          close: price("2026-10-14", close, "close"),
         },
       ],
     ),
@@ -173,7 +182,7 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
     const { series, initial, first, second } = await confirmed();
     expect(initial).toMatchObject({
       book: "MODEL",
-      scheduledStartDate: "2026-10-05",
+      scheduledStartDate: "2026-10-12",
       firstValidSessionDate: null,
       lastSessionDate: null,
       cash: "100000000",
@@ -183,10 +192,10 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
       pendingExits: [],
     });
     expect(initial.valuation.nav).toBe("100000000");
-    expect(first.state.firstValidSessionDate).toBe("2026-10-06");
+    expect(first.state.firstValidSessionDate).toBe("2026-10-12");
     expect(first.record.fills).toEqual([]);
     expect(first.state.pendingConfirmations).toEqual([
-      { symbol: "360750", originDate: "2026-10-06" },
+      { symbol: "360750", originDate: "2026-10-12" },
     ]);
     expect(second.record.fills).toEqual([]);
     expect(second.state.pendingEntries).toHaveLength(1);
@@ -195,14 +204,14 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
       second.state,
       input(
         series,
-        "2026-10-08",
-        "2026-10-07",
+        "2026-10-14",
+        "2026-10-13",
         [],
         [
           {
             symbol: "360750",
-            open: price("2026-10-08", "10000"),
-            close: price("2026-10-08", "10000", "close"),
+            open: price("2026-10-14", "10000"),
+            close: price("2026-10-14", "10000", "close"),
           },
         ],
       ),
@@ -210,12 +219,12 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
     expect(third.record.fills).toHaveLength(1);
     expect(third.record.fills[0]).toMatchObject({
       side: "BUY",
-      executionDate: "2026-10-08",
-      signalDate: "2026-10-07",
-      originDate: "2026-10-06",
+      executionDate: "2026-10-14",
+      signalDate: "2026-10-13",
+      originDate: "2026-10-12",
       quantity: "499",
       targetBudget: "5000000",
-      budgetNavDate: "2026-10-07",
+      budgetNavDate: "2026-10-13",
       gross: "4990000",
       fee: "7485",
       cashDelta: "-4997485",
@@ -232,14 +241,14 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
         second.state,
         input(
           series,
-          "2026-10-08",
-          "2026-10-07",
-          [signal("360750", "2026-10-08", "2026-10-07", "none", { annualVolatility: volatility })],
+          "2026-10-14",
+          "2026-10-13",
+          [signal("360750", "2026-10-14", "2026-10-13", "none", { annualVolatility: volatility })],
           [
             {
               symbol: "360750",
-              open: price("2026-10-08", "10000"),
-              close: price("2026-10-08", close, "close"),
+              open: price("2026-10-14", "10000"),
+              close: price("2026-10-14", close, "close"),
             },
           ],
         ),
@@ -258,9 +267,9 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
     const result = await stepEtfAdoptedShadow(
       series,
       initial,
-      input(series, "2026-10-06", null, [
-        signal("360750", "2026-10-06", "2026-10-02", "confirmed"),
-        signal("069500", "2026-10-06", "2026-10-05", "confirmed"),
+      input(series, "2026-10-12", null, [
+        signal("360750", "2026-10-12", "2026-10-08", "confirmed"),
+        signal("069500", "2026-10-12", "2026-10-05", "confirmed"),
       ]),
     );
     expect(result.state.pendingEntries).toEqual([]);
@@ -271,7 +280,7 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
       ]),
     );
     await expect(
-      stepEtfAdoptedShadow(series, initial, input(series, "2026-10-02", null)),
+      stepEtfAdoptedShadow(series, initial, input(series, "2026-10-08", null)),
     ).rejects.toThrow(/regular market session/);
   });
 
@@ -280,56 +289,56 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
       initial = await initializeEtfAdoptedShadow(series);
     const seeded = {
       ...initial,
-      pendingConfirmations: [{ symbol: "360750", originDate: "2026-10-02" }],
+      pendingConfirmations: [{ symbol: "360750", originDate: "2026-10-08" }],
     };
     await expect(
-      stepEtfAdoptedShadow(series, seeded, input(series, "2026-10-06", null)),
+      stepEtfAdoptedShadow(series, seeded, input(series, "2026-10-12", null)),
     ).rejects.toThrow(/all cash/);
   });
 
   it("requires the exact next covered market session, handles holidays and rejects replay", async () => {
     const { series, first, second } = await confirmed();
     await expect(
-      stepEtfAdoptedShadow(series, first.state, input(series, "2026-10-08", "2026-10-06")),
+      stepEtfAdoptedShadow(series, first.state, input(series, "2026-10-14", "2026-10-12")),
     ).rejects.toThrow(/next covered/);
     await expect(
-      stepEtfAdoptedShadow(series, second.state, input(series, "2026-10-08", "2026-10-05")),
+      stepEtfAdoptedShadow(series, second.state, input(series, "2026-10-14", "2026-10-05")),
     ).rejects.toThrow(/matching previous/);
     await expect(
-      stepEtfAdoptedShadow(series, second.state, input(series, "2026-10-07", "2026-10-07")),
+      stepEtfAdoptedShadow(series, second.state, input(series, "2026-10-13", "2026-10-13")),
     ).rejects.toThrow(/chronology|increasing/);
     const third = await stepEtfAdoptedShadow(
       series,
       second.state,
-      input(series, "2026-10-08", "2026-10-07"),
+      input(series, "2026-10-14", "2026-10-13"),
     );
     await expect(
-      stepEtfAdoptedShadow(series, third.state, input(series, "2026-10-09", "2026-10-08")),
+      stepEtfAdoptedShadow(series, third.state, input(series, "2026-10-15", "2026-10-14")),
     ).rejects.toThrow(/next covered/);
     const next = await stepEtfAdoptedShadow(
       series,
       third.state,
-      input(series, "2026-10-12", "2026-10-08"),
+      input(series, "2026-10-16", "2026-10-14"),
     );
-    expect(next.state.lastSessionDate).toBe("2026-10-12");
+    expect(next.state.lastSessionDate).toBe("2026-10-16");
   });
 
   it("expires an entry with missing/stale open and never fills the stale signal later", async () => {
     const { series, second } = await confirmed();
     for (const open of [
       null,
-      price("2026-10-07", "10000"),
-      { ...price("2026-10-08", "10000"), availableAt: "2026-10-08T00:01:00Z" },
+      price("2026-10-13", "10000"),
+      { ...price("2026-10-14", "10000"), availableAt: "2026-10-14T00:01:00Z" },
     ]) {
       const third = await stepEtfAdoptedShadow(
         series,
         second.state,
         input(
           series,
-          "2026-10-08",
-          "2026-10-07",
+          "2026-10-14",
+          "2026-10-13",
           [],
-          [{ symbol: "360750", open, close: price("2026-10-08", "10000", "close") }],
+          [{ symbol: "360750", open, close: price("2026-10-14", "10000", "close") }],
         ),
       );
       expect(third.record.fills).toEqual([]);
@@ -344,14 +353,14 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
         third.state,
         input(
           series,
-          "2026-10-12",
-          "2026-10-08",
+          "2026-10-16",
+          "2026-10-14",
           [],
           [
             {
               symbol: "360750",
-              open: price("2026-10-12", "10000"),
-              close: price("2026-10-12", "10000", "close"),
+              open: price("2026-10-16", "10000"),
+              close: price("2026-10-16", "10000", "close"),
             },
           ],
         ),
@@ -371,13 +380,13 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
       { ...second.state, pendingEntries },
       input(
         series,
-        "2026-10-08",
-        "2026-10-07",
+        "2026-10-14",
+        "2026-10-13",
         [],
         pendingEntries.map((entry) => ({
           symbol: entry.symbol,
-          open: price("2026-10-08", "10000"),
-          close: price("2026-10-08", "10000", "close"),
+          open: price("2026-10-14", "10000"),
+          close: price("2026-10-14", "10000", "close"),
         })),
       ),
     );
@@ -407,14 +416,14 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
       second.state,
       input(
         series,
-        "2026-10-08",
-        "2026-10-07",
-        [signal("069500", "2026-10-08", "2026-10-07", "pending", { annualVolatility: 0 })],
+        "2026-10-14",
+        "2026-10-13",
+        [signal("069500", "2026-10-14", "2026-10-13", "pending", { annualVolatility: 0 })],
         [
           {
             symbol: "360750",
-            open: price("2026-10-08", "10000"),
-            close: price("2026-10-08", "10000000", "close"),
+            open: price("2026-10-14", "10000"),
+            close: price("2026-10-14", "10000000", "close"),
           },
         ],
       ),
@@ -424,14 +433,14 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
       bought.state,
       input(
         series,
-        "2026-10-12",
-        "2026-10-08",
-        [signal("069500", "2026-10-12", "2026-10-08", "confirmed", { annualVolatility: 0 })],
+        "2026-10-16",
+        "2026-10-14",
+        [signal("069500", "2026-10-16", "2026-10-14", "confirmed", { annualVolatility: 0 })],
         [
           {
             symbol: "360750",
-            open: price("2026-10-12", "10000000"),
-            close: price("2026-10-12", "10000000", "close"),
+            open: price("2026-10-16", "10000000"),
+            close: price("2026-10-16", "10000000", "close"),
           },
         ],
       ),
@@ -441,14 +450,14 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
       ready.state,
       input(
         series,
-        "2026-10-13",
-        "2026-10-12",
+        "2026-10-19",
+        "2026-10-16",
         [],
         [
           {
             symbol: "069500",
-            open: price("2026-10-13", "10000"),
-            close: price("2026-10-13", "10000", "close"),
+            open: price("2026-10-19", "10000"),
+            close: price("2026-10-19", "10000", "close"),
           },
         ],
       ),
@@ -466,7 +475,7 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
     const symbols = Array.from({ length: 12 }, (_, i) => `${i + 1}`.padStart(6, "0")).reverse();
     const { series, first } = await confirmed(symbols, 0);
     const signals = symbols.map((s) =>
-      signal(s, "2026-10-07", "2026-10-06", "confirmed", {
+      signal(s, "2026-10-13", "2026-10-12", "confirmed", {
         annualVolatility: 0,
         averageTradingValue20: s === "000012" ? 2e9 : 1e9,
       }),
@@ -474,20 +483,20 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
     const second = await stepEtfAdoptedShadow(
       series,
       first.state,
-      input(series, "2026-10-07", "2026-10-06", signals),
+      input(series, "2026-10-13", "2026-10-12", signals),
     );
     const third = await stepEtfAdoptedShadow(
       series,
       second.state,
       input(
         series,
-        "2026-10-08",
-        "2026-10-07",
+        "2026-10-14",
+        "2026-10-13",
         [],
         symbols.map((s) => ({
           symbol: s,
-          open: price("2026-10-08", "10000"),
-          close: price("2026-10-08", "10000", "close"),
+          open: price("2026-10-14", "10000"),
+          close: price("2026-10-14", "10000", "close"),
         })),
       ),
     );
@@ -516,14 +525,14 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
     const result = await stepEtfAdoptedShadow(
       series,
       bought.state,
-      input(series, "2026-10-12", "2026-10-08"),
+      input(series, "2026-10-16", "2026-10-14"),
     );
     expect(result.record.fills).toEqual([]);
     expect(result.state.positions).toHaveLength(1);
     expect(result.state.valuation).toMatchObject({ status: "STALE", nav: "99992515" });
     expect(result.state.valuation.marks[0]).toMatchObject({
       status: "STALE",
-      asOfDate: "2026-10-08",
+      asOfDate: "2026-10-14",
       price: "10000",
     });
     expect(result.record.issues).toContainEqual({
@@ -555,14 +564,14 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
       second.state,
       input(
         series,
-        "2026-10-08",
-        "2026-10-07",
-        [signal("069500", "2026-10-08", "2026-10-07", "pending")],
+        "2026-10-14",
+        "2026-10-13",
+        [signal("069500", "2026-10-14", "2026-10-13", "pending")],
         [
           {
             symbol: "360750",
-            open: price("2026-10-08", "10000"),
-            close: price("2026-10-08", "10000", "close"),
+            open: price("2026-10-14", "10000"),
+            close: price("2026-10-14", "10000", "close"),
           },
         ],
       ),
@@ -570,8 +579,8 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
     const stale = await stepEtfAdoptedShadow(
       series,
       bought.state,
-      input(series, "2026-10-12", "2026-10-08", [
-        signal("069500", "2026-10-12", "2026-10-08", "confirmed"),
+      input(series, "2026-10-16", "2026-10-14", [
+        signal("069500", "2026-10-16", "2026-10-14", "confirmed"),
       ]),
     );
     expect(stale.state.valuation.status).toBe("STALE");
@@ -580,14 +589,14 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
       stale.state,
       input(
         series,
-        "2026-10-13",
-        "2026-10-12",
+        "2026-10-19",
+        "2026-10-16",
         [],
         [
           {
             symbol: "069500",
-            open: price("2026-10-13", "10000"),
-            close: price("2026-10-13", "10000", "close"),
+            open: price("2026-10-19", "10000"),
+            close: price("2026-10-19", "10000", "close"),
           },
         ],
       ),
@@ -608,17 +617,17 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
       second.state,
       input(
         series,
-        "2026-10-08",
-        "2026-10-07",
-        [signal("069500", "2026-10-08", "2026-10-07", "pending")],
-        [{ symbol: "360750", open: price("2026-10-08", "10000"), close: null }],
+        "2026-10-14",
+        "2026-10-13",
+        [signal("069500", "2026-10-14", "2026-10-13", "pending")],
+        [{ symbol: "360750", open: price("2026-10-14", "10000"), close: null }],
       ),
     );
     const ready = await stepEtfAdoptedShadow(
       series,
       bought.state,
-      input(series, "2026-10-12", "2026-10-08", [
-        signal("069500", "2026-10-12", "2026-10-08", "confirmed"),
+      input(series, "2026-10-16", "2026-10-14", [
+        signal("069500", "2026-10-16", "2026-10-14", "confirmed"),
       ]),
     );
     expect(ready.state.pendingEntries).toHaveLength(1);
@@ -627,19 +636,19 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
       ready.state,
       input(
         series,
-        "2026-10-13",
-        "2026-10-12",
+        "2026-10-19",
+        "2026-10-16",
         [],
         [
           {
             symbol: "069500",
-            open: price("2026-10-13", "10000"),
-            close: price("2026-10-13", "10000", "close"),
+            open: price("2026-10-19", "10000"),
+            close: price("2026-10-19", "10000", "close"),
           },
           {
             symbol: "360750",
-            open: price("2026-10-13", "10000"),
-            close: price("2026-10-13", "10000", "close"),
+            open: price("2026-10-19", "10000"),
+            close: price("2026-10-19", "10000", "close"),
           },
         ],
       ),
@@ -660,10 +669,10 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
       second.state,
       input(
         series,
-        "2026-10-08",
-        "2026-10-07",
+        "2026-10-14",
+        "2026-10-13",
         [
-          signal("360750", "2026-10-08", "2026-10-07", "none", {
+          signal("360750", "2026-10-14", "2026-10-13", "none", {
             exit: "MA60",
             underlyingClose: 90,
           }),
@@ -671,8 +680,8 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
         [
           {
             symbol: "360750",
-            open: price("2026-10-08", "10000"),
-            close: price("2026-10-08", "9000", "close"),
+            open: price("2026-10-14", "10000"),
+            close: price("2026-10-14", "9000", "close"),
           },
         ],
       ),
@@ -684,14 +693,14 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
       bought.state,
       input(
         series,
-        "2026-10-12",
-        "2026-10-08",
+        "2026-10-16",
+        "2026-10-14",
         [],
         [
           {
             symbol: "360750",
-            open: price("2026-10-12", "10000"),
-            close: price("2026-10-12", "20000", "close"),
+            open: price("2026-10-16", "10000"),
+            close: price("2026-10-16", "20000", "close"),
           },
         ],
       ),
@@ -699,8 +708,8 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
     expect(sold.record.fills[0]).toMatchObject({
       side: "SELL",
       reason: "MA60",
-      signalDate: "2026-10-08",
-      executionDate: "2026-10-12",
+      signalDate: "2026-10-14",
+      executionDate: "2026-10-16",
       quantity: "499",
       fee: "7485",
       realizedPnl: "-14970",
@@ -719,14 +728,14 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
     const signaled = await stepEtfAdoptedShadow(
       series,
       bought.state,
-      input(series, "2026-10-12", "2026-10-08", [
-        signal("360750", "2026-10-12", "2026-10-08", "none", { exit: "MA60", underlyingClose: 90 }),
+      input(series, "2026-10-16", "2026-10-14", [
+        signal("360750", "2026-10-16", "2026-10-14", "none", { exit: "MA60", underlyingClose: 90 }),
       ]),
     );
     const delayed = await stepEtfAdoptedShadow(
       series,
       signaled.state,
-      input(series, "2026-10-13", "2026-10-12"),
+      input(series, "2026-10-19", "2026-10-16"),
     );
     expect(delayed.record.fills).toEqual([]);
     expect(delayed.state.pendingExits).toHaveLength(1);
@@ -740,16 +749,16 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
       delayed.state,
       input(
         series,
-        "2026-10-14",
-        "2026-10-13",
+        "2026-10-20",
+        "2026-10-19",
         [],
-        [{ symbol: "360750", open: price("2026-10-14", "9900"), close: null }],
+        [{ symbol: "360750", open: price("2026-10-20", "9900"), close: null }],
       ),
     );
     expect(filled.record.fills[0]).toMatchObject({
       side: "SELL",
-      signalDate: "2026-10-12",
-      executionDate: "2026-10-14",
+      signalDate: "2026-10-16",
+      executionDate: "2026-10-20",
     });
     expect(filled.state.positions).toEqual([]);
   });
@@ -758,20 +767,20 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
     const { series, first } = await confirmed();
     const variants: EtfShadowSignal[] = [
       {
-        ...signal("360750", "2026-10-07", "2026-10-06", "confirmed"),
-        availableAt: "2026-10-07T08:00:00Z",
+        ...signal("360750", "2026-10-13", "2026-10-12", "confirmed"),
+        availableAt: "2026-10-13T08:00:00Z",
       },
-      signal("360750", "2026-10-08", "2026-10-06", "confirmed"),
-      signal("360750", "2026-10-07", "2026-10-06", "confirmed", {
+      signal("360750", "2026-10-14", "2026-10-12", "confirmed"),
+      signal("360750", "2026-10-13", "2026-10-12", "confirmed", {
         dataStatus: "krx_batch_pending",
       }),
-      signal("360750", "2026-10-07", "2026-10-06", "confirmed", { underlyingClose: 90 }),
+      signal("360750", "2026-10-13", "2026-10-12", "confirmed", { underlyingClose: 90 }),
     ];
     for (const candidate of variants) {
       const result = await stepEtfAdoptedShadow(
         series,
         first.state,
-        input(series, "2026-10-07", "2026-10-06", [candidate]),
+        input(series, "2026-10-13", "2026-10-12", [candidate]),
       );
       expect(result.state.pendingEntries).toEqual([]);
       expect(result.record.issues.length).toBeGreaterThan(0);
@@ -783,14 +792,14 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
     const previousJson = JSON.stringify(second.state);
     const nextInput = input(
       series,
-      "2026-10-08",
-      "2026-10-07",
+      "2026-10-14",
+      "2026-10-13",
       [],
       [
         {
           symbol: "360750",
-          open: price("2026-10-08", "0.00000001"),
-          close: price("2026-10-08", "0.00000001", "close"),
+          open: price("2026-10-14", "0.00000001"),
+          close: price("2026-10-14", "0.00000001", "close"),
         },
       ],
     );
@@ -827,8 +836,8 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
 describe("ETF immutable journal run wrapper", () => {
   it("binds complete input and predecessor state/record, and reuses identical same-day runs", async () => {
     const series = await create();
-    const firstInput = input(series, "2026-10-06", null, [
-      signal("360750", "2026-10-06", "2026-10-02", "pending"),
+    const firstInput = input(series, "2026-10-12", null, [
+      signal("360750", "2026-10-12", "2026-10-08", "pending"),
     ]);
     const first = await stepAdoptedEtfSeries(series, firstInput);
     expect(first.status).toBe("NEW");
@@ -843,8 +852,8 @@ describe("ETF immutable journal run wrapper", () => {
     const reused = await stepAdoptedEtfSeries(series, structuredClone(firstInput), first.run);
     expect(reused.status).toBe("REUSE");
     expect(reused.run).toBe(first.run);
-    const secondInput = input(series, "2026-10-07", "2026-10-06", [
-      signal("360750", "2026-10-07", "2026-10-06", "confirmed"),
+    const secondInput = input(series, "2026-10-13", "2026-10-12", [
+      signal("360750", "2026-10-13", "2026-10-12", "confirmed"),
     ]);
     const second = await stepAdoptedEtfSeries(series, secondInput, first.run);
     expect(second.run.previousStateHash).toBe(first.run.stateHash);
@@ -854,14 +863,14 @@ describe("ETF immutable journal run wrapper", () => {
       series,
       input(
         series,
-        "2026-10-08",
-        "2026-10-07",
+        "2026-10-14",
+        "2026-10-13",
         [],
         [
           {
             symbol: "360750",
-            open: price("2026-10-08", "10000"),
-            close: price("2026-10-08", "10000", "close"),
+            open: price("2026-10-14", "10000"),
+            close: price("2026-10-14", "10000", "close"),
           },
         ],
       ),
@@ -877,14 +886,14 @@ describe("ETF immutable journal run wrapper", () => {
     const series = await create();
     const firstInput = input(
       series,
-      "2026-10-06",
+      "2026-10-12",
       null,
-      [signal("360750", "2026-10-06", "2026-10-02", "pending")],
+      [signal("360750", "2026-10-12", "2026-10-08", "pending")],
       [
         {
           symbol: "360750",
-          open: price("2026-10-06", "10000"),
-          close: price("2026-10-06", "10000", "close"),
+          open: price("2026-10-12", "10000"),
+          close: price("2026-10-12", "10000", "close"),
         },
       ],
     );
@@ -899,7 +908,7 @@ describe("ETF immutable journal run wrapper", () => {
       alteredPrice,
       alteredSignal,
       alteredCalendar,
-      { ...firstInput, closeAt: "2026-10-06T07:01:00Z" },
+      { ...firstInput, closeAt: "2026-10-12T07:01:00Z" },
       { ...firstInput, sourceHash: hash("9") },
     ])
       await expect(stepAdoptedEtfSeries(series, changed, first.run)).rejects.toThrow(/Same-date/);
@@ -910,8 +919,8 @@ describe("ETF immutable journal run wrapper", () => {
 
   it("rejects changed prior state, prior daily record, predecessor pointer and wrong book", async () => {
     const series = await create();
-    const first = await stepAdoptedEtfSeries(series, input(series, "2026-10-06", null));
-    const next = input(series, "2026-10-07", "2026-10-06");
+    const first = await stepAdoptedEtfSeries(series, input(series, "2026-10-12", null));
+    const next = input(series, "2026-10-13", "2026-10-12");
     const alteredState = structuredClone(first.run);
     alteredState.result.state.cash = "100000001";
     const alteredRecord = structuredClone(first.run);
@@ -928,51 +937,51 @@ describe("ETF immutable journal run wrapper", () => {
       stepAdoptedEtfSeries(series, next, { ...first.run, bookId: "ACTUAL" }),
     ).rejects.toThrow(/cannot enter/);
     await expect(
-      stepAdoptedEtfSeries(series, input(series, "2026-10-08", "2026-10-06"), first.run),
+      stepAdoptedEtfSeries(series, input(series, "2026-10-14", "2026-10-12"), first.run),
     ).rejects.toThrow(/next covered/);
   });
 
   it("normalizes offset timestamps to Asia/Seoul rather than comparing their written date", async () => {
     const series = await create();
-    const firstInput = input(series, "2026-10-06", null, [
+    const firstInput = input(series, "2026-10-12", null, [
       {
-        ...signal("360750", "2026-10-06", "2026-10-02", "pending"),
+        ...signal("360750", "2026-10-12", "2026-10-08", "pending"),
         availableAt: "2026-10-05T23:40:00-07:00",
       },
     ]);
     firstInput.openAt = "2026-10-05T20:00:00-04:00";
-    firstInput.closeAt = "2026-10-06T16:00:00+09:00";
+    firstInput.closeAt = "2026-10-12T16:00:00+09:00";
     const first = await stepAdoptedEtfSeries(series, firstInput);
     expect(first.run.result.state.pendingConfirmations).toHaveLength(1);
     await expect(
-      stepAdoptedEtfSeries(series, { ...firstInput, closeAt: "2026-10-06T16:00:00Z" }),
+      stepAdoptedEtfSeries(series, { ...firstInput, closeAt: "2026-10-12T16:00:00Z" }),
     ).rejects.toThrow(/chronology/);
     await expect(
-      stepAdoptedEtfSeries(series, { ...firstInput, openAt: "2026-10-06T00:00:00+10:00" }),
+      stepAdoptedEtfSeries(series, { ...firstInput, openAt: "2026-10-12T00:00:00+10:00" }),
     ).rejects.toThrow(/chronology/);
   });
 
   it("rejects removal of an archived calendar session or shrinking coverage, while allowing extension", async () => {
     const series = await create();
-    const first = await stepAdoptedEtfSeries(series, input(series, "2026-10-06", null));
-    const skipped = input(series, "2026-10-08", "2026-10-06");
+    const first = await stepAdoptedEtfSeries(series, input(series, "2026-10-12", null));
+    const skipped = input(series, "2026-10-14", "2026-10-12");
     skipped.calendar = {
       ...calendar,
-      regularSessions: calendar.regularSessions.filter((date) => date !== "2026-10-07"),
+      regularSessions: calendar.regularSessions.filter((date) => date !== "2026-10-13"),
     };
     await expect(stepAdoptedEtfSeries(series, skipped, first.run)).rejects.toThrow(
       /calendar|session|coverage/i,
     );
-    const shrunk = input(series, "2026-10-07", "2026-10-06");
+    const shrunk = input(series, "2026-10-13", "2026-10-12");
     shrunk.calendar = {
       ...calendar,
-      coverageEnd: "2026-10-19",
-      regularSessions: calendar.regularSessions.filter((date) => date <= "2026-10-19"),
+      coverageEnd: "2026-10-23",
+      regularSessions: calendar.regularSessions.filter((date) => date <= "2026-10-23"),
     };
     await expect(stepAdoptedEtfSeries(series, shrunk, first.run)).rejects.toThrow(
       /calendar|coverage/i,
     );
-    const extended = input(series, "2026-10-07", "2026-10-06");
+    const extended = input(series, "2026-10-13", "2026-10-12");
     extended.calendar = {
       ...calendar,
       sourceHash: hash("9"),
@@ -984,6 +993,6 @@ describe("ETF immutable journal run wrapper", () => {
     expect(second.run.calendar).toEqual(extended.calendar);
     expect(second.run.calendar).not.toBe(extended.calendar);
     expect(Object.isFrozen(extended.calendar)).toBe(false);
-    expect(first.run.calendar.coverageEnd).toBe("2026-10-20");
+    expect(first.run.calendar.coverageEnd).toBe("2026-10-26");
   });
 });
