@@ -488,7 +488,7 @@ class Suite:
         for owned in specs.values():
             self.register(owned, USER_D)
         daily = dict(version="kr-daily-inputs-v1", date="2026-10-06", inputs=dict(
-            snapshots=[dict(date="2026-10-06", asOfDate="2026-10-06", savedAt="2026-10-06T06:32:00Z",
+            snapshots=[dict(date="2026-10-06", asOfDate="2026-10-06", savedAt="2026-10-07T08:00:00+09:00",
                             entries=[dict(symbol="005930", instrumentType="STOCK", name="Synthetic stock")])],
             bars={"005930": [dict(tradeDate="2026-10-06", open=100, high=102, low=99, close=101, volume=123)]},
             markets={"005930": "KOSPI"}, marketGates={}))
@@ -516,7 +516,7 @@ class Suite:
         self.check("Bounded KR daily input stages once, reuses exactly via owner and unchanged service RPC, and rejects same-hash payload substitution")
         raced_day = copy.deepcopy(daily)
         raced_day["date"] = "2026-10-07"
-        raced_day["inputs"]["snapshots"][0].update(date="2026-10-07", asOfDate="2026-10-07", savedAt="2026-10-07T06:32:00Z")
+        raced_day["inputs"]["snapshots"][0].update(date="2026-10-07", asOfDate="2026-10-07", savedAt="2026-10-08T08:00:00+09:00")
         raced_day["inputs"]["bars"]["005930"][0]["tradeDate"] = "2026-10-07"
         raced_id = "october-input:KR:2026-10-07:" + digest(raced_day)[7:]
         outcomes = self.race(specs["KR_MIXED"]["bookId"], [
