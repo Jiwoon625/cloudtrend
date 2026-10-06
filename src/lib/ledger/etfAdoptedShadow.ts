@@ -173,6 +173,8 @@ export interface EtfShadowSessionInput {
   previousSessionDate: string | null;
   openAt: string;
   closeAt: string;
+  /** Latest complete KRX/source refresh that authorizes this session decision. */
+  finalizedAt: string;
   decisionAt: string;
   calendar: ModelCalendar;
   codeHash: SeriesHash;
@@ -472,17 +474,7 @@ export async function stepEtfAdoptedShadow(
     (previous.lastDecisionAt && openAt <= time(previous.lastDecisionAt))
   )
     throw new Error("Invalid ETF open/close/decision chronology");
-  const evidenceTimes = [
-    ...input.closeSignals.map((signal) => signal.availableAt),
-    ...input.prices.flatMap((row) => (row.close ? [row.close.availableAt] : [])),
-  ];
-  const latestEvidenceAt = evidenceTimes
-    .filter((value) => Number.isFinite(Date.parse(value)))
-    .sort((a, b) => Date.parse(a) - Date.parse(b))
-    .at(-1);
-  if (!latestEvidenceAt)
-    throw new Error("ETF finalized close evidence is required");
-  assertKrShadowDecisionWindow(input.sessionDate, latestEvidenceAt, input.decisionAt);
+  assertKrShadowDecisionWindow(input.sessionDate, input.finalizedAt, input.decisionAt);
   if (
     input.previousSessionDate !== previous.lastSessionDate ||
     (previous.lastSessionDate && input.sessionDate <= previous.lastSessionDate)
