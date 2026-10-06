@@ -24,6 +24,7 @@ export async function recordWebOctoberShadow(input: {
 }) {
   if (input.analysis.asOfDate < MODEL_ACCOUNTING_START)
     return {
+      status: "WAITING_START" as const,
       market: "KR" as const,
       calculatedAt: input.decisionAt,
       processed: [],
@@ -31,7 +32,7 @@ export async function recordWebOctoberShadow(input: {
       latestRecordedDate: null,
       throughDate: input.analysis.asOfDate,
     };
-  return replayKrShadow({
+  const replay = await replayKrShadow({
     client: input.client,
     userId: input.userId,
     dataset: input.dataset,
@@ -40,4 +41,12 @@ export async function recordWebOctoberShadow(input: {
     mode: "authenticated-owner",
     calculatedAt: input.decisionAt,
   });
+  return {
+    ...replay,
+    status: replay.deferred
+      ? ("DEFERRED" as const)
+      : replay.processed.length
+        ? ("RECORDED" as const)
+        : ("UP_TO_DATE" as const),
+  };
 }
