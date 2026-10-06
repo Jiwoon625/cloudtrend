@@ -1,9 +1,9 @@
 {
-  "request_id": "s03-s04-nullopenfix-20261006-002",
+  "request_id": "s01-s04-workers4-pr190-gate-20261006-001",
   "mode": "run",
   "stage": "base",
-  "offset": 2,
-  "count": 2,
+  "offset": 0,
+  "count": 4,
   "max_seconds": 6000,
-  "workers": 2
+  "workers": 4
 }
