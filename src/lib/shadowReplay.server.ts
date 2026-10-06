@@ -325,8 +325,9 @@ export async function replayKrShadow(input: {
 
   for (const date of dates) {
     const clock = shadowReplayClock("KR", date, calculatedAt);
-    if (Date.parse(calculatedAt) < Date.parse(regularCloseAt("KR", date))) {
-      const reason = "정규장 종료 전 자료는 Shadow 일일 입력으로 확정하지 않습니다.";
+    if (Date.parse(calculatedAt) < Date.parse(clock.modelDecisionAt)) {
+      const reason =
+        "해당 거래일의 모델 판단시각 전입니다. 자료는 유지하고 판단시각 이후 자동으로 이어 계산합니다.";
       await insertReplayAudit(input.client, input.userId, {
         market: "KR",
         signalDate: date,
@@ -583,8 +584,9 @@ export async function replayUsShadow(input: {
 
   for (const date of expected) {
     const clock = shadowReplayClock("US", date, calculatedAt);
-    if (Date.parse(calculatedAt) < Date.parse(regularCloseAt("US", date))) {
-      const reason = "미국 정규장 종료 전 자료는 Shadow 일일 입력으로 확정하지 않습니다.";
+    if (Date.parse(calculatedAt) < Date.parse(clock.modelDecisionAt)) {
+      const reason =
+        "해당 미국 거래일의 모델 판단시각 전입니다. 자료는 유지하고 판단시각 이후 자동으로 이어 계산합니다.";
       await insertReplayAudit(input.client, input.userId, {
         market: "US",
         signalDate: date,
