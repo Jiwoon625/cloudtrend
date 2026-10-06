@@ -75,7 +75,7 @@ async function pending() {
   );
   const confirmed = await stepAdoptedKospiShadowSeries(
     series,
-    input("2026-10-08", series.configHash, 9.5),
+    input("2026-10-08", series.configHash, 9),
     onset.run,
   );
   return { series, first, onset, confirmed };
@@ -121,7 +121,7 @@ describe("isolated October KOSPI confirm1/bear-only journal adapter", () => {
     expect((await stepAdoptedKospiShadowSeries(series, source, first.run)).status).toBe("REUSE");
     const confirmed = await stepAdoptedKospiShadowSeries(
       series,
-      input("2026-10-07", series.configHash, 9.5),
+      input("2026-10-07", series.configHash, 9),
       first.run,
     );
     expect(confirmed.run.result.state.pendingEntries[0]?.originDate).toBe("2026-10-06");
@@ -162,7 +162,7 @@ describe("isolated October KOSPI confirm1/bear-only journal adapter", () => {
       legacyFirst.state,
     );
     const legacyConfirmed = stepKospiShadow(
-      input("2026-10-08", series.configHash, 9.5).session,
+      input("2026-10-08", series.configHash, 9).session,
       legacyOnset.state,
     );
     const legacyFill = stepKospiShadow(source.session, legacyConfirmed.state);
@@ -223,7 +223,7 @@ describe("isolated October KOSPI confirm1/bear-only journal adapter", () => {
   });
 
   it.each(["RISK_ON", "NEUTRAL", "RISK_OFF"] as const)(
-    "freezes %s onset regime, retaining bear-only RSAccel and permitted confirmation UP95",
+    "freezes %s onset regime and blocks confirmation at the 9.5 exit threshold",
     async (regime) => {
       const series = await create();
       const first = await stepAdoptedKospiShadowSeries(
@@ -234,14 +234,16 @@ describe("isolated October KOSPI confirm1/bear-only journal adapter", () => {
       onsetInput.session.gate.status = regime;
       const onset = await stepAdoptedKospiShadowSeries(series, onsetInput, first.run);
       const confirmInput = input("2026-10-08", series.configHash, 9.5);
-      confirmInput.session.rows[0]!.rsAccel = 0;
+      confirmInput.session.rows[0]!.rsAccel = 1;
       confirmInput.session.gate.status = regime === "RISK_OFF" ? "RISK_ON" : "RISK_OFF";
       const confirmed = await stepAdoptedKospiShadowSeries(series, confirmInput, onset.run);
       expect(confirmed.run.result.candidates[0]).toMatchObject({
         onsetRegime: regime,
         confirmationUp95: true,
+        status: "EXCLUDED",
+        reason: "CONFIRMATION_AT_OR_ABOVE_UPSIDE_EXIT",
       });
-      expect(confirmed.run.result.state.pendingEntries.length).toBe(regime === "RISK_OFF" ? 0 : 1);
+      expect(confirmed.run.result.state.pendingEntries).toEqual([]);
       expect(confirmed.run.result.policy).toEqual(KOSPI_SHADOW_POLICY);
     },
   );

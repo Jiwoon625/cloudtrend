@@ -26,6 +26,7 @@ const reason = (v: string) =>
     ONSET_REGIME_UNOBSERVABLE: "발생일 국면 자료 미확인",
     CONFIRMATION_SCORE_MISSING: "확인일 점수 미확인",
     CONFIRMATION_SCORE_BELOW_8: "확인일 8점 미만",
+    CONFIRMATION_AT_OR_ABOVE_UPSIDE_EXIT: "확인일 9.5점 이상 · 청산점수 도달로 진입 제외",
     COMMON_HISTORY_OR_SIGNAL_OPEN_INELIGIBLE: "공통 이력 또는 확인일 시가 미충족",
     BEAR_CONFIRMATION_RSACCEL_MISSING: "불황 확인일 RSAccel 미확인",
     BEAR_CONFIRMATION_RSACCEL_NONPOSITIVE: "불황 확인일 RSAccel 0 이하",

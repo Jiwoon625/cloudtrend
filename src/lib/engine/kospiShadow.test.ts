@@ -51,7 +51,7 @@ function onset(regime = "NEUTRAL" as "NEUTRAL" | "RISK_OFF" | "RISK_ON" | "UNKNO
   );
 }
 function confirmed() {
-  return stepKospiShadow(day("2026-10-06", "2026-10-05", 9.5), onset().state);
+  return stepKospiShadow(day("2026-10-06", "2026-10-05", 9), onset().state);
 }
 describe("isolated KOSPI research Shadow", () => {
   it("starts in cash without historical candidates, executions or actual records", () => {
@@ -62,22 +62,39 @@ describe("isolated KOSPI research Shadow", () => {
     expect(result.state.awaiting).toEqual([]);
     expect(result.daily.cagr).toBeNull();
   });
-  it("freezes origin regime; bullish/neutral confirmation needs no RS, including UP95", () => {
-    for (const regime of ["RISK_ON", "NEUTRAL"] as const) {
-      const s = onset(regime);
-      const prev = structuredClone(s.state);
-      const r = stepKospiShadow(
-        day("2026-10-06", "2026-10-05", 9.5, {
-          gate: { date: "2026-10-06", status: "RISK_OFF", issues: [] },
-          rows: [row(9.5, { date: "2026-10-06", rsAccel: null })],
-        }),
-        s.state,
-      );
-      expect(r.candidates[0]?.status).toBe("MODEL_ENTRY_PENDING");
-      expect(r.candidates[0]?.confirmationUp95).toBe(true);
-      expect(r.candidates[0]?.onsetRegime).toBe(regime);
-      expect(s.state).toEqual(prev);
+  it("blocks confirmation at or above 9.5 for every origin regime, even without a fresh UP95 crossing", () => {
+    for (const regime of ["RISK_ON", "NEUTRAL", "RISK_OFF"] as const) {
+      for (const score of [9.5, 10]) {
+        const s = onset(regime);
+        const prev = structuredClone(s.state);
+        const r = stepKospiShadow(
+          day("2026-10-06", "2026-10-05", score, {
+            gate: { date: "2026-10-06", status: "RISK_OFF", issues: [] },
+            rows: [row(score, { date: "2026-10-06", rsAccel: 1 })],
+          }),
+          s.state,
+        );
+        expect(r.candidates[0]).toMatchObject({
+          status: "EXCLUDED",
+          reason: "CONFIRMATION_AT_OR_ABOVE_UPSIDE_EXIT",
+          confirmationScore: score,
+          onsetRegime: regime,
+        });
+        expect(r.state.pendingEntries).toEqual([]);
+        expect(s.state).toEqual(prev);
+      }
     }
+    const overshootOnset = stepKospiShadow(
+      day("2026-10-05", "2026-10-02", 9.5),
+      baseline().state,
+    );
+    const noFreshCross = stepKospiShadow(
+      day("2026-10-06", "2026-10-05", 9.5),
+      overshootOnset.state,
+    );
+    expect(noFreshCross.candidates[0]?.confirmationUp95).toBe(false);
+    expect(noFreshCross.candidates[0]?.reason).toBe("CONFIRMATION_AT_OR_ABOVE_UPSIDE_EXIT");
+    expect(noFreshCross.state.pendingEntries).toEqual([]);
   });
   it("requires positive RS only for frozen bear origin even after regime improves", () => {
     for (const rs of [null, 0, -1]) {
@@ -211,7 +228,7 @@ describe("isolated KOSPI research Shadow", () => {
     const sold = stepKospiShadow(day("2026-10-13", "2026-10-12", 9.5), missing.state);
     expect(sold.trades[0]?.side).toBe("SELL");
   });
-  it("H60 tradable close and deferred open, including held UP95 exception before TIME", () => {
+  it("H60 tradable close and deferred open, while confirmation exit-score block still wins", () => {
     const s: KospiShadowState = stepKospiShadow(
       day("2026-10-07", "2026-10-06", 7),
       confirmed().state,
@@ -220,7 +237,7 @@ describe("isolated KOSPI research Shadow", () => {
     const o = stepKospiShadow(day("2026-10-08", "2026-10-07", 8), s);
     const r = stepKospiShadow(day("2026-10-09", "2026-10-08", 9.5), o.state);
     expect(r.trades[0]?.reason).toBe("H60_CLOSE");
-    expect(r.candidates[0]?.reason).toBe("HELD_UP95_EXCEPTION_BLOCKED");
+    expect(r.candidates[0]?.reason).toBe("CONFIRMATION_AT_OR_ABOVE_UPSIDE_EXIT");
     const halted = stepKospiShadow(
       day("2026-10-09", "2026-10-08", 9, { rows: [row(9, { date: "2026-10-09", volume: 0 })] }),
       o.state,
