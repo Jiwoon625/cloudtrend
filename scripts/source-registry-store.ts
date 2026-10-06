@@ -20,6 +20,7 @@ import {
   validateSourceBytes,
 } from "../src/lib/sourceData";
 import { ANALYSIS_BUCKET, downloadJson, uploadJson } from "./analysis-run-store";
+import { createSourceValidationCache, type SourceValidationCache } from "./source-validation-cache";
 
 export type SourceRegistrationMode = "replace" | "append" | "merge" | "add" | "replace_all";
 
@@ -183,7 +184,10 @@ export async function listSourceRecords(
 }
 
 async function downloadBytes(client: SupabaseClient, bucket: string, objectPath: string) {
-  const { data, error } = await client.storage.from(bucket).download(objectPath);
+  // Generation proofs must never be paired with stale CDN bytes from an older upload.
+  const { data, error } = await client.storage
+    .from(bucket)
+    .download(objectPath, { cacheNonce: crypto.randomUUID() }, { cache: "no-store" });
   if (error) throw new Error(`Supabase 다운로드 실패 (${objectPath}): ${error.message}`);
   return new Uint8Array(await data.arrayBuffer());
 }
@@ -328,42 +332,51 @@ async function loadRegistryInputs(
   userId: string,
   sourceType: SourceType,
   compact = false,
+  validationCache?: SourceValidationCache,
 ) {
   const records = await listSourceRecords(client, userId, sourceType);
   const load = async (record: SourceRecord): Promise<LoadedSourceInput> => {
-    const { logicalBytes, logicalFileHash } = await registeredLogicalBytes(client, record);
-    memory("source-validation-start", { bytes: logicalBytes.byteLength });
-    const validation = await validateSourceBytes({
-      streamingCsv: compact,
-      onStage: memory,
-      bytes: logicalBytes,
-      filename: record.original_filename,
-      contentType: record.canonical_format === "csv.gz" ? "text/csv" : record.content_type,
-    });
-    if (!validation.valid)
-      throw new Error(
-        `등록 원천데이터 검증 실패 (${record.original_filename}): ${validation.errors[0]?.message ?? "형식 오류"}`,
-      );
-    if (
-      validation.dataHash !== record.data_hash ||
-      validation.schemaHash !== record.schema_hash ||
-      validation.fileHash !== logicalFileHash
-    )
-      throw new Error(`등록 원천데이터 논리 해시 불일치: ${record.original_filename}`);
+    const validate = async () => {
+      const { logicalBytes, logicalFileHash } = await registeredLogicalBytes(client, record);
+      memory("source-validation-start", { bytes: logicalBytes.byteLength });
+      const validation = await validateSourceBytes({
+        streamingCsv: compact,
+        onStage: memory,
+        bytes: logicalBytes,
+        filename: record.original_filename,
+        contentType: record.canonical_format === "csv.gz" ? "text/csv" : record.content_type,
+      });
+      if (!validation.valid)
+        throw new Error(
+          `등록 원천데이터 검증 실패 (${record.original_filename}): ${validation.errors[0]?.message ?? "형식 오류"}`,
+        );
+      if (
+        validation.dataHash !== record.data_hash ||
+        validation.schemaHash !== record.schema_hash ||
+        validation.fileHash !== logicalFileHash
+      )
+        throw new Error(`등록 원천데이터 논리 해시 불일치: ${record.original_filename}`);
+      return validation;
+    };
+    const validation = validationCache
+      ? await validationCache.load(client, record, validate)
+      : await validate();
     return {
       id: record.id,
       fileName: record.original_filename,
-      bytes: logicalBytes.byteLength,
+      bytes: validation.originalSizeBytes,
       savedAt: record.activated_at ?? record.created_at,
       text: validation.canonicalCsv,
-      fileHash: logicalFileHash,
+      fileHash: validation.fileHash,
       dataHash: validation.dataHash,
       schemaHash: validation.schemaHash,
       sourceRecord: record,
       validation: compact ? { ...validation, rows: [] } : validation,
     };
   };
-  if (!compact) return Promise.all(records.map(load));
+  // Registration/cache warmup keeps the historical loader bounded: don't expand
+  // all large 102-column sources concurrently. Result ordering is unchanged.
+  if (!compact && !validationCache) return Promise.all(records.map(load));
   const loaded: LoadedSourceInput[] = [];
   for (const record of records) loaded.push(await load(record));
   return loaded;
@@ -446,11 +459,18 @@ export async function loadAnalysisSourceInputs(
   client: SupabaseClient,
   userId: string,
   sourceType: SourceType,
-  options: { lightweight?: boolean; compact?: boolean } = {},
+  options: {
+    lightweight?: boolean;
+    compact?: boolean;
+    validationCache?: SourceValidationCache;
+  } = {},
 ) {
+  const validationCache =
+    options.validationCache ??
+    (process.env["SOURCE_VALIDATION_CACHE_DIR"] ? createSourceValidationCache() : undefined);
   const registered = options.lightweight
     ? await loadRegistryInputsLightweight(client, userId, sourceType)
-    : await loadRegistryInputs(client, userId, sourceType, options.compact);
+    : await loadRegistryInputs(client, userId, sourceType, options.compact, validationCache);
   if (sourceType === "screening") {
     // parseManualMarketData는 같은 종목·거래일에서 뒤에 들어온 source의
     // 비어 있지 않은 값을 기존 행에 덮어쓴다. 따라서 활성화 순서가 오래된
@@ -494,7 +514,8 @@ function validateOverlap(
   );
 }
 
-async function syncLegacyScreening(
+/** Keep Colab and the server on the same oldest-to-newest legacy merge contract. */
+export async function syncLegacyScreening(
   client: SupabaseClient,
   userId: string,
   inputs: LoadedSourceInput[],
@@ -569,6 +590,8 @@ export async function registerSourceBytes(input: {
   filename: string;
   contentType?: string | undefined;
   syncLegacy?: boolean;
+  /** Optional request-scoped or private persistent cache of verified source generations. */
+  validationCache?: SourceValidationCache;
 }) {
   modeFor(input.sourceType, input.mode);
   if (input.bytes.byteLength > SOURCE_MAX_FILE_BYTES)
@@ -586,11 +609,11 @@ export async function registerSourceBytes(input: {
         .join(" / ")}`,
     );
 
-  const existing = await loadAnalysisSourceInputs(
-    input.client,
-    input.userId,
-    input.sourceType,
-  ).catch((error: unknown) => {
+  // Reuse the same verified generations in the registration and legacy-sync passes.
+  const validationCache = input.validationCache ?? createSourceValidationCache();
+  const existing = await loadAnalysisSourceInputs(input.client, input.userId, input.sourceType, {
+    validationCache,
+  }).catch((error: unknown) => {
     if (error instanceof Error && /없습니다/.test(error.message)) return [] as LoadedSourceInput[];
     throw error;
   });
@@ -686,7 +709,21 @@ export async function registerSourceBytes(input: {
   const source = activated as SourceRecord;
   if (input.syncLegacy !== false) {
     if (input.sourceType === "screening") {
-      const activeAfter = await loadRegistryInputs(input.client, input.userId, "screening");
+      // The incoming bytes have already passed validation. Verify the stored raw bytes
+      // before reusing that result; a successful upload alone is not an integrity proof.
+      await validationCache.load(input.client, source, async () => {
+        const { logicalFileHash } = await registeredLogicalBytes(input.client, source);
+        if (logicalFileHash !== validation.fileHash)
+          throw new Error("New source upload readback hash mismatch");
+        return validation;
+      });
+      const activeAfter = await loadRegistryInputs(
+        input.client,
+        input.userId,
+        "screening",
+        false,
+        validationCache,
+      );
       await syncLegacyScreening(input.client, input.userId, activeAfter, source.original_filename);
     } else if (input.syncLegacy === true) {
       await syncLegacyBacktestEntry(

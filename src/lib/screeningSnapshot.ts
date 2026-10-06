@@ -1,6 +1,7 @@
 import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
 import type { ScreeningRow, V8ExitSignal } from "@/lib/engine/pipeline";
 import { getDisplayStatus } from "@/lib/statusDisplay";
+import { sourceTimingEvidence } from "./sourceTimingEvidence";
 
 export interface SnapshotEntry {
   symbol: string;
@@ -132,12 +133,14 @@ export function latestSourceRegistration(
     max_date: string | null;
     activated_at: string | null;
     created_at: string;
+    validation_result?: unknown;
   }>,
   asOfDate: string,
 ): string | undefined {
   return sources
+    .flatMap(sourceTimingEvidence)
     .filter((s) => s.min_date && s.max_date && s.min_date <= asOfDate && s.max_date >= asOfDate)
-    .map((s) => s.activated_at ?? s.created_at)
+    .map((s) => s.activated_at ?? s.created_at ?? "")
     .filter((t) => Number.isFinite(Date.parse(t)))
     .sort((a, b) => Date.parse(b) - Date.parse(a))[0];
 }

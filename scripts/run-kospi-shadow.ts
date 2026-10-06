@@ -13,6 +13,7 @@ import { KOSPI_SHADOW_POLICY } from "../src/lib/engine/kospiShadow";
 import { buildKospiShadowSession } from "../src/lib/engine/kospiShadowDataset";
 import { persistKospiShadow, type ShadowObjectStore } from "../src/lib/kospiShadowStore";
 import { isKrOfficialShadowDecision } from "../src/lib/ledger/krShadowDecision";
+import { sourceTimingEvidence } from "../src/lib/sourceTimingEvidence";
 function arg(name: string) {
   const i = process.argv.indexOf(name);
   return i < 0 ? undefined : process.argv[i + 1];
@@ -86,10 +87,20 @@ export async function runKospiShadow() {
   }
   // The complete source set becomes decision-ready only when its latest required
   // constituent has been registered. Same-evening data remains preview-only.
-  const relevant = inputs.filter((i) => i.validation.stats.maxDate === date);
+  const relevant = inputs
+    .flatMap((input) =>
+      sourceTimingEvidence(
+        input.sourceRecord ?? {
+          min_date: input.validation.stats.minDate,
+          max_date: input.validation.stats.maxDate,
+          savedAt: input.savedAt,
+        },
+      ),
+    )
+    .filter((source) => source.max_date === date);
   if (!relevant.length) throw new Error("No registered source declares the requested close date");
   const sourceCollectedAt = relevant
-    .map((i) => i.savedAt)
+    .map((source) => source.activated_at ?? source.savedAt ?? source.created_at ?? "")
     .sort((a, b) => Date.parse(a) - Date.parse(b))
     .at(-1)!;
   const decisionAt = new Date().toISOString();
@@ -151,7 +162,8 @@ export async function runKospiShadow() {
     }),
   );
 }
-runKospiShadow().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+if (!process.env["VITEST"])
+  runKospiShadow().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });

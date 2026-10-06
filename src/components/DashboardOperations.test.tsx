@@ -2,7 +2,11 @@ import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { DashboardSignalCounts, DashboardSignalLists } from "./DashboardOperations";
+import {
+  DashboardSignalCounts,
+  DashboardSignalLists,
+  DashboardStrategyRules,
+} from "./DashboardOperations";
 import type {
   DashboardMarket,
   DashboardOperations,
@@ -39,6 +43,49 @@ vi.mock("@/lib/dashboardOperations.functions", () => ({
 }));
 vi.mock("@/lib/cloud", () => ({ supabase: {} }));
 const date = "2026-10-02";
+
+describe("concise dashboard strategy rules", () => {
+  const markup = () => renderToStaticMarkup(<DashboardStrategyRules />);
+
+  it("keeps KOSPI confirmation, market guards, exits and sector limit", () => {
+    const html = markup();
+    expect(html).toContain(">KOSPI</h3>");
+    expect(html).toContain("ETF PL 84 우선 / Stock PL 80 대체");
+    expect(html).toContain("8.0 신규 돌파 후 다음 거래일 종가에 8점 이상·RSAccel");
+    expect(html).toContain("&gt; 0·9.5 상향돌파 없음 확인, 그다음 거래 가능 시가 진입");
+    expect(html).toContain("돌파일·체결 직전 완료 거래일 모두 Risk-On 또는 Neutral 필수");
+    expect(html).toContain("하락장·시장자료 미확인 시 제외, 새 돌파 필요");
+    expect(html).toContain("9.5 상향돌파 또는 60거래일 만기 청산");
+    expect(html).toContain("점수 하락 청산 없음 · 섹터 한도 10%");
+  });
+
+  it("keeps adopted KOSDAQ 9/3 exits, timing and held-signal priority", () => {
+    const html = markup();
+    expect(html).toContain(">KOSDAQ</h3>");
+    expect(html).toContain("Stock PL 80 · 8.0 신규 돌파 진입");
+    expect(html).toContain("9.0 상향 재돌파·3.0 하향 이탈·60거래일 만기 청산");
+    expect(html).toContain("진입은 다음 거래일 시가 · 미보유 종목의 동시 돌파는 진입 우선");
+    expect(html).toContain("섹터 한도 20%");
+    expect(html).toContain("점수 청산은 다음 거래일 시가, 만기는 당일 종가");
+    expect(html).toContain("보유 종목·청산한 동일 신호는 진입 제외, 보유 중 청산 우선");
+  });
+
+  it("removes repeated implementation history while preserving ETF and US copy", () => {
+    const html = markup();
+    const domesticText = html.split("ETF · M0")[0]!.replace(/<[^>]+>/g, "");
+    expect(domesticText.length).toBeLessThan(500);
+    expect(html).not.toContain("2026-10-02");
+    expect(html).not.toContain("기존 운영 전략 유지");
+    expect(html).not.toContain("되살리지 않으며");
+    expect(html).toContain(
+      "M0 80점 신규 돌파 진입 · 기초지수 MA60 하회 시 청산 · 데이터 오류 시 청산 점검.",
+    );
+    expect(html).toContain(
+      "Core 상위 30% 밖 또는 산정 불가 시 청산. Beta 상위 40% 밖 3거래일 연속도 청산합니다.",
+    );
+  });
+});
+
 const signal = (market: DashboardMarket, number: number, kind = "pending"): DashboardSignal => ({
   symbol: `${market}${number}`,
   name: `${market} ${kind} ${number}`,

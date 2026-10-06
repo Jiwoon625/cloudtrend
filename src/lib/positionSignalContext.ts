@@ -3,13 +3,21 @@ export interface DomesticPositionContext {
   lastSellDateBySymbol: Record<string, string>;
 }
 
+export function entrySuppressionReason(
+  context: DomesticPositionContext | null | undefined,
+  symbol: string,
+  signalDate: string,
+): "held" | "sold" | null {
+  if (!context) return null;
+  if (context.heldSymbols.includes(symbol)) return "held";
+  const lastSellDate = context.lastSellDateBySymbol[symbol];
+  return lastSellDate && lastSellDate >= signalDate ? "sold" : null;
+}
+
 export function isOnsetSuppressed(
   context: DomesticPositionContext | null | undefined,
   symbol: string,
   signalDate: string,
 ): boolean {
-  if (!context) return false;
-  if (context.heldSymbols.includes(symbol)) return true;
-  const lastSellDate = context.lastSellDateBySymbol[symbol];
-  return Boolean(lastSellDate && lastSellDate >= signalDate);
+  return entrySuppressionReason(context, symbol, signalDate) !== null;
 }

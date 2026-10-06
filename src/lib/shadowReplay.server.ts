@@ -3,6 +3,7 @@ import type { MarketDataset } from "./engine/dataset";
 import { runFullMarketAnalysis } from "./engine/fullMarketAnalysis";
 import type { ScoringConfig } from "./engine/scoring";
 import { buildSnapshot, type ScreeningSnapshot } from "./screeningSnapshot";
+import { sourceTimingEvidence, type SourceTimingRecord } from "./sourceTimingEvidence";
 import {
   ADOPTED_SERIES_VERSION,
   MODEL_ACCOUNTING_START,
@@ -271,25 +272,19 @@ async function priorSnapshot(
   }
 }
 
-function sourceCaptureForDate(
-  sources: Array<{
-    min_date?: string | null;
-    max_date?: string | null;
-    activated_at?: string | null;
-    created_at?: string;
-    savedAt?: string;
-  }>,
-  date: string,
-) {
-  return sources
-    .filter((source) => {
-      const min = source.min_date ?? null;
-      const max = source.max_date ?? null;
-      return !min || !max || (min <= date && max >= date);
-    })
-    .map((source) => source.activated_at ?? source.savedAt ?? source.created_at ?? "")
-    .filter((value) => Number.isFinite(Date.parse(value)))
-    .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
+export function sourceCaptureForDate(sources: SourceTimingRecord[], date: string) {
+  return (
+    sources
+      .flatMap(sourceTimingEvidence)
+      .filter((source) => {
+        const min = source.min_date ?? null;
+        const max = source.max_date ?? null;
+        return !min || !max || (min <= date && max >= date);
+      })
+      .map((source) => source.activated_at ?? source.savedAt ?? source.created_at ?? "")
+      .filter((value) => Number.isFinite(Date.parse(value)))
+      .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null
+  );
 }
 
 export async function replayKrShadow(input: {
@@ -297,13 +292,7 @@ export async function replayKrShadow(input: {
   userId: string;
   dataset: MarketDataset;
   config: ScoringConfig;
-  sources: Array<{
-    min_date?: string | null;
-    max_date?: string | null;
-    activated_at?: string | null;
-    created_at?: string;
-    savedAt?: string;
-  }>;
+  sources: SourceTimingRecord[];
   mode?: "service" | "authenticated-owner";
   calculatedAt?: string;
 }): Promise<ShadowReplayBatchResult> {

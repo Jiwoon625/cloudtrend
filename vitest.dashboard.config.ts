@@ -16,6 +16,7 @@ export default defineConfig({
       "tests/dashboard-operations-sector-limits.test.ts",
       "tests/dashboard-operations-server.test.ts",
       "src/lib/dashboardHoldingSignals.test.ts",
+      "src/lib/statusDisplay.test.ts",
       "src/lib/engine/operationalStrategy.test.ts",
       "src/lib/engine/kospiEntryConfirmation.test.ts",
       "tests/kospi-confirmation-persistence.test.ts",

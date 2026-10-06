@@ -1,0 +1,94 @@
+name: CloudTrend screening source compaction
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Prepare only, or verify and atomically apply with all originals retained
+        type: choice
+        options: [prepare, apply]
+        default: prepare
+        required: true
+      expected_source_hash:
+        description: Approved active source ID and raw hash snapshot
+        type: string
+        default: "sha256:8c8f171d2b6bce3d722e39b8810148b5d7f8fc6e41493327f0b2bb4dd636f558"
+        required: true
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudtrend-screening-source-compaction
+  cancel-in-progress: false
+
+jobs:
+  compact:
+    if: >-
+      github.actor == github.repository_owner && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'issue_comment' && github.event.issue.number == 16 &&
+        github.event.issue.pull_request == null &&
+        github.event.comment.body == '/cloudtrend compact screening sha256:8c8f171d2b6bce3d722e39b8810148b5d7f8fc6e41493327f0b2bb4dd636f558'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Validate owner, branch and exact command
+        id: parameters
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          REF: ${{ github.ref }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          IS_PULL_REQUEST: ${{ github.event.issue.pull_request != null }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_EXPECTED_HASH: ${{ inputs.expected_source_hash }}
+        run: node scripts/parse-compaction-command.mjs >> "$GITHUB_OUTPUT"
+      - name: Install pinned dependencies before exposing existing server secrets
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate compaction safety contracts
+        run: |
+          node --test tests/compaction-command.test.mjs
+          npx vitest run --config vitest.compaction.config.ts
+      - name: Verify and consolidate private sources
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          MODE: ${{ steps.parameters.outputs.mode }}
+          EXPECTED_SOURCE_HASH: ${{ steps.parameters.outputs.expected_source_hash }}
+        run: |
+          test -n "$SUPABASE_URL" && test -n "$SUPABASE_SERVICE_ROLE_KEY" && test -n "$SUPABASE_USER_ID"
+          args=(--user-id "$SUPABASE_USER_ID" --output "$RUNNER_TEMP/compaction" --expected-source-hash "$EXPECTED_SOURCE_HASH")
+          if [[ "$MODE" == "apply" ]]; then args+=(--apply --private-evidence --restore-private-evidence); fi
+          node --max-old-space-size=4096 node_modules/vite-node/vite-node.mjs --config vitest.compaction.config.ts scripts/run-screening-compaction.ts -- "${args[@]}"
+      - name: Measure verified reuse after completed cutover (read-only)
+        if: steps.parameters.outputs.mode == 'apply'
+        id: source_profile
+        continue-on-error: true
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: |
+          if ! node --max-old-space-size=4096 node_modules/vite-node/vite-node.mjs --config vitest.source-pipeline.config.ts scripts/run-source-validation-profile.ts > "$RUNNER_TEMP/source-profile.json" 2>&1; then
+            echo "Cutover completed, but read-only performance profiling failed; no source details were published."
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/source-profile.json"
+      - name: Distinguish committed cutover from optional profiling
+        if: always() && steps.source_profile.outcome == 'failure'
+        run: echo "Compaction was already applied. Profiling needs separate read-only follow-up; do not repeat cutover to obtain timings."
+      # Raw/canonical CSVs and detailed evidence never become GitHub artifacts.
+      # Evidence is retained only under the owner's private Supabase results prefix.

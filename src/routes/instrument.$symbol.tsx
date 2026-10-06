@@ -1,3 +1,4 @@
+import { entrySuppressionReason } from "@/lib/positionSignalContext";
 import { loadDomesticPositionContext } from "@/lib/portfolioPositionContext";
 import { StrategyDescription } from "@/components/StrategyDescription";
 import { KospiEntryDetails } from "@/components/KospiEntryDetails";
@@ -187,7 +188,11 @@ function InstrumentDetail() {
 
   return (
     <AppShell>
-      <StrategyDescription />
+      <div className="mb-4">
+        <StrategyDescription
+          market={row.instrument.instrumentType === "STOCK" ? row.instrument.market : undefined}
+        />
+      </div>
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight">
@@ -240,10 +245,18 @@ function InstrumentDetail() {
           className="mt-3 rounded-md border border-border bg-card p-3"
           aria-label="KOSPI 확인 기록"
         >
-          <h2 className="mb-1 text-xs font-semibold">KOSPI 하루·시장국면 확인 기록</h2>
-          <KospiEntryDetails entry={row.kospiEntry} showState />
+          <h2 className="mb-1 text-xs font-semibold">KOSPI 신규 후보 확인 기록</h2>
+          <KospiEntryDetails
+            entry={row.kospiEntry}
+            showState
+            entrySuppression={entrySuppressionReason(
+              positionContext,
+              symbol,
+              row.kospiEntry?.originDate ?? analysis.asOfDate,
+            )}
+          />
           <p className="mt-2 text-[10px] text-muted-foreground">
-            Onset일과 체결 직전 마지막 완료 거래일의 Risk-On/Neutral 확인이 필요합니다.
+            신규 후보는 Onset일과 체결 직전 마지막 완료 거래일의 Risk-On/Neutral 확인이 필요합니다.
             하락장·결측·오래된 시장자료로 취소된 후보는 새 Onset 없이 다시 진입하지 않습니다.
           </p>
         </section>
@@ -366,7 +379,8 @@ function InstrumentDetail() {
           <h2 className="mb-1 text-sm font-semibold">Onset 발생 경로</h2>
           <OnsetProfileDetails profile={row.onsetProfile} />
           <p className="mt-2 text-[11px] text-muted-foreground">
-            유형·신규 획득 점수·MA20 이격은 신호 설명 정보이며 진입 점수나 매매규칙을 변경하지 않습니다.
+            유형·신규 획득 점수·MA20 이격은 신호 설명 정보이며 진입 점수나 매매규칙을 변경하지
+            않습니다.
           </p>
         </section>
       ) : null}
