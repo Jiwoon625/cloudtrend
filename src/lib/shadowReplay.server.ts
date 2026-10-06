@@ -24,6 +24,15 @@ import {
 } from "./ledger/octoberShadowPipeline";
 import { octoberShadowStore } from "./ledger/octoberShadowRepository.server";
 import manifest from "./ledger/octoberShadowEngineManifest.generated.json";
+import {
+  runUsProspectiveAnalysis,
+  US_PROSPECTIVE_RULE_VERSION,
+  type UsProspectiveAnalysis,
+  type UsProspectiveInputRow,
+  type UsProspectivePreviousState,
+} from "./engine/usProspective";
+
+const ANALYSIS_BUCKET = "cloudtrend-data";
 
 export type ShadowReplayMode = "CONTEMPORANEOUS" | "RETROSPECTIVE";
 export type ShadowReplayStatus = "RECORDED" | "REUSED" | "WAITING_INPUT" | "FAILED";
@@ -67,6 +76,7 @@ export interface ShadowReplayBatchResult {
   throughDate: string;
 }
 
+const US_KINDS: AdoptedSeriesKind[] = ["US_A0", "US_A2", "US_B3"];
 const KR_KINDS: AdoptedSeriesKind[] = [
   "KR_MIXED",
   "KR_KOSPI",
@@ -465,4 +475,273 @@ export async function recordUsReplayAudit(
   input: Omit<ShadowReplayAuditInput, "market">,
 ) {
   return insertReplayAudit(client, userId, { market: "US", ...input });
+}
+
+
+async function maybeStorageJson<T>(
+  client: SupabaseClient,
+  path: string,
+): Promise<T | null> {
+  const { data, error } = await client.storage.from(ANALYSIS_BUCKET).download(path);
+  if (error) {
+    if (/not.?found|404|Object not found/i.test(error.message)) return null;
+    throw new Error(`Shadow replay artifact 조회 실패 (${path}): ${error.message}`);
+  }
+  return JSON.parse(await data.text()) as T;
+}
+
+async function putImmutableStorageJson(
+  client: SupabaseClient,
+  path: string,
+  value: unknown,
+) {
+  const text = JSON.stringify(value);
+  const { error } = await client.storage.from(ANALYSIS_BUCKET).upload(path, text, {
+    contentType: "application/json",
+    upsert: false,
+  });
+  if (!error) return;
+  const existing = await maybeStorageJson<unknown>(client, path);
+  if (existing === null || JSON.stringify(existing) !== text)
+    throw new Error(`Shadow replay 날짜 입력은 immutable입니다: ${path}`);
+}
+
+async function previousUsRankState(
+  client: SupabaseClient,
+  userId: string,
+  date: string | null,
+): Promise<UsProspectivePreviousState> {
+  if (!date) return {};
+  const shadow = await maybeStorageJson<{
+    analysis?: { state?: UsProspectivePreviousState };
+  }>(client, `${userId}/results/shadow-replay/US/${date}.json`);
+  if (shadow?.analysis?.state) return shadow.analysis.state;
+  const legacy = await maybeStorageJson<{
+    analysis?: { state?: UsProspectivePreviousState };
+  }>(client, `${userId}/results/us-screening/${date}.json`);
+  return legacy?.analysis?.state ?? {};
+}
+
+export interface UsShadowReplayBatchResult extends ShadowReplayBatchResult {
+  latestAnalysis: UsProspectiveAnalysis | null;
+}
+
+/**
+ * Replays every missing US Shadow session from dated rows.
+ * The source may contain one day or many days; upload/collection time never gates the model.
+ */
+export async function replayUsShadow(input: {
+  client: SupabaseClient;
+  userId: string;
+  rows: UsProspectiveInputRow[];
+  sourceCapturedAt: string | null;
+  calculatedAt?: string;
+  mode?: "service" | "authenticated-owner";
+}): Promise<UsShadowReplayBatchResult> {
+  const calculatedAt = input.calculatedAt ?? new Date().toISOString();
+  const datesInSource = [...new Set(input.rows.map((row) => row.date))].sort();
+  const throughDate = datesInSource.at(-1) ?? MODEL_ACCOUNTING_START;
+  if (!datesInSource.length)
+    return {
+      market: "US",
+      calculatedAt,
+      processed: [],
+      deferred: { date: throughDate, reason: "US Shadow 입력 행이 없습니다." },
+      latestRecordedDate: null,
+      throughDate,
+      latestAnalysis: null,
+    };
+
+  const store = octoberShadowStore(input.client, input.userId, input.mode ?? "service");
+  const latestRecordedDate = await alignedLatestDate(store, US_KINDS);
+  const calendar = await octoberModelCalendar("US", throughDate);
+  const start = latestRecordedDate
+    ? calendar.regularSessions.find((date) => date > latestRecordedDate)
+    : calendar.regularSessions.find((date) => date >= MODEL_ACCOUNTING_START);
+  if (!start)
+    return {
+      market: "US",
+      calculatedAt,
+      processed: [],
+      deferred: null,
+      latestRecordedDate,
+      throughDate,
+      latestAnalysis: null,
+    };
+
+  const byDate = new Map<string, UsProspectiveInputRow[]>();
+  for (const row of input.rows) {
+    const rows = byDate.get(row.date) ?? [];
+    rows.push(row);
+    byDate.set(row.date, rows);
+  }
+  const expected = calendar.regularSessions.filter((date) => date >= start && date <= throughDate);
+  let rankState = await previousUsRankState(input.client, input.userId, latestRecordedDate);
+  let latestAnalysis: UsProspectiveAnalysis | null = null;
+  let lastRecorded = latestRecordedDate;
+  const processed: ShadowReplayBatchResult["processed"] = [];
+
+  for (const date of expected) {
+    const clock = shadowReplayClock("US", date, calculatedAt);
+    if (Date.parse(calculatedAt) < Date.parse(regularCloseAt("US", date))) {
+      const reason = "미국 정규장 종료 전 자료는 Shadow 일일 입력으로 확정하지 않습니다.";
+      await insertReplayAudit(input.client, input.userId, {
+        market: "US",
+        signalDate: date,
+        calculatedAt,
+        sourceCapturedAt: input.sourceCapturedAt,
+        modelAvailableAt: clock.modelAvailableAt,
+        modelDecisionAt: clock.modelDecisionAt,
+        executionAt: clock.executionAt,
+        replayMode: clock.replayMode,
+        status: "WAITING_INPUT",
+        sourceHash: null,
+        reason,
+      });
+      return {
+        market: "US",
+        calculatedAt,
+        processed,
+        deferred: { date, reason },
+        latestRecordedDate: lastRecorded,
+        throughDate,
+        latestAnalysis,
+      };
+    }
+    const rows = byDate.get(date);
+    if (!rows?.length) {
+      const reason = "해당 미국 정규장 날짜의 입력 행이 없습니다.";
+      await insertReplayAudit(input.client, input.userId, {
+        market: "US",
+        signalDate: date,
+        calculatedAt,
+        sourceCapturedAt: input.sourceCapturedAt,
+        modelAvailableAt: clock.modelAvailableAt,
+        modelDecisionAt: clock.modelDecisionAt,
+        executionAt: clock.executionAt,
+        replayMode: clock.replayMode,
+        status: "WAITING_INPUT",
+        sourceHash: null,
+        reason,
+      });
+      return {
+        market: "US",
+        calculatedAt,
+        processed,
+        deferred: { date, reason },
+        latestRecordedDate: lastRecorded,
+        throughDate,
+        latestAnalysis,
+      };
+    }
+
+    try {
+      const analysis = runUsProspectiveAnalysis(rows, rankState);
+      const sourceHash = (await hashSeriesValue({
+        version: "us-shadow-dated-input-v1",
+        date,
+        rows: [...rows].sort((a, b) => a.symbol.localeCompare(b.symbol)),
+      })) as SeriesHash;
+      const frozen = await store.readSeries(`${ADOPTED_SERIES_VERSION}:US_A0`);
+      if (!frozen) throw new Error("US Shadow registry is not initialized");
+      const previousSessionDate =
+        calendar.regularSessions.filter((session) => session < date).at(-1) ?? "2026-10-02";
+      const result = await recordOctoberPublication(store, {
+        market: "US",
+        analysis,
+        codeHash: frozen.codeHash,
+        runtimeCodeHash: manifest.codeHash as SeriesHash,
+        sourceHash,
+        availableAt: clock.modelAvailableAt,
+        decisionAt: clock.modelDecisionAt,
+        confirmedRegularClose: true,
+        failedSymbols: 0,
+        previousSessionDate,
+        marketCalendarOk: true,
+      });
+      const status = result.records.every((record) => record.reused) ? "REUSED" : "RECORDED";
+      const artifact = {
+        version: "us-shadow-replay-input-v1",
+        date,
+        sourceHash,
+        ruleVersion: US_PROSPECTIVE_RULE_VERSION,
+        sourceCapturedAt: input.sourceCapturedAt,
+        calculatedAt,
+        replayMode: clock.replayMode,
+        modelAvailableAt: clock.modelAvailableAt,
+        modelDecisionAt: clock.modelDecisionAt,
+        analysis: {
+          date: analysis.date,
+          ruleVersion: analysis.ruleVersion,
+          summary: analysis.summary,
+          state: analysis.state,
+        },
+      };
+      await putImmutableStorageJson(
+        input.client,
+        `${input.userId}/results/shadow-replay/US/${date}.json`,
+        artifact,
+      );
+      await insertReplayAudit(input.client, input.userId, {
+        market: "US",
+        signalDate: date,
+        calculatedAt,
+        sourceCapturedAt: input.sourceCapturedAt,
+        modelAvailableAt: clock.modelAvailableAt,
+        modelDecisionAt: clock.modelDecisionAt,
+        executionAt: clock.executionAt,
+        replayMode: clock.replayMode,
+        status,
+        sourceHash,
+        details: {
+          books: result.records.length,
+          inputRows: analysis.summary.inputRows,
+          ruleVersion: analysis.ruleVersion,
+        },
+      });
+      rankState = analysis.state;
+      latestAnalysis = analysis;
+      lastRecorded = date;
+      processed.push({
+        date,
+        status,
+        replayMode: clock.replayMode,
+        records: result.records,
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "US Shadow replay 실패";
+      await insertReplayAudit(input.client, input.userId, {
+        market: "US",
+        signalDate: date,
+        calculatedAt,
+        sourceCapturedAt: input.sourceCapturedAt,
+        modelAvailableAt: clock.modelAvailableAt,
+        modelDecisionAt: clock.modelDecisionAt,
+        executionAt: clock.executionAt,
+        replayMode: clock.replayMode,
+        status: "WAITING_INPUT",
+        sourceHash: null,
+        reason,
+      });
+      return {
+        market: "US",
+        calculatedAt,
+        processed,
+        deferred: { date, reason },
+        latestRecordedDate: lastRecorded,
+        throughDate,
+        latestAnalysis,
+      };
+    }
+  }
+
+  return {
+    market: "US",
+    calculatedAt,
+    processed,
+    deferred: null,
+    latestRecordedDate: lastRecorded,
+    throughDate,
+    latestAnalysis,
+  };
 }
