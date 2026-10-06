@@ -22,8 +22,9 @@ vi.mock("../../../scripts/analysis-run-store", () => ({
 vi.mock("./octoberShadowRepository.server", () => ({ octoberShadowStore: vi.fn() }));
 
 vi.mock("../../../scripts/october-shadow-code-manifest", () => ({
+  adoptedShadowFrozenCodeHash: () => `sha256:${"a".repeat(64)}`,
   shadowEngineManifest: async () => ({
-    codeHash: `sha256:${"a".repeat(64)}`,
+    codeHash: `sha256:${"b".repeat(64)}`,
     manifest: { version: "test-local-manifest", files: {} },
   }),
 }));
