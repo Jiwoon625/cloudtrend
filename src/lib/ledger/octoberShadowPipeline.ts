@@ -36,6 +36,7 @@ import type { ModelJournalRun } from "./modelJournal";
 import {
   assertKrShadowDecisionWindow,
   octoberModelCalendar,
+  previousReviewedRegularSession,
   regularCloseAt,
   regularOpenAt,
 } from "./octoberShadowCalendar";
@@ -151,7 +152,9 @@ function verifyPublication(input: OctoberPublication, calendar: ModelCalendar) {
       );
   }
   if (input.market === "US") {
-    const prior = calendar.regularSessions.filter((d) => d < date).at(-1) ?? "2026-10-02";
+    const prior =
+      calendar.regularSessions.filter((d) => d < date).at(-1) ??
+      previousReviewedRegularSession("US", date);
     if (
       !input.marketCalendarOk ||
       input.previousSessionDate !== prior ||
