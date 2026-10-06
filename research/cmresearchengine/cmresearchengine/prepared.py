@@ -11,10 +11,11 @@ from cm06_comparison_panels import MonthlyDayPanels
 from cm06_exact_units_resume_state_v1 import frame_fingerprint
 
 class PreparedResearch(PreparedFreshDiagnostic):
-    def __init__(self, config, candidate, references=None):
+    def __init__(self, config, candidate, references=None, execution_optimization=None):
         runtime.activate()
         self.research_candidate=candidate
         self.references=references or {}
+        self.execution_optimization=execution_optimization
         super().__init__(config)
         self._bind_research_identity()
 
@@ -30,6 +31,7 @@ class PreparedResearch(PreparedFreshDiagnostic):
             reference_nav_fingerprint=frame_fingerprint(self.references.get('nav')),
             reference_demands_fingerprint=frame_fingerprint(self.references.get('demands')),
             reference_capital=self.references.get('capital'),
+            execution_optimization=self.execution_optimization,
             evaluation_completed=False)
         self.identity=bind_identity(self.base_identity,self.factory())
         self.trial_key='cm-'+candidate.candidate_id+'-'+digest(self.identity)

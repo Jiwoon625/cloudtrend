@@ -8,7 +8,7 @@ from decimal import Decimal
 from fixtures import make,inputs,identity,H
 from cmresearchengine.replay import ResearchReplay
 from cmresearchengine.plan import candidates,manifest,choose
-from cmresearchengine.runner import run_strategy,build_references,read_result
+from cmresearchengine.runner import run_strategy,run_strategy_group,build_references,read_result
 from cm06_fresh_codec_v1 import pack,restore
 from cm06_fresh_host_v1 import CandidateHazard
 from cm06_checkpoint_store import DirectoryStore
@@ -107,5 +107,34 @@ class RunnerTests(unittest.TestCase):
             store=DirectoryStore(d);p=self.prepared();a=run_strategy(p,store,event_limit=3)
             p.identity=dict(p.identity,change='different');b=run_strategy(p,store,event_limit=3)
             self.assertEqual(a['checkpoint_sequence'],b['checkpoint_sequence'])
+
+    def test_lockstep_shared_group_pause_resume_matches_independent_outputs(self):
+        optimization={'schema':'CM_EXECUTION_OPTIMIZATION_V1',
+            'mode':'LOCKSTEP_SHARED_US_ANALYSIS_V1',
+            'shared_panels':'READ_ONLY_SAME_INPUT_OBJECTS',
+            'candidate_state':'FULLY_INDEPENDENT'}
+        def prepared(candidate_id):
+            candidate=candidate_by_id(candidate_id);original=make(candidate)
+            ident=dict(identity(original),execution_optimization=optimization)
+            return SimpleNamespace(identity=ident,trial_key='synthetic-'+candidate_id,
+                factory=lambda candidate=candidate:make(candidate))
+        with tempfile.TemporaryDirectory() as d:
+            ids=('S01','S02')
+            group_prepared={candidate_id:prepared(candidate_id) for candidate_id in ids}
+            group_stores={candidate_id:DirectoryStore(str(Path(d)/('group-'+candidate_id))) for candidate_id in ids}
+            items=[(candidate_id,group_prepared[candidate_id],group_stores[candidate_id]) for candidate_id in ids]
+            paused=run_strategy_group(items,event_limit=3)
+            self.assertEqual([r['status'] for r in paused['receipts']],['PAUSED_VERIFIED','PAUSED_VERIFIED'])
+            completed=run_strategy_group(items)
+            self.assertEqual([r['status'] for r in completed['receipts']],['COMPLETED_VERIFIED','COMPLETED_VERIFIED'])
+            self.assertGreater(completed['shared_us_analysis']['hits'],0)
+            by_id={r['candidate_id']:r for r in completed['receipts']}
+            for candidate_id in ids:
+                independent_store=DirectoryStore(str(Path(d)/('independent-'+candidate_id)))
+                independent=run_strategy(group_prepared[candidate_id],independent_store)
+                group_files=read_result(by_id[candidate_id]['completion'],group_stores[candidate_id])
+                independent_files=read_result(independent['completion'],independent_store)
+                for name in ('summary.json','nav.csv','orders.csv','demands.csv'):
+                    self.assertEqual(group_files[name],independent_files[name])
 
 if __name__=='__main__':unittest.main()

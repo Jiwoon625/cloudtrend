@@ -12,6 +12,8 @@ import json
 import random
 import time
 import zipfile
+from copy import deepcopy
+from decimal import getcontext, setcontext
 import numpy as np
 import pandas as pd
 
@@ -86,6 +88,158 @@ def run_strategy(prepared, store, *, max_seconds=3000, event_limit=None, stop_re
     if canonical(journal.completed())!=canonical(completed):raise RuntimeError('Completion readback mismatch')
     return {'status':'COMPLETED_VERIFIED','trial_key':prepared.trial_key,'completion':completed}
 
+
+
+def _capture_runtime_context():
+    state=np.random.get_state()
+    numpy_state=(state[0],state[1].copy(),state[2],state[3],state[4])
+    return (random.getstate(),numpy_state,getcontext().copy())
+
+def _restore_runtime_context(state):
+    python_state,numpy_state,decimal_context=state
+    random.setstate(python_state);np.random.set_state(numpy_state)
+    setcontext(decimal_context.copy())
+
+def _group_pause_receipt(candidate_id, prepared, journal):
+    head=journal.head
+    if head is None:
+        return {'status':'NOT_STARTED_DEADLINE','candidate_id':candidate_id,
+            'trial_key':prepared.trial_key,'processed_events':0,'checkpoint_sequence':0}
+    return {'status':'PAUSED_VERIFIED','candidate_id':candidate_id,
+        'trial_key':prepared.trial_key,'processed_events':head['processed_events'],
+        'checkpoint_sequence':journal.sequence,'processed_at':head['at']}
+
+def run_strategy_group(items, *, max_seconds=3000, event_limit=None, stop_requested=None):
+    """Run 2..4 static candidates in one lockstep process with independent state.
+
+    The only shared objects are immutable market panels and one-session US market
+    analysis. Each candidate retains its own runner, ledger, adapters, journal,
+    checkpoint namespace and RNG/Decimal context.
+    """
+    if not 1<=max_seconds<=19800:raise ValueError('Time cap must be 1..19800 seconds')
+    if event_limit is not None and event_limit<1:raise ValueError('Event limit must be positive')
+    items=list(items)
+    if not 2<=len(items)<=4:raise ValueError('Shared group must contain 2..4 candidates')
+    if len({candidate_id for candidate_id,_,_ in items})!=len(items):
+        raise ValueError('Shared group candidate IDs must be unique')
+    optimization={'schema':'CM_EXECUTION_OPTIMIZATION_V1',
+        'mode':'LOCKSTEP_SHARED_US_ANALYSIS_V1',
+        'shared_panels':'READ_ONLY_SAME_INPUT_OBJECTS',
+        'candidate_state':'FULLY_INDEPENDENT'}
+    for candidate_id,prepared,_ in items:
+        if prepared.identity.get('execution_optimization')!=optimization:
+            raise ValueError('Prepared identity is not bound to shared-analysis optimization')
+    from cm06_shared_us_analysis_v1 import (
+        activate_shared_us_analysis,deactivate_shared_us_analysis,shared_us_analysis_stats)
+    base_runtime=_capture_runtime_context()
+    contexts=[];receipts={}
+    try:
+        for candidate_id,prepared,store in items:
+            identity=prepared.identity
+            journal=CandidateJournal(store,'first_'+digest(identity),'complete_'+digest(identity),identity)
+            verified=journal.completed()
+            if verified:
+                receipts[candidate_id]={'status':'COMPLETED_VERIFIED','candidate_id':candidate_id,
+                    'trial_key':prepared.trial_key,'completion':verified,'already_complete':True}
+                continue
+            runner=prepared.factory();journal.load(runner)
+            if not journal.head:
+                setcontext(base_runtime[2].copy())
+                random.seed(identity['deterministic_seed']);np.random.seed(identity['deterministic_seed']%(2**32))
+                journal.commit(runner,False)
+            runtime_state=_capture_runtime_context()
+            if journal.head['finished']:
+                _restore_runtime_context(runtime_state)
+                completed=journal.complete(serialize_result(runner))
+                if canonical(journal.completed())!=canonical(completed):
+                    raise RuntimeError('Completion verification mismatch')
+                receipts[candidate_id]={'status':'COMPLETED_VERIFIED','candidate_id':candidate_id,
+                    'trial_key':prepared.trial_key,'completion':completed}
+                continue
+            contexts.append({'candidate_id':candidate_id,'prepared':prepared,'runner':runner,
+                'journal':journal,'runtime':runtime_state,'initial_events':runner._resume_events,
+                'last_snapshots':len(runner.snapshots)})
+        if not contexts:
+            return {'receipts':[receipts[candidate_id] for candidate_id,_,_ in items],
+                'shared_us_analysis':{'hits':0,'misses':0,'row_checks':0,'max_cached_rows':0,'active':False}}
+
+        leader=contexts[0]['runner']
+        for context in contexts[1:]:
+            other=context['runner']
+            if other.calendars!=leader.calendars or set(other.panels)!=set(leader.panels):
+                raise ValueError('Shared group market clocks/panel sets differ')
+            other.panels=dict(other.panels)
+            for engine,panel in leader.panels.items():
+                if type(other.panels[engine]) is not type(panel):
+                    raise ValueError('Shared group panel wrapper types differ')
+                other.panels[engine]=panel
+
+        activate_shared_us_analysis(optimization)
+        start=time.monotonic();last_checkpoint=start;failed=None
+        while contexts:
+            first_event=contexts[0]['runner'].queue[0] if contexts[0]['runner'].queue else None
+            for context in contexts[1:]:
+                event=context['runner'].queue[0] if context['runner'].queue else None
+                if event!=first_event:raise ValueError('Shared group event grids diverged')
+            progressed=[]
+            for context in contexts:
+                _restore_runtime_context(context['runtime'])
+                try:
+                    alive=context['runner'].step()
+                except Exception as exc:
+                    context['runtime']=_capture_runtime_context();failed=(context,exc);break
+                context['runtime']=_capture_runtime_context();progressed.append(alive)
+            if failed is not None:break
+            if len(set(progressed))!=1:raise RuntimeError('Shared group completion boundary diverged')
+            if progressed and progressed[0] is False:
+                for context in contexts:
+                    _restore_runtime_context(context['runtime'])
+                    context['journal'].commit(context['runner'],True)
+                    context['runtime']=_capture_runtime_context()
+                    completed=context['journal'].complete(serialize_result(context['runner']))
+                    if canonical(context['journal'].completed())!=canonical(completed):
+                        raise RuntimeError('Group completion readback mismatch')
+                    receipts[context['candidate_id']]={'status':'COMPLETED_VERIFIED',
+                        'candidate_id':context['candidate_id'],'trial_key':context['prepared'].trial_key,
+                        'completion':completed}
+                contexts.clear();break
+            now=time.monotonic()
+            stop=bool((now-start)>=max_seconds or
+                (event_limit is not None and any(
+                    context['runner']._resume_events-context['initial_events']>=event_limit for context in contexts)) or
+                (stop_requested is not None and stop_requested()))
+            snapshot_due=any(
+                len(context['runner'].snapshots)-context['last_snapshots']>=CHECKPOINT_SNAPSHOTS
+                for context in contexts)
+            if stop or now-last_checkpoint>=CHECKPOINT_SECONDS or snapshot_due:
+                for context in contexts:
+                    _restore_runtime_context(context['runtime'])
+                    context['journal'].commit(context['runner'],False)
+                    context['runtime']=_capture_runtime_context()
+                    context['last_snapshots']=len(context['runner'].snapshots)
+                last_checkpoint=time.monotonic()
+            if stop:
+                for context in contexts:
+                    receipts[context['candidate_id']]=_group_pause_receipt(
+                        context['candidate_id'],context['prepared'],context['journal'])
+                contexts.clear();break
+        if failed is not None:
+            failed_context,exc=failed
+            for context in contexts:
+                if context is failed_context:
+                    receipts[context['candidate_id']]={'status':'WORKER_EXCEPTION',
+                        'candidate_id':context['candidate_id'],'trial_key':context['prepared'].trial_key,
+                        'error_type':type(exc).__name__,'processed_events':None,
+                        'checkpoint_sequence':context['journal'].sequence}
+                else:
+                    receipts[context['candidate_id']]=_group_pause_receipt(
+                        context['candidate_id'],context['prepared'],context['journal'])
+        stats=shared_us_analysis_stats()
+        return {'receipts':[receipts[candidate_id] for candidate_id,_,_ in items],
+            'shared_us_analysis':stats}
+    finally:
+        deactivate_shared_us_analysis()
+        _restore_runtime_context(base_runtime)
 
 def read_result(completion, store):
     raw=store.get_bytes(completion['outputs_id'])
