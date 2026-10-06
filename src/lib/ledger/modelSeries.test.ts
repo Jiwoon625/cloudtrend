@@ -53,13 +53,13 @@ const calendar = (market: "KR" | "US" = "KR"): ModelCalendar => ({
   coverageStart: "2026-10-01",
   coverageEnd: "2026-10-20",
   regularSessions: [
-    "2026-10-01",
-    "2026-10-02",
     "2026-10-12",
     "2026-10-13",
     "2026-10-14",
     "2026-10-15",
-    "2026-10-12",
+    "2026-10-16",
+    "2026-10-19",
+    "2026-10-20",
   ],
 });
 const signal = {
@@ -327,7 +327,7 @@ describe("official initial FX and explicit rounding residual", () => {
 });
 
 describe("accounting, signal, execution, and point-in-time boundaries", () => {
-  it("keeps Oct 5 accounting start separate from the first valid market session", async () => {
+  it("keeps Oct 12 accounting start separate from the first valid market session", async () => {
     const s = await create();
     const holidayCalendar = {
       ...calendar(),
@@ -445,7 +445,7 @@ describe("exact allocation boundary without replacing adopted engine rules", () 
     expect(quoteModelBudget("1000", "100.15", "100").quantity).toBe("1");
     expect(quoteModelBudget("1", "1", "0.00000001").remainingCash).not.toMatch(/^-/);
     expect(() => krInitialSlotBudget(s, "2026-10-04")).toThrow("boundary");
-    expect(() => krInitialSlotBudget(s, "2027-10-05")).toThrow("boundary");
+    expect(() => krInitialSlotBudget(s, "2027-10-12")).toThrow("boundary");
     expect(() => quoteModelBudget("100", "100", "0")).toThrow();
     expect(() => quoteModelBudget("100", "-1", "1")).toThrow();
   });
