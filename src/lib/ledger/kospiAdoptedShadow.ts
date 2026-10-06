@@ -80,7 +80,7 @@ export async function stepAdoptedKospiShadowSeries(
   const first = firstModelSession(series, input.calendar);
   const sessions = [...input.calendar.regularSessions].sort();
   if (first !== ADOPTED_KOSPI_FIRST_SESSION || !sessions.includes(date))
-    throw new Error("KOSPI calendar must contain the verified first regular session on 2026-10-06");
+    throw new Error("KOSPI calendar must contain the verified first v2 regular session on 2026-10-12");
   const preceding = sessions.filter((day) => day < date).at(-1) ?? null;
   if (session.previousSessionDate !== preceding)
     throw new Error("KOSPI source must identify the exact previous regular calendar session");
