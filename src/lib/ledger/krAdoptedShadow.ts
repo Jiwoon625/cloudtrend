@@ -46,13 +46,6 @@ export interface AdoptedKrRun {
     prefixHash: SeriesHash;
   };
 }
-const localDate = (value: string) =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(value));
 function prefix(input: AdoptedKrRun["frozenInputs"], date: string): AdoptedKrRun["frozenInputs"] {
   const snapshots = input.snapshots
     .filter((s) => s.asOfDate <= date)
