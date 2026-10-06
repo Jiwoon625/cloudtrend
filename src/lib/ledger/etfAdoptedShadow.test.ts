@@ -119,6 +119,7 @@ function input(
     previousSessionDate,
     openAt: `${date}T00:00:00Z`,
     closeAt: `${date}T06:30:00Z`,
+    finalizedAt: finalizedAt(date),
     decisionAt: decisionAt(date),
     calendar,
     codeHash: series.codeHash,
