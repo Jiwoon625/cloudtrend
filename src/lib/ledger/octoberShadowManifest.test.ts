@@ -173,7 +173,7 @@ export const list = [
 it("keeps PR195 runtime provenance compatible with the eight frozen Shadow contracts", async () => {
   const runtime = await shadowEngineManifest();
   expect(runtime.codeHash).toBe(
-    "sha256:c085f43a86eb198ddd2576a8b122954abcfdbe912a1a859a91386a27112fc44b",
+    "sha256:a321c97e37a3b55249b23597e811997b089943d8c56cb27088c60a2806691a80",
   );
   expect(REVIEWED_SHADOW_RUNTIME_CODE_HASHES).toContain(runtime.codeHash);
   expect(adoptedShadowFrozenCodeHash(runtime.codeHash)).toBe(
