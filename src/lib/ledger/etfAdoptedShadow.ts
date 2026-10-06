@@ -15,6 +15,7 @@ import {
   type SeriesHash,
 } from "./modelSeries";
 import { validDate } from "./date";
+import { isKrOfficialShadowDecision } from "./krShadowDecision";
 
 /** An opt-in MODEL executor. It has no persistence, scheduler, broker, or real-holdings access. */
 export interface EtfShadowPrice {
@@ -168,6 +169,8 @@ export interface EtfShadowSessionInput {
   previousSessionDate: string | null;
   openAt: string;
   closeAt: string;
+  /** Production KR publication waits for the next regular-session morning KRX refresh. */
+  decisionWindow?: "SESSION_CLOSE" | "NEXT_SESSION_PREOPEN";
   calendar: ModelCalendar;
   codeHash: SeriesHash;
   configHash: SeriesHash;
@@ -451,14 +454,17 @@ export async function stepEtfAdoptedShadow(
   assertState(series, previous);
   date(input.sessionDate);
   const openAt = time(input.openAt),
-    closeAt = time(input.closeAt);
+    closeAt = time(input.closeAt),
+    nextMorning = input.decisionWindow === "NEXT_SESSION_PREOPEN";
   if (
     marketDate(input.openAt) !== input.sessionDate ||
-    marketDate(input.closeAt) !== input.sessionDate ||
+    (!nextMorning && marketDate(input.closeAt) !== input.sessionDate) ||
+    (nextMorning &&
+      !isKrOfficialShadowDecision(input.sessionDate, input.closeAt, input.closeAt)) ||
     openAt >= closeAt ||
     (previous.lastCloseAt && openAt <= time(previous.lastCloseAt))
   )
-    throw new Error("Invalid ETF open/close chronology");
+    throw new Error("Invalid ETF open/decision chronology");
   if (
     input.previousSessionDate !== previous.lastSessionDate ||
     (previous.lastSessionDate && input.sessionDate <= previous.lastSessionDate)
@@ -642,7 +648,10 @@ export async function stepEtfAdoptedShadow(
       issue(signal.symbol, "SIGNAL_DATE_MISMATCH", "CLOSE");
       continue;
     }
-    if (marketDate(signal.availableAt) !== s.date || time(signal.availableAt) > closeAt) {
+    const signalReady = nextMorning
+      ? isKrOfficialShadowDecision(s.date, signal.availableAt, input.closeAt)
+      : marketDate(signal.availableAt) === s.date && time(signal.availableAt) <= closeAt;
+    if (!signalReady) {
       issue(signal.symbol, "SIGNAL_UNAVAILABLE_AT_CLOSE", "CLOSE");
       continue;
     }
