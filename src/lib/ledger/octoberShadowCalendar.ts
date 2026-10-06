@@ -109,6 +109,20 @@ export function nextReviewedRegularSession(market: "KR" | "US", date: string): s
   return null;
 }
 
+export function previousReviewedRegularSession(
+  market: "KR" | "US",
+  date: string,
+): string | null {
+  if (!validDate(date)) throw new Error("Invalid market session date");
+  const holidays: readonly string[] = OCTOBER_CALENDAR_EVIDENCE[market].holidays;
+  for (let at = Date.parse(`${date}T00:00:00Z`) - 86400000; at >= Date.parse("2026-01-01T00:00:00Z"); at -= 86400000) {
+    const candidate = new Date(at).toISOString().slice(0, 10);
+    const day = new Date(at).getUTCDay();
+    if (day !== 0 && day !== 6 && !holidays.includes(candidate)) return candidate;
+  }
+  return null;
+}
+
 export type KrShadowDecisionWindowReason =
   | "ELIGIBLE"
   | "INVALID_TIMESTAMP"
