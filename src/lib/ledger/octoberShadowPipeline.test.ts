@@ -16,6 +16,7 @@ import type { OctoberShadowStore } from "./octoberShadowRepository.server";
 import type { ModelJournalRun } from "./modelJournal";
 import { runUsProspectiveAnalysis, type UsProspectiveInputRow } from "../engine/usProspective";
 import { octoberModelCalendar, regularCloseAt } from "./octoberShadowCalendar";
+import { nextKrRegularSession } from "./krShadowDecision";
 const codeHash = `sha256:${"a".repeat(64)}` as const,
   sourceHash = `sha256:${"b".repeat(64)}` as const;
 
