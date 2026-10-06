@@ -417,10 +417,10 @@ describe("accounting, signal, execution, and point-in-time boundaries", () => {
     expect(() =>
       nextModelExecutionSession(
         s,
-        { ...signal, signalDate: "2026-10-16", availableAt: "2026-10-16T07:00:00Z" },
+        { ...signal, signalDate: "2026-10-18", availableAt: "2026-10-18T07:00:00Z" },
         calendar(),
-        "2026-10-16",
-        "2026-10-16T08:00:00Z",
+        "2026-10-18",
+        "2026-10-18T08:00:00Z",
       ),
     ).toThrow("regular market");
   });
