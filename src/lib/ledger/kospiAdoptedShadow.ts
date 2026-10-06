@@ -50,14 +50,6 @@ function time(value: string) {
     throw new Error("Explicit KOSPI timestamp with timezone required");
   return Date.parse(value);
 }
-function marketDate(value: string) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(time(value)));
-}
 /** Pure wrapper: the existing confirm1/bear-only-RSAccel rules remain unchanged.
  * The optional execution policy creates a separate cash-only October model and never
  * consumes the legacy research history, pre-start candidates, actual holdings or orders.
