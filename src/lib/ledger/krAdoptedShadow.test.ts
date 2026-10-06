@@ -123,30 +123,34 @@ describe("new KR adopted-series opt-in", () => {
 import { freezeAdoptedSeries } from "./modelSeries";
 import { stepAdoptedKrSeries } from "./krAdoptedShadow";
 const hash = `sha256:${"a".repeat(64)}` as const;
-it("freezes daily KR prefixes, enforces calendar sequence and reuses immutable same-date runs", async () => {
+it("freezes daily KR prefixes, enforces T+1 finalization and reuses immutable same-date runs", async () => {
   const series = await freezeAdoptedSeries({
     kind: "KR_KOSDAQ",
     codeHash: hash,
     sourceHash: hash,
-    frozenAt: "2026-10-02T12:00:00Z",
+    frozenAt: "2026-10-08T12:00:00Z",
   });
   const calendar = {
     market: "KR" as const,
     sourceHash: hash,
-    coverageStart: "2026-10-01",
-    coverageEnd: "2026-10-08",
-    regularSessions: ["2026-10-01", "2026-10-02", "2026-10-06", "2026-10-07", "2026-10-08"],
+    coverageStart: "2026-10-12",
+    coverageEnd: "2026-10-14",
+    regularSessions: ["2026-10-12", "2026-10-13", "2026-10-14"],
+  };
+  const firstSnapshot = {
+    ...snapshot("2026-10-12", [entry("NEW")]),
+    savedAt: "2026-10-12T22:50:00Z",
   };
   const firstInput = {
-    date: "2026-10-06",
+    date: "2026-10-12",
     codeHash: hash,
     sourceHash: hash,
     configHash: series.configHash,
-    availableAt: "2026-10-06T09:00:00Z",
-    decisionAt: "2026-10-06T10:00:00Z",
+    availableAt: "2026-10-12T22:50:00Z",
+    decisionAt: "2026-10-12T23:10:00Z",
     confirmedClose: true,
-    snapshots: [snapshot("2026-10-06", [entry("NEW")])],
-    bars: { NEW: [bar("2026-10-06", 100)] },
+    snapshots: [firstSnapshot],
+    bars: { NEW: [bar("2026-10-12", 100)] },
     markets: { NEW: "KOSDAQ" as const },
     marketGates: {},
     calendar,
@@ -154,30 +158,38 @@ it("freezes daily KR prefixes, enforces calendar sequence and reuses immutable s
   const first = await stepAdoptedKrSeries(series, firstInput);
   expect(first.run.result.trades).toHaveLength(0);
   expect((await stepAdoptedKrSeries(series, firstInput, first.run)).status).toBe("REUSE");
+  const nextSnapshot = {
+    ...snapshot("2026-10-13", []),
+    savedAt: "2026-10-13T22:50:00Z",
+  };
   const nextInput = {
     ...firstInput,
-    date: "2026-10-07",
-    availableAt: "2026-10-07T09:00:00Z",
-    decisionAt: "2026-10-07T10:00:00Z",
-    snapshots: [...firstInput.snapshots, snapshot("2026-10-07", [])],
-    bars: { NEW: [...firstInput.bars.NEW, bar("2026-10-07", 100)] },
+    date: "2026-10-13",
+    availableAt: "2026-10-13T22:50:00Z",
+    decisionAt: "2026-10-13T23:10:00Z",
+    snapshots: [...firstInput.snapshots, nextSnapshot],
+    bars: { NEW: [...firstInput.bars.NEW, bar("2026-10-13", 100)] },
   };
   const next = await stepAdoptedKrSeries(series, nextInput, first.run);
   expect(next.run.result.trades).toHaveLength(1);
   await expect(
     stepAdoptedKrSeries(
       series,
-      { ...nextInput, bars: { NEW: [bar("2026-10-06", 99), bar("2026-10-07", 100)] } },
+      { ...nextInput, bars: { NEW: [bar("2026-10-12", 99), bar("2026-10-13", 100)] } },
       first.run,
     ),
   ).rejects.toThrow("historical inputs changed");
   await expect(
     stepAdoptedKrSeries(
       series,
-      { ...nextInput, availableAt: "2026-10-08T09:00:00Z", decisionAt: "2026-10-08T10:00:00Z" },
+      {
+        ...nextInput,
+        availableAt: "2026-10-14T00:10:00Z",
+        decisionAt: "2026-10-14T00:20:00Z",
+      },
       first.run,
     ),
-  ).rejects.toThrow("Exact-session");
+  ).rejects.toThrow("T+1 pre-open");
 });
 it("keeps new KR fees/cash at the same exact precision as US/ETF", () => {
   const result = simulateStrategy(
