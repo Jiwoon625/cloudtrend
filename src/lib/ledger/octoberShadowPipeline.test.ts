@@ -58,7 +58,7 @@ function source(date: string): UsModelPublication {
     decisionAt: `${date}T21:30:00Z`,
     confirmedRegularClose: true,
     failedSymbols: 0,
-    previousSessionDate: date === "2026-10-05" ? "2026-10-02" : "2026-10-05",
+    previousSessionDate: date === "2026-10-12" ? "2026-10-09" : "2026-10-12",
     marketCalendarOk: true,
   };
 }
@@ -152,29 +152,29 @@ describe("completed manual/upload publication to October journal", () => {
   });
   it("records all US books once, exact retry and restarted next day preserve the predecessor chain", async () => {
     const f = await fixture(),
-      first = source("2026-10-05");
+      first = source("2026-10-12");
     const a = await recordOctoberPublication(f.store, first);
     expect(a.records).toHaveLength(3);
     expect(f.sessions.size).toBe(3);
     const retry = await recordOctoberPublication(
       { ...f.store },
-      { ...first, decisionAt: "2026-10-05T22:00:00Z" },
+      { ...first, decisionAt: "2026-10-12T22:00:00Z" },
     );
     expect(retry.records.every((r) => r.reused)).toBe(true);
     expect(f.appends()).toBe(3);
-    await recordOctoberPublication({ ...f.store }, source("2026-10-06"));
+    await recordOctoberPublication({ ...f.store }, source("2026-10-13"));
     expect(f.sessions.size).toBe(6);
   });
   it("recovers a partially published market without appending a second first book", async () => {
     const f = await fixture();
     f.failAt(2);
-    await expect(recordOctoberPublication(f.store, source("2026-10-05"))).rejects.toThrow(
+    await expect(recordOctoberPublication(f.store, source("2026-10-12"))).rejects.toThrow(
       "interruption",
     );
     expect(f.sessions.size).toBe(1);
     const result = await recordOctoberPublication(
       { ...f.store },
-      { ...source("2026-10-05"), decisionAt: "2026-10-06T21:30:00Z" },
+      { ...source("2026-10-12"), decisionAt: "2026-10-13T21:30:00Z" },
     );
     expect(result.records.map((r) => r.reused)).toEqual([true, false, false]);
     expect(f.sessions.size).toBe(3);
@@ -183,50 +183,49 @@ describe("completed manual/upload publication to October journal", () => {
     { confirmedRegularClose: false },
     { failedSymbols: 1 },
     { marketCalendarOk: false },
-    { availableAt: "2026-10-05T19:00:00Z" },
-    { availableAt: "2026-10-06T21:00:00Z" },
-    { previousSessionDate: "2026-10-01" },
+    { availableAt: "2026-10-12T19:00:00Z" },
+    { availableAt: "2026-10-13T21:00:00Z" },
+    { previousSessionDate: "2026-10-08" },
   ])("rejects incomplete or late-source evidence before any write: %o", async (patch) => {
     const f = await fixture();
     await expect(
-      recordOctoberPublication(f.store, { ...source("2026-10-05"), ...patch }),
+      recordOctoberPublication(f.store, { ...source("2026-10-12"), ...patch }),
     ).rejects.toThrow();
     expect(f.appends()).toBe(0);
   });
   it("rejects missing first session, changed engine, revised same day and forged stored state", async () => {
     const f = await fixture();
-    await expect(recordOctoberPublication(f.store, source("2026-10-06"))).rejects.toThrow(
+    await expect(recordOctoberPublication(f.store, source("2026-10-13"))).rejects.toThrow(
       "next regular session",
     );
     await expect(
       recordOctoberPublication(f.store, {
-        ...source("2026-10-05"),
+        ...source("2026-10-12"),
         codeHash: `sha256:${"c".repeat(64)}`,
       }),
     ).rejects.toThrow("manifest");
-    await recordOctoberPublication(f.store, source("2026-10-05"));
-    const revised = source("2026-10-05");
+    await recordOctoberPublication(f.store, source("2026-10-12"));
+    const revised = source("2026-10-12");
     revised.analysis.rows[0]!.close = 102;
     await expect(recordOctoberPublication(f.store, revised)).rejects.toThrow("immutable");
     const first = [...f.sessions.values()][0]!;
     first.stateHash = `sha256:${"d".repeat(64)}`;
-    await expect(recordOctoberPublication(f.store, source("2026-10-06"))).rejects.toThrow(
+    await expect(recordOctoberPublication(f.store, source("2026-10-13"))).rejects.toThrow(
       "integrity",
     );
   });
 });
 describe("reviewed regular-session boundaries", () => {
-  it("starts US on Oct5 and KR on Oct6, blocks Oct9 KR and missing support", async () => {
-    expect((await octoberModelCalendar("US", "2026-10-05")).regularSessions).toEqual([
-      "2026-10-05",
+  it("starts US and KR v2 on Oct12 and retains reviewed Q4 boundaries", async () => {
+    expect((await octoberModelCalendar("US", "2026-10-12")).regularSessions).toEqual([
+      "2026-10-12",
     ]);
-    expect((await octoberModelCalendar("KR", "2026-10-09")).regularSessions).toEqual([
-      "2026-10-06",
-      "2026-10-07",
-      "2026-10-08",
+    expect((await octoberModelCalendar("KR", "2026-10-13")).regularSessions).toEqual([
+      "2026-10-12",
+      "2026-10-13",
     ]);
     await expect(octoberModelCalendar("KR", "2027-01-04")).rejects.toThrow("calendar");
-    expect(regularCloseAt("US", "2026-10-05")).toBe("2026-10-05T20:00:00Z");
+    expect(regularCloseAt("US", "2026-10-12")).toBe("2026-10-12T20:00:00Z");
     expect(regularCloseAt("US", "2026-11-27")).toBe("2026-11-27T18:00:00Z");
     expect(regularCloseAt("US", "2026-12-31")).toBe("2026-12-31T21:00:00Z");
   });
@@ -279,7 +278,7 @@ function krSource(date: string): KrModelPublication {
   const strategy: EtfStrategySnapshot = {
     version: ETF_POLICY.version,
     date,
-    previousDate: date === "2026-10-06" ? "2026-10-02" : "2026-10-06",
+    previousDate: date === "2026-10-12" ? "2026-10-08" : "2026-10-12",
     eligible: false,
     score: 50,
     previousScore: 50,
@@ -329,8 +328,8 @@ function krSource(date: string): KrModelPublication {
     },
     notes: [],
     sectors: [],
-    tradeDates: ["2026-10-02", "2026-10-06", ...(date > "2026-10-06" ? [date] : [])],
-    kospiGateDates: ["2026-10-02", "2026-10-06", ...(date > "2026-10-06" ? [date] : [])],
+    tradeDates: ["2026-10-08", "2026-10-12", ...(date > "2026-10-12" ? [date] : [])],
+    kospiGateDates: ["2026-10-08", "2026-10-12", ...(date > "2026-10-12" ? [date] : [])],
     instruments,
     bars: Object.fromEntries(instruments.map((i) => [i.symbol, [bar]])),
     indexSeries: [{ indexCode: "KOSPI", bars: [bar] }],
@@ -342,23 +341,38 @@ function krSource(date: string): KrModelPublication {
     market: "KR",
     codeHash,
     sourceHash,
-    availableAt: `${date}T07:00:00Z`,
-    decisionAt: `${date}T08:00:00Z`,
+    availableAt:
+      date === "2026-10-12" ? "2026-10-12T22:50:00Z" : "2026-10-13T22:50:00Z",
+    decisionAt:
+      date === "2026-10-12" ? "2026-10-12T23:10:00Z" : "2026-10-13T23:10:00Z",
     confirmedRegularClose: true,
     failedSymbols: 0,
     dataset,
     config: DEFAULT_SCORING_CONFIG,
     universeEvidence: {
-      asOfDate: date === "2026-10-06" ? "2026-10-02" : "2026-10-06",
+      asOfDate: date === "2026-10-12" ? "2026-10-08" : "2026-10-12",
       sourceHash,
       symbols: instruments.map((i) => i.symbol),
     },
-    sourceEvidence: [{ sourceHash, asOfDate: date, registeredAt: `${date}T07:00:00Z` }],
-    analysis: { asOfDate: date, calculatedAt: `${date}T08:00:00Z`, rows } as AnalysisResult,
+    sourceEvidence: [
+      {
+        sourceHash,
+        asOfDate: date,
+        registeredAt:
+          date === "2026-10-12" ? "2026-10-12T22:50:00Z" : "2026-10-13T22:50:00Z",
+      },
+    ],
+    analysis: {
+      asOfDate: date,
+      calculatedAt:
+        date === "2026-10-12" ? "2026-10-12T23:10:00Z" : "2026-10-13T23:10:00Z",
+      rows,
+    } as AnalysisResult,
     snapshot: {
       date,
       asOfDate: date,
-      savedAt: `${date}T08:00:00Z`,
+      savedAt:
+        date === "2026-10-12" ? "2026-10-12T23:10:00Z" : "2026-10-13T23:10:00Z",
       entries: [],
       marketGateStatus: "UNKNOWN",
       totalCount: 0,
@@ -369,28 +383,28 @@ function krSource(date: string): KrModelPublication {
   };
 }
 describe("KR five-book complete publication", () => {
-  it("records first Oct6 and next Oct7 from rolling uploads without importing prestart history", async () => {
+  it("records first Oct12 and next Oct13 from T+1 finalized uploads without importing prestart history", async () => {
     const f = await fixture();
-    const first = await recordOctoberPublication(f.store, krSource("2026-10-06"));
+    const first = await recordOctoberPublication(f.store, krSource("2026-10-12"));
     expect(first.records).toHaveLength(5);
     expect(f.sessions.size).toBe(5);
-    const retry = await recordOctoberPublication({ ...f.store }, krSource("2026-10-06"));
+    const retry = await recordOctoberPublication({ ...f.store }, krSource("2026-10-12"));
     expect(retry.records.every((r) => r.reused)).toBe(true);
-    await recordOctoberPublication({ ...f.store }, krSource("2026-10-07"));
+    await recordOctoberPublication({ ...f.store }, krSource("2026-10-13"));
     expect(f.sessions.size).toBe(10);
-    expect([...f.sessions.values()].every((r) => r.receipt.date >= "2026-10-06")).toBe(true);
+    expect([...f.sessions.values()].every((r) => r.receipt.date >= "2026-10-12")).toBe(true);
   });
   it("defers every book when a required ETF close is pending and rejects source/config changes", async () => {
     const f = await fixture(),
-      incomplete = krSource("2026-10-06");
+      incomplete = krSource("2026-10-12");
     incomplete.analysis.rows[2]!.etfStrategy!.dataStatus = "krx_batch_pending";
     await expect(recordOctoberPublication(f.store, incomplete)).rejects.toThrow("pending");
     expect(f.appends()).toBe(0);
-    const bad = krSource("2026-10-06");
+    const bad = krSource("2026-10-12");
     bad.dataset.isLive = false;
     await expect(recordOctoberPublication(f.store, bad)).rejects.toThrow("synthetic");
     await expect(recordOctoberPublication(f.store, krSource("2026-10-05"))).rejects.toThrow(
-      "regular close",
+      "finalized",
     );
     expect(f.appends()).toBe(0);
   });
@@ -398,7 +412,7 @@ describe("KR five-book complete publication", () => {
 
 it("persists one shared KR day archive and compact run references; missing archives fail closed", async () => {
   const f = await fixture();
-  await recordOctoberPublication(f.store, krSource("2026-10-06"));
+  await recordOctoberPublication(f.store, krSource("2026-10-12"));
   expect(f.archives.size).toBe(1);
   const adopted = [...f.sessions.values()].filter((run) =>
     ["KR_MIXED", "KR_KOSPI", "KR_KOSDAQ"].some((kind) => run.bookId.endsWith(`:${kind}`)),
@@ -416,10 +430,10 @@ it("persists one shared KR day archive and compact run references; missing archi
   expect(
     Object.values(day.inputs.bars)
       .flat()
-      .every((bar) => bar.tradeDate === "2026-10-06"),
+      .every((bar) => bar.tradeDate === "2026-10-12"),
   ).toBe(true);
   f.archives.clear();
-  await expect(recordOctoberPublication(f.store, krSource("2026-10-07"))).rejects.toThrow(
+  await expect(recordOctoberPublication(f.store, krSource("2026-10-13"))).rejects.toThrow(
     "archive",
   );
   expect(f.sessions.size).toBe(5);
@@ -429,8 +443,8 @@ it("exports synthetic application-shaped payloads only for optional local Postgr
   const output = process.env["CLOUDTREND_OCTOBER_APP_FIXTURES"];
   if (!output) return;
   const f = await fixture();
-  await recordOctoberPublication(f.store, source("2026-10-05"));
-  await recordOctoberPublication(f.store, krSource("2026-10-06"));
+  await recordOctoberPublication(f.store, source("2026-10-12"));
+  await recordOctoberPublication(f.store, krSource("2026-10-12"));
   const prepared = [...f.prepared.values()];
   const value = {
     series: [...f.registry.values()],
