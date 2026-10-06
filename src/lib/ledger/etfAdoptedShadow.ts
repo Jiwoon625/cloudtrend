@@ -15,6 +15,7 @@ import {
   type SeriesHash,
 } from "./modelSeries";
 import { validDate } from "./date";
+import { assertKrShadowDecisionWindow } from "./octoberShadowCalendar";
 
 /** An opt-in MODEL executor. It has no persistence, scheduler, broker, or real-holdings access. */
 export interface EtfShadowPrice {
@@ -90,7 +91,10 @@ export interface EtfAdoptedShadowState {
   scheduledStartDate: string;
   firstValidSessionDate: string | null;
   lastSessionDate: string | null;
+  /** Actual exchange close timestamp for the last processed session. */
   lastCloseAt: string | null;
+  /** Finalized KRX decision cutoff, after close and before the next regular open. */
+  lastDecisionAt: string | null;
   cash: string;
   positions: EtfShadowPosition[];
   /** Only raw onsets actually observed inside this new series can become confirmations. */
@@ -150,6 +154,7 @@ export interface EtfShadowDailyRecord {
   previousSessionDate: string | null;
   openAt: string;
   closeAt: string;
+  decisionAt: string;
   openingCash: string;
   priorCloseNav: string | null;
   priorCloseNavDate: string;
@@ -168,6 +173,7 @@ export interface EtfShadowSessionInput {
   previousSessionDate: string | null;
   openAt: string;
   closeAt: string;
+  decisionAt: string;
   calendar: ModelCalendar;
   codeHash: SeriesHash;
   configHash: SeriesHash;
@@ -318,6 +324,7 @@ function assertState(series: FrozenModelSeries, state: EtfAdoptedShadowState) {
     if (
       state.firstValidSessionDate !== null ||
       state.lastCloseAt !== null ||
+      state.lastDecisionAt !== null ||
       state.positions.length ||
       state.pendingEntries.length ||
       state.pendingExits.length ||
@@ -333,11 +340,13 @@ function assertState(series: FrozenModelSeries, state: EtfAdoptedShadowState) {
       !state.firstValidSessionDate ||
       state.firstValidSessionDate < series.accountingStartDate ||
       state.firstValidSessionDate > state.lastSessionDate ||
-      !state.lastCloseAt
+      !state.lastCloseAt ||
+      !state.lastDecisionAt
     )
       throw new Error("Invalid ETF processed-session boundary");
     date(state.firstValidSessionDate);
     time(state.lastCloseAt);
+    time(state.lastDecisionAt!);
   }
   for (const position of state.positions) {
     if (
@@ -358,7 +367,7 @@ function assertState(series: FrozenModelSeries, state: EtfAdoptedShadowState) {
       validatePrice(position.mark);
       if (
         position.mark.asOfDate > state.lastSessionDate ||
-        time(position.mark.availableAt) > time(state.lastCloseAt!)
+        time(position.mark.availableAt) > time(state.lastDecisionAt!)
       )
         throw new Error("Future mark in ETF state");
     }
@@ -375,7 +384,7 @@ function assertState(series: FrozenModelSeries, state: EtfAdoptedShadowState) {
       entry.originDate < series.accountingStartDate ||
       entry.originDate >= entry.confirmationDate ||
       entry.confirmationDate !== state.lastSessionDate ||
-      time(entry.availableAt) > time(state.lastCloseAt!) ||
+      time(entry.availableAt) > time(state.lastDecisionAt!) ||
       decimal(entry.entryWeight) <= 0n ||
       decimal(entry.entryWeight) > decimal("0.1") ||
       !Number.isFinite(entry.averageTradingValue20) ||
@@ -392,7 +401,7 @@ function assertState(series: FrozenModelSeries, state: EtfAdoptedShadowState) {
       exit.signalDate < series.accountingStartDate ||
       !state.lastSessionDate ||
       exit.signalDate > state.lastSessionDate ||
-      time(exit.availableAt) > time(state.lastCloseAt!) ||
+      time(exit.availableAt) > time(state.lastDecisionAt!) ||
       !state.positions.some((position) => position.symbol === exit.symbol)
     )
       throw new Error("Invalid ETF pending exit");
@@ -426,6 +435,7 @@ export async function initializeEtfAdoptedShadow(
     firstValidSessionDate: null,
     lastSessionDate: null,
     lastCloseAt: null,
+    lastDecisionAt: null,
     cash: series.initialKrw,
     positions: [],
     pendingConfirmations: [],
@@ -451,14 +461,28 @@ export async function stepEtfAdoptedShadow(
   assertState(series, previous);
   date(input.sessionDate);
   const openAt = time(input.openAt),
-    closeAt = time(input.closeAt);
+    closeAt = time(input.closeAt),
+    decisionAt = time(input.decisionAt);
   if (
     marketDate(input.openAt) !== input.sessionDate ||
     marketDate(input.closeAt) !== input.sessionDate ||
     openAt >= closeAt ||
-    (previous.lastCloseAt && openAt <= time(previous.lastCloseAt))
+    closeAt >= decisionAt ||
+    (previous.lastCloseAt && openAt <= time(previous.lastCloseAt)) ||
+    (previous.lastDecisionAt && openAt <= time(previous.lastDecisionAt))
   )
-    throw new Error("Invalid ETF open/close chronology");
+    throw new Error("Invalid ETF open/close/decision chronology");
+  const evidenceTimes = [
+    ...input.closeSignals.map((signal) => signal.availableAt),
+    ...input.prices.flatMap((row) => (row.close ? [row.close.availableAt] : [])),
+  ];
+  const latestEvidenceAt = evidenceTimes
+    .filter((value) => Number.isFinite(Date.parse(value)))
+    .sort((a, b) => Date.parse(a) - Date.parse(b))
+    .at(-1);
+  if (!latestEvidenceAt)
+    throw new Error("ETF finalized close evidence is required");
+  assertKrShadowDecisionWindow(input.sessionDate, latestEvidenceAt, input.decisionAt);
   if (
     input.previousSessionDate !== previous.lastSessionDate ||
     (previous.lastSessionDate && input.sessionDate <= previous.lastSessionDate)
@@ -642,7 +666,7 @@ export async function stepEtfAdoptedShadow(
       issue(signal.symbol, "SIGNAL_DATE_MISMATCH", "CLOSE");
       continue;
     }
-    if (marketDate(signal.availableAt) !== s.date || time(signal.availableAt) > closeAt) {
+    if (time(signal.availableAt) > decisionAt) {
       issue(signal.symbol, "SIGNAL_UNAVAILABLE_AT_CLOSE", "CLOSE");
       continue;
     }
@@ -743,7 +767,7 @@ export async function stepEtfAdoptedShadow(
       mark &&
       mark.price !== null &&
       mark.asOfDate <= input.sessionDate &&
-      time(mark.availableAt) <= closeAt &&
+      time(mark.availableAt) <= decisionAt &&
       (!position.mark || mark.asOfDate >= position.mark.asOfDate)
     )
       position.mark = { ...mark, price: mark.price };
@@ -758,6 +782,7 @@ export async function stepEtfAdoptedShadow(
     firstValidSessionDate: previous.firstValidSessionDate ?? input.sessionDate,
     lastSessionDate: input.sessionDate,
     lastCloseAt: input.closeAt,
+    lastDecisionAt: input.decisionAt,
     cash: format(cash),
     positions,
     pendingConfirmations,
@@ -773,6 +798,7 @@ export async function stepEtfAdoptedShadow(
     previousSessionDate: input.previousSessionDate,
     openAt: input.openAt,
     closeAt: input.closeAt,
+    decisionAt: input.decisionAt,
     openingCash: previous.cash,
     priorCloseNav: previous.valuation.nav,
     priorCloseNavDate: previous.valuation.asOfDate,
