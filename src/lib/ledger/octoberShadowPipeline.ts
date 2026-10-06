@@ -387,7 +387,9 @@ export async function recordOctoberPublication(
         date,
         input.analysis,
       );
-      session.previousSessionDate = calendar.regularSessions.filter((d) => d < date).at(-1) ?? null;
+      session.previousSessionDate =
+        calendar.regularSessions.filter((d) => d < date).at(-1) ??
+        previousReviewedRegularSession("KR", date);
       if (!previous && date === ADOPTED_KOSPI_FIRST_SESSION) {
         // Read-only warmup uses only the exact preceding reviewed KR session.
         // It can establish the first v2 onset; it never imports old model orders or holdings.
