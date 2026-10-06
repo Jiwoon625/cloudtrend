@@ -30,6 +30,7 @@ import { stepAdoptedKospiShadowSeries, type AdoptedKospiShadowRun } from "./kosp
 import type { OctoberShadowStore } from "./octoberShadowRepository.server";
 import type { ModelJournalRun } from "./modelJournal";
 import { octoberModelCalendar, regularCloseAt, regularOpenAt } from "./octoberShadowCalendar";
+import { isKrOfficialShadowDecision } from "./krShadowDecision";
 import { fromLegacyNumber } from "./decimal";
 
 export interface PublicationProof {
@@ -89,8 +90,9 @@ function verifyPublication(input: OctoberPublication, calendar: ModelCalendar) {
     !Number.isFinite(Date.parse(input.decisionAt)) ||
     Date.parse(input.availableAt) > Date.parse(input.decisionAt) ||
     Date.parse(input.availableAt) < Date.parse(regularCloseAt(input.market, date)) ||
-    marketDate(input.market, input.availableAt) !== date ||
-    marketDate(input.market, input.decisionAt) !== date ||
+    (input.market === "US"
+      ? marketDate("US", input.availableAt) !== date || marketDate("US", input.decisionAt) !== date
+      : !isKrOfficialShadowDecision(date, input.availableAt, input.decisionAt)) ||
     !calendar.regularSessions.includes(date)
   )
     throw new Error("Only a complete same-session regular close can enter the October journal");
@@ -429,6 +431,7 @@ export async function recordOctoberPublication(
             previousSessionDate: previous?.receipt.date ?? null,
             openAt,
             closeAt: input.decisionAt,
+            decisionWindow: "NEXT_SESSION_PREOPEN",
             calendar,
             codeHash: input.codeHash,
             configHash: series.configHash,
