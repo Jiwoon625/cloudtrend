@@ -35,7 +35,10 @@ import { fromLegacyNumber } from "./decimal";
 
 export interface PublicationProof {
   sourceHash: SeriesHash;
+  /** Frozen calculation identity stored on all eight existing series. */
   codeHash: SeriesHash;
+  /** Exact reviewed transitive runtime used for this dated publication. */
+  runtimeCodeHash?: SeriesHash;
   availableAt: string;
   decisionAt: string;
   confirmedRegularClose: boolean;
@@ -62,6 +65,7 @@ export type OctoberRun = (AdoptedUsRun | AdoptedKrRun | AdoptedEtfRun | AdoptedK
     version: "october-manual-publication-v1";
     inputHash: SeriesHash;
     sourceHash: SeriesHash;
+    runtimeCodeHash?: SeriesHash;
     availableAt: string;
     decisionAt: string;
   };
@@ -89,6 +93,8 @@ function verifyPublication(input: OctoberPublication, calendar: ModelCalendar) {
     !Number.isFinite(Date.parse(input.availableAt)) ||
     !Number.isFinite(Date.parse(input.decisionAt)) ||
     Date.parse(input.availableAt) > Date.parse(input.decisionAt) ||
+    (input.runtimeCodeHash !== undefined &&
+      !/^sha256:[a-f0-9]{64}$/.test(input.runtimeCodeHash)) ||
     Date.parse(input.availableAt) < Date.parse(regularCloseAt(input.market, date)) ||
     (input.market === "US"
       ? marketDate("US", input.availableAt) !== date || marketDate("US", input.decisionAt) !== date
@@ -161,6 +167,7 @@ function publicationValue(input: OctoberPublication) {
   return json({
     market: input.market,
     sourceHash: input.sourceHash,
+    runtimeCodeHash: input.runtimeCodeHash ?? input.codeHash,
     availableAt: input.availableAt,
     confirmedRegularClose: input.confirmedRegularClose,
     failedSymbols: input.failedSymbols,
@@ -204,6 +211,7 @@ export interface PreparedOctoberPublication {
   date: string;
   sourceHash: SeriesHash;
   codeHash: SeriesHash;
+  runtimeCodeHash: SeriesHash;
   inputHash: SeriesHash;
   preparedAt: string;
   entries: Array<{
@@ -240,6 +248,8 @@ async function persistPreparedOctober(
       item.run.receipt.date !== prepared.date ||
       item.run.publication.inputHash !== prepared.inputHash ||
       item.run.publication.sourceHash !== prepared.sourceHash ||
+      (item.run.publication.runtimeCodeHash ?? item.run.receipt.codeHash) !==
+        prepared.runtimeCodeHash ||
       item.run.receipt.codeHash !== prepared.codeHash
     )
       throw new Error("Prepared October input identity mismatch");
@@ -535,6 +545,7 @@ export async function recordOctoberPublication(
         version: "october-manual-publication-v1" as const,
         inputHash,
         sourceHash: input.sourceHash,
+        runtimeCodeHash: input.runtimeCodeHash ?? input.codeHash,
         availableAt: input.availableAt,
         decisionAt: input.decisionAt,
       },
@@ -550,6 +561,7 @@ export async function recordOctoberPublication(
     date,
     sourceHash: input.sourceHash,
     codeHash: input.codeHash,
+    runtimeCodeHash: input.runtimeCodeHash ?? input.codeHash,
     inputHash,
     preparedAt: input.decisionAt,
     entries: prepared.map((item) => ({
