@@ -34,7 +34,7 @@ export function registry(series: FrozenModelSeries): OctoberRegistryRow {
 }
 export async function usRun(
   series: FrozenModelSeries,
-  date = "2026-10-05",
+  date = "2026-10-12",
   previous: OctoberRun | null = null,
 ): Promise<OctoberRun> {
   const receipt = (
@@ -53,16 +53,16 @@ export async function usRun(
     previousStateHash: previous?.stateHash ?? null,
     calendar: {
       market: "US" as const,
-      coverageStart: "2026-10-01",
-      coverageEnd: "2026-10-09",
+      coverageStart: "2026-10-12",
+      coverageEnd: "2026-10-20",
       regularSessions: [
-        "2026-10-01",
-        "2026-10-02",
-        "2026-10-05",
-        "2026-10-06",
-        "2026-10-07",
-        "2026-10-08",
-        "2026-10-09",
+        "2026-10-12",
+        "2026-10-13",
+        "2026-10-14",
+        "2026-10-15",
+        "2026-10-16",
+        "2026-10-19",
+        "2026-10-20",
       ],
       sourceHash: hash("d"),
     },
