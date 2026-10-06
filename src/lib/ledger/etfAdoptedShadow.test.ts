@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ETF_POLICY, type EtfStrategySnapshot } from "../engine/etfStrategy";
 import { decimal } from "./decimal";
+import { nextReviewedRegularSession, regularOpenAt } from "./octoberShadowCalendar";
 import {
   freezeAdoptedSeries,
   type FrozenModelSeries,
@@ -36,13 +37,10 @@ const calendar: ModelCalendar = {
     "2026-10-26",
   ],
 };
-function nextSession(date: string) {
-  return calendar.regularSessions.find((session) => session > date) ?? null;
-}
 function beforeNextOpen(date: string, minutes: number) {
-  const next = nextSession(date);
-  if (!next) return new Date(Date.parse(`${date}T06:30:00Z`) + 60 * 60 * 1000).toISOString();
-  return new Date(Date.parse(`${next}T00:00:00Z`) - minutes * 60 * 1000).toISOString();
+  const next = nextReviewedRegularSession("KR", date);
+  if (!next) throw new Error("Reviewed next KR session required in fixture");
+  return new Date(Date.parse(regularOpenAt("KR", next)) - minutes * 60 * 1000).toISOString();
 }
 const finalizedAt = (date: string) => beforeNextOpen(date, 70);
 const decisionAt = (date: string) => beforeNextOpen(date, 50);
