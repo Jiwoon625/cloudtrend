@@ -99,6 +99,25 @@ class MissingSessionRegressions(unittest.TestCase):
         runner.step()
         self.assertNotIn(('K', 'K_A'), runner.ledger.positions)
 
+    def test_null_us_execution_open_is_diagnostic_not_type_error(self):
+        runner = make()
+        while runner.queue:
+            event = runner.queue[0]
+            pending_buys = [intent for intent in runner.adapters['U'].pending_intents()
+                if intent['side'] == 'BUY']
+            if event[3:5] == ('OPEN', 'U') and pending_buys:
+                break
+            runner.step()
+        else:
+            self.fail('Synthetic fixture did not produce a pending US BUY')
+        day = runner.queue[0][5]['session_date']
+        intent = pending_buys[0]
+        frame = runner.panels['U'].panels.panels[day]
+        frame.loc[frame.symbol.eq(intent['symbol']), 'comparison_open'] = None
+        runner.step()
+        self.assertTrue(any(row['signal_id'] == intent['signal_id'] and
+            row['reason'] == 'MISSING_EXECUTION_OPEN' for row in runner.order_diagnostics))
+
     def test_missing_whole_close_breaks_kosdaq_score_adjacency(self):
         panels, calendars, fx = inputs()
         panels['K']['score'] = [6., 6., 6., 8., 8., 8.]

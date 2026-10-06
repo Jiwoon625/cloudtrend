@@ -44,6 +44,43 @@ def _parallel_static_worker(config, candidate, plan_hash, max_seconds, event_lim
     return receipt
 
 
+def _parallel_exception_receipt(candidate, exc, status='WORKER_EXCEPTION'):
+    """Sanitized terminal receipt for one candidate-local worker failure."""
+    return {
+        'status': status,
+        'candidate_id': candidate.candidate_id,
+        'error_type': type(exc).__name__,
+        'processed_events': None,
+        'checkpoint_sequence': None,
+    }
+
+
+def _parallel_not_started_receipt(candidate, status):
+    if status not in ('NOT_STARTED_DEADLINE','NOT_STARTED_STOP_REQUESTED'):
+        raise ValueError('Unknown parallel not-started status')
+    return {
+        'status': status,
+        'candidate_id': candidate.candidate_id,
+        'processed_events': None,
+        'checkpoint_sequence': None,
+    }
+
+
+def _parallel_future_receipt(future, candidate):
+    try:
+        return future.result(), False
+    except Exception as exc:
+        return _parallel_exception_receipt(candidate, exc), True
+
+
+def _ordered_parallel_receipts(selected, receipts_by_id):
+    missing=[candidate.candidate_id for candidate in selected
+             if candidate.candidate_id not in receipts_by_id]
+    if missing:
+        raise RuntimeError('Parallel candidate receipts missing: '+','.join(missing))
+    return [receipts_by_id[candidate.candidate_id] for candidate in selected]
+
+
 def main(argv=None):
     parser=argparse.ArgumentParser(description='CMresearchengine research-only manual runner')
     parser.add_argument('mode',choices=('plan','preflight','run'))
@@ -120,31 +157,58 @@ def main(argv=None):
         pending=list(selected)
         active={}
         receipts_by_id={}
+        selected_order={candidate.candidate_id:index for index,candidate in enumerate(selected)}
+        parent_only_statuses={'WORKER_EXCEPTION','WORKER_SUBMIT_EXCEPTION',
+                              'NOT_STARTED_DEADLINE','NOT_STARTED_STOP_REQUESTED'}
+        def record_parent_receipt(candidate, receipt):
+            receipts_by_id[candidate.candidate_id]=receipt
+            if receipt['status'] in parent_only_statuses:
+                store.put_object('results/'+plan_hash+'/'+candidate.candidate_id+'/attempts/'+
+                    digest(receipt)+'.json',canonical(receipt))
         with ProcessPoolExecutor(max_workers=args.workers) as pool:
             while pending or active:
                 while pending and len(active)<args.workers:
                     remaining=int(deadline-time.monotonic())
-                    if stop[0] or remaining<=45:break
+                    if stop[0] or remaining<=45:
+                        status='NOT_STARTED_STOP_REQUESTED' if stop[0] else 'NOT_STARTED_DEADLINE'
+                        for candidate in pending:
+                            record_parent_receipt(candidate,_parallel_not_started_receipt(candidate,status))
+                        pending.clear()
+                        break
                     candidate=pending.pop(0)
-                    future=pool.submit(_parallel_static_worker,config,candidate,plan_hash,
-                        max(1,remaining-25),args.event_limit)
+                    try:
+                        future=pool.submit(_parallel_static_worker,config,candidate,plan_hash,
+                            max(1,remaining-25),args.event_limit)
+                    except Exception as exc:
+                        record_parent_receipt(candidate,
+                            _parallel_exception_receipt(candidate,exc,'WORKER_SUBMIT_EXCEPTION'))
+                        continue
                     active[future]=candidate
-                if not active:break
+                if not active:
+                    continue
                 done,_=wait(tuple(active),return_when=FIRST_COMPLETED)
-                for future in done:
+                for future in sorted(done,key=lambda item:selected_order[active[item].candidate_id]):
                     candidate=active.pop(future)
-                    receipt=future.result()
+                    receipt,parent_only=_parallel_future_receipt(future,candidate)
                     receipts_by_id[candidate.candidate_id]=receipt
+                    if parent_only:
+                        store.put_object('results/'+plan_hash+'/'+candidate.candidate_id+'/attempts/'+
+                            digest(receipt)+'.json',canonical(receipt))
                     emit(receipt['status'],candidate_id=candidate.candidate_id,
                         processed_events=receipt.get('processed_events'),
                         checkpoint_sequence=receipt.get('checkpoint_sequence'),
+                        error_type=receipt.get('error_type'),
                         worker_mode='PROCESS_ISOLATED')
-                if stop[0] or time.monotonic()>=deadline-45:
-                    break
-        receipts=[receipts_by_id[c.candidate_id] for c in selected if c.candidate_id in receipts_by_id]
+                # Do not abandon submitted children at the parent deadline. Each
+                # child has its own bounded max_seconds and must yield a terminal
+                # receipt (completed, paused, or candidate-attributed exception).
+        receipts=_ordered_parallel_receipts(selected,receipts_by_id)
         completed=sum(x['status']=='COMPLETED_VERIFIED' for x in receipts)
         emit('BATCH_VERIFIED',selected_count=len(selected),completed_in_selected_batch=completed,
             remaining_in_selected_batch=len(selected)-completed,
+            terminal_receipts_collected=len(receipts),
+            worker_exceptions=sum(x['status'] in ('WORKER_EXCEPTION','WORKER_SUBMIT_EXCEPTION') for x in receipts),
+            not_started=sum(x['status'].startswith('NOT_STARTED_') for x in receipts),
             all_planned_strategies_completion_checked=False,parallel_workers=args.workers)
         return 0
 
