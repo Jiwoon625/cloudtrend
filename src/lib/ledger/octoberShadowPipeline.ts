@@ -210,6 +210,9 @@ export interface PreparedOctoberPublication {
   market: "KR" | "US";
   date: string;
   sourceHash: SeriesHash;
+  /** Exact reviewed transitive runtime for this prepared decision. */
+  runtimeCodeHash: SeriesHash;
+  /** Frozen calculation identity retained by the eight existing contracts. */
   codeHash: SeriesHash;
   inputHash: SeriesHash;
   preparedAt: string;
@@ -247,8 +250,8 @@ async function persistPreparedOctober(
       item.run.receipt.date !== prepared.date ||
       item.run.publication.inputHash !== prepared.inputHash ||
       item.run.publication.sourceHash !== prepared.sourceHash ||
-      (item.run.publication.runtimeCodeHash !== undefined &&
-        !/^sha256:[a-f0-9]{64}$/.test(item.run.publication.runtimeCodeHash)) ||
+      item.run.publication.runtimeCodeHash !== prepared.runtimeCodeHash ||
+      !/^sha256:[a-f0-9]{64}$/.test(prepared.runtimeCodeHash) ||
       item.run.receipt.codeHash !== prepared.codeHash
     )
       throw new Error("Prepared October input identity mismatch");
@@ -283,7 +286,8 @@ export async function recordOctoberPublication(
     if (
       durable.sourceHash !== input.sourceHash ||
       durable.inputHash !== inputHash ||
-      durable.codeHash !== input.codeHash
+      durable.codeHash !== input.codeHash ||
+      durable.runtimeCodeHash !== (input.runtimeCodeHash ?? input.codeHash)
     )
       throw new Error("Prepared October input is immutable");
     return persistPreparedOctober(store, durable);
@@ -559,6 +563,7 @@ export async function recordOctoberPublication(
     market: input.market,
     date,
     sourceHash: input.sourceHash,
+    runtimeCodeHash: input.runtimeCodeHash ?? input.codeHash,
     codeHash: input.codeHash,
     inputHash,
     preparedAt: input.decisionAt,
