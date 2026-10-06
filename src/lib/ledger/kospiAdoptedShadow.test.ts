@@ -195,10 +195,10 @@ describe("isolated October KOSPI confirm1/bear-only journal adapter", () => {
     );
     const exit = await stepAdoptedKospiShadowSeries(
       series,
-      input("2026-10-13", series.configHash, 9.5),
+      input("2026-10-16", series.configHash, 9.5),
       bought.run,
     );
-    const fill = input("2026-10-14", series.configHash, 9.5);
+    const fill = input("2026-10-19", series.configHash, 9.5);
     fill.session.rows[0]!.open = 110;
     const sold = await stepAdoptedKospiShadowSeries(series, fill, exit.run);
     expect(sold.run.result.trades[0]).toMatchObject({
