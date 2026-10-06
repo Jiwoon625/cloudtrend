@@ -127,6 +127,61 @@ describe("new adopted series, never historical book rewrites", () => {
     expect(series[4]!.policy.allocation).toBe("ETF_V02_VOLATILITY_UNCHANGED");
   });
 
+  it("reproduces all eight production-frozen config and contract hashes under PR195", async () => {
+    const productionCodeHash =
+      "sha256:ca565a5ec7bff10815a4943989ae3b02fd52fd508bbd283ae5c4d23eb79607c6";
+    const productionSourceHash =
+      "sha256:55e2c15825b4a931f87cccc14bcd9ebf7a77ba66bb9bed2851c576ce35255ed3";
+    const productionFrozenAt = "2026-10-03T05:40:25.020Z";
+    const expected = {
+      ETF_V02: {
+        configHash: "sha256:37062f02f5acd922950d6391033d2a019c1b6d5ec634ba59c7e04b9056f95ccb",
+        contractHash: "sha256:ef8370508ddd60a65f8078b6855606bcf98d54ec0a0806865369d43bee6507f8",
+      },
+      KR_KOSDAQ: {
+        configHash: "sha256:97b6de022ccae01d1e0d84132563c2db01e032033eb6d79d1288f03038e77b86",
+        contractHash: "sha256:7578fd7559778a2277399d419f46650e91e29e1bffc906929bb0d6901aceb90d",
+      },
+      KR_KOSPI: {
+        configHash: "sha256:66da449d18356527e3ca30fdb3e025248816a3e18e7f80becd87bad4ffb749d6",
+        contractHash: "sha256:e90eb916595de764495ce9dc275f309f0b1824b8a7d58b4d2cc512362c63438c",
+      },
+      KR_KOSPI_CONFIRM1_BEAR: {
+        configHash: "sha256:a432f426fea51fee0ce2cbf7d8931eac0c711269874a4dfe9fedeb0240744642",
+        contractHash: "sha256:51c45808e13cca1dbe87e6d1c8c4b4080a88c268701017bfdec7cd179710e56c",
+      },
+      KR_MIXED: {
+        configHash: "sha256:a13a99deb0a6a852f7cdbc1d616c02880e2b155201e9c49ecf944f808a020f85",
+        contractHash: "sha256:dea21166c2436f59b199fc4995214e848d9713bfb6fe1958800f3684a6427dbf",
+      },
+      US_A0: {
+        configHash: "sha256:d9a24d980ead310611936dbbec65ae3b115fa0c012b749b441ea302aaf934642",
+        contractHash: "sha256:62df090de5db742a4f9f98c46816bcf1c53dca3b76dbb64efe454a417f37a4f1",
+      },
+      US_A2: {
+        configHash: "sha256:c7982d913689ee552de538b875684a6218fe95bfb4e87263a0a9d3acff4ab96b",
+        contractHash: "sha256:399ede9ac4444cfb7c20ddb1aeabfae8511cef6e2f717486524e599c322aecd2",
+      },
+      US_B3: {
+        configHash: "sha256:3e78b35b914bf1622ffabcb6bc653e0866a57a0dcca2f8d3fd9a433b801d2b40",
+        contractHash: "sha256:b29f42de8690fd7639fb646e9e881b321397229c3e0f57945bcc9e14d17f2851",
+      },
+    } as const;
+    for (const kind of ADOPTED_SERIES_KINDS) {
+      const series = await freezeAdoptedSeries({
+        kind,
+        frozenAt: productionFrozenAt,
+        codeHash: productionCodeHash,
+        sourceHash: productionSourceHash,
+        ...(isAdoptedUsSeriesKind(kind) ? { initialFx: VERIFIED_INITIAL_FX } : {}),
+      });
+      expect(series.codeHash).toBe(productionCodeHash);
+      expect(series.configHash).toBe(expected[kind].configHash);
+      expect(series.contractHash).toBe(expected[kind].contractHash);
+      await verifyFrozenSeries(series);
+    }
+  });
+
   it("preserves the exact KR/ETF frozen contracts while changing only approved US allocation", async () => {
     const originalHashes = {
       KR_MIXED: "7ee1fdd09122c1c3de674ba7e3ffe68e694f1cdb59b54c3ce73bb88d22ef731b",
