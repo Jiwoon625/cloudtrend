@@ -24,6 +24,10 @@ on:
       workers:
         description: 'Independent strategy worker processes (1..4)'
         default: '1'
+      shared_us_ranking:
+        description: 'Precompute exact candidate-independent US cross-sectional ranks once per job'
+        type: boolean
+        default: false
   push:
     branches: [main]
     paths:
@@ -63,6 +67,7 @@ jobs:
           MANUAL_COUNT: ${{ github.event.inputs.count }}
           MANUAL_MAX_SECONDS: ${{ github.event.inputs.max_seconds }}
           MANUAL_WORKERS: ${{ github.event.inputs.workers }}
+          MANUAL_SHARED_US_RANKING: ${{ github.event.inputs.shared_us_ranking }}
           MANUAL_REQUEST_ID: manual-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           if [ "$EVENT_NAME" = "push" ]; then
@@ -75,6 +80,7 @@ jobs:
               --mode "$MANUAL_MODE" --stage "$MANUAL_STAGE" \
               --offset "$MANUAL_OFFSET" --count "$MANUAL_COUNT" \
               --max-seconds "$MANUAL_MAX_SECONDS" --workers "$MANUAL_WORKERS" \
+              --shared-us-ranking "$MANUAL_SHARED_US_RANKING" \
               --github-output "$GITHUB_OUTPUT"
           fi
       - name: Validate and optionally run bounded research
@@ -85,12 +91,17 @@ jobs:
           CM_COUNT: ${{ steps.request.outputs.count }}
           CM_MAX_SECONDS: ${{ steps.request.outputs.max_seconds }}
           CM_WORKERS: ${{ steps.request.outputs.workers }}
+          CM_SHARED_US_RANKING: ${{ steps.request.outputs.shared_us_ranking }}
         run: |
           df -PB1 "$RUNNER_TEMP"
+          SHARED_ARGS=()
+          if [ "$CM_SHARED_US_RANKING" = "true" ]; then
+            SHARED_ARGS+=(--shared-us-ranking)
+          fi
           /usr/bin/time -v python -m cmresearchengine.cli "$CM_MODE" \
             --stage "$CM_STAGE" --offset "$CM_OFFSET" --count "$CM_COUNT" \
             --max-seconds "$CM_MAX_SECONDS" --workers "$CM_WORKERS" \
-            --work "$RUNNER_TEMP/cm-private/work"
+            "${SHARED_ARGS[@]}" --work "$RUNNER_TEMP/cm-private/work"
           df -PB1 "$RUNNER_TEMP"
       # Private inputs, NAV, holdings, evidence, and checkpoints never enter
       # public Actions artifacts or public caches. Storage alone persists them.

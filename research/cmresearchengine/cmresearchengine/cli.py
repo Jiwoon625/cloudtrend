@@ -90,6 +90,7 @@ def main(argv=None):
     parser.add_argument('--ids',help='Comma-separated exact registered strategy IDs')
     parser.add_argument('--max-seconds',type=int,default=3000)
     parser.add_argument('--workers',type=int,default=1)
+    parser.add_argument('--shared-us-ranking',action='store_true')
     parser.add_argument('--event-limit',type=int)
     parser.add_argument('--work',default='.cm-private/work')
     args=parser.parse_args(argv)
@@ -97,6 +98,8 @@ def main(argv=None):
     if not 60<=args.max_seconds<=6300:parser.error('--max-seconds must be 60..6300')
     if not 1<=args.workers<=4:parser.error('--workers must be 1..4')
     if args.workers>args.count:parser.error('--workers cannot exceed --count')
+    if args.shared_us_ranking and (args.mode!='run' or args.workers<2):
+        parser.error('--shared-us-ranking requires run mode with at least two workers')
     if args.event_limit is not None and args.event_limit<1:parser.error('--event-limit must be positive')
     plan=manifest();plan_hash=plan['definition_sha256']
     if args.mode=='plan':
@@ -104,6 +107,8 @@ def main(argv=None):
         return 0
     selected=choose(args.stage,args.offset,args.count,args.ids.split(',') if args.ids else None)
     if not selected:raise ValueError('Batch offset is outside selected stage')
+    if args.shared_us_ranking and (args.stage=='references' or any(candidate.policy_id for candidate in selected)):
+        raise ValueError('Shared US ranking is limited to static non-reference candidates')
     from .storage import SupabaseCMStore
     from .ingest import restore_archives, restore_evidence
     from .prepared import PreparedResearch, configuration
@@ -117,9 +122,25 @@ def main(argv=None):
     # Private data overlays are hash-verified and cannot contain code. Runtime
     # import roots and code remain the reviewed repository version throughout.
     config=configuration(work,runtime.VENDOR,work/'state')
+    from cm06_shared_us_ranking_v1 import ENV as SHARED_US_RANK_ENV
+    # Never inherit an undeclared optimization cache from the runner process.
+    os.environ.pop(SHARED_US_RANK_ENV,None)
     prototype=PreparedResearch(config,candidate_by_id('S05'))
     if prototype.admitted_event_count!=27:
         raise ValueError('Known-event profile no longer contains all 27 expected events')
+    if args.shared_us_ranking:
+        from .shared_us import build_shared_us_rank_cache
+        cache_started=time.monotonic()
+        cache=build_shared_us_rank_cache(prototype,work/'shared-us-ranking-v1')
+        os.environ[SHARED_US_RANK_ENV]=cache['manifest_path']
+        # Bind the optimization contract into every candidate checkpoint identity.
+        prototype=PreparedResearch(config,candidate_by_id('S05'))
+        if prototype.admitted_event_count!=27:
+            raise ValueError('Known-event profile changed after shared-rank binding')
+        emit('SHARED_US_RANKING_VERIFIED',
+            cache_sessions=cache['sessions'],cache_rows=cache['rows'],
+            cache_bytes=cache['bytes'],build_seconds=round(time.monotonic()-cache_started,3),
+            binding_sha256=cache['binding_sha256'])
     store.put_object('manifest.json',canonical(source_manifest))
     emit('PREFLIGHT_VERIFIED',normalized_files=389,reference_files=12,known_events=27,
         historical_paths_completed=0,plan_sha256=plan_hash)
@@ -209,7 +230,8 @@ def main(argv=None):
             terminal_receipts_collected=len(receipts),
             worker_exceptions=sum(x['status'] in ('WORKER_EXCEPTION','WORKER_SUBMIT_EXCEPTION') for x in receipts),
             not_started=sum(x['status'].startswith('NOT_STARTED_') for x in receipts),
-            all_planned_strategies_completion_checked=False,parallel_workers=args.workers)
+            all_planned_strategies_completion_checked=False,parallel_workers=args.workers,
+            shared_us_ranking=args.shared_us_ranking)
         return 0
 
     if any(c.policy_id for c in selected):
@@ -229,7 +251,7 @@ def main(argv=None):
     completed=sum(x['status']=='COMPLETED_VERIFIED' for x in receipts)
     emit('BATCH_VERIFIED',selected_count=len(selected),completed_in_selected_batch=completed,
         remaining_in_selected_batch=len(selected)-completed,
-        all_planned_strategies_completion_checked=False)
+        all_planned_strategies_completion_checked=False,shared_us_ranking=args.shared_us_ranking)
     return 0
 
 if __name__=='__main__':

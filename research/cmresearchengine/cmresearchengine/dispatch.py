@@ -12,7 +12,14 @@ from pathlib import Path
 
 ALLOWED_MODES = {"preflight", "run"}
 ALLOWED_STAGES = {"base", "fine", "split25", "split10", "references"}
-ALLOWED_KEYS = {"request_id", "mode", "stage", "offset", "count", "max_seconds", "workers"}
+ALLOWED_KEYS = {"request_id", "mode", "stage", "offset", "count", "max_seconds", "workers", "shared_us_ranking"}
+
+def _parse_bool(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.lower() in ("true", "false"):
+        return value.lower() == "true"
+    raise ValueError("shared_us_ranking must be a boolean")
 
 
 def validate_request(raw):
@@ -51,6 +58,11 @@ def validate_request(raw):
         raise ValueError("workers must be 1..4")
     if workers > count:
         raise ValueError("workers cannot exceed count")
+    shared_us_ranking = _parse_bool(raw.get("shared_us_ranking", False))
+    if shared_us_ranking and workers < 2:
+        raise ValueError("shared_us_ranking requires at least two workers")
+    if shared_us_ranking and stage == "references":
+        raise ValueError("shared_us_ranking is not valid for references")
 
     return {
         "request_id": request_id,
@@ -60,13 +72,16 @@ def validate_request(raw):
         "count": count,
         "max_seconds": max_seconds,
         "workers": workers,
+        "shared_us_ranking": shared_us_ranking,
     }
 
 
 def _write_github_output(path, request):
     with open(path, "a", encoding="utf-8") as stream:
-        for key in ("request_id", "mode", "stage", "offset", "count", "max_seconds", "workers"):
-            stream.write(f"{key}={request[key]}\n")
+        for key in ("request_id", "mode", "stage", "offset", "count", "max_seconds", "workers", "shared_us_ranking"):
+            value=request[key]
+            if isinstance(value,bool):value=str(value).lower()
+            stream.write(f"{key}={value}\n")
 
 
 def main(argv=None):
@@ -79,13 +94,15 @@ def main(argv=None):
     parser.add_argument("--count")
     parser.add_argument("--max-seconds")
     parser.add_argument("--workers", default="1")
+    parser.add_argument("--shared-us-ranking", default="false", choices=("true", "false"))
     parser.add_argument("--github-output")
     args = parser.parse_args(argv)
 
     if args.request_file:
         if any(v is not None for v in (
             args.request_id, args.mode, args.stage, args.offset, args.count, args.max_seconds,
-            None if args.workers == "1" else args.workers
+            None if args.workers == "1" else args.workers,
+            None if args.shared_us_ranking == "false" else args.shared_us_ranking
         )):
             raise ValueError("Use either --request-file or explicit request fields")
         raw = json.loads(Path(args.request_file).read_text(encoding="utf-8"))
@@ -98,6 +115,7 @@ def main(argv=None):
             "count": args.count,
             "max_seconds": args.max_seconds,
             "workers": args.workers,
+            "shared_us_ranking": args.shared_us_ranking,
         }
 
     request = validate_request(raw)

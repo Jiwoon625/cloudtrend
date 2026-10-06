@@ -8,6 +8,7 @@ from __future__ import annotations
 from decimal import Decimal, ROUND_CEILING, ROUND_DOWN
 from math import isfinite, floor
 from typing import Any, Mapping
+from cm06_shared_us_ranking_v1 import maybe_shared_us_cross_section
 
 FROZEN_SHA = 'a844945f62fa7ea60f4b497b4e66e408d891ebfd'
 KOSPI_VERSION = 'kospi-e8-confirm1-rsaccel-bear-v3'
@@ -36,14 +37,12 @@ def percentile_rank(pairs):
         i = j
     return out
 
-def us_analysis(input_rows, previous=None):
-    """Frozen ranking formulas with explicitly named research-universe inputs; not broker/PIT certification."""
-    previous = previous or {}
-    if not input_rows: raise ValueError('US screening input is empty')
-    date = max(r['date'] for r in input_rows)
-    if any(r['date'] != date for r in input_rows) or len({r['symbol'] for r in input_rows}) != len(input_rows):
-        raise ValueError('US input must contain one date and unique symbols')
-    if previous.get('lastDate', '') >= date: raise ValueError('Rank state requires a later trading date')
+def us_cross_section_ranks(input_rows):
+    """Exact candidate-independent current-session US ranks.
+
+    Previous rank state, beta streaks, holdings, cash, orders and fills are
+    deliberately excluded so only the immutable market cross-section is shared.
+    """
     tradable = [r for r in input_rows if r['symbol'] != 'SPY' and r['researchCommonSnapshot'] and r['researchExchangeEligible']
                 and (r.get('status') is None or r['status'].upper() == 'ACTIVE')
                 and positive(r.get('close')) and r.get('ret120') is not None and r.get('ret252') is not None]
@@ -53,6 +52,23 @@ def us_analysis(input_rows, previous=None):
     beta, tk, rv, liq, ami = rank('beta60Spy'), rank('ichimokuTkGap'), rank('relvol1_20'), rank('adv20Usd'), rank('amihud20', True)
     core_scores = {r['symbol']: 0.5*r120[r['symbol']] + 0.5*r252[r['symbol']] for r in tradable if r['symbol'] in r120 and r['symbol'] in r252}
     core_rank = percentile_rank(list(core_scores.items()))
+    return dict(r120=r120,r252=r252,beta=beta,tk=tk,rv=rv,liq=liq,ami=ami,
+                core_scores=core_scores,core_rank=core_rank)
+
+def us_analysis(input_rows, previous=None):
+    """Frozen ranking formulas with explicitly named research-universe inputs; not broker/PIT certification."""
+    previous = previous or {}
+    if not input_rows: raise ValueError('US screening input is empty')
+    date = max(r['date'] for r in input_rows)
+    if any(r['date'] != date for r in input_rows) or len({r['symbol'] for r in input_rows}) != len(input_rows):
+        raise ValueError('US input must contain one date and unique symbols')
+    if previous.get('lastDate', '') >= date: raise ValueError('Rank state requires a later trading date')
+    cross = maybe_shared_us_cross_section(input_rows)
+    if cross is None:
+        cross = us_cross_section_ranks(input_rows)
+    r120, r252 = cross['r120'], cross['r252']
+    beta, tk, rv, liq, ami = cross['beta'], cross['tk'], cross['rv'], cross['liq'], cross['ami']
+    core_scores, core_rank = cross['core_scores'], cross['core_rank']
     prev_core, prev_streak = previous.get('coreRanks', {}), previous.get('betaWeakStreak', {})
     bootstrap = not prev_core
     next_core, next_streak, out = {}, {}, []

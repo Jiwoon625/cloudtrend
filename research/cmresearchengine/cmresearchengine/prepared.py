@@ -9,6 +9,7 @@ from cm06_fresh_driver_v1 import PreparedFreshDiagnostic, source_hashes, digest,
 from cm06_fresh_codec_v1 import bind_identity
 from cm06_comparison_panels import MonthlyDayPanels
 from cm06_exact_units_resume_state_v1 import frame_fingerprint
+from cm06_shared_us_ranking_v1 import shared_rank_binding_from_env
 
 class PreparedResearch(PreparedFreshDiagnostic):
     def __init__(self, config, candidate, references=None):
@@ -30,6 +31,7 @@ class PreparedResearch(PreparedFreshDiagnostic):
             reference_nav_fingerprint=frame_fingerprint(self.references.get('nav')),
             reference_demands_fingerprint=frame_fingerprint(self.references.get('demands')),
             reference_capital=self.references.get('capital'),
+            shared_us_ranking=shared_rank_binding_from_env(),
             evaluation_completed=False)
         self.identity=bind_identity(self.base_identity,self.factory())
         self.trial_key='cm-'+candidate.candidate_id+'-'+digest(self.identity)

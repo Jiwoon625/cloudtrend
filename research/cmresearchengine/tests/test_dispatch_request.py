@@ -20,6 +20,7 @@ class DispatchRequestTests(unittest.TestCase):
         self.assertEqual(request["offset"], 4)
         self.assertEqual(request["count"], 1)
         self.assertEqual(request["workers"], 1)
+        self.assertFalse(request["shared_us_ranking"])
 
     def test_four_workers_are_explicitly_bounded(self):
         request = validate_request({
@@ -30,8 +31,10 @@ class DispatchRequestTests(unittest.TestCase):
             "count": 4,
             "max_seconds": 6000,
             "workers": 4,
+            "shared_us_ranking": True,
         })
         self.assertEqual(request["workers"], 4)
+        self.assertTrue(request["shared_us_ranking"])
         with self.assertRaises(ValueError):
             validate_request({
                 "request_id": "parallel-bad",
@@ -41,6 +44,17 @@ class DispatchRequestTests(unittest.TestCase):
                 "count": 1,
                 "max_seconds": 6000,
                 "workers": 2,
+            })
+        with self.assertRaises(ValueError):
+            validate_request({
+                "request_id": "shared-ranking-needs-parallel-workers",
+                "mode": "run",
+                "stage": "base",
+                "offset": 0,
+                "count": 1,
+                "max_seconds": 6000,
+                "workers": 1,
+                "shared_us_ranking": True,
             })
         with self.assertRaises(ValueError):
             validate_request({
@@ -83,6 +97,8 @@ class DispatchRequestTests(unittest.TestCase):
         self.assertIn("workflow_dispatch:", workflow)
         self.assertIn("MANUAL_WORKERS", workflow)
         self.assertIn("CM_WORKERS", workflow)
+        self.assertIn("MANUAL_SHARED_US_RANKING", workflow)
+        self.assertIn("CM_SHARED_US_RANKING", workflow)
 
 
 if __name__ == "__main__":
