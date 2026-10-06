@@ -309,6 +309,15 @@ export async function replayKrShadow(input: {
 }): Promise<ShadowReplayBatchResult> {
   const calculatedAt = input.calculatedAt ?? new Date().toISOString();
   const throughDate = input.dataset.asOfDate;
+  if (throughDate < MODEL_ACCOUNTING_START)
+    return {
+      market: "KR",
+      calculatedAt,
+      processed: [],
+      deferred: null,
+      latestRecordedDate: null,
+      throughDate,
+    };
   const store = octoberShadowStore(input.client, input.userId, input.mode ?? "service");
   const latestRecordedDate = await alignedLatestDate(store, KR_KINDS);
   const calendar = await octoberModelCalendar("KR", throughDate);
@@ -542,6 +551,16 @@ export async function replayUsShadow(input: {
   const calculatedAt = input.calculatedAt ?? new Date().toISOString();
   const datesInSource = [...new Set(input.rows.map((row) => row.date))].sort();
   const throughDate = datesInSource.at(-1) ?? MODEL_ACCOUNTING_START;
+  if (throughDate < MODEL_ACCOUNTING_START)
+    return {
+      market: "US",
+      calculatedAt,
+      processed: [],
+      deferred: null,
+      latestRecordedDate: null,
+      throughDate,
+      latestAnalysis: null,
+    };
   if (!datesInSource.length)
     return {
       market: "US",
