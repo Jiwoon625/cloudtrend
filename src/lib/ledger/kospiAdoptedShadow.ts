@@ -19,6 +19,7 @@ import {
   type ModelCalendar,
 } from "./modelSeries";
 import { validDate } from "./date";
+import { isKrOfficialShadowDecision } from "./krShadowDecision";
 
 export const ADOPTED_KOSPI_FIRST_SESSION = "2026-10-06";
 export interface AdoptedKospiShadowRun extends ModelJournalRun {
@@ -48,14 +49,6 @@ function time(value: string) {
   )
     throw new Error("Explicit KOSPI timestamp with timezone required");
   return Date.parse(value);
-}
-function marketDate(value: string) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(time(value)));
 }
 /** Pure wrapper: the existing confirm1/bear-only-RSAccel rules remain unchanged.
  * The optional execution policy creates a separate cash-only October model and never
@@ -92,11 +85,10 @@ export async function stepAdoptedKospiShadowSeries(
     !session.confirmedClose ||
     time(session.sourceCollectedAt) < Date.parse(`${date}T06:30:00Z`) ||
     time(session.sourceCollectedAt) > time(input.decisionAt) ||
-    marketDate(session.sourceCollectedAt) !== date ||
-    marketDate(input.decisionAt) !== date
+    !isKrOfficialShadowDecision(date, session.sourceCollectedAt, input.decisionAt)
   )
     throw new Error(
-      "KOSPI completed close and decision must be available on the same market session",
+      "KOSPI Shadow requires the full next-session-morning refresh before that session opens",
     );
   if (session.codeVersion !== input.codeHash || session.configHash !== input.configHash)
     throw new Error("KOSPI session code/config must match the frozen run provenance");

@@ -67,10 +67,27 @@ def sign(run):
     return run
 
 
+def next_kr_session(session):
+    current = date.fromisoformat(session) + timedelta(days=1)
+    holidays = {date(2026, 10, 9), date(2026, 12, 25), date(2026, 12, 31)}
+    while current <= date(2026, 12, 31):
+        if current.weekday() < 5 and current not in holidays:
+            return current.isoformat()
+        current += timedelta(days=1)
+    return None
+
+
 def run_for(spec, session, previous=None, coverage=None):
     market = spec["policy"]["market"]
-    close = "06:31:00" if market == "KR" else ("20:01:00" if session < "2026-11-01" else "21:01:00")
-    decision = "06:32:00" if market == "KR" else ("20:02:00" if session < "2026-11-01" else "21:02:00")
+    if market == "KR":
+        next_session = next_kr_session(session)
+        available_at = (next_session + "T08:00:00+09:00") if next_session else (session + "T23:59:59+09:00")
+        decision_at = (next_session + "T08:10:00+09:00") if next_session else (session + "T23:59:59+09:00")
+    else:
+        close = "20:01:00" if session < "2026-11-01" else "21:01:00"
+        decision = "20:02:00" if session < "2026-11-01" else "21:02:00"
+        available_at = session + "T" + close + "Z"
+        decision_at = session + "T" + decision + "Z"
     receipt = dict(book="MODEL", bookId=spec["bookId"], date=session,
                    contractHash=spec["contractHash"], codeHash=spec["codeHash"],
                    configHash=spec["configHash"], sourceHash=digest(["engine-input", session]))
@@ -79,7 +96,7 @@ def run_for(spec, session, previous=None, coverage=None):
                      calendar=calendar(market, coverage or session),
                      publication=dict(version="october-manual-publication-v1", inputHash=digest(["input", session]),
                                       sourceHash=digest(["publication-source", session]),
-                                      availableAt=session + "T" + close + "Z", decisionAt=session + "T" + decision + "Z"),
+                                      availableAt=available_at, decisionAt=decision_at),
                      result=dict(synthetic=True, cash="100000000")))
 
 
@@ -173,12 +190,29 @@ class Suite:
         """The test alone replaces one function initializer in its disposable DB."""
         marker = "v_now timestamptz := pg_catalog.statement_timestamp();"
         assert self.migration.count(marker) == 1
-        body = self.migration.split("create function public.ledger_append_own_october_model_session", 1)[1].split("alter function", 1)[0]
-        body = "create or replace function public.ledger_append_own_october_model_session" + body
+        owner_source = getattr(self, "timing_migration", self.migration)
+        marker_name = "create or replace function public.ledger_append_own_october_model_session"
+        if marker_name in owner_source:
+            body = owner_source.split(marker_name, 1)[1].split("alter function", 1)[0]
+            body = marker_name + body
+        else:
+            body = owner_source.split("create function public.ledger_append_own_october_model_session", 1)[1].split("alter function", 1)[0]
+            body = "create or replace function public.ledger_append_own_october_model_session" + body
         body = body.replace(marker, "v_now timestamptz := " + literal(instant) + "::timestamptz;")
         self.sql(body)
-        generic = self.migration.split("create or replace function public.ledger_append_model_session", 1)[1].split("create function public.ledger_append_own_october_model_session", 1)[0]
-        generic = "create or replace function public.ledger_append_model_session" + generic
+        generic_source = getattr(self, "timing_migration", self.migration)
+        generic_marker = "create or replace function public.ledger_append_model_session"
+        assert generic_marker in generic_source
+        generic_tail = generic_source.split(generic_marker, 1)[1]
+        owner_markers = [
+            "create or replace function public.ledger_append_own_october_model_session",
+            "create function public.ledger_append_own_october_model_session",
+        ]
+        generic_end = len(generic_tail)
+        for owner_marker in owner_markers:
+            if owner_marker in generic_tail:
+                generic_end = min(generic_end, generic_tail.index(owner_marker))
+        generic = generic_marker + generic_tail[:generic_end]
         marker = "v_artifact_now timestamptz := pg_catalog.statement_timestamp();"
         assert generic.count(marker) == 1
         self.sql(generic.replace(marker, "v_artifact_now timestamptz := " + literal(instant) + "::timestamptz;"))
@@ -262,7 +296,13 @@ class Suite:
         assert retained.strip() == original.strip(), "Normal service append behavior must be preserved verbatim"
         assert self.sql(catalog) == before_catalog
         assert self.sql("SELECT prosecdef::text || ':' || pg_get_userbyid(proowner) || ':' || proconfig[1] FROM pg_proc WHERE oid=" + literal(SIGNATURE) + "::regprocedure") == 'true:postgres:search_path=""'
-        self.check("Migration fails closed on changed prerequisite; adds postgres-owned empty-search-path RPC without changing tables/RLS/triggers/grants")
+        timing_migrations = list((ROOT / "supabase/migrations").glob("*_kr_shadow_next_morning.sql"))
+        assert len(timing_migrations) == 1
+        self.timing_migration = timing_migrations[0].read_text()
+        self.sql(self.timing_migration)
+        assert self.sql(catalog) == before_catalog
+        assert self.sql("SELECT prosecdef::text || ':' || pg_get_userbyid(proowner) || ':' || proconfig[1] FROM pg_proc WHERE oid=" + literal(SIGNATURE) + "::regprocedure") == 'true:postgres:search_path=""'
+        self.check("Migration fails closed on changed prerequisite; timing update preserves postgres ownership, ACLs, tables, RLS and triggers")
 
         specs = {kind: series(kind) for kind in KINDS}
         for spec in specs.values():
@@ -346,6 +386,19 @@ class Suite:
         assert self.record(first)["reused"] is True
         self.check("Same-session post-close source <= decision <= current time; valid first append and exact same-day retry succeed")
 
+        kr_first = run_for(specs["KR_KOSPI"], "2026-10-06")
+        same_evening = copy.deepcopy(kr_first)
+        same_evening["publication"]["availableAt"] = "2026-10-06T20:00:00+09:00"
+        same_evening["publication"]["decisionAt"] = "2026-10-06T20:10:00+09:00"
+        self.clock("2026-10-07T08:20:00+09:00")
+        self.reject(call(same_evening), "next regular-session morning refresh")
+        after_open = copy.deepcopy(kr_first)
+        after_open["publication"]["decisionAt"] = "2026-10-07T09:01:00+09:00"
+        self.reject(call(after_open), "next regular-session morning refresh")
+        assert self.record(kr_first) == dict(reused=False, stateHash=kr_first["stateHash"])
+        assert self.record(kr_first)["reused"] is True
+        self.check("KR same-evening publication is preview-only; next-session 08:xx KST succeeds and post-open decisions fail")
+
         altered = copy.deepcopy(first)
         altered["result"]["cash"] = "999"
         sign(altered)
@@ -372,10 +425,11 @@ class Suite:
         self.check("A previously prepared original decision can be appended after the session, without relabeling date or decision evidence")
 
         for kind in KINDS:
-            if kind in ["US_A0", "US_A2"]:
+            if kind in ["US_A0", "US_A2", "KR_KOSPI"]:
                 continue
             initial = run_for(specs[kind], "2026-10-05" if kind.startswith("US_") else "2026-10-06")
             assert self.record(initial)["reused"] is False
+        assert self.record(run_for(specs["KR_KOSPI"], "2026-10-06"))["reused"] is True
         assert self.sql("SELECT count(distinct series_id) FROM public.ledger_model_sessions") == "8"
         self.register(spec, USER_B)
         assert self.record(first, user=USER_B)["reused"] is False
@@ -434,7 +488,7 @@ class Suite:
         for owned in specs.values():
             self.register(owned, USER_D)
         daily = dict(version="kr-daily-inputs-v1", date="2026-10-06", inputs=dict(
-            snapshots=[dict(date="2026-10-06", asOfDate="2026-10-06", savedAt="2026-10-06T06:32:00Z",
+            snapshots=[dict(date="2026-10-06", asOfDate="2026-10-06", savedAt="2026-10-07T08:00:00+09:00",
                             entries=[dict(symbol="005930", instrumentType="STOCK", name="Synthetic stock")])],
             bars={"005930": [dict(tradeDate="2026-10-06", open=100, high=102, low=99, close=101, volume=123)]},
             markets={"005930": "KOSPI"}, marketGates={}))
@@ -462,7 +516,7 @@ class Suite:
         self.check("Bounded KR daily input stages once, reuses exactly via owner and unchanged service RPC, and rejects same-hash payload substitution")
         raced_day = copy.deepcopy(daily)
         raced_day["date"] = "2026-10-07"
-        raced_day["inputs"]["snapshots"][0].update(date="2026-10-07", asOfDate="2026-10-07", savedAt="2026-10-07T06:32:00Z")
+        raced_day["inputs"]["snapshots"][0].update(date="2026-10-07", asOfDate="2026-10-07", savedAt="2026-10-08T08:00:00+09:00")
         raced_day["inputs"]["bars"]["005930"][0]["tradeDate"] = "2026-10-07"
         raced_id = "october-input:KR:2026-10-07:" + digest(raced_day)[7:]
         outcomes = self.race(specs["KR_MIXED"]["bookId"], [

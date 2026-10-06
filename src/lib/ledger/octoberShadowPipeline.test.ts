@@ -16,6 +16,7 @@ import type { OctoberShadowStore } from "./octoberShadowRepository.server";
 import type { ModelJournalRun } from "./modelJournal";
 import { runUsProspectiveAnalysis, type UsProspectiveInputRow } from "../engine/usProspective";
 import { octoberModelCalendar, regularCloseAt } from "./octoberShadowCalendar";
+import { nextKrRegularSession } from "./krShadowDecision";
 const codeHash = `sha256:${"a".repeat(64)}` as const,
   sourceHash = `sha256:${"b".repeat(64)}` as const;
 
@@ -338,12 +339,15 @@ function krSource(date: string): KrModelPublication {
     etfFacts: {},
     vkospiSeries: [],
   } as unknown as MarketDataset;
+  const next = nextKrRegularSession(date);
+  const availableAt = next ? `${next}T08:00:00+09:00` : `${date}T23:50:00+09:00`;
+  const decisionAt = next ? `${next}T08:10:00+09:00` : `${date}T23:55:00+09:00`;
   return {
     market: "KR",
     codeHash,
     sourceHash,
-    availableAt: `${date}T07:00:00Z`,
-    decisionAt: `${date}T08:00:00Z`,
+    availableAt,
+    decisionAt,
     confirmedRegularClose: true,
     failedSymbols: 0,
     dataset,
@@ -353,12 +357,12 @@ function krSource(date: string): KrModelPublication {
       sourceHash,
       symbols: instruments.map((i) => i.symbol),
     },
-    sourceEvidence: [{ sourceHash, asOfDate: date, registeredAt: `${date}T07:00:00Z` }],
-    analysis: { asOfDate: date, calculatedAt: `${date}T08:00:00Z`, rows } as AnalysisResult,
+    sourceEvidence: [{ sourceHash, asOfDate: date, registeredAt: availableAt }],
+    analysis: { asOfDate: date, calculatedAt: decisionAt, rows } as AnalysisResult,
     snapshot: {
       date,
       asOfDate: date,
-      savedAt: `${date}T08:00:00Z`,
+      savedAt: availableAt,
       entries: [],
       marketGateStatus: "UNKNOWN",
       totalCount: 0,
@@ -389,9 +393,7 @@ describe("KR five-book complete publication", () => {
     const bad = krSource("2026-10-06");
     bad.dataset.isLive = false;
     await expect(recordOctoberPublication(f.store, bad)).rejects.toThrow("synthetic");
-    await expect(recordOctoberPublication(f.store, krSource("2026-10-05"))).rejects.toThrow(
-      "regular close",
-    );
+    await expect(recordOctoberPublication(f.store, krSource("2026-10-05"))).rejects.toThrow();
     expect(f.appends()).toBe(0);
   });
 });

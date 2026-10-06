@@ -987,3 +987,81 @@ describe("ETF immutable journal run wrapper", () => {
     expect(first.run.calendar.coverageEnd).toBe("2026-10-20");
   });
 });
+
+
+describe("ETF production next-morning decision window", () => {
+  it("accepts a completed-session signal first available after the next-morning KRX refresh", async () => {
+    const series = await create();
+    const initial = await initializeEtfAdoptedShadow(series);
+    const ready = signal("360750", "2026-10-06", "2026-10-02", "pending");
+    ready.availableAt = "2026-10-07T08:00:00+09:00";
+    const nextMorning = {
+      ...input(series, "2026-10-06", null, [ready]),
+      closeAt: "2026-10-07T08:10:00+09:00",
+      decisionWindow: "NEXT_SESSION_PREOPEN" as const,
+    };
+    const result = await stepEtfAdoptedShadow(series, initial, nextMorning);
+    expect(result.state.pendingConfirmations).toEqual([
+      { symbol: "360750", originDate: "2026-10-06" },
+    ]);
+    expect(result.state.lastCloseAt).toBe("2026-10-07T08:10:00+09:00");
+  });
+
+  it("rejects same-evening publication in next-morning production mode", async () => {
+    const series = await create();
+    const initial = await initializeEtfAdoptedShadow(series);
+    await expect(
+      stepEtfAdoptedShadow(series, initial, {
+        ...input(series, "2026-10-06", null),
+        closeAt: "2026-10-06T20:10:00+09:00",
+        decisionWindow: "NEXT_SESSION_PREOPEN",
+      }),
+    ).rejects.toThrow(/open\/decision chronology/);
+  });
+
+  it("keeps next-open execution causal when the prior signal was fixed before that open", async () => {
+    const series = await create();
+    const initial = await initializeEtfAdoptedShadow(series);
+    const onset = signal("360750", "2026-10-06", "2026-10-02", "pending");
+    onset.availableAt = "2026-10-07T08:00:00+09:00";
+    const first = await stepEtfAdoptedShadow(series, initial, {
+      ...input(series, "2026-10-06", null, [onset]),
+      closeAt: "2026-10-07T08:10:00+09:00",
+      decisionWindow: "NEXT_SESSION_PREOPEN",
+    });
+    const confirmation = signal("360750", "2026-10-07", "2026-10-06", "confirmed");
+    confirmation.availableAt = "2026-10-08T08:00:00+09:00";
+    const second = await stepEtfAdoptedShadow(series, first.state, {
+      ...input(series, "2026-10-07", "2026-10-06", [confirmation]),
+      closeAt: "2026-10-08T08:10:00+09:00",
+      decisionWindow: "NEXT_SESSION_PREOPEN",
+    });
+    expect(second.state.pendingEntries).toHaveLength(1);
+
+    const third = await stepEtfAdoptedShadow(series, second.state, {
+      ...input(
+        series,
+        "2026-10-08",
+        "2026-10-07",
+        [],
+        [
+          {
+            symbol: "360750",
+            open: price("2026-10-08", "10000"),
+            close: {
+              ...price("2026-10-08", "10000", "close"),
+              availableAt: "2026-10-12T08:00:00+09:00",
+            },
+          },
+        ],
+      ),
+      closeAt: "2026-10-12T08:10:00+09:00",
+      decisionWindow: "NEXT_SESSION_PREOPEN",
+    });
+    expect(third.record.fills[0]).toMatchObject({
+      side: "BUY",
+      executionDate: "2026-10-08",
+      signalDate: "2026-10-07",
+    });
+  });
+});

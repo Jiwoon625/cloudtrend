@@ -1,6 +1,7 @@
 import { simulateStrategy, type StrategyLedger } from "../portfolioLedgers";
 import type { DailyPrice, Market } from "../engine/types";
 import type { KospiMarketGateEvidence } from "../engine/kospiMarketGate";
+import { isKrOfficialShadowDecision } from "./krShadowDecision";
 import type { ScreeningSnapshot } from "../screeningSnapshot";
 import {
   assertModelSeriesIsolation,
@@ -45,13 +46,6 @@ export interface AdoptedKrRun {
     prefixHash: SeriesHash;
   };
 }
-const localDate = (value: string) =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(value));
 function prefix(input: AdoptedKrRun["frozenInputs"], date: string): AdoptedKrRun["frozenInputs"] {
   const snapshots = input.snapshots
     .filter((s) => s.asOfDate <= date)
@@ -96,10 +90,11 @@ export async function stepAdoptedKrSeries(
     !Number.isFinite(Date.parse(input.availableAt)) ||
     !Number.isFinite(Date.parse(input.decisionAt)) ||
     Date.parse(input.availableAt) > Date.parse(input.decisionAt) ||
-    localDate(input.availableAt) !== input.date ||
-    localDate(input.decisionAt) !== input.date
+    !isKrOfficialShadowDecision(input.date, input.availableAt, input.decisionAt)
   )
-    throw new Error("Exact-session completed data must be available before the decision");
+    throw new Error(
+      "KR Shadow requires the full next-session-morning refresh before that session opens",
+    );
   const first = firstModelSession(series, input.calendar);
   const sessions = [...input.calendar.regularSessions].sort();
   if (!sessions.includes(input.date)) throw new Error("Verified KR regular session required");
@@ -107,7 +102,7 @@ export async function stepAdoptedKrSeries(
     input.snapshots.some(
       (s) =>
         s.asOfDate > input.date ||
-        localDate(s.savedAt) !== s.asOfDate ||
+        !isKrOfficialShadowDecision(s.asOfDate, s.savedAt, s.savedAt) ||
         Date.parse(s.savedAt) > Date.parse(input.decisionAt),
     ) ||
     new Set(input.snapshots.map((s) => s.asOfDate)).size !== input.snapshots.length

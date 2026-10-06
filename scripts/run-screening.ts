@@ -1,4 +1,5 @@
 import { hashSeriesValue, MODEL_ACCOUNTING_START } from "../src/lib/ledger/modelSeries";
+import { isKrOfficialShadowDecision } from "../src/lib/ledger/krShadowDecision";
 import {
   octoberShadowAlreadyRecorded,
   publishOctoberShadow,
@@ -260,33 +261,48 @@ export async function runScreening(argv = process.argv.slice(2)) {
         .map((i) => i.savedAt)
         .sort((a, b) => Date.parse(a) - Date.parse(b))
         .at(-1);
-      const octoberShadow = await publishOctoberShadow(client, options.supabaseUserId, {
-        market: "KR",
-        dataset,
-        analysis: engineAnalysis,
-        snapshot: shadowSnapshot,
-        config,
-        sourceHash: sourceSeriesHash(dataVersion),
-        availableAt: availableAt ?? "",
-        decisionAt: createdAt,
-        confirmedRegularClose: currentSources.length > 0,
-        failedSymbols: previous
-          ? previous.entries.filter(
-              (entry) => !analysis.rows.some((row) => row.instrument.symbol === entry.symbol),
-            ).length
-          : -1,
-        universeEvidence: {
-          asOfDate: previous?.asOfDate ?? "",
-          sourceHash: await hashSeriesValue(previous),
-          symbols: [...new Set(previous?.entries.map((entry) => entry.symbol) ?? [])].sort(),
-        },
-        sourceEvidence: inputs.map((source) => ({
-          sourceHash: sourceSeriesHash(source.dataHash),
-          asOfDate: source.validation.stats.maxDate ?? "",
-          registeredAt: source.savedAt,
-        })),
-      });
-      process.stdout.write(`${JSON.stringify({ octoberShadow })}\n`);
+      if (
+        !availableAt ||
+        !isKrOfficialShadowDecision(analysis.asOfDate, availableAt, createdAt)
+      ) {
+        process.stdout.write(
+          `${JSON.stringify({
+            octoberShadow: {
+              status: "PREVIEW_ONLY",
+              date: analysis.asOfDate,
+              reason: "KR Shadow waits for the next regular-session morning KRX refresh",
+            },
+          })}\n`,
+        );
+      } else {
+        const octoberShadow = await publishOctoberShadow(client, options.supabaseUserId, {
+          market: "KR",
+          dataset,
+          analysis: engineAnalysis,
+          snapshot: shadowSnapshot,
+          config,
+          sourceHash: sourceSeriesHash(dataVersion),
+          availableAt,
+          decisionAt: createdAt,
+          confirmedRegularClose: currentSources.length > 0,
+          failedSymbols: previous
+            ? previous.entries.filter(
+                (entry) => !analysis.rows.some((row) => row.instrument.symbol === entry.symbol),
+              ).length
+            : -1,
+          universeEvidence: {
+            asOfDate: previous?.asOfDate ?? "",
+            sourceHash: await hashSeriesValue(previous),
+            symbols: [...new Set(previous?.entries.map((entry) => entry.symbol) ?? [])].sort(),
+          },
+          sourceEvidence: inputs.map((source) => ({
+            sourceHash: sourceSeriesHash(source.dataHash),
+            asOfDate: source.validation.stats.maxDate ?? "",
+            registeredAt: source.savedAt,
+          })),
+        });
+        process.stdout.write(`${JSON.stringify({ octoberShadow })}\n`);
+      }
     }
     releaseSourcePayloads(inputs);
     await Promise.all([

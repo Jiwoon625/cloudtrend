@@ -3,6 +3,7 @@ import { KOSPI_SHADOW_POLICY, stepKospiShadow, type KospiShadowRow } from "../en
 import { decimal } from "./decimal";
 import { stepAdoptedKospiShadowSeries, type AdoptedKospiShadowInput } from "./kospiAdoptedShadow";
 import { freezeAdoptedSeries, hashSeriesValue, type ModelCalendar } from "./modelSeries";
+import { nextKrRegularSession } from "./krShadowDecision";
 
 const codeHash = `sha256:${"a".repeat(64)}` as const;
 const sourceHash = `sha256:${"b".repeat(64)}` as const;
@@ -44,9 +45,10 @@ const row = (date: string, score = 7, patch: Partial<KospiShadowRow> = {}): Kosp
   ...patch,
 });
 function input(date: string, configHash: string, score = 7): AdoptedKospiShadowInput {
+  const next = nextKrRegularSession(date) ?? date;
   return {
     calendar,
-    decisionAt: `${date}T08:10:00Z`,
+    decisionAt: `${next}T08:10:00+09:00`,
     codeHash,
     configHash,
     session: {
@@ -55,7 +57,7 @@ function input(date: string, configHash: string, score = 7): AdoptedKospiShadowI
       sourceHash,
       codeVersion: codeHash,
       configHash,
-      sourceCollectedAt: `${date}T08:00:00Z`,
+      sourceCollectedAt: `${next}T08:00:00+09:00`,
       confirmedClose: true,
       benchmarkClose: 2500,
       gate: { date, status: "NEUTRAL", issues: [] },
@@ -268,8 +270,8 @@ describe("isolated October KOSPI confirm1/bear-only journal adapter", () => {
       "exact previous",
     );
     for (const source of [
-      { ...input("2026-10-07", series.configHash), decisionAt: "2026-10-08T08:10:00Z" },
-      { ...input("2026-10-07", series.configHash), decisionAt: "2026-10-07T07:00:00Z" },
+      { ...input("2026-10-07", series.configHash), decisionAt: "2026-10-08T09:01:00+09:00" },
+      { ...input("2026-10-07", series.configHash), decisionAt: "2026-10-07T20:10:00+09:00" },
       {
         ...input("2026-10-07", series.configHash),
         session: { ...input("2026-10-07", series.configHash).session, confirmedClose: false },
@@ -278,12 +280,12 @@ describe("isolated October KOSPI confirm1/bear-only journal adapter", () => {
         ...input("2026-10-07", series.configHash),
         session: {
           ...input("2026-10-07", series.configHash).session,
-          sourceCollectedAt: "2026-10-08T07:00:00Z",
+          sourceCollectedAt: "2026-10-07T20:00:00+09:00",
         },
       },
     ])
       await expect(stepAdoptedKospiShadowSeries(series, source, first.run)).rejects.toThrow(
-        "same market session",
+        "next-session-morning",
       );
     await expect(
       stepAdoptedKospiShadowSeries(series, input("2026-10-02", series.configHash)),
