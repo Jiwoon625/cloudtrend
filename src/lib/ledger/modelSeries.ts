@@ -17,12 +17,12 @@ import {
 import type { UsProspectiveAnalysis } from "../engine/usProspective";
 
 /** Additive comparison contracts only. No existing engine or historical book is migrated. */
-export const ADOPTED_SERIES_VERSION = "adopted-shadow-2026-10-05-v1";
-export const MODEL_ACCOUNTING_START = "2026-10-05";
+export const ADOPTED_SERIES_VERSION = "adopted-shadow-2026-10-12-v2";
+export const MODEL_ACCOUNTING_START = "2026-10-12";
 export const MODEL_INITIAL_KRW = "100000000";
 export const MODEL_ROUND_TRIP_COST = "0.003";
 export const MODEL_ONE_WAY_COST = "0.0015";
-export const KR_FIXED_BUDGET_END_EXCLUSIVE = "2027-10-05";
+export const KR_FIXED_BUDGET_END_EXCLUSIVE = "2027-10-12";
 export const ADOPTED_SERIES_KINDS = [
   "KR_MIXED",
   "KR_KOSPI",
