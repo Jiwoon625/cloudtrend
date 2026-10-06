@@ -3,6 +3,7 @@ import { simulateStrategy, type ProspectiveKrReplayPolicy } from "../portfolioLe
 import { getOperationalSignals } from "../engine/operationalStrategy";
 import type { DailyPrice } from "../engine/types";
 import type { ScreeningSnapshot, SnapshotEntry } from "../screeningSnapshot";
+import { isKrOfficialShadowDecision, nextKrRegularSession } from "./krShadowDecision";
 const settings = {
   initialCapital: 100_000_000,
   maxPositions: 30,
@@ -30,10 +31,15 @@ const entry = (symbol: string, sectorCode = "s"): SnapshotEntry => ({
   hardFilterPassed: true,
   ...getOperationalSignals("KOSDAQ", 7.5, 8, true),
 });
+const officialSavedAt = (date: string) => {
+  const next = nextKrRegularSession(date);
+  if (!next) throw new Error("Missing reviewed next KR session");
+  return `${next}T08:00:00+09:00`;
+};
 const snapshot = (date: string, entries: SnapshotEntry[]): ScreeningSnapshot => ({
   date,
   asOfDate: date,
-  savedAt: `${date}T09:00:00Z`,
+  savedAt: officialSavedAt(date),
   entries,
   marketGateStatus: "",
   totalCount: entries.length,
@@ -142,8 +148,8 @@ it("freezes daily KR prefixes, enforces calendar sequence and reuses immutable s
     codeHash: hash,
     sourceHash: hash,
     configHash: series.configHash,
-    availableAt: "2026-10-06T09:00:00Z",
-    decisionAt: "2026-10-06T10:00:00Z",
+    availableAt: "2026-10-07T08:00:00+09:00",
+    decisionAt: "2026-10-07T08:10:00+09:00",
     confirmedClose: true,
     snapshots: [snapshot("2026-10-06", [entry("NEW")])],
     bars: { NEW: [bar("2026-10-06", 100)] },
@@ -157,8 +163,8 @@ it("freezes daily KR prefixes, enforces calendar sequence and reuses immutable s
   const nextInput = {
     ...firstInput,
     date: "2026-10-07",
-    availableAt: "2026-10-07T09:00:00Z",
-    decisionAt: "2026-10-07T10:00:00Z",
+    availableAt: "2026-10-08T08:00:00+09:00",
+    decisionAt: "2026-10-08T08:10:00+09:00",
     snapshots: [...firstInput.snapshots, snapshot("2026-10-07", [])],
     bars: { NEW: [...firstInput.bars.NEW, bar("2026-10-07", 100)] },
   };
@@ -174,10 +180,10 @@ it("freezes daily KR prefixes, enforces calendar sequence and reuses immutable s
   await expect(
     stepAdoptedKrSeries(
       series,
-      { ...nextInput, availableAt: "2026-10-08T09:00:00Z", decisionAt: "2026-10-08T10:00:00Z" },
+      { ...nextInput, availableAt: "2026-10-08T18:00:00+09:00", decisionAt: "2026-10-08T18:10:00+09:00" },
       first.run,
     ),
-  ).rejects.toThrow("Exact-session");
+  ).rejects.toThrow(/next-session-morning/);
 });
 it("keeps new KR fees/cash at the same exact precision as US/ETF", () => {
   const result = simulateStrategy(
@@ -193,4 +199,52 @@ it("keeps new KR fees/cash at the same exact precision as US/ETF", () => {
   expect(result.trades[0]!.entryFee).toBe(4949.9505);
   expect(result.modelAccounting!.fees["NEW|2026-10-06"]!.entry).toBe("4949.9505");
   expect(result.modelAccounting!.cash).toBe("96695083.0495");
+});
+
+
+describe("KR Shadow official timing", () => {
+  it("keeps the same-evening run as preview and accepts next-morning KRX completion", () => {
+    expect(
+      isKrOfficialShadowDecision(
+        "2026-10-06",
+        "2026-10-06T20:00:00+09:00",
+        "2026-10-06T20:10:00+09:00",
+      ),
+    ).toBe(false);
+    expect(
+      isKrOfficialShadowDecision(
+        "2026-10-06",
+        "2026-10-07T08:00:00+09:00",
+        "2026-10-07T08:10:00+09:00",
+      ),
+    ).toBe(true);
+  });
+
+  it("uses the next reviewed regular session across the 10/9 holiday and weekend", () => {
+    expect(nextKrRegularSession("2026-10-08")).toBe("2026-10-12");
+    expect(
+      isKrOfficialShadowDecision(
+        "2026-10-08",
+        "2026-10-12T08:00:00+09:00",
+        "2026-10-12T08:10:00+09:00",
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects a stale source and any decision after the next market open", () => {
+    expect(
+      isKrOfficialShadowDecision(
+        "2026-10-06",
+        "2026-10-06T20:00:00+09:00",
+        "2026-10-07T08:10:00+09:00",
+      ),
+    ).toBe(false);
+    expect(
+      isKrOfficialShadowDecision(
+        "2026-10-06",
+        "2026-10-07T08:00:00+09:00",
+        "2026-10-07T09:01:00+09:00",
+      ),
+    ).toBe(false);
+  });
 });
