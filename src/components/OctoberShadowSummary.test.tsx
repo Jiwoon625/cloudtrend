@@ -30,7 +30,8 @@ describe("October Shadow registry cards", () => {
     );
     const html = render({
       version: ADOPTED_SERIES_VERSION,
-      viewVersion: "october-shadow-holdings-tax-v1",
+      viewVersion: "october-shadow-holdings-tax-v2",
+      replayStatus: [],
       readyForPortfolioConsolidation: true,
       checkedAt,
       books,
@@ -44,6 +45,39 @@ describe("October Shadow registry cards", () => {
     expect(html).toContain("첫 세션 대기");
     expect(html).not.toContain("실제 소유자 · 과세대상 계좌 합산");
   });
+  it("shows retrospective replay and a deferred input reason separately from signal date", async () => {
+    const books = await Promise.all(
+      ADOPTED_SERIES_KINDS.map(async (kind) =>
+        summarizeOctoberShadowBook(kind, registry(await fixtureSeries(kind)), [], true, checkedAt),
+      ),
+    );
+    const html = render({
+      version: ADOPTED_SERIES_VERSION,
+      viewVersion: "october-shadow-holdings-tax-v2",
+      readyForPortfolioConsolidation: true,
+      checkedAt,
+      replayStatus: [
+        {
+          market: "KR",
+          signalDate: "2026-10-06",
+          calculatedAt: "2026-10-08T00:00:00Z",
+          sourceCapturedAt: "2026-10-08T00:00:00Z",
+          modelDecisionAt: "2026-10-07T08:10:00+09:00",
+          executionAt: "2026-10-07T09:00:00+09:00",
+          replayMode: "RETROSPECTIVE",
+          status: "WAITING_INPUT",
+          reason: "해당 거래일 종목 행이 없습니다.",
+        },
+      ],
+      books,
+    });
+    expect(html).toContain("한국 Shadow replay");
+    expect(html).toContain("신호 기준일 2026-10-06");
+    expect(html).toContain("사후 복원 계산");
+    expect(html).toContain("자료 대기");
+    expect(html).toContain("보류 사유: 해당 거래일 종목 행이 없습니다.");
+  });
+
   it("shows persisted first date and independently verified zero tax after a real model session", async () => {
     const series = await fixtureSeries();
     const book = await summarizeOctoberShadowBook(
@@ -55,7 +89,8 @@ describe("October Shadow registry cards", () => {
     );
     const html = render({
       version: ADOPTED_SERIES_VERSION,
-      viewVersion: "october-shadow-holdings-tax-v1",
+      viewVersion: "october-shadow-holdings-tax-v2",
+      replayStatus: [],
       readyForPortfolioConsolidation: true,
       checkedAt,
       books: [book],
@@ -90,7 +125,8 @@ it("shows the independent holdings table and fixed-budget rule without actual-ac
   ];
   const html = render({
     version: ADOPTED_SERIES_VERSION,
-    viewVersion: "october-shadow-holdings-tax-v1",
+    viewVersion: "october-shadow-holdings-tax-v2",
+      replayStatus: [],
     readyForPortfolioConsolidation: false,
     checkedAt,
     books: [book],

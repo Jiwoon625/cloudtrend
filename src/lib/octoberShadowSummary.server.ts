@@ -48,11 +48,23 @@ export interface OctoberShadowBookSummary {
   tax: UsTaxOverlayResult | null;
   warnings: string[];
 }
+export interface ShadowReplayStatusSummary {
+  market: "KR" | "US";
+  signalDate: string;
+  calculatedAt: string;
+  sourceCapturedAt: string | null;
+  modelDecisionAt: string | null;
+  executionAt: string | null;
+  replayMode: "CONTEMPORANEOUS" | "RETROSPECTIVE";
+  status: "RECORDED" | "REUSED" | "WAITING_INPUT" | "FAILED";
+  reason: string | null;
+}
 export interface OctoberShadowSummary {
   version: string;
   checkedAt: string;
-  viewVersion: "october-shadow-holdings-tax-v1";
+  viewVersion: "october-shadow-holdings-tax-v2";
   readyForPortfolioConsolidation: boolean;
+  replayStatus: ShadowReplayStatusSummary[];
   books: OctoberShadowBookSummary[];
 }
 export interface OctoberRegistryRow {
@@ -379,11 +391,47 @@ export async function loadOctoberShadowSummaryForOwner(
       }
     }),
   );
+  const replayQuery = await client
+    .from("shadow_replay_audit")
+    .select(
+      "market,signal_date,calculated_at,source_captured_at,model_decision_at,execution_at,replay_mode,status,reason",
+    )
+    .eq("user_id", uid)
+    .order("calculated_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(100);
+  const replayStatus: ShadowReplayStatusSummary[] = [];
+  if (!replayQuery.error) {
+    for (const market of ["KR", "US"] as const) {
+      const row = (replayQuery.data ?? []).find((item) => item.market === market);
+      if (!row) continue;
+      replayStatus.push({
+        market,
+        signalDate: String(row.signal_date),
+        calculatedAt: String(row.calculated_at),
+        sourceCapturedAt: row.source_captured_at ? String(row.source_captured_at) : null,
+        modelDecisionAt: row.model_decision_at ? String(row.model_decision_at) : null,
+        executionAt: row.execution_at ? String(row.execution_at) : null,
+        replayMode:
+          row.replay_mode === "RETROSPECTIVE" ? "RETROSPECTIVE" : "CONTEMPORANEOUS",
+        status:
+          row.status === "WAITING_INPUT"
+            ? "WAITING_INPUT"
+            : row.status === "FAILED"
+              ? "FAILED"
+              : row.status === "REUSED"
+                ? "REUSED"
+                : "RECORDED",
+        reason: row.reason ? String(row.reason) : null,
+      });
+    }
+  }
   return {
     version: ADOPTED_SERIES_VERSION,
     checkedAt,
-    viewVersion: "october-shadow-holdings-tax-v1",
+    viewVersion: "october-shadow-holdings-tax-v2",
     readyForPortfolioConsolidation: isOctoberShadowReady(books),
+    replayStatus,
     books,
   };
 }

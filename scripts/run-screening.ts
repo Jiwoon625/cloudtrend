@@ -1,10 +1,5 @@
-import { hashSeriesValue, MODEL_ACCOUNTING_START } from "../src/lib/ledger/modelSeries";
-import { isKrOfficialShadowDecision } from "../src/lib/ledger/krShadowDecision";
-import {
-  octoberShadowAlreadyRecorded,
-  publishOctoberShadow,
-  sourceSeriesHash,
-} from "./october-shadow-publication";
+import { MODEL_ACCOUNTING_START } from "../src/lib/ledger/modelSeries";
+import { replayKrShadow } from "../src/lib/shadowReplay.server";
 import { memory } from "./screening-memory";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -157,18 +152,9 @@ export async function runScreening(argv = process.argv.slice(2)) {
         .filter((date): date is string => typeof date === "string")
         .sort()
         .at(-1);
-    if (
-      reusable &&
-      (!options.upload ||
-        (reusableDate &&
-          (await octoberShadowAlreadyRecorded(
-            client,
-            options.supabaseUserId,
-            "KR",
-            reusableDate,
-            dataVersion,
-          ))))
-    ) {
+    // A reusable post-start screen may still have missing Shadow dates, so upload
+    // runs continue into replay. Pre-start data has no Shadow work and can return.
+    if (reusable && (!options.upload || (reusableDate && reusableDate < MODEL_ACCOUNTING_START))) {
       process.stdout.write(`${JSON.stringify({ reused: true, run: reusable }, null, 2)}\n`);
       return;
     }
@@ -182,8 +168,7 @@ export async function runScreening(argv = process.argv.slice(2)) {
     analysis.asOfDate,
   );
   const snapshot = buildSnapshot(analysis, sourceRegisteredAt);
-  // The October Shadow code/config contract remains bound to the untouched frozen engine payload.
-  const shadowSnapshot = buildSnapshot(engineAnalysis, sourceRegisteredAt);
+  // Shadow is replayed separately from the latest investment-screen view.
   const previous = await loadPreviousSnapshot(client, options.supabaseUserId, snapshot.date);
   const summary = buildScreeningSummary(analysis, snapshot, previous);
   const createdAt = new Date().toISOString();
@@ -255,55 +240,22 @@ export async function runScreening(argv = process.argv.slice(2)) {
     });
 
     memory("cache-publish-end");
-    if (analysis.asOfDate >= MODEL_ACCOUNTING_START) {
-      const currentSources = inputs.filter((i) => i.validation.stats.maxDate === analysis.asOfDate);
-      const availableAt = inputs
-        .map((i) => i.savedAt)
-        .sort((a, b) => Date.parse(a) - Date.parse(b))
-        .at(-1);
-      if (
-        !availableAt ||
-        !isKrOfficialShadowDecision(analysis.asOfDate, availableAt, createdAt)
-      ) {
-        process.stdout.write(
-          `${JSON.stringify({
-            octoberShadow: {
-              status: "PREVIEW_ONLY",
-              date: analysis.asOfDate,
-              reason: "KR Shadow waits for the next regular-session morning KRX refresh",
-            },
-          })}\n`,
-        );
-      } else {
-        const octoberShadow = await publishOctoberShadow(client, options.supabaseUserId, {
-          market: "KR",
-          dataset,
-          analysis: engineAnalysis,
-          snapshot: shadowSnapshot,
-          config,
-          sourceHash: sourceSeriesHash(dataVersion),
-          availableAt,
-          decisionAt: createdAt,
-          confirmedRegularClose: currentSources.length > 0,
-          failedSymbols: previous
-            ? previous.entries.filter(
-                (entry) => !analysis.rows.some((row) => row.instrument.symbol === entry.symbol),
-              ).length
-            : -1,
-          universeEvidence: {
-            asOfDate: previous?.asOfDate ?? "",
-            sourceHash: await hashSeriesValue(previous),
-            symbols: [...new Set(previous?.entries.map((entry) => entry.symbol) ?? [])].sort(),
-          },
-          sourceEvidence: inputs.map((source) => ({
-            sourceHash: sourceSeriesHash(source.dataHash),
-            asOfDate: source.validation.stats.maxDate ?? "",
-            registeredAt: source.savedAt,
-          })),
-        });
-        process.stdout.write(`${JSON.stringify({ octoberShadow })}\n`);
-      }
-    }
+    const octoberShadow = await replayKrShadow({
+      client,
+      userId: options.supabaseUserId,
+      dataset,
+      config,
+      calculatedAt: createdAt,
+      mode: "service",
+      sources: inputs.map((source) => ({
+        min_date: source.validation.stats.minDate,
+        max_date: source.validation.stats.maxDate,
+        activated_at: source.sourceRecord?.activated_at ?? null,
+        created_at: source.sourceRecord?.created_at ?? source.savedAt,
+        savedAt: source.savedAt,
+      })),
+    });
+    process.stdout.write(`${JSON.stringify({ octoberShadow })}\n`);
     releaseSourcePayloads(inputs);
     await Promise.all([
       uploadScreeningJsonFile(client, resultPath, bundleFile),

@@ -24,6 +24,15 @@ const states: Record<OctoberShadowBookSummary["status"], string> = {
   RECORDED: "실제 세션 기록 연결됨",
   UNAVAILABLE: "자료 확인 필요",
 };
+const replayStateLabel = (status: Summary["replayStatus"][number]["status"]) =>
+  status === "WAITING_INPUT"
+    ? "자료 대기"
+    : status === "FAILED"
+      ? "계산 실패"
+      : status === "REUSED"
+        ? "기존 기록 재사용"
+        : "기록 완료";
+
 const money = (value: string | null, currency: "KRW" | "USD", residual = false) =>
   value === null
     ? "미확인"
@@ -147,6 +156,35 @@ export function OctoberShadowSummaryContent({
         대기이며, 해당일 기록 전에 보완해야 합니다. 이후 거래일도 공식 달력을 확인해 연장하며,
         확인되지 않은 날짜는 기록을 건너뛰지 않고 중단합니다.
       </p>
+      {summary?.replayStatus.length ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {summary.replayStatus.map((replay) => (
+            <div key={replay.market} className="space-y-1 rounded-lg border p-3 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <strong>{replay.market === "KR" ? "한국 Shadow replay" : "미국 Shadow replay"}</strong>
+                <span>{replayStateLabel(replay.status)}</span>
+              </div>
+              <p className="text-muted-foreground">
+                신호 기준일 {replay.signalDate} · 실제 계산{" "}
+                {new Date(replay.calculatedAt).toLocaleString("ko-KR")}
+              </p>
+              <p className="text-muted-foreground">
+                {replay.replayMode === "RETROSPECTIVE"
+                  ? "사후 복원 계산"
+                  : "다음 거래일 체결 전에 계산"}
+                {replay.executionAt
+                  ? ` · 다음 체결시각 ${new Date(replay.executionAt).toLocaleString("ko-KR")}`
+                  : ""}
+              </p>
+              {replay.reason ? (
+                <p role="status" className="text-warn">
+                  보류 사유: {replay.reason}
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
       {summary ? (
         <div className="grid min-w-0 gap-4 lg:grid-cols-2">
           {summary.books.map((book) => (

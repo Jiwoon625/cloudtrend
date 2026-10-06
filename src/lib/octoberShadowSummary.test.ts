@@ -114,12 +114,32 @@ describe("October Shadow read-only summary", () => {
           range() {
             return builder;
           },
+          limit() {
+            return builder;
+          },
           then(resolve: (value: unknown) => unknown) {
             return Promise.resolve(
               resolve(
                 table === "ledger_model_series"
                   ? { data: [registry(series)], error: null }
-                  : { data: null, error: { message: "fixture read failed" } },
+                  : table === "shadow_replay_audit"
+                    ? {
+                        data: [
+                          {
+                            market: "KR",
+                            signal_date: "2026-10-06",
+                            calculated_at: "2026-10-08T00:00:00Z",
+                            source_captured_at: "2026-10-08T00:00:00Z",
+                            model_decision_at: "2026-10-07T08:10:00+09:00",
+                            execution_at: "2026-10-07T09:00:00+09:00",
+                            replay_mode: "RETROSPECTIVE",
+                            status: "RECORDED",
+                            reason: null,
+                          },
+                        ],
+                        error: null,
+                      }
+                    : { data: null, error: { message: "fixture read failed" } },
               ),
             );
           },
@@ -130,13 +150,20 @@ describe("October Shadow read-only summary", () => {
     const result = await loadOctoberShadowSummaryForOwner(client, uid);
     expect(result.books.find((book) => book.kind === "US_A0")?.status).toBe("UNAVAILABLE");
     expect(result.books.find((book) => book.kind === "US_A0")?.tax).toBeNull();
-    expect(queries.length).toBe(2);
+    expect(queries.length).toBe(3);
+    expect(result.replayStatus[0]).toMatchObject({
+      market: "KR",
+      signalDate: "2026-10-06",
+      replayMode: "RETROSPECTIVE",
+      status: "RECORDED",
+    });
     expect(
       queries.every((query) =>
         query.filters.some(([key, value]) => key === "user_id" && value === uid),
       ),
     ).toBe(true);
     expect(queries[1]!.filters).toContainEqual(["series_id", series.bookId]);
+    expect(queries[2]!.table).toBe("shadow_replay_audit");
     await expect(loadOctoberShadowSummaryForOwner(client, "untrusted")).rejects.toThrow("소유자");
   });
 });
