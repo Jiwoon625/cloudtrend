@@ -267,7 +267,7 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
       initial,
       input(series, "2026-10-12", null, [
         signal("360750", "2026-10-12", "2026-10-08", "confirmed"),
-        signal("069500", "2026-10-12", "2026-10-11", "confirmed"),
+        signal("069500", "2026-10-12", "2026-10-12", "confirmed"),
       ]),
     );
     expect(result.state.pendingEntries).toEqual([]);
@@ -766,7 +766,7 @@ describe("isolated ETF V0.2 adopted shadow daily executor", () => {
     const variants: EtfShadowSignal[] = [
       {
         ...signal("360750", "2026-10-13", "2026-10-12", "confirmed"),
-        availableAt: "2026-10-13T08:00:00Z",
+        availableAt: "2026-10-13T23:20:00Z",
       },
       signal("360750", "2026-10-14", "2026-10-12", "confirmed"),
       signal("360750", "2026-10-13", "2026-10-12", "confirmed", {
@@ -983,8 +983,8 @@ describe("ETF immutable journal run wrapper", () => {
     extended.calendar = {
       ...calendar,
       sourceHash: hash("9"),
-      coverageEnd: "2026-10-21",
-      regularSessions: [...calendar.regularSessions, "2026-10-21"],
+      coverageEnd: "2026-10-26",
+      regularSessions: [...calendar.regularSessions, "2026-10-26"],
     };
     const second = await stepAdoptedEtfSeries(series, extended, first.run);
     expect(second.status).toBe("NEW");
