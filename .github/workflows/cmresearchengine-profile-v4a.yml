@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: cmresearchengine-profile-v4a
+  group: cmresearchengine-profile-v4a-short
   cancel-in-progress: true
 jobs:
   synthetic:
@@ -40,6 +40,7 @@ jobs:
       OMP_NUM_THREADS: '1'
       OPENBLAS_NUM_THREADS: '1'
       CM_PROFILE_MODE: '1'
+      CM_PROFILE_TAG: 'event1500-v1'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:

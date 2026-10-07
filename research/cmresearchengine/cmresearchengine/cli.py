@@ -32,8 +32,11 @@ HYBRID_SHARED_US_ANALYSIS_PROFILE={
 }
 
 def _hybrid_execution_optimization():
-    return (HYBRID_SHARED_US_ANALYSIS_PROFILE if os.environ.get('CM_PROFILE_MODE')=='1'
-        else HYBRID_SHARED_US_ANALYSIS)
+    if os.environ.get('CM_PROFILE_MODE')!='1':
+        return HYBRID_SHARED_US_ANALYSIS
+    profile=dict(HYBRID_SHARED_US_ANALYSIS_PROFILE)
+    profile['profile_run_tag']=os.environ.get('CM_PROFILE_TAG','default')
+    return profile
 
 def _hybrid_pairs(selected):
     if len(selected)!=4:raise ValueError('Hybrid 2x2 requires exactly four candidates')
