@@ -143,7 +143,8 @@ def run_strategy_group(items, *, max_seconds=3000, event_limit=None, stop_reques
     profile={'schema':'CM_HYBRID_PROFILE_V1','candidate_setup_seconds':0.0,
         'candidate_step_seconds':0.0,'context_switch_seconds':0.0,
         'checkpoint_seconds':0.0,'checkpoint_count':0,'completion_seconds':0.0,
-        'step_calls':0,'group_wall_seconds':0.0,'step_exclusive_us_seconds':0.0}
+        'step_calls':0,'group_wall_seconds':0.0,'step_exclusive_us_seconds':0.0,
+        'event_seconds':{},'event_calls':{}}
     base_runtime=_capture_runtime_context()
     contexts=[];receipts={}
     try:
@@ -207,8 +208,14 @@ def run_strategy_group(items, *, max_seconds=3000, event_limit=None, stop_reques
                     if profile_enabled:tstep=time.perf_counter()
                     alive=context['runner'].step()
                     if profile_enabled:
-                        profile['candidate_step_seconds']+=time.perf_counter()-tstep
+                        elapsed=time.perf_counter()-tstep
+                        profile['candidate_step_seconds']+=elapsed
                         profile['step_calls']+=1
+                        event_key='NONE'
+                        if first_event is not None and len(first_event)>=5:
+                            event_key=str(first_event[3])+':'+str(first_event[4])
+                        profile['event_seconds'][event_key]=profile['event_seconds'].get(event_key,0.0)+elapsed
+                        profile['event_calls'][event_key]=profile['event_calls'].get(event_key,0)+1
                 except Exception as exc:
                     if profile_enabled:tctx=time.perf_counter()
                     context['runtime']=_capture_runtime_context()
@@ -275,6 +282,8 @@ def run_strategy_group(items, *, max_seconds=3000, event_limit=None, stop_reques
             profile['step_exclusive_us_seconds']=max(0.0,
                 profile['candidate_step_seconds']-stats.get('compute_seconds',0.0)-
                 stats.get('hit_validation_seconds',0.0)-stats.get('cache_store_seconds',0.0))
+            profile['event_seconds']={key:round(value,6) for key,value in sorted(profile['event_seconds'].items())}
+            profile['event_calls']={key:value for key,value in sorted(profile['event_calls'].items())}
             profile={key:(round(value,6) if isinstance(value,float) else value)
                 for key,value in profile.items()}
         return {'receipts':[receipts[candidate_id] for candidate_id,_,_ in items],
