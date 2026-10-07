@@ -100,7 +100,7 @@ export function buildSnapshot(
     hardFilterPassed: row.hardFilterPassed,
     kosdaq80Onset: row.kosdaq80Onset,
     kospiEightPointEntry: row.kospiEightPointEntry,
-    kospiEntry: row.kospiEntry,
+    ...(row.kospiEntry !== undefined ? { kospiEntry: row.kospiEntry } : {}),
     ...(row.onsetProfile ? { onsetProfile: row.onsetProfile } : {}),
     kospi80Onset: row.kospi80Onset ?? false,
     ...(row.operationalSignalVersion

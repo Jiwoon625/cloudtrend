@@ -1,3 +1,7 @@
+import runtimeManifest from "./ledger/octoberShadowEngineManifest.generated.json";
+import type { LedgerRefreshSummary } from "./portfolioFreshness";
+import { stableCacheJson } from "./screeningCacheContract";
+import { normalizeSnapshots } from "./portfolioStrategyRules";
 import { savedExecutionMemo } from "./ledger/executionMemo";
 import { readWebsiteDocument } from "./ledger/websiteRepository.server";
 import { parseManualMarketData } from "./engine/manualDataset";
@@ -35,9 +39,14 @@ export interface LedgerRequest {
   note?: string | undefined;
   sourceLinks?: import("./ledger/executionMemo").ExecutionSourceLink[] | undefined;
 }
-async function readDocument(client: SupabaseClient, uid: string): Promise<Row> {
+async function readDocument(
+  client: SupabaseClient,
+  uid: string,
+  allowInitialize = true,
+): Promise<Row> {
   const canonical = await readWebsiteDocument<LedgerDocument>(client, uid, TABLE);
   if (canonical) return canonical;
+  if (!allowInitialize) throw new Error("포트폴리오 원장 초기화는 포트폴리오 화면에서 확인하세요.");
   const [{ data: settings, error: se }, { data: legacy, error: le }] = await Promise.all([
     client.from("portfolio_settings").select("*").eq("user_id", uid).maybeSingle(),
     client
@@ -131,6 +140,7 @@ async function priceInputs(
   sources: ActiveSourceRecord[],
   symbols: Set<string>,
   from: string,
+  verifiedInputs?: VerifiedPortfolioSources,
 ) {
   const bySymbol = new Map<string, Map<string, DailyPrice>>();
   const markets: Record<string, Market> = {};
@@ -139,19 +149,33 @@ async function priceInputs(
   const observedDates = new Set<string>();
   for (const source of sources) {
     // Earlier index rows are still needed for MA60/cloud/volatility warmup; stock rows stay bounded.
-    const { data, error } = await client.storage
-      .from(source.storage_bucket)
-      .download(source.storage_path);
-    if (error || !data)
-      throw new Error(`포트폴리오 가격 조회 실패: ${error?.message ?? source.original_filename}`);
-    const bytes = new Uint8Array(await data.arrayBuffer());
-    if (`sha256:${createHash("sha256").update(bytes).digest("hex")}` !== source.file_hash)
-      throw new Error("가격 원본 검증에 실패했습니다.");
-    let text: string;
-    try {
-      text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    } catch {
-      text = new TextDecoder("euc-kr").decode(bytes);
+    // Screening has already verified these bytes. Reuse its decoded text in this request,
+    // but only for exactly matching source IDs/hashes; never carry raw inputs across requests.
+    const preloadedIndex =
+      verifiedInputs?.sources.findIndex(
+        (item) => item.id === source.id && item.file_hash === source.file_hash,
+      ) ?? -1;
+    let text = preloadedIndex >= 0 ? verifiedInputs?.texts[preloadedIndex] : undefined;
+    // A canonicalized text can fill absent opens and must never masquerade as raw input.
+    if (
+      text !== undefined &&
+      `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}` !== source.file_hash
+    )
+      text = undefined;
+    if (text === undefined) {
+      const { data, error } = await client.storage
+        .from(source.storage_bucket)
+        .download(source.storage_path);
+      if (error || !data)
+        throw new Error(`포트폴리오 가격 조회 실패: ${error?.message ?? source.original_filename}`);
+      const bytes = new Uint8Array(await data.arrayBuffer());
+      if (`sha256:${createHash("sha256").update(bytes).digest("hex")}` !== source.file_hash)
+        throw new Error("가격 원본 검증에 실패했습니다.");
+      try {
+        text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      } catch {
+        text = new TextDecoder("euc-kr").decode(bytes);
+      }
     }
     let header: Record<string, number> = {};
     const indexRows: string[] = [];
@@ -247,12 +271,33 @@ async function priceInputs(
   return { bars, markets, marketDates, marketGates };
 }
 
-async function refreshStrategy(client: SupabaseClient, uid: string, doc: LedgerDocument) {
+// Shared only while a content-addressed refresh is running; never retain raw prices here.
+const strategyRefreshes = new Map<string, Promise<NonNullable<LedgerDocument["strategy"]>>>();
+class LedgerRevisionConflict extends Error {}
+
+export type VerifiedPortfolioSources = { sources: ActiveSourceRecord[]; texts: string[] };
+async function refreshStrategy(
+  client: SupabaseClient,
+  uid: string,
+  doc: LedgerDocument,
+  verifiedInputs?: VerifiedPortfolioSources,
+) {
   const [snapshots, sources] = await Promise.all([
     snapshotsFor(client, uid),
     listActiveSources(client, uid),
   ]);
-  const symbols = new Set(doc.executions.map((e) => e.symbol));
+  if (verifiedInputs) {
+    const identity = (items: ActiveSourceRecord[]) =>
+      stableCacheJson(items.map((s) => [s.id, s.file_hash, s.activated_at, s.created_at]));
+    if (
+      verifiedInputs.texts.length !== verifiedInputs.sources.length ||
+      identity(verifiedInputs.sources) !== identity(sources)
+    )
+      throw new Error(
+        "스크리닝 중 활성 원천데이터가 변경됐습니다. 포트폴리오를 최신 입력으로 다시 확인하세요.",
+      );
+  }
+  const symbols = new Set(doc.executions.filter((e) => e.market !== "ETF").map((e) => e.symbol));
   for (const s of snapshots)
     for (const e of s.entries)
       if (
@@ -265,52 +310,71 @@ async function refreshStrategy(client: SupabaseClient, uid: string, doc: LedgerD
   for (const s of snapshots)
     for (const e of s.entries)
       if (/KOSDAQ\s*(?:80|8)\s*Onset/i.test(e.status ?? "")) symbols.add(e.symbol);
+  const from =
+    [
+      ...snapshots.map((s) => s.asOfDate),
+      ...doc.executions.filter((e) => e.market !== "ETF").map((e) => e.date),
+    ]
+      .filter(Boolean)
+      .sort()[0] ?? "9999-12-31";
   const fingerprint = createHash("sha256")
     .update(
-      JSON.stringify({
+      stableCacheJson({
         version: LEDGER_VERSION,
+        runtimeCodeHash: runtimeManifest.codeHash,
         entryPolicy: KOSPI_ENTRY_POLICY.version,
+        from,
         settings: [
           doc.settings.initialCapital,
           doc.settings.maxPositions,
           doc.settings.sectorCap,
           doc.settings.roundTripCostRate,
         ],
-        sources: sources.map((s) => [s.id, s.file_hash, s.activated_at]),
-        snapshots,
+        sources: sources.map((s) => [s.id, s.file_hash, s.activated_at, s.created_at]),
+        // Persistence timestamps and JSONB key order are not strategy inputs.
+        snapshots: normalizeSnapshots(snapshots).map(
+          ({ savedAt: _savedAt, ...snapshot }) => snapshot,
+        ),
         symbols: [...symbols].sort(),
       }),
     )
     .digest("hex");
   if (doc.strategy?.fingerprint === fingerprint) return false;
-  const from =
-    [...snapshots.map((s) => s.asOfDate), ...doc.executions.map((e) => e.date)]
-      .filter(Boolean)
-      .sort()[0] ?? "9999-12-31";
-  const { bars, markets, marketDates, marketGates } = await priceInputs(
-    client,
-    sources,
-    symbols,
-    from,
-  );
-  doc.strategy = simulateStrategy(
-    doc.settings,
-    snapshots,
-    bars,
-    markets,
-    fingerprint,
-    marketDates,
-    marketGates,
-  );
+  const key = `${uid}/${fingerprint}`;
+  let running = strategyRefreshes.get(key);
+  if (!running) {
+    running = (async () => {
+      const { bars, markets, marketDates, marketGates } = await priceInputs(
+        client,
+        sources,
+        symbols,
+        from,
+        verifiedInputs,
+      );
+      return simulateStrategy(
+        doc.settings,
+        snapshots,
+        bars,
+        markets,
+        fingerprint,
+        marketDates,
+        marketGates,
+      );
+    })().finally(() => strategyRefreshes.delete(key));
+    strategyRefreshes.set(key, running);
+  }
+  doc.strategy = structuredClone(await running);
   return true;
 }
 
-export async function operateLedgers(
+async function operateLedgersOnce(
   client: SupabaseClient,
   uid: string,
   input: LedgerRequest,
-): Promise<DualPortfolioState> {
-  const row = await readDocument(client, uid);
+  verifiedInputs?: VerifiedPortfolioSources,
+  allowInitialize = true,
+): Promise<LedgerOperationResult> {
+  const row = await readDocument(client, uid, allowInitialize);
   const doc = structuredClone(row.payload);
   let etfWarning: string | null = null;
   const etfContext = await portfolioEtfContext(client, uid).catch((error) => {
@@ -395,8 +459,33 @@ export async function operateLedgers(
     }
     changed = true;
   }
-  if (input.action === "sync" || input.action === "capital" || !doc.strategy)
-    changed = (await refreshStrategy(client, uid, doc)) || changed;
+  // Metadata checks are cheap. Only changed strategy/price inputs download sources and replay.
+  // Execution edits are valued immediately, but shares/fees/memos never enter the model hash.
+  const actualOnlyWrite =
+    ["execution", "remove", "exclude"].includes(input.action) ||
+    (input.action === "capital" &&
+      (input.strategyCapital === undefined ||
+        input.strategyCapital === row.payload.settings.initialCapital));
+  let strategyChanged = false,
+    strategyFailed = false;
+  try {
+    strategyChanged = await refreshStrategy(client, uid, doc, verifiedInputs);
+  } catch (error) {
+    // The actual journal is authoritative. A derived-price outage must not discard an
+    // otherwise valid actual correction; canonical integrity and CAS still fail closed.
+    if (!actualOnlyWrite) throw error;
+    strategyFailed = true;
+  }
+  changed = strategyChanged || changed;
+  const strategyRefresh = {
+    status: strategyFailed
+      ? ("FAILED" as const)
+      : strategyChanged
+        ? ("UPDATED" as const)
+        : ("REUSED" as const),
+    asOfDate: doc.strategy?.summary.latestDate ?? null,
+    calculatedAt: doc.strategy?.calculatedAt ?? null,
+  };
   const actual = calculateActual(
     doc.actualCapital,
     doc.executions.filter((e) => e.market !== "ETF"),
@@ -429,8 +518,43 @@ export async function operateLedgers(
       .select("revision")
       .maybeSingle();
     if (error) throw new Error(error.message);
-    if (!data) throw new Error("동시에 원장이 변경됐습니다. 새로고침 후 다시 시도하세요.");
-    return { revision: row.revision + 1, document: doc, actual, ...etfState };
+    if (!data)
+      throw new LedgerRevisionConflict("동시에 원장이 변경됐습니다. 새로고침 후 다시 시도하세요.");
+    return { revision: row.revision + 1, document: doc, actual, ...etfState, strategyRefresh };
   }
-  return { revision: row.revision, document: doc, actual, ...etfState };
+  return { revision: row.revision, document: doc, actual, ...etfState, strategyRefresh };
+}
+
+export type LedgerOperationResult = DualPortfolioState & { strategyRefresh: LedgerRefreshSummary };
+
+export async function operateLedgers(
+  client: SupabaseClient,
+  uid: string,
+  input: LedgerRequest,
+  verifiedInputs?: VerifiedPortfolioSources,
+  allowInitialize = true,
+): Promise<LedgerOperationResult> {
+  try {
+    return await operateLedgersOnce(client, uid, input, verifiedInputs, allowInitialize);
+  } catch (error) {
+    // A refresh may race with a real execution. Re-read canonical state and re-check inputs;
+    // never replay an execution/capital/exclusion write or overwrite the winning revision.
+    if (error instanceof LedgerRevisionConflict && ["load", "sync"].includes(input.action))
+      return operateLedgersOnce(client, uid, input, verifiedInputs, allowInitialize);
+    throw error;
+  }
+}
+
+/** Safe for screening logs: no executions, holdings, account balances, or private journal data. */
+export async function refreshPortfolioAfterScreening(
+  client: SupabaseClient,
+  uid: string,
+  verifiedInputs?: VerifiedPortfolioSources,
+) {
+  // Background screening must never initialize a real book or import legacy executions.
+  // The authenticated portfolio flow owns any explicit first-time initialization.
+  const existing = await readWebsiteDocument<LedgerDocument>(client, uid, TABLE);
+  if (!existing) return { status: "NOT_INITIALIZED" as const, asOfDate: null, calculatedAt: null };
+  const state = await operateLedgers(client, uid, { action: "sync" }, verifiedInputs, false);
+  return state.strategyRefresh;
 }

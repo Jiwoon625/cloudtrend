@@ -1,15 +1,19 @@
 import { readFileSync } from "node:fs";
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
 import { expect, test, vi } from "vitest";
+vi.mock("../src/lib/cloud", () => ({ supabase: {} }));
+vi.mock("../src/lib/portfolioLedgers.functions", () => ({
+  portfolioLedgersServer: vi.fn(),
+  portfolioPositionContextServer: vi.fn(),
+}));
+import { domesticPortfolioQueryOptions } from "../src/lib/portfolioPositionContext";
 
-test("portfolio remount reuses session data until explicitly invalidated", async () => {
+test("portfolio remount reuses shared fresh data and explicit changes invalidate it", async () => {
   const client = new QueryClient();
   const queryFn = vi.fn(async () => ({ version: queryFn.mock.calls.length }));
   const options = {
-    queryKey: ["portfolio-ledgers"],
+    ...domesticPortfolioQueryOptions,
     queryFn,
-    staleTime: Infinity,
-    gcTime: Infinity,
   };
   try {
     await client.fetchQuery(options);
@@ -28,16 +32,44 @@ test("portfolio remount reuses session data until explicitly invalidated", async
   }
 });
 
-test("both portfolio consumers retain session queries and both change paths invalidate them", () => {
-  for (const path of ["src/components/PortfolioAssetHub.tsx", "src/routes/portfolio.tsx"]) {
-    const source = readFileSync(path, "utf8");
-    expect(source).toContain("staleTime: Infinity");
-    expect(source).toContain("gcTime: Infinity");
+test("dashboard and portfolio share bounded metadata freshness without discarding session data", () => {
+  expect(domesticPortfolioQueryOptions.queryKey).toEqual(["portfolio-ledgers"]);
+  expect(domesticPortfolioQueryOptions.staleTime).toBe(60_000);
+  expect(domesticPortfolioQueryOptions.gcTime).toBe(Infinity);
+  expect(domesticPortfolioQueryOptions.refetchOnWindowFocus).toBe(true);
+  expect(domesticPortfolioQueryOptions.retry).toBe(false);
+  for (const path of [
+    "src/components/PortfolioAssetHub.tsx",
+    "src/routes/portfolio.tsx",
+    "src/routes/index.tsx",
+  ]) {
+    expect(readFileSync(path, "utf8")).toMatch(
+      /(?:\.\.\.|useQuery\()domesticPortfolioQueryOptions/,
+    );
   }
   for (const path of ["src/routes/index.tsx", "src/routes/scoring.tsx"]) {
     expect(readFileSync(path, "utf8")).toMatch(
       /invalidateQueries\(\{\s*queryKey:\s*\["portfolio-ledgers"\]/,
     );
+  }
+});
+
+test("expired shared metadata can observe an external update while fresh remounts reuse it", async () => {
+  const client = new QueryClient();
+  const now = vi.spyOn(Date, "now").mockReturnValue(1_800_000_000_000);
+  const queryFn = vi.fn(async () => ({ revision: queryFn.mock.calls.length }));
+  const options = { ...domesticPortfolioQueryOptions, queryFn };
+  try {
+    await client.fetchQuery(options);
+    now.mockReturnValue(1_800_000_059_000);
+    await client.fetchQuery(options);
+    expect(queryFn).toHaveBeenCalledTimes(1);
+    now.mockReturnValue(1_800_000_061_000);
+    await client.fetchQuery(options);
+    expect(queryFn).toHaveBeenCalledTimes(2);
+  } finally {
+    client.clear();
+    now.mockRestore();
   }
 });
 

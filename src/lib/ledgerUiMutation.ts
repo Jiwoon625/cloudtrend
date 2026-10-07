@@ -45,6 +45,7 @@ export async function runLedgerWrite<T extends { revision: number }>({
   request,
   onBusy,
   onError,
+  waitForReadRefresh = true,
 }: {
   guard: LedgerWriteGuard;
   session: LedgerEditSession;
@@ -53,6 +54,7 @@ export async function runLedgerWrite<T extends { revision: number }>({
   request: (revision: number) => Promise<T>;
   onBusy: (busy: boolean) => void;
   onError: (message: string) => void;
+  waitForReadRefresh?: boolean;
 }): Promise<boolean> {
   if (guard.pending || guard.needsReload || session.needsReview) return false;
   if (session.revision === undefined) {
@@ -69,7 +71,11 @@ export async function runLedgerWrite<T extends { revision: number }>({
     client.setQueryData<T>(queryKey, (previous) =>
       previous && previous.revision > next.revision ? previous : next,
     );
-    await invalidateLedgerReads(client);
+    const refreshing = invalidateLedgerReads(client);
+    // A confirmed derived-data sync is complete even when another view's read is slow.
+    // Each query still owns its loading/error state; real execution writes keep existing behavior.
+    if (waitForReadRefresh) await refreshing;
+    else void refreshing.catch(() => undefined);
     return true;
   } catch (error) {
     // A rejected/lost response is not proof that the server did not commit.

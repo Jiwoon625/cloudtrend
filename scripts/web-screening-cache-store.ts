@@ -129,8 +129,10 @@ export async function persistWebScreeningCaches(input: {
 
   const source = { live: true, credentialsConfigured: true, fallbackReason: null };
   const payload: AnalysisPayload = { analysis: input.analysis, source };
+  const publicationId = crypto.randomUUID();
   const screening = {
     version: SCREENING_CACHE_VERSION,
+    publicationId,
     createdAt: new Date().toISOString(),
     inputFingerprint: fingerprint,
     resultDigest: digest,
@@ -181,6 +183,7 @@ export async function persistWebScreeningCaches(input: {
   }
 
   return {
+    publicationId,
     inputFingerprint: fingerprint,
     resultDigest: digest,
     regressionBaseline: existing?.resultDigest ?? null,

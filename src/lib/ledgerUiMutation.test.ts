@@ -157,3 +157,20 @@ describe("ledger UI mutation safety", () => {
     options.client.clear();
   });
 });
+
+it("a confirmed sync unlocks while dependent reads finish in the background", async () => {
+  const options = setup();
+  const refresh = deferred<void>();
+  vi.spyOn(options.client, "invalidateQueries").mockReturnValue(refresh.promise);
+  expect(
+    await runLedgerWrite({
+      ...options,
+      request: async () => ({ revision: 4 }),
+      waitForReadRefresh: false,
+    }),
+  ).toBe(true);
+  expect(options.guard.pending).toBe(false);
+  expect(options.client.getQueryData(options.queryKey)).toEqual({ revision: 4 });
+  refresh.resolve();
+  options.client.clear();
+});

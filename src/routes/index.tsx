@@ -10,7 +10,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -38,7 +38,8 @@ import {
   formatPercent,
   formatWon,
 } from "@/lib/format";
-import { loadDomesticPortfolioLedger } from "@/lib/portfolioPositionContext";
+import { PortfolioFreshnessSummary } from "@/components/PortfolioFreshnessSummary";
+import { domesticPortfolioQueryOptions } from "@/lib/portfolioPositionContext";
 import type { DualPortfolioState } from "@/lib/portfolioLedgers";
 import type { DashboardSummary } from "@/lib/screeningCache";
 import { isScreeningStarted } from "@/lib/screeningRun";
@@ -130,22 +131,32 @@ function Dashboard() {
   const summaryQuery = useQuery({ ...dashboardQueryOptions, enabled: started });
   const operations = useDashboardOperations(started, summaryQuery.data?.resultDigest);
   const portfolioQuery = useQuery({
-    queryKey: ["portfolio-ledgers-overview"],
-    queryFn: loadDomesticPortfolioLedger,
-    enabled: started,
-    staleTime: 0,
-    refetchOnWindowFocus: true,
+    ...domesticPortfolioQueryOptions,
+    enabled: started && Boolean(summaryQuery.data),
   });
+  useEffect(() => {
+    if (summaryQuery.data?.resultDigest)
+      void queryClient.invalidateQueries({ queryKey: domesticPortfolioQueryOptions.queryKey });
+  }, [queryClient, summaryQuery.data?.inputFingerprint, summaryQuery.data?.resultDigest]);
 
   const rescreen = async () => {
     setRescreening(true);
     try {
-      await rebuildScreeningCachesServerFirst();
+      const result = await rebuildScreeningCachesServerFirst();
       await queryClient.invalidateQueries({ queryKey: ["market-analysis"] });
       await queryClient.invalidateQueries({ queryKey: ["portfolio-ledgers"] });
       await queryClient.invalidateQueries({ queryKey: DASHBOARD_OPERATIONS_QUERY });
       queryClient.removeQueries({ queryKey: ["instrument"] });
-      toast.success("V8 Final 스크리닝을 서버에서 다시 계산했습니다.");
+      if (result.refresh?.portfolioRefresh.status === "FAILED")
+        toast.warning(
+          "스크리닝은 완료됐지만 포트폴리오 갱신에 실패했습니다. 포트폴리오에서 다시 확인하세요.",
+        );
+      else
+        toast.success(
+          result.refresh?.reused
+            ? "입력이 같아 저장된 스크리닝·포트폴리오를 재사용했습니다."
+            : "스크리닝과 포트폴리오를 함께 갱신했습니다.",
+        );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "스크리닝 재계산에 실패했습니다.");
     } finally {
@@ -218,7 +229,8 @@ function Dashboard() {
         <DashboardContent
           summary={summaryQuery.data}
           portfolio={portfolioQuery.data ?? null}
-          portfolioPending={portfolioQuery.isPending}
+          portfolioPending={portfolioQuery.isPending || portfolioQuery.isFetching}
+          portfolioError={portfolioQuery.isError}
           operations={operations}
         />
       )}
@@ -230,11 +242,13 @@ function DashboardContent({
   summary,
   portfolio,
   portfolioPending,
+  portfolioError,
   operations,
 }: {
   summary: DashboardSummary;
   portfolio: DualPortfolioState | null;
   portfolioPending: boolean;
+  portfolioError: boolean;
   operations: ReturnType<typeof useDashboardOperations>;
 }) {
   const gate = kospiMarketGateDisplay(summary.kospiMarketGate, summary.asOfDate);
@@ -287,6 +301,12 @@ function DashboardContent({
               value={
                 portfolio ? formatWon(portfolio.actual.summary.realizedPnl) : portfolioFallback
               }
+            />
+            <PortfolioFreshnessSummary
+              state={portfolio}
+              screeningDate={summary.asOfDate}
+              pending={portfolioPending}
+              error={portfolioError}
             />
             <Link
               to="/portfolio"

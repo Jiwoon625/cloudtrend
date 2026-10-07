@@ -10,14 +10,21 @@ vi.mock("./ledger/websiteRepository.server", () => ({
   },
 }));
 import { kospiEntryGates, kospiGateDataset } from "../../tests/kospi-policy-fixtures";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { operateLedgers } from "./portfolioLedgers.server";
+import { operateLedgers, refreshPortfolioAfterScreening } from "./portfolioLedgers.server";
 import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
 import { OPERATIONAL_SIGNAL_VERSION } from "./engine/operationalStrategy";
-import type { LedgerDocument } from "./portfolioLedgers";
+import { simulateStrategy, type LedgerDocument } from "./portfolioLedgers";
 
+vi.mock("./portfolioLedgers", async (original) => {
+  const actual = await original<typeof import("./portfolioLedgers")>();
+  return { ...actual, simulateStrategy: vi.fn(actual.simulateStrategy) };
+});
+beforeEach(() => {
+  vi.mocked(simulateStrategy).mockClear();
+});
 vi.mock("./dashboardOperations.server", () => ({
   portfolioEtfContext: async () => ({
     rows: [
@@ -104,8 +111,10 @@ function database() {
     ],
   };
   let conflict = false;
+  let beforeUpdate: (() => void) | null = null;
+  const download = vi.fn(async () => ({ data: new Blob([csv]), error: null }));
   const client = {
-    storage: { from: () => ({ download: async () => ({ data: new Blob([csv]), error: null }) }) },
+    storage: { from: () => ({ download }) },
     from(name: string) {
       const filters: [string, unknown][] = [];
       let operation = "select",
@@ -134,6 +143,11 @@ function database() {
           return query;
         },
         then(resolve: (result: unknown) => unknown) {
+          if (operation === "update" && beforeUpdate) {
+            const run = beforeUpdate;
+            beforeUpdate = null;
+            run();
+          }
           let rows = (tables[name] ?? []).filter((row) =>
             filters.every(([key, value]) => row[key] === value),
           );
@@ -156,6 +170,10 @@ function database() {
   return {
     client,
     tables,
+    download,
+    beforeUpdate: (callback: () => void) => {
+      beforeUpdate = callback;
+    },
     conflict: () => {
       conflict = true;
     },
@@ -454,4 +472,283 @@ describe("confirmation source and persistence integration", () => {
       csv = previousCsv;
     }
   });
+});
+
+describe("screening portfolio freshness", () => {
+  it("repeated reads and unchanged sync perform zero raw downloads and simulations", async () => {
+    const db = database();
+    const first = await operateLedgers(db.client, "owner", { action: "load" });
+    db.download.mockClear();
+    vi.mocked(simulateStrategy).mockClear();
+    for (const action of ["load", "load", "sync", "load"] as const) {
+      const next = await operateLedgers(db.client, "owner", { action });
+      expect(next.revision).toBe(first.revision);
+      expect(next.strategyRefresh.status).toBe("REUSED");
+    }
+    expect(db.download).not.toHaveBeenCalled();
+    expect(simulateStrategy).not.toHaveBeenCalled();
+  });
+  it("ignores savedAt and JSONB key order, but refreshes changed screening content", async () => {
+    const db = database();
+    const first = await operateLedgers(db.client, "owner", { action: "load" });
+    const snapshot = db.tables["screening_history"]![0]!["snapshot"] as {
+      savedAt: string;
+      entries: Array<{ technicalPoints: number }>;
+    };
+    snapshot.savedAt = "2026-10-07T00:00:00Z";
+    db.tables["screening_history"]![0]!["snapshot"] = Object.fromEntries(
+      Object.entries(snapshot).reverse(),
+    );
+    db.download.mockClear();
+    vi.mocked(simulateStrategy).mockClear();
+    expect((await refreshPortfolioAfterScreening(db.client, "owner")).status).toBe("REUSED");
+    expect(db.download).not.toHaveBeenCalled();
+    expect(simulateStrategy).not.toHaveBeenCalled();
+    snapshot.entries[0]!.technicalPoints = 9;
+    const next = await operateLedgers(db.client, "owner", { action: "load" });
+    expect(next.revision).toBe(first.revision + 1);
+    expect(next.strategyRefresh.status).toBe("UPDATED");
+    expect(db.download).toHaveBeenCalledTimes(1);
+    expect(simulateStrategy).toHaveBeenCalledTimes(1);
+    expect(next.document.executions).toEqual(first.document.executions);
+  });
+  it("actual buy edits revalue the actual book without replaying the model or generating fills", async () => {
+    const db = database();
+    const first = await operateLedgers(db.client, "owner", { action: "load" });
+    db.download.mockClear();
+    vi.mocked(simulateStrategy).mockClear();
+    const execution = first.document.executions[0]!;
+    const next = await operateLedgers(db.client, "owner", {
+      action: "execution",
+      revision: first.revision,
+      execution: { ...execution, shares: 12, note: "verified fill" },
+    });
+    expect(next.actual.positions[0]!.shares).toBe(12);
+    expect(next.document.executions).toHaveLength(first.document.executions.length);
+    expect(next.document.strategy).toEqual(first.document.strategy);
+    expect(db.download).not.toHaveBeenCalled();
+    expect(simulateStrategy).not.toHaveBeenCalled();
+    await operateLedgers(db.client, "owner", {
+      action: "capital",
+      revision: next.revision,
+      actualCapital: 13000000,
+    });
+    expect(simulateStrategy).not.toHaveBeenCalled();
+    const current = await operateLedgers(db.client, "owner", { action: "load" });
+    await operateLedgers(db.client, "owner", {
+      action: "capital",
+      revision: current.revision,
+      strategyCapital: 15000000,
+    });
+    expect(simulateStrategy).toHaveBeenCalledTimes(1);
+  });
+  it("coalesces concurrent identical refresh work and retains the winning revision", async () => {
+    const db = database();
+    await operateLedgers(db.client, "owner", { action: "load" });
+    (db.tables["portfolio_ledgers"]![0]!["payload"] as LedgerDocument).strategy = null;
+    db.download.mockClear();
+    vi.mocked(simulateStrategy).mockClear();
+    const results = await Promise.all([
+      operateLedgers(db.client, "owner", { action: "sync" }),
+      operateLedgers(db.client, "owner", { action: "load" }),
+    ]);
+    expect(results[0]!.revision).toBe(results[1]!.revision);
+    expect(db.download).toHaveBeenCalledTimes(1);
+    expect(simulateStrategy).toHaveBeenCalledTimes(1);
+  });
+  it("a refresh racing a real buy re-reads canonical state rather than overwriting it", async () => {
+    const db = database();
+    const first = await operateLedgers(db.client, "owner", { action: "load" });
+    (db.tables["portfolio_ledgers"]![0]!["payload"] as LedgerDocument).strategy = null;
+    db.beforeUpdate(() => {
+      const row = db.tables["portfolio_ledgers"]![0]!;
+      const doc = row["payload"] as LedgerDocument;
+      doc.executions[0]!.shares = 17;
+      row["revision"] = Number(row["revision"]) + 1;
+    });
+    const next = await operateLedgers(db.client, "owner", { action: "sync" });
+    expect(next.actual.positions[0]!.shares).toBe(17);
+    expect(next.revision).toBe(first.revision + 2);
+    expect(next.document.executions).toHaveLength(first.document.executions.length);
+  });
+  it("reuses exact already-verified source text from a successful screening", async () => {
+    const db = database();
+    await operateLedgers(db.client, "owner", { action: "load" });
+    (db.tables["portfolio_ledgers"]![0]!["payload"] as LedgerDocument).strategy = null;
+    db.download.mockClear();
+    const { listActiveSources } = await import("./screeningSources.server");
+    const sources = await listActiveSources(db.client, "owner");
+    const summary = await refreshPortfolioAfterScreening(db.client, "owner", {
+      sources,
+      texts: [csv],
+    });
+    expect(db.download).not.toHaveBeenCalled();
+    expect(summary.status).toBe("UPDATED");
+    expect(Object.keys(summary).sort()).toEqual(["asOfDate", "calculatedAt", "status"]);
+  });
+});
+
+it("background screening never initializes an absent real ledger or imports legacy trades", async () => {
+  const db = database();
+  const before = structuredClone(db.tables);
+  const from = vi.spyOn(db.client, "from");
+  expect(await refreshPortfolioAfterScreening(db.client, "owner")).toEqual({
+    status: "NOT_INITIALIZED",
+    asOfDate: null,
+    calculatedAt: null,
+  });
+  expect(db.tables).toEqual(before);
+  expect(from.mock.calls.map(([name]) => name)).toEqual(["portfolio_ledgers"]);
+  expect(db.download).not.toHaveBeenCalled();
+});
+it("rejects a changed active source set instead of relabelling preloaded old texts", async () => {
+  const db = database();
+  await operateLedgers(db.client, "owner", { action: "load" });
+  const before = structuredClone(db.tables["portfolio_ledgers"]);
+  db.download.mockClear();
+  vi.mocked(simulateStrategy).mockClear();
+  const { listActiveSources } = await import("./screeningSources.server");
+  const sources = await listActiveSources(db.client, "owner");
+  await expect(
+    refreshPortfolioAfterScreening(db.client, "owner", {
+      sources: sources.map((s) => ({ ...s, file_hash: "old-hash" })),
+      texts: [csv],
+    }),
+  ).rejects.toThrow("활성 원천데이터가 변경");
+  expect(db.tables["portfolio_ledgers"]).toEqual(before);
+  expect(db.download).not.toHaveBeenCalled();
+  expect(simulateStrategy).not.toHaveBeenCalled();
+});
+
+it("canonical text cannot masquerade as raw input and falls back to verified Storage bytes", async () => {
+  const previous = csv;
+  csv = [
+    "symbol,name,securityType,market,sector,date,open,high,low,close,volume,tradingValue,foreignNetBuyValue",
+    "005930,검증 종목,STOCK,KOSDAQ,SEMI,2026-01-02,100,110,90,105,0,0,0",
+    "005930,검증 종목,STOCK,KOSDAQ,SEMI,2026-01-05,105,115,100,110,0,0,",
+    "005930,검증 종목,STOCK,KOSDAQ,SEMI,2026-01-06,,120,100,115,100,0,",
+    "KOSPI,코스피,INDEX,INDEX,,2026-01-02,2000,2100,1900,2050,0,0,0",
+    "KOSDAQ,코스닥,INDEX,INDEX,,2026-01-02,600,650,550,610,0,0,",
+  ].join("\n");
+  try {
+    const { validateSourceText } = await import("./sourceData");
+    const canonical = await validateSourceText(csv, "synthetic-raw.csv");
+    expect(canonical.errors).toEqual([]);
+    expect(canonical.valid).toBe(true);
+    expect(canonical.canonicalCsv).not.toBe(csv);
+    expect(canonical.canonicalCsv.split("\n")[0]).toContain("type");
+    const db = database();
+    db.tables["portfolio_trades"]![0]!["symbol"] = "005930";
+    const snapshot = db.tables["screening_history"]![0]!["snapshot"] as {
+      entries: Array<{ symbol: string }>;
+    };
+    snapshot.entries[0]!.symbol = "005930";
+    const raw = await operateLedgers(db.client, "owner", { action: "load" });
+    (db.tables["portfolio_ledgers"]![0]!["payload"] as LedgerDocument).strategy = null;
+    const { listActiveSources } = await import("./screeningSources.server");
+    const sources = await listActiveSources(db.client, "owner");
+    db.download.mockClear();
+    const reused = await operateLedgers(
+      db.client,
+      "owner",
+      { action: "sync" },
+      { sources, texts: [canonical.canonicalCsv] },
+    );
+    expect(db.download).toHaveBeenCalledTimes(1);
+    expect({ ...reused.document.strategy, calculatedAt: null }).toEqual({
+      ...raw.document.strategy,
+      calculatedAt: null,
+    });
+    expect(reused.actual).toEqual(raw.actual);
+  } finally {
+    csv = previous;
+  }
+});
+
+it("a corrected earlier actual buy date refreshes required price coverage", async () => {
+  const previous = csv;
+  csv = "symbol,date,market,open,high,low,close,volume\nA,2026-01-02,KOSDAQ,100,110,90,105,1000";
+  try {
+    const db = database();
+    db.tables["screening_history"] = [];
+    db.tables["portfolio_trades"]![0]!["entry_date"] = "2026-01-06";
+    const first = await operateLedgers(db.client, "owner", { action: "load" });
+    expect(first.document.strategy?.quotes["A"]).toBeUndefined();
+    db.download.mockClear();
+    vi.mocked(simulateStrategy).mockClear();
+    const next = await operateLedgers(db.client, "owner", {
+      action: "execution",
+      revision: first.revision,
+      execution: { ...first.document.executions[0]!, date: "2026-01-01" },
+    });
+    expect(next.document.strategy?.quotes["A"]?.price).toBe(105);
+    expect(db.download).toHaveBeenCalledTimes(1);
+    expect(simulateStrategy).toHaveBeenCalledTimes(1);
+  } finally {
+    csv = previous;
+  }
+});
+it("rejects changed source activation metadata before reusing provided raw text", async () => {
+  const db = database();
+  await operateLedgers(db.client, "owner", { action: "load" });
+  const before = structuredClone(db.tables["portfolio_ledgers"]);
+  const { listActiveSources } = await import("./screeningSources.server");
+  const sources = await listActiveSources(db.client, "owner");
+  db.download.mockClear();
+  await expect(
+    refreshPortfolioAfterScreening(db.client, "owner", {
+      sources: sources.map((source) => ({ ...source, activated_at: "different-registration" })),
+      texts: [csv],
+    }),
+  ).rejects.toThrow("활성 원천데이터가 변경");
+  expect(db.tables["portfolio_ledgers"]).toEqual(before);
+  expect(db.download).not.toHaveBeenCalled();
+});
+
+it("a derived-source outage cannot drop or duplicate a valid actual execution edit", async () => {
+  const db = database();
+  const first = await operateLedgers(db.client, "owner", { action: "load" });
+  const sources = await import("./screeningSources.server");
+  const list = vi
+    .spyOn(sources, "listActiveSources")
+    .mockRejectedValue(new Error("temporary source outage"));
+  const request = {
+    action: "execution" as const,
+    revision: first.revision,
+    execution: { ...first.document.executions[0]!, shares: 19 },
+  };
+  try {
+    const saved = await operateLedgers(db.client, "owner", request);
+    expect(saved.actual.positions[0]!.shares).toBe(19);
+    expect(saved.strategyRefresh.status).toBe("FAILED");
+    expect(saved.document.strategy).toEqual(first.document.strategy);
+    expect(saved.revision).toBe(first.revision + 1);
+    await expect(operateLedgers(db.client, "owner", request)).rejects.toThrow("원장이 변경");
+    expect(
+      (db.tables["portfolio_ledgers"]![0]!["payload"] as LedgerDocument).executions,
+    ).toHaveLength(first.document.executions.length);
+  } finally {
+    list.mockRestore();
+  }
+  expect(
+    (await operateLedgers(db.client, "owner", { action: "load" })).actual.positions[0]!.shares,
+  ).toBe(19);
+});
+
+it("changed calculation runtime invalidates a cached portfolio even when policy versions stay unchanged", async () => {
+  const db = database();
+  const first = await operateLedgers(db.client, "owner", { action: "load" });
+  const runtime = await import("./ledger/octoberShadowEngineManifest.generated.json");
+  const original = runtime.default.codeHash;
+  db.download.mockClear();
+  vi.mocked(simulateStrategy).mockClear();
+  try {
+    runtime.default.codeHash = `sha256:${"0".repeat(64)}`;
+    const next = await operateLedgers(db.client, "owner", { action: "load" });
+    expect(next.document.strategy?.fingerprint).not.toBe(first.document.strategy?.fingerprint);
+    expect(db.download).toHaveBeenCalledTimes(1);
+    expect(simulateStrategy).toHaveBeenCalledTimes(1);
+  } finally {
+    runtime.default.codeHash = original;
+  }
 });

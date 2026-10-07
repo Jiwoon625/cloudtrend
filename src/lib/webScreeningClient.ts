@@ -3,7 +3,7 @@ import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import { readDashboardCache, readScreeningCache } from "@/lib/screeningCache";
 import { runWebScreeningServer } from "@/lib/webScreening.functions";
 
-let serverBuildInFlight: Promise<void> | null = null;
+let serverBuildInFlight: ReturnType<typeof runWebScreeningServer> | null = null;
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -16,7 +16,7 @@ async function buildCachesOnServer() {
     if (error) throw error;
     const accessToken = data.session?.access_token;
     if (!accessToken) throw new Error("먼저 로그인해 주세요.");
-    await runWebScreeningServer({
+    return runWebScreeningServer({
       data: { accessToken, config: getActiveScoringConfig() },
     });
   })().finally(() => {
@@ -59,10 +59,10 @@ export async function getOrBuildScreeningPayloadServerFirst() {
   }
 }
 
-/** 사용자가 명시적으로 다시 스크리닝을 눌렀을 때 기존 캐시 유무와 관계없이 서버에서 재계산한다. */
+/** Explicit screening checks inputs; unchanged successful publications reuse verified results. */
 export async function rebuildScreeningCachesServerFirst() {
-  await buildCachesOnServer();
+  const refresh = await buildCachesOnServer();
   const [screening, dashboard] = await Promise.all([readScreeningCache(), readDashboardCache()]);
   if (!screening || !dashboard) throw new Error("서버 재계산 후 캐시 검증에 실패했습니다.");
-  return { screening, dashboard };
+  return { screening, dashboard, refresh };
 }

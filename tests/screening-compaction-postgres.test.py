@@ -6,6 +6,7 @@ existing data directory. Run with --pg-bin-dir and optional --pg-share-dir.
 """
 import argparse
 import copy
+from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -107,16 +108,21 @@ class Suite:
         receipt = json.loads(self.sql(call(*first), role='service_role'))
         # Two previously compacted parents share all three original origins.
         # Add one new raw source, then create a single staged replacement.
+        # Cutover activation uses clock_timestamp(), so a fixed calendar date
+        # eventually puts the new raw source before the compacted parents.
+        created_at = datetime.fromisoformat(receipt['committed_at']) + timedelta(seconds=1)
+        activated_at = created_at + timedelta(seconds=1)
         for number, status, rows in [(7, 'active', 3), (8, 'valid', 9)]:
             ident = str(uuid.UUID(int=number))
             extra = dict(id=ident, storage_path=f'{A}/source/screening/{ident}/part.csv',
                          status=status, row_count=rows, superseded_by=None,
-                         created_at='2026-10-07T00:00:00Z',
-                         activated_at='2026-10-07T00:00:01Z' if status == 'active' else None,
+                         created_at=created_at.isoformat(),
+                         activated_at=activated_at.isoformat() if status == 'active' else None,
                          validation_result={'valid':True,'hashes':{'file':H,'data':H,'schema':H}})
             self.sql("insert into public.analysis_source_files select (jsonb_populate_record(null::public.analysis_source_files,to_jsonb(s)||" + jl(extra) + ")).* from public.analysis_source_files s where id=" + literal(first[1][0]['id']))
             self.sql("insert into storage.objects(id,bucket_id,name,version) select id,storage_bucket,storage_path,'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' from public.analysis_source_files where id=" + literal(ident))
         parents = self.descriptors(f"user_id='{A}' and status='active'")
+        assert [parent['id'] for parent in parents] == receipt['candidate_ids'] + [str(uuid.UUID(int=7))]
         candidate = self.descriptors(f"id='{str(uuid.UUID(int=8))}'")
         verification = {**first[2], 'effective_rows_before':9, 'effective_rows_after':9}
         second = (parents,candidate,verification,str(uuid.uuid4()))

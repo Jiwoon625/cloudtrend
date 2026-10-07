@@ -1,3 +1,5 @@
+import { completeScreeningPublication } from "../src/lib/screeningPublication.server";
+import { refreshPortfolioAfterScreening } from "../src/lib/portfolioLedgers.server";
 import { MODEL_ACCOUNTING_START } from "../src/lib/ledger/modelSeries";
 import { replayKrShadow } from "../src/lib/shadowReplay.server";
 import { memory } from "./screening-memory";
@@ -257,6 +259,15 @@ export async function runScreening(argv = process.argv.slice(2)) {
         validation_result: source.sourceRecord?.validation_result,
       })),
     });
+    // ACTUAL-book integrity failures must not block independent MODEL Shadow publication.
+    // CLI inputs are canonicalized; portfolio price loading must keep the original raw semantics.
+    const portfolioRefresh = await refreshPortfolioAfterScreening(
+      client,
+      options.supabaseUserId,
+    ).catch(() => ({ status: "FAILED" as const, asOfDate: null, calculatedAt: null }));
+    process.stdout.write(`${JSON.stringify({ portfolioRefresh })}\n`);
+    if (!octoberShadow.deferred && portfolioRefresh.status !== "FAILED")
+      await completeScreeningPublication(client, options.supabaseUserId, webCache);
     process.stdout.write(`${JSON.stringify({ octoberShadow })}\n`);
     releaseSourcePayloads(inputs);
     await Promise.all([
