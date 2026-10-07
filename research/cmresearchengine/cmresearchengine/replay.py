@@ -6,6 +6,7 @@ not an actual executable historical fill. Neither cash nor historical NAV is
 backdated. Known admitted events and pending stock bridges run first.
 """
 from . import runtime
+from .immutable_session_rows import freeze_us_session_rows
 from copy import deepcopy
 from decimal import Decimal
 import pandas as pd
@@ -75,6 +76,10 @@ class ResearchReplay(FreshPolicyReplay):
                     if (kind,engine,day) not in queued:self.push(session[key],priority,kind,engine,session)
 
     def step(self):
+        # Keep the existing atomic rollback intact. Only detached, read-only
+        # scalar market rows may make its deepcopy an O(1) reference reuse.
+        if self.queue and self.queue[0][4]=='U' and self.queue[0][3] in ('OPEN','CLOSE'):
+            self.latest_rows['U']=freeze_us_session_rows(self.latest_rows['U'])
         # Fresh host rolls back US ledger writes on error. Include newly added
         # proxy state so a failed known event cannot leave a phantom audit exit.
         before=(dict(self.proxy_last_close),list(self.proxy_exits),
@@ -162,7 +167,7 @@ class ResearchReplay(FreshPolicyReplay):
         if engine=='U' and self.entitlement_bridge is not None:
             self.entitlement_bridge.resolve_close(self,session)
             if any(type(p) is ExactComparisonEntitlementPosition for (e,_),p in self.ledger.positions.items() if e=='U'):
-                self.adapters['U']=promote_us_adapter(self.adapters['U'])
+                self.adapters[engine]=promote_us_adapter(self.adapters['U'])
         records=panel_records(self.panels[engine],day) if day in self.panels[engine] else None
         rows={} if records is None else {r['symbol']:r for r in records}
         if any(utc(r['available_at'])>self.ledger.at for r in rows.values()):
