@@ -46,6 +46,8 @@ class MonthlyDayPanels(Mapping):
         self._verified = set()
         self._day_cache_day, self._day_cache_frame = None, None
         self._records_cache_day, self._records_cache = None, None
+        self._session_view_day, self._session_rows, self._session_max_available_at = None, None, None
+        self._available_max_by_day = {}
         self.loads = 0
         self.peak_cached_rows = 0
 
@@ -62,6 +64,8 @@ class MonthlyDayPanels(Mapping):
         self._frame, self._month = None, None
         self._day_cache_day, self._day_cache_frame = None, None
         self._records_cache_day, self._records_cache = None, None
+        self._session_view_day, self._session_rows, self._session_max_available_at = None, None, None
+        self._available_max_by_day = {}
         part = self.parts[month]
         path = (self.root / part["path"]).resolve()
         if not path.is_relative_to(self.root):
@@ -84,6 +88,7 @@ class MonthlyDayPanels(Mapping):
         if "market_gate" in frame:
             frame["market_gate"] = frame.market_gate.map(clean)
         times = pd.to_datetime(frame.available_at, utc=True, errors="raise", format="mixed")
+        self._available_max_by_day = pd.DataFrame({"session_date":frame.session_date,"available_at":times}).groupby("session_date",sort=False).available_at.max().to_dict()
         frame["available_at"] = times.map(lambda x: x.isoformat())
         # Frozen signal predicates require absent numeric fields to be None.
         # Normalize once per loaded month instead of once per OPEN/CLOSE access.
@@ -100,6 +105,7 @@ class MonthlyDayPanels(Mapping):
             self._day_cache_frame = self._frame.loc[self._frame.session_date.eq(day)].copy()
             self._day_cache_day = day
             self._records_cache_day, self._records_cache = None, None
+            self._session_view_day, self._session_rows, self._session_max_available_at = None, None, None
         # Consumers receive a separate DataFrame shell while the immutable
         # normalized values remain shared for this one-session cache.
         return self._day_cache_frame.copy(deep=False)
@@ -111,6 +117,18 @@ class MonthlyDayPanels(Mapping):
             self._records_cache_day = day
         return self._records_cache
 
+    def session_view(self, day):
+        """Immutable one-session records, symbol index and latest availability."""
+        if self._session_view_day != day:
+            records = self.records(day)
+            rows = {row["symbol"]:row for row in records}
+            if len(rows) != len(records):
+                raise ValueError("Duplicate symbol/date in normalized session")
+            self._session_rows = rows
+            self._session_max_available_at = self._available_max_by_day[day]
+            self._session_view_day = day
+        return self._records_cache, self._session_rows, self._session_max_available_at
+
 
 def panel_records(panel, day):
     """Use a wrapper's explicit records fast-path, otherwise preserve old behavior."""
@@ -118,6 +136,19 @@ def panel_records(panel, day):
     if method is not None:
         return method(panel, day)
     return panel[day].to_dict("records")
+
+
+def panel_session_view(panel, day):
+    """Return records, a symbol index, and the exact latest availability timestamp."""
+    method = getattr(type(panel), "session_view", None)
+    if method is not None:
+        return method(panel, day)
+    records = panel_records(panel, day)
+    rows = {row["symbol"]:row for row in records}
+    if len(rows) != len(records):
+        raise ValueError("Duplicate symbol/date in normalized session")
+    available = pd.to_datetime([row["available_at"] for row in records], utc=True, errors="raise", format="mixed")
+    return records, rows, available.max() if len(available) else None
 
 
 def normalized_day_panels(panel, engine, structural_split):
