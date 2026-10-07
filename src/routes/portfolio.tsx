@@ -17,6 +17,9 @@ import { supabase } from "@/lib/cloud";
 import { portfolioLedgersServer } from "@/lib/portfolioLedgers.functions";
 import type { ActualExecution, Candidate, DualPortfolioState } from "@/lib/portfolioLedgers";
 import type { PortfolioSummary } from "@/lib/portfolioStoreCore";
+import { buildKrPendingEntryPreview } from "@/lib/portfolioPendingEntries";
+import { domesticPortfolioQueryOptions } from "@/lib/portfolioPositionContext";
+import { waitForPortfolioSync } from "@/lib/portfolioSyncRequest";
 import type { LedgerRequest } from "@/lib/portfolioLedgers.server";
 import {
   acknowledgeLedgerReload,
@@ -46,6 +49,19 @@ async function request(input: LedgerRequest): Promise<DualPortfolioState> {
 }
 const pnlClass = (v: number) => (v > 0 ? "text-up" : v < 0 ? "text-down" : "text-muted-foreground");
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+const calculatedAtLabel = (value: string | undefined) =>
+  value && Number.isFinite(Date.parse(value))
+    ? `${new Date(value).toLocaleString("ko-KR", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      })} KST`
+    : "미확인";
 function SummaryCard({
   title,
   caption,
@@ -174,12 +190,7 @@ function PortfolioPage() {
 export function KoreaPortfolioContent() {
   const qc = useQueryClient();
   const query = useQuery({
-    queryKey: QUERY,
-    queryFn: () => request({ action: "load" }),
-    staleTime: Infinity,
-    gcTime: Infinity,
-    refetchOnWindowFocus: false,
-    retry: false,
+    ...domesticPortfolioQueryOptions,
   });
   const state = query.data,
     doc = state?.document,
@@ -200,6 +211,7 @@ export function KoreaPortfolioContent() {
   const editSession = useRef<LedgerEditSession | null>(null);
   const capitalSession = useRef<LedgerEditSession | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
   function openEditor(next: Edit) {
     if (writeGuard.current.pending || writeGuard.current.needsReload) return;
     if (edit && editSession.current?.needsReview) {
@@ -226,13 +238,31 @@ export function KoreaPortfolioContent() {
       session,
       client: qc,
       queryKey: QUERY,
-      request: (revision) => request({ ...input, revision }),
+      waitForReadRefresh: input.action !== "sync",
+      request: (revision) =>
+        input.action === "sync"
+          ? waitForPortfolioSync(() => request({ ...input, revision }))
+          : request({ ...input, revision }),
       onBusy: setBusy,
       onError: (message) => {
         setWriteError(message);
         toast.error(message);
       },
     });
+  }
+  async function synchronize() {
+    if (writeGuard.current.pending || writeGuard.current.needsReload) return;
+    setSyncing(true);
+    try {
+      if (await mutate({ action: "sync" })) {
+        const latest = qc.getQueryData<DualPortfolioState>(QUERY)?.document.strategy;
+        toast.success(
+          `전략·시세 확인 완료 · 데이터 기준 ${latest?.summary.latestDate ?? "미확인"} · 계산 ${calculatedAtLabel(latest?.calculatedAt)}`,
+        );
+      }
+    } finally {
+      setSyncing(false);
+    }
   }
   function beginBuy(c: Candidate) {
     openEditor({
@@ -311,6 +341,10 @@ export function KoreaPortfolioContent() {
   const candidates = [...(strategy?.candidates ?? [])].sort((a, b) =>
     b.signalDate.localeCompare(a.signalDate),
   );
+  const pendingEntries = buildKrPendingEntryPreview(strategy, {
+    actualExecutions: doc?.executions ?? [],
+  });
+  const pendingByKey = new Map(pendingEntries.rows.map((row) => [row.key, row]));
   const bought = new Map<string, number>();
   for (const e of doc?.executions ?? [])
     if (e.side === "BUY" && e.signalKey)
@@ -331,20 +365,31 @@ export function KoreaPortfolioContent() {
         <Button
           variant="outline"
           size="sm"
-          disabled={query.isFetching || busy}
-          onClick={() => void mutate({ action: "sync" })}
+          disabled={query.isFetching || busy || writeGuard.current.needsReload}
+          onClick={() => void synchronize()}
         >
-          {query.isFetching ? (
+          {query.isFetching || syncing ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
             <RefreshCw className="size-4" />
           )}
-          전략·시세 동기화
+          {syncing ? "전략·시세 동기화 중…" : "전략·시세 동기화"}
         </Button>
       </div>
+      {syncing ? (
+        <p role="status" className="mb-3 text-sm text-muted-foreground">
+          전략·시세 동기화 중… 입력이 바뀐 경우 첫 갱신은 시간이 걸릴 수 있습니다.
+        </p>
+      ) : null}
       <p className="mb-3 text-xs text-muted-foreground">
         통합 원장 · 실제 체결을 기준으로 보유·손익을 조회합니다. {LEDGER_CASH_NOTE}
       </p>
+      {state?.strategyRefresh?.status === "FAILED" ? (
+        <p role="alert" className="mb-3 text-sm text-warn">
+          실제 체결·설정은 저장됐지만 전략·시세 갱신에 실패했습니다. 표시된 평가는 이전 자료
+          기준입니다.
+        </p>
+      ) : null}
       {writeError ? (
         <div role="alert" className="mb-3 rounded border border-destructive p-3 text-sm">
           {writeError}
@@ -389,10 +434,34 @@ export function KoreaPortfolioContent() {
               capital={doc.actualCapital}
             />
           </div>
+          {pendingEntries.rows.length > 0 ? (
+            <LedgerTable
+              title={`전략 진입 예정 · ${pendingEntries.rows.length}건 (오늘 ${pendingEntries.todayCount}건)`}
+              caption="저장된 신호와 검증된 한국 거래일 기준의 예정 후보입니다. 시가·수량·한도 등 실행 조건 확인 전이며, 전략 보유·현금과 실제 체결에는 반영하지 않습니다."
+              headers={["종목", "신호일", "진입 예정일", "전략 상태", "실제 체결"]}
+            >
+              {pendingEntries.rows.map((row) => (
+                <tr key={row.key} className="border-t">
+                  <td className={td}>
+                    <StockLink symbol={row.symbol} name={row.name} />
+                  </td>
+                  <td className={td}>{row.signalDate}</td>
+                  <td className={td}>{row.expectedEntryDate ?? "미확인 · 거래일 자료 없음"}</td>
+                  <td className={td}>
+                    {row.label}
+                    <br />
+                    <span className="text-muted-foreground">{row.decision}</span>
+                  </td>
+                  <td className={td}>{row.actualLabel}</td>
+                </tr>
+              ))}
+            </LedgerTable>
+          ) : null}
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>
               저장된 스크리닝 이력 {strategy.firstSignalDate ?? "-"}부터 · 평가 기준{" "}
-              {strategy.summary.latestDate ?? "-"} · 두 원장 각각 최대 30종목
+              {strategy.summary.latestDate ?? "-"} · 전략 계산{" "}
+              {calculatedAtLabel(strategy.calculatedAt)} · 두 원장 각각 최대 30종목
             </span>
             <Button
               variant="ghost"
@@ -726,7 +795,7 @@ export function KoreaPortfolioContent() {
                 "종목",
                 "신호일",
                 "전략 판단",
-                "전략 진입일",
+                "전략 진입일 / 예정일",
                 "실제 매수 누계",
                 "실제 상태 / 사유",
                 "체결 입력",
@@ -736,11 +805,21 @@ export function KoreaPortfolioContent() {
               {candidates.filter(matches).map((c) => (
                 <tr key={c.key} className="border-t">
                   <td className={td}>
-                    <StockLink {...c} />
+                    <StockLink symbol={c.symbol} name={c.name} />
                   </td>
                   <td className={td}>{c.signalDate}</td>
                   <td className={td}>{c.decision}</td>
-                  <td className={td}>{c.entryDate ?? "다음 거래일 대기"}</td>
+                  <td className={td}>
+                    {c.entryDate ?? pendingByKey.get(c.key)?.expectedEntryDate ?? "미확인"}
+                    {pendingByKey.has(c.key) ? (
+                      <>
+                        <br />
+                        <span className="text-muted-foreground">
+                          {pendingByKey.get(c.key)?.label}
+                        </span>
+                      </>
+                    ) : null}
+                  </td>
                   <td className={td}>{bought.get(c.key) ?? 0}주</td>
                   <td className={td}>
                     {bought.has(c.key)

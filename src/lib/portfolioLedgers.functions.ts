@@ -1,3 +1,4 @@
+import type { PortfolioLedgerViewState } from "./portfolioFreshness";
 import { validateExecutionSourceLinks } from "./ledger/executionMemo";
 import { readWebsiteDocument } from "./ledger/websiteRepository.server";
 import { createServerFn } from "@tanstack/react-start";
@@ -64,7 +65,7 @@ async function authenticate(accessToken: string) {
 
 export const portfolioLedgersServer = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => request.parse(input))
-  .handler(async ({ data }) => {
+  .handler(async ({ data }): Promise<PortfolioLedgerViewState> => {
     const { client, uid } = await authenticate(data.accessToken);
     return operateLedgers(client, uid, data);
   });

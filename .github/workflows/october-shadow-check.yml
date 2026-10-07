@@ -4,6 +4,8 @@ on:
     paths:
       - src/lib/ledger/**
       - src/lib/octoberShadow*
+      - src/lib/shadowReplay*
+      - src/lib/screeningSnapshot*
       - src/components/OctoberShadowSummary*
       - src/lib/engine/usProspective*
       - src/lib/engine/kospiShadow*

@@ -12,6 +12,16 @@ const mocks = vi.hoisted(() => ({
   warm: vi.fn(),
   trusted: vi.fn(),
   reused: vi.fn(),
+  portfolioRefresh: vi.fn(),
+  complete: vi.fn(),
+  shadow: vi.fn(),
+}));
+vi.mock("../src/lib/shadowReplay.server", () => ({ replayKrShadow: mocks.shadow }));
+vi.mock("../src/lib/screeningPublication.server", () => ({
+  completeScreeningPublication: mocks.complete,
+}));
+vi.mock("../src/lib/portfolioLedgers.server", () => ({
+  refreshPortfolioAfterScreening: mocks.portfolioRefresh,
 }));
 vi.mock("../scripts/source-registry-store", () => ({ loadAnalysisSourceInputs: mocks.load }));
 vi.mock("../src/lib/engine/manualDataset", () => ({ parseManualMarketData: mocks.parse }));
@@ -94,9 +104,16 @@ beforeEach(async () => {
       },
     },
   ];
+  mocks.shadow.mockResolvedValue({ deferred: null });
+  mocks.portfolioRefresh.mockResolvedValue({
+    status: "REUSED",
+    asOfDate: "2026-09-30",
+    calculatedAt: "2026-09-30T00:00:00Z",
+  });
   mocks.load.mockResolvedValue(inputs);
   mocks.parse.mockReturnValue({ dataset: getMockDataset(), stats: { rows: 1 } });
   mocks.cache.mockResolvedValue({
+    publicationId: "synthetic-publication",
     inputFingerprint: "fingerprint",
     resultDigest: "digest",
     roundTripVerified: true,
@@ -133,6 +150,17 @@ for (const phase of ["prices", "warm"] as const) {
       .record as import("../src/lib/analysisRunBundle").AnalysisRunSummaryRecord;
     expect(run.status).toBe("COMPLETED");
     expect(mocks.cache).toHaveBeenCalledTimes(1);
+    expect(mocks.portfolioRefresh).toHaveBeenCalledExactlyOnceWith(
+      expect.anything(),
+      "11111111-1111-1111-1111-111111111111",
+    );
+    expect(mocks.shadow.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.portfolioRefresh.mock.invocationCallOrder[0]!,
+    );
+    expect(mocks.complete).toHaveBeenCalledTimes(1);
+    expect(mocks.complete.mock.invocationCallOrder[0]).toBeGreaterThan(
+      mocks.portfolioRefresh.mock.invocationCallOrder[0]!,
+    );
     const bundle = JSON.parse(uploaded.get(run.result_path)!);
     expect(bundle.schemaVersion).toBe(1);
     expect(bundle.summary).toEqual(run.summary);
@@ -179,4 +207,18 @@ test("a legacy completed run with no as_of_date reuses a verified pre-start sour
   await runScreening(args().filter((value) => value !== "--force"));
   expect(mocks.parse).not.toHaveBeenCalled();
   expect(upserts).toEqual([]);
+});
+
+test("an ACTUAL-book refresh failure does not block MODEL replay or expose private error details", async () => {
+  mocks.portfolioRefresh.mockRejectedValue(new Error("private account journal integrity"));
+  await expect(runScreening(args())).resolves.toBeUndefined();
+  expect(mocks.shadow).toHaveBeenCalledTimes(1);
+  expect(mocks.complete).not.toHaveBeenCalled();
+  expect(upserts.some((value) => value.table === "analysis_runs")).toBe(true);
+  const logs = vi
+    .mocked(process.stdout.write)
+    .mock.calls.map((call) => String(call[0]))
+    .join("\n");
+  expect(logs).toContain('"status":"FAILED"');
+  expect(logs).not.toContain("private account");
 });

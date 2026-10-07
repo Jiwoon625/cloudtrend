@@ -17,6 +17,11 @@ on:
       - src/components/UsPortfolioLedgers.tsx
       - src/routes/us.portfolio.tsx
       - vitest.portfolio.config.ts
+      - vitest.portfolio-freshness.config.ts
+      - tests/portfolio-screening-refresh.test.ts
+      - src/components/PortfolioFreshnessSummary*
+      - src/components/PortfolioPendingEntries*
+      - src/lib/ledgerUiMutation*
       - src/lib/datasetDataStatus.ts
       - src/lib/usBrowserViews.ts
       - tests/us-browser-views.test.ts
@@ -28,6 +33,8 @@ on:
       - tests/instrument-chart-cache.test.ts
       - src/lib/screeningCache.ts
       - src/lib/webScreening.functions.ts
+      - src/lib/screeningPublication.server.ts
+      - scripts/web-screening-cache-store.ts
       - src/lib/screeningCacheContract.ts
       - tests/dashboard-cache.test.ts
       - .github/workflows/screening-cache-contract-check.yml
@@ -53,6 +60,8 @@ jobs:
         run: npx eslint src/lib/screeningCache.ts src/lib/webScreening.functions.ts src/lib/screeningCacheContract.ts src/lib/onsetProfile.ts src/components/OnsetProfileDetails.tsx tests/onset-profile.test.tsx
       - name: Test independent portfolio ledgers
         run: npx vitest run --config vitest.portfolio.config.ts
+      - name: Test screening freshness and pending-entry display
+        run: npx vitest run --config vitest.portfolio-freshness.config.ts
       - name: Build
         id: build
         shell: bash

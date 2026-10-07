@@ -1,3 +1,4 @@
+import { domesticPortfolioQueryOptions } from "@/lib/portfolioPositionContext";
 import { usePortfolioModelConsolidation } from "@/lib/usePortfolioModelConsolidation";
 import { UsModelExecutionJournal } from "./UsModelExecutionJournal";
 import {
@@ -115,14 +116,7 @@ export function PortfolioAssetHub({
   onAssetChange?: (asset: PortfolioAsset) => void;
 }) {
   const qc = useQueryClient();
-  const kr = useQuery({
-    queryKey: ["portfolio-ledgers"],
-    queryFn: () => krRequest({ action: "load" }),
-    staleTime: Infinity,
-    gcTime: Infinity,
-    retry: false,
-    refetchOnWindowFocus: false,
-  });
+  const kr = useQuery(domesticPortfolioQueryOptions);
   const us = useQuery({
     queryKey: ["us-actual-ledger"],
     queryFn: () => usRequest({ action: "load" }),
@@ -341,6 +335,11 @@ export function PortfolioAssetHub({
   }
   return (
     <AppShell loadAnalysis={false}>
+      {kr.data?.strategyRefresh?.status === "FAILED" ? (
+        <p role="alert" className="mb-3 text-sm text-warn">
+          실제 기록은 저장됐지만 전략·시세 갱신에 실패했습니다. 평가 자료를 다시 확인하세요.
+        </p>
+      ) : null}
       <header className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">포트폴리오</h1>
