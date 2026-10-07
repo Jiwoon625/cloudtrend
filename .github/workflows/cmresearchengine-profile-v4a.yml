@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: cmresearchengine-profile-v4a-short
+  group: cmresearchengine-profile-v4a-micro
   cancel-in-progress: true
 jobs:
   synthetic:
@@ -31,7 +31,7 @@ jobs:
   benchmark:
     needs: synthetic
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 25
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -40,7 +40,7 @@ jobs:
       OMP_NUM_THREADS: '1'
       OPENBLAS_NUM_THREADS: '1'
       CM_PROFILE_MODE: '1'
-      CM_PROFILE_TAG: 'event1500-v1'
+      CM_PROFILE_TAG: 'event400-v1'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -53,6 +53,6 @@ jobs:
         run: |
           df -PB1 "$RUNNER_TEMP"
           /usr/bin/time -v python -m cmresearchengine.cli run \
-            --stage base --offset 0 --count 4 --workers 2 --max-seconds 1800 --event-limit 1500 \
+            --stage base --offset 0 --count 4 --workers 2 --max-seconds 900 --event-limit 400 \
             --hybrid-shared-us-analysis --work "$RUNNER_TEMP/cm-private/work"
           df -PB1 "$RUNNER_TEMP"
