@@ -10,7 +10,7 @@ permissions:
   contents: read
 concurrency:
   group: cmresearchengine-profile-v4a
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   synthetic:
     runs-on: ubuntu-24.04
@@ -31,7 +31,7 @@ jobs:
   benchmark:
     needs: synthetic
     runs-on: ubuntu-24.04
-    timeout-minutes: 150
+    timeout-minutes: 45
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -52,6 +52,6 @@ jobs:
         run: |
           df -PB1 "$RUNNER_TEMP"
           /usr/bin/time -v python -m cmresearchengine.cli run \
-            --stage base --offset 0 --count 4 --workers 2 --max-seconds 6000 \
+            --stage base --offset 0 --count 4 --workers 2 --max-seconds 1800 --event-limit 1500 \
             --hybrid-shared-us-analysis --work "$RUNNER_TEMP/cm-private/work"
           df -PB1 "$RUNNER_TEMP"
