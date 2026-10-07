@@ -10,13 +10,23 @@ import {
   canonicalSeriesJson,
   freezeAdoptedSeries,
   hashSeriesValue,
+  VERIFIED_INITIAL_FX,
+  type AdoptedSeriesKind,
   type FrozenModelSeries,
 } from "./ledger/modelSeries";
 import type { ModelJournalRun } from "./ledger/modelJournal";
 import type { KrDailyInputArchive } from "./ledger/octoberShadowArchive";
 import type { OctoberShadowStore } from "./ledger/octoberShadowRepository.server";
 import * as publication from "./ledger/octoberShadowPipeline";
-import { replayKrShadow, shadowReplayClock, sliceKrDatasetForReplay } from "./shadowReplay.server";
+import {
+  replayKrShadow,
+  replayUsShadow,
+  shadowReplayClock,
+  sliceKrDatasetForReplay,
+} from "./shadowReplay.server";
+import { parseUsProspectiveCsv } from "./engine/usProspective";
+import { ADOPTED_SHADOW_FROZEN_CODE_HASH } from "./ledger/octoberShadowRuntime";
+import manifest from "./ledger/octoberShadowEngineManifest.generated.json";
 
 const persistence = vi.hoisted(() => ({ store: vi.fn() }));
 vi.mock("./ledger/octoberShadowRepository.server", () => ({
@@ -170,7 +180,10 @@ function replayDataset(): MarketDataset {
 }
 
 /** Only persistence is replaced; replay, snapshots, hashing and all five book engines run. */
-async function replayPersistence() {
+async function replayPersistence(
+  codeHash = ADOPTED_SHADOW_FROZEN_CODE_HASH as string,
+  changedKind?: AdoptedSeriesKind,
+) {
   const registry = new Map<string, FrozenModelSeries>();
   const sessions = new Map<string, ModelJournalRun>();
   const archives = new Map<string, KrDailyInputArchive>();
@@ -223,18 +236,33 @@ async function replayPersistence() {
       return { reused: false, stateHash };
     },
   };
-  for (const kind of ADOPTED_SERIES_KINDS.filter((kind) => !kind.startsWith("US_")))
+  for (const kind of ADOPTED_SERIES_KINDS)
     await store.insertSeries(
       await freezeAdoptedSeries({
         kind,
         frozenAt: "2026-10-03T00:00:00Z",
-        codeHash: `sha256:${"a".repeat(64)}`,
+        codeHash: !changedKind || kind === changedKind ? codeHash : ADOPTED_SHADOW_FROZEN_CODE_HASH,
         sourceHash: `sha256:${"b".repeat(64)}`,
+        ...(kind.startsWith("US_") ? { initialFx: VERIFIED_INITIAL_FX } : {}),
       }),
     );
   persistence.store.mockReturnValue(store);
   const audits: Array<Record<string, unknown>> = [];
+  const artifacts = new Map<string, string>();
   const client = {
+    storage: {
+      from: () => ({
+        async upload(path: string, body: string) {
+          artifacts.set(path, body);
+          return { error: null };
+        },
+        async download(path: string) {
+          return artifacts.has(path)
+            ? { data: new Blob([artifacts.get(path)!]), error: null }
+            : { data: null, error: { message: "Object not found" } };
+        },
+      }),
+    },
     from(table: string) {
       expect(table).toBe("shadow_replay_audit");
       return {
@@ -245,8 +273,85 @@ async function replayPersistence() {
       };
     },
   } as unknown as SupabaseClient;
-  return { store, client, sessions, archives, prepared, writes, audits };
+  return { store, client, sessions, archives, prepared, writes, audits, artifacts };
 }
+
+async function runAdmissionFixture(
+  market: "KR" | "US",
+  fixture: Awaited<ReturnType<typeof replayPersistence>>,
+) {
+  const common = {
+    client: fixture.client,
+    userId: "11111111-1111-4111-8111-111111111111",
+    calculatedAt: "2026-10-07T23:20:00Z",
+  };
+  if (market === "KR")
+    return replayKrShadow({
+      ...common,
+      dataset: replayDataset(),
+      config: DEFAULT_SCORING_CONFIG,
+      sources: [],
+    });
+  return replayUsShadow({
+    ...common,
+    rows: parseUsProspectiveCsv(
+      "date,symbol,open,high,low,close,volume,ret120,ret252,beta60_spy,ichimoku_tk_gap,relvol1_20,adv20_usd,amihud20,active20,toss_tradable,is_common_share\n2026-10-05,SPY,100,101,99,100,1000,1,1,1,1,1,1000000,0.001,true,true,true",
+    ),
+    sourceCapturedAt: "2026-10-05T20:01:00Z",
+  });
+}
+
+describe("server Shadow exact-runtime admission", () => {
+  it.each(["KR", "US"] as const)(
+    "blocks unknown %s runtime before publication or ledger writes",
+    async (market) => {
+      const fixture = await replayPersistence();
+      const publish = vi.spyOn(publication, "recordOctoberPublication");
+      const originalHash = manifest.codeHash;
+      try {
+        manifest.codeHash = `sha256:${"f".repeat(64)}`;
+        const result = await runAdmissionFixture(market, fixture);
+        expect(result.deferred?.reason).toMatch(/Unreviewed October Shadow runtime hash/);
+        expect(result.processed).toEqual([]);
+        expect(publish).not.toHaveBeenCalled();
+        expect(fixture.writes).toEqual([]);
+        expect(fixture.sessions.size).toBe(0);
+        expect(fixture.artifacts.size).toBe(0);
+      } finally {
+        manifest.codeHash = originalHash;
+      }
+    },
+  );
+
+  it.each(["KR", "US"] as const)(
+    "rejects a mismatched %s frozen registry instead of relabeling its runtime",
+    async (market) => {
+      const fixture = await replayPersistence(
+        `sha256:${"e".repeat(64)}`,
+        market === "KR" ? "KR_KOSPI_CONFIRM1_BEAR" : "US_B3",
+      );
+      const publish = vi.spyOn(publication, "recordOctoberPublication");
+      const result = await runAdmissionFixture(market, fixture);
+      expect(result.deferred?.reason).toMatch(/registry code hash does not match reviewed runtime/);
+      expect(result.processed).toEqual([]);
+      expect(publish).not.toHaveBeenCalled();
+      expect(fixture.writes).toEqual([]);
+      expect(fixture.sessions.size).toBe(0);
+      expect(fixture.artifacts.size).toBe(0);
+    },
+  );
+
+  it("retains the separate US publication path under a reviewed exact runtime", async () => {
+    const fixture = await replayPersistence();
+    const result = await runAdmissionFixture("US", fixture);
+    expect(result.deferred).toBeNull();
+    expect(result.processed[0]?.records).toHaveLength(3);
+    expect(fixture.sessions.size).toBe(3);
+    expect(fixture.artifacts.size).toBe(1);
+    for (const run of fixture.sessions.values())
+      expect(run.receipt.codeHash).toBe(ADOPTED_SHADOW_FROZEN_CODE_HASH);
+  });
+});
 
 describe("KR replay snapshot provenance", () => {
   it("hashes real mixed-market current and prior snapshots without inventing KOSPI entries", async () => {

@@ -42,6 +42,8 @@ export interface KospiShadowRow {
   rsAccel: number | null;
   commonHistory: boolean;
   onsetEligible: boolean;
+  /** Missing entry inputs veto new intent, while score remains usable by held exits. */
+  universeDataPending?: boolean;
 }
 export interface KospiShadowSession {
   date: string;
@@ -536,6 +538,7 @@ export function stepKospiShadow(
     c.priority = row?.priority ?? null;
     let reason: string | null = null;
     if (c.onsetRegime === "UNKNOWN") reason = "ONSET_REGIME_UNOBSERVABLE";
+    else if (row?.universeDataPending) reason = "CONFIRMATION_UNIVERSE_DATA_PENDING";
     else if (!row || !finite(row.score)) reason = "CONFIRMATION_SCORE_MISSING";
     else if (row.score < KOSPI_SHADOW_POLICY.entryScore) reason = "CONFIRMATION_SCORE_BELOW_8";
     else if (row.score >= KOSPI_SHADOW_POLICY.upsideExitScore)
@@ -567,6 +570,7 @@ export function stepKospiShadow(
         !finite(row.score) ||
         old.score >= 8 ||
         row.score < 8 ||
+        row.universeDataPending ||
         !row.onsetEligible
       )
         continue;

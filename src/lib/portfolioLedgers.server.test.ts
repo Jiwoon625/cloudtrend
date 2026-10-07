@@ -475,6 +475,47 @@ describe("confirmation source and persistence integration", () => {
 });
 
 describe("screening portfolio freshness", () => {
+  it("same-date cap completion invalidates pending cached replay once without changing actual trades", async () => {
+    const previous = csv;
+    csv =
+      "symbol,date,market,open,high,low,close,volume,marketCap\nA,2026-01-02,KOSDAQ,100,110,90,105,1000,";
+    try {
+      const db = database();
+      const snapshot = db.tables["screening_history"]![0]!["snapshot"] as {
+        entries: Array<Record<string, unknown>>;
+      };
+      Object.assign(snapshot.entries[0]!, {
+        hardFilterPassed: false,
+        hardFilterStatus: "PENDING",
+        pendingRules: ["시가총액 자료 대기"],
+      });
+      const first = await operateLedgers(db.client, "owner", { action: "load" });
+      expect(first.document.strategy?.trades).toEqual([]);
+      csv += "1000000000000";
+      Object.assign(snapshot.entries[0]!, {
+        hardFilterPassed: true,
+        hardFilterStatus: "PASS",
+        pendingRules: [],
+      });
+      db.download.mockClear();
+      vi.mocked(simulateStrategy).mockClear();
+      const completed = await operateLedgers(db.client, "owner", { action: "load" });
+      expect(completed.document.strategy?.fingerprint).not.toBe(
+        first.document.strategy?.fingerprint,
+      );
+      expect(completed.document.strategy?.trades).toHaveLength(1);
+      expect(completed.document.executions).toEqual(first.document.executions);
+      expect(completed.strategyRefresh.status).toBe("UPDATED");
+      for (const action of ["load", "sync", "load"] as const)
+        expect((await operateLedgers(db.client, "owner", { action })).strategyRefresh.status).toBe(
+          "REUSED",
+        );
+      expect(db.download).toHaveBeenCalledTimes(1);
+      expect(simulateStrategy).toHaveBeenCalledTimes(1);
+    } finally {
+      csv = previous;
+    }
+  });
   it("repeated reads and unchanged sync perform zero raw downloads and simulations", async () => {
     const db = database();
     const first = await operateLedgers(db.client, "owner", { action: "load" });

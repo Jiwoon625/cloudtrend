@@ -3,6 +3,7 @@ import { loadDomesticPositionContext } from "@/lib/portfolioPositionContext";
 import { StrategyDescription } from "@/components/StrategyDescription";
 import { KospiEntryDetails } from "@/components/KospiEntryDetails";
 import { OnsetProfileDetails } from "@/components/OnsetProfileDetails";
+import { UniverseFilterDetails } from "@/components/UniverseFilterDetails";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
@@ -144,6 +145,8 @@ function InstrumentDetail() {
       exitSignal: row.exitSignal,
     },
     failedRules: row.failedRules,
+    hardFilterStatus: row.hardFilterStatus ?? (row.hardFilterPassed ? "PASS" : "FAIL"),
+    pendingRules: row.pendingRules ?? [],
     warnings: row.warnings,
     displayWarnings,
     timestamps: { calculatedAt: new Date().toISOString() },
@@ -249,6 +252,7 @@ function InstrumentDetail() {
           <KospiEntryDetails
             entry={row.kospiEntry}
             showState
+            entryJudgmentPending={row.hardFilterStatus === "PENDING"}
             entrySuppression={entrySuppressionReason(
               positionContext,
               symbol,
@@ -275,11 +279,7 @@ function InstrumentDetail() {
           ))}
         </div>
       ) : null}
-      {!row.hardFilterPassed ? (
-        <div className="mt-3 rounded-md border border-destructive/30 bg-down-soft p-2 text-[12px] text-down">
-          실격 사유: {row.failedRules.join(", ")}
-        </div>
-      ) : null}
+      <UniverseFilterDetails row={row} />
       {row.financials?.isFinancialSector ? (
         <div className="mt-3 rounded-md border border-warn/30 bg-warn-soft p-2 text-[12px] text-warn">
           금융업 종목: 일반 재무건전성 기준 적용에 주의가 필요합니다.

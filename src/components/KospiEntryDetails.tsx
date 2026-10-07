@@ -39,17 +39,19 @@ export function KospiEntryDetails({
   compact = false,
   showState = false,
   entrySuppression = null,
+  entryJudgmentPending = false,
 }: {
   entry: Entry;
   compact?: boolean;
   showState?: boolean;
   entrySuppression?: "held" | "sold" | null;
+  entryJudgmentPending?: boolean;
 }) {
   if (!entry)
     return (
       <span className="text-[10px] text-muted-foreground">확인 기록 없음 · 진입 판정 제외</span>
     );
-  if (entry.state === "none" && !showState) return null;
+  if (entry.state === "none" && !showState && !entryJudgmentPending) return null;
   const record = (
     <div className={`${compact ? "text-[10px]" : "text-[11px]"} space-y-0.5 text-muted-foreground`}>
       {showState ? (
@@ -93,12 +95,17 @@ export function KospiEntryDetails({
       {entry.issues.length ? <p className="text-warn">{entry.issues.join(" · ")}</p> : null}
     </div>
   );
-  if (!entrySuppression) return record;
+  if (!entrySuppression && !entryJudgmentPending) return record;
   return (
     <div className={`${compact ? "text-[10px]" : "text-[11px]"} space-y-1 text-muted-foreground`}>
-      <p className="font-medium">
-        {entrySuppression === "held" ? "보유 중 · 추가 진입 제외" : "매도한 신호 · 재진입 제외"}
-      </p>
+      {entrySuppression ? (
+        <p className="font-medium">
+          {entrySuppression === "held" ? "보유 중 · 추가 진입 제외" : "매도한 신호 · 재진입 제외"}
+        </p>
+      ) : null}
+      {entryJudgmentPending ? (
+        <p className="font-medium text-warn">필수 자료 미확인 · 신규 진입 판단 보류</p>
+      ) : null}
       {entrySuppression === "held" && !compact ? (
         <p>청산 여부는 보유종목 청산 규칙으로 판단합니다.</p>
       ) : null}

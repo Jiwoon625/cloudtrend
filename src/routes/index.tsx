@@ -39,6 +39,7 @@ import {
   formatWon,
 } from "@/lib/format";
 import { PortfolioFreshnessSummary } from "@/components/PortfolioFreshnessSummary";
+import { UniversePendingSummary } from "@/components/UniversePendingSummary";
 import { domesticPortfolioQueryOptions } from "@/lib/portfolioPositionContext";
 import type { DualPortfolioState } from "@/lib/portfolioLedgers";
 import type { DashboardSummary } from "@/lib/screeningCache";
@@ -476,6 +477,8 @@ function DashboardContent({
       </section>
 
       <DashboardSignalLists query={operations} />
+
+      <UniversePendingSummary reasons={summary.pendingReasons ?? []} />
 
       {summary.skippedReasons.length > 0 ? (
         <section className="mt-4 overflow-hidden rounded-lg border border-border bg-card">

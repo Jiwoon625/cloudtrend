@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { getMockDataset } from "./mockProvider";
 import { DEFAULT_SCORING_CONFIG } from "./scoring";
 import { shadowDatasetAsOf, buildKospiShadowSession } from "./kospiShadowDataset";
+import { runFullMarketAnalysis } from "./fullMarketAnalysis";
 const provenance = {
   sourceHash: "source",
   configHash: "config",
@@ -10,6 +11,42 @@ const provenance = {
   now: "2026-10-02T09:00:00Z",
 };
 describe("Shadow dated source adapter", () => {
+  it("carries missing-cap entry vetoes separately from valid technical scores and known failures", () => {
+    const raw = { ...structuredClone(getMockDataset()), isLive: true };
+    const analysis = runFullMarketAnalysis(raw, DEFAULT_SCORING_CONFIG).analysis;
+    const screen = analysis.rows.find((r) => r.instrument.market === "KOSPI")!;
+    screen.operatingScore10 = 8.5;
+    screen.hardFilterPassed = false;
+    screen.failedRules = ["known Primary filter failure"];
+    screen.hardFilterStatus = "FAIL";
+    screen.pendingRules = ["시가총액 자료 대기"];
+    const pending = buildKospiShadowSession(
+      raw,
+      DEFAULT_SCORING_CONFIG,
+      provenance,
+      raw.asOfDate,
+      analysis,
+    );
+    expect(pending.rows.find((r) => r.symbol === screen.instrument.symbol)).toMatchObject({
+      score: 8.5,
+      universeDataPending: true,
+    });
+    screen.pendingRules = [];
+    const knownFail = buildKospiShadowSession(
+      raw,
+      DEFAULT_SCORING_CONFIG,
+      provenance,
+      raw.asOfDate,
+      analysis,
+    );
+    expect(knownFail.rows.find((r) => r.symbol === screen.instrument.symbol)).toMatchObject({
+      score: 8.5,
+      onsetEligible: true,
+    });
+    expect(knownFail.rows.find((r) => r.symbol === screen.instrument.symbol)).not.toHaveProperty(
+      "universeDataPending",
+    );
+  });
   it("truncates every price series, session calendar and future fact before calculation", () => {
     const raw = getMockDataset(),
       date = raw.tradeDates.at(-2)!;

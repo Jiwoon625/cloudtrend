@@ -103,6 +103,10 @@ export function getOperationalSignals(
 }
 
 interface Signals {
+  /** Optional only for archived snapshots written before explicit universe status. */
+  hardFilterPassed?: boolean;
+  hardFilterStatus?: "PASS" | "FAIL" | "PENDING" | undefined;
+  pendingRules?: readonly string[] | undefined;
   kospiEntry?: KospiEntrySnapshot | undefined;
   kospi80Onset?: boolean;
   kosdaq80Onset?: boolean;
@@ -110,6 +114,13 @@ interface Signals {
   exitSignal?: string | null;
 }
 export function isOperationalEntry(row: Signals, asOfDate?: string): boolean {
+  if (
+    (row.hardFilterStatus !== undefined && row.hardFilterPassed === false) ||
+    row.hardFilterStatus === "FAIL" ||
+    row.hardFilterStatus === "PENDING" ||
+    (row.pendingRules?.length ?? 0) > 0
+  )
+    return false;
   return (
     row.kosdaq80Onset === true ||
     (row.operationalSignalVersion === OPERATIONAL_SIGNAL_VERSION &&

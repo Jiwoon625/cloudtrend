@@ -200,6 +200,9 @@ export function DashboardSignalCounts({
           </span>
         </Row>
         <Row label="점수 산정 불가">{formatCount(counts.incomplete)}</Row>
+        <Row label="주식 판단 보류">
+          {counts.pending == null ? "미확인" : formatCount(counts.pending)}
+        </Row>
       </div>
       <EtfHoldings query={query} />
       <Link

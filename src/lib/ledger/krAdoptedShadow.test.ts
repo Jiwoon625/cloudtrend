@@ -180,7 +180,11 @@ it("freezes daily KR prefixes, enforces calendar sequence and reuses immutable s
   await expect(
     stepAdoptedKrSeries(
       series,
-      { ...nextInput, availableAt: "2026-10-08T18:00:00+09:00", decisionAt: "2026-10-08T18:10:00+09:00" },
+      {
+        ...nextInput,
+        availableAt: "2026-10-08T18:00:00+09:00",
+        decisionAt: "2026-10-08T18:10:00+09:00",
+      },
       first.run,
     ),
   ).rejects.toThrow(/next-session-morning/);
@@ -200,7 +204,6 @@ it("keeps new KR fees/cash at the same exact precision as US/ETF", () => {
   expect(result.modelAccounting!.fees["NEW|2026-10-06"]!.entry).toBe("4949.9505");
   expect(result.modelAccounting!.cash).toBe("96695083.0495");
 });
-
 
 describe("KR Shadow official timing", () => {
   it("keeps the same-evening run as preview and accepts next-morning KRX completion", () => {
@@ -247,4 +250,26 @@ describe("KR Shadow official timing", () => {
       ),
     ).toBe(false);
   });
+});
+
+import legacyPrefix from "../../../tests/fixtures/market-cap-legacy-prefix.json";
+import type { AdoptedKrRun, KrSeriesInputs } from "./krAdoptedShadow";
+import type { FrozenModelSeries } from "./modelSeries";
+
+it("preserves the pre-patch frozen legacy prefix and next-session continuation byte-for-byte", async () => {
+  // Generated on clean main e8c6687 with synthetic input, including a legacy
+  // false hardFilterPassed flag which old replay intentionally did not consult.
+  const series = legacyPrefix.series as FrozenModelSeries;
+  const firstInput = legacyPrefix.firstInput as KrSeriesInputs;
+  const previous = legacyPrefix.first.run as AdoptedKrRun;
+  const nextInput = legacyPrefix.nextInput as KrSeriesInputs;
+  const originalBytes = JSON.stringify(previous);
+  expect(await stepAdoptedKrSeries(series, firstInput)).toEqual(legacyPrefix.first);
+  expect(await stepAdoptedKrSeries(series, firstInput, previous)).toEqual({
+    status: "REUSE",
+    run: previous,
+  });
+  expect(await stepAdoptedKrSeries(series, nextInput, previous)).toEqual(legacyPrefix.next);
+  expect(JSON.stringify(previous)).toBe(originalBytes);
+  expect(legacyPrefix.next.run.result.trades).toHaveLength(1);
 });

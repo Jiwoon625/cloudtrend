@@ -1,0 +1,562 @@
+{
+  "generatedWith": "e8c66871fcc51e3e554a793403e1cb6315d06e49",
+  "synthetic": true,
+  "series": {
+    "book": "MODEL",
+    "bookId": "adopted-shadow-2026-10-05-v1:KR_KOSDAQ",
+    "version": "adopted-shadow-2026-10-05-v1",
+    "accountingStartDate": "2026-10-05",
+    "initialKrw": "100000000",
+    "roundTripCost": "0.003",
+    "oneWayCost": "0.0015",
+    "policy": {
+      "kind": "KR_KOSDAQ",
+      "market": "KR",
+      "currency": "KRW",
+      "maxPositions": 30,
+      "allocation": "KR_INITIAL_CAPITAL_DIV_30_FIRST_YEAR",
+      "sectorCapByCandidateMarket": {
+        "KOSPI": 3,
+        "KOSDAQ": 6
+      },
+      "allowedMarkets": [
+        "KOSDAQ"
+      ],
+      "enginePolicy": {
+        "operational": {
+          "KOSPI": {
+            "pl": "ETF PL 84 우선 / Stock PL 80 fallback",
+            "summary": "KOSPI: ETF PL 84 우선 / Stock PL 80 fallback · 8.0 Onset → 다음 KOSPI 거래일 종가 8점 이상·U9.5 청산 없음·유한한 RSAccel > 0 확인 → 다음 거래 가능 시가 진입 · Onset일·체결 직전 마지막 완료 거래일 시장국면 non-bear 필수 · 하락장/시장자료 미확인 시 신규 진입 제외 · U9.5 상향돌파 청산 · Downside Exit 없음(DX) · H60",
+            "maxHoldingDays": 60,
+            "sectorCap": 0.1
+          },
+          "KOSDAQ": {
+            "pl": "Stock PL 80",
+            "summary": "KOSDAQ: Stock PL 80 · 8.0 Onset 진입 · U9.0 상향 재돌파 / D3.0 하향 이탈 · H60 (기존 운영 전략 유지)",
+            "maxHoldingDays": 60,
+            "sectorCap": 0.2
+          }
+        },
+        "kospiEntry": {
+          "version": "kospi-e8-confirm1-rsaccel-bear-v3",
+          "effectiveConfirmationDate": "2026-10-02",
+          "entryScore": 8,
+          "upsideExitScore": 9.5
+        }
+      }
+    },
+    "frozenAt": "2026-10-02T12:00:00Z",
+    "codeHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sourceHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "configHash": "sha256:97b6de022ccae01d1e0d84132563c2db01e032033eb6d79d1288f03038e77b86",
+    "fx": null,
+    "contractHash": "sha256:baed9f9ddbde326f689b545a51700090a9129c8a0cf87eabb053e572b5e1e728"
+  },
+  "firstInput": {
+    "date": "2026-10-06",
+    "codeHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sourceHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "configHash": "sha256:97b6de022ccae01d1e0d84132563c2db01e032033eb6d79d1288f03038e77b86",
+    "availableAt": "2026-10-07T08:00:00+09:00",
+    "decisionAt": "2026-10-07T08:10:00+09:00",
+    "confirmedClose": true,
+    "snapshots": [
+      {
+        "date": "2026-10-06",
+        "asOfDate": "2026-10-06",
+        "savedAt": "2026-10-07T08:00:00+09:00",
+        "entries": [
+          {
+            "symbol": "SYNTHETIC",
+            "name": "Synthetic legacy fixture",
+            "instrumentType": "STOCK",
+            "sectorCode": "s",
+            "sectorName": "s",
+            "grade": "A",
+            "status": "",
+            "totalScore": 80,
+            "scoreDelta1d": 5,
+            "technicalPoints": 8,
+            "priorityPoints": 5,
+            "hardFilterPassed": false,
+            "kospi80Onset": false,
+            "kosdaq80Onset": true,
+            "kospiEightPointEntry": false,
+            "exitSignal": null,
+            "operationalSignalVersion": "kospi-e8-confirm1-rsaccel-bear-v3"
+          }
+        ],
+        "marketGateStatus": "",
+        "totalCount": 1,
+        "passedCount": 0,
+        "gradeACount": 1,
+        "gradeBCount": 0
+      }
+    ],
+    "bars": {
+      "SYNTHETIC": [
+        {
+          "tradeDate": "2026-10-06",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100,
+          "volume": 1000000,
+          "tradingValue": 1000000000,
+          "marketCap": null,
+          "foreignNetBuyValue": null,
+          "institutionNetBuyValue": null
+        }
+      ]
+    },
+    "markets": {
+      "SYNTHETIC": "KOSDAQ"
+    },
+    "marketGates": {},
+    "calendar": {
+      "market": "KR",
+      "sourceHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "coverageStart": "2026-10-01",
+      "coverageEnd": "2026-10-08",
+      "regularSessions": [
+        "2026-10-01",
+        "2026-10-02",
+        "2026-10-06",
+        "2026-10-07",
+        "2026-10-08"
+      ]
+    }
+  },
+  "first": {
+    "status": "NEW",
+    "run": {
+      "book": "MODEL",
+      "bookId": "adopted-shadow-2026-10-05-v1:KR_KOSDAQ",
+      "contractHash": "sha256:baed9f9ddbde326f689b545a51700090a9129c8a0cf87eabb053e572b5e1e728",
+      "receipt": {
+        "book": "MODEL",
+        "bookId": "adopted-shadow-2026-10-05-v1:KR_KOSDAQ",
+        "date": "2026-10-06",
+        "contractHash": "sha256:baed9f9ddbde326f689b545a51700090a9129c8a0cf87eabb053e572b5e1e728",
+        "codeHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "configHash": "sha256:97b6de022ccae01d1e0d84132563c2db01e032033eb6d79d1288f03038e77b86",
+        "sourceHash": "sha256:4d396bfdf2097578d4aac8cea3cd2544fb6c0693fb5dad2ce7cc019b2b7bce1f",
+        "runHash": "sha256:8a0f1a0c65bab756f3ef41baf7a3757c80c91318d0485ea2ff4cd84488961e9e"
+      },
+      "previousStateHash": null,
+      "calendar": {
+        "market": "KR",
+        "sourceHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "coverageStart": "2026-10-01",
+        "coverageEnd": "2026-10-08",
+        "regularSessions": [
+          "2026-10-01",
+          "2026-10-02",
+          "2026-10-06",
+          "2026-10-07",
+          "2026-10-08"
+        ]
+      },
+      "frozenInputs": {
+        "snapshots": [
+          {
+            "date": "2026-10-06",
+            "asOfDate": "2026-10-06",
+            "savedAt": "2026-10-07T08:00:00+09:00",
+            "entries": [
+              {
+                "symbol": "SYNTHETIC",
+                "name": "Synthetic legacy fixture",
+                "instrumentType": "STOCK",
+                "sectorCode": "s",
+                "sectorName": "s",
+                "grade": "A",
+                "status": "",
+                "totalScore": 80,
+                "scoreDelta1d": 5,
+                "technicalPoints": 8,
+                "priorityPoints": 5,
+                "hardFilterPassed": false,
+                "kospi80Onset": false,
+                "kosdaq80Onset": true,
+                "kospiEightPointEntry": false,
+                "exitSignal": null,
+                "operationalSignalVersion": "kospi-e8-confirm1-rsaccel-bear-v3"
+              }
+            ],
+            "marketGateStatus": "",
+            "totalCount": 1,
+            "passedCount": 0,
+            "gradeACount": 1,
+            "gradeBCount": 0
+          }
+        ],
+        "bars": {
+          "SYNTHETIC": [
+            {
+              "tradeDate": "2026-10-06",
+              "open": 100,
+              "high": 100,
+              "low": 100,
+              "close": 100,
+              "volume": 1000000,
+              "tradingValue": 1000000000,
+              "marketCap": null,
+              "foreignNetBuyValue": null,
+              "institutionNetBuyValue": null
+            }
+          ]
+        },
+        "markets": {
+          "SYNTHETIC": "KOSDAQ"
+        },
+        "marketGates": {}
+      },
+      "result": {
+        "trades": [],
+        "candidates": [
+          {
+            "key": "SYNTHETIC|2026-10-06",
+            "symbol": "SYNTHETIC",
+            "name": "Synthetic legacy fixture",
+            "market": "KOSDAQ",
+            "sectorCode": "s",
+            "sectorName": "s",
+            "signalDate": "2026-10-06",
+            "entryDate": null,
+            "price": null,
+            "technical": 8,
+            "priority": 5,
+            "decision": "다음 거래일 대기"
+          }
+        ],
+        "summary": {
+          "cash": 100000000,
+          "marketValue": 0,
+          "equity": 100000000,
+          "realizedPnl": 0,
+          "unrealizedPnl": 0,
+          "totalPnl": 0,
+          "totalReturn": 0,
+          "openPositions": 0,
+          "slotTargetAmount": 3333333.33,
+          "latestDate": "2026-10-06"
+        },
+        "firstSignalDate": "2026-10-06",
+        "quotes": {
+          "SYNTHETIC": {
+            "price": 100,
+            "date": "2026-10-06",
+            "exitSignal": null
+          }
+        },
+        "fingerprint": "sha256:4d396bfdf2097578d4aac8cea3cd2544fb6c0693fb5dad2ce7cc019b2b7bce1f",
+        "calculatedAt": "2026-10-07T08:10:00+09:00",
+        "modelAccounting": {
+          "cash": "100000000",
+          "nav": "100000000",
+          "valuationStatus": "COMPLETE",
+          "fees": {},
+          "realizedPnl": "0"
+        }
+      },
+      "stateHash": "sha256:1add621350b68935326b7959c38c3c5c8b5eb611e4e4d7bc9bcd78adb60b3cce"
+    }
+  },
+  "nextInput": {
+    "date": "2026-10-07",
+    "codeHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sourceHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "configHash": "sha256:97b6de022ccae01d1e0d84132563c2db01e032033eb6d79d1288f03038e77b86",
+    "availableAt": "2026-10-08T08:00:00+09:00",
+    "decisionAt": "2026-10-08T08:10:00+09:00",
+    "confirmedClose": true,
+    "snapshots": [
+      {
+        "date": "2026-10-06",
+        "asOfDate": "2026-10-06",
+        "savedAt": "2026-10-07T08:00:00+09:00",
+        "entries": [
+          {
+            "symbol": "SYNTHETIC",
+            "name": "Synthetic legacy fixture",
+            "instrumentType": "STOCK",
+            "sectorCode": "s",
+            "sectorName": "s",
+            "grade": "A",
+            "status": "",
+            "totalScore": 80,
+            "scoreDelta1d": 5,
+            "technicalPoints": 8,
+            "priorityPoints": 5,
+            "hardFilterPassed": false,
+            "kospi80Onset": false,
+            "kosdaq80Onset": true,
+            "kospiEightPointEntry": false,
+            "exitSignal": null,
+            "operationalSignalVersion": "kospi-e8-confirm1-rsaccel-bear-v3"
+          }
+        ],
+        "marketGateStatus": "",
+        "totalCount": 1,
+        "passedCount": 0,
+        "gradeACount": 1,
+        "gradeBCount": 0
+      },
+      {
+        "date": "2026-10-07",
+        "asOfDate": "2026-10-07",
+        "savedAt": "2026-10-08T08:00:00+09:00",
+        "entries": [],
+        "marketGateStatus": "",
+        "totalCount": 0,
+        "passedCount": 0,
+        "gradeACount": 0,
+        "gradeBCount": 0
+      }
+    ],
+    "bars": {
+      "SYNTHETIC": [
+        {
+          "tradeDate": "2026-10-06",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100,
+          "volume": 1000000,
+          "tradingValue": 1000000000,
+          "marketCap": null,
+          "foreignNetBuyValue": null,
+          "institutionNetBuyValue": null
+        },
+        {
+          "tradeDate": "2026-10-07",
+          "open": 100,
+          "high": 100,
+          "low": 100,
+          "close": 100,
+          "volume": 1000000,
+          "tradingValue": 1000000000,
+          "marketCap": null,
+          "foreignNetBuyValue": null,
+          "institutionNetBuyValue": null
+        }
+      ]
+    },
+    "markets": {
+      "SYNTHETIC": "KOSDAQ"
+    },
+    "marketGates": {},
+    "calendar": {
+      "market": "KR",
+      "sourceHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "coverageStart": "2026-10-01",
+      "coverageEnd": "2026-10-08",
+      "regularSessions": [
+        "2026-10-01",
+        "2026-10-02",
+        "2026-10-06",
+        "2026-10-07",
+        "2026-10-08"
+      ]
+    }
+  },
+  "next": {
+    "status": "NEW",
+    "run": {
+      "book": "MODEL",
+      "bookId": "adopted-shadow-2026-10-05-v1:KR_KOSDAQ",
+      "contractHash": "sha256:baed9f9ddbde326f689b545a51700090a9129c8a0cf87eabb053e572b5e1e728",
+      "receipt": {
+        "book": "MODEL",
+        "bookId": "adopted-shadow-2026-10-05-v1:KR_KOSDAQ",
+        "date": "2026-10-07",
+        "contractHash": "sha256:baed9f9ddbde326f689b545a51700090a9129c8a0cf87eabb053e572b5e1e728",
+        "codeHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "configHash": "sha256:97b6de022ccae01d1e0d84132563c2db01e032033eb6d79d1288f03038e77b86",
+        "sourceHash": "sha256:7dd4ce62f6f4f6f13e6fea8a3967aa39817e460508e7a239e49ebfdb548c9cb4",
+        "runHash": "sha256:8cbbcba55febdcea863db0a7a895255483ec4f64dd9251be8bc469e33e6f92b6"
+      },
+      "previousStateHash": "sha256:1add621350b68935326b7959c38c3c5c8b5eb611e4e4d7bc9bcd78adb60b3cce",
+      "calendar": {
+        "market": "KR",
+        "sourceHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "coverageStart": "2026-10-01",
+        "coverageEnd": "2026-10-08",
+        "regularSessions": [
+          "2026-10-01",
+          "2026-10-02",
+          "2026-10-06",
+          "2026-10-07",
+          "2026-10-08"
+        ]
+      },
+      "frozenInputs": {
+        "snapshots": [
+          {
+            "date": "2026-10-06",
+            "asOfDate": "2026-10-06",
+            "savedAt": "2026-10-07T08:00:00+09:00",
+            "entries": [
+              {
+                "symbol": "SYNTHETIC",
+                "name": "Synthetic legacy fixture",
+                "instrumentType": "STOCK",
+                "sectorCode": "s",
+                "sectorName": "s",
+                "grade": "A",
+                "status": "",
+                "totalScore": 80,
+                "scoreDelta1d": 5,
+                "technicalPoints": 8,
+                "priorityPoints": 5,
+                "hardFilterPassed": false,
+                "kospi80Onset": false,
+                "kosdaq80Onset": true,
+                "kospiEightPointEntry": false,
+                "exitSignal": null,
+                "operationalSignalVersion": "kospi-e8-confirm1-rsaccel-bear-v3"
+              }
+            ],
+            "marketGateStatus": "",
+            "totalCount": 1,
+            "passedCount": 0,
+            "gradeACount": 1,
+            "gradeBCount": 0
+          },
+          {
+            "date": "2026-10-07",
+            "asOfDate": "2026-10-07",
+            "savedAt": "2026-10-08T08:00:00+09:00",
+            "entries": [],
+            "marketGateStatus": "",
+            "totalCount": 0,
+            "passedCount": 0,
+            "gradeACount": 0,
+            "gradeBCount": 0
+          }
+        ],
+        "bars": {
+          "SYNTHETIC": [
+            {
+              "tradeDate": "2026-10-06",
+              "open": 100,
+              "high": 100,
+              "low": 100,
+              "close": 100,
+              "volume": 1000000,
+              "tradingValue": 1000000000,
+              "marketCap": null,
+              "foreignNetBuyValue": null,
+              "institutionNetBuyValue": null
+            },
+            {
+              "tradeDate": "2026-10-07",
+              "open": 100,
+              "high": 100,
+              "low": 100,
+              "close": 100,
+              "volume": 1000000,
+              "tradingValue": 1000000000,
+              "marketCap": null,
+              "foreignNetBuyValue": null,
+              "institutionNetBuyValue": null
+            }
+          ]
+        },
+        "markets": {
+          "SYNTHETIC": "KOSDAQ"
+        },
+        "marketGates": {}
+      },
+      "result": {
+        "trades": [
+          {
+            "id": "SYNTHETIC|2026-10-06",
+            "symbol": "SYNTHETIC",
+            "name": "Synthetic legacy fixture",
+            "market": "KOSDAQ",
+            "sectorCode": "s",
+            "sectorName": "s",
+            "signalDate": "2026-10-06",
+            "entryDate": "2026-10-07",
+            "entryPrice": 100,
+            "entryTechnicalPoints": 8,
+            "entryPriorityPoints": 5,
+            "entryStatus": "Onset · 전략 진입",
+            "targetWeight": 0.03333333333333333,
+            "targetAmount": 3333333.3333333335,
+            "shares": 33283,
+            "buyAmount": 3328300,
+            "entryFee": 4992.45,
+            "markDate": "2026-10-07",
+            "currentPrice": 100,
+            "currentTechnicalPoints": 8,
+            "currentPriorityPoints": 5,
+            "currentStatus": "전략 보유",
+            "holdingDays": 1,
+            "exitSignalDate": null,
+            "exitDate": null,
+            "exitPrice": null,
+            "exitReason": null,
+            "exitFee": 0,
+            "realizedPnl": null,
+            "realizedReturn": null,
+            "status": "OPEN"
+          }
+        ],
+        "candidates": [
+          {
+            "key": "SYNTHETIC|2026-10-06",
+            "symbol": "SYNTHETIC",
+            "name": "Synthetic legacy fixture",
+            "market": "KOSDAQ",
+            "sectorCode": "s",
+            "sectorName": "s",
+            "signalDate": "2026-10-06",
+            "entryDate": "2026-10-07",
+            "price": 100,
+            "technical": 8,
+            "priority": 5,
+            "decision": "전략 진입"
+          }
+        ],
+        "summary": {
+          "cash": 96666707.55,
+          "marketValue": 3328300,
+          "equity": 99995007.55,
+          "realizedPnl": 0,
+          "unrealizedPnl": -4992.45,
+          "totalPnl": -4992.45,
+          "totalReturn": -0.00499245,
+          "openPositions": 1,
+          "slotTargetAmount": 3333333.33,
+          "latestDate": "2026-10-07"
+        },
+        "firstSignalDate": "2026-10-06",
+        "quotes": {
+          "SYNTHETIC": {
+            "price": 100,
+            "date": "2026-10-07",
+            "exitSignal": null
+          }
+        },
+        "fingerprint": "sha256:7dd4ce62f6f4f6f13e6fea8a3967aa39817e460508e7a239e49ebfdb548c9cb4",
+        "calculatedAt": "2026-10-08T08:10:00+09:00",
+        "modelAccounting": {
+          "cash": "96666707.55",
+          "nav": "99995007.55",
+          "valuationStatus": "COMPLETE",
+          "fees": {
+            "SYNTHETIC|2026-10-06": {
+              "entry": "4992.45",
+              "exit": null
+            }
+          },
+          "realizedPnl": "0"
+        }
+      },
+      "stateHash": "sha256:035a0c3ebf0ae88a2f0ccece0f23df5763e06b87c47508b4f3b5acb7b2a3b15e"
+    }
+  }
+}

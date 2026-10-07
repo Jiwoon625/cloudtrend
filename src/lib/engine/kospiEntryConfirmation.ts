@@ -1,7 +1,12 @@
 import type { MarketDataset } from "./dataset";
 import type { DailyPrice } from "./types";
 import { computeIndicators } from "./indicators";
-import { ALL_AVAILABLE, evaluateUniverse, type ScoringConfig } from "./scoring";
+import {
+  ALL_AVAILABLE,
+  evaluateUniverse,
+  type HardFilterStatus,
+  type ScoringConfig,
+} from "./scoring";
 import { evaluateKospiMarketGateAtDate, type KospiMarketGateEvidence } from "./kospiMarketGate";
 import { historicalInstrumentScore } from "./historicalInstrumentScore";
 
@@ -33,6 +38,8 @@ export interface KospiEntrySnapshot {
 }
 export interface KospiEntryObservation {
   date: string;
+  eligibilityStatus?: HardFilterStatus;
+  pendingRules?: string[];
   score: number | null;
   eligible: boolean;
   observed: boolean;
@@ -53,7 +60,7 @@ export function kospiEntryConfirmation(
     !!b &&
     a.observed &&
     b.observed &&
-    b.eligible &&
+    (b.eligible || b.eligibilityStatus === "PENDING") &&
     finite(a.score) &&
     finite(b.score) &&
     a.date < b.date &&
@@ -78,7 +85,8 @@ export function kospiEntryConfirmation(
     },
   };
   if (awaiting) {
-    if (current.observed && !current.eligible) result.issues.push("확인일 대상 부적격");
+    if (current.observed && !current.eligible && current.eligibilityStatus !== "PENDING")
+      result.issues.push("확인일 대상 부적격");
     if (finite(current.score) && current.score < KOSPI_ENTRY_POLICY.entryScore)
       result.issues.push("확인일 V8 8점 미만");
     if (
@@ -108,6 +116,22 @@ export function kospiEntryConfirmation(
   ) {
     result.state = "unobservable";
     result.issues.push("연속 거래일 관측 부족 · 신규 돌파/확인 여부 미확인");
+  }
+  const pendingEligibility = [
+    ...(awaiting && previous?.eligibilityStatus === "PENDING"
+      ? [{ label: "발생일", observation: previous }]
+      : []),
+    ...(current.eligibilityStatus === "PENDING"
+      ? [{ label: awaiting ? "확인일" : "기준일", observation: current }]
+      : []),
+  ];
+  if (pendingEligibility.length) {
+    result.eligible = false;
+    if (result.state !== "rejected") result.state = "unobservable";
+    for (const pending of pendingEligibility)
+      result.issues.push(
+        `${pending.label} ${(pending.observation.pendingRules ?? ["시가총액 미확인 · 판단 보류"]).join(" · ")}`,
+      );
   }
   // The dated guard is prospective. Older reconstructed states stay reference-only.
   if ((awaiting || pending) && current.date >= KOSPI_ENTRY_POLICY.effectiveConfirmationDate) {
@@ -247,6 +271,8 @@ export function buildKospiEntrySnapshot(ds: MarketDataset, symbol: string, cfg: 
       score,
       observed,
       eligible: universe.passed && liquid,
+      eligibilityStatus: liquid ? universe.status : "FAIL",
+      pendingRules: universe.pendingRules,
       rsAccel: rs.rsAccel,
       marketGate,
     };

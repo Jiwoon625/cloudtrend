@@ -15,8 +15,73 @@ import { runAnalysis } from "./pipeline";
 import { buildSnapshot } from "../screeningSnapshot";
 import { compactDashboardRow } from "../dashboardRow";
 import { buildDashboardSummary } from "../screeningCacheContract";
+import { buildScreeningSummary } from "../analysisRunBundle";
 
 describe("KOSPI executable strategy", () => {
+  it("vetoes pending or failed universe checks even when stale entry flags say yes", () => {
+    const signals = getOperationalSignals("KOSDAQ", 7.5, 8, true);
+    expect(isOperationalEntry(signals)).toBe(true); // legacy snapshots remain readable
+    expect(isOperationalEntry({ ...signals, hardFilterPassed: false })).toBe(true);
+    for (const guard of [
+      { hardFilterStatus: "PASS" as const, hardFilterPassed: false },
+      { hardFilterStatus: "PENDING" as const },
+      { hardFilterStatus: "FAIL" as const },
+      { hardFilterStatus: "PASS" as const, pendingRules: ["시가총액 자료 대기"] },
+    ])
+      expect(isOperationalEntry({ ...signals, ...guard })).toBe(false);
+    expect(getHeldOperationalExitSignal("KOSDAQ", 9.5, 40)).toBe("UP90");
+  });
+  it("preserves pending evidence and numeric scores without counting it as failure or entry", () => {
+    const analysis = runAnalysis(getMockDataset());
+    const base = analysis.rows.find((r) => r.instrument.instrumentType === "STOCK")!;
+    const pending = {
+      ...base,
+      instrument: { ...base.instrument, market: "KOSDAQ" as const },
+      hardFilterPassed: false,
+      hardFilterStatus: "PENDING" as const,
+      pendingRules: ["시가총액 자료 대기"],
+      failedRules: [],
+      operatingScore10: 9.5,
+      scoreDelta1d: 40,
+      kosdaq80Onset: true, // defensive guard against inconsistent stored flags
+      exitSignal: "UP90" as const,
+    };
+    analysis.rows = [pending];
+    const snapshot = buildSnapshot(analysis);
+    expect(snapshot.entries[0]).toMatchObject({
+      hardFilterStatus: "PENDING",
+      pendingRules: pending.pendingRules,
+      technicalPoints: 9.5,
+      scoreDelta1d: 40,
+    });
+    expect(isOperationalEntry(snapshot.entries[0]!)).toBe(false);
+    expect(compactDashboardRow(pending)).toMatchObject({
+      hardFilterStatus: "PENDING",
+      pendingRules: pending.pendingRules,
+      operatingScore10: 9.5,
+    });
+    const dashboard = buildDashboardSummary(analysis, "input", "result");
+    expect(dashboard.counts).toMatchObject({
+      passed: 0,
+      disqualified: 0,
+      pending: 1,
+      kosdaq80Onsets: 0,
+    });
+    expect(dashboard.pendingReasons).toEqual([["시가총액 자료 대기", 1]]);
+    expect(dashboard.onsetRows).toEqual([]);
+    expect(dashboard.exitRows).toHaveLength(1);
+    const summary = buildScreeningSummary(analysis, snapshot, null);
+    expect(summary.counts).toMatchObject({
+      passed: 0,
+      failed: 0,
+      pending: 1,
+      operationalEntryCandidates: 0,
+    });
+    expect(summary.universePendingCandidates[0]).toMatchObject({
+      hardFilterStatus: "PENDING",
+      pendingRules: pending.pendingRules,
+    });
+  });
   it.each([
     [7.5, 8, true, null],
     [9, 9.5, false, "UP95"],

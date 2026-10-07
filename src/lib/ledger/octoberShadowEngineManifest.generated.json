@@ -9,16 +9,16 @@
       "src/lib/engine/fullMarketAnalysis.ts": "sha256:e07951891f14bbb6a0a81744f921b3f6fd27c794ff77186d67594dbe80e03f4a",
       "src/lib/engine/historicalInstrumentScore.ts": "sha256:f25068a6e9070b79cf454f189d130d12c8a5bc082ab0f11f2ef774d308956ee9",
       "src/lib/engine/indicators.ts": "sha256:4862c805f7c1c3731fdeb60c08ab9ba47baaa37983aa408c2483346ef9e8032b",
-      "src/lib/engine/kospiEntryConfirmation.ts": "sha256:9c9014ffa4f669b2baee368971ac4728100282868da0b533d062b8fabd1f5314",
+      "src/lib/engine/kospiEntryConfirmation.ts": "sha256:ce630032daeb06d7f5f02a6a8bdbbbd31e4576a3810911ac3ed437c67c3f14d4",
       "src/lib/engine/kospiMarketGate.ts": "sha256:4187e60af90fa66cfc922c73003491efc0c5f01e63d64c57742960885aa8907a",
-      "src/lib/engine/kospiShadow.ts": "sha256:22e35a41834b994faf50e12c1efc7a56dbbd172afffe382b7cfb93bb69f39e21",
-      "src/lib/engine/kospiShadowDataset.ts": "sha256:82d6f9cfcb8e622b57bff5f27ea1f3dedb1d8e46039f655a75c98136b5c5960d",
+      "src/lib/engine/kospiShadow.ts": "sha256:43912d625d53cdfcc921831fd76e03798349deac37a1e83b16257331598e747d",
+      "src/lib/engine/kospiShadowDataset.ts": "sha256:f0d13dd26f4763530c6a5747540b240676ceaf2069cd02e821baa1ecbd034eb9",
       "src/lib/engine/kospiVolatility.ts": "sha256:7c4d43f18ceef204c638274cb5e60f6dcb33f2a8f7b9ed565ee3d43f2f370585",
       "src/lib/engine/manualDataset.ts": "sha256:1d0904fbaf245e5c797539ec5cae8a3fc818509cc6f2048d64e5ce6eff588ff1",
-      "src/lib/engine/operationalStrategy.ts": "sha256:877c08179731afa7103f630d945d828ae55ff9639a18f1deb841b6c9fdabb349",
-      "src/lib/engine/pipeline.ts": "sha256:f3f351a4d8d467548ddbd30959c71ed58fc1bffe74b93ebbf124d394cbe70105",
+      "src/lib/engine/operationalStrategy.ts": "sha256:780f0677fe54517fc5943218ccfea17968043b9c021bbf9fda6a6c8348ee17b4",
+      "src/lib/engine/pipeline.ts": "sha256:3ea60017d207aa4c0ed8d57fd9cb20eec98f5c0908445f14979e6600a0520ac3",
       "src/lib/engine/priorityScoreV8.ts": "sha256:9a263d860f1dcafc68f2168c35d4191158ffdaf7b3edf33f688948a95ee9418f",
-      "src/lib/engine/scoring.ts": "sha256:4010ca23f1e412b1462e44dc6a823b3e06ccae71c2566ae998dfc1d218f957b0",
+      "src/lib/engine/scoring.ts": "sha256:b657b608e8c29906806e76188aff712a3750f089ae493df92a7c0e4b62b594e5",
       "src/lib/engine/sectorRotation.ts": "sha256:cc9545805ff753a494c71b9f4d9d3ec2b63023f14679926164ab17339574b33c",
       "src/lib/engine/sectorRotationFullUniverse.ts": "sha256:bf5fd12bef69b784c9a886876d6655762b6afe7fcbd8f73a186950d56b5f16c3",
       "src/lib/engine/sectors.ts": "sha256:ff9407588cc71573c0c065b2a25fc0bf9eb28ebbaa3a6fa15d618bfad1df5d02",
@@ -40,7 +40,7 @@
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:9c8b5e98035e53d81dedc58c43f7ddf8678ad835bbe449a21d63088dabd76a32",
       "src/lib/ledger/octoberShadowPipeline.ts": "sha256:6a5c6c78c1c6b4985991b895908e0dac7e6f0cfd05582d72137a952a0e1ee105",
       "src/lib/portfolioLedgers.ts": "sha256:90aedbbb1b005c97464819775936eb54c02690b4e851f1e4547b1401b60ab64f",
-      "src/lib/portfolioStrategyRules.ts": "sha256:2381d44003618c1edb8f916248df887e1ef0631e3850ad301fcfc649cc4dac27",
+      "src/lib/portfolioStrategyRules.ts": "sha256:eb10608596ad282af818b5f4482969489225db8c9dc73b85be8d82384ff6863f",
       "src/lib/sourceData.ts": "sha256:b1e84d0b96523d2fc712c28749bcee80ebbdd3275213e35e9522d5608d51bd61"
     },
     "dependencies": {
@@ -48,5 +48,5 @@
     },
     "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
   },
-  "codeHash": "sha256:23f73782cb5646002b80b78c027168bb238ec338da87bd247ef1686794c5aa84"
+  "codeHash": "sha256:76e7f82b84ea9fb536cc46cda7d1720c23d63ab5a5184932fd6cf13bbf108d5e"
 }

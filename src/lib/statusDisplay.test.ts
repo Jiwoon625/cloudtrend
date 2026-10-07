@@ -286,3 +286,77 @@ describe("unheld exit conditions are not actual sell instructions", () => {
     ).toBe(`미보유 · ${condition} 조건 충족`);
   });
 });
+
+describe("missing market-cap judgment and held exits", () => {
+  const pending = (overrides: Partial<ScreeningRow> = {}) =>
+    row({
+      hardFilterPassed: false,
+      hardFilterStatus: "PENDING",
+      pendingRules: ["현재 시가총액 미확인"],
+      operatingScore10: 8.5,
+      scoreDelta1d: 10,
+      ...overrides,
+    });
+  const empty: DomesticPositionContext = { heldSymbols: [], lastSellDateBySymbol: {} };
+
+  it.each(["KOSPI", "KOSDAQ"] as const)(
+    "does not show %s pending inputs as a confirmed entry or an observed failure",
+    (market) => {
+      const input = pending({ instrument: instrument(market), kosdaq80Onset: true });
+      const before = structuredClone(input);
+      expect(getDisplayStatus(input)).toBe("판단 보류 · 현재 시가총액 미확인");
+      expect(getPortfolioAwareDisplayStatus(input, empty, "2026-10-07")).toBe(
+        "판단 보류 · 현재 시가총액 미확인",
+      );
+      expect(isPortfolioAwareOperationalEntry(input, empty, "2026-10-07")).toBe(false);
+      expect(input).toEqual(before);
+    },
+  );
+
+  it.each([
+    ["KOSPI", 9.5, 10, "KOSPI 9.5점 상향돌파"],
+    ["KOSDAQ", 9, 10, "KOSDAQ 9.0점 상향 재돌파"],
+    ["KOSDAQ", 2.5, -10, "KOSDAQ 3.0점 하향 이탈"],
+  ] as const)(
+    "retains held %s exit evaluation when market-cap eligibility is pending",
+    (market, score, delta, label) => {
+      const input = pending({
+        instrument: instrument(market),
+        operatingScore10: score,
+        scoreDelta1d: delta,
+      });
+      const held = { heldSymbols: [input.instrument.symbol], lastSellDateBySymbol: {} };
+      expect(getPortfolioAwareDisplayStatus(input, held, "2026-10-07")).toBe(
+        `청산 대기 · ${label} · 신규 진입 판단 보류 · 현재 시가총액 미확인`,
+      );
+      expect(isPortfolioAwareOperationalEntry(input, held, "2026-10-07")).toBe(false);
+    },
+  );
+
+  it("keeps a non-exiting held position held and shows the separate entry-data limitation", () => {
+    expect(
+      getPortfolioAwareDisplayStatus(
+        pending(),
+        { heldSymbols: ["000000"], lastSellDateBySymbol: {} },
+        "2026-10-07",
+      ),
+    ).toBe("보유 · 신규 진입 판단 보류 · 현재 시가총액 미확인");
+  });
+
+  it("keeps unheld exit conditions informational alongside pending judgment", () => {
+    const input = pending({ instrument: instrument("KOSDAQ"), exitSignal: "UP90" });
+    expect(getPortfolioAwareDisplayStatus(input, empty, "2026-10-07")).toBe(
+      "판단 보류 · 현재 시가총액 미확인 · 미보유 · KOSDAQ 9.0점 상향 재돌파 조건 충족",
+    );
+    expect(getPortfolioAwareDisplayStatus(input, undefined, "2026-10-07")).toContain("보유 미확인");
+  });
+
+  it("does not modify the existing ETF missing-KRX display", () => {
+    const input = pending({
+      instrument: { ...instrument("KOSPI"), instrumentType: "ETF", market: "ETF" },
+      actionLabelText: "KRX 자료 대기 · 신호 판단 보류",
+    });
+    expect(getDisplayStatus(input)).toBe("KRX 자료 대기 · 신호 판단 보류");
+    expect(getPortfolioAwareDisplayStatus(input, empty, "2026-10-07")).toBe(input.actionLabelText);
+  });
+});
