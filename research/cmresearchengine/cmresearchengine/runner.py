@@ -125,20 +125,29 @@ def run_strategy_group(items, *, max_seconds=3000, event_limit=None, stop_reques
     optimization=items[0][1].identity.get('execution_optimization')
     if (not isinstance(optimization,dict) or
         optimization.get('schema')!='CM_EXECUTION_OPTIMIZATION_V1' or
-        optimization.get('mode') not in ('LOCKSTEP_SHARED_US_ANALYSIS_V1','HYBRID_2X2_SHARED_US_ANALYSIS_V1') or
+        optimization.get('mode') not in ('LOCKSTEP_SHARED_US_ANALYSIS_V1','HYBRID_2X2_SHARED_US_ANALYSIS_V1',
+            'HYBRID_2X2_SHARED_US_ANALYSIS_PROFILE_V1') or
         optimization.get('shared_panels')!='READ_ONLY_SAME_INPUT_OBJECTS' or
         optimization.get('candidate_state')!='FULLY_INDEPENDENT'):
         raise ValueError('Prepared identity is not bound to an approved shared-analysis optimization')
-    if optimization['mode']=='HYBRID_2X2_SHARED_US_ANALYSIS_V1' and len(items)!=2:
+    if optimization['mode'] in ('HYBRID_2X2_SHARED_US_ANALYSIS_V1',
+            'HYBRID_2X2_SHARED_US_ANALYSIS_PROFILE_V1') and len(items)!=2:
         raise ValueError('Hybrid shared-analysis child group must contain exactly two candidates')
     for candidate_id,prepared,_ in items:
         if prepared.identity.get('execution_optimization')!=optimization:
             raise ValueError('Prepared shared-analysis identities differ inside group')
     from cm06_shared_us_analysis_v1 import (
         activate_shared_us_analysis,deactivate_shared_us_analysis,shared_us_analysis_stats)
+    profile_enabled=optimization['mode']=='HYBRID_2X2_SHARED_US_ANALYSIS_PROFILE_V1'
+    group_wall_start=time.perf_counter()
+    profile={'schema':'CM_HYBRID_PROFILE_V1','candidate_setup_seconds':0.0,
+        'candidate_step_seconds':0.0,'context_switch_seconds':0.0,
+        'checkpoint_seconds':0.0,'checkpoint_count':0,'completion_seconds':0.0,
+        'step_calls':0,'group_wall_seconds':0.0,'step_exclusive_us_seconds':0.0}
     base_runtime=_capture_runtime_context()
     contexts=[];receipts={}
     try:
+        setup_start=time.perf_counter()
         for candidate_id,prepared,store in items:
             identity=prepared.identity
             journal=CandidateJournal(store,'first_'+digest(identity),'complete_'+digest(identity),identity)
@@ -164,9 +173,12 @@ def run_strategy_group(items, *, max_seconds=3000, event_limit=None, stop_reques
             contexts.append({'candidate_id':candidate_id,'prepared':prepared,'runner':runner,
                 'journal':journal,'runtime':runtime_state,'initial_events':runner._resume_events,
                 'last_snapshots':len(runner.snapshots)})
+        if profile_enabled:profile['candidate_setup_seconds']=time.perf_counter()-setup_start
         if not contexts:
+            if profile_enabled:profile['group_wall_seconds']=time.perf_counter()-group_wall_start
             return {'receipts':[receipts[candidate_id] for candidate_id,_,_ in items],
-                'shared_us_analysis':{'hits':0,'misses':0,'row_checks':0,'max_cached_rows':0,'active':False}}
+                'shared_us_analysis':{'hits':0,'misses':0,'row_checks':0,'max_cached_rows':0,'active':False},
+                'profile':profile if profile_enabled else {}}
 
         leader=contexts[0]['runner']
         for context in contexts[1:]:
@@ -188,20 +200,34 @@ def run_strategy_group(items, *, max_seconds=3000, event_limit=None, stop_reques
                 if event!=first_event:raise ValueError('Shared group event grids diverged')
             progressed=[]
             for context in contexts:
+                if profile_enabled:tctx=time.perf_counter()
                 _restore_runtime_context(context['runtime'])
+                if profile_enabled:profile['context_switch_seconds']+=time.perf_counter()-tctx
                 try:
+                    if profile_enabled:tstep=time.perf_counter()
                     alive=context['runner'].step()
+                    if profile_enabled:
+                        profile['candidate_step_seconds']+=time.perf_counter()-tstep
+                        profile['step_calls']+=1
                 except Exception as exc:
-                    context['runtime']=_capture_runtime_context();failed=(context,exc);break
-                context['runtime']=_capture_runtime_context();progressed.append(alive)
+                    if profile_enabled:tctx=time.perf_counter()
+                    context['runtime']=_capture_runtime_context()
+                    if profile_enabled:profile['context_switch_seconds']+=time.perf_counter()-tctx
+                    failed=(context,exc);break
+                if profile_enabled:tctx=time.perf_counter()
+                context['runtime']=_capture_runtime_context()
+                if profile_enabled:profile['context_switch_seconds']+=time.perf_counter()-tctx
+                progressed.append(alive)
             if failed is not None:break
             if len(set(progressed))!=1:raise RuntimeError('Shared group completion boundary diverged')
             if progressed and progressed[0] is False:
                 for context in contexts:
                     _restore_runtime_context(context['runtime'])
+                    if profile_enabled:tcomplete=time.perf_counter()
                     context['journal'].commit(context['runner'],True)
                     context['runtime']=_capture_runtime_context()
                     completed=context['journal'].complete(serialize_result(context['runner']))
+                    if profile_enabled:profile['completion_seconds']+=time.perf_counter()-tcomplete
                     if canonical(context['journal'].completed())!=canonical(completed):
                         raise RuntimeError('Group completion readback mismatch')
                     receipts[context['candidate_id']]={'status':'COMPLETED_VERIFIED',
@@ -219,7 +245,11 @@ def run_strategy_group(items, *, max_seconds=3000, event_limit=None, stop_reques
             if stop or now-last_checkpoint>=CHECKPOINT_SECONDS or snapshot_due:
                 for context in contexts:
                     _restore_runtime_context(context['runtime'])
+                    if profile_enabled:tcheckpoint=time.perf_counter()
                     context['journal'].commit(context['runner'],False)
+                    if profile_enabled:
+                        profile['checkpoint_seconds']+=time.perf_counter()-tcheckpoint
+                        profile['checkpoint_count']+=1
                     context['runtime']=_capture_runtime_context()
                     context['last_snapshots']=len(context['runner'].snapshots)
                 last_checkpoint=time.monotonic()
@@ -240,8 +270,15 @@ def run_strategy_group(items, *, max_seconds=3000, event_limit=None, stop_reques
                     receipts[context['candidate_id']]=_group_pause_receipt(
                         context['candidate_id'],context['prepared'],context['journal'])
         stats=shared_us_analysis_stats()
+        if profile_enabled:
+            profile['group_wall_seconds']=time.perf_counter()-group_wall_start
+            profile['step_exclusive_us_seconds']=max(0.0,
+                profile['candidate_step_seconds']-stats.get('compute_seconds',0.0)-
+                stats.get('hit_validation_seconds',0.0)-stats.get('cache_store_seconds',0.0))
+            profile={key:(round(value,6) if isinstance(value,float) else value)
+                for key,value in profile.items()}
         return {'receipts':[receipts[candidate_id] for candidate_id,_,_ in items],
-            'shared_us_analysis':stats}
+            'shared_us_analysis':stats,'profile':profile if profile_enabled else {}}
     finally:
         deactivate_shared_us_analysis()
         _restore_runtime_context(base_runtime)

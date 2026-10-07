@@ -5,6 +5,7 @@ analysis, candidate state, credentials, holdings, orders or fills.
 """
 from __future__ import annotations
 from copy import deepcopy
+import time
 
 _ACTIVE=None
 _ENTRY=None
@@ -14,10 +15,12 @@ def activate_shared_us_analysis(binding):
     global _ACTIVE,_ENTRY,_STATS
     if _ACTIVE is not None:raise RuntimeError('Shared US analysis is already active')
     if (not isinstance(binding,dict) or binding.get('mode') not in
-        ('LOCKSTEP_SHARED_US_ANALYSIS_V1','HYBRID_2X2_SHARED_US_ANALYSIS_V1')):
+        ('LOCKSTEP_SHARED_US_ANALYSIS_V1','HYBRID_2X2_SHARED_US_ANALYSIS_V1',
+         'HYBRID_2X2_SHARED_US_ANALYSIS_PROFILE_V1')):
         raise ValueError('Explicit shared US analysis binding required')
     _ACTIVE=deepcopy(binding);_ENTRY=None
-    _STATS={'hits':0,'misses':0,'row_checks':0,'max_cached_rows':0,'active':True}
+    _STATS={'hits':0,'misses':0,'row_checks':0,'max_cached_rows':0,'active':True,
+        'compute_seconds':0.0,'hit_validation_seconds':0.0,'cache_store_seconds':0.0}
 
 def shared_us_analysis_stats():
     return dict(_STATS or {'hits':0,'misses':0,'row_checks':0,'max_cached_rows':0,'active':False})
@@ -34,14 +37,18 @@ def shared_us_session_analysis(rows,previous,compute):
     if not date or any(row.get('session_date')!=date for row in rows):
         raise ValueError('Shared US analysis requires one raw session date')
     if _ENTRY is not None and _ENTRY['date']==date:
+        started=time.perf_counter()
         _STATS['row_checks']+=1
         if previous!=_ENTRY['previous']:raise ValueError('Shared US analysis prior market state diverged')
         if rows!=_ENTRY['rows']:raise ValueError('Shared US analysis raw session rows diverged')
         _STATS['hits']+=1
+        _STATS['hit_validation_seconds']+=time.perf_counter()-started
         return _ENTRY['result']
     if _ENTRY is not None and date<_ENTRY['date']:raise ValueError('Shared US analysis session time reversed')
-    result=compute()
+    started=time.perf_counter();result=compute();_STATS['compute_seconds']+=time.perf_counter()-started
+    started=time.perf_counter()
     _ENTRY={'date':date,'rows':list(rows),'previous':deepcopy(previous),'result':result}
+    _STATS['cache_store_seconds']+=time.perf_counter()-started
     _STATS['misses']+=1
     _STATS['max_cached_rows']=max(_STATS['max_cached_rows'],len(rows))
     return result

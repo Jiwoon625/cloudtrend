@@ -25,6 +25,15 @@ HYBRID_SHARED_US_ANALYSIS={
     'process_groups':2,
     'candidates_per_process':2,
 }
+HYBRID_SHARED_US_ANALYSIS_PROFILE={
+    **HYBRID_SHARED_US_ANALYSIS,
+    'mode':'HYBRID_2X2_SHARED_US_ANALYSIS_PROFILE_V1',
+    'profile_schema':'CM_HYBRID_PROFILE_V1',
+}
+
+def _hybrid_execution_optimization():
+    return (HYBRID_SHARED_US_ANALYSIS_PROFILE if os.environ.get('CM_PROFILE_MODE')=='1'
+        else HYBRID_SHARED_US_ANALYSIS)
 
 def _hybrid_pairs(selected):
     if len(selected)!=4:raise ValueError('Hybrid 2x2 requires exactly four candidates')
@@ -74,16 +83,21 @@ def _parallel_shared_pair_worker(config, pair, plan_hash, max_seconds, event_lim
     pair=tuple(pair)
     if len(pair)!=2 or any(candidate.policy_id or candidate.stage=='references' for candidate in pair):
         raise ValueError('Hybrid pair worker accepts exactly two static non-reference candidates')
-    store=SupabaseCMStore.from_env()
+    profile_enabled=os.environ.get('CM_PROFILE_MODE')=='1'
+    worker_start=time.perf_counter()
+    t=time.perf_counter();store=SupabaseCMStore.from_env();store_init_seconds=time.perf_counter()-t
+    t=time.perf_counter()
     prototype=PreparedResearch(config,candidate_by_id('S05'),
-        execution_optimization=HYBRID_SHARED_US_ANALYSIS)
+        execution_optimization=_hybrid_execution_optimization())
     items=[];prepared_by_id={};scoped_by_id={}
     for candidate in pair:
         prepared=prototype.clone(candidate,None)
         scoped=store.scoped_checkpoints(plan_hash,candidate.candidate_id)
         prepared_by_id[candidate.candidate_id]=prepared;scoped_by_id[candidate.candidate_id]=scoped
         items.append((candidate.candidate_id,prepared,scoped))
+    prepare_seconds=time.perf_counter()-t
     group=run_strategy_group(items,max_seconds=max_seconds,event_limit=event_limit)
+    t=time.perf_counter()
     for receipt in group['receipts']:
         candidate_id=receipt['candidate_id']
         store.put_object('results/'+plan_hash+'/'+candidate_id+'/attempts/'+
@@ -93,6 +107,15 @@ def _parallel_shared_pair_worker(config, pair, plan_hash, max_seconds, event_lim
             key='results/'+plan_hash+'/'+candidate_id+'/'+digest(prepared_by_id[candidate_id].identity)
             store.put_object(key+'/summary.json',files['summary.json'])
             store.put_object(key+'/completion.json',canonical(receipt['completion']))
+    publish_seconds=time.perf_counter()-t
+    if profile_enabled:
+        group['worker_profile']={
+            'schema':'CM_HYBRID_WORKER_PROFILE_V1',
+            'worker_wall_seconds':round(time.perf_counter()-worker_start,6),
+            'store_init_seconds':round(store_init_seconds,6),
+            'prepare_seconds':round(prepare_seconds,6),
+            'publish_seconds':round(publish_seconds,6),
+        }
     return group
 
 def _parallel_pair_exception_receipts(pair, exc, status='WORKER_EXCEPTION'):
@@ -177,19 +200,28 @@ def main(argv=None):
     from .runner import run_strategy, run_strategy_group, read_result, build_references
     from cm06.registry import candidate_by_id
     from cm06_fresh_host_v1 import canonical,digest
-    store=SupabaseCMStore.from_env()
+    profile_enabled=os.environ.get('CM_PROFILE_MODE')=='1'
+    t=time.perf_counter();store=SupabaseCMStore.from_env();profile_store_init=time.perf_counter()-t
     work=Path(args.work).resolve();work.mkdir(parents=True,exist_ok=True)
-    source_manifest=restore_archives(store,work)
-    restore_evidence(store,runtime.VENDOR)
+    t=time.perf_counter();source_manifest=restore_archives(store,work);profile_restore_archives=time.perf_counter()-t
+    t=time.perf_counter();restore_evidence(store,runtime.VENDOR);profile_restore_evidence=time.perf_counter()-t
     # Private data overlays are hash-verified and cannot contain code. Runtime
     # import roots and code remain the reviewed repository version throughout.
-    config=configuration(work,runtime.VENDOR,work/'state')
-    optimization=(HYBRID_SHARED_US_ANALYSIS if args.hybrid_shared_us_analysis else
+    t=time.perf_counter();config=configuration(work,runtime.VENDOR,work/'state');profile_configuration=time.perf_counter()-t
+    optimization=(_hybrid_execution_optimization() if args.hybrid_shared_us_analysis else
         LOCKSTEP_SHARED_US_ANALYSIS if args.shared_us_analysis else None)
-    prototype=PreparedResearch(config,candidate_by_id('S05'),execution_optimization=optimization)
+    t=time.perf_counter();prototype=PreparedResearch(config,candidate_by_id('S05'),execution_optimization=optimization);profile_prototype=time.perf_counter()-t
     if prototype.admitted_event_count!=27:
         raise ValueError('Known-event profile no longer contains all 27 expected events')
-    store.put_object('manifest.json',canonical(source_manifest))
+    t=time.perf_counter();store.put_object('manifest.json',canonical(source_manifest));profile_manifest_write=time.perf_counter()-t
+    if profile_enabled:
+        emit('PROFILE_PREFLIGHT_TIMING',
+            store_init_seconds=round(profile_store_init,6),
+            restore_archives_seconds=round(profile_restore_archives,6),
+            restore_evidence_seconds=round(profile_restore_evidence,6),
+            configuration_seconds=round(profile_configuration,6),
+            prototype_seconds=round(profile_prototype,6),
+            manifest_write_seconds=round(profile_manifest_write,6))
     emit('PREFLIGHT_VERIFIED',normalized_files=389,reference_files=12,known_events=27,
         historical_paths_completed=0,plan_sha256=plan_hash)
     if args.mode=='preflight':return 0
@@ -224,7 +256,7 @@ def main(argv=None):
         pairs=_hybrid_pairs(selected)
         remaining=int(deadline-time.monotonic())
         if stop[0] or remaining<=45:raise RuntimeError('No bounded time remains for hybrid shared analysis')
-        receipts_by_id={};stats_by_group={};active={}
+        receipts_by_id={};stats_by_group={};profile_by_group={};active={}
         selected_order={candidate.candidate_id:index for index,candidate in enumerate(selected)}
         with ProcessPoolExecutor(max_workers=2) as pool:
             for group_index,pair in enumerate(pairs):
@@ -244,6 +276,10 @@ def main(argv=None):
                     try:
                         group=future.result()
                         stats_by_group[group_index]=group.get('shared_us_analysis',{})
+                        profile_by_group[group_index]={
+                            'engine':group.get('profile',{}),
+                            'worker':group.get('worker_profile',{}),
+                        }
                         group_receipts=group['receipts']
                     except Exception as exc:
                         group_receipts=_parallel_pair_exception_receipts(pair,exc)
@@ -268,7 +304,13 @@ def main(argv=None):
             hits=sum(stats.get('hits',0) for stats in stats_by_group.values()),
             misses=sum(stats.get('misses',0) for stats in stats_by_group.values()),
             row_checks=sum(stats.get('row_checks',0) for stats in stats_by_group.values()),
-            max_cached_rows=max([stats.get('max_cached_rows',0) for stats in stats_by_group.values()] or [0]))
+            max_cached_rows=max([stats.get('max_cached_rows',0) for stats in stats_by_group.values()] or [0]),
+            compute_seconds=round(sum(stats.get('compute_seconds',0) for stats in stats_by_group.values()),6),
+            hit_validation_seconds=round(sum(stats.get('hit_validation_seconds',0) for stats in stats_by_group.values()),6),
+            cache_store_seconds=round(sum(stats.get('cache_store_seconds',0) for stats in stats_by_group.values()),6))
+        if profile_enabled:
+            for group_index in sorted(profile_by_group):
+                emit('HYBRID_PROFILE_GROUP',group_index=group_index,**profile_by_group[group_index])
         completed=sum(x['status']=='COMPLETED_VERIFIED' for x in receipts)
         emit('BATCH_VERIFIED',selected_count=len(selected),completed_in_selected_batch=completed,
             remaining_in_selected_batch=len(selected)-completed,
