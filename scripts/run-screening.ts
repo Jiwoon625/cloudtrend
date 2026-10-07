@@ -1,3 +1,4 @@
+import { hydrateScreeningSnapshot } from "../src/lib/screeningSnapshotStorage";
 import { completeScreeningPublication } from "../src/lib/screeningPublication.server";
 import { refreshPortfolioAfterScreening } from "../src/lib/portfolioLedgers.server";
 import { MODEL_ACCOUNTING_START } from "../src/lib/ledger/modelSeries";
@@ -100,7 +101,7 @@ async function loadPreviousSnapshot(
     .limit(1)
     .maybeSingle();
   if (error) throw new Error(`이전 스크리닝 이력 조회 실패: ${error.message}`);
-  return (data?.snapshot as ScreeningSnapshot | undefined) ?? null;
+  return data?.snapshot ? hydrateScreeningSnapshot(data.snapshot) : null;
 }
 
 function analyzeInputs(

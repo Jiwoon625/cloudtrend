@@ -1,3 +1,4 @@
+import { hydrateScreeningSnapshot, serializeScreeningSnapshot } from "./screeningSnapshotStorage";
 import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
 import type { ScreeningRow, V8ExitSignal } from "@/lib/engine/pipeline";
 import { getDisplayStatus } from "@/lib/statusDisplay";
@@ -174,20 +175,20 @@ export async function persistScreeningSnapshot(
     .eq("user_id", userId)
     .eq("date", incoming.asOfDate)
     .maybeSingle();
-  if (error) throw error;
+  if (error) throw new Error(`스크리닝 이력 조회 실패: ${error.message}`);
   const snapshot = preservePreAdoptionSnapshot(
     incoming,
-    (data?.snapshot as ScreeningSnapshot | undefined) ?? null,
+    data?.snapshot ? hydrateScreeningSnapshot(data.snapshot) : null,
   );
   if (snapshot !== incoming) return snapshot;
   const { error: writeError } = await client.from("screening_history").upsert(
     {
       user_id: userId,
       date: snapshot.asOfDate,
-      snapshot: { ...snapshot, date: snapshot.asOfDate },
+      snapshot: serializeScreeningSnapshot({ ...snapshot, date: snapshot.asOfDate }),
     },
     { onConflict: "user_id,date" },
   );
-  if (writeError) throw writeError;
+  if (writeError) throw new Error(`스크리닝 이력 저장 실패: ${writeError.message}`);
   return snapshot;
 }

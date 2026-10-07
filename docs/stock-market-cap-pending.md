@@ -35,3 +35,11 @@ Only the exact reviewed runtime hash is admitted. The immutable frozen code iden
 - Existing ETF, US, ledger, dashboard, and source/cache test configurations
 
 Production deployment and one existing-source screening refresh are verified separately in the release record. No orders are submitted by this change.
+
+## Bounded history persistence
+
+The deployed-input check exposed that repeated pending metadata could exceed the existing 1 MiB `screening_history.snapshot` JSONB text limit even when all calculations succeeded. Oversized snapshots now use a versioned, lossless field-name schema envelope only at the database boundary. All domestic history readers decode it before domain, portfolio, or display logic. Existing plain snapshots remain readable and are not bulk-rewritten. Small snapshots retain their existing format.
+
+The size guard accounts for PostgreSQL JSONB separator spaces, UTF-8, and numeric exponent expansion rather than comparing compact JavaScript JSON alone. It rejects malformed envelopes and oversized output with an explicit error; it never truncates entries or pending evidence. No database limit, migration, sharing setting, or frozen Shadow calculation is changed.
+
+PostgreSQL's JSONB output normalization is documented in [JSON input/output syntax](https://www.postgresql.org/docs/current/datatype-json.html#JSON-IO).

@@ -3,6 +3,8 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { beforeEach, afterEach, expect, test, vi } from "vitest";
 import { getMockDataset } from "../src/lib/engine/mockProvider";
+import { largeScreeningSnapshot } from "./screening-snapshot-storage-fixture";
+import { serializeScreeningSnapshot } from "../src/lib/screeningSnapshotStorage";
 
 const mocks = vi.hoisted(() => ({
   load: vi.fn(),
@@ -45,8 +47,9 @@ let inputs: Array<{
 }>;
 let uploaded: Map<string, string>;
 let upserts: Array<{ table: string; record: unknown; options: unknown }>;
+let previousStored: unknown = null;
 interface MockQuery {
-  maybeSingle(): Promise<{ data: null; error: null }>;
+  maybeSingle(): Promise<{ data: { snapshot: unknown } | null; error: null }>;
   upsert(record: unknown, options: unknown): Promise<{ error: null }>;
   select(): MockQuery;
   eq(): MockQuery;
@@ -59,6 +62,7 @@ beforeEach(async () => {
   dir = await mkdtemp(path.join(tmpdir(), "screening-cli-"));
   uploaded = new Map();
   upserts = [];
+  previousStored = null;
   const storage = {
     upload: async (key: string, body: string | AsyncIterable<{ toString(): string }>) => {
       let text = "";
@@ -71,15 +75,25 @@ beforeEach(async () => {
   mocks.trusted.mockReturnValue({
     storage: { from: () => storage },
     from: (table: string) => {
+      let previousQuery = false;
       const query: MockQuery = {
-        maybeSingle: async () => ({ data: null, error: null }),
+        maybeSingle: async () => ({
+          data:
+            table === "screening_history" && previousQuery && previousStored
+              ? { snapshot: previousStored }
+              : null,
+          error: null,
+        }),
         upsert: async (record: unknown, options: unknown) => {
           upserts.push({ table, record, options });
           return { error: null };
         },
         select: () => query,
         eq: () => query,
-        lt: () => query,
+        lt: () => {
+          previousQuery = true;
+          return query;
+        },
         order: () => query,
         limit: () => query,
       };
@@ -133,6 +147,14 @@ const args = () => [
   "--upload",
   "--force",
 ];
+test("CLI restores compact previous history before summary and cache publication", async () => {
+  const previous = largeScreeningSnapshot();
+  previous.date = previous.asOfDate = getMockDataset().tradeDates.at(-2)!;
+  previousStored = JSON.parse(JSON.stringify(serializeScreeningSnapshot(previous)));
+  await runScreening(args());
+  expect(mocks.cache.mock.calls[0]![0].previous).toEqual(previous);
+  expect(mocks.cache.mock.calls[0]![0].previous.entries).toHaveLength(1785);
+});
 for (const phase of ["prices", "warm"] as const) {
   test(`${phase} failure is isolated after history/cache/run publication; bundle contract and source release remain intact`, async () => {
     mocks[phase].mockRejectedValue(new Error("chart failure"));

@@ -17,6 +17,8 @@ import { operateLedgers, refreshPortfolioAfterScreening } from "./portfolioLedge
 import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
 import { OPERATIONAL_SIGNAL_VERSION } from "./engine/operationalStrategy";
 import { simulateStrategy, type LedgerDocument } from "./portfolioLedgers";
+import { serializeScreeningSnapshot } from "./screeningSnapshotStorage";
+import { largeScreeningSnapshot } from "../../tests/screening-snapshot-storage-fixture";
 
 vi.mock("./portfolioLedgers", async (original) => {
   const actual = await original<typeof import("./portfolioLedgers")>();
@@ -475,6 +477,24 @@ describe("confirmation source and persistence integration", () => {
 });
 
 describe("screening portfolio freshness", () => {
+  it("hydrates compact stored history before replay and retains the unchanged-input cache", async () => {
+    const db = database();
+    const snapshot = largeScreeningSnapshot();
+    db.tables["screening_history"] = [
+      { user_id: "owner", snapshot: serializeScreeningSnapshot(snapshot) },
+    ];
+    const first = await operateLedgers(db.client, "owner", { action: "load" });
+    const replayInput = vi.mocked(simulateStrategy).mock.calls.at(-1)![1];
+    expect(replayInput[0]).toEqual(snapshot);
+    expect(replayInput[0]?.entries[614]?.pendingRules).toEqual(snapshot.entries[614]!.pendingRules);
+    db.download.mockClear();
+    vi.mocked(simulateStrategy).mockClear();
+    const again = await operateLedgers(db.client, "owner", { action: "load" });
+    expect(again.document.strategy?.fingerprint).toBe(first.document.strategy?.fingerprint);
+    expect(again.strategyRefresh.status).toBe("REUSED");
+    expect(simulateStrategy).not.toHaveBeenCalled();
+    expect(db.download).not.toHaveBeenCalled();
+  });
   it("same-date cap completion invalidates pending cached replay once without changing actual trades", async () => {
     const previous = csv;
     csv =
