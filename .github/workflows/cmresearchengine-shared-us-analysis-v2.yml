@@ -1,0 +1,56 @@
+name: CM shared US analysis v2 branch benchmark
+on:
+  push:
+    branches:
+      - 'research/cm-shared-us-analysis-v2'
+    paths:
+      - 'research/cmresearchengine/**'
+      - '.github/workflows/cmresearchengine-shared-us-analysis-v2.yml'
+permissions:
+  contents: read
+concurrency:
+  group: cm-shared-us-analysis-v2-benchmark
+  cancel-in-progress: false
+jobs:
+  synthetic:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.14'
+      - run: python -m pip install --disable-pip-version-check -r research/cmresearchengine/requirements.txt
+      - run: python -m compileall -q research/cmresearchengine
+      - name: Synthetic lockstep parity and resume checks
+        env:
+          PYTHONPATH: research/cmresearchengine
+        run: python -m unittest discover -s research/cmresearchengine/tests -v
+  benchmark:
+    needs: synthetic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      PYTHONPATH: research/cmresearchengine
+      OMP_NUM_THREADS: '2'
+      OPENBLAS_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.14'
+      - run: python -m pip install --disable-pip-version-check -r research/cmresearchengine/requirements.txt
+      - name: S01-S04 event-zero shared-analysis benchmark
+        run: |
+          df -PB1 "$RUNNER_TEMP"
+          /usr/bin/time -v python -m cmresearchengine.cli run \
+            --stage base --offset 0 --count 4 --workers 1 --max-seconds 6000 \
+            --shared-us-analysis --work "$RUNNER_TEMP/cm-private/work"
+          df -PB1 "$RUNNER_TEMP"

@@ -4,9 +4,11 @@ from types import SimpleNamespace
 import unittest
 
 from cmresearchengine.cli import (
+    _hybrid_pairs,
     _ordered_parallel_receipts,
     _parallel_future_receipt,
     _parallel_not_started_receipt,
+    _parallel_pair_exception_receipts,
 )
 
 
@@ -67,6 +69,20 @@ class ParallelReceiptCollectionTests(unittest.TestCase):
                 selected,
                 {"S01": {"status": "COMPLETED_VERIFIED"}},
             )
+
+    def test_hybrid_pairing_is_deterministic_and_complete(self):
+        selected=[candidate("S01"),candidate("S02"),candidate("S03"),candidate("S04")]
+        pairs=_hybrid_pairs(selected)
+        self.assertEqual([[x.candidate_id for x in pair] for pair in pairs],
+            [["S01","S02"],["S03","S04"]])
+        with self.assertRaises(ValueError):_hybrid_pairs(selected[:3])
+
+    def test_pair_exception_attributes_both_candidates(self):
+        pair=(candidate("S01"),candidate("S02"))
+        receipts=_parallel_pair_exception_receipts(pair,TypeError("synthetic"))
+        self.assertEqual([r["candidate_id"] for r in receipts],["S01","S02"])
+        self.assertEqual({r["status"] for r in receipts},{"WORKER_EXCEPTION"})
+        self.assertEqual({r["error_type"] for r in receipts},{"TypeError"})
 
 
 if __name__ == "__main__":

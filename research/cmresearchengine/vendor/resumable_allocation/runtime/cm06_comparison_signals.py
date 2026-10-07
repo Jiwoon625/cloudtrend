@@ -8,6 +8,8 @@ from __future__ import annotations
 from decimal import Decimal, ROUND_CEILING, ROUND_DOWN
 from math import isfinite, floor
 from typing import Any, Mapping
+from copy import deepcopy
+from cm06_shared_us_analysis_v1 import shared_us_session_analysis
 
 FROZEN_SHA = 'a844945f62fa7ea60f4b497b4e66e408d891ebfd'
 KOSPI_VERSION = 'kospi-e8-confirm1-rsaccel-bear-v3'
@@ -159,6 +161,12 @@ def normalized_us_row(row):
     for k,v in defaults.items(): out.setdefault(k,v)
     return out
 
+def us_session_analysis(rows, previous=None):
+    """Analyze one immutable US session, sharing only inside an explicit lockstep group."""
+    previous = previous or {}
+    return shared_us_session_analysis(rows, previous,
+        lambda: us_analysis([normalized_us_row(row) for row in rows], previous))
+
 class FrozenIntentAdapter:
     """Close-event signal state. The caller owns fills, settlement, marks, and holdings.
 
@@ -209,7 +217,7 @@ class FrozenIntentAdapter:
         self.pending={k:v for k,v in self.pending.items() if v['expiry']!='NEXT_MARKET_OPEN_ONLY'}
         emitted=[]
         if self.sleeve=='US_A0':
-            a=us_analysis([normalized_us_row(r) for r in rows],self.us_state);self.us_state=a['state']
+            a=us_session_analysis(rows,self.us_state);self.us_state=deepcopy(a['state'])
             analyzed={r['symbol']:r for r in a['rows']}
             for symbol,h in holdings.items():
                 r=analyzed.get(symbol)
