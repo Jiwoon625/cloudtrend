@@ -137,4 +137,33 @@ class RunnerTests(unittest.TestCase):
                 for name in ('summary.json','nav.csv','orders.csv','demands.csv'):
                     self.assertEqual(group_files[name],independent_files[name])
 
+    def test_hybrid_identity_two_candidate_group_matches_independent_outputs(self):
+        optimization={'schema':'CM_EXECUTION_OPTIMIZATION_V1',
+            'mode':'HYBRID_2X2_SHARED_US_ANALYSIS_V1',
+            'shared_panels':'READ_ONLY_SAME_INPUT_OBJECTS',
+            'candidate_state':'FULLY_INDEPENDENT',
+            'process_groups':2,'candidates_per_process':2}
+        def prepared(candidate_id):
+            candidate=candidate_by_id(candidate_id);original=make(candidate)
+            ident=dict(identity(original),execution_optimization=optimization)
+            return SimpleNamespace(identity=ident,trial_key='hybrid-'+candidate_id,
+                factory=lambda candidate=candidate:make(candidate))
+        with tempfile.TemporaryDirectory() as d:
+            ids=('S03','S04')
+            prepared_by_id={candidate_id:prepared(candidate_id) for candidate_id in ids}
+            stores={candidate_id:DirectoryStore(str(Path(d)/('hybrid-'+candidate_id))) for candidate_id in ids}
+            items=[(candidate_id,prepared_by_id[candidate_id],stores[candidate_id]) for candidate_id in ids]
+            grouped=run_strategy_group(items)
+            self.assertEqual([r['status'] for r in grouped['receipts']],
+                ['COMPLETED_VERIFIED','COMPLETED_VERIFIED'])
+            self.assertGreater(grouped['shared_us_analysis']['hits'],0)
+            by_id={r['candidate_id']:r for r in grouped['receipts']}
+            for candidate_id in ids:
+                independent_store=DirectoryStore(str(Path(d)/('hybrid-independent-'+candidate_id)))
+                independent=run_strategy(prepared_by_id[candidate_id],independent_store)
+                grouped_files=read_result(by_id[candidate_id]['completion'],stores[candidate_id])
+                independent_files=read_result(independent['completion'],independent_store)
+                for name in ('summary.json','nav.csv','orders.csv','demands.csv'):
+                    self.assertEqual(grouped_files[name],independent_files[name])
+
 if __name__=='__main__':unittest.main()

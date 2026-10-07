@@ -122,13 +122,18 @@ def run_strategy_group(items, *, max_seconds=3000, event_limit=None, stop_reques
     if not 2<=len(items)<=4:raise ValueError('Shared group must contain 2..4 candidates')
     if len({candidate_id for candidate_id,_,_ in items})!=len(items):
         raise ValueError('Shared group candidate IDs must be unique')
-    optimization={'schema':'CM_EXECUTION_OPTIMIZATION_V1',
-        'mode':'LOCKSTEP_SHARED_US_ANALYSIS_V1',
-        'shared_panels':'READ_ONLY_SAME_INPUT_OBJECTS',
-        'candidate_state':'FULLY_INDEPENDENT'}
+    optimization=items[0][1].identity.get('execution_optimization')
+    if (not isinstance(optimization,dict) or
+        optimization.get('schema')!='CM_EXECUTION_OPTIMIZATION_V1' or
+        optimization.get('mode') not in ('LOCKSTEP_SHARED_US_ANALYSIS_V1','HYBRID_2X2_SHARED_US_ANALYSIS_V1') or
+        optimization.get('shared_panels')!='READ_ONLY_SAME_INPUT_OBJECTS' or
+        optimization.get('candidate_state')!='FULLY_INDEPENDENT'):
+        raise ValueError('Prepared identity is not bound to an approved shared-analysis optimization')
+    if optimization['mode']=='HYBRID_2X2_SHARED_US_ANALYSIS_V1' and len(items)!=2:
+        raise ValueError('Hybrid shared-analysis child group must contain exactly two candidates')
     for candidate_id,prepared,_ in items:
         if prepared.identity.get('execution_optimization')!=optimization:
-            raise ValueError('Prepared identity is not bound to shared-analysis optimization')
+            raise ValueError('Prepared shared-analysis identities differ inside group')
     from cm06_shared_us_analysis_v1 import (
         activate_shared_us_analysis,deactivate_shared_us_analysis,shared_us_analysis_stats)
     base_runtime=_capture_runtime_context()

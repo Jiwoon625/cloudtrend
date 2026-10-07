@@ -11,6 +11,25 @@ from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 from .plan import manifest, candidates, choose
 
 
+LOCKSTEP_SHARED_US_ANALYSIS={
+    'schema':'CM_EXECUTION_OPTIMIZATION_V1',
+    'mode':'LOCKSTEP_SHARED_US_ANALYSIS_V1',
+    'shared_panels':'READ_ONLY_SAME_INPUT_OBJECTS',
+    'candidate_state':'FULLY_INDEPENDENT',
+}
+HYBRID_SHARED_US_ANALYSIS={
+    'schema':'CM_EXECUTION_OPTIMIZATION_V1',
+    'mode':'HYBRID_2X2_SHARED_US_ANALYSIS_V1',
+    'shared_panels':'READ_ONLY_SAME_INPUT_OBJECTS',
+    'candidate_state':'FULLY_INDEPENDENT',
+    'process_groups':2,
+    'candidates_per_process':2,
+}
+
+def _hybrid_pairs(selected):
+    if len(selected)!=4:raise ValueError('Hybrid 2x2 requires exactly four candidates')
+    return (tuple(selected[:2]),tuple(selected[2:]))
+
 def emit(status, **details):
     # No positions, private filenames, storage credentials or result data in
     # public GitHub Actions logs. Complete details live in private Storage only.
@@ -42,6 +61,42 @@ def _parallel_static_worker(config, candidate, plan_hash, max_seconds, event_lim
         store.put_object(key+'/summary.json',files['summary.json'])
         store.put_object(key+'/completion.json',canonical(receipt['completion']))
     return receipt
+
+
+def _parallel_shared_pair_worker(config, pair, plan_hash, max_seconds, event_limit):
+    """Run one two-candidate lockstep group inside an isolated child process."""
+    from .storage import SupabaseCMStore
+    from .prepared import PreparedResearch
+    from .runner import run_strategy_group, read_result
+    from cm06.registry import candidate_by_id
+    from cm06_fresh_host_v1 import canonical, digest
+
+    pair=tuple(pair)
+    if len(pair)!=2 or any(candidate.policy_id or candidate.stage=='references' for candidate in pair):
+        raise ValueError('Hybrid pair worker accepts exactly two static non-reference candidates')
+    store=SupabaseCMStore.from_env()
+    prototype=PreparedResearch(config,candidate_by_id('S05'),
+        execution_optimization=HYBRID_SHARED_US_ANALYSIS)
+    items=[];prepared_by_id={};scoped_by_id={}
+    for candidate in pair:
+        prepared=prototype.clone(candidate,None)
+        scoped=store.scoped_checkpoints(plan_hash,candidate.candidate_id)
+        prepared_by_id[candidate.candidate_id]=prepared;scoped_by_id[candidate.candidate_id]=scoped
+        items.append((candidate.candidate_id,prepared,scoped))
+    group=run_strategy_group(items,max_seconds=max_seconds,event_limit=event_limit)
+    for receipt in group['receipts']:
+        candidate_id=receipt['candidate_id']
+        store.put_object('results/'+plan_hash+'/'+candidate_id+'/attempts/'+
+            digest(receipt)+'.json',canonical(receipt))
+        if receipt['status']=='COMPLETED_VERIFIED':
+            files=read_result(receipt['completion'],scoped_by_id[candidate_id])
+            key='results/'+plan_hash+'/'+candidate_id+'/'+digest(prepared_by_id[candidate_id].identity)
+            store.put_object(key+'/summary.json',files['summary.json'])
+            store.put_object(key+'/completion.json',canonical(receipt['completion']))
+    return group
+
+def _parallel_pair_exception_receipts(pair, exc, status='WORKER_EXCEPTION'):
+    return [_parallel_exception_receipt(candidate,exc,status) for candidate in pair]
 
 
 def _parallel_exception_receipt(candidate, exc, status='WORKER_EXCEPTION'):
@@ -91,6 +146,7 @@ def main(argv=None):
     parser.add_argument('--max-seconds',type=int,default=3000)
     parser.add_argument('--workers',type=int,default=1)
     parser.add_argument('--shared-us-analysis',action='store_true')
+    parser.add_argument('--hybrid-shared-us-analysis',action='store_true')
     parser.add_argument('--event-limit',type=int)
     parser.add_argument('--work',default='.cm-private/work')
     args=parser.parse_args(argv)
@@ -98,8 +154,12 @@ def main(argv=None):
     if not 60<=args.max_seconds<=6300:parser.error('--max-seconds must be 60..6300')
     if not 1<=args.workers<=4:parser.error('--workers must be 1..4')
     if args.workers>args.count:parser.error('--workers cannot exceed --count')
+    if args.shared_us_analysis and args.hybrid_shared_us_analysis:
+        parser.error('Choose only one shared US analysis mode')
     if args.shared_us_analysis and (args.mode!='run' or args.workers!=1 or not 2<=args.count<=4):
         parser.error('--shared-us-analysis requires run mode, workers=1 and count=2..4')
+    if args.hybrid_shared_us_analysis and (args.mode!='run' or args.workers!=2 or args.count!=4):
+        parser.error('--hybrid-shared-us-analysis requires run mode, workers=2 and count=4')
     if args.event_limit is not None and args.event_limit<1:parser.error('--event-limit must be positive')
     plan=manifest();plan_hash=plan['definition_sha256']
     if args.mode=='plan':
@@ -109,6 +169,8 @@ def main(argv=None):
     if not selected:raise ValueError('Batch offset is outside selected stage')
     if args.shared_us_analysis and (args.stage!='base' or any(candidate.policy_id for candidate in selected)):
         raise ValueError('Shared US analysis v1 is limited to static base candidates')
+    if args.hybrid_shared_us_analysis and (args.stage!='base' or any(candidate.policy_id for candidate in selected)):
+        raise ValueError('Hybrid shared US analysis is limited to four static base candidates')
     from .storage import SupabaseCMStore
     from .ingest import restore_archives, restore_evidence
     from .prepared import PreparedResearch, configuration
@@ -122,10 +184,8 @@ def main(argv=None):
     # Private data overlays are hash-verified and cannot contain code. Runtime
     # import roots and code remain the reviewed repository version throughout.
     config=configuration(work,runtime.VENDOR,work/'state')
-    optimization=({'schema':'CM_EXECUTION_OPTIMIZATION_V1',
-        'mode':'LOCKSTEP_SHARED_US_ANALYSIS_V1',
-        'shared_panels':'READ_ONLY_SAME_INPUT_OBJECTS',
-        'candidate_state':'FULLY_INDEPENDENT'} if args.shared_us_analysis else None)
+    optimization=(HYBRID_SHARED_US_ANALYSIS if args.hybrid_shared_us_analysis else
+        LOCKSTEP_SHARED_US_ANALYSIS if args.shared_us_analysis else None)
     prototype=PreparedResearch(config,candidate_by_id('S05'),execution_optimization=optimization)
     if prototype.admitted_event_count!=27:
         raise ValueError('Known-event profile no longer contains all 27 expected events')
@@ -160,6 +220,65 @@ def main(argv=None):
             store.put_object(key+'/completion.json',canonical(receipt['completion']))
             return receipt,files
         return receipt,None
+    if args.hybrid_shared_us_analysis:
+        pairs=_hybrid_pairs(selected)
+        remaining=int(deadline-time.monotonic())
+        if stop[0] or remaining<=45:raise RuntimeError('No bounded time remains for hybrid shared analysis')
+        receipts_by_id={};stats_by_group={};active={}
+        selected_order={candidate.candidate_id:index for index,candidate in enumerate(selected)}
+        with ProcessPoolExecutor(max_workers=2) as pool:
+            for group_index,pair in enumerate(pairs):
+                try:
+                    future=pool.submit(_parallel_shared_pair_worker,config,pair,plan_hash,
+                        max(1,remaining-25),args.event_limit)
+                    active[future]=(group_index,pair)
+                except Exception as exc:
+                    for receipt in _parallel_pair_exception_receipts(pair,exc,'WORKER_SUBMIT_EXCEPTION'):
+                        receipts_by_id[receipt['candidate_id']]=receipt
+                        store.put_object('results/'+plan_hash+'/'+receipt['candidate_id']+'/attempts/'+
+                            digest(receipt)+'.json',canonical(receipt))
+            while active:
+                done,_=wait(tuple(active),return_when=FIRST_COMPLETED)
+                for future in done:
+                    group_index,pair=active.pop(future)
+                    try:
+                        group=future.result()
+                        stats_by_group[group_index]=group.get('shared_us_analysis',{})
+                        group_receipts=group['receipts']
+                    except Exception as exc:
+                        group_receipts=_parallel_pair_exception_receipts(pair,exc)
+                    for receipt in group_receipts:
+                        candidate_id=receipt['candidate_id']
+                        receipts_by_id[candidate_id]=receipt
+                        if receipt['status'] in ('WORKER_EXCEPTION','WORKER_SUBMIT_EXCEPTION'):
+                            store.put_object('results/'+plan_hash+'/'+candidate_id+'/attempts/'+
+                                digest(receipt)+'.json',canonical(receipt))
+                        emit(receipt['status'],candidate_id=candidate_id,
+                            processed_events=receipt.get('processed_events'),
+                            checkpoint_sequence=receipt.get('checkpoint_sequence'),
+                            error_type=receipt.get('error_type'),
+                            worker_mode='HYBRID_2X2_SHARED_US_ANALYSIS',group_index=group_index)
+        receipts=_ordered_parallel_receipts(selected,receipts_by_id)
+        for group_index in sorted(stats_by_group):
+            stats=stats_by_group[group_index]
+            emit('HYBRID_US_ANALYSIS_GROUP_VERIFIED',group_index=group_index,
+                hits=stats.get('hits',0),misses=stats.get('misses',0),
+                row_checks=stats.get('row_checks',0),max_cached_rows=stats.get('max_cached_rows',0))
+        emit('HYBRID_US_ANALYSIS_VERIFIED',groups=len(stats_by_group),
+            hits=sum(stats.get('hits',0) for stats in stats_by_group.values()),
+            misses=sum(stats.get('misses',0) for stats in stats_by_group.values()),
+            row_checks=sum(stats.get('row_checks',0) for stats in stats_by_group.values()),
+            max_cached_rows=max([stats.get('max_cached_rows',0) for stats in stats_by_group.values()] or [0]))
+        completed=sum(x['status']=='COMPLETED_VERIFIED' for x in receipts)
+        emit('BATCH_VERIFIED',selected_count=len(selected),completed_in_selected_batch=completed,
+            remaining_in_selected_batch=len(selected)-completed,
+            terminal_receipts_collected=len(receipts),
+            worker_exceptions=sum(x['status'] in ('WORKER_EXCEPTION','WORKER_SUBMIT_EXCEPTION') for x in receipts),
+            not_started=sum(x['status'].startswith('NOT_STARTED_') for x in receipts),
+            all_planned_strategies_completion_checked=False,parallel_workers=2,
+            shared_us_analysis=True,hybrid_2x2=True)
+        return 0
+
     if args.shared_us_analysis:
         remaining=int(deadline-time.monotonic())
         if stop[0] or remaining<=30:raise RuntimeError('No bounded time remains for shared analysis group')

@@ -13,7 +13,8 @@ _STATS=None
 def activate_shared_us_analysis(binding):
     global _ACTIVE,_ENTRY,_STATS
     if _ACTIVE is not None:raise RuntimeError('Shared US analysis is already active')
-    if not isinstance(binding,dict) or binding.get('mode')!='LOCKSTEP_SHARED_US_ANALYSIS_V1':
+    if (not isinstance(binding,dict) or binding.get('mode') not in
+        ('LOCKSTEP_SHARED_US_ANALYSIS_V1','HYBRID_2X2_SHARED_US_ANALYSIS_V1')):
         raise ValueError('Explicit shared US analysis binding required')
     _ACTIVE=deepcopy(binding);_ENTRY=None
     _STATS={'hits':0,'misses':0,'row_checks':0,'max_cached_rows':0,'active':True}
