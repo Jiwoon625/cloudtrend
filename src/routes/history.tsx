@@ -1,4 +1,4 @@
-import { getStoredOperationalExit, isOperationalEntry } from "@/lib/engine/operationalStrategy";
+import { getStoredOperationalExit } from "@/lib/engine/operationalStrategy";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowDownRight, ArrowUpRight, History, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -6,7 +6,10 @@ import { useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { KospiEntryDetails } from "@/components/KospiEntryDetails";
 import { OnsetProfileDetails } from "@/components/OnsetProfileDetails";
-import { kospiEntryStateLabel } from "@/components/kospiEntryPresentation";
+import {
+  historyEntryStatus,
+  isHistoryOperationalEntry,
+} from "@/components/historyEntryPresentation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCount, formatKstDateTime, formatNumber } from "@/lib/format";
@@ -33,28 +36,10 @@ export const Route = createFileRoute("/history")({
   component: HistoryPage,
 });
 
-function isOperational8Onset(entry: SnapshotEntry, asOfDate: string): boolean {
-  if (isOperationalEntry(entry, asOfDate)) return true;
-  if (entry.kosdaq80Onset === true) return true;
-  return /KOSDAQ\s*80\s*Onset|KOSDAQ\s*8\s*ONSET/i.test(entry.status ?? "");
-}
-
 function isOperationalExit(entry: SnapshotEntry): boolean {
   if (getStoredOperationalExit(entry, "KOSPI")) return true;
   if (entry.exitSignal === "UP90" || entry.exitSignal === "DOWN30") return true;
   return /KOSDAQ\s*Exit/i.test(entry.status ?? "");
-}
-
-function historyStatus(entry: SnapshotEntry): string {
-  const status = entry.status?.trim() || (entry.hardFilterPassed ? "관찰" : "실격");
-  if (getStoredOperationalExit(entry, "KOSPI")) return status;
-  if (entry.kospiEntry && entry.kospiEntry.state !== "none")
-    return `KOSPI ${kospiEntryStateLabel(entry.kospiEntry)}`;
-  if (!entry.kospiEntry && (entry.kospi80Onset || entry.kospiEightPointEntry))
-    return `기존 운영 기록: ${status} · 하루 확인 기록 없음`;
-  return status
-    .replace(/KOSDAQ80 Onset/gi, "KOSDAQ 8 ONSET")
-    .replace(/KOSDAQ 80 Onset/gi, "KOSDAQ 8 ONSET");
 }
 
 function EntryList({ entries, empty }: { entries: SnapshotEntry[]; empty: string }) {
@@ -122,7 +107,7 @@ function TopEntriesTable({
                 <td className="num py-1.5 pr-2 text-right">{formatNumber(e.priorityPoints, 1)}</td>
                 <td className="py-1.5 pr-2 font-semibold">{e.grade}</td>
                 <td className="py-1.5 font-medium">
-                  <div>{historyStatus(e)}</div>
+                  <div>{historyEntryStatus(e)}</div>
                   <OnsetProfileDetails profile={e.onsetProfile} compact />
                 </td>
               </tr>
@@ -143,7 +128,9 @@ function HistoryPage() {
   );
 
   const entryOnsets = useMemo(
-    () => selected?.entries.filter((entry) => isOperational8Onset(entry, selected.asOfDate)) ?? [],
+    () =>
+      selected?.entries.filter((entry) => isHistoryOperationalEntry(entry, selected.asOfDate)) ??
+      [],
     [selected],
   );
   const kospiAssessments = useMemo(
@@ -254,6 +241,13 @@ function HistoryPage() {
                     ["시장 게이트", selected.marketGateStatus],
                     ["전체 분석 종목", formatCount(selected.totalCount)],
                     ["Universe 통과", formatCount(selected.passedCount)],
+                    [
+                      "판단 보류",
+                      formatCount(
+                        selected.entries.filter((entry) => entry.hardFilterStatus === "PENDING")
+                          .length,
+                      ),
+                    ],
                     ["A등급 / B등급", `${selected.gradeACount} / ${selected.gradeBCount}`],
                   ].map(([label, value]) => (
                     <div
@@ -317,7 +311,11 @@ function HistoryPage() {
                           <span className="text-[10px] text-muted-foreground">{entry.symbol}</span>
                         </Link>
                         <div className="max-w-[520px] text-right">
-                          <KospiEntryDetails entry={entry.kospiEntry} showState />
+                          <KospiEntryDetails
+                            entry={entry.kospiEntry}
+                            showState
+                            entryJudgmentPending={entry.hardFilterStatus === "PENDING"}
+                          />
                           <OnsetProfileDetails profile={entry.onsetProfile} compact />
                         </div>
                       </div>

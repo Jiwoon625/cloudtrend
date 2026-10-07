@@ -105,7 +105,12 @@ export function buildKospiShadowSession(
       priority: score === null ? null : (screen?.priority.points ?? null),
       rsAccel: kospiRelativeReturns(bars, benchmark[0]!.bars, sessions, date).rsAccel,
       commonHistory: common.size >= 2 && common.has(inst.symbol),
-      // The research E8 cross does not inherit live Primary universe/entry vetoes.
+      // Missing current universe inputs cannot create new model intent. Preserve the
+      // technical score for held exits and keep known Primary filter vetoes separate.
+      ...((screen?.pendingRules?.length ?? 0) > 0 || screen?.hardFilterStatus === "PENDING"
+        ? { universeDataPending: true }
+        : {}),
+      // The research E8 cross does not inherit known live Primary universe/entry vetoes.
       // Common 253-session history is checked at confirmation, as in the frozen study.
       onsetEligible: score !== null,
     };

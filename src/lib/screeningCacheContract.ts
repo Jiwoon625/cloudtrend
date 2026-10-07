@@ -3,9 +3,9 @@ import { compactDashboardRow } from "@/lib/dashboardRow";
 import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
 import { isKospiRelativeMomentumConfirmed } from "@/lib/kospiRelativeQuality";
 
-export const SCREENING_CACHE_VERSION = "screening-cache-v8-onset-profile-v1" as const;
-export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-onset-profile-v1" as const;
-export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-onset-profile-v1" as const;
+export const SCREENING_CACHE_VERSION = "screening-cache-v8-universe-pending-v1" as const;
+export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-universe-pending-v1" as const;
+export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v8-universe-pending-v1" as const;
 
 export interface DashboardSummary {
   version: typeof DASHBOARD_CACHE_VERSION;
@@ -36,6 +36,7 @@ export interface DashboardSummary {
     total: number;
     passed: number;
     disqualified: number;
+    pending?: number;
     kosdaq80Onsets: number;
     kospiEightPointEntries: number;
     kospiPendingEntries?: number;
@@ -45,6 +46,7 @@ export interface DashboardSummary {
     incomplete: number;
   };
   failReasons: Array<[string, number]>;
+  pendingReasons?: Array<[string, number]>;
   skippedReasons: Array<[string, number]>;
   onsetRows: ScreeningRow[];
   kospiEntryRows: ScreeningRow[];
@@ -113,8 +115,9 @@ export function buildDashboardSummary(
   const rows = analysis.rows;
   const stockRows = rows.filter((row) => row.instrument.instrumentType === "STOCK");
   const passed = stockRows.filter((row) => row.hardFilterPassed);
+  const pending = stockRows.filter((row) => row.hardFilterStatus === "PENDING");
   const onsetRows = [...rows]
-    .filter((row) => row.kosdaq80Onset)
+    .filter((row) => row.kosdaq80Onset && isOperationalEntry(row, analysis.asOfDate))
     .sort(signalPriority)
     .slice(0, 30);
   const kospiEntryRows = [...rows]
@@ -137,10 +140,13 @@ export function buildDashboardSummary(
     .slice(0, 10);
 
   const failMap = new Map<string, number>();
+  const pendingMap = new Map<string, number>();
   const skippedMap = new Map<string, number>();
   for (const row of stockRows) {
     if (!row.hardFilterPassed)
       for (const reason of row.failedRules) failMap.set(reason, (failMap.get(reason) ?? 0) + 1);
+    for (const reason of row.pendingRules ?? [])
+      pendingMap.set(reason, (pendingMap.get(reason) ?? 0) + 1);
     for (const reason of row.skippedRules)
       skippedMap.set(reason, (skippedMap.get(reason) ?? 0) + 1);
   }
@@ -164,8 +170,11 @@ export function buildDashboardSummary(
     counts: {
       total: stockRows.length,
       passed: passed.length,
-      disqualified: stockRows.length - passed.length,
-      kosdaq80Onsets: rows.filter((row) => row.kosdaq80Onset).length,
+      disqualified: stockRows.length - passed.length - pending.length,
+      pending: pending.length,
+      kosdaq80Onsets: rows.filter(
+        (row) => row.kosdaq80Onset && isOperationalEntry(row, analysis.asOfDate),
+      ).length,
       kospiEightPointEntries: rows.filter(
         (row) => row.instrument.market === "KOSPI" && isOperationalEntry(row, analysis.asOfDate),
       ).length,
@@ -185,6 +194,7 @@ export function buildDashboardSummary(
       ).length,
     },
     failReasons: [...failMap.entries()].sort((a, b) => b[1] - a[1]),
+    pendingReasons: [...pendingMap.entries()].sort((a, b) => b[1] - a[1]),
     skippedReasons: [...skippedMap.entries()].sort((a, b) => b[1] - a[1]),
     onsetRows: onsetRows.map(compactDashboardRow),
     kospiEntryRows: kospiEntryRows.map(compactDashboardRow),

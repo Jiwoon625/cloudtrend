@@ -146,6 +146,9 @@ export interface ScreeningRow {
   failedRules: string[];
   skippedRules: string[];
   hardFilterPassed: boolean;
+  /** Missing entry prerequisites are distinct from observed filter failures. */
+  hardFilterStatus?: import("./scoring").HardFilterStatus;
+  pendingRules?: string[];
   financials: FinancialFacts | undefined;
   etf: EtfFacts | undefined;
   marketCap: number | null;
@@ -408,6 +411,16 @@ export function runAnalysis(
 
   const rows: ScreeningRow[] = prepared.map(({ inst, bars, snap, previousSnap }) => {
     const last = bars[bars.length - 1]!;
+    // A prior-session cap is never evidence for today's entry universe.
+    const currentMarketCap =
+      inst.instrumentType !== "STOCK"
+        ? last.marketCap
+        : last.tradeDate === ds.asOfDate &&
+            last.marketCap !== null &&
+            Number.isFinite(last.marketCap) &&
+            last.marketCap > 0
+          ? last.marketCap
+          : null;
     const financials = ds.financials[inst.symbol];
     const etf = ds.etfFacts[inst.symbol];
     const valuePct = percentile(groups.get(inst.market) ?? [], last.tradingValue);
@@ -463,7 +476,7 @@ export function runAnalysis(
       inst,
       snap,
       financials,
-      last.marketCap,
+      currentMarketCap,
       benchmark.dayReturn,
       cfg,
     );
@@ -494,7 +507,7 @@ export function runAnalysis(
     const universe = evaluateUniverse(
       inst,
       snap,
-      last.marketCap,
+      currentMarketCap,
       last.tradingValue,
       bars.length,
       etf,
@@ -506,6 +519,7 @@ export function runAnalysis(
     if (prior20.length >= 20 && tradedDays < 10) {
       universe.failedRules.push(`직전 20거래일 중 거래일 ${tradedDays}일 (유동성 부족)`);
       universe.passed = false;
+      universe.status = "FAIL";
     }
 
     const signals = getOperationalSignals(
@@ -556,9 +570,11 @@ export function runAnalysis(
       failedRules: universe.failedRules,
       skippedRules: universe.skippedRules,
       hardFilterPassed: universe.passed,
+      hardFilterStatus: universe.status,
+      pendingRules: universe.pendingRules,
       financials,
       etf,
-      marketCap: last.marketCap,
+      marketCap: currentMarketCap,
       benchmarkCode,
       benchmarkFallback,
       rs20:
@@ -591,6 +607,12 @@ export function runAnalysis(
     row.rs20 = dated.rs20;
     row.rs60 = dated.rs60;
     row.actionLabelText = getOperationalStatus(row, "KOSPI");
+  }
+
+  for (const row of rows) {
+    if (row.instrument.instrumentType === "STOCK" && row.hardFilterStatus === "PENDING") {
+      row.actionLabelText = `시가총액 미확인 · 판단 보류${row.exitSignal ? ` · ${row.actionLabelText}` : ""}`;
+    }
   }
 
   const sectors = sectorSnapshotScores(ds, rows);
@@ -663,6 +685,9 @@ export function runAnalysis(
     row.dataCompletenessRatio =
       [s.technical, s.priority, s.health, s.environment].filter((x) => x !== null).length / 4;
     row.hardFilterPassed = s.eligible;
+    row.hardFilterStatus =
+      s.dataStatus === "krx_batch_pending" ? "PENDING" : s.eligible ? "PASS" : "FAIL";
+    row.pendingRules = s.dataStatus === "krx_batch_pending" ? [...s.issues] : [];
     row.failedRules = s.issues;
     row.skippedRules = [];
     row.sectorRotationScore = null;

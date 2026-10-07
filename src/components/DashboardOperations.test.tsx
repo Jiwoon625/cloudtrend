@@ -139,6 +139,21 @@ beforeEach(() => {
   state.market = "ALL";
 });
 describe("combined dashboard confirmation counts", () => {
+  it("keeps missing-input judgment separate from confirmation waiting and score completeness", () => {
+    const html = renderToStaticMarkup(
+      <QueryClientProvider client={new QueryClient()}>
+        <DashboardSignalCounts
+          query={query(data(3, 1))}
+          counts={{ ...counts, pending: 7, incomplete: 2 }}
+        />
+      </QueryClientProvider>,
+    );
+    expect(html).toContain("주식 판단 보류");
+    expect(html).toContain(">7</span>");
+    expect(html).toContain("점수 산정 불가");
+    expect(html).toContain(">2</span>");
+    expect(html).toContain(">3/1</span>");
+  });
   it.each([
     [3, 1],
     [0, 1],

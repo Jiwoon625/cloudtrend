@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { KospiEntryDetails } from "@/components/KospiEntryDetails";
 import { OnsetProfileDetails } from "@/components/OnsetProfileDetails";
+import { UniverseFilterDetails } from "@/components/UniverseFilterDetails";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
 import { getKospiRsAccel } from "@/lib/kospiRelativeQuality";
@@ -338,6 +339,9 @@ export function ScreenerTable({
                           원점수 {formatNumber(techBlock.points, 1)}/
                           {formatNumber(techBlock.maxPoints, 1)}
                         </span>
+                        <span className="block text-[10px] font-normal text-muted-foreground">
+                          산정 가능 {formatNumber(techBlock.availableMaxPoints, 1)}
+                        </span>
                       </>
                     ) : (
                       <>
@@ -408,7 +412,7 @@ export function ScreenerTable({
                       className={
                         isPortfolioAwareOperationalEntry(r, positionContext, signalDate)
                           ? "border-primary/30 bg-primary/5 text-primary"
-                          : displayStatus.includes("청산")
+                          : displayStatus.includes("청산") || r.hardFilterStatus === "PENDING"
                             ? "border-warn/30 bg-warn-soft text-warn"
                             : "text-muted-foreground"
                       }
@@ -419,6 +423,7 @@ export function ScreenerTable({
                       <KospiEntryDetails
                         entry={r.kospiEntry}
                         compact
+                        entryJudgmentPending={r.hardFilterStatus === "PENDING"}
                         entrySuppression={entrySuppressionReason(
                           positionContext,
                           r.instrument.symbol,
@@ -427,9 +432,7 @@ export function ScreenerTable({
                       />
                     ) : null}
                     <OnsetProfileDetails profile={r.onsetProfile} compact />
-                    {!r.hardFilterPassed ? (
-                      <span className="text-[10px] text-down">실격: {r.failedRules[0]}</span>
-                    ) : null}
+                    <UniverseFilterDetails row={r} compact />
                     {r.dataCompletenessRatio < 1 ? (
                       <span className="text-[10px] text-warn">기술점수 산정 불완전</span>
                     ) : null}
@@ -457,7 +460,7 @@ export function ScreenerTable({
               return (
                 <tr
                   key={r.instrument.symbol}
-                  className={`border-t border-border hover:bg-accent/40 ${r.hardFilterPassed ? "" : "opacity-60"}`}
+                  className={`border-t border-border hover:bg-accent/40 ${r.hardFilterPassed || r.hardFilterStatus === "PENDING" ? "" : "opacity-60"}`}
                 >
                   {visible.map((c) => (
                     <td

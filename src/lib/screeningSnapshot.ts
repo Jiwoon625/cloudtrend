@@ -16,6 +16,9 @@ export interface SnapshotEntry {
   technicalPoints: number | null;
   priorityPoints: number;
   hardFilterPassed: boolean;
+  /** Absent on legacy frozen snapshots; never infer historical pending evidence. */
+  hardFilterStatus?: ScreeningRow["hardFilterStatus"];
+  pendingRules?: string[];
   /** V8 Final operational signals. Optional for backward compatibility with old snapshots. */
   kosdaq80Onset?: boolean;
   kospiEightPointEntry?: boolean;
@@ -98,6 +101,8 @@ export function buildSnapshot(
         : (row.vf ?? row.technical).points,
     priorityPoints: row.priority.points,
     hardFilterPassed: row.hardFilterPassed,
+    ...(row.hardFilterStatus !== undefined ? { hardFilterStatus: row.hardFilterStatus } : {}),
+    ...(row.pendingRules !== undefined ? { pendingRules: [...row.pendingRules] } : {}),
     kosdaq80Onset: row.kosdaq80Onset,
     kospiEightPointEntry: row.kospiEightPointEntry,
     ...(row.kospiEntry !== undefined ? { kospiEntry: row.kospiEntry } : {}),

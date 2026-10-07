@@ -33,12 +33,14 @@ type PresetId =
   | "KOSPI_ENTRY_8"
   | "KOSPI_PENDING"
   | "KOSPI_CONFIRMED"
+  | "JUDGMENT_PENDING"
   | "EXIT";
 
 const PRESETS: Array<{ id: PresetId; label: string; test: (r: ScreeningRow) => boolean }> = [
   { id: "ENTRY", label: "진입 준비", test: isOperationalEntry },
   { id: "KOSDAQ_ENTRY_8", label: "KOSDAQ Onset", test: (r) => r.kosdaq80Onset },
   { id: "CORE", label: "Core 후보", test: (r) => r.grade !== "C" && r.hardFilterPassed },
+  { id: "JUDGMENT_PENDING", label: "판단 보류", test: (r) => r.hardFilterStatus === "PENDING" },
   { id: "GRADE_A", label: "A등급", test: (r) => r.grade === "A" },
   { id: "GRADE_B", label: "B등급 리테스트 대기", test: (r) => r.grade === "B" },
   { id: "VOLUME", label: "거래량 폭발", test: (r) => (r.snapshot.volumeRatio20 ?? 0) >= 200 },
@@ -112,6 +114,12 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
   const sectors = [...new Set(base.map((r) => r.instrument.sectorName))];
   const presetMatches = (r: ScreeningRow, id: PresetId) => {
     if (mode === "STOCK") {
+      if (
+        r.hardFilterStatus &&
+        r.hardFilterStatus !== "PASS" &&
+        (id === "KOSDAQ_ENTRY_8" || id === "KOSPI_PENDING")
+      )
+        return false;
       if (id === "ENTRY")
         return isPortfolioAwareOperationalEntry(r, positionContext, analysis.asOfDate);
       if (id === "KOSDAQ_ENTRY_8")
@@ -145,7 +153,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
   };
 
   const filtered = base.filter((r) => {
-    if (!showDisqualified && !r.hardFilterPassed) return false;
+    if (!showDisqualified && !r.hardFilterPassed && r.hardFilterStatus !== "PENDING") return false;
     if (mode === "ETF" && !includeLeveraged && (r.instrument.isLeveraged || r.instrument.isInverse))
       return false;
     if (query) {
@@ -204,7 +212,8 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
             분석 종목 {base.length}건 중{" "}
             <span className="text-foreground">{filtered.length}건</span> 표시 · 통과{" "}
             {base.filter((r) => r.hardFilterPassed).length}건 / 실격{" "}
-            {base.filter((r) => !r.hardFilterPassed).length}건
+            {base.filter((r) => !r.hardFilterPassed && r.hardFilterStatus !== "PENDING").length}건 /
+            판단 보류 {base.filter((r) => r.hardFilterStatus === "PENDING").length}건
           </p>
         </div>
         <PdfExportButton
@@ -263,7 +272,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         <div className="flex items-center gap-2 lg:col-span-2">
           <Switch id="disq" checked={showDisqualified} onCheckedChange={setShowDisqualified} />
           <Label htmlFor="disq" className="text-[12px]">
-            실격 종목 보기 (사유 표시)
+            실격 종목 보기 (판단 보류는 계속 표시)
           </Label>
         </div>
         {mode === "ETF" ? (

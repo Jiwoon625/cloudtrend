@@ -12,6 +12,7 @@ import {
   deterministicAnalysis,
 } from "../src/lib/screeningCacheContract";
 import type { AnalysisResult } from "../src/lib/engine/pipeline";
+import { validateSourceText } from "../src/lib/sourceData";
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   load: vi.fn(),
@@ -144,6 +145,39 @@ function cache(complete = true) {
     );
 }
 describe("screening publication and portfolio refresh", () => {
+  it("same-date market-cap replacement invalidates the analysis once, then keeps cheap reads", async () => {
+    const header = "symbol,name,market,type,date,open,high,low,close,volume,marketCap";
+    const missing = `${header}\n005930,삼성전자,KOSPI,STOCK,2026-10-06,100,110,90,105,1000,`;
+    const complete = `${missing}1000000000000`;
+    const [before, after] = await Promise.all([
+      validateSourceText(missing, "same-date.csv"),
+      validateSourceText(complete, "same-date.csv"),
+    ]);
+    expect(before.stats.maxDate).toBe(after.stats.maxDate);
+    expect(before.dataHash).not.toBe(after.dataHash);
+    const beforeSources = [
+      { ...sources[0], data_hash: before.dataHash, file_hash: before.fileHash },
+    ];
+    const afterSources = [{ ...sources[0], data_hash: after.dataHash, file_hash: after.fileHash }];
+    mocks.list.mockResolvedValue(beforeSources);
+    mocks.load.mockResolvedValue({ sources: beforeSources, texts: [missing] });
+    const first = await runWebScreeningForUser(client, "owner", DEFAULT_SCORING_CONFIG);
+    mocks.list.mockResolvedValue(afterSources);
+    mocks.load.mockResolvedValue({ sources: afterSources, texts: [complete] });
+    const replaced = await runWebScreeningForUser(client, "owner", DEFAULT_SCORING_CONFIG);
+    expect(replaced.inputFingerprint).not.toBe(first.inputFingerprint);
+    expect(replaced.reused).toBe(false);
+    expect(mocks.analyze).toHaveBeenCalledTimes(2);
+    expect(mocks.portfolio).toHaveBeenLastCalledWith(client, "owner", {
+      sources: afterSources,
+      texts: [complete],
+    });
+    const again = await runWebScreeningForUser(client, "owner", DEFAULT_SCORING_CONFIG);
+    expect(again.reused).toBe(true);
+    expect(mocks.load).toHaveBeenCalledTimes(2);
+    expect(mocks.analyze).toHaveBeenCalledTimes(2);
+    expect(mocks.shadow).toHaveBeenCalledTimes(2);
+  });
   it("unchanged verified screening reuses results without source download, engine calculation, or shadow replay", async () => {
     cache();
     const result = await runWebScreeningForUser(client, "owner", DEFAULT_SCORING_CONFIG);

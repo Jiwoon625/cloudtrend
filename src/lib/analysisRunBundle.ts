@@ -41,6 +41,8 @@ export interface ScreeningCandidateSummary {
   grade: string;
   status: string;
   hardFilterPassed: boolean;
+  hardFilterStatus?: ScreeningRow["hardFilterStatus"];
+  pendingRules?: string[];
   kospiEntry?: ScreeningRow["kospiEntry"];
   onsetProfile?: ScreeningRow["onsetProfile"];
   rs20: number | null;
@@ -67,6 +69,8 @@ function candidate(row: ScreeningRow, rank: number): ScreeningCandidateSummary {
     grade: row.grade,
     status: row.actionLabelText,
     hardFilterPassed: row.hardFilterPassed,
+    ...(row.hardFilterStatus !== undefined ? { hardFilterStatus: row.hardFilterStatus } : {}),
+    ...(row.pendingRules !== undefined ? { pendingRules: row.pendingRules } : {}),
     kospiEntry: row.kospiEntry,
     onsetProfile: row.onsetProfile,
     rs20: row.rs20,
@@ -92,6 +96,7 @@ export function buildScreeningSummary(
   previous: ScreeningSnapshot | null,
 ) {
   const passed = analysis.rows.filter((row) => row.hardFilterPassed);
+  const universePending = analysis.rows.filter((row) => row.hardFilterStatus === "PENDING");
   const sortedPassed = ranked(passed);
   // Structural signals only: display translations must never decide entry eligibility.
   const onsets = sortedPassed.filter((row) =>
@@ -105,8 +110,11 @@ export function buildScreeningSummary(
   const kospiPending = sortedPassed.filter((row) => row.kospiEntry?.state === "pending");
   const momentumRisk = ranked(analysis.rows.filter((row) => row.actionLabelText === "모멘텀 위험"));
   const failureReasons = new Map<string, number>();
+  const pendingReasons = new Map<string, number>();
   const warningCounts = new Map<string, number>();
   for (const row of analysis.rows) {
+    for (const reason of row.pendingRules ?? [])
+      pendingReasons.set(reason, (pendingReasons.get(reason) ?? 0) + 1);
     for (const warning of row.warnings)
       warningCounts.set(warning, (warningCounts.get(warning) ?? 0) + 1);
     if (!row.hardFilterPassed) {
@@ -176,7 +184,8 @@ export function buildScreeningSummary(
     counts: {
       total: analysis.rows.length,
       passed: passed.length,
-      failed: analysis.rows.length - passed.length,
+      failed: analysis.rows.length - passed.length - universePending.length,
+      pending: universePending.length,
       gradeA: passed.filter((row) => row.grade === "A").length,
       gradeB: passed.filter((row) => row.grade === "B").length,
       entryOnset60: onsets.filter((row) => row.actionLabelText === "진입후보").length,
@@ -218,9 +227,13 @@ export function buildScreeningSummary(
     topCandidates: sortedPassed.slice(0, 50).map(candidate),
     onsetCandidates: onsets.slice(0, 50).map(candidate),
     kospiPendingCandidates: kospiPending.slice(0, 50).map(candidate),
+    universePendingCandidates: ranked(universePending).slice(0, 50).map(candidate),
     momentumRisk: momentumRisk.slice(0, 50).map(candidate),
     topSectors,
     failureReasons: [...failureReasons.entries()]
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count),
+    pendingReasons: [...pendingReasons.entries()]
       .map(([reason, count]) => ({ reason, count }))
       .sort((a, b) => b.count - a.count),
     warningCounts: [...warningCounts.entries()]

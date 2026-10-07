@@ -54,6 +54,53 @@ function confirmed() {
   return stepKospiShadow(day("2026-10-06", "2026-10-05", 9), onset().state);
 }
 describe("isolated KOSPI research Shadow", () => {
+  it("does not create or confirm model entry intent from missing universe data", () => {
+    const pendingOnset = stepKospiShadow(
+      day("2026-10-05", "2026-10-02", 8, {
+        rows: [row(8, { date: "2026-10-05", universeDataPending: true })],
+      }),
+      baseline().state,
+    );
+    expect(pendingOnset.state.awaiting).toEqual([]);
+    expect(pendingOnset.candidates).toEqual([]);
+    expect(pendingOnset.state.previousRows["005930"]?.score).toBe(8);
+    const pendingConfirmation = stepKospiShadow(
+      day("2026-10-06", "2026-10-05", 9, {
+        rows: [row(9, { date: "2026-10-06", universeDataPending: true })],
+      }),
+      onset().state,
+    );
+    expect(pendingConfirmation.state.pendingEntries).toEqual([]);
+    expect(pendingConfirmation.candidates[0]).toMatchObject({
+      status: "EXCLUDED",
+      reason: "CONFIRMATION_UNIVERSE_DATA_PENDING",
+      confirmationScore: 9,
+    });
+  });
+  it("keeps prior valid open orders and held exits independent from later close-time pending data", () => {
+    const filled = stepKospiShadow(
+      day("2026-10-07", "2026-10-06", 9, {
+        rows: [row(9, { date: "2026-10-07", universeDataPending: true })],
+      }),
+      confirmed().state,
+    );
+    expect(filled.trades[0]?.side).toBe("BUY");
+    const held = stepKospiShadow(
+      day("2026-10-08", "2026-10-07", 9.5, {
+        rows: [row(9.5, { date: "2026-10-08", universeDataPending: true })],
+      }),
+      filled.state,
+    );
+    expect(held.state.pendingExits["005930"]?.reason).toBe("UP95");
+    const exited = stepKospiShadow(
+      day("2026-10-09", "2026-10-08", 9.5, {
+        rows: [row(9.5, { date: "2026-10-09", universeDataPending: true })],
+      }),
+      held.state,
+    );
+    expect(exited.trades[0]).toMatchObject({ side: "SELL", reason: "UP95" });
+    expect(exited.state.positions).toEqual({});
+  });
   it("starts in cash without historical candidates, executions or actual records", () => {
     const result = stepKospiShadow(day("2026-10-02", "2026-10-01", 9.5), null);
     expect(result.state.cashKrw).toBe(100_000_000);
@@ -84,10 +131,7 @@ describe("isolated KOSPI research Shadow", () => {
         expect(s.state).toEqual(prev);
       }
     }
-    const overshootOnset = stepKospiShadow(
-      day("2026-10-05", "2026-10-02", 9.5),
-      baseline().state,
-    );
+    const overshootOnset = stepKospiShadow(day("2026-10-05", "2026-10-02", 9.5), baseline().state);
     const noFreshCross = stepKospiShadow(
       day("2026-10-06", "2026-10-05", 9.5),
       overshootOnset.state,

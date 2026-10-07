@@ -54,6 +54,8 @@ export function compactDashboardRow(row: ScreeningRow): ScreeningRow {
     warnings: row.warnings,
     failedRules: row.failedRules,
     hardFilterPassed: row.hardFilterPassed,
+    hardFilterStatus: row.hardFilterStatus,
+    pendingRules: row.pendingRules,
     marketCap: row.marketCap,
     rs20: row.rs20,
     rs60: row.rs60,

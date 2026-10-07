@@ -58,6 +58,13 @@ export function datasetLatestDate(dataset: MarketDataset): string | null {
 }
 
 export function isEntryOnset(entry: SnapshotEntry, market: Market, asOfDate?: string) {
+  if (
+    (entry.hardFilterStatus !== undefined && entry.hardFilterPassed === false) ||
+    entry.hardFilterStatus === "FAIL" ||
+    entry.hardFilterStatus === "PENDING" ||
+    (entry.pendingRules?.length ?? 0) > 0
+  )
+    return false;
   if (market === "KOSPI") return isOperationalEntry({ ...entry, kosdaq80Onset: false }, asOfDate);
   if (market !== "KOSDAQ") return false;
   if (entry.kosdaq80Onset === true) return true;
@@ -67,6 +74,8 @@ export function isEntryOnset(entry: SnapshotEntry, market: Market, asOfDate?: st
 /** Explicit historical replay exception. Never use this as a live action gate. */
 export function isLegacyReplayEntry(entry: SnapshotEntry, market: Market, asOfDate: string) {
   return (
+    entry.hardFilterStatus !== "PENDING" &&
+    (entry.pendingRules?.length ?? 0) === 0 &&
     market === "KOSPI" &&
     asOfDate < KOSPI_ENTRY_POLICY.effectiveConfirmationDate &&
     entry.operationalSignalVersion === LEGACY_OPERATIONAL_SIGNAL_VERSION &&

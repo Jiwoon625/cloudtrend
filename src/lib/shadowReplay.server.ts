@@ -25,6 +25,7 @@ import {
 } from "./ledger/octoberShadowPipeline";
 import { octoberShadowStore } from "./ledger/octoberShadowRepository.server";
 import manifest from "./ledger/octoberShadowEngineManifest.generated.json";
+import { adoptedShadowFrozenCodeHash, assertAdoptedShadowRuntime } from "./ledger/octoberShadowRuntime";
 import {
   runUsProspectiveAnalysis,
   US_PROSPECTIVE_RULE_VERSION,
@@ -85,6 +86,20 @@ const KR_KINDS: AdoptedSeriesKind[] = [
   "ETF_V02",
   "KR_KOSPI_CONFIRM1_BEAR",
 ];
+
+/** Admit every target book before a publication can archive inputs or append any model session. */
+async function reviewedReplayCodeHash(
+  store: ReturnType<typeof octoberShadowStore>,
+  kinds: readonly AdoptedSeriesKind[],
+) {
+  const codeHash = adoptedShadowFrozenCodeHash(manifest.codeHash);
+  for (const kind of kinds) {
+    const frozen = await store.readSeries(`${ADOPTED_SERIES_VERSION}:${kind}`);
+    if (!frozen) throw new Error(`October Shadow registry is not initialized: ${kind}`);
+    assertAdoptedShadowRuntime(manifest.codeHash, frozen.codeHash);
+  }
+  return codeHash;
+}
 
 function plusMs(value: string, ms: number) {
   return new Date(Date.parse(value) + ms).toISOString().replace(".000Z", "Z");
@@ -385,15 +400,14 @@ export async function replayKrShadow(input: {
         previousSnapshot?.asOfDate ??
         input.dataset.tradeDates.filter((day) => day < date).sort().at(-1) ??
         date;
-      const frozen = await store.readSeries(`${ADOPTED_SERIES_VERSION}:KR_MIXED`);
-      if (!frozen) throw new Error("KR Shadow registry is not initialized");
+      const codeHash = await reviewedReplayCodeHash(store, KR_KINDS);
       const octoberShadow = await recordOctoberPublication(store, {
         market: "KR",
         dataset,
         analysis,
         snapshot,
         config: input.config,
-        codeHash: frozen.codeHash,
+        codeHash,
         runtimeCodeHash: manifest.codeHash as SeriesHash,
         sourceHash,
         availableAt: clock.modelAvailableAt,
@@ -652,14 +666,13 @@ export async function replayUsShadow(input: {
         date,
         rows: [...rows].sort((a, b) => a.symbol.localeCompare(b.symbol)),
       })) as SeriesHash;
-      const frozen = await store.readSeries(`${ADOPTED_SERIES_VERSION}:US_A0`);
-      if (!frozen) throw new Error("US Shadow registry is not initialized");
+      const codeHash = await reviewedReplayCodeHash(store, US_KINDS);
       const previousSessionDate =
         calendar.regularSessions.filter((session) => session < date).at(-1) ?? "2026-10-02";
       const result = await recordOctoberPublication(store, {
         market: "US",
         analysis,
-        codeHash: frozen.codeHash,
+        codeHash,
         runtimeCodeHash: manifest.codeHash as SeriesHash,
         sourceHash,
         availableAt: clock.modelAvailableAt,

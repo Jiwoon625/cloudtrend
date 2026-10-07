@@ -7,6 +7,7 @@ export default defineConfig({
   test: {
     include: [
       "src/components/KospiEntryDetails.test.tsx",
+      "src/components/UniverseFilterDetails.test.tsx",
       "src/components/DashboardOperations.test.tsx",
       "src/components/UsOrderPreview.test.tsx",
       "src/lib/engine/usProspectiveOrderPreview.test.ts",

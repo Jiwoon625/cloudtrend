@@ -35,6 +35,38 @@ function snapshot(previous: number, current: number, day = 2): ScreeningSnapshot
   } as ScreeningSnapshot;
 }
 describe("portfolio consumes KOSPI operational signals", () => {
+  it("never upgrades pending universe rows through KOSDAQ boolean or legacy status fallback", () => {
+    for (const signal of [{ kosdaq80Onset: true }, { status: "KOSDAQ 8 Onset" }]) {
+      expect(
+        isEntryOnset({ ...signal, hardFilterPassed: false } as unknown as SnapshotEntry, "KOSDAQ"),
+      ).toBe(true);
+      expect(
+        isEntryOnset(
+          {
+            ...signal,
+            hardFilterPassed: false,
+            hardFilterStatus: "PENDING",
+            pendingRules: ["시가총액 자료 대기"],
+          } as unknown as SnapshotEntry,
+          "KOSDAQ",
+        ),
+      ).toBe(false);
+    }
+  });
+  it("retains held exits when the current universe row is pending", () => {
+    const pending = snapshot(9, 9.5);
+    Object.assign(pending.entries[0]!, {
+      hardFilterPassed: false,
+      hardFilterStatus: "PENDING",
+      pendingRules: ["시가총액 자료 대기"],
+      technicalPoints: 9.5,
+      scoreDelta1d: 5,
+    });
+    expect(deriveExitPlan(trade, [pending], bars, bars[4]!.tradeDate)).toMatchObject({
+      exitDate: bars[3]!.tradeDate,
+      reason: "9.5점 상향돌파",
+    });
+  });
   it("requires confirmed eligibility and never accepts raw or legacy onsets as live entries", () => {
     expect(
       isEntryOnset(getOperationalSignals("KOSPI", 7.5, 8, true) as SnapshotEntry, "KOSPI"),

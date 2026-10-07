@@ -89,8 +89,12 @@ export function evaluateMarketGate(input: {
   };
 }
 
+export type HardFilterStatus = "PASS" | "FAIL" | "PENDING";
+
 export interface UniverseResult {
   passed: boolean;
+  status: HardFilterStatus;
+  pendingRules: string[];
   failedRules: string[];
   skippedRules: string[];
 }
@@ -107,6 +111,7 @@ export function evaluateUniverse(
 ): UniverseResult {
   const failed: string[] = [];
   const skipped: string[] = [];
+  const pending: string[] = [];
   if (!inst.isActive) failed.push("거래정지 또는 비활성 종목");
   if (barCount < 120) failed.push("최근 120거래일 데이터 부족");
 
@@ -114,9 +119,17 @@ export function evaluateUniverse(
     if (inst.isPreferredStock) failed.push("우선주 제외");
     if (inst.isManagementIssue) failed.push("관리종목 제외");
     if (inst.isInvestmentWarning) failed.push("투자경고종목 제외");
-    if (snap.close < params.minPrice) failed.push(`주가 ${params.minPrice.toLocaleString()}원 미만`);
-    if (snap.close > params.maxPrice) failed.push(`주가 ${params.maxPrice.toLocaleString()}원 초과`);
-    if (!availability.marketCap || marketCap === null) skipped.push("시가총액 기준 (데이터 없음)");
+    if (snap.close < params.minPrice)
+      failed.push(`주가 ${params.minPrice.toLocaleString()}원 미만`);
+    if (snap.close > params.maxPrice)
+      failed.push(`주가 ${params.maxPrice.toLocaleString()}원 초과`);
+    if (
+      !availability.marketCap ||
+      marketCap === null ||
+      !Number.isFinite(marketCap) ||
+      marketCap <= 0
+    )
+      pending.push("기준일 시가총액 미확인 · 판단 보류");
     else if (marketCap < params.minMarketCap) failed.push("시가총액 기준 미달");
   } else {
     if (params.excludeLeveragedInverse && (inst.isLeveraged || inst.isInverse))
@@ -131,7 +144,14 @@ export function evaluateUniverse(
         failed.push("괴리율 기준 초과");
     }
   }
-  return { passed: failed.length === 0, failedRules: failed, skippedRules: skipped };
+  const status: HardFilterStatus = failed.length ? "FAIL" : pending.length ? "PENDING" : "PASS";
+  return {
+    passed: status === "PASS",
+    status,
+    pendingRules: pending,
+    failedRules: failed,
+    skippedRules: skipped,
+  };
 }
 
 export interface ScoreBlock {
