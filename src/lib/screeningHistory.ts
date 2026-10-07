@@ -1,3 +1,4 @@
+import { hydrateScreeningSnapshot } from "./screeningSnapshotStorage";
 // 계정별 일별 스냅샷은 기한 없이 보관하고, 화면 조회만 최근 90개 날짜로 제한한다.
 import { useCallback, useEffect, useState } from "react";
 
@@ -22,7 +23,7 @@ export async function hydrateSnapshots() {
     .order("date", { ascending: false })
     .limit(90);
   if (error) throw error;
-  snapshots = (data ?? []).map((r) => r.snapshot as ScreeningSnapshot);
+  snapshots = (data ?? []).map((r) => hydrateScreeningSnapshot(r.snapshot));
   for (const listener of listeners) listener();
 }
 

@@ -1,7 +1,9 @@
 import { beforeEach, expect, test, vi } from "vitest";
+import { largeScreeningSnapshot } from "./screening-snapshot-storage-fixture";
+import { serializeScreeningSnapshot } from "../src/lib/screeningSnapshotStorage";
 
 const cloud = vi.hoisted(() => ({
-  rows: [] as { snapshot: { asOfDate: string } }[],
+  rows: [] as { snapshot: unknown }[],
   limits: [] as number[],
   mutations: vi.fn(),
 }));
@@ -62,5 +64,16 @@ test("repeat refresh remains a bounded read and does not trim retained history",
   expect(cloud.limits).toEqual([90, 90]);
   expect(loadSnapshots()).toHaveLength(90);
   expect(cloud.rows).toHaveLength(120);
+  expect(cloud.mutations).not.toHaveBeenCalled();
+});
+
+test("browser history restores compact stored rows before exposing the unchanged domain API", async () => {
+  const snapshot = largeScreeningSnapshot();
+  const stored = serializeScreeningSnapshot(snapshot);
+  cloud.rows = [{ snapshot: JSON.parse(JSON.stringify(stored)) }, ...cloud.rows];
+  await hydrateSnapshots();
+  expect(loadSnapshots()[0]).toEqual(snapshot);
+  expect(loadSnapshots()[0]?.entries).toHaveLength(1785);
+  expect(cloud.rows[0]?.snapshot).toHaveProperty("storageFormat");
   expect(cloud.mutations).not.toHaveBeenCalled();
 });

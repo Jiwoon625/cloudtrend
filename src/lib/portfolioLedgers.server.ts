@@ -1,3 +1,4 @@
+import { hydrateScreeningSnapshot } from "./screeningSnapshotStorage";
 import runtimeManifest from "./ledger/octoberShadowEngineManifest.generated.json";
 import type { LedgerRefreshSummary } from "./portfolioFreshness";
 import { stableCacheJson } from "./screeningCacheContract";
@@ -128,7 +129,7 @@ async function snapshotsFor(client: SupabaseClient, uid: string) {
       .order("date")
       .range(start, start + 199);
     if (error) throw new Error(error.message);
-    result.push(...(data ?? []).map((r) => r.snapshot as ScreeningSnapshot));
+    result.push(...(data ?? []).map((r) => hydrateScreeningSnapshot(r.snapshot)));
     if (!data || data.length < 200) break;
   }
   return result;

@@ -1,7 +1,7 @@
+import { hydrateScreeningSnapshot } from "./screeningSnapshotStorage";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { createPortfolioStore } from "./portfolioStoreCore";
-import type { ScreeningSnapshot } from "./screeningSnapshot";
 import { loadActiveSources } from "./screeningSources.server";
 import { parseManualMarketData } from "./engine/manualDataset";
 
@@ -33,7 +33,7 @@ export const portfolioServer = createServerFn({ method: "POST" })
     const store = createPortfolioStore({
       supabase: client,
       userId: async () => uid,
-      loadSnapshots: () => (history ?? []).map((row) => row.snapshot as ScreeningSnapshot),
+      loadSnapshots: () => (history ?? []).map((row) => hydrateScreeningSnapshot(row.snapshot)),
       ensureManualDataset: async () => {
         if (!history?.length) return null;
         const { texts } = await loadActiveSources(client, uid);
