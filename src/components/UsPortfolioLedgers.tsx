@@ -10,6 +10,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { UsTaxEstimatePanel } from "./UsTaxEstimatePanel";
 import { UsModelTaxEstimatePanel } from "./UsModelTaxEstimatePanel";
+import { UsA0AllocationRules } from "./UsA0AllocationRules";
 import { supabase } from "@/lib/cloud";
 import { usActualLedgerServer } from "@/lib/usActualLedger.functions";
 import type {
@@ -285,7 +286,7 @@ export function UsPortfolioLedgers({
           </section>
         ) : null}
         <section className="rounded-lg border bg-card p-4" aria-label="US 실제 투자">
-          <h3 className="text-sm font-semibold">실제 투자 · 최대 30종목</h3>
+          <h3 className="text-sm font-semibold">실제 투자 · A0 목표 20종목</h3>
           <p className="mt-3 text-xl font-bold">
             {actual ? usd(actual.summary.totalPnl) : "-"}{" "}
             <span className="text-sm">
@@ -293,7 +294,14 @@ export function UsPortfolioLedgers({
             </span>
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            입력한 체결만 반영 · 보유 {actual?.summary.openPositions ?? 0}/30
+            입력한 체결만 반영 · 보유 {actual?.summary.openPositions ?? 0}종목 · 기록 한도 30종목
+          </p>
+          <div className="mt-2">
+            <UsA0AllocationRules />
+          </div>
+          <p className="mt-2 text-xs">
+            설정 운용자금 기준 종목당 참고 매입예산:{" "}
+            {actual ? usd(actual.summary.slotTargetAmount) : "-"}
           </p>
           {actual ? (
             <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
@@ -500,7 +508,7 @@ export function UsPortfolioLedgers({
       {activeTab === "actual" && actual ? (
         <>
           <Table
-            title={`실제 보유 종목 · ${actual.positions.length}/30`}
+            title={`실제 보유 종목 · ${actual.positions.length}종목 · A0 목표 20종목`}
             heads={[
               "종목",
               "수량",

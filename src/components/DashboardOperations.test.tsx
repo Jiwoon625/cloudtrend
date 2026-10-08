@@ -47,6 +47,14 @@ const date = "2026-10-02";
 describe("concise dashboard strategy rules", () => {
   const markup = () => renderToStaticMarkup(<DashboardStrategyRules />);
 
+  it("describes A0 fixed initial-capital slots without quarterly or funding sales", () => {
+    const html = markup();
+    expect(html).toContain("계좌별 초기 투자금액 ÷ 고정 목표 20종목");
+    expect(html).toContain("당일 후보 수·현재 평가자산으로 다시 나누지 않습니다");
+    expect(html).toContain("정기 리밸런싱과 신규 진입 자금 마련용 부분매도는 하지 않으며");
+    expect(html).not.toContain("비중조정은 분기별");
+  });
+
   it("keeps KOSPI confirmation, market guards, exits and sector limit", () => {
     const html = markup();
     expect(html).toContain(">KOSPI</h3>");

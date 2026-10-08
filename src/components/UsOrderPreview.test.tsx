@@ -311,6 +311,74 @@ describe("US saved model order preview", () => {
     expect(html).not.toContain("다음 분기 비중조정 · 미확인");
   });
 
+  it.each([false, true])(
+    "shows fixed-slot A0 rules without quarterly or funding-sale claims (compact=%s)",
+    (compact) => {
+      const value = bundle({
+        allocationPolicy: {
+          version: "us-initial-capital-slots-v1",
+          effectiveDate: "2026-10-05",
+          initialCapitalUsd: "100000",
+          targetPositions: 20,
+          quarterlyRebalance: false,
+          fundingOnlySales: false,
+        },
+        nextQuarter: null,
+        nextSession: plan({
+          kind: "PENDING",
+          quarter: null,
+          rows: [row({ reason: "ENTRY_ONSET80", targetWeight: 0.05 })],
+        }),
+      });
+      const html = render(value, { compact });
+      expect(html).toContain("초기자금 USD ÷ 목표 20종목의 매입 예산을 고정합니다");
+      expect(html).toContain("정기 비중조정·신규 진입 자금 마련용 부분매도는 하지 않습니다");
+      expect(html).toContain("다음 정규장 대기 조정");
+      expect(html).toContain("신규 진입 신호");
+      expect(html).not.toContain("분기");
+      expect(html).not.toContain("축소도 수량에 포함됩니다");
+      expect(html).not.toContain("목표비중");
+      if (!compact) {
+        expect(html).toContain("초기자금 기준 비중");
+        expect(html).toContain("5.0%");
+      }
+    },
+  );
+
+  it.each(["A2", "B3 Beta"])(
+    "preserves explicit %s preview labels even with allocation metadata",
+    (strategyLabel) => {
+      const html = render(
+        bundle({
+          allocationPolicy: {
+            version: "us-initial-capital-slots-v1",
+            effectiveDate: "2026-10-05",
+            initialCapitalUsd: "100000",
+            targetPositions: 20,
+            quarterlyRebalance: false,
+            fundingOnlySales: false,
+          },
+        }),
+        { strategyLabel },
+      );
+      expect(html).toContain("다음 분기 비중조정 · 2027Q1");
+      expect(html).toContain("목표비중");
+      expect(html).toContain("축소도 수량에 포함됩니다");
+      expect(html).not.toContain("초기자금 기준 비중");
+    },
+  );
+
+  it.each([{}, { isPending: true }, { error: "조회 실패" }])(
+    "uses a neutral missing-plan heading: %o",
+    (extra) => {
+      const html = render(null, extra);
+      expect(html).toContain("모델 주문 계획 · 미확인");
+      expect(html).not.toContain("다음 분기 비중조정 · 미확인");
+      expect(html).not.toContain("분기");
+      expect(html).not.toContain("축소도 수량에 포함됩니다");
+    },
+  );
+
   it("shows compact planned quantities immediately with remaining rows expandable", () => {
     const rows = Array.from({ length: 7 }, (_, i) => row({ symbol: `COMPACT${i}` }));
     const html = render(bundle({ nextQuarter: plan({ rows }) }), { compact: true });

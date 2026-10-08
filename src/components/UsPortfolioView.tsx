@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { UsModelTradeTable } from "@/components/UsModelExecutionJournal";
 import { UsModelTaxEstimatePanel } from "@/components/UsModelTaxEstimatePanel";
+import { UsA0AllocationRules } from "@/components/UsA0AllocationRules";
 import {
   loadUsPortfolioSnapshots,
   loadUsPortfolioTrades,
@@ -208,6 +209,7 @@ export function UsPortfolioView({
               2026-10-05부터 초기자금 ÷ 목표 20종목 · 고정 매입 예산. 이전 기록은 당시 규칙을
               보존합니다.
             </p>
+            {selectedStrategy === "A0_QUARTER_PRIMARY" ? <UsA0AllocationRules /> : null}
           </div>
           <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="모델 보유종목 표">
             <table className="w-full min-w-[620px] text-[11px]">

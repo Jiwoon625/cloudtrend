@@ -7,6 +7,7 @@ import type {
   OctoberShadowSummary as Summary,
 } from "@/lib/octoberShadowSummary.server";
 import { UsTaxEstimatePanel } from "./UsTaxEstimatePanel";
+import { UsA0AllocationRules } from "./UsA0AllocationRules";
 
 const labels: Record<OctoberShadowBookSummary["kind"], string> = {
   KR_MIXED: "한국 혼합",
@@ -278,6 +279,7 @@ export function OctoberShadowSummaryContent({
                     수량·현금·비용·거래대금 한도를 적용합니다
                   </p>
                 ) : null}
+                {book.kind === "US_A0" ? <UsA0AllocationRules /> : null}
                 {book.kind === "KR_KOSDAQ" ? (
                   <p className="text-xs text-muted-foreground">
                     실제 매수 여부·수동 제외·실계좌 현금과 분리된 가상 1억원/30 장부입니다. 실제

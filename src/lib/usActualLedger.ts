@@ -1,4 +1,5 @@
 import { savedExecutionMemo } from "./ledger/executionMemo";
+import { usFixedSlotAllocationPolicy, usFixedSlotBudget } from "./engine/usProspectivePortfolio";
 import {
   calculateActual,
   keyFor,
@@ -9,6 +10,17 @@ import {
 import type { UsPortfolioTradeRecord } from "./usProspectiveCloud";
 
 export type UsExecution = ActualExecution<"US">;
+/** Read-only A0 reference budget; actual fills and the historical record capacity stay intact. */
+export function calculateUsActual(
+  capital: number,
+  events: UsExecution[],
+  quotes: Record<string, Quote>,
+  latest: string | null,
+): ActualLedger<"US"> {
+  const actual = calculateActual(capital, events, quotes, latest);
+  actual.summary.slotTargetAmount = Number(usFixedSlotBudget(usFixedSlotAllocationPolicy(capital)));
+  return actual;
+}
 export interface UsCandidate {
   key: string;
   symbol: string;

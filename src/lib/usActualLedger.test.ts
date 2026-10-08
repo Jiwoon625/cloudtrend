@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   migrateUsActual,
   changeUsActual,
+  calculateUsActual,
   type UsExecution,
   type UsCandidate,
 } from "./usActualLedger";
@@ -177,8 +178,29 @@ describe("US actual ledger isolation", () => {
       fill({ id: String(i), symbol: String(i), order: i }),
     );
     expect(calculateActual(100000, events, {}, null).positions).toHaveLength(30);
+    const reference = calculateUsActual(100000, events, {}, null);
+    expect(reference.positions).toHaveLength(30);
+    expect(reference.summary.slotTargetAmount).toBe(5000);
+    expect({ ...reference.summary, slotTargetAmount: undefined }).toEqual({
+      ...calculateActual(100000, events, {}, null).summary,
+      slotTargetAmount: undefined,
+    });
     expect(() =>
       calculateActual(100000, [...events, fill({ id: "31", symbol: "31", order: 31 })], {}, null),
     ).toThrow("30개");
+  });
+  it("uses each account's set capital over fixed 20 slots, regardless of marks and holding count", () => {
+    const events = [fill({ id: "entry" })];
+    const before = structuredClone(events);
+    const actual = calculateUsActual(
+      73551.04,
+      events,
+      { A: { price: 200, date: "2026-10-07", exitSignal: null } },
+      "2026-10-07",
+    );
+    expect(actual.summary.slotTargetAmount).toBe(3677.552);
+    expect(actual.summary.equity).not.toBe(73551.04);
+    expect(events).toEqual(before);
+    expect(calculateUsActual(20000, [], {}, null).summary.slotTargetAmount).toBe(1000);
   });
 });

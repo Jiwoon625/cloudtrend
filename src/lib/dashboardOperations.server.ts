@@ -4,7 +4,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
 import { loadUsOrderPreview } from "./usOrderPreview.server";
 import { calculateActual, type LedgerDocument, type Quote } from "./portfolioLedgers";
-import type { UsActualDocument } from "./usActualLedger";
+import { calculateUsActual, type UsActualDocument } from "./usActualLedger";
 import type { AnalysisResult } from "./engine/pipeline";
 import {
   DASHBOARD_CACHE_VERSION,
@@ -205,7 +205,7 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
     : null;
   const usActual = usDoc
     ? await safe("미국 실제 원장", async () =>
-        calculateActual(usDoc.capital, usDoc.executions, quotesFor(us), us?.date ?? null),
+        calculateUsActual(usDoc.capital, usDoc.executions, quotesFor(us), us?.date ?? null),
       )
     : null;
   const etfActual = krDoc

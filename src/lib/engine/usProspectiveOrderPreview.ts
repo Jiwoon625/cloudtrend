@@ -5,6 +5,7 @@ import {
   US_PROSPECTIVE_PARTICIPATION,
   usFixedSlotPendingTargets,
   usFixedSlotBudget,
+  usOperatingOneWayCost,
   type UsFixedSlotAllocationPolicy,
   type UsPendingTarget,
   type UsPortfolioState,
@@ -145,7 +146,9 @@ function plan(
   const fixedSlots = allocationPolicy && executionDate >= allocationPolicy.effectiveDate;
   const oneWayCost = state.executionPolicy
     ? Number(state.executionPolicy.oneWayCost)
-    : US_PROSPECTIVE_ONE_WAY_COST;
+    : fixedSlots
+      ? usOperatingOneWayCost(config.id, executionDate)
+      : US_PROSPECTIVE_ONE_WAY_COST;
   const sourceDate = state.lastDate!;
   const confirmationDate = nextScheduledUsSession(executionDate, -1);
   const result: UsOrderPlan = {

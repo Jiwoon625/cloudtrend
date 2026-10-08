@@ -104,7 +104,15 @@ function CompactRows({ rows }: { rows: UsOrderPreviewRow[] }) {
   );
 }
 
-function DetailRows({ rows, title }: { rows: UsOrderPreviewRow[]; title: string }) {
+function DetailRows({
+  rows,
+  title,
+  fixedSlotA0,
+}: {
+  rows: UsOrderPreviewRow[];
+  title: string;
+  fixedSlotA0: boolean;
+}) {
   return (
     <div
       className="overflow-x-auto"
@@ -124,7 +132,7 @@ function DetailRows({ rows, title }: { rows: UsOrderPreviewRow[]; title: string 
               예상 조정수량
             </th>
             <th scope="col" className="text-right">
-              목표비중
+              {fixedSlotA0 ? "초기자금 기준 비중" : "목표비중"}
             </th>
             <th scope="col" className="text-right">
               참고가격 / 가격일
@@ -180,10 +188,12 @@ function Plan({
   plan,
   compact,
   todayUs,
+  fixedSlotA0 = false,
 }: {
   plan: UsOrderPlan;
   compact: boolean;
   todayUs: string;
+  fixedSlotA0?: boolean;
 }) {
   const quarterly = plan.kind === "QUARTER";
   const title = quarterly ? "다음 분기 비중조정" : "다음 정규장 대기 조정";
@@ -275,7 +285,7 @@ function Plan({
             <CompactRows rows={plan.rows} />
           </div>
         ) : (
-          <DetailRows rows={plan.rows} title={title} />
+          <DetailRows rows={plan.rows} title={title} fixedSlotA0={fixedSlotA0} />
         )
       ) : (
         <p className="border-t border-border p-3 text-[11px] text-muted-foreground">
@@ -304,7 +314,13 @@ export function UsOrderPreview({
     day: "2-digit",
   }).format(new Date()),
 }: Props) {
+  const fixedSlotA0 =
+    strategyLabel === "A0" &&
+    (!bundle ||
+      (!!bundle.allocationPolicy &&
+        bundle.nextSession.executionDate >= bundle.allocationPolicy.effectiveDate));
   const nextSessionIsQuarter = Boolean(
+    !fixedSlotA0 &&
     bundle?.nextQuarter &&
     bundle.nextSession.quarter === bundle.nextQuarter.quarter &&
     bundle.nextSession.executionDate === bundle.nextQuarter.executionDate,
@@ -324,9 +340,9 @@ export function UsOrderPreview({
         수량으로 환산하지 않습니다.
       </p>
       <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
-        분기 조정의 모델 체결은 분기 첫 미국 정규장 시가를 기다립니다. 휴장일에는 체결하지 않으며,
-        실제 시가·현금·거래량 제약에 따라 수량이 달라질 수 있습니다. 아래 두 계획은 합산하지
-        않습니다.
+        {fixedSlotA0
+          ? "초기자금 USD ÷ 목표 20종목의 매입 예산을 고정합니다. 다음 미국 정규장 시가 기준이며, 실제 시가·현금·비용·거래대금 한도에 따라 수량이 달라질 수 있습니다."
+          : "분기 조정의 모델 체결은 분기 첫 미국 정규장 시가를 기다립니다. 휴장일에는 체결하지 않으며, 실제 시가·현금·거래량 제약에 따라 수량이 달라질 수 있습니다. 아래 두 계획은 합산하지 않습니다."}
       </p>
       {error ? (
         <p role="alert" className="mt-3 text-[11px] text-destructive">
@@ -335,25 +351,30 @@ export function UsOrderPreview({
       ) : null}
       {bundle && !error ? (
         <div className="mt-3 space-y-3">
-          {bundle.nextQuarter ? (
+          {!fixedSlotA0 && bundle.nextQuarter ? (
             <Plan plan={bundle.nextQuarter} compact={compact} todayUs={todayUs} />
-          ) : (
+          ) : !fixedSlotA0 ? (
             <p className="rounded-md border p-3 text-[11px] text-muted-foreground">
               이 모델은 정기 분기 비중조정을 사용하지 않습니다. 다음 정규장 대기 조정을 확인하세요.
             </p>
-          )}
+          ) : null}
           {nextSessionIsQuarter ? (
             <p className="rounded-md bg-muted p-3 text-[11px] leading-relaxed text-muted-foreground">
               다음 정규장이 분기 첫 거래일이므로 위 분기 계획이 다음 정규장 대기 조정에도
               적용됩니다. 같은 수량을 중복 표시하지 않습니다.
             </p>
           ) : (
-            <Plan plan={bundle.nextSession} compact={compact} todayUs={todayUs} />
+            <Plan
+              plan={bundle.nextSession}
+              compact={compact}
+              todayUs={todayUs}
+              fixedSlotA0={fixedSlotA0}
+            />
           )}
         </div>
       ) : (
         <div className="mt-3 rounded-md border p-3">
-          <h3 className="text-xs font-semibold">다음 분기 비중조정 · 미확인</h3>
+          <h3 className="text-xs font-semibold">모델 주문 계획 · 미확인</h3>
           <p
             role={isPending ? "status" : undefined}
             className="mt-1 text-[11px] text-muted-foreground"
@@ -367,8 +388,9 @@ export function UsOrderPreview({
         </div>
       )}
       <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">
-        신규 진입·전량 청산 신호 집계와 별도입니다. 분기 리밸런싱과 진입 자금 마련을 위한 기존 종목
-        축소도 수량에 포함됩니다.
+        {fixedSlotA0
+          ? "신규 진입·전량 청산 신호와 체결 제약을 반영한 예상입니다. 정기 비중조정·신규 진입 자금 마련용 부분매도는 하지 않습니다."
+          : "신규 진입·전량 청산 신호 집계와 별도입니다. 분기 리밸런싱과 진입 자금 마련을 위한 기존 종목 축소도 수량에 포함됩니다."}
       </p>
     </section>
   );
