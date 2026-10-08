@@ -1,9 +1,10 @@
 {
-  "request_id": "cm-v4b-s06-s07-20261008-1425-001",
+  "request_id": "cm-v4b-hybrid-base07-20261008-001",
   "mode": "run",
   "stage": "base",
-  "offset": 5,
-  "count": 2,
+  "offset": 7,
+  "count": 4,
   "max_seconds": 3000,
-  "workers": 2
+  "workers": 2,
+  "hybrid_shared_us_analysis": true
 }
