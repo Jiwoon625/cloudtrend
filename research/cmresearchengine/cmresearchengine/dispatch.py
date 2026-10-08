@@ -8,11 +8,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 
 ALLOWED_MODES = {"preflight", "run"}
 ALLOWED_STAGES = {"base", "fine", "split25", "split10", "references"}
-ALLOWED_KEYS = {"request_id", "mode", "stage", "offset", "count", "max_seconds", "workers"}
+ALLOWED_KEYS = {"request_id", "mode", "stage", "offset", "count", "max_seconds", "workers", "ids"}
 
 
 def validate_request(raw):
@@ -52,7 +53,31 @@ def validate_request(raw):
     if workers > count:
         raise ValueError("workers cannot exceed count")
 
+    # Select only explicitly named preregistered strategies in sparse
+    # batches; no change to candidate policies, economic logic or data.
+    ids_value = raw.get("ids", "")
+    if ids_value is None:
+        ids_value = ""
+    if not isinstance(ids_value, str):
+        raise ValueError("ids must be a comma-separated string")
+    ids = ids_value.strip()
+    if ids:
+        tokens = [item.strip() for item in ids.split(",")]
+        if (len(tokens) != count or len(set(tokens)) != len(tokens) or
+                any(re.fullmatch(r"[A-Za-z0-9_]{1,120}", item) is None for item in tokens)):
+            raise ValueError("ids must be unique, valid, and equal count")
+        if offset != 0:
+            raise ValueError("Explicit ids require offset=0")
+        from .plan import choose
+        selected = choose(stage, offset, count, tokens)
+        if [item.candidate_id for item in selected] != tokens:
+            raise ValueError("Explicit ids differ from preregistered candidates")
+        if workers > 1 and (stage == "references" or any(item.policy_id for item in selected)):
+            raise ValueError("Parallel workers require static non-reference candidates")
+        ids = ",".join(tokens)
+
     return {
+        "ids": ids,
         "request_id": request_id,
         "mode": mode,
         "stage": stage,
@@ -65,7 +90,7 @@ def validate_request(raw):
 
 def _write_github_output(path, request):
     with open(path, "a", encoding="utf-8") as stream:
-        for key in ("request_id", "mode", "stage", "offset", "count", "max_seconds", "workers"):
+        for key in ("request_id", "mode", "stage", "offset", "count", "max_seconds", "workers", "ids"):
             stream.write(f"{key}={request[key]}\n")
 
 
@@ -79,13 +104,14 @@ def main(argv=None):
     parser.add_argument("--count")
     parser.add_argument("--max-seconds")
     parser.add_argument("--workers", default="1")
+    parser.add_argument("--ids")
     parser.add_argument("--github-output")
     args = parser.parse_args(argv)
 
     if args.request_file:
         if any(v is not None for v in (
             args.request_id, args.mode, args.stage, args.offset, args.count, args.max_seconds,
-            None if args.workers == "1" else args.workers
+            None if args.workers == "1" else args.workers, args.ids
         )):
             raise ValueError("Use either --request-file or explicit request fields")
         raw = json.loads(Path(args.request_file).read_text(encoding="utf-8"))
@@ -98,6 +124,7 @@ def main(argv=None):
             "count": args.count,
             "max_seconds": args.max_seconds,
             "workers": args.workers,
+            "ids": args.ids or "",
         }
 
     request = validate_request(raw)
