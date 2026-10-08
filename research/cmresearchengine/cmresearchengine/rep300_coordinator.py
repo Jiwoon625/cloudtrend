@@ -13,6 +13,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -60,6 +61,10 @@ def safe_failure(exc):
         "Object is outside the CM storage areas",
         "Invalid candidate ID",
         "The existing cloudtrend-data bucket must be private",
+        "GitHub CLI job log retrieval unavailable",
+        "GitHub CLI job log retrieval failed",
+        "GitHub CLI job log too large",
+        "GitHub CLI returned no structured receipt markers",
     }
     # A numerical HTTP code is safe to expose; body, URL and headers are not.
     http_error = re.fullmatch(
@@ -167,10 +172,41 @@ class GitHub:
                     raise ValueError("Job log too large")
                 return raw.decode("utf-8-sig", errors="replace")
         except urllib.error.HTTPError as exc:
-            # Classify the failing hop, never disclose signed redirect links.
+            # GitHub's signed log CDN may reject urllib with HTTP 400 while
+            # the authenticated GitHub API hop was successful. Try the
+            # runner's official GitHub CLI once; keep fail-closed semantics.
+            if redirect.was_redirected and exc.code == 400:
+                return self.job_logs_cli(job_id)
             location = "LOG_CDN" if redirect.was_redirected else "GITHUB_API"
             raise RuntimeError("GitHub job log read failed HTTP " + str(exc.code) +
                                " at " + location) from None
+
+    def job_logs_cli(self, job_id):
+        # Do not put tokens on the command line or forward Supabase secrets.
+        # The CLI follows the signed HTTPS log redirect using its own client.
+        safe_env = {k: os.environ[k] for k in ("HOME", "PATH", "XDG_CONFIG_HOME")
+                    if k in os.environ}
+        safe_env["GH_TOKEN"] = self.token
+        safe_env["GH_PROMPT_DISABLED"] = "1"
+        try:
+            process = subprocess.run(
+                ["gh", "run", "view", "--job", str(int(job_id)),
+                 "--log", "--repo", REPO],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                env=safe_env, timeout=90, check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            raise RuntimeError("GitHub CLI job log retrieval unavailable") from None
+        if process.returncode != 0:
+            raise RuntimeError("GitHub CLI job log retrieval failed") from None
+        if len(process.stdout) > 15 * 1024 * 1024:
+            raise ValueError("GitHub CLI job log too large")
+        raw = process.stdout.decode("utf-8-sig", errors="replace")
+        if not json_markers(raw):
+            raise ValueError("GitHub CLI returned no structured receipt markers")
+        emit("GITHUB_LOG_CDN_FALLBACK_VERIFIED", method="gh_cli", markers=len(json_markers(raw)))
+        return raw
 
     def contents(self):
         item = self.api("/contents/" + CONTROL + "?ref=main")
