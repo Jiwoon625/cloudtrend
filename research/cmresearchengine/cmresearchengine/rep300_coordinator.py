@@ -63,7 +63,7 @@ def safe_failure(exc):
     }
     # A numerical HTTP code is safe to expose; body, URL and headers are not.
     http_error = re.fullmatch(
-        r"GitHub (request failed: |job log read failed )HTTP ([45][0-9]{2})",
+        r"GitHub (request failed: |job log read failed )HTTP ([45][0-9]{2})(?: at (GITHUB_API|LOG_CDN))?",
         message,
     )
     reason = message if message in safe_literals or http_error else "WITHHELD"
@@ -146,14 +146,20 @@ class GitHub:
         # GitHub redirects job logs to a signed CDN link. Follow only this
         # GitHub API-issued redirect; never transmit the token to the redirect.
         class StripAuth(urllib.request.HTTPRedirectHandler):
+            def __init__(self):
+                super().__init__()
+                self.was_redirected = False
+
             def redirect_request(self, request, fp, code, msg, h, newurl):
                 parsed = urllib.parse.urlparse(newurl)
                 if parsed.scheme != "https":
                     raise ValueError("Log redirect must use HTTPS")
+                self.was_redirected = True
                 safe = {k: v for k, v in request.header_items()
                         if k.lower() not in {"authorization", "x-github-api-version"}}
                 return urllib.request.Request(newurl, headers=safe)
-        opener = urllib.request.build_opener(StripAuth())
+        redirect = StripAuth()
+        opener = urllib.request.build_opener(redirect)
         try:
             with opener.open(req, timeout=60) as response:
                 raw = response.read(15 * 1024 * 1024 + 1)
@@ -161,7 +167,10 @@ class GitHub:
                     raise ValueError("Job log too large")
                 return raw.decode("utf-8-sig", errors="replace")
         except urllib.error.HTTPError as exc:
-            raise RuntimeError("GitHub job log read failed HTTP " + str(exc.code)) from None
+            # Classify the failing hop, never disclose signed redirect links.
+            location = "LOG_CDN" if redirect.was_redirected else "GITHUB_API"
+            raise RuntimeError("GitHub job log read failed HTTP " + str(exc.code) +
+                               " at " + location) from None
 
     def contents(self):
         item = self.api("/contents/" + CONTROL + "?ref=main")
