@@ -369,7 +369,8 @@ def decision(gh, rows, store, dry=False):
     batches = [x for x in markers if x["status"] == "BATCH_VERIFIED"]
     if len(dispatches) != 1 or len(preflights) != 1 or len(batches) != 1:
         raise ValueError("Incomplete dispatch/preflight/batch receipts")
-    req, selected = selection(dispatches[0])
+    # Receipt metadata is not itself a dispatch request field.
+    req, selected = selection({k: v for k, v in dispatches[0].items() if k != "status"})
     if req["mode"] != "run" or preflights[0]["plan_sha256"] != PLAN_HASH:
         raise ValueError("Wrong research mode or input manifest")
     if (preflights[0]["normalized_files"],preflights[0]["reference_files"],preflights[0]["known_events"]) != (389,12,27):
