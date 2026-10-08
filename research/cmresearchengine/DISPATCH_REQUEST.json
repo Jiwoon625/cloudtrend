@@ -1,9 +1,9 @@
 {
-  "request_id": "cm-v4b-s05-20261008-001",
+  "request_id": "cm-v4b-s06-s07-20261008-1425-001",
   "mode": "run",
   "stage": "base",
-  "offset": 4,
-  "count": 1,
+  "offset": 5,
+  "count": 2,
   "max_seconds": 3000,
-  "workers": 1
+  "workers": 2
 }
