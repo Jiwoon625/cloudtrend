@@ -26,7 +26,7 @@ import {
 import { projectDashboardSectorContext } from "./dashboardOperationsSectorLimits";
 
 const BUCKET = "cloudtrend-data";
-const VERSION = "dashboard-operations-sector-codes-v5";
+const VERSION = "dashboard-operations-partial-evidence-v6";
 const memory = new Map<string, { expires: number; index: DashboardIndex }>();
 const inFlight = new Map<string, Promise<DashboardIndex>>();
 
@@ -190,7 +190,7 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
   ]);
   if (kr?.rows.some((r) => r.market === "ETF" && r.etfEntry?.dataStatus === "krx_batch_pending")) {
     warnings.push(
-      `ETF ${kr.date}: 최신 KRX 금액·기초지수 일괄 미수신. 신규 진입·청산 판단 대기, 다음 자료 수집 후 재확인 필요.`,
+      `ETF ${kr.date}: KRX 기준일 자료 확인 대기. 다음 영업일 08:00 KST부터 조회 가능하며, 저녁 미공표는 정상입니다. 가용한 조건별 판단은 ETF 스크리너에서 확인하고 최종 진입은 자료 확인 후 판단합니다.`,
     );
   }
   const krActual = krDoc

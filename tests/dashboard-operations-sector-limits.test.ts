@@ -275,7 +275,7 @@ describe("Korean dashboard strategy-sector annotation", () => {
       new URL("../src/lib/dashboardOperations.server.ts", import.meta.url),
       "utf8",
     );
-    expect(source).toContain("dashboard-operations-sector-codes-v5");
+    expect(source).toContain("dashboard-operations-partial-evidence-v6");
     expect(source).toContain("projectDashboardSectorContext(krDoc, kr?.screeningCreatedAt)");
     expect(source).not.toMatch(/operateLedgers|simulateStrategy|refreshStrategy/);
   });

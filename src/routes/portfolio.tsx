@@ -9,6 +9,8 @@ import { BriefcaseBusiness, Loader2, RefreshCw, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { PortfolioAssetHub, type PortfolioAsset } from "@/components/PortfolioAssetHub";
+import { useDashboardOperations } from "@/components/DashboardOperations";
+import { DomesticAssessmentPanel } from "@/components/DomesticAssessmentPanel";
 import { StrategyDescription } from "@/components/StrategyDescription";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -195,6 +197,7 @@ export function KoreaPortfolioContent() {
   const state = query.data,
     doc = state?.document,
     strategy = doc?.strategy;
+  const assessments = useDashboardOperations(Boolean(state), state?.revision?.toString());
   const [tab, setTab] = useState<"strategy" | "actual" | "signals">("actual");
   const [busy, setBusy] = useState(false),
     [edit, setEdit] = useState<Edit | null>(null);
@@ -559,6 +562,14 @@ export function KoreaPortfolioContent() {
               </p>
             </div>
           </details>
+          {assessments.data ? (
+            <DomesticAssessmentPanel markets={assessments.data.markets} heldOnly />
+          ) : assessments.isError ? (
+            <p className="text-xs text-warn">
+              보유종목 조건별 판단 조회 실패 ·{" "}
+              <button onClick={() => void assessments.refetch()}>다시 조회</button>
+            </p>
+          ) : null}
           {state.actual.summary.cash < 0 ? (
             <p className="mb-3 text-sm text-down">
               운용자금 기준 계산 현금이 음수입니다. 기초 현금·입출금과 설정 자금을 확인하세요.

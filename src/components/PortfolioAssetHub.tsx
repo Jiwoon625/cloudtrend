@@ -1,3 +1,4 @@
+import { DomesticAssessmentPanel } from "./DomesticAssessmentPanel";
 import { domesticPortfolioQueryOptions } from "@/lib/portfolioPositionContext";
 import { usePortfolioModelConsolidation } from "@/lib/usePortfolioModelConsolidation";
 import { UsModelExecutionJournal } from "./UsModelExecutionJournal";
@@ -529,10 +530,29 @@ export function PortfolioAssetHub({
                 className="mb-3 rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-slate-900"
               >
                 {krxPending.date} KRX 금액·기초지수 일괄 미수신 · 직전 자료 확인일{" "}
-                {krxPending.etfEntry?.krxReferenceDate}. ETF 신규 진입·청산 판단은 자료 수신까지
+                {krxPending.etfEntry?.krxReferenceDate}. ETF 최종 진입 판단은 자료 수신까지
                 대기합니다. MA60 하회 청산으로 해석하지 마세요.
               </p>
             )}
+            <DomesticAssessmentPanel
+              markets={[
+                {
+                  market: "ETF",
+                  date: books.ETF?.summary.latestDate ?? null,
+                  holdingsKnown: true,
+                  onsetCount: null,
+                  exitCount: null,
+                  onsets: [],
+                  exits: [],
+                  assessments: etfRows.map((r) => ({
+                    ...r,
+                    held: heldEtfs.has(r.symbol),
+                    reason: heldEtfs.has(r.symbol) ? "보유 · 추가 진입 제외" : "미보유",
+                  })),
+                },
+              ]}
+              heldOnly
+            />
             {staleEtfPolicy && (
               <p role="alert" className="mb-3 text-sm text-down">
                 이전 ETF 규칙 캐시입니다. 스크리닝을 다시 실행해야 새 진입 신호가 표시됩니다.

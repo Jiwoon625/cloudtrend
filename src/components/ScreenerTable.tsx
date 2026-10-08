@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { KospiEntryDetails } from "@/components/KospiEntryDetails";
 import { OnsetProfileDetails } from "@/components/OnsetProfileDetails";
+import { StockAssessmentDetails } from "./StockAssessmentDetails";
+import { stockAssessmentDisplay } from "@/lib/stockAssessmentDisplay";
 import { UniverseFilterDetails } from "@/components/UniverseFilterDetails";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
@@ -157,10 +159,12 @@ export function ScreenerTable({
   rows,
   positionContext,
   signalDate,
+  tradeDates,
 }: {
   rows: ScreeningRow[];
   positionContext?: DomesticPositionContext | undefined;
   signalDate: string;
+  tradeDates?: readonly string[];
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("entry");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
@@ -373,7 +377,7 @@ export function ScreenerTable({
                     <ScoreDelta value={r.scoreDelta1d} />
                   </span>
                 ),
-                grade: <GradeBadge grade={r.grade} />,
+                grade: tech === null ? <span>미확인</span> : <GradeBadge grade={r.grade} />,
                 volumeRatio: (
                   <span className="num">
                     {r.snapshot.volumeRatio20 === null
@@ -433,6 +437,11 @@ export function ScreenerTable({
                     ) : null}
                     <OnsetProfileDetails profile={r.onsetProfile} compact />
                     <UniverseFilterDetails row={r} compact />
+                    {r.instrument.instrumentType === "STOCK" ? (
+                      <StockAssessmentDetails
+                        assessment={stockAssessmentDisplay(r, signalDate, tradeDates)}
+                      />
+                    ) : null}
                     {r.dataCompletenessRatio < 1 ? (
                       <span className="text-[10px] text-warn">기술점수 산정 불완전</span>
                     ) : null}

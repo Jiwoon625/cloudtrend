@@ -4,6 +4,15 @@ on:
   pull_request:
     paths:
       - src/routes/index.tsx
+      - src/components/DomesticAssessmentPanel*
+      - src/components/StockAssessmentDetails*
+      - src/components/EtfAssessmentDetails*
+      - src/components/EtfScreener*
+      - src/components/ScreenerTable.tsx
+      - src/components/ScreenerView.tsx
+      - src/components/PortfolioAssetHub.tsx
+      - src/lib/stockAssessmentDisplay*
+      - src/lib/etfPartialEvidence*
       - src/components/DashboardOperations.tsx
       - src/components/DashboardOperations.test.tsx
       - src/components/UsOrderPreview*

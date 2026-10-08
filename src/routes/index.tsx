@@ -39,6 +39,7 @@ import {
   formatWon,
 } from "@/lib/format";
 import { PortfolioFreshnessSummary } from "@/components/PortfolioFreshnessSummary";
+import { DomesticAssessmentPanel } from "@/components/DomesticAssessmentPanel";
 import { UniversePendingSummary } from "@/components/UniversePendingSummary";
 import { domesticPortfolioQueryOptions } from "@/lib/portfolioPositionContext";
 import type { DualPortfolioState } from "@/lib/portfolioLedgers";
@@ -477,6 +478,7 @@ function DashboardContent({
       </section>
 
       <DashboardSignalLists query={operations} />
+      {operations.data ? <DomesticAssessmentPanel markets={operations.data.markets} /> : null}
 
       <UniversePendingSummary reasons={summary.pendingReasons ?? []} />
 

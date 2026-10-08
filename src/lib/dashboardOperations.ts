@@ -1,3 +1,5 @@
+import { etfPartialEvidence } from "./etfPartialEvidence";
+import { stockAssessmentDisplay, type StockAssessmentDisplay } from "./stockAssessmentDisplay";
 import {
   getHeldOperationalExitSignal,
   isOperationalEntry,
@@ -28,6 +30,9 @@ export interface DashboardSignal {
   priority: number;
   reason: string;
   onsetProfile?: import("./onsetProfile").OnsetProfile | null;
+  assessment?: StockAssessmentDisplay | undefined;
+  etfAssessment?: ReturnType<typeof etfPartialEvidence> | undefined;
+  held?: boolean | undefined;
 }
 export interface DashboardIndexRow extends Omit<DashboardSignal, "reason"> {
   onset: boolean;
@@ -71,6 +76,7 @@ export interface DashboardMarketSignals {
   pendingCount?: number | null;
   pending?: DashboardSignal[];
   exits: DashboardSignal[];
+  assessments?: DashboardSignal[];
 }
 export interface DashboardOperations {
   usOrderPreview?: import("./engine/usProspectiveOrderPreview").UsOrderPreviewBundle | null;
@@ -104,6 +110,10 @@ export function projectKrDashboard(analysis: AnalysisResult): DashboardIndex {
         ? (strategy?.date ?? analysis.asOfDate)
         : (r.snapshot.tradeDate ?? analysis.asOfDate),
       kospiEntry: r.kospiEntry,
+      assessment: etf
+        ? undefined
+        : stockAssessmentDisplay(r, analysis.asOfDate, analysis.tradeDates),
+      etfAssessment: etf ? etfPartialEvidence(r, analysis.asOfDate) : undefined,
       onsetProfile: etf ? null : (r.onsetProfile ?? null),
       price: finite(r.snapshot.close),
       score: finite(etf ? strategy?.score : r.operatingScore10),
@@ -222,6 +232,7 @@ export function marketSignals(
     pendingCount: index ? 0 : null,
     pending: [],
     exits: [],
+    assessments: [],
   };
   if (!index) return result;
   const held = new Map((holdings ?? []).filter((p) => p.shares > 0).map((p) => [p.symbol, p]));
@@ -229,6 +240,14 @@ export function marketSignals(
   const rows = new Map(index.rows.filter((r) => r.market === market).map((r) => [r.symbol, r]));
   const dates = [...new Set(index.tradeDates)].filter((d) => d <= index.date).sort();
   for (const row of rows.values()) {
+    if (row.assessment || row.etfAssessment) {
+      const isHeld = held.has(row.symbol);
+      result.assessments!.push({
+        ...row,
+        held: isHeld,
+        reason: isHeld ? "보유 · 추가 진입 제외" : holdings === null ? "보유 미확인" : "미보유",
+      });
+    }
     // A stale individual quote cannot create today's signal.
     if (row.date !== index.date) continue;
     const holding = held.get(row.symbol);
@@ -284,6 +303,13 @@ export function marketSignals(
     }
     if (reason) result.exits.push({ ...row, reason: exitLabel(reason) });
   }
+  result.assessments!.sort(
+    (a, b) =>
+      Number(b.held) - Number(a.held) ||
+      Number(b.assessment?.rawOnset) - Number(a.assessment?.rawOnset) ||
+      (b.assessment?.score ?? -Infinity) - (a.assessment?.score ?? -Infinity) ||
+      a.symbol.localeCompare(b.symbol),
+  );
   result.onsets.sort((a, b) => b.priority - a.priority || a.symbol.localeCompare(b.symbol));
   result.exits.sort((a, b) => a.symbol.localeCompare(b.symbol));
   result.pending!.sort((a, b) => b.priority - a.priority || a.symbol.localeCompare(b.symbol));
