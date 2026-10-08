@@ -3,7 +3,7 @@ import io
 import json
 import unittest
 from contextlib import redirect_stdout
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 from cmresearchengine.rep300_coordinator import (
     approved, next_batch, selection, verify_existing_request, json_markers,
     make_request, decision, storage_folders, WatchPhaseError, watch_call, safe_failure
@@ -164,6 +164,33 @@ class NativeCoordinatorTests(unittest.TestCase):
             watch_call("GITHUB_READ_JOB_LOG", failing)
         self.assertEqual(str(caught.exception), "GITHUB_READ_JOB_LOG")
         self.assertEqual(safe_failure(caught.exception)["reason"], "WITHHELD")
+
+    def test_cli_job_log_fallback_has_safe_arguments_and_no_storage_credentials(self):
+        from cmresearchengine.rep300_coordinator import GitHub
+        gh = GitHub("fake-github-token")
+        fake_output = b'job\tstep\t2026-10-08T15:29:46Z {"status":"PAUSED_VERIFIED","candidate_id":"S08"}\n'
+        with patch("cmresearchengine.rep300_coordinator.subprocess.run",
+                   return_value=Mock(returncode=0, stdout=fake_output)) as run:
+            with patch.dict("os.environ", {"SUPABASE_SERVICE_ROLE_KEY": "secret-storage-key"}):
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    log = gh.job_logs_cli(113367738846)
+        self.assertIn("PAUSED_VERIFIED", log)
+        cmd = run.call_args.args[0]
+        self.assertEqual(cmd[:4], ["gh", "run", "view", "--job"])
+        self.assertNotIn("fake-github-token", cmd)
+        self.assertEqual(run.call_args.kwargs["env"]["GH_TOKEN"], "fake-github-token")
+        self.assertNotIn("SUPABASE_SERVICE_ROLE_KEY", run.call_args.kwargs["env"])
+        self.assertIs(run.call_args.kwargs["stderr"], __import__("subprocess").DEVNULL)
+        self.assertIn("GITHUB_LOG_CDN_FALLBACK_VERIFIED", out.getvalue())
+
+    def test_cli_job_log_fallback_fails_closed(self):
+        from cmresearchengine.rep300_coordinator import GitHub
+        gh = GitHub("fake-github-token")
+        with patch("cmresearchengine.rep300_coordinator.subprocess.run",
+                   return_value=Mock(returncode=1, stdout=b"untrusted")):
+            with self.assertRaisesRegex(RuntimeError, "GitHub CLI job log retrieval failed"):
+                gh.job_logs_cli(113367738846)
 
     def test_paused_hybrid_dry_run_cannot_rerun(self):
         request = {"status": "DISPATCH_REQUEST_VERIFIED",
