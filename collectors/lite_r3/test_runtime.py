@@ -25,6 +25,17 @@ sys.modules[spec.name] = rt
 spec.loader.exec_module(rt)
 
 
+class StubRequestError(Exception):
+    pass
+
+
+class StubTimeout(StubRequestError):
+    pass
+
+
+REQUEST_EXCEPTIONS = types.SimpleNamespace(Timeout=StubTimeout, RequestException=StubRequestError)
+
+
 class RuntimeTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -249,6 +260,199 @@ class RuntimeTests(unittest.TestCase):
     def test_known_wbd_lifecycle_remains_in_daily_setup(self):
         event=next(e for e in self.ns['VERIFIED_LIFECYCLE_EVENTS'] if e['symbol']=='WBD')
         self.assertEqual(event['effective_date'],'2026-10-06');self.assertEqual(event['status'],'SUSPENDED')
+
+    def _snapshot_fixture(self, *, date='2026-10-07', frozen=True, registered=True):
+        stable=['open','high','low','close','volume','dollar_volume','ret120','ret252',
+                'beta60_spy','ichimoku_tk_gap','relvol1_20','adv20_usd','amihud20']
+        frame=pd.DataFrame([{'date':date,'symbol':symbol,'name':symbol,'status':'ACTIVE',
+                            'toss_tradable':True,'active20':True,**{col:10.0 for col in stable}}
+                           for symbol in ['KEEP','SPY','WBD']])
+        original=frame.to_csv(index=False,lineterminator='\n').encode()
+        path=self.ns['OUTPUT_DIR']/('us_screening_input_'+date.replace('-','')+'.csv')
+        if frozen:path.write_bytes(original)
+        elif path.exists():path.unlink()
+        event=next(e.copy() for e in self.ns['VERIFIED_LIFECYCLE_EVENTS'] if e['symbol']=='WBD')
+        frame.loc[frame.symbol.eq('WBD'),stable]=np.nan
+        frame.loc[frame.symbol.eq('WBD'),['toss_tradable','active20']]=False
+        frame.loc[frame.symbol.eq('WBD'),'status']='SUSPENDED'
+        pointer={'as_of_date':date,'data_hash':'sha256:'+hashlib.sha256(original).hexdigest(),
+                 'row_count':3,'symbol_count':3}
+        if frozen and registered:
+            ingest={**pointer,'user_id':'test-owner','collected_at':'2026-10-08T00:00:00+00:00',
+                    'metadata':{'confirmedRegularClose':True,'failedSymbols':0,'previousSessionDate':('2026-10-02' if date<'2026-10-06' else '2026-10-06'),
+                                'sourceCoverageComplete':True,'providerGapSymbols':[],'lifecycleExcludedSymbols':[]}}
+            self.ns['_CT_US_ARCHIVE']['freeze_us_atomic_archive'](
+                raw=original,ingest=ingest,root=self.ns['DATED_ARCHIVE_DIR'],user_id='test-owner')
+        proof={'analysis':{'date':date},'source':{'metadata':{
+            'sourceCoverageComplete':False,'quarantinedSymbols':['WBD'],
+            'recoveryPublication':{'version':'us-recovery-publication-v1',
+                'sourceKind':'REVIEWED_ATOMIC_QUARANTINE','originalDataHash':pointer['data_hash']}}}}
+        self.ns.update(AS_OF_DATE=date,latest_date=date,snap=frame,lifecycle_events=[event],
+                       provider_gap_symbols=set(),truthy=lambda v:str(v).lower() in ('true','1'))
+        self.ns['_US_STAGE_RUN']['diagnostics']=self.ns['_US_RUN_ID']
+        calls=[]
+        def get(url,**kwargs):
+            calls.append((url,kwargs))
+            value=([pointer] if registered else []) if '/rest/v1/' in url else proof
+            return types.SimpleNamespace(status_code=200,json=lambda:value,raise_for_status=lambda:None)
+        self.ns['requests']=types.SimpleNamespace(get=get,exceptions=REQUEST_EXCEPTIONS)
+        return path,original,pointer,proof,calls
+
+    def test_reviewed_wbd_same_day_reuses_exact_bytes_and_one_small_proof(self):
+        path,original,pointer,proof,calls=self._snapshot_fixture()
+        log=io.StringIO()
+        with redirect_stdout(log):rt.run_stage('us_snapshot',self.ns)
+        self.assertEqual(path.read_bytes(),original)
+        self.assertEqual(self.ns['raw'],original)
+        self.assertEqual(self.ns['data_hash'],pointer['data_hash'])
+        self.assertEqual(self.ns['out'].set_index('symbol').loc['WBD','status'],'ACTIVE')
+        self.assertTrue(self.ns['_US_SNAPSHOT_READY'])
+        self.assertIn('sourceCoverageComplete=False',log.getvalue())
+        self.assertEqual(len(calls),2)
+        url,kwargs=calls[1]
+        self.assertEqual(url,'https://example.invalid/storage/v1/object/authenticated/cloudtrend-data/test-owner/cache/us-screening/summary-v1.json')
+        self.assertEqual(kwargs['headers']['Authorization'],'Bearer test-only')
+        self.assertEqual(kwargs['headers']['Cache-Control'],'no-cache')
+        self.assertEqual(kwargs['timeout'],30)
+
+    def test_wbd_reuse_requires_matching_complete_review_marker(self):
+        mutations=[lambda p:p.clear(),lambda p:p['analysis'].update(date='2026-10-06'),
+                   lambda p:p['source']['metadata']['recoveryPublication'].update(originalDataHash='sha256:'+'f'*64),
+                   lambda p:p['source']['metadata']['recoveryPublication'].update(version='other'),
+                   lambda p:p['source']['metadata']['recoveryPublication'].update(sourceKind='ATOMIC_DATED_SNAPSHOT'),
+                   lambda p:p['source']['metadata'].update(quarantinedSymbols=[]),
+                   lambda p:p['source']['metadata'].update(quarantinedSymbols='WBD'),
+                   lambda p:p['source']['metadata'].update(sourceCoverageComplete=True),
+                   lambda p:p['source']['metadata'].update(sourceCoverageComplete=0)]
+        for change in mutations:
+            with self.subTest(change=change):
+                path,original,_,proof,calls=self._snapshot_fixture()
+                change(proof)
+                with self.assertRaisesRegex(RuntimeError,'근거의 날짜'):self.run_stage('us_snapshot')
+                self.assertFalse(self.ns['_US_SNAPSHOT_READY'])
+                self.assertEqual(path.read_bytes(),original)
+                self.assertEqual(len(calls),2)
+
+    def test_wbd_proof_read_failures_are_safe_and_diagnostic(self):
+        cases=[(403,'HTTP 403'),(404,'HTTP 404'),(StubTimeout('secret-response'),'timeout'),
+               (StubRequestError('secret-response'),'연결 오류'),('bad-json','근거의 날짜')]
+        for failure,message in cases:
+            with self.subTest(failure=message):
+                path,original,_,_,calls=self._snapshot_fixture()
+                pointer_get=self.ns['requests'].get
+                def get(url,**kwargs):
+                    if '/rest/v1/' in url:return pointer_get(url,**kwargs)
+                    if isinstance(failure,Exception):raise failure
+                    def body():raise ValueError('secret-response')
+                    return types.SimpleNamespace(status_code=200 if failure=='bad-json' else failure,json=body)
+                self.ns['requests']=types.SimpleNamespace(get=get,exceptions=REQUEST_EXCEPTIONS)
+                with self.assertRaisesRegex(RuntimeError,message) as error:self.run_stage('us_snapshot')
+                self.assertNotIn('secret-response',str(error.exception))
+                self.assertFalse(self.ns['_US_SNAPSHOT_READY'])
+                self.assertEqual(path.read_bytes(),original)
+
+    def test_wbd_reuse_requires_original_local_archive_without_creating_a_descriptor(self):
+        mutations=[None,lambda s:s.update(date='2026-10-06'),lambda s:s.update(dataHash='sha256:'+'f'*64),
+                   lambda s:s['pit'].update(kind='REVIEWED_ATOMIC_QUARANTINE')]
+        for mutate in mutations:
+            path,original,_,_,calls=self._snapshot_fixture()
+            archive_path=self.ns['DATED_ARCHIVE_DIR']/'2026-10-07/source.json'
+            if mutate is None:archive_path.unlink()
+            else:
+                source=json.loads(archive_path.read_text());mutate(source)
+                archive_path.write_text(json.dumps(source))
+            before=archive_path.read_bytes() if archive_path.exists() else None
+            with self.assertRaisesRegex(RuntimeError,'날짜별 보존 기록'):self.run_stage('us_snapshot')
+            self.assertEqual(path.read_bytes(),original);self.assertEqual(len(calls),1)
+            self.assertEqual(archive_path.read_bytes() if archive_path.exists() else None,before)
+            # Restore only this synthetic fixture for the next subcase.
+            if archive_path.exists():archive_path.unlink()
+
+    def test_wbd_reuse_checks_registered_identity_before_proof_read(self):
+        for change in [lambda p:p.update(data_hash='sha256:'+'f'*64),lambda p:p.update(row_count=4),
+                       lambda p:p.update(symbol_count=4)]:
+            path,original,pointer,_,calls=self._snapshot_fixture()
+            change(pointer)
+            with self.assertRaisesRegex(RuntimeError,'source hash|source counts'):self.run_stage('us_snapshot')
+            self.assertEqual(path.read_bytes(),original);self.assertEqual(len(calls),1)
+        path,original,_,_,calls=self._snapshot_fixture(registered=False)
+        with self.assertRaisesRegex(RuntimeError,'lifecycle exclusion'):self.run_stage('us_snapshot')
+        self.assertEqual(path.read_bytes(),original);self.assertEqual(len(calls),1)
+
+    def test_other_or_multiple_lifecycle_conflicts_remain_blocked_without_proof_read(self):
+        for conflicts in [['KEEP'],['WBD','KEEP']]:
+            path,original,_,_,calls=self._snapshot_fixture()
+            self.ns['lifecycle_events']=[{**self.ns['lifecycle_events'][0],'symbol':s} for s in conflicts]
+            with self.assertRaisesRegex(RuntimeError,'lifecycle exclusion'):self.run_stage('us_snapshot')
+            self.assertEqual(path.read_bytes(),original);self.assertEqual(len(calls),1)
+
+    def test_wbd_reuse_requires_known_effective_suspension(self):
+        for change in [dict(effective_date='2026-10-08'),dict(effective_date='bad'),dict(status='ACTIVE')]:
+            path,original,_,_,calls=self._snapshot_fixture()
+            self.ns['lifecycle_events'][0].update(change)
+            with self.assertRaisesRegex(RuntimeError,'lifecycle exclusion'):self.run_stage('us_snapshot')
+            self.assertEqual(path.read_bytes(),original);self.assertEqual(len(calls),1)
+        path,original,_,_,calls=self._snapshot_fixture(date='2026-10-05')
+        with self.assertRaisesRegex(RuntimeError,'lifecycle exclusion'):self.run_stage('us_snapshot')
+        self.assertEqual(path.read_bytes(),original);self.assertEqual(len(calls),1)
+
+    def test_reviewed_wbd_does_not_hide_other_stock_or_benchmark_corrections(self):
+        for symbol in ['KEEP','SPY']:
+            path,original,_,_,calls=self._snapshot_fixture()
+            self.ns['snap'].loc[self.ns['snap'].symbol.eq(symbol),'close']=11
+            with self.assertRaisesRegex(RuntimeError,'Current same-session values differ'):self.run_stage('us_snapshot')
+            self.assertFalse(self.ns['_US_SNAPSHOT_READY'])
+            self.assertEqual(path.read_bytes(),original);self.assertEqual(len(calls),2)
+
+    def test_no_conflict_and_new_date_use_no_review_get(self):
+        path,original,_,_,calls=self._snapshot_fixture()
+        self.ns['lifecycle_events']=[]
+        self.ns['snap']=pd.read_csv(path)
+        self.run_stage('us_snapshot')
+        self.assertEqual(path.read_bytes(),original);self.assertEqual(len(calls),1)
+        path,_,pointer,_,calls=self._snapshot_fixture(date='2026-10-08',frozen=False)
+        pointer['as_of_date']='2026-10-07'
+        self.run_stage('us_snapshot')
+        self.assertEqual(len(calls),1)
+        wbd=pd.read_csv(path).set_index('symbol').loc['WBD']
+        self.assertEqual(wbd.status,'SUSPENDED');self.assertFalse(wbd.toss_tradable)
+        self.assertTrue(pd.isna(wbd.close));self.assertFalse(wbd.active20)
+
+    def test_reviewed_reuse_upload_preserves_original_archive_and_ingest(self):
+        self._upload_fixture()
+        path,original,pointer,_,calls=self._snapshot_fixture()
+        archive=self.ns['_CT_US_ARCHIVE']
+        ingest={**pointer,'user_id':'test-owner','collected_at':'2026-10-08T00:00:00+00:00',
+                'metadata':{'confirmedRegularClose':True,'failedSymbols':0,'previousSessionDate':'2026-10-06',
+                            'sourceCoverageComplete':True,'providerGapSymbols':[],'lifecycleExcludedSymbols':[]}}
+        source=archive['freeze_us_atomic_archive'](raw=original,ingest=ingest,root=self.ns['DATED_ARCHIVE_DIR'],user_id='test-owner')
+        before={p:p.read_bytes() for p in self.ns['DATED_ARCHIVE_DIR'].rglob('*') if p.is_file()}
+        self.run_stage('us_snapshot')
+        writes=[]
+        def get(url,**kwargs):
+            return types.SimpleNamespace(status_code=200,content=original,json=lambda:[pointer],raise_for_status=lambda:None)
+        def post(url,**kwargs):
+            writes.append((url,kwargs))
+            return types.SimpleNamespace(status_code=409)
+        self.ns['requests']=types.SimpleNamespace(get=get,post=post)
+        self.ns['PREVIOUS_SESSION']='2026-10-06'
+        self.run_stage('us_upload');self.run_stage('us_archive')
+        self.assertTrue(self.ns['_US_UPLOAD_VERIFIED'])
+        self.assertEqual(path.read_bytes(),original)
+        self.assertEqual({p:p.read_bytes() for p in self.ns['DATED_ARCHIVE_DIR'].rglob('*') if p.is_file()},before)
+        self.assertEqual(self.ns['_US_DAILY_ARCHIVE_SOURCE'],source)
+        self.assertEqual(len(writes),1)
+        self.assertIn('/storage/v1/object/cloudtrend-data/',writes[0][0])
+        self.assertEqual(writes[0][1]['data'],original)
+        self.assertEqual(writes[0][1]['headers']['x-upsert'],'false')
+
+    def test_release_zip_matches_runtime_source_exactly(self):
+        expected={str(p.relative_to(ROOT/'runtime')):p.read_bytes()
+                  for p in (ROOT/'runtime').rglob('*.py')}
+        prefix='cloudtrend_lite_r3_runtime/'
+        with zipfile.ZipFile(ROOT/'runtime.zip') as archive:
+            self.assertEqual(set(archive.namelist()),{prefix+name for name in expected})
+            for name,raw in expected.items():self.assertEqual(archive.read(prefix+name),raw,name)
 
     def test_real_zip_import_and_stage_resource_read(self):
         package='r3_daily_zip_test'

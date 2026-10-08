@@ -209,9 +209,9 @@
     },
     {
       "path": "stages/us_snapshot.py",
-      "bytes": 7968,
-      "characters": 7918,
-      "sha256": "f24725152fe8727b5b7fc429329282c994b127ddc9dcaed312f7d11f423c866f"
+      "bytes": 12186,
+      "characters": 11736,
+      "sha256": "59bee24bb081d8e38d1bb6ffa19057138eab0075d896330aed02aeb9e403a7db"
     },
     {
       "path": "stages/us_summary.py",
