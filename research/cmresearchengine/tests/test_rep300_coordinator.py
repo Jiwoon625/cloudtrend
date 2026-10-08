@@ -145,6 +145,12 @@ class NativeCoordinatorTests(unittest.TestCase):
             "error_type": "RuntimeError",
             "reason": "GitHub job log read failed HTTP 403",
         })
+        redirected = safe_failure(WatchPhaseError(
+            "GITHUB_READ_JOB_LOG",
+            RuntimeError("GitHub job log read failed HTTP 400 at LOG_CDN")))
+        self.assertEqual(redirected["reason"],
+                         "GitHub job log read failed HTTP 400 at LOG_CDN")
+        self.assertEqual(redirected["phase"], "GITHUB_READ_JOB_LOG")
         # The exception may originate from an untrusted remote response.
         secret = "https://secret.example/path?token=private-key"
         withheld = safe_failure(WatchPhaseError("GITHUB_LIST_RUNS", RuntimeError(secret)))
