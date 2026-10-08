@@ -1,11 +1,18 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { bytesHash } from "../scripts/us-replay-source";
 import { sourceCsv } from "./us-replay-fixtures";
+import { US_PROSPECTIVE_RULE_VERSION } from "../src/lib/engine/usProspective";
 import { runUsScreening } from "../scripts/run-us-screening";
 import type { trustedSupabaseClient } from "../scripts/analysis-run-store";
-const spy = vi.hoisted(() => ({ replay: vi.fn() }));
+const spy = vi.hoisted(() => ({ replay: vi.fn(), recovered: vi.fn() }));
+vi.mock("../scripts/us-recovery-publication", () => ({
+  loadPublishedUsRecoveryView: spy.recovered,
+}));
 vi.mock("../src/lib/shadowReplay.server", () => ({ replayUsShadow: spy.replay }));
-beforeEach(() => spy.replay.mockReset());
+beforeEach(() => {
+  spy.replay.mockReset();
+  spy.recovered.mockReset().mockResolvedValue(null);
+});
 function client(
   history: unknown,
   metadata: unknown = {
@@ -16,6 +23,8 @@ function client(
 ) {
   const csv = sourceCsv("2026-10-06");
   const writes: string[] = [];
+  const uploaded: Array<{ path: string; body: string | Uint8Array }> = [];
+  let completed: unknown = null;
   const ingest = {
     storage_bucket: "cloudtrend-data",
     storage_path: "input.csv",
@@ -55,18 +64,67 @@ function client(
         async download(path: string) {
           return path === "input.csv"
             ? { data: { text: async () => csv }, error: null }
-            : { data: null, error: { message: "404 Object not found" } };
+            : completed && path.endsWith("/results/us-screening/2026-10-06.json")
+              ? { data: { text: async () => JSON.stringify(completed) }, error: null }
+              : { data: null, error: { message: "404 Object not found" } };
         },
-        async upload() {
+        async upload(path: string, body: string | Uint8Array) {
+          uploaded.push({ path, body });
           writes.push("upload");
           return { error: null };
         },
       }),
     },
   };
-  return { c: c as unknown as ReturnType<typeof trustedSupabaseClient>, writes };
+  return {
+    c: c as unknown as ReturnType<typeof trustedSupabaseClient>,
+    writes,
+    uploaded,
+    setCompleted: (v: unknown) => {
+      completed = v;
+    },
+  };
 }
 describe("ordinary US runner pre-mutation admission", () => {
+  it("republishes a verified recovered same-day screen without replaying or reverting to bootstrap", async () => {
+    const csv = sourceCsv("2026-10-06"),
+      dataHash = bytesHash(csv);
+    const f = client({
+      date: "2026-10-06",
+      data_hash: dataHash,
+      rule_version: US_PROSPECTIVE_RULE_VERSION,
+    });
+    const original = {
+      generatedAt: "2026-10-06T21:00:00Z",
+      dataHash,
+      source: {
+        provider: "fixture",
+        collectedAt: "2026-10-06T21:00:00Z",
+        schemaVersion: "us-prospective-v1",
+        metadata: {},
+      },
+      analysis: {
+        date: "2026-10-06",
+        ruleVersion: US_PROSPECTIVE_RULE_VERSION,
+        summary: { a0Entries: 0 },
+        rows: [],
+      },
+    };
+    const recovered = {
+      ...original,
+      dataHash: bytesHash("recovered"),
+      analysis: { ...original.analysis, summary: { a0Entries: 1 } },
+    };
+    f.setCompleted(original);
+    spy.recovered.mockResolvedValueOnce(recovered);
+    await runUsScreening(f.c, "owner");
+    expect(spy.replay).not.toHaveBeenCalled();
+    expect(
+      JSON.parse(f.uploaded.find((u) => u.path.endsWith("/latest.json"))!.body as string),
+    ).toEqual(recovered);
+    expect(original.analysis.summary.a0Entries).toBe(0);
+  });
+
   it("rejects past input without writing a Shadow audit, archive, ledger or cache", async () => {
     const f = client({ date: "2026-10-07", data_hash: "other", rule_version: "other" });
     await expect(runUsScreening(f.c, "owner")).rejects.toThrow("Past US history");

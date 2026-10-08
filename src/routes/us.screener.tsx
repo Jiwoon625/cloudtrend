@@ -4,6 +4,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown, Download } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
+import { UsRecoveryNotice } from "@/components/UsRecoveryNotice";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -244,6 +245,7 @@ function UsScreenerPage() {
             </Button>
           </div>
         </header>
+        <UsRecoveryNotice metadata={query.data?.source?.metadata} />
         {query.isError ? (
           <p role="alert">US 결과를 불러오지 못했습니다: {query.error.message}</p>
         ) : !query.data ? (

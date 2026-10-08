@@ -7,7 +7,17 @@ import {
   parseUsProspectiveCsv,
   US_PROSPECTIVE_RULE_VERSION,
 } from "../src/lib/engine/usProspective";
-const mocks = vi.hoisted(() => ({ shadow: vi.fn(), commit: vi.fn(), operating: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  shadow: vi.fn(),
+  commit: vi.fn(),
+  operating: vi.fn(),
+  publicationPreflight: vi.fn(),
+  publish: vi.fn(),
+}));
+vi.mock("../scripts/us-recovery-publication", () => ({
+  preflightUsRecoveryPublication: mocks.publicationPreflight,
+  publishUsRecoveryViews: mocks.publish,
+}));
 vi.mock("../scripts/us-shadow-replay-plan", () => ({
   planUsShadowReplay: mocks.shadow,
   commitUsShadowReplay: mocks.commit,
@@ -40,6 +50,12 @@ beforeEach(() => {
     expectedPendingTrades: [],
   });
   mocks.commit.mockResolvedValue([]);
+  mocks.publicationPreflight.mockResolvedValue({});
+  mocks.publish.mockImplementation(async (input) => ({
+    generatedAt: input.generatedAt,
+    dataHash: input.source.dataHash,
+    analysis: { date: input.analysis.date },
+  }));
 });
 function setup() {
   const files = new Map<string, string>();
@@ -232,6 +248,61 @@ describe("guarded US recovery driver", () => {
     );
     expect(f.writes).toEqual([]);
     expect(mocks.commit).not.toHaveBeenCalled();
+  });
+  it("pins the approved operating plan hash before any write", async () => {
+    const f = setup();
+    await expect(
+      runUsGapReplay({ ...f.input, apply: true, expectedOperatingPlanHash: bytesHash("changed") }),
+    ).rejects.toThrow("approved exact plan hash");
+    expect(f.writes).toEqual([]);
+    expect(mocks.commit).not.toHaveBeenCalled();
+  });
+  it("admits publication before writes but publishes only after successful model commits", async () => {
+    const f = setup();
+    mocks.publicationPreflight.mockImplementation(async () => {
+      expect(f.writes).toEqual([]);
+      return {};
+    });
+    mocks.publish.mockImplementation(async (input) => {
+      expect(mocks.commit).toHaveBeenCalledTimes(1);
+      expect(f.rpcCalls.map((c) => c.p_apply)).toEqual([false, true]);
+      return { dataHash: input.source.dataHash, analysis: { date: input.analysis.date } };
+    });
+    const result = await runUsGapReplay({
+      ...f.input,
+      apply: true,
+      publishRecoveredView: true,
+      expectedOperatingPlanHash: `sha256:${"c".repeat(64)}`,
+    });
+    expect(result.screeningPublished).toBe(true);
+    expect(mocks.publish).toHaveBeenCalledTimes(1);
+    expect(mocks.publish.mock.calls[0]![0].analysis).toBe(
+      mocks.shadow.mock.results[0]
+        ? (await mocks.shadow.mock.results[0].value).analyses[1]
+        : undefined,
+    );
+    expect(f.files.get(`${uid}/results/us-screening/2026-10-07.json`)).toBe(f.original);
+  });
+  it("rejects publication admission without writing a model or view", async () => {
+    const f = setup();
+    mocks.publicationPreflight.mockRejectedValueOnce(new Error("newer ingest"));
+    await expect(
+      runUsGapReplay({ ...f.input, apply: true, publishRecoveredView: true }),
+    ).rejects.toThrow("newer ingest");
+    expect(f.writes).toEqual([]);
+    expect(mocks.commit).not.toHaveBeenCalled();
+    expect(mocks.publish).not.toHaveBeenCalled();
+  });
+  it("never publishes if Shadow commit fails and never publishes in a dry-run", async () => {
+    const f = setup();
+    mocks.commit.mockRejectedValueOnce(new Error("Shadow failed"));
+    await expect(
+      runUsGapReplay({ ...f.input, apply: true, publishRecoveredView: true }),
+    ).rejects.toThrow("Shadow failed");
+    expect(mocks.publish).not.toHaveBeenCalled();
+    await expect(runUsGapReplay({ ...f.input, publishRecoveredView: true })).rejects.toThrow(
+      "requires an applied replay",
+    );
   });
   it("rejects final-date source revision before either planner or backend validation", async () => {
     const f = setup();

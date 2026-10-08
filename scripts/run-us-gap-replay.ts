@@ -1,3 +1,8 @@
+import {
+  preflightUsRecoveryPublication,
+  publishUsRecoveryViews,
+  type UsRecoveryPublicationInput,
+} from "./us-recovery-publication";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { ANALYSIS_BUCKET, stableJson, trustedSupabaseClient } from "./analysis-run-store";
@@ -111,8 +116,12 @@ export async function runUsGapReplay(input: {
   manifestHash: string;
   apply: boolean;
   calculatedAt?: string;
+  expectedOperatingPlanHash?: string | undefined;
+  publishRecoveredView?: boolean;
 }) {
   const { client, userId } = input;
+  if (input.publishRecoveredView && !input.apply)
+    throw new Error("Recovered screen publication requires an applied replay");
   if (!/^[a-f0-9-]{36}$/i.test(userId) || !/^sha256:[a-f0-9]{64}$/.test(input.manifestHash))
     throw new Error("Exact US recovery owner and manifest hash are required");
   assertOwnerReplayPath(input.manifestPath, userId);
@@ -225,6 +234,8 @@ export async function runUsGapReplay(input: {
     registries,
     existingTrades: trades,
   });
+  if (input.expectedOperatingPlanHash && input.expectedOperatingPlanHash !== operating.planHash)
+    throw new Error("US recovery plan differs from the approved exact plan hash");
   const plan: SavedPlan = {
     version: "us-gap-replay-plan-v1",
     manifestHash: input.manifestHash,
@@ -269,6 +280,23 @@ export async function runUsGapReplay(input: {
       throw new Error("Recovered US rank artifact conflicts with the prepared batch");
     rankArtifacts.push({ path, artifact });
   }
+  let publicationInput: UsRecoveryPublicationInput | undefined;
+  if (input.publishRecoveredView) {
+    const protectedOriginal = protectedRows.find((row) => row.date === manifest.throughDate);
+    if (!protectedOriginal)
+      throw new Error("Recovered current-date publication requires an existing original result");
+    publicationInput = {
+      client,
+      userId,
+      analysis: shadow.analyses.at(-1)!,
+      source: sessions.at(-1)!.source,
+      manifestHash: input.manifestHash,
+      operatingPlanHash: operating.planHash,
+      generatedAt: calculatedAt,
+      protectedOriginal,
+    };
+    await preflightUsRecoveryPublication(publicationInput);
+  }
   const summary = {
     mode: input.apply ? "APPLY" : "PREFLIGHT",
     baseDate: manifest.baseDate,
@@ -312,7 +340,19 @@ export async function runUsGapReplay(input: {
       records: r.records.map(({ bookId, stateHash }) => ({ bookId, stateHash })),
     })),
   });
-  return { ...summary, applied: true };
+  if (publicationInput) {
+    const published = await publishUsRecoveryViews(publicationInput);
+    await immutableJson(client, `${prefix}/publication-receipt.json`, {
+      version: "us-recovery-publication-receipt-v1",
+      manifestHash: input.manifestHash,
+      operatingPlanHash: operating.planHash,
+      date: published.analysis.date,
+      dataHash: published.dataHash,
+      publishedHash: bytesHash(stableJson(published)),
+      originalScreeningPreserved: true,
+    });
+  }
+  return { ...summary, applied: true, screeningPublished: Boolean(publicationInput) };
 }
 async function main() {
   const userId = argument("--user") ?? process.env["SUPABASE_USER_ID"];
@@ -326,6 +366,8 @@ async function main() {
     manifestPath,
     manifestHash,
     apply: process.argv.includes("--apply"),
+    expectedOperatingPlanHash: argument("--expected-plan-hash"),
+    publishRecoveredView: process.argv.includes("--publish-recovered-view"),
   });
   console.log(JSON.stringify(result)); // Never print rows, holdings, raw plans or credentials to CI.
 }
