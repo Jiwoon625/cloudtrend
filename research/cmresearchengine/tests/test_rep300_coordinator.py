@@ -13,6 +13,21 @@ class NativeCoordinatorTests(unittest.TestCase):
     def setUpClass(cls):
         cls.rows = approved()
 
+    def test_reconcile_trigger_has_bounded_completion_and_schedule_fallback(self):
+        from pathlib import Path
+        wf=(Path(__file__).resolve().parents[3] /
+            ".github/workflows/cmresearchengine-300-native-watch.yml").read_text()
+        self.assertIn("workflows: ['CMresearchengine manual research']",wf)
+        self.assertIn("types: [completed]",wf)
+        self.assertIn("branches: [main]",wf)
+        self.assertIn("cron: '*/15 * * * *'",wf)
+        self.assertIn(
+            "if: github.event_name == 'schedule' || github.event_name == 'workflow_run'",wf)
+        self.assertIn(
+            "if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'",wf)
+        self.assertIn("concurrency:",wf)
+        self.assertIn("cancel-in-progress: false",wf)
+
     def test_manifest_exact_300(self):
         self.assertEqual(len(self.rows), 300)
         self.assertEqual([self.rows[i]["id"] for i in range(7, 11)],
