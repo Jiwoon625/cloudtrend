@@ -1,3 +1,5 @@
+import { CompactStockStatus } from "./CompactStockStatus";
+import { getCompactStockStatus, getCompactStockWarnings } from "@/lib/stockCompactStatus";
 import { Link } from "@tanstack/react-router";
 import { ArrowDown, ArrowUp, Download, Minus } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -160,11 +162,13 @@ export function ScreenerTable({
   positionContext,
   signalDate,
   tradeDates,
+  compactStock = false,
 }: {
   rows: ScreeningRow[];
   positionContext?: DomesticPositionContext | undefined;
   signalDate: string;
   tradeDates?: readonly string[];
+  compactStock?: boolean;
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("entry");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
@@ -199,13 +203,21 @@ export function ScreenerTable({
     return copy;
   }, [rows, sortKey, dir, positionContext, signalDate]);
 
-  const visible = COLUMNS.filter((c) => !hidden.includes(c.id));
+  const columns = compactStock
+    ? COLUMNS.filter((c) =>
+        ["name", "sector", "close", "technical", "scoreDelta1d", "status"].includes(c.id),
+      )
+    : COLUMNS;
+  const visible = columns.filter((c) => !hidden.includes(c.id));
 
   const downloadCsv = () => {
     const header = visible.map((c) => c.label).join(",");
     const lines = sorted.map((r, i) => {
       const tech = technicalValue(r);
       const rsAccel = getKospiRsAccel(r);
+      const compactStatus = compactStock
+        ? getCompactStockStatus(r, positionContext, signalDate, tradeDates)
+        : null;
       const values: Record<string, string | number> = {
         rank: i + 1,
         name: r.instrument.name,
@@ -224,7 +236,9 @@ export function ScreenerTable({
         rsAccel: rsAccel?.toFixed(2) ?? "",
         distanceHigh: r.snapshot.distanceFrom52wHigh?.toFixed(2) ?? "",
         marketCap: r.marketCap ?? "",
-        status: getPortfolioAwareDisplayStatus(r, positionContext, signalDate),
+        status: compactStatus
+          ? [compactStatus.primary, compactStatus.secondary].join(" · ")
+          : getPortfolioAwareDisplayStatus(r, positionContext, signalDate),
         warnings: getDisplayWarnings(r).join("|"),
       };
       return visible.map((c) => values[c.id] ?? "").join(",");
@@ -248,7 +262,7 @@ export function ScreenerTable({
       return (
         <th
           key={col.id}
-          className={`sticky top-0 z-10 whitespace-nowrap bg-surface-strong px-2 py-2 text-[11px] font-semibold ${numeric ? "text-right" : "text-left"}`}
+          className={`sticky top-0 z-10 whitespace-nowrap bg-surface-strong px-2 py-2 text-[11px] font-semibold ${compactStock && col.id === "name" ? "left-0 z-20 w-24 sm:w-36" : ""} ${numeric ? "text-right" : "text-left"}`}
         >
           {col.label}
         </th>
@@ -290,24 +304,29 @@ export function ScreenerTable({
           <Download className="size-3.5" /> CSV 다운로드
         </Button>
         <div className="flex flex-wrap gap-1">
-          {COLUMNS.filter((c) => !["rank", "name"].includes(c.id)).map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() =>
-                setHidden((h) => (h.includes(c.id) ? h.filter((x) => x !== c.id) : [...h, c.id]))
-              }
-              className={`rounded border px-1.5 py-0.5 text-[10px] ${hidden.includes(c.id) ? "border-border text-muted-foreground line-through" : "border-primary/30 bg-info-soft text-info"}`}
-            >
-              {c.label}
-            </button>
-          ))}
+          {columns
+            .filter((c) => !["rank", "name"].includes(c.id))
+            .map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() =>
+                  setHidden((h) => (h.includes(c.id) ? h.filter((x) => x !== c.id) : [...h, c.id]))
+                }
+                className={`rounded border px-1.5 py-0.5 text-[10px] ${hidden.includes(c.id) ? "border-border text-muted-foreground line-through" : "border-primary/30 bg-info-soft text-info"}`}
+              >
+                {c.label}
+              </button>
+            ))}
         </div>
         <span className="ml-auto text-xs text-muted-foreground">{sorted.length}건</span>
       </div>
 
       <div className="max-h-[70vh] overflow-auto rounded-lg border border-border bg-card">
-        <table className="w-full min-w-[1200px] text-[12px]">
+        <table
+          className={`w-full text-[12px] ${compactStock ? "min-w-[640px] sm:min-w-[720px]" : "min-w-[1200px]"}`}
+          aria-label={compactStock ? "주식 핵심 목록" : undefined}
+        >
           <thead>
             <tr>{visible.map((c) => th(c))}</tr>
           </thead>
@@ -315,26 +334,59 @@ export function ScreenerTable({
             {sorted.map((r, i) => {
               const tech = technicalValue(r);
               const techBlock = r.vf ?? r.technical;
-              const displayWarnings = getDisplayWarnings(r);
+              const displayWarnings = compactStock
+                ? getCompactStockWarnings(r)
+                : getDisplayWarnings(r);
               const displayStatus = getPortfolioAwareDisplayStatus(r, positionContext, signalDate);
+              const instrumentLink = (
+                <Link
+                  to="/instrument/$symbol"
+                  params={{ symbol: r.instrument.symbol }}
+                  className={`font-medium text-primary hover:underline ${compactStock ? "block truncate" : ""}`}
+                >
+                  {r.instrument.name}
+                  <span className="ml-1 text-[10px] text-muted-foreground">
+                    {r.instrument.symbol}
+                  </span>
+                </Link>
+              );
               const cells: Record<string, React.ReactNode> = {
                 rank: <span className="num">{i + 1}</span>,
-                name: (
-                  <Link
-                    to="/instrument/$symbol"
-                    params={{ symbol: r.instrument.symbol }}
-                    className="font-medium text-primary hover:underline"
-                  >
-                    {r.instrument.name}
-                    <span className="ml-1 text-[10px] text-muted-foreground">
-                      {r.instrument.symbol}
-                    </span>
-                  </Link>
+                name: compactStock ? (
+                  <div className="w-24 max-w-24 sm:w-36 sm:max-w-36">
+                    {instrumentLink}
+                    {compactStock && displayWarnings.length ? (
+                      <Link
+                        to="/instrument/$symbol"
+                        params={{ symbol: r.instrument.symbol }}
+                        className="block truncate text-[10px] text-warn"
+                        title={displayWarnings.join(" · ")}
+                      >
+                        주의 · {displayWarnings[0]}
+                        {displayWarnings.length > 1 ? ` 외 ${displayWarnings.length - 1}건` : ""}
+                      </Link>
+                    ) : null}
+                  </div>
+                ) : (
+                  instrumentLink
                 ),
                 market: <span>{r.instrument.market}</span>,
-                sector: <span>{r.instrument.sectorName}</span>,
+                sector: (
+                  <span
+                    className={compactStock ? "block max-w-24 truncate" : undefined}
+                    title={compactStock ? r.instrument.sectorName : undefined}
+                  >
+                    {r.instrument.sectorName}
+                  </span>
+                ),
                 close: <span className="num">{formatPrice(r.snapshot.close)}</span>,
-                technical: (
+                technical: compactStock ? (
+                  <span className="num font-semibold">
+                    {tech === null || !Number.isFinite(tech)
+                      ? "산정 불가"
+                      : `${formatNumber(tech, 1)}/10`}
+                  </span>
+                ) : (
                   <span className="num font-semibold">
                     {tech === null ? (
                       <>
@@ -409,7 +461,11 @@ export function ScreenerTable({
                     )}
                   </span>
                 ),
-                status: (
+                status: compactStock ? (
+                  <CompactStockStatus
+                    status={getCompactStockStatus(r, positionContext, signalDate, tradeDates)}
+                  />
+                ) : (
                   <div className="flex flex-col items-start gap-0.5">
                     <Badge
                       variant="outline"
@@ -469,12 +525,12 @@ export function ScreenerTable({
               return (
                 <tr
                   key={r.instrument.symbol}
-                  className={`border-t border-border hover:bg-accent/40 ${r.hardFilterPassed || r.hardFilterStatus === "PENDING" ? "" : "opacity-60"}`}
+                  className={`border-t border-border hover:bg-accent/40 ${compactStock || r.hardFilterPassed || r.hardFilterStatus === "PENDING" ? "" : "opacity-60"}`}
                 >
                   {visible.map((c) => (
                     <td
                       key={c.id}
-                      className={`px-2 py-1.5 ${["rank", "name", "market", "sector", "grade", "status", "warnings"].includes(c.id) ? "text-left" : "text-right"}`}
+                      className={`${compactStock ? "px-1" : "px-2"} py-1.5 ${compactStock && c.id === "name" ? "sticky left-0 z-10 bg-card" : ""} ${["rank", "name", "market", "sector", "grade", "status", "warnings"].includes(c.id) ? "text-left" : "text-right"}`}
                     >
                       {cells[c.id]}
                     </td>
