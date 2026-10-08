@@ -421,14 +421,23 @@ def main(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument("--execute",action="store_true")
     p.add_argument("--dry-run",action="store_true")
+    p.add_argument("--audit-existing",action="store_true",
+                   help="Read-only proof of S06/S07 private Storage audit using the existing configured secrets")
     args = p.parse_args(argv)
     if args.execute == args.dry_run:
         p.error("Choose exactly one of --execute / --dry-run")
     if os.environ.get("GITHUB_REPOSITORY") != REPO:
         raise ValueError("Repository environment mismatch")
     rows = approved()
-    gh = GitHub(os.environ.get("GH_TOKEN"))
     store = SupabaseCMStore.from_env()
+    if args.audit_existing:
+        if not args.dry_run:
+            raise ValueError("Historical self-audit is read-only only")
+        for candidate in ("S06", "S07"):
+            verify_private_one(store, candidate, False)
+        emit("CM300_PRIVATE_LIST_AND_AUDIT_VERIFIED", strategies=2)
+        return
+    gh = GitHub(os.environ.get("GH_TOKEN"))
     decision(gh,rows,store,dry=args.dry_run)
 
 
