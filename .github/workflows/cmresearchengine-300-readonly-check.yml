@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/cmresearchengine-300-readonly-check.yml'
+      - 'research/cmresearchengine/cmresearchengine/rep300_coordinator.py'
 permissions:
   contents: read
   actions: read
