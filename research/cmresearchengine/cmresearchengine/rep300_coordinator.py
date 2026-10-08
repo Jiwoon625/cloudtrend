@@ -236,7 +236,7 @@ def verify_existing_request(rows, request, names):
 
 def storage_folders(store, relative):
     assert relative.startswith("results/" + PLAN_HASH + "/")
-    prefix = store.object_key(relative)
+    prefix = store.object_key(relative.rstrip("/")) + "/"
     data = json.dumps({"prefix": prefix, "limit": 100, "offset": 0}).encode()
     raw = store._request(
         "POST", "object/list/cloudtrend-data",
