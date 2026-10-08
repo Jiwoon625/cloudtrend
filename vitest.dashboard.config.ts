@@ -10,6 +10,7 @@ export default defineConfig({
       "src/components/DomesticAssessmentPanel.test.tsx",
       "src/lib/etfPartialEvidence.test.ts",
       "src/components/EtfScreener.test.tsx",
+      "tests/etf-confirmation-ui.test.tsx",
       "src/components/KospiEntryDetails.test.tsx",
       "src/components/UniverseFilterDetails.test.tsx",
       "src/components/DashboardOperations.test.tsx",

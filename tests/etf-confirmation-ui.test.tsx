@@ -24,7 +24,7 @@ function page(
           instrumentType: "ETF",
           sectorName: "시장대표",
         },
-        snapshot: { close: 10000 },
+        snapshot: { tradeDate: date, close: 10000 },
         etfStrategy: {
           dataStatus: dataPending ? "krx_batch_pending" : "ready",
           krxReferenceDate: dataPending ? "2026-09-30" : null,
@@ -33,6 +33,7 @@ function page(
           eligible: true,
           score: state === "rejected" ? 79 : 81,
           previousScore: 81,
+          previousDate: "2026-09-30",
           technical: 90,
           priority: 0,
           health: 100,
