@@ -6,12 +6,16 @@ import { ETF_POLICY, etfOrderPlan } from "@/lib/engine/etfStrategy";
 import type { DualPortfolioState } from "@/lib/portfolioLedgers";
 import { soldSymbolsSinceSignal } from "@/lib/dashboardOperations";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
+import { etfPartialEvidence } from "@/lib/etfPartialEvidence";
 
 const num = (n: number | null | undefined, digits = 2) =>
   n == null || !Number.isFinite(n)
     ? "—"
     : n.toLocaleString("ko-KR", { maximumFractionDigits: digits });
-const pct = (n: number | null | undefined) => (n == null ? "—" : `${num(n * 100)}%`);
+const pct = (n: number | null | undefined) =>
+  n == null || !Number.isFinite(n) ? "미확인" : `${num(n * 100)}%`;
+const scoreText = (n: number | null) => (n === null ? "산정 불가" : num(n));
+const evidenceText = (n: number | null, digits = 2) => (n === null ? "미확인" : num(n, digits));
 const environmentNames = {
   stock_sector: "국내 주식 섹터",
   peer_mix_lag1: "지역 ETF 환경 · 전일",
@@ -88,9 +92,12 @@ export function EtfScreener({
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const rows = analysis.rows.filter((r) => r.instrument.instrumentType === "ETF");
-  const krxPending = rows.find(
-    (r) => r.etfStrategy?.dataStatus === "krx_batch_pending",
-  )?.etfStrategy;
+  const evidenceBySymbol = new Map(
+    rows.map((r) => [r.instrument.symbol, etfPartialEvidence(r, analysis.asOfDate)]),
+  );
+  const evidenceFor = (r: AnalysisResult["rows"][number]) =>
+    evidenceBySymbol.get(r.instrument.symbol)!;
+  const krxPending = rows.find((r) => evidenceFor(r).krxPending)?.etfStrategy;
   const heldSymbols = [
     ...(ledger?.etfActual?.positions.map((p) => p.symbol) ?? []),
     ...(ledger?.etfTrackedSymbols ?? []).filter(
@@ -142,7 +149,7 @@ export function EtfScreener({
     const s = r.etfStrategy;
     const symbol = r.instrument.symbol;
     const confirmed = s?.version === ETF_POLICY.version;
-    if (!confirmed) return "재계산 필요";
+    if (!confirmed || !evidenceFor(r).current) return "기준일 자료 미확인 · 재계산 필요";
     if (s.dataStatus === "krx_batch_pending") return "KRX 자료 대기 · 신호 판단 보류";
     if (heldSet.has(symbol))
       return s.exit === "MA60"
@@ -164,30 +171,31 @@ export function EtfScreener({
   };
   const getSortValue = (r: AnalysisResult["rows"][number], key: SortKey) => {
     const s = r.etfStrategy;
+    const e = evidenceFor(r);
     const symbol = r.instrument.symbol;
     switch (key) {
       case "instrument":
         return `${r.instrument.name} ${symbol}`;
       case "score":
-        return s?.score;
+        return e.score;
       case "previousScore":
-        return s?.previousScore;
+        return e.previousScore;
       case "technical":
-        return s?.technical == null ? null : s.technical * 0.625;
+        return e.technical;
       case "priority":
-        return s?.priority == null ? null : s.priority * 0.075;
+        return e.priority;
       case "health":
-        return s?.health == null ? null : s.health * 0.15;
+        return e.health;
       case "environment":
-        return s?.environment == null ? null : s.environment * 0.15;
+        return e.environment;
       case "tradingValue":
-        return s?.averageTradingValue20;
+        return e.averageTradingValue20;
       case "signal":
         return getSignalLabel(r);
       case "volatility":
-        return s?.annualVolatility;
+        return e.annualVolatility;
       case "entryWeight":
-        return s?.entryWeight;
+        return e.entryWeight;
       case "orderPrice": {
         const enteredPrice = prices[symbol];
         return enteredPrice === undefined ? r.snapshot.close : Number(enteredPrice);
@@ -216,6 +224,7 @@ export function EtfScreener({
       if (filter === "entry") return actionable(r);
       if (filter === "pending")
         return s?.entryState === "pending" || s?.entryState === "data_pending";
+      if (filter === "partial") return evidenceFor(r).krxPending;
       if (filter === "rejected") return s?.entryState === "rejected";
       if (filter === "exit")
         return (
@@ -223,7 +232,10 @@ export function EtfScreener({
           (s?.exit != null || s?.dataStatus === "krx_batch_pending")
         );
       if (filter === "missing") return !s?.eligible;
-      if (filter === "equity") return s?.eligible === true;
+      if (filter === "equity") {
+        const evidence = evidenceFor(r);
+        return s?.eligible === true || (evidence.krxPending && evidence.isStrategyTarget);
+      }
       return true;
     })
     .sort((a, b) => {
@@ -263,9 +275,10 @@ export function EtfScreener({
           <strong>{analysis.asOfDate} KRX 금액·기초지수 자료가 일괄 미수신 상태입니다</strong>
           <p>
             주가는 {analysis.asOfDate}, 직전 KRX 자료 확인일은 {krxPending.krxReferenceDate}입니다.
-            수집 시각에 따른 발표 대기 여부를 확인해 주세요. 새 KRX 자료를 수집한 뒤 다시
-            스크리닝해야 당일 M0·진입·청산을 판단할 수 있습니다. 전일 M0는 과거 참고값이며 오늘 매수
-            신호가 아닙니다.
+            KRX 일별 자료는 통상 다음 영업일 오전 8시(KST)에 발표됩니다. 현재 저장된 주가 기반
+            기술·Priority·변동성과 계산 가능한 환경 근거는 아래에서 먼저 확인할 수 있습니다. KRX
+            의존 항목은 미확인으로 남기며, 새 자료 수집 후 다시 스크리닝해야 당일 M0와 진입·청산
+            신호를 확정할 수 있습니다. 전일 M0는 과거 참고값입니다.
           </p>
           <p>
             이 상태는 기초지수 MA60 하회 청산 신호와 구분합니다. 개별 종목의 이력 부족·전략 대상
@@ -423,7 +436,8 @@ export function EtfScreener({
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         >
-          <option value="equity">계산 가능한 전략 대상</option>
+          <option value="equity">전략 대상 · 부분 판단 포함</option>
+          <option value="partial">KRX 대기 · 부분 판단</option>
           <option value="entry">확인 완료 · 신규 진입</option>
           <option value="pending">하루 확인 대기</option>
           <option value="rejected">하루 확인 탈락</option>
@@ -432,8 +446,9 @@ export function EtfScreener({
           <option value="all">전체 ETF</option>
         </select>
         <span className="text-sm text-muted-foreground">
-          {shown.length}/{rows.length}종목 · 신규 신호 {rows.filter(actionable).length}건 ·
-          데이터·대상 점검 {rows.filter((r) => !r.etfStrategy?.eligible).length}건
+          {shown.length}/{rows.length}종목 · 신규 신호 {rows.filter(actionable).length}건 · KRX 대기{" "}
+          {rows.filter((r) => evidenceFor(r).krxPending).length}건 · 데이터·대상 점검{" "}
+          {rows.filter((r) => !r.etfStrategy?.eligible && !evidenceFor(r).krxPending).length}건
         </span>
       </div>
       <div className="overflow-x-auto rounded-lg border">
@@ -472,6 +487,7 @@ export function EtfScreener({
                 symbol = r.instrument.symbol,
                 order = bySymbol.get(symbol);
               const label = getSignalLabel(r);
+              const e = evidenceFor(r);
               return (
                 <tr key={symbol} className="border-t align-top">
                   <td className="p-3">
@@ -486,17 +502,28 @@ export function EtfScreener({
                       {symbol} · {s?.region ?? "분류 없음"} · {s?.sector ?? r.instrument.sectorName}
                     </div>
                   </td>
-                  <td className="p-3 font-semibold">{num(s?.score)}</td>
-                  <td className="p-3">{num(s?.previousScore)}</td>
-                  <td className="p-3">{num(s?.technical == null ? null : s.technical * 0.625)}</td>
-                  <td className="p-3">{num(s?.priority == null ? null : s.priority * 0.075)}</td>
-                  <td className="p-3">{num(s?.health == null ? null : s.health * 0.15)}</td>
-                  <td className="p-3">
-                    {num(s?.environment == null ? null : s.environment * 0.15)}
+                  <td className="p-3 font-semibold">
+                    {scoreText(e.score)}
+                    {e.krxPending && <div className="text-xs font-normal">KRX 자료 대기</div>}
                   </td>
                   <td className="p-3">
+                    {scoreText(e.previousScore)}
+                    {e.previousScore !== null && (
+                      <div className="text-xs text-muted-foreground">
+                        {e.previousDate} · 과거 참고
+                      </div>
+                    )}
+                  </td>
+                  <td className="p-3">{scoreText(e.technical)}</td>
+                  <td className="p-3">{scoreText(e.priority)}</td>
+                  <td className="p-3">
+                    {scoreText(e.health)}
+                    {e.krxPending && <div className="text-xs">KRX 시총·거래대금 미확인</div>}
+                  </td>
+                  <td className="p-3">{scoreText(e.environment)}</td>
+                  <td className="p-3">
                     <strong>{label}</strong>
-                    {s?.originDate && (
+                    {e.current && s?.originDate && (
                       <div className="text-xs">
                         Onset {s.originDate} · 확인 {s.confirmationDate ?? "다음 거래일 종가"}
                       </div>
@@ -507,12 +534,20 @@ export function EtfScreener({
                       </div>
                     ) : null}
                     <div className="text-xs text-muted-foreground">
-                      기초지수 {num(s?.underlyingClose)} / MA60 {num(s?.underlyingMa60)}
+                      기초지수 {evidenceText(e.underlyingClose)} / MA60{" "}
+                      {evidenceText(e.underlyingMa60)}
+                    </div>
+                    <div className="text-xs">
+                      {e.underlyingJudgment === "below_ma60"
+                        ? "관측 근거: 기초지수 MA60 하회"
+                        : e.underlyingJudgment === "above_ma60"
+                          ? "관측 근거: 기초지수 MA60 이상"
+                          : "기초지수 MA60 판단 미확인"}
                     </div>
                   </td>
-                  <td className="p-3">{num(s?.averageTradingValue20, 0)}</td>
-                  <td className="p-3">{pct(s?.annualVolatility)}</td>
-                  <td className="p-3">{pct(s?.entryWeight)}</td>
+                  <td className="p-3">{evidenceText(e.averageTradingValue20, 0)}</td>
+                  <td className="p-3">{pct(e.annualVolatility)}</td>
+                  <td className="p-3">{pct(e.entryWeight)}</td>
                   <td className="p-3">
                     {actionable(r) ? (
                       <Input
@@ -535,7 +570,9 @@ export function EtfScreener({
                         : "—"}
                   </td>
                   <td className="p-3 whitespace-normal min-w-48 text-xs">
-                    {s ? environmentNames[s.environmentSource] : "새 전략 재계산 필요"}
+                    <p>{e.provenanceLabel}</p>
+                    {e.current && s ? environmentNames[s.environmentSource] : "환경 출처 미확인"}
+                    {e.krxPending && <p>부분 근거만 표시 · M0·진입·청산 확정 대기</p>}
                     {s?.issues.length ? <p>{s.issues.join(" · ")}</p> : null}
                   </td>
                 </tr>

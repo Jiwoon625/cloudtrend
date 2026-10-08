@@ -14,12 +14,14 @@ import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
 
 type Mode = "STOCK" | "ETF";
 
+import { stockAssessmentDisplay } from "@/lib/stockAssessmentDisplay";
 import { isOperationalEntry } from "@/lib/engine/operationalStrategy";
 import { loadDomesticPositionContext } from "@/lib/portfolioPositionContext";
 import { isOnsetSuppressed } from "@/lib/positionSignalContext";
 import { isPortfolioAwareOperationalEntry } from "@/lib/statusDisplay";
 
 type PresetId =
+  | "TECHNICAL_ONSET"
   | "ENTRY"
   | "KOSDAQ_ENTRY_8"
   | "CORE"
@@ -37,6 +39,7 @@ type PresetId =
   | "EXIT";
 
 const PRESETS: Array<{ id: PresetId; label: string; test: (r: ScreeningRow) => boolean }> = [
+  { id: "TECHNICAL_ONSET", label: "기술 8.0 신규 돌파 · 진입 미확정", test: () => false },
   { id: "ENTRY", label: "진입 준비", test: isOperationalEntry },
   { id: "KOSDAQ_ENTRY_8", label: "KOSDAQ Onset", test: (r) => r.kosdaq80Onset },
   { id: "CORE", label: "Core 후보", test: (r) => r.grade !== "C" && r.hardFilterPassed },
@@ -114,6 +117,8 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
   const sectors = [...new Set(base.map((r) => r.instrument.sectorName))];
   const presetMatches = (r: ScreeningRow, id: PresetId) => {
     if (mode === "STOCK") {
+      if (id === "TECHNICAL_ONSET")
+        return stockAssessmentDisplay(r, analysis.asOfDate, analysis.tradeDates).rawOnset === true;
       if (
         r.hardFilterStatus &&
         r.hardFilterStatus !== "PASS" &&
@@ -221,7 +226,15 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         />
       </header>
 
-      {mode === "STOCK" ? <StrategyDescription /> : null}
+      {mode === "STOCK" ? (
+        <>
+          <StrategyDescription />
+          <p className="text-[12px] text-muted-foreground">
+            기술점수·거래량·돌파·청산·확인 조건은 시가총액 대기와 별도로 표시합니다. KRX 기준일
+            자료는 다음 영업일 08:00 KST부터 조회 가능하며, 저녁 미공표 중 최종 진입은 미확정입니다.
+          </p>
+        </>
+      ) : null}
       <div className="flex flex-wrap gap-1">
         <button
           type="button"
@@ -322,6 +335,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         rows={filtered}
         positionContext={positionContext}
         signalDate={analysis.asOfDate}
+        tradeDates={analysis.tradeDates}
       />
     </div>
   );

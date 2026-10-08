@@ -1,6 +1,10 @@
 vi.mock("../src/lib/ledger/websiteRepository.server", () => ({
   readWebsiteDocument: async (client: SupabaseClient, uid: string, source: string) => {
-    const result = await client.from(source).select("revision,payload").eq("user_id", uid).maybeSingle();
+    const result = await client
+      .from(source)
+      .select("revision,payload")
+      .eq("user_id", uid)
+      .maybeSingle();
     if (result.error) throw new Error(result.error.message);
     return result.data;
   },
@@ -45,13 +49,13 @@ describe("dashboard projection policy cache identity", () => {
     });
     await expect(projection(client, "old-full", "kr")).rejects.toThrow("갱신 중");
   });
-  it("reprojects sector codes rather than reusing the old policy sidecar", async () => {
+  it("reprojects current partial evidence rather than reusing the pre-evidence sidecar", async () => {
     vi.mocked(downloadFreshObject).mockImplementation(async (_client, _bucket, path) => {
       const value = path.endsWith("dashboard/latest.json")
         ? { version: DASHBOARD_CACHE_VERSION, resultDigest: "sector-code" }
         : path.endsWith("dashboard-operations/kr-v1.json")
           ? {
-              key: "old-sidecar:kr:dashboard-operations-kospi-confirm1-v4:sector-code",
+              key: "old-sidecar:kr:dashboard-operations-sector-codes-v5:sector-code",
               index: { date: "2026-10-01", rows: [{ symbol: "OLD" }] },
             }
           : path.endsWith("screening/latest.json")
@@ -81,7 +85,11 @@ describe("dashboard projection policy cache identity", () => {
       return { data: value ? new Blob([JSON.stringify(value)]) : null, error: null };
     });
     const projected = await projection(client, "old-sidecar", "kr");
-    expect(projected?.rows[0]).toMatchObject({ symbol: "NEW", sectorCode: "SEMI" });
+    expect(projected?.rows[0]).toMatchObject({
+      symbol: "NEW",
+      sectorCode: "SEMI",
+      assessment: { current: false, score: null },
+    });
   });
   it("overlays fresh generation metadata on a saved sidecar", async () => {
     vi.mocked(downloadFreshObject).mockImplementation(async (_client, _bucket, path) => {
@@ -92,7 +100,7 @@ describe("dashboard projection policy cache identity", () => {
             createdAt: "2026-10-02T00:40:00.000Z",
           }
         : {
-            key: "timestamp-sidecar:kr:dashboard-operations-sector-codes-v5:same-sidecar",
+            key: "timestamp-sidecar:kr:dashboard-operations-partial-evidence-v6:same-sidecar",
             index: {
               date: "2026-10-01",
               rows: [],
