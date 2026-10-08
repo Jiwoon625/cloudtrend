@@ -24,6 +24,9 @@ on:
       workers:
         description: 'Independent strategy worker processes (1..4)'
         default: '1'
+      ids:
+        description: 'Optional comma-separated exact preregistered IDs for sparse subsets'
+        default: ''
   push:
     branches: [main]
     paths:
@@ -63,6 +66,7 @@ jobs:
           MANUAL_COUNT: ${{ github.event.inputs.count }}
           MANUAL_MAX_SECONDS: ${{ github.event.inputs.max_seconds }}
           MANUAL_WORKERS: ${{ github.event.inputs.workers }}
+          MANUAL_IDS: ${{ github.event.inputs.ids }}
           MANUAL_REQUEST_ID: manual-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           if [ "$EVENT_NAME" = "push" ]; then
@@ -75,7 +79,7 @@ jobs:
               --mode "$MANUAL_MODE" --stage "$MANUAL_STAGE" \
               --offset "$MANUAL_OFFSET" --count "$MANUAL_COUNT" \
               --max-seconds "$MANUAL_MAX_SECONDS" --workers "$MANUAL_WORKERS" \
-              --github-output "$GITHUB_OUTPUT"
+              --ids "$MANUAL_IDS" --github-output "$GITHUB_OUTPUT"
           fi
       - name: Validate and optionally run bounded research
         env:
@@ -85,12 +89,15 @@ jobs:
           CM_COUNT: ${{ steps.request.outputs.count }}
           CM_MAX_SECONDS: ${{ steps.request.outputs.max_seconds }}
           CM_WORKERS: ${{ steps.request.outputs.workers }}
+          CM_IDS: ${{ steps.request.outputs.ids }}
         run: |
           df -PB1 "$RUNNER_TEMP"
-          /usr/bin/time -v python -m cmresearchengine.cli "$CM_MODE" \
+          cmd=(python -m cmresearchengine.cli "$CM_MODE" \
             --stage "$CM_STAGE" --offset "$CM_OFFSET" --count "$CM_COUNT" \
             --max-seconds "$CM_MAX_SECONDS" --workers "$CM_WORKERS" \
-            --work "$RUNNER_TEMP/cm-private/work"
+            --work "$RUNNER_TEMP/cm-private/work")
+          if [ -n "$CM_IDS" ]; then cmd+=(--ids "$CM_IDS"); fi
+          /usr/bin/time -v "${cmd[@]}"
           df -PB1 "$RUNNER_TEMP"
       # Private inputs, NAV, holdings, evidence, and checkpoints never enter
       # public Actions artifacts or public caches. Storage alone persists them.
