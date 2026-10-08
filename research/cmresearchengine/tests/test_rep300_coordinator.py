@@ -44,17 +44,17 @@ class NativeCoordinatorTests(unittest.TestCase):
         self.assertFalse(nxt["hybrid_shared_us_analysis"])
 
     def test_sparse_fine_ids_only(self):
-        last = self.rows[121]  # final split25 candidate at sequence 122
+        last = self.rows[109]  # final split25 candidate after base40 + split25 70
         nxt = next_batch(self.rows,{"stage":"split25"},[last["id"]])
         self.assertEqual(nxt["stage"],"fine")
         self.assertEqual(nxt["offset"],0)
         self.assertEqual(nxt["count"],2)
         self.assertEqual(nxt["ids"].split(","),
-                         [self.rows[122]["id"],self.rows[123]["id"]])
+                         [self.rows[110]["id"],self.rows[111]["id"]])
         self.assertFalse(nxt["hybrid_shared_us_analysis"])
 
     def test_reference_gate_dynamic_and_split10(self):
-        last_fine=self.rows[199]
+        last_fine=self.rows[187]
         ref=next_batch(self.rows,{"stage":"fine"},[last_fine["id"]])
         self.assertEqual((ref["stage"],ref["offset"]),("references",0))
         b=next_batch(self.rows,{"stage":"references"},["REF_K"])
@@ -64,11 +64,11 @@ class NativeCoordinatorTests(unittest.TestCase):
         d=next_batch(self.rows,{"stage":"references"},["REF_U"])
         self.assertEqual((d["stage"],d["offset"],d["count"],d["workers"]),
                          ("base",40,1,1))
-        end_dyn=self.rows[211]
+        end_dyn=self.rows[199]
         nxt=next_batch(self.rows,{"stage":"base"},[end_dyn["id"]])
         self.assertEqual(nxt["stage"],"split10")
         self.assertEqual(nxt["ids"].split(","),
-                         [self.rows[212]["id"], self.rows[213]["id"]])
+                         [self.rows[200]["id"], self.rows[201]["id"]])
         last_two=[r["id"] for r in self.rows[-2:]]
         self.assertIsNone(next_batch(self.rows,{"stage":"split10"},last_two))
 
