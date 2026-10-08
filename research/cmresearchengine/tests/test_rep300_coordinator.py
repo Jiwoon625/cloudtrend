@@ -175,7 +175,7 @@ class NativeCoordinatorTests(unittest.TestCase):
         batch = {"status": "BATCH_VERIFIED", "selected_count": 4,
                  "completed_in_selected_batch": 2, "remaining_in_selected_batch": 2,
                  "worker_exceptions": 0, "not_started": 0}
-        log = "\\n".join(json.dumps(x) for x in [request, preflight, *receipts, batch])
+        log = "\n".join(json.dumps(x) for x in [request, preflight, *receipts, batch])
         class ReadOnlyGH:
             def runs(self):
                 return [{"id": 37756315203, "status": "completed", "conclusion": "success",
