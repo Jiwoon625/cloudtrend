@@ -8,6 +8,24 @@ on:
         description: "CloudTrend Supabase user id (optional when secret is set)"
         required: false
         type: string
+      replay_manifest_path:
+        description: "Owner-private dated replay manifest (empty means ordinary screening)"
+        required: false
+        type: string
+      replay_manifest_hash:
+        description: "Exact sha256 identity of the reviewed replay manifest"
+        required: false
+        type: string
+      replay_apply:
+        description: "Commit only after whole-batch preflight; false is read-only"
+        required: false
+        default: false
+        type: boolean
+      replay_then_screen:
+        description: "After an applied replay, publish the current ordinary screening"
+        required: false
+        default: false
+        type: boolean
   pull_request:
     paths:
       - "src/lib/engine/usProspective*.ts"
@@ -18,6 +36,13 @@ on:
       - "vitest.dashboard.config.ts"
       - "src/routes/us*.tsx"
       - "scripts/run-us-screening.ts"
+      - "scripts/run-us-gap-replay.ts"
+      - "scripts/us-*-replay*.ts"
+      - "scripts/us-replay-source.ts"
+      - "tests/us-replay-*.test.ts"
+      - "tests/us-operating-replay*"
+      - "vitest.us-replay.config.ts"
+      - "supabase/migrations/*us_operating_replay*"
       - "scripts/test-us-collector.py"
       - "notebooks/cloudtrend_US_*.ipynb"
       - ".github/workflows/us-prospective-screening.yml"
@@ -32,6 +57,13 @@ on:
       - "vitest.dashboard.config.ts"
       - "src/routes/us*.tsx"
       - "scripts/run-us-screening.ts"
+      - "scripts/run-us-gap-replay.ts"
+      - "scripts/us-*-replay*.ts"
+      - "scripts/us-replay-source.ts"
+      - "tests/us-replay-*.test.ts"
+      - "tests/us-operating-replay*"
+      - "vitest.us-replay.config.ts"
+      - "supabase/migrations/*us_operating_replay*"
       - "scripts/test-us-collector.py"
       - "notebooks/cloudtrend_US_*.ipynb"
       - ".github/workflows/us-prospective-screening.yml"
@@ -54,6 +86,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:us
+      - run: npx vitest run --config vitest.us-replay.config.ts
+      - name: Verify atomic US recovery and no-write preflight in isolated PostgreSQL
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql
+          python3 tests/us-operating-replay-postgres.test.py --pg-bin-dir "$(pg_config --bindir)" --pg-share-dir "$(pg_config --sharedir)"
       - run: npx vitest run --config vitest.dashboard.config.ts
       - uses: actions/setup-python@v5
         with:
@@ -77,5 +115,26 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Run frozen US prospective engine
-        run: npm run us:screening -- --user "$SUPABASE_USER_ID"
+      - name: Run frozen US prospective engine or verified dated recovery
+        env:
+          REPLAY_MANIFEST_PATH: ${{ inputs.replay_manifest_path }}
+          REPLAY_MANIFEST_HASH: ${{ inputs.replay_manifest_hash }}
+          REPLAY_APPLY: ${{ inputs.replay_apply }}
+          REPLAY_THEN_SCREEN: ${{ inputs.replay_then_screen }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "$REPLAY_MANIFEST_PATH" ]]; then
+            test -n "$REPLAY_MANIFEST_HASH"
+            args=(--user "$SUPABASE_USER_ID" --manifest "$REPLAY_MANIFEST_PATH" --manifest-hash "$REPLAY_MANIFEST_HASH")
+            if [[ "$REPLAY_APPLY" == "true" ]]; then args+=(--apply); fi
+            npm run us:replay -- "${args[@]}"
+            if [[ "$REPLAY_APPLY" == "true" && "$REPLAY_THEN_SCREEN" == "true" ]]; then
+              npm run us:screening -- --user "$SUPABASE_USER_ID"
+            fi
+          else
+            test -z "$REPLAY_MANIFEST_HASH"
+            test "$REPLAY_APPLY" != "true"
+            test "$REPLAY_THEN_SCREEN" != "true"
+            npm run us:screening -- --user "$SUPABASE_USER_ID"
+          fi

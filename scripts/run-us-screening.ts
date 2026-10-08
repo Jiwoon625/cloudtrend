@@ -1,9 +1,11 @@
+import { assertUsScreeningCoverage } from "./us-replay-source";
 import { replayUsShadow } from "../src/lib/shadowReplay.server";
 import { gzipSync } from "node:zlib";
 import { buildUsOrderPreview } from "../src/lib/engine/usProspectiveOrderPreview";
 import { usBrowserViews } from "../src/lib/usBrowserViews";
 import type { UsProspectiveCache } from "../src/lib/usProspectiveCloud";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 
 import {
   ANALYSIS_BUCKET,
@@ -101,11 +103,10 @@ function compactRow(row: UsProspectiveAnalysis["rows"][number]) {
   };
 }
 
-async function main() {
-  const userId = arg("--user") ?? process.env["SUPABASE_USER_ID"];
-  if (!userId) throw new Error("--user 또는 SUPABASE_USER_ID가 필요합니다.");
-  const client = trustedSupabaseClient();
-
+export async function runUsScreening(
+  client: ReturnType<typeof trustedSupabaseClient>,
+  userId: string,
+) {
   const { data: ingest, error: ingestError } = await client
     .from("us_screening_ingest")
     .select("*")
@@ -131,16 +132,6 @@ async function main() {
     latestSourceDate !== String(ingest.as_of_date)
   )
     throw new Error("US source row count, symbol count or latest date mismatch");
-
-  const shadowReplay = await replayUsShadow({
-    client,
-    userId,
-    rows: allParsed,
-    sourceCapturedAt: String(ingest.collected_at),
-    calculatedAt: new Date().toISOString(),
-    mode: "service",
-  });
-  console.log(JSON.stringify({ shadowReplay }));
 
   const { data: lastHistory, error: lastError } = await client
     .from("us_screening_history")
@@ -173,8 +164,11 @@ async function main() {
     confirmedRegularClose?: boolean;
     failedSymbols?: number;
   };
-  if (!sourceMetadata.confirmedRegularClose || sourceMetadata.failedSymbols !== 0)
-    throw new Error("US source is not a complete confirmed session");
+  assertUsScreeningCoverage(ingest.metadata as Record<string, unknown>, allParsed);
+  if ((ingest.metadata as Record<string, unknown>)["sourceCoverageComplete"] === false)
+    console.warn(
+      "US source has explicit quarantines/holds; workflow success does not mean complete universe coverage.",
+    );
   const portfolioGap =
     Boolean(lastHistory) && sourceMetadata.previousSessionDate !== lastHistory?.date;
 
@@ -191,27 +185,90 @@ async function main() {
     .maybeSingle();
   if (previousHistoryError)
     throw new Error(`US 이전 스크리닝 날짜 조회 실패: ${previousHistoryError.message}`);
-  const previousResult = previousHistory?.date
+  const recoveredPrevious = previousHistory?.date
     ? await maybeDownloadJson<{
+        version?: string;
         analysis?: {
-          state?: { coreRanks?: Record<string, number>; betaWeakStreak?: Record<string, number> };
+          ruleVersion?: string;
+          state?: {
+            lastDate?: string;
+            coreRanks?: Record<string, number>;
+            betaWeakStreak?: Record<string, number>;
+          };
         };
-      }>(client, `${userId}/results/us-screening/${previousHistory.date}.json`)
+      }>(client, `${userId}/results/us-replay-state/${previousHistory.date}.json`)
     : null;
+  if (
+    recoveredPrevious &&
+    (recoveredPrevious.version !== "us-replay-state-v1" ||
+      recoveredPrevious.analysis?.ruleVersion !== US_PROSPECTIVE_RULE_VERSION ||
+      recoveredPrevious.analysis?.state?.lastDate !== previousHistory?.date)
+  )
+    throw new Error("Recovered US rank-state identity mismatch");
+  const previousResult =
+    recoveredPrevious ??
+    (previousHistory?.date
+      ? await maybeDownloadJson<{
+          analysis?: {
+            state?: { coreRanks?: Record<string, number>; betaWeakStreak?: Record<string, number> };
+          };
+        }>(client, `${userId}/results/us-screening/${previousHistory.date}.json`)
+      : null);
   if (previousHistory && !previousResult?.analysis?.state)
     throw new Error("Previous US rank state is missing");
 
   const latestRows = allParsed.filter((row) => row.date === String(ingest.as_of_date));
   if (!latestRows.length) throw new Error("US latest-date rows are missing");
-  const analysis =
-    shadowReplay.latestAnalysis?.date === String(ingest.as_of_date)
-      ? shadowReplay.latestAnalysis
-      : runUsProspectiveAnalysis(
-          latestRows,
-          portfolioGap ? {} : (previousResult?.analysis?.state ?? {}),
-        );
-  if (analysis.date !== String(ingest.as_of_date)) {
+  let analysis = runUsProspectiveAnalysis(
+    latestRows,
+    portfolioGap ? {} : (previousResult?.analysis?.state ?? {}),
+  );
+  if (analysis.date !== String(ingest.as_of_date))
     throw new Error(`입력 기준일 불일치: DB ${ingest.as_of_date} / CSV ${analysis.date}`);
+
+  // Detect stale/missing operating predecessors before Shadow can advance. All
+  // affected books are admitted together; ordinary screening cannot repair gaps.
+  const operatingPrevious = new Map<
+    string,
+    { state: UsPortfolioState; nav_usd: number; date: string } | null
+  >();
+  for (const strategy of portfolioGap ? [] : US_PROSPECTIVE_STRATEGIES) {
+    const { data: frozen, error: frozenError } = await client
+      .from("us_strategy_registry")
+      .select("rule_version,config")
+      .eq("user_id", userId)
+      .eq("strategy_id", strategy.id)
+      .maybeSingle();
+    if (frozenError) throw frozenError;
+    if (
+      frozen &&
+      (frozen.rule_version !== US_PROSPECTIVE_RULE_VERSION ||
+        stableJson(frozen.config) !== stableJson(strategy))
+    )
+      throw new Error("Frozen strategy version differs; explicit migration required");
+    const { data: prev, error: previousError } = await client
+      .from("us_portfolio_snapshots")
+      .select("state,nav_usd,date")
+      .eq("user_id", userId)
+      .eq("strategy_id", strategy.id)
+      .lt("date", analysis.date)
+      .order("date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (previousError) throw previousError;
+    if (lastHistory && prev?.date !== lastHistory.date)
+      throw new Error(`Previous portfolio state is missing: ${strategy.id}`);
+    const state = prev?.state as UsPortfolioState | undefined;
+    for (const symbol of new Set([
+      ...Object.keys(state?.positions ?? {}),
+      ...Object.keys(state?.pendingTargets ?? {}),
+      ...Object.keys(state?.pendingExits ?? {}),
+    ])) {
+      const row = latestRows.find((r) => r.symbol === symbol);
+      if (!row || !(Number(row.open) > 0) || !(Number(row.close) > 0))
+        throw new Error(`Operating US security lacks current prices: ${symbol}`);
+    }
+    operatingPrevious.set(strategy.id, prev ?? null);
   }
 
   // Lock a date's input before any ledger writes, including retries after partial failure.
@@ -240,6 +297,31 @@ async function main() {
   )
     throw new Error("Daily US result is immutable");
 
+  // Date/hash/metadata and immutable-result admission must precede any Shadow mutation.
+  const shadowReplay = await replayUsShadow({
+    client,
+    userId,
+    rows: allParsed,
+    sourceCapturedAt: String(ingest.collected_at),
+    calculatedAt: new Date().toISOString(),
+    mode: "service",
+  });
+  console.log(
+    JSON.stringify({
+      shadowReplay: {
+        market: shadowReplay.market,
+        processed: shadowReplay.processed.map(({ date, status }) => ({ date, status })),
+        deferred: shadowReplay.deferred
+          ? { date: shadowReplay.deferred.date, waitingInput: true }
+          : null,
+        latestRecordedDate: shadowReplay.latestRecordedDate,
+        throughDate: shadowReplay.throughDate,
+      },
+    }),
+  );
+  if (shadowReplay.latestAnalysis?.date === String(ingest.as_of_date))
+    analysis = shadowReplay.latestAnalysis;
+
   const cachePayload = {
     generatedAt: new Date().toISOString(),
     dataHash: ingest.data_hash,
@@ -265,7 +347,6 @@ async function main() {
     summary: analysis.summary,
     signals: usProspectiveCompactSignals(analysis),
   };
-
 
   if (portfolioGap) {
     console.warn(
@@ -302,18 +383,7 @@ async function main() {
     );
     if (registryError) throw new Error(`US 전략 정의 저장 실패: ${registryError.message}`);
 
-    const { data: prev, error: prevError } = await client
-      .from("us_portfolio_snapshots")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("strategy_id", strategy.id)
-      .lt("date", analysis.date)
-      .order("date", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (prevError) throw new Error(`US 포트폴리오 이전 상태 조회 실패: ${prevError.message}`);
-    if (lastHistory && prev?.date !== lastHistory.date)
-      throw new Error(`Previous portfolio state is missing: ${strategy.id}`);
+    const prev = operatingPrevious.get(strategy.id) ?? null;
     const previousState = (prev?.state as UsPortfolioState | null) ?? null;
     const previousNav = prev ? Number(prev.nav_usd) : null;
     const stepped = stepUsProspectiveOperatingPortfolio(
@@ -463,7 +533,15 @@ async function main() {
   );
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? (error.stack ?? error.message) : error);
-  process.exitCode = 1;
-});
+async function main() {
+  const userId = arg("--user") ?? process.env["SUPABASE_USER_ID"];
+  if (!userId) throw new Error("--user 또는 SUPABASE_USER_ID가 필요합니다.");
+  await runUsScreening(trustedSupabaseClient(), userId);
+}
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
+  main().catch((error) => {
+    console.error(
+      `US screening stopped; private diagnostic ${sha256(error instanceof Error ? error.message : "unknown").slice(0, 12)}. Check source and model preflight evidence before retrying.`,
+    );
+    process.exitCode = 1;
+  });
