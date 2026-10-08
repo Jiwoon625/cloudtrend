@@ -230,8 +230,8 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         <>
           <StrategyDescription />
           <p className="text-[12px] text-muted-foreground">
-            기술점수·거래량·돌파·청산·확인 조건은 시가총액 대기와 별도로 표시합니다. KRX 기준일
-            자료는 다음 영업일 08:00 KST부터 조회 가능하며, 저녁 미공표 중 최종 진입은 미확정입니다.
+            KRX 기준일 자료는 다음 영업일 08:00 KST부터 조회 가능합니다. 저녁에는 계산된 기술 신호와
+            최종 판단을 구분합니다. 조건별 근거와 상세 지표는 종목명을 눌러 확인하세요.
           </p>
         </>
       ) : null}
@@ -336,6 +336,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         positionContext={positionContext}
         signalDate={analysis.asOfDate}
         tradeDates={analysis.tradeDates}
+        compactStock={mode === "STOCK"}
       />
     </div>
   );

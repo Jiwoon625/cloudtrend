@@ -4,6 +4,7 @@ import { StrategyDescription } from "@/components/StrategyDescription";
 import { KospiEntryDetails } from "@/components/KospiEntryDetails";
 import { OnsetProfileDetails } from "@/components/OnsetProfileDetails";
 import { UniverseFilterDetails } from "@/components/UniverseFilterDetails";
+import { StockInstrumentSummary } from "@/components/StockInstrumentSummary";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
@@ -92,7 +93,13 @@ function InstrumentDetail() {
   const cardMax = row.instrument.instrumentType === "ETF" ? 100 : 10;
   const snap = row.snapshot;
   const ich = snap.ichimoku;
-  const displayWarnings = getDisplayWarnings(row);
+  const displayWarnings = getDisplayWarnings(row).map((warning) =>
+    row.instrument.instrumentType === "STOCK" &&
+    !positionContext?.heldSymbols.includes(symbol) &&
+    /Exit|청산/i.test(warning)
+      ? `${positionContext ? "미보유" : "보유 미확인"} · 관측 조건 참고 · ${warning}`
+      : warning,
+  );
 
   const log = {
     strategyVersion: analysis.strategyVersion,
@@ -225,23 +232,34 @@ function InstrumentDetail() {
         </div>
       </header>
 
-      <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
-        <Stat label="현재가" value={formatPrice(snap.close)} />
-        <Stat
-          label="기술점수"
-          value={cardPoints === null ? "산정 불가" : `${formatNumber(cardPoints, 1)} / ${cardMax}`}
+      {row.instrument.instrumentType === "STOCK" ? (
+        <StockInstrumentSummary
+          row={row}
+          asOfDate={analysis.asOfDate}
+          tradeDates={analysis.tradeDates}
+          positionContext={positionContext}
         />
-        <Stat
-          label="우선점수"
-          value={`${formatNumber(row.priority.points, 2)} / ${formatNumber(row.priority.maxPoints, 1)}`}
-        />
-        <Stat label="모델등급" value={<GradeBadge grade={row.grade} />} />
-        <Stat
-          label="상태"
-          value={getPortfolioAwareDisplayStatus(row, positionContext, analysis.asOfDate)}
-        />
-        <Stat label="52주 고점 거리" value={<Delta value={snap.distanceFrom52wHigh} />} />
-      </div>
+      ) : (
+        <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          <Stat label="현재가" value={formatPrice(snap.close)} />
+          <Stat
+            label="기술점수"
+            value={
+              cardPoints === null ? "산정 불가" : `${formatNumber(cardPoints, 1)} / ${cardMax}`
+            }
+          />
+          <Stat
+            label="우선점수"
+            value={`${formatNumber(row.priority.points, 2)} / ${formatNumber(row.priority.maxPoints, 1)}`}
+          />
+          <Stat label="모델등급" value={<GradeBadge grade={row.grade} />} />
+          <Stat
+            label="상태"
+            value={getPortfolioAwareDisplayStatus(row, positionContext, analysis.asOfDate)}
+          />
+          <Stat label="52주 고점 거리" value={<Delta value={snap.distanceFrom52wHigh} />} />
+        </div>
+      )}
 
       {row.instrument.instrumentType === "STOCK" && row.instrument.market === "KOSPI" ? (
         <section
@@ -279,7 +297,7 @@ function InstrumentDetail() {
           ))}
         </div>
       ) : null}
-      <UniverseFilterDetails row={row} />
+      {row.instrument.instrumentType !== "STOCK" ? <UniverseFilterDetails row={row} /> : null}
       {row.financials?.isFinancialSector ? (
         <div className="mt-3 rounded-md border border-warn/30 bg-warn-soft p-2 text-[12px] text-warn">
           금융업 종목: 일반 재무건전성 기준 적용에 주의가 필요합니다.
@@ -343,14 +361,16 @@ function InstrumentDetail() {
             <Stat label="외국인 20일 누적" value={formatWon(snap.foreignNet20d)} />
             <Stat label="외국인 60일 누적" value={formatWon(snap.foreignNet60d)} />
             <Stat label="기관 20일 누적" value={formatWon(snap.institutionNet20d)} />
-            <Stat
-              label="거래량 비율(20일)"
-              value={
-                snap.volumeRatio20 === null
-                  ? "데이터 없음"
-                  : `${formatNumber(snap.volumeRatio20, 1)}%`
-              }
-            />
+            {row.instrument.instrumentType !== "STOCK" ? (
+              <Stat
+                label="거래량 비율(20일)"
+                value={
+                  snap.volumeRatio20 === null
+                    ? "데이터 없음"
+                    : `${formatNumber(snap.volumeRatio20, 1)}%`
+                }
+              />
+            ) : null}
             <Stat
               label="거래대금 비율(20일)"
               value={
@@ -368,13 +388,15 @@ function InstrumentDetail() {
                   : `${formatNumber(snap.atrExtension, 2)} ATR`
               }
             />
-            <Stat label="RS20" value={<Delta value={row.rs20} digits={2} />} />
+            {row.instrument.instrumentType !== "STOCK" ? (
+              <Stat label="RS20" value={<Delta value={row.rs20} digits={2} />} />
+            ) : null}
             <Stat label="RS60" value={<Delta value={row.rs60} digits={2} />} />
           </div>
         </section>
       </div>
 
-      {row.onsetProfile ? (
+      {row.instrument.instrumentType !== "STOCK" && row.onsetProfile ? (
         <section className="mt-5 rounded-lg border border-border bg-card p-4">
           <h2 className="mb-1 text-sm font-semibold">Onset 발생 경로</h2>
           <OnsetProfileDetails profile={row.onsetProfile} />

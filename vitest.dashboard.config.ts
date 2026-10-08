@@ -6,6 +6,9 @@ export default defineConfig({
   esbuild: { jsx: "automatic" },
   test: {
     include: [
+      "src/lib/stockCompactStatus.test.ts",
+      "src/components/CompactStockScreener.test.tsx",
+      "src/components/StockInstrumentSummary.test.tsx",
       "src/lib/stockAssessmentDisplay.test.ts",
       "src/components/DomesticAssessmentPanel.test.tsx",
       "src/lib/etfPartialEvidence.test.ts",

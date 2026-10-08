@@ -8,6 +8,10 @@ on:
       - src/components/StockAssessmentDetails*
       - src/components/EtfAssessmentDetails*
       - src/components/EtfScreener*
+      - src/lib/stockCompactStatus*
+      - src/components/CompactStock*
+      - src/components/StockInstrumentSummary*
+      - src/routes/instrument.$symbol.tsx
       - src/components/ScreenerTable.tsx
       - src/components/ScreenerView.tsx
       - src/components/PortfolioAssetHub.tsx
