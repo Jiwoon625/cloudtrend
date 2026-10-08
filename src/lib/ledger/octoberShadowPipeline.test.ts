@@ -1,3 +1,5 @@
+import { buildSnapshot } from "../screeningSnapshot";
+import { resolveKrInputArchive } from "./octoberShadowArchive";
 import type { KrDailyInputArchive } from "./octoberShadowArchive";
 import { describe, expect, it } from "vitest";
 import {
@@ -427,12 +429,63 @@ it("persists one shared KR day archive and compact run references; missing archi
   expect(f.sessions.size).toBe(5);
 });
 
+function krEvidenceSource(date: string): KrModelPublication {
+  const input = krSource(date);
+  const rows = input.analysis.rows
+    .filter((row) => row.instrument.instrumentType === "STOCK")
+    .map((row) => ({
+      ...row,
+      grade: "A" as const,
+      operatingScore10: 8,
+      totalScoreNormalized: 80,
+      scoreDelta1d: 5,
+      hardFilterPassed: row.instrument.market === "KOSPI",
+      hardFilterStatus:
+        row.instrument.market === "KOSPI" ? ("PASS" as const) : ("PENDING" as const),
+      pendingRules: row.instrument.market === "KOSPI" ? [] : ["기준일 시가총액 미확인 · 판단 보류"],
+      // Even a stale onset cannot turn explicit pending evidence into a buy.
+      kosdaq80Onset: row.instrument.market === "KOSDAQ",
+    }));
+  input.snapshot = buildSnapshot({ ...input.analysis, rows, marketGate: { status: "NEUTRAL" } });
+  return input;
+}
+
+it("preserves buildSnapshot pending evidence through shared archives, replay and exact retries", async () => {
+  const f = await fixture();
+  const frozen = JSON.stringify([...f.registry.values()]);
+  const first = krEvidenceSource("2026-10-06");
+  await recordOctoberPublication(f.store, first);
+  const firstDay = JSON.stringify([...f.archives.values()][0]);
+  await recordOctoberPublication(f.store, krEvidenceSource("2026-10-07"));
+  expect(f.archives.size).toBe(2);
+  expect(JSON.stringify([...f.archives.values()][0])).toBe(firstDay);
+  expect(JSON.stringify([...f.registry.values()])).toBe(frozen);
+  const run = [...f.sessions.values()].find(
+    (item) => item.bookId.endsWith(":KR_KOSDAQ") && item.receipt.date === "2026-10-07",
+  ) as import("./krAdoptedShadow").AdoptedKrRun;
+  const inputs = await resolveKrInputArchive(run, async (_date, hash) => f.archives.get(hash)!);
+  expect(inputs.snapshots).toHaveLength(2);
+  for (const snapshot of inputs.snapshots) {
+    expect(snapshot.entries.find((entry) => entry.symbol === "000002")).toMatchObject({
+      hardFilterPassed: false,
+      hardFilterStatus: "PENDING",
+      pendingRules: ["기준일 시가총액 미확인 · 판단 보류"],
+    });
+  }
+  expect(run.result.trades).toHaveLength(0);
+  const before = JSON.stringify([...f.sessions]);
+  const retry = await recordOctoberPublication(f.store, krEvidenceSource("2026-10-07"));
+  expect(retry.records.every((record) => record.reused)).toBe(true);
+  expect(JSON.stringify([...f.sessions])).toBe(before);
+});
+
 it("exports synthetic application-shaped payloads only for optional local PostgreSQL verification", async () => {
   const output = process.env["CLOUDTREND_OCTOBER_APP_FIXTURES"];
   if (!output) return;
   const f = await fixture();
   await recordOctoberPublication(f.store, source("2026-10-05"));
-  await recordOctoberPublication(f.store, krSource("2026-10-06"));
+  await recordOctoberPublication(f.store, krEvidenceSource("2026-10-06"));
+  await recordOctoberPublication(f.store, krEvidenceSource("2026-10-07"));
   const prepared = [...f.prepared.values()];
   expect(
     prepared.every(
