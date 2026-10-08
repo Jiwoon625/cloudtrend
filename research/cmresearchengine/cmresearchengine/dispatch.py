@@ -13,7 +13,7 @@ from pathlib import Path
 
 ALLOWED_MODES = {"preflight", "run"}
 ALLOWED_STAGES = {"base", "fine", "split25", "split10", "references"}
-ALLOWED_KEYS = {"request_id", "mode", "stage", "offset", "count", "max_seconds", "workers", "ids"}
+ALLOWED_KEYS = {"request_id", "mode", "stage", "offset", "count", "max_seconds", "workers", "ids", "hybrid_shared_us_analysis"}
 
 
 def validate_request(raw):
@@ -76,7 +76,22 @@ def validate_request(raw):
             raise ValueError("Parallel workers require static non-reference candidates")
         ids = ",".join(tokens)
 
+    # Only the previously adopted v4b hybrid 2x2 engine: two isolated
+    # processes, two static base strategies in each. Reject unsupported
+    # selections before restoring any private research data.
+    hybrid = raw.get("hybrid_shared_us_analysis", False)
+    if type(hybrid) is not bool:
+        raise ValueError("hybrid_shared_us_analysis must be a JSON boolean")
+    if hybrid:
+        if mode != "run" or stage != "base" or count != 4 or workers != 2:
+            raise ValueError("Hybrid 2x2 requires run/base/count=4/workers=2")
+        from .plan import choose
+        selected = choose(stage, offset, count, ids.split(",") if ids else None)
+        if len(selected) != 4 or any(c.policy_id or c.stage == "references" for c in selected):
+            raise ValueError("Hybrid 2x2 requires exactly four static non-reference base candidates")
+
     return {
+        "hybrid_shared_us_analysis": hybrid,
         "ids": ids,
         "request_id": request_id,
         "mode": mode,
@@ -90,8 +105,9 @@ def validate_request(raw):
 
 def _write_github_output(path, request):
     with open(path, "a", encoding="utf-8") as stream:
-        for key in ("request_id", "mode", "stage", "offset", "count", "max_seconds", "workers", "ids"):
-            stream.write(f"{key}={request[key]}\n")
+        for key in ("request_id", "mode", "stage", "offset", "count", "max_seconds", "workers", "ids", "hybrid_shared_us_analysis"):
+            value = str(request[key]).lower() if key == "hybrid_shared_us_analysis" else request[key]
+            stream.write(f"{key}={value}\n")
 
 
 def main(argv=None):
@@ -105,13 +121,15 @@ def main(argv=None):
     parser.add_argument("--max-seconds")
     parser.add_argument("--workers", default="1")
     parser.add_argument("--ids")
+    parser.add_argument("--hybrid-shared-us-analysis", choices=("true", "false"), default="false")
     parser.add_argument("--github-output")
     args = parser.parse_args(argv)
 
     if args.request_file:
         if any(v is not None for v in (
             args.request_id, args.mode, args.stage, args.offset, args.count, args.max_seconds,
-            None if args.workers == "1" else args.workers, args.ids
+            None if args.workers == "1" else args.workers, args.ids,
+            None if args.hybrid_shared_us_analysis == "false" else args.hybrid_shared_us_analysis
         )):
             raise ValueError("Use either --request-file or explicit request fields")
         raw = json.loads(Path(args.request_file).read_text(encoding="utf-8"))
@@ -125,6 +143,7 @@ def main(argv=None):
             "max_seconds": args.max_seconds,
             "workers": args.workers,
             "ids": args.ids or "",
+            "hybrid_shared_us_analysis": args.hybrid_shared_us_analysis == "true",
         }
 
     request = validate_request(raw)
