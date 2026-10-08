@@ -446,6 +446,18 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        # Do not include private data, paths, token, or exception bodies in logs.
-        emit("CM300_WATCH_BLOCKED",error_type=type(exc).__name__)
+        # Only predeclared, literal safe error classifications; never emit
+        # HTTP bodies, private paths, actual inputs or credential-bearing repr.
+        reason = str(exc)
+        safe_codes = {
+            "Unsafe storage object key",
+            "Invalid descriptive object name",
+            "Storage redirects are forbidden",
+            "A candidate checkpoint scope is required",
+            "Object is outside the CM storage areas",
+            "Invalid candidate ID",
+            "The existing cloudtrend-data bucket must be private",
+        }
+        emit("CM300_WATCH_BLOCKED",error_type=type(exc).__name__,
+             reason=reason if reason in safe_codes else "WITHHELD")
         sys.exit(2)
