@@ -1,10 +1,12 @@
 """Fail-closed representative-300 coordinator transitions and checkpoint resumption."""
+import io
 import json
 import unittest
+from contextlib import redirect_stdout
 from unittest.mock import patch
 from cmresearchengine.rep300_coordinator import (
     approved, next_batch, selection, verify_existing_request, json_markers,
-    make_request, decision, storage_folders
+    make_request, decision, storage_folders, WatchPhaseError, watch_call, safe_failure
 )
 
 
@@ -134,6 +136,65 @@ class NativeCoordinatorTests(unittest.TestCase):
         self.assertEqual(calls[0][2]["ref"],"main")
         self.assertEqual(calls[0][2]["inputs"]["hybrid_shared_us_analysis"],"true")
         self.assertEqual(calls[0][2]["inputs"]["count"],"4")
+
+    def test_phase_diagnostics_are_credential_safe(self):
+        error = WatchPhaseError("GITHUB_READ_JOB_LOG",
+                                RuntimeError("GitHub job log read failed HTTP 403"))
+        self.assertEqual(safe_failure(error), {
+            "phase": "GITHUB_READ_JOB_LOG",
+            "error_type": "RuntimeError",
+            "reason": "GitHub job log read failed HTTP 403",
+        })
+        # The exception may originate from an untrusted remote response.
+        secret = "https://secret.example/path?token=private-key"
+        withheld = safe_failure(WatchPhaseError("GITHUB_LIST_RUNS", RuntimeError(secret)))
+        self.assertEqual(withheld["reason"], "WITHHELD")
+        self.assertNotIn(secret, json.dumps(withheld))
+
+    def test_phase_wrapping_never_formats_untrusted_exceptions(self):
+        def failing():
+            raise RuntimeError("Bearer secret-token")
+        with self.assertRaises(WatchPhaseError) as caught:
+            watch_call("GITHUB_READ_JOB_LOG", failing)
+        self.assertEqual(str(caught.exception), "GITHUB_READ_JOB_LOG")
+        self.assertEqual(safe_failure(caught.exception)["reason"], "WITHHELD")
+
+    def test_paused_hybrid_dry_run_cannot_rerun(self):
+        request = {"status": "DISPATCH_REQUEST_VERIFIED",
+                   "request_id": "cm-v4b-hybrid-base07-20261008-001",
+                   **make_request("base", 7, 4, 2, True)}
+        preflight = {"status": "PREFLIGHT_VERIFIED",
+                     "plan_sha256": "ce6be8c497e45fa22a41d3a7b924913a23b18588fd05efd33ee14eb961ec7c2c",
+                     "normalized_files": 389, "reference_files": 12, "known_events": 27}
+        receipts = [
+            {"status": "PAUSED_VERIFIED", "candidate_id": "S08"},
+            {"status": "PAUSED_VERIFIED", "candidate_id": "S09"},
+            {"status": "COMPLETED_VERIFIED", "candidate_id": "Q_K000_E000_U000_C100"},
+            {"status": "COMPLETED_VERIFIED", "candidate_id": "Q_K000_E000_U025_C075"},
+        ]
+        batch = {"status": "BATCH_VERIFIED", "selected_count": 4,
+                 "completed_in_selected_batch": 2, "remaining_in_selected_batch": 2,
+                 "worker_exceptions": 0, "not_started": 0}
+        log = "\\n".join(json.dumps(x) for x in [request, preflight, *receipts, batch])
+        class ReadOnlyGH:
+            def runs(self):
+                return [{"id": 37756315203, "status": "completed", "conclusion": "success",
+                         "event": "push"}]
+            def jobs(self, run):
+                assert run == 37756315203
+                return [{"id": 113367738846, "name": "research", "conclusion": "success"}]
+            def job_logs(self, job):
+                assert job == 113367738846
+                return log
+            def contents(self):
+                return "unused", {"request_id": request["request_id"]}
+            def rerun_job(self, *args):
+                raise AssertionError("Dry-run attempted a write")
+        output = io.StringIO()
+        with redirect_stdout(output):
+            decision(ReadOnlyGH(), self.rows, None, dry=True)
+        self.assertIn('"status": "PAUSED_VERIFIED_RETRY"', output.getvalue())
+        self.assertIn('"dry_run": true', output.getvalue())
 
     def test_human_started_manual_run_cannot_autoadvance(self):
         raw={"status":"DISPATCH_REQUEST_VERIFIED","request_id":"manual-1",
