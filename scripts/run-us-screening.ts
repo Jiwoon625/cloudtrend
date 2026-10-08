@@ -114,11 +114,37 @@ export async function runUsScreening(
     console.log("US date already completed; portfolio and streak unchanged.");
     return;
   }
+  // Replay persists this state before committing either ledger. If publication
+  // was interrupted, only that exact replay may finish the missing history.
+  // An ordinary retry must never overwrite a same-day model from bootstrap.
+  const pendingReplay = await maybeDownloadJson<unknown>(
+    client,
+    `${userId}/results/us-replay-state/${ingest.as_of_date}.json`,
+  );
+  if (pendingReplay)
+    throw new Error(
+      "US replay publication is incomplete; resume the same immutable replay manifest",
+    );
   const sourceMetadata = ingest.metadata as {
     previousSessionDate?: string;
     confirmedRegularClose?: boolean;
     failedSymbols?: number;
   };
+  if (
+    sourceMetadata.previousSessionDate &&
+    lastHistory?.date !== sourceMetadata.previousSessionDate
+  ) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(sourceMetadata.previousSessionDate))
+      throw new Error("Invalid previous US session date");
+    const pendingPreviousReplay = await maybeDownloadJson<unknown>(
+      client,
+      `${userId}/results/us-replay-state/${sourceMetadata.previousSessionDate}.json`,
+    );
+    if (pendingPreviousReplay)
+      throw new Error(
+        "Previous US replay publication is incomplete; resume the same immutable replay manifest",
+      );
+  }
   assertUsScreeningCoverage(ingest.metadata as Record<string, unknown>, allParsed);
   if ((ingest.metadata as Record<string, unknown>)["sourceCoverageComplete"] === false)
     console.warn(

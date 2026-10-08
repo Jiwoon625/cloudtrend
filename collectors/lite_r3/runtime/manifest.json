@@ -1,0 +1,229 @@
+{
+  "version": "cloudtrend-lite-r3-daily-v1",
+  "sourceNotebookHash": "8adb08efd219087a9bf887a873d2d22e8d4b79282b6ad853f2140c333941c434",
+  "stageCount": 30,
+  "files": [
+    {
+      "path": "__init__.py",
+      "bytes": 1582,
+      "characters": 1582,
+      "sha256": "4902fb5c2f3313372ff496aa1d25b948e8155bc76d43b487186673f21e82774b"
+    },
+    {
+      "path": "helpers/kr_callback.py",
+      "bytes": 19607,
+      "characters": 18907,
+      "sha256": "ba54667b031a5abfc167c630556f1603d9ada37cba2eed05052fc120d967aae9"
+    },
+    {
+      "path": "helpers/kr_progress.py",
+      "bytes": 17266,
+      "characters": 15631,
+      "sha256": "8dab17e65e4fcf866a3462bd6e10750158783fe234335d5f5c4635ff1705b51d"
+    },
+    {
+      "path": "helpers/kr_publisher.py",
+      "bytes": 32096,
+      "characters": 30170,
+      "sha256": "9391ff6c045c8bf25605f52a9961c9e269594802b540688870fbcb82d8fcec88"
+    },
+    {
+      "path": "helpers/kr_schema.py",
+      "bytes": 9875,
+      "characters": 9560,
+      "sha256": "9c616a602cb40993fb79828ee306193acd96fb1f5dc2609a64b6d5ca4d25221a"
+    },
+    {
+      "path": "helpers/kr_supply_readiness.py",
+      "bytes": 15503,
+      "characters": 14572,
+      "sha256": "54578821bbeeebb1df8d69f961b7d6cb96d305fdb531739d2fb186db6009c891"
+    },
+    {
+      "path": "helpers/us_archive.py",
+      "bytes": 13672,
+      "characters": 13600,
+      "sha256": "adf51b6207a5250ffde2f0aaaf02a55dad62c16ad4b20ae3bb1063ccdf15ec91"
+    },
+    {
+      "path": "stages/common_init.py",
+      "bytes": 5108,
+      "characters": 4853,
+      "sha256": "5825185e2753f7797921f330e9e827b13343ec717abe95ef34248629fa9b47a7"
+    },
+    {
+      "path": "stages/helpers.py",
+      "bytes": 1951,
+      "characters": 1879,
+      "sha256": "f15e6e646df469b51a5e699888eea49b6f4ca5d71fdc881faa8a1e6c6b0735b2"
+    },
+    {
+      "path": "stages/integrated_summary.py",
+      "bytes": 1653,
+      "characters": 1459,
+      "sha256": "a1d57702e51718eb549f94a9f7b6e8f07b3974f65da215d7b13dc40aa3b80380"
+    },
+    {
+      "path": "stages/kr_calendar.py",
+      "bytes": 799,
+      "characters": 638,
+      "sha256": "30bce009d98fb371e39be5ba61d95e70de833a98a0854ee4d24e73aea7c27555"
+    },
+    {
+      "path": "stages/kr_collection.py",
+      "bytes": 152,
+      "characters": 144,
+      "sha256": "9bda3bfc197956cc3bf7ff6afc1c83452c53439b21e32662fc4642455976b5f9"
+    },
+    {
+      "path": "stages/kr_connections.py",
+      "bytes": 143,
+      "characters": 125,
+      "sha256": "01de4fc96e2319917b5373b1d6bc41aa6f86fd44891d5af051d5a8021cb60c18"
+    },
+    {
+      "path": "stages/kr_enrichment.py",
+      "bytes": 2699,
+      "characters": 2251,
+      "sha256": "15b37907457f84f642e47b148a055f6c35a699faffd7da6165d6ad1d2aeddca7"
+    },
+    {
+      "path": "stages/kr_enrichment_setup.py",
+      "bytes": 143,
+      "characters": 125,
+      "sha256": "cdd0552a9d6dcb722aafac69be9bdc49b540ce0b676ac870d616cbed4923bc71"
+    },
+    {
+      "path": "stages/kr_functions.py",
+      "bytes": 140,
+      "characters": 124,
+      "sha256": "bb4a899118d85a84085172ff8625eaf7623a07a96ea0d65b44a678a636062c64"
+    },
+    {
+      "path": "stages/kr_index.py",
+      "bytes": 2363,
+      "characters": 2277,
+      "sha256": "30735c5836e07a2c8aae92cffea8eec9d1313240156a0b7086b1bd7d98ed4133"
+    },
+    {
+      "path": "stages/kr_master.py",
+      "bytes": 140,
+      "characters": 124,
+      "sha256": "3c50eea628434b6302e126c97ae6e582c7b7d9842b2217650226c4621ee32582"
+    },
+    {
+      "path": "stages/kr_publish.py",
+      "bytes": 829,
+      "characters": 681,
+      "sha256": "6926e4c9fdd7e8bb12ed4bd75bc2f62f474b36517077e740b29a0053f11306be"
+    },
+    {
+      "path": "stages/kr_retry_saved.py",
+      "bytes": 611,
+      "characters": 557,
+      "sha256": "e657285dea419bff19d8b8050df2544fbb8967e679a5fc1861e92572867aae0b"
+    },
+    {
+      "path": "stages/kr_runtime.py",
+      "bytes": 1087,
+      "characters": 997,
+      "sha256": "740fc46d4d78386b5dd608f5cbc5f8d625aaf75fb2c1ecaaca647f2b1a922245"
+    },
+    {
+      "path": "stages/kr_save.py",
+      "bytes": 137,
+      "characters": 123,
+      "sha256": "8b86da0fbd4737fd8bc68c715e9e2cccc5b9ddf399d91b2bdb565db7fcfd5685"
+    },
+    {
+      "path": "stages/kr_setup.py",
+      "bytes": 3662,
+      "characters": 3470,
+      "sha256": "ae1e3f04d34d3c3fb5151a12409d70f03ee4d29cb9f6175b06bf05fac5420ac3"
+    },
+    {
+      "path": "stages/kr_universe.py",
+      "bytes": 1252,
+      "characters": 1100,
+      "sha256": "b5fe162439c3a0d5b2296861d1c689c832c74a1b9ab55e353df4a44620381c07"
+    },
+    {
+      "path": "stages/plan_init.py",
+      "bytes": 2357,
+      "characters": 2001,
+      "sha256": "d21738e8d0b6583c3062f3dfeaea8020df20313ee80f768b9ad0875bdc47f678"
+    },
+    {
+      "path": "stages/us_archive.py",
+      "bytes": 742,
+      "characters": 656,
+      "sha256": "62cbcb35b45f8d64f63dc0fe351b3e6dddf8c8be640635278c3699154a784c8a"
+    },
+    {
+      "path": "stages/us_auth.py",
+      "bytes": 2703,
+      "characters": 2685,
+      "sha256": "beed217802ae40c3354bcac2d47c23c6ee54b1b1344c6ac71e3fdcbfc879005b"
+    },
+    {
+      "path": "stages/us_collection.py",
+      "bytes": 24769,
+      "characters": 23957,
+      "sha256": "56c2edf20d8d444d1eee8ca6536f98223f73823ef40042d3025a8b1278711299"
+    },
+    {
+      "path": "stages/us_diagnostics.py",
+      "bytes": 3063,
+      "characters": 2872,
+      "sha256": "fa245168d89e986b02852a4b252682a6a5fd6393dd0a539ec0456f779ca8a6e5"
+    },
+    {
+      "path": "stages/us_dispatch.py",
+      "bytes": 2485,
+      "characters": 2215,
+      "sha256": "3effc9e24d5ca3d6fed13fdc8c5c621c623f4d213fbf1a73961dda65f3100c19"
+    },
+    {
+      "path": "stages/us_features.py",
+      "bytes": 7311,
+      "characters": 7247,
+      "sha256": "69c389f41bfd0544c264783e0f614b1e3886600f63000786012ba48ddd79784d"
+    },
+    {
+      "path": "stages/us_master.py",
+      "bytes": 3234,
+      "characters": 3170,
+      "sha256": "0956ee0d2071f2e634bcb53876399fdec0593c58dd5a50fd5b4cf43a59f5e57e"
+    },
+    {
+      "path": "stages/us_seed.py",
+      "bytes": 4515,
+      "characters": 4507,
+      "sha256": "c69cb9590854d5d9f9f7a8a6eb729d47d065bccc1d724203164c7d9689289174"
+    },
+    {
+      "path": "stages/us_setup.py",
+      "bytes": 5710,
+      "characters": 5140,
+      "sha256": "7f5af58c442d8cc6fa9df67fe95691f627d7cef9431389be03216f14a5d2e4f6"
+    },
+    {
+      "path": "stages/us_snapshot.py",
+      "bytes": 7968,
+      "characters": 7918,
+      "sha256": "f24725152fe8727b5b7fc429329282c994b127ddc9dcaed312f7d11f423c866f"
+    },
+    {
+      "path": "stages/us_summary.py",
+      "bytes": 1577,
+      "characters": 1320,
+      "sha256": "bc15e4543c34bc088aab997b208321960adcc30e327ed721a3f1227ad977eb0a"
+    },
+    {
+      "path": "stages/us_upload.py",
+      "bytes": 5336,
+      "characters": 5322,
+      "sha256": "1cbf7bbcff464e735e60ad663ca6ae129bc8affe7886bce214afb4a29db418e5"
+    }
+  ]
+}
