@@ -34,6 +34,45 @@ PLAN_FILE = Path(__file__).resolve().parents[1] / "REPRESENTATIVE_300_APPROVED.j
 ACTIVE = {"queued", "in_progress", "waiting", "pending", "requested"}
 IDENTITY = re.compile(r"^[0-9a-f]{64}$")
 
+# Phases are fixed labels, not externally supplied URLs, paths or input values.
+class WatchPhaseError(Exception):
+    def __init__(self, phase, cause):
+        self.phase = phase
+        self.cause = cause
+        super().__init__(phase)
+
+
+def watch_call(phase, fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except Exception as exc:
+        raise WatchPhaseError(phase, exc) from None
+
+
+def safe_failure(exc):
+    original = exc.cause if isinstance(exc, WatchPhaseError) else exc
+    message = str(original)
+    safe_literals = {
+        "Unsafe storage object key",
+        "Invalid descriptive object name",
+        "Storage redirects are forbidden",
+        "A candidate checkpoint scope is required",
+        "Object is outside the CM storage areas",
+        "Invalid candidate ID",
+        "The existing cloudtrend-data bucket must be private",
+    }
+    # A numerical HTTP code is safe to expose; body, URL and headers are not.
+    http_error = re.fullmatch(
+        r"GitHub (request failed: |job log read failed )HTTP ([45][0-9]{2})",
+        message,
+    )
+    reason = message if message in safe_literals or http_error else "WITHHELD"
+    return {
+        "phase": exc.phase if isinstance(exc, WatchPhaseError) else "UNCLASSIFIED",
+        "error_type": type(original).__name__,
+        "reason": reason,
+    }
+
 
 def emit(status, **details):
     print(json.dumps({"status": status, **details}, sort_keys=True), flush=True)
@@ -359,7 +398,7 @@ def verify_private_one(store, candidate, hybrid):
 
 
 def decision(gh, rows, store, dry=False):
-    runs = gh.runs()
+    runs = watch_call("GITHUB_LIST_RUNS", gh.runs)
     active = [r for r in runs if r["status"] in ACTIVE]
     if active:
         emit("ACTIVE_RESEARCH_WAIT",active_runs=len(active))
@@ -369,11 +408,11 @@ def decision(gh, rows, store, dry=False):
     last = runs[0]
     if last["status"] != "completed" or last["conclusion"] != "success":
         raise ValueError("Last research workflow not successful")
-    jobs = gh.jobs(last["id"])
+    jobs = watch_call("GITHUB_LIST_JOBS", gh.jobs, last["id"])
     research = [j for j in jobs if j["name"] == "research"]
     if len(research) != 1 or research[0]["conclusion"] != "success":
         raise ValueError("Research job missing or unsuccessful")
-    markers = json_markers(gh.job_logs(research[0]["id"]))
+    markers = json_markers(watch_call("GITHUB_READ_JOB_LOG", gh.job_logs, research[0]["id"]))
     dispatches = [x for x in markers if x["status"] == "DISPATCH_REQUEST_VERIFIED"]
     preflights = [x for x in markers if x["status"] == "PREFLIGHT_VERIFIED"]
     batches = [x for x in markers if x["status"] == "BATCH_VERIFIED"]
@@ -392,7 +431,7 @@ def decision(gh, rows, store, dry=False):
     # trigger when called with GITHUB_TOKEN). Keep the old file as an immutable
     # manual fallback; do not create hundreds of new Vercel-triggering commits.
     if last["event"] == "push":
-        _, control = gh.contents()
+        _, control = watch_call("GITHUB_READ_CONTROL", gh.contents)
         if control["request_id"] != req["request_id"]:
             raise ValueError("Push run differs from latest approved control")
     elif last["event"] == "workflow_dispatch":
@@ -416,15 +455,15 @@ def decision(gh, rows, store, dry=False):
     if len(done) < len(selected):
         emit("PAUSED_VERIFIED_RETRY",run=last["id"],completed=len(done),remaining=len(selected)-len(done),dry_run=dry)
         if not dry:
-            gh.rerun_job(research[0]["id"])
+            watch_call("GITHUB_RERUN_RESEARCH_JOB", gh.rerun_job, research[0]["id"])
         return
     if store is None:
         emit("PRIVATE_AUDIT_REQUIRED",candidates=len(selected))
         return
-    if store.verify_private_bucket()["public"] is not False:
+    if watch_call("STORAGE_VERIFY_BUCKET", store.verify_private_bucket)["public"] is not False:
         raise ValueError("Storage is not private")
     for candidate in selected:
-        verify_private_one(store,candidate,bool(req["hybrid_shared_us_analysis"]))
+        watch_call("STORAGE_VERIFY_RESULT", verify_private_one, store, candidate, bool(req["hybrid_shared_us_analysis"]))
     emit("PRIVATE_BATCH_VERIFIED",candidate_count=len(selected),run=last["id"])
     request = next_batch(rows,req,selected)
     if request is None:
@@ -437,10 +476,10 @@ def decision(gh, rows, store, dry=False):
          workers=request["workers"],hybrid=request["hybrid_shared_us_analysis"],dry_run=dry)
     if not dry:
         # Recheck immediately before dispatch; avoid racing any manual run.
-        if any(r["status"] in ACTIVE for r in gh.runs()):
+        if any(r["status"] in ACTIVE for r in watch_call("GITHUB_RACE_CHECK", gh.runs)):
             emit("RACE_AVOIDED_ACTIVE_RESEARCH")
             return
-        gh.dispatch_research(request)
+        watch_call("GITHUB_DISPATCH_NEXT", gh.dispatch_research, request)
         emit("NEXT_BOUNDED_BATCH_DISPATCHED",count=request["count"])
 
 
@@ -455,8 +494,8 @@ def main(argv=None):
         p.error("Choose exactly one of --execute / --dry-run")
     if os.environ.get("GITHUB_REPOSITORY") != REPO:
         raise ValueError("Repository environment mismatch")
-    rows = approved()
-    store = SupabaseCMStore.from_env()
+    rows = watch_call("MANIFEST_VALIDATE", approved)
+    store = watch_call("STORAGE_INIT", SupabaseCMStore.from_env)
     if args.audit_existing:
         if not args.dry_run:
             raise ValueError("Historical self-audit is read-only only")
@@ -464,7 +503,7 @@ def main(argv=None):
             verify_private_one(store, candidate, False)
         emit("CM300_PRIVATE_LIST_AND_AUDIT_VERIFIED", strategies=2)
         return
-    gh = GitHub(os.environ.get("GH_TOKEN"))
+    gh = watch_call("GITHUB_INIT", GitHub, os.environ.get("GH_TOKEN"))
     decision(gh,rows,store,dry=args.dry_run)
 
 
@@ -472,18 +511,6 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        # Only predeclared, literal safe error classifications; never emit
-        # HTTP bodies, private paths, actual inputs or credential-bearing repr.
-        reason = str(exc)
-        safe_codes = {
-            "Unsafe storage object key",
-            "Invalid descriptive object name",
-            "Storage redirects are forbidden",
-            "A candidate checkpoint scope is required",
-            "Object is outside the CM storage areas",
-            "Invalid candidate ID",
-            "The existing cloudtrend-data bucket must be private",
-        }
-        emit("CM300_WATCH_BLOCKED",error_type=type(exc).__name__,
-             reason=reason if reason in safe_codes else "WITHHELD")
+        # Emit only fixed phase names, exception type and allowlisted safe codes.
+        emit("CM300_WATCH_BLOCKED", **safe_failure(exc))
         sys.exit(2)
