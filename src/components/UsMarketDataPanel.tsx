@@ -17,7 +17,10 @@ const RULES = [
     "A0 Portfolio",
     "동일 섹터 cap 없음 · 최대 20종목 · 초기자금 ÷ 목표 20종목 · 고정 매입 예산 · 진입/청산은 매일",
   ],
-  ["Execution model", "다음 미국 정규장 시가 · 편도 25bp · ADV20 1% 참여율 · 정수 주식"],
+  [
+    "Execution model",
+    "다음 미국 정규장 시가 · 2026-10-08부터 A0 편도 15bp(이전 25bp) · ADV20 1% 참여율 · 정수 주식",
+  ],
 ] as const;
 
 function fmtDate(value: string | undefined | null) {

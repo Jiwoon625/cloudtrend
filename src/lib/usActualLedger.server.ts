@@ -2,9 +2,10 @@ import { readWebsiteDocument } from "./ledger/websiteRepository.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { gunzipSync } from "node:zlib";
 import { downloadFreshObject } from "./freshStorage";
-import { calculateActual, keyFor, type Quote } from "./portfolioLedgers";
+import { keyFor, type Quote } from "./portfolioLedgers";
 import {
   migrateUsActual,
+  calculateUsActual,
   changeUsActual,
   type UsActualDocument,
   type UsActualRequest,
@@ -121,7 +122,7 @@ export async function operateUsActual(
       .map((q) => q.date)
       .sort()
       .at(-1) ?? null;
-  const actual = calculateActual(doc.capital, doc.executions, quotes, latest);
+  const actual = calculateUsActual(doc.capital, doc.executions, quotes, latest);
   let revision = row.revision;
   if (input.action !== "load") {
     const result = await client

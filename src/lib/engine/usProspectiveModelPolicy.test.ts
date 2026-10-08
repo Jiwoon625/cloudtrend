@@ -608,7 +608,7 @@ describe("approved initial-capital/20 prospective US allocation", () => {
     };
     const sold = stepUsProspectiveOperatingPortfolio(a0, next, previous, held.nav);
     expect(sold.trades.find((t) => t.executionDate)?.reason).toBe("A0_BETA_ANCHOR_3D");
-    expect(sold.trades.find((t) => t.executionDate)?.feeUsd).toBe(12.5);
+    expect(sold.trades.find((t) => t.executionDate)?.feeUsd).toBe(7.5);
   });
 
   it("caps partial fills by original gross budget and prior ADV without reallocating after price changes", () => {
@@ -655,5 +655,59 @@ describe("approved initial-capital/20 prospective US allocation", () => {
         usFixedSlotAllocationPolicy(200000),
       ),
     ).toThrow("initial capital");
+  });
+
+  it.each([
+    ["2026-10-06", "2026-10-07", 0.0025],
+    ["2026-10-07", "2026-10-08", 0.0015],
+  ] as const)(
+    "cuts over A0 costs on execution date %s -> %s",
+    (signalDate, executionDate, cost) => {
+      for (const config of US_PROSPECTIVE_STRATEGIES) {
+        const first = stepUsProspectiveOperatingPortfolio(config, analysis(signalDate), null, null);
+        const before = structuredClone(first.state);
+        const buy = stepUsProspectiveOperatingPortfolio(
+          config,
+          analysis(executionDate),
+          first.state,
+          first.nav,
+        );
+        const effectiveCost = config.id === a0.id ? cost : 0.0025;
+        expect(buy.trades.find((t) => t.executionDate)?.feeUsd).toBe(5000 * effectiveCost);
+        expect(buy.state.positions["T0"]!.shares).toBe(50);
+        expect(buy.state.initialCapital).toBe(first.state.initialCapital);
+        expect(first.state).toEqual(before);
+        expect(buy.state.executionPolicy).toBeUndefined();
+      }
+    },
+  );
+
+  it("uses the new A0 fee for cash affordability and exits while preserving default historical calls", () => {
+    const first = stepUsProspectiveOperatingPortfolio(a0, analysis("2026-10-07"), null, null);
+    first.state.cash = 5007.5;
+    const legacy = stepUsProspectivePortfolio(a0, analysis("2026-10-08"), first.state, first.nav);
+    const buy = stepUsProspectiveOperatingPortfolio(
+      a0,
+      analysis("2026-10-08"),
+      first.state,
+      first.nav,
+    );
+    expect(legacy.state.positions["T0"]!.shares).toBe(49);
+    expect(legacy.feesUsd).toBe(12.25);
+    expect(buy.state.positions["T0"]!.shares).toBe(50);
+    expect(buy.feesUsd).toBe(7.5);
+    expect(buy.cash).toBeCloseTo(0, 8);
+    buy.state.pendingExits["T0"] = {
+      symbol: "T0",
+      signalDate: "2026-10-08",
+      reason: "A0_BETA_ANCHOR_3D",
+    };
+    const sold = stepUsProspectiveOperatingPortfolio(
+      a0,
+      analysis("2026-10-09"),
+      buy.state,
+      buy.nav,
+    );
+    expect(sold.trades.find((t) => t.side === "SELL" && t.executionDate)?.feeUsd).toBe(7.5);
   });
 });

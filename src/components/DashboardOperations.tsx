@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { DomesticStrategyRules } from "./DomesticStrategyRules";
+import { UsA0AllocationRules } from "./UsA0AllocationRules";
 import { OnsetProfileDetails } from "./OnsetProfileDetails";
 import { supabase } from "@/lib/cloud";
 import { formatCount, formatKstDateTime } from "@/lib/format";
@@ -242,6 +243,9 @@ export function UsDashboardPortfolio({ query }: { query: OperationsQuery }) {
         </h2>
         <p className="mb-2 text-[10px] text-muted-foreground">실제 체결 원장 기준 · USD</p>
         <Row label="운용자금">{portfolio ? usd(portfolio.capital) : fallback}</Row>
+        <Row label="A0 종목당 참고 매입예산">
+          {portfolio ? usd(portfolio.summary.slotTargetAmount) : fallback}
+        </Row>
         <Row label="보유 종목수">
           {portfolio ? `${portfolio.summary.openPositions}종목` : fallback}
         </Row>
@@ -283,9 +287,8 @@ export function DashboardStrategyRules() {
           조건 충족.
         </p>
         <p>Core 상위 30% 밖 또는 산정 불가 시 청산. Beta 상위 40% 밖 3거래일 연속도 청산합니다.</p>
-        <p>
-          비중조정은 분기별 · 신규 진입/청산 신호는 매일 확인하고 다음 거래일 시가에 반영합니다.
-        </p>
+        <UsA0AllocationRules />
+        <p>신규 진입·청산 신호는 매일 확인하고 다음 미국 정규장 시가에 반영합니다.</p>
       </div>
     </div>
   );

@@ -73,6 +73,37 @@ function analysis(date: string, q = quotes(date)): UsProspectiveAnalysis {
   } as unknown as UsProspectiveAnalysis;
 }
 afterEach(() => vi.useRealTimers());
+
+it.each(["2026-10-06", "2026-10-07"])(
+  "previews the A0 execution-date cost cutover from %s using each book's unchanged capital",
+  (date) => {
+    for (const config of US_PROSPECTIVE_STRATEGIES) {
+      const s = state(date);
+      s.positions = {};
+      s.cash = 1001.5;
+      s.allocationPolicy = usFixedSlotAllocationPolicy(s.initialCapital);
+      s.pendingTargets = {
+        A: { symbol: "A", signalDate: date, targetWeight: 0.05, reason: "ENTRY_ONSET80" },
+      };
+      const original = structuredClone(s);
+      const preview = buildUsOrderPreview(config, s, quotes(date))!;
+      const executionDate = preview.nextSession.executionDate;
+      const stepped = stepUsProspectiveOperatingPortfolio(
+        config,
+        analysis(executionDate),
+        s,
+        100000,
+      );
+      const cutover = config.id === a0!.id && executionDate >= "2026-10-08";
+      expect(preview.nextSession.rows[0]!.estimatedShares).toBe(cutover ? 10 : 9);
+      expect(preview.nextSession.feesUsd).toBeCloseTo(cutover ? 1.5 : 2.25, 8);
+      expect(preview.nextSession.feesUsd).toBeCloseTo(stepped.feesUsd, 8);
+      expect(preview.nextSession.cashAfterUsd).toBeCloseTo(stepped.cash, 8);
+      expect(preview.nextQuarter).toBeNull();
+      expect(s).toEqual(original);
+    }
+  },
+);
 describe("US scheduled sessions", () => {
   it.each([
     ["2026-12-31", "2027-01-04"],

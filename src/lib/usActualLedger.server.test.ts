@@ -135,6 +135,7 @@ describe("US actual server persistence", () => {
       exitSignal: "A0 청산 신호",
     });
     expect(bought.actual.summary.totalPnl).toBe(49);
+    expect(bought.actual.summary.slotTargetAmount).toBe(5000);
     const read = await operateUsActual(db.client, "owner", { action: "load" });
     expect(read.document).toEqual(bought.document);
     expect(new Set(db.writes)).toEqual(new Set(["us_actual_portfolio_ledgers"]));

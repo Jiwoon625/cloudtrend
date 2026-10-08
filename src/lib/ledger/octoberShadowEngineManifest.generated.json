@@ -25,7 +25,7 @@
       "src/lib/engine/sectorScoreAdjustment.ts": "sha256:810cc969c35b129600bbc4ba3c243840def8bbb854bff9c2511ffd30a7753838",
       "src/lib/engine/stockSectorMaster.ts": "sha256:56485e45637b3b00423a9c98da6ed7410cbdd74aebd66baf4676b2270583090f",
       "src/lib/engine/usProspective.ts": "sha256:714ba66fabe36f856e886fa890075a64301aafe61ad07a063ab2eaee1e403138",
-      "src/lib/engine/usProspectivePortfolio.ts": "sha256:c543c9701a3d6df5c80e45e9263e2e7bda6213a08d1e488187a5ed25b98e4c93",
+      "src/lib/engine/usProspectivePortfolio.ts": "sha256:6cbd503b006dc9d8e0a3792cb09c0c5285546a32f80d38d22ffd84dcfbc4a0fa",
       "src/lib/engine/v8SectorPriceLeadership.ts": "sha256:1161aca2b8219712ce27df35a051f13a2177c3c965db34f163b204eaa1643078",
       "src/lib/engine/v8SectorPriceLeadershipPolicy.ts": "sha256:a20de64beb856963b466aaacbf5613a58d4d179ad076df7002171fb859b99fb6",
       "src/lib/engine/vfConfig.ts": "sha256:d5b6fa115ff765785ead12764a29f10df2da80833de63f68af48f97d76e77573",
@@ -48,5 +48,5 @@
     },
     "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
   },
-  "codeHash": "sha256:76e7f82b84ea9fb536cc46cda7d1720c23d63ab5a5184932fd6cf13bbf108d5e"
+  "codeHash": "sha256:e478d2119fe41745dc6e563aed6ee99c0701650d74d53f736b498d3d120daf81"
 }

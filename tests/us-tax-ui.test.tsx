@@ -101,7 +101,7 @@ function actual(): UsActualState {
         totalPnl: 10000,
         totalReturn: 10,
         openPositions: 0,
-        slotTargetAmount: 3333.33,
+        slotTargetAmount: 5000,
         latestDate: "2026-01-15",
       },
     },
@@ -273,6 +273,10 @@ describe("US tax panel integration", () => {
       asOf: "2026-10-02",
     });
     expect(html).toContain("A0 모델 · 양도소득세 추정");
+    expect(html).toContain("실제 투자 · A0 목표 20종목");
+    expect(html).toContain("기록 한도 30종목");
+    expect(html).toContain("설정 운용자금 기준 종목당 참고 매입예산: $5,000.00");
+    expect(html).not.toContain("실제 투자 · 최대 30종목");
     expect(html).toContain("실제 투자 · 양도소득세 추정");
     expect(html.match(/산출 불가 · 자료 미확인/g)).toHaveLength(2);
     expect(JSON.stringify(state.actual)).toBe(before);

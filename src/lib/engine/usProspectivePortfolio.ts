@@ -13,6 +13,14 @@ import type {
 
 export const US_PROSPECTIVE_INITIAL_CAPITAL = 100_000;
 export const US_PROSPECTIVE_ONE_WAY_COST = 0.0025;
+export const US_A0_OPERATING_COST_EFFECTIVE_DATE = "2026-10-08";
+export const US_A0_OPERATING_ONE_WAY_COST = 0.0015;
+/** Execution-date cutover for the operating A0 book only; frozen models supply their own cost. */
+export function usOperatingOneWayCost(strategyId: UsProspectiveStrategyId, executionDate: string) {
+  return strategyId === "A0_QUARTER_PRIMARY" && executionDate >= US_A0_OPERATING_COST_EFFECTIVE_DATE
+    ? US_A0_OPERATING_ONE_WAY_COST
+    : US_PROSPECTIVE_ONE_WAY_COST;
+}
 export const US_PROSPECTIVE_PARTICIPATION = 0.01;
 export const US_PROSPECTIVE_MAX_POSITIONS = 20;
 
@@ -263,6 +271,7 @@ export function stepUsProspectivePortfolio(
   previousNav: number | null,
   executionPolicy?: UsModelExecutionPolicy,
   requestedAllocationPolicy?: UsFixedSlotAllocationPolicy,
+  operatingOneWayCost = US_PROSPECTIVE_ONE_WAY_COST,
 ): UsPortfolioStepResult {
   const allocationPolicy = requestedAllocationPolicy ?? previous?.allocationPolicy;
   const fixedSlots = allocationPolicy && analysis.date >= allocationPolicy.effectiveDate;
@@ -398,7 +407,7 @@ export function stepUsProspectivePortfolio(
       return { notional: Number(format(gross)), fee: Number(format(exactFee)) };
     }
     const notional = shares * price,
-      fee = notional * US_PROSPECTIVE_ONE_WAY_COST;
+      fee = notional * operatingOneWayCost;
     if (side === "BUY") state.cash -= notional + fee;
     else state.cash += notional - fee;
     state.totalFees += fee;
@@ -584,7 +593,7 @@ export function stepUsProspectivePortfolio(
             executionPolicy.oneWayCost,
           ),
         )
-      : Math.max(0, Math.floor(state.cash / (o.px * (1 + US_PROSPECTIVE_ONE_WAY_COST))));
+      : Math.max(0, Math.floor(state.cash / (o.px * (1 + operatingOneWayCost))));
     const budgetCapacity = fixedSlots
       ? Number(decimal(o.pending.remainingBudgetUsd!) / decimal(fromLegacyNumber(o.px)))
       : Infinity;
@@ -869,5 +878,6 @@ export function stepUsProspectiveOperatingPortfolio(
     analysis.date >= US_FIXED_SLOT_EFFECTIVE_DATE
       ? usFixedSlotAllocationPolicy(previous?.initialCapital ?? US_PROSPECTIVE_INITIAL_CAPITAL)
       : undefined,
+    usOperatingOneWayCost(config.id, analysis.date),
   );
 }

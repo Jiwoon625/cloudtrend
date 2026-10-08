@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { UsRecoveryNotice } from "@/components/UsRecoveryNotice";
+import { UsA0AllocationRules } from "@/components/UsA0AllocationRules";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -231,6 +232,11 @@ function UsScreenerPage() {
             <p className="mt-1 text-[11px] text-muted-foreground">
               기준일 {query.data?.analysis.date ?? "-"} · Core 상위 20% Onset / 상위 30% 밖 + Beta 상위 40% 밖×3 Anchor ·
               Core ret120/252 50:50 · 숫자 재튜닝 금지
+            </p>
+            <UsA0AllocationRules />
+            <p className="text-[11px] text-muted-foreground">
+              아래 목록은 조건 충족 신호입니다. 실제 진입은 계좌별 기존 보유·빈 슬롯·현금과 정수
+              수량·거래대금 한도를 반영합니다.
             </p>
           </div>
           <div className="flex gap-2">
