@@ -168,7 +168,7 @@ class NativeCoordinatorTests(unittest.TestCase):
     def test_cli_job_log_fallback_has_safe_arguments_and_no_storage_credentials(self):
         from cmresearchengine.rep300_coordinator import GitHub
         gh = GitHub("fake-github-token")
-        fake_output = b'job\\tstep\\t2026-10-08T15:29:46Z {"status":"PAUSED_VERIFIED","candidate_id":"S08"}\\n'
+        fake_output = b'job\tstep\t2026-10-08T15:29:46Z {"status":"PAUSED_VERIFIED","candidate_id":"S08"}\n'
         with patch("cmresearchengine.rep300_coordinator.subprocess.run",
                    return_value=Mock(returncode=0, stdout=fake_output)) as run:
             with patch.dict("os.environ", {"SUPABASE_SERVICE_ROLE_KEY": "secret-storage-key"}):
