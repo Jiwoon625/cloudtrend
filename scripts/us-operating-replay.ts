@@ -7,6 +7,7 @@ import {
 } from "../src/lib/engine/usProspective";
 import {
   stepUsProspectiveOperatingPortfolio,
+  usFixedSlotAllocationPolicy,
   US_PROSPECTIVE_STRATEGIES,
   type UsPortfolioState,
   type UsModelTrade,
@@ -110,6 +111,18 @@ export function usOperatingStableJson(value: unknown): string {
   return JSON.stringify(value);
 }
 const eq = (a: unknown, b: unknown) => usOperatingStableJson(a) === usOperatingStableJson(b);
+
+/** JSONB preserves policy values, not insertion order. Validate the whole stored
+ * policy semantically, then restore the frozen engine's constructor order on a
+ * copy. Do not rewrite prior snapshots or change any policy/capital value. */
+export function hydrateUsOperatingState(state: UsPortfolioState): UsPortfolioState {
+  if (!state.allocationPolicy) return state;
+  if (!positive(state.initialCapital)) throw new Error("Invalid stored US initial capital");
+  const expected = usFixedSlotAllocationPolicy(state.initialCapital);
+  if (!eq(state.allocationPolicy, expected))
+    throw new Error("Stored US fixed-slot policy differs from its initial capital or identity");
+  return { ...state, allocationPolicy: expected };
+}
 function near(a: number, b: number, label: string) {
   if (
     !Number.isFinite(a) ||
@@ -391,7 +404,12 @@ export function planUsOperatingReplay(input: {
         ...a.rows.filter((r) => r.a0Entry || r.a2Entry || r.b3Entry).map((r) => r.symbol),
       ]);
       for (const symbol of required) requireFreshOhlc(rows.get(symbol), a.date, symbol);
-      const result = stepUsProspectiveOperatingPortfolio(strategy, a, state, previous.nav_usd);
+      const result = stepUsProspectiveOperatingPortfolio(
+        strategy,
+        a,
+        hydrateUsOperatingState(state),
+        previous.nav_usd,
+      );
       reconcile(state, result, a);
       const snapshot: UsOperatingSnapshot = {
         strategy_id: strategy.id,
