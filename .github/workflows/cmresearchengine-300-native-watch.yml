@@ -1,13 +1,16 @@
 name: CMresearchengine representative300 native watch
 on:
   workflow_dispatch:
+  schedule:
+    # Research-only reconciliation: no recurring market screening.
+    - cron: '*/15 * * * *'
   push:
     branches: [main]
     paths:
       - '.github/workflows/cmresearchengine-300-native-watch.yml'
 permissions:
   contents: read
-  actions: read
+  actions: write
 concurrency:
   group: cmresearchengine-300-native-watch
   cancel-in-progress: false
@@ -33,5 +36,9 @@ jobs:
           python-version: '3.12.14'
       - name: Install pinned research dependencies
         run: python -m pip install --disable-pip-version-check -r research/cmresearchengine/requirements.txt
-      - name: Verify next bounded action without any GitHub mutation
+      - name: Reconcile one approved research cohort, resuming paused checkpoints
+        if: github.event_name == 'schedule'
+        run: python -m cmresearchengine.rep300_coordinator --execute
+      - name: Read-only verification on manual trigger or workflow changes
+        if: github.event_name != 'schedule'
         run: python -m cmresearchengine.rep300_coordinator --dry-run
