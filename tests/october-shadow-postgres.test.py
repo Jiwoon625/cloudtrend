@@ -200,7 +200,7 @@ class Suite:
             body = "create or replace function public.ledger_append_own_october_model_session" + body
         body = body.replace(marker, "v_now timestamptz := " + literal(instant) + "::timestamptz;")
         self.sql(body)
-        generic_source = getattr(self, "runtime_hash_migration", getattr(self, "timing_migration", self.migration))
+        generic_source = getattr(self, "pending_archive_migration", getattr(self, "runtime_hash_migration", getattr(self, "timing_migration", self.migration)))
         generic_marker = "create or replace function public.ledger_append_model_session"
         assert generic_marker in generic_source
         generic_tail = generic_source.split(generic_marker, 1)[1]
@@ -304,6 +304,13 @@ class Suite:
         assert len(runtime_hash_migrations) == 1
         self.runtime_hash_migration = runtime_hash_migrations[0].read_text()
         self.sql(self.runtime_hash_migration)
+        pending_migrations = list((ROOT / "supabase/migrations").glob("*_shadow_pending_archive_validation.sql"))
+        assert len(pending_migrations) == 1
+        self.pending_archive_migration = pending_migrations[0].read_text()
+        before_pending = self.snapshot()
+        self.sql(self.pending_archive_migration)
+        assert self.snapshot() == before_pending, "Schema fix rewrote immutable rows"
+        assert self.sql("SELECT prosecdef::text || ':' || pg_get_userbyid(proowner) || ':' || proconfig[1] FROM pg_proc WHERE oid='public.ledger_append_model_session(uuid,jsonb,jsonb,date,text)'::regprocedure") == 'false:postgres:search_path=""'
         assert self.sql(catalog) == before_catalog
         assert self.sql("SELECT proacl FROM pg_proc WHERE oid='public.ledger_append_model_session(uuid,jsonb,jsonb,date,text)'::regprocedure") == generic_acl
         assert self.sql("SELECT prosecdef::text || ':' || pg_get_userbyid(proowner) || ':' || proconfig[1] FROM pg_proc WHERE oid=" + literal(SIGNATURE) + "::regprocedure") == 'true:postgres:search_path=""'
@@ -519,6 +526,58 @@ class Suite:
         changed["publicationArtifact"]["payload"]["inputs"]["bars"]["005930"][0]["close"] = 999
         self.reject(call(changed), "Immutable October daily input conflict", user=USER_D)
         self.check("Bounded KR daily input stages once, reuses exactly via owner and unchanged service RPC, and rejects same-hash payload substitution")
+        # Both fields remain optional only as a legacy pair. Modern evidence is
+        # tightly typed and consistent, and is never stripped before archiving.
+        legacy_snapshot = self.snapshot()
+        self.sql(self.pending_archive_migration)
+        assert self.snapshot() == legacy_snapshot
+        self.clock("2026-10-12T22:00:00Z")
+        assert stage(daily_envelope) == daily
+        base_entry = daily["inputs"]["snapshots"][0]["entries"][0]
+        for status, passed, rules in [
+            ("PASS", True, []), ("PENDING", False, ["기준일 시가총액 미확인 · 판단 보류"]),
+            ("FAIL", False, []), ("FAIL", False, ["시가총액 자료 대기"]),
+            ("PENDING", False, ["x" * 256] * 16),
+        ]:
+            modern = copy.deepcopy(daily)
+            modern["inputs"]["snapshots"][0]["entries"][0].update(
+                hardFilterStatus=status, hardFilterPassed=passed, pendingRules=rules)
+            value = envelope(modern, "KR_DAILY_INPUT")
+            assert stage(value) == modern
+            assert stage(value, service=True) == modern
+            before_retry = self.snapshot()
+            assert stage(value) == modern
+            assert self.snapshot() == before_retry
+            changed = copy.deepcopy(value)
+            changed["publicationArtifact"]["payload"]["inputs"]["snapshots"][0]["entries"][0]["name"] = "Changed"
+            self.reject(call(changed), "Immutable October daily input conflict", user=USER_D)
+        self.check("PASS/PENDING/FAIL evidence persists and retries exactly, including FAIL with pending reasons; legacy archives remain byte-equivalent")
+        invalid_entries = [
+            dict(hardFilterStatus="UNKNOWN", hardFilterPassed=False, pendingRules=[]),
+            dict(hardFilterStatus=None, hardFilterPassed=False, pendingRules=[]),
+            dict(hardFilterStatus=1, hardFilterPassed=False, pendingRules=[]),
+            dict(hardFilterStatus="PASS", hardFilterPassed="true", pendingRules=[]),
+            dict(hardFilterStatus="PASS", pendingRules=[]),
+            dict(hardFilterStatus="PASS", hardFilterPassed=True),
+            dict(hardFilterPassed=False, pendingRules=[]),
+            dict(hardFilterStatus="PENDING", hardFilterPassed=False, pendingRules=None),
+            dict(hardFilterStatus="PENDING", hardFilterPassed=False, pendingRules="reason"),
+            dict(hardFilterStatus="PENDING", hardFilterPassed=False, pendingRules={"reason":"x"}),
+            *[dict(hardFilterStatus="PENDING", hardFilterPassed=False, pendingRules=rules)
+              for rules in [[None], [1], [True], [{}], [[]], [""], ["   "], ["\t\n"], ["\r\n "], ["x" * 257], ["x"] * 17]],
+            dict(hardFilterStatus="PASS", hardFilterPassed=False, pendingRules=[]),
+            dict(hardFilterStatus="PASS", hardFilterPassed=True, pendingRules=["reason"]),
+            dict(hardFilterStatus="PENDING", hardFilterPassed=True, pendingRules=["reason"]),
+            dict(hardFilterStatus="PENDING", hardFilterPassed=False, pendingRules=[]),
+            dict(hardFilterStatus="FAIL", hardFilterPassed=True, pendingRules=[]),
+            dict(hardFilterStatus="PASS", hardFilterPassed=True, pendingRules=[], unknown="arbitrary"),
+            dict(hardFilterStatus="PASS", hardFilterPassed=True, pendingRules=[], instrumentType="ETF"),
+        ]
+        for fields in invalid_entries:
+            bad = copy.deepcopy(daily)
+            bad["inputs"]["snapshots"][0]["entries"][0] = dict(base_entry, **fields)
+            self.reject(call(envelope(bad, "KR_DAILY_INPUT")), user=USER_D)
+        self.check(f"All {len(invalid_entries)} malformed, partial, contradictory, oversized and unknown-field evidence shapes reject atomically")
         raced_day = copy.deepcopy(daily)
         raced_day["date"] = "2026-10-07"
         raced_day["inputs"]["snapshots"][0].update(date="2026-10-07", asOfDate="2026-10-07", savedAt="2026-10-08T08:00:00+09:00")

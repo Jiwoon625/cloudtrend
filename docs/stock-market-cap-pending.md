@@ -43,3 +43,17 @@ The deployed-input check exposed that repeated pending metadata could exceed the
 The size guard accounts for PostgreSQL JSONB separator spaces, UTF-8, and numeric exponent expansion rather than comparing compact JavaScript JSON alone. It rejects malformed envelopes and oversized output with an explicit error; it never truncates entries or pending evidence. No database limit, migration, sharing setting, or frozen Shadow calculation is changed.
 
 PostgreSQL's JSONB output normalization is documented in [JSON input/output syntax](https://www.postgresql.org/docs/current/datatype-json.html#JSON-IO).
+
+## Shadow archive schema compatibility
+
+The forward migration `20261008021537_shadow_pending_archive_validation.sql` admits the two current snapshot fields to the existing bounded `KR_DAILY_INPUT` archive schema. Both absent retains legacy semantics; current evidence requires both fields and a boolean `hardFilterPassed`:
+
+- PASS: true, no pending reasons
+- PENDING: false, at least one pending reason
+- FAIL: false, with or without pending reasons (another known failure takes precedence)
+
+`pendingRules` is limited to 16 nonblank strings, each at most 256 characters. Nulls, malformed types, partial pairs, contradictory status/boolean values, non-stock entries and unknown fields fail atomically. The original evidence is stored verbatim. No historical archive, frozen contract, series state, source upload, US collector or CM calculation is rewritten.
+
+The migration replaces only the existing invoker function, preserves its owner/ACL and empty search path, and adds no grants, roles, policies or helper endpoints. Regression coverage uses real PostgreSQL plus two-session TypeScript-generated snapshots and prepared publications, checking owner/service persistence, replay, exact retry, conflicting hash/payload rejection, legacy equality and pending-entry suppression. Shadow migrations now trigger the integrity workflow independently of application edits.
+
+Rollback, if needed, is a new forward migration restoring the previous function body from `20261006201500_shadow_runtime_hash_provenance.sql` while retaining the existing owner and ACL. Do not delete or rewrite archived evidence or completed sessions. The old validator rejects new-format snapshots again, so replay would remain blocked until a corrected forward fix is deployed. Application/UI rollback is not needed for this schema-only runtime change.
