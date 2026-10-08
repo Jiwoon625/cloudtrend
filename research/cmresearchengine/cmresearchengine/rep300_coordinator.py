@@ -129,12 +129,20 @@ class GitHub:
         raw = base64.b64decode(item["content"])
         return item["sha"], json.loads(raw)
 
-    def write_request(self, old_sha, request):
-        b = json.dumps(request, indent=2, sort_keys=True).encode() + b"\n"
-        return self.api("/contents/" + CONTROL, "PUT", {
-            "message": "research: auto-dispatch next verified representative-300 cohort",
-            "branch": "main", "sha": old_sha,
-            "content": base64.b64encode(b).decode()})
+    def dispatch_research(self, request):
+        """Explicit workflow_dispatch is allowed from GITHUB_TOKEN.
+
+        GitHub suppresses downstream on:push workflow runs for commits made
+        by GITHUB_TOKEN. Do not depend on that suppressed trigger or push a
+        new control commit each batch. The existing workflow accepts these
+        exact bounded, prevalidated inputs through its native dispatch API.
+        """
+        req = validate_request(request)
+        inputs = {name: str(req[name]) for name in
+                  ("mode", "stage", "offset", "count", "max_seconds", "workers", "ids")}
+        inputs["hybrid_shared_us_analysis"] = str(req["hybrid_shared_us_analysis"]).lower()
+        return self.api("/actions/workflows/" + WORKFLOW + "/dispatches",
+                        "POST", {"ref": "main", "inputs": inputs})
 
     def rerun_job(self, job_id):
         return self.api("/actions/jobs/" + str(int(job_id)) + "/rerun", "POST", {})
@@ -300,8 +308,10 @@ def verify_private_one(store, candidate, hybrid):
         events = read_rows("events.csv")
         nav = read_rows("nav.csv")
         audits = read_rows("retrospective_exit_proxy_audit.csv")
-        if not nav or not events:
-            raise ValueError("Missing historical rows")
+        if not nav:
+            raise ValueError("Missing NAV rows")
+        # A pure-cash preregistered strategy may legally have zero executions.
+        # Empty trading events must not be invented just to pass audit.
         trades = [e for e in events if e.get("kind") in {"BUY","SELL"}]
         if len({t["id"] for t in trades}) != len(trades):
             raise ValueError("Duplicate executed trade id")
@@ -377,9 +387,21 @@ def decision(gh, rows, store, dry=False):
         raise ValueError("Input evidence profile drift")
     if not verify_existing_request(rows, req, selected):
         raise ValueError("Run contains unapproved candidate")
-    latest_sha, control = gh.contents()
-    if control["request_id"] != req["request_id"]:
-        raise ValueError("Latest run does not match durable dispatch control; do not duplicate")
+    # First batch was initiated by a reviewed contents-file push. Future
+    # native coordinator batches use explicit workflow_dispatch (which does
+    # trigger when called with GITHUB_TOKEN). Keep the old file as an immutable
+    # manual fallback; do not create hundreds of new Vercel-triggering commits.
+    if last["event"] == "push":
+        _, control = gh.contents()
+        if control["request_id"] != req["request_id"]:
+            raise ValueError("Push run differs from latest approved control")
+    elif last["event"] == "workflow_dispatch":
+        if last.get("actor", {}).get("login") != "github-actions[bot]":
+            raise ValueError("Unexpected manual workflow actor; do not auto-advance")
+        if last.get("head_branch") != "main":
+            raise ValueError("Research dispatch was not run on main")
+    else:
+        raise ValueError("Unrecognized CM research workflow event")
     receipts = [x for x in markers if x["status"] in ("PAUSED_VERIFIED", "COMPLETED_VERIFIED")]
     if len(receipts) != len(selected) or {r.get("candidate_id") for r in receipts} != set(selected):
         raise ValueError("Incomplete candidate receipts")
@@ -414,7 +436,11 @@ def decision(gh, rows, store, dry=False):
     emit("NEXT_BOUNDED_BATCH_READY",stage=request["stage"],offset=request["offset"],count=request["count"],
          workers=request["workers"],hybrid=request["hybrid_shared_us_analysis"],dry_run=dry)
     if not dry:
-        gh.write_request(latest_sha,request)
+        # Recheck immediately before dispatch; avoid racing any manual run.
+        if any(r["status"] in ACTIVE for r in gh.runs()):
+            emit("RACE_AVOIDED_ACTIVE_RESEARCH")
+            return
+        gh.dispatch_research(request)
         emit("NEXT_BOUNDED_BATCH_DISPATCHED",count=request["count"])
 
 
