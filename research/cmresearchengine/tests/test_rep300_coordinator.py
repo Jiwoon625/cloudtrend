@@ -1,6 +1,7 @@
 """Fail-closed representative-300 coordinator transitions and checkpoint resumption."""
 import json
 import unittest
+from unittest.mock import patch
 from cmresearchengine.rep300_coordinator import (
     approved, next_batch, selection, verify_existing_request, json_markers,
     make_request, decision, storage_folders
@@ -102,6 +103,46 @@ class NativeCoordinatorTests(unittest.TestCase):
             'arbitrary nonsense {"status": false}\n'
         self.assertEqual(json_markers(raw),
                          [{"status":"PAUSED_VERIFIED","candidate_id":"S08"}])
+
+    def test_workflow_dispatch_is_native_actions_api_not_contents_push(self):
+        from cmresearchengine.rep300_coordinator import GitHub
+        gh=GitHub("fake-token")
+        calls=[]
+        gh.api=lambda path,method="GET",payload=None: calls.append((path,method,payload))
+        request={"request_id":"native-1","mode":"run","stage":"base",
+                 "offset":7,"count":4,"workers":2,"max_seconds":3000,
+                 "ids":"","hybrid_shared_us_analysis":True}
+        gh.dispatch_research(request)
+        self.assertEqual(len(calls),1)
+        self.assertTrue(calls[0][0].endswith("/dispatches"))
+        self.assertEqual(calls[0][1],"POST")
+        self.assertEqual(calls[0][2]["ref"],"main")
+        self.assertEqual(calls[0][2]["inputs"]["hybrid_shared_us_analysis"],"true")
+        self.assertEqual(calls[0][2]["inputs"]["count"],"4")
+
+    def test_human_started_manual_run_cannot_autoadvance(self):
+        raw={"status":"DISPATCH_REQUEST_VERIFIED","request_id":"manual-1",
+             "mode":"run","stage":"base","offset":5,"count":2,
+             "max_seconds":3000,"workers":2,"ids":"","hybrid_shared_us_analysis":False}
+        pre={"status":"PREFLIGHT_VERIFIED",
+             "plan_sha256":"ce6be8c497e45fa22a41d3a7b924913a23b18588fd05efd33ee14eb961ec7c2c",
+             "normalized_files":389,"reference_files":12,"known_events":27}
+        batch={"status":"BATCH_VERIFIED","selected_count":2,
+               "completed_in_selected_batch":2,"remaining_in_selected_batch":0}
+        log="\n".join(json.dumps(z) for z in
+             [raw,pre,{"status":"COMPLETED_VERIFIED","candidate_id":"S06"},
+              {"status":"COMPLETED_VERIFIED","candidate_id":"S07"},batch])
+        class GH:
+            def runs(self):
+                return [{"id":1,"status":"completed","conclusion":"success",
+                         "event":"workflow_dispatch","actor":{"login":"human"},
+                         "head_branch":"main"}]
+            def jobs(self,x):
+                return [{"id":2,"name":"research","conclusion":"success"}]
+            def job_logs(self,x):
+                return log
+        with self.assertRaisesRegex(ValueError,"Unexpected manual workflow actor"):
+            decision(GH(),self.rows,None,dry=True)
 
     def test_active_research_skips_all_other_io(self):
         class ActiveGH:
