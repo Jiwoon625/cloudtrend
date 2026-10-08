@@ -1,4 +1,4 @@
-name: CMresearchengine S05 private final audit
+name: CMresearchengine S06 S07 private final audit
 on:
   push:
     branches: [main]
@@ -24,7 +24,7 @@ jobs:
           python-version: '3.12.14'
       - name: Install pinned research dependencies
         run: python -m pip install --disable-pip-version-check -r research/cmresearchengine/requirements.txt
-      - name: Verify S05 private result and accounting without exposing records
+      - name: Verify S06 and S07 private result accounting without exposing records
         run: |
           python - <<'PY'
           import csv, hashlib, io, json, zipfile
@@ -32,89 +32,93 @@ jobs:
           from decimal import Decimal
           from cmresearchengine.storage import SupabaseCMStore
           from cmresearchengine.runner import read_result
-
-          plan='ce6be8c497e45fa22a41d3a7b924913a23b18588fd05efd33ee14eb961ec7c2c'
-          identity='8b628f482e2b109e316a68c3acee3ec4c350839917d92acb3cd972844b72d763'
-          path=f'results/{plan}/S05/{identity}/'
-          store=SupabaseCMStore.from_env()
-          assert store.verify_private_bucket()['public'] is False
-          completion_raw=store.get_object(path+'completion.json',max_bytes=1000000)
-          summary_raw=store.get_object(path+'summary.json',max_bytes=1000000)
-          checkpoint=store.scoped_checkpoints(plan,'S05')
-          marker_raw=checkpoint.get_bytes('complete_'+identity)
-          assert marker_raw==completion_raw, 'Completion marker/posting byte mismatch'
-          completion=json.loads(completion_raw)
-          assert isinstance(completion['outputs_size'],int) and completion['outputs_size']>0
-          assert len(completion['outputs_sha256'])==64
-          files=read_result(completion,checkpoint)
-          assert files['summary.json']==summary_raw,'Public private posted summary mismatch'
-          manifest=json.loads(files['file_manifest.json'])['files']
-          assert set(manifest)==set(files)-{'file_manifest.json'}
-          for name,record in manifest.items():
-              content=files[name]
-              assert len(content)==record['size'],f'{name}: size'
-              assert hashlib.sha256(content).hexdigest()==record['sha256'],f'{name}: SHA256'
-          summary=json.loads(summary_raw)
-          assert summary['candidate_id']=='S05'
-          assert summary['schema']=='CM_RESEARCH_RESULT_V1'
-          assert summary['historical_pit_certified'] is False
-          assert summary['actual_historical_execution_certified'] is False
-          assert summary['policy']['policy_id']=='RETROSPECTIVE_LAST_VALID_CLOSE_EXIT_V1'
-          assert Decimal(summary['ordinary_and_proxy_sales_share_one_way_fee'])==Decimal('0.0015')
-          assert summary['evaluation_start']=='2017-08-21' and summary['evaluation_end']=='2026-09-11'
-          assert 'final_snapshot' in summary and 'performance' in summary
-
-          def rows(filename):
-              return list(csv.DictReader(io.StringIO(files[filename].decode('utf-8-sig'))))
-          def D(x):
-              return Decimal(str(x))
-          def dt(x):
-              return datetime.fromisoformat(str(x).replace('Z','+00:00'))
-          events=rows('events.csv')
-          nav=rows('nav.csv')
-          proxies=rows('retrospective_exit_proxy_audit.csv')
-          assert len(nav)>0 and len(events)>0
-          kinds={'BUY','SELL'}
-          trades=[r for r in events if r.get('kind') in kinds]
-          assert len({e['id'] for e in trades})==len(trades),'Duplicate trade IDs'
-          for e in trades:
-              assert D(e['quantity'])>0 and D(e['price'])>0
-              assert abs(D(e['fee'])-D(e['quantity'])*D(e['price'])*Decimal('0.0015'))<=Decimal('0.01'),'Fee reconciliation mismatch'
-              if e['kind']=='SELL':
-                  assert dt(e['settlement_at'])>=dt(e['at']),'Backdated cash settlement'
-          by_id={e['id']:e for e in trades}
-          proxy_sells={e['id'] for e in trades if e['kind']=='SELL' and e.get('execution_class')=='RETROSPECTIVE_EXIT_PROXY'}
-          assert len(proxies)==summary['proxy_exit_count']==len(proxy_sells),'Proxy count mismatch'
-          assert len({p['fill_id'] for p in proxies})==len(proxies),'Duplicate proxy fill IDs'
-          for p in proxies:
-              e=by_id[p['fill_id']]
-              assert p['fill_id'] in proxy_sells
-              assert p['policy_id']=='RETROSPECTIVE_LAST_VALID_CLOSE_EXIT_V1'
-              assert str(p['actual_historical_fill']).lower()=='false'
-              assert str(p['retroactive_nav_rewrite']).lower()=='false'
-              assert dt(p['reference_price_available_at'])<=dt(p['recognition_at'])
-              assert str(p['reference_price_date'])<=str(p['trigger_session_date'])
-              assert dt(p['cash_available_at'])>=dt(p['recognition_at'])
-              assert dt(p['recognition_at'])==dt(e['at'])
-              assert dt(p['cash_available_at'])==dt(e['settlement_at'])
-              assert D(p['reference_price'])==D(e['price'])
-          for r in nav:
-              assert D(r['gross_nav_krw'])>0,'Nonpositive NAV'
-              for k in ('cash_krw','receivable_krw','market_value_krw'):
-                  if k in r and r[k]:
-                      assert D(r[k]).is_finite(),f'Invalid {k}'
-          residual=summary['final_snapshot'].get('bridge_residual_krw')
-          assert residual is not None and abs(D(residual))<=Decimal('0.01'),'Final balance bridge residual'
-          assert int(summary['unresolved_rights_encounter_count'])>=0
-          print(json.dumps({'status':'S05_PRIVATE_AUDIT_VERIFIED',
-              'result_zip_size':completion['outputs_size'],
-              'result_zip_sha256':completion['outputs_sha256'],
-              'file_manifest_checked':len(manifest),
-              'trade_fee_checks':len(trades),
-              'proxy_exit_checks':len(proxies),
-              'cash_settlement_checks':sum(e['kind']=='SELL' for e in trades),
-              'nav_rows_checked':len(nav),
-              'unresolved_rights_encounters':summary['unresolved_rights_encounter_count'],
-              'bridge_residual_krw':str(residual),
-              'private_storage':True},sort_keys=True))
+          
+          
+          def audit(candidate,identity):
+              plan='ce6be8c497e45fa22a41d3a7b924913a23b18588fd05efd33ee14eb961ec7c2c'
+              path=f'results/{plan}/{candidate}/{identity}/'
+              store=SupabaseCMStore.from_env()
+              assert store.verify_private_bucket()['public'] is False
+              completion_raw=store.get_object(path+'completion.json',max_bytes=1000000)
+              summary_raw=store.get_object(path+'summary.json',max_bytes=1000000)
+              checkpoint=store.scoped_checkpoints(plan,candidate)
+              marker_raw=checkpoint.get_bytes('complete_'+identity)
+              assert marker_raw==completion_raw, 'Completion marker/posting byte mismatch'
+              completion=json.loads(completion_raw)
+              assert isinstance(completion['outputs_size'],int) and completion['outputs_size']>0
+              assert len(completion['outputs_sha256'])==64
+              files=read_result(completion,checkpoint)
+              assert files['summary.json']==summary_raw,'Public private posted summary mismatch'
+              manifest=json.loads(files['file_manifest.json'])['files']
+              assert set(manifest)==set(files)-{'file_manifest.json'}
+              for name,record in manifest.items():
+                  content=files[name]
+                  assert len(content)==record['size'],f'{name}: size'
+                  assert hashlib.sha256(content).hexdigest()==record['sha256'],f'{name}: SHA256'
+              summary=json.loads(summary_raw)
+              assert summary['candidate_id']==candidate
+              assert summary['schema']=='CM_RESEARCH_RESULT_V1'
+              assert summary['historical_pit_certified'] is False
+              assert summary['actual_historical_execution_certified'] is False
+              assert summary['policy']['policy_id']=='RETROSPECTIVE_LAST_VALID_CLOSE_EXIT_V1'
+              assert Decimal(summary['ordinary_and_proxy_sales_share_one_way_fee'])==Decimal('0.0015')
+              assert summary['evaluation_start']=='2017-08-21' and summary['evaluation_end']=='2026-09-11'
+              assert 'final_snapshot' in summary and 'performance' in summary
+          
+              def rows(filename):
+                  return list(csv.DictReader(io.StringIO(files[filename].decode('utf-8-sig'))))
+              def D(x):
+                  return Decimal(str(x))
+              def dt(x):
+                  return datetime.fromisoformat(str(x).replace('Z','+00:00'))
+              events=rows('events.csv')
+              nav=rows('nav.csv')
+              proxies=rows('retrospective_exit_proxy_audit.csv')
+              assert len(nav)>0 and len(events)>0
+              kinds={'BUY','SELL'}
+              trades=[r for r in events if r.get('kind') in kinds]
+              assert len({e['id'] for e in trades})==len(trades),'Duplicate trade IDs'
+              for e in trades:
+                  assert D(e['quantity'])>0 and D(e['price'])>0
+                  assert abs(D(e['fee'])-D(e['quantity'])*D(e['price'])*Decimal('0.0015'))<=Decimal('0.01'),'Fee reconciliation mismatch'
+                  if e['kind']=='SELL':
+                      assert dt(e['settlement_at'])>=dt(e['at']),'Backdated cash settlement'
+              by_id={e['id']:e for e in trades}
+              proxy_sells={e['id'] for e in trades if e['kind']=='SELL' and e.get('execution_class')=='RETROSPECTIVE_EXIT_PROXY'}
+              assert len(proxies)==summary['proxy_exit_count']==len(proxy_sells),'Proxy count mismatch'
+              assert len({p['fill_id'] for p in proxies})==len(proxies),'Duplicate proxy fill IDs'
+              for p in proxies:
+                  e=by_id[p['fill_id']]
+                  assert p['fill_id'] in proxy_sells
+                  assert p['policy_id']=='RETROSPECTIVE_LAST_VALID_CLOSE_EXIT_V1'
+                  assert str(p['actual_historical_fill']).lower()=='false'
+                  assert str(p['retroactive_nav_rewrite']).lower()=='false'
+                  assert dt(p['reference_price_available_at'])<=dt(p['recognition_at'])
+                  assert str(p['reference_price_date'])<=str(p['trigger_session_date'])
+                  assert dt(p['cash_available_at'])>=dt(p['recognition_at'])
+                  assert dt(p['recognition_at'])==dt(e['at'])
+                  assert dt(p['cash_available_at'])==dt(e['settlement_at'])
+                  assert D(p['reference_price'])==D(e['price'])
+              for r in nav:
+                  assert D(r['gross_nav_krw'])>0,'Nonpositive NAV'
+                  for k in ('cash_krw','receivable_krw','market_value_krw'):
+                      if k in r and r[k]:
+                          assert D(r[k]).is_finite(),f'Invalid {k}'
+              residual=summary['final_snapshot'].get('bridge_residual_krw')
+              assert residual is not None and abs(D(residual))<=Decimal('0.01'),'Final balance bridge residual'
+              assert int(summary['unresolved_rights_encounter_count'])>=0
+              print(json.dumps({'status':candidate+'_PRIVATE_AUDIT_VERIFIED',
+                  'result_zip_size':completion['outputs_size'],
+                  'result_zip_sha256':completion['outputs_sha256'],
+                  'file_manifest_checked':len(manifest),
+                  'trade_fee_checks':len(trades),
+                  'proxy_exit_checks':len(proxies),
+                  'cash_settlement_checks':sum(e['kind']=='SELL' for e in trades),
+                  'nav_rows_checked':len(nav),
+                  'unresolved_rights_encounters':summary['unresolved_rights_encounter_count'],
+                  'bridge_residual_krw':str(residual),
+                  'private_storage':True},sort_keys=True))
+          
+          audit('S06','f86e278af7c3ca242a90cff743fe3fb3a9347de10d80b204d2084d82c10f6b33')
+          audit('S07','9facd9af8860f604635ccac755604935e22be2dd3293b2e27b6baa49eebdc3b9')
           PY
