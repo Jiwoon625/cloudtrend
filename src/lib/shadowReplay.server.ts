@@ -25,7 +25,10 @@ import {
 } from "./ledger/octoberShadowPipeline";
 import { octoberShadowStore } from "./ledger/octoberShadowRepository.server";
 import manifest from "./ledger/octoberShadowEngineManifest.generated.json";
-import { adoptedShadowFrozenCodeHash, assertAdoptedShadowRuntime } from "./ledger/octoberShadowRuntime";
+import {
+  adoptedShadowFrozenCodeHash,
+  assertAdoptedShadowRuntime,
+} from "./ledger/octoberShadowRuntime";
 import {
   runUsProspectiveAnalysis,
   US_PROSPECTIVE_RULE_VERSION,
@@ -131,7 +134,8 @@ export function shadowReplayClock(
   signalDate: string,
   calculatedAt = new Date().toISOString(),
 ): ShadowReplayClock {
-  if (!Number.isFinite(Date.parse(calculatedAt))) throw new Error("Invalid replay calculation time");
+  if (!Number.isFinite(Date.parse(calculatedAt)))
+    throw new Error("Invalid replay calculation time");
   const next = nextRegularSession(market, signalDate);
   const executionAt = next ? regularOpenAt(market, next) : null;
   if (market === "KR") {
@@ -232,7 +236,11 @@ function currentDateEvidence(dataset: MarketDataset, snapshot: ScreeningSnapshot
   };
 }
 
-async function insertReplayAudit(client: SupabaseClient, userId: string, row: ShadowReplayAuditInput) {
+async function insertReplayAudit(
+  client: SupabaseClient,
+  userId: string,
+  row: ShadowReplayAuditInput,
+) {
   const { error } = await client.from("shadow_replay_audit").insert({
     user_id: userId,
     market: row.market,
@@ -265,7 +273,9 @@ async function alignedLatestDate(
   const nonNull = latest.filter((value): value is string => value !== null);
   if (!nonNull.length) return null;
   if (new Set(latest).size !== 1)
-    throw new Error("Shadow books are not aligned on one latest session; repair required before replay");
+    throw new Error(
+      "Shadow books are not aligned on one latest session; repair required before replay",
+    );
   return nonNull[0]!;
 }
 
@@ -274,7 +284,10 @@ async function priorSnapshot(
   config: ScoringConfig,
   beforeDate: string,
 ): Promise<ScreeningSnapshot | null> {
-  const prior = rawDataset.tradeDates.filter((date) => date < beforeDate).sort().at(-1);
+  const prior = rawDataset.tradeDates
+    .filter((date) => date < beforeDate)
+    .sort()
+    .at(-1);
   if (!prior) return null;
   const sliced = sliceKrDatasetForReplay(rawDataset, prior);
   if (!sliced.instruments.length) return null;
@@ -329,7 +342,14 @@ export async function replayKrShadow(input: {
     ? calendar.regularSessions.find((date) => date > latestRecordedDate)
     : calendar.regularSessions.find((date) => date >= MODEL_ACCOUNTING_START);
   if (!start)
-    return { market: "KR", calculatedAt, processed: [], deferred: null, latestRecordedDate, throughDate };
+    return {
+      market: "KR",
+      calculatedAt,
+      processed: [],
+      deferred: null,
+      latestRecordedDate,
+      throughDate,
+    };
 
   const dates = calendar.regularSessions.filter((date) => date >= start && date <= throughDate);
   let previousSnapshot = await priorSnapshot(input.dataset, input.config, start);
@@ -354,7 +374,14 @@ export async function replayKrShadow(input: {
         sourceHash: null,
         reason,
       });
-      return { market: "KR", calculatedAt, processed, deferred: { date, reason }, latestRecordedDate: lastRecorded, throughDate };
+      return {
+        market: "KR",
+        calculatedAt,
+        processed,
+        deferred: { date, reason },
+        latestRecordedDate: lastRecorded,
+        throughDate,
+      };
     }
     const sliced = sliceKrDatasetForReplay(input.dataset, date);
     const hasKospi = sliced.indexSeries
@@ -379,12 +406,20 @@ export async function replayKrShadow(input: {
         sourceHash: null,
         reason,
       });
-      return { market: "KR", calculatedAt, processed, deferred: { date, reason }, latestRecordedDate: lastRecorded, throughDate };
+      return {
+        market: "KR",
+        calculatedAt,
+        processed,
+        deferred: { date, reason },
+        latestRecordedDate: lastRecorded,
+        throughDate,
+      };
     }
 
     try {
       const { analysis, dataset } = runFullMarketAnalysis(sliced, input.config);
-      if (analysis.asOfDate !== date) throw new Error("날짜별 분석 기준일이 replay 대상일과 다릅니다.");
+      if (analysis.asOfDate !== date)
+        throw new Error("날짜별 분석 기준일이 replay 대상일과 다릅니다.");
       const snapshot: ScreeningSnapshot = {
         ...buildSnapshot(analysis, sourceCaptureForDate(input.sources, date) ?? undefined),
         savedAt: clock.modelAvailableAt,
@@ -393,12 +428,15 @@ export async function replayKrShadow(input: {
         currentDateEvidence(dataset, snapshot),
       )) as SeriesHash;
       const currentSymbols = new Set(snapshot.entries.map((entry) => entry.symbol));
-      const priorSymbols =
-        previousSnapshot?.entries.map((entry) => entry.symbol).filter((symbol) => currentSymbols.has(symbol)) ??
-        [...currentSymbols];
+      const priorSymbols = previousSnapshot?.entries
+        .map((entry) => entry.symbol)
+        .filter((symbol) => currentSymbols.has(symbol)) ?? [...currentSymbols];
       const priorDate =
         previousSnapshot?.asOfDate ??
-        input.dataset.tradeDates.filter((day) => day < date).sort().at(-1) ??
+        input.dataset.tradeDates
+          .filter((day) => day < date)
+          .sort()
+          .at(-1) ??
         date;
       const codeHash = await reviewedReplayCodeHash(store, KR_KINDS);
       const octoberShadow = await recordOctoberPublication(store, {
@@ -415,9 +453,17 @@ export async function replayKrShadow(input: {
         confirmedRegularClose: true,
         failedSymbols: 0,
         universeEvidence: {
-          asOfDate: priorDate < date ? priorDate : input.dataset.tradeDates.filter((day) => day < date).sort().at(-1) ?? MODEL_ACCOUNTING_START,
+          asOfDate:
+            priorDate < date
+              ? priorDate
+              : (input.dataset.tradeDates
+                  .filter((day) => day < date)
+                  .sort()
+                  .at(-1) ?? MODEL_ACCOUNTING_START),
           sourceHash: previousSnapshot ? await hashSeriesValue(previousSnapshot) : sourceHash,
-          symbols: priorSymbols.length ? [...new Set(priorSymbols)].sort() : [...currentSymbols].sort(),
+          symbols: priorSymbols.length
+            ? [...new Set(priorSymbols)].sort()
+            : [...currentSymbols].sort(),
         },
         sourceEvidence: [
           {
@@ -468,7 +514,14 @@ export async function replayKrShadow(input: {
         sourceHash: null,
         reason,
       });
-      return { market: "KR", calculatedAt, processed, deferred: { date, reason }, latestRecordedDate: lastRecorded, throughDate };
+      return {
+        market: "KR",
+        calculatedAt,
+        processed,
+        deferred: { date, reason },
+        latestRecordedDate: lastRecorded,
+        throughDate,
+      };
     }
   }
 
@@ -490,11 +543,7 @@ export async function recordUsReplayAudit(
   return insertReplayAudit(client, userId, { market: "US", ...input });
 }
 
-
-async function maybeStorageJson<T>(
-  client: SupabaseClient,
-  path: string,
-): Promise<T | null> {
+async function maybeStorageJson<T>(client: SupabaseClient, path: string): Promise<T | null> {
   const { data, error } = await client.storage.from(ANALYSIS_BUCKET).download(path);
   if (error) {
     if (/not.?found|404|Object not found/i.test(error.message)) return null;
@@ -503,11 +552,7 @@ async function maybeStorageJson<T>(
   return JSON.parse(await data.text()) as T;
 }
 
-async function putImmutableStorageJson(
-  client: SupabaseClient,
-  path: string,
-  value: unknown,
-) {
+async function putImmutableStorageJson(client: SupabaseClient, path: string, value: unknown) {
   const text = JSON.stringify(value);
   const { error } = await client.storage.from(ANALYSIS_BUCKET).upload(path, text, {
     contentType: "application/json",
@@ -525,6 +570,19 @@ async function previousUsRankState(
   date: string | null,
 ): Promise<UsProspectivePreviousState> {
   if (!date) return {};
+  const recovered = await maybeStorageJson<{
+    version?: string;
+    analysis?: { ruleVersion?: string; state?: UsProspectivePreviousState };
+  }>(client, `${userId}/results/us-replay-state/${date}.json`);
+  if (recovered) {
+    if (
+      recovered.version !== "us-replay-state-v1" ||
+      recovered.analysis?.ruleVersion !== US_PROSPECTIVE_RULE_VERSION ||
+      recovered.analysis?.state?.lastDate !== date
+    )
+      throw new Error("Recovered US rank state identity mismatch");
+    return recovered.analysis.state;
+  }
   const shadow = await maybeStorageJson<{
     analysis?: { state?: UsProspectivePreviousState };
   }>(client, `${userId}/results/shadow-replay/US/${date}.json`);
