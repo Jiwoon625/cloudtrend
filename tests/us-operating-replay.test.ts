@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {
   planUsOperatingReplay,
+  hydrateUsOperatingState,
   usOperatingTradeProjection,
   US_OPERATING_STRATEGY_IDS,
   type UsOperatingSnapshot,
@@ -17,6 +18,7 @@ import {
 } from "../src/lib/engine/usProspective";
 import {
   stepUsProspectiveOperatingPortfolio,
+  usFixedSlotAllocationPolicy,
   US_PROSPECTIVE_STRATEGIES,
   type UsPortfolioState,
 } from "../src/lib/engine/usProspectivePortfolio";
@@ -476,5 +478,71 @@ describe("US operating chronological recovery planner", () => {
     expect(sql).toContain(
       "grant execute on function public.apply_us_operating_replay(uuid,jsonb,boolean) to service_role",
     );
+  });
+});
+
+describe("stored US allocation policy order", () => {
+  const jsonbPolicy = () => ({
+    version: "us-initial-capital-slots-v1" as const,
+    effectiveDate: "2026-10-05" as const,
+    targetPositions: 20 as const,
+    fundingOnlySales: false as const,
+    initialCapitalUsd: "100000",
+    quarterlyRebalance: false as const,
+  });
+  it("reproduces the JSONB order failure and preserves every policy value after hydration", () => {
+    const f = fixture(),
+      state = operating(f);
+    state.allocationPolicy = jsonbPolicy();
+    const before = JSON.stringify(state);
+    expect(() =>
+      stepUsProspectiveOperatingPortfolio(
+        US_PROSPECTIVE_STRATEGIES[0]!,
+        f.dates[0]!.analysis,
+        state,
+        100000,
+      ),
+    ).toThrow("capital and identity");
+    const hydrated = hydrateUsOperatingState(state);
+    expect(hydrated).toEqual(state);
+    expect(JSON.stringify(state)).toBe(before);
+    expect(JSON.stringify(hydrated.allocationPolicy)).toBe(
+      JSON.stringify(usFixedSlotAllocationPolicy(100000)),
+    );
+    expect(() =>
+      stepUsProspectiveOperatingPortfolio(
+        US_PROSPECTIVE_STRATEGIES[0]!,
+        f.dates[0]!.analysis,
+        hydrated,
+        100000,
+      ),
+    ).not.toThrow();
+  });
+  it("produces the same exact two-day plan for canonical and JSONB-ordered predecessors", () => {
+    const a = fixture(),
+      b = fixture();
+    for (const strategy of US_PROSPECTIVE_STRATEGIES) {
+      operating(a, strategy.id).allocationPolicy = usFixedSlotAllocationPolicy(100000);
+      operating(b, strategy.id).allocationPolicy = jsonbPolicy();
+    }
+    const original = JSON.stringify(b);
+    expect(planUsOperatingReplay(b)).toEqual(planUsOperatingReplay(a));
+    expect(JSON.stringify(b)).toBe(original);
+  });
+  it.each([
+    { initialCapitalUsd: "90000" },
+    { targetPositions: 10 },
+    { effectiveDate: "2026-10-06" },
+    { version: "different" },
+    { fundingOnlySales: true },
+    { quarterlyRebalance: true },
+    { extra: true },
+  ])("still rejects a changed policy value %j", (change) => {
+    const f = fixture();
+    operating(f).allocationPolicy = {
+      ...jsonbPolicy(),
+      ...change,
+    } as UsPortfolioState["allocationPolicy"];
+    expect(() => planUsOperatingReplay(f)).toThrow("capital or identity");
   });
 });

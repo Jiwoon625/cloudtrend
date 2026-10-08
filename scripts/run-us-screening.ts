@@ -1,3 +1,4 @@
+import { hydrateUsOperatingState } from "./us-operating-replay";
 import { assertUsScreeningCoverage } from "./us-replay-source";
 import { replayUsShadow } from "../src/lib/shadowReplay.server";
 import { gzipSync } from "node:zlib";
@@ -268,7 +269,10 @@ export async function runUsScreening(
       if (!row || !(Number(row.open) > 0) || !(Number(row.close) > 0))
         throw new Error(`Operating US security lacks current prices: ${symbol}`);
     }
-    operatingPrevious.set(strategy.id, prev ?? null);
+    operatingPrevious.set(
+      strategy.id,
+      prev ? { ...prev, state: hydrateUsOperatingState(prev.state as UsPortfolioState) } : null,
+    );
   }
 
   // Lock a date's input before any ledger writes, including retries after partial failure.
