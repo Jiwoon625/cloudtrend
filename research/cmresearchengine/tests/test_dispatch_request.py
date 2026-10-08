@@ -21,6 +21,28 @@ class DispatchRequestTests(unittest.TestCase):
         self.assertEqual(request["count"], 1)
         self.assertEqual(request["workers"], 1)
 
+    def test_exact_sparse_registered_ids(self):
+        raw = {
+            "request_id": "representative-300-sparse",
+            "mode": "run", "stage": "fine", "offset": 0,
+            "count": 2, "max_seconds": 3000, "workers": 2,
+            "ids": "F10_K000_E000_U040_C060,F10_K000_E010_U080_C010",
+        }
+        result = validate_request(raw)
+        self.assertEqual(result["ids"], raw["ids"])
+        self.assertEqual(result["workers"], 2)
+        self.assertEqual(validate_request({**raw, "ids": ""})["ids"], "")
+        for change in (
+            {"ids": "F10_K000_E000_U040_C060"},
+            {"ids": "F10_K000_E000_U040_C060,F10_K000_E000_U040_C060"},
+            {"ids": "NOT_REGISTERED,F10_K000_E010_U080_C010"},
+            {"stage": "split25"},
+            {"offset": 4},
+            {"ids": "F10_K000_E000_U040_C060,XX;malicious"},
+        ):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_request({**raw, **change})
+
     def test_four_workers_are_explicitly_bounded(self):
         request = validate_request({
             "request_id": "parallel-4",
@@ -83,6 +105,8 @@ class DispatchRequestTests(unittest.TestCase):
         self.assertIn("workflow_dispatch:", workflow)
         self.assertIn("MANUAL_WORKERS", workflow)
         self.assertIn("CM_WORKERS", workflow)
+        self.assertIn("CM_IDS", workflow)
+        self.assertIn("--ids", workflow)
 
 
 if __name__ == "__main__":
