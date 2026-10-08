@@ -53,8 +53,15 @@ if RUN_US_MARKET:
         _spy = frozen.loc[frozen.symbol.eq('SPY'), 'close']
         if len(_spy) != 1 or not _spy.gt(0).all():
             raise RuntimeError('Frozen source has no valid SPY benchmark; no source was changed')
-        # A frozen same-day file cannot silently restore ACTIVE/price-bearing lifecycle rows.
-        # Preserve its bytes and require correction review if current verified exclusions conflict.
+        if _registered_same_day:
+            if _frozen_hash != _registered['data_hash']:
+                raise RuntimeError('Frozen source hash differs from registered immutable source; no source was changed')
+            if len(frozen) != _registered['row_count'] or frozen.symbol.nunique() != _registered['symbol_count']:
+                raise RuntimeError('Frozen source counts differ from registered source; no source was changed')
+        # A frozen source never silently restores ACTIVE/price-bearing lifecycle rows.
+        # The sole exception reuses registered bytes behind an already published WBD review.
+        _lifecycle_conflicts = []
+        _reviewed_exclusions = set()
         for _event in lifecycle_events:
             _held = frozen.loc[frozen.symbol.eq(_event['symbol'])]
             if _held.empty:
@@ -64,15 +71,70 @@ if RUN_US_MARKET:
             _priced = any(pd.to_numeric(_held[_col], errors='coerce').notna().any()
                           for _col in ['open','high','low','close','volume'] if _col in _held)
             if not _status_ok or not _tradable_ok or _priced:
-                raise RuntimeError(f"Frozen source conflicts with verified lifecycle exclusion: {_event['symbol']}; original preserved for correction review")
+                _lifecycle_conflicts.append(_event)
+        if _lifecycle_conflicts:
+            if (not _registered_same_day or len(_lifecycle_conflicts) != 1
+                    or _lifecycle_conflicts[0]['symbol'] != 'WBD'
+                    or _lifecycle_conflicts[0].get('status') != 'SUSPENDED'
+                    or _lifecycle_conflicts[0].get('effective_date') != '2026-10-06'
+                    or latest_date < '2026-10-06'):
+                raise RuntimeError('Frozen source conflicts with verified lifecycle exclusion: '
+                                   + ', '.join(event['symbol'] for event in _lifecycle_conflicts)
+                                   + '; original preserved for correction review')
+            # Reuse requires the original local archive too; never mint a newly labelled
+            # atomic descriptor from ACTIVE raw rows and today's exclusion metadata.
+            try:
+                _review_archive = json.loads((DATED_ARCHIVE_DIR/latest_date/'source.json').read_text(encoding='utf-8'))
+                _review_archive_matches = (
+                    _review_archive['date'] == latest_date
+                    and _review_archive['dataHash'] == _frozen_hash
+                    and _review_archive['pit']['kind'] == 'ATOMIC_DATED_SNAPSHOT'
+                )
+            except (OSError, ValueError, TypeError, KeyError):
+                _review_archive_matches = False
+            if not _review_archive_matches:
+                raise RuntimeError('WBD 등록 원본의 날짜별 보존 기록이 없거나 일치하지 않습니다: '
+                                   '원본을 보존하고 업로드를 중단했습니다.')
+            # One small authenticated read only on this exact reviewed same-day conflict.
+            # Do not fetch or substitute derived CSV bytes, or alter ingest/replay evidence.
+            try:
+                _review_response = requests.get(
+                    f'{SUPABASE_URL}/storage/v1/object/authenticated/cloudtrend-data/'
+                    f'{SUPABASE_USER_ID}/cache/us-screening/summary-v1.json',
+                    headers={**_pointer_headers, 'Cache-Control': 'no-cache'}, timeout=30,
+                )
+            except requests.exceptions.Timeout:
+                raise RuntimeError('WBD 검토 게시 근거 조회 시간 초과(timeout): 원본을 보존하고 업로드를 중단했습니다.') from None
+            except requests.exceptions.RequestException:
+                raise RuntimeError('WBD 검토 게시 근거 조회 연결 오류: 원본을 보존하고 업로드를 중단했습니다.') from None
+            if _review_response.status_code != 200:
+                raise RuntimeError(f'WBD 검토 게시 근거 조회 실패(HTTP {_review_response.status_code}): '
+                                   '원본을 보존하고 업로드를 중단했습니다.')
+            try:
+                _review = _review_response.json()
+                _review_metadata = _review['source']['metadata']
+                _review_marker = _review_metadata['recoveryPublication']
+                _review_quarantines = _review_metadata['quarantinedSymbols']
+                _review_matches = (
+                    _review['analysis']['date'] == latest_date
+                    and _review_marker['version'] == 'us-recovery-publication-v1'
+                    and _review_marker['sourceKind'] == 'REVIEWED_ATOMIC_QUARANTINE'
+                    and _review_marker['originalDataHash'] == _frozen_hash
+                    and _review_metadata['sourceCoverageComplete'] is False
+                    and isinstance(_review_quarantines, list)
+                    and 'WBD' in _review_quarantines
+                )
+            except (ValueError, TypeError, KeyError):
+                _review_matches = False
+            if not _review_matches:
+                raise RuntimeError('WBD 검토 게시 근거의 날짜·원본 해시·제외 기록이 없거나 일치하지 않습니다: '
+                                   '원본을 보존하고 업로드를 중단했습니다.')
+            _reviewed_exclusions = {'WBD'}
+            print('검토 게시된 WBD 제외 확인: 등록 원본 바이트 유지, 기존 검토 결과 재사용; sourceCoverageComplete=False')
         if _registered_same_day:
-            if _frozen_hash != _registered['data_hash']:
-                raise RuntimeError('Frozen source hash differs from registered immutable source; no source was changed')
-            if len(frozen) != _registered['row_count'] or frozen.symbol.nunique() != _registered['symbol_count']:
-                raise RuntimeError('Frozen source counts differ from registered source; no source was changed')
             # A known immutable source is authoritative; actual same-session price/feature
             # corrections still require review instead of being silently discarded.
-            _common = sorted((set(frozen.symbol) & set(out.symbol)) - set(provider_gap_symbols))
+            _common = sorted((set(frozen.symbol) & set(out.symbol)) - set(provider_gap_symbols) - _reviewed_exclusions)
             _stable_cols = ['open', 'high', 'low', 'close', 'volume', 'dollar_volume',
                             'ret120', 'ret252', 'beta60_spy', 'ichimoku_tk_gap',
                             'relvol1_20', 'adv20_usd', 'amihud20', 'active20']
