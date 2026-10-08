@@ -25,6 +25,8 @@ function client(
   const writes: string[] = [];
   const uploaded: Array<{ path: string; body: string | Uint8Array }> = [];
   let completed: unknown = null;
+  let replayState: unknown = null;
+  let replayDate = "2026-10-06";
   const ingest = {
     storage_bucket: "cloudtrend-data",
     storage_path: "input.csv",
@@ -64,9 +66,11 @@ function client(
         async download(path: string) {
           return path === "input.csv"
             ? { data: { text: async () => csv }, error: null }
-            : completed && path.endsWith("/results/us-screening/2026-10-06.json")
-              ? { data: { text: async () => JSON.stringify(completed) }, error: null }
-              : { data: null, error: { message: "404 Object not found" } };
+            : replayState && path.endsWith(`/results/us-replay-state/${replayDate}.json`)
+              ? { data: { text: async () => JSON.stringify(replayState) }, error: null }
+              : completed && path.endsWith("/results/us-screening/2026-10-06.json")
+                ? { data: { text: async () => JSON.stringify(completed) }, error: null }
+                : { data: null, error: { message: "404 Object not found" } };
         },
         async upload(path: string, body: string | Uint8Array) {
           uploaded.push({ path, body });
@@ -83,9 +87,31 @@ function client(
     setCompleted: (v: unknown) => {
       completed = v;
     },
+    setReplayState: (v: unknown, date = "2026-10-06") => {
+      replayState = v;
+      replayDate = date;
+    },
   };
 }
 describe("ordinary US runner pre-mutation admission", () => {
+  it("holds an ordinary retry while a dated replay has no completion marker", async () => {
+    const f = client(null);
+    f.setReplayState({ version: "us-replay-state-v1", analysis: { date: "2026-10-06" } });
+    await expect(runUsScreening(f.c, "owner")).rejects.toThrow(
+      "resume the same immutable replay manifest",
+    );
+    expect(spy.replay).not.toHaveBeenCalled();
+    expect(f.writes).toEqual([]);
+  });
+  it("does not jump over an unfinished previous-session replay publication", async () => {
+    const f = client({ date: "2026-10-02" });
+    f.setReplayState({ version: "us-replay-state-v1" }, "2026-10-05");
+    await expect(runUsScreening(f.c, "owner")).rejects.toThrow(
+      "Previous US replay publication is incomplete",
+    );
+    expect(spy.replay).not.toHaveBeenCalled();
+    expect(f.writes).toEqual([]);
+  });
   it("republishes a verified recovered same-day screen without replaying or reverting to bootstrap", async () => {
     const csv = sourceCsv("2026-10-06"),
       dataHash = bytesHash(csv);

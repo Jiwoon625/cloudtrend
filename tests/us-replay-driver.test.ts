@@ -13,6 +13,12 @@ const mocks = vi.hoisted(() => ({
   operating: vi.fn(),
   publicationPreflight: vi.fn(),
   publish: vi.fn(),
+  dailyPreflight: vi.fn(),
+  dailyPublish: vi.fn(),
+}));
+vi.mock("../scripts/us-replay-screening-publication", () => ({
+  preflightUsReplayScreening: mocks.dailyPreflight,
+  publishUsReplayScreening: mocks.dailyPublish,
 }));
 vi.mock("../scripts/us-recovery-publication", () => ({
   preflightUsRecoveryPublication: mocks.publicationPreflight,
@@ -51,6 +57,8 @@ beforeEach(() => {
   });
   mocks.commit.mockResolvedValue([]);
   mocks.publicationPreflight.mockResolvedValue({});
+  mocks.dailyPreflight.mockResolvedValue({});
+  mocks.dailyPublish.mockResolvedValue({});
   mocks.publish.mockImplementation(async (input) => ({
     generatedAt: input.generatedAt,
     dataHash: input.source.dataHash,
@@ -217,7 +225,7 @@ describe("guarded US recovery driver", () => {
     expect(f.writes).toEqual([]);
     expect(mocks.commit).not.toHaveBeenCalled();
     expect(f.rpcCalls).toHaveLength(1);
-    expect(f.rpcCalls[0]!.p_apply).toBe(false);
+    expect(f.rpcCalls[0]!["p_apply"]).toBe(false);
     expect(f.reads.some((p) => p.includes("actual"))).toBe(false);
   });
   it("stops on backend dry-run conflict before plan/archive/model writes", async () => {
@@ -230,7 +238,7 @@ describe("guarded US recovery driver", () => {
   it("preserves Oct7 original bytes and uses explicit apply only after preflight", async () => {
     const f = setup();
     expect(await runUsGapReplay({ ...f.input, apply: true })).toMatchObject({ applied: true });
-    expect(f.rpcCalls.map((c) => c.p_apply)).toEqual([false, true]);
+    expect(f.rpcCalls.map((c) => c["p_apply"])).toEqual([false, true]);
     expect(mocks.commit).toHaveBeenCalledTimes(1);
     expect(f.files.get(`${uid}/results/us-screening/2026-10-07.json`)).toBe(f.original);
     expect(
@@ -265,7 +273,7 @@ describe("guarded US recovery driver", () => {
     });
     mocks.publish.mockImplementation(async (input) => {
       expect(mocks.commit).toHaveBeenCalledTimes(1);
-      expect(f.rpcCalls.map((c) => c.p_apply)).toEqual([false, true]);
+      expect(f.rpcCalls.map((c) => c["p_apply"])).toEqual([false, true]);
       return { dataHash: input.source.dataHash, analysis: { date: input.analysis.date } };
     });
     const result = await runUsGapReplay({
@@ -311,5 +319,79 @@ describe("guarded US recovery driver", () => {
     expect(mocks.shadow).not.toHaveBeenCalled();
     expect(f.rpcCalls).toEqual([]);
     expect(f.writes).toEqual([]);
+  });
+  it("publishes the same ATOMIC analyses after both commits, without ordinary screening", async () => {
+    const f = setup();
+    mocks.dailyPreflight.mockImplementationOnce(async () => {
+      expect(f.writes).toEqual([]);
+    });
+    mocks.dailyPublish.mockImplementationOnce(async (input) => {
+      expect(f.rpcCalls.map((call) => call["p_apply"])).toEqual([false, true]);
+      expect(mocks.commit).toHaveBeenCalledTimes(1);
+      expect(input.analyses).toBe((await mocks.shadow.mock.results[0]!.value).analyses);
+    });
+    expect(
+      await runUsGapReplay({ ...f.input, apply: true, publishDailyScreen: true }),
+    ).toMatchObject({ applied: true, screeningPublished: true });
+    expect(mocks.publish).not.toHaveBeenCalled();
+  });
+  it("resumes a failed daily publication from the applied receipt without re-reading sources or stepping models", async () => {
+    const f = setup();
+    mocks.dailyPublish.mockRejectedValueOnce(new Error("publication interrupted"));
+    await expect(
+      runUsGapReplay({ ...f.input, apply: true, publishDailyScreen: true }),
+    ).rejects.toThrow("publication interrupted");
+    const receiptPath = `${uid}/results/us-gap-replay/${f.input.manifestHash.slice(7)}/daily-publication-receipt.json`;
+    expect(f.files.has(receiptPath)).toBe(false);
+    f.rpcCalls.length = 0;
+    f.reads.length = 0;
+    mocks.shadow.mockClear();
+    mocks.operating.mockClear();
+    mocks.commit.mockClear();
+    expect(
+      await runUsGapReplay({ ...f.input, apply: true, publishDailyScreen: true }),
+    ).toMatchObject({ applied: true, screeningPublished: true, reused: true });
+    expect(f.rpcCalls).toEqual([]);
+    expect(mocks.shadow).not.toHaveBeenCalled();
+    expect(mocks.operating).not.toHaveBeenCalled();
+    expect(mocks.commit).not.toHaveBeenCalled();
+    expect(f.reads.some((path) => path.endsWith(".csv") || path.endsWith(".roster.json"))).toBe(
+      false,
+    );
+    expect(JSON.parse(f.files.get(receiptPath)!)).toMatchObject({
+      version: "us-daily-publication-receipt-v1",
+      manifestHash: f.input.manifestHash,
+      throughDate: "2026-10-07",
+      screeningPublished: true,
+    });
+  });
+  it("never publishes daily results before both ledgers acknowledge or in a dry run", async () => {
+    const f = setup();
+    mocks.commit.mockRejectedValueOnce(new Error("Shadow failed"));
+    await expect(
+      runUsGapReplay({ ...f.input, apply: true, publishDailyScreen: true }),
+    ).rejects.toThrow("Shadow failed");
+    expect(mocks.dailyPublish).not.toHaveBeenCalled();
+    await expect(runUsGapReplay({ ...f.input, publishDailyScreen: true })).rejects.toThrow(
+      "requires an applied replay",
+    );
+  });
+  it("keeps reconstructed historical sources outside the automatic daily path", async () => {
+    const f = setup();
+    const manifest = JSON.parse(f.files.get(f.input.manifestPath)!);
+    manifest.sessions[0].pit.kind = "DATED_ROSTER_RECONSTRUCTION";
+    manifest.sessions[0].pit.rosterCapturedAt = "2026-10-06T19:00:00Z";
+    const text = JSON.stringify(manifest);
+    f.files.set(f.input.manifestPath, text);
+    await expect(
+      runUsGapReplay({
+        ...f.input,
+        manifestHash: bytesHash(text),
+        apply: true,
+        publishDailyScreen: true,
+      }),
+    ).rejects.toThrow("preserved ATOMIC inputs only");
+    expect(f.writes).toEqual([]);
+    expect(mocks.shadow).not.toHaveBeenCalled();
   });
 });

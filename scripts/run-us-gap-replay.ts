@@ -3,6 +3,11 @@ import {
   publishUsRecoveryViews,
   type UsRecoveryPublicationInput,
 } from "./us-recovery-publication";
+import {
+  preflightUsReplayScreening,
+  publishUsReplayScreening,
+  type UsReplayScreeningInput,
+} from "./us-replay-screening-publication";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 import { ANALYSIS_BUCKET, stableJson, trustedSupabaseClient } from "./analysis-run-store";
@@ -109,6 +114,22 @@ async function protectedHistory(
   return protectedRows;
 }
 
+async function finishDailyScreening(input: UsReplayScreeningInput) {
+  await publishUsReplayScreening(input);
+  await immutableJson(
+    input.client,
+    `${input.userId}/results/us-gap-replay/${input.manifestHash.slice(7)}/daily-publication-receipt.json`,
+    {
+      version: "us-daily-publication-receipt-v1",
+      manifestHash: input.manifestHash,
+      operatingPlanHash: input.operatingPlanHash,
+      throughDate: input.sources.at(-1)!.date,
+      dataHash: input.sources.at(-1)!.dataHash,
+      screeningPublished: true,
+    },
+  );
+}
+
 export async function runUsGapReplay(input: {
   client: Client;
   userId: string;
@@ -118,10 +139,13 @@ export async function runUsGapReplay(input: {
   calculatedAt?: string;
   expectedOperatingPlanHash?: string | undefined;
   publishRecoveredView?: boolean;
+  publishDailyScreen?: boolean;
 }) {
   const { client, userId } = input;
-  if (input.publishRecoveredView && !input.apply)
+  if ((input.publishRecoveredView || input.publishDailyScreen) && !input.apply)
     throw new Error("Recovered screen publication requires an applied replay");
+  if (input.publishRecoveredView && input.publishDailyScreen)
+    throw new Error("Choose either reviewed recovery or preserved ATOMIC daily publication");
   if (!/^[a-f0-9-]{36}$/i.test(userId) || !/^sha256:[a-f0-9]{64}$/.test(input.manifestHash))
     throw new Error("Exact US recovery owner and manifest hash are required");
   assertOwnerReplayPath(input.manifestPath, userId);
@@ -129,10 +153,11 @@ export async function runUsGapReplay(input: {
   if (!source || bytesHash(source) !== input.manifestHash)
     throw new Error("US recovery manifest hash mismatch");
   const manifest = await validateUsReplayManifest(JSON.parse(source), userId);
-  const sessions = await loadVerifiedUsReplaySessions(
-    manifest,
-    async (path) => (await readText(client, path))!,
-  );
+  if (
+    input.publishDailyScreen &&
+    manifest.sessions.some((s) => s.pit.kind !== "ATOMIC_DATED_SNAPSHOT" || s.originalSource)
+  )
+    throw new Error("Automatic daily publication requires preserved ATOMIC inputs only");
   const prefix = `${userId}/results/us-gap-replay/${input.manifestHash.slice(7)}`;
   const savedText = await readText(client, `${prefix}/plan.json`, true);
   type SavedPlan = {
@@ -149,6 +174,64 @@ export async function runUsGapReplay(input: {
     (saved.version !== "us-gap-replay-plan-v1" || saved.manifestHash !== input.manifestHash)
   )
     throw new Error("US recovery plan identity mismatch");
+  // A completed model replay may have stopped while publishing history/cache. Reuse
+  // its immutable analyses and receipt; never re-step models or re-read raw sources.
+  if (input.publishDailyScreen && saved) {
+    const receiptText = await readText(client, `${prefix}/receipt.json`, true);
+    if (receiptText) {
+      const receipt = JSON.parse(receiptText);
+      if (
+        receipt.version !== "us-gap-replay-receipt-v1" ||
+        receipt.applied !== true ||
+        receipt.operatingPlanHash !== saved.operating.planHash ||
+        receipt.calculatedAt !== saved.calculatedAt ||
+        receipt.baseDate !== manifest.baseDate ||
+        receipt.throughDate !== manifest.throughDate ||
+        receipt.sessions !== manifest.sessions.length ||
+        (input.expectedOperatingPlanHash &&
+          input.expectedOperatingPlanHash !== saved.operating.planHash)
+      )
+        throw new Error("Applied US daily replay receipt identity mismatch");
+      const originals = await protectedHistory(
+        client,
+        userId,
+        manifest.baseDate,
+        manifest.throughDate,
+      );
+      if (
+        stableJson(
+          originals.filter((row) => saved.protectedHistory.some((old) => old.date === row.date)),
+        ) !== stableJson(saved.protectedHistory)
+      )
+        throw new Error("Protected US screening history changed since recovery preparation");
+      await finishDailyScreening({
+        client,
+        userId,
+        analyses: saved.shadow.analyses,
+        sources: manifest.sessions,
+        manifestHash: input.manifestHash,
+        operatingPlanHash: saved.operating.planHash,
+        generatedAt: saved.calculatedAt,
+        protectedHistory: saved.protectedHistory,
+      });
+      return {
+        mode: "APPLY",
+        baseDate: manifest.baseDate,
+        throughDate: manifest.throughDate,
+        sessions: manifest.sessions.length,
+        operatingPlanHash: saved.operating.planHash,
+        sourceCoverageComplete: manifest.sessions.every((s) => s.sourceCoverageComplete),
+        protectedOriginalResults: saved.protectedHistory.length,
+        applied: true,
+        screeningPublished: true,
+        reused: true,
+      };
+    }
+  }
+  const sessions = await loadVerifiedUsReplaySessions(
+    manifest,
+    async (path) => (await readText(client, path))!,
+  );
   const calculatedAt = saved?.calculatedAt ?? input.calculatedAt ?? new Date().toISOString();
   if (
     !Number.isFinite(Date.parse(calculatedAt)) ||
@@ -281,6 +364,20 @@ export async function runUsGapReplay(input: {
     rankArtifacts.push({ path, artifact });
   }
   let publicationInput: UsRecoveryPublicationInput | undefined;
+  let dailyPublicationInput: UsReplayScreeningInput | undefined;
+  if (input.publishDailyScreen) {
+    dailyPublicationInput = {
+      client,
+      userId,
+      analyses: shadow.analyses,
+      sources: sessions.map((s) => s.source),
+      manifestHash: input.manifestHash,
+      operatingPlanHash: operating.planHash,
+      generatedAt: calculatedAt,
+      protectedHistory: protectedRows,
+    };
+    await preflightUsReplayScreening(dailyPublicationInput);
+  }
   if (input.publishRecoveredView) {
     const protectedOriginal = protectedRows.find((row) => row.date === manifest.throughDate);
     if (!protectedOriginal)
@@ -352,7 +449,12 @@ export async function runUsGapReplay(input: {
       originalScreeningPreserved: true,
     });
   }
-  return { ...summary, applied: true, screeningPublished: Boolean(publicationInput) };
+  if (dailyPublicationInput) await finishDailyScreening(dailyPublicationInput);
+  return {
+    ...summary,
+    applied: true,
+    screeningPublished: Boolean(publicationInput || dailyPublicationInput),
+  };
 }
 async function main() {
   const userId = argument("--user") ?? process.env["SUPABASE_USER_ID"];
@@ -368,6 +470,7 @@ async function main() {
     apply: process.argv.includes("--apply"),
     expectedOperatingPlanHash: argument("--expected-plan-hash"),
     publishRecoveredView: process.argv.includes("--publish-recovered-view"),
+    publishDailyScreen: process.argv.includes("--publish-daily-screen"),
   });
   console.log(JSON.stringify(result)); // Never print rows, holdings, raw plans or credentials to CI.
 }
