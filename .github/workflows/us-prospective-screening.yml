@@ -21,6 +21,15 @@ on:
         required: false
         default: false
         type: boolean
+      replay_expected_plan_hash:
+        description: "Optional exact approved operating plan hash"
+        required: false
+        type: string
+      replay_publish_recovered_view:
+        description: "Publish an applied recovery view while preserving the original dated result"
+        required: false
+        default: false
+        type: boolean
       replay_then_screen:
         description: "After an applied replay, publish the current ordinary screening"
         required: false
@@ -39,6 +48,10 @@ on:
       - "scripts/run-us-gap-replay.ts"
       - "scripts/us-*-replay*.ts"
       - "scripts/us-replay-source.ts"
+      - "scripts/us-recovery-publication.ts"
+      - "scripts/us-screening-publication.ts"
+      - "tests/us-recovery-*.test.*"
+      - "src/components/UsRecoveryNotice.tsx"
       - "tests/us-replay-*.test.ts"
       - "tests/us-operating-replay*"
       - "vitest.us-replay.config.ts"
@@ -60,6 +73,10 @@ on:
       - "scripts/run-us-gap-replay.ts"
       - "scripts/us-*-replay*.ts"
       - "scripts/us-replay-source.ts"
+      - "scripts/us-recovery-publication.ts"
+      - "scripts/us-screening-publication.ts"
+      - "tests/us-recovery-*.test.*"
+      - "src/components/UsRecoveryNotice.tsx"
       - "tests/us-replay-*.test.ts"
       - "tests/us-operating-replay*"
       - "vitest.us-replay.config.ts"
@@ -121,6 +138,8 @@ jobs:
           REPLAY_MANIFEST_HASH: ${{ inputs.replay_manifest_hash }}
           REPLAY_APPLY: ${{ inputs.replay_apply }}
           REPLAY_THEN_SCREEN: ${{ inputs.replay_then_screen }}
+          REPLAY_EXPECTED_PLAN_HASH: ${{ inputs.replay_expected_plan_hash }}
+          REPLAY_PUBLISH_RECOVERED_VIEW: ${{ inputs.replay_publish_recovered_view }}
         shell: bash
         run: |
           set -euo pipefail
@@ -128,6 +147,12 @@ jobs:
             test -n "$REPLAY_MANIFEST_HASH"
             args=(--user "$SUPABASE_USER_ID" --manifest "$REPLAY_MANIFEST_PATH" --manifest-hash "$REPLAY_MANIFEST_HASH")
             if [[ "$REPLAY_APPLY" == "true" ]]; then args+=(--apply); fi
+            if [[ -n "$REPLAY_EXPECTED_PLAN_HASH" ]]; then args+=(--expected-plan-hash "$REPLAY_EXPECTED_PLAN_HASH"); fi
+            if [[ "$REPLAY_PUBLISH_RECOVERED_VIEW" == "true" ]]; then
+              test "$REPLAY_APPLY" == "true"
+              test "$REPLAY_THEN_SCREEN" != "true"
+              args+=(--publish-recovered-view)
+            fi
             npm run us:replay -- "${args[@]}"
             if [[ "$REPLAY_APPLY" == "true" && "$REPLAY_THEN_SCREEN" == "true" ]]; then
               npm run us:screening -- --user "$SUPABASE_USER_ID"
@@ -136,5 +161,7 @@ jobs:
             test -z "$REPLAY_MANIFEST_HASH"
             test "$REPLAY_APPLY" != "true"
             test "$REPLAY_THEN_SCREEN" != "true"
+            test "$REPLAY_PUBLISH_RECOVERED_VIEW" != "true"
+            test -z "$REPLAY_EXPECTED_PLAN_HASH"
             npm run us:screening -- --user "$SUPABASE_USER_ID"
           fi

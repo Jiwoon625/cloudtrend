@@ -81,8 +81,19 @@ model identities and preserved original results separately.
 
 - `replay_manifest_path` and exact `replay_manifest_hash`
 - `replay_apply`: default false, full preflight only
-- `replay_then_screen`: default false; after an applied recovery, optionally run
-  ordinary screening for the current ingest
+- `replay_expected_plan_hash`: optionally pins the exact operating plan approved after preflight
+- `replay_publish_recovered_view`: default false; after a successful apply, publishes
+  the already computed current-date analysis to a separate immutable recovery result
+  and the rebuildable screen caches. It requires an existing original dated result.
+- `replay_then_screen`: the legacy ordinary-screening chain. Keep this false for
+  recovered current-date publication; it must not be combined with the recovered-view flag.
+
+The recovered-view path never recalculates signals or writes model/history rows.
+The original daily result and history remain unchanged. Its explicit provenance
+and incomplete-coverage status are retained in the cache and shown on the US
+screener. A later ordinary same-date refresh reuses the validated recovered view,
+instead of restoring the earlier bootstrap presentation. Missing future ordinary
+history completion is a separate integration step; this path does not add it.
 
 An empty replay path runs ordinary screening. Replay flags without a manifest
 are rejected. CI must not publish raw sources, holdings, private plans or secrets.

@@ -1,10 +1,9 @@
+import { loadPublishedUsRecoveryView } from "./us-recovery-publication";
+import { compactRow, publishBrowserViews } from "./us-screening-publication";
 import { hydrateUsOperatingState } from "./us-operating-replay";
 import { assertUsScreeningCoverage } from "./us-replay-source";
 import { replayUsShadow } from "../src/lib/shadowReplay.server";
-import { gzipSync } from "node:zlib";
 import { buildUsOrderPreview } from "../src/lib/engine/usProspectiveOrderPreview";
-import { usBrowserViews } from "../src/lib/usBrowserViews";
-import type { UsProspectiveCache } from "../src/lib/usProspectiveCloud";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
@@ -20,30 +19,12 @@ import {
   runUsProspectiveAnalysis,
   usProspectiveCompactSignals,
   US_PROSPECTIVE_RULE_VERSION,
-  type UsProspectiveAnalysis,
 } from "../src/lib/engine/usProspective";
 import {
   stepUsProspectiveOperatingPortfolio,
   US_PROSPECTIVE_STRATEGIES,
   type UsPortfolioState,
 } from "../src/lib/engine/usProspectivePortfolio";
-
-async function publishBrowserViews(
-  client: ReturnType<typeof trustedSupabaseClient>,
-  uid: string,
-  result: unknown,
-) {
-  const views = usBrowserViews(result as UsProspectiveCache);
-  const compressed = gzipSync(JSON.stringify(views.screening));
-  const { error } = await client.storage
-    .from(ANALYSIS_BUCKET)
-    .upload(`${uid}/cache/us-screening/view-v1.json.gz`, compressed, {
-      upsert: true,
-      contentType: "application/octet-stream",
-    });
-  if (error) throw error;
-  await uploadJson(client, `${uid}/cache/us-screening/summary-v1.json`, views.summary);
-}
 
 function arg(name: string) {
   const i = process.argv.indexOf(name);
@@ -66,42 +47,6 @@ async function maybeDownloadJson<T>(
     throw new Error(`US 캐시 다운로드 실패 (${path}): ${error.message}`);
   }
   return JSON.parse(await data.text()) as T;
-}
-
-function compactRow(row: UsProspectiveAnalysis["rows"][number]) {
-  return {
-    date: row.date,
-    symbol: row.symbol,
-    name: row.name,
-    market: row.market,
-    sector: row.sector,
-    status: row.status,
-    close: row.close,
-    open: row.open,
-    ret120: row.ret120,
-    ret252: row.ret252,
-    ret120Rank: row.ret120Rank,
-    ret252Rank: row.ret252Rank,
-    coreRank: row.coreRank,
-    betaRank: row.betaRank,
-    tkRank: row.tkRank,
-    relvolRank: row.relvolRank,
-    liquidityRank: row.liquidityRank,
-    amihudRank: row.amihudRank,
-    adv20Usd: row.adv20Usd,
-    marketCap: row.marketCap,
-    onset80: row.onset80,
-    a0Entry: row.a0Entry,
-    a0Exit: row.a0Exit,
-    a0BetaExit: row.a0BetaExit,
-    a2Entry: row.a2Entry,
-    a2Exit: row.a2Exit,
-    b3Entry: row.b3Entry,
-    b3Exit: row.b3Exit,
-    b3BetaExit: row.b3BetaExit,
-    betaWeakStreak: row.betaWeakStreak,
-    primarySignal: row.primarySignal,
-  };
 }
 
 export async function runUsScreening(
@@ -155,8 +100,17 @@ export async function runUsScreening(
       `${userId}/results/us-screening/${ingest.as_of_date}.json`,
     );
     if (!completed) throw new Error("Completed US result is missing");
-    await uploadJson(client, `${userId}/cache/us-screening/latest.json`, completed);
-    await publishBrowserViews(client, userId, completed);
+    const recoveredView = await loadPublishedUsRecoveryView(client, userId, {
+      date: String(ingest.as_of_date),
+      dataHash: String(ingest.data_hash),
+      ruleVersion: US_PROSPECTIVE_RULE_VERSION,
+    });
+    await uploadJson(
+      client,
+      `${userId}/cache/us-screening/latest.json`,
+      recoveredView ?? completed,
+    );
+    await publishBrowserViews(client, userId, recoveredView ?? completed);
     console.log("US date already completed; portfolio and streak unchanged.");
     return;
   }
