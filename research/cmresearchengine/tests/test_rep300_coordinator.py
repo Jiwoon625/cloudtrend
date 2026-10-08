@@ -3,7 +3,7 @@ import json
 import unittest
 from cmresearchengine.rep300_coordinator import (
     approved, next_batch, selection, verify_existing_request, json_markers,
-    make_request, decision
+    make_request, decision, storage_folders
 )
 
 
@@ -79,6 +79,23 @@ class NativeCoordinatorTests(unittest.TestCase):
                          ["S08","S01"]))
         with self.assertRaises(ValueError):
             next_batch(self.rows,{"stage":"base"},["S08","S01"])
+
+    def test_private_storage_list_prefix_keeps_valid_scope(self):
+        class Store:
+            def object_key(self, key):
+                self_value = "results/" + "ce6be8c497e45fa22a41d3a7b924913a23b18588fd05efd33ee14eb961ec7c2c" + "/S06"
+                if key != self_value or key.endswith("/"):
+                    raise ValueError("Invalid scoped key")
+                return "user/research/cm/" + key
+            def _request(self, method, route, callback, *, data, headers):
+                self.assert_ = (method, route)
+                raw = json.loads(data)
+                assert raw["prefix"].endswith("/S06/")
+                return b'[]'
+            def _bounded(self, r, limit):
+                return b'[]'
+        store = Store()
+        self.assertEqual(storage_folders(store, "results/ce6be8c497e45fa22a41d3a7b924913a23b18588fd05efd33ee14eb961ec7c2c/S06/"), [])
 
     def test_marker_parsing_ignores_untrusted_noise(self):
         raw='2026-10-08Z {"status":"PAUSED_VERIFIED","candidate_id":"S08"}\n' + \
