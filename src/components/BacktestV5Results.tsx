@@ -79,7 +79,9 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
 
   const thresholdChartData = useMemo(() => {
     const horizon = result.rankIcSummary.horizon;
-    const thresholds = [...new Set(result.scoreOnsets.map((r) => r.threshold))].sort((a, b) => a - b);
+    const thresholds = [...new Set(result.scoreOnsets.map((r) => r.threshold))].sort(
+      (a, b) => a - b,
+    );
     return thresholds.map((threshold) => ({
       threshold: `${threshold}점`,
       onset:
@@ -107,9 +109,7 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
                   type="button"
                   onClick={() => toggleDecay(fh.featureKey)}
                   className={`rounded-md border px-2 py-1 text-[11px] ${
-                    on
-                      ? "border-primary bg-primary/10"
-                      : "border-border text-muted-foreground"
+                    on ? "border-primary bg-primary/10" : "border-border text-muted-foreground"
                   }`}
                 >
                   {fh.featureLabel}
@@ -130,7 +130,9 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
                     key={key}
                     type="monotone"
                     dataKey={key}
-                    name={result.featureHorizons.find((f) => f.featureKey === key)?.featureLabel ?? key}
+                    name={
+                      result.featureHorizons.find((f) => f.featureKey === key)?.featureLabel ?? key
+                    }
                     stroke={CHART_COLORS[i % CHART_COLORS.length]}
                     strokeWidth={2}
                     dot
@@ -145,7 +147,7 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
 
       <Panel
         title={`Score Threshold · ${result.rankIcSummary.horizon}D`}
-        note="9.5점 기준. State는 신규 돌파를 포함한 모든 고득점 관측입니다. Onset은 관측일에 직전 거래일 대비 돌파한 부분집합입니다. 순수 지속 상태는 일별 분석 표에서 확인하세요."
+        note="9.5점 기준. State는 신규 돌파를 포함한 모든 고득점 관측입니다. 원신호는 관측일에 직전 거래일 대비 돌파한 부분집합입니다. 순수 지속 상태는 일별 분석 표에서 확인하세요."
       >
         <div className="p-3" style={{ height: 280 }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -167,7 +169,7 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
               <Line
                 type="monotone"
                 dataKey="onset"
-                name="Onset 시장초과"
+                name="원신호 시장초과"
                 stroke="var(--color-up)"
                 strokeWidth={2}
                 dot
@@ -179,7 +181,7 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
       </Panel>
 
       <Panel
-        title="Score Threshold Onset"
+        title="점수 기준 원신호"
         note="직전 거래일 점수 < 기준 ≤ 현재 점수. 관측 그리드에 해당하는 돌파만 집계합니다. 모든 거래일의 신규/지속 비교는 일별 분석 표를 사용하세요."
       >
         <div className="overflow-x-auto">
@@ -216,7 +218,9 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
                   <td className="num px-2 py-1.5 text-right">{r.horizon}D</td>
                   <td className="num px-2 py-1.5 text-right">{r.count.toLocaleString("ko-KR")}</td>
                   <td className="num px-2 py-1.5 text-right">{pct(r.avgReturn)}</td>
-                  <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.marketAdjustedAvgReturn)}</td>
+                  <td className="num px-2 py-1.5 text-right font-semibold">
+                    {pct(r.marketAdjustedAvgReturn)}
+                  </td>
                   <td className="num px-2 py-1.5 text-right">{pct(r.edgeVsAll)}</td>
                   <td className="num px-2 py-1.5 text-right">{pct(r.medianReturn)}</td>
                   <td className="num px-2 py-1.5 text-right">{rate(r.winRate)}</td>
@@ -240,7 +244,10 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
             ["시장조정 IC 양(+) 날짜", rate(result.rankIcSummary.marketAdjustedPositiveRate)],
             ["Rank IC 관측일", `${result.rankIcSummary.dates.toLocaleString("ko-KR")}일`],
             [`Top ${result.topSelection.topN} 평균`, pct(result.topSelection.avgReturn)],
-            [`Top ${result.topSelection.topN} 시장초과`, pct(result.topSelection.marketAdjustedAvgReturn)],
+            [
+              `Top ${result.topSelection.topN} 시장초과`,
+              pct(result.topSelection.marketAdjustedAvgReturn),
+            ],
             [`Top ${result.topSelection.topN} 중앙`, pct(result.topSelection.medianReturn)],
             [`Top ${result.topSelection.topN} 승률`, rate(result.topSelection.winRate)],
           ].map(([label, value]) => (
@@ -280,9 +287,15 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
                   <td className="num px-2 py-1.5 text-right">{pct(q.topAvgReturn)}</td>
                   <td className="num px-2 py-1.5 text-right">{pct(q.bottomAvgReturn)}</td>
                   <td className="num px-2 py-1.5 text-right">{pct(q.rawSpread)}</td>
-                  <td className="num px-2 py-1.5 text-right">{pct(q.topMarketAdjustedAvgReturn)}</td>
-                  <td className="num px-2 py-1.5 text-right">{pct(q.bottomMarketAdjustedAvgReturn)}</td>
-                  <td className="num px-2 py-1.5 text-right font-semibold">{pct(q.marketAdjustedSpread)}</td>
+                  <td className="num px-2 py-1.5 text-right">
+                    {pct(q.topMarketAdjustedAvgReturn)}
+                  </td>
+                  <td className="num px-2 py-1.5 text-right">
+                    {pct(q.bottomMarketAdjustedAvgReturn)}
+                  </td>
+                  <td className="num px-2 py-1.5 text-right font-semibold">
+                    {pct(q.marketAdjustedSpread)}
+                  </td>
                   <td className="num px-2 py-1.5 text-right">{formatNumber(q.robustTStat, 2)}</td>
                   <td className="num whitespace-nowrap px-2 py-1.5 text-right">
                     {pct(q.ci95Low)} ~ {pct(q.ci95High)}
@@ -319,7 +332,9 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
                     <td className="num px-2 py-1.5 text-right">{formatNumber(r.avgScore, 1)}</td>
                     <td className="num px-2 py-1.5 text-right">{pct(r.avgReturn)}</td>
                     <td className="num px-2 py-1.5 text-right">{pct(r.benchmarkAvgReturn)}</td>
-                    <td className="num px-2 py-1.5 text-right font-semibold">{pct(r.marketAdjustedAvgReturn)}</td>
+                    <td className="num px-2 py-1.5 text-right font-semibold">
+                      {pct(r.marketAdjustedAvgReturn)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -347,9 +362,13 @@ export function BacktestV5Results({ result }: { result: BacktestResult }) {
                 {result.rankIcByDate.map((r) => (
                   <tr key={r.date} className="border-t border-border/60">
                     <td className="px-2 py-1.5">{r.date}</td>
-                    <td className="num px-2 py-1.5 text-right">{r.observations.toLocaleString("ko-KR")}</td>
+                    <td className="num px-2 py-1.5 text-right">
+                      {r.observations.toLocaleString("ko-KR")}
+                    </td>
                     <td className="num px-2 py-1.5 text-right">{ic(r.rawRankIc)}</td>
-                    <td className="num px-2 py-1.5 text-right font-semibold">{ic(r.marketAdjustedRankIc)}</td>
+                    <td className="num px-2 py-1.5 text-right font-semibold">
+                      {ic(r.marketAdjustedRankIc)}
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -163,7 +163,7 @@ describe("independent strategy and actual books", () => {
     );
     expect(model.trades).toHaveLength(1);
     expect(model.trades[0]).toMatchObject({ exitDate: date(61), exitReason: "60거래일 만기" });
-    expect(model.candidates.find((c) => c.symbol === "B")?.decision).toBe("30종목 한도");
+    expect(model.candidates.find((c) => c.symbol === "B")?.decision).toBe("1종목 한도");
   });
 });
 

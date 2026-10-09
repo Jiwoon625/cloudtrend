@@ -168,8 +168,11 @@ export async function stepAdoptedKrSeries(
     sessions.filter((s) => s <= input.date),
     frozenInputs.marketGates,
     {
-      version: "kr-adopted-shadow-20261005-v1",
-      startDate: "2026-10-05",
+      version:
+        series.accountingStartDate === "2026-10-12"
+          ? "kr-common-execution-20261012-v1"
+          : "kr-adopted-shadow-20261005-v1",
+      startDate: series.accountingStartDate,
       throughDate: input.date,
       scope:
         series.policy.kind === "KR_MIXED"

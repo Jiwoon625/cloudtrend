@@ -34,7 +34,7 @@ export function MarketDataOverview({
         ["전략 버전", kr?.strategyVersion ?? "미확인"],
         ["수집 종목", kr ? `${krBars.length.toLocaleString()}종목` : "미확인"],
         [
-          "일봉 최소기간 충족",
+          "기본 추세 120봉",
           kr
             ? `${krBars.filter((r) => r.bars >= 120).length.toLocaleString()} / ${krBars.length.toLocaleString()}종목 · 120봉 기준`
             : "미확인",
@@ -42,6 +42,10 @@ export function MarketDataOverview({
         [
           "전체 일봉 구간",
           validDates.length ? `${validDates[0]} ~ ${validDates.at(-1)}` : "미확인",
+        ],
+        [
+          "52주 항목 252봉",
+          kr ? `${krBars.filter((r) => r.bars >= 252).length} / ${krBars.length}종목` : "미확인",
         ],
         ["자료 구분", kr ? (kr.isLive ? "실데이터" : "합성 데이터") : "미확인"],
       ],
@@ -106,7 +110,7 @@ export function MarketDataOverview({
   );
 }
 
-export function MarketDataPage() {
+export function MarketDataContent() {
   const kr = useQuery(dataStatusQueryOptions);
   const us = useQuery({
     queryKey: ["us-market-data-summary"],
@@ -122,25 +126,14 @@ export function MarketDataPage() {
   });
   const pending = kr.isFetching || us.isFetching || history.isFetching;
   return (
-    <AppShell
-      loadAnalysis={false}
-      {...(kr.data
-        ? {
-            source: {
-              isLive: kr.data.isLive,
-              provider: kr.data.dataProvider,
-              notes: kr.data.notes,
-              fallbackReason: kr.data.source.fallbackReason,
-            },
-          }
-        : {})}
-    >
+    <div>
       <div className="min-w-0 space-y-6">
         <header className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-xl font-bold tracking-tight">데이터상태</h1>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              한국·미국 수집 상태, 검증 결과와 운용 규칙을 한 곳에서 확인합니다.
+              한국·ETF·미국 자료 상태와 검증 결과입니다. 120봉 확보가 52주 항목·수급·시장국면의
+              완전성을 뜻하지 않습니다.
             </p>
           </div>
           <Button
@@ -207,6 +200,14 @@ export function MarketDataPage() {
           </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+export function MarketDataPage() {
+  return (
+    <AppShell>
+      <MarketDataContent />
     </AppShell>
   );
 }

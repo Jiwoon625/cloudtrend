@@ -7,13 +7,11 @@ import { savedExecutionMemo } from "./ledger/executionMemo";
 import { readWebsiteDocument } from "./ledger/websiteRepository.server";
 import { parseManualMarketData } from "./engine/manualDataset";
 import { evaluateKospiMarketGateAtDate } from "./engine/kospiMarketGate";
-import { NO_CAPABILITIES, type MarketDataset } from "./engine/dataset";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { listActiveSources, type ActiveSourceRecord } from "./screeningSources.server";
-import { visitDelimitedRows } from "./sourceData";
 import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
-import type { DailyPrice, Market } from "./engine/types";
+import type { Market } from "./engine/types";
 import type { ScreeningSnapshot } from "./screeningSnapshot";
 import { portfolioEtfContext } from "./dashboardOperations.server";
 import {
@@ -143,11 +141,7 @@ async function priceInputs(
   from: string,
   verifiedInputs?: VerifiedPortfolioSources,
 ) {
-  const bySymbol = new Map<string, Map<string, DailyPrice>>();
-  const markets: Record<string, Market> = {};
-  const kospiDates = new Set<string>();
-  const indexTexts: string[] = [];
-  const observedDates = new Set<string>();
+  const texts: string[] = [];
   for (const source of sources) {
     // Earlier index rows are still needed for MA60/cloud/volatility warmup; stock rows stay bounded.
     // Screening has already verified these bytes. Reuse its decoded text in this request,
@@ -178,98 +172,36 @@ async function priceInputs(
         text = new TextDecoder("euc-kr").decode(bytes);
       }
     }
-    let header: Record<string, number> = {};
-    const indexRows: string[] = [];
-    const csvRow = (cells: string[]) =>
-      cells.map((value) => `"${value.replaceAll('"', '""')}"`).join(",");
-    visitDelimitedRows(text, (cells, index) => {
-      if (index === 0) {
-        indexRows.push(csvRow(cells));
-        header = Object.fromEntries(
-          cells.map((v, i) => [
-            v
-              .replace(/^\uFEFF/, "")
-              .trim()
-              .toLowerCase(),
-            i,
-          ]),
-        );
-        return;
-      }
-      const cell = (key: string) => cells[header[key]!] ?? "";
-      const symbol = cell("symbol"),
-        date = cell("date");
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
-      const market = cell("market");
-      const number = (key: string) => {
-        const raw = cell(key).replaceAll(",", "").trim();
-        return raw ? Number(raw) : Number.NaN;
-      };
-      if (["KOSPI", "KOSDAQ", "VKOSPI"].includes(symbol)) indexRows.push(csvRow(cells));
-      if (symbol === "KOSPI") kospiDates.add(date);
-      if (market === "KOSPI" || market === "KOSDAQ" || symbol === "KOSPI") observedDates.add(date);
-      if (date < from) return;
-      if (!symbols.has(symbol)) return;
-      if (market !== "KOSPI" && market !== "KOSDAQ" && market !== "ETF") return;
-      // Only the new KOSPI entry path needs raw suspension/invalid rows. Other markets retain
-      // their original price filtering; simulateStrategy separates raw entry bars from replay quotes.
-      if (market !== "KOSPI" && (number("open") <= 0 || number("close") <= 0)) return;
-      const series = bySymbol.get(symbol) ?? new Map<string, DailyPrice>();
-      if (!series.has(date))
-        series.set(date, {
-          tradeDate: date,
-          open: number("open"),
-          close: number("close"),
-          high: number("high"),
-          low: number("low"),
-          volume: number("volume"),
-          tradingValue: 0,
-          marketCap: null,
-          foreignNetBuyValue: null,
-          institutionNetBuyValue: null,
-        });
-      bySymbol.set(symbol, series);
-      markets[symbol] = market;
-    });
-    if (indexRows.length > 1) indexTexts.push(indexRows.join("\n"));
+    texts.push(text);
   }
+  // One normalizer selects the same final symbol/date values for screening, MODEL and ledger.
+  // Filtering only limits retained stock rows; all index warmup and calendar evidence remain.
+  const gateDataset = parseManualMarketData(texts, {
+    allowIndexOnly: true,
+    allowIncompleteIndex: true,
+    symbols,
+    from,
+  }).dataset;
   const bars = Object.fromEntries(
-    [...bySymbol].map(([s, b]) => [
-      s,
-      [...b.values()].sort((a, b) => a.tradeDate.localeCompare(b.tradeDate)),
+    gateDataset.instruments.map((i) => [
+      i.symbol,
+      (gateDataset.observedBars?.[i.symbol] ?? gateDataset.bars[i.symbol] ?? []).filter(
+        (bar) => i.market === "KOSPI" || bar.close > 0,
+      ),
     ]),
   );
-  const marketDates = [...new Set([...kospiDates, ...observedDates])].sort();
-  // Parse only the small index subset with the same non-null merge, source quality,
-  // and dated volatility rules as screening. Never silently erase flow on overlaps.
-  let gateDataset: MarketDataset;
-  try {
-    gateDataset = parseManualMarketData(indexTexts, { allowIndexOnly: true }).dataset;
-    gateDataset.kospiGateDates = [
-      ...new Set([...(gateDataset.kospiGateDates ?? gateDataset.tradeDates), ...marketDates]),
-    ].sort();
-  } catch {
-    gateDataset = {
-      provider: "MANUAL_INPUT",
-      version: KOSPI_ENTRY_POLICY.version,
-      asOfDate: marketDates.at(-1) ?? "",
-      isLive: true,
-      capabilities: NO_CAPABILITIES,
-      notes: ["시장 입력 파싱 불가"],
-      sectors: [],
-      tradeDates: marketDates,
-      instruments: [],
-      bars: {},
-      indexSeries: [],
-      financials: {},
-      etfFacts: {},
-      vkospiSeries: [],
-    };
-  }
+  const markets = Object.fromEntries(gateDataset.instruments.map((i) => [i.symbol, i.market]));
+  const marketDates = gateDataset.kospiGateDates ?? gateDataset.tradeDates;
   const marketGates = Object.fromEntries(
     marketDates.map((date) => [date, evaluateKospiMarketGateAtDate(gateDataset, date)]),
   );
-  return { bars, markets, marketDates, marketGates };
+  return {
+    bars,
+    markets,
+    marketDates,
+    marketGates,
+    liquidCounts: gateDataset.liquidSymbolCountsByDate,
+  };
 }
 
 // Shared only while a content-addressed refresh is running; never retain raw prices here.
@@ -345,7 +277,7 @@ async function refreshStrategy(
   let running = strategyRefreshes.get(key);
   if (!running) {
     running = (async () => {
-      const { bars, markets, marketDates, marketGates } = await priceInputs(
+      const { bars, markets, marketDates, marketGates, liquidCounts } = await priceInputs(
         client,
         sources,
         symbols,
@@ -360,6 +292,15 @@ async function refreshStrategy(
         fingerprint,
         marketDates,
         marketGates,
+        marketDates.at(-1)! >= "2026-10-12"
+          ? {
+              version: "kr-common-execution-20261012-v1",
+              startDate: "2026-10-12",
+              throughDate: marketDates.at(-1)!,
+              scope: "MIXED",
+            }
+          : undefined,
+        liquidCounts,
       );
     })().finally(() => strategyRefreshes.delete(key));
     strategyRefreshes.set(key, running);

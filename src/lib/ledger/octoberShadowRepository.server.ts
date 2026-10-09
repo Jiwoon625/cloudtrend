@@ -1,3 +1,4 @@
+import { activeSeriesVersion } from "./modelSeries";
 import { US_PROSPECTIVE_STRATEGIES } from "../engine/usProspectivePortfolio";
 import type { KrDailyInputArchive } from "./octoberShadowArchive";
 import type { PreparedOctoberPublication } from "./octoberShadowPipeline";
@@ -101,7 +102,7 @@ export function octoberShadowStore(
       const saved = await stageArtifact(
         "KR_DAILY_INPUT",
         value,
-        "adopted-shadow-2026-10-05-v1:KR_MIXED",
+        `${activeSeriesVersion(value.date)}:KR_MIXED`,
       );
       if (canonicalSeriesJson(saved) !== canonicalSeriesJson(value))
         throw new Error("Immutable KR archive acknowledgement mismatch");

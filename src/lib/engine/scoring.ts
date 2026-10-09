@@ -307,7 +307,7 @@ export function technicalScore(
 export function vfStockScore(
   snap: IndicatorSnapshot,
   cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
-  options: { exclude52wHigh?: boolean } = {},
+  options: { exclude52wHigh?: boolean | undefined } = {},
 ): ScoreBlock {
   const rows: RuleRow[] = [];
   const t = cfg.technical;
@@ -417,8 +417,7 @@ export function v8FinalStockScore(
 ): ScoreBlock {
   const base = vfStockScore(snap, cfg, { exclude52wHigh: options.exclude52wHigh });
   const priceLeadership = options.sectorPriceLeadership ?? null;
-  const threshold =
-    options.sectorPriceLeadershipThreshold ?? VF_SECTOR_PL_OVERHEAT_THRESHOLD;
+  const threshold = options.sectorPriceLeadershipThreshold ?? VF_SECTOR_PL_OVERHEAT_THRESHOLD;
   const adjustment = adjustSectorPenaltyScore(base.points, priceLeadership, threshold);
   const available = adjustment.sectorScoreAvailable;
   const sectorPoints = Math.round((adjustment.score - base.points) * 100) / 100;
@@ -454,7 +453,9 @@ export function historicalTechnicalScore(
   const missingRules = score.rows.filter((row) => row.status === "NO_DATA").map((row) => row.rule);
   return {
     points:
-      missingRules.length === 0 && Number.isFinite(score.points) && score.availableMaxPoints === score.maxPoints
+      missingRules.length === 0 &&
+      Number.isFinite(score.points) &&
+      score.availableMaxPoints === score.maxPoints
         ? score.points
         : null,
     rawPoints: score.points,
@@ -595,36 +596,143 @@ export function fundamentalScore(facts: FinancialFacts | undefined): ScoreBlock 
   if (!facts) return { points: 0, maxPoints: 100, availableMaxPoints: 0, rows };
 
   const roe = facts.roe;
-  add("수익성", "ROE", roe === null ? "데이터 없음" : fmtPct(roe * 100), "12% 이상 15점 / 8% 이상 8점", roe === null ? "NO_DATA" : roe >= 0.08 ? "PASS" : "FAIL", roe === null ? 0 : roe >= 0.12 ? 15 : roe >= 0.08 ? 8 : 0, 15);
+  add(
+    "수익성",
+    "ROE",
+    roe === null ? "데이터 없음" : fmtPct(roe * 100),
+    "12% 이상 15점 / 8% 이상 8점",
+    roe === null ? "NO_DATA" : roe >= 0.08 ? "PASS" : "FAIL",
+    roe === null ? 0 : roe >= 0.12 ? 15 : roe >= 0.08 ? 8 : 0,
+    15,
+  );
   const om = facts.operatingMargin;
-  add("수익성", "영업이익률", om === null ? "데이터 없음" : fmtPct(om * 100), "10% 이상 10점 / 5% 이상 5점", om === null ? "NO_DATA" : om >= 0.05 ? "PASS" : "FAIL", om === null ? 0 : om >= 0.1 ? 10 : om >= 0.05 ? 5 : 0, 10);
+  add(
+    "수익성",
+    "영업이익률",
+    om === null ? "데이터 없음" : fmtPct(om * 100),
+    "10% 이상 10점 / 5% 이상 5점",
+    om === null ? "NO_DATA" : om >= 0.05 ? "PASS" : "FAIL",
+    om === null ? 0 : om >= 0.1 ? 10 : om >= 0.05 ? 5 : 0,
+    10,
+  );
   const rc = facts.revenueCagr3y;
-  add("성장성", "매출 3년 CAGR", rc === null ? "데이터 없음" : fmtPct(rc * 100), "10% 이상 12점", rc === null ? "NO_DATA" : rc >= 0.1 ? "PASS" : "FAIL", rc !== null && rc >= 0.1 ? 12 : 0, 12);
+  add(
+    "성장성",
+    "매출 3년 CAGR",
+    rc === null ? "데이터 없음" : fmtPct(rc * 100),
+    "10% 이상 12점",
+    rc === null ? "NO_DATA" : rc >= 0.1 ? "PASS" : "FAIL",
+    rc !== null && rc >= 0.1 ? 12 : 0,
+    12,
+  );
   const oc = facts.operatingProfitCagr3y;
   if (oc === null && facts.quarterlyOpProfitYoY !== null && facts.quarterlyOpProfitYoY > 0)
-    add("성장성", "영업이익 3년 CAGR (계산 불가 → 흑자전환 대체)", "CAGR 계산 불가, 최근 분기 개선", "대체 시 최대 8점", "PASS", 8, 13);
+    add(
+      "성장성",
+      "영업이익 3년 CAGR (계산 불가 → 흑자전환 대체)",
+      "CAGR 계산 불가, 최근 분기 개선",
+      "대체 시 최대 8점",
+      "PASS",
+      8,
+      13,
+    );
   else
-    add("성장성", "영업이익 3년 CAGR", oc === null ? "데이터 없음" : fmtPct(oc * 100), "15% 이상 13점", oc === null ? "NO_DATA" : oc >= 0.15 ? "PASS" : "FAIL", oc !== null && oc >= 0.15 ? 13 : 0, 13);
+    add(
+      "성장성",
+      "영업이익 3년 CAGR",
+      oc === null ? "데이터 없음" : fmtPct(oc * 100),
+      "15% 이상 13점",
+      oc === null ? "NO_DATA" : oc >= 0.15 ? "PASS" : "FAIL",
+      oc !== null && oc >= 0.15 ? 13 : 0,
+      13,
+    );
   const dr = facts.debtRatio;
-  add("재무건전성", "부채비율 100% 이하", dr === null ? "데이터 없음" : fmtPct(dr * 100), "100% 이하 10점", dr === null ? "NO_DATA" : dr <= 1 ? "PASS" : "FAIL", dr !== null && dr <= 1 ? 10 : 0, 10);
+  add(
+    "재무건전성",
+    "부채비율 100% 이하",
+    dr === null ? "데이터 없음" : fmtPct(dr * 100),
+    "100% 이하 10점",
+    dr === null ? "NO_DATA" : dr <= 1 ? "PASS" : "FAIL",
+    dr !== null && dr <= 1 ? 10 : 0,
+    10,
+  );
   const cr = facts.currentRatio;
-  add("재무건전성", "유동비율 150% 이상", cr === null ? "데이터 없음" : fmtPct(cr * 100), "150% 이상 8점", cr === null ? "NO_DATA" : cr >= 1.5 ? "PASS" : "FAIL", cr !== null && cr >= 1.5 ? 8 : 0, 8);
+  add(
+    "재무건전성",
+    "유동비율 150% 이상",
+    cr === null ? "데이터 없음" : fmtPct(cr * 100),
+    "150% 이상 8점",
+    cr === null ? "NO_DATA" : cr >= 1.5 ? "PASS" : "FAIL",
+    cr !== null && cr >= 1.5 ? 8 : 0,
+    8,
+  );
   const ic = facts.interestCoverage;
-  add("재무건전성", "이자보상배율 3배 이상", ic === null ? "데이터 없음 (분모 0 또는 음수 포함)" : `${ic.toFixed(1)}배`, "3배 이상 7점", ic === null ? "NO_DATA" : ic >= 3 ? "PASS" : "FAIL", ic !== null && ic >= 3 ? 7 : 0, 7);
+  add(
+    "재무건전성",
+    "이자보상배율 3배 이상",
+    ic === null ? "데이터 없음 (분모 0 또는 음수 포함)" : `${ic.toFixed(1)}배`,
+    "3배 이상 7점",
+    ic === null ? "NO_DATA" : ic >= 3 ? "PASS" : "FAIL",
+    ic !== null && ic >= 3 ? 7 : 0,
+    7,
+  );
   const fp = facts.forwardPer;
   const ip = facts.industryAveragePer;
-  add("밸류에이션", "Forward PER ≤ 업종 평균", fp === null || ip === null ? "데이터 없음" : `${fp.toFixed(1)}배 vs 업종 ${ip.toFixed(1)}배`, "이하 7점", fp === null || ip === null ? "NO_DATA" : fp <= ip ? "PASS" : "FAIL", fp !== null && ip !== null && fp <= ip ? 7 : 0, 7);
+  add(
+    "밸류에이션",
+    "Forward PER ≤ 업종 평균",
+    fp === null || ip === null ? "데이터 없음" : `${fp.toFixed(1)}배 vs 업종 ${ip.toFixed(1)}배`,
+    "이하 7점",
+    fp === null || ip === null ? "NO_DATA" : fp <= ip ? "PASS" : "FAIL",
+    fp !== null && ip !== null && fp <= ip ? 7 : 0,
+    7,
+  );
   const hp = facts.historicalFiveYearAveragePer;
-  add("밸류에이션", "Forward PER 5년 평균 대비 20% 이상 할인", fp === null || hp === null ? "데이터 없음" : `${fp.toFixed(1)}배 vs 5년 ${hp.toFixed(1)}배`, "20% 이상 할인 5점", fp === null || hp === null ? "NO_DATA" : fp <= hp * 0.8 ? "PASS" : "FAIL", fp !== null && hp !== null && fp <= hp * 0.8 ? 5 : 0, 5);
+  add(
+    "밸류에이션",
+    "Forward PER 5년 평균 대비 20% 이상 할인",
+    fp === null || hp === null ? "데이터 없음" : `${fp.toFixed(1)}배 vs 5년 ${hp.toFixed(1)}배`,
+    "20% 이상 할인 5점",
+    fp === null || hp === null ? "NO_DATA" : fp <= hp * 0.8 ? "PASS" : "FAIL",
+    fp !== null && hp !== null && fp <= hp * 0.8 ? 5 : 0,
+    5,
+  );
   const pbr = facts.pbr;
-  add("밸류에이션", "PBR 1.0~3.0", pbr === null ? "데이터 없음" : `${pbr.toFixed(2)}배`, "구간 내 5점 (1배 미만 자동 가점 없음)", pbr === null ? "NO_DATA" : pbr >= 1 && pbr <= 3 ? "PASS" : "FAIL", pbr !== null && pbr >= 1 && pbr <= 3 ? 5 : 0, 5);
+  add(
+    "밸류에이션",
+    "PBR 1.0~3.0",
+    pbr === null ? "데이터 없음" : `${pbr.toFixed(2)}배`,
+    "구간 내 5점 (1배 미만 자동 가점 없음)",
+    pbr === null ? "NO_DATA" : pbr >= 1 && pbr <= 3 ? "PASS" : "FAIL",
+    pbr !== null && pbr >= 1 && pbr <= 3 ? 5 : 0,
+    5,
+  );
   const ev = facts.evEbitda;
   const iev = facts.industryAverageEvEbitda;
-  add("밸류에이션", "EV/EBITDA ≤ 업종 평균", ev === null || iev === null ? "데이터 없음" : `${ev.toFixed(1)} vs ${iev.toFixed(1)}`, "이하 5점", ev === null || iev === null ? "NO_DATA" : ev <= iev ? "PASS" : "FAIL", ev !== null && iev !== null && ev <= iev ? 5 : 0, 5);
+  add(
+    "밸류에이션",
+    "EV/EBITDA ≤ 업종 평균",
+    ev === null || iev === null ? "데이터 없음" : `${ev.toFixed(1)} vs ${iev.toFixed(1)}`,
+    "이하 5점",
+    ev === null || iev === null ? "NO_DATA" : ev <= iev ? "PASS" : "FAIL",
+    ev !== null && iev !== null && ev <= iev ? 5 : 0,
+    5,
+  );
   const dy = facts.dividendYield;
-  add("밸류에이션", "배당수익률 2% 이상", dy === null ? "데이터 없음" : fmtPct(dy * 100, 2), "2% 이상 3점", dy === null ? "NO_DATA" : dy >= 0.02 ? "PASS" : "FAIL", dy !== null && dy >= 0.02 ? 3 : 0, 3);
+  add(
+    "밸류에이션",
+    "배당수익률 2% 이상",
+    dy === null ? "데이터 없음" : fmtPct(dy * 100, 2),
+    "2% 이상 3점",
+    dy === null ? "NO_DATA" : dy >= 0.02 ? "PASS" : "FAIL",
+    dy !== null && dy >= 0.02 ? 3 : 0,
+    3,
+  );
   const points = rows.reduce((sum, row) => sum + row.points, 0);
-  const availableMaxPoints = rows.reduce((sum, row) => sum + (row.status === "NO_DATA" ? 0 : row.maxPoints), 0);
+  const availableMaxPoints = rows.reduce(
+    (sum, row) => sum + (row.status === "NO_DATA" ? 0 : row.maxPoints),
+    0,
+  );
   return { points, maxPoints: 100, availableMaxPoints, rows };
 }
 
@@ -635,18 +743,58 @@ export function etfHealthScore(inst: Instrument, etf: EtfFacts | undefined): Sco
   let aumPts = 0;
   if (aum >= 50_000_000_000) aumPts += 20;
   if (aum >= 100_000_000_000) aumPts += 10;
-  rows.push({ group: "유동성", rule: "순자산 규모", actual: `${(aum / 100_000_000).toFixed(0)}억 원`, threshold: "500억 20점 / 1,000억 추가 10점", status: aumPts > 0 ? "PASS" : "FAIL", points: aumPts, maxPoints: 30 });
+  rows.push({
+    group: "유동성",
+    rule: "순자산 규모",
+    actual: `${(aum / 100_000_000).toFixed(0)}억 원`,
+    threshold: "500억 20점 / 1,000억 추가 10점",
+    status: aumPts > 0 ? "PASS" : "FAIL",
+    points: aumPts,
+    maxPoints: 30,
+  });
   const tvPts = etf.averageTradingValue20d >= 1_000_000_000 ? 20 : 0;
-  rows.push({ group: "유동성", rule: "20일 평균 거래대금 10억 원 이상", actual: `${(etf.averageTradingValue20d / 100_000_000).toFixed(1)}억 원`, threshold: "충족 시 20점", status: tvPts > 0 ? "PASS" : "FAIL", points: tvPts, maxPoints: 20 });
+  rows.push({
+    group: "유동성",
+    rule: "20일 평균 거래대금 10억 원 이상",
+    actual: `${(etf.averageTradingValue20d / 100_000_000).toFixed(1)}억 원`,
+    threshold: "충족 시 20점",
+    status: tvPts > 0 ? "PASS" : "FAIL",
+    points: tvPts,
+    maxPoints: 20,
+  });
   const pd = Math.abs(etf.premiumDiscountRate);
   const pdPts = pd <= 0.5 ? 20 : pd <= 1 ? 10 : 0;
-  rows.push({ group: "추적 품질", rule: "괴리율 절댓값", actual: `${etf.premiumDiscountRate.toFixed(2)}%`, threshold: "0.5% 이내 20점 / 1.0% 이내 10점", status: pdPts > 0 ? "PASS" : "FAIL", points: pdPts, maxPoints: 20 });
+  rows.push({
+    group: "추적 품질",
+    rule: "괴리율 절댓값",
+    actual: `${etf.premiumDiscountRate.toFixed(2)}%`,
+    threshold: "0.5% 이내 20점 / 1.0% 이내 10점",
+    status: pdPts > 0 ? "PASS" : "FAIL",
+    points: pdPts,
+    maxPoints: 20,
+  });
   let ter = 0;
   if (etf.totalExpenseRatio <= 0.5) ter += 15;
   if (etf.totalExpenseRatio <= 0.3) ter += 5;
-  rows.push({ group: "비용", rule: "총보수", actual: `${etf.totalExpenseRatio.toFixed(2)}%`, threshold: "0.5% 이하 15점 / 0.3% 이하 추가 5점", status: ter > 0 ? "PASS" : "FAIL", points: ter, maxPoints: 20 });
+  rows.push({
+    group: "비용",
+    rule: "총보수",
+    actual: `${etf.totalExpenseRatio.toFixed(2)}%`,
+    threshold: "0.5% 이하 15점 / 0.3% 이하 추가 5점",
+    status: ter > 0 ? "PASS" : "FAIL",
+    points: ter,
+    maxPoints: 20,
+  });
   const plain = !inst.isLeveraged && !inst.isInverse;
-  rows.push({ group: "구조", rule: "레버리지·인버스 아님", actual: plain ? "일반형" : inst.isLeveraged ? "레버리지" : "인버스", threshold: "충족 시 10점", status: plain ? "PASS" : "FAIL", points: plain ? 10 : 0, maxPoints: 10 });
+  rows.push({
+    group: "구조",
+    rule: "레버리지·인버스 아님",
+    actual: plain ? "일반형" : inst.isLeveraged ? "레버리지" : "인버스",
+    threshold: "충족 시 10점",
+    status: plain ? "PASS" : "FAIL",
+    points: plain ? 10 : 0,
+    maxPoints: 10,
+  });
   const points = rows.reduce((sum, row) => sum + row.points, 0);
   return { points, maxPoints: 100, availableMaxPoints: 100, rows };
 }
@@ -664,8 +812,18 @@ export interface Weights {
   marketSector: number;
 }
 
-export const STOCK_WEIGHTS: Weights = { technical: 1, priority: 0, fundamental: 0, marketSector: 0 };
-export const ETF_WEIGHTS: Weights = { technical: 0.55, priority: 0.15, fundamental: 0.15, marketSector: 0.15 };
+export const STOCK_WEIGHTS: Weights = {
+  technical: 1,
+  priority: 0,
+  fundamental: 0,
+  marketSector: 0,
+};
+export const ETF_WEIGHTS: Weights = {
+  technical: 0.55,
+  priority: 0.15,
+  fundamental: 0.15,
+  marketSector: 0.15,
+};
 
 export function totalScore(input: {
   technicalNormalized: number | null;
@@ -725,7 +883,8 @@ export function collectWarnings(input: {
   const w: string[] = [];
   const { snap, inst, etf } = input;
   if (snap.bollinger.headFakeWarning === true) w.push("HEAD_FAKE");
-  if (snap.bollinger.bbBreakout === true && (snap.volumeRatio20 ?? 0) < 130) w.push("LOW_VOLUME_BREAKOUT");
+  if (snap.bollinger.bbBreakout === true && (snap.volumeRatio20 ?? 0) < 130)
+    w.push("LOW_VOLUME_BREAKOUT");
   const ich = snap.ichimoku;
   if (ich.cloudTop !== null && ich.cloudBottom !== null) {
     if (snap.close < ich.cloudBottom) w.push("PRICE_BELOW_CLOUD");
@@ -736,7 +895,10 @@ export function collectWarnings(input: {
   if (input.vkospi !== null && input.vkospi >= 30) w.push("VKOSPI_HIGH");
   if (snap.foreignNet20d !== null && snap.foreignNet20d < 0) w.push("FOREIGN_FLOW_NEGATIVE");
   if (snap.distanceFrom52wHigh !== null && snap.distanceFrom52wHigh >= -3) w.push("NEAR_52W_HIGH");
-  if ((snap.extensionFromMa20 !== null && snap.extensionFromMa20 >= 15) || (snap.atrExtension !== null && snap.atrExtension >= 3))
+  if (
+    (snap.extensionFromMa20 !== null && snap.extensionFromMa20 >= 15) ||
+    (snap.atrExtension !== null && snap.atrExtension >= 3)
+  )
     w.push("OVEREXTENDED_FROM_MA20");
   if (input.dataCompletenessRatio < 1) w.push("DATA_INCOMPLETE");
   if (etf && Math.abs(etf.premiumDiscountRate) > 1) w.push("ETF_PREMIUM_DISCOUNT_HIGH");
@@ -781,12 +943,18 @@ export function calculatePositionSizing(input: PositionSizingInput): PositionSiz
   if (stopPrice >= input.entryPrice) errors.push("손절가가 진입가 이상입니다.");
   if (input.riskPercent <= 0) errors.push("허용 리스크 비율이 0입니다.");
   const riskBudget = input.totalCapital * (input.riskPercent / 100);
-  const riskBasedQuantity = riskPerShare > 0 && riskBudget > 0 ? Math.floor(riskBudget / riskPerShare) : 0;
-  const weightCappedQuantity = input.entryPrice > 0 ? Math.floor((input.totalCapital * (input.maxWeightPercent / 100)) / input.entryPrice) : 0;
+  const riskBasedQuantity =
+    riskPerShare > 0 && riskBudget > 0 ? Math.floor(riskBudget / riskPerShare) : 0;
+  const weightCappedQuantity =
+    input.entryPrice > 0
+      ? Math.floor((input.totalCapital * (input.maxWeightPercent / 100)) / input.entryPrice)
+      : 0;
   const finalQuantity = Math.max(0, Math.min(riskBasedQuantity, weightCappedQuantity));
   const investment = finalQuantity * input.entryPrice;
   const maxLoss = finalQuantity * riskPerShare;
-  const openRiskAfter = input.currentOpenRiskPercent + (input.totalCapital > 0 ? (maxLoss / input.totalCapital) * 100 : 0);
+  const openRiskAfter =
+    input.currentOpenRiskPercent +
+    (input.totalCapital > 0 ? (maxLoss / input.totalCapital) * 100 : 0);
   return {
     stopPrice,
     riskPerShare,
@@ -891,14 +1059,22 @@ export function mergeScoringConfig(input: unknown): ScoringConfig {
   const rot = at(raw, "rotation");
   return {
     configVersion: SCORING_CONFIG_VERSION,
-    weights: { stock: weightBlock(at(w, "stock"), d.weights.stock), etf: weightBlock(at(w, "etf"), d.weights.etf) },
+    weights: {
+      stock: weightBlock(at(w, "stock"), d.weights.stock),
+      etf: weightBlock(at(w, "etf"), d.weights.etf),
+    },
     technical: {
       cloudAboveMax: clampNum(at(t, "cloudAboveMax"), d.technical.cloudAboveMax, 0, 20),
       maAlignedMax: clampNum(at(t, "maAlignedMax"), d.technical.maAlignedMax, 0, 20),
       momentumMax: clampNum(at(t, "momentumMax"), d.technical.momentumMax, 0, 20),
       breakoutMax: clampNum(at(t, "breakoutMax"), d.technical.breakoutMax, 0, 20),
       volumeMax: clampNum(at(t, "volumeMax"), d.technical.volumeMax, 0, 20),
-      volumeStrongRatio: clampNum(at(t, "volumeStrongRatio"), d.technical.volumeStrongRatio, 100, 2000),
+      volumeStrongRatio: clampNum(
+        at(t, "volumeStrongRatio"),
+        d.technical.volumeStrongRatio,
+        100,
+        2000,
+      ),
       clvThreshold: clampNum(at(t, "clvThreshold"), d.technical.clvThreshold, 0, 1),
     },
     priority: {
@@ -907,9 +1083,19 @@ export function mergeScoringConfig(input: unknown): ScoringConfig {
       nearHighPoints: clampNum(at(p, "nearHighPoints"), d.priority.nearHighPoints, 0, 20),
       sizePoints: clampNum(at(p, "sizePoints"), d.priority.sizePoints, 0, 20),
       relativePoints: clampNum(at(p, "relativePoints"), d.priority.relativePoints, 0, 20),
-      nearHighThresholdPercent: clampNum(at(p, "nearHighThresholdPercent"), d.priority.nearHighThresholdPercent, -100, 0),
+      nearHighThresholdPercent: clampNum(
+        at(p, "nearHighThresholdPercent"),
+        d.priority.nearHighThresholdPercent,
+        -100,
+        0,
+      ),
       minMarketCap: clampNum(at(p, "minMarketCap"), d.priority.minMarketCap, 0, 1e15),
-      excessReturnThresholdPp: clampNum(at(p, "excessReturnThresholdPp"), d.priority.excessReturnThresholdPp, -20, 20),
+      excessReturnThresholdPp: clampNum(
+        at(p, "excessReturnThresholdPp"),
+        d.priority.excessReturnThresholdPp,
+        -20,
+        20,
+      ),
     },
     grade: {
       aMin: clampNum(at(g, "aMin"), d.grade.aMin, 0, 100),
@@ -921,8 +1107,18 @@ export function mergeScoringConfig(input: unknown): ScoringConfig {
       minMarketCap: clampNum(at(u, "minMarketCap"), d.universe.minMarketCap, 0, 1e15),
       minTradingValue: clampNum(at(u, "minTradingValue"), d.universe.minTradingValue, 0, 1e15),
       etfMinAum: clampNum(at(u, "etfMinAum"), d.universe.etfMinAum, 0, 1e15),
-      etfMinTradingValue20d: clampNum(at(u, "etfMinTradingValue20d"), d.universe.etfMinTradingValue20d, 0, 1e15),
-      etfMaxPremiumDiscount: clampNum(at(u, "etfMaxPremiumDiscount"), d.universe.etfMaxPremiumDiscount, 0, 50),
+      etfMinTradingValue20d: clampNum(
+        at(u, "etfMinTradingValue20d"),
+        d.universe.etfMinTradingValue20d,
+        0,
+        1e15,
+      ),
+      etfMaxPremiumDiscount: clampNum(
+        at(u, "etfMaxPremiumDiscount"),
+        d.universe.etfMaxPremiumDiscount,
+        0,
+        50,
+      ),
       excludeLeveragedInverse:
         typeof at(u, "excludeLeveragedInverse") === "boolean"
           ? (at(u, "excludeLeveragedInverse") as boolean)
@@ -938,7 +1134,11 @@ export function mergeScoringConfig(input: unknown): ScoringConfig {
 
 export function technicalMaxPoints(cfg: ScoringConfig = DEFAULT_SCORING_CONFIG): number {
   const t = cfg.technical;
-  return Math.round((t.cloudAboveMax + t.maAlignedMax + t.momentumMax + t.breakoutMax + t.volumeMax) * 100) / 100;
+  return (
+    Math.round(
+      (t.cloudAboveMax + t.maAlignedMax + t.momentumMax + t.breakoutMax + t.volumeMax) * 100,
+    ) / 100
+  );
 }
 
 export function priorityMaxPoints(cfg: ScoringConfig = DEFAULT_SCORING_CONFIG): number {

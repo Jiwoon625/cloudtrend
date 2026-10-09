@@ -1,12 +1,18 @@
 import type { StockAssessmentDisplay } from "@/lib/stockAssessmentDisplay";
 
-export function StockAssessmentDetails({ assessment }: { assessment: StockAssessmentDisplay }) {
+export function StockAssessmentDetails({
+  assessment,
+  held = false,
+}: {
+  assessment: StockAssessmentDisplay;
+  held?: boolean;
+}) {
   return (
     <div className="space-y-1 text-[11px] leading-relaxed" aria-label="계산된 조건별 판단">
       {assessment.conditions.map((condition) => (
         <p key={condition}>{condition}</p>
       ))}
-      <p>{assessment.exit}</p>
+      {held ? <p>{assessment.exit}</p> : null}
       {assessment.failed.length ? (
         <p className="text-down">확인된 미충족: {assessment.failed.join(" · ")}</p>
       ) : null}

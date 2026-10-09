@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyOctoberShadowInitialization,
   planOctoberShadowInitialization,
+  planRestartShadowInitialization,
   runOctoberShadowInitialization,
 } from "../../../scripts/initialize-october-shadow";
 import {
@@ -201,4 +202,25 @@ it("writes distinct private plan and exact verified-result files on a local simu
     log.mockRestore();
     await rm(folder, { recursive: true, force: true });
   }
+});
+
+describe("October 12 independent initialization", () => {
+  it("resumes a partial freeze while retaining beta contracts and exact original timestamps", async () => {
+    const f = fixture();
+    const beta = await planOctoberShadowInitialization("2026-10-03T00:00:00Z");
+    await applyOctoberShadowInitialization(beta, f.store);
+    const old = [...f.registry.values()].map((s) => structuredClone(s));
+    const plan = await planRestartShadowInitialization("2026-10-09T01:00:00Z");
+    f.failAt(11);
+    await expect(applyOctoberShadowInitialization(plan, f.store)).rejects.toThrow("interruption");
+    f.failAt(null);
+    const retry = await planRestartShadowInitialization("2026-10-09T02:00:00Z");
+    const result = await applyOctoberShadowInitialization(retry, f.store);
+    expect(result.version).toBe("adopted-shadow-2026-10-12-v1");
+    expect(f.registry.size).toBe(16);
+    expect([...f.registry.values()].slice(0, 8)).toEqual(old);
+    expect(result.reusedBookIds).toHaveLength(2);
+    expect(result.series[0]!.frozenAt).toBe(plan.series[0]!.frozenAt);
+    expect(result.sessionsInserted).toBe(0);
+  });
 });

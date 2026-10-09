@@ -140,7 +140,7 @@ export function DomesticAssessmentPanel({
                 </td>
                 <td className="p-3">
                   {r.assessment ? (
-                    <StockAssessmentDetails assessment={r.assessment} />
+                    <StockAssessmentDetails assessment={r.assessment} held={r.held ?? false} />
                   ) : r.etfAssessment ? (
                     <EtfAssessmentDetails evidence={r.etfAssessment} />
                   ) : (

@@ -4,13 +4,14 @@ import type { KospiMarketGateEvidence } from "./engine/kospiMarketGate";
 import type { DailyPrice, Market } from "./engine/types";
 import type { ScreeningSnapshot } from "./screeningSnapshot";
 import type { PortfolioSettings, PortfolioSummary, PortfolioTrade } from "./portfolioStoreCore";
-import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
+import { KOSPI_ENTRY_POLICY, kospiPolicyVersionAt } from "./engine/kospiEntryConfirmation";
 import { STRATEGY_CONFIG } from "./engine/operationalStrategy";
 import {
   normalizeSnapshots,
   isEntryOnset,
   isLegacyReplayEntry,
   nextKospiConfirmedEntry,
+  nextConfirmedEntry,
   heldDuringEntryWindow,
   firstBarAfter,
   deriveExitPlan,
@@ -143,8 +144,8 @@ function summary(
 
 /** Explicit new-series opt-in. Historical callers keep the original execution contract. */
 export interface ProspectiveKrReplayPolicy {
-  version: "kr-adopted-shadow-20261005-v1";
-  startDate: "2026-10-05";
+  version: "kr-adopted-shadow-20261005-v1" | "kr-common-execution-20261012-v1";
+  startDate: "2026-10-05" | "2026-10-12";
   throughDate: string;
   scope: "MIXED" | "KOSPI" | "KOSDAQ";
 }
@@ -159,16 +160,41 @@ export function simulateStrategy(
   marketDates: string[] = [],
   marketGates: Record<string, KospiMarketGateEvidence> = {},
   prospective?: ProspectiveKrReplayPolicy,
+  marketLiquidCounts?: Record<string, number>,
 ): StrategyLedger {
+  const unified = prospective?.version === "kr-common-execution-20261012-v1";
+  if (unified && !marketLiquidCounts) {
+    const observed = new Map<string, Set<string>>();
+    for (const [symbol, rows] of Object.entries(bars))
+      for (const bar of rows) {
+        if (
+          bar.tradeDate > prospective!.throughDate ||
+          bar.volumeObserved === false ||
+          !Number.isFinite(bar.volume) ||
+          bar.volume <= 0
+        )
+          continue;
+        const symbols = observed.get(bar.tradeDate) ?? new Set<string>();
+        symbols.add(symbol);
+        observed.set(bar.tradeDate, symbols);
+      }
+    marketLiquidCounts = Object.fromEntries(
+      [...observed].map(([date, symbols]) => [date, symbols.size]),
+    );
+  }
   if (prospective) {
     if (
-      prospective.version !== "kr-adopted-shadow-20261005-v1" ||
-      prospective.startDate !== "2026-10-05" ||
+      (!unified && prospective.version !== "kr-adopted-shadow-20261005-v1") ||
+      prospective.startDate !== (unified ? "2026-10-12" : "2026-10-05") ||
       !validDate(prospective.throughDate) ||
       prospective.throughDate < prospective.startDate ||
-      prospective.throughDate >= "2027-10-05" ||
-      settings.initialCapital !== 100_000_000 ||
-      settings.maxPositions !== 30 ||
+      prospective.throughDate >= (unified ? "2027-10-12" : "2027-10-05") ||
+      (!unified && settings.initialCapital !== 100_000_000) ||
+      !Number.isFinite(settings.initialCapital) ||
+      settings.initialCapital <= 0 ||
+      (!unified && settings.maxPositions !== 30) ||
+      !Number.isInteger(settings.maxPositions) ||
+      settings.maxPositions < 1 ||
       settings.roundTripCostRate !== 0.003
     )
       throw new Error("Invalid frozen first-year KR series contract");
@@ -209,7 +235,7 @@ export function simulateStrategy(
       ),
     ]),
   );
-  const latest = Object.values(bars).reduce<string | null>((d, b) => {
+  let latest = Object.values(bars).reduce<string | null>((d, b) => {
     const x = b.at(-1)?.tradeDate;
     return x && (!d || x > d) ? x : d;
   }, null);
@@ -221,6 +247,16 @@ export function simulateStrategy(
           ...snapshots.map((snapshot) => snapshot.asOfDate),
         ]),
       ].sort();
+  if (unified) latest = observedDates.at(-1) ?? latest;
+  const liquidSymbolsByDate = new Map<string, Set<string>>();
+  if (unified)
+    for (const [symbol, rows] of Object.entries(entryBars))
+      for (const bar of rows) {
+        if (!(bar.volume > 0) || bar.volumeObserved === false) continue;
+        const symbols = liquidSymbolsByDate.get(bar.tradeDate) ?? new Set<string>();
+        symbols.add(symbol);
+        liquidSymbolsByDate.set(bar.tradeDate, symbols);
+      }
   type ReplayCandidate = Candidate & { executable: boolean; confirmedPolicy: boolean };
   const byKey = new Map<string, ReplayCandidate>();
   for (const snapshot of snapshots)
@@ -261,7 +297,7 @@ export function simulateStrategy(
         } else if (
           !confirmation ||
           confirmation.date !== snapshot.asOfDate ||
-          confirmation.version !== KOSPI_ENTRY_POLICY.version
+          confirmation.version !== kospiPolicyVersionAt(confirmation.date)
         ) {
           decision = "확인 자료 없음 · 진입 제외";
         } else if (confirmation.state === "pending") {
@@ -273,7 +309,15 @@ export function simulateStrategy(
         } else {
           decision = "확인 조건 미충족 · 진입 제외";
         }
-      } else next = firstBarAfter(bars[entry.symbol] ?? [], snapshot.asOfDate);
+      } else
+        next = unified
+          ? nextConfirmedEntry(
+              entryBars[entry.symbol] ?? [],
+              snapshot.asOfDate,
+              observedDates,
+              true,
+            ).bar
+          : firstBarAfter(bars[entry.symbol] ?? [], snapshot.asOfDate);
       const key = keyFor(entry.symbol, confirmedPolicy ? originDate : snapshot.asOfDate);
       // A legacy origin immediately before adoption already owns its next-open replay fill.
       // A later confirmation must not replace or retime that historical trade.
@@ -323,7 +367,22 @@ export function simulateStrategy(
   const closeDue = (cutoff: string, beforeEntry: boolean) => {
     for (const t of trades) {
       if (t.status !== "OPEN" || !latest) continue;
-      const plan = deriveExitPlan(t, snapshots, bars[t.symbol] ?? [], latest);
+      const healthyDates = unified
+        ? observedDates.filter((date) => {
+            const symbols = liquidSymbolsByDate.get(date);
+            return (
+              (marketLiquidCounts?.[date] ?? symbols?.size ?? 0) > (symbols?.has(t.symbol) ? 1 : 0)
+            );
+          })
+        : undefined;
+      const plan = deriveExitPlan(
+        t,
+        snapshots,
+        unified ? (entryBars[t.symbol] ?? []) : (bars[t.symbol] ?? []),
+        latest,
+        healthyDates,
+        observedDates,
+      );
       if (
         !plan ||
         plan.exitDate > cutoff ||
@@ -363,7 +422,9 @@ export function simulateStrategy(
       cash = prospective ? Number(format(exactCash)) : cash + t.shares * plan.exitPrice - fee;
     }
   };
-  for (const candidate of rawCandidates) {
+  const executionQueue = [...rawCandidates];
+  while (executionQueue.length) {
+    const candidate = executionQueue.shift()!;
     const { executable, confirmedPolicy, ...c } = candidate;
     if (confirmedPolicy && c.entryDate && latest) closeDue(c.entryDate, true);
     const heldOnSignal = trades.some((trade) =>
@@ -388,7 +449,28 @@ export function simulateStrategy(
         });
       continue;
     }
-    candidates.push(c);
+    const priorCandidate = candidates.findIndex((item) => item.key === c.key);
+    if (priorCandidate >= 0) candidates[priorCandidate] = c;
+    else candidates.push(c);
+    const defer = (reason: string) => {
+      c.decision = unified ? `${reason} · 미체결 이월` : reason;
+      if (!unified || !c.entryDate) return;
+      const next = nextConfirmedEntry(
+        entryBars[c.symbol] ?? [],
+        c.entryDate,
+        observedDates,
+        true,
+      ).bar;
+      if (!next || !latest || next.tradeDate > latest) return;
+      executionQueue.push({ ...candidate, entryDate: next.tradeDate, price: next.open });
+      executionQueue.sort(
+        (a, b) =>
+          (a.entryDate ?? "9999").localeCompare(b.entryDate ?? "9999") ||
+          (b.technical ?? -Infinity) - (a.technical ?? -Infinity) ||
+          (b.priority ?? -Infinity) - (a.priority ?? -Infinity) ||
+          a.symbol.localeCompare(b.symbol),
+      );
+    };
     if (
       !executable ||
       !c.entryDate ||
@@ -400,13 +482,26 @@ export function simulateStrategy(
     )
       continue;
     if (!confirmedPolicy) closeDue(c.entryDate, true);
+    if (unified && c.market === "KOSPI") {
+      const priorDate = observedDates.filter((date) => date < c.entryDate!).at(-1);
+      const gate = priorDate ? marketGates[priorDate] : undefined;
+      if (
+        !gate ||
+        gate.incomplete ||
+        gate.issues.length ||
+        !["RISK_ON", "NEUTRAL"].includes(gate.status)
+      ) {
+        defer("체결 전 시장국면 제한");
+        continue;
+      }
+    }
     const active = trades.filter((t) => t.status === "OPEN");
     if (active.some((t) => t.symbol === c.symbol)) {
       c.decision = "동일 종목 보유";
       continue;
     }
     if (active.length >= settings.maxPositions) {
-      c.decision = "30종목 한도";
+      defer(`${settings.maxPositions}종목 한도`);
       continue;
     }
     const sectorSlots = Math.max(
@@ -418,7 +513,7 @@ export function simulateStrategy(
       ),
     );
     if (active.filter((t) => t.sectorCode === c.sectorCode).length >= sectorSlots) {
-      c.decision = "섹터 한도";
+      defer("섹터 한도");
       continue;
     }
     const target = settings.initialCapital / settings.maxPositions;
@@ -430,7 +525,12 @@ export function simulateStrategy(
     const shares = prospective
       ? Number(
           integerBudgetQuantity(
-            format(divide(decimal(fromLegacyNumber(settings.initialCapital)), decimal("30"))),
+            format(
+              divide(
+                decimal(fromLegacyNumber(settings.initialCapital)),
+                decimal(String(settings.maxPositions)),
+              ),
+            ),
             format(exactCash),
             fromLegacyNumber(c.price),
             "0.0015",
@@ -438,7 +538,7 @@ export function simulateStrategy(
         )
       : Math.min(Math.max(1, Math.round(target / c.price)), affordable);
     if (shares < 1) {
-      c.decision = "목표예산 내 정수 수량 없음";
+      defer("목표예산 내 정수 수량 없음");
       continue;
     }
     const grossExact = prospective ? decimal(fromLegacyNumber(c.price)) * BigInt(shares) : 0n;

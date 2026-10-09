@@ -14,6 +14,7 @@ import {
   dashboardOperationsServer,
   dashboardEtfHoldingsServer,
 } from "@/lib/dashboardOperations.functions";
+import { compareDashboardCandidates } from "@/lib/dashboardOperations";
 import type {
   DashboardMarket,
   DashboardOperations,
@@ -146,9 +147,8 @@ export function DashboardSignalCounts({
         오늘의 진입 준비/EXIT
       </h2>
       <p className="mb-2 text-[10px] leading-relaxed text-muted-foreground">
-        시장별 최신 확정 거래일 기준 · KOSPI는 하루 확인·RSAccel·시장국면 조건을 통과한 진입 준비만
-        집계 · KOSPI는 체결 직전 완료 거래일 시장국면을 다시 확인하며, EXIT는 실제 보유종목
-        기준입니다.
+        시장별 최신 확정 거래일 기준입니다. 진입 준비는 주문 후보이며 체결 기록은 포트폴리오에서
+        확인합니다.
       </p>
       <table className="w-full text-[12px]">
         <thead>
@@ -349,6 +349,7 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
   const selectedMarkets = listMarkets(tab).filter((m) => market === "ALL" || m === market);
   const selected = (query.data?.markets ?? []).filter((m) => selectedMarkets.includes(m.market));
   const rows = selected.flatMap((m) => m[tab] ?? []);
+  if (tab !== "exits") rows.sort(compareDashboardCandidates);
   const pageCount = Math.max(1, Math.ceil(rows.length / 25));
   const currentPage = Math.min(page, pageCount - 1);
   const visible = rows.slice(currentPage * 25, currentPage * 25 + 25);
@@ -401,7 +402,7 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
         </p>
         {tab !== "exits" && selectedMarkets.some((m) => m === "KOSPI" || m === "KOSDAQ") ? (
           <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-            섹터 보유 수는 전략 장부의 KOSPI+KOSDAQ 합산입니다. 제한 종목도 Onset·확인 신호는
+            섹터 보유 수는 전략 장부의 KOSPI+KOSDAQ 합산입니다. 제한 종목도 원신호·확인 신호는
             유지합니다. 여유는 기준일 현재 수량이며 진입을 보장하지 않습니다. 예정 청산은 미차감,
             같은 날 다른 진입 후보의 슬롯은 미예약 상태입니다.
           </p>

@@ -37,6 +37,7 @@ export interface KospiShadowRow {
   open: number | null;
   close: number | null;
   volume: number | null;
+  priceObserved?: boolean;
   score: number | null;
   priority: number | null;
   rsAccel: number | null;
@@ -136,8 +137,8 @@ export interface KospiModelExecutionPolicy {
   contractHash: string;
   codeHash: string;
   configHash: string;
-  accountingStartDate: "2026-10-05";
-  fixedBudgetEndExclusive: "2027-10-05";
+  accountingStartDate: "2026-10-05" | "2026-10-12";
+  fixedBudgetEndExclusive: "2027-10-05" | "2027-10-12";
   initialCapitalKrw: "100000000";
   oneWayCost: "0.0015";
 }
@@ -225,12 +226,13 @@ export function stepKospiShadow(
     const p = executionPolicy;
     if (
       p.version !== "isolated-kospi-model-v1" ||
-      p.bookId !== "adopted-shadow-2026-10-05-v1:KR_KOSPI_CONFIRM1_BEAR" ||
+      p.bookId !== `adopted-shadow-${p.accountingStartDate}-v1:KR_KOSPI_CONFIRM1_BEAR` ||
       ![p.contractHash, p.codeHash, p.configHash].every((hash) =>
         /^sha256:[a-f0-9]{64}$/.test(hash),
       ) ||
-      p.accountingStartDate !== "2026-10-05" ||
-      p.fixedBudgetEndExclusive !== "2027-10-05" ||
+      !["2026-10-05", "2026-10-12"].includes(p.accountingStartDate) ||
+      p.fixedBudgetEndExclusive !==
+        (p.accountingStartDate === "2026-10-12" ? "2027-10-12" : "2027-10-05") ||
       p.initialCapitalKrw !== "100000000" ||
       p.oneWayCost !== "0.0015" ||
       session.configHash !== p.configHash ||
@@ -242,9 +244,14 @@ export function stepKospiShadow(
     if (
       session.warmupRows &&
       (previous !== null ||
-        session.date !== "2026-10-06" ||
+        session.date !== (p.accountingStartDate === "2026-10-12" ? "2026-10-12" : "2026-10-06") ||
         new Set(session.warmupRows.map((row) => row.symbol)).size !== session.warmupRows.length ||
-        session.warmupRows.some((row) => row.date !== "2026-10-02" || !row.symbol || !row.sector))
+        session.warmupRows.some(
+          (row) =>
+            row.date !== (p.accountingStartDate === "2026-10-12" ? "2026-10-08" : "2026-10-02") ||
+            !row.symbol ||
+            !row.sector,
+        ))
     )
       throw new Error("KOSPI warmup permits only final pre-start observations at initialization");
     const identity = (value: KospiModelExecutionPolicy) =>
@@ -438,6 +445,8 @@ export function stepKospiShadow(
     if (exit && positive(row?.open) && positive(row?.volume))
       close(p, row.open, exit.reason, exit.signalDate);
   }
+  const carriedEntries: ShadowCandidate[] = [];
+  const unified = executionPolicy?.accountingStartDate === "2026-10-12";
   for (const saved of state.pendingEntries.sort(
     (a, b) =>
       (b.confirmationScore ?? -Infinity) - (a.confirmationScore ?? -Infinity) ||
@@ -502,19 +511,35 @@ export function stepKospiShadow(
       }
     }
     if (reason) {
-      c.status = "EXCLUDED";
-      c.reason = reason;
+      c.status = unified && reason !== "ALREADY_HELD" ? "MODEL_ENTRY_PENDING" : "EXCLUDED";
+      c.reason =
+        unified && reason === "NO_EXECUTABLE_OPEN_NO_LATE_RETRY"
+          ? "ENTRY_CARRIED_NO_EXECUTABLE_OPEN"
+          : reason;
+      if (c.status === "MODEL_ENTRY_PENDING") carriedEntries.push(c);
     }
     candidates.push(c);
   }
-  state.pendingEntries = [];
+  state.pendingEntries = carriedEntries;
   for (const p of Object.values(state.positions)) {
     const row = rows.get(p.symbol);
+    if (
+      unified &&
+      !positive(row?.volume) &&
+      session.rows.some((other) => other.symbol !== p.symbol && positive(other.volume))
+    ) {
+      const prior = state.previousRows[p.symbol];
+      if (prior?.date === session.previousSessionDate && positive(prior.open)) {
+        close(p, prior.open, `MODEL_UNOBSERVED_PREVIOUS_OPEN:${prior.date}`, session.date);
+        continue;
+      }
+    }
+    if (unified && row && row.priceObserved !== false) p.heldSessions++;
     if (positive(row?.close)) {
       p.lastPrice = row.close;
       p.lastPriceDate = session.date;
       p.lastPriceBasis = "CLOSE";
-      p.heldSessions++;
+      if (!unified) p.heldSessions++;
       if (p.heldSessions >= KOSPI_SHADOW_POLICY.maxHoldingSessions) {
         if (positive(row.open) && positive(row.volume))
           close(p, row.close, "H60_CLOSE", session.date);
@@ -525,6 +550,13 @@ export function stepKospiShadow(
           };
       }
     }
+    if (
+      unified &&
+      state.positions[p.symbol] &&
+      p.heldSessions >= KOSPI_SHADOW_POLICY.maxHoldingSessions &&
+      !positive(row?.close)
+    )
+      state.pendingExits[p.symbol] ??= { reason: "H60_DEFERRED_OPEN", signalDate: session.date };
     if (state.positions[p.symbol] && up95(state.previousRows[p.symbol]?.score, row?.score))
       state.pendingExits[p.symbol] ??= { reason: "UP95", signalDate: session.date };
   }
@@ -541,7 +573,11 @@ export function stepKospiShadow(
     else if (row?.universeDataPending) reason = "CONFIRMATION_UNIVERSE_DATA_PENDING";
     else if (!row || !finite(row.score)) reason = "CONFIRMATION_SCORE_MISSING";
     else if (row.score < KOSPI_SHADOW_POLICY.entryScore) reason = "CONFIRMATION_SCORE_BELOW_8";
-    else if (row.score >= KOSPI_SHADOW_POLICY.upsideExitScore)
+    else if (
+      session.date >= "2026-10-12"
+        ? c.confirmationUp95
+        : row.score >= KOSPI_SHADOW_POLICY.upsideExitScore
+    )
       reason = "CONFIRMATION_AT_OR_ABOVE_UPSIDE_EXIT";
     else if (!row.commonHistory || !positive(row.open))
       reason = "COMMON_HISTORY_OR_SIGNAL_OPEN_INELIGIBLE";

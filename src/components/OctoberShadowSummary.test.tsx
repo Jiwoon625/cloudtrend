@@ -39,8 +39,8 @@ describe("October Shadow registry cards", () => {
     expect((html.match(/초기화 완료 · 첫 실제 세션 대기/g) ?? []).length).toBe(8);
     expect(html).toContain("KOSPI 하루확인·불황 시 RSAccel 필터");
     expect(html).toContain("$73,551.04");
-    expect(html).toContain("계좌별 초기 투자금액 ÷ 고정 목표 20종목");
-    expect(html.match(/정기 리밸런싱과 신규 진입 자금 마련용 부분매도는 하지 않으며/g)).toHaveLength(1);
+    expect(html).not.toContain("계좌별 초기 투자금액 ÷ 고정 목표 20종목");
+    expect(html).not.toContain("정기 리밸런싱과 신규 진입 자금 마련용 부분매도는 하지 않으며");
     expect(html).toContain("6.016원");
     expect(html).toContain("0 / 0");
     expect(html).toContain("초기화는 거래일 기록이 아닙니다");
@@ -128,7 +128,7 @@ it("shows the independent holdings table and fixed-budget rule without actual-ac
   const html = render({
     version: ADOPTED_SERIES_VERSION,
     viewVersion: "october-shadow-holdings-tax-v2",
-      replayStatus: [],
+    replayStatus: [],
     readyForPortfolioConsolidation: false,
     checkedAt,
     books: [book],

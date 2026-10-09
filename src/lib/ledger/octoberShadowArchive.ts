@@ -1,11 +1,18 @@
 import type { AdoptedKrRun } from "./krAdoptedShadow";
 import { hashSeriesValue, type SeriesHash } from "./modelSeries";
 import type { MarketDataset } from "../engine/dataset";
+import type { DailyPrice } from "../engine/types";
 import type { ScreeningSnapshot } from "../screeningSnapshot";
 export interface KrDailyInputArchive {
   version: "kr-daily-inputs-v1";
   date: string;
   inputs: AdoptedKrRun["frozenInputs"];
+}
+/** Observation flags belong to the restart contract, not the immutable beta schema. */
+export function krExecutionBar(bar: DailyPrice): DailyPrice {
+  if (bar.tradeDate >= "2026-10-12") return bar;
+  const { openObserved, volumeObserved, ...legacy } = bar;
+  return legacy;
 }
 /** Exactly one stock session, shared by three KR books. No warmup history or ETF copies. */
 export function krDailyInputArchive(
@@ -22,15 +29,26 @@ export function krDailyInputArchive(
   const cleanSnapshot = JSON.parse(
     JSON.stringify({
       ...snapshot,
+      runId: undefined,
+      strategyVersion: undefined,
+      market: undefined,
       savedAt: decisionAt,
-      entries: snapshot.entries.filter((entry) => stocks.has(entry.symbol)),
+      entries: snapshot.entries
+        .filter((entry) => stocks.has(entry.symbol))
+        .map(({ evidence, market, onsetProfile, ...entry }) => entry),
       topStocks: undefined,
       topEtfs: undefined,
     }),
   ) as ScreeningSnapshot;
   const bars = Object.fromEntries(
     [...stocks].flatMap(([symbol]) => {
-      const rows = (dataset.bars[symbol] ?? []).filter((bar) => bar.tradeDate === date);
+      const rows = (
+        (date >= "2026-10-12" ? dataset.observedBars?.[symbol] : undefined) ??
+        dataset.bars[symbol] ??
+        []
+      )
+        .filter((bar) => bar.tradeDate === date)
+        .map(krExecutionBar);
       return rows.length ? [[symbol, rows]] : [];
     }),
   );

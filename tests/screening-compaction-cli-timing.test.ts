@@ -1,3 +1,4 @@
+import { createImmutableArchiveFixture } from "./immutable-archive-fixture";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -107,7 +108,10 @@ beforeEach(async () => {
   for (const method of [query.select, query.eq, query.lt, query.order, query.limit])
     method.mockReturnValue(query);
   capture.upsert.mockResolvedValue({ error: null });
-  capture.trusted.mockReturnValue({ from: () => query });
+  const archive = createImmutableArchiveFixture();
+  capture.trusted.mockReturnValue({
+    from: (table: string) => (table === "screening_run_archive" ? archive() : query),
+  });
   capture.replay.mockResolvedValue({ processed: [], deferred: null });
   capture.buildLegacy.mockReturnValue({
     date: "2026-10-06",

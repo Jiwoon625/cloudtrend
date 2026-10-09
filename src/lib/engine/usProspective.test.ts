@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { runUsProspectiveAnalysis, type UsProspectiveInputRow } from "./usProspective";
+import {
+  runUsProspectiveAnalysis,
+  parseUsProspectiveCsv,
+  type UsProspectiveInputRow,
+} from "./usProspective";
 import { stepUsProspectivePortfolio, US_PROSPECTIVE_STRATEGIES } from "./usProspectivePortfolio";
 import { resolveUsProspectiveDecisionAt } from "./usProspectiveRecovery";
 
@@ -225,7 +229,6 @@ describe("A0 Anchor and execution invariants", () => {
   });
 });
 
-
 describe("US October retry decision evidence", () => {
   const availableAt = "2026-10-06T01:13:58.237Z"; // 2026-10-05 21:13 ET
 
@@ -281,4 +284,22 @@ describe("US October retry decision evidence", () => {
       }),
     ).toThrow(/cannot prove a same-session decision/);
   });
+});
+
+it("normalizes US duplicate symbol/date prices with later non-empty fields before every consumer", () => {
+  const header =
+    "date,symbol,open,close,volume,ret120,ret252,beta60_spy,ichimoku_tk_gap,relvol1_20,adv20_usd,amihud20,active20,toss_tradable,is_common_share";
+  const first = "2026-10-12,ABC,100,105,1000,1,1,1,1,1,1000000,0.1,true,true,true";
+  const later = "2026-10-12,ABC,101,,0,,,,,,,,false,,";
+  const rows = parseUsProspectiveCsv([header, first, later].join("\n"));
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    open: 101,
+    close: 105,
+    volume: 0,
+    active20: false,
+    tossTradable: true,
+    isCommonShare: true,
+  });
+  expect(parseUsProspectiveCsv([header, first, later, later].join("\n"))).toEqual(rows);
 });

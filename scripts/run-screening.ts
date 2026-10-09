@@ -170,12 +170,12 @@ export async function runScreening(argv = process.argv.slice(2)) {
     inputs.flatMap((input) => (input.sourceRecord ? [input.sourceRecord] : [])),
     analysis.asOfDate,
   );
-  const snapshot = buildSnapshot(analysis, sourceRegisteredAt);
+  const createdAt = new Date().toISOString();
+  const runId = `${createdAt.replace(/[-:.TZ]/g, "").slice(0, 14)}-${dataVersion.slice(7, 15)}`;
+  const snapshot = buildSnapshot(analysis, sourceRegisteredAt, runId);
   // Shadow is replayed separately from the latest investment-screen view.
   const previous = await loadPreviousSnapshot(client, options.supabaseUserId, snapshot.date);
   const summary = buildScreeningSummary(analysis, snapshot, previous);
-  const createdAt = new Date().toISOString();
-  const runId = `${createdAt.replace(/[-:.TZ]/g, "").slice(0, 14)}-${dataVersion.slice(7, 15)}`;
   const resultPath = `${options.supabaseUserId}/results/screening/${runId}.json`;
   const run = {
     id: runId,

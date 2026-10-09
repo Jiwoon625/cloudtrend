@@ -59,11 +59,14 @@ export function StockInstrumentSummary({
           기준일 {asOfDate}의 저장된 계산 결과입니다. 기술 조건·확인된 미충족·자료 대기를 각각
           표시하며, 실제 보유·보유기간·체결 여부는 원장에서 별도 확인합니다.
         </p>
-        <StockAssessmentDetails assessment={assessment} />
+        <StockAssessmentDetails
+          assessment={assessment}
+          held={positionContext?.heldSymbols.includes(row.instrument.symbol) ?? false}
+        />
       </div>
       {row.onsetProfile ? (
         <div className="mt-3 border-t border-border pt-3">
-          <h3 className="mb-1 text-xs font-semibold">Onset 발생 경로</h3>
+          <h3 className="mb-1 text-xs font-semibold">원신호 발생 경로</h3>
           <OnsetProfileDetails profile={row.onsetProfile} />
           <p className="mt-2 text-[11px] text-muted-foreground">
             유형·신규 획득 점수·MA20 이격은 신호 설명 정보이며 진입 점수나 매매규칙을 변경하지

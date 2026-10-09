@@ -46,4 +46,8 @@ jobs:
           sudo apt-get install -y postgresql
           CLOUDTREND_OCTOBER_APP_FIXTURES=/tmp/october-application-fixtures.json npx vitest run --config vitest.ledger.config.ts src/lib/ledger/octoberShadowPipeline.test.ts -t "exports synthetic application"
           CLOUDTREND_OCTOBER_APP_FIXTURES=/tmp/october-application-fixtures.json python3 tests/october-shadow-postgres.test.py --pg-bin-dir "$(pg_config --bindir)" --pg-share-dir "$(pg_config --sharedir)"
+      - name: Verify October 12 restart and immutable screening history
+        run: |
+          CLOUDTREND_RESTART_APP_FIXTURES=/tmp/ct-restart-fixtures.json npx vitest run --config vitest.ledger.config.ts src/lib/ledger/octoberShadowPipeline.test.ts -t "records October 12"
+          CLOUDTREND_RESTART_APP_FIXTURES=/tmp/ct-restart-fixtures.json node tests/consistency-restart-postgres.test.mjs
       - run: npm run build

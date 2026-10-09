@@ -22,6 +22,9 @@ export interface Instrument {
 }
 
 export interface DailyPrice {
+  /** False means the display value was inferred, never an executable observation. */
+  openObserved?: boolean;
+  volumeObserved?: boolean;
   /** ETF V0.1 uses the dated underlying and KRX amounts, never NAV proxies. */
   etfUnderlyingIndexClose?: number | null;
   etfMarketCap?: number | null;

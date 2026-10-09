@@ -280,7 +280,7 @@ export function UsPortfolioLedgers({
               모델 누적손익 · 기준자금 $100,000.00 · 보유 {model?.positions_count ?? 0}/20
             </p>
             <p className="mt-2 text-xs">
-              2026-10-05부터 초기자금 ÷ 목표 20종목 고정 매입 예산 · Onset/A0/Beta Anchor 청산 규칙
+              2026-10-05부터 초기자금 ÷ 목표 20종목 고정 매입 예산 · 원신호/A0/Beta Anchor 청산 규칙
               유지
             </p>
           </section>
@@ -296,9 +296,7 @@ export function UsPortfolioLedgers({
           <p className="mt-1 text-xs text-muted-foreground">
             입력한 체결만 반영 · 보유 {actual?.summary.openPositions ?? 0}종목 · 기록 한도 30종목
           </p>
-          <div className="mt-2">
-            <UsA0AllocationRules />
-          </div>
+
           <p className="mt-2 text-xs">
             설정 운용자금 기준 종목당 참고 매입예산:{" "}
             {actual ? usd(actual.summary.slotTargetAmount) : "-"}

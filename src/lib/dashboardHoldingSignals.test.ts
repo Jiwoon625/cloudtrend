@@ -62,7 +62,7 @@ describe("dashboard holding-aware signal priority", () => {
       kospiEntryRows: [],
       exitRows: [tiger],
       top: [simmtech, tiger],
-    } as DashboardSummary;
+    } as unknown as DashboardSummary;
 
     const adjusted = applyHoldingSignalPriority(summary, portfolio(["222800", "219130"]));
 
@@ -97,7 +97,7 @@ describe("dashboard holding-aware signal priority", () => {
       kospiEntryRows: [],
       exitRows: [],
       top: [simmtech],
-    } as DashboardSummary;
+    } as unknown as DashboardSummary;
 
     const adjusted = applyHoldingSignalPriority(summary, portfolio([]));
     expect(adjusted.onsetRows).toHaveLength(1);

@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { ETF_POLICY, etfOrderPlan } from "@/lib/engine/etfStrategy";
+import { Button } from "@/components/ui/button";
+import type { DomesticPositionContext } from "@/lib/positionSignalContext";
+import { ETF_POLICY } from "@/lib/engine/etfStrategy";
 import type { DualPortfolioState } from "@/lib/portfolioLedgers";
 import { soldSymbolsSinceSignal } from "@/lib/dashboardOperations";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
@@ -36,8 +37,6 @@ type SortKey =
   | "signal"
   | "volatility"
   | "entryWeight"
-  | "orderPrice"
-  | "quantity"
   | "evidence";
 
 const ETF_TABLE_COLUMNS: Array<{ key: SortKey; label: string }> = [
@@ -52,8 +51,6 @@ const ETF_TABLE_COLUMNS: Array<{ key: SortKey; label: string }> = [
   { key: "tradingValue", label: "20일 평균 거래대금(원)" },
   { key: "volatility", label: "20일 변동성" },
   { key: "entryWeight", label: "신규 비중" },
-  { key: "orderPrice", label: "주문가격(원)" },
-  { key: "quantity", label: "매수 수량" },
   { key: "evidence", label: "데이터·환경 근거" },
 ];
 
@@ -78,17 +75,16 @@ export function EtfScreener({
   analysis,
   ledger,
   ledgerError,
+  positionContext,
 }: {
   analysis: AnalysisResult;
   ledger?: DualPortfolioState | undefined;
   ledgerError?: string | undefined;
+  positionContext?: DomesticPositionContext | undefined;
 }) {
+  const [page, setPage] = useState(0);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("equity");
-  const [equity, setEquity] = useState("");
-  const [cash, setCash] = useState("");
-  const [held, setHeld] = useState("");
-  const [prices, setPrices] = useState<Record<string, string>>({});
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const rows = analysis.rows.filter((r) => r.instrument.instrumentType === "ETF");
@@ -99,16 +95,11 @@ export function EtfScreener({
     evidenceBySymbol.get(r.instrument.symbol)!;
   const krxPending = rows.find((r) => evidenceFor(r).krxPending)?.etfStrategy;
   const heldSymbols = [
+    ...(positionContext?.heldSymbols ?? []),
     ...(ledger?.etfActual?.positions.map((p) => p.symbol) ?? []),
     ...(ledger?.etfTrackedSymbols ?? []).filter(
       (symbol) =>
         !ledger?.document.executions.some((e) => e.market === "ETF" && e.symbol === symbol),
-    ),
-    ...new Set(
-      held
-        .split(/[\s,]+/)
-        .map((x) => x.trim().toUpperCase())
-        .filter(Boolean),
     ),
   ];
   const heldSet = new Set(heldSymbols);
@@ -125,26 +116,6 @@ export function EtfScreener({
     r.etfStrategy.dataStatus !== "krx_batch_pending" &&
     !heldSet.has(r.instrument.symbol) &&
     !blocked(r);
-  const validAccount =
-    Number(equity) > 0 && cash.trim() !== "" && Number(cash) >= 0 && Number(cash) <= Number(equity);
-  const orders = ledger
-    ? etfOrderPlan({
-        equity: Number(equity),
-        cash: cash.trim() === "" ? NaN : Number(cash),
-        heldSymbols: [...heldSet],
-        asOfDate: analysis.asOfDate,
-        excludedSymbols: rows.filter(blocked).map((r) => r.instrument.symbol),
-        candidates: rows.map((r) => ({
-          symbol: r.instrument.symbol,
-          strategy: r.etfStrategy,
-          price:
-            prices[r.instrument.symbol] === undefined
-              ? r.snapshot.close
-              : Number(prices[r.instrument.symbol]),
-        })),
-      })
-    : [];
-  const bySymbol = new Map(orders.map((o) => [o.symbol, o]));
   const getSignalLabel = (r: AnalysisResult["rows"][number]) => {
     const s = r.etfStrategy;
     const symbol = r.instrument.symbol;
@@ -161,13 +132,8 @@ export function EtfScreener({
     if (s.entryState === "rejected") return "하루 확인 탈락";
     if (!s.eligible) return "대상·데이터 점검";
     if (s.entryState === "pending") return "하루 확인 대기";
-    if (s.onset)
-      return ledger ? "하루 확인 완료 · 다음 시가 진입" : "확인 완료 · 보유정보 확인 필요";
-    return s.exit === "MA60"
-      ? "MA60 하회 · 보유 시 청산"
-      : s.score !== null && s.score >= 80
-        ? "80 이상 유지"
-        : "관찰";
+    if (s.onset) return ledger ? "진입 준비 · 다음 시가 진입" : "진입 준비 · 보유정보 확인 필요";
+    return s.score !== null && s.score >= 80 ? "80 이상 유지" : "관찰";
   };
   const getSortValue = (r: AnalysisResult["rows"][number], key: SortKey) => {
     const s = r.etfStrategy;
@@ -196,12 +162,6 @@ export function EtfScreener({
         return e.annualVolatility;
       case "entryWeight":
         return e.entryWeight;
-      case "orderPrice": {
-        const enteredPrice = prices[symbol];
-        return enteredPrice === undefined ? r.snapshot.close : Number(enteredPrice);
-      }
-      case "quantity":
-        return bySymbol.get(symbol)?.quantity ?? null;
       case "evidence":
         return s
           ? `${environmentNames[s.environmentSource]} ${s.issues.join(" ")}`
@@ -254,7 +214,29 @@ export function EtfScreener({
         a.instrument.symbol.localeCompare(b.instrument.symbol)
       );
     });
-  const exits = rows.filter((r) => heldSet.has(r.instrument.symbol) && r.etfStrategy?.exit != null);
+  const pageCount = Math.max(1, Math.ceil(shown.length / 100));
+  const currentPage = Math.min(page, pageCount - 1);
+  const downloadCsv = () => {
+    const quote = (v: unknown) => `"${String(v ?? "").replaceAll('"', '""')}"`;
+    const body = [
+      ["기준일", "전략 버전", ...ETF_TABLE_COLUMNS.map((c) => c.label)],
+      ...shown.map((r) => [
+        analysis.asOfDate,
+        ETF_POLICY.version,
+        ...ETF_TABLE_COLUMNS.map((c) => getSortValue(r, c.key)),
+      ]),
+    ]
+      .map((row) => row.map(quote).join(","))
+      .join("\n");
+    const url = URL.createObjectURL(
+      new Blob(["\uFEFF" + body], { type: "text/csv;charset=utf-8" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `cloudtrend-etf-${analysis.asOfDate}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
   return (
     <div className="space-y-4">
       <header>
@@ -263,7 +245,7 @@ export function EtfScreener({
           <span className="text-sm text-muted-foreground">하루 확인 · 거래대금순 · 교체 없음</span>
         </h1>
         <p className="text-sm text-muted-foreground">
-          기준일 {analysis.asOfDate} · 주식형·커버드콜 ETF · 최대 10종목
+          기준일 {analysis.asOfDate} · 전략 {ETF_POLICY.version} · 자료 {rows.length}종목
         </p>
       </header>
       {krxPending && (
@@ -286,159 +268,43 @@ export function EtfScreener({
           </p>
         </section>
       )}
-      <section className="rounded-lg border bg-card p-4 text-sm space-y-2" aria-label="확정 전략">
-        <p>
-          <strong>진입</strong> M0 80점 신규 돌파(Onset) → 다음 거래일 종가에 M0 ≥ 80·기초지수 ≥
-          MA60·데이터 적격 확인 → 그다음 거래일 시가 진입. 확인 실패·결측은 폐기하며 새 Onset을
-          기다립니다. 80점은 상위 20%가 아닌 절대점수입니다.
-          <strong> 청산</strong> 기초지수 종가 &lt; MA60이면 다음 거래일 시가 기준
-        </p>
-        <p>
-          기술 62.5 + Priority 7.5 + Health 15 + 환경 15 = 100점. Priority는 국내 상대성과만
-          반영합니다.
-        </p>
-        <p>
-          <strong>신규 매수 비중 = 10% × min(1, 15% ÷ 20일 연환산 변동성)</strong>
-        </p>
-        <p className="text-muted-foreground">
-          수정종가의 최근 20개 단순 일수익률 표본표준편차 × √252. 변동성 15% 이하는 10%, 20%는 7.5%,
-          30%는 5%입니다. 보유 후 변동성 변화로 추가 매수·일부 매도하지 않습니다. 점수 청산과
-          보유기한 제한은 없습니다.
-        </p>
-      </section>
-      <section className="rounded-lg border bg-card p-4" aria-label="M0 요소별 산출방법">
-        <h2 className="mb-3 text-sm font-semibold">M0 요소별 산출방법</h2>
-        <dl className="grid gap-4 text-xs leading-relaxed sm:grid-cols-2">
-          <div>
-            <dt className="mb-1 font-semibold">기술 · 62.5점</dt>
-            <dd className="text-muted-foreground">
-              종가/구름대 상단, MA20/MA60, MA60/MA120, 종가/MA20, MA60의 5거래일 변화율을
-              평가합니다. 각 비율의 이격도를 20일 일수익률 변동성으로 조정해 0~100점으로 연속 산정한
-              뒤, 5개 항목 평균 × 62.5%를 반영합니다.
-            </dd>
-          </div>
-          <div>
-            <dt className="mb-1 font-semibold">Priority · 7.5점</dt>
-            <dd className="text-muted-foreground">
-              국내 투자 ETF의 당일 수정주가 수익률이 KOSPI 당일 수익률보다 2%p 이상 높으면 7.5점,
-              미충족 또는 해외 투자 ETF는 0점입니다. 규모·로테이션·지수편입 가점은 없습니다.
-            </dd>
-          </div>
-          <div>
-            <dt className="mb-1 font-semibold">Health · 15점</dt>
-            <dd className="text-muted-foreground">
-              KRX ETF 시가총액 500억 원 이상 5점, 1,000억 원 이상이면 추가 2.5점, 최근 20거래일 평균
-              거래대금 10억 원 이상 5점, 일반형 구조 2.5점을 합산합니다. 규모 기준은 이 항목에 남아
-              있으며, 필수 데이터가 없으면 산정하지 않습니다.
-            </dd>
-          </div>
-          <div>
-            <dt className="mb-1 font-semibold">환경 · 15점</dt>
-            <dd className="text-muted-foreground">
-              국내 섹터형은 해당 주식 섹터의 20·60일 상대강도 순위, 추세, 상승 확산도를 합산합니다.
-              해외·시장대표형은 같은 지역의 다른 기초지수군 3개 이상으로 추세 50% + 상승 확산도
-              50%를 산정하고, 부족하면 자체 기초지수 추세로 대체합니다. 해외·시장대표형은 전일 값을
-              사용하며, 환경 원점수 × 15%를 반영합니다.
-            </dd>
-          </div>
-        </dl>
-      </section>
-      <section className="rounded-lg border bg-card p-4 space-y-3" aria-label="신규 매수 수량 계산">
-        <h2 className="font-semibold">신규 매수 계획 · 확인일 20일 평균 거래대금 내림차순</h2>
-        {!ledger && (
-          <p role="alert" className="text-sm">
-            {ledgerError ?? "실제 ETF 보유·청산 내역 확인 중"} · 확인 전 신규 매수 계획은 생성하지
-            않습니다.
-          </p>
-        )}
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div>
-            <Label htmlFor="etf-equity">ETF 운용 총자산(원)</Label>
-            <Input
-              id="etf-equity"
-              type="number"
-              min="0"
-              value={equity}
-              onChange={(e) => setEquity(e.target.value)}
-              placeholder="보유 ETF 평가액 + 현금"
-            />
-          </div>
-          <div>
-            <Label htmlFor="etf-cash">가용현금(원)</Label>
-            <Input
-              id="etf-cash"
-              type="number"
-              min="0"
-              value={cash}
-              onChange={(e) => setCash(e.target.value)}
-              placeholder="실제 주문 가능 금액"
-            />
-          </div>
-          <div>
-            <Label htmlFor="etf-held">추가 제외할 기보유 ETF 코드</Label>
-            <Input
-              id="etf-held"
-              value={held}
-              onChange={(e) => setHeld(e.target.value)}
-              placeholder="예: 069500, 360750"
-            />
-          </div>
+      <div className="grid gap-3 sm:grid-cols-3 text-sm">
+        <div className="rounded-lg border p-3">
+          원신호 {rows.filter((r) => r.etfStrategy?.rawOnset).length}
         </div>
-        <p className="text-xs text-muted-foreground">
-          기보유 {heldSet.size}/10 · 신규 계획 {orders.length}종목 · 비용 포함 예상 사용액{" "}
-          {num(
-            orders.reduce((s, o) => s + o.estimatedCost, 0),
-            0,
-          )}
-          원. 확인일 최근 20거래일 평균 거래대금 내림차순(동률은 종목코드순)으로 배정하며 화면
-          검색·필터는 배정 순서에 영향을 주지 않습니다.
-        </p>
-        {!validAccount && (
-          <p className="text-sm">
-            총자산과 가용현금을 입력해 주세요. 현금은 총자산을 초과할 수 없습니다.
-          </p>
-        )}
-        {heldSet.size >= 10 && (
-          <p className="text-sm">
-            보유 한도에 도달했습니다. 청산 체결 후 보유 코드와 가용현금을 갱신해 주세요.
-          </p>
-        )}
-        {exits.length > 0 && (
-          <p className="text-sm font-medium">
-            보유 ETF 청산·데이터 점검:{" "}
-            {exits
-              .map(
-                (r) =>
-                  `${r.instrument.name} (${r.etfStrategy?.exit === "MA60" ? "MA60 하회" : "기초지수 데이터 오류"})`,
-              )
-              .join(", ")}
-            . 청산 전 예상 매도대금은 신규 매수 재원에 포함하지 않습니다.
-          </p>
-        )}
-        <p className="text-xs text-muted-foreground">
-          주문가격 기본값은 기준일 종가로 계산한 추정치입니다. 실제 주문가격으로 수정하면 수량을
-          다시 계산합니다. 비용 여유분 편도 0.15% 포함, 소수점 수량 버림. 실제 원장과 입력한 보유
-          종목 및 Onset 이후 청산 종목은 신규 매수에서 제외합니다. 자리가 없으면 매수를 건너뛰며
-          보유 종목을 교체하지 않습니다.
-        </p>
-      </section>
+        <div className="rounded-lg border p-3">
+          확인 대기 {rows.filter((r) => r.etfStrategy?.entryState === "pending").length}
+        </div>
+        <div className="rounded-lg border p-3">진입 준비 {rows.filter(actionable).length}</div>
+      </div>
+      <p className="text-xs">
+        <Link to="/portfolio" className="text-primary hover:underline">
+          ETF 자금·보유·주문 계획은 포트폴리오에서 확인
+        </Link>
+      </p>
       <div className="flex flex-wrap gap-2 items-center">
         <Input
           className="max-w-xs"
           aria-label="ETF 검색"
           placeholder="ETF 이름 / 코드"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setPage(0);
+          }}
         />
         <select
           aria-label="ETF 신호 필터"
           className="rounded-md border bg-background p-2 text-sm"
           value={filter}
-          onChange={(e) => setFilter(e.target.value)}
+          onChange={(e) => {
+            setFilter(e.target.value);
+            setPage(0);
+          }}
         >
           <option value="equity">전략 대상 · 부분 판단 포함</option>
           <option value="partial">KRX 대기 · 부분 판단</option>
-          <option value="entry">확인 완료 · 신규 진입</option>
+          <option value="entry">진입 준비 · 신규 진입</option>
           <option value="pending">하루 확인 대기</option>
           <option value="rejected">하루 확인 탈락</option>
           <option value="exit">보유 ETF 청산·점검</option>
@@ -450,6 +316,30 @@ export function EtfScreener({
           {rows.filter((r) => evidenceFor(r).krxPending).length}건 · 데이터·대상 점검{" "}
           {rows.filter((r) => !r.etfStrategy?.eligible && !evidenceFor(r).krxPending).length}건
         </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="outline" onClick={downloadCsv}>
+          CSV 다운로드
+        </Button>
+        <span className="ml-auto text-xs text-muted-foreground">
+          {currentPage + 1}/{pageCount}페이지
+        </span>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={currentPage === 0}
+          onClick={() => setPage(currentPage - 1)}
+        >
+          이전
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={currentPage + 1 >= pageCount}
+          onClick={() => setPage(currentPage + 1)}
+        >
+          다음
+        </Button>
       </div>
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm whitespace-nowrap">
@@ -482,10 +372,9 @@ export function EtfScreener({
             </tr>
           </thead>
           <tbody>
-            {shown.map((r) => {
+            {shown.slice(currentPage * 100, (currentPage + 1) * 100).map((r) => {
               const s = r.etfStrategy,
-                symbol = r.instrument.symbol,
-                order = bySymbol.get(symbol);
+                symbol = r.instrument.symbol;
               const label = getSignalLabel(r);
               const e = evidenceFor(r);
               return (
@@ -525,7 +414,7 @@ export function EtfScreener({
                     <strong>{label}</strong>
                     {e.current && s?.originDate && (
                       <div className="text-xs">
-                        Onset {s.originDate} · 확인 {s.confirmationDate ?? "다음 거래일 종가"}
+                        원신호 {s.originDate} · 확인 {s.confirmationDate ?? "다음 거래일 종가"}
                       </div>
                     )}
                     {s?.confirmationIssues?.length ? (
@@ -548,27 +437,6 @@ export function EtfScreener({
                   <td className="p-3">{evidenceText(e.averageTradingValue20, 0)}</td>
                   <td className="p-3">{pct(e.annualVolatility)}</td>
                   <td className="p-3">{pct(e.entryWeight)}</td>
-                  <td className="p-3">
-                    {actionable(r) ? (
-                      <Input
-                        type="number"
-                        min="0"
-                        aria-label={`${symbol} 주문가격`}
-                        className="w-28"
-                        value={prices[symbol] ?? r.snapshot.close}
-                        onChange={(e) => setPrices((p) => ({ ...p, [symbol]: e.target.value }))}
-                      />
-                    ) : (
-                      num(r.snapshot.close, 0)
-                    )}
-                  </td>
-                  <td className="p-3">
-                    {order
-                      ? `${num(order.quantity, 0)}주`
-                      : actionable(r) && validAccount
-                        ? "0주 · 한도/현금/가격 점검"
-                        : "—"}
-                  </td>
                   <td className="p-3 whitespace-normal min-w-48 text-xs">
                     <p>{e.provenanceLabel}</p>
                     {e.current && s ? environmentNames[s.environmentSource] : "환경 출처 미확인"}
@@ -586,6 +454,12 @@ export function EtfScreener({
           </p>
         )}
       </div>
+      <details className="rounded-lg border p-3 text-sm">
+        <summary>운영규칙·산식</summary>
+        <Link to="/operating-rules" className="text-primary">
+          운영규칙에서 ETF 채택 기준 확인
+        </Link>
+      </details>
     </div>
   );
 }

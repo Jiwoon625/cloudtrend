@@ -301,3 +301,74 @@ describe("isolated KOSPI research Shadow", () => {
     expect(s.daily.averageExposure).toBeCloseTo(s.daily.exposure / 4);
   });
 });
+
+it("counts actual symbol observations in the restart, carries zero-volume entry and closes missing holdings at the previous open", () => {
+  const hash = `sha256:${"a".repeat(64)}`;
+  const policy = {
+    version: "isolated-kospi-model-v1" as const,
+    bookId: "adopted-shadow-2026-10-12-v1:KR_KOSPI_CONFIRM1_BEAR",
+    contractHash: hash,
+    codeHash: hash,
+    configHash: hash,
+    accountingStartDate: "2026-10-12" as const,
+    fixedBudgetEndExclusive: "2027-10-12" as const,
+    initialCapitalKrw: "100000000" as const,
+    oneWayCost: "0.0015" as const,
+  };
+  const session = (
+    date: string,
+    previous: string,
+    score: number,
+    patch: Partial<KospiShadowSession> = {},
+  ) => day(date, previous, score, { configHash: hash, codeVersion: hash, ...patch });
+  const first = stepKospiShadow(
+    session("2026-10-12", "2026-10-08", 9.5, { warmupRows: [row(7, { date: "2026-10-08" })] }),
+    null,
+    policy,
+  );
+  const ready = stepKospiShadow(session("2026-10-13", "2026-10-12", 9.5), first.state, policy);
+  expect(ready.state.pendingEntries).toHaveLength(1);
+  const delayed = stepKospiShadow(
+    session("2026-10-14", "2026-10-13", 9.5, {
+      rows: [row(9.5, { date: "2026-10-14", volume: 0 })],
+    }),
+    ready.state,
+    policy,
+  );
+  expect(delayed.trades).toHaveLength(0);
+  expect(delayed.state.pendingEntries).toHaveLength(1);
+  const bought = stepKospiShadow(session("2026-10-15", "2026-10-14", 9.5), delayed.state, policy);
+  expect(bought.trades[0]?.side).toBe("BUY");
+  expect(bought.state.positions["005930"]!.heldSessions).toBe(1);
+  const absent = stepKospiShadow(
+    session("2026-10-16", "2026-10-15", 9.5, {
+      rows: [
+        row(9.5, {
+          date: "2026-10-16",
+          open: null,
+          close: null,
+          volume: null,
+          priceObserved: false,
+        }),
+      ],
+    }),
+    bought.state,
+    policy,
+  );
+  expect(absent.state.positions["005930"]!.heldSessions).toBe(1);
+  const observed = stepKospiShadow(session("2026-10-19", "2026-10-16", 9.5), absent.state, policy);
+  expect(observed.state.positions["005930"]!.heldSessions).toBe(2);
+  const sold = stepKospiShadow(
+    session("2026-10-20", "2026-10-19", 9.5, {
+      rows: [row(7, { symbol: "000660", date: "2026-10-20" })],
+    }),
+    observed.state,
+    policy,
+  );
+  expect(sold.trades[0]).toMatchObject({
+    side: "SELL",
+    price: 100,
+    reason: "MODEL_UNOBSERVED_PREVIOUS_OPEN:2026-10-19",
+  });
+  expect(Object.keys(sold.state.positions)).toHaveLength(0);
+});

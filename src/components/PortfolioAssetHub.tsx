@@ -133,7 +133,6 @@ export function PortfolioAssetHub({
   });
   const [localAsset, setLocalAsset] = useState<Asset>("KR");
   const asset = selectedAsset ?? localAsset;
-  const modelComparison = usePortfolioModelConsolidation(asset === "US");
   function selectAsset(next: PortfolioAsset) {
     if (onAssetChange) onAssetChange(next);
     else setLocalAsset(next);
@@ -456,74 +455,20 @@ export function PortfolioAssetHub({
         {asset === "KR" ? domestic : null}
         {asset === "US" ? (
           <div className="min-w-0 space-y-4">
-            {!modelComparison.ready ? (
-              <div className="rounded-lg border bg-card p-3 text-xs text-muted-foreground">
-                <p role={modelComparison.error ? "status" : undefined}>
-                  {modelComparison.checking
-                    ? "Shadow 비교 화면의 준비 상태를 확인하고 있습니다. 확인 전에는 기존 모델 카드를 유지합니다."
-                    : modelComparison.error
-                      ? "Shadow 비교 화면을 확인하지 못해 기존 모델 카드를 유지합니다."
-                      : "신규 Shadow의 모든 비교 자료가 준비되기 전까지 기존 모델 카드를 유지합니다."}
-                </p>
-                {!modelComparison.checking ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="mt-2"
-                    disabled={modelComparison.refreshing}
-                    onClick={() => void modelComparison.refresh()}
-                  >
-                    Shadow 준비 상태 다시 확인
-                  </Button>
-                ) : null}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                모델 보유·성과·세금 비교는{" "}
-                <Link to="/shadow" className="text-primary underline">
-                  Shadow
-                </Link>
-                에서 확인합니다. A0 모델 체결 원장은 아래에 유지합니다.
-              </p>
-            )}
-            <UsPortfolioLedgers
-              model={model}
-              hideHistory
-              initialTab="actual"
-              modelComparisonMoved={modelComparison.ready}
-              modelJournal={<UsModelExecutionJournal />}
-            >
-              <Table
-                title="A0 전략 보유 · USD"
-                heads={["종목", "수량", "현재가 USD", "진입일"]}
-                empty={!modelPositions.length}
-              >
-                {modelPositions.map((p) => (
-                  <tr key={p.symbol} className="border-t">
-                    <td className={td}>
-                      {p.symbol} · {p.name}
-                    </td>
-                    <td className={td}>{p.shares}주</td>
-                    <td className={td}>{usd(p.lastPrice)}</td>
-                    <td className={td}>{p.entryDate}</td>
-                  </tr>
-                ))}
-              </Table>
-              <Link to="/shadow" className="text-sm text-primary underline">
-                미국 모델 성과·보유·세금 및 이전 기록
+            <p className="text-xs text-muted-foreground">
+              모델 보유·성과·매매·세금 비교는{" "}
+              <Link to="/shadow" className="text-primary underline">
+                Shadow
               </Link>
+              에서 확인합니다.
+            </p>
+            <UsPortfolioLedgers model={model} hideHistory initialTab="actual" modelComparisonMoved>
+              {null}
             </UsPortfolioLedgers>
           </div>
         ) : null}
         {asset === "ETF" ? (
           <>
-            <p className="mb-3 text-sm text-muted-foreground">
-              M0 80점 신규 돌파 후 다음 거래일 종가에 M0 ≥ 80·기초지수 ≥ MA60·데이터 적격을
-              확인하고, 그다음 거래일 시가에 진입합니다. 확인일 20거래일 평균 거래대금 내림차순(동률
-              종목코드순), 최대 10종목, 변동성 비례 비중입니다. 자리가 없으면 건너뛰며 교체·추가
-              매수는 하지 않습니다. 청산 체결 후 실제 현금만 사용합니다. 실제 매수·매도는 직접
-              입력하며 신호로 자동 체결하지 않습니다.
-            </p>
             {krxPending && (
               <p
                 role="status"
@@ -741,7 +686,7 @@ export function PortfolioAssetHub({
               title="ETF 하루 확인 · 진입·청산 신호"
               heads={[
                 "종목",
-                "Onset / 확인일",
+                "원신호 / 확인일",
                 "M0 점수",
                 "20일 평균 거래대금",
                 "신규 비중",
@@ -780,7 +725,7 @@ export function PortfolioAssetHub({
                           ? "하루 확인 대기"
                           : r.etfEntry?.entryState === "rejected"
                             ? `확인 탈락 · ${(r.etfEntry.confirmationIssues ?? []).join(" · ")}`
-                            : "확인 완료 · 다음 거래일 시가 진입"}
+                            : "진입 준비 · 다음 거래일 시가 진입"}
                   </td>
                   <td className={td}>
                     <Button

@@ -77,11 +77,11 @@ const render = () =>
 describe("unified portfolio comparison transition", () => {
   it("keeps old reference cards while replacement coverage is unverified and always keeps the A0 journal", () => {
     const html = render();
-    expect(html).toContain("A0 모델 포트폴리오");
-    expect(html).toContain("A0 모델 · 양도소득세 추정");
+    expect(html).not.toContain("A0 모델 포트폴리오");
+    expect(html).not.toContain("A0 모델 · 양도소득세 추정");
     expect(html).toContain("실제 투자 · 양도소득세 추정");
-    expect(html).toContain("A0 실행 참조");
-    expect(html).toContain("기존 모델 카드를 유지합니다");
+    expect(html).not.toContain("A0 실행 참조");
+    expect(html).toContain('href="/shadow"');
   });
   it("removes only model-comparison cards after readiness, preserving actual tax, holdings, controls and A0 journal", () => {
     gate.ready = true;
@@ -93,23 +93,22 @@ describe("unified portfolio comparison transition", () => {
       "실제 투자 · 양도소득세 추정",
       "실제 보유 종목",
       "실제 운용자금 설정",
-      "A0 실행 참조",
       "A0 신호 · 미매수",
     ])
       expect(html).toContain(text);
-    expect(html.indexOf("A0 실행 참조")).toBeLessThan(html.indexOf("실제 투자 · 양도소득세 추정"));
+
     expect(html).toContain('href="/shadow"');
     expect(html).not.toContain('href="/us/portfolio"');
   });
   it("fails closed on readiness loading/error without hiding the actual investment surface", () => {
     gate.checking = true;
-    expect(render()).toContain("준비 상태를 확인하고 있습니다");
+    expect(render()).toContain("실제 원장 새로고침");
     gate.checking = false;
     gate.error = "fixture read failure";
     const html = render();
-    expect(html).toContain("확인하지 못해 기존 모델 카드를 유지합니다");
+    expect(html).toContain('href="/shadow"');
     expect(html).toContain("실제 원장 새로고침");
-    expect(html).toContain("A0 실행 참조");
+    expect(html).not.toContain("A0 실행 참조");
   });
   it("resolves an old model-tab selection to actual controls once comparison content moves", () => {
     const html = renderToStaticMarkup(

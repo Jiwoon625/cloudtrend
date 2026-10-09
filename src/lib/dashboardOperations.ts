@@ -28,6 +28,8 @@ export interface DashboardSignal {
   price: number | null;
   score: number | null;
   priority: number;
+  betaRank?: number | null;
+  tkRank?: number | null;
   reason: string;
   onsetProfile?: import("./onsetProfile").OnsetProfile | null;
   assessment?: StockAssessmentDisplay | undefined;
@@ -36,6 +38,7 @@ export interface DashboardSignal {
 }
 export interface DashboardIndexRow extends Omit<DashboardSignal, "reason"> {
   onset: boolean;
+  observationDates?: string[];
   kospiEntry?: import("./engine/kospiEntryConfirmation").KospiEntrySnapshot | undefined;
   exitReason: string | null;
   etfEntry?:
@@ -109,6 +112,9 @@ export function projectKrDashboard(analysis: AnalysisResult): DashboardIndex {
       date: etf
         ? (strategy?.date ?? analysis.asOfDate)
         : (r.snapshot.tradeDate ?? analysis.asOfDate),
+      ...(analysis.observationDates?.[r.instrument.symbol]
+        ? { observationDates: analysis.observationDates[r.instrument.symbol] }
+        : {}),
       kospiEntry: r.kospiEntry,
       assessment: etf
         ? undefined
@@ -165,6 +171,8 @@ export function projectUsDashboard(cache: UsProspectiveCache): DashboardIndex {
         price: finite(r.close),
         score: finite(r.coreRank),
         priority: finite(r.coreRank) ?? -1,
+        betaRank: finite(r.betaRank),
+        tkRank: finite(r.tkRank),
         onset: r.a0Entry === true,
         // Read frozen A0 results. Never infer A0 from primarySignal, A2, B3, or Onset80 alone.
         exitReason:
@@ -265,7 +273,7 @@ export function marketSignals(
       result.pending!.push({
         ...row,
         sectorLimit,
-        reason: "8.0 Onset · 다음 거래일 종가 확인 대기",
+        reason: "8.0 원신호 · 다음 거래일 종가 확인 대기",
       });
     if (
       market === "ETF" &&
@@ -276,7 +284,7 @@ export function marketSignals(
       !holding &&
       !consumed
     )
-      result.pending!.push({ ...row, reason: "M0 80점 Onset · 다음 거래일 종가 확인 대기" });
+      result.pending!.push({ ...row, reason: "M0 80점 원신호 · 다음 거래일 종가 확인 대기" });
     if (row.onset && !holding && !consumed) {
       result.onsets.push({
         ...row,
@@ -285,10 +293,10 @@ export function marketSignals(
           market === "US"
             ? "A0 신규 진입"
             : market === "ETF"
-              ? "하루 확인 완료 · 다음 거래일 시가 진입"
+              ? "진입 준비 · 다음 거래일 시가 진입"
               : market === "KOSPI"
-                ? "하루·RS·시장국면 확인 완료 · 체결 전 불황 재확인 후 다음 거래 가능 시가 진입 대기"
-                : "8.0 Onset",
+                ? "진입 준비 · 다음 거래 가능 시가 진입 대기"
+                : "8.0 원신호",
       });
     }
     if (!holding || holding.firstEntryDate > index.date) continue;
@@ -296,8 +304,9 @@ export function marketSignals(
     if (
       (market === "KOSPI" || market === "KOSDAQ") &&
       holding.firstEntryDate &&
-      dates.filter((d) => d >= holding.firstEntryDate).length >=
-        STRATEGY_CONFIG[market].maxHoldingDays
+      (row.observationDates ?? (index.date < "2026-10-12" ? dates : [])).filter(
+        (d) => d >= holding.firstEntryDate && d <= index.date,
+      ).length >= STRATEGY_CONFIG[market].maxHoldingDays
     ) {
       reason = reason ? `${exitLabel(reason)} · ${exitLabel("H60")}` : "H60";
     }
@@ -310,9 +319,9 @@ export function marketSignals(
       (b.assessment?.score ?? -Infinity) - (a.assessment?.score ?? -Infinity) ||
       a.symbol.localeCompare(b.symbol),
   );
-  result.onsets.sort((a, b) => b.priority - a.priority || a.symbol.localeCompare(b.symbol));
+  result.onsets.sort(compareDashboardCandidates);
   result.exits.sort((a, b) => a.symbol.localeCompare(b.symbol));
-  result.pending!.sort((a, b) => b.priority - a.priority || a.symbol.localeCompare(b.symbol));
+  result.pending!.sort(compareDashboardCandidates);
   result.pendingCount = result.pending!.length;
   result.onsetCount = result.onsets.length;
   if (holdings !== null) result.exitCount = result.exits.length;
@@ -328,4 +337,20 @@ export function validateEtfHoldingSymbols(input: unknown): string[] {
     throw new Error("ETF 보유종목은 6자리 종목코드로 입력해 주세요.");
   }
   return [...new Set(input as string[])].sort();
+}
+
+/** Same-market allocation order; KR mixed-book candidates compete across KOSPI/KOSDAQ. */
+export function compareDashboardCandidates(a: DashboardSignal, b: DashboardSignal) {
+  const group = (market: DashboardMarket) => (market === "US" ? 2 : market === "ETF" ? 1 : 0);
+  const different = group(a.market) - group(b.market);
+  if (different) return different;
+  return (
+    (a.market !== "ETF" ? (b.score ?? -Infinity) - (a.score ?? -Infinity) : 0) ||
+    (a.market === "US"
+      ? (b.betaRank ?? -Infinity) - (a.betaRank ?? -Infinity) ||
+        (b.tkRank ?? -Infinity) - (a.tkRank ?? -Infinity)
+      : 0) ||
+    b.priority - a.priority ||
+    a.symbol.localeCompare(b.symbol)
+  );
 }

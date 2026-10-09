@@ -6,6 +6,8 @@ import { buildSnapshot, type ScreeningSnapshot } from "./screeningSnapshot";
 import { sourceTimingEvidence, type SourceTimingRecord } from "./sourceTimingEvidence";
 import {
   ADOPTED_SERIES_VERSION,
+  activeSeriesVersion,
+  RESTART_ACCOUNTING_START,
   MODEL_ACCOUNTING_START,
   hashSeriesValue,
   type AdoptedSeriesKind,
@@ -94,10 +96,11 @@ const KR_KINDS: AdoptedSeriesKind[] = [
 async function reviewedReplayCodeHash(
   store: ReturnType<typeof octoberShadowStore>,
   kinds: readonly AdoptedSeriesKind[],
+  date: string,
 ) {
   const codeHash = adoptedShadowFrozenCodeHash(manifest.codeHash);
   for (const kind of kinds) {
-    const frozen = await store.readSeries(`${ADOPTED_SERIES_VERSION}:${kind}`);
+    const frozen = await store.readSeries(`${activeSeriesVersion(date)}:${kind}`);
     if (!frozen) throw new Error(`October Shadow registry is not initialized: ${kind}`);
     assertAdoptedShadowRuntime(manifest.codeHash, frozen.codeHash);
   }
@@ -192,12 +195,19 @@ export function sliceKrDatasetForReplay(raw: MarketDataset, date: string): Marke
         .map((bar) => structuredClone(bar)),
     ]),
   );
+  if (raw.observedBars)
+    copy.observedBars = Object.fromEntries(
+      Object.entries(raw.observedBars).map(([symbol, bars]) => [
+        symbol,
+        bars.filter((bar) => bar.tradeDate <= date).map((bar) => structuredClone(bar)),
+      ]),
+    );
   copy.indexSeries = raw.indexSeries.map((series) => ({
     ...structuredClone(series),
     bars: series.bars.filter((bar) => bar.tradeDate <= date).map((bar) => structuredClone(bar)),
   }));
   copy.tradeDates = raw.tradeDates.filter((day) => day <= date);
-  copy.kospiGateDates = raw.kospiGateDates.filter((day) => day <= date);
+  copy.kospiGateDates = (raw.kospiGateDates ?? raw.tradeDates).filter((day) => day <= date);
   if (copy.vkospiObservations)
     copy.vkospiObservations = copy.vkospiObservations.filter((point) => point.date <= date);
   if (copy.kospiPriceInputIssues)
@@ -224,7 +234,11 @@ function currentDateEvidence(dataset: MarketDataset, snapshot: ScreeningSnapshot
     bars: Object.fromEntries(
       dataset.instruments.map((instrument) => [
         instrument.symbol,
-        (dataset.bars[instrument.symbol] ?? []).filter((bar) => bar.tradeDate === date),
+        (
+          (date >= "2026-10-12" ? dataset.observedBars?.[instrument.symbol] : undefined) ??
+          dataset.bars[instrument.symbol] ??
+          []
+        ).filter((bar) => bar.tradeDate === date),
       ]),
     ),
     indexes: dataset.indexSeries.map((series) => ({
@@ -253,7 +267,7 @@ async function insertReplayAudit(
     replay_mode: row.replayMode,
     status: row.status,
     source_hash: row.sourceHash,
-    strategy_version: ADOPTED_SERIES_VERSION,
+    strategy_version: activeSeriesVersion(row.signalDate),
     reason: row.reason ?? null,
     details: row.details ?? {},
   });
@@ -263,10 +277,11 @@ async function insertReplayAudit(
 async function alignedLatestDate(
   store: ReturnType<typeof octoberShadowStore>,
   kinds: AdoptedSeriesKind[],
+  date: string,
 ): Promise<string | null> {
   const latest = await Promise.all(
     kinds.map(async (kind) => {
-      const run = await store.readLatest<OctoberRun>(`${ADOPTED_SERIES_VERSION}:${kind}`);
+      const run = await store.readLatest<OctoberRun>(`${activeSeriesVersion(date)}:${kind}`);
       return run?.receipt.date ?? null;
     }),
   );
@@ -336,11 +351,17 @@ export async function replayKrShadow(input: {
       throughDate,
     };
   const store = octoberShadowStore(input.client, input.userId, input.mode ?? "service");
-  const latestRecordedDate = await alignedLatestDate(store, KR_KINDS);
+  const latestRecordedDate = await alignedLatestDate(store, KR_KINDS, throughDate);
   const calendar = await octoberModelCalendar("KR", throughDate);
   const start = latestRecordedDate
     ? calendar.regularSessions.find((date) => date > latestRecordedDate)
-    : calendar.regularSessions.find((date) => date >= MODEL_ACCOUNTING_START);
+    : calendar.regularSessions.find(
+        (date) =>
+          date >=
+          (throughDate >= RESTART_ACCOUNTING_START
+            ? RESTART_ACCOUNTING_START
+            : MODEL_ACCOUNTING_START),
+      );
   if (!start)
     return {
       market: "KR",
@@ -387,10 +408,14 @@ export async function replayKrShadow(input: {
     const hasKospi = sliced.indexSeries
       .find((series) => series.indexCode === "KOSPI")
       ?.bars.some((bar) => bar.tradeDate === date);
-    if (!hasKospi || !sliced.kospiGateDates.includes(date) || sliced.instruments.length === 0) {
+    if (
+      !hasKospi ||
+      !(sliced.kospiGateDates ?? sliced.tradeDates).includes(date) ||
+      sliced.instruments.length === 0
+    ) {
       const reason = !hasKospi
         ? "KOSPI 기준일 시세가 없습니다."
-        : !sliced.kospiGateDates.includes(date)
+        : !(sliced.kospiGateDates ?? sliced.tradeDates).includes(date)
           ? "KRX 정규장 기준일 증거가 없습니다."
           : "해당 거래일 종목 행이 없습니다.";
       await insertReplayAudit(input.client, input.userId, {
@@ -438,7 +463,7 @@ export async function replayKrShadow(input: {
           .sort()
           .at(-1) ??
         date;
-      const codeHash = await reviewedReplayCodeHash(store, KR_KINDS);
+      const codeHash = await reviewedReplayCodeHash(store, KR_KINDS, date);
       const octoberShadow = await recordOctoberPublication(store, {
         market: "KR",
         dataset,
@@ -634,11 +659,17 @@ export async function replayUsShadow(input: {
     };
 
   const store = octoberShadowStore(input.client, input.userId, input.mode ?? "service");
-  const latestRecordedDate = await alignedLatestDate(store, US_KINDS);
+  const latestRecordedDate = await alignedLatestDate(store, US_KINDS, throughDate);
   const calendar = await octoberModelCalendar("US", throughDate);
   const start = latestRecordedDate
     ? calendar.regularSessions.find((date) => date > latestRecordedDate)
-    : calendar.regularSessions.find((date) => date >= MODEL_ACCOUNTING_START);
+    : calendar.regularSessions.find(
+        (date) =>
+          date >=
+          (throughDate >= RESTART_ACCOUNTING_START
+            ? RESTART_ACCOUNTING_START
+            : MODEL_ACCOUNTING_START),
+      );
   if (!start)
     return {
       market: "US",
@@ -724,7 +755,7 @@ export async function replayUsShadow(input: {
         date,
         rows: [...rows].sort((a, b) => a.symbol.localeCompare(b.symbol)),
       })) as SeriesHash;
-      const codeHash = await reviewedReplayCodeHash(store, US_KINDS);
+      const codeHash = await reviewedReplayCodeHash(store, US_KINDS, date);
       const previousSessionDate =
         calendar.regularSessions.filter((session) => session < date).at(-1) ?? "2026-10-02";
       const result = await recordOctoberPublication(store, {

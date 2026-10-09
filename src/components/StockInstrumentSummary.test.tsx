@@ -214,7 +214,7 @@ describe("stock instrument summary", () => {
     for (const evidence of [
       "확인일 8점 유지 충족",
       "확인일 RSAccel &gt; 0 미충족",
-      "Onset일 시장 RISK_OFF · 미충족",
+      "원신호일 시장 RISK_OFF · 미충족",
       "확인일 시장 RISK_OFF · 미충족",
       pendingReason,
       "확인된 조건 미충족 · 신규 진입 제외",
@@ -240,7 +240,7 @@ describe("stock instrument summary", () => {
         시가총액: "데이터 없음",
       });
       expect(html).not.toMatch(/NaN|Infinity|A등급/);
-      expect(html).toContain("기술청산 판단 미확인");
+      expect(html).not.toContain("보유 시 기술청산 조건 충족");
       expect(html).toContain("최종 진입 미확정 · 필수 자료 확인 대기");
     },
   );
@@ -253,7 +253,7 @@ describe("stock instrument summary", () => {
       exitSignal: "UP95",
     });
     const html = render(input);
-    expect(html).toContain("보유 시 기술청산 조건 충족 · 9.5점 상향돌파");
+    expect(html).not.toContain("보유 시 기술청산 조건 충족 · 9.5점 상향돌파");
     expect(statusText(html)).not.toContain("청산");
     expect(html).not.toMatch(/청산 대기|매도 지시|다음 시가 매도/);
     const held = render(input, {
@@ -296,8 +296,8 @@ describe("instrument route integration", () => {
       exitSignal: "UP95",
     });
     const html = renderRoute(input);
-    expect(html).toContain("미보유 · 관측 조건 참고 · 상단 Exit · 9.5점 상향돌파");
-    expect(html).toContain("보유 시 기술청산 조건 충족 · 9.5점 상향돌파");
+    expect(html).not.toContain("미보유 · 관측 조건 참고 · 상단 Exit · 9.5점 상향돌파");
+    expect(html).not.toContain("보유 시 기술청산 조건 충족 · 9.5점 상향돌파");
     state.positions.heldSymbols = [input.instrument.symbol];
     const held = renderRoute(input);
     expect(held).not.toContain("관측 조건 참고");
@@ -342,7 +342,7 @@ describe("instrument route integration", () => {
       "확인된 미충족: 유동성 부족",
       pendingReason,
       "확인된 조건 미충족 · 신규 진입 제외",
-      "Onset 발생 경로",
+      "원신호 발생 경로",
       "구조개선형",
     ])
       expect(aboveChart).toContain(evidence);
@@ -352,41 +352,31 @@ describe("instrument route integration", () => {
     expect(html.indexOf("구조개선형")).toBeLessThan(html.indexOf(">상세 지표<"));
     expect(html.match(/>거래량 비율\(20일\)</g)).toHaveLength(1);
     expect(html.match(/>RS20</g)).toHaveLength(1);
-    expect(html.match(/>Onset 발생 경로</g)).toHaveLength(1);
+    expect(html.match(/>원신호 발생 경로</g)).toHaveLength(1);
     expect(html).not.toContain("계산 근거 로그 (JSON)");
     expect(input).toEqual(before);
   });
 
-  it("preserves the ETF detail branch and its 100-point technical score", () => {
+  it("shows ETF M0 evidence in the approved order and suppresses stale components", () => {
     const input = row({
-      vf: null,
-      technicalNormalized: 82,
       etfStrategy: { technical: 84 } as NonNullable<ScreeningRow["etfStrategy"]>,
-      hardFilterPassed: false,
-      hardFilterStatus: "PENDING",
-      pendingRules: ["ETF 상품건전성 미확인"],
-      actionLabelText: "ETF 관찰",
     });
     input.instrument.instrumentType = "ETF";
     expect(render(input)).toBe("");
     const html = renderRoute(input);
-    expect(html).not.toContain("판단 요약");
-    expect(html).not.toContain("계산된 조건과 최종 진입 판단");
+    const sections = [
+      "M0 총점",
+      "구성요소",
+      "원신호 · 확인일",
+      "기초지수 MA60",
+      "보유 시 행동",
+      "원자료",
+    ];
+    const offsets = sections.map((section) => html.indexOf(`>${section}<`));
+    expect(offsets.every((offset) => offset >= 0)).toBe(true);
+    expect(offsets).toEqual([...offsets].sort((a, b) => a - b));
+    expect(html).toContain("미관측");
+    expect(html).not.toContain("84.0 / 100");
     expect(html).not.toContain("KOSPI 신규 후보 확인 기록");
-    for (const evidence of [
-      "현재가",
-      "84.0 / 100",
-      "우선점수",
-      "모델등급",
-      "ETF 관찰",
-      "판단 보류:",
-      "ETF 상품건전성 미확인",
-      "ETF 상품건전성 (100점)",
-      "ETF 기술점수는 84.0/100점입니다",
-    ])
-      expect(html).toContain(evidence);
-    const belowChart = html.slice(html.indexOf('aria-label="상세 차트"'));
-    expect(belowChart).toContain("거래량 비율(20일)");
-    expect(belowChart).toContain("RS20");
   });
 });

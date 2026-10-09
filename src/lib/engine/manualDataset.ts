@@ -211,18 +211,29 @@ interface Series {
  */
 export function parseManualMarketData(
   input: string | string[],
-  options: { allowIndexOnly?: boolean } = {},
+  options: {
+    allowIndexOnly?: boolean;
+    allowIncompleteIndex?: boolean;
+    symbols?: ReadonlySet<string>;
+    from?: string;
+  } = {},
 ): ManualParseResult {
   const map = new Map<string, Series>();
   const kospiPriceInputIssues: Record<string, string[]> = {};
   const kospiGateDates = new Set<string>();
+  const liquidSymbols = new Map<string, Set<string>>();
   const warnings: string[] = [];
   let skipped = 0;
   let recordCount = 0;
   const consume = (rec: RawRecord) => {
     const symbol = normalizeKrxSymbol(pick(rec, "symbol"));
     const date = normalizeDate(pick(rec, "date"));
-    const close = num(pick(rec, "close"));
+    const priorSeries = symbol ? map.get(symbol) : undefined;
+    const prior =
+      date && priorSeries?.dates.has(date)
+        ? priorSeries.bars.find((bar) => bar.tradeDate === date)
+        : undefined;
+    const close = num(pick(rec, "close")) ?? prior?.close ?? null;
     const rawType = String(pick(rec, "type") ?? "")
       .trim()
       .toUpperCase();
@@ -241,7 +252,29 @@ export function parseManualMarketData(
           ["KOSPI", "KOSDAQ", "코스피", "코스닥"].includes(rawMarket)))
     )
       kospiGateDates.add(date);
-    if (!symbol || !date || close === null || close <= 0) {
+    if (symbol && date && !INDEX_SYMBOLS.has(symbol)) {
+      const volume = num(pick(rec, "volume"));
+      if (volume !== null) {
+        const symbols = liquidSymbols.get(date) ?? new Set<string>();
+        if (volume > 0) symbols.add(symbol);
+        else symbols.delete(symbol);
+        liquidSymbols.set(date, symbols);
+      }
+    }
+    if (
+      options.symbols &&
+      symbol &&
+      !INDEX_SYMBOLS.has(symbol) &&
+      (!options.symbols.has(symbol) || (date && options.from && date < options.from))
+    )
+      return;
+    if (
+      !symbol ||
+      !date ||
+      close === null ||
+      close < 0 ||
+      (close === 0 && INDEX_SYMBOLS.has(symbol))
+    ) {
       // A rejected duplicate does not replace an earlier usable price row.
       if (symbol === "KOSPI" && date && !map.get(symbol)?.dates.has(date)) {
         kospiPriceInputIssues[date] = ["close"];
@@ -279,11 +312,11 @@ export function parseManualMarketData(
         ? "KOSDAQ"
         : "KOSPI";
 
-    const open = num(pick(rec, "open")) ?? close;
-    const high = num(pick(rec, "high")) ?? Math.max(open, close);
-    const low = num(pick(rec, "low")) ?? Math.min(open, close);
-    const volume = num(pick(rec, "volume")) ?? 0;
-    const tradingValue = num(pick(rec, "tradingValue")) ?? close * volume;
+    const open = num(pick(rec, "open")) ?? prior?.open ?? close;
+    const high = num(pick(rec, "high")) ?? prior?.high ?? Math.max(open, close);
+    const low = num(pick(rec, "low")) ?? prior?.low ?? Math.min(open, close);
+    const volume = num(pick(rec, "volume")) ?? prior?.volume ?? 0;
+    const tradingValue = num(pick(rec, "tradingValue")) ?? prior?.tradingValue ?? close * volume;
 
     const bar: DailyPrice = {
       ...(isEtf
@@ -297,6 +330,8 @@ export function parseManualMarketData(
           }
         : {}),
       tradeDate: date,
+      openObserved: num(pick(rec, "open")) !== null || prior?.openObserved === true,
+      volumeObserved: num(pick(rec, "volume")) !== null || prior?.volumeObserved === true,
       open,
       high: Math.max(high, open, close, low),
       low: Math.min(low, open, close, high),
@@ -352,8 +387,8 @@ export function parseManualMarketData(
 
   for (const s of map.values()) s.bars.sort((a, b) => a.tradeDate.localeCompare(b.tradeDate));
 
-  const kospi = map.get("KOSPI");
-  if (!kospi || kospi.bars.length < 60) {
+  const kospi = map.get("KOSPI") ?? { bars: [] as DailyPrice[] };
+  if ((!kospi.bars.length || kospi.bars.length < 60) && !options.allowIncompleteIndex) {
     throw new Error(
       "코스피 지수 일봉이 필요합니다. symbol=KOSPI, market=INDEX 행을 60거래일 이상 포함해 주세요(시장 게이트 판정용).",
     );
@@ -381,6 +416,7 @@ export function parseManualMarketData(
 
   const instruments: Instrument[] = [];
   const bars: Record<string, DailyPrice[]> = {};
+  const observedBars: Record<string, DailyPrice[]> = {};
   const usedSectors = new Set<string>();
   let marketCapCount = 0;
   let flowCount = 0;
@@ -428,7 +464,8 @@ export function parseManualMarketData(
       isInverse: isEtf && /인버스|숏|SHORT/i.test(name),
       isActive: true,
     });
-    bars[s.symbol] = s.bars;
+    observedBars[s.symbol] = s.bars;
+    bars[s.symbol] = s.bars.filter((bar) => bar.close > 0);
   }
 
   if (instruments.length === 0 && !options.allowIndexOnly) {
@@ -436,7 +473,7 @@ export function parseManualMarketData(
   }
 
   const tradeDates = kospi.bars.map((b) => b.tradeDate);
-  const asOfDate = tradeDates[tradeDates.length - 1]!;
+  const asOfDate = tradeDates[tradeDates.length - 1] ?? [...kospiGateDates].sort().at(-1) ?? "";
   const shortSeries = instruments.filter((i) => (bars[i.symbol]?.length ?? 0) < 120).length;
   if (shortSeries > 0)
     warnings.push(
@@ -485,6 +522,10 @@ export function parseManualMarketData(
     kospiGateDates: [...kospiGateDates].sort(),
     instruments,
     bars,
+    observedBars,
+    liquidSymbolCountsByDate: Object.fromEntries(
+      [...liquidSymbols].map(([date, symbols]) => [date, symbols.size]),
+    ),
     indexSeries,
     financials: {} as Record<string, FinancialFacts>,
     etfFacts: {} as Record<string, EtfFacts>,

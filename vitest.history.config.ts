@@ -1,5 +1,11 @@
 import { defineConfig } from "vitest/config";
 export default defineConfig({
   resolve: { alias: { "@": new URL("./src", import.meta.url).pathname } },
-  test: { include: ["tests/history-asof.test.ts", "tests/history-retention.test.ts"] },
+  test: {
+    include: [
+      "tests/history-asof.test.ts",
+      "tests/history-retention.test.ts",
+      "tests/screening-execution-archive.test.ts",
+    ],
+  },
 });

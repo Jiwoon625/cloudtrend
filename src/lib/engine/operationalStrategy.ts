@@ -1,5 +1,7 @@
+import { kospiPolicyVersionAt } from "./kospiEntryConfirmation";
 import {
   KOSPI_ENTRY_POLICY,
+  KOSPI_CONSISTENCY_VERSION,
   isKospiEntryReady,
   type KospiEntrySnapshot,
 } from "./kospiEntryConfirmation";
@@ -76,6 +78,7 @@ export function getOperationalSignals(
   previous: number | null,
   current: number | null,
   eligible: boolean,
+  asOfDate?: string,
 ) {
   const onset =
     eligible &&
@@ -98,7 +101,9 @@ export function getOperationalSignals(
     kosdaq80Onset,
     kospiEightPointEntry: false,
     exitSignal,
-    operationalSignalVersion: OPERATIONAL_SIGNAL_VERSION,
+    operationalSignalVersion: asOfDate
+      ? kospiPolicyVersionAt(asOfDate)
+      : OPERATIONAL_SIGNAL_VERSION,
   };
 }
 
@@ -123,7 +128,8 @@ export function isOperationalEntry(row: Signals, asOfDate?: string): boolean {
     return false;
   return (
     row.kosdaq80Onset === true ||
-    (row.operationalSignalVersion === OPERATIONAL_SIGNAL_VERSION &&
+    ((row.operationalSignalVersion === OPERATIONAL_SIGNAL_VERSION ||
+      row.operationalSignalVersion === KOSPI_CONSISTENCY_VERSION) &&
       isKospiEntryReady(row.kospiEntry, asOfDate))
   );
 }
@@ -133,6 +139,7 @@ export function getStoredOperationalExit(
 ): "UP95" | "UP90" | "DOWN30" | null {
   if (market === "KOSPI")
     return (row.operationalSignalVersion === OPERATIONAL_SIGNAL_VERSION ||
+      row.operationalSignalVersion === KOSPI_CONSISTENCY_VERSION ||
       row.operationalSignalVersion === LEGACY_OPERATIONAL_SIGNAL_VERSION ||
       row.operationalSignalVersion === PREVIOUS_KOSPI_ENTRY_POLICY_VERSION) &&
       row.exitSignal === "UP95"
@@ -153,15 +160,16 @@ export function getOperationalStatus(row: Signals, market: string): string {
       return "KOSPI 하루·RS·시장국면 확인 완료 · 체결 전 시장 재확인 대기";
     if (s.state === "confirmed")
       return s.date < KOSPI_ENTRY_POLICY.effectiveConfirmationDate ||
-        s.version !== KOSPI_ENTRY_POLICY.version
+        s.version !== kospiPolicyVersionAt(s.date)
         ? "KOSPI 과거 확인 참고 · 운영 진입 제외"
         : `KOSPI 확인 기록 미충족 · 진입 제외${s.issues.length ? ` · ${s.issues.join(" · ")}` : ""}`;
-    if (s.state === "pending") return "KOSPI 8.0 Onset · 다음 거래일 확인 대기";
+    if (s.state === "pending") return "KOSPI 8.0 원신호 · 다음 거래일 확인 대기";
     if (s.state === "rejected") return `KOSPI 확인 실패 · 진입 제외 · ${s.issues.join(" · ")}`;
     if (s.state === "unobservable")
       return `KOSPI 확인 자료 미확인 · 진입 제외${s.issues.length ? ` · ${s.issues.join(" · ")}` : ""}`;
   }
-  if (market === "KOSPI" && row.kospi80Onset) return "KOSPI 8.0 Onset · 확인 기록 없음 · 진입 제외";
-  if (isOperationalEntry(row)) return `${market} 8.0 Onset · 신규 진입`;
+  if (market === "KOSPI" && row.kospi80Onset)
+    return "KOSPI 8.0 원신호 · 확인 기록 없음 · 진입 제외";
+  if (isOperationalEntry(row)) return `${market} 8.0 원신호 · 신규 진입`;
   return "관찰";
 }

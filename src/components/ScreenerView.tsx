@@ -1,5 +1,5 @@
 import { kospiMarketGateDisplay, kospiMarketGateLabel } from "./kospiEntryPresentation";
-import { StrategyDescription } from "@/components/StrategyDescription";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
@@ -18,7 +18,7 @@ import { stockAssessmentDisplay } from "@/lib/stockAssessmentDisplay";
 import { isOperationalEntry } from "@/lib/engine/operationalStrategy";
 import { loadDomesticPositionContext } from "@/lib/portfolioPositionContext";
 import { isOnsetSuppressed } from "@/lib/positionSignalContext";
-import { isPortfolioAwareOperationalEntry } from "@/lib/statusDisplay";
+import { isPortfolioAwareOperationalEntry, isHeldExit } from "@/lib/statusDisplay";
 
 type PresetId =
   | "TECHNICAL_ONSET"
@@ -39,46 +39,15 @@ type PresetId =
   | "EXIT";
 
 const PRESETS: Array<{ id: PresetId; label: string; test: (r: ScreeningRow) => boolean }> = [
-  { id: "TECHNICAL_ONSET", label: "기술 8.0 신규 돌파 · 진입 미확정", test: () => false },
+  { id: "TECHNICAL_ONSET", label: "원신호", test: () => false },
+  { id: "KOSPI_PENDING", label: "확인 대기", test: () => false },
   { id: "ENTRY", label: "진입 준비", test: isOperationalEntry },
-  { id: "KOSDAQ_ENTRY_8", label: "KOSDAQ Onset", test: (r) => r.kosdaq80Onset },
-  { id: "CORE", label: "Core 후보", test: (r) => r.grade !== "C" && r.hardFilterPassed },
-  { id: "JUDGMENT_PENDING", label: "판단 보류", test: (r) => r.hardFilterStatus === "PENDING" },
-  { id: "GRADE_A", label: "A등급", test: (r) => r.grade === "A" },
-  { id: "GRADE_B", label: "B등급 리테스트 대기", test: (r) => r.grade === "B" },
-  { id: "VOLUME", label: "거래량 폭발", test: (r) => (r.snapshot.volumeRatio20 ?? 0) >= 200 },
+  { id: "EXIT", label: "보유 청산", test: () => false },
   {
-    id: "NEAR_HIGH",
-    label: "신고가 근접",
-    test: (r) => (r.snapshot.distanceFrom52wHigh ?? -100) >= -10,
+    id: "JUDGMENT_PENDING",
+    label: "자료 판단 보류",
+    test: (r) => r.hardFilterStatus === "PENDING",
   },
-  {
-    id: "FOREIGN",
-    label: "외국인 수급 우수",
-    test: (r) => (r.snapshot.foreignNet20d ?? -1) > 0,
-  },
-  {
-    id: "VALUEUP",
-    label: "밸류업",
-    test: (r) => r.instrument.indexMemberships.includes("KOREA_VALUEUP"),
-  },
-  { id: "HEAD_FAKE", label: "Head Fake 경고", test: (r) => r.warnings.includes("HEAD_FAKE") },
-  {
-    id: "KOSPI_ENTRY_8",
-    label: "KOSPI 원시 Onset",
-    test: (r) => r.kospi80Onset === true,
-  },
-  {
-    id: "KOSPI_PENDING",
-    label: "KOSPI 하루 확인 대기",
-    test: (r) => r.instrument.market === "KOSPI" && r.kospiEntry?.state === "pending",
-  },
-  {
-    id: "KOSPI_CONFIRMED",
-    label: "KOSPI 확인 완료 · 진입 준비",
-    test: (r) => r.instrument.market === "KOSPI" && isOperationalEntry(r),
-  },
-  { id: "EXIT", label: "Exit 점검", test: (r) => r.exitSignal !== null },
 ];
 
 export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: AnalysisResult }) {
@@ -96,18 +65,6 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
   const [showDisqualified, setShowDisqualified] = useState(true);
   const [includeLeveraged, setIncludeLeveraged] = useState(true);
   const [preset, setPreset] = useState<PresetId | null>(null);
-  const [savedPresets, setSavedPresets] = useState<
-    Array<{
-      name: string;
-      state: {
-        query: string;
-        minTechnical: number;
-        minVolumeRatio: number;
-        sector: string;
-        showDisqualified: boolean;
-      };
-    }>
-  >([]);
 
   const gate =
     mode === "STOCK"
@@ -117,6 +74,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
   const sectors = [...new Set(base.map((r) => r.instrument.sectorName))];
   const presetMatches = (r: ScreeningRow, id: PresetId) => {
     if (mode === "STOCK") {
+      if (id === "EXIT") return isHeldExit(r, positionContext);
       if (id === "TECHNICAL_ONSET")
         return stockAssessmentDisplay(r, analysis.asOfDate, analysis.tradeDates).rawOnset === true;
       if (
@@ -199,7 +157,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
             {mode === "STOCK" ? "주식 스크리너" : "ETF 스크리너"}
           </h1>
           <p className="text-[12px] text-muted-foreground">
-            기준일 {analysis.asOfDate} ·{" "}
+            기준일 {analysis.asOfDate} · 전략 {analysis.strategyVersion} ·{" "}
             {mode === "STOCK" ? "KOSPI 신규진입 시장국면" : "시장 게이트"}{" "}
             {mode === "STOCK"
               ? kospiMarketGateLabel(gate.status)
@@ -228,7 +186,6 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
 
       {mode === "STOCK" ? (
         <>
-          <StrategyDescription />
           <p className="text-[12px] text-muted-foreground">
             KRX 기준일 자료는 다음 영업일 08:00 KST부터 조회 가능합니다. 저녁에는 계산된 기술 신호와
             최종 판단을 구분합니다. 조건별 근거와 상세 지표는 종목명을 눌러 확인하세요.
@@ -296,39 +253,6 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
             </Label>
           </div>
         ) : null}
-        <div className="flex items-end gap-2 lg:col-span-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() =>
-              setSavedPresets((prev) => [
-                ...prev,
-                {
-                  name: `내 프리셋 ${prev.length + 1}`,
-                  state: { query, minTechnical, minVolumeRatio, sector, showDisqualified },
-                },
-              ])
-            }
-          >
-            현재 필터 저장
-          </Button>
-          {savedPresets.map((p) => (
-            <button
-              key={p.name}
-              type="button"
-              className="rounded border border-border px-2 py-1 text-[11px] hover:bg-accent"
-              onClick={() => {
-                setQuery(p.state.query);
-                setMinTechnical(p.state.minTechnical);
-                setMinVolumeRatio(p.state.minVolumeRatio);
-                setSector(p.state.sector);
-                setShowDisqualified(p.state.showDisqualified);
-              }}
-            >
-              {p.name}
-            </button>
-          ))}
-        </div>
       </div>
 
       <ScreenerTable
@@ -338,6 +262,12 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         tradeDates={analysis.tradeDates}
         compactStock={mode === "STOCK"}
       />
+      <details className="rounded-lg border p-3 text-sm">
+        <summary>운영규칙·산식</summary>
+        <Link to="/operating-rules" className="text-primary">
+          운영규칙에서 시장별 채택 기준 확인
+        </Link>
+      </details>
     </div>
   );
 }

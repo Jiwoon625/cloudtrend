@@ -74,14 +74,15 @@ describe("ETF screener rendered state contract", () => {
   it("shows pending dates without an order input", () => {
     const html = page("pending", book);
     expect(html).toContain("하루 확인 대기");
-    expect(html).toContain("Onset 2026-09-30");
+    expect(html).toContain("원신호 2026-09-30");
     expect(html).not.toContain('aria-label="360750 주문가격"');
   });
   it("shows confirmed next-open entry, liquidity, and order price", () => {
     const html = page("confirmed", book);
-    expect(html).toContain("하루 확인 완료 · 다음 시가 진입");
+    expect(html).toContain("진입 준비 · 다음 시가 진입");
     expect(html).toContain("2,000,000,000");
-    expect(html).toContain('aria-label="360750 주문가격"');
+    expect(html).not.toContain('aria-label="360750 주문가격"');
+    expect(html).toContain("포트폴리오");
   });
   it("shows rejection reasons without a signal order input", () => {
     const html = page("rejected", book);

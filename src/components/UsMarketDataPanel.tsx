@@ -147,17 +147,17 @@ export function UsMarketDataPanel({
         <StrategyCard
           role="PRIMARY"
           title="A0 · Anchor"
-          detail="공격형 · sector cap 없음 · Core 상위 20% Onset · 상위 30% 밖 또는 Beta 상위 40% 밖 3거래일 · 고정 매입 예산"
+          detail="공격형 · sector cap 없음 · Core 상위 20% 원신호 · 상위 30% 밖 또는 Beta 상위 40% 밖 3거래일 · 고정 매입 예산"
         />
         <StrategyCard
           role="SHADOW"
           title="A2"
-          detail="Core 상위 20% Onset / 상위 30% 밖 청산 · Anchor 미적용 · 동일 섹터 최대 2종목 · 고정 매입 예산"
+          detail="Core 상위 20% 원신호 / 상위 30% 밖 청산 · Anchor 미적용 · 동일 섹터 최대 2종목 · 고정 매입 예산"
         />
         <StrategyCard
           role="SHADOW"
           title="B3 Beta 상위 40% 밖×3"
-          detail="균형형 · 동일 섹터 최대 3종목 · Core 상위 20% Onset · 상위 50% 밖 청산 + Beta 상위 40% 밖 3거래일"
+          detail="균형형 · 동일 섹터 최대 3종목 · Core 상위 20% 원신호 · 상위 50% 밖 청산 + Beta 상위 40% 밖 3거래일"
         />
       </section>
       <p className="text-sm text-muted-foreground">
@@ -172,7 +172,7 @@ export function UsMarketDataPanel({
         <h2 className="text-sm font-semibold">실제 자료수집 계약</h2>
         <p className="mt-1 text-[11px] text-muted-foreground">
           Google Colab의 미국주식 전용 수집기가 Toss Open API를 호출하고, 계산에 필요한 원자 피처를
-          Supabase에 업로드합니다. 횡단면 순위와 Onset/Exit는 GitHub 엔진이 한 번만 계산합니다.
+          Supabase에 업로드합니다. 횡단면 순위와 원신호/Exit는 GitHub 엔진이 한 번만 계산합니다.
         </p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <DataField title="가격" body="Adjusted 일봉 OHLCV, 현재가" />

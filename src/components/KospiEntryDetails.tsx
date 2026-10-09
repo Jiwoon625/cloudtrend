@@ -61,7 +61,7 @@ export function KospiEntryDetails({
       ) : null}
       {entry.originDate ? (
         <p>
-          Onset {entry.originDate} · 확인{" "}
+          원신호 {entry.originDate} · 확인{" "}
           {entry.confirmationDate ??
             (entry.state === "pending" ? "다음 KOSPI 거래일 종가" : "미확인")}
         </p>
@@ -69,7 +69,7 @@ export function KospiEntryDetails({
       {entry.state !== "none" ? (
         <>
           <MarketEvidenceLine
-            label="Onset일 시장"
+            label="원신호일 시장"
             evidence={entry.marketGate?.origin}
             expectedDate={entry.originDate}
           />

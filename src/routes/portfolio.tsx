@@ -40,7 +40,7 @@ export const Route = createFileRoute("/portfolio")({
   ): { asset: PortfolioAsset } => ({
     asset: search["asset"] === "US" || search["asset"] === "ETF" ? search["asset"] : "KR",
   }),
-  head: () => ({ meta: [{ title: "포트폴리오 | 전략 성과 · 실제 투자" }] }),
+  head: () => ({ meta: [{ title: "포트폴리오 | 실제 보유·체결" }] }),
   component: PortfolioPage,
 });
 const QUERY = ["portfolio-ledgers"];
@@ -362,7 +362,7 @@ export function KoreaPortfolioContent() {
             한국주식 포트폴리오
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            전략대로 운용한 성과와 내가 실제로 투자한 손익을 따로 확인합니다.
+            실제 보유와 체결을 확인합니다. 모델 성과는 Shadow에서 조회합니다.
           </p>
         </div>
         <Button
@@ -423,12 +423,12 @@ export function KoreaPortfolioContent() {
       {state && doc && strategy ? (
         <>
           <div className="mb-4 grid gap-3 lg:grid-cols-2">
-            <SummaryCard
-              title="전략 포트폴리오"
-              caption="KOSPI 하루·RS·시장국면 확인 / KOSDAQ Onset 진입 · 규칙에 따른 청산 · 개인 미매수와 독립"
-              s={strategy.summary}
-              capital={doc.settings.initialCapital}
-            />
+            <Link
+              to="/shadow"
+              className="rounded-lg border p-4 text-sm text-primary hover:underline"
+            >
+              모델 성과·보유·매매는 Shadow에서 확인
+            </Link>
             <SummaryCard
               title="실제 투자"
               actual
@@ -486,17 +486,6 @@ export function KoreaPortfolioContent() {
             <section className="mb-4 rounded-lg border bg-card p-4">
               <div className="flex flex-wrap items-end gap-3">
                 <label className="text-xs">
-                  전략 기준자금
-                  <Input
-                    className="mt-1"
-                    type="number"
-                    min="1"
-                    disabled={busy}
-                    value={capitals.strategy}
-                    onChange={(e) => setCapitals({ ...capitals, strategy: e.target.value })}
-                  />
-                </label>
-                <label className="text-xs">
                   실제 운용자금
                   <Input
                     className="mt-1"
@@ -517,7 +506,6 @@ export function KoreaPortfolioContent() {
                       (await mutate(
                         {
                           action: "capital",
-                          strategyCapital: Number(capitals.strategy),
                           actualCapital: Number(capitals.actual),
                         },
                         capitalSession.current,
@@ -544,24 +532,11 @@ export function KoreaPortfolioContent() {
                 </p>
               ) : null}
               <p className="mt-2 text-xs text-muted-foreground">
-                전략 기준자금 변경 시 저장된 신호부터 전략 수량을 다시 계산합니다. 실제 체결 수량은
-                유지됩니다.
+                운용자금은 실제 원장과 대조해 입력합니다. 모델 초기자금은 Shadow의 고정 계약에서
+                관리합니다.
               </p>
             </section>
           ) : null}
-          <details className="mb-4 rounded-lg border bg-card p-3 text-xs">
-            <summary className="cursor-pointer font-medium">운용 규칙과 손익 기준</summary>
-            <div className="mt-3">
-              <StrategyDescription />
-              <p className="mt-2 leading-relaxed text-muted-foreground">
-                전략은 다음 거래일 시가 진입·신호 청산, 60거래일 종가 만기, 왕복 0.30% 비용을
-                적용합니다. 같은 날 후보는 기술점수 → 우선순위점수 → 종목코드 순입니다. 실제 원장은
-                입력한 체결만 반영하며 청산 신호로 자동 매도하지 않습니다. 실제 손익은 입력한
-                수수료·세금과 이동평균 매입원가를 사용합니다. 미체결 매도비용과 배당은 포함하지
-                않습니다. 과거 이관 기록은 기존 비용을 유지합니다.
-              </p>
-            </div>
-          </details>
           {assessments.data ? (
             <DomesticAssessmentPanel markets={assessments.data.markets} heldOnly />
           ) : assessments.isError ? (
@@ -583,7 +558,6 @@ export function KoreaPortfolioContent() {
               aria-label="포트폴리오 원장"
             >
               {[
-                ["strategy", "전략 원장"],
                 ["actual", "실제 보유·거래"],
                 ["signals", "진입 신호 · 미매수"],
               ].map(([value, label]) => (
@@ -682,56 +656,6 @@ export function KoreaPortfolioContent() {
               </div>
             </section>
           ) : null}
-          {tab === "strategy" ? (
-            <LedgerTable
-              title="전략 원장 · 가상 매수·매도"
-              caption={`전체 진입 신호 ${candidates.length}건 중 전략 진입 ${modelTrades.length}건. 한도 초과와 체결 대기는 진입 신호 탭에서 확인합니다.`}
-              headers={[
-                "종목",
-                "신호일",
-                "진입일",
-                "진입가 / 수량",
-                "상태",
-                "현재가 / 청산가",
-                "청산일 · 사유",
-                "손익",
-                "수익률",
-              ]}
-              empty={!modelTrades.filter(matches).length}
-            >
-              {modelTrades.filter(matches).map((t) => {
-                const pnl =
-                  t.status === "CLOSED"
-                    ? (t.realizedPnl ?? 0)
-                    : t.shares * (t.currentPrice ?? t.entryPrice) - t.buyAmount - t.entryFee;
-                return (
-                  <tr key={t.id} className="border-t">
-                    <td className={td}>
-                      <StockLink {...t} />
-                    </td>
-                    <td className={td}>{t.signalDate}</td>
-                    <td className={td}>{t.entryDate}</td>
-                    <td className={td}>
-                      {formatPrice(t.entryPrice)} / {t.shares}주
-                    </td>
-                    <td className={td}>{t.currentStatus}</td>
-                    <td className={td}>
-                      {formatPrice(t.status === "CLOSED" ? t.exitPrice : t.currentPrice)}
-                    </td>
-                    <td className={td}>
-                      {t.exitDate ?? "-"}
-                      <br />
-                      {t.exitReason}
-                    </td>
-                    <td className={`${td} ${pnlClass(pnl)}`}>{formatWon(pnl)}</td>
-                    <td className={`${td} ${pnlClass(pnl)}`}>
-                      {formatPercent((pnl / (t.buyAmount + t.entryFee)) * 100, 2)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </LedgerTable>
-          ) : null}
           {tab === "actual" ? (
             <>
               <LedgerTable
@@ -801,7 +725,7 @@ export function KoreaPortfolioContent() {
           {tab === "signals" ? (
             <LedgerTable
               title="전체 진입 신호 · 실제 매수 여부"
-              caption="KOSPI 하루·RS·시장국면 확인 완료와 KOSDAQ Onset 진입 신호를 전략 한도와 관계없이 보여줍니다. 새 신호는 실제 수량 0주로 시작하며, 매수한 경우에만 체결을 입력하세요."
+              caption="KOSPI 하루·RS·시장국면 진입 준비와 KOSDAQ 원신호 진입 신호를 전략 한도와 관계없이 보여줍니다. 새 신호는 실제 수량 0주로 시작하며, 매수한 경우에만 체결을 입력하세요."
               headers={[
                 "종목",
                 "신호일",

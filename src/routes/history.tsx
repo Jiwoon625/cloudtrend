@@ -1,343 +1,211 @@
-import { getStoredOperationalExit } from "@/lib/engine/operationalStrategy";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowDownRight, ArrowUpRight, History, Trash2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-
 import { AppShell } from "@/components/AppShell";
-import { KospiEntryDetails } from "@/components/KospiEntryDetails";
-import { OnsetProfileDetails } from "@/components/OnsetProfileDetails";
+import { listScreeningArchive, readScreeningArchive } from "@/lib/screeningArchiveQuery";
+import { formatKstDateTime } from "@/lib/format";
 import {
-  historyEntryStatus,
   isHistoryOperationalEntry,
+  historyEtfEvidence,
+  historyEntryStatus,
 } from "@/components/historyEntryPresentation";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { formatCount, formatKstDateTime, formatNumber } from "@/lib/format";
-import { useSnapshots, type SnapshotEntry } from "@/lib/screeningHistory";
-import { topTechnicalEntries } from "@/lib/screeningSnapshot";
-
 export const Route = createFileRoute("/history")({
   ssr: false,
-  head: () => ({
-    meta: [
-      { title: "스크리닝 이력 | TrendScore KR" },
-      {
-        name: "description",
-        content:
-          "날짜별 스크리닝 결과와 KOSPI 하루 확인 기록, KOSDAQ Onset·Exit 조건 달성 종목, 기술점수·운영상태를 조회합니다.",
-      },
-      { property: "og:title", content: "스크리닝 이력 | TrendScore KR" },
-      {
-        property: "og:description",
-        content: "일별 마지막 스크리닝 스냅샷과 V8 운영신호 기록.",
-      },
-    ],
-  }),
+  head: () => ({ meta: [{ title: "스크리닝 이력 | CloudTrend" }] }),
   component: HistoryPage,
 });
-
-function isOperationalExit(entry: SnapshotEntry): boolean {
-  if (getStoredOperationalExit(entry, "KOSPI")) return true;
-  if (entry.exitSignal === "UP90" || entry.exitSignal === "DOWN30") return true;
-  return /KOSDAQ\s*Exit/i.test(entry.status ?? "");
-}
-
-function EntryList({ entries, empty }: { entries: SnapshotEntry[]; empty: string }) {
-  if (entries.length === 0) return <p className="text-[11px] text-muted-foreground">{empty}</p>;
-  return (
-    <div className="grid gap-1 sm:grid-cols-2 xl:grid-cols-3">
-      {entries.map((e) => (
-        <div key={e.symbol} className="rounded-md border border-border/60 p-2">
-          <Link to="/instrument/$symbol" params={{ symbol: e.symbol }}>
-            <Badge variant="outline" className="text-[10px]">
-              {e.name}
-            </Badge>
-          </Link>
-          <OnsetProfileDetails profile={e.onsetProfile} compact />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function TopEntriesTable({
-  title,
-  subtitle,
-  entries,
-}: {
-  title: string;
-  subtitle: string;
-  entries: SnapshotEntry[];
-}) {
-  return (
-    <section className="rounded-lg border border-border bg-card p-4">
-      <div className="mb-2">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <p className="text-[11px] text-muted-foreground">{subtitle}</p>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[700px] text-[12px]">
-          <thead>
-            <tr className="border-b border-border text-left text-muted-foreground">
-              <th className="py-1.5 pr-2 font-medium">순위</th>
-              <th className="py-1.5 pr-2 font-medium">종목</th>
-              <th className="py-1.5 pr-2 text-right font-medium">기술점수</th>
-              <th className="py-1.5 pr-2 text-right font-medium">우선점수</th>
-              <th className="py-1.5 pr-2 font-medium">등급</th>
-              <th className="py-1.5 font-medium">상태</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((e, index) => (
-              <tr key={e.symbol} className="border-b border-border/60 last:border-0">
-                <td className="num py-1.5 pr-2 text-muted-foreground">{index + 1}</td>
-                <td className="py-1.5 pr-2">
-                  <Link
-                    to="/instrument/$symbol"
-                    params={{ symbol: e.symbol }}
-                    className="hover:underline"
-                  >
-                    {e.name}
-                    <span className="num ml-1 text-[10px] text-muted-foreground">{e.symbol}</span>
-                  </Link>
-                </td>
-                <td className="num py-1.5 pr-2 text-right">
-                  {e.technicalPoints === null ? "-" : formatNumber(e.technicalPoints, 1)}
-                </td>
-                <td className="num py-1.5 pr-2 text-right">{formatNumber(e.priorityPoints, 1)}</td>
-                <td className="py-1.5 pr-2 font-semibold">{e.grade}</td>
-                <td className="py-1.5 font-medium">
-                  <div>{historyEntryStatus(e)}</div>
-                  <OnsetProfileDetails profile={e.onsetProfile} compact />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
 function HistoryPage() {
-  const { snapshots, remove, clear } = useSnapshots();
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const selected = useMemo(
-    () => snapshots.find((s) => s.date === selectedDate) ?? snapshots[0] ?? null,
-    [snapshots, selectedDate],
-  );
-
-  const entryOnsets = useMemo(
+  const [market, setMarket] = useState("ALL"),
+    [version, setVersion] = useState("ALL"),
+    [date, setDate] = useState(""),
+    [run, setRun] = useState(""),
+    [search, setSearch] = useState(""),
+    [page, setPage] = useState(0);
+  const q = useQuery({
+    queryKey: ["screening-execution-history", date],
+    queryFn: () => listScreeningArchive(date || undefined),
+    retry: false,
+  });
+  const runs = useMemo(
     () =>
-      selected?.entries.filter((entry) => isHistoryOperationalEntry(entry, selected.asOfDate)) ??
-      [],
-    [selected],
+      (q.data ?? []).filter(
+        (s) =>
+          (!date || s.asOfDate === date) &&
+          (version === "ALL" || (s.strategyVersion ?? "과거 버전 미기록") === version) &&
+          (market === "ALL" ||
+            (market === "US" && s.market === "US") ||
+            (market !== "US" && s.market !== "US")),
+      ),
+    [q.data, date, version, market],
   );
-  const kospiAssessments = useMemo(
-    () =>
-      selected?.entries.filter(
-        (entry) =>
-          (entry.kospiEntry && entry.kospiEntry.state !== "none") ||
-          entry.kospi80Onset ||
-          entry.kospiEightPointEntry,
-      ) ?? [],
-    [selected],
+  const selected = runs.find((s) => (s.runId ?? s.savedAt) === run) ?? runs[0];
+  const detail = useQuery({
+    queryKey: ["screening-execution", selected?.runId, selected?.asOfDate, selected?.savedAt],
+    enabled: !!selected,
+    queryFn: () =>
+      readScreeningArchive(selected!.runId ?? "", selected!.asOfDate, selected!.savedAt),
+    retry: false,
+  });
+  const entries = (detail.data?.entries ?? []).filter(
+    (e) =>
+      (market === "ALL" ||
+        market === "US" ||
+        e.market === market ||
+        (market === "ETF" && e.instrumentType === "ETF")) &&
+      (!search || `${e.name} ${e.symbol}`.toLowerCase().includes(search.toLowerCase())),
   );
-  const exitConditionMet = useMemo(
-    () => selected?.entries.filter(isOperationalExit) ?? [],
-    [selected],
-  );
-
-  const stockTopEntries = useMemo(
-    () => (selected ? (selected.topStocks ?? topTechnicalEntries(selected.entries, "STOCK")) : []),
-    [selected],
-  );
-  const etfTopEntries = useMemo(
-    () => (selected ? (selected.topEtfs ?? topTechnicalEntries(selected.entries, "ETF")) : []),
-    [selected],
-  );
-
+  const pages = Math.max(1, Math.ceil(entries.length / 50));
+  const currentPage = Math.min(page, pages - 1);
   return (
     <AppShell>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight">
-            <History className="size-5 text-primary" />
-            스크리닝 이력
-          </h1>
-          <p className="text-[12px] text-muted-foreground">
-            하루에 여러 번 스크리닝하면 그날의 마지막 결과만 Supabase에 저장됩니다. 최근 90개 날짜를
-            모든 기기에서 공유합니다.
-          </p>
-        </div>
-        {snapshots.length > 0 ? (
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={clear}>
-            <Trash2 className="size-3.5" />
-            전체 삭제
-          </Button>
-        ) : null}
+      <header className="mb-4">
+        <h1 className="text-xl font-bold">스크리닝 이력</h1>
+        <p className="text-xs text-muted-foreground">
+          실행별 보존 기록과 과거 일별 대표 기록 · 최근 90개 실행/날짜 조회
+        </p>
+      </header>
+      <div className="mb-4 flex flex-wrap gap-2 text-sm">
+        <select
+          aria-label="시장"
+          value={market}
+          onChange={(e) => {
+            setMarket(e.target.value);
+            setPage(0);
+          }}
+        >
+          {["ALL", "KOSPI", "KOSDAQ", "ETF", "US"].map((v) => (
+            <option key={v} value={v}>
+              {v === "ALL" ? "전체 시장" : v}
+            </option>
+          ))}
+        </select>
+        <select aria-label="전략 버전" value={version} onChange={(e) => setVersion(e.target.value)}>
+          <option value="ALL">전체 전략 버전</option>
+          {[...new Set((q.data ?? []).map((s) => s.strategyVersion ?? "과거 버전 미기록"))].map(
+            (v) => (
+              <option key={v}>{v}</option>
+            ),
+          )}
+        </select>
+        <input
+          aria-label="기준일"
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+        />
+        <input
+          aria-label="종목 검색"
+          placeholder="종목명·코드 검색"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(0);
+          }}
+        />
       </div>
-
-      {snapshots.length === 0 ? (
-        <section className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
-          <p className="text-[13px] text-muted-foreground">
-            저장된 이력이 없습니다. 대시보드에서 스크리닝을 실행하면 자료 기준일별 결과가 자동
-            저장됩니다.
-          </p>
-          <Link to="/" className="mt-3 inline-block text-[12px] text-primary hover:underline">
-            대시보드로 이동
-          </Link>
-        </section>
+      {q.isPending ? (
+        <p>이력 불러오는 중…</p>
+      ) : q.error ? (
+        <div role="alert">
+          {q.error.message}
+          <button onClick={() => void q.refetch()}>다시 시도</button>
+        </div>
+      ) : !selected ? (
+        <p>선택한 조건의 기록이 없습니다.</p>
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
-          <section className="rounded-lg border border-border bg-card p-3">
-            <h2 className="mb-2 text-sm font-semibold">자료 기준일</h2>
-            <ul className="space-y-1">
-              {snapshots.map((s) => {
-                const isActive = selected?.date === s.date;
-                return (
-                  <li key={s.date} className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedDate(s.date)}
-                      className={`num flex-1 rounded px-2 py-1.5 text-left text-[12px] ${
-                        isActive ? "bg-primary/15 font-semibold text-primary" : "hover:bg-muted"
-                      }`}
-                    >
-                      {s.asOfDate}
-                      <span className="ml-1 text-[10px] text-muted-foreground">
-                        {s.totalCount}종목 · A {s.gradeACount}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`${s.date} 삭제`}
-                      onClick={() => remove(s.date)}
-                      className="rounded p-1 text-muted-foreground hover:text-down"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-
-          {selected ? (
-            <div className="space-y-4">
-              <section className="rounded-lg border border-border bg-card p-4">
-                <h2 className="mb-2 text-sm font-semibold">{selected.asOfDate} 스크리닝 요약</h2>
-                <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
-                  {[
-                    ["자료 기준일", selected.asOfDate],
-                    ["자료 기준시각", "일별 자료 · 정확한 시각 미제공"],
-                    [
-                      "원천자료 등록 (KST)",
-                      selected.sourceRegisteredAt
-                        ? formatKstDateTime(selected.sourceRegisteredAt)
-                        : "기록 없음",
-                    ],
-                    ["스크리닝 실행 (KST)", formatKstDateTime(selected.savedAt)],
-                    ["시장 게이트", selected.marketGateStatus],
-                    ["전체 분석 종목", formatCount(selected.totalCount)],
-                    ["Universe 통과", formatCount(selected.passedCount)],
-                    [
-                      "판단 보류",
-                      formatCount(
-                        selected.entries.filter((entry) => entry.hardFilterStatus === "PENDING")
-                          .length,
-                      ),
-                    ],
-                    ["A등급 / B등급", `${selected.gradeACount} / ${selected.gradeBCount}`],
-                  ].map(([label, value]) => (
-                    <div
-                      key={label}
-                      className="flex items-baseline justify-between gap-2 border-b border-border py-1.5"
-                    >
-                      <span className="text-[12px] text-muted-foreground">{label}</span>
-                      <span className="num text-[13px] font-medium">{value}</span>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <section className="rounded-lg border border-border bg-card p-4">
-                  <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-up">
-                    <ArrowUpRight className="size-4" />
-                    KOSPI / KOSDAQ 진입 준비 ({entryOnsets.length})
-                  </h3>
-                  <p className="mb-2 text-[11px] text-muted-foreground">
-                    저장된 KOSPI 하루 확인·RSAccel·시장국면 조건 통과와 KOSDAQ 8.0 Onset 신호입니다.
-                    KOSPI 원시 Onset과 과거 운영 기록은 현재 진입 준비로 집계하지 않습니다.
-                  </p>
-                  <EntryList entries={entryOnsets} empty="해당 종목 없음" />
-                </section>
-                <section className="rounded-lg border border-border bg-card p-4">
-                  <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-down">
-                    <ArrowDownRight className="size-4" />
-                    EXIT조건 달성 ({exitConditionMet.length})
-                  </h3>
-                  <p className="mb-2 text-[11px] text-muted-foreground">
-                    KOSPI 9.5점 상향돌파 또는 KOSDAQ 9.0점 상향 재돌파 / 3.0점 하향 이탈 Exit 조건을
-                    달성한 종목입니다.
-                  </p>
-                  <EntryList entries={exitConditionMet} empty="해당 종목 없음" />
-                </section>
-              </div>
-
-              <section className="rounded-lg border border-border bg-card p-4">
-                <h3 className="mb-1 text-sm font-semibold">
-                  KOSPI 원시 Onset · 하루 확인 기록 ({kospiAssessments.length})
-                </h3>
-                <p className="mb-3 text-[11px] text-muted-foreground">
-                  해당 날짜에 저장된 상태·Onset일·확인일을 표시합니다. 확인 기록이 없는 이전 이력은
-                  가격이나 RSAccel만으로 확인 완료를 추정하지 않습니다. 하락장·시장자료 미확인으로
-                  제외된 원시 Onset은 진입 신호가 아닙니다.
-                </p>
-                {kospiAssessments.length ? (
-                  <div className="divide-y divide-border">
-                    {kospiAssessments.map((entry) => (
-                      <div
-                        key={entry.symbol}
-                        className="flex flex-wrap items-start justify-between gap-2 py-2"
-                      >
-                        <Link
-                          to="/instrument/$symbol"
-                          params={{ symbol: entry.symbol }}
-                          className="text-xs font-medium hover:underline"
-                        >
-                          {entry.name}{" "}
-                          <span className="text-[10px] text-muted-foreground">{entry.symbol}</span>
-                        </Link>
-                        <div className="max-w-[520px] text-right">
-                          <KospiEntryDetails
-                            entry={entry.kospiEntry}
-                            showState
-                            entryJudgmentPending={entry.hardFilterStatus === "PENDING"}
-                          />
-                          <OnsetProfileDetails profile={entry.onsetProfile} compact />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-muted-foreground">저장된 KOSPI 확인 대상 없음</p>
-                )}
-              </section>
-
-              <TopEntriesTable
-                title={`주식 기술점수 TOP 50 (${stockTopEntries.length})`}
-                subtitle="주식은 10점 만점 기술점수를 기준으로 별도 정렬합니다."
-                entries={stockTopEntries}
-              />
-              <TopEntriesTable
-                title={`ETF 기술점수 TOP 50 (${etfTopEntries.length})`}
-                subtitle="ETF는 100점 만점 기술점수를 기준으로 별도 정렬합니다."
-                entries={etfTopEntries}
-              />
-            </div>
+        <div className="space-y-4">
+          <select
+            className="w-full rounded border p-2 text-xs"
+            aria-label="실행 기록"
+            value={selected.runId ?? selected.savedAt}
+            onChange={(e) => {
+              setRun(e.target.value);
+              setPage(0);
+            }}
+          >
+            {runs.map((s) => (
+              <option key={s.runId ?? s.savedAt} value={s.runId ?? s.savedAt}>
+                {s.asOfDate} · {s.market ?? "KR"} · {formatKstDateTime(s.savedAt)} ·{" "}
+                {s.runId ?? "과거 일별 대표"}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-muted-foreground">
+            기준일 {selected.asOfDate} · 전략 {selected.strategyVersion ?? "과거 버전 미기록"} ·
+            실행 ID {selected.runId ?? "미기록"} · {selected.runId ? "실제 분석" : "과거 저장시각"}{" "}
+            {formatKstDateTime(selected.savedAt)}
+          </p>
+          {detail.isPending ? (
+            <p>선택한 실행 불러오는 중…</p>
+          ) : detail.error ? (
+            <p role="alert">{detail.error.message}</p>
           ) : null}
+          <div className="overflow-auto rounded-lg border">
+            <table className="w-full min-w-[800px] text-xs">
+              <thead>
+                <tr className="border-b text-left">
+                  <th className="p-2">종목</th>
+                  <th>시장</th>
+                  <th>점수</th>
+                  <th>원신호</th>
+                  <th>확인·진입 준비</th>
+                  <th>청산 기록</th>
+                  <th>당시 상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.slice(currentPage * 50, (currentPage + 1) * 50).map((e) => (
+                  <tr key={e.symbol} className="border-b">
+                    <td className="p-2">
+                      <Link
+                        to="/history-instrument/$symbol"
+                        params={{ symbol: e.symbol }}
+                        search={{
+                          runId: selected.runId ?? "",
+                          date: selected.asOfDate,
+                          savedAt: selected.savedAt,
+                        }}
+                        className="text-primary hover:underline"
+                      >
+                        {e.name} · {e.symbol}
+                      </Link>
+                    </td>
+                    <td>{e.market ?? (e.instrumentType === "ETF" ? "ETF" : "미기록")}</td>
+                    <td>{e.technicalPoints ?? "미관측"}</td>
+                    <td>
+                      {e.kospi80Onset ||
+                      e.kosdaq80Onset ||
+                      e.evidence?.["rawOnset"] ||
+                      historyEtfEvidence(e)?.rawOnset
+                        ? "원신호"
+                        : "—"}
+                    </td>
+                    <td>
+                      {e.kospiEntry?.confirmationDate ??
+                        (isHistoryOperationalEntry(e, selected.asOfDate) ||
+                        historyEtfEvidence(e)?.entryState === "confirmed" ||
+                        e.evidence?.["a0Entry"] === true
+                          ? "진입 준비"
+                          : "—")}
+                    </td>
+                    <td>{e.exitSignal ?? "—"}</td>
+                    <td>{historyEntryStatus(e)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <button disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>
+              이전
+            </button>
+            <span>
+              {currentPage + 1} / {pages} · {entries.length}종목
+            </span>
+            <button disabled={currentPage + 1 >= pages} onClick={() => setPage(currentPage + 1)}>
+              다음
+            </button>
+          </div>
         </div>
       )}
     </AppShell>

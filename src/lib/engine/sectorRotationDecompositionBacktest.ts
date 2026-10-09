@@ -349,7 +349,8 @@ function rollingHigh(bars: DailyPrice[], window = 250, minimum = 60): number[] {
   let head = 0;
   for (let i = 0; i < bars.length; i++) {
     while (head < deque.length && deque[head]! < i - window + 1) head++;
-    while (deque.length > head && bars[deque[deque.length - 1]!]!.high <= bars[i]!.high) deque.pop();
+    while (deque.length > head && bars[deque[deque.length - 1]!]!.high <= bars[i]!.high)
+      deque.pop();
     deque.push(i);
     if (i >= minimum - 1) out[i] = bars[deque[head]!]!.high;
     if (head > 256 && head * 2 > deque.length) {
@@ -409,8 +410,9 @@ function memberMetric(prepared: PreparedInstrument, date: string): MemberMetric 
     aboveMa20: ma20 === null ? null : bar.close > ma20,
     aboveMa60: ma60 === null ? null : bar.close > ma60,
     aboveMa120: ma120 === null ? null : bar.close > ma120,
-    maAligned: ma20 === null || ma60 === null || ma120 === null ? null : ma20 > ma60 && ma60 > ma120,
-    nearHigh: Number.isFinite(high) ? bar.close >= high * 0.95 : null,
+    maAligned:
+      ma20 === null || ma60 === null || ma120 === null ? null : ma20 > ma60 && ma60 > ma120,
+    nearHigh: Number.isFinite(high) ? bar.close >= high! * 0.95 : null,
     advancing: bar.close > prepared.bars[index - 1]!.close,
     foreign5: nullableWindowSum(prepared.foreignPrefix, prepared.foreignMissingPrefix, index, 5),
     institution5: nullableWindowSum(
@@ -487,7 +489,8 @@ function buildRawSectorDay(
     if (!allowed.has(code)) continue;
     const metric = memberMetric(item, date);
     if (!metric) continue;
-    const aggregate = aggregates.get(code) ?? createAggregate(code, names.get(code) ?? item.instrument.sectorName);
+    const aggregate =
+      aggregates.get(code) ?? createAggregate(code, names.get(code) ?? item.instrument.sectorName);
     aggregate.memberCount++;
     if (finite(metric.r20)) aggregate.r20.push(metric.r20);
     if (finite(metric.r60)) aggregate.r60.push(metric.r60);
@@ -527,8 +530,14 @@ function buildRawSectorDay(
   const complete = sectorDefs
     .map((sector) => aggregates.get(sector.code))
     .filter((value): value is SectorAggregate => value !== undefined && value.memberCount > 0);
-  const total5 = complete.reduce((sum, aggregate) => sum + (aggregate.turnover5Count ? aggregate.turnover5 : 0), 0);
-  const total20 = complete.reduce((sum, aggregate) => sum + (aggregate.turnover20Count ? aggregate.turnover20 : 0), 0);
+  const total5 = complete.reduce(
+    (sum, aggregate) => sum + (aggregate.turnover5Count ? aggregate.turnover5 : 0),
+    0,
+  );
+  const total20 = complete.reduce(
+    (sum, aggregate) => sum + (aggregate.turnover20Count ? aggregate.turnover20 : 0),
+    0,
+  );
 
   return complete.map((aggregate) => {
     const eq20 = quantile(aggregate.r20, 50);
@@ -582,7 +591,10 @@ function averageRatios(values: Array<number | null>): number | null {
 
 function scoreLevel(raw: RawSectorDay[]): Array<Omit<LevelScore, "momentum" | "rotation">> {
   const sorted = (get: (row: RawSectorDay) => number | null) =>
-    raw.map(get).filter(finite).sort((a, b) => a - b);
+    raw
+      .map(get)
+      .filter(finite)
+      .sort((a, b) => a - b);
   const rs20s = sorted((row) => row.rs20);
   const rs60s = sorted((row) => row.rs60);
   const rs120s = sorted((row) => row.rs120);
@@ -683,8 +695,12 @@ function buildRankHistory(
       return {
         ...current,
         momentumParts: [
-          finite(current.price) && finite(previousRow?.price) ? current.price - previousRow.price : null,
-          finite(current.flow) && finite(previousRow?.flow) ? current.flow - previousRow.flow : null,
+          finite(current.price) && finite(previousRow?.price)
+            ? current.price - previousRow.price
+            : null,
+          finite(current.flow) && finite(previousRow?.flow)
+            ? current.flow - previousRow.flow
+            : null,
           current.turnoverShareDiff,
           finite(current.bothBuy5) && finite(previousRow?.bothBuy5)
             ? current.bothBuy5 - previousRow.bothBuy5
@@ -785,7 +801,7 @@ function strictTopEpisodes(
       previousMarketIndex = day.marketIndex;
     });
     if (current) {
-      current.rightCensored = true;
+      (current as Episode).rightCensored = true;
       episodes.push(current);
     }
   }
@@ -830,14 +846,17 @@ function bufferedTopEpisodes(
       previousMarketIndex = day.marketIndex;
     });
     if (current) {
-      current.rightCensored = true;
+      (current as Episode).rightCensored = true;
       episodes.push(current);
     }
   }
   return episodes;
 }
 
-function survival(episodes: Episode[], horizon: number): { eligible: number; survivors: number; rate: number | null } {
+function survival(
+  episodes: Episode[],
+  horizon: number,
+): { eligible: number; survivors: number; rate: number | null } {
   const entries = episodes.filter((episode) => !episode.leftCensored);
   let eligible = 0;
   let survivors = 0;
@@ -852,7 +871,11 @@ function survival(episodes: Episode[], horizon: number): { eligible: number; sur
   return { eligible, survivors, rate: eligible ? (survivors / eligible) * 100 : null };
 }
 
-function topSetRetention(history: DailyRanking[], kind: SectorScoreKind, horizon: number): TopSetRetentionStat {
+function topSetRetention(
+  history: DailyRanking[],
+  kind: SectorScoreKind,
+  horizon: number,
+): TopSetRetentionStat {
   const byIndex = new Map(history.map((day) => [day.marketIndex, day]));
   const retained: number[] = [];
   const rates: number[] = [];
@@ -905,7 +928,10 @@ function boundaryGap(history: DailyRanking[], kind: SectorScoreKind): BoundaryGa
   };
 }
 
-function topReentryGap(episodes: Episode[], sectorDefs: Array<{ code: string; name: string }>): EpisodeStats {
+function topReentryGap(
+  episodes: Episode[],
+  sectorDefs: Array<{ code: string; name: string }>,
+): EpisodeStats {
   const gaps: number[] = [];
   for (const sector of sectorDefs) {
     const starts = episodes
@@ -966,10 +992,14 @@ function performanceForSignals(
       observations: returns.length,
       avgReturn: mean(returns),
       medianReturn: quantile(returns, 50),
-      winRate: returns.length ? (returns.filter((value) => value > 0).length / returns.length) * 100 : null,
+      winRate: returns.length
+        ? (returns.filter((value) => value > 0).length / returns.length) * 100
+        : null,
       avgExcessReturn: mean(excess),
       medianExcessReturn: quantile(excess, 50),
-      excessWinRate: excess.length ? (excess.filter((value) => value > 0).length / excess.length) * 100 : null,
+      excessWinRate: excess.length
+        ? (excess.filter((value) => value > 0).length / excess.length) * 100
+        : null,
     };
   });
 }
@@ -1027,7 +1057,9 @@ function correlation(xs: number[], ys: number[]): number | null {
 }
 
 function ranks(values: number[]): number[] {
-  const indexed = values.map((value, index) => ({ value, index })).sort((a, b) => a.value - b.value);
+  const indexed = values
+    .map((value, index) => ({ value, index }))
+    .sort((a, b) => a.value - b.value);
   const out = new Array<number>(values.length);
   let i = 0;
   while (i < indexed.length) {
@@ -1108,7 +1140,7 @@ function scoreBandEpisodes(
       previousMarketIndex = day.marketIndex;
     });
     if (current) {
-      current.rightCensored = true;
+      (current as Episode).rightCensored = true;
       episodes.push(current);
     }
   }
@@ -1119,7 +1151,12 @@ function signalsForBucket(
   history: DailyRanking[],
   kind: SectorScoreKind,
   bucket: ScoreBucketDefinition,
-): { stateSignals: SignalRecord[]; entrySignals: SignalRecord[]; top4Count: number; sectors: Set<string> } {
+): {
+  stateSignals: SignalRecord[];
+  entrySignals: SignalRecord[];
+  top4Count: number;
+  sectors: Set<string>;
+} {
   const stateSignals: SignalRecord[] = [];
   const entrySignals: SignalRecord[] = [];
   const sectors = new Set<string>();
@@ -1132,7 +1169,12 @@ function signalsForBucket(
         : new Map<string, RankedSector>();
     for (const row of day.byKind[kind]) {
       if (!scoreInBucket(row.score, bucket)) continue;
-      const signal = { sectorCode: row.sectorCode, date: day.date, marketIndex: day.marketIndex, score: row.score };
+      const signal = {
+        sectorCode: row.sectorCode,
+        date: day.date,
+        marketIndex: day.marketIndex,
+        score: row.score,
+      };
       stateSignals.push(signal);
       sectors.add(row.sectorCode);
       if (row.rank <= TOP_MAX_RANK) top4Count++;
@@ -1197,9 +1239,9 @@ function flowConfirmation(history: DailyRanking[]): FlowConfirmationStat {
     const previousTop =
       previousDay && day.marketIndex === previousDay.marketIndex + 1
         ? new Set(
-            previousDay.byKind.FLOW
-              .filter((row) => row.rank <= TOP_MAX_RANK)
-              .map((row) => row.sectorCode),
+            previousDay.byKind.FLOW.filter((row) => row.rank <= TOP_MAX_RANK).map(
+              (row) => row.sectorCode,
+            ),
           )
         : new Set<string>();
     for (const row of day.byKind.FLOW.filter((item) => item.rank <= TOP_MAX_RANK)) {
@@ -1209,7 +1251,11 @@ function flowConfirmation(history: DailyRanking[]): FlowConfirmationStat {
           : null;
       const positiveCombined = finite(combined) && combined > 0;
       const positiveShare = row.turnoverShareDiff > 0;
-      const bothPositive = finite(row.foreign5) && finite(row.institution5) && row.foreign5 > 0 && row.institution5 > 0;
+      const bothPositive =
+        finite(row.foreign5) &&
+        finite(row.institution5) &&
+        row.foreign5 > 0 &&
+        row.institution5 > 0;
       top4SectorDays++;
       if (positiveCombined) combinedNetPositive++;
       if (positiveCombined && positiveShare) combinedNetAndSharePositive++;
@@ -1285,17 +1331,14 @@ function familyDiagnostic(
       topSetRetention(history, kind, horizon),
     ),
     boundaryGap: boundaryGap(history, kind),
-    scoreForwardCorrelations: scoreForwardCorrelations(
-      history,
-      kind,
-      preparedBySector,
-      kospiBars,
-    ),
+    scoreForwardCorrelations: scoreForwardCorrelations(history, kind, preparedBySector, kospiBars),
     scoreBands: scoreBandDiagnostics(history, kind, sectorDefs, preparedBySector, kospiBars),
   };
 }
 
-export function runSectorRotationDecompositionBacktest(input: MarketDataset): SectorRotationDecompositionResult | null {
+export function runSectorRotationDecompositionBacktest(
+  input: MarketDataset,
+): SectorRotationDecompositionResult | null {
   const dataset = buildFullUniverseSectorDataset(input);
   const kospi = dataset.indexSeries.find((series) => series.indexCode === "KOSPI");
   if (!kospi || kospi.bars.length <= MIN_LEVEL_INDEX + MOMENTUM_LOOKBACK) return null;
@@ -1306,14 +1349,16 @@ export function runSectorRotationDecompositionBacktest(input: MarketDataset): Se
       .map((instrument) => instrument.sectorCode),
   );
   const sectorDefs = THEME_SECTORS.filter(
-    (sector) => sector.code !== "MARKET_IDX" && sector.code !== "ETC" && availableCodes.has(sector.code),
+    (sector) =>
+      sector.code !== "MARKET_IDX" && sector.code !== "ETC" && availableCodes.has(sector.code),
   );
   if (sectorDefs.length === 0) return null;
 
   const prepared = dataset.instruments
     .filter(
       (instrument) =>
-        instrument.instrumentType === "STOCK" && sectorDefs.some((sector) => sector.code === instrument.sectorCode),
+        instrument.instrumentType === "STOCK" &&
+        sectorDefs.some((sector) => sector.code === instrument.sectorCode),
     )
     .map((instrument) => prepareInstrument(instrument, dataset.bars[instrument.symbol] ?? []))
     .filter((item) => item.bars.length > 1);

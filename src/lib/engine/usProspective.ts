@@ -39,6 +39,8 @@ export interface UsProspectivePreviousState {
 }
 
 export interface UsProspectiveRow extends UsProspectiveInputRow {
+  previousCoreRank?: number | null;
+  previousCoreDate?: string | null;
   ret120Rank: number | null;
   ret252Rank: number | null;
   coreScore: number | null;
@@ -150,8 +152,24 @@ export function parseUsProspectiveCsv(text: string): UsProspectiveInputRow[] {
   const missing = required.filter((key) => !idx.has(key));
   if (missing.length > 0) throw new Error(`US 스크리닝 CSV 필수 열 누락: ${missing.join(", ")}`);
 
-  return lines.slice(1).flatMap((line) => {
-    const c = splitCsvLine(line);
+  // Same normalization contract as KR daily bars: later non-empty observations win.
+  // Merge raw cells before numeric/boolean defaults, so an absent value cannot erase evidence.
+  const selected = new Map<string, string[]>();
+  for (const line of lines.slice(1)) {
+    const cells = splitCsvLine(line);
+    const symbol = (v(cells, "symbol") ?? "").trim().toUpperCase();
+    const date = (v(cells, "date") ?? "").trim().slice(0, 10);
+    if (!symbol || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    const key = `${symbol}|${date}`,
+      previous = selected.get(key);
+    selected.set(
+      key,
+      previous
+        ? header.map((_, index) => (cells[index]?.trim() ? cells[index]! : (previous[index] ?? "")))
+        : cells,
+    );
+  }
+  return [...selected.values()].flatMap((c) => {
     const symbol = (v(c, "symbol") ?? "").trim().toUpperCase();
     const date = (v(c, "date") ?? "").trim().slice(0, 10);
     if (!symbol || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
@@ -332,6 +350,9 @@ export function runUsProspectiveAnalysis(
       ret252Rank: rankOf(r252, row.symbol),
       coreScore: coreScore.get(row.symbol) ?? null,
       coreRank: core,
+      ...(date >= "2026-10-12"
+        ? { previousCoreRank: prior ?? null, previousCoreDate: previous.lastDate ?? null }
+        : {}),
       betaRank: b,
       tkRank,
       relvolRank: rv,

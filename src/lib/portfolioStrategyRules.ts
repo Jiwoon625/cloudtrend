@@ -94,6 +94,7 @@ export function nextConfirmedEntry(
   bars: DailyPrice[],
   confirmationDate: string,
   marketDates: string[],
+  carry = confirmationDate >= "2026-10-12",
 ): EntryExecution {
   const byDate = new Map(bars.map((bar) => [bar.tradeDate, bar]));
   const dates = [...new Set([...marketDates, ...byDate.keys()])]
@@ -101,6 +102,17 @@ export function nextConfirmedEntry(
     .sort();
   for (const date of dates) {
     const bar = byDate.get(date);
+    if (
+      carry &&
+      (!bar ||
+        bar.volumeObserved === false ||
+        bar.openObserved === false ||
+        !Number.isFinite(bar.volume) ||
+        bar.volume <= 0 ||
+        !Number.isFinite(bar.open) ||
+        bar.open <= 0)
+    )
+      continue;
     if (!bar)
       return { bar: null, state: "unobservable", reason: `가격 관측 불가 · ${date} 자료 누락` };
     if (
@@ -132,7 +144,32 @@ export function nextKospiConfirmedEntry(
   marketDates: string[],
   gates: Record<string, KospiMarketGateEvidence> = {},
 ): EntryExecution {
-  const execution = nextConfirmedEntry(bars, entry.confirmationDate ?? entry.date, marketDates);
+  let execution = nextConfirmedEntry(bars, entry.confirmationDate ?? entry.date, marketDates);
+  if (entry.date >= "2026-10-12") {
+    while (execution.bar) {
+      const previousDate = [...new Set(marketDates)]
+        .filter((date) => date < execution.bar!.tradeDate)
+        .sort()
+        .at(-1);
+      const gate = previousDate
+        ? (gates[previousDate] ??
+          (entry.marketGate?.confirmation?.date === previousDate
+            ? entry.marketGate.confirmation
+            : undefined))
+        : undefined;
+      if (
+        gate &&
+        !gate.incomplete &&
+        gate.evaluatedCount === 4 &&
+        gate.issues.length === 0 &&
+        ["RISK_ON", "NEUTRAL"].includes(gate.status)
+      )
+        break;
+      execution = nextConfirmedEntry(bars, execution.bar.tradeDate, marketDates, true);
+    }
+    if (!execution.bar)
+      return { ...execution, reason: "미체결 이월 · 거래량·시가·체결 전 시장국면 재확인" };
+  }
   if (execution.state === "unobservable") return execution;
   const dates = [...new Set(marketDates)].sort();
   const priorDate = execution.bar
@@ -248,7 +285,46 @@ export function deriveExitPlan(
   snapshots: ScreeningSnapshot[],
   bars: DailyPrice[],
   latestDate: string,
+  healthyMarketDates?: string[],
+  marketDates: string[] = healthyMarketDates ?? [],
 ): ExitPlan | null {
+  const unified = healthyMarketDates !== undefined;
+  const tradable = (bar: DailyPrice) =>
+    bar.open > 0 &&
+    Number.isFinite(bar.open) &&
+    bar.openObserved !== false &&
+    bar.volume > 0 &&
+    Number.isFinite(bar.volume) &&
+    bar.volumeObserved !== false;
+  let exceptionPlan: ExitPlan | null = null;
+  if (unified) {
+    const byDate = new Map(bars.map((bar) => [bar.tradeDate, bar]));
+    const dates = [...new Set(healthyMarketDates)]
+      .filter((date) => date > trade.entryDate && date <= latestDate)
+      .sort();
+    for (const date of dates) {
+      const bar = byDate.get(date);
+      if (bar && bar.volumeObserved !== false && Number.isFinite(bar.volume) && bar.volume > 0)
+        continue;
+      // Recognition is today, with the explicitly approved previous market-session open as model price.
+      // Never backdate proceeds or label this as an actual exchange fill.
+      const priorDate = [...new Set(marketDates)]
+        .filter((day) => day < date)
+        .sort()
+        .at(-1);
+      const prior = priorDate ? byDate.get(priorDate) : undefined;
+      if (!prior || prior.openObserved === false || !Number.isFinite(prior.open) || prior.open <= 0)
+        continue;
+      exceptionPlan = {
+        signalDate: date,
+        exitDate: date,
+        exitPrice: prior.open,
+        reason: `모델 가정 청산 · ${bar ? "거래량 0/미관측" : "종목 자료 누락"} · 가격 기준 ${prior.tradeDate} 시가`,
+        timing: "CLOSE",
+      };
+      break;
+    }
+  }
   let scorePlan: ExitPlan | null = null;
   for (const snapshot of snapshots) {
     if (snapshot.asOfDate < trade.entryDate || snapshot.asOfDate > latestDate) continue;
@@ -256,7 +332,9 @@ export function deriveExitPlan(
     if (!entry) continue;
     const signal = operationalExit(entry, trade.market, true);
     if (!signal) continue;
-    const execution = firstBarAfter(bars, snapshot.asOfDate);
+    const execution = unified
+      ? bars.find((bar) => bar.tradeDate > snapshot.asOfDate && tradable(bar))
+      : firstBarAfter(bars, snapshot.asOfDate);
     if (!execution || execution.tradeDate > latestDate || execution.open <= 0) continue;
     scorePlan = {
       signalDate: snapshot.asOfDate,
@@ -282,17 +360,25 @@ export function deriveExitPlan(
             1
         ]
       : undefined;
+  const timeExecution =
+    unified && timeBar && !tradable(timeBar)
+      ? bars.find((bar) => bar.tradeDate > timeBar.tradeDate && tradable(bar))
+      : timeBar;
   const timePlan: ExitPlan | null =
-    timeBar && timeBar.tradeDate <= latestDate && timeBar.close > 0
+    timeExecution && timeExecution.tradeDate <= latestDate && timeExecution.close > 0
       ? {
           signalDate: null,
-          exitDate: timeBar.tradeDate,
-          exitPrice: timeBar.close,
+          exitDate: timeExecution.tradeDate,
+          exitPrice: timeExecution === timeBar ? timeExecution.close : timeExecution.open,
           reason: "60거래일 만기",
-          timing: "CLOSE",
+          timing: timeExecution === timeBar ? "CLOSE" : "OPEN",
         }
       : null;
 
+  if (exceptionPlan)
+    return [exceptionPlan, scorePlan, timePlan]
+      .filter((p): p is ExitPlan => !!p)
+      .sort((a, b) => a.exitDate.localeCompare(b.exitDate) || (a.timing === "OPEN" ? -1 : 1))[0]!;
   if (!scorePlan) return timePlan;
   if (!timePlan) return scorePlan;
   if (scorePlan.exitDate < timePlan.exitDate) return scorePlan;

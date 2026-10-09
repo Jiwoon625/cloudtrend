@@ -1,3 +1,4 @@
+import { isHeldExit } from "./statusDisplay";
 import type { ScreeningRow } from "./engine/pipeline";
 import { isOperationalEntry } from "./engine/operationalStrategy";
 import { entrySuppressionReason, type DomesticPositionContext } from "./positionSignalContext";
@@ -35,7 +36,7 @@ export function getCompactStockStatus(
       tone: "warn",
     };
   if (suppression === "held") {
-    if (a.exit.startsWith("보유 시 기술청산 조건 충족"))
+    if (isHeldExit(row, context))
       return {
         primary: "보유 · 청산 조건 충족",
         secondary: a.exit.split(" · ")[1]!,
@@ -82,7 +83,7 @@ export function getCompactStockStatus(
       tone: "positive",
     };
   if (row.kospiEntry?.state === "confirmed" && row.kospiEntry.date !== asOfDate)
-    return { primary: "기한 지난 확인 · 진입 제외", secondary: "새 Onset 필요", tone: "normal" };
+    return { primary: "기한 지난 확인 · 진입 제외", secondary: "새 원신호 필요", tone: "normal" };
   if (entry?.state === "pending")
     return { primary: `${prefix}하루 확인 대기`, secondary: "다음 거래일 종가 확인", tone: "warn" };
   if (entry?.state === "unobservable" || a.score === null || a.rawOnset === null)

@@ -233,7 +233,11 @@ export async function runWebScreeningForUser(
       decisionAt: screening.createdAt,
     });
 
-    const snapshot = buildSnapshot(analysis, latestSourceRegistration(sources, analysis.asOfDate));
+    const snapshot = buildSnapshot(
+      analysis,
+      latestSourceRegistration(sources, analysis.asOfDate),
+      screening.publicationId,
+    );
     await persistScreeningSnapshot(client, userId, snapshot);
     const portfolioRefresh = await refreshPortfolioAfterScreening(client, userId, {
       sources,

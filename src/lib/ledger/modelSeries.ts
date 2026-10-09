@@ -18,6 +18,10 @@ import type { UsProspectiveAnalysis } from "../engine/usProspective";
 
 /** Additive comparison contracts only. No existing engine or historical book is migrated. */
 export const ADOPTED_SERIES_VERSION = "adopted-shadow-2026-10-05-v1";
+export const RESTART_SERIES_VERSION = "adopted-shadow-2026-10-12-v1";
+export const RESTART_ACCOUNTING_START = "2026-10-12";
+export const activeSeriesVersion = (date: string) =>
+  date >= RESTART_ACCOUNTING_START ? RESTART_SERIES_VERSION : ADOPTED_SERIES_VERSION;
 export const MODEL_ACCOUNTING_START = "2026-10-05";
 export const MODEL_INITIAL_KRW = "100000000";
 export const MODEL_ROUND_TRIP_COST = "0.003";
@@ -87,12 +91,25 @@ export interface AdoptedSeriesPolicy {
   enginePolicyRole?: "HISTORICAL_SIGNAL_STRATEGY_BASE";
   /** Separate prospective allocation override; underlying selection/exit configs are unchanged. */
   usAllocationPolicy?: UsFixedSlotAllocationPolicy;
+  executionConsistency?: typeof RESTART_EXECUTION_CONTRACT;
 }
+export const RESTART_EXECUTION_CONTRACT = Object.freeze({
+  version: "kr-common-execution-20261012-v1",
+  duplicatePrices: "LATER_NONEMPTY_FIELDS",
+  quantity: "INTEGER_BUDGET_INCLUDING_COST_AND_CASH",
+  money: "FIXED_DECIMAL_8",
+  krEntry: "POSITIVE_OBSERVED_VOLUME_AND_OPEN",
+  missingHeld: "PREVIOUS_MARKET_SESSION_OPEN_RECOGNIZED_CURRENT_CLOSE",
+  pendingOrders: "CARRY_UNTIL_FILLED",
+  h60: "SYMBOL_PRICE_OBSERVATION_60",
+  kospiConfirmation: "NEW_UP95_CROSS_EXCLUDED_RS_POSITIVE_ONLY_BEAR_ORIGIN",
+  opening: "CASH_ONLY_NO_PRESTART_SIGNALS",
+} as const);
 export interface FrozenModelSeries {
   book: "MODEL";
   bookId: string;
-  version: typeof ADOPTED_SERIES_VERSION;
-  accountingStartDate: typeof MODEL_ACCOUNTING_START;
+  version: typeof ADOPTED_SERIES_VERSION | typeof RESTART_SERIES_VERSION;
+  accountingStartDate: typeof MODEL_ACCOUNTING_START | typeof RESTART_ACCOUNTING_START;
   initialKrw: typeof MODEL_INITIAL_KRW;
   roundTripCost: typeof MODEL_ROUND_TRIP_COST;
   oneWayCost: typeof MODEL_ONE_WAY_COST;
@@ -317,6 +334,85 @@ export async function freezeAdoptedSeries(input: {
   }
   return series;
 }
+/** Separate approved contract. Never changes the beta registry or imports its positions/orders. */
+export async function freezeRestartSeries(input: {
+  kind: AdoptedSeriesKind;
+  frozenAt: string;
+  codeHash: string;
+  sourceHash: string;
+  existing?: FrozenModelSeries;
+}): Promise<FrozenModelSeries> {
+  assertHash(input.codeHash);
+  assertHash(input.sourceHash);
+  if (timestamp(input.frozenAt) >= Date.parse("2026-10-12T00:00:00Z"))
+    throw new Error("Restart contract must be frozen before start");
+  const evidence: InitialFxEvidence = {
+    base: "USD",
+    quote: "KRW",
+    rate: "1339.2",
+    publishedDate: "2026-10-08",
+    publishedAt: null,
+    rateType: "사용자 지정 기준환율",
+    sourceUrl: "",
+    evidenceId: "owner-approved-20261009-usdkrw-1339.2",
+    verifiedAt: input.frozenAt,
+    verified: true,
+  };
+  const usd =
+    (divide(decimal(MODEL_INITIAL_KRW), decimal(evidence.rate)) / decimal("0.01")) *
+    decimal("0.01");
+  const converted = multiply(usd, decimal(evidence.rate));
+  const fx: FxOpeningConversion | null = isAdoptedUsSeriesKind(input.kind)
+    ? {
+        evidence,
+        rounding: "FLOOR_USD_CENTS_KEEP_KRW_RESIDUAL",
+        usdCash: format(usd),
+        convertedKrw: format(converted),
+        residualKrw: format(decimal(MODEL_INITIAL_KRW) - converted),
+      }
+    : null;
+  const policy = policyFor(input.kind);
+  policy.executionConsistency = RESTART_EXECUTION_CONTRACT;
+  policy.enginePolicyRole = "HISTORICAL_SIGNAL_STRATEGY_BASE";
+  if (fx) policy.usAllocationPolicy = usFixedSlotAllocationPolicy(fx.usdCash);
+  // US engine configuration remains the historical signal base; the contract version fixes execution.
+  if (isAdoptedUsSeriesKind(input.kind)) policy.enginePolicy = policyFor(input.kind).enginePolicy;
+  const configHash = await hashSeriesValue({
+    policy,
+    accountingStartDate: RESTART_ACCOUNTING_START,
+    initialKrw: MODEL_INITIAL_KRW,
+    roundTripCost: MODEL_ROUND_TRIP_COST,
+    oneWayCost: MODEL_ONE_WAY_COST,
+    krFixedBudgetEndExclusive: "2027-10-12",
+    fx,
+  });
+  const body: Omit<FrozenModelSeries, "contractHash"> = {
+    book: "MODEL" as const,
+    bookId: `${RESTART_SERIES_VERSION}:${input.kind}`,
+    version: RESTART_SERIES_VERSION,
+    accountingStartDate: RESTART_ACCOUNTING_START,
+    initialKrw: MODEL_INITIAL_KRW,
+    roundTripCost: MODEL_ROUND_TRIP_COST,
+    oneWayCost: MODEL_ONE_WAY_COST,
+    policy,
+    frozenAt: input.frozenAt,
+    codeHash: input.codeHash,
+    sourceHash: input.sourceHash,
+    configHash,
+    fx,
+  };
+  const series = freeze({ ...body, contractHash: await hashSeriesValue(body) });
+  if (input.existing) {
+    await verifyFrozenSeries(input.existing);
+    if (canonicalSeriesJson(input.existing) !== canonicalSeriesJson(series))
+      throw new Error(
+        "Existing series is immutable; changed restart contract requires a separately authorized version",
+      );
+    return input.existing;
+  }
+  return series;
+}
+
 export async function verifyFrozenSeries(series: FrozenModelSeries): Promise<void> {
   const { contractHash, ...body } = series;
   assertHash(contractHash);
@@ -325,10 +421,16 @@ export async function verifyFrozenSeries(series: FrozenModelSeries): Promise<voi
   assertHash(series.configHash);
   if (
     series.book !== "MODEL" ||
-    series.version !== ADOPTED_SERIES_VERSION ||
-    series.bookId !== `${ADOPTED_SERIES_VERSION}:${series.policy.kind}` ||
+    ![ADOPTED_SERIES_VERSION, RESTART_SERIES_VERSION].includes(series.version) ||
+    series.bookId !== `${series.version}:${series.policy.kind}` ||
     !(ADOPTED_SERIES_KINDS as readonly string[]).includes(series.policy.kind) ||
-    series.accountingStartDate !== MODEL_ACCOUNTING_START ||
+    series.accountingStartDate !==
+      (series.version === RESTART_SERIES_VERSION
+        ? RESTART_ACCOUNTING_START
+        : MODEL_ACCOUNTING_START) ||
+    (series.version === RESTART_SERIES_VERSION &&
+      canonicalSeriesJson(series.policy.executionConsistency) !==
+        canonicalSeriesJson(RESTART_EXECUTION_CONTRACT)) ||
     series.initialKrw !== MODEL_INITIAL_KRW ||
     series.roundTripCost !== MODEL_ROUND_TRIP_COST ||
     series.oneWayCost !== MODEL_ONE_WAY_COST ||
@@ -571,9 +673,13 @@ export function krInitialSlotBudget(series: FrozenModelSeries, date: string): st
   assertDate(date);
   if (series.policy.allocation !== "KR_INITIAL_CAPITAL_DIV_30_FIRST_YEAR")
     throw new Error("KR first-year sizing must not replace US quarterly or ETF volatility sizing");
-  if (date < series.accountingStartDate || date >= KR_FIXED_BUDGET_END_EXCLUSIVE)
+  if (
+    date < series.accountingStartDate ||
+    date >=
+      (series.version === RESTART_SERIES_VERSION ? "2027-10-12" : KR_FIXED_BUDGET_END_EXCLUSIVE)
+  )
     throw new Error("KR fixed-capital first-year boundary; later sizing is not specified");
-  return format(divide(decimal(series.initialKrw), decimal("30")));
+  return format(divide(decimal(series.initialKrw), decimal(String(series.policy.maxPositions))));
 }
 export function krSlotCapacity(
   series: FrozenModelSeries,

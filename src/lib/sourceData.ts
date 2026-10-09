@@ -761,7 +761,7 @@ function decodeText(bytes: Uint8Array) {
 
 function oversizedSourceValidationResult(input: {
   filename: string;
-  contentType?: string;
+  contentType?: string | undefined;
   originalSizeBytes: number;
 }): SourceValidationResult {
   const filename = input.filename.trim() || "source.csv";
@@ -794,7 +794,7 @@ function oversizedSourceValidationResult(input: {
 export async function validateSourceBytes(input: {
   bytes: Uint8Array;
   filename: string;
-  contentType?: string;
+  contentType?: string | undefined;
   onStage?: (stage: string) => void;
   streamingCsv?: boolean;
 }): Promise<SourceValidationResult> {

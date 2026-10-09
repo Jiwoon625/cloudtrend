@@ -554,7 +554,7 @@ export function StrategyValidationResults({
             </span>
           </div>
           <p className="mt-1 max-w-4xl text-[11px] leading-relaxed text-muted-foreground">
-            기술점수 배점은 1 / 1 / 1.5 / 1 / 0.5 / 2.5 / 2로 고정합니다. 매수는 70점 Onset, 하락
+            기술점수 배점은 1 / 1 / 1.5 / 1 / 0.5 / 2.5 / 2로 고정합니다. 매수는 70점 원신호, 하락
             청산은 30점 이탈, 최대 보유는 40D를 대표 규칙으로 두고 ↑90과 ↑80 두 전략을 비교합니다.
           </p>
         </div>
@@ -573,7 +573,7 @@ export function StrategyValidationResults({
 
       <div className="rounded-md border border-info/30 bg-info/5 p-3 text-[10px] leading-relaxed text-muted-foreground">
         <b className="text-foreground">↑90 전략의 거래 수가 ↑80보다 많을 수 있는 이유:</b> 현재 V6
-        정의는 70점 Onset 당일 점수가 이미 선택한 상승청산선 이상이면 진입하지 않습니다. 예를 들어
+        정의는 70점 원신호 당일 점수가 이미 선택한 상승청산선 이상이면 진입하지 않습니다. 예를 들어
         점수가 65→85로 뛰면 ↑80 전략은 신규진입을 건너뛰지만 ↑90 전략은 진입합니다. 따라서 표의
         “거래”는 80/90 도달 횟수가 아니라 각 규칙으로 실제 생성된 총 매매 횟수입니다.
       </div>
@@ -585,7 +585,7 @@ export function StrategyValidationResults({
       </div>
 
       <Panel
-        title="1. 70점 Onset 점수 변동폭별 성과"
+        title="1. 70점 원신호 점수 변동폭별 성과"
         note="점수 변동은 신호일 점수에서 직전 거래일 점수를 뺀 100점 환산 p입니다. 구간은 [0,5), [5,10), [10,20), [20,∞)로 중복 없이 나누며, 다음 거래일 시가 진입 후 대표 40D 청산 규칙의 실제 거래성과를 비교합니다."
       >
         <ScoreChangeTable rows={scoreChanges} />
@@ -652,7 +652,7 @@ export function StrategyValidationResults({
 
       <Panel
         title="5. 포트폴리오 성과 · 40D 검증"
-        note="70 Onset / ↓30을 고정하고 최대 보유 20·30·40·50D를 비교합니다. 매 거래일 활성 종목을 동일가중하며 신호가 없는 날은 현금으로 둡니다."
+        note="70 원신호 / ↓30을 고정하고 최대 보유 20·30·40·50D를 비교합니다. 매 거래일 활성 종목을 동일가중하며 신호가 없는 날은 현금으로 둡니다."
       >
         <PortfolioTable rows={portfolios} />
       </Panel>

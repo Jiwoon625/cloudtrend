@@ -122,7 +122,7 @@ describe("ETF available-evidence screen", () => {
         />,
       );
       const names = cells(html)
-        .filter((_, index) => index % 14 === 0)
+        .filter((_, index) => index % 12 === 0)
         .join(" ");
       expect(names.includes("계산 완료 ETF")).toBe(filter === "equity" || filter === "all");
       expect(names.includes("확정 데이터 부적격 ETF")).toBe(
@@ -170,7 +170,8 @@ describe("ETF available-evidence screen", () => {
     expect(values[8]).toBe("미확인");
     expect(values[9]).toBe("20%");
     expect(values[10]).toBe("미확인");
-    expect(values[12]).toBe("—");
+    expect(values).toHaveLength(12);
+    expect(html).not.toContain("주문가격");
     expect(html).not.toContain("신규 신호 1건");
     expect(input).toEqual(before);
   });

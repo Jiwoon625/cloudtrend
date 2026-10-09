@@ -19,6 +19,7 @@ import { isKrOfficialShadowDecision } from "./krShadowDecision";
 
 /** An opt-in MODEL executor. It has no persistence, scheduler, broker, or real-holdings access. */
 export interface EtfShadowPrice {
+  volume?: number | null;
   asOfDate: string;
   availableAt: string;
   sourceHash: SeriesHash;
@@ -46,6 +47,7 @@ export interface EtfShadowPosition {
   /** Includes the entry fee; it is never reset by a new closing mark. */
   costBasis: string;
   mark: EtfShadowMark | null;
+  previousOpen?: EtfShadowMark | null;
 }
 export interface EtfShadowPendingEntry {
   symbol: string;
@@ -112,7 +114,7 @@ export interface EtfShadowFill {
   signalDate: string;
   signalSourceHash: SeriesHash;
   originDate: string | null;
-  reason: "CONFIRM1" | "MA60";
+  reason: "CONFIRM1" | "MA60" | "MODEL_UNOBSERVED";
   quantity: string;
   price: string;
   gross: string;
@@ -123,6 +125,7 @@ export interface EtfShadowFill {
   realizedPnl: string | null;
 }
 export type EtfShadowIssueCode =
+  | "ENTRY_CARRIED"
   | "ENTRY_EXPIRED_MISSING_OPEN"
   | "EXIT_DELAYED_MISSING_OPEN"
   | "SIGNAL_UNAVAILABLE_AT_OPEN"
@@ -288,9 +291,12 @@ function validatePrice(price: EtfShadowPrice | null) {
 function openPrice(
   price: EtfShadowPrice | null | undefined,
   input: EtfShadowSessionInput,
+  requireVolume = false,
 ): EtfShadowMark | null {
   return price &&
     price.price !== null &&
+    (!requireVolume ||
+      (typeof price.volume === "number" && Number.isFinite(price.volume) && price.volume > 0)) &&
     price.asOfDate === input.sessionDate &&
     marketDate(price.availableAt) === input.sessionDate &&
     time(price.availableAt) <= time(input.openAt)
@@ -377,7 +383,9 @@ function assertState(series: FrozenModelSeries, state: EtfAdoptedShadowState) {
     if (
       entry.originDate < series.accountingStartDate ||
       entry.originDate >= entry.confirmationDate ||
-      entry.confirmationDate !== state.lastSessionDate ||
+      (series.accountingStartDate === "2026-10-12"
+        ? !state.lastSessionDate || entry.confirmationDate > state.lastSessionDate
+        : entry.confirmationDate !== state.lastSessionDate) ||
       time(entry.availableAt) > time(state.lastCloseAt!) ||
       decimal(entry.entryWeight) <= 0n ||
       decimal(entry.entryWeight) > decimal("0.1") ||
@@ -459,8 +467,7 @@ export async function stepEtfAdoptedShadow(
   if (
     marketDate(input.openAt) !== input.sessionDate ||
     (!nextMorning && marketDate(input.closeAt) !== input.sessionDate) ||
-    (nextMorning &&
-      !isKrOfficialShadowDecision(input.sessionDate, input.closeAt, input.closeAt)) ||
+    (nextMorning && !isKrOfficialShadowDecision(input.sessionDate, input.closeAt, input.closeAt)) ||
     openAt >= closeAt ||
     (previous.lastCloseAt && openAt <= time(previous.lastCloseAt))
   )
@@ -516,11 +523,13 @@ export async function stepEtfAdoptedShadow(
   const issue = (symbol: string, code: EtfShadowIssueCode, phase: EtfShadowIssue["phase"]) =>
     issues.push({ symbol, code, phase });
   const sold = new Set<string>();
+  const unified = series.accountingStartDate === "2026-10-12";
+  const carriedEntries: EtfShadowPendingEntry[] = [];
 
   // A known MA60 liquidation may wait for a real open. No inferred or stale-price fills.
   for (const exit of [...previous.pendingExits].sort((a, b) => a.symbol.localeCompare(b.symbol))) {
     const position = positions.find((held) => held.symbol === exit.symbol)!;
-    const price = openPrice(prices.get(exit.symbol)?.open, input);
+    const price = openPrice(prices.get(exit.symbol)?.open, input, unified);
     if (!price || time(exit.availableAt) > openAt) {
       issue(
         exit.symbol,
@@ -570,27 +579,51 @@ export async function stepEtfAdoptedShadow(
   for (const entry of entries) {
     if (positions.some((position) => position.symbol === entry.symbol) || sold.has(entry.symbol)) {
       issue(entry.symbol, "ALREADY_HELD", "OPEN");
+      if (unified && !positions.some((p) => p.symbol === entry.symbol) && !sold.has(entry.symbol)) {
+        carriedEntries.push({ ...entry });
+        issue(entry.symbol, "ENTRY_CARRIED", "OPEN");
+      }
       continue;
     }
     if (time(entry.availableAt) > openAt) {
       issue(entry.symbol, "SIGNAL_UNAVAILABLE_AT_OPEN", "OPEN");
+      if (unified && !positions.some((p) => p.symbol === entry.symbol) && !sold.has(entry.symbol)) {
+        carriedEntries.push({ ...entry });
+        issue(entry.symbol, "ENTRY_CARRIED", "OPEN");
+      }
       continue;
     }
     if (positions.length >= ETF_POLICY.maxPositions) {
       issue(entry.symbol, "ENTRY_EXPIRED_MAX_POSITIONS", "OPEN");
+      if (unified && !positions.some((p) => p.symbol === entry.symbol) && !sold.has(entry.symbol)) {
+        carriedEntries.push({ ...entry });
+        issue(entry.symbol, "ENTRY_CARRIED", "OPEN");
+      }
       continue;
     }
     if (previous.valuation.nav === null) {
       issue(entry.symbol, "ENTRY_EXPIRED_INCOMPLETE_PRIOR_NAV", "OPEN");
+      if (unified && !positions.some((p) => p.symbol === entry.symbol) && !sold.has(entry.symbol)) {
+        carriedEntries.push({ ...entry });
+        issue(entry.symbol, "ENTRY_CARRIED", "OPEN");
+      }
       continue;
     }
     if (previous.valuation.status !== "COMPLETE") {
       issue(entry.symbol, "ENTRY_EXPIRED_STALE_PRIOR_NAV", "OPEN");
+      if (unified && !positions.some((p) => p.symbol === entry.symbol) && !sold.has(entry.symbol)) {
+        carriedEntries.push({ ...entry });
+        issue(entry.symbol, "ENTRY_CARRIED", "OPEN");
+      }
       continue;
     }
-    const price = openPrice(prices.get(entry.symbol)?.open, input);
+    const price = openPrice(prices.get(entry.symbol)?.open, input, unified);
     if (!price) {
       issue(entry.symbol, "ENTRY_EXPIRED_MISSING_OPEN", "OPEN");
+      if (unified && !positions.some((p) => p.symbol === entry.symbol) && !sold.has(entry.symbol)) {
+        carriedEntries.push({ ...entry });
+        issue(entry.symbol, "ENTRY_CARRIED", "OPEN");
+      }
       continue;
     }
     const targetBudget = format(
@@ -599,6 +632,10 @@ export async function stepEtfAdoptedShadow(
     const quote = quoteModelBudget(targetBudget, format(cash), price.price);
     if (quote.quantity === "0") {
       issue(entry.symbol, "ENTRY_EXPIRED_INSUFFICIENT_BUDGET", "OPEN");
+      if (unified && !positions.some((p) => p.symbol === entry.symbol) && !sold.has(entry.symbol)) {
+        carriedEntries.push({ ...entry });
+        issue(entry.symbol, "ENTRY_CARRIED", "OPEN");
+      }
       continue;
     }
     cash = decimal(quote.remainingCash);
@@ -635,7 +672,7 @@ export async function stepEtfAdoptedShadow(
     });
   }
 
-  const pendingEntries: EtfShadowPendingEntry[] = [],
+  const pendingEntries: EtfShadowPendingEntry[] = carriedEntries,
     pendingConfirmations: EtfAdoptedShadowState["pendingConfirmations"] = [];
   const currentSignals = new Map<string, EtfShadowSignal>();
   for (const signal of input.closeSignals) {
@@ -734,6 +771,11 @@ export async function stepEtfAdoptedShadow(
       issue(signal.symbol, "SIGNAL_INVALID_CONFIRMATION", "CLOSE");
       continue;
     }
+    if (
+      pendingEntries.some((entry) => entry.symbol === signal.symbol) ||
+      positions.some((p) => p.symbol === signal.symbol)
+    )
+      continue;
     pendingEntries.push({
       symbol: signal.symbol,
       originDate: s.originDate,
@@ -744,7 +786,60 @@ export async function stepEtfAdoptedShadow(
       averageTradingValue20: s.averageTradingValue20,
     });
   }
+  // A day-end absence is recognized after open allocation; proceeds cannot fund earlier buys.
+  if (unified)
+    for (const position of [...positions]) {
+      const current = prices.get(position.symbol)?.open;
+      const liquidElsewhere = input.prices.some(
+        (row) =>
+          row.symbol !== position.symbol &&
+          typeof row.open?.volume === "number" &&
+          row.open.volume > 0,
+      );
+      const prior = position.previousOpen;
+      if (
+        (!current ||
+          typeof current.volume !== "number" ||
+          !Number.isFinite(current.volume) ||
+          current.volume <= 0) &&
+        liquidElsewhere &&
+        prior?.asOfDate === input.previousSessionDate
+      ) {
+        const gross = decimal(prior.price) * BigInt(position.quantity);
+        const scale = decimal("1"),
+          fee = (gross * decimal(series.oneWayCost) + scale - 1n) / scale;
+        const credit = gross - fee,
+          pnl = credit - decimal(position.costBasis);
+        cash += credit;
+        fees += fee;
+        realizedPnl += pnl;
+        fills.push({
+          symbol: position.symbol,
+          side: "SELL",
+          executionDate: input.sessionDate,
+          executionAt: input.closeAt,
+          priceAsOfDate: prior.asOfDate,
+          priceSourceHash: prior.sourceHash,
+          signalDate: input.sessionDate,
+          signalSourceHash: input.sourceHash,
+          originDate: null,
+          reason: "MODEL_UNOBSERVED",
+          quantity: position.quantity,
+          price: prior.price,
+          gross: format(gross),
+          fee: format(fee),
+          cashDelta: format(credit),
+          targetBudget: null,
+          budgetNavDate: null,
+          realizedPnl: format(pnl),
+        });
+        positions = positions.filter((p) => p.symbol !== position.symbol);
+        const index = pendingExits.findIndex((exit) => exit.symbol === position.symbol);
+        if (index >= 0) pendingExits.splice(index, 1);
+      }
+    }
   for (const position of positions) {
+    if (unified) position.previousOpen = openPrice(prices.get(position.symbol)?.open, input);
     if (!currentSignals.has(position.symbol))
       issue(position.symbol, "HELD_SIGNAL_MISSING", "CLOSE");
     const mark = prices.get(position.symbol)?.close;

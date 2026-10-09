@@ -25,6 +25,13 @@ export function shadowDatasetAsOf(raw: MarketDataset, date: string): MarketDatas
     bars: Object.fromEntries(
       Object.entries(raw.bars).map(([symbol, bars]) => [symbol, slice(bars)]),
     ),
+    ...(raw.observedBars
+      ? {
+          observedBars: Object.fromEntries(
+            Object.entries(raw.observedBars).map(([symbol, bars]) => [symbol, slice(bars)]),
+          ),
+        }
+      : {}),
     indexSeries: raw.indexSeries.map((s) => ({ ...s, bars: slice(s.bars) })),
     financials: Object.fromEntries(
       Object.entries(raw.financials).filter(([, facts]) => facts.sourceDate <= date),
@@ -87,7 +94,9 @@ export function buildKospiShadowSession(
   }
   const rows: KospiShadowRow[] = kospi.map((inst) => {
     const bars = ds.bars[inst.symbol] ?? [],
-      bar = bars.find((b) => b.tradeDate === date),
+      bar = ((date >= "2026-10-12" ? ds.observedBars?.[inst.symbol] : undefined) ?? bars).find(
+        (b) => b.tradeDate === date,
+      ),
       screen = latest.get(inst.symbol);
     const score =
       bar && positive(bar.close) && screen?.snapshot.tradeDate === date
@@ -98,9 +107,10 @@ export function buildKospiShadowSession(
       name: inst.name,
       sector: inst.sectorCode || "UNKNOWN",
       date,
-      open: bar?.open ?? null,
+      ...(date >= "2026-10-12" ? { priceObserved: !!bar } : {}),
+      open: bar?.openObserved !== false ? (bar?.open ?? null) : null,
       close: bar?.close ?? null,
-      volume: bar?.volume ?? null,
+      volume: bar?.volumeObserved !== false ? (bar?.volume ?? null) : null,
       score,
       priority: score === null ? null : (screen?.priority.points ?? null),
       rsAccel: kospiRelativeReturns(bars, benchmark[0]!.bars, sessions, date).rsAccel,

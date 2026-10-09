@@ -3,6 +3,7 @@ import { ETF_POLICY, type EtfStrategySnapshot } from "../engine/etfStrategy";
 import { decimal } from "./decimal";
 import {
   freezeAdoptedSeries,
+  freezeRestartSeries,
   type FrozenModelSeries,
   type ModelCalendar,
   type SeriesHash,
@@ -988,7 +989,6 @@ describe("ETF immutable journal run wrapper", () => {
   });
 });
 
-
 describe("ETF production next-morning decision window", () => {
   it("accepts a completed-session signal first available after the next-morning KRX refresh", async () => {
     const series = await create();
@@ -1064,4 +1064,86 @@ describe("ETF production next-morning decision window", () => {
       signalDate: "2026-10-07",
     });
   });
+});
+
+it("carries a new-series ETF entry over missing volume and models missing held data at the previous session open", async () => {
+  const series = await freezeRestartSeries({
+    kind: "ETF_V02",
+    frozenAt: "2026-10-09T00:00:00Z",
+    codeHash: hash("a"),
+    sourceHash: hash("b"),
+  });
+  const state = await initializeEtfAdoptedShadow(series);
+  const first = await stepEtfAdoptedShadow(
+    series,
+    state,
+    input(series, "2026-10-12", null, [signal("360750", "2026-10-12", "2026-10-08", "pending")]),
+  );
+  const second = await stepEtfAdoptedShadow(
+    series,
+    first.state,
+    input(series, "2026-10-13", "2026-10-12", [
+      signal("360750", "2026-10-13", "2026-10-12", "confirmed"),
+    ]),
+  );
+  const pending = await stepEtfAdoptedShadow(
+    series,
+    second.state,
+    input(
+      series,
+      "2026-10-14",
+      "2026-10-13",
+      [],
+      [
+        {
+          symbol: "360750",
+          open: price("2026-10-14", "10000"),
+          close: price("2026-10-14", "10000", "close"),
+        },
+      ],
+    ),
+  );
+  expect(pending.record.fills).toHaveLength(0);
+  expect(pending.state.pendingEntries).toHaveLength(1);
+  const bought = await stepEtfAdoptedShadow(
+    series,
+    pending.state,
+    input(
+      series,
+      "2026-10-15",
+      "2026-10-14",
+      [],
+      [
+        {
+          symbol: "360750",
+          open: { ...price("2026-10-15", "10000"), volume: 1000 },
+          close: price("2026-10-15", "10100", "close"),
+        },
+      ],
+    ),
+  );
+  expect(bought.record.fills[0]).toMatchObject({ side: "BUY", executionDate: "2026-10-15" });
+  const sold = await stepEtfAdoptedShadow(
+    series,
+    bought.state,
+    input(
+      series,
+      "2026-10-16",
+      "2026-10-15",
+      [],
+      [
+        {
+          symbol: "114800",
+          open: { ...price("2026-10-16", "20000"), volume: 1000 },
+          close: price("2026-10-16", "20000", "close"),
+        },
+      ],
+    ),
+  );
+  expect(sold.record.fills[0]).toMatchObject({
+    side: "SELL",
+    executionDate: "2026-10-16",
+    price: "10000",
+  });
+  expect(sold.state.positions).toHaveLength(0);
 });

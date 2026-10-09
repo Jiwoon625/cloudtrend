@@ -4,6 +4,8 @@ import {
   ADOPTED_SERIES_KINDS,
   ADOPTED_SERIES_VERSION,
   freezeAdoptedSeries,
+  freezeRestartSeries,
+  RESTART_SERIES_VERSION,
   hashSeriesValue,
   initializeModelSeries,
   verifyFrozenSeries,
@@ -13,10 +15,7 @@ import {
 } from "../src/lib/ledger/modelSeries";
 import { OCTOBER_CALENDAR_EVIDENCE } from "../src/lib/ledger/octoberShadowCalendar";
 import { DEFAULT_SCORING_CONFIG } from "../src/lib/engine/scoring";
-import {
-  adoptedShadowFrozenCodeHash,
-  shadowEngineManifest,
-} from "./october-shadow-code-manifest";
+import { adoptedShadowFrozenCodeHash, shadowEngineManifest } from "./october-shadow-code-manifest";
 import {
   octoberShadowStore,
   type OctoberShadowStore,
@@ -54,8 +53,35 @@ export async function planOctoberShadowInitialization(frozenAt = new Date().toIS
     openingStates: series.map(initializeModelSeries),
   };
 }
+/** Explicit fresh start: no beta positions, pending orders or originating signals. */
+export async function planRestartShadowInitialization(frozenAt = new Date().toISOString()) {
+  const { manifest, codeHash: runtimeCodeHash } = await shadowEngineManifest();
+  const codeHash = adoptedShadowFrozenCodeHash(runtimeCodeHash);
+  const sourceManifest = {
+    version: "october-shadow-opening-v2",
+    source: "AUTHORIZED_FRESH_CASH_ONLY",
+    calendarEvidence: OCTOBER_CALENDAR_EVIDENCE,
+    initialFx: { rate: "1339.2", publishedDate: "2026-10-08", source: "OWNER_APPROVED_20261009" },
+    scoring: DEFAULT_SCORING_CONFIG,
+  };
+  const sourceHash = await hashSeriesValue(sourceManifest);
+  const series = await Promise.all(
+    ADOPTED_SERIES_KINDS.map((kind) =>
+      freezeRestartSeries({ kind, frozenAt, codeHash, sourceHash }),
+    ),
+  );
+  return {
+    manifest,
+    runtimeCodeHash,
+    frozenCodeHash: codeHash,
+    sourceManifest,
+    series,
+    openingStates: series.map(initializeModelSeries),
+  };
+}
 export type OctoberShadowInitializationPlan = Awaited<
-  ReturnType<typeof planOctoberShadowInitialization>
+  | ReturnType<typeof planOctoberShadowInitialization>
+  | ReturnType<typeof planRestartShadowInitialization>
 >;
 
 /** The plan is intent, not evidence of the persisted freeze timestamps or contracts.
@@ -78,14 +104,22 @@ export async function applyOctoberShadowInitialization(
     if (existing) reusedBookIds.add(series.bookId);
     // Retries preserve each successfully persisted contract, including its original frozenAt.
     const candidate = existing
-      ? await freezeAdoptedSeries({
-          kind: series.policy.kind,
-          codeHash: series.codeHash,
-          sourceHash: series.sourceHash,
-          frozenAt: existing.frozenAt,
-          ...(series.fx ? { initialFx: VERIFIED_INITIAL_FX } : {}),
-          existing,
-        })
+      ? series.version === RESTART_SERIES_VERSION
+        ? await freezeRestartSeries({
+            kind: series.policy.kind,
+            codeHash: series.codeHash,
+            sourceHash: series.sourceHash,
+            frozenAt: existing.frozenAt,
+            existing,
+          })
+        : await freezeAdoptedSeries({
+            kind: series.policy.kind,
+            codeHash: series.codeHash,
+            sourceHash: series.sourceHash,
+            frozenAt: existing.frozenAt,
+            ...(series.fx ? { initialFx: VERIFIED_INITIAL_FX } : {}),
+            existing,
+          })
       : series;
     await store.insertSeries(candidate);
     expected.push(candidate);
@@ -101,7 +135,7 @@ export async function applyOctoberShadowInitialization(
   }
   return {
     artifact: "VERIFIED_REGISTRY_READBACK" as const,
-    version: ADOPTED_SERIES_VERSION,
+    version: plan.series[0]!.version,
     verifiedAt: new Date().toISOString(),
     planHash: await hashSeriesValue({ artifact: "INITIALIZATION_PLAN", ...plan }),
     series: verified,
@@ -117,8 +151,12 @@ export async function applyOctoberShadowInitialization(
 export async function runOctoberShadowInitialization(args = process.argv.slice(2)) {
   const output = args[args.indexOf("--output") + 1];
   if (!args.includes("--output") || !output)
-    throw new Error("Usage: --output <private-directory> [--apply --user <uuid>]");
-  const plan = await planOctoberShadowInitialization();
+    throw new Error(
+      "Usage: --output <private-directory> [--restart-20261012] [--apply --user <uuid>]",
+    );
+  const plan = args.includes("--restart-20261012")
+    ? await planRestartShadowInitialization()
+    : await planOctoberShadowInitialization();
   const folder = path.resolve(output);
   await mkdir(folder, { recursive: true, mode: 0o700 });
   const planPath = path.join(folder, "october-shadow-initialization.json");
@@ -141,7 +179,7 @@ export async function runOctoberShadowInitialization(args = process.argv.slice(2
   }
   console.log(
     JSON.stringify({
-      version: ADOPTED_SERIES_VERSION,
+      version: plan.series[0]!.version,
       initialized: args.includes("--apply"),
       series: plan.series.map((s: FrozenModelSeries) => s.policy.kind),
       sessionsInserted: 0,

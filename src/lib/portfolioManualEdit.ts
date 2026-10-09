@@ -55,36 +55,36 @@ export async function updatePortfolioEntryExecution(
   };
 
   if (shares === 0) {
-    patch.entry_status = `${baseStatus} · 미매수`;
-    patch.status = "CLOSED";
-    patch.current_status = "미매수 · P30 제외";
-    patch.holding_days = 0;
-    patch.mark_date = trade.entry_date;
-    patch.current_price = null;
-    patch.exit_signal_date = null;
-    patch.exit_date = trade.entry_date;
-    patch.exit_price = money(entryPrice);
-    patch.exit_reason = "미매수 · 실제 체결 0주";
-    patch.exit_fee = 0;
-    patch.realized_pnl = 0;
-    patch.realized_return = 0;
+    patch["entry_status"] = `${baseStatus} · 미매수`;
+    patch["status"] = "CLOSED";
+    patch["current_status"] = "미매수 · P30 제외";
+    patch["holding_days"] = 0;
+    patch["mark_date"] = trade.entry_date;
+    patch["current_price"] = null;
+    patch["exit_signal_date"] = null;
+    patch["exit_date"] = trade.entry_date;
+    patch["exit_price"] = money(entryPrice);
+    patch["exit_reason"] = "미매수 · 실제 체결 0주";
+    patch["exit_fee"] = 0;
+    patch["realized_pnl"] = 0;
+    patch["realized_return"] = 0;
   } else {
-    patch.entry_status = `${baseStatus} · 실제체결 수정`;
+    patch["entry_status"] = `${baseStatus} · 실제체결 수정`;
 
     const wasNoFill = String(trade.exit_reason ?? "").startsWith("미매수");
     if (wasNoFill) {
-      patch.status = "OPEN";
-      patch.current_status = "보유 · 실제체결 수정";
-      patch.holding_days = 1;
-      patch.mark_date = trade.entry_date;
-      patch.current_price = money(entryPrice);
-      patch.exit_signal_date = null;
-      patch.exit_date = null;
-      patch.exit_price = null;
-      patch.exit_reason = null;
-      patch.exit_fee = 0;
-      patch.realized_pnl = null;
-      patch.realized_return = null;
+      patch["status"] = "OPEN";
+      patch["current_status"] = "보유 · 실제체결 수정";
+      patch["holding_days"] = 1;
+      patch["mark_date"] = trade.entry_date;
+      patch["current_price"] = money(entryPrice);
+      patch["exit_signal_date"] = null;
+      patch["exit_date"] = null;
+      patch["exit_price"] = null;
+      patch["exit_reason"] = null;
+      patch["exit_fee"] = 0;
+      patch["realized_pnl"] = null;
+      patch["realized_return"] = null;
     } else if (trade.status === "CLOSED" && trade.exit_price !== null) {
       const exitPrice = Number(trade.exit_price);
       if (Number.isFinite(exitPrice) && exitPrice > 0) {
@@ -92,9 +92,9 @@ export async function updatePortfolioEntryExecution(
         const exitFee = money(exitGross * halfCost);
         const costBasis = buyAmount + entryFee;
         const realizedPnl = money(exitGross - exitFee - costBasis);
-        patch.exit_fee = exitFee;
-        patch.realized_pnl = realizedPnl;
-        patch.realized_return = costBasis > 0 ? rate((realizedPnl / costBasis) * 100) : 0;
+        patch["exit_fee"] = exitFee;
+        patch["realized_pnl"] = realizedPnl;
+        patch["realized_return"] = costBasis > 0 ? rate((realizedPnl / costBasis) * 100) : 0;
       }
     }
   }

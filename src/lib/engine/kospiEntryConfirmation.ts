@@ -17,6 +17,18 @@ export const KOSPI_ENTRY_POLICY = {
   entryScore: 8,
   upsideExitScore: 9.5,
 } as const;
+export const KOSPI_CONSISTENCY_START = "2026-10-12";
+export const KOSPI_CONSISTENCY_VERSION = "kospi-e8-confirm1-bear-rs-cross-v4";
+export const kospiPolicyVersionAt = (date: string) =>
+  date >= KOSPI_CONSISTENCY_START ? KOSPI_CONSISTENCY_VERSION : KOSPI_ENTRY_POLICY.version;
+
+export function requiresKospiRsAccel(
+  origin: KospiMarketGateEvidence | null | undefined,
+  date: string,
+) {
+  return date < KOSPI_CONSISTENCY_START || origin?.status === "RISK_OFF";
+}
+
 export interface KospiEntrySnapshot {
   version: string;
   date: string;
@@ -69,7 +81,7 @@ export function kospiEntryConfirmation(
   const pending = cross(previous, current);
   const awaiting = !!previous && previous.date < current.date && cross(beforePrevious, previous);
   const result: KospiEntrySnapshot = {
-    version: KOSPI_ENTRY_POLICY.version,
+    version: kospiPolicyVersionAt(current.date),
     date: current.date,
     originDate: awaiting ? previous!.date : pending ? current.date : null,
     confirmationDate: awaiting ? current.date : null,
@@ -84,6 +96,7 @@ export function kospiEntryConfirmation(
       confirmation: awaiting ? (current.marketGate ?? null) : null,
     },
   };
+  const requiresRs = requiresKospiRsAccel(result.marketGate?.origin, current.date);
   if (awaiting) {
     if (current.observed && !current.eligible && current.eligibilityStatus !== "PENDING")
       result.issues.push("확인일 대상 부적격");
@@ -96,10 +109,14 @@ export function kospiEntryConfirmation(
       current.score >= 9.5
     )
       result.issues.push("확인일 U9.5 청산신호");
-    if (finite(current.rsAccel) && current.rsAccel <= 0)
+    if (requiresRs && finite(current.rsAccel) && current.rsAccel <= 0)
       result.issues.push("확인일 RSAccel 0 이하");
     if (result.issues.length) result.state = "rejected";
-    else if (!current.observed || !finite(current.score) || !finite(current.rsAccel)) {
+    else if (
+      !current.observed ||
+      !finite(current.score) ||
+      (requiresRs && !finite(current.rsAccel))
+    ) {
       result.state = "unobservable";
       result.issues.push("확인일 종목·지수·점수·RS 자료 미확인 · 지연 진입 불가");
     } else {
@@ -173,7 +190,7 @@ export function kospiEntryConfirmation(
 export function isKospiEntryReady(s: KospiEntrySnapshot | undefined, asOfDate?: string): boolean {
   return (
     !!s &&
-    s.version === KOSPI_ENTRY_POLICY.version &&
+    s.version === kospiPolicyVersionAt(s.date) &&
     s.state === "confirmed" &&
     s.eligible &&
     s.date === s.confirmationDate &&
@@ -183,8 +200,7 @@ export function isKospiEntryReady(s: KospiEntrySnapshot | undefined, asOfDate?: 
     s.originDate < s.date &&
     finite(s.score) &&
     s.score >= 8 &&
-    finite(s.rsAccel) &&
-    s.rsAccel > 0 &&
+    (!requiresKospiRsAccel(s.marketGate?.origin, s.date) || (finite(s.rsAccel) && s.rsAccel > 0)) &&
     s.issues.length === 0 &&
     !!s.marketGate &&
     [
