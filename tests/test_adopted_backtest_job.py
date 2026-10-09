@@ -209,9 +209,9 @@ class JobTests(unittest.TestCase):
         metadata = json.loads(base64.b64decode(self.writes()[-1][2]["headers"]["x-metadata"]))
         self.assertEqual(metadata["schema"], "adopted-kr-etf-symbol-audit-v1")
         self.assertNotIn("books", metadata)
-        self.assertEqual(metadata["invalid"][0]["rawSymbol"], "SPY")
+        self.assertEqual(metadata["examples"][0]["rawSymbol"], "SPY")
         invalid = json.loads(json.dumps(metadata))
-        invalid["invalid"][0]["rawSymbol"] = "https://private.invalid/secret"
+        invalid["examples"][0]["rawSymbol"] = "X"*129
         with self.assertRaisesRegex(job.JobError, "SYMBOL_AUDIT"):
             job.safe_symbol_audit_metadata(invalid)
 

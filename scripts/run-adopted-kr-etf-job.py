@@ -91,14 +91,15 @@ def finite_number(value):
 
 
 def safe_symbol_audit_metadata(metadata):
-    require(isinstance(metadata, dict) and set(metadata) == {"schema", "status", "sourceFileCount", "invalid", "resultManifestSha256"}, "INVALID_SYMBOL_AUDIT")
+    require(isinstance(metadata, dict) and set(metadata) == {"schema", "status", "sourceFileCount", "invalidClasses", "invalidRows", "examples", "resultManifestSha256"}, "INVALID_SYMBOL_AUDIT")
     require(metadata["schema"] == "adopted-kr-etf-symbol-audit-v1" and metadata["status"] == "INPUT_CLASSIFICATION_ONLY", "INVALID_SYMBOL_AUDIT")
     check_hash(metadata["resultManifestSha256"])
     require(type(metadata["sourceFileCount"]) is int and 0 < metadata["sourceFileCount"] <= 256, "INVALID_SYMBOL_AUDIT")
-    require(isinstance(metadata["invalid"], list) and len(metadata["invalid"]) <= 50, "INVALID_SYMBOL_AUDIT")
-    for item in metadata["invalid"]:
+    require(all(type(metadata[k]) is int and 0 <= metadata[k] <= 2**53-1 for k in ("invalidClasses", "invalidRows")), "INVALID_SYMBOL_AUDIT_COUNTS")
+    require(isinstance(metadata["examples"], list) and len(metadata["examples"]) <= 8, "INVALID_SYMBOL_AUDIT_EXAMPLES")
+    for item in metadata["examples"]:
         require(isinstance(item, dict) and set(item) == {"rawSymbol", "normalizedSymbol", "market", "type", "rows", "sourceOrders"}, "INVALID_SYMBOL_AUDIT")
-        require(all(isinstance(item[k], str) and re.fullmatch(r"[A-Z0-9._^=/가-힣-]{0,32}", item[k]) for k in ("rawSymbol", "normalizedSymbol", "market", "type")), "INVALID_SYMBOL_AUDIT")
+        require(all(isinstance(item[k], str) and len(item[k]) <= 128 for k in ("rawSymbol", "normalizedSymbol", "market", "type")), "INVALID_SYMBOL_AUDIT_LABEL")
         require(type(item["rows"]) is int and 0 < item["rows"] <= 2**53-1 and isinstance(item["sourceOrders"], list) and
                 all(type(n) is int and 1 <= n <= metadata["sourceFileCount"] for n in item["sourceOrders"]), "INVALID_SYMBOL_AUDIT")
     header = base64.b64encode(json_bytes(metadata)).decode("ascii")
@@ -629,8 +630,10 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
             command[command.index("--output")+1] = str(profile_path)
             command += ["--inspect-symbols-only"]
             command_runner(command, root / "symbol-audit.log", environment)
-            profile = read_local_json(profile_path, MAX_METADATA_BYTES, "INVALID_SYMBOL_AUDIT")
-            metadata = {**profile, "resultManifestSha256": digest_file(profile_path)["sha256"]}
+            profile = read_local_json(profile_path, CHUNK, "INVALID_SYMBOL_AUDIT_FILE")
+            metadata = {"schema": profile["schema"], "status": profile["status"], "sourceFileCount": profile["sourceFileCount"],
+                        "invalidClasses": len(profile["invalid"]), "invalidRows": sum(item["rows"] for item in profile["invalid"]),
+                        "examples": profile["invalid"][:8], "resultManifestSha256": digest_file(profile_path)["sha256"]}
             storage.create_result("run-manifest.json", profile_path, metadata=metadata)
             return {"status": "INPUT_CLASSIFICATION_ONLY", "mode": "symbols", "invalidClasses": len(profile["invalid"])}
     command_runner(command, root / "prepare.log", environment)
