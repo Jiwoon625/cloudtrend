@@ -467,7 +467,39 @@ def run_command(command, log, environment):
         os.chmod(log, 0o600)
         result = subprocess.run(command, cwd=ROOT, env=child_environment(environment),
                                 stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, check=False)
-    require(result.returncode == 0, "LOCAL_RESEARCH_PROCESS_FAILED")
+    if result.returncode != 0:
+        # Emit only source-code identifiers and fixed classifications; never the
+        # exception text, input symbols/paths, financial values or private log.
+        phase = "PREPARE" if any(str(x).endswith("prepare-adopted-us-cm-inputs.py") for x in command) else ("SMOKE" if "--smoke-sessions" in command else "REPLAY")
+        with Path(log).open("rb") as stream:
+            stream.seek(max(0, Path(log).stat().st_size - 65536))
+            tail = stream.read().decode("utf-8",errors="replace")
+        patterns = {
+            "JavaScript heap out of memory":"JS_HEAP_LIMIT",
+            "MemoryError":"PY_MEMORY_LIMIT",
+            "ENOSPC":"DISK_LIMIT",
+            "No space left on device":"DISK_LIMIT",
+            "Source close availability differs":"CLOSE_AVAILABILITY",
+            "Expanded prepared schema mismatch":"PREPARED_SCHEMA",
+            "Monthly row/session coverage mismatch":"MONTHLY_COVERAGE",
+            "Requested endpoints outside source sessions":"ENDPOINT_COVERAGE",
+            "Genuine 252-session feature warmup required":"SOURCE_WARMUP",
+            "Full source coverage mismatch":"FULL_SOURCE_COVERAGE",
+            "US dated row count/date mismatch":"US_DAY_ROW_COUNT",
+            "Legacy number is not safely representable":"UNSAFE_PRICE_MAGNITUDE",
+            "Legacy number needs more than eight decimal places":"STRICT_PRICE_PRECISION",
+            "Positive source price cannot be represented as zero":"ZERO_REPRESENTED_PRICE",
+            "NO_PRIOR_VALID_CLOSE_FOR_PROXY":"MISSING_PROXY_REFERENCE",
+            "no finite positive":"NONPOSITIVE_PRICE",
+            "Incomplete market source cannot trigger":"INCOMPLETE_MARKET_SOURCE",
+            "Invalid remaining fixed US entry budget":"PENDING_BUDGET",
+            "Isolated model fill exceeds exact cash":"CASH_AFFORDABILITY",
+        }
+        code = next((code for text, code in patterns.items() if text in tail), "UNCLASSIFIED")
+        locations = re.findall(r'(?:/|\\)((?:prepare-adopted-us-cm-inputs|run-adopted-us-full-period-backtest)\.(?:py|ts)|us(?:ProspectivePortfolio|AnnualEntryBudget|LastValidClosePolicy|ResearchTradePrice)\.ts)(?:\", line |:)([0-9]{1,6})', tail)
+        location = ",".join(name+":"+line for name,line in locations[-3:]) or "NO_SOURCE_LOCATION"
+        raise JobError("LOCAL_RESEARCH_PROCESS_FAILED:"+phase+":"+str(result.returncode)+":"+code+":"+location)
+
 
 
 def output_files(directory):
@@ -533,6 +565,7 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
     if options.market == "us":
         staged = root / "us-inputs"
         hook = us_input_hook or load_us_input_hook()
+        print("ADOPTED_PHASE_US_SOURCE_READ_START", flush=True)
         try:
             inputs = hook(storage, storage.owner, manifest, staged)
         except Exception as error:
@@ -541,6 +574,7 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
             raise
         require(isinstance(inputs, dict) and isinstance(inputs.get("canonical"), list) and inputs["canonical"] and
                 isinstance(inputs.get("provenance"), dict), "INVALID_US_INPUT_HOOK_RESULT")
+        print("ADOPTED_PHASE_US_SOURCE_READ_COMPLETE", flush=True)
         canonical = [verified_hook_path(file, staged) for file in inputs["canonical"]]
         require(len(set(canonical)) == len(canonical), "DUPLICATE_US_CANONICAL_PATH")
         if inputs.get("inputKind") == "CM_EXPANDED_NORMALIZED_V2":
@@ -567,7 +601,9 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
         command = [sys.executable, str(ROOT / "scripts/prepare-adopted-kr-etf-inputs.py"),
                    "--source-manifest", str(source_manifest), "--staged-root", str(staged),
                    "--output", str(prepared), "--through", options.through]
+    print("ADOPTED_PHASE_PREPARE_START", flush=True)
     command_runner(command, root / "prepare.log", environment)
+    print("ADOPTED_PHASE_PREPARE_COMPLETE", flush=True)
     prepared_manifest = read_local_json(prepared / "manifest.json", 8 * CHUNK, "INVALID_PREPARED_MANIFEST")
     preparation = prepared_manifest.get("preparationMetrics")
     require(isinstance(preparation, dict) and set(preparation) == {"elapsedSeconds", "maxRssKiB"} and
@@ -586,12 +622,21 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
         if smoke:
             command += ["--smoke-sessions", str(options.smoke_sessions)]
         before = time.monotonic()
+        print("ADOPTED_PHASE_" + ("SMOKE" if smoke else "FULL") + "_START", flush=True)
         command_runner(command, root / (label + ".log"), environment)
+        print("ADOPTED_PHASE_" + ("SMOKE" if smoke else "FULL") + "_COMPLETE", flush=True)
         if input_provenance is not None:
             local_json(target / "input-provenance.json", input_provenance)
         if not smoke and options.market == "us" and inputs.get("inputKind") == "CM_EXPANDED_NORMALIZED_V2":
             from audit_us_math import audit_result
-            full_audit = audit_result(target, Path(inputs["benchmark"]))
+            print("ADOPTED_PHASE_MATH_AUDIT_START", flush=True)
+            try:
+                full_audit = audit_result(target, Path(inputs["benchmark"]))
+            except Exception as error:
+                if type(error).__name__ == "AuditError" and re.fullmatch(r"[A-Z][A-Z0-9_]{1,95}", str(error)):
+                    raise JobError(str(error)) from None
+                raise
+            print("ADOPTED_PHASE_MATH_AUDIT_COMPLETE", flush=True)
             failed = [name for name, check in full_audit.get("checks", {}).items() if check.get("passed") is not True]
             require(all(re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", name) for name in failed), "INVALID_AUDIT_CHECK_NAME")
             require(full_audit.get("status") == "PASS", "INDEPENDENT_MATH_AUDIT_FAILED:" + ",".join(failed[:12]))

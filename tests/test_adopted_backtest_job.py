@@ -384,6 +384,20 @@ class JobTests(unittest.TestCase):
             self.assertIn(SECRET, log.read_text())
             self.assertEqual(log.stat().st_mode & 0o777, 0o600)
 
+    def test_failed_child_diagnostic_never_echoes_private_exception(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log=Path(directory)/"log"
+            def fail(command,**kwargs):
+                kwargs["stdout"].write(("PRIVATE_NAV " + SECRET + '\nFile "/private/work/scripts/prepare-adopted-us-cm-inputs.py", line 85, in prepare\nValueError: Source close availability differs from verified calendar\n').encode())
+                return argparse.Namespace(returncode=1)
+            with mock.patch.object(job.subprocess,"run",side_effect=fail):
+                with self.assertRaises(job.JobError) as raised:
+                    job.run_command(["python","scripts/prepare-adopted-us-cm-inputs.py"],log,self.env)
+            message=str(raised.exception)
+            self.assertIn("PREPARE:1:CLOSE_AVAILABILITY",message)
+            self.assertIn("prepare-adopted-us-cm-inputs.py:85",message)
+            self.assertNotIn(SECRET,message);self.assertNotIn("PRIVATE_NAV",message);self.assertNotIn("/private/work",message)
+
     def test_raw_files_and_symlinks_cannot_enter_result_upload(self):
         with tempfile.TemporaryDirectory() as directory:
             target = Path(directory)
