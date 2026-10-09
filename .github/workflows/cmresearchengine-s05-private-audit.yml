@@ -1,4 +1,4 @@
-name: CMresearchengine S24 S27 private final audit
+name: CMresearchengine S28 S31 private final audit
 on:
   push:
     branches: [main]
@@ -26,7 +26,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r research/cmresearchengine/requirements.txt
       - name: Test isolated private report exporter
         run: python scripts/test_cm_private_report.py -v
-      - name: Verify S24 through S27 private result accounting without exposing records
+      - name: Verify S28 through S31 private result accounting without exposing records
         run: |
           python - <<'PY'
           import csv, hashlib, io, json, zipfile
@@ -122,10 +122,10 @@ jobs:
                   'private_storage':True},sort_keys=True))
           
           targets = [
-              ('Q_K025_E000_U025_C050', '47ff5251fc0aeb9f3d96d8363d57c9ebe25aa5ea449742130abc163f5d85d805'),
-              ('Q_K025_E000_U050_C025', 'f110d9d4dbaea4b5127441033eedcd0cd80d91799e206ed1ffb0d64a22150d07'),
-              ('Q_K025_E000_U075_C000', '65ae43142a775f15fca42cdde679a8db32bd54aee2f54c21b5e2e162ba5d8782'),
-              ('Q_K025_E025_U000_C050', '6d3e0a504520ddb6c8bcdec8bebb2cd305aa9265c8fe433e3b62a68f1aa198f5'),
+              ('Q_K025_E025_U025_C025', '1e2df17654daf40c2af5b6fd4dc12835eabcbdd803f092c7304e8aa9beec46cc'),
+              ('Q_K025_E025_U050_C000', '76aa6cf7b4bdf9bf0444e3ba0bd067873c381b21737d19139766a2e029ca8b52'),
+              ('Q_K025_E050_U000_C025', '46c484e77bffcf4682dd09e996ce9dc6b3166f01f4b7e0fd4168d5dd56194734'),
+              ('Q_K025_E050_U025_C000', '1087d32e914578a179e6f74c2068f4008da0d9e781c5051611d91d39762045a5'),
           ]
           for candidate, identity in targets:
               audit(candidate, identity)
