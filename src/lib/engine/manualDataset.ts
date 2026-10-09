@@ -210,7 +210,7 @@ interface Series {
  * 여러 파일을 배열로 넘기면 하나의 데이터셋으로 합쳐서 해석한다(같은 종목·같은 날짜는 1건만 사용).
  */
 export function parseManualMarketData(
-  input: string | string[],
+  input: string | Iterable<string>,
   options: {
     allowIndexOnly?: boolean;
     allowIncompleteIndex?: boolean;
@@ -378,7 +378,7 @@ export function parseManualMarketData(
       dates: new Set([date]),
     });
   };
-  for (const text of Array.isArray(input) ? input : [input]) {
+  for (const text of typeof input === "string" ? [input] : input) {
     recordCount += visitRecords(text, consume);
   }
   if (recordCount === 0) {

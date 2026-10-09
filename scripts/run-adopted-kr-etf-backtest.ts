@@ -7,7 +7,7 @@
  * Smoke fixture instead of files: dataset:{path,bytes,sha256},sourceHash:"sha256:...".
  */
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, readFileSync } from "node:fs";
 import { chmod, mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -196,14 +196,21 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
       sourceFiles.push(await verifyFile(base, kr.dataset, true));
       dataset = JSON.parse(await readVerifiedText(base, kr.dataset)) as MarketDataset;
     } else {
-      const texts: string[] = [];
       for (const file of kr.files!) {
         if (!/\.csv(\.gz)?$/i.test(file.path))
           throw new Error("KR/ETF sources must be canonical CSV or CSV.gz");
         sourceFiles.push(await verifyFile(base, file, true));
-        texts.push(await readVerifiedText(base, file));
       }
-      dataset = parseManualMarketData(texts).dataset;
+      function* sourceTexts() {
+        for (const entry of kr.files!) {
+          const file = path.resolve(base, entry.path),
+            data = readFileSync(file);
+          if (data.length !== entry.bytes || digest(data) !== entry.sha256)
+            throw new Error("Input changed after preflight verification");
+          yield (file.endsWith(".gz") ? gunzipSync(data) : data).toString("utf8");
+        }
+      }
+      dataset = parseManualMarketData(sourceTexts()).dataset;
     }
     assertResearchDataset(dataset);
     if (!dataset.tradeDates.some((date) => date < start))

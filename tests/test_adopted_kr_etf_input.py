@@ -92,6 +92,24 @@ class AdoptedKrEtfInputTests(unittest.TestCase):
         self.assertEqual(first["sourceManifestFingerprint"], prep.sha256_file(self.manifest))
         self.assertEqual(json.loads((self.root / "prepared/manifest.json").read_text()), first)
 
+    def test_chunks_between_complete_rows_and_preserves_original_order(self):
+        source = pa.table({"symbol": ["005930"]*8, "date": ["2026-09-11"]*8,
+                           "market": ["KOSPI"]*8, "close": [str(i) for i in range(8)],
+                           "notes": ['한글, "quoted"\nsecond line ' + str(i) for i in range(8)]})
+        self.manifest_for([("stock_history/chunked.parquet", source)])
+        with mock.patch.object(prep, "MAX_PREPARED_CHARS", 100):
+            result = self.prepare()
+        self.assertEqual(result["sourceFileCount"], 1)
+        self.assertGreater(result["preparedFileCount"], 1)
+        self.assertEqual(sum(item["rows"] for item in result["files"]), 8)
+        collected = []
+        for index, item in enumerate(result["files"]):
+            rows = self.read_csv(result, index)
+            self.assertEqual(rows[0], source.column_names)
+            self.assertEqual(item["sourcePart"], index+1)
+            collected.extend(rows[1:])
+        self.assertEqual(collected, [[value for value in row.values()] for row in source.to_pylist()])
+
     def test_typed_numeric_timestamp_precision_and_signed_zero(self):
         table = pa.table({
             "symbol": ["005930", "000001"], "date": ["2026-09-10", "2026-09-11"], "market": ["KOSPI", "KOSDAQ"],

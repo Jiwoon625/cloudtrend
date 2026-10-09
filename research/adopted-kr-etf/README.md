@@ -13,6 +13,8 @@ Research branch only. This path fixes current strategy rules on real historical 
 
 The source manifest and every input require exact byte/SHA pins. KR/ETF conversion preserves all fields, rows, duplicate order, zeros and empty observations; the existing parser retains its canonical merge policy. The located ETF long-history source is the 768-instrument study, not the current larger recent-only collection.
 
+Prepared CSV gzip files are bounded to approximately 32 Mi characters and split only between complete records, preserving quoted newlines. Each part repeats the original header and is independently hashed. Original source ordering and within-source part ordering are retained. The canonical parser consumes a lazy iterable so all decompressed source texts are never retained together. This avoids Node's single-string limit without changing source data or merge semantics.
+
 The private job reads existing Actions secrets, validates the private bucket, strips credentials from subprocesses and writes create-only results into a new run prefix with hash readback. Raw input, prices, daily NAV, positions and logs never enter public artifacts or caches. Only compact aggregate evidence is attached as private metadata to the completion manifest.
 
 Run a 20-session real-data smoke and inspect actual time/RSS and source bounds before choosing full-period dates. A selected-range completion alone does not certify whole-market coverage. Earlier history remains available for indicators, including recursive ATR.

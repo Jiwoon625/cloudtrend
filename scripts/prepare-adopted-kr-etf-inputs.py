@@ -35,6 +35,7 @@ SOURCE_VERSION = "adopted-full-period-source-transfer-v1"
 DEFAULT_THROUGH = "2026-09-11"
 DEFAULT_BATCH_SIZE = 1024
 MAX_BATCH_SIZE = 16384
+MAX_PREPARED_CHARS = 32 * 1024 * 1024
 CHUNK_BYTES = 1024 * 1024
 ALIASES = {
     "symbol": "symbol", "code": "symbol", "종목코드": "symbol", "단축코드": "symbol",
@@ -184,35 +185,59 @@ def convert_file(path: Path, target: Path, item: dict, batch_size: int) -> tuple
                 raise ValueError(f"Unsupported lossless CSV type for {field.name}: {field.type}")
         columns = calendar_columns(names)
         nulls = dict.fromkeys(names, 0)
-        with target.open("xb") as raw:
-            # No timestamp or filename in gzip headers: reproducible across roots.
-            with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0, compresslevel=6) as compressed:
-                with io.TextIOWrapper(compressed, encoding="utf-8", newline="") as text:
-                    writer = csv.writer(text, lineterminator="\n")
-                    writer.writerow(names)
-                    for batch in parquet.iter_batches(batch_size=batch_size, use_threads=False):
-                        for index, name in enumerate(names):
-                            nulls[name] += batch.column(index).null_count
-                        # Never materialize the full table, file, or dictionary panel.
-                        values = [csv_column(pa, column) for column in batch.columns]
-                        for row in zip(*values):
-                            writer.writerow(row)
-                            rows += 1
-                            day, reason = calendar_evidence(row, columns)
-                            if day:
-                                dates.add(day)
-                            else:
-                                missing_dates += 1
-                            if reason:
-                                sessions.add(day)
-                                evidence[reason] += 1
+        parts = []
+        part_rows = part_chars = 0
+        raw = compressed = text = writer = None
+        def close_part():
+            nonlocal raw, text
+            if text is not None:
+                text.close()
+            if raw is not None:
+                raw.close()
+            raw = text = None
+        def start_part():
+            nonlocal raw, compressed, text, writer, part_rows, part_chars
+            suffix = "" if not parts else f".part{len(parts)+1:04d}"
+            name = target.name.removesuffix(".csv.gz") + suffix + ".csv.gz"
+            raw = target.with_name(name).open("xb")
+            compressed = gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0, compresslevel=6)
+            text = io.TextIOWrapper(compressed, encoding="utf-8", newline="")
+            writer = csv.writer(text, lineterminator="\n")
+            part_rows, part_chars = 0, writer.writerow(names)
+            parts.append({"name": name, "rows": 0})
+        try:
+            start_part()
+            for batch in parquet.iter_batches(batch_size=batch_size, use_threads=False):
+                for index, name in enumerate(names):
+                    nulls[name] += batch.column(index).null_count
+                values = [csv_column(pa, column) for column in batch.columns]
+                for row in zip(*values):
+                    # A chunk boundary is always between complete CSV records,
+                    # including records containing quoted newlines. No row is split.
+                    if part_rows and part_chars >= MAX_PREPARED_CHARS:
+                        close_part()
+                        start_part()
+                    part_chars += writer.writerow(row)
+                    part_rows += 1
+                    parts[-1]["rows"] = part_rows
+                    rows += 1
+                    day, reason = calendar_evidence(row, columns)
+                    if day:
+                        dates.add(day)
+                    else:
+                        missing_dates += 1
+                    if reason:
+                        sessions.add(day)
+                        evidence[reason] += 1
+        finally:
+            close_part()
         if rows != parquet.metadata.num_rows:
             raise ValueError("Parquet row count changed during conversion")
         # Recheck the same open file descriptor after decoding to detect source
         # mutation during preparation, without reopening a substituted path.
         verified_stream(source, item)
     return {
-        "rows": rows, "columnCount": len(names),
+        "rows": rows, "columnCount": len(names), "preparedParts": parts,
         "columns": [{"name": field.name, "arrowType": str(field.type), "nulls": nulls[field.name]} for field in schema],
         "firstDate": min(dates) if dates else None, "lastDate": max(dates) if dates else None,
         "observedDateCount": len(dates), "missingOrInvalidDateRows": missing_dates,
@@ -260,13 +285,18 @@ def prepare(source_manifest: Path, staged_root: Path, output: Path,
             relative = f"files/{item['order']:04d}-{name}.csv.gz"
             target = output / relative
             info, observed, counts = convert_file(path, target, item, batch_size)
-            os.chmod(target, 0o600)
             sessions.update(observed)
             for kind, count in counts.items():
                 evidence[kind] += count
-            files.append({"path": relative, "bytes": target.stat().st_size, "sha256": sha256_file(target),
-                          "source": {key: item[key] for key in ["order", "sourceGroup", "sourcePath", "bytes", "sha256"]},
-                          **info})
+            parts = info.pop("preparedParts")
+            for number, part in enumerate(parts, 1):
+                output_part = target.with_name(part["name"])
+                os.chmod(output_part, 0o600)
+                files.append({"path": "files/" + part["name"], "bytes": output_part.stat().st_size, "sha256": sha256_file(output_part),
+                              "source": {key: item[key] for key in ["order", "sourceGroup", "sourcePath", "bytes", "sha256"]},
+                              **info, "rows": part["rows"], "sourceTotalRows": info["rows"],
+                              "sourcePart": number, "sourcePartCount": len(parts),
+                              "rangeEvidenceScope": "WHOLE_ORIGINAL_SOURCE"})
         if not sessions:
             raise ValueError("No observed Korean index or stock session calendar evidence")
         manifest_hash = "sha256:" + hashlib.sha256(source_bytes).hexdigest()
@@ -280,7 +310,7 @@ def prepare(source_manifest: Path, staged_root: Path, output: Path,
             "sourceManifest": {"path": "source-manifest.json", "bytes": len(source_bytes), "sha256": manifest_hash},
             "sourceCatalogSha256": source.get("catalogSha256"),
             "sessions": sorted(sessions), "firstDate": min(sessions), "lastDate": max(sessions),
-            "throughDate": through, "files": files, "sourceFileCount": len(files),
+            "throughDate": through, "files": files, "sourceFileCount": len(sources), "preparedFileCount": len(files),
             "rows": sum(item["rows"] for item in files), "sessionCount": len(sessions),
             "calendarEvidenceRows": evidence,
             "sourceOrdering": "orderedFiles order; original rows, columns and duplicates retained",

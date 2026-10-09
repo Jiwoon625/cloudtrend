@@ -6,6 +6,7 @@ import path from "node:path";
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { getMockDataset } from "../src/lib/engine/mockProvider";
+import { parseManualMarketData } from "../src/lib/engine/manualDataset";
 import {
   adoptedDatasetAsOf,
   selectBacktestSessions,
@@ -36,6 +37,35 @@ async function fixture() {
 }
 
 describe("local adopted-rule replay inputs", () => {
+  it("parses lazy record-boundary chunks with the same later-nonempty merge", () => {
+    const header =
+      "symbol,name,market,securityType,date,open,high,low,close,volume,tradingValue,marketCap";
+    const rows = [
+      "KOSPI,Index,INDEX,INDEX,2020-01-02,100,100,100,100,1,1,1",
+      '005930,"quoted, name",KOSPI,STOCK,2020-01-02,90,110,80,100,10,1000,100000',
+      "005930,,KOSPI,STOCK,2020-01-02,,,,101,0,,",
+      "005930,,KOSPI,STOCK,2020-01-02,,,,,,0,",
+      "KOSPI,Index,INDEX,INDEX,2020-01-03,101,101,101,101,1,1,1",
+      "005930,Stock,KOSPI,STOCK,2020-01-03,101,102,100,102,10,1020,102000",
+    ];
+    let consumed = 0;
+    function* chunks() {
+      for (const row of rows) {
+        consumed++;
+        yield header + "\n" + row;
+      }
+    }
+    const expected = parseManualMarketData(header + "\n" + rows.join("\n"), {
+      allowIncompleteIndex: true,
+    });
+    expect(parseManualMarketData(chunks(), { allowIncompleteIndex: true })).toEqual(expected);
+    expect(consumed).toBe(rows.length);
+    const bar = expected.dataset.observedBars!["005930"][0];
+    expect(bar.close).toBe(101);
+    expect(bar.volume).toBe(0);
+    expect(bar.tradingValue).toBe(0);
+  });
+
   it("keeps full warmup and clips every future-bearing field without mutating source", () => {
     const raw = structuredClone(getMockDataset());
     raw.observedBars = raw.bars;
