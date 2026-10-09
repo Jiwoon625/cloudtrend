@@ -3,6 +3,10 @@ on:
   pull_request:
     paths:
       - src/lib/ledger/**
+      - src/lib/actualPerformance*
+      - src/components/ActualPerformance*
+      - vitest.actual-performance.config.ts
+      - docs/actual-performance-restart.md
       - src/lib/portfolioLedgers*
       - src/lib/usActualLedger*
       - src/lib/dashboardOperations.server.ts
@@ -38,6 +42,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx vitest run --config vitest.ledger.config.ts
+      - run: npx vitest run --config vitest.actual-performance.config.ts
       - run: npx vitest run --config vitest.portfolio.config.ts
       - run: npx vitest run --config vitest.ledger-ui.config.ts
       - run: npx vitest run --config vitest.shadow.config.ts

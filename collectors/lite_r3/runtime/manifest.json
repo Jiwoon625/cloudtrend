@@ -5,9 +5,9 @@
   "files": [
     {
       "path": "__init__.py",
-      "bytes": 1582,
-      "characters": 1582,
-      "sha256": "4902fb5c2f3313372ff496aa1d25b948e8155bc76d43b487186673f21e82774b"
+      "bytes": 1752,
+      "characters": 1752,
+      "sha256": "3b88eaebfe67fc35bc65ecda860be2ae8d81c0b8d06fc63e6760e8cb21ec5ead"
     },
     {
       "path": "helpers/kr_callback.py",
@@ -185,9 +185,9 @@
     },
     {
       "path": "stages/us_features.py",
-      "bytes": 7311,
-      "characters": 7247,
-      "sha256": "69c389f41bfd0544c264783e0f614b1e3886600f63000786012ba48ddd79784d"
+      "bytes": 4529,
+      "characters": 4503,
+      "sha256": "7dc8746e9ab8f81b8f93928e9f4bbccc1aa9732dcaeb4da05beea1d89df065d4"
     },
     {
       "path": "stages/us_master.py",
@@ -224,6 +224,12 @@
       "bytes": 5336,
       "characters": 5322,
       "sha256": "1cbf7bbcff464e735e60ad663ca6ae129bc8affe7886bce214afb4a29db418e5"
+    },
+    {
+      "path": "us_feature_core.py",
+      "bytes": 3732,
+      "characters": 3694,
+      "sha256": "07f874043bfc75e5453cac67adf8f39ffc00d2314b67ac74226f577e2763dff5"
     }
   ]
 }

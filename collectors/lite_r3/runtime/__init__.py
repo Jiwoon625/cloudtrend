@@ -25,6 +25,9 @@ def _execute(relative, namespace):
 def run_stage(stage, namespace):
     if stage not in STAGES:
         raise ValueError('Unknown daily runtime stage: ' + str(stage))
+    if stage == 'us_features':
+        from .us_feature_core import compute_us_feature_panel
+        namespace['_CT_COMPUTE_US_FEATURE_PANEL'] = compute_us_feature_panel
     namespace['_CT_RUNTIME_TEXT'] = _text
     namespace['_CT_RUNTIME_EXEC'] = _execute
     _execute('stages/' + stage + '.py', namespace)

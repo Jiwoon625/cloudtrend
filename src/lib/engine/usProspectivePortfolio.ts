@@ -10,6 +10,7 @@ import type {
   UsProspectiveRow,
   UsProspectiveStrategyId,
 } from "./usProspective";
+import { isCurrentRulesResearch, type OperatingPolicyContext } from "./operatingPolicyContext";
 
 export const US_PROSPECTIVE_INITIAL_CAPITAL = 100_000;
 export const US_PROSPECTIVE_ONE_WAY_COST = 0.0025;
@@ -272,9 +273,25 @@ export function stepUsProspectivePortfolio(
   executionPolicy?: UsModelExecutionPolicy,
   requestedAllocationPolicy?: UsFixedSlotAllocationPolicy,
   operatingOneWayCost = US_PROSPECTIVE_ONE_WAY_COST,
+  researchContext?: OperatingPolicyContext,
 ): UsPortfolioStepResult {
+  const research = isCurrentRulesResearch(researchContext);
   const allocationPolicy = requestedAllocationPolicy ?? previous?.allocationPolicy;
-  const fixedSlots = allocationPolicy && analysis.date >= allocationPolicy.effectiveDate;
+  const fixedSlots =
+    allocationPolicy && (research || analysis.date >= allocationPolicy.effectiveDate);
+  // The research caller uses real historical dates and the same execution body.
+  // Its isolated identity is deliberately rejected by every ordinary caller.
+  if (
+    research &&
+    (!executionPolicy ||
+      !allocationPolicy ||
+      config.id !== "A0_QUARTER_PRIMARY" ||
+      executionPolicy.initialCapital !== "74671.44" ||
+      executionPolicy.oneWayCost !== "0.0015")
+  )
+    throw new Error(
+      "Current-rules US research requires isolated A0, fixed capital/20 and 0.15% costs",
+    );
   if (allocationPolicy) {
     usFixedSlotBudget(allocationPolicy);
     const initialCapital =
@@ -322,7 +339,10 @@ export function stepUsProspectivePortfolio(
     if (
       !adopted ||
       JSON.stringify(config) !== JSON.stringify(adopted) ||
-      p.bookId !== `adopted-shadow-${p.accountingStartDate}-v1:${seriesKind}`
+      p.bookId !==
+        (research
+          ? `current-rules-research-${p.accountingStartDate}-v1:${seriesKind}`
+          : `adopted-shadow-${p.accountingStartDate}-v1:${seriesKind}`)
     )
       throw new Error(
         "Isolated US execution requires unchanged adopted strategy and matching series",

@@ -1,3 +1,6 @@
+import { ActualPerformanceReview } from "./ActualPerformanceReview";
+import { ActualPerformancePanel } from "./ActualPerformancePanel";
+import { actualPerformanceServer } from "@/lib/actualPerformance.functions";
 import { DomesticAssessmentPanel } from "./DomesticAssessmentPanel";
 import { domesticPortfolioQueryOptions } from "@/lib/portfolioPositionContext";
 import { usePortfolioModelConsolidation } from "@/lib/usePortfolioModelConsolidation";
@@ -124,6 +127,14 @@ export function PortfolioAssetHub({
     staleTime: 60_000,
     retry: false,
     refetchOnWindowFocus: false,
+  });
+  const performance = useQuery({
+    queryKey: ["actual-performance", kr.data?.revision, us.data?.revision],
+    queryFn: async () =>
+      actualPerformanceServer({ data: { action: "load", accessToken: await token() } }),
+    enabled: !!kr.data && !!us.data,
+    staleTime: 30_000,
+    retry: false,
   });
   const snapshots = useQuery({
     queryKey: ["us-portfolio-snapshots"],
@@ -365,8 +376,14 @@ export function PortfolioAssetHub({
           {writeError}
         </p>
       ) : null}
+      <ActualPerformancePanel
+        series={performance.data?.series}
+        loading={kr.isPending || us.isPending || performance.isPending}
+        error={kr.error || us.error || performance.error}
+      />
+      <ActualPerformanceReview />
       <div className="mb-4 rounded-lg border bg-card p-4" aria-label="전체 실제 투자 요약">
-        <h2 className="font-semibold">전체 실제 투자 · 통화별</h2>
+        <h2 className="font-semibold">전체 실제 투자 · 기존 원장 누적</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <p>
             원화 평가금액{" "}
@@ -377,7 +394,7 @@ export function PortfolioAssetHub({
             </strong>
             <br />
             <span className="text-sm text-muted-foreground">
-              누적손익{" "}
+              기존 원장 누적손익{" "}
               {kr.data && books.ETF
                 ? formatWon(kr.data.actual.summary.totalPnl + books.ETF.summary.totalPnl)
                 : "-"}
@@ -387,7 +404,7 @@ export function PortfolioAssetHub({
             달러 평가금액 <strong>{books.US ? usd(books.US.summary.marketValue) : "-"}</strong>
             <br />
             <span className="text-sm text-muted-foreground">
-              누적손익 {books.US ? usd(books.US.summary.totalPnl) : "-"}
+              기존 원장 누적손익 {books.US ? usd(books.US.summary.totalPnl) : "-"}
             </span>
           </p>
         </div>
@@ -412,7 +429,7 @@ export function PortfolioAssetHub({
                 {book ? amount(book.summary.totalPnl, key) : "-"}
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
-                누적손익 · 보유 {book?.positions.length ?? "-"}종목
+                기존 원장 누적손익 · 보유 {book?.positions.length ?? "-"}종목
               </p>
               <p className="mt-3 text-sm">
                 평가금액 {book ? amount(book.summary.marketValue, key) : "-"}
