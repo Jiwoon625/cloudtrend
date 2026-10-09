@@ -230,8 +230,7 @@ export default function InstrumentCharts({
           핵심 피처가 결측인 날짜는 선을 비워 둡니다.
         </p>
         <p className="mt-1 text-[11px] text-muted-foreground">
-          ATR 손절선 참고: {formatPrice(snap.close - 1.8 * (snap.atr14 ?? 0))} (진입가 기준 1.8 ATR)
-          · 52주 신고가 {formatPrice(snap.high52w)}
+          52주 신고가 {formatPrice(snap.high52w)}
         </p>
       </section>
 

@@ -92,7 +92,9 @@ export function KospiEntryDetails({
             : `${entry.rsAccel > 0 ? "+" : ""}${entry.rsAccel.toFixed(2)}%p`}
         </p>
       ) : null}
-      {entry.issues.length ? <p className="text-warn">{entry.issues.join(" · ")}</p> : null}
+      {entry.issues.length ? (
+        <p className="text-warn">{entry.issues.join(" · ").replace(/onset/gi, "원신호")}</p>
+      ) : null}
     </div>
   );
   if (!entrySuppression && !entryJudgmentPending) return record;

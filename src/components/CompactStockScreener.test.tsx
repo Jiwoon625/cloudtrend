@@ -94,6 +94,15 @@ function render(rows = [row()]) {
   return { html: renderToStaticMarkup(tree), tree, nodes: nodes(tree) };
 }
 describe("compact stock screener", () => {
+  it("shows an explicit empty result for a holding exit filter without matches", () => {
+    const html = renderToStaticMarkup(<ScreenerTable rows={[]} {...baseProps} />);
+    expect(html).toContain("조건에 맞는 종목이 없습니다.");
+  });
+  it("displays legacy score deltas on the same ten-point scale as the score", () => {
+    const html = renderToStaticMarkup(<ScreenerTable rows={[row()]} {...baseProps} />);
+    expect(html).toContain("전 거래일 대비 +2.5점");
+    expect(html).not.toContain("전 거래일 대비 +25.0점");
+  });
   it("keeps exactly six core headers and removes retired column toggles", () => {
     const html = render().html;
     expect((html.match(/<th(?:\s|>)/g) ?? []).length).toBe(6);

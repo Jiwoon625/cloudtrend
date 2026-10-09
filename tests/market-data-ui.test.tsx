@@ -221,11 +221,7 @@ describe("market/data consolidation and mobile portfolio layout", () => {
       "자동 검증 결과",
       "항목별 제공 여부",
       "종목별 일봉 수집 구간",
-      "최근 수집 · 신호 요약",
-      "운용 규칙 · A0",
-      "A0 · Anchor",
-      "A2",
-      "B3 Beta",
+      "최근 수집 요약",
       "실제 자료수집 계약",
       "Prospective 누적 상태",
       "원본 데이터 해시",
@@ -233,6 +229,8 @@ describe("market/data consolidation and mobile portfolio layout", () => {
       "미국 · 항목별 제공 범위와 검증",
     ])
       expect(html).toContain(title);
+    expect(html).not.toContain("운용 규칙 · A0");
+    expect(html).toContain("운영규칙 보기");
     expect(html).toContain('href="#kr-data"');
     expect(html).toContain('href="#us-data"');
     expect(html).toContain("시가총액");

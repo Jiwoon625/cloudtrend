@@ -135,7 +135,7 @@ it("shows the independent holdings table and fixed-budget rule without actual-ac
   });
   expect(html).toContain("Synthetic Holding");
   expect(html).toContain("$1,000.00");
-  expect(html).toContain("목표 20종목 고정 매입 예산");
+  expect(html).not.toContain("10월 5일 신규 장부:");
   expect(html).not.toContain("매수 기록 저장");
 });
 
@@ -145,4 +145,44 @@ it("shows allocator as an uninitialized separate CM6 placeholder without a ninth
   expect(html).toContain("배분전략 확정 대기 · CM6");
   expect(html).toContain("가상 총자금 1억원");
   expect(html).toContain("8개 독립 장부의 자금을 합산하지 않습니다");
+});
+
+it("renders only the selected book and excludes beta replay from a restart view", async () => {
+  const books = await Promise.all(
+    ADOPTED_SERIES_KINDS.map(async (kind) =>
+      summarizeOctoberShadowBook(kind, registry(await fixtureSeries(kind)), [], true, checkedAt),
+    ),
+  );
+  const html = renderToStaticMarkup(
+    <OctoberShadowSummaryContent
+      selectedKind="US_A0"
+      loading={false}
+      error={null}
+      refresh={() => {}}
+      summary={{
+        version: "adopted-shadow-2026-10-12-v1",
+        viewVersion: "october-shadow-holdings-tax-v2",
+        readyForPortfolioConsolidation: true,
+        checkedAt,
+        books,
+        replayStatus: [
+          {
+            market: "KR",
+            signalDate: "2026-10-08",
+            calculatedAt: checkedAt,
+            sourceCapturedAt: null,
+            modelDecisionAt: checkedAt,
+            executionAt: null,
+            replayMode: "RETROSPECTIVE",
+            status: "WAITING_INPUT",
+            reason: "BETA_ONLY",
+          },
+        ],
+      }}
+    />,
+  );
+  expect((html.match(/<article/g) ?? []).length).toBe(1);
+  expect(html).toContain("미국 A0 고정예산");
+  expect(html).not.toContain("BETA_ONLY");
+  expect(html).not.toContain("KOSDAQ 현행전략");
 });
