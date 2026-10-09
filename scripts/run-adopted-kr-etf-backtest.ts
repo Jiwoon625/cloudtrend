@@ -414,7 +414,11 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
           years: result.finalState.researchYearAssetBases,
         });
         summary["ETF_V02"] = metrics(result.dailyNav, start, result.initialNav, smoke, sessions);
-        quality["ETF_V02"] = result.quality;
+        quality["ETF_V02"] = {
+          ...result.quality,
+          tradeCount: result.fills.length,
+          terminalOpenPositions: Object.keys(result.finalState.positions).length,
+        };
       } else
         for (const _snapshot of scoreSessions()) {
           /* consume the shared scoring generator */
@@ -563,6 +567,15 @@ if (
     )
     .catch((error: unknown) => {
       console.error(error instanceof Error ? error.message : String(error));
+      if (error instanceof Error) {
+        // Only public source locations escape the credential-free private log.
+        for (const line of (error.stack ?? "").split("\n").slice(1)) {
+          const frame = line.match(
+            /((?:src\/lib|scripts)\/[A-Za-z0-9_./-]+\.ts:[0-9]+:[0-9]+)/,
+          )?.[1];
+          if (frame && !frame.includes("..")) console.error("RESEARCH_FAILURE_FRAME " + frame);
+        }
+      }
       process.exitCode = 1;
     });
 }

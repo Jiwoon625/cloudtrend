@@ -40,7 +40,7 @@ OPTIONAL_OUTPUT_NAMES = {"input-provenance.json"}
 BOOK_NAMES = {"KR_COMBINED_ADOPTED", "KOSPI_STANDALONE_DIAGNOSTIC", "KOSDAQ_STANDALONE_DIAGNOSTIC", "ETF_V02", "US_A0"}
 BOOK_SUFFIXES = {"daily-nav.jsonl", "trades.jsonl", "yearly-budgets.json", "evidence.json", "contract.json", "final-state.json", "accounting.json"}
 SUMMARY_FIELDS = {"schema", "status", "mode", "market", "start", "through", "codeCommit", "catalogSha256",
-                  "books", "measurements", "preparation", "resultManifestSha256", "sourceCoverage", "verifiedArithmetic"}
+                  "books", "measurements", "preparation", "resultManifestSha256", "sourceCoverage", "verifiedArithmetic", "checks"}
 BOOK_SUMMARY_FIELDS = {"status", "startDate", "endDate", "observations", "cagr", "mdd", "cumulativeReturn",
                        "missingValuationCount", "staleValuationCount", "annualization"}
 MAX_METADATA_BYTES = 8 * 1024
@@ -132,6 +132,21 @@ def safe_summary_metadata(metadata):
         require(isinstance(item, dict) and set(item) == {"symbols", "rows", "firstDate", "lastDate"}, "INVALID_SOURCE_COVERAGE")
         require(all(type(item[k]) is int and 0 <= item[k] <= 2**53-1 for k in ("symbols", "rows")), "INVALID_SOURCE_COVERAGE")
         require(all(item[k] is None or summary_date(item[k]) for k in ("firstDate", "lastDate")), "INVALID_SOURCE_COVERAGE")
+    checks = metadata["checks"]
+    require(isinstance(checks, dict) and set(checks) == {"calendar", "signals", "accounts"}, "INVALID_CHECKS")
+    require(isinstance(checks["calendar"], dict) and set(checks["calendar"]) == {"first", "last"} and
+            all(value is None or summary_date(value) for value in checks["calendar"].values()), "INVALID_CHECKS_CALENDAR")
+    signals = checks["signals"]
+    require(isinstance(signals, dict) and set(signals) <= {"KOSPI", "KOSDAQ", "ETF"}, "INVALID_CHECKS_SIGNALS")
+    for value in signals.values():
+        require(isinstance(value, dict) and set(value) == {"scoreFirst", "entryFirst", "scoreCount", "entryCount"}, "INVALID_CHECKS_SIGNALS")
+        require(all(value[k] is None or summary_date(value[k]) for k in ("scoreFirst", "entryFirst")), "INVALID_CHECKS_SIGNALS")
+        require(all(type(value[k]) is int and 0 <= value[k] <= 2**53-1 for k in ("scoreCount", "entryCount")), "INVALID_CHECKS_SIGNALS")
+    accounts = checks["accounts"]
+    require(isinstance(accounts, dict) and set(accounts) <= expected, "INVALID_CHECKS_ACCOUNTS")
+    for value in accounts.values():
+        require(isinstance(value, dict) and set(value) == {"events", "openCount"} and
+                all(type(count) is int and 0 <= count <= 2**53-1 for count in value.values()), "INVALID_CHECKS_ACCOUNTS")
     preparation = metadata["preparation"]
     require(isinstance(preparation, dict) and set(preparation) == {"elapsedSeconds", "maxRssKiB"} and
             finite_number(preparation["elapsedSeconds"]) and preparation["elapsedSeconds"] >= 0 and
@@ -155,7 +170,7 @@ def build_summary_metadata(report, summary, manifest_hash):
     require(isinstance(summary, dict) and all(isinstance(value, dict) for value in summary.values()), "INVALID_RESULT_SUMMARY")
     metadata = {"schema": "adopted-backtest-summary-v1",
                 **{field: report[field] for field in ["status", "mode", "market", "start", "through", "codeCommit", "catalogSha256"]},
-                "preparation": report["preparation"],
+                "preparation": report["preparation"], "checks": report["checks"],
                 "sourceCoverage": report.get("sourceCoverage", {}), "verifiedArithmetic": report["verifiedArithmetic"],
                 "books": {book: {field: values.get(field) for field in BOOK_SUMMARY_FIELDS} for book, values in summary.items()},
                 "measurements": [{field: item[field] for field in ["elapsedSeconds", "maxRssKiB"]} for item in report["measurements"]],
@@ -473,8 +488,31 @@ def run_command(command, log, environment):
             ("integer sizing mismatch", "INTEGER_SIZING"),
             ("Performance metric mismatch", "METRIC_RECONCILIATION"),
         ]
-        code = next((code for text, code in known if text in tail),
-                    "PROCESS_KILLED" if result.returncode in (-9, 137) else "UNCLASSIFIED")
+        code = next((code for text, code in known if text in tail), None)
+        if code is None:
+            # Only literal assertion text from this public source tree may identify
+            # a failure. Never print the private message or interpolation values.
+            assertions = []
+            for folder in (ROOT / "src/lib", ROOT / "scripts"):
+                for file in folder.rglob("*.ts"):
+                    if ".test." in file.name:
+                        continue
+                    source = file.read_text(encoding="utf-8")
+                    for match in re.finditer(r'throw new Error\(\s*["\x27`]([^"\x27`\n$]{16,})', source):
+                        literal = match.group(1)
+                        if literal in tail:
+                            relative = file.relative_to(ROOT).as_posix()
+                            line = source.count("\n", 0, match.start()) + 1
+                            assertions.append((len(literal), relative, line))
+            if assertions:
+                _, relative, line = max(assertions)
+                code = "SOURCE_ASSERT_" + relative + ":" + str(line)
+            else:
+                frames = re.findall(r'RESEARCH_FAILURE_FRAME ((?:src/lib|scripts)/[A-Za-z0-9_./-]+\.ts:[0-9]+:[0-9]+)', tail)
+                if frames:
+                    code = "SOURCE_FRAME_" + frames[0]
+                else:
+                    code = "PROCESS_KILLED" if result.returncode in (-9, 137) else "UNCLASSIFIED"
         raise JobError("LOCAL_RESEARCH_PROCESS_FAILED_" + stage + "_" + code)
     print(json.dumps({"phase": "PREPARE_COMPLETE" if "--output" in command else "VERIFY_COMPLETE" if "--results" in command else "REPLAY_COMPLETE"}), flush=True)
 
@@ -618,6 +656,19 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
     for run in runs:
         for file in run["files"]:
             outputs.append(storage.create_result(run["directory"].name + "/" + file.name, file))
+    result_quality = read_local_json(root / "result" / "quality.json", 4*CHUNK, "INVALID_RESULT_QUALITY")
+    readiness = result_quality.get("signalReadiness", {})
+    checks = {
+        "calendar": {"first": result_quality.get("sourceCalendarStart"), "last": result_quality.get("sourceCalendarEnd")},
+        "signals": {market: {
+            "scoreFirst": readiness.get("firstAnyValidScoreDate", {}).get(market),
+            "entryFirst": readiness.get("firstEntryReadyDate", {}).get(market),
+            "scoreCount": readiness.get("validScoreObservations", {}).get(market, 0),
+            "entryCount": readiness.get("entryReadyObservations", {}).get(market, 0),
+        } for market in ("KOSPI", "KOSDAQ", "ETF")},
+        "accounts": {book: {"events": result_quality[book]["tradeCount"], "openCount": result_quality[book]["terminalOpenPositions"]}
+                     for book in BOOK_NAMES if isinstance(result_quality.get(book), dict) and "tradeCount" in result_quality[book]},
+    }
     report = {"version": "adopted-private-backtest-job-v1", "status": "COMPLETE", "mode": options.mode,
               "codeCommit": code_commit,
               "market": options.market, "start": options.start, "through": options.through,
@@ -627,8 +678,8 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
               "downloadedKrEtfBytes": sum(item["bytes"] for item in sources) if options.market != "us" else 0,
               "usInputProvenance": input_provenance,
               "preparation": preparation,
-              "verifiedArithmetic": True,
-              "sourceCoverage": read_local_json(root / "result" / "quality.json", 4*CHUNK, "INVALID_RESULT_QUALITY").get("sourceCoverage", {}),
+              "verifiedArithmetic": True, "checks": checks,
+              "sourceCoverage": result_quality.get("sourceCoverage", {}),
               "measurements": [{key: value for key, value in run.items() if key not in ("directory", "files")} for run in runs],
               "outputs": outputs, "rawInputsUploaded": False, "logsUploaded": False,
               "cmAndOriginalSourcesUnmodified": True, "actionsArtifactsOrCacheUsed": False}

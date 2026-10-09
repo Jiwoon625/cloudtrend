@@ -136,6 +136,12 @@ class FakeCommands:
         market = command[command.index("--market") + 1]
         books = ["US_A0"] if market == "us" else ["ETF_V02"] if market == "etf" else [
             "KR_COMBINED_ADOPTED", "KOSPI_STANDALONE_DIAGNOSTIC", "KOSDAQ_STANDALONE_DIAGNOSTIC"] + (["ETF_V02"] if market == "kr-etf" else [])
+        quality.update({"sourceCalendarStart": "2016-08-12", "sourceCalendarEnd": "2026-09-11",
+                        "signalReadiness": {"firstAnyValidScoreDate": {"ETF": "2017-09-01"},
+                                            "firstEntryReadyDate": {"ETF": "2017-09-04"},
+                                            "validScoreObservations": {"ETF": 100},
+                                            "entryReadyObservations": {"ETF": 2}}})
+        quality.update({book: {"tradeCount": 3, "terminalOpenPositions": 1, "private": SECRET} for book in books})
         summary = {book: {"status": "SAMPLE_INCOMPLETE" if smoke else "COMPLETE",
                           "startDate": command[command.index("--start") + 1], "endDate": command[command.index("--through") + 1],
                           "observations": quality["sessions"], "cagr": None if smoke else 0.1,
@@ -205,6 +211,8 @@ class JobTests(unittest.TestCase):
             self.assertEqual(set(metadata), job.SUMMARY_FIELDS)
             self.assertEqual(metadata["schema"], "adopted-backtest-summary-v1")
             self.assertEqual(set(metadata["books"]), {"KR_COMBINED_ADOPTED", "KOSPI_STANDALONE_DIAGNOSTIC", "KOSDAQ_STANDALONE_DIAGNOSTIC", "ETF_V02"})
+            self.assertEqual(metadata["checks"]["signals"]["ETF"], {"scoreFirst": "2017-09-01", "entryFirst": "2017-09-04", "scoreCount": 100, "entryCount": 2})
+            self.assertEqual(metadata["checks"]["accounts"]["ETF_V02"], {"events": 3, "openCount": 1})
             for book in metadata["books"].values():
                 self.assertEqual(set(book), job.BOOK_SUMMARY_FIELDS)
                 self.assertEqual(book["status"], "SAMPLE_INCOMPLETE")
@@ -235,6 +243,15 @@ class JobTests(unittest.TestCase):
         invalid = changed()
         invalid["books"]["ETF_V02"]["finalNAV"] = 100
         with self.assertRaisesRegex(job.JobError, "BOOK_FIELDS"):
+            job.safe_summary_metadata(invalid)
+        for field, value in [("scoreFirst", SECRET), ("entryCount", True), ("scoreCount", -1), ("extra", SECRET)]:
+            invalid = changed()
+            invalid["checks"]["signals"]["ETF"][field] = value
+            with self.assertRaisesRegex(job.JobError, "CHECKS"):
+                job.safe_summary_metadata(invalid)
+        invalid = changed()
+        invalid["checks"]["accounts"]["ETF_V02"]["events"] = SECRET
+        with self.assertRaisesRegex(job.JobError, "CHECKS"):
             job.safe_summary_metadata(invalid)
         with mock.patch.object(job, "MAX_METADATA_BYTES", 16):
             with self.assertRaisesRegex(job.JobError, "TOO_LARGE"):
@@ -390,6 +407,21 @@ class JobTests(unittest.TestCase):
                     job.run_command(["node", "local-only"], log, self.env)
             self.assertIn(SECRET, log.read_text())
             self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+
+    def test_error_diagnostics_emit_only_public_source_location(self):
+        for message, expected in [
+            ("Invalid or stale ETF pending entry: " + SECRET, "SOURCE_ASSERT_src/lib/ledger/etfAdoptedShadow.ts:"),
+            (SECRET + "\nRESEARCH_FAILURE_FRAME src/lib/engine/manualDataset.ts:300:4", "SOURCE_FRAME_src/lib/engine/manualDataset.ts:300:4"),
+        ]:
+            with tempfile.TemporaryDirectory() as directory:
+                def fake_run(command, **kwargs):
+                    kwargs["stdout"].write(message.encode())
+                    return argparse.Namespace(returncode=1)
+                with mock.patch.object(job.subprocess, "run", side_effect=fake_run):
+                    with self.assertRaises(job.JobError) as caught:
+                        job.run_command(["node", "local-only"], Path(directory) / "log", self.env)
+                self.assertIn(expected, str(caught.exception))
+                self.assertNotIn(SECRET, str(caught.exception))
 
     def test_raw_files_and_symlinks_cannot_enter_result_upload(self):
         with tempfile.TemporaryDirectory() as directory:
