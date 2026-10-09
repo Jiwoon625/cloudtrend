@@ -41,7 +41,10 @@ def verify(root: Path):
                 nav = INITIAL if b['valuationDate'] is None else D(by_date[b['valuationDate']]['nav'])
                 require(nav == D(b['nav']), 'ETF annual prior-close asset mismatch')
                 require(b['valuationDate'] is None or b['valuationDate'] < b['effectiveDate'], 'ETF asset lookahead')
-                require(b['effectiveDate'] == next(r['date'] for r in rows if int(r['date'][:4]) == b['year']), 'ETF asset reset not on first session')
+                first = next(i for i, r in enumerate(rows) if int(r['date'][:4]) == b['year'])
+                require(b['effectiveDate'] == rows[first]['date'], 'ETF asset reset not on first session')
+                require(b['valuationDate'] == (rows[first-1]['date'] if first else None), 'ETF asset base not immediately prior close')
+                require(not first or rows[first-1]['valuationStatus'] == 'COMPLETE', 'ETF annual stale asset base')
             running_cash = INITIAL
             for t in trades:
                 quantity = D(t['quantity'])
@@ -84,7 +87,41 @@ def verify(root: Path):
                 nav = INITIAL if b['valuationDate'] is None else D(by_date[b['valuationDate']]['nav'])
                 require(nav == D(b['nav']) and (nav / 30).quantize(UNIT, rounding=ROUND_DOWN) == D(b['budget']), 'Annual prior-close budget mismatch')
                 require(b['valuationDate'] is None or b['valuationDate'] < b['effectiveDate'], 'Budget lookahead')
-                require(b['effectiveDate'] == next(r['date'] for r in rows if int(r['date'][:4]) == b['year']), 'Budget not reset at first session')
+                first = next(i for i, r in enumerate(rows) if int(r['date'][:4]) == b['year'])
+                require(b['effectiveDate'] == rows[first]['date'], 'Budget not reset at first session')
+                require(b['valuationDate'] == (rows[first-1]['date'] if first else None), 'KR budget base not immediately prior close')
+                require(not first or rows[first-1]['valuationStatus'] == 'COMPLETE', 'KR annual stale asset base')
+            years = {b['year']: b for b in budgets}
+            timing = json.loads((root / f'{book}.evidence.json').read_text())['exitTiming']
+            events = defaultdict(list)
+            for index, t in enumerate(trades):
+                require(t['signalDate'] < t['entryDate'], 'KR entry before confirmed signal')
+                events[t['entryDate']].append((1, index, 'BUY', t))
+                if t['status'] == 'CLOSED':
+                    require(timing.get(t['id']) in ('OPEN', 'CLOSE'), 'KR exit timing missing')
+                    events[t['exitDate']].append((0 if timing[t['id']] == 'OPEN' else 2, index, 'SELL', t))
+            running_cash, held = INITIAL, set()
+            for r in rows:
+                for _, _, side, t in sorted(events.pop(r['date'], []), key=lambda event: event[:2]):
+                    quantity = D(t['shares'])
+                    if side == 'BUY':
+                        b = years[int(t['signalDate'][:4])]
+                        budget, price = D(b['budget']), D(t['entryPrice'])
+                        require(abs(D(t['targetAmount'])-budget) <= D('0.000001'), 'KR signal-year target mismatch')
+                        require(quantity == int(min(budget, running_cash) / (price*(1+RATE))), 'KR integer sizing mismatch')
+                        gross = price*quantity
+                        running_cash -= gross + fee(gross)
+                        require(t['id'] not in held, 'KR duplicate entry')
+                        held.add(t['id'])
+                    else:
+                        require(t['id'] in held, 'KR exit before entry')
+                        gross = D(t['exitPrice'])*quantity
+                        running_cash += gross-fee(gross)
+                        held.remove(t['id'])
+                    require(running_cash >= 0, 'KR intraday overspend')
+                require(running_cash == D(r['cash']), 'KR intraday cash reconciliation mismatch')
+                require(len(held) == r['openPositions'], 'KR position count mismatch')
+            require(not events, 'KR event outside NAV period')
         cash, peak, mdd = INITIAL, INITIAL, D(0)
         missing = stale = 0
         previous = None

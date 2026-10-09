@@ -8,6 +8,7 @@ Research branch only. This path fixes current strategy rules on real historical 
 - Integer positions, 0.15% one-way fees, exact cash, current carry/exception and H60 rules are retained. Open positions are marked without forced terminal liquidation.
 - An independent Python Decimal check reconciles all fills to daily cash, fee rounding, NAV = cash + marks, annual budgets, CAGR and MDD. Failure blocks result upload.
 - Metrics are historical CAGR and MDD, not a forecast. Smoke or missing/stale valuations withhold metrics. Current-universe and sector metadata applied retrospectively are not point-in-time or independent OOS evidence.
+- Execution follows the existing daily-bar convention: observed open and final daily volume validate tradability. This is historical reconstruction, not certification of intraday data-arrival timing. Independent verification recomputes arithmetic, annual sizing and cash timing from outputs, not the source prices or signal engine.
 
 ## Inputs and outputs
 
@@ -18,6 +19,8 @@ Prepared CSV gzip files are bounded to approximately 32 Mi characters and split 
 The private job reads existing Actions secrets, validates the private bucket, strips credentials from subprocesses and writes create-only results into a new run prefix with hash readback. Raw input, prices, daily NAV, positions and logs never enter public artifacts or caches. Only compact aggregate evidence is attached as private metadata to the completion manifest.
 
 Run a 20-session real-data smoke and inspect actual time/RSS and source bounds before choosing full-period dates. A selected-range completion alone does not certify whole-market coverage. Earlier history remains available for indicators, including recursive ATR.
+
+An explicit request mode `symbols` runs only a source-column classification audit. It stores a bounded private summary of non-six-character ETF identifiers, counts and source-order numbers. Its status is `INPUT_CLASSIFICATION_ONLY`, never performance completion. It does not remove, rewrite or normalize any source beyond reporting the existing parser's normalization alongside the original identifier.
 
 ## Local checks
 

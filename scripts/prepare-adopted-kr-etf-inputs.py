@@ -336,6 +336,52 @@ def prepare(source_manifest: Path, staged_root: Path, output: Path,
         raise
 
 
+def inspect_symbols(source_manifest: Path, staged_root: Path, output: Path) -> dict:
+    """Read-only source classification audit, not a replay or symbol normalization change."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    source = json.loads(source_manifest.read_bytes())
+    invalid = {}
+    for item in source["orderedFiles"]:
+        path = local_source(staged_root.resolve(strict=True), item["sourcePath"])
+        with path.open("rb") as stream:
+            verified_stream(stream, item)
+            parquet = pq.ParquetFile(stream)
+            aliases = {}
+            for name in parquet.schema_arrow.names:
+                key = ALIASES.get(re.sub(r"\s|_", "", name).lower())
+                if key in {"symbol", "market", "type"}:
+                    aliases[key] = name
+            if "symbol" not in aliases:
+                raise ValueError("Canonical source requires symbol column")
+            names = list(aliases.values())
+            for batch in parquet.iter_batches(batch_size=16384, columns=names, use_threads=False):
+                columns = {name: csv_column(pa, batch.column(batch.schema.get_field_index(name))) for name in names}
+                for i in range(batch.num_rows):
+                    raw = columns[aliases["symbol"]][i].strip().upper()
+                    market = columns[aliases["market"]][i].strip().upper() if "market" in aliases else ""
+                    kind = columns[aliases["type"]][i].strip().upper() if "type" in aliases else ""
+                    if kind == "INDEX" or market in {"INDEX", "지수"} or not (kind == "ETF" or market == "ETF"):
+                        continue
+                    normalized = re.sub(r"\.0$", "", re.sub(r"^A(?=\d{6}$)", "", raw))
+                    if re.fullmatch(r"\d{1,6}", normalized):
+                        normalized = normalized.zfill(6)
+                    if re.fullmatch(r"[A-Z0-9]{6}", normalized):
+                        continue
+                    key = (raw, normalized, market, kind)
+                    value = invalid.setdefault(key, {"rawSymbol": raw, "normalizedSymbol": normalized, "market": market, "type": kind, "rows": 0, "sourceOrders": []})
+                    value["rows"] += 1
+                    if item["order"] not in value["sourceOrders"]:
+                        value["sourceOrders"].append(item["order"])
+            verified_stream(stream, item)
+    result = {"schema": "adopted-kr-etf-symbol-audit-v1", "status": "INPUT_CLASSIFICATION_ONLY", "sourceFileCount": len(source["orderedFiles"]), "invalid": list(invalid.values())}
+    with output.open("x", encoding="utf-8") as stream:
+        json.dump(result, stream, ensure_ascii=False, allow_nan=False)
+        stream.write("\n")
+    os.chmod(output, 0o600)
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-manifest", required=True)
@@ -343,8 +389,13 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--through", default=DEFAULT_THROUGH, help="Evaluation default only; raw rows are never cropped")
+    parser.add_argument("--inspect-symbols-only", action="store_true")
     args = parser.parse_args()
     try:
+        if args.inspect_symbols_only:
+            result = inspect_symbols(Path(args.source_manifest), Path(args.staged_root), Path(args.output))
+            print(json.dumps({"status": result["status"], "invalidClasses": len(result["invalid"])}))
+            return
         result = prepare(Path(args.source_manifest), Path(args.staged_root), Path(args.output), args.batch_size, args.through)
     except (OSError, ValueError, ImportError) as error:
         parser.exit(1, f"Preparation failed: {error}\n")

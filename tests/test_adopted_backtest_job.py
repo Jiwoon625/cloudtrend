@@ -109,6 +109,11 @@ class FakeCommands:
         self.verification_calls = []
 
     def __call__(self, command, log, environment):
+        if "--inspect-symbols-only" in command:
+            target = Path(command[command.index("--output")+1])
+            target.write_bytes(job.json_bytes({"schema": "adopted-kr-etf-symbol-audit-v1", "status": "INPUT_CLASSIFICATION_ONLY", "sourceFileCount": 2,
+                "invalid": [{"rawSymbol": "SPY", "normalizedSymbol": "SPY", "market": "ETF", "type": "ETF", "rows": 20, "sourceOrders": [2]}]}))
+            return
         if "--results" in command:
             self.verification_calls.append(command)
             target = Path(command[command.index("--results") + 1])
@@ -195,6 +200,20 @@ class JobTests(unittest.TestCase):
         self.assertEqual(len(self.logs), 1)
         for secret in [SECRET, "PRIVATE_NAV_TEST", "synthetic-stock-raw", "https://"]:
             self.assertNotIn(secret, self.logs[0])
+
+    def test_private_symbol_audit_is_not_a_performance_completion(self):
+        self.options.mode = "symbols"
+        result = self.run_job()
+        self.assertEqual(result["status"], "INPUT_CLASSIFICATION_ONLY")
+        self.assertEqual(result["invalidClasses"], 1)
+        metadata = json.loads(base64.b64decode(self.writes()[-1][2]["headers"]["x-metadata"]))
+        self.assertEqual(metadata["schema"], "adopted-kr-etf-symbol-audit-v1")
+        self.assertNotIn("books", metadata)
+        self.assertEqual(metadata["invalid"][0]["rawSymbol"], "SPY")
+        invalid = json.loads(json.dumps(metadata))
+        invalid["invalid"][0]["rawSymbol"] = "https://private.invalid/secret"
+        with self.assertRaisesRegex(job.JobError, "SYMBOL_AUDIT"):
+            job.safe_symbol_audit_metadata(invalid)
 
     def test_run_manifest_header_contains_only_bounded_safe_summary_metadata(self):
         self.assertEqual(self.run_job()["status"], "COMPLETE")

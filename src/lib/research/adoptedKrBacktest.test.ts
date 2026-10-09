@@ -226,6 +226,13 @@ describe("explicit historical current-rules KR contract", () => {
     expect(result.evidence.accountRole).toBe("INDEPENDENT_30_SLOT_DIAGNOSTIC");
   });
 
+  it("rejects annual resets from a stale prior close instead of silently reusing an old mark", () => {
+    const dates = ["2019-12-27", "2019-12-30", "2019-12-31", "2020-01-02"];
+    const input = inputs(dates);
+    input.bars["A"] = input.bars["A"]!.filter((bar) => bar.tradeDate !== "2019-12-31");
+    expect(() => runAdoptedKrBacktest(input)).toThrow(/complete prior-close NAV/);
+  });
+
   it("does not spend H60 close proceeds at the same morning open", () => {
     const dates = sessions("2020-02-03", 63);
     const symbols = Array.from({ length: 30 }, (_, index) => `S${String(index).padStart(2, "0")}`);

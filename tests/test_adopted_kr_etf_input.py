@@ -124,6 +124,17 @@ class AdoptedKrEtfInputTests(unittest.TestCase):
         self.assertEqual(rows[1][3:], ["12345678901234567890.123456789", "0", "-0.0", "true", "1970-01-01 09:00:01.234567891+09:00"])
         self.assertEqual(rows[2][3:], ["0E-9", "9223372036854775807", "0.10000000000000002", "false", ""])
 
+    def test_symbol_audit_preserves_raw_identifiers_without_changing_scope(self):
+        table = pa.table({"symbol": ["12345.0", "0193T0", "SPY", "SPY", "^GSPC", "ABC"],
+                          "date": ["2020-01-02"]*6, "market": ["ETF"]*4+["INDEX", "KOSPI"],
+                          "type": ["ETF"]*4+["INDEX", "STOCK"], "close": [100]*6})
+        self.manifest_for([("sources/audit.parquet", table)])
+        raw = (self.raw / "sources/audit.parquet").read_bytes()
+        result = prep.inspect_symbols(self.manifest, self.raw, self.root / "audit.json")
+        self.assertEqual(result["status"], "INPUT_CLASSIFICATION_ONLY")
+        self.assertEqual(result["invalid"], [{"rawSymbol": "SPY", "normalizedSymbol": "SPY", "market": "ETF", "type": "ETF", "rows": 2, "sourceOrders": [1]}])
+        self.assertEqual((self.raw / "sources/audit.parquet").read_bytes(), raw)
+
     def test_calendar_uses_observed_kr_rows_even_without_prices(self):
         table = pa.table({
             "종목코드": ["KOSPI", "KOSDAQ", "005930", "000660", "SPY", "0193T0", "VKOSPI", "", "ABC"],

@@ -90,6 +90,22 @@ def finite_number(value):
         return False
 
 
+def safe_symbol_audit_metadata(metadata):
+    require(isinstance(metadata, dict) and set(metadata) == {"schema", "status", "sourceFileCount", "invalid", "resultManifestSha256"}, "INVALID_SYMBOL_AUDIT")
+    require(metadata["schema"] == "adopted-kr-etf-symbol-audit-v1" and metadata["status"] == "INPUT_CLASSIFICATION_ONLY", "INVALID_SYMBOL_AUDIT")
+    check_hash(metadata["resultManifestSha256"])
+    require(type(metadata["sourceFileCount"]) is int and 0 < metadata["sourceFileCount"] <= 256, "INVALID_SYMBOL_AUDIT")
+    require(isinstance(metadata["invalid"], list) and len(metadata["invalid"]) <= 50, "INVALID_SYMBOL_AUDIT")
+    for item in metadata["invalid"]:
+        require(isinstance(item, dict) and set(item) == {"rawSymbol", "normalizedSymbol", "market", "type", "rows", "sourceOrders"}, "INVALID_SYMBOL_AUDIT")
+        require(all(isinstance(item[k], str) and re.fullmatch(r"[A-Z0-9._^=/가-힣-]{0,32}", item[k]) for k in ("rawSymbol", "normalizedSymbol", "market", "type")), "INVALID_SYMBOL_AUDIT")
+        require(type(item["rows"]) is int and 0 < item["rows"] <= 2**53-1 and isinstance(item["sourceOrders"], list) and
+                all(type(n) is int and 1 <= n <= metadata["sourceFileCount"] for n in item["sourceOrders"]), "INVALID_SYMBOL_AUDIT")
+    header = base64.b64encode(json_bytes(metadata)).decode("ascii")
+    require(len(header) <= MAX_METADATA_BYTES, "SYMBOL_AUDIT_TOO_LARGE")
+    return header
+
+
 def safe_summary_metadata(metadata):
     """Validate both shape and scalar domains; never serialize arbitrary source values."""
     require(isinstance(metadata, dict) and set(metadata) == SUMMARY_FIELDS, "INVALID_RESULT_METADATA_FIELDS")
@@ -182,7 +198,7 @@ def build_summary_metadata(report, summary, manifest_hash):
 def validate_options(options):
     check_hash(options.catalog_sha)
     check_hash(options.source_manifest_sha)
-    require(isinstance(options.mode, str) and options.mode in {"smoke", "full"} and
+    require(isinstance(options.mode, str) and options.mode in {"smoke", "full", "symbols"} and
             isinstance(options.market, str) and options.market in {"kr", "etf", "kr-etf", "us"}, "INVALID_MODE_OR_MARKET")
     require(type(options.smoke_sessions) is int and 20 <= options.smoke_sessions <= 60, "INVALID_SMOKE_SESSIONS")
     try:
@@ -396,7 +412,7 @@ class PrivateStorage:
         metadata_headers = {}
         if metadata is not None:
             require(relative == "run-manifest.json", "METADATA_ONLY_ALLOWED_ON_RUN_MANIFEST")
-            metadata_headers["x-metadata"] = safe_summary_metadata(metadata)
+            metadata_headers["x-metadata"] = (safe_symbol_audit_metadata(metadata) if metadata.get("schema") == "adopted-kr-etf-symbol-audit-v1" else safe_summary_metadata(metadata))
             require(metadata["resultManifestSha256"] == evidence["sha256"], "RESULT_METADATA_HASH_MISMATCH")
         self.verify_private_bucket(evidence["bytes"])
         # Existing objects are never overwritten. A same-attempt retry may verify identical bytes.
@@ -608,6 +624,15 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
         command = [sys.executable, str(ROOT / "scripts/prepare-adopted-kr-etf-inputs.py"),
                    "--source-manifest", str(source_manifest), "--staged-root", str(staged),
                    "--output", str(prepared), "--through", options.through]
+        if options.mode == "symbols":
+            profile_path = root / "run-manifest.json"
+            command[command.index("--output")+1] = str(profile_path)
+            command += ["--inspect-symbols-only"]
+            command_runner(command, root / "symbol-audit.log", environment)
+            profile = read_local_json(profile_path, MAX_METADATA_BYTES, "INVALID_SYMBOL_AUDIT")
+            metadata = {**profile, "resultManifestSha256": digest_file(profile_path)["sha256"]}
+            storage.create_result("run-manifest.json", profile_path, metadata=metadata)
+            return {"status": "INPUT_CLASSIFICATION_ONLY", "mode": "symbols", "invalidClasses": len(profile["invalid"])}
     command_runner(command, root / "prepare.log", environment)
     prepared_manifest = read_local_json(prepared / "manifest.json", 8 * CHUNK, "INVALID_PREPARED_MANIFEST")
     preparation = prepared_manifest.get("preparationMetrics")
@@ -726,7 +751,7 @@ def parse_options(argv=None):
     parser.add_argument("--request", dest="request_file", help="Local JSON containing seven explicit research selection fields")
     parser.add_argument("--catalog-sha")
     parser.add_argument("--source-manifest-sha")
-    parser.add_argument("--mode", choices=["smoke", "full"])
+    parser.add_argument("--mode", choices=["smoke", "full", "symbols"])
     parser.add_argument("--market", choices=["kr", "etf", "kr-etf", "us"])
     parser.add_argument("--start")
     parser.add_argument("--through")

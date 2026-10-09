@@ -257,6 +257,8 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
       "Source adjustment and corporate-action/dividend completeness are not certified by this runner.",
       "Full earlier source history is retained; no fixed 252-session truncation.",
       "A complete selected range does not assert completeness of the entire available historical market.",
+      "Execution availability follows the production daily-bar convention: observed open and final daily volume validate tradability; intraday arrival timing is not certified.",
+      "Independent verification checks arithmetic, sizing and timing from output evidence; it does not independently rebuild source prices or signals.",
     ],
   };
   try {

@@ -496,8 +496,11 @@ export function simulateStrategy(
     const year = Number(date.slice(0, 4));
     if (yearlyBudgets.at(-1)?.year === year) return;
     const previousClose = dailyNAV.at(-1);
-    if (previousClose?.nav === null)
-      throw new Error("Cannot reset annual KR budget without prior-close NAV");
+    if (
+      previousClose &&
+      (previousClose.nav === null || previousClose.valuationStatus !== "COMPLETE")
+    )
+      throw new Error("Cannot reset annual KR budget without complete prior-close NAV");
     const nav = previousClose?.nav ?? fromLegacyNumber(settings.initialCapital);
     entryBudget = divide(decimal(nav), decimal(String(settings.maxPositions)));
     yearlyBudgets.push({
