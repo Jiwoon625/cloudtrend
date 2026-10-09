@@ -8,11 +8,13 @@ and its bounded user_metadata. No raw result or metric is printed to Actions.
 from __future__ import annotations
 
 import base64
+import csv
 import hashlib
 import io
 import json
 import math
 import os
+from decimal import Decimal
 from pathlib import Path
 import re
 
@@ -150,6 +152,50 @@ def prepare_report(store, candidate, identity, audit_context, approved):
             "unresolved_rights_encounter_count": count(summary["unresolved_rights_encounter_count"]),
             "historical_pit_certified": False, "actual_historical_execution_certified": False,
             "full_tax_supported": False}
+
+
+def audit_cash_only(candidate, identity, *, store=None):
+    """Narrow historical pure-cash audit; zero executions are required, not invented."""
+    from cmresearchengine.storage import SupabaseCMStore
+    from cmresearchengine.runner import read_result
+    require(candidate == "Q_K000_E000_U000_C100", "PURE_CASH_CANDIDATE_ONLY")
+    hash_value(identity)
+    store = SupabaseCMStore.from_env() if store is None else store
+    require(store.verify_private_bucket()["public"] is False, "PRIVATE_BUCKET_REQUIRED")
+    prefix = f"results/{PLAN}/{candidate}/{identity}/"
+    completion_raw = store.get_object(prefix + "completion.json", max_bytes=1000000)
+    summary_raw = store.get_object(prefix + "summary.json", max_bytes=1000000)
+    checkpoint = store.scoped_checkpoints(PLAN, candidate)
+    require(checkpoint.get_bytes("complete_" + identity) == completion_raw, "COMPLETION_MARKER_MISMATCH")
+    completion = json.loads(completion_raw)
+    require(sha256(canonical(completion["identity"])) == identity and
+            completion["identity"]["candidate"]["candidate_id"] == candidate and
+            completion["identity"]["candidate"]["initial_weights"] == {"K": 0, "E": 0, "U": 0, "C": 1},
+            "PURE_CASH_IDENTITY_MISMATCH")
+    files = read_result(completion, checkpoint)
+    require(files["summary.json"] == summary_raw, "SUMMARY_BYTES_MISMATCH")
+    manifest = json.loads(files["file_manifest.json"])["files"]
+    require(set(manifest) == set(files) - {"file_manifest.json"}, "FILE_SET_MISMATCH")
+    for name, record in manifest.items():
+        require(len(files[name]) == record["size"] and sha256(files[name]) == record["sha256"], "FILE_HASH_MISMATCH")
+    rows = lambda filename: list(csv.DictReader(io.StringIO(files[filename].decode("utf-8-sig"))))
+    nav, events, proxies = rows("nav.csv"), rows("events.csv"), rows("retrospective_exit_proxy_audit.csv")
+    summary = json.loads(summary_raw)
+    require(bool(nav) and not any(row.get("kind") in {"BUY", "SELL"} for row in events) and not proxies,
+            "PURE_CASH_EXECUTION_FOUND")
+    require(summary["proxy_exit_count"] == summary["unresolved_rights_encounter_count"] == 0,
+            "PURE_CASH_RIGHTS_FOUND")
+    for row in nav:
+        require(Decimal(row["gross_nav_krw"]) == Decimal(row["cash_krw"]) == Decimal("100000000") and
+                Decimal(row["receivable_krw"]) == Decimal(row["market_value_krw"]) == 0,
+                "PURE_CASH_NAV_CHANGED")
+    require(Decimal(str(summary["final_snapshot"]["bridge_residual_krw"])) == 0, "PURE_CASH_BRIDGE_FAILED")
+    for field in ("cagr", "mdd", "cumulative_return", "annualized_volatility"):
+        require(number(summary["performance"][field]) == 0, "PURE_CASH_PERFORMANCE_CHANGED")
+    print(json.dumps({"status": candidate + "_PRIVATE_AUDIT_VERIFIED", "trade_fee_checks": 0,
+                      "cash_settlement_checks": 0, "proxy_exit_checks": 0, "nav_rows_checked": len(nav),
+                      "file_manifest_checked": len(manifest), "pure_cash_contract_verified": True,
+                      "result_zip_sha256": completion["outputs_sha256"], "private_storage": True}, sort_keys=True))
 
 
 def publish_report(store, report):
