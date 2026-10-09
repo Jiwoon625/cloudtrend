@@ -7,7 +7,7 @@ import { format } from "prettier";
 import {
   ADOPTED_SHADOW_FROZEN_CODE_HASH,
   adoptedShadowFrozenCodeHash,
-  OCTOBER12_REAUDIT_RUNTIME_HASH,
+  US_PRIORITY_SHARED_COMPARATOR_RUNTIME_HASH,
   REVIEWED_SHADOW_RUNTIME_CODE_HASHES,
   shadowEngineManifest,
   shadowExecutableSyntax,
@@ -173,7 +173,7 @@ export const list = [
 
 it("keeps reviewed runtime provenance compatible with the eight frozen Shadow contracts", async () => {
   const runtime = await shadowEngineManifest();
-  expect(runtime.codeHash).toBe(OCTOBER12_REAUDIT_RUNTIME_HASH);
+  expect(runtime.codeHash).toBe(US_PRIORITY_SHARED_COMPARATOR_RUNTIME_HASH);
   expect(REVIEWED_SHADOW_RUNTIME_CODE_HASHES).toContain(runtime.codeHash);
   expect(adoptedShadowFrozenCodeHash(runtime.codeHash)).toBe(ADOPTED_SHADOW_FROZEN_CODE_HASH);
   expect(ADOPTED_SHADOW_FROZEN_CODE_HASH).toBe(
@@ -186,7 +186,7 @@ it("keeps reviewed runtime provenance compatible with the eight frozen Shadow co
 
 it("freezes calculation sources independently of deployment/UI/docs while detecting engine changes", async () => {
   const original = await shadowEngineManifest();
-  expect(Object.keys(original.manifest.files)).toHaveLength(40);
+  expect(Object.keys(original.manifest.files)).toHaveLength(41);
   expect(original).toEqual(
     JSON.parse(await readFile("src/lib/ledger/octoberShadowEngineManifest.generated.json", "utf8")),
   );

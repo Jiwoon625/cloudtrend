@@ -44,3 +44,17 @@ describe("US holdings availability", () => {
     expect(html).not.toContain("보유 자료 조회 실패");
   });
 });
+
+it("uses A0 TK and B3 RelVol to break Core/Beta ties before the symbol", async () => {
+  const { compareUsCandidates } = await import("../src/lib/usCandidatePriority");
+  const a = { symbol: "AAA", coreRank: 0.9, betaRank: 0.95, tkRank: 0.8, relvolRank: 0.99 };
+  const z = { ...a, symbol: "ZZZ", tkRank: 0.99, relvolRank: 0.8 };
+  expect([a, z].sort((x, y) => compareUsCandidates(x, y)).map((r) => r.symbol)).toEqual([
+    "ZZZ",
+    "AAA",
+  ]);
+  expect([a, z].sort((x, y) => compareUsCandidates(x, y, true)).map((r) => r.symbol)).toEqual([
+    "AAA",
+    "ZZZ",
+  ]);
+});

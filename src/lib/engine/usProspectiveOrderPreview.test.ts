@@ -536,3 +536,50 @@ it("spends cash in frozen signal priority in both preview and operating executio
   for (const r of preview.rows)
     expect(r.estimatedShares).toBe(result.state.positions[r.symbol]?.shares ?? 0);
 });
+
+it.each([a0!, b3!])(
+  "captures and retains $id signal priority before execution, including confirmation ties",
+  (config) => {
+    const s = state("2026-10-09");
+    s.cash = s.initialCapital;
+    s.positions = {};
+    s.allocationPolicy = usFixedSlotAllocationPolicy(s.initialCapital);
+    const q = ["AAA", "ZZZ"].map((symbol) => ({
+      symbol,
+      name: symbol,
+      sector: symbol,
+      close: 100,
+      date: "2026-10-12",
+    }));
+    const signal = analysis("2026-10-12", q);
+    signal.rows.forEach((r, i) => {
+      r.coreRank = 0.95;
+      r.betaRank = 0.95;
+      r.tkRank = i === 0 ? 0.8 : 0.99;
+      r.relvolRank = i === 0 ? 0.99 : 0.8;
+      r.a0Entry = true;
+      r.b3Entry = true;
+    });
+    const planned = stepUsProspectiveOperatingPortfolio(config, signal, s, s.initialCapital);
+    const expected = config.style === "BALANCED" ? ["AAA", "ZZZ"] : ["ZZZ", "AAA"];
+    expect(Object.keys(planned.state.pendingTargets)).toEqual(expected);
+    expect(planned.state.pendingTargets[expected[0]!]!.signalPriority?.confirmation).toBe(0.99);
+    const opened = analysis("2026-10-13", q);
+    opened.rows.forEach((r) => {
+      r.coreRank = 0.99;
+      r.tkRank = 0;
+      r.relvolRank = 0;
+    });
+    const filled = stepUsProspectiveOperatingPortfolio(
+      config,
+      opened,
+      planned.state,
+      s.initialCapital,
+    );
+    expect(
+      filled.trades.filter((t) => t.side === "BUY" && t.status !== "PENDING").map((t) => t.symbol),
+    ).toEqual(expected);
+    const preview = buildUsOrderPreview(config, planned.state, q)!.nextSession;
+    expect(preview.rows.filter((r) => r.side === "BUY").map((r) => r.symbol)).toEqual(expected);
+  },
+);
