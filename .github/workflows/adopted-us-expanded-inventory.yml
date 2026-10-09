@@ -12,7 +12,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   inventory:
-    if: github.event.head_commit.message == 'inventory(adopted-backtest): expanded US'
+    if: >-
+      github.event.head_commit.message == 'inventory(adopted-backtest): expanded US'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
