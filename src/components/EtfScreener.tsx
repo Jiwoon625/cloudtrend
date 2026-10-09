@@ -97,11 +97,7 @@ export function EtfScreener({
   const evidenceFor = (r: AnalysisResult["rows"][number]) =>
     evidenceBySymbol.get(r.instrument.symbol)!;
   const krxPending = rows.find((r) => evidenceFor(r).krxPending)?.etfStrategy;
-  const heldSymbols = [
-    ...(positionContext?.heldSymbols ?? []),
-    ...(ledger?.etfActual?.positions.map((p) => p.symbol) ?? []),
-  ];
-  const heldSet = new Set(heldSymbols);
+  const heldSet = new Set(positionContext?.heldSymbols ?? []);
   const blocked = (r: AnalysisResult["rows"][number]) =>
     soldSymbolsSinceSignal(
       ledger?.document.executions ?? [],

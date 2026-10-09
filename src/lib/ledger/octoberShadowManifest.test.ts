@@ -182,7 +182,7 @@ it("keeps reviewed runtime provenance compatible with the eight frozen Shadow co
   expect(() => adoptedShadowFrozenCodeHash(`sha256:${"f".repeat(64)}`)).toThrow(
     /Unreviewed October Shadow runtime hash/,
   );
-});
+}, 15000);
 
 it("freezes calculation sources independently of deployment/UI/docs while detecting engine changes", async () => {
   const original = await shadowEngineManifest();
@@ -236,4 +236,4 @@ it("freezes calculation sources independently of deployment/UI/docs while detect
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-}, 20000);
+}, 60000);

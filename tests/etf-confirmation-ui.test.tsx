@@ -14,6 +14,7 @@ function page(
   ledger?: DualPortfolioState,
   dataPending = false,
   positionsAvailable = true,
+  heldSymbols?: string[],
 ) {
   const analysis = {
     asOfDate: date,
@@ -65,7 +66,7 @@ function page(
       {...(positionsAvailable && ledger
         ? {
             positionContext: {
-              heldSymbols: ledger.etfActual.positions.map((p) => p.symbol),
+              heldSymbols: heldSymbols ?? ledger.etfActual.positions.map((p) => p.symbol),
               lastSellDateBySymbol: {},
             },
           }
@@ -84,6 +85,15 @@ describe("ETF screener rendered state contract", () => {
     expect(html).toContain("보유 미확인 · 청산 판정 대기");
     expect(html).toContain("보유 확인 대기");
     expect(html).not.toContain("진입 준비 · 다음 시가 진입");
+  });
+  it("uses the canonical holding union even if the separate ledger response is older", () => {
+    const oldLedger = {
+      ...book,
+      etfActual: { ...book.etfActual, positions: [{ symbol: "360750", shares: 1 }] },
+    } as DualPortfolioState;
+    const html = page("confirmed", oldLedger, false, true, []);
+    expect(html).not.toContain("보유 · 추가 매수 없음");
+    expect(html).toContain("진입 준비 · 다음 시가 진입");
   });
   it("labels batch arrival separately from a normal exit", () => {
     const html = page("confirmed", book, true);
