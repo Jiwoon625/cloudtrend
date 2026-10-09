@@ -53,21 +53,30 @@ class FakeStore:
         self.objects[route] = data
 
 
-def fixture():
+def fixture(cash=False, bad_cash=False):
     store = FakeStore()
-    identity = {"candidate": {"candidate_id": "S05"}, "plan_sha256": report.PLAN}
+    candidate = "Q_K000_E000_U000_C100" if cash else "S05"
+    identity = {"candidate": {"candidate_id": candidate, "initial_weights": {"K": 0, "E": 0, "U": 0, "C": 1} if cash else {"K": 1/3, "E": 1/3, "U": 1/3, "C": 0}}, "plan_sha256": report.PLAN}
     identity_hash = report.sha256(report.canonical(identity))
     nav = pd.DataFrame({"at": ["2017-08-21T22:00:00+00:00", "2020-01-02T22:00:00+00:00", "2026-09-11T22:00:00+00:00"],
                         "gross_nav_krw": [99900000.0, 90000000.0, 140000000.0]})
+    if cash:
+        nav["gross_nav_krw"] = 100000000.0
+        nav["cash_krw"] = 100000000.0
+        nav["receivable_krw"] = 0.0
+        nav["market_value_krw"] = 1.0 if bad_cash else 0.0
     series = pd.Series([100000000.0] + list(nav.gross_nav_krw),
                        index=pd.to_datetime(["2017-08-21T00:00:00+00:00"] + list(nav["at"]), utc=True))
-    summary = {"schema": "CM_RESEARCH_RESULT_V1", "candidate_id": "S05", "evaluation_start": "2017-08-21",
+    summary = {"schema": "CM_RESEARCH_RESULT_V1", "candidate_id": candidate, "final_snapshot": {"bridge_residual_krw": "0"}, "evaluation_start": "2017-08-21",
                "evaluation_end": "2026-09-11", "historical_pit_certified": False,
                "actual_historical_execution_certified": False, "full_tax_supported": False,
                "ordinary_and_proxy_sales_share_one_way_fee": "0.0015", "proxy_exit_count": 0,
                "unresolved_rights_encounter_count": 0, "execution_contract": {"initial_capital_krw": 100000000},
                "performance": performance_metrics(series)}
     files = {"summary.json": report.canonical(summary), "nav.csv": nav.to_csv(index=False).encode()}
+    if cash:
+        files["events.csv"] = b"kind,id\n"
+        files["retrospective_exit_proxy_audit.csv"] = b"fill_id\n"
     files["file_manifest.json"] = report.canonical({"files": {name: {"sha256": report.sha256(raw), "size": len(raw)} for name, raw in files.items()}})
     archive = io.BytesIO()
     with zipfile.ZipFile(archive, "w") as z:
@@ -76,7 +85,7 @@ def fixture():
     raw = archive.getvalue()
     completion = {"schema": "CM06_FRESH_COMPLETED_V1", "identity": identity, "outputs_id": "zip",
                   "outputs_size": len(raw), "outputs_sha256": report.sha256(raw)}
-    source = f"results/{report.PLAN}/S05/{identity_hash}/"
+    source = f"results/{report.PLAN}/{candidate}/{identity_hash}/"
     store.objects.update({source + "completion.json": report.canonical(completion),
                           "complete_" + identity_hash: report.canonical(completion), "zip": raw,
                           source + "summary.json": files["summary.json"]})
@@ -180,6 +189,20 @@ class PrivateReportTests(unittest.TestCase):
         with self.assertRaises(ImmutableConflict):
             report.publish_report(store, result)
         self.assertEqual(store.objects[path], b"{}")
+        self.assertFalse(store.posts)
+
+    def test_pure_cash_zero_execution_contract(self):
+        store, identity = fixture(cash=True)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            report.audit_cash_only("Q_K000_E000_U000_C100", identity, store=store)
+        self.assertTrue(json.loads(output.getvalue())["pure_cash_contract_verified"])
+        self.assertFalse(store.posts)
+
+    def test_pure_cash_rejects_nonzero_market_value(self):
+        store, identity = fixture(cash=True, bad_cash=True)
+        with self.assertRaises(report.ReportError):
+            report.audit_cash_only("Q_K000_E000_U000_C100", identity, store=store)
         self.assertFalse(store.posts)
 
 
