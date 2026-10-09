@@ -1,0 +1,138 @@
+name: KR ETF resumable final-strategy backtest
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Verify code, or execute the committed private research request'
+        type: choice
+        options: [verify, full]
+        default: verify
+        required: true
+  push:
+    branches: [feat/kr-etf-final-history]
+    paths:
+      - .github/workflows/kr-etf-resumable-history.yml
+      - .github/kr-etf-resumable-request.json
+      - scripts/*adopted*.py
+      - scripts/*adopted*.ts
+      - src/lib/research/**
+      - src/lib/engine/**
+      - src/lib/portfolio*.ts
+      - src/lib/ledger/etfAdoptedShadow.ts
+      - tests/*adopted*
+      - vitest.adopted-backtest.config.ts
+permissions:
+  contents: read
+concurrency:
+  group: kr-etf-resumable-final-history
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.14'
+      - run: npm ci
+      - run: python -m pip install --disable-pip-version-check pyarrow==19.0.1 pandas==2.2.3 numpy==2.3.5 requests==2.32.5
+      - run: npx tsc --noEmit
+      - run: npx vitest run --config vitest.adopted-backtest.config.ts
+      - run: npx vitest run --config vitest.portfolio.config.ts
+      - run: npx vitest run --config vitest.shadow.config.ts
+      - run: npx vitest run --config vitest.dashboard.config.ts
+      - run: npx vitest run --config vitest.ledger.config.ts src/lib/ledger/etfAdoptedShadow.test.ts
+      - run: python -m unittest discover -s tests -p 'test_adopted_*.py'
+  plan:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'full') ||
+      (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'run(kr-etf-resumable): full'))
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.14'
+      - run: npm ci
+      - run: python -m pip install --disable-pip-version-check pyarrow==19.0.1 pandas==2.2.3 numpy==2.3.5 requests==2.32.5
+      - id: plan
+        name: Verify original inputs and real-input split replay equivalence
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          NODE_OPTIONS: --max-old-space-size=11000
+        run: python scripts/run-adopted-kr-etf-resumable-job.py --request .github/kr-etf-resumable-request.json --phase plan
+  score:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.14'
+      - run: npm ci
+      - run: python -m pip install --disable-pip-version-check pyarrow==19.0.1 pandas==2.2.3 numpy==2.3.5 requests==2.32.5
+      - name: Preserve one verified signal segment without resetting portfolio state
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          NODE_OPTIONS: --max-old-space-size=11000
+          SEGMENT_INDEX: ${{ matrix.chunkIndex }}
+        run: python scripts/run-adopted-kr-etf-resumable-job.py --request .github/kr-etf-resumable-request.json --phase score --chunk-index "$SEGMENT_INDEX"
+  replay:
+    needs: [plan, score]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        market: [kr, etf]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.14'
+      - run: npm ci
+      - run: python -m pip install --disable-pip-version-check pyarrow==19.0.1 pandas==2.2.3 numpy==2.3.5 requests==2.32.5
+      - name: Replay continuous signals once and independently verify cash and closed trades
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          NODE_OPTIONS: --max-old-space-size=11000
+          REPLAY_MARKET: ${{ matrix.market }}
+        run: python scripts/run-adopted-kr-etf-resumable-job.py --request .github/kr-etf-resumable-request.json --phase replay --market "$REPLAY_MARKET"
+      # Original bytes, signal caches, NAV, trades, and private logs never enter Actions artifacts/cache.

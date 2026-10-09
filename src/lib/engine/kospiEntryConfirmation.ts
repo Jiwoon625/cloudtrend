@@ -274,6 +274,7 @@ export function buildKospiEntrySnapshot(
   symbol: string,
   cfg: ScoringConfig,
   context?: OperatingPolicyContext,
+  researchMarketGateAtDate?: (date: string) => KospiMarketGateEvidence,
 ) {
   const benchmark = ds.indexSeries.find((s) => s.indexCode === "KOSPI")?.bars ?? [];
   const sessions = [
@@ -289,7 +290,12 @@ export function buildKospiEntrySnapshot(
     const bar = bars[index];
     const observed = !!bar && benchmark.some((b) => b.tradeDate === date && positive(b.close));
     const rs = kospiRelativeReturns(bars, benchmark, sessions, date);
-    const marketGate = evaluateKospiMarketGateAtDate(ds, date);
+    // A research caller may share this exact dataset/date calculation across symbols.
+    // The default operating/frozen path always evaluates its own evidence as before.
+    const marketGate =
+      isCurrentRulesResearch(context) && researchMarketGateAtDate
+        ? researchMarketGateAtDate(date)
+        : evaluateKospiMarketGateAtDate(ds, date);
     if (!observed)
       return { date, score: null, eligible: false, observed: false, rsAccel: null, marketGate };
     const snap = computeIndicators(bars, index);

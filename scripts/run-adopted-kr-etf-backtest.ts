@@ -8,8 +8,19 @@
  */
 import { createHash } from "node:crypto";
 import { createReadStream, readFileSync } from "node:fs";
-import { chmod, mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  rm,
+  readdir,
+  readFile,
+  realpath,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 import type { MarketDataset } from "../src/lib/engine/dataset";
@@ -17,7 +28,7 @@ import { parseManualMarketData } from "../src/lib/engine/manualDataset";
 import { runFullMarketAnalysis } from "../src/lib/engine/fullMarketAnalysis";
 import { DEFAULT_SCORING_CONFIG } from "../src/lib/engine/scoring";
 import { CURRENT_RULES_RESEARCH } from "../src/lib/engine/operatingPolicyContext";
-import { buildSnapshot, type ScreeningSnapshot } from "../src/lib/screeningSnapshot";
+import type { ScreeningSnapshot } from "../src/lib/screeningSnapshot";
 import type { SeriesHash } from "../src/lib/ledger/modelSeries";
 import {
   adoptedDatasetAsOf,
@@ -32,6 +43,17 @@ import {
   type AdoptedEtfDatedSnapshot,
 } from "../src/lib/research/adoptedEtfBacktest";
 import {
+  accumulateSignalQuality,
+  adoptedSignalRecord,
+  createAdoptedSignalIdentity,
+  openAdoptedSignalCache,
+  SIGNAL_CACHE_INDEX_VERSION,
+  signalQualityAccumulator,
+  stableSignalHash,
+  writeAdoptedSignalCache,
+  type AdoptedSignalRecord,
+} from "../src/lib/research/adoptedSignalCache";
+import {
   fullPeriodBacktestMetrics,
   type BacktestNavPoint,
 } from "../src/lib/research/backtestMetrics";
@@ -45,6 +67,8 @@ export interface ReplayOptions {
   start?: string;
   through?: string;
   smokeSessions?: number;
+  scoringOnly?: boolean;
+  cacheInput?: string;
 }
 interface FileEvidence {
   path: string;
@@ -168,6 +192,8 @@ function metrics(
 
 export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
   if (!["kr", "etf", "kr-etf"].includes(options.market)) throw new Error("Unknown market");
+  if (options.scoringOnly && options.cacheInput)
+    throw new Error("--scoring-only and --cache-input are mutually exclusive");
   const started = performance.now();
   const manifestPath = await realpath(options.manifest);
   const base = path.dirname(manifestPath);
@@ -226,7 +252,11 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
       }
       const overlap = parseManualMarketData(texts, { allowIncompleteIndex: true }).dataset;
       extensionContinuity = verifyExtensionPriceContinuity(dataset, overlap, evidence.afterDate, {
-        totalRows: 6160, minComparedRows: 6150, indexRows: 20, maxNewRows: 10, maxNewSymbols: 1,
+        totalRows: 6160,
+        minComparedRows: 6150,
+        indexRows: 20,
+        maxNewRows: 10,
+        maxNewSymbols: 1,
       });
       if (extensionContinuity.comparedRows + extensionContinuity.unmatchedRows !== evidence.rows)
         throw new Error("Extension continuity row count mismatch");
@@ -246,13 +276,31 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
     )
       throw new Error("Canonical observation outside the declared market calendar");
   }
+  const identity = createAdoptedSignalIdentity({
+    sourceKind: kr.dataset ? "SMOKE_DATASET" : "CANONICAL_CSV",
+    files: sourceFiles,
+    sessions: manifest.sessions,
+    actualSessions: dataset!.tradeDates,
+    extension: kr.extension?.continuityEvidence
+      ? {
+          afterDate: kr.extension.continuityEvidence.afterDate,
+          rows: kr.extension.continuityEvidence.rows,
+        }
+      : null,
+    codeHash: code.sha256,
+    policy: CURRENT_RULES_RESEARCH,
+  });
   const out = path.resolve(options.out);
   // Always a new directory; refusing reuse prevents clobbering originals or earlier results.
   await mkdir(out, { recursive: false, mode: 0o700 });
   await chmod(out, 0o700);
   const summary: Record<string, unknown> = {};
   const quality: Record<string, unknown> = {
-    mode: smoke ? "SAMPLE_INCOMPLETE" : "SELECTED_RANGE_REPLAY",
+    mode: options.scoringOnly
+      ? "SCORING_ONLY"
+      : smoke
+        ? "SAMPLE_INCOMPLETE"
+        : "SELECTED_RANGE_REPLAY",
     market: options.market,
     requestedStart: start,
     requestedThrough: through,
@@ -260,6 +308,8 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
     evaluatedThrough: end,
     sessions: sessions.length,
     sourceManifestHash,
+    sourceHash: identity.sourceHash,
+    signalIdentityHash: stableSignalHash(identity),
     codeHash: code.sha256,
     extensionContinuity,
     inputFiles: sourceFiles,
@@ -280,10 +330,13 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
       "Independent verification checks arithmetic, sizing and timing from output evidence; it does not independently rebuild source prices or signals.",
     ],
   };
+  let transientCacheDirectory: string | undefined;
   try {
     await json(out, "provenance.json", {
       manifest: JSON.parse(bytes.toString("utf8")),
       sourceManifestHash,
+      // Semantic identity excludes job-local paths, registration times and preparation duration.
+      identity,
       code,
     });
     {
@@ -300,80 +353,21 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
         .map((instrument) => instrument.symbol);
       if (withEtf && !etfSymbols.length)
         throw new Error("Requested ETF replay has no ETF instruments");
-      let scoredEntries = 0;
-      const signalQuality = {
-        pendingStockEntries: 0,
-        missingStockScores: 0,
-        incompleteKospiGateSessions: 0,
-      };
-      const readiness = {
-        scope: "SELECTED_SCORING_SESSIONS_ONLY_NOT_EARLIEST_SOURCE_HISTORY",
-        entryReadyDefinition: "CURRENT_ENGINE_ELIGIBLE_ENTRY_SIGNAL_NOT_FILL",
-        firstAnyValidScoreDate: { KOSPI: null, KOSDAQ: null, ETF: null } as Record<
-          "KOSPI" | "KOSDAQ" | "ETF",
-          string | null
-        >,
-        firstEntryReadyDate: { KOSPI: null, KOSDAQ: null, ETF: null } as Record<
-          "KOSPI" | "KOSDAQ" | "ETF",
-          string | null
-        >,
-        validScoreObservations: { KOSPI: 0, KOSDAQ: 0, ETF: 0 },
-        entryReadyObservations: { KOSPI: 0, KOSDAQ: 0, ETF: 0 },
-      };
-      function* scoreSessions(): Generator<AdoptedEtfDatedSnapshot> {
+      const signalCounts = signalQualityAccumulator();
+      let generatedScoringSessions = 0;
+      function* scoreSessions(): Generator<AdoptedSignalRecord> {
         for (const date of sessions) {
+          // Preserve all real prior history, including recursive seeds and confirmation origins.
           const sliced = adoptedDatasetAsOf(raw, date);
           const { analysis } = runFullMarketAnalysis(
             sliced,
             DEFAULT_SCORING_CONFIG,
             CURRENT_RULES_RESEARCH,
           );
-          scoredEntries += analysis.rows.length;
-          for (const row of analysis.rows) {
-            const market = row.instrument.market;
-            const score = market === "ETF" ? row.etfStrategy?.score : row.operatingScore10;
-            const valid = typeof score === "number" && Number.isFinite(score);
-            if (valid) {
-              readiness.firstAnyValidScoreDate[market] ??= date;
-              readiness.validScoreObservations[market]++;
-            }
-            const ready =
-              market === "ETF"
-                ? row.etfStrategy?.eligible === true &&
-                  row.etfStrategy.dataStatus === "ready" &&
-                  row.etfStrategy.onset
-                : valid &&
-                  row.hardFilterPassed &&
-                  (row.pendingRules?.length ?? 0) === 0 &&
-                  (market === "KOSPI" ? row.kospiEntry?.eligible === true : row.kosdaq80Onset);
-            if (ready) {
-              readiness.firstEntryReadyDate[market] ??= date;
-              readiness.entryReadyObservations[market]++;
-            }
-          }
-          for (const row of analysis.rows)
-            if (row.instrument.instrumentType === "STOCK") {
-              if (row.hardFilterStatus === "PENDING" || (row.pendingRules?.length ?? 0) > 0)
-                signalQuality.pendingStockEntries++;
-              if (row.operatingScore10 === null) signalQuality.missingStockScores++;
-            }
-          if (!analysis.kospiMarketGate || analysis.kospiMarketGate.incomplete)
-            signalQuality.incompleteKospiGateSessions++;
-          if (withKr) {
-            // Do not retain evidence/top-list duplication. Preserve all stock entries and policy fields.
-            const { topStocks: _stocks, topEtfs: _etfs, ...snapshot } = buildSnapshot(analysis);
-            snapshot.entries = snapshot.entries.filter((entry) => entry.instrumentType === "STOCK");
-            snapshots.push(snapshot);
-            if (analysis.kospiMarketGate) gates[date] = analysis.kospiMarketGate;
-          }
-          yield {
-            date,
-            strategies: analysis.rows.flatMap((row) =>
-              row.instrument.instrumentType === "ETF" && row.etfStrategy
-                ? [{ symbol: row.instrument.symbol, strategy: row.etfStrategy }]
-                : [],
-            ),
-          };
+          const record = adoptedSignalRecord(analysis);
+          generatedScoringSessions++;
+          if (options.scoringOnly) accumulateSignalQuality(signalCounts, record);
+          yield record;
         }
       }
       const sourceCoverage = Object.fromEntries(
@@ -423,87 +417,161 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
       );
       quality["syntheticFixture"] = Boolean(kr.dataset) || !raw.isLive;
       quality["undatedEtfFactsExcluded"] = Object.keys(raw.etfFacts).length;
-      if (withEtf) {
-        const result = await runAdoptedEtfBacktest({
-          runId: `${smoke ? "smoke" : "selected"}-${sourceManifestHash.slice(7, 19)}-${start}-${end}`,
-          startDate: start,
-          endDate: end,
-          sourceHash: sourceManifestHash,
-          codeHash: code.sha256,
-          calendar: {
-            market: "KR",
-            sourceHash: digest(JSON.stringify(manifest.sessions)),
-            coverageStart: manifest.sessions[0]!,
-            coverageEnd: manifest.sessions.at(-1)!,
-            regularSessions: manifest.sessions,
-          },
-          etfSymbols,
-          observedBars: raw.observedBars!,
-          snapshots: scoreSessions(),
-          includeRecords: false,
+      let cacheIndexPath = options.cacheInput;
+      if (!cacheIndexPath) {
+        const cacheOut = options.scoringOnly
+          ? out
+          : (transientCacheDirectory = await mkdtemp(
+              path.join(os.tmpdir(), "adopted-signal-spool-"),
+            ));
+        await chmod(cacheOut, 0o700);
+        const chunk = await writeAdoptedSignalCache({
+          out: cacheOut,
+          identity,
+          evaluationDates: sessions,
+          records: scoreSessions(),
         });
-        await lines(out, "ETF_V02.daily-nav.jsonl", result.dailyNav);
-        await lines(out, "ETF_V02.trades.jsonl", result.fills);
-        await json(out, "ETF_V02.contract.json", result.contract);
-        await json(out, "ETF_V02.final-state.json", result.finalState);
-        await json(out, "ETF_V02.yearly-budgets.json", {
-          policy: "ANNUAL_NAV_VOLATILITY_SIGNAL_YEAR_V1",
-          yearlyReset: true,
-          years: result.finalState.researchYearAssetBases,
-        });
-        summary["ETF_V02"] = metrics(result.dailyNav, start, result.initialNav, smoke, sessions);
-        quality["ETF_V02"] = {
-          ...result.quality,
-          tradeCount: result.fills.length,
-          terminalOpenPositions: Object.keys(result.finalState.positions).length,
-        };
-      } else
-        for (const _snapshot of scoreSessions()) {
-          /* consume the shared scoring generator */
-        }
-      if (withKr)
-        for (const scope of ["MIXED", "KOSPI", "KOSDAQ"] as const) {
-          const result = runAdoptedKrBacktest({
-            snapshots,
-            bars: raw.observedBars!,
-            markets,
-            marketDates: manifest.sessions,
-            marketGates: gates,
-            startDate: start,
-            throughDate: end,
-            scope,
-            fingerprint: sourceManifestHash,
-            ...(raw.liquidSymbolCountsByDate
-              ? { marketLiquidCounts: raw.liquidSymbolCountsByDate }
-              : {}),
+        if (options.scoringOnly) quality["signalCacheManifest"] = chunk;
+        if (!options.scoringOnly) {
+          const manifestName = "signal-cache.manifest.json";
+          const manifestFile = path.join(cacheOut, manifestName);
+          await json(cacheOut, "signal-cache.index.json", {
+            version: SIGNAL_CACHE_INDEX_VERSION,
+            chunks: [
+              {
+                path: manifestName,
+                bytes: (await stat(manifestFile)).size,
+                sha256: await hashFile(manifestFile),
+              },
+            ],
           });
-          const book = scope === "MIXED" ? "KR_COMBINED_ADOPTED" : `${scope}_STANDALONE_DIAGNOSTIC`;
-          await lines(out, `${book}.daily-nav.jsonl`, result.dailyNAV);
-          await lines(out, `${book}.trades.jsonl`, result.trades);
-          await json(out, `${book}.yearly-budgets.json`, result.yearlyBudgets);
-          await json(out, `${book}.evidence.json`, result.evidence);
-          await json(out, `${book}.accounting.json`, result.ledger.modelAccounting);
-          summary[book] = metrics(
-            result.dailyNAV,
-            start,
-            result.evidence.initialCapital,
-            smoke,
-            sessions,
-          );
-          quality[book] = {
-            accountRole: result.evidence.accountRole,
-            missingNavSessions: result.dailyNAV.filter((row) => row.valuationStatus === "MISSING")
-              .length,
-            staleNavSessions: result.dailyNAV.filter((row) => row.valuationStatus === "STALE")
-              .length,
-            tradeCount: result.trades.length,
-            terminalOpenPositions: result.trades.filter((trade) => trade.status === "OPEN").length,
+          cacheIndexPath = path.join(cacheOut, "signal-cache.index.json");
+        }
+      }
+      if (!options.scoringOnly) {
+        const cache = await openAdoptedSignalCache({
+          indexPath: path.resolve(cacheIndexPath!),
+          identity,
+          actualSessions: raw.tradeDates,
+          selectedSessions: sessions,
+        });
+        // Consume and validate EVERY indexed row, even outside this portfolio's range,
+        // before any portfolio executor is called. Retain only selected KR signals.
+        for await (const { record, generatedAt } of cache.records()) {
+          accumulateSignalQuality(signalCounts, record);
+          if (withKr) {
+            snapshots.push({ ...record.krSnapshot, savedAt: generatedAt });
+            if (record.krGate) gates[record.date] = record.krGate;
+          }
+        }
+        quality["signalCache"] = {
+          identityHash: cache.identityHash,
+          indexHash: cache.indexHash,
+          chunks: cache.chunks,
+          availableSessions: cache.availableSessions,
+          selectedSessions: cache.selectedSessions,
+          allIndexedRowsValidatedBeforeExecution: true,
+        };
+        async function* etfSnapshots(): AsyncGenerator<AdoptedEtfDatedSnapshot> {
+          // Re-read the verified cache to avoid retaining all ETF strategies in memory.
+          // The ETF executor remains a single uninterrupted stateful pass across chunks.
+          for await (const { record } of cache.records()) yield record.etfSnapshot;
+        }
+        if (withEtf) {
+          const result = await runAdoptedEtfBacktest({
+            runId: `${smoke ? "smoke" : "selected"}-${identity.sourceHash.slice(7, 19)}-${start}-${end}`,
+            startDate: start,
+            endDate: end,
+            sourceHash: identity.sourceHash,
+            codeHash: code.sha256,
+            calendar: {
+              market: "KR",
+              sourceHash: digest(JSON.stringify(manifest.sessions)),
+              coverageStart: manifest.sessions[0]!,
+              coverageEnd: manifest.sessions.at(-1)!,
+              regularSessions: manifest.sessions,
+            },
+            etfSymbols,
+            observedBars: raw.observedBars!,
+            snapshots: etfSnapshots(),
+            includeRecords: false,
+          });
+          await lines(out, "ETF_V02.daily-nav.jsonl", result.dailyNav);
+          await lines(out, "ETF_V02.trades.jsonl", result.fills);
+          await json(out, "ETF_V02.contract.json", result.contract);
+          await json(out, "ETF_V02.final-state.json", result.finalState);
+          await json(out, "ETF_V02.yearly-budgets.json", {
+            policy: "ANNUAL_NAV_VOLATILITY_SIGNAL_YEAR_V1",
+            yearlyReset: true,
+            years: result.finalState.researchYearAssetBases,
+          });
+          summary["ETF_V02"] = metrics(result.dailyNav, start, result.initialNav, smoke, sessions);
+          quality["ETF_V02"] = {
+            ...result.quality,
+            tradeCount: result.fills.length,
+            terminalOpenPositions: Object.keys(result.finalState.positions).length,
           };
         }
+        if (withKr)
+          for (const scope of ["MIXED", "KOSPI", "KOSDAQ"] as const) {
+            const result = runAdoptedKrBacktest({
+              snapshots,
+              bars: raw.observedBars!,
+              markets,
+              marketDates: manifest.sessions,
+              marketGates: gates,
+              startDate: start,
+              throughDate: end,
+              scope,
+              fingerprint: identity.sourceHash,
+              ...(raw.liquidSymbolCountsByDate
+                ? { marketLiquidCounts: raw.liquidSymbolCountsByDate }
+                : {}),
+            });
+            const book =
+              scope === "MIXED" ? "KR_COMBINED_ADOPTED" : `${scope}_STANDALONE_DIAGNOSTIC`;
+            await lines(out, `${book}.daily-nav.jsonl`, result.dailyNAV);
+            await lines(out, `${book}.trades.jsonl`, result.trades);
+            await json(out, `${book}.yearly-budgets.json`, result.yearlyBudgets);
+            await json(out, `${book}.evidence.json`, result.evidence);
+            await json(out, `${book}.accounting.json`, result.ledger.modelAccounting);
+            summary[book] = metrics(
+              result.dailyNAV,
+              start,
+              result.evidence.initialCapital,
+              smoke,
+              sessions,
+            );
+            quality[book] = {
+              accountRole: result.evidence.accountRole,
+              missingNavSessions: result.dailyNAV.filter((row) => row.valuationStatus === "MISSING")
+                .length,
+              staleNavSessions: result.dailyNAV.filter((row) => row.valuationStatus === "STALE")
+                .length,
+              tradeCount: result.trades.length,
+              terminalOpenPositions: result.trades.filter((trade) => trade.status === "OPEN")
+                .length,
+            };
+          }
+      }
       quality["scoringSessions"] = sessions.length;
-      quality["signalQuality"] = signalQuality;
-      quality["signalReadiness"] = readiness;
-      quality["scoredEntries"] = scoredEntries;
+      quality["generatedScoringSessions"] = generatedScoringSessions;
+      quality["portfolioExecutionPasses"] = options.scoringOnly
+        ? {
+            ETF_V02: 0,
+            KR_COMBINED_ADOPTED: 0,
+            KOSPI_STANDALONE_DIAGNOSTIC: 0,
+            KOSDAQ_STANDALONE_DIAGNOSTIC: 0,
+          }
+        : {
+            ETF_V02: withEtf ? 1 : 0,
+            KR_COMBINED_ADOPTED: withKr ? 1 : 0,
+            KOSPI_STANDALONE_DIAGNOSTIC: withKr ? 1 : 0,
+            KOSDAQ_STANDALONE_DIAGNOSTIC: withKr ? 1 : 0,
+          };
+      quality["signalQuality"] = signalCounts.signalQuality;
+      quality["signalReadiness"] = signalCounts.readiness;
+      quality["scoredEntries"] = signalCounts.scoredEntries;
       quality["retainedStockSnapshots"] = snapshots.length;
       quality["retainedStockEntries"] = snapshots.reduce(
         (n, snapshot) => n + snapshot.entries.length,
@@ -519,10 +587,12 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
     await writeFile(
       path.join(out, "report.md"),
       [
-        `# Adopted rules ${smoke ? "SMOKE SAMPLE / INCOMPLETE" : "selected-range research"}`,
+        `# Adopted rules ${options.scoringOnly ? "SIGNAL SCORING ONLY / NO PORTFOLIO REPLAY" : smoke ? "SMOKE SAMPLE / INCOMPLETE" : "selected-range research"}`,
         "",
         `Range: ${start} through ${end}; ${sessions.length} actual sessions.`,
-        "Current production scoring and adopted executors; no forced terminal liquidation.",
+        options.scoringOnly
+          ? "Signals only; no portfolio executor called and no performance metrics generated."
+          : "Current production scoring and adopted executors; no forced terminal liquidation.",
         "KR_COMBINED_ADOPTED shares 30 slots; KOSPI/KOSDAQ standalone books are independent 30-slot diagnostics.",
         "KR yearly new-entry budget uses prior-year final-close NAV / 30; held quantities are not rebalanced.",
         "Only COMPLETE non-smoke selected-range valuations publish return/CAGR/MDD. CAGR uses calendar days / 365.2425.",
@@ -545,6 +615,9 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
       summaryMetricsPublishable: false,
     });
     throw error;
+  } finally {
+    if (transientCacheDirectory)
+      await rm(transientCacheDirectory, { recursive: true, force: true });
   }
 }
 
@@ -557,11 +630,18 @@ export function parseReplayArgs(argv: string[]): ReplayOptions {
     "--start",
     "--through",
     "--smoke-sessions",
+    "--cache-input",
   ]);
   const values = new Map<string, string>();
-  for (let i = 0; i < argv.length; i += 2) {
+  let scoringOnly = false;
+  for (let i = 0; i < argv.length; i++) {
     const flag = argv[i]!;
-    const value = argv[i + 1];
+    if (flag === "--scoring-only") {
+      if (scoringOnly) throw new Error("Duplicate --scoring-only argument");
+      scoringOnly = true;
+      continue;
+    }
+    const value = argv[++i];
     if (!allowed.has(flag) || !value || value.startsWith("--") || values.has(flag))
       throw new Error(`Invalid or duplicate CLI argument: ${flag}`);
     values.set(flag, value);
@@ -573,10 +653,14 @@ export function parseReplayArgs(argv: string[]): ReplayOptions {
     throw new Error(
       "Required: --market kr|etf|kr-etf --manifest <local JSON> --out <new private directory>",
     );
+  if (scoringOnly && values.has("--cache-input"))
+    throw new Error("--scoring-only and --cache-input are mutually exclusive");
   return {
     market,
     manifest,
     out,
+    ...(scoringOnly ? { scoringOnly: true } : {}),
+    ...(values.has("--cache-input") ? { cacheInput: values.get("--cache-input")! } : {}),
     ...(values.has("--start") ? { start: values.get("--start")! } : {}),
     ...(values.has("--through") ? { through: values.get("--through")! } : {}),
     ...(values.has("--smoke-sessions")

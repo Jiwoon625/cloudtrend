@@ -358,6 +358,21 @@ export function runAnalysis(
   cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
   context?: OperatingPolicyContext,
 ): AnalysisResult {
+  // Per-call research cache: all KOSPI symbols consult the same three session gates.
+  // Never retain it across calls or datasets, including an in-place source update.
+  const researchMarketGates = isCurrentRulesResearch(context)
+    ? new Map<string, KospiMarketGateEvidence>()
+    : undefined;
+  const researchMarketGateAtDate = researchMarketGates
+    ? (date: string) => {
+        let evidence = researchMarketGates.get(date);
+        if (!evidence) {
+          evidence = evaluateKospiMarketGateAtDate(ds, date);
+          researchMarketGates.set(date, evidence);
+        }
+        return evidence;
+      }
+    : undefined;
   const kospi = indexSnapshot(ds, "KOSPI");
   const kosdaq = indexSnapshot(ds, "KOSDAQ") ?? kospi;
   if (!kospi || !kosdaq)
@@ -596,7 +611,13 @@ export function runAnalysis(
 
   for (const row of rows) {
     if (row.instrument.instrumentType !== "STOCK" || row.instrument.market !== "KOSPI") continue;
-    const dated = buildKospiEntrySnapshot(ds, row.instrument.symbol, cfg, context);
+    const dated = buildKospiEntrySnapshot(
+      ds,
+      row.instrument.symbol,
+      cfg,
+      context,
+      researchMarketGateAtDate,
+    );
     row.kospiEntry = dated.entry;
     Object.assign(
       row,
@@ -733,7 +754,8 @@ export function runAnalysis(
     capabilities: ds.capabilities,
     notes: ds.notes,
     marketGate: gate,
-    kospiMarketGate: evaluateKospiMarketGateAtDate(ds, ds.asOfDate),
+    kospiMarketGate:
+      researchMarketGateAtDate?.(ds.asOfDate) ?? evaluateKospiMarketGateAtDate(ds, ds.asOfDate),
     vkospi,
     kospi,
     kosdaq,
