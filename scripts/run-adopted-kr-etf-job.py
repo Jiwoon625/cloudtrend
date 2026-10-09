@@ -448,7 +448,35 @@ def run_command(command, log, environment):
         os.chmod(log, 0o600)
         result = subprocess.run(command, cwd=ROOT, env=child_environment(environment),
                                 stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT, check=False)
-    require(result.returncode == 0, "LOCAL_RESEARCH_PROCESS_FAILED")
+    if result.returncode != 0:
+        stage = "PREPARE" if "--output" in command else "VERIFY" if "--results" in command else "REPLAY"
+        with Path(log).open("rb") as stream:
+            stream.seek(max(0, Path(log).stat().st_size - 32768))
+            tail = stream.read().decode("utf-8", errors="replace")
+        known = [
+            ("Cannot create a string longer", "STRING_LIMIT"),
+            ("Invalid string length", "STRING_LIMIT"),
+            ("heap out of memory", "HEAP_LIMIT"),
+            ("Reached heap limit", "HEAP_LIMIT"),
+            ("Legacy number needs more than eight decimal places", "PRICE_PRECISION"),
+            ("Source byte count mismatch", "INPUT_SIZE"),
+            ("Source SHA-256 mismatch", "INPUT_HASH"),
+            ("outside the declared market calendar", "CALENDAR_OBSERVATION"),
+            ("differ from canonical KOSPI session evidence", "CALENDAR_MISMATCH"),
+            ("boundaries must be covered", "PERIOD_BOUNDARY"),
+            ("Unsupported lossless CSV type", "SOURCE_SCHEMA"),
+            ("Canonical source requires", "SOURCE_COLUMNS"),
+            ("symbols must", "SYMBOL_SCHEMA"),
+            ("symbol/date/version", "SIGNAL_IDENTITY"),
+            ("Annual ETF asset base requires", "ANNUAL_NAV_UNAVAILABLE"),
+            ("Negative cash or cash reconciliation mismatch", "CASH_RECONCILIATION"),
+            ("integer sizing mismatch", "INTEGER_SIZING"),
+            ("Performance metric mismatch", "METRIC_RECONCILIATION"),
+        ]
+        code = next((code for text, code in known if text in tail),
+                    "PROCESS_KILLED" if result.returncode in (-9, 137) else "UNCLASSIFIED")
+        raise JobError("LOCAL_RESEARCH_PROCESS_FAILED_" + stage + "_" + code)
+    print(json.dumps({"phase": "PREPARE_COMPLETE" if "--output" in command else "VERIFY_COMPLETE" if "--results" in command else "REPLAY_COMPLETE"}), flush=True)
 
 
 def output_files(directory):
