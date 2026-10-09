@@ -40,10 +40,14 @@ OPTIONAL_OUTPUT_NAMES = {"input-provenance.json"}
 BOOK_NAMES = {"KR_COMBINED_ADOPTED", "KOSPI_STANDALONE_DIAGNOSTIC", "KOSDAQ_STANDALONE_DIAGNOSTIC", "ETF_V02", "US_A0"}
 BOOK_SUFFIXES = {"daily-nav.jsonl", "trades.jsonl", "yearly-budgets.json", "evidence.json", "contract.json", "final-state.json", "accounting.json"}
 SUMMARY_FIELDS = {"schema", "status", "mode", "market", "start", "through", "codeCommit", "catalogSha256",
-                  "books", "measurements", "preparation", "resultManifestSha256", "sourceCoverage", "verifiedArithmetic", "checks"}
+                  "books", "measurements", "preparation", "resultManifestSha256", "sourceCoverage", "verifiedArithmetic", "checks", "extensionHashes", "extensionContinuity"}
 BOOK_SUMMARY_FIELDS = {"status", "startDate", "endDate", "observations", "cagr", "mdd", "cumulativeReturn",
                        "missingValuationCount", "staleValuationCount", "annualization"}
 MAX_METADATA_BYTES = 8 * 1024
+EXTENSION_AFTER = "2026-09-11"
+EXTENSION_THROUGH = "2026-09-30"
+EXTENSION_SHA256 = "fb6386fcf81d26ed11f20497ca05d9ceabc9e089f9c8dd86452eb6354c4aef8e"
+EXTENSION_BYTES = 21136723
 
 
 class JobError(RuntimeError):
@@ -119,6 +123,22 @@ def safe_summary_metadata(metadata):
     validated_code_commit({"GITHUB_SHA": metadata["codeCommit"]})
     check_hash(metadata["catalogSha256"])
     check_hash(metadata["resultManifestSha256"])
+    require(isinstance(metadata["extensionHashes"], list) and len(metadata["extensionHashes"]) <= 1, "INVALID_EXTENSION_METADATA")
+    for extension_hash in metadata["extensionHashes"]:
+        check_hash(extension_hash)
+        require(extension_hash == EXTENSION_SHA256, "INVALID_EXTENSION_METADATA")
+    if metadata["market"] != "us":
+        require(metadata["extensionHashes"] == ([EXTENSION_SHA256] if metadata["through"] > EXTENSION_AFTER else []), "EXTENSION_METADATA_PERIOD_MISMATCH")
+    continuity = metadata["extensionContinuity"]
+    if metadata["extensionHashes"]:
+        require(isinstance(continuity, dict) and set(continuity) == {"status", "afterDate", "comparedRows", "unmatchedRows", "comparedIndexRows", "comparedFields", "priceBasisAdjusted"}, "INVALID_EXTENSION_CONTINUITY")
+        require(continuity["status"] == "PASS" and continuity["afterDate"] == EXTENSION_AFTER and
+                continuity["comparedFields"] == ["open", "high", "low", "close"] and continuity["priceBasisAdjusted"] is False,
+                "INVALID_EXTENSION_CONTINUITY")
+        require(all(type(continuity[k]) is int and 0 <= continuity[k] <= 2**53-1 for k in ("comparedRows", "unmatchedRows", "comparedIndexRows")) and
+                0 < continuity["comparedIndexRows"] < continuity["comparedRows"], "INVALID_EXTENSION_CONTINUITY")
+    else:
+        require(continuity is None, "UNEXPECTED_EXTENSION_CONTINUITY")
     expected = {"US_A0"} if metadata["market"] == "us" else (
         {"ETF_V02"} if metadata["market"] == "etf" else
         {"KR_COMBINED_ADOPTED", "KOSPI_STANDALONE_DIAGNOSTIC", "KOSDAQ_STANDALONE_DIAGNOSTIC"} |
@@ -189,7 +209,7 @@ def build_summary_metadata(report, summary, manifest_hash):
     require(isinstance(summary, dict) and all(isinstance(value, dict) for value in summary.values()), "INVALID_RESULT_SUMMARY")
     metadata = {"schema": "adopted-backtest-summary-v1",
                 **{field: report[field] for field in ["status", "mode", "market", "start", "through", "codeCommit", "catalogSha256"]},
-                "preparation": report["preparation"], "checks": report["checks"],
+                "preparation": report["preparation"], "checks": report["checks"], "extensionHashes": report.get("extensionHashes", []), "extensionContinuity": report.get("extensionContinuity"),
                 "sourceCoverage": report.get("sourceCoverage", {}), "verifiedArithmetic": report["verifiedArithmetic"],
                 "books": {book: {field: values.get(field) for field in BOOK_SUMMARY_FIELDS} for book, values in summary.items()},
                 "measurements": [{field: item[field] for field in ["elapsedSeconds", "maxRssKiB"]} for item in report["measurements"]],
@@ -369,6 +389,38 @@ class PrivateStorage:
         allowed = bucket.get("allowed_mime_types")
         require(not allowed or isinstance(allowed, list) and any(
             mime in allowed for mime in ["application/octet-stream", "application/*", "*/*"]), "BUCKET_RESULT_MIME_RESTRICTED")
+
+    def verified_september_extension(self, target):
+        """Owner-scoped, hash-pinned read of a preserved source, never the dynamic active set."""
+        fields = "id,user_id,file_hash,file_size_bytes,storage_bucket,storage_path,source_type,status"
+        parameters = {"select": fields, "user_id": "eq." + self.owner,
+                      "file_hash": "eq.sha256:" + EXTENSION_SHA256,
+                      "file_size_bytes": "eq." + str(EXTENSION_BYTES),
+                      "storage_bucket": "eq." + BUCKET, "source_type": "eq.screening",
+                      "status": "eq.superseded", "limit": "2"}
+        with safe_response(self.session, "GET", EXPECTED_SUPABASE_URL + "/rest/v1/analysis_source_files",
+                           headers=self.headers, params=parameters, timeout=(20, 60)) as response:
+            require(response.status_code == 200, "EXTENSION_REGISTRY_UNAVAILABLE")
+            try:
+                rows = response.json()
+            except Exception:
+                raise JobError("INVALID_EXTENSION_REGISTRY") from None
+        require(isinstance(rows, list) and len(rows) == 1 and isinstance(rows[0], dict), "EXTENSION_REGISTRY_NOT_UNIQUE")
+        item = rows[0]
+        require(set(item) == set(fields.split(",")), "INVALID_EXTENSION_REGISTRY_FIELDS")
+        require(item["user_id"] == self.owner and item["file_hash"] == "sha256:" + EXTENSION_SHA256 and
+                type(item["file_size_bytes"]) is int and item["file_size_bytes"] == EXTENSION_BYTES and
+                item["storage_bucket"] == BUCKET and item["source_type"] == "screening" and item["status"] == "superseded",
+                "EXTENSION_REGISTRY_PIN_MISMATCH")
+        require(isinstance(item["id"], str) and re.fullmatch(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", item["id"]), "INVALID_EXTENSION_SOURCE_ID")
+        key = item["storage_path"]
+        prefix = self.owner + "/source/screening/" + item["id"] + "/"
+        require(isinstance(key, str) and key.startswith(prefix) and
+                re.fullmatch(r"[A-Za-z0-9_.-]+\.csv", key[len(prefix):]), "EXTENSION_STORAGE_SCOPE_MISMATCH")
+        self.input_keys.add(key)
+        self.download(key, target, {"bytes": EXTENSION_BYTES, "sha256": EXTENSION_SHA256})
+        return {"sourceType": "OWNER_PINNED_PRESERVED_SCREENING_SOURCE", "registry": item,
+                "bytes": EXTENSION_BYTES, "sha256": EXTENSION_SHA256, "hashVerified": True}
 
     def _url(self, key, *, write=False):
         require(key in (self.output_keys if write else self.input_keys | self.output_keys), "STORAGE_PATH_OUTSIDE_JOB")
@@ -596,6 +648,8 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
     os.chmod(source_manifest, 0o600)
     prepared = root / "prepared"
     input_provenance = None
+    extension_hashes = []
+    extension_evidence = []
     if options.market == "us":
         staged = root / "us-inputs"
         hook = us_input_hook or load_us_input_hook()
@@ -638,6 +692,17 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
                         "examples": profile["invalid"][:8], "resultManifestSha256": digest_file(profile_path)["sha256"]}
             storage.create_result("run-manifest.json", profile_path, metadata=metadata)
             return {"status": "INPUT_CLASSIFICATION_ONLY", "mode": "symbols", "invalidClasses": len(profile["invalid"])}
+        if options.through > EXTENSION_AFTER:
+            require(options.through <= EXTENSION_THROUGH, "REQUEST_BEYOND_VERIFIED_EXTENSION")
+            extension_path = root / "verified-september-stock-index-source.csv"
+            evidence = storage.verified_september_extension(extension_path)
+            extension_manifest = root / "extension-manifest.json"
+            local_json(extension_manifest, {"version": "adopted-kr-stock-index-extension-v1", "localPath": str(extension_path),
+                "bytes": EXTENSION_BYTES, "sha256": EXTENSION_SHA256,
+                "afterDate": EXTENSION_AFTER, "throughDate": options.through, "evidence": evidence})
+            command += ["--extension-manifest", str(extension_manifest)]
+            extension_hashes.append(EXTENSION_SHA256)
+            extension_evidence.append(evidence)
     command_runner(command, root / "prepare.log", environment)
     prepared_manifest = read_local_json(prepared / "manifest.json", 8 * CHUNK, "INVALID_PREPARED_MANIFEST")
     preparation = prepared_manifest.get("preparationMetrics")
@@ -708,8 +773,8 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
               "downloadedKrEtfFiles": len(sources) if options.market != "us" else 0,
               "downloadedKrEtfBytes": sum(item["bytes"] for item in sources) if options.market != "us" else 0,
               "usInputProvenance": input_provenance,
-              "preparation": preparation,
-              "verifiedArithmetic": True, "checks": checks,
+              "preparation": preparation, "extensionHashes": extension_hashes, "inputExtensions": extension_evidence,
+              "verifiedArithmetic": True, "checks": checks, "extensionContinuity": result_quality.get("extensionContinuity"),
               "sourceCoverage": result_quality.get("sourceCoverage", {}),
               "measurements": [{key: value for key, value in run.items() if key not in ("directory", "files")} for run in runs],
               "outputs": outputs, "rawInputsUploaded": False, "logsUploaded": False,

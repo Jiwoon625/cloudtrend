@@ -44,7 +44,9 @@ permissions:
   contents: read
 concurrency:
   group: kr-etf-final-history
-  cancel-in-progress: false
+  # Only an explicit replacement request cancels this research workflow's old range.
+  # Ordinary full KR/ETF requests remain serialized and do not cancel each other.
+  cancel-in-progress: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[replace-superseded-range]') }}
 jobs:
   verify:
     runs-on: ubuntu-24.04

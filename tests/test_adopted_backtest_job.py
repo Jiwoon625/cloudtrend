@@ -40,7 +40,7 @@ class Response:
 
 class Session:
     def __init__(self):
-        self.objects, self.calls = {}, []
+        self.objects, self.calls, self.registry = {}, [], []
         self.bucket = {"id": job.BUCKET, "public": False, "file_size_limit": None, "allowed_mime_types": None}
         self.redirect = self.fail_after_store = self.fail_before_store = self.tamper_readback = False
         self.closed = False
@@ -48,7 +48,10 @@ class Session:
     def request(self, method, url, **kwargs):
         self.calls.append((method, url, kwargs))
         assert kwargs["allow_redirects"] is False
-        assert url.startswith(job.EXPECTED_SUPABASE_URL + "/storage/v1/")
+        assert url.startswith(job.EXPECTED_SUPABASE_URL + "/storage/v1/") or url == job.EXPECTED_SUPABASE_URL + "/rest/v1/analysis_source_files"
+        if url.endswith("/rest/v1/analysis_source_files"):
+            assert method == "GET"
+            return Response(metadata=self.registry)
         if self.redirect:
             return Response(302, data=SECRET.encode())
         if "/bucket/" in url:
@@ -126,6 +129,8 @@ class FakeCommands:
         log.write_text("Private local subprocess log " + SECRET)
         os.chmod(log, 0o600)
         if "--output" in command:
+            if "--extension-manifest" in command:
+                self.extension_manifest = json.loads(Path(command[command.index("--extension-manifest")+1]).read_text())
             target = Path(command[command.index("--output") + 1])
             target.mkdir(mode=0o700)
             (target / "manifest.json").write_bytes(job.json_bytes({"preparationMetrics": {"elapsedSeconds": 2.5, "maxRssKiB": 123456}}))
@@ -138,6 +143,9 @@ class FakeCommands:
         quality = {"runStatus": "FINISHED", "mode": "SAMPLE_INCOMPLETE" if smoke else "SELECTED_RANGE_REPLAY",
                    "sessions": int(command[command.index("--smoke-sessions") + 1]) if smoke else 40,
                    "maxRssKiB": 100000, "elapsedSeconds": 1.5}
+        if hasattr(self, "extension_manifest"):
+            quality["extensionContinuity"] = {"status": "PASS", "afterDate": "2026-09-11", "comparedRows": 6, "unmatchedRows": 0,
+                "comparedIndexRows": 4, "comparedFields": ["open", "high", "low", "close"], "priceBasisAdjusted": False}
         market = command[command.index("--market") + 1]
         books = ["US_A0"] if market == "us" else ["ETF_V02"] if market == "etf" else [
             "KR_COMBINED_ADOPTED", "KOSPI_STANDALONE_DIAGNOSTIC", "KOSDAQ_STANDALONE_DIAGNOSTIC"] + (["ETF_V02"] if market == "kr-etf" else [])
@@ -200,6 +208,49 @@ class JobTests(unittest.TestCase):
         self.assertEqual(len(self.logs), 1)
         for secret in [SECRET, "PRIVATE_NAV_TEST", "synthetic-stock-raw", "https://"]:
             self.assertNotIn(secret, self.logs[0])
+
+    def test_extension_reads_only_exact_owner_hash_bytes_and_preserves_source(self):
+        payload = b"synthetic extension source bytes"
+        sha = hashlib.sha256(payload).hexdigest()
+        sid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        key = OWNER + "/source/screening/" + sid + "/publish.csv"
+        row = {"id": sid, "user_id": OWNER, "file_hash": "sha256:"+sha, "file_size_bytes": len(payload),
+               "storage_bucket": job.BUCKET, "storage_path": key, "source_type": "screening", "status": "superseded"}
+        self.session.registry = [row]
+        self.session.objects[key] = payload
+        self.options.through = "2026-09-30"
+        with mock.patch.object(job, "EXTENSION_SHA256", sha), mock.patch.object(job, "EXTENSION_BYTES", len(payload)):
+            result = self.run_job()
+        self.assertEqual(result["status"], "COMPLETE")
+        self.assertEqual(self.session.objects[key], payload)
+        self.assertEqual(self.commands.extension_manifest["sha256"], sha)
+        self.assertEqual(self.commands.extension_manifest["afterDate"], "2026-09-11")
+        self.assertNotIn(SECRET, json.dumps(self.commands.extension_manifest))
+        read = next(c for c in self.session.calls if "/rest/v1/" in c[1])
+        self.assertEqual(read[2]["params"]["user_id"], "eq."+OWNER)
+        self.assertEqual(read[2]["params"]["file_hash"], "eq.sha256:"+sha)
+        metadata = json.loads(base64.b64decode(self.writes()[-1][2]["headers"]["x-metadata"]))
+        self.assertEqual(metadata["extensionHashes"], [sha])
+        self.assertTrue(all("/research/adopted-full-period/runs/" in call[1] for call in self.writes()))
+
+    def test_extension_rejects_changed_owner_duplicate_registry_and_changed_bytes(self):
+        payload = b"synthetic extension source bytes"
+        sha = hashlib.sha256(payload).hexdigest()
+        sid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        key = OWNER + "/source/screening/" + sid + "/publish.csv"
+        original = {"id": sid, "user_id": OWNER, "file_hash": "sha256:"+sha, "file_size_bytes": len(payload),
+                    "storage_bucket": job.BUCKET, "storage_path": key, "source_type": "screening", "status": "superseded"}
+        for variation in ("owner", "duplicate", "path", "bytes"):
+            session = Session()
+            item = dict(original)
+            if variation == "owner": item["user_id"] = sid
+            if variation == "path": item["storage_path"] = sid+"/outside.csv"
+            session.registry = [item, item] if variation == "duplicate" else [item]
+            session.objects[key] = payload+b"changed" if variation == "bytes" else payload
+            storage = job.PrivateStorage(session, job.EXPECTED_SUPABASE_URL, OWNER, SECRET, self.sha, "12345-1")
+            with tempfile.TemporaryDirectory() as tmp, mock.patch.object(job, "EXTENSION_SHA256", sha), mock.patch.object(job, "EXTENSION_BYTES", len(payload)):
+                with self.assertRaises(job.JobError): storage.verified_september_extension(Path(tmp)/"extension.csv")
+            self.assertFalse(any(method == "POST" for method, _, _ in session.calls))
 
     def test_private_symbol_audit_is_not_a_performance_completion(self):
         self.options.mode = "symbols"

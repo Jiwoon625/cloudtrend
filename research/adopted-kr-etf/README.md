@@ -20,6 +20,8 @@ Prepared CSV gzip files are bounded to approximately 32 Mi characters and split 
 
 The private job reads existing Actions secrets, validates the private bucket, strips credentials from subprocesses and writes create-only results into a new run prefix with hash readback. Raw input, prices, daily NAV, positions and logs never enter public artifacts or caches. Only compact aggregate evidence is attached as private metadata to the completion manifest.
 
+For evaluation after 2026-09-11, an additional preserved private screening source is resolved by exact owner, file SHA-256, byte count, source type and preserved status. Its original object is read-only. Only actual Korean STOCK and KOSPI/KOSDAQ INDEX observations after the base cutoff are appended; earlier dates and all ETF rows from the extension are excluded. The original base catalog stays unchanged, and the extra source hash is recorded separately. Observed index/stock dates extend the replay calendar without constructing weekdays or holiday assumptions. This remains observed-session evidence, not an independent exchange-calendar certification.
+
 Run a 20-session real-data smoke and inspect actual time/RSS and source bounds before choosing full-period dates. A selected-range completion alone does not certify whole-market coverage. Earlier history remains available for indicators, including recursive ATR.
 
 An explicit request mode `symbols` runs only a source-column classification audit. It stores a bounded private summary of non-six-character ETF identifiers, counts and source-order numbers. Its status is `INPUT_CLASSIFICATION_ONLY`, never performance completion. It does not remove, rewrite or normalize any source beyond reporting the existing parser's normalization alongside the original identifier.
@@ -31,3 +33,5 @@ python -m unittest discover -s tests -p 'test_adopted*py'
 npx tsc --noEmit
 
 Frozen runtime admission is deliberately unchanged. Shared-code research opt-ins alter the executable hash; do not amend production runtime allowlists to permit this branch. This branch is not a production-release candidate.
+
+The pinned September join also requires 6,160 overlap rows, at least 6,150 exact OHLC comparisons and 20 compared index rows. At most 10 unmatched rows from a single stock with no pre-cutoff base history may remain as explicitly unmatched evidence; these old extension rows are never replay inputs. Missing dates for an already observed base symbol fail closed.

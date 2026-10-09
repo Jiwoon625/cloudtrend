@@ -57,6 +57,232 @@ class AdoptedKrEtfInputTests(unittest.TestCase):
     def basic(self):
         return pa.table({"symbol": ["005930"], "date": ["2026-09-11"], "market": ["KOSPI"], "close": ["0"]})
 
+    def extension_for(self, rows=None, names=None, **overrides):
+        names = names or ["symbol", "date", "market", "securityType", "close", "notes"]
+        if rows is None:
+            rows = [[symbol, day, market, kind, close, '한글, "quote"\r\nnext line  ']
+                    for day in ("2026-09-12", "2026-09-14")
+                    for symbol, market, kind, close in (("KOSPI", "INDEX", "INDEX", "100.000"),
+                                                        ("005930", "KOSPI", "STOCK", "-0.0"),
+                                                        ("KOSDAQ", "INDEX", "INDEX", ""))]
+        source = self.root / "extension.csv"
+        with source.open("w", encoding="utf-8", newline="") as stream:
+            writer = csv.writer(stream, lineterminator="\r\n")
+            writer.writerow(names)
+            writer.writerows(rows)
+        contract = {"version": prep.EXTENSION_VERSION, "localPath": str(source),
+                    "bytes": source.stat().st_size, "sha256": prep.sha256_file(source),
+                    "afterDate": "2026-09-11", "throughDate": "2026-09-14",
+                    "evidence": {"verification": "Synthetic private-source equivalence fixture"}, **overrides}
+        path = self.root / "extension-manifest.json"
+        path.write_text(json.dumps(contract, ensure_ascii=False), encoding="utf-8")
+        return path, contract, names, rows
+
+    def test_extension_preserves_base_and_selected_cells_header_order_and_real_sessions(self):
+        self.manifest_for([("stock_history/base.parquet", self.basic()),
+                           ("sources/etf.parquet", pa.table({"symbol": ["0193T0"], "date": ["2026-09-30"],
+                                                            "market": ["KOSPI"], "securityType": ["ETF"], "close": ["9"]}))])
+        base = self.prepare("base")
+        extension, contract, names, selected = self.extension_for(names=["\ufeffsymbol", "date", "market", "securityType", "close", "notes"])
+        omitted = [["005930", "2026-09-11", "KOSPI", "STOCK", "999", "cutoff"],
+                   ["KOSPI", "2026-09-10", "INDEX", "INDEX", "999", "older"],
+                   ["0193T0", "2026-09-13", "KOSPI", "ETF", "999", "ETF-only date"],
+                   ["KOSPI", "2026-09-14", "INDEX", "ETF", "999", "ETF despite index symbol"],
+                   ["005930", "2026-09-16", "KOSPI", "STOCK", "999", "later"],
+                   ["SPY", "2026-09-14", "NYSE", "STOCK", "999", "foreign"],
+                   ["^GSPC", "2026-09-14", "INDEX", "INDEX", "999", "other index"],
+                   ["OTHER", "2026-09-14", "KOSPI", "OTHER", "999", "other type"]]
+        # Interleave selected and omitted records so order preservation is tested.
+        all_rows = [omitted[0], selected[0], omitted[1], *selected[1:4], *omitted[2:], *selected[4:]]
+        extension, contract, names, _ = self.extension_for(all_rows, names)
+        before = {path: path.read_bytes() for path in [self.manifest, extension, self.root / "extension.csv", *self.raw.rglob("*.parquet")]}
+        result = self.prepare(extension_manifest=extension, through="2026-09-14")
+        self.assertEqual(result["files"][:2], base["files"])
+        self.assertEqual(result["sourceManifestFingerprint"], base["sourceManifestFingerprint"])
+        for item in base["files"]:
+            self.assertEqual((self.root / "prepared" / item["path"]).read_bytes(), (self.root / "base" / item["path"]).read_bytes())
+        self.assertEqual(self.read_csv(result, 2), [names, *selected])
+        self.assertEqual(result["sessions"], ["2026-09-11", "2026-09-12", "2026-09-14"])
+        self.assertEqual(result["calendarEvidenceRows"], {"KR_INDEX": 4, "KR_STOCK": 3})
+        self.assertFalse(result["allRawRowsRetained"])
+        self.assertTrue(result["allBaseRawRowsRetained"])
+        self.assertEqual(result["sourceFileCount"], 3)
+        self.assertEqual(result["baseSourceFileCount"], 2)
+        info = result["extension"]
+        self.assertEqual(info["source"], contract)
+        self.assertEqual(info["rows"], 6)
+        self.assertEqual(info["sourceTotalRows"], 14)
+        self.assertEqual(info["omittedRows"], 8)
+        self.assertEqual(info["omittedRowsByReason"], {"ETF": 2, "AT_OR_BEFORE_CUTOFF": 2, "AFTER_THROUGH": 1,
+                                                     "OTHER_TYPE": 1, "NON_KOREAN_STOCK": 1, "OTHER_INDEX": 1})
+        self.assertEqual(info["sourceFirstDate"], "2026-09-10")
+        self.assertEqual(info["sourceLastDate"], "2026-09-16")
+        self.assertEqual(info["selectedRowsByType"], {"INDEX": 4, "STOCK": 2})
+        self.assertEqual(info["selectedKoreanSessions"], {key: ["2026-09-12", "2026-09-14"] for key in ("KOSPI", "KOSDAQ", "KR_STOCK")})
+        self.assertTrue(info["utf8BomRetained"])
+        self.assertEqual(info["originalHeader"], names)
+        continuity = info["continuityEvidence"]
+        self.assertEqual(continuity["rows"], 2)
+        self.assertFalse(continuity["includedInReplayFiles"])
+        self.assertEqual(continuity["comparisonStatus"], "EVIDENCE_ONLY_NOT_YET_COMPARED_TO_BASE")
+        self.assertEqual(continuity["afterDate"], "2026-09-11")
+        with gzip.open(self.root / "prepared" / continuity["files"][0]["path"], "rt", encoding="utf-8", newline="") as stream:
+            self.assertEqual(list(csv.reader(stream)), [names, omitted[0], omitted[1]])
+        self.assertTrue(set(item["path"] for item in continuity["files"]).isdisjoint(item["path"] for item in result["files"]))
+        for item in result["files"]:
+            output = self.root / "prepared" / item["path"]
+            self.assertEqual(prep.sha256_file(output), item["sha256"])
+            self.assertEqual(output.stat().st_size, item["bytes"])
+        self.assertEqual((self.root / "prepared/extension-manifest.json").read_bytes(), before[extension])
+        self.assertEqual((self.root / "prepared/source-manifest.json").read_bytes(), before[self.manifest])
+        self.assertEqual(before, {path: path.read_bytes() for path in before})
+
+    def test_extension_chunks_only_between_selected_complete_records(self):
+        self.manifest_for([("stock_history/base.parquet", self.basic())])
+        extension, _, names, rows = self.extension_for()
+        with mock.patch.object(prep, "MAX_PREPARED_CHARS", 120):
+            result = self.prepare(extension_manifest=extension)
+        appended = result["files"][1:]
+        self.assertGreater(len(appended), 1)
+        actual = []
+        for index, item in enumerate(appended, 1):
+            records = self.read_csv(result, index)
+            self.assertEqual(records[0], names)
+            self.assertEqual(item["sourcePart"], index)
+            self.assertEqual(item["sourcePartCount"], len(appended))
+            actual.extend(records[1:])
+        self.assertEqual(actual, rows)
+
+    def test_extension_continuity_evidence_is_bounded_hashed_and_excluded_from_replay(self):
+        self.manifest_for([("stock_history/base.parquet", self.basic())])
+        _, _, names, selected = self.extension_for()
+        overlap = [[f"{100+i:06d}", "2026-09-11", "KOSPI", "STOCK", str(i), 'quoted, "data"\nline'] for i in range(8)]
+        excluded = [["SPY", "2026-09-10", "NYSE", "STOCK", "500", "foreign"],
+                    ["0193T0", "2026-09-10", "KOSPI", "ETF", "999", "ETF"]]
+        extension, _, _, _ = self.extension_for([*overlap[:4], *selected, *excluded, *overlap[4:]], names)
+        with mock.patch.object(prep, "MAX_PREPARED_CHARS", 120):
+            result = self.prepare(extension_manifest=extension)
+        continuity = result["extension"]["continuityEvidence"]
+        self.assertEqual(continuity["rows"], 8)
+        self.assertEqual(continuity["rowsByType"], {"STOCK": 8})
+        self.assertGreater(len(continuity["files"]), 1)
+        actual = []
+        replay_paths = {item["path"] for item in result["files"]}
+        for index, item in enumerate(continuity["files"], 1):
+            self.assertNotIn(item["path"], replay_paths)
+            self.assertEqual(item["sourcePart"], index)
+            path = self.root / "prepared" / item["path"]
+            self.assertEqual(item["sha256"], prep.sha256_file(path))
+            self.assertEqual(item["bytes"], path.stat().st_size)
+            with gzip.open(path, "rt", encoding="utf-8", newline="") as stream:
+                records = list(csv.reader(stream))
+            self.assertEqual(records[0], names)
+            self.assertEqual(len(records)-1, item["rows"])
+            actual.extend(records[1:])
+        self.assertEqual(actual, overlap)
+        self.assertEqual(sum(item["rows"] for item in result["files"]), 1+len(selected))
+
+    def test_extension_pin_preflight_and_post_read_mutation_fail_closed(self):
+        self.manifest_for([("stock_history/base.parquet", self.basic())])
+        for override, message in [({"sha256": "0"*64}, "SHA-256"), ({"bytes": 1}, "byte count")]:
+            extension, _, _, _ = self.extension_for(**override)
+            original = (self.root / "extension.csv").read_bytes()
+            with self.assertRaisesRegex(ValueError, message):
+                self.prepare(extension_manifest=extension)
+            self.assertFalse((self.root / "prepared").exists())
+            self.assertEqual((self.root / "extension.csv").read_bytes(), original)
+        extension, _, _, _ = self.extension_for()
+        source = self.root / "extension.csv"
+        original_reader = csv.reader
+        def mutate_after_read(*args, **kwargs):
+            yield from original_reader(*args, **kwargs)
+            source.write_bytes(source.read_bytes().replace(b"100.000", b"999.000", 1))
+        with mock.patch.object(prep.csv, "reader", side_effect=mutate_after_read):
+            with self.assertRaisesRegex(ValueError, "SHA-256"):
+                self.prepare(extension_manifest=extension)
+        self.assertFalse((self.root / "prepared").exists())
+
+    def test_extension_schema_bounds_and_selected_identity_fail_closed(self):
+        self.manifest_for([("stock_history/base.parquet", self.basic())])
+        _, _, names, rows = self.extension_for()
+        cases = [
+            (names + ["type"], [row+[row[3]] for row in rows], {}, "Ambiguous"),
+            (names[:-1], rows, {}, "width mismatch"),
+            (names, [[*rows[0][:1], "2026-09-14-extra", *rows[0][2:]], *rows[1:]], {}, "ISO dates"),
+            (names, rows, {"afterDate": "2026-09-10"}, "last base"),
+            (names, rows, {"throughDate": "2026-09-15"}, "actually selected"),
+            (names, rows[:-1], {}, "sessions disagree"),
+            (names, rows+[rows[1]], {}, "Duplicate selected"),
+            (names, rows+[[*rows[1][:4], "999", "different duplicate"]], {}, "Duplicate selected"),
+            (names, rows+[["005930", "2026-09-11", "KOSPI", "STOCK", "1", ""]]*2, {}, "Duplicate continuity"),
+            (names, [rows[0], ["1.88E+02", *rows[1][1:]], *rows[2:]], {}, "stock identity"),
+            (names, [["KOSPI", "2026-09-12", "KOSDAQ", "INDEX", "1", ""], *rows[1:]], {}, "index identity"),
+            (names, rows, {"afterDate": "2026-09-14"}, "strictly increasing"),
+            (names, rows, {"throughDate": "2026-09-31"}, "date bounds"),
+            (names, rows, {"evidence": {}}, "evidence"),
+        ]
+        for header, records, overrides, error in cases:
+            with self.subTest(error=error, overrides=overrides):
+                extension, _, _, _ = self.extension_for(records, header, **overrides)
+                with self.assertRaisesRegex(ValueError, error):
+                    self.prepare(extension_manifest=extension)
+                self.assertFalse((self.root / "prepared").exists())
+
+    def test_extension_cli_matches_python_interface(self):
+        self.manifest_for([("stock_history/base.parquet", self.basic())])
+        extension, _, _, _ = self.extension_for()
+        command = ["python", str(ROOT / "scripts/prepare-adopted-kr-etf-inputs.py"),
+                   "--source-manifest", str(self.manifest), "--staged-root", str(self.raw),
+                   "--output", str(self.root / "prepared"), "--extension-manifest", str(extension), "--through", "2026-09-14"]
+        result = subprocess.run(command, text=True, capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        manifest = json.loads((self.root / "prepared/manifest.json").read_text())
+        self.assertEqual(manifest["extension"]["rows"], 6)
+        self.assertEqual(json.loads(result.stdout)["lastDate"], "2026-09-14")
+
+    def test_extension_existing_parser_preserves_earlier_stock_and_all_etf_bars(self):
+        bundler = ROOT / "node_modules/esbuild/lib/main.js"
+        if not shutil.which("node") or not bundler.exists():
+            self.skipTest("Existing esbuild dependency is not installed")
+        table = pa.table({"symbol": ["005930", "KOSPI", "KOSDAQ", "0193T0"],
+                          "date": ["2026-09-11"]*3+["2026-09-30"],
+                          "market": ["KOSPI", "INDEX", "INDEX", "KOSPI"],
+                          "securityType": ["STOCK", "INDEX", "INDEX", "ETF"],
+                          "close": ["10", "100", "50", "9"]})
+        self.manifest_for([("stock_history/base.parquet", table)])
+        _, _, names, rows = self.extension_for()
+        extension, _, _, _ = self.extension_for(rows + [
+            ["005930", "2026-09-11", "KOSPI", "STOCK", "999", "must not overwrite"],
+            ["0193T0", "2026-09-30", "KOSPI", "ETF", "999", "must not overwrite"],
+            ["0193T0", "2026-09-14", "KOSPI", "ETF", "999", "must not add"],
+        ], names)
+        manifest = self.prepare(extension_manifest=extension)
+        files = [str(self.root / "prepared" / item["path"]) for item in manifest["files"]]
+        check = self.root / "extension-parser-check.ts"
+        check.write_text(f'''import {{ readFileSync }} from "node:fs";
+import {{ gunzipSync }} from "node:zlib";
+import assert from "node:assert/strict";
+import {{ parseManualMarketData }} from {json.dumps(str(ROOT / "src/lib/engine/manualDataset.ts"))};
+const files = {json.dumps(files)};
+const dataset = parseManualMarketData(files.map(p => gunzipSync(readFileSync(p)).toString("utf8")), {{allowIncompleteIndex: true}}).dataset;
+const stocks = dataset.observedBars!["005930"];
+assert.equal(stocks.length, 3);
+assert.equal(stocks[0].tradeDate, "2026-09-11");
+assert.equal(stocks[0].close, 10);
+assert.deepEqual(stocks.map(bar => bar.tradeDate), ["2026-09-11", "2026-09-12", "2026-09-14"]);
+assert.equal(stocks[1].close, -0);
+assert.equal(dataset.observedBars!["0193T0"].length, 1);
+assert.equal(dataset.observedBars!["0193T0"][0].tradeDate, "2026-09-30");
+assert.equal(dataset.observedBars!["0193T0"][0].close, 9);
+console.log("EXTENSION_PARSER_PASS");
+''')
+        bundle = self.root / "extension-parser-check.mjs"
+        compiled = subprocess.run(["node", "-e", 'require("esbuild").buildSync({entryPoints:[process.argv[1]],outfile:process.argv[2],bundle:true,platform:"node",format:"esm",target:"node20",ignoreAnnotations:true})', str(check), str(bundle)], cwd=ROOT, text=True, capture_output=True, timeout=30)
+        self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+        parsed = subprocess.run(["node", str(bundle)], cwd=ROOT, text=True, capture_output=True, timeout=30)
+        self.assertEqual(parsed.returncode, 0, parsed.stdout + parsed.stderr)
+        self.assertIn("EXTENSION_PARSER_PASS", parsed.stdout)
+
     def test_exact_string_fields_order_duplicates_nulls_and_deterministic_gzip(self):
         source = pa.table({
             "symbol": ["005930", "005930", "KOSPI"],

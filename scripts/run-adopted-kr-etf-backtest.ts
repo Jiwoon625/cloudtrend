@@ -24,6 +24,7 @@ import {
   assertOrderedSessions,
   assertResearchDataset,
   selectBacktestSessions,
+  verifyExtensionPriceContinuity,
 } from "../src/lib/research/adoptedBacktestInput";
 import { runAdoptedKrBacktest } from "../src/lib/research/adoptedKrBacktest";
 import {
@@ -59,6 +60,7 @@ interface KrManifest {
   startDate?: string;
   throughDate?: string;
   limitations?: string[];
+  extension?: { continuityEvidence?: { afterDate: string; rows: number; files: FileEvidence[] } };
 }
 const digest = (value: string | Buffer): SeriesHash =>
   `sha256:${createHash("sha256").update(value).digest("hex")}`;
@@ -184,6 +186,7 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
   const code = await codeFingerprint();
   const sourceFiles: Array<{ file: string; bytes: number; sha256: string }> = [];
   let dataset: MarketDataset | undefined;
+  let extensionContinuity: ReturnType<typeof verifyExtensionPriceContinuity> | null = null;
   {
     if (
       kr.version !== "adopted-kr-etf-inputs-v1" ||
@@ -213,6 +216,21 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
       dataset = parseManualMarketData(sourceTexts()).dataset;
     }
     assertResearchDataset(dataset);
+    if (kr.extension) {
+      const evidence = kr.extension.continuityEvidence;
+      if (!evidence?.files?.length) throw new Error("Extension continuity evidence required");
+      const texts = [];
+      for (const file of evidence.files) {
+        sourceFiles.push(await verifyFile(base, file, true));
+        texts.push(await readVerifiedText(base, file));
+      }
+      const overlap = parseManualMarketData(texts, { allowIncompleteIndex: true }).dataset;
+      extensionContinuity = verifyExtensionPriceContinuity(dataset, overlap, evidence.afterDate, {
+        totalRows: 6160, minComparedRows: 6150, indexRows: 20, maxNewRows: 10, maxNewSymbols: 1,
+      });
+      if (extensionContinuity.comparedRows + extensionContinuity.unmatchedRows !== evidence.rows)
+        throw new Error("Extension continuity row count mismatch");
+    }
     if (!dataset.tradeDates.some((date) => date < start))
       throw new Error("Input must retain real before-start history");
     const sourceSessions = dataset.tradeDates.filter((date) => date >= start && date <= end);
@@ -243,6 +261,7 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
     sessions: sessions.length,
     sourceManifestHash,
     codeHash: code.sha256,
+    extensionContinuity,
     inputFiles: sourceFiles,
     sourceSessions: manifest.sessions.length,
     sourceCalendarStart: manifest.sessions[0],

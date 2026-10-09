@@ -10,6 +10,7 @@ import { parseManualMarketData } from "../src/lib/engine/manualDataset";
 import {
   adoptedDatasetAsOf,
   selectBacktestSessions,
+  verifyExtensionPriceContinuity,
 } from "../src/lib/research/adoptedBacktestInput";
 import {
   runAdoptedFullPeriodBacktest,
@@ -37,6 +38,51 @@ async function fixture() {
 }
 
 describe("local adopted-rule replay inputs", () => {
+  it("checks the joined source price basis without rescaling or overwriting prior bars", () => {
+    const base = structuredClone(getMockDataset());
+    base.observedBars = base.bars;
+    if (!base.indexSeries.some((index) => index.indexCode === "KOSDAQ"))
+      base.indexSeries.push({ ...structuredClone(base.indexSeries[0]!), indexCode: "KOSDAQ" });
+    const overlap = structuredClone(base);
+    overlap.instruments = overlap.instruments
+      .filter((i) => i.instrumentType === "STOCK")
+      .slice(0, 1);
+    const symbol = overlap.instruments[0]!.symbol;
+    overlap.bars = { [symbol]: overlap.bars[symbol]!.slice(-2) };
+    overlap.observedBars = overlap.bars;
+    overlap.indexSeries = overlap.indexSeries
+      .filter((index) => ["KOSPI", "KOSDAQ"].includes(index.indexCode))
+      .map((index) => ({ ...index, bars: index.bars.slice(-2) }));
+    expect(verifyExtensionPriceContinuity(base, overlap, base.asOfDate)).toMatchObject({
+      status: "PASS",
+      comparedRows: 6,
+      comparedIndexRows: 4,
+      unmatchedRows: 0,
+      priceBasisAdjusted: false,
+    });
+    expect(() => verifyExtensionPriceContinuity(base, overlap, base.asOfDate, {
+      totalRows: 6, minComparedRows: 6, indexRows: 4, maxNewRows: 0, maxNewSymbols: 0,
+    })).not.toThrow();
+    expect(() => verifyExtensionPriceContinuity(base, overlap, base.asOfDate, {
+      totalRows: 6160, minComparedRows: 6150, indexRows: 20, maxNewRows: 10, maxNewSymbols: 1,
+    })).toThrow(/Pinned extension continuity coverage/);
+    const missing = structuredClone(base);
+    missing.observedBars![symbol] = missing.observedBars![symbol]!.slice(0, -1);
+    expect(() => verifyExtensionPriceContinuity(missing, overlap, base.asOfDate)).toThrow(/Missing existing-source/);
+    const changed = structuredClone(overlap);
+    changed.observedBars![symbol]![0]!.close *= 0.5;
+    expect(() => verifyExtensionPriceContinuity(base, changed, base.asOfDate)).toThrow(
+      /OHLC continuity/,
+    );
+    expect(() => verifyExtensionPriceContinuity(base, overlap, base.tradeDates.at(-3)!)).toThrow(
+      /crosses cutoff/,
+    );
+    overlap.indexSeries = overlap.indexSeries.filter((index) => index.indexCode !== "KOSDAQ");
+    expect(() => verifyExtensionPriceContinuity(base, overlap, base.asOfDate)).toThrow(
+      /Insufficient/,
+    );
+  });
+
   it("uses a separately derived final code alias without numerically interpreting an alphanumeric ticker", () => {
     const csv =
       "symbol,name,market,securityType,date,open,high,low,close,volume,code\n" +

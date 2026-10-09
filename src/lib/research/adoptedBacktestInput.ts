@@ -81,3 +81,66 @@ export function assertResearchDataset(dataset: MarketDataset) {
       throw new Error("Canonical bars must be unique and chronological");
   }
 }
+
+/** A later adjusted-price source cannot silently introduce a different price basis. */
+export function verifyExtensionPriceContinuity(
+  base: MarketDataset,
+  overlap: MarketDataset,
+  afterDate: string,
+  pinnedCoverage?: { totalRows: number; minComparedRows: number; indexRows: number; maxNewRows: number; maxNewSymbols: number },
+) {
+  if (!validDate(afterDate)) throw new Error("Invalid extension continuity boundary");
+  if (overlap.instruments.some((instrument) => instrument.instrumentType !== "STOCK"))
+    throw new Error("Unexpected non-stock in extension continuity evidence");
+  const series = (dataset: MarketDataset) =>
+    new Map([
+      ...Object.entries(dataset.observedBars ?? {}),
+      ...dataset.indexSeries.map((index) => [index.indexCode, index.bars] as const),
+    ]);
+  const originals = series(base);
+  let comparedRows = 0,
+    unmatchedRows = 0,
+    comparedIndexRows = 0;
+  const matchedIndexSymbols = new Set<string>();
+  const newSymbols = new Set<string>();
+  for (const [symbol, rows] of series(overlap)) {
+    const before = new Map((originals.get(symbol) ?? []).filter((bar) => bar.tradeDate <= afterDate).map((bar) => [bar.tradeDate, bar]));
+    for (const observation of rows) {
+      if (observation.tradeDate > afterDate)
+        throw new Error("Extension continuity evidence crosses cutoff");
+      const original = before.get(observation.tradeDate);
+      if (!original) {
+        if (before.size || symbol === "KOSPI" || symbol === "KOSDAQ")
+          throw new Error("Missing existing-source extension continuity observation");
+        newSymbols.add(symbol);
+        unmatchedRows++;
+        continue;
+      }
+      for (const key of ["open", "high", "low", "close"] as const)
+        if (original[key] !== observation[key])
+          throw new Error("Extension OHLC continuity mismatch");
+      comparedRows++;
+      if (symbol === "KOSPI" || symbol === "KOSDAQ") {
+        comparedIndexRows++;
+        matchedIndexSymbols.add(symbol);
+      }
+    }
+  }
+  if (matchedIndexSymbols.size !== 2 || comparedRows <= comparedIndexRows)
+    throw new Error("Insufficient extension price continuity evidence");
+  if (pinnedCoverage && (
+    comparedRows + unmatchedRows !== pinnedCoverage.totalRows ||
+    comparedRows < pinnedCoverage.minComparedRows ||
+    comparedIndexRows !== pinnedCoverage.indexRows ||
+    unmatchedRows > pinnedCoverage.maxNewRows || newSymbols.size > pinnedCoverage.maxNewSymbols
+  )) throw new Error("Pinned extension continuity coverage mismatch");
+  return {
+    status: "PASS" as const,
+    afterDate,
+    comparedRows,
+    unmatchedRows,
+    comparedIndexRows,
+    comparedFields: ["open", "high", "low", "close"],
+    priceBasisAdjusted: false,
+  };
+}
