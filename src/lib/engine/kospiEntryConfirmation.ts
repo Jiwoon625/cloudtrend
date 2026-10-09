@@ -9,6 +9,7 @@ import {
 } from "./scoring";
 import { evaluateKospiMarketGateAtDate, type KospiMarketGateEvidence } from "./kospiMarketGate";
 import { historicalInstrumentScore } from "./historicalInstrumentScore";
+import { isCurrentRulesResearch, type OperatingPolicyContext } from "./operatingPolicyContext";
 
 /** Adopted 2026-10-02 KST. This is a prospective entry policy, not a backtest rewrite. */
 export const KOSPI_ENTRY_POLICY = {
@@ -19,14 +20,20 @@ export const KOSPI_ENTRY_POLICY = {
 } as const;
 export const KOSPI_CONSISTENCY_START = "2026-10-12";
 export const KOSPI_CONSISTENCY_VERSION = "kospi-e8-confirm1-bear-rs-cross-v4";
-export const kospiPolicyVersionAt = (date: string) =>
-  date >= KOSPI_CONSISTENCY_START ? KOSPI_CONSISTENCY_VERSION : KOSPI_ENTRY_POLICY.version;
+export const kospiPolicyVersionAt = (date: string, context?: OperatingPolicyContext) =>
+  isCurrentRulesResearch(context) || date >= KOSPI_CONSISTENCY_START
+    ? KOSPI_CONSISTENCY_VERSION
+    : KOSPI_ENTRY_POLICY.version;
 
 export function requiresKospiRsAccel(
   origin: KospiMarketGateEvidence | null | undefined,
   date: string,
+  context?: OperatingPolicyContext,
 ) {
-  return date < KOSPI_CONSISTENCY_START || origin?.status === "RISK_OFF";
+  return (
+    (!isCurrentRulesResearch(context) && date < KOSPI_CONSISTENCY_START) ||
+    origin?.status === "RISK_OFF"
+  );
 }
 
 export interface KospiEntrySnapshot {
@@ -66,6 +73,7 @@ export function kospiEntryConfirmation(
   current: KospiEntryObservation,
   previous: KospiEntryObservation | null,
   beforePrevious: KospiEntryObservation | null,
+  context?: OperatingPolicyContext,
 ): KospiEntrySnapshot {
   const cross = (a: KospiEntryObservation | null, b: KospiEntryObservation | null) =>
     !!a &&
@@ -81,7 +89,7 @@ export function kospiEntryConfirmation(
   const pending = cross(previous, current);
   const awaiting = !!previous && previous.date < current.date && cross(beforePrevious, previous);
   const result: KospiEntrySnapshot = {
-    version: kospiPolicyVersionAt(current.date),
+    version: kospiPolicyVersionAt(current.date, context),
     date: current.date,
     originDate: awaiting ? previous!.date : pending ? current.date : null,
     confirmationDate: awaiting ? current.date : null,
@@ -96,7 +104,7 @@ export function kospiEntryConfirmation(
       confirmation: awaiting ? (current.marketGate ?? null) : null,
     },
   };
-  const requiresRs = requiresKospiRsAccel(result.marketGate?.origin, current.date);
+  const requiresRs = requiresKospiRsAccel(result.marketGate?.origin, current.date, context);
   if (awaiting) {
     if (current.observed && !current.eligible && current.eligibilityStatus !== "PENDING")
       result.issues.push("확인일 대상 부적격");
@@ -121,7 +129,9 @@ export function kospiEntryConfirmation(
       result.issues.push("확인일 종목·지수·점수·RS 자료 미확인 · 지연 진입 불가");
     } else {
       result.state = "confirmed";
-      result.eligible = current.date >= KOSPI_ENTRY_POLICY.effectiveConfirmationDate;
+      result.eligible =
+        isCurrentRulesResearch(context) ||
+        current.date >= KOSPI_ENTRY_POLICY.effectiveConfirmationDate;
       if (!result.eligible) result.issues.push("도입일 이전 재구성 · 과거 참고만, 운영 진입 제외");
     }
   } else if (pending) result.state = "pending";
@@ -151,7 +161,11 @@ export function kospiEntryConfirmation(
       );
   }
   // The dated guard is prospective. Older reconstructed states stay reference-only.
-  if ((awaiting || pending) && current.date >= KOSPI_ENTRY_POLICY.effectiveConfirmationDate) {
+  if (
+    (awaiting || pending) &&
+    (isCurrentRulesResearch(context) ||
+      current.date >= KOSPI_ENTRY_POLICY.effectiveConfirmationDate)
+  ) {
     const checks = [
       { label: "발생일", date: result.originDate!, gate: result.marketGate!.origin },
       ...(awaiting
@@ -187,20 +201,25 @@ export function kospiEntryConfirmation(
   return result;
 }
 
-export function isKospiEntryReady(s: KospiEntrySnapshot | undefined, asOfDate?: string): boolean {
+export function isKospiEntryReady(
+  s: KospiEntrySnapshot | undefined,
+  asOfDate?: string,
+  context?: OperatingPolicyContext,
+): boolean {
   return (
     !!s &&
-    s.version === kospiPolicyVersionAt(s.date) &&
+    s.version === kospiPolicyVersionAt(s.date, context) &&
     s.state === "confirmed" &&
     s.eligible &&
     s.date === s.confirmationDate &&
     (!asOfDate || s.date === asOfDate) &&
-    s.date >= KOSPI_ENTRY_POLICY.effectiveConfirmationDate &&
+    (isCurrentRulesResearch(context) || s.date >= KOSPI_ENTRY_POLICY.effectiveConfirmationDate) &&
     !!s.originDate &&
     s.originDate < s.date &&
     finite(s.score) &&
     s.score >= 8 &&
-    (!requiresKospiRsAccel(s.marketGate?.origin, s.date) || (finite(s.rsAccel) && s.rsAccel > 0)) &&
+    (!requiresKospiRsAccel(s.marketGate?.origin, s.date, context) ||
+      (finite(s.rsAccel) && s.rsAccel > 0)) &&
     s.issues.length === 0 &&
     !!s.marketGate &&
     [
@@ -250,7 +269,12 @@ export function kospiRelativeReturns(
 }
 
 /** Reconstruct only the three required closes from dated source data, not run counts or saved labels. */
-export function buildKospiEntrySnapshot(ds: MarketDataset, symbol: string, cfg: ScoringConfig) {
+export function buildKospiEntrySnapshot(
+  ds: MarketDataset,
+  symbol: string,
+  cfg: ScoringConfig,
+  context?: OperatingPolicyContext,
+) {
   const benchmark = ds.indexSeries.find((s) => s.indexCode === "KOSPI")?.bars ?? [];
   const sessions = [
     ...new Set([...(ds.kospiGateDates ?? ds.tradeDates), ...benchmark.map((b) => b.tradeDate)]),
@@ -298,7 +322,7 @@ export function buildKospiEntrySnapshot(ds: MarketDataset, symbol: string, cfg: 
   const current = observation(ds.asOfDate)!;
   const previous = i > 0 ? observation(sessions[i - 1]) : null;
   const before = i > 1 ? observation(sessions[i - 2]) : null;
-  const entry = kospiEntryConfirmation(current, previous, before);
+  const entry = kospiEntryConfirmation(current, previous, before, context);
   const relative = kospiRelativeReturns(bars, benchmark, sessions, ds.asOfDate);
   return { entry, current, previous, ...relative };
 }

@@ -6,6 +6,7 @@ import type { ScreeningSnapshot } from "./screeningSnapshot";
 import type { PortfolioSettings, PortfolioSummary, PortfolioTrade } from "./portfolioStoreCore";
 import { KOSPI_ENTRY_POLICY, kospiPolicyVersionAt } from "./engine/kospiEntryConfirmation";
 import { STRATEGY_CONFIG } from "./engine/operationalStrategy";
+import { CURRENT_RULES_RESEARCH } from "./engine/operatingPolicyContext";
 import {
   normalizeSnapshots,
   isEntryOnset,
@@ -14,9 +15,11 @@ import {
   nextConfirmedEntry,
   heldDuringEntryWindow,
   firstBarAfter,
+  barOnOrBefore,
   deriveExitPlan,
   latestSnapshotEntry,
   operationalExit,
+  type ExitPlan,
 } from "./portfolioStrategyRules";
 
 export const LEDGER_VERSION = 3;
@@ -57,6 +60,29 @@ export interface StrategyLedger {
     fees: Record<string, { entry: string; exit: string | null }>;
     realizedPnl: string;
   };
+  /** Research-only observations of this same executor, never a second cash simulation. */
+  researchHistory?: {
+    dailyNAV: KrResearchNavRow[];
+    yearlyBudgets: KrResearchYearBudget[];
+    exitTiming: Record<string, "OPEN" | "CLOSE">;
+  };
+}
+export interface KrResearchNavRow {
+  date: string;
+  cash: string;
+  marketValue: string;
+  nav: string | null;
+  realizedPnl: string;
+  openPositions: number;
+  valuationStatus: "COMPLETE" | "STALE" | "MISSING";
+  entryBudget: string;
+}
+export interface KrResearchYearBudget {
+  year: number;
+  effectiveDate: string;
+  valuationDate: string | null;
+  nav: string;
+  budget: string;
 }
 export interface ActualExecution<M extends string = Market> {
   id: string;
@@ -143,12 +169,20 @@ function summary(
 }
 
 /** Explicit new-series opt-in. Historical callers keep the original execution contract. */
-export interface ProspectiveKrReplayPolicy {
-  version: "kr-adopted-shadow-20261005-v1" | "kr-common-execution-20261012-v1";
-  startDate: "2026-10-05" | "2026-10-12";
-  throughDate: string;
-  scope: "MIXED" | "KOSPI" | "KOSDAQ";
-}
+export type ProspectiveKrReplayPolicy =
+  | {
+      version: "kr-adopted-shadow-20261005-v1" | "kr-common-execution-20261012-v1";
+      startDate: "2026-10-05" | "2026-10-12";
+      throughDate: string;
+      scope: "MIXED" | "KOSPI" | "KOSDAQ";
+    }
+  | {
+      version: "kr-annual-signal-year-research-v2";
+      startDate: string;
+      throughDate: string;
+      scope: "MIXED" | "KOSPI" | "KOSDAQ";
+      entryBudgetPolicy: "ANNUAL_PRIOR_CLOSE_NAV";
+    };
 
 /** Deterministic strategy replay. No personal executions, exclusions or edited legacy fills enter here. */
 export function simulateStrategy(
@@ -162,7 +196,9 @@ export function simulateStrategy(
   prospective?: ProspectiveKrReplayPolicy,
   marketLiquidCounts?: Record<string, number>,
 ): StrategyLedger {
-  const unified = prospective?.version === "kr-common-execution-20261012-v1";
+  const research = prospective?.version === "kr-annual-signal-year-research-v2";
+  const context = research ? CURRENT_RULES_RESEARCH : undefined;
+  const unified = research || prospective?.version === "kr-common-execution-20261012-v1";
   if (unified && !marketLiquidCounts) {
     const observed = new Map<string, Set<string>>();
     for (const [symbol, rows] of Object.entries(bars))
@@ -185,10 +221,14 @@ export function simulateStrategy(
   if (prospective) {
     if (
       (!unified && prospective.version !== "kr-adopted-shadow-20261005-v1") ||
-      prospective.startDate !== (unified ? "2026-10-12" : "2026-10-05") ||
+      (!research && prospective.startDate !== (unified ? "2026-10-12" : "2026-10-05")) ||
+      (research &&
+        (!validDate(prospective.startDate) ||
+          prospective.entryBudgetPolicy !== "ANNUAL_PRIOR_CLOSE_NAV" ||
+          settings.maxPositions !== 30)) ||
       !validDate(prospective.throughDate) ||
       prospective.throughDate < prospective.startDate ||
-      prospective.throughDate >= (unified ? "2027-10-12" : "2027-10-05") ||
+      (!research && prospective.throughDate >= (unified ? "2027-10-12" : "2027-10-05")) ||
       (!unified && settings.initialCapital !== 100_000_000) ||
       !Number.isFinite(settings.initialCapital) ||
       settings.initialCapital <= 0 ||
@@ -264,8 +304,8 @@ export function simulateStrategy(
       const market = markets[entry.symbol] ?? (entry.kospiEntry ? "KOSPI" : undefined);
       if (!market || entry.instrumentType !== "STOCK") continue;
       const confirmation = market === "KOSPI" ? entry.kospiEntry : undefined;
-      const legacy = isLegacyReplayEntry(entry, market, snapshot.asOfDate);
-      const executable = isEntryOnset(entry, market, snapshot.asOfDate) || legacy;
+      const legacy = !research && isLegacyReplayEntry(entry, market, snapshot.asOfDate);
+      const executable = isEntryOnset(entry, market, snapshot.asOfDate, context) || legacy;
       const confirmedPolicy = market === "KOSPI" && !legacy;
       if (
         !executable &&
@@ -286,18 +326,20 @@ export function simulateStrategy(
             confirmation!,
             observedDates,
             marketGates,
+            context,
           );
           next = execution.bar;
           decision = execution.reason;
         } else if (
           confirmation?.state === "confirmed" &&
+          !research &&
           snapshot.asOfDate < KOSPI_ENTRY_POLICY.effectiveConfirmationDate
         ) {
           decision = "적용일 이전 · 참고용";
         } else if (
           !confirmation ||
           confirmation.date !== snapshot.asOfDate ||
-          confirmation.version !== kospiPolicyVersionAt(confirmation.date)
+          confirmation.version !== kospiPolicyVersionAt(confirmation.date, context)
         ) {
           decision = "확인 자료 없음 · 진입 제외";
         } else if (confirmation.state === "pending") {
@@ -362,27 +404,48 @@ export function simulateStrategy(
     exactRealized = 0n;
   const exactBasis = new Map<string, bigint>();
   const modelFees: Record<string, { entry: string; exit: string | null }> = {};
+  const dailyNAV: KrResearchNavRow[] = [];
+  const yearlyBudgets: KrResearchYearBudget[] = [];
+  const exitTiming: Record<string, "OPEN" | "CLOSE"> = {};
+  let entryBudget = prospective
+    ? divide(
+        decimal(fromLegacyNumber(settings.initialCapital)),
+        decimal(String(settings.maxPositions)),
+      )
+    : 0n;
   const exactFee = (gross: bigint) =>
     (gross * decimal("0.0015") + decimal("1") - 1n) / decimal("1");
+  const researchExitPlans = new Map<string, ExitPlan | null>();
+  const researchHealthyDates = new Map<string, string[]>();
   const closeDue = (cutoff: string, beforeEntry: boolean) => {
     for (const t of trades) {
       if (t.status !== "OPEN" || !latest) continue;
-      const healthyDates = unified
-        ? observedDates.filter((date) => {
-            const symbols = liquidSymbolsByDate.get(date);
-            return (
-              (marketLiquidCounts?.[date] ?? symbols?.size ?? 0) > (symbols?.has(t.symbol) ? 1 : 0)
+      const healthyDates =
+        research && researchHealthyDates.has(t.symbol)
+          ? researchHealthyDates.get(t.symbol)!
+          : unified
+            ? observedDates.filter((date) => {
+                const symbols = liquidSymbolsByDate.get(date);
+                return (
+                  (marketLiquidCounts?.[date] ?? symbols?.size ?? 0) >
+                  (symbols?.has(t.symbol) ? 1 : 0)
+                );
+              })
+            : undefined;
+      if (research && healthyDates && !researchHealthyDates.has(t.symbol))
+        researchHealthyDates.set(t.symbol, healthyDates);
+      const plan =
+        research && researchExitPlans.has(t.id)
+          ? researchExitPlans.get(t.id)!
+          : deriveExitPlan(
+              t,
+              snapshots,
+              unified ? (entryBars[t.symbol] ?? []) : (bars[t.symbol] ?? []),
+              latest,
+              healthyDates,
+              observedDates,
             );
-          })
-        : undefined;
-      const plan = deriveExitPlan(
-        t,
-        snapshots,
-        unified ? (entryBars[t.symbol] ?? []) : (bars[t.symbol] ?? []),
-        latest,
-        healthyDates,
-        observedDates,
-      );
+      if (research && !researchExitPlans.has(t.id)) researchExitPlans.set(t.id, plan);
       if (
         !plan ||
         plan.exitDate > cutoff ||
@@ -402,6 +465,7 @@ export function simulateStrategy(
         exactCash += grossExact - feeExact;
         exactRealized += pnlExact;
         modelFees[t.id]!.exit = format(feeExact);
+        if (research) exitTiming[t.id] = plan.timing;
       }
       Object.assign(t, {
         status: "CLOSED",
@@ -422,10 +486,70 @@ export function simulateStrategy(
       cash = prospective ? Number(format(exactCash)) : cash + t.shares * plan.exitPrice - fee;
     }
   };
+  const researchDates = research
+    ? [...new Set(observedDates)]
+        .filter((date) => date >= prospective!.startDate && date <= prospective!.throughDate)
+        .sort()
+    : [];
+  let researchDateIndex = 0;
+  const ensureYearBudget = (date: string) => {
+    const year = Number(date.slice(0, 4));
+    if (yearlyBudgets.at(-1)?.year === year) return;
+    const previousClose = dailyNAV.at(-1);
+    if (previousClose?.nav === null)
+      throw new Error("Cannot reset annual KR budget without prior-close NAV");
+    const nav = previousClose?.nav ?? fromLegacyNumber(settings.initialCapital);
+    entryBudget = divide(decimal(nav), decimal(String(settings.maxPositions)));
+    yearlyBudgets.push({
+      year,
+      effectiveDate: date,
+      valuationDate: previousClose?.date ?? null,
+      nav,
+      budget: format(entryBudget),
+    });
+  };
+  const recordResearchClose = (date: string) => {
+    const active = trades.filter((trade) => trade.status === "OPEN");
+    let marketValue = 0n;
+    let valuationStatus: KrResearchNavRow["valuationStatus"] = "COMPLETE";
+    for (const trade of active) {
+      const mark = barOnOrBefore(bars[trade.symbol] ?? [], date);
+      if (!mark) {
+        valuationStatus = "MISSING";
+        continue;
+      }
+      if (mark.tradeDate !== date && valuationStatus !== "MISSING") valuationStatus = "STALE";
+      marketValue += decimal(fromLegacyNumber(mark.close)) * BigInt(trade.shares);
+    }
+    dailyNAV.push({
+      date,
+      cash: format(exactCash),
+      marketValue: format(marketValue),
+      nav: valuationStatus === "MISSING" ? null : format(exactCash + marketValue),
+      realizedPnl: format(exactRealized),
+      openPositions: active.length,
+      valuationStatus,
+      entryBudget: format(entryBudget),
+    });
+  };
+  /** Close each intervening calendar session before the next entry, including quiet year boundaries. */
+  const advanceResearch = (cutoff: string, includeCutoff: boolean) => {
+    if (!research) return;
+    while (researchDateIndex < researchDates.length) {
+      const date = researchDates[researchDateIndex]!;
+      if (date > cutoff || (!includeCutoff && date === cutoff)) break;
+      ensureYearBudget(date);
+      closeDue(date, false);
+      recordResearchClose(date);
+      researchDateIndex++;
+    }
+    if (!includeCutoff && researchDates[researchDateIndex] === cutoff) ensureYearBudget(cutoff);
+  };
   const executionQueue = [...rawCandidates];
   while (executionQueue.length) {
     const candidate = executionQueue.shift()!;
     const { executable, confirmedPolicy, ...c } = candidate;
+    if (c.entryDate) advanceResearch(c.entryDate, false);
     if (confirmedPolicy && c.entryDate && latest) closeDue(c.entryDate, true);
     const heldOnSignal = trades.some((trade) =>
       confirmedPolicy
@@ -541,7 +665,14 @@ export function simulateStrategy(
       defer("섹터 한도");
       continue;
     }
-    const target = settings.initialCapital / settings.maxPositions;
+    const signalYearBudget = research
+      ? yearlyBudgets.find((year) => year.year === Number(c.signalDate.slice(0, 4)))
+      : undefined;
+    if (research && !signalYearBudget) throw new Error("Missing KR signal-year entry budget");
+    const candidateBudget = research ? decimal(signalYearBudget!.budget) : entryBudget;
+    const target = research
+      ? Number(format(candidateBudget))
+      : settings.initialCapital / settings.maxPositions;
     const affordable = Math.floor(cash / (c.price * (1 + half)));
     if (!prospective && affordable < 1) {
       c.decision = "현금 부족";
@@ -550,12 +681,14 @@ export function simulateStrategy(
     const shares = prospective
       ? Number(
           integerBudgetQuantity(
-            format(
-              divide(
-                decimal(fromLegacyNumber(settings.initialCapital)),
-                decimal(String(settings.maxPositions)),
-              ),
-            ),
+            research
+              ? format(candidateBudget)
+              : format(
+                  divide(
+                    decimal(fromLegacyNumber(settings.initialCapital)),
+                    decimal(String(settings.maxPositions)),
+                  ),
+                ),
             format(exactCash),
             fromLegacyNumber(c.price),
             "0.0015",
@@ -612,7 +745,10 @@ export function simulateStrategy(
       status: "OPEN",
     });
   }
-  if (latest) closeDue(latest, false);
+  if (latest) {
+    if (research) advanceResearch(latest, true);
+    else closeDue(latest, false);
+  }
   const quotes: Record<string, Quote> = {};
   for (const [symbol, series] of Object.entries(bars)) {
     const mark = [...series].reverse().find((bar) => Number.isFinite(bar.close) && bar.close > 0);
@@ -654,20 +790,24 @@ export function simulateStrategy(
   return {
     trades,
     candidates,
-    summary: summary(
-      settings.initialCapital,
-      cash,
-      value,
-      realized,
-      unrealized,
-      count,
-      latest,
-      settings.maxPositions,
-    ),
+    summary: {
+      ...summary(
+        settings.initialCapital,
+        cash,
+        value,
+        realized,
+        unrealized,
+        count,
+        latest,
+        settings.maxPositions,
+      ),
+      ...(research ? { slotTargetAmount: Number(format(entryBudget)) } : {}),
+    },
     firstSignalDate: snapshots[0]?.asOfDate ?? null,
     quotes,
     fingerprint,
     calculatedAt: new Date().toISOString(),
+    ...(research ? { researchHistory: { dailyNAV, yearlyBudgets, exitTiming } } : {}),
     ...(prospective
       ? {
           modelAccounting: {

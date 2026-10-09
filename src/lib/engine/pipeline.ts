@@ -1,4 +1,5 @@
 import { kospiPolicyVersionAt } from "./kospiEntryConfirmation";
+import { isCurrentRulesResearch, type OperatingPolicyContext } from "./operatingPolicyContext";
 import { evaluateKospiMarketGateAtDate, type KospiMarketGateEvidence } from "./kospiMarketGate";
 import {
   buildKospiEntrySnapshot,
@@ -355,6 +356,7 @@ function sectorSnapshotScores(ds: MarketDataset, rows: ScreeningRow[]): SectorSc
 export function runAnalysis(
   ds: MarketDataset,
   cfg: ScoringConfig = DEFAULT_SCORING_CONFIG,
+  context?: OperatingPolicyContext,
 ): AnalysisResult {
   const kospi = indexSnapshot(ds, "KOSPI");
   const kosdaq = indexSnapshot(ds, "KOSDAQ") ?? kospi;
@@ -530,6 +532,7 @@ export function runAnalysis(
       operatingScore10,
       universe.passed,
       ds.asOfDate,
+      context,
     );
     const { exitSignal } = signals;
     const technicalNormalized = inst.instrumentType === "STOCK" ? stockPercent : normalize(tech);
@@ -561,7 +564,7 @@ export function runAnalysis(
       grade: modelGrade,
       actionLabelText:
         inst.instrumentType === "STOCK"
-          ? getOperationalStatus(signals, inst.market)
+          ? getOperationalStatus(signals, inst.market, context)
           : actionLabel(modelGrade, gate.status),
       operatingScore10,
       previousOperatingScore10,
@@ -593,7 +596,7 @@ export function runAnalysis(
 
   for (const row of rows) {
     if (row.instrument.instrumentType !== "STOCK" || row.instrument.market !== "KOSPI") continue;
-    const dated = buildKospiEntrySnapshot(ds, row.instrument.symbol, cfg);
+    const dated = buildKospiEntrySnapshot(ds, row.instrument.symbol, cfg, context);
     row.kospiEntry = dated.entry;
     Object.assign(
       row,
@@ -603,14 +606,15 @@ export function runAnalysis(
         dated.current.score,
         dated.current.observed && dated.current.eligible,
         ds.asOfDate,
+        context,
       ),
     );
     // Preserve the raw onset for a blocked badge; readiness is independently guarded.
     row.kospi80Onset = dated.entry.originDate === ds.asOfDate;
-    row.kospiEightPointEntry = isKospiEntryReady(dated.entry, ds.asOfDate);
+    row.kospiEightPointEntry = isKospiEntryReady(dated.entry, ds.asOfDate, context);
     row.rs20 = dated.rs20;
     row.rs60 = dated.rs60;
-    row.actionLabelText = getOperationalStatus(row, "KOSPI");
+    row.actionLabelText = getOperationalStatus(row, "KOSPI", context);
   }
 
   for (const row of rows) {
@@ -715,7 +719,7 @@ export function runAnalysis(
 
   return {
     asOfDate: ds.asOfDate,
-    strategyVersion: `${STRATEGY_VERSION} / ${ETF_POLICY.version} / ${kospiPolicyVersionAt(ds.asOfDate)}`,
+    strategyVersion: `${STRATEGY_VERSION} / ${ETF_POLICY.version} / ${kospiPolicyVersionAt(ds.asOfDate, context)}`,
     scoringConfig: {
       ...cfg,
       weights: {
@@ -737,7 +741,7 @@ export function runAnalysis(
     rows,
     sectors,
     sectorRotation,
-    ...(ds.asOfDate >= "2026-10-12"
+    ...(isCurrentRulesResearch(context) || ds.asOfDate >= "2026-10-12"
       ? {
           observationDates: Object.fromEntries(
             Object.entries(ds.observedBars ?? ds.bars).map(([symbol, bars]) => [

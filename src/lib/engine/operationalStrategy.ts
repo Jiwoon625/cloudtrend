@@ -1,4 +1,5 @@
 import { kospiPolicyVersionAt } from "./kospiEntryConfirmation";
+import { isCurrentRulesResearch, type OperatingPolicyContext } from "./operatingPolicyContext";
 import {
   KOSPI_ENTRY_POLICY,
   KOSPI_CONSISTENCY_VERSION,
@@ -79,6 +80,7 @@ export function getOperationalSignals(
   current: number | null,
   eligible: boolean,
   asOfDate?: string,
+  context?: OperatingPolicyContext,
 ) {
   const onset =
     eligible &&
@@ -102,7 +104,7 @@ export function getOperationalSignals(
     kospiEightPointEntry: false,
     exitSignal,
     operationalSignalVersion: asOfDate
-      ? kospiPolicyVersionAt(asOfDate)
+      ? kospiPolicyVersionAt(asOfDate, context)
       : OPERATIONAL_SIGNAL_VERSION,
   };
 }
@@ -118,7 +120,11 @@ interface Signals {
   operationalSignalVersion?: string;
   exitSignal?: string | null;
 }
-export function isOperationalEntry(row: Signals, asOfDate?: string): boolean {
+export function isOperationalEntry(
+  row: Signals,
+  asOfDate?: string,
+  context?: OperatingPolicyContext,
+): boolean {
   if (
     (row.hardFilterStatus !== undefined && row.hardFilterPassed === false) ||
     row.hardFilterStatus === "FAIL" ||
@@ -130,7 +136,7 @@ export function isOperationalEntry(row: Signals, asOfDate?: string): boolean {
     row.kosdaq80Onset === true ||
     ((row.operationalSignalVersion === OPERATIONAL_SIGNAL_VERSION ||
       row.operationalSignalVersion === KOSPI_CONSISTENCY_VERSION) &&
-      isKospiEntryReady(row.kospiEntry, asOfDate))
+      isKospiEntryReady(row.kospiEntry, asOfDate, context))
   );
 }
 export function getStoredOperationalExit(
@@ -149,18 +155,23 @@ export function getStoredOperationalExit(
     return row.exitSignal;
   return null;
 }
-export function getOperationalStatus(row: Signals, market: string): string {
+export function getOperationalStatus(
+  row: Signals,
+  market: string,
+  context?: OperatingPolicyContext,
+): string {
   const exit = getStoredOperationalExit(row, market);
   if (exit === "UP95") return "KOSPI 청산 · 9.5점 상향돌파";
   if (exit === "UP90") return "KOSDAQ 청산 · 9.0점 상향 재돌파";
   if (exit === "DOWN30") return "KOSDAQ 청산 · 3.0점 하향 이탈";
   if (market === "KOSPI" && row.kospiEntry) {
     const s = row.kospiEntry;
-    if (isOperationalEntry(row))
+    if (isOperationalEntry(row, undefined, context))
       return "KOSPI 하루·RS·시장국면 확인 완료 · 체결 전 시장 재확인 대기";
     if (s.state === "confirmed")
-      return s.date < KOSPI_ENTRY_POLICY.effectiveConfirmationDate ||
-        s.version !== kospiPolicyVersionAt(s.date)
+      return (!isCurrentRulesResearch(context) &&
+        s.date < KOSPI_ENTRY_POLICY.effectiveConfirmationDate) ||
+        s.version !== kospiPolicyVersionAt(s.date, context)
         ? "KOSPI 과거 확인 참고 · 운영 진입 제외"
         : `KOSPI 확인 기록 미충족 · 진입 제외${s.issues.length ? ` · ${s.issues.join(" · ")}` : ""}`;
     if (s.state === "pending") return "KOSPI 8.0 원신호 · 다음 거래일 확인 대기";
@@ -170,6 +181,6 @@ export function getOperationalStatus(row: Signals, market: string): string {
   }
   if (market === "KOSPI" && row.kospi80Onset)
     return "KOSPI 8.0 원신호 · 확인 기록 없음 · 진입 제외";
-  if (isOperationalEntry(row)) return `${market} 8.0 원신호 · 신규 진입`;
+  if (isOperationalEntry(row, undefined, context)) return `${market} 8.0 원신호 · 신규 진입`;
   return "관찰";
 }

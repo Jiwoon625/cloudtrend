@@ -1,4 +1,8 @@
 import { ETF_POLICY, etfEntryWeight, type EtfStrategySnapshot } from "../engine/etfStrategy";
+import {
+  isCurrentRulesResearch,
+  type OperatingPolicyContext,
+} from "../engine/operatingPolicyContext";
 import { decimal, format, multiply } from "./decimal";
 import {
   assertModelSeriesIsolation,
@@ -57,6 +61,10 @@ export interface EtfShadowPendingEntry {
   sourceHash: SeriesHash;
   entryWeight: string;
   averageTradingValue20: number;
+  /** Research-only target fixed when confirmation creates an intent. */
+  researchTargetBudget?: string;
+  researchBudgetNavDate?: string | null;
+  researchBudgetYear?: number;
 }
 export interface EtfShadowPendingExit {
   symbol: string;
@@ -83,6 +91,12 @@ export interface EtfShadowValuation {
     status: "CURRENT" | "STALE" | "MISSING";
   }>;
 }
+export interface EtfResearchYearAssetBase {
+  year: number;
+  effectiveDate: string;
+  valuationDate: string | null;
+  nav: string;
+}
 export interface EtfAdoptedShadowState {
   book: "MODEL";
   bookId: string;
@@ -103,6 +117,7 @@ export interface EtfAdoptedShadowState {
   valuation: EtfShadowValuation;
   cumulativeFees: string;
   realizedPnl: string;
+  researchYearAssetBases?: EtfResearchYearAssetBase[];
 }
 export interface EtfShadowFill {
   symbol: string;
@@ -121,6 +136,8 @@ export interface EtfShadowFill {
   fee: string;
   cashDelta: string;
   targetBudget: string | null;
+  researchEntryWeight?: string;
+  researchBudgetYear?: number;
   budgetNavDate: string | null;
   realizedPnl: string | null;
 }
@@ -303,8 +320,41 @@ function openPrice(
     ? { ...price, price: price.price }
     : null;
 }
-function assertState(series: FrozenModelSeries, state: EtfAdoptedShadowState) {
-  assertModelSeriesIsolation(series, state);
+/** Shared execution fields only; research never changes or impersonates a frozen series. */
+type EtfExecutionContract = Pick<
+  FrozenModelSeries,
+  | "book"
+  | "bookId"
+  | "contractHash"
+  | "codeHash"
+  | "configHash"
+  | "sourceHash"
+  | "initialKrw"
+  | "oneWayCost"
+> & {
+  accountingStartDate: string;
+  researchEntryBudgetPolicy?: "ANNUAL_NAV_VOLATILITY_SIGNAL_YEAR_V1" | "ADOPTED_VOLATILITY";
+};
+
+export type EtfResearchExecutionContract = EtfExecutionContract & {
+  bookId: `RESEARCH:ETF_V02:${string}`;
+  researchEntryBudgetPolicy: "ANNUAL_NAV_VOLATILITY_SIGNAL_YEAR_V1" | "ADOPTED_VOLATILITY";
+};
+
+function usesCurrentExecution(series: EtfExecutionContract, context?: OperatingPolicyContext) {
+  return isCurrentRulesResearch(context) || series.accountingStartDate === "2026-10-12";
+}
+function assertState(
+  series: EtfExecutionContract,
+  state: EtfAdoptedShadowState,
+  context?: OperatingPolicyContext,
+) {
+  if (
+    state.book !== series.book ||
+    state.bookId !== series.bookId ||
+    state.contractHash !== series.contractHash
+  )
+    throw new Error("Actual, alternative, and other model state cannot enter this series");
   if (
     state.scheduledStartDate !== series.accountingStartDate ||
     state.codeHash !== series.codeHash ||
@@ -383,7 +433,7 @@ function assertState(series: FrozenModelSeries, state: EtfAdoptedShadowState) {
     if (
       entry.originDate < series.accountingStartDate ||
       entry.originDate >= entry.confirmationDate ||
-      (series.accountingStartDate === "2026-10-12"
+      (usesCurrentExecution(series, context)
         ? !state.lastSessionDate || entry.confirmationDate > state.lastSessionDate
         : entry.confirmationDate !== state.lastSessionDate) ||
       time(entry.availableAt) > time(state.lastCloseAt!) ||
@@ -393,6 +443,19 @@ function assertState(series: FrozenModelSeries, state: EtfAdoptedShadowState) {
       entry.averageTradingValue20 < 0
     )
       throw new Error("Invalid or stale ETF pending entry");
+    if (series.researchEntryBudgetPolicy === "ANNUAL_NAV_VOLATILITY_SIGNAL_YEAR_V1") {
+      const base = state.researchYearAssetBases?.find(
+        (b) => b.year === Number(entry.confirmationDate.slice(0, 4)),
+      );
+      if (
+        !base ||
+        entry.researchBudgetYear !== base.year ||
+        entry.researchBudgetNavDate !== base.valuationDate ||
+        entry.researchTargetBudget !==
+          format(multiply(decimal(base.nav), decimal(entry.entryWeight)))
+      )
+        throw new Error("Research ETF pending budget changed after confirmation");
+    }
   }
   for (const exit of state.pendingExits) {
     date(exit.signalDate);
@@ -426,6 +489,10 @@ export async function initializeEtfAdoptedShadow(
   series: FrozenModelSeries,
 ): Promise<EtfAdoptedShadowState> {
   await assertSeries(series);
+  return initialEtfState(series);
+}
+
+function initialEtfState(series: EtfExecutionContract): EtfAdoptedShadowState {
   return freeze({
     book: "MODEL",
     bookId: series.bookId,
@@ -459,7 +526,33 @@ export async function stepEtfAdoptedShadow(
   input: EtfShadowSessionInput,
 ): Promise<{ state: EtfAdoptedShadowState; record: EtfShadowDailyRecord }> {
   await assertSeries(series);
-  assertState(series, previous);
+  return stepEtfShadowSession(
+    series,
+    previous,
+    input,
+    () => firstModelSession(series, input.calendar),
+    async () =>
+      (
+        await guardModelRun(series, {
+          date: input.sessionDate,
+          codeHash: input.codeHash,
+          configHash: input.configHash,
+          sourceHash: input.sourceHash,
+        })
+      ).receipt,
+  );
+}
+
+/** One implementation of allocation, carry, fills, marking and proxy exits for both callers. */
+async function stepEtfShadowSession(
+  series: EtfExecutionContract,
+  previous: EtfAdoptedShadowState,
+  input: EtfShadowSessionInput,
+  firstSession: () => string | null,
+  runReceipt: () => Promise<ModelRunReceipt>,
+  context?: OperatingPolicyContext,
+): Promise<{ state: EtfAdoptedShadowState; record: EtfShadowDailyRecord }> {
+  assertState(series, previous, context);
   date(input.sessionDate);
   const openAt = time(input.openAt),
     closeAt = time(input.closeAt),
@@ -477,7 +570,7 @@ export async function stepEtfAdoptedShadow(
     (previous.lastSessionDate && input.sessionDate <= previous.lastSessionDate)
   )
     throw new Error("ETF steps require strictly increasing matching previous sessions");
-  const first = firstModelSession(series, input.calendar);
+  const first = firstSession();
   if (previous.firstValidSessionDate !== null && first !== previous.firstValidSessionDate)
     throw new Error("ETF calendar changed the recorded first valid session");
   const expected = previous.lastSessionDate
@@ -491,12 +584,7 @@ export async function stepEtfAdoptedShadow(
     (previous.lastSessionDate && !input.calendar.regularSessions.includes(previous.lastSessionDate))
   )
     throw new Error("ETF step must be the next covered regular market session");
-  const { receipt } = await guardModelRun(series, {
-    date: input.sessionDate,
-    codeHash: input.codeHash,
-    configHash: input.configHash,
-    sourceHash: input.sourceHash,
-  });
+  const receipt = await runReceipt();
   uniqueSymbols(input.prices);
   uniqueSymbols(input.closeSignals);
   for (const prices of input.prices) {
@@ -509,6 +597,23 @@ export async function stepEtfAdoptedShadow(
     date(signal.strategy.date);
   }
 
+  const annualAllocation =
+    series.researchEntryBudgetPolicy === "ANNUAL_NAV_VOLATILITY_SIGNAL_YEAR_V1";
+  const yearAssetBases = previous.researchYearAssetBases?.map((base) => ({ ...base })) ?? [];
+  if (annualAllocation) {
+    if (!isCurrentRulesResearch(context)) throw new Error("Annual ETF allocation is research-only");
+    const year = Number(input.sessionDate.slice(0, 4));
+    if (yearAssetBases.at(-1)?.year !== year) {
+      if (previous.valuation.nav === null || previous.valuation.status !== "COMPLETE")
+        throw new Error("Annual ETF asset base requires complete prior-close NAV");
+      yearAssetBases.push({
+        year,
+        effectiveDate: input.sessionDate,
+        valuationDate: previous.lastSessionDate,
+        nav: previous.valuation.nav,
+      });
+    }
+  }
   let cash = decimal(previous.cash),
     fees = 0n,
     realizedPnl = 0n;
@@ -523,7 +628,7 @@ export async function stepEtfAdoptedShadow(
   const issue = (symbol: string, code: EtfShadowIssueCode, phase: EtfShadowIssue["phase"]) =>
     issues.push({ symbol, code, phase });
   const sold = new Set<string>();
-  const unified = series.accountingStartDate === "2026-10-12";
+  const unified = usesCurrentExecution(series, context);
   const carriedEntries: EtfShadowPendingEntry[] = [];
 
   // A known MA60 liquidation may wait for a real open. No inferred or stale-price fills.
@@ -626,9 +731,9 @@ export async function stepEtfAdoptedShadow(
       }
       continue;
     }
-    const targetBudget = format(
-      multiply(decimal(previous.valuation.nav), decimal(entry.entryWeight)),
-    );
+    const targetBudget = annualAllocation
+      ? entry.researchTargetBudget!
+      : format(multiply(decimal(previous.valuation.nav), decimal(entry.entryWeight)));
     const quote = quoteModelBudget(targetBudget, format(cash), price.price);
     if (quote.quantity === "0") {
       issue(entry.symbol, "ENTRY_EXPIRED_INSUFFICIENT_BUDGET", "OPEN");
@@ -667,7 +772,10 @@ export async function stepEtfAdoptedShadow(
       fee: quote.fee,
       cashDelta: format(-decimal(quote.debit)),
       targetBudget,
-      budgetNavDate: previous.valuation.asOfDate,
+      ...(annualAllocation
+        ? { researchEntryWeight: entry.entryWeight, researchBudgetYear: entry.researchBudgetYear! }
+        : {}),
+      budgetNavDate: annualAllocation ? entry.researchBudgetNavDate! : previous.valuation.asOfDate,
       realizedPnl: null,
     });
   }
@@ -791,6 +899,15 @@ export async function stepEtfAdoptedShadow(
       sourceHash: signal.sourceHash,
       entryWeight,
       averageTradingValue20: s.averageTradingValue20,
+      ...(annualAllocation
+        ? {
+            researchTargetBudget: format(
+              multiply(decimal(yearAssetBases.at(-1)!.nav), decimal(entryWeight)),
+            ),
+            researchBudgetNavDate: yearAssetBases.at(-1)!.valuationDate,
+            researchBudgetYear: yearAssetBases.at(-1)!.year,
+          }
+        : {}),
     });
   }
   // A day-end absence is recognized after open allocation; proceeds cannot fund earlier buys.
@@ -875,6 +992,7 @@ export async function stepEtfAdoptedShadow(
     pendingEntries,
     pendingExits,
     valuation,
+    ...(annualAllocation ? { researchYearAssetBases: yearAssetBases } : {}),
     cumulativeFees: format(decimal(previous.cumulativeFees) + fees),
     realizedPnl: format(decimal(previous.realizedPnl) + realizedPnl),
   };
@@ -897,6 +1015,97 @@ export async function stepEtfAdoptedShadow(
     realizedPnl: format(realizedPnl),
   };
   return freeze({ state, record });
+}
+
+/** Research receipts are in an isolated namespace and cannot pass a production frozen guard. */
+async function assertResearchContract(
+  contract: EtfResearchExecutionContract,
+  context: OperatingPolicyContext,
+) {
+  if (
+    !isCurrentRulesResearch(context) ||
+    contract.book !== "MODEL" ||
+    !/^RESEARCH:ETF_V02:[a-zA-Z0-9._-]+$/.test(contract.bookId) ||
+    contract.initialKrw !== "100000000" ||
+    contract.oneWayCost !== "0.0015" ||
+    !["ANNUAL_NAV_VOLATILITY_SIGNAL_YEAR_V1", "ADOPTED_VOLATILITY"].includes(
+      contract.researchEntryBudgetPolicy,
+    )
+  )
+    throw new Error("Explicit current-rules ETF research contract required");
+  date(contract.accountingStartDate);
+  for (const value of [
+    contract.codeHash,
+    contract.configHash,
+    contract.sourceHash,
+    contract.contractHash,
+  ])
+    hash(value);
+  const { contractHash, ...body } = contract;
+  if ((await hashSeriesValue(body)) !== contractHash)
+    throw new Error("ETF research contract hash mismatch");
+}
+
+export async function initializeEtfCurrentRulesResearch(
+  contract: EtfResearchExecutionContract,
+  context: OperatingPolicyContext,
+): Promise<EtfAdoptedShadowState> {
+  await assertResearchContract(contract, context);
+  return initialEtfState(contract);
+}
+
+/** Preserve historical dates; never move observations into a production accounting period. */
+export async function stepEtfCurrentRulesResearch(
+  contract: EtfResearchExecutionContract,
+  previous: EtfAdoptedShadowState,
+  input: EtfShadowSessionInput,
+  context: OperatingPolicyContext,
+): Promise<{ state: EtfAdoptedShadowState; record: EtfShadowDailyRecord }> {
+  await assertResearchContract(contract, context);
+  const calendar = input.calendar;
+  hash(calendar.sourceHash);
+  date(calendar.coverageStart);
+  date(calendar.coverageEnd);
+  if (
+    calendar.market !== "KR" ||
+    calendar.coverageStart > contract.accountingStartDate ||
+    calendar.coverageEnd < contract.accountingStartDate ||
+    new Set(calendar.regularSessions).size !== calendar.regularSessions.length
+  )
+    throw new Error("ETF research requires a complete KR session calendar covering its start");
+  for (const session of calendar.regularSessions) {
+    date(session);
+    if (session < calendar.coverageStart || session > calendar.coverageEnd)
+      throw new Error("ETF research session outside calendar coverage");
+  }
+  date(input.sessionDate);
+  for (const value of [input.codeHash, input.configHash, input.sourceHash]) hash(value);
+  if (
+    input.sessionDate < contract.accountingStartDate ||
+    input.codeHash !== contract.codeHash ||
+    input.configHash !== contract.configHash
+  )
+    throw new Error("ETF research start or provenance mismatch");
+  const body = {
+    book: "MODEL" as const,
+    bookId: contract.bookId,
+    date: input.sessionDate,
+    contractHash: contract.contractHash,
+    codeHash: input.codeHash,
+    configHash: input.configHash,
+    sourceHash: input.sourceHash,
+  };
+  const receipt: ModelRunReceipt = { ...body, runHash: await hashSeriesValue(body) };
+  const first =
+    [...calendar.regularSessions].sort().find((d) => d >= contract.accountingStartDate) ?? null;
+  return stepEtfShadowSession(
+    contract,
+    previous,
+    input,
+    () => first,
+    async () => receipt,
+    context,
+  );
 }
 
 /**

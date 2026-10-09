@@ -11,6 +11,10 @@ import type { ScreeningSnapshot, SnapshotEntry } from "./screeningSnapshot";
 import type { DailyPrice, Market } from "./engine/types";
 import type { MarketDataset } from "./engine/dataset";
 import type { PortfolioTrade } from "./portfolioStoreCore";
+import {
+  isCurrentRulesResearch,
+  type OperatingPolicyContext,
+} from "./engine/operatingPolicyContext";
 export interface ExitPlan {
   signalDate: string | null;
   exitDate: string;
@@ -57,7 +61,12 @@ export function datasetLatestDate(dataset: MarketDataset): string | null {
   return latest;
 }
 
-export function isEntryOnset(entry: SnapshotEntry, market: Market, asOfDate?: string) {
+export function isEntryOnset(
+  entry: SnapshotEntry,
+  market: Market,
+  asOfDate?: string,
+  context?: OperatingPolicyContext,
+) {
   if (
     (entry.hardFilterStatus !== undefined && entry.hardFilterPassed === false) ||
     entry.hardFilterStatus === "FAIL" ||
@@ -65,7 +74,8 @@ export function isEntryOnset(entry: SnapshotEntry, market: Market, asOfDate?: st
     (entry.pendingRules?.length ?? 0) > 0
   )
     return false;
-  if (market === "KOSPI") return isOperationalEntry({ ...entry, kosdaq80Onset: false }, asOfDate);
+  if (market === "KOSPI")
+    return isOperationalEntry({ ...entry, kosdaq80Onset: false }, asOfDate, context);
   if (market !== "KOSDAQ") return false;
   if (entry.kosdaq80Onset === true) return true;
   return /KOSDAQ\s*(?:80|8)\s*(?:Onset|ONSET)/i.test(entry.status ?? "");
@@ -143,9 +153,16 @@ export function nextKospiConfirmedEntry(
   entry: KospiEntrySnapshot,
   marketDates: string[],
   gates: Record<string, KospiMarketGateEvidence> = {},
+  context?: OperatingPolicyContext,
 ): EntryExecution {
-  let execution = nextConfirmedEntry(bars, entry.confirmationDate ?? entry.date, marketDates);
-  if (entry.date >= "2026-10-12") {
+  const currentExecution = isCurrentRulesResearch(context) || entry.date >= "2026-10-12";
+  let execution = nextConfirmedEntry(
+    bars,
+    entry.confirmationDate ?? entry.date,
+    marketDates,
+    isCurrentRulesResearch(context) ? true : undefined,
+  );
+  if (currentExecution) {
     while (execution.bar) {
       const previousDate = [...new Set(marketDates)]
         .filter((date) => date < execution.bar!.tradeDate)

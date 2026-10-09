@@ -5,6 +5,7 @@ import {
   computeFullUniverseSectorRotation,
 } from "./sectorRotationFullUniverse";
 import { DEFAULT_SCORING_CONFIG, type ScoringConfig } from "./scoring";
+import type { OperatingPolicyContext } from "./operatingPolicyContext";
 
 /**
  * Browser screening, dashboard snapshots, and trusted automation share this
@@ -14,9 +15,10 @@ import { DEFAULT_SCORING_CONFIG, type ScoringConfig } from "./scoring";
 export function runFullMarketAnalysis(
   rawDataset: MarketDataset,
   config: ScoringConfig = DEFAULT_SCORING_CONFIG,
+  context?: OperatingPolicyContext,
 ): { analysis: AnalysisResult; dataset: MarketDataset } {
   const dataset = buildFullUniverseSectorDataset(rawDataset);
-  const analysis = runAnalysis(dataset, config);
+  const analysis = runAnalysis(dataset, config, context);
   // Preserve the V8 structural signals, status and score delta from the pipeline.
 
   const representativeEtf = new Map<string, { symbol: string; name: string }>();
