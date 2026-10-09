@@ -1,4 +1,4 @@
-name: CMresearchengine S20 S23 private final audit
+name: CMresearchengine prior audited candidates private final audit
 on:
   push:
     branches: [main]
@@ -26,7 +26,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r research/cmresearchengine/requirements.txt
       - name: Test isolated private report exporter
         run: python scripts/test_cm_private_report.py -v
-      - name: Verify S20 through S23 private result accounting without exposing records
+      - name: Verify prior uniquely bound private results without exposing records
         run: |
           python - <<'PY'
           import csv, hashlib, io, json, zipfile
@@ -122,10 +122,19 @@ jobs:
                   'private_storage':True},sort_keys=True))
           
           targets = [
-              ('Q_K000_E050_U050_C000', 'e4eb52fc36cc0edf05cfe3f6c4c57f0207bbeeacc8b23b30f9ff242054c1079f'),
-              ('Q_K000_E075_U000_C025', '8fe2986d470bf47bbfbe268b35c2cf79ad1e7eca0d45028668fd34916d4cf8ff'),
-              ('Q_K000_E075_U025_C000', '5c571680ec855f262ffb0272e2c4b798aa84ebf64cd9a541d28cc7973580fa46'),
-              ('Q_K025_E000_U000_C075', 'e223562ee9a3ab11e699572929a45372eb732fdc4021b447f51861adfd466bc9'),
+              ('S06', 'f86e278af7c3ca242a90cff743fe3fb3a9347de10d80b204d2084d82c10f6b33'),
+              ('S07', '9facd9af8860f604635ccac755604935e22be2dd3293b2e27b6baa49eebdc3b9'),
+              ('S08', 'ea8602223ca7987dc97767d2e21bf60733d2a2d0177c79fc1242b1e09fd31ed6'),
+              ('S09', 'ec15ef10fe1516dcdd5b3e6cdfd370e8a4a70990f0b9e2af3466848541782c0c'),
+              ('Q_K000_E000_U025_C075', '6aa9a2291f3a784794e5194dcdcebd7a20aa550bbf2fcddfb82b1a4650ca7fee'),
+              ('Q_K000_E000_U050_C050', '245415f2c00b0c79c1c6b7fa13a2bbadc2acfc24f2620338a5d1bce6daf6f10f'),
+              ('Q_K000_E000_U075_C025', '56350de6adf32bf27f91b290f4d1b0fdfc5ef3dfe213093eca3731b34282a9ae'),
+              ('Q_K000_E025_U000_C075', '05badc948a20d6d8e83a38b78d3f88e88d9db31a5f66141e352900825d458781'),
+              ('Q_K000_E025_U025_C050', 'c9cf920468df2519f08f408efeceaf86b4af41674354ce5f98f2472bdff2aac9'),
+              ('Q_K000_E025_U050_C025', '7da989e26ab05f17f6b19f11a2abae1d4f6ad0493f5b706640aa242955c2f621'),
+              ('Q_K000_E025_U075_C000', 'ee9147b7cc9710ace58b706bff6f54f55c3c4a6a1f142ef49708cd1323fef7e9'),
+              ('Q_K000_E050_U000_C050', '0865efe197c9c91cbfc1977da0a3d214e4292a3d6cd018a1f32e73cf93a33bb9'),
+              ('Q_K000_E050_U025_C025', 'dde07700ca34563ca2c3b412e9d37fe6047431666cc953b3b8a791abc8d8ebd8'),
           ]
           for candidate, identity in targets:
               audit(candidate, identity)
