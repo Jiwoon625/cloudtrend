@@ -375,6 +375,23 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
         }),
       );
       quality["sourceCoverage"] = sourceCoverage;
+      const featureLowerBound = (kind: "STOCK" | "ETF", observations: number) => {
+        const dates = raw.instruments
+          .filter((instrument) => instrument.instrumentType === kind)
+          .flatMap((instrument) => {
+            const day = raw.bars[instrument.symbol]?.[observations - 1]?.tradeDate;
+            return day ? [day] : [];
+          })
+          .sort();
+        return dates.length
+          ? (manifest.sessions.find((day) => day >= dates[0]! && day > raw.tradeDates[0]!) ?? null)
+          : null;
+      };
+      quality["featureWarmupLowerBounds"] = {
+        KR: featureLowerBound("STOCK", 252),
+        ETF: featureLowerBound("ETF", 120),
+        definition: "EARLIEST_POSSIBLE_REQUIRED_PRICE_FEATURE_NOT_GUARANTEED_SIGNAL",
+      };
       quality["sourceBarStart"] = raw.tradeDates[0];
       quality["sourceBarEnd"] = raw.asOfDate;
       quality["warmupSessions"] = raw.tradeDates.filter((date) => date < start).length;

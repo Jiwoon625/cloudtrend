@@ -5,6 +5,8 @@ Input is the transfer worker's source-manifest.json and a staging root containin
 each orderedFiles[].sourcePath. All inputs need pinned byte counts and SHA-256s.
 Source files, columns, rows and duplicates retain their declared order. No source
 values, scores, metadata, or dates are filled, recomputed, merged, or filtered.
+A source-hash-pinned identity repair may append a separately documented canonical
+code column while preserving every original cell, including the damaged symbol.
 
 Requires pyarrow. Example (output must not exist):
   python scripts/prepare-adopted-kr-etf-inputs.py --source-manifest /private/source-manifest.json \
@@ -17,6 +19,7 @@ from __future__ import annotations
 import argparse
 import csv
 from datetime import date
+from decimal import Decimal
 import gzip
 import hashlib
 import io
@@ -42,6 +45,17 @@ ALIASES = {
     "date": "date", "tradedate": "date", "기준일": "date", "일자": "date",
     "market": "market", "시장": "market",
     "type": "type", "securitytype": "type", "종류": "type",
+}
+
+# Public issuer identity, applied only to the independently pinned affected source.
+# The original symbol cell remains unchanged; an appended canonical code column
+# supplies the existing parser's later-alias precedence. Never parse an arbitrary
+# scientific-notation identifier as an ordinary numeric stock code.
+VERIFIED_SYMBOL_REPAIR = {
+    "sourceSha256": "238b43699209438ed1d706f182878ef9ba2192bb769d0daedcee68fd475c8ead",
+    "canonicalSymbol": "0219E0", "name": "KODEX 200커버드콜액티브",
+    "firstDate": "2026-07-14", "lastDate": "2026-09-11", "expectedRows": 42,
+    "issuerEvidence": "https://www.samsungfund.com/etf/search.do?searchText=Kodex+200",
 }
 
 
@@ -184,6 +198,12 @@ def convert_file(path: Path, target: Path, item: dict, batch_size: int) -> tuple
             if not supported_type(pa, field.type):
                 raise ValueError(f"Unsupported lossless CSV type for {field.name}: {field.type}")
         columns = calendar_columns(names)
+        repair = VERIFIED_SYMBOL_REPAIR if normalized_hash(item["sha256"]).removeprefix("sha256:") == VERIFIED_SYMBOL_REPAIR["sourceSha256"] else None
+        if repair and (not {"symbol", "name", "market", "securityType", "date"} <= set(names) or "code" in names):
+            raise ValueError("Verified symbol-repair source schema changed")
+        output_names = names + (["code"] if repair else [])
+        repaired = 0
+        repaired_dates = set()
         nulls = dict.fromkeys(names, 0)
         parts = []
         part_rows = part_chars = 0
@@ -203,7 +223,7 @@ def convert_file(path: Path, target: Path, item: dict, batch_size: int) -> tuple
             compressed = gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0, compresslevel=6)
             text = io.TextIOWrapper(compressed, encoding="utf-8", newline="")
             writer = csv.writer(text, lineterminator="\n")
-            part_rows, part_chars = 0, writer.writerow(names)
+            part_rows, part_chars = 0, writer.writerow(output_names)
             parts.append({"name": name, "rows": 0})
         try:
             start_part()
@@ -212,12 +232,27 @@ def convert_file(path: Path, target: Path, item: dict, batch_size: int) -> tuple
                     nulls[name] += batch.column(index).null_count
                 values = [csv_column(pa, column) for column in batch.columns]
                 for row in zip(*values):
+                    output_row = row
+                    if repair:
+                        canonical = row[names.index("symbol")]
+                        if re.fullmatch(r"\d+(?:\.\d+)?[Ee]\+\d+", canonical):
+                            day = observed_date(row[names.index("date")])
+                            if not (Decimal(canonical) == Decimal(repair["canonicalSymbol"]) and
+                                    row[names.index("name")] == repair["name"] and
+                                    row[names.index("market")] == "KOSPI" and
+                                    row[names.index("securityType")] == "ETF" and
+                                    day and repair["firstDate"] <= day <= repair["lastDate"]):
+                                raise ValueError("Verified symbol-repair identity mismatch")
+                            canonical = repair["canonicalSymbol"]
+                            repaired += 1
+                            repaired_dates.add(day)
+                        output_row = (*row, canonical)
                     # A chunk boundary is always between complete CSV records,
                     # including records containing quoted newlines. No row is split.
                     if part_rows and part_chars >= MAX_PREPARED_CHARS:
                         close_part()
                         start_part()
-                    part_chars += writer.writerow(row)
+                    part_chars += writer.writerow(output_row)
                     part_rows += 1
                     parts[-1]["rows"] = part_rows
                     rows += 1
@@ -233,12 +268,16 @@ def convert_file(path: Path, target: Path, item: dict, batch_size: int) -> tuple
             close_part()
         if rows != parquet.metadata.num_rows:
             raise ValueError("Parquet row count changed during conversion")
+        if repair and (repaired != repair["expectedRows"] or min(repaired_dates, default=None) != repair["firstDate"] or max(repaired_dates, default=None) != repair["lastDate"]):
+            raise ValueError("Verified symbol-repair row count or date range changed")
         # Recheck the same open file descriptor after decoding to detect source
         # mutation during preparation, without reopening a substituted path.
         verified_stream(source, item)
     return {
-        "rows": rows, "columnCount": len(names), "preparedParts": parts,
-        "columns": [{"name": field.name, "arrowType": str(field.type), "nulls": nulls[field.name]} for field in schema],
+        "rows": rows, "columnCount": len(output_names), "originalColumnCount": len(names), "preparedParts": parts,
+        "symbolIdentityRepairs": ([{**repair, "affectedRows": repaired, "originalCellsRetained": True, "derivedCanonicalColumn": "code"}] if repair else []),
+        "columns": [{"name": field.name, "arrowType": str(field.type), "nulls": nulls[field.name]} for field in schema] +
+                   ([{"name": "code", "arrowType": "research-derived-string", "nulls": 0}] if repair else []),
         "firstDate": min(dates) if dates else None, "lastDate": max(dates) if dates else None,
         "observedDateCount": len(dates), "missingOrInvalidDateRows": missing_dates,
         "koreanSessionCount": len(sessions), "calendarEvidenceRows": evidence,

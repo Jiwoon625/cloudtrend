@@ -37,6 +37,16 @@ async function fixture() {
 }
 
 describe("local adopted-rule replay inputs", () => {
+  it("uses a separately derived final code alias without numerically interpreting an alphanumeric ticker", () => {
+    const csv =
+      "symbol,name,market,securityType,date,open,high,low,close,volume,code\n" +
+      "1.88E+02,Synthetic ETF,KOSPI,ETF,2020-01-02,100,100,100,100,100,0188E0";
+    const result = parseManualMarketData(csv, { allowIncompleteIndex: true });
+    expect(result.dataset.instruments[0]!.symbol).toBe("0188E0");
+    expect(result.dataset.observedBars!["0188E0"]).toHaveLength(1);
+    expect(result.dataset.observedBars!["000188"]).toBeUndefined();
+  });
+
   it("parses lazy record-boundary chunks with the same later-nonempty merge", () => {
     const header =
       "symbol,name,market,securityType,date,open,high,low,close,volume,tradingValue,marketCap";
@@ -159,6 +169,11 @@ describe("local adopted-rule replay inputs", () => {
       warmupSessions: 280,
       scoringSessions: 20,
       syntheticFixture: true,
+      featureWarmupLowerBounds: {
+        KR: f.dataset.tradeDates[251],
+        ETF: f.dataset.tradeDates[119],
+        definition: "EARLIEST_POSSIBLE_REQUIRED_PRICE_FEATURE_NOT_GUARANTEED_SIGNAL",
+      },
     });
     expect(result.quality["signalReadiness"]).toMatchObject({
       scope: "SELECTED_SCORING_SESSIONS_ONLY_NOT_EARLIEST_SOURCE_HISTORY",

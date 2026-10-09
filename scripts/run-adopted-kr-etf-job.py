@@ -150,9 +150,11 @@ def safe_summary_metadata(metadata):
         require(all(type(item[k]) is int and 0 <= item[k] <= 2**53-1 for k in ("symbols", "rows")), "INVALID_SOURCE_COVERAGE")
         require(all(item[k] is None or summary_date(item[k]) for k in ("firstDate", "lastDate")), "INVALID_SOURCE_COVERAGE")
     checks = metadata["checks"]
-    require(isinstance(checks, dict) and set(checks) == {"calendar", "signals", "accounts"}, "INVALID_CHECKS")
+    require(isinstance(checks, dict) and set(checks) == {"calendar", "signals", "accounts", "featureLowerBounds"}, "INVALID_CHECKS")
     require(isinstance(checks["calendar"], dict) and set(checks["calendar"]) == {"first", "last"} and
             all(value is None or summary_date(value) for value in checks["calendar"].values()), "INVALID_CHECKS_CALENDAR")
+    bounds = checks["featureLowerBounds"]
+    require(isinstance(bounds, dict) and set(bounds) == {"KR", "ETF"} and all(value is None or summary_date(value) for value in bounds.values()), "INVALID_CHECKS_FEATURE_BOUNDS")
     signals = checks["signals"]
     require(isinstance(signals, dict) and set(signals) <= {"KOSPI", "KOSDAQ", "ETF"}, "INVALID_CHECKS_SIGNALS")
     for value in signals.values():
@@ -688,6 +690,7 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
     readiness = result_quality.get("signalReadiness", {})
     checks = {
         "calendar": {"first": result_quality.get("sourceCalendarStart"), "last": result_quality.get("sourceCalendarEnd")},
+        "featureLowerBounds": {market: result_quality.get("featureWarmupLowerBounds", {}).get(market) for market in ("KR", "ETF")},
         "signals": {market: {
             "scoreFirst": readiness.get("firstAnyValidScoreDate", {}).get(market),
             "entryFirst": readiness.get("firstEntryReadyDate", {}).get(market),
@@ -780,7 +783,7 @@ def main():
         print(json.dumps({"status": "STOPPED", "code": str(error)}, sort_keys=True))
         return 1
     result = run_github_job(options)
-    return 0 if result["status"] == "COMPLETE" else 1
+    return 0 if result["status"] in ("COMPLETE", "INPUT_CLASSIFICATION_ONLY") else 1
 
 
 if __name__ == "__main__":

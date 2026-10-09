@@ -135,6 +135,29 @@ class AdoptedKrEtfInputTests(unittest.TestCase):
         self.assertEqual(result["invalid"], [{"rawSymbol": "SPY", "normalizedSymbol": "SPY", "market": "ETF", "type": "ETF", "rows": 2, "sourceOrders": [1]}])
         self.assertEqual((self.raw / "sources/audit.parquet").read_bytes(), raw)
 
+    def test_pinned_identity_recovery_preserves_every_original_cell(self):
+        table = pa.table({"symbol": ["1.88E+02", "1.88E+02", "KOSPI"], "name": ["Synthetic ETF"]*2+["Other"],
+                          "market": ["KOSPI", "KOSPI", "INDEX"], "securityType": ["ETF", "ETF", "INDEX"],
+                          "date": ["2020-01-02", "2020-01-03", "2020-01-03"], "close": [100, 101, 102]})
+        self.manifest_for([("stock_history/identity.parquet", table)])
+        item = json.loads(self.manifest.read_text())["orderedFiles"][0]
+        repair = {"sourceSha256": item["sha256"], "canonicalSymbol": "0188E0", "name": "Synthetic ETF",
+                  "firstDate": "2020-01-02", "lastDate": "2020-01-03", "expectedRows": 2,
+                  "issuerEvidence": "https://example.test/synthetic"}
+        with mock.patch.object(prep, "VERIFIED_SYMBOL_REPAIR", repair):
+            result = self.prepare()
+        rows = self.read_csv(result)
+        self.assertEqual(rows[0], table.schema.names+["code"])
+        self.assertEqual([r[:-1] for r in rows[1:]], [[str(v) for v in row.values()] for row in table.to_pylist()])
+        self.assertEqual([r[-1] for r in rows[1:]], ["0188E0", "0188E0", "KOSPI"])
+        self.assertEqual(result["files"][0]["symbolIdentityRepairs"][0]["affectedRows"], 2)
+        with mock.patch.object(prep, "VERIFIED_SYMBOL_REPAIR", {**repair, "name": "Wrong"}):
+            with self.assertRaisesRegex(ValueError, "identity mismatch"):
+                self.prepare("bad")
+        with mock.patch.object(prep, "VERIFIED_SYMBOL_REPAIR", {**repair, "expectedRows": 3}):
+            with self.assertRaisesRegex(ValueError, "row count"):
+                self.prepare("bad-count")
+
     def test_calendar_uses_observed_kr_rows_even_without_prices(self):
         table = pa.table({
             "종목코드": ["KOSPI", "KOSDAQ", "005930", "000660", "SPY", "0193T0", "VKOSPI", "", "ABC"],
