@@ -92,9 +92,15 @@ describe("ETF screener rendered state contract", () => {
   it("requires real holdings and suppresses held or consumed entries", () => {
     expect(page("confirmed")).toContain("보유정보 확인 필요");
     expect(page("confirmed")).not.toContain('aria-label="360750 주문가격"');
-    expect(page("confirmed", { ...book, etfTrackedSymbols: ["360750"] })).toContain(
+    expect(page("confirmed", { ...book, etfTrackedSymbols: ["360750"] })).not.toContain(
       "보유 · 추가 매수 없음",
     );
+    expect(
+      page("confirmed", {
+        ...book,
+        etfActual: { ...book.etfActual, positions: [{ symbol: "360750", shares: 1 }] },
+      } as DualPortfolioState),
+    ).toContain("보유 · 추가 매수 없음");
     const sold = {
       ...book,
       document: {

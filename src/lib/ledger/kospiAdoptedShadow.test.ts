@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { KOSPI_SHADOW_POLICY, stepKospiShadow, type KospiShadowRow } from "../engine/kospiShadow";
 import { decimal } from "./decimal";
 import { stepAdoptedKospiShadowSeries, type AdoptedKospiShadowInput } from "./kospiAdoptedShadow";
-import { freezeAdoptedSeries, hashSeriesValue, type ModelCalendar } from "./modelSeries";
+import {
+  freezeAdoptedSeries,
+  freezeRestartSeries,
+  hashSeriesValue,
+  type ModelCalendar,
+} from "./modelSeries";
 import { nextKrRegularSession } from "./krShadowDecision";
 
 const codeHash = `sha256:${"a".repeat(64)}` as const;
@@ -357,4 +362,32 @@ describe("isolated October KOSPI confirm1/bear-only journal adapter", () => {
       ),
     ).toThrow("frozen execution policy");
   });
+});
+
+it("cancels an isolated restart KOSPI carried entry on a later U9.5 close", async () => {
+  const series = await freezeRestartSeries({
+    kind: "KR_KOSPI_CONFIRM1_BEAR",
+    codeHash,
+    sourceHash,
+    frozenAt: "2026-10-09T00:00:00Z",
+  });
+  const firstInput = input("2026-10-12", series.configHash, 8);
+  firstInput.session.warmupRows = [row("2026-10-08", 7)];
+  const first = await stepAdoptedKospiShadowSeries(series, firstInput);
+  const confirmed = await stepAdoptedKospiShadowSeries(
+    series,
+    input("2026-10-13", series.configHash, 9),
+    first.run,
+  );
+  expect(confirmed.run.result.state.pendingEntries).toHaveLength(1);
+  const later = input("2026-10-14", series.configHash, 9.5);
+  later.session.rows[0]!.volume = 0;
+  const cancelled = await stepAdoptedKospiShadowSeries(series, later, confirmed.run);
+  expect(cancelled.run.result.state.pendingEntries).toHaveLength(0);
+  const next = await stepAdoptedKospiShadowSeries(
+    series,
+    input("2026-10-15", series.configHash, 9.5),
+    cancelled.run,
+  );
+  expect(next.run.result.trades).toEqual([]);
 });

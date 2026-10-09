@@ -542,3 +542,30 @@ it("records October 12 in separate books without importing a beta holding or pen
     );
   }
 });
+
+it("continues all five restart KR books through retries and days two and three without changing beta", async () => {
+  const f = await fixture();
+  await recordOctoberPublication(f.store, krSource("2026-10-06"));
+  const beta = JSON.stringify([...f.sessions]);
+  for (const kind of ADOPTED_SERIES_KINDS)
+    await f.store.insertSeries(
+      await freezeRestartSeries({ kind, frozenAt: "2026-10-09T00:00:00Z", codeHash, sourceHash }),
+    );
+  for (const date of ["2026-10-12", "2026-10-13", "2026-10-14"]) {
+    const input = krEvidenceSource(date);
+    input.dataset.tradeDates = ["2026-10-08", "2026-10-12", "2026-10-13", "2026-10-14"].filter(
+      (d) => d <= date,
+    );
+    input.dataset.kospiGateDates = input.dataset.tradeDates;
+    const result = await recordOctoberPublication(f.store, input);
+    expect(result.records).toHaveLength(5);
+    const saved = JSON.stringify([...f.sessions]);
+    const retry = await recordOctoberPublication(f.store, input);
+    expect(retry.records.every((r) => r.reused)).toBe(true);
+    expect(JSON.stringify([...f.sessions])).toBe(saved);
+  }
+  expect(f.sessions.size).toBe(20);
+  expect(JSON.stringify([...f.sessions].filter(([, r]) => r.receipt.date < "2026-10-12"))).toBe(
+    beta,
+  );
+});

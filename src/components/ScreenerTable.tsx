@@ -165,16 +165,23 @@ export function ScreenerTable({
   signalDate,
   tradeDates,
   compactStock = false,
+  paginationKey = "",
 }: {
   rows: ScreeningRow[];
   positionContext?: DomesticPositionContext | undefined;
   signalDate: string;
   tradeDates?: readonly string[];
   compactStock?: boolean;
+  paginationKey?: string;
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("entry");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(0);
+  const [previousPaginationKey, setPreviousPaginationKey] = useState(paginationKey);
+  if (previousPaginationKey !== paginationKey) {
+    setPreviousPaginationKey(paginationKey);
+    setPage(0);
+  }
   const [hidden, setHidden] = useState<string[]>([]);
 
   const sorted = useMemo(() => {
@@ -254,7 +261,7 @@ export function ScreenerTable({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `trendscore-kr-screening.csv`;
+    a.download = `cloudtrend-kr-screening.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

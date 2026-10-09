@@ -36,13 +36,13 @@ export const Route = createFileRoute("/sectors")({
   ssr: false,
   head: () => ({
     meta: [
-      { title: "섹터 로테이션 엔진 | TrendScore KR" },
+      { title: "섹터 로테이션 엔진 | CloudTrend" },
       {
         name: "description",
         content:
           "가격 리더십과 실제 자금흐름을 분리 계산해 어느 섹터로 자금이 유입·유출되는지, 시장 전체 유입인지 섹터 순환매인지 신뢰도와 함께 추적합니다.",
       },
-      { property: "og:title", content: "섹터 로테이션 엔진 | TrendScore KR" },
+      { property: "og:title", content: "섹터 로테이션 엔진 | CloudTrend" },
       {
         property: "og:description",
         content: "외국인·기관 수급, 거래대금 점유율, 상대강도를 결합한 섹터 자금 유입·유출 분석.",

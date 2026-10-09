@@ -256,6 +256,17 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
       </div>
 
       <ScreenerTable
+        paginationKey={JSON.stringify([
+          mode,
+          query,
+          minTechnical,
+          minVolumeRatio,
+          sector,
+          showDisqualified,
+          includeLeveraged,
+          preset,
+          analysis.asOfDate,
+        ])}
         rows={filtered}
         positionContext={positionContext}
         signalDate={analysis.asOfDate}

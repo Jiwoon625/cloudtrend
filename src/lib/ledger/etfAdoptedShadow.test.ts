@@ -1147,3 +1147,66 @@ it("carries a new-series ETF entry over missing volume and models missing held d
   });
   expect(sold.state.positions).toHaveLength(0);
 });
+
+it.each(["MA60", "DATA_UNAVAILABLE", null] as const)(
+  "handles a carried ETF entry after observed %s without looking ahead to the close",
+  async (exit) => {
+    const series = await freezeRestartSeries({
+      kind: "ETF_V02",
+      frozenAt: "2026-10-09T00:00:00Z",
+      codeHash: hash("a"),
+      sourceHash: hash("b"),
+    });
+    const initial = await initializeEtfAdoptedShadow(series);
+    const first = await stepEtfAdoptedShadow(
+      series,
+      initial,
+      input(series, "2026-10-12", null, [signal("360750", "2026-10-12", "2026-10-08", "pending")]),
+    );
+    const second = await stepEtfAdoptedShadow(
+      series,
+      first.state,
+      input(series, "2026-10-13", "2026-10-12", [
+        signal("360750", "2026-10-13", "2026-10-12", "confirmed"),
+      ]),
+    );
+    const current = signal("360750", "2026-10-14", "2026-10-13", "none", { exit });
+    const deferred = await stepEtfAdoptedShadow(
+      series,
+      second.state,
+      input(series, "2026-10-14", "2026-10-13", [current]),
+    );
+    expect(deferred.state.pendingEntries).toHaveLength(exit === "MA60" ? 0 : 1);
+    const prices = [
+      {
+        symbol: "360750",
+        open: { ...price("2026-10-15", "10000"), volume: 1000 },
+        close: price("2026-10-15", "10000", "close"),
+      },
+    ];
+    const next = await stepEtfAdoptedShadow(
+      series,
+      deferred.state,
+      input(series, "2026-10-15", "2026-10-14", [], prices),
+    );
+    expect(next.record.fills.filter((f) => f.side === "BUY")).toHaveLength(exit === "MA60" ? 0 : 1);
+    const executable = await stepEtfAdoptedShadow(
+      series,
+      second.state,
+      input(
+        series,
+        "2026-10-14",
+        "2026-10-13",
+        [current],
+        [
+          {
+            symbol: "360750",
+            open: { ...price("2026-10-14", "10000"), volume: 1000 },
+            close: price("2026-10-14", "10000", "close"),
+          },
+        ],
+      ),
+    );
+    expect(executable.record.fills.some((f) => f.side === "BUY")).toBe(true);
+  },
+);
