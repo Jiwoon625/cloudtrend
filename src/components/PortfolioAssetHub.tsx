@@ -1,4 +1,5 @@
 import { ActualPerformanceReview } from "./ActualPerformanceReview";
+import { OperatingCapitalPlan } from "./OperatingCapitalPlan";
 import { ActualPerformancePanel } from "./ActualPerformancePanel";
 import { actualPerformanceServer } from "@/lib/actualPerformance.functions";
 import { DomesticAssessmentPanel } from "./DomesticAssessmentPanel";
@@ -376,6 +377,7 @@ export function PortfolioAssetHub({
           {writeError}
         </p>
       ) : null}
+      <OperatingCapitalPlan editable />
       <ActualPerformancePanel
         series={performance.data?.series}
         loading={kr.isPending || us.isPending || performance.isPending}
