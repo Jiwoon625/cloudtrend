@@ -90,7 +90,7 @@ export function UsMarketDataPanel({
         운영규칙 보기
       </Link>
       <p className="text-sm text-muted-foreground">
-        A0·A2·B3의 모델 보유·성과·체결 기록은{" "}
+        2026-10-12 이후 A0·A2·B3의 모델 보유·성과·체결 기록은{" "}
         <Link to="/shadow" className="underline">
           통합 Shadow 탭
         </Link>

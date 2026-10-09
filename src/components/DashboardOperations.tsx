@@ -249,8 +249,9 @@ export function UsDashboardPortfolio({ query }: { query: OperationsQuery }) {
         <Row label="보유 종목수">
           {portfolio ? `${portfolio.summary.openPositions}종목` : fallback}
         </Row>
-        <Row label="평가손익">{portfolio ? usd(portfolio.summary.unrealizedPnl) : fallback}</Row>
-        <Row label="실현손익">{portfolio ? usd(portfolio.summary.realizedPnl) : fallback}</Row>
+        <p className="mt-2 text-xs text-muted-foreground">
+          성과는 10월 12일 신규 운용 구간에서만 확인합니다.
+        </p>
         {portfolio?.unpricedPositions ? (
           <p className="mt-2 text-[10px] text-warn">
             {portfolio.unpricedPositions}종목은 최신 평가가격을 확인하지 못해 기존 원장 가격을

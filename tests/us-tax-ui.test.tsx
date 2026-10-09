@@ -256,92 +256,51 @@ describe("US tax panel integration", () => {
     expect(JSON.stringify(state.snapshots)).toBe(before);
   });
 
-  it("pairs actual/model panels without mutating the ledger and uses the Korean observation date", () => {
-    state.actual = actual();
-    const before = JSON.stringify(state.actual);
-    const spy = vi.spyOn(taxOverlay, "actualUsTaxOverlay");
-    const html = renderToStaticMarkup(
-      <UsPortfolioLedgers model={snapshot("A0_QUARTER_PRIMARY")} initialTab="actual">
-        <p>모델 원장</p>
-      </UsPortfolioLedgers>,
-    );
-    expect(spy).toHaveBeenLastCalledWith({
-      document: state.actual.document,
-      revision: 3,
-      navUsd: 110000,
-      capitalUsd: 100000,
-      asOf: "2026-10-02",
-    });
-    expect(html).toContain("A0 모델 · 양도소득세 추정");
-    expect(html).toContain("실제 투자 · A0 목표 20종목");
-    expect(html).toContain("기록 한도 30종목");
-    expect(html).toContain("설정 운용자금 기준 종목당 참고 매입예산: $5,000.00");
-    expect(html).not.toContain("실제 투자 · 최대 30종목");
-    expect(html).toContain("실제 투자 · 양도소득세 추정");
-    expect(html.match(/산출 불가 · 자료 미확인/g)).toHaveLength(2);
-    expect(JSON.stringify(state.actual)).toBe(before);
-  });
+  it.each(["2026-10-02T12:00:00Z", "2026-12-31T15:30:00Z", "2027-01-01T14:00:00Z"])(
+    "does not render cumulative actual tax or performance on the active website path at %s",
+    (now) => {
+      vi.setSystemTime(new Date(now));
+      state.actual = actual();
+      const before = JSON.stringify(state.actual);
+      const spy = vi.spyOn(taxOverlay, "actualUsTaxOverlay");
+      const html = renderToStaticMarkup(
+        <UsPortfolioLedgers model={undefined} modelComparisonMoved initialTab="actual">
+          {null}
+        </UsPortfolioLedgers>,
+      );
+      expect(spy).not.toHaveBeenCalled();
+      for (const text of [
+        "실제 투자 · 양도소득세 추정",
+        "세후 평가자산",
+        "실현손익",
+        "미실현",
+        "A0 모델 포트폴리오",
+      ])
+        expect(html).not.toContain(text);
+      expect(html).toContain("실제 보유 종목");
+      expect(html).toContain("실제 원장 새로고침");
+      expect(JSON.stringify(state.actual)).toBe(before);
+    },
+  );
 
-  it("keeps the current observation date even when quotes are absent and the ledger date is old", () => {
-    state.actual = { ...actual(), quotes: {} };
-    const spy = vi.spyOn(taxOverlay, "actualUsTaxOverlay");
-    renderToStaticMarkup(<UsPortfolioLedgers model={undefined}>{null}</UsPortfolioLedgers>);
-    expect(spy.mock.calls.at(-1)?.[0].asOf).toBe("2026-10-02");
-  });
-
-  it("does not let stale prior-year quotes hide a new-year execution or roll back the tax year", () => {
-    vi.setSystemTime(new Date("2027-01-01T14:00:00Z"));
-    state.actual = actual();
-    state.actual.document.executions.push({
-      id: "new-year-buy",
-      symbol: "NEWER",
-      name: "New year execution",
-      market: "US",
-      signalKey: null,
-      side: "BUY",
-      date: "2027-01-01",
-      price: 200,
-      shares: 1,
-      fee: 1,
-      note: "",
-      order: 0,
-    });
-    state.actual.actual.summary.latestDate = "2027-01-01";
-    const spy = vi.spyOn(taxOverlay, "actualUsTaxOverlay");
-    const html = renderToStaticMarkup(
-      <UsPortfolioLedgers model={undefined}>{null}</UsPortfolioLedgers>,
-    );
-    expect(spy.mock.calls.at(-1)?.[0].asOf).toBe("2027-01-01");
-    expect(spy.mock.results.at(-1)?.value).toMatchObject({
-      taxYear: 2027,
-      status: "UNAVAILABLE",
-      currentYearTaxKrw: null,
-      afterTaxNavUsd: null,
-    });
-    expect(html).toContain("2027년");
-  });
-
-  it("starts the tax observation year at Seoul midnight rather than UTC or New York midnight", () => {
-    vi.setSystemTime(new Date("2026-12-31T15:30:00Z"));
-    state.actual = actual();
-    const spy = vi.spyOn(taxOverlay, "actualUsTaxOverlay");
-    renderToStaticMarkup(<UsPortfolioLedgers model={undefined}>{null}</UsPortfolioLedgers>);
-    expect(spy.mock.calls.at(-1)?.[0].asOf).toBe("2027-01-01");
-    expect(spy.mock.results.at(-1)?.value.taxYear).toBe(2027);
-  });
-
-  it("leaves all panel values unknown during loading and after a failed query", () => {
+  it("does not restore beta panels while loading or after a failed query", () => {
     state.pending = true;
     let html = renderToStaticMarkup(
-      <UsPortfolioLedgers model={undefined}>{null}</UsPortfolioLedgers>,
+      <UsPortfolioLedgers model={undefined} modelComparisonMoved>
+        {null}
+      </UsPortfolioLedgers>,
     );
     expect(html).toContain("실제 원장을 불러오는 중입니다");
-    expect(html.match(/<dd[^>]*>미확인<\/dd>/g)).toHaveLength(16);
+    expect(html).not.toContain("양도소득세 추정");
     state.pending = false;
     state.error = new Error("세션 만료");
-    html = renderToStaticMarkup(<UsPortfolioLedgers model={undefined}>{null}</UsPortfolioLedgers>);
+    html = renderToStaticMarkup(
+      <UsPortfolioLedgers model={undefined} modelComparisonMoved>
+        {null}
+      </UsPortfolioLedgers>,
+    );
     expect(html).toContain("세션 만료");
     expect(html).toContain('role="alert"');
-    expect(html.match(/<dd[^>]*>미확인<\/dd>/g)).toHaveLength(16);
+    expect(html).not.toContain("양도소득세 추정");
   });
 });

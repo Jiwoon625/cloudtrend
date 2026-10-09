@@ -81,8 +81,11 @@ describe("confirmed actual performance display", () => {
     const html = renderToStaticMarkup(<ActualPerformancePanel series={syntheticSeries()} />);
     expect(html).toContain("첫 일별 평가 대기");
     expect(html).toContain("1,000,000,000,000,000,000,000 KRW");
-    expect(html).toContain("베타 종료 요약");
-    expect(html).toContain("7 KRW");
+    expect(html).not.toContain("베타 종료 요약");
+    expect(html).not.toContain("7 KRW");
+    expect(syntheticSeries().baseline?.betaArchive.summaries).toEqual({
+      "합성 베타 손익": "7 KRW",
+    });
     expect(html).not.toContain("Infinity");
     expect(html).not.toContain("0.00%");
   });

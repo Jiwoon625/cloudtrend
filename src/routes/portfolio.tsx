@@ -18,7 +18,6 @@ import { formatWon, formatPercent, formatPrice } from "@/lib/format";
 import { supabase } from "@/lib/cloud";
 import { portfolioLedgersServer } from "@/lib/portfolioLedgers.functions";
 import type { ActualExecution, Candidate, DualPortfolioState } from "@/lib/portfolioLedgers";
-import type { PortfolioSummary } from "@/lib/portfolioStoreCore";
 import { buildKrPendingEntryPreview } from "@/lib/portfolioPendingEntries";
 import { domesticPortfolioQueryOptions } from "@/lib/portfolioPositionContext";
 import { waitForPortfolioSync } from "@/lib/portfolioSyncRequest";
@@ -49,7 +48,6 @@ async function request(input: LedgerRequest): Promise<DualPortfolioState> {
   if (error || !data.session) throw new Error("먼저 로그인해 주세요.");
   return portfolioLedgersServer({ data: { ...input, accessToken: data.session.access_token } });
 }
-const pnlClass = (v: number) => (v > 0 ? "text-up" : v < 0 ? "text-down" : "text-muted-foreground");
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
 const calculatedAtLabel = (value: string | undefined) =>
   value && Number.isFinite(Date.parse(value))
@@ -64,49 +62,6 @@ const calculatedAtLabel = (value: string | undefined) =>
         hour12: false,
       })} KST`
     : "미확인";
-function SummaryCard({
-  title,
-  caption,
-  s,
-  capital,
-  actual = false,
-}: {
-  title: string;
-  caption: string;
-  s: PortfolioSummary;
-  capital: number;
-  actual?: boolean;
-}) {
-  return (
-    <section className="rounded-xl border border-border bg-card p-4" aria-label={title}>
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="font-semibold">{title}</h2>
-        <span className="rounded-full bg-muted px-2 py-1 text-xs">보유 {s.openPositions} / 30</span>
-      </div>
-      <p className="mt-1 text-xs text-muted-foreground">{caption}</p>
-      <p className={`num mt-4 text-2xl font-bold ${pnlClass(s.totalPnl)}`}>
-        {formatWon(s.totalPnl)}{" "}
-        <span className="text-base">({formatPercent(s.totalReturn, 2)})</span>
-      </p>
-      <p className="text-xs text-muted-foreground">
-        기존 원장 누적손익 · 기준자금 {formatWon(capital)}
-      </p>
-      <dl className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
-        {[
-          [actual ? "운용자금 기준 평가자산" : "총 평가자산", s.equity],
-          [actual ? "운용자금 기준 계산 현금" : "현금", s.cash],
-          ["실현손익", s.realizedPnl],
-          ["평가손익", s.unrealizedPnl],
-        ].map(([label, value]) => (
-          <div key={label}>
-            <dt className="text-muted-foreground">{label}</dt>
-            <dd className="num mt-1 font-medium">{formatWon(Number(value))}</dd>
-          </div>
-        ))}
-      </dl>
-    </section>
-  );
-}
 function StockLink({ symbol, name }: { symbol: string; name: string }) {
   return (
     <Link to="/instrument/$symbol" params={{ symbol }} className="font-medium hover:underline">
@@ -387,7 +342,7 @@ export function KoreaPortfolioContent() {
         </p>
       ) : null}
       <p className="mb-3 text-xs text-muted-foreground">
-        통합 원장 · 실제 체결을 기준으로 보유·손익을 조회합니다. {LEDGER_CASH_NOTE}
+        통합 원장 · 실제 체결을 기준으로 보유·원가를 조회합니다. {LEDGER_CASH_NOTE}
       </p>
       {state?.strategyRefresh?.status === "FAILED" ? (
         <p role="alert" className="mb-3 text-sm text-warn">
@@ -429,15 +384,11 @@ export function KoreaPortfolioContent() {
               to="/shadow"
               className="rounded-lg border p-4 text-sm text-primary hover:underline"
             >
-              모델 성과·보유·매매는 Shadow에서 확인
+              10월 12일 이후 독립 모델 기록은 Shadow에서 확인
             </Link>
-            <SummaryCard
-              title="실제 투자"
-              actual
-              caption="입력한 매수·매도 체결만 반영 · 미매수 0주는 보유 상한에서 제외"
-              s={state.actual.summary}
-              capital={doc.actualCapital}
-            />
+            <p className="rounded-lg border p-4 text-sm text-muted-foreground">
+              원본 실제 보유·체결 관리 · 성과는 상단의 10월 12일 신규 구간에서만 확인합니다.
+            </p>
           </div>
           {pendingEntries.rows.length > 0 ? (
             <LedgerTable
@@ -668,7 +619,6 @@ export function KoreaPortfolioContent() {
                   "평균원가",
                   "현재가",
                   "평가금액",
-                  "평가손익",
                   "전략 청산 신호",
                   "실제 체결",
                 ]}
@@ -687,9 +637,6 @@ export function KoreaPortfolioContent() {
                       <span className="text-muted-foreground">{p.markDate ?? "체결가 기준"}</span>
                     </td>
                     <td className={td}>{formatWon(p.marketValue)}</td>
-                    <td className={`${td} ${pnlClass(p.unrealizedPnl)}`}>
-                      {formatWon(p.unrealizedPnl)}
-                    </td>
                     <td className={td}>
                       {p.exitSignal ?? "없음"}
                       <br />

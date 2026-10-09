@@ -259,14 +259,18 @@ describe("portfolio ledger UI wiring", () => {
         모델
       </UsPortfolioLedgers>,
     );
-    expect(usMarkup).toContain("운용자금 기준 계산 현금");
-    expect(usMarkup).toContain("운용자금 기준 평가자산");
-    expect(usMarkup).toContain("$99,000.00");
+    expect(usMarkup).not.toContain("운용자금 기준 계산 현금");
+    expect(usMarkup).not.toContain("운용자금 기준 평가자산");
+    expect(usMarkup).not.toContain("$99,000.00");
     harness.states = [];
     harness.refs = [];
     const krMarkup = render(koreaElement());
-    expect(krMarkup).toContain("운용자금 기준 계산 현금");
-    expect(krMarkup).toContain("운용자금 기준 평가자산");
+    expect(krMarkup).not.toContain("운용자금 기준 계산 현금");
+    expect(krMarkup).not.toContain("운용자금 기준 평가자산");
+    for (const html of [hub, usMarkup, krMarkup]) {
+      for (const label of ["기존 원장 누적손익", "실현손익", "평가손익"])
+        expect(html).not.toContain(label);
+    }
     expect(portfolioLedgersServer).not.toHaveBeenCalled();
     expect(usActualLedgerServer).not.toHaveBeenCalled();
   });

@@ -1,11 +1,6 @@
 import { ShadowTimeline } from "./ShadowTimeline";
 import { OperatingCapitalPlan } from "./OperatingCapitalPlan";
-import {
-  activeSeriesVersion,
-  ADOPTED_SERIES_VERSION,
-  RESTART_SERIES_VERSION,
-  type AdoptedSeriesKind,
-} from "@/lib/ledger/modelSeries";
+import { RESTART_SERIES_VERSION, type AdoptedSeriesKind } from "@/lib/ledger/modelSeries";
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/cloud";
@@ -15,6 +10,7 @@ import type {
   OctoberShadowSummary as Summary,
 } from "@/lib/octoberShadowSummary.server";
 import { UsTaxEstimatePanel } from "./UsTaxEstimatePanel";
+import { WEBSITE_PERFORMANCE_START, websiteShadowSummary } from "@/lib/websitePerformanceBoundary";
 
 const labels: Record<OctoberShadowBookSummary["kind"], string> = {
   KR_MIXED: "한국 혼합",
@@ -55,9 +51,7 @@ const money = (value: string | null, currency: "KRW" | "USD", residual = false) 
       )}${currency === "KRW" ? "원" : ""}`;
 
 export function OctoberShadowSummary() {
-  const [version, setVersion] = useState(
-    activeSeriesVersion(new Date().toISOString().slice(0, 10)),
-  );
+  const version = RESTART_SERIES_VERSION;
   const [kind, setKind] = useState<AdoptedSeriesKind>("KR_MIXED");
   const [market, setMarket] = useState("KR");
   const [role, setRole] = useState("ADOPTED");
@@ -157,19 +151,28 @@ export function OctoberShadowSummary() {
             </option>
           ))}
         </select>
-        <select
-          aria-label="시리즈 시작일"
-          value={version}
-          onChange={(e) => setVersion(e.target.value as typeof version)}
-        >
-          <option value={ADOPTED_SERIES_VERSION}>10월 5일 베타 · 10월 9일까지</option>
-          <option value={RESTART_SERIES_VERSION}>10월 12일 새 성과측정</option>
-        </select>
+        <p className="self-center text-sm">성과 시작일: 2026-10-12</p>
         <label>
-          시작일 <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          시작일{" "}
+          <input
+            type="date"
+            min={WEBSITE_PERFORMANCE_START}
+            value={from}
+            onChange={(e) =>
+              setFrom(e.target.value < WEBSITE_PERFORMANCE_START ? "" : e.target.value)
+            }
+          />
         </label>
         <label>
-          종료일 <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          종료일{" "}
+          <input
+            type="date"
+            min={WEBSITE_PERFORMANCE_START}
+            value={to}
+            onChange={(e) =>
+              setTo(e.target.value < WEBSITE_PERFORMANCE_START ? "" : e.target.value)
+            }
+          />
         </label>
       </div>
       <OctoberShadowSummaryContent
@@ -188,7 +191,7 @@ export function OctoberShadowSummary() {
 
 export function OctoberShadowSummaryContent({
   capitalPlan,
-  summary,
+  summary: requestedSummary,
   loading,
   refreshing = false,
   selectedKind,
@@ -205,6 +208,7 @@ export function OctoberShadowSummaryContent({
   error: string | null;
   refresh: () => void;
 }) {
+  const summary = websiteShadowSummary(requestedSummary);
   return (
     <section
       aria-labelledby="october-shadow-title"
@@ -213,8 +217,7 @@ export function OctoberShadowSummaryContent({
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="october-shadow-title" className="text-lg font-semibold">
-            {summary?.version === RESTART_SERIES_VERSION ? "10월 12일 성과측정" : "베타 기록"} ·
-            독립 Shadow
+            10월 12일 성과측정 · 독립 Shadow
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             장부당 시작자본 1억원 · 기존 연구 이력과 분리 · 읽기 전용
