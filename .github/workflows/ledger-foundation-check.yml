@@ -4,7 +4,9 @@ on:
     paths:
       - src/lib/ledger/**
       - src/lib/actualPerformance*
+      - src/lib/operatingCapitalPlan*
       - src/components/ActualPerformance*
+      - src/components/OperatingCapitalPlan*
       - vitest.actual-performance.config.ts
       - docs/actual-performance-restart.md
       - src/lib/portfolioLedgers*
@@ -43,6 +45,7 @@ jobs:
       - run: npm ci
       - run: npx vitest run --config vitest.ledger.config.ts
       - run: npx vitest run --config vitest.actual-performance.config.ts
+      - run: npx eslint src/lib/operatingCapitalPlan*.ts src/components/OperatingCapitalPlan*.tsx
       - run: npx vitest run --config vitest.portfolio.config.ts
       - run: npx vitest run --config vitest.ledger-ui.config.ts
       - run: npx vitest run --config vitest.shadow.config.ts

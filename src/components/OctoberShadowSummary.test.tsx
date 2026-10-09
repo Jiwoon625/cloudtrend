@@ -143,7 +143,7 @@ it("shows allocator as an uninitialized separate CM6 placeholder without a ninth
   const html = render(null);
   expect(html).toContain("자산배분 통합 Shadow");
   expect(html).toContain("배분전략 확정 대기 · CM6");
-  expect(html).toContain("가상 총자금 1억원");
+  expect(html).toContain("총 계획금액과 시장 배분을 확인한 뒤");
   expect(html).toContain("8개 독립 장부의 자금을 합산하지 않습니다");
 });
 

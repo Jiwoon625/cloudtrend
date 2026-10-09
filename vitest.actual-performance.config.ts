@@ -8,6 +8,8 @@ export default defineConfig({
       "src/lib/ledger/actualPerformance.test.ts",
       "src/lib/actualPerformance*.test.ts",
       "src/components/ActualPerformance*.test.tsx",
+      "src/lib/operatingCapitalPlan*.test.ts",
+      "src/components/OperatingCapitalPlan.test.tsx",
     ],
   },
 });
