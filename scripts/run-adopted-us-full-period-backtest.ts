@@ -46,7 +46,15 @@ interface FileEvidence {
   bytes?: number;
 }
 interface UsManifest {
-  version: "adopted-us-atomic-inputs-v1";
+  version: "adopted-us-atomic-inputs-v1" | "adopted-us-cm-expanded-inputs-v1";
+  annualBudgetPolicyId?: "US_A0_ANNUAL_ENTRY_BUDGET_PRIOR_NAV_V1";
+  tradePricePolicyId?: "US_A0_COMPARISON_PRICE_8DP_LEDGER_V1";
+  normalizerSource?: string;
+  normalizerCodeHash?: string;
+  calendar?: FileEvidence;
+  sourceCoverageEndDate?: string;
+  missingClosePolicyId?: "US_A0_ALL_HELD_LAST_VALID_CLOSE_EXIT_V1";
+  sourceClocks?: Array<{date: string; openAt: string; closeAvailableAt: string}>;
   /** Preserve the original runner's optional selected-range end override. */
   throughDate?: string;
   sessions: string[];
@@ -56,6 +64,7 @@ interface UsManifest {
     bytes: number;
     sha256: string;
     rows: number;
+    marketDataComplete?: boolean;
   }>;
   featureWarmup?: {
     requiredPriorSessions: number;
@@ -125,6 +134,9 @@ async function codeFingerprint() {
   names.push(
     "scripts/run-adopted-us-full-period-backtest.ts",
     "collectors/lite_r3/runtime/us_feature_core.py",
+    "scripts/prepare-adopted-us-cm-inputs.py",
+    "scripts/adopted-us-cm-inputs.py",
+    "scripts/audit_us_math.py",
   );
   const files = [];
   for (const name of names.sort())
@@ -198,18 +210,28 @@ export async function runAdoptedUsFullPeriodBacktest(options: ReplayOptions) {
   const code = await codeFingerprint();
   const sourceFiles: Array<{ file: string; bytes: number; sha256: string }> = [];
   const us = manifest;
+  const expanded = us.version === "adopted-us-cm-expanded-inputs-v1";
   if (
-    us.version !== "adopted-us-atomic-inputs-v1" ||
+    (!expanded && us.version !== "adopted-us-atomic-inputs-v1") ||
     !Array.isArray(us.files) ||
     !Array.isArray(us.canonical) ||
     !us.canonical.length
   )
     throw new Error("Expected prepare-adopted-us-backtest.py manifest");
   if (
-    us.featureSource !== "collectors/lite_r3/runtime/us_feature_core.py" ||
+    us.featureSource !== (expanded
+      ? "research/cmresearchengine/vendor/resumable_allocation/runtime/cm06_closeadj_features.py"
+      : "collectors/lite_r3/runtime/us_feature_core.py") ||
     us.featureCodeHash !== (await hashFile(path.join(ROOT, us.featureSource)))
   )
     throw new Error("Prepared US features do not match the current production feature function");
+  if (expanded && (us.normalizerSource !== "research/cmresearchengine/vendor/resumable_allocation/runtime/cm06_prepare_comparison.py"
+    || us.normalizerCodeHash !== await hashFile(path.join(ROOT, us.normalizerSource))
+    || !us.calendar || !us.sourceCoverageEndDate || !us.sourceClocks
+    || us.missingClosePolicyId !== "US_A0_ALL_HELD_LAST_VALID_CLOSE_EXIT_V1"
+    || us.annualBudgetPolicyId !== "US_A0_ANNUAL_ENTRY_BUDGET_PRIOR_NAV_V1"
+    || us.tradePricePolicyId !== "US_A0_COMPARISON_PRICE_8DP_LEDGER_V1"))
+    throw new Error("Expanded normalization/calendar/policy provenance is required");
   if (
     us.files.length !== us.sessions.length ||
     us.files.some((file, i) => file.date !== us!.sessions[i])
@@ -220,6 +242,7 @@ export async function runAdoptedUsFullPeriodBacktest(options: ReplayOptions) {
     us.benchmark,
     us.master,
     ...(us.sectorMap ? [us.sectorMap] : []),
+    ...(us.calendar ? [us.calendar] : []),
   ])
     sourceFiles.push(await verifyFile(base, file));
   if (smoke && !us.canonical.some((file) => file.firstDate < start))
@@ -241,7 +264,7 @@ export async function runAdoptedUsFullPeriodBacktest(options: ReplayOptions) {
   for (const file of us.files) {
     if (
       path.basename(file.file) !== file.file ||
-      !file.file.endsWith(".csv") ||
+      (!file.file.endsWith(".csv") && !file.file.endsWith(".csv.gz")) ||
       !Number.isSafeInteger(file.rows) ||
       file.rows < 1
     )
@@ -292,6 +315,14 @@ export async function runAdoptedUsFullPeriodBacktest(options: ReplayOptions) {
       calendarSourceHash: digest(JSON.stringify(us.sessions)),
       sourceManifestHash,
       codeHash: code.sha256,
+      ...(expanded ? {
+        annualBudgetPolicy: {policyId: "US_A0_ANNUAL_ENTRY_BUDGET_PRIOR_NAV_V1" as const},
+        tradePricePolicy: {policyId: "US_A0_COMPARISON_PRICE_8DP_LEDGER_V1" as const},
+        missingClosePolicy: {
+        policyId: "US_A0_ALL_HELD_LAST_VALID_CLOSE_EXIT_V1" as const,
+        sourceCoverageEndDate: us.sourceCoverageEndDate!,
+        sessionClocks: us.sourceClocks!.filter((clock) => sessions.includes(clock.date)),
+      }} : {}),
     });
     let previous: AdoptedUsBacktestRun | null = null;
     const nav: Array<BacktestNavPoint & Record<string, unknown>> = [];
@@ -316,7 +347,8 @@ export async function runAdoptedUsFullPeriodBacktest(options: ReplayOptions) {
       totalRows += rows.length;
       previous = await stepAdoptedUsBacktest(
         contract,
-        { date, rows, sourceHash: file.sha256 as SeriesHash },
+        { date, rows, sourceHash: file.sha256 as SeriesHash,
+          ...(expanded ? { marketDataComplete: file.marketDataComplete === true } : {}) },
         previous,
       );
       const rankedRows = Object.keys(previous.rankState.coreRanks).length;
@@ -362,9 +394,10 @@ export async function runAdoptedUsFullPeriodBacktest(options: ReplayOptions) {
     await lines(out, "US_A0.trades.jsonl", trades);
     await json(out, "US_A0.final-state.json", previous.result.state);
     await json(out, "US_A0.yearly-budgets.json", {
-      policy: "FIXED_INITIAL_CAPITAL_DIV_20_NO_REBALANCE",
+      policy: expanded ? "US_A0_ANNUAL_ENTRY_BUDGET_PRIOR_NAV_V1" : "FIXED_INITIAL_CAPITAL_DIV_20_NO_REBALANCE",
       initialCapital: US_BACKTEST_INITIAL_CAPITAL,
-      yearlyReset: false,
+      yearlyReset: expanded,
+      ...(expanded ? {yearlyBudgets: previous.result.state.annualEntryBudgetResearch?.byYear} : {}),
     });
     summary["US_A0"] = metrics(nav, start, US_BACKTEST_INITIAL_CAPITAL, smoke, sessions);
     quality["dailySignalReadiness"] = readiness;
@@ -386,7 +419,9 @@ export async function runAdoptedUsFullPeriodBacktest(options: ReplayOptions) {
         "",
         `Range: ${start} through ${end}; ${sessions.length} actual sessions.`,
         "Current production scoring and adopted executors; no forced terminal liquidation.",
-        "US_A0 uses fixed initial capital / 20 per new entry; no quarter/year rebalancing.",
+        expanded
+          ? "US_A0 uses each year's prior-session NAV / 20 for new signals; no holding rebalance; prior pending intent budgets remain frozen."
+          : "US_A0 uses fixed initial capital / 20 per new entry; no quarter/year rebalancing.",
         "Only COMPLETE non-smoke selected-range valuations publish return/CAGR/MDD. CAGR uses calendar days / 365.2425.",
         "",
         "See summary.json, quality.json, provenance.json and each book's daily-nav/trades/yearly-budgets files.",

@@ -15,6 +15,20 @@ import {
 } from "../engine/usProspectivePortfolio";
 import { hashSeriesValue, type SeriesHash } from "../ledger/modelSeries";
 import { validDate } from "../ledger/date";
+import {
+  validateUsLastValidClosePolicy,
+  validateUsResearchCloseContext,
+  type UsLastValidClosePolicy,
+  type UsResearchCloseContext,
+} from "./usLastValidClosePolicy";
+import {
+  validateUsAnnualEntryBudgetPolicy,
+  type UsAnnualEntryBudgetPolicy,
+} from "./usAnnualEntryBudget";
+import {
+  validateUsResearchTradePricePolicy,
+  type UsResearchTradePricePolicy,
+} from "./usResearchTradePrice";
 
 export const US_BACKTEST_INITIAL_CAPITAL = "74671.44";
 export const US_BACKTEST_ONE_WAY_COST = "0.0015";
@@ -35,6 +49,10 @@ export interface AdoptedUsBacktestContract {
   initialCapitalUsd: typeof US_BACKTEST_INITIAL_CAPITAL;
   oneWayCost: typeof US_BACKTEST_ONE_WAY_COST;
   researchGrade: "RETROSPECTIVE_CURRENT_RULES_NOT_INDEPENDENT_OOS";
+  /** Optional fresh-run-only all-held proxy; omitted contracts keep historical defaults. */
+  missingClosePolicy?: UsLastValidClosePolicy;
+  annualBudgetPolicy?: UsAnnualEntryBudgetPolicy;
+  tradePricePolicy?: UsResearchTradePricePolicy;
   configHash: SeriesHash;
   contractHash: SeriesHash;
 }
@@ -43,6 +61,8 @@ export interface AdoptedUsBacktestSession {
   date: string;
   sourceHash: SeriesHash;
   rows: UsProspectiveInputRow[];
+  /** Verified by the source driver, never inferred from one observed ticker. */
+  marketDataComplete?: boolean;
 }
 
 export interface AdoptedUsBacktestRun {
@@ -75,6 +95,9 @@ export async function initializeAdoptedUsBacktest(input: {
   calendarSourceHash: SeriesHash;
   sourceManifestHash: SeriesHash;
   codeHash: SeriesHash;
+  missingClosePolicy?: UsLastValidClosePolicy;
+  annualBudgetPolicy?: UsAnnualEntryBudgetPolicy;
+  tradePricePolicy?: UsResearchTradePricePolicy;
 }): Promise<AdoptedUsBacktestContract> {
   const sessions = [...input.sessions];
   if (
@@ -83,11 +106,30 @@ export async function initializeAdoptedUsBacktest(input: {
   )
     throw new Error("A nonempty, strictly increasing historical session calendar is required");
   [input.calendarSourceHash, input.sourceManifestHash, input.codeHash].forEach(assertHash);
+  if (input.annualBudgetPolicy) validateUsAnnualEntryBudgetPolicy(input.annualBudgetPolicy);
+  const annualBudgetPolicy = input.annualBudgetPolicy
+    ? { policyId: input.annualBudgetPolicy.policyId }
+    : undefined;
+  if (input.tradePricePolicy) validateUsResearchTradePricePolicy(input.tradePricePolicy);
+  const tradePricePolicy = input.tradePricePolicy
+    ? { policyId: input.tradePricePolicy.policyId }
+    : undefined;
+  if (input.missingClosePolicy) validateUsLastValidClosePolicy(input.missingClosePolicy, sessions);
+  const missingClosePolicy = input.missingClosePolicy
+    ? {
+        policyId: input.missingClosePolicy.policyId,
+        sourceCoverageEndDate: input.missingClosePolicy.sourceCoverageEndDate,
+        sessionClocks: input.missingClosePolicy.sessionClocks.map((clock) => ({ ...clock })),
+      }
+    : undefined;
   const configHash = await hashSeriesValue({
     strategy: STRATEGY,
     allocation: usFixedSlotAllocationPolicy(US_BACKTEST_INITIAL_CAPITAL),
     oneWayCost: US_BACKTEST_ONE_WAY_COST,
     context: CURRENT_RULES_RESEARCH,
+    ...(missingClosePolicy ? { missingClosePolicy } : {}),
+    ...(annualBudgetPolicy ? { annualBudgetPolicy } : {}),
+    ...(tradePricePolicy ? { tradePricePolicy } : {}),
   });
   const body: Omit<AdoptedUsBacktestContract, "contractHash"> = {
     version: VERSION,
@@ -102,6 +144,9 @@ export async function initializeAdoptedUsBacktest(input: {
     initialCapitalUsd: US_BACKTEST_INITIAL_CAPITAL,
     oneWayCost: US_BACKTEST_ONE_WAY_COST,
     researchGrade: "RETROSPECTIVE_CURRENT_RULES_NOT_INDEPENDENT_OOS" as const,
+    ...(missingClosePolicy ? { missingClosePolicy } : {}),
+    ...(annualBudgetPolicy ? { annualBudgetPolicy } : {}),
+    ...(tradePricePolicy ? { tradePricePolicy } : {}),
     configHash,
   };
   return freeze({ ...body, contractHash: await hashSeriesValue(body) });
@@ -120,6 +165,9 @@ export async function stepAdoptedUsBacktest(
     calendarSourceHash: contract.calendarSourceHash,
     sourceManifestHash: contract.sourceManifestHash,
     codeHash: contract.codeHash,
+    ...(contract.missingClosePolicy ? { missingClosePolicy: contract.missingClosePolicy } : {}),
+    ...(contract.annualBudgetPolicy ? { annualBudgetPolicy: contract.annualBudgetPolicy } : {}),
+    ...(contract.tradePricePolicy ? { tradePricePolicy: contract.tradePricePolicy } : {}),
   });
   if (contractHash !== expected.contractHash) throw new Error("Historical US policy changed");
   assertHash(input.sourceHash);
@@ -137,6 +185,17 @@ export async function stepAdoptedUsBacktest(
   const previousIndex = previous ? contract.sessions.indexOf(previous.date) : -1;
   if ((previous && previousIndex < 0) || contract.sessions[previousIndex + 1] !== input.date)
     throw new Error("Historical US replay requires the next declared session");
+  let researchCloseContext: UsResearchCloseContext | undefined;
+  if (contract.missingClosePolicy) {
+    if (input.marketDataComplete !== true)
+      throw new Error("Incomplete market source cannot trigger research disappearance exits");
+    researchCloseContext = {
+      ...contract.missingClosePolicy.sessionClocks[previousIndex + 1]!,
+      policyId: contract.missingClosePolicy.policyId,
+      marketDataComplete: true,
+    };
+    validateUsResearchCloseContext(researchCloseContext, input.date, input.rows);
+  }
   if (
     !input.rows.length ||
     input.rows.some((r) => r.date !== input.date) ||
@@ -161,6 +220,9 @@ export async function stepAdoptedUsBacktest(
     usFixedSlotAllocationPolicy(contract.initialCapitalUsd),
     0.0015,
     CURRENT_RULES_RESEARCH,
+    researchCloseContext,
+    contract.annualBudgetPolicy,
+    contract.tradePricePolicy,
   );
   const quotes = new Map(input.rows.map((r) => [r.symbol, r]));
   const staleMarkSymbols = Object.keys(result.state.positions)
@@ -175,7 +237,11 @@ export async function stepAdoptedUsBacktest(
     contractHash,
     previousStateHash: previous?.stateHash ?? null,
     sourceHash: input.sourceHash,
-    inputHash: await hashSeriesValue({ rows: input.rows, sourceHash: input.sourceHash }),
+    inputHash: await hashSeriesValue({
+      rows: input.rows,
+      sourceHash: input.sourceHash,
+      ...(researchCloseContext ? { researchCloseContext } : {}),
+    }),
     rankState: analysis.state,
     result,
     staleMarkSymbols,

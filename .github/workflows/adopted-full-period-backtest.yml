@@ -69,6 +69,7 @@ jobs:
       - run: npx vitest run --config vitest.ledger.config.ts src/lib/engine/usProspectiveModelPolicy.test.ts
       - run: python -m unittest discover -s tests -p 'test_adopted_us*input*.py'
       - run: python -m unittest discover -s tests -p 'test_adopted_backtest_job.py'
+      - run: PYTHONPATH=scripts python -m unittest discover -s tests -p 'test_audit_us_math.py'
       # Frozen Shadow runtime admission is not changed by research CI.
       # Promotion to main is a separate authorization and integrity review.
   replay:

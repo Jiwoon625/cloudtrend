@@ -11,6 +11,25 @@ import type {
   UsProspectiveStrategyId,
 } from "./usProspective";
 import { isCurrentRulesResearch, type OperatingPolicyContext } from "./operatingPolicyContext";
+import {
+  finitePositive,
+  validateUsLastValidCloseReference,
+  validateUsResearchCloseContext,
+  type UsLastValidCloseState,
+  type UsResearchCloseContext,
+} from "../research/usLastValidClosePolicy";
+import {
+  advanceUsAnnualEntryBudget,
+  validateUsAnnualEntryBudgetPolicy,
+  type UsAnnualEntryBudgetPolicy,
+  type UsAnnualEntryBudgetState,
+} from "../research/usAnnualEntryBudget";
+import {
+  representedUsResearchTradePrice,
+  usResearchTradePriceAudit,
+  validateUsResearchTradePricePolicy,
+  type UsResearchTradePricePolicy,
+} from "../research/usResearchTradePrice";
 
 export const US_PROSPECTIVE_INITIAL_CAPITAL = 100_000;
 export const US_PROSPECTIVE_ONE_WAY_COST = 0.0025;
@@ -122,6 +141,8 @@ export interface UsPendingTarget {
   /** Fixed entry budget excludes fees; cash affordability still includes them. */
   fixedBudgetUsd?: string;
   remainingBudgetUsd?: string;
+  /** Research annual principal is frozen when the intent is created, across year changes. */
+  annualEntryBudgetYear?: string;
   /** Frozen at its first executable open. Partial fills cannot turn into rebalancing. */
   fixedTargetShares?: number;
   /** Candidate priority captured at signal close; never rerank using execution-day close. */
@@ -171,6 +192,10 @@ export interface UsModelExecutionPolicy {
   oneWayCost: string;
 }
 export interface UsPortfolioState {
+  /** Research-only close history. A price written by an OPEN fill is never a proxy reference. */
+  lastValidCloseResearch?: UsLastValidCloseState;
+  annualEntryBudgetResearch?: UsAnnualEntryBudgetState;
+  tradePriceResearch?: UsResearchTradePricePolicy;
   allocationPolicy?: UsFixedSlotAllocationPolicy;
   executionPolicy?: UsModelExecutionPolicy;
   /** Exact cash/fees exist only on the opt-in path; NAV remains the existing engine's number output. */
@@ -301,8 +326,42 @@ export function stepUsProspectivePortfolio(
   requestedAllocationPolicy?: UsFixedSlotAllocationPolicy,
   operatingOneWayCost = US_PROSPECTIVE_ONE_WAY_COST,
   researchContext?: OperatingPolicyContext,
+  researchCloseContext?: UsResearchCloseContext,
+  researchAnnualBudgetPolicy?: UsAnnualEntryBudgetPolicy,
+  researchTradePricePolicy?: UsResearchTradePricePolicy,
 ): UsPortfolioStepResult {
   const research = isCurrentRulesResearch(researchContext);
+  if (previous?.tradePriceResearch && !researchTradePricePolicy)
+    throw new Error("Research trade-price state requires its frozen opt-in policy");
+  if (researchTradePricePolicy) {
+    if (!research || !executionPolicy || config.id !== "A0_QUARTER_PRIMARY")
+      throw new Error(
+        "Trade-price representation is restricted to isolated current-rules US research",
+      );
+    validateUsResearchTradePricePolicy(researchTradePricePolicy);
+    if (previous && previous.tradePriceResearch?.policyId !== researchTradePricePolicy.policyId)
+      throw new Error("Research trade-price policy cannot be activated or changed mid-series");
+  }
+  if (previous?.annualEntryBudgetResearch && !researchAnnualBudgetPolicy)
+    throw new Error("Annual research state requires its frozen opt-in policy");
+  if (researchAnnualBudgetPolicy) {
+    if (!research || !executionPolicy || config.id !== "A0_QUARTER_PRIMARY")
+      throw new Error("Annual entry budget is restricted to isolated current-rules US research");
+    validateUsAnnualEntryBudgetPolicy(researchAnnualBudgetPolicy);
+  }
+  if (previous?.lastValidCloseResearch && !researchCloseContext)
+    throw new Error("Research missing-close state requires its frozen opt-in policy");
+  if (researchCloseContext) {
+    if (!research || !executionPolicy || config.id !== "A0_QUARTER_PRIMARY")
+      throw new Error("Missing-close proxy is restricted to isolated current-rules US research");
+    validateUsResearchCloseContext(researchCloseContext, analysis.date, analysis.rows);
+    if (
+      previous &&
+      (!previous.lastValidCloseResearch ||
+        previous.lastValidCloseResearch.policyId !== researchCloseContext.policyId)
+    )
+      throw new Error("Research missing-close policy cannot be activated or changed mid-series");
+  }
   const allocationPolicy = requestedAllocationPolicy ?? previous?.allocationPolicy;
   const fixedSlots =
     allocationPolicy && (research || analysis.date >= allocationPolicy.effectiveDate);
@@ -421,13 +480,32 @@ export function stepUsProspectivePortfolio(
   const rows = maps(analysis);
   const spy = rows.get("SPY")?.close ?? null;
   const state = previous ? clone(previous) : fresh(analysis.date, spy, executionPolicy);
+  if (researchTradePricePolicy) state.tradePriceResearch = { ...researchTradePricePolicy };
+  if (researchCloseContext && !state.lastValidCloseResearch)
+    state.lastValidCloseResearch = {
+      policyId: researchCloseContext.policyId,
+      lastValidCloseBySymbol: {},
+    };
   if (state.lastDate && analysis.date <= state.lastDate)
     throw new Error(
       "Portfolio step requires a later trading date; replay from the preceding snapshot.",
     );
+  if (researchAnnualBudgetPolicy)
+    state.annualEntryBudgetResearch = advanceUsAnnualEntryBudget({
+      policy: researchAnnualBudgetPolicy,
+      date: analysis.date,
+      initialCapitalUsd: executionPolicy!.initialCapital,
+      previousState: previous?.annualEntryBudgetResearch ?? null,
+      previousDate: previous?.lastDate ?? null,
+      previousNav,
+    });
   if (fixedSlots) {
     state.allocationPolicy = clone(allocationPolicy);
-    state.pendingTargets = usFixedSlotPendingTargets(state, allocationPolicy);
+    state.pendingTargets = usFixedSlotPendingTargets(
+      state,
+      allocationPolicy,
+      state.annualEntryBudgetResearch,
+    );
   }
   const trades: UsModelTrade[] = [];
   let turnover = 0;
@@ -435,11 +513,16 @@ export function stepUsProspectivePortfolio(
   let modelCash = executionPolicy ? decimal(state.modelCashExact!) : 0n;
   let modelFees = executionPolicy ? decimal(state.modelFeesExact!) : 0n;
   let dayModelFees = 0n;
+  const journalPrice = (price: number) =>
+    researchTradePricePolicy ? representedUsResearchTradePrice(price) : fromLegacyNumber(price);
+  const priceAudit = (sourcePrice: number, accountedPrice: number) =>
+    researchTradePricePolicy ? usResearchTradePriceAudit(sourcePrice, accountedPrice) : {};
   const bookFill = (shares: number, price: number, side: "BUY" | "SELL") => {
     if (executionPolicy) {
       if (!Number.isSafeInteger(shares) || shares <= 0)
         throw new Error("Model fills require positive safe integer shares");
-      const gross = decimal(fromLegacyNumber(price)) * BigInt(shares);
+      const accountedPrice = journalPrice(price);
+      const gross = decimal(accountedPrice) * BigInt(shares);
       const scale = decimal("1");
       const exactFee = (gross * decimal(executionPolicy.oneWayCost) + scale - 1n) / scale;
       modelCash += (side === "BUY" ? -gross : gross) - exactFee;
@@ -451,7 +534,11 @@ export function stepUsProspectivePortfolio(
       state.cash = Number(state.modelCashExact);
       state.totalFees = Number(state.modelFeesExact);
       fees = Number(format(dayModelFees));
-      return { notional: Number(format(gross)), fee: Number(format(exactFee)) };
+      return {
+        notional: Number(format(gross)),
+        fee: Number(format(exactFee)),
+        modelPrice: Number(accountedPrice),
+      };
     }
     const notional = shares * price,
       fee = notional * operatingOneWayCost;
@@ -459,7 +546,7 @@ export function stepUsProspectivePortfolio(
     else state.cash += notional - fee;
     state.totalFees += fee;
     fees += fee;
-    return { notional, fee };
+    return { notional, fee, modelPrice: price };
   };
 
   const record = (t: UsModelTrade) => trades.push(t);
@@ -471,7 +558,7 @@ export function stepUsProspectivePortfolio(
       Math.floor(
         ((state.adv20BySymbol?.[row.symbol] ?? 0) * US_PROSPECTIVE_PARTICIPATION -
           (used.get(row.symbol) ?? 0)) /
-          px,
+          (researchTradePricePolicy ? Number(journalPrice(px)) : px),
       ),
     );
   const consume = (symbol: string, notional: number) =>
@@ -506,10 +593,17 @@ export function stepUsProspectivePortfolio(
       delete state.pendingExits[symbol];
       continue;
     }
-    if (!row || !px || px <= 0 || pending.signalDate >= analysis.date) continue;
+    if (
+      !row ||
+      !px ||
+      px <= 0 ||
+      pending.signalDate >= analysis.date ||
+      (researchCloseContext && (!finitePositive(px) || !finitePositive(row.volume)))
+    )
+      continue;
     const shares = Math.min(p.shares, capacity(row, px));
     if (shares <= 0) continue;
-    const { notional, fee } = bookFill(shares, px, "SELL");
+    const { notional, fee, modelPrice } = bookFill(shares, px, "SELL");
     consume(symbol, notional);
     p.shares -= shares;
     p.lastPrice = px;
@@ -526,12 +620,12 @@ export function stepUsProspectivePortfolio(
       side: "SELL",
       reason: pending.reason,
       status: partial ? "PARTIAL" : "EXECUTED",
-      modelPrice: px,
+      modelPrice,
       modelShares: shares,
       modelNotional: notional,
       feeUsd: fee,
       coreRank: row.coreRank,
-      detail: { participation: US_PROSPECTIVE_PARTICIPATION },
+      detail: { participation: US_PROSPECTIVE_PARTICIPATION, ...priceAudit(px, modelPrice) },
     });
     if (!partial) {
       delete state.positions[symbol];
@@ -550,6 +644,7 @@ export function stepUsProspectivePortfolio(
         !row ||
         !px ||
         px <= 0 ||
+        (researchCloseContext && (!finitePositive(px) || !finitePositive(row.volume))) ||
         pending.signalDate >= analysis.date ||
         state.pendingExits[pending.symbol]
       )
@@ -557,7 +652,7 @@ export function stepUsProspectivePortfolio(
       const current = state.positions[pending.symbol]?.shares ?? 0;
       if (fixedSlots && pending.fixedTargetShares === undefined) {
         const budget = decimal(pending.fixedBudgetUsd!);
-        const unit = decimal(fromLegacyNumber(px));
+        const unit = decimal(journalPrice(px));
         pending.fixedTargetShares = Math.max(current, Number(budget / unit));
         // An inherited, partially filled entry reserves its existing shares at the cutover open.
         // This is only an allocation reservation; historical fills/cost basis remain untouched.
@@ -588,7 +683,7 @@ export function stepUsProspectivePortfolio(
     if (!p) continue;
     const shares = Math.min(-o.delta, capacity(o.row, o.px));
     if (shares <= 0) continue;
-    const { notional, fee } = bookFill(shares, o.px, "SELL");
+    const { notional, fee, modelPrice } = bookFill(shares, o.px, "SELL");
     consume(o.row.symbol, notional);
     p.shares -= shares;
     p.lastPrice = o.px;
@@ -612,12 +707,12 @@ export function stepUsProspectivePortfolio(
       side: "REBALANCE_SELL",
       reason: o.pending.reason,
       status: partial ? "PARTIAL" : "EXECUTED",
-      modelPrice: o.px,
+      modelPrice,
       modelShares: shares,
       modelNotional: notional,
       feeUsd: fee,
       coreRank: o.row.coreRank,
-      detail: { targetWeight: o.pending.targetWeight },
+      detail: { targetWeight: o.pending.targetWeight, ...priceAudit(o.px, modelPrice) },
     });
     if (p.shares <= 0) delete state.positions[o.row.symbol];
     if (!partial) delete state.pendingTargets[o.row.symbol];
@@ -638,20 +733,20 @@ export function stepUsProspectivePortfolio(
           integerBudgetQuantity(
             format(modelCash),
             format(modelCash),
-            fromLegacyNumber(o.px),
+            journalPrice(o.px),
             executionPolicy.oneWayCost,
           ),
         )
       : Math.max(0, Math.floor(state.cash / (o.px * (1 + operatingOneWayCost))));
     const budgetCapacity = fixedSlots
-      ? Number(decimal(o.pending.remainingBudgetUsd!) / decimal(fromLegacyNumber(o.px)))
+      ? Number(decimal(o.pending.remainingBudgetUsd!) / decimal(journalPrice(o.px)))
       : Infinity;
     const shares = Math.min(o.delta, capacity(o.row, o.px), affordable, budgetCapacity);
     if (shares <= 0) continue;
-    const { notional, fee } = bookFill(shares, o.px, "BUY");
+    const { notional, fee, modelPrice } = bookFill(shares, o.px, "BUY");
     if (fixedSlots)
       o.pending.remainingBudgetUsd = format(
-        decimal(o.pending.remainingBudgetUsd!) - decimal(fromLegacyNumber(o.px)) * BigInt(shares),
+        decimal(o.pending.remainingBudgetUsd!) - decimal(journalPrice(o.px)) * BigInt(shares),
       );
     consume(o.row.symbol, notional);
     turnover += notional;
@@ -690,17 +785,82 @@ export function stepUsProspectivePortfolio(
       side: o.pending.reason.startsWith("QUARTER") ? "REBALANCE_BUY" : "BUY",
       reason: o.pending.reason,
       status: partial ? "PARTIAL" : "EXECUTED",
-      modelPrice: o.px,
+      modelPrice,
       modelShares: shares,
       modelNotional: notional,
       feeUsd: fee,
       coreRank: o.row.coreRank,
-      detail: { targetWeight: o.pending.targetWeight },
+      detail: { targetWeight: o.pending.targetWeight, ...priceAudit(o.px, modelPrice) },
     });
     if (!partial) delete state.pendingTargets[o.row.symbol];
   }
 
   for (const o of orders.filter((x) => x.delta === 0)) delete state.pendingTargets[o.row.symbol];
+
+  // Research-only CLOSE boundary. OPEN fills have already completed: these proceeds
+  // cannot retroactively finance them. Every other A0 sizing/execution rule is retained.
+  if (researchCloseContext) {
+    const references = state.lastValidCloseResearch!.lastValidCloseBySymbol;
+    for (const row of analysis.rows) {
+      if (finitePositive(row.close))
+        references[row.symbol] = {
+          date: analysis.date,
+          availableAt: researchCloseContext.closeAvailableAt,
+          price: row.close,
+        };
+    }
+    for (const p of Object.values(state.positions)) {
+      if (finitePositive(rows.get(p.symbol)?.close)) continue;
+      const reference = references[p.symbol];
+      validateUsLastValidCloseReference(reference, researchCloseContext);
+      const { notional, fee, modelPrice } = bookFill(p.shares, reference.price, "SELL");
+      turnover += notional;
+      record({
+        tradeKey: tkey(
+          config.id,
+          analysis.date,
+          analysis.date,
+          p.symbol,
+          "SELL",
+          researchCloseContext.policyId,
+        ),
+        strategyId: config.id,
+        signalDate: analysis.date,
+        executionDate: analysis.date,
+        symbol: p.symbol,
+        name: p.name,
+        sector: p.sector,
+        side: "SELL",
+        reason: researchCloseContext.policyId,
+        status: "EXECUTED",
+        modelPrice,
+        modelShares: p.shares,
+        modelNotional: notional,
+        feeUsd: fee,
+        coreRank: rows.get(p.symbol)?.coreRank ?? null,
+        detail: {
+          policy_id: researchCloseContext.policyId,
+          execution_class: "RETROSPECTIVE_EXIT_PROXY",
+          actual_historical_fill: false,
+          retrospective_exit_proxy: true,
+          retroactive_nav_rewrite: false,
+          trigger_session_date: analysis.date,
+          recognition_at: researchCloseContext.closeAvailableAt,
+          reference_price_date: reference.date,
+          reference_price_available_at: reference.availableAt,
+          reference_price: reference.price,
+          cash_available_at: researchCloseContext.closeAvailableAt,
+          cash_policy: "A0_IMMEDIATE_AT_RECOGNITION",
+          one_way_fee: executionPolicy!.oneWayCost,
+          corporate_actions_modeled: false,
+          ...priceAudit(reference.price, modelPrice),
+        },
+      });
+      delete state.positions[p.symbol];
+      delete state.pendingExits[p.symbol];
+      delete state.pendingTargets[p.symbol];
+    }
+  }
 
   for (const p of Object.values(state.positions)) {
     const close = rows.get(p.symbol)?.close;
@@ -758,6 +918,11 @@ export function stepUsProspectivePortfolio(
   const desired = [...retained.map((p) => p.symbol), ...reserved, ...entries.map((r) => r.symbol)];
   if (desired.length > 0 && entries.length > 0) {
     const target = fixedSlots ? 1 / allocationPolicy.targetPositions : 1 / desired.length;
+    const annualBudget =
+      state.annualEntryBudgetResearch?.byYear[state.annualEntryBudgetResearch.currentYear];
+    const entryBudgetUsd = fixedSlots
+      ? (annualBudget?.entryPrincipalUsd ?? usFixedSlotBudget(allocationPolicy))
+      : undefined;
     entries.forEach(
       (r) =>
         (state.pendingTargets[r.symbol] = {
@@ -765,8 +930,9 @@ export function stepUsProspectivePortfolio(
           targetWeight: target,
           ...(fixedSlots
             ? {
-                fixedBudgetUsd: usFixedSlotBudget(allocationPolicy),
-                remainingBudgetUsd: usFixedSlotBudget(allocationPolicy),
+                fixedBudgetUsd: entryBudgetUsd!,
+                remainingBudgetUsd: entryBudgetUsd!,
+                ...(annualBudget ? { annualEntryBudgetYear: annualBudget.year } : {}),
               }
             : {}),
           ...(useSignalOrder(analysis.date, executionPolicy, researchContext)
@@ -888,12 +1054,31 @@ export function stepUsProspectivePortfolio(
 export function usFixedSlotPendingTargets(
   state: UsPortfolioState,
   policy: UsFixedSlotAllocationPolicy,
+  annualBudgetState?: UsAnnualEntryBudgetState,
 ): Record<string, UsPendingTarget> {
-  const budget = usFixedSlotBudget(policy);
+  const fixedBudget = usFixedSlotBudget(policy);
+  if (state.annualEntryBudgetResearch && !annualBudgetState)
+    throw new Error("Annual pending order validation requires its budget history");
   return Object.fromEntries(
     Object.entries(state.pendingTargets)
       .filter(([, pending]) => pending.reason === "ENTRY_ONSET80")
       .map(([symbol, pending]) => {
+        const annualSnapshot =
+          annualBudgetState && pending.annualEntryBudgetYear
+            ? annualBudgetState.byYear[pending.annualEntryBudgetYear]
+            : undefined;
+        if (
+          annualBudgetState &&
+          (!annualSnapshot ||
+            pending.annualEntryBudgetYear !== pending.signalDate.slice(0, 4) ||
+            pending.signalDate < annualSnapshot.effectiveDate ||
+            pending.fixedBudgetUsd === undefined ||
+            pending.remainingBudgetUsd === undefined)
+        )
+          throw new Error("Annual pending intent requires its original creation-year budget");
+        if (!annualBudgetState && pending.annualEntryBudgetYear !== undefined)
+          throw new Error("Annual pending intent cannot enter the fixed-initial-budget path");
+        const budget = annualSnapshot?.entryPrincipalUsd ?? fixedBudget;
         if (pending.fixedBudgetUsd !== undefined && pending.fixedBudgetUsd !== budget)
           throw new Error("US pending fixed entry budget changed");
         if (

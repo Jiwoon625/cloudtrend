@@ -536,5 +536,23 @@ class JobTests(unittest.TestCase):
                 storage.download_observed(OWNER + "/research/cm/arbitrary", target, 3)
 
 
+class CompactAuditMetadataTests(unittest.TestCase):
+    def valid(self):
+        return {"checksPassed":True,"initialNAV":"74671.44","finalNAV":"123456.12345678","totalFeesUsd":"100.5","buyFills":10,"sellFills":9,"proxyExitFills":1,"annualReturns":[{"year":2020,"return":0.1,"endingNAV":"82000"}],"annualBudgets":{"2020":"3733.572"},"spy":{"cagr":0.1,"mdd":-0.2,"cumulativeReturn":0.5,"dividendTotalReturnCertified":False}}
+    def test_accepts_only_numeric_aggregate(self):
+        self.assertEqual(job.safe_compact_audit(self.valid())["buyFills"],10)
+    def test_rejects_extra_fields_and_raw_strings(self):
+        x=self.valid();x["symbol"]="PRIVATE"
+        with self.assertRaises(job.JobError):job.safe_compact_audit(x)
+        x=self.valid();x["finalNAV"]="https://private.example/?token=x"
+        with self.assertRaises(job.JobError):job.safe_compact_audit(x)
+        x=self.valid();x["annualBudgets"]={"PRIVATE":"20"}
+        with self.assertRaises(job.JobError):job.safe_compact_audit(x)
+    def test_rejects_failed_audit_and_nonfinite_numbers(self):
+        x=self.valid();x["checksPassed"]=False
+        with self.assertRaises(job.JobError):job.safe_compact_audit(x)
+        x=self.valid();x["spy"]["cagr"]=float("inf")
+        with self.assertRaises(job.JobError):job.safe_compact_audit(x)
+
 if __name__ == "__main__":
     unittest.main()

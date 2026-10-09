@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -383,5 +384,58 @@ describe("isolated local US A0 runner", () => {
       await expect(run(f)).rejects.toThrow();
       await expect(stat(path.join(f.dir, "result"))).rejects.toThrow();
     }
+  });
+});
+
+async function expandedFixture() {
+  const f = await fixture("stale");
+  const featureSource = "research/cmresearchengine/vendor/resumable_allocation/runtime/cm06_closeadj_features.py";
+  const normalizerSource = "research/cmresearchengine/vendor/resumable_allocation/runtime/cm06_prepare_comparison.py";
+  const sourceClocks = dates.map((date) => ({ date, openAt: `${date}T14:30:00Z`, closeAvailableAt: `${date}T21:15:00Z` }));
+  const calendar = JSON.stringify(sourceClocks);
+  await writeFile(path.join(f.dir, "calendar.json"), calendar);
+  for (const file of f.manifest.files) {
+    const raw = (await readFile(path.join(f.dir, file.file), "utf8")).trim().split("\n");
+    const data = gzipSync(Buffer.from(raw.map((line, i) => `${line},${i === 0 ? "volume" : "1000000"}`).join("\n")+"\n"));
+    file.file += ".gz";
+    file.bytes = data.length; file.sha256 = hash(data);
+    Object.assign(file, {marketDataComplete: true});
+    await writeFile(path.join(f.dir, file.file), data);
+  }
+  Object.assign(f.manifest, { version: "adopted-us-cm-expanded-inputs-v1", featureSource,
+    featureCodeHash: hash(await readFile(path.resolve(featureSource))), normalizerSource,
+    normalizerCodeHash: hash(await readFile(path.resolve(normalizerSource))),
+    calendar: {path:"calendar.json", bytes:Buffer.byteLength(calendar), sha256:hash(calendar)},
+    sourceCoverageEndDate: dates.at(-1), sourceClocks,
+    annualBudgetPolicyId:"US_A0_ANNUAL_ENTRY_BUDGET_PRIOR_NAV_V1",
+    tradePricePolicyId:"US_A0_COMPARISON_PRICE_8DP_LEDGER_V1",
+    missingClosePolicyId:"US_A0_ALL_HELD_LAST_VALID_CLOSE_EXIT_V1"});
+  await f.save(); return f;
+}
+
+describe("expanded CM source adapter and proxy integration", () => {
+  it("reads compressed exact rows and recognizes missing-close proxy on the missing session only", async () => {
+    const f=await expandedFixture();const result=await run(f);
+    expect(result.summary["US_A0"]).toMatchObject({status:"COMPLETE",staleValuationCount:0});
+    const trades=await readLines(path.join(result.out,"US_A0.trades.jsonl"));
+    const proxy=trades.find(t=>t.reason==="US_A0_ALL_HELD_LAST_VALID_CLOSE_EXIT_V1");
+    expect(proxy).toMatchObject({symbol:"T00",executionDate:"2018-01-02",side:"SELL",modelPrice:100,modelShares:37});
+    expect(proxy.detail).toMatchObject({reference_price_date:"2017-12-29",retroactive_nav_rewrite:false,corporate_actions_modeled:false});
+    const contract=await readJson(path.join(result.out,"US_A0.contract.json"));
+    expect(contract.missingClosePolicy.sessionClocks).toHaveLength(21);
+  });
+  it("refuses a declared incomplete source session", async () => {
+    const f=await expandedFixture();Object.assign(f.manifest.files[3]!,{marketDataComplete:false});await f.save();
+    await expect(run(f)).rejects.toThrow(/Incomplete market source/);
+  });
+  it("refuses any session after the final verified source date", async () => {
+    const f=await expandedFixture();Object.assign(f.manifest,{sourceCoverageEndDate:dates[19]});await f.save();
+    await expect(run(f)).rejects.toThrow(/within source coverage/);
+  });
+  it("smoke truncates only the replay clocks and never publishes sample CAGR", async () => {
+    const f=await expandedFixture();const result=await run(f,{smokeSessions:20});
+    expect(result.summary["US_A0"]).toMatchObject({status:"SAMPLE_INCOMPLETE",cagr:null,mdd:null});
+    const contract=await readJson(path.join(result.out,"US_A0.contract.json"));
+    expect(contract.missingClosePolicy.sessionClocks).toHaveLength(20);
   });
 });

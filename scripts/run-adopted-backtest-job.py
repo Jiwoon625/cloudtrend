@@ -36,7 +36,7 @@ SOURCE_VERSION = "adopted-full-period-source-transfer-v1"
 REQUEST_BRANCH = "refs/heads/feat/adopted-full-period-backtest"
 REQUEST_FIELDS = {"mode", "market", "catalog_sha", "source_manifest_sha", "start", "through", "smoke_sessions"}
 OUTPUT_NAMES = {"summary.json", "quality.json", "provenance.json", "report.md"}
-OPTIONAL_OUTPUT_NAMES = {"input-provenance.json"}
+OPTIONAL_OUTPUT_NAMES = {"input-provenance.json", "math-audit.json"}
 BOOK_NAMES = {"KR_COMBINED_ADOPTED", "KOSPI_STANDALONE_DIAGNOSTIC", "KOSDAQ_STANDALONE_DIAGNOSTIC", "ETF_V02", "US_A0"}
 BOOK_SUFFIXES = {"daily-nav.jsonl", "trades.jsonl", "yearly-budgets.json", "evidence.json", "contract.json", "final-state.json"}
 SUMMARY_FIELDS = {"schema", "status", "mode", "market", "start", "through", "codeCommit", "catalogSha256",
@@ -92,7 +92,7 @@ def finite_number(value):
 
 def safe_summary_metadata(metadata):
     """Validate both shape and scalar domains; never serialize arbitrary source values."""
-    require(isinstance(metadata, dict) and set(metadata) == SUMMARY_FIELDS, "INVALID_RESULT_METADATA_FIELDS")
+    require(isinstance(metadata, dict) and set(metadata) in (SUMMARY_FIELDS, SUMMARY_FIELDS | {"audit"}), "INVALID_RESULT_METADATA_FIELDS")
     require(metadata["schema"] == "adopted-backtest-summary-v1" and metadata["status"] == "COMPLETE",
             "INVALID_RESULT_METADATA_STATUS")
     require(metadata["mode"] in ("smoke", "full") and metadata["market"] in ("kr", "etf", "kr-etf", "us"),
@@ -138,13 +138,38 @@ def safe_summary_metadata(metadata):
         require(finite_number(item["elapsedSeconds"]) and item["elapsedSeconds"] >= 0 and
                 type(item["maxRssKiB"]) is int and 0 < item["maxRssKiB"] <= 2 ** 53 - 1,
                 "INVALID_RESULT_METADATA_MEASUREMENTS")
+    if "audit" in metadata:
+        safe_compact_audit(metadata["audit"])
     payload = json_bytes(metadata)
     header = base64.b64encode(payload).decode("ascii")
     require(len(payload) <= MAX_METADATA_BYTES and len(header) <= MAX_METADATA_BYTES, "RESULT_METADATA_TOO_LARGE")
     return header
 
 
-def build_summary_metadata(report, summary, manifest_hash):
+def safe_compact_audit(value):
+    fields={"checksPassed","initialNAV","finalNAV","totalFeesUsd","buyFills","sellFills","proxyExitFills","annualReturns","annualBudgets","spy"}
+    require(isinstance(value,dict) and set(value)==fields and value["checksPassed"] is True,"INVALID_AUDIT_SUMMARY")
+    def money(v): return isinstance(v,str) and bool(re.fullmatch(r"[0-9]+(?:\.[0-9]{1,20})?",v)) and finite_number(float(v))
+    for key in ("initialNAV","finalNAV","totalFeesUsd"):
+        require(money(value[key]),"INVALID_AUDIT_AMOUNT")
+    for key in ("buyFills","sellFills","proxyExitFills"):
+        require(type(value[key]) is int and 0<=value[key]<2**53,"INVALID_AUDIT_COUNT")
+    require(isinstance(value["annualReturns"],list) and len(value["annualReturns"])<=50,"INVALID_AUDIT_YEARS")
+    for row in value["annualReturns"]:
+        require(isinstance(row,dict) and set(row)=={"year","return","endingNAV"} and type(row["year"]) is int and 1900<=row["year"]<=2100 and finite_number(row["return"]) and money(row["endingNAV"]),"INVALID_AUDIT_YEAR")
+    require(isinstance(value["annualBudgets"],dict) and len(value["annualBudgets"])<=50 and all(re.fullmatch(r"[12][0-9]{3}",k) and money(v) for k,v in value["annualBudgets"].items()),"INVALID_AUDIT_BUDGETS")
+    spy=value["spy"]
+    require(isinstance(spy,dict) and set(spy)=={"cagr","mdd","cumulativeReturn","dividendTotalReturnCertified"} and spy["dividendTotalReturnCertified"] is False and all(finite_number(spy[k]) for k in ("cagr","mdd","cumulativeReturn")),"INVALID_AUDIT_BENCHMARK")
+    return value
+
+
+def compact_audit(audit):
+    require(audit.get("status")=="PASS" and audit.get("arithmeticAndLedgerChecksPassed") is True,"INDEPENDENT_MATH_AUDIT_FAILED")
+    p,l,t,b=audit["performance"],audit["ledger"],audit["tradeCounts"]["allFills"],audit["benchmark"]
+    return safe_compact_audit({"checksPassed":True,"initialNAV":p["initialNAV"],"finalNAV":p["finalNAV"],"totalFeesUsd":l["totalFeesExact"],"buyFills":t["BUY"],"sellFills":t["SELL"],"proxyExitFills":l["retrospectiveProxyExitFills"],"annualReturns":[{k:r[k] for k in ("year","return","endingNAV")} for r in audit["annualReturns"]],"annualBudgets":l["annualGrossEntryBudgets"],"spy":{**{k:b["performance"][k] for k in ("cagr","mdd","cumulativeReturn")},"dividendTotalReturnCertified":False}})
+
+
+def build_summary_metadata(report, summary, manifest_hash, audit=None):
     require(isinstance(summary, dict) and all(isinstance(value, dict) for value in summary.values()), "INVALID_RESULT_SUMMARY")
     metadata = {"schema": "adopted-backtest-summary-v1",
                 **{field: report[field] for field in ["status", "mode", "market", "start", "through", "codeCommit", "catalogSha256"]},
@@ -152,6 +177,8 @@ def build_summary_metadata(report, summary, manifest_hash):
                 "books": {book: {field: values.get(field) for field in BOOK_SUMMARY_FIELDS} for book, values in summary.items()},
                 "measurements": [{field: item[field] for field in ["elapsedSeconds", "maxRssKiB"]} for item in report["measurements"]],
                 "resultManifestSha256": manifest_hash}
+    if audit is not None:
+        metadata["audit"] = compact_audit(audit)
     safe_summary_metadata(metadata)
     return metadata
 
@@ -456,7 +483,7 @@ def output_files(directory):
 
 
 def load_us_input_hook():
-    specification = importlib.util.spec_from_file_location("adopted_us_private_inputs", ROOT / "scripts/adopted-us-private-inputs.py")
+    specification = importlib.util.spec_from_file_location("adopted_us_private_inputs", ROOT / "scripts/adopted-us-cm-inputs.py")
     require(specification is not None and specification.loader is not None, "US_PRIVATE_INPUT_HOOK_UNAVAILABLE")
     module = importlib.util.module_from_spec(specification)
     sys.modules[specification.name] = module
@@ -516,12 +543,18 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
                 isinstance(inputs.get("provenance"), dict), "INVALID_US_INPUT_HOOK_RESULT")
         canonical = [verified_hook_path(file, staged) for file in inputs["canonical"]]
         require(len(set(canonical)) == len(canonical), "DUPLICATE_US_CANONICAL_PATH")
-        command = [sys.executable, str(ROOT / "scripts/prepare-adopted-us-backtest.py"),
-                   "--canonical", *canonical, "--benchmark", verified_hook_path(inputs.get("benchmark"), staged),
-                   "--master", verified_hook_path(inputs.get("master"), staged), "--output", str(prepared),
-                   "--start", options.start, "--through", options.through]
-        if inputs.get("sectorMap") is not None:
-            command += ["--sector-map", verified_hook_path(inputs["sectorMap"], staged)]
+        if inputs.get("inputKind") == "CM_EXPANDED_NORMALIZED_V2":
+            verified_hook_path(inputs.get("calendar"), staged)
+            command = [sys.executable, str(ROOT / "scripts/prepare-adopted-us-cm-inputs.py"),
+                       "--input-root", str(staged), "--output", str(prepared),
+                       "--start", options.start, "--through", options.through]
+        else:
+            command = [sys.executable, str(ROOT / "scripts/prepare-adopted-us-backtest.py"),
+                       "--canonical", *canonical, "--benchmark", verified_hook_path(inputs.get("benchmark"), staged),
+                       "--master", verified_hook_path(inputs.get("master"), staged), "--output", str(prepared),
+                       "--start", options.start, "--through", options.through]
+            if inputs.get("sectorMap") is not None:
+                command += ["--sector-map", verified_hook_path(inputs["sectorMap"], staged)]
         input_provenance = inputs["provenance"]
     else:
         staged = root / "raw"
@@ -542,7 +575,9 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
             type(preparation["maxRssKiB"]) is int and preparation["maxRssKiB"] > 0,
             "INVALID_PREPARATION_MEASUREMENTS")
     runs = []
+    full_audit = None
     def replay(label, smoke):
+        nonlocal full_audit
         target = root / label
         command = [str(ROOT / "node_modules/.bin/vite-node"), "--config", "vitest.adopted-backtest.config.ts",
                    "scripts/run-adopted-us-full-period-backtest.ts", "--", "--run-adopted-backtest",
@@ -554,6 +589,13 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
         command_runner(command, root / (label + ".log"), environment)
         if input_provenance is not None:
             local_json(target / "input-provenance.json", input_provenance)
+        if not smoke and options.market == "us" and inputs.get("inputKind") == "CM_EXPANDED_NORMALIZED_V2":
+            from audit_us_math import audit_result
+            full_audit = audit_result(target, Path(inputs["benchmark"]))
+            failed = [name for name, check in full_audit.get("checks", {}).items() if check.get("passed") is not True]
+            require(all(re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", name) for name in failed), "INVALID_AUDIT_CHECK_NAME")
+            require(full_audit.get("status") == "PASS", "INDEPENDENT_MATH_AUDIT_FAILED:" + ",".join(failed[:12]))
+            local_json(target / "math-audit.json", full_audit)
         files = output_files(target)
         try:
             quality = json.loads((target / "quality.json").read_bytes())
@@ -596,7 +638,7 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
         summary = json.loads((root / "result" / "summary.json").read_bytes())
     except (ValueError, UnicodeDecodeError):
         raise JobError("INVALID_RESULT_SUMMARY") from None
-    metadata = build_summary_metadata(report, summary, digest_file(report_path)["sha256"])
+    metadata = build_summary_metadata(report, summary, digest_file(report_path)["sha256"], full_audit)
     storage.create_result("run-manifest.json", report_path, metadata=metadata)  # Completion marker is always last.
     return {"status": "COMPLETE", "mode": options.mode, "market": options.market, "outputFiles": len(outputs)}
 
