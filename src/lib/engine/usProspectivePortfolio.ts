@@ -1,3 +1,4 @@
+import { compareUsCandidates } from "../usCandidatePriority";
 import {
   decimal,
   divide,
@@ -266,14 +267,7 @@ function navOf(state: UsPortfolioState, rows: Map<string, UsProspectiveRow>, ope
 function entryRows(config: UsStrategyConfig, rows: UsProspectiveRow[]) {
   return rows
     .filter((r) => (config.style === "BALANCED" ? r.b3Entry : r.a0Entry))
-    .sort(
-      (a, b) =>
-        (b.coreRank ?? -1) - (a.coreRank ?? -1) ||
-        (b.betaRank ?? -1) - (a.betaRank ?? -1) ||
-        ((config.style === "BALANCED" ? b.relvolRank : b.tkRank) ?? -1) -
-          ((config.style === "BALANCED" ? a.relvolRank : a.tkRank) ?? -1) ||
-        a.symbol.localeCompare(b.symbol),
-    );
+    .sort((a, b) => compareUsCandidates(a, b, config.style === "BALANCED"));
 }
 function shouldExit(config: UsStrategyConfig, row?: UsProspectiveRow) {
   if (!row) return true;

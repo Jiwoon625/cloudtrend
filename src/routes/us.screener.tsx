@@ -1,3 +1,4 @@
+import { compareUsCandidates } from "@/lib/usCandidatePriority";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ArrowUpDown, Download } from "lucide-react";
@@ -171,7 +172,14 @@ export function UsScreenerPage() {
   };
 
   const sorted = useMemo(() => {
-    if (!sort) return filtered;
+    if (!sort)
+      return [...filtered].sort((a, b) =>
+        compareUsCandidates(
+          a,
+          b,
+          filter === "B3_ENTRY" || (filter.startsWith("FUNNEL_") && funnelStrategy === "B3"),
+        ),
+      );
     const direction = sort.direction === "asc" ? 1 : -1;
     return [...filtered].sort((a, b) => {
       const av = sortValue(a, sort.key);
@@ -182,7 +190,7 @@ export function UsScreenerPage() {
         return String(av).localeCompare(String(bv), undefined, { numeric: true }) * direction;
       return (Number(av) - Number(bv)) * direction;
     });
-  }, [filtered, sort]);
+  }, [filtered, sort, filter, funnelStrategy]);
 
   const toggleSort = (key: SortKey) => {
     setSort((current) =>
@@ -438,6 +446,30 @@ export function UsScreenerPage() {
                     </option>
                   ))}
               </select>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>
+                {sort
+                  ? "사용자 지정 정렬"
+                  : "배정 우선순위: Core ↓ · Beta ↓ · " +
+                    (filter === "B3_ENTRY" ||
+                    (filter.startsWith("FUNNEL_") && funnelStrategy === "B3")
+                      ? "RelVol"
+                      : "TK") +
+                    " ↓ · 종목코드 ↑"}
+              </span>
+              {sort ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSort(null);
+                    setPage(0);
+                  }}
+                >
+                  배정 순서로 복원
+                </Button>
+              ) : null}
             </div>
             <nav aria-label="종목 페이지" className="flex items-center gap-3 text-xs">
               <span>
