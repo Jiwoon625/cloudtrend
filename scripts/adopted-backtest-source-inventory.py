@@ -47,7 +47,8 @@ def main():
     selected = [item for item in data_files if any(
         target in item["relative_path"] for target in (
             "normalized_bars.parquet", "normalized_engine_input.parquet", "normalized_features_pre_gap.parquet",
-            "normalized_features_post_gap.parquet", "cloudtrend_etf_research", "clean-input-panel.parquet"))]
+            "normalized_features_post_gap.parquet", "cloudtrend_etf_research", "clean-input-panel.parquet",
+            "/E/2026-09.parquet", "/K/2026-09.parquet", "/U/2026-09.parquet"))]
     sources = {item["storage_key"]: item for item in manifest.get("sources", [])}
     checked = []
     with tempfile.TemporaryDirectory(prefix="adopted-source-inventory-") as temp:
@@ -95,7 +96,7 @@ def main():
         raise RuntimeError("Private inventory readback mismatch")
     # Schemas/counts only. No credentials, signed URLs, price rows, positions, or NAV.
     print(json.dumps({"status": "COMPLETE", "dataFileCount": len(data_files),
-                      "dataNames": [item["relative_path"] for item in data_files],
+                      "dataGroups": sorted({str(PurePosixPath(item["relative_path"]).parent) for item in data_files}),
                       "checkedParquetSchemas": checked, "privateReportRun": run_id + "-" + attempt}, ensure_ascii=False))
 
 
