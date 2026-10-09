@@ -1,4 +1,4 @@
-name: CMresearchengine S12 S15 private final audit
+name: CMresearchengine S16 S19 private final audit
 on:
   push:
     branches: [main]
@@ -24,7 +24,7 @@ jobs:
           python-version: '3.12.14'
       - name: Install pinned research dependencies
         run: python -m pip install --disable-pip-version-check -r research/cmresearchengine/requirements.txt
-      - name: Verify S12 through S15 private result accounting without exposing records
+      - name: Verify S16 through S19 private result accounting without exposing records
         run: |
           python - <<'PY'
           import csv, hashlib, io, json, zipfile
@@ -119,8 +119,8 @@ jobs:
                   'bridge_residual_krw':str(residual),
                   'private_storage':True},sort_keys=True))
           
-          audit('Q_K000_E000_U050_C050','245415f2c00b0c79c1c6b7fa13a2bbadc2acfc24f2620338a5d1bce6daf6f10f')
-          audit('Q_K000_E000_U075_C025','56350de6adf32bf27f91b290f4d1b0fdfc5ef3dfe213093eca3731b34282a9ae')
-          audit('Q_K000_E025_U000_C075','05badc948a20d6d8e83a38b78d3f88e88d9db31a5f66141e352900825d458781')
-          audit('Q_K000_E025_U025_C050','c9cf920468df2519f08f408efeceaf86b4af41674354ce5f98f2472bdff2aac9')
+          audit('Q_K000_E025_U050_C025','7da989e26ab05f17f6b19f11a2abae1d4f6ad0493f5b706640aa242955c2f621')
+          audit('Q_K000_E025_U075_C000','ee9147b7cc9710ace58b706bff6f54f55c3c4a6a1f142ef49708cd1323fef7e9')
+          audit('Q_K000_E050_U000_C050','0865efe197c9c91cbfc1977da0a3d214e4292a3d6cd018a1f32e73cf93a33bb9')
+          audit('Q_K000_E050_U025_C025','dde07700ca34563ca2c3b412e9d37fe6047431666cc953b3b8a791abc8d8ebd8')
           PY
