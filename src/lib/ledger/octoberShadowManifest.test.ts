@@ -7,7 +7,7 @@ import { format } from "prettier";
 import {
   ADOPTED_SHADOW_FROZEN_CODE_HASH,
   adoptedShadowFrozenCodeHash,
-  REAUDIT_OBSERVATION_METADATA_RUNTIME_HASH,
+  REAUDIT_SIGNAL_POLICY_NAMING_RUNTIME_HASH,
   REVIEWED_SHADOW_RUNTIME_CODE_HASHES,
   shadowEngineManifest,
   shadowExecutableSyntax,
@@ -173,7 +173,7 @@ export const list = [
 
 it("keeps reviewed runtime provenance compatible with the eight frozen Shadow contracts", async () => {
   const runtime = await shadowEngineManifest();
-  expect(runtime.codeHash).toBe(REAUDIT_OBSERVATION_METADATA_RUNTIME_HASH);
+  expect(runtime.codeHash).toBe(REAUDIT_SIGNAL_POLICY_NAMING_RUNTIME_HASH);
   expect(REVIEWED_SHADOW_RUNTIME_CODE_HASHES).toContain(runtime.codeHash);
   expect(adoptedShadowFrozenCodeHash(runtime.codeHash)).toBe(ADOPTED_SHADOW_FROZEN_CODE_HASH);
   expect(ADOPTED_SHADOW_FROZEN_CODE_HASH).toBe(

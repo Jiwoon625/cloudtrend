@@ -132,7 +132,10 @@ export interface UsPendingTarget {
   signalDate: string;
   reason: string;
 }
-export function useSignalOrder(date: string, policy?: UsModelExecutionPolicy): boolean {
+export function shouldPreserveUsSignalPriority(
+  date: string,
+  policy?: UsModelExecutionPolicy,
+): boolean {
   return (policy?.accountingStartDate ?? date) >= "2026-10-12";
 }
 export function compareUsTargetOrders(
@@ -550,7 +553,9 @@ export function stepUsProspectivePortfolio(
         },
       ];
     })
-    .sort((a, b) => compareUsTargetOrders(a, b, useSignalOrder(analysis.date, executionPolicy)));
+    .sort((a, b) =>
+      compareUsTargetOrders(a, b, shouldPreserveUsSignalPriority(analysis.date, executionPolicy)),
+    );
 
   for (const o of orders.filter((x) => x.delta < 0)) {
     const p = state.positions[o.row.symbol];
@@ -588,7 +593,7 @@ export function stepUsProspectivePortfolio(
       coreRank: o.row.coreRank,
       detail: {
         targetWeight: o.pending.targetWeight,
-        ...(useSignalOrder(analysis.date, executionPolicy)
+        ...(shouldPreserveUsSignalPriority(analysis.date, executionPolicy)
           ? {
               coreRankBasis: "EXECUTION_DAY_CLOSE",
               signalPriority: o.pending.signalPriority ?? null,
@@ -645,7 +650,8 @@ export function stepUsProspectivePortfolio(
         lastPrice: o.px,
         entryDate: analysis.date,
         entryCoreRank: o.row.coreRank,
-        ...(useSignalOrder(analysis.date, executionPolicy) && o.pending.signalPriority
+        ...(shouldPreserveUsSignalPriority(analysis.date, executionPolicy) &&
+        o.pending.signalPriority
           ? {
               entrySignalDate: o.pending.signalDate,
               entrySignalPriority: { ...o.pending.signalPriority },
@@ -680,7 +686,7 @@ export function stepUsProspectivePortfolio(
       coreRank: o.row.coreRank,
       detail: {
         targetWeight: o.pending.targetWeight,
-        ...(useSignalOrder(analysis.date, executionPolicy)
+        ...(shouldPreserveUsSignalPriority(analysis.date, executionPolicy)
           ? {
               coreRankBasis: "EXECUTION_DAY_CLOSE",
               signalPriority: o.pending.signalPriority ?? null,
@@ -760,7 +766,7 @@ export function stepUsProspectivePortfolio(
                 remainingBudgetUsd: usFixedSlotBudget(allocationPolicy),
               }
             : {}),
-          ...(useSignalOrder(analysis.date, executionPolicy)
+          ...(shouldPreserveUsSignalPriority(analysis.date, executionPolicy)
             ? {
                 signalPriority: {
                   core: r.coreRank,
@@ -847,7 +853,7 @@ export function stepUsProspectivePortfolio(
       coreRank: row?.coreRank ?? null,
       detail: {
         targetWeight: pending.targetWeight,
-        ...(useSignalOrder(analysis.date, executionPolicy)
+        ...(shouldPreserveUsSignalPriority(analysis.date, executionPolicy)
           ? {
               coreRankBasis: "CURRENT_ANALYSIS_CLOSE",
               signalPriority: pending.signalPriority ?? null,
