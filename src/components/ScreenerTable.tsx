@@ -182,7 +182,6 @@ export function ScreenerTable({
     setPreviousPaginationKey(paginationKey);
     setPage(0);
   }
-  const [hidden, setHidden] = useState<string[]>([]);
 
   const sorted = useMemo(() => {
     const copy = [...rows];
@@ -218,7 +217,7 @@ export function ScreenerTable({
         ["name", "sector", "close", "technical", "scoreDelta1d", "status"].includes(c.id),
       )
     : COLUMNS;
-  const visible = columns.filter((c) => !hidden.includes(c.id));
+  const visible = columns;
 
   const pageCount = Math.max(1, Math.ceil(sorted.length / 100));
   const currentPage = Math.min(page, pageCount - 1);
@@ -283,6 +282,7 @@ export function ScreenerTable({
     return (
       <th
         key={col.id}
+        aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}
         className="sticky top-0 z-10 whitespace-nowrap bg-surface-strong px-2 py-2 text-right text-[11px] font-semibold"
       >
         <button
@@ -315,22 +315,6 @@ export function ScreenerTable({
         <Button size="sm" variant="outline" onClick={downloadCsv}>
           <Download className="size-3.5" /> CSV 다운로드
         </Button>
-        <div className="flex flex-wrap gap-1">
-          {columns
-            .filter((c) => !["rank", "name"].includes(c.id))
-            .map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() =>
-                  setHidden((h) => (h.includes(c.id) ? h.filter((x) => x !== c.id) : [...h, c.id]))
-                }
-                className={`rounded border px-1.5 py-0.5 text-[10px] ${hidden.includes(c.id) ? "border-border text-muted-foreground line-through" : "border-primary/30 bg-info-soft text-info"}`}
-              >
-                {c.label}
-              </button>
-            ))}
-        </div>
         <span className="ml-auto text-xs text-muted-foreground">
           {sorted.length}건 · {currentPage + 1}/{pageCount}페이지
         </span>

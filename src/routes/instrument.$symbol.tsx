@@ -10,6 +10,7 @@ import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
 import { Link, createFileRoute, notFound } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
 
+import { HoldingsAvailability } from "@/components/HoldingsAvailability";
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
 import { BreakdownTable } from "@/components/BreakdownTable";
@@ -65,12 +66,20 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
 function InstrumentDetail() {
   const { symbol } = Route.useParams();
   const { data: payload } = useSuspenseQuery(analysisQueryOptions);
-  const { data: positionContext } = useQuery({
+  const positions = useQuery({
     queryKey: ["domestic-position-context"],
     queryFn: loadDomesticPositionContext,
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
+  const positionContext = positions.isSuccess ? positions.data : undefined;
+  const holdingsNotice = (
+    <HoldingsAvailability
+      ready={positions.isSuccess}
+      failed={positions.isError}
+      retry={positions.refetch}
+    />
+  );
   const [showLog, setShowLog] = useState(false);
   const analysis = payload.analysis;
   const originalRow = analysis.rows.find((item) => item.instrument.symbol === symbol);
@@ -90,6 +99,7 @@ function InstrumentDetail() {
       <EtfInstrumentDetail
         row={row}
         calculatedAt={analysis.calculatedAt}
+        holdingsNotice={holdingsNotice}
         held={positionContext?.heldSymbols.includes(symbol)}
       />
     );
@@ -203,6 +213,7 @@ function InstrumentDetail() {
 
   return (
     <AppShell>
+      {holdingsNotice}
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight">

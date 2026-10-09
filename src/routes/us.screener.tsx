@@ -110,7 +110,7 @@ export function UsScreenerPage() {
       },
       {
         step: "3",
-        label: "Confirm 통과",
+        label: "확인 조건 통과",
         description: "A0/A2 TK 상위 20% 이내 · B3 RelVol 상위 20% 이내",
         a0: aggressiveConfirm.length,
         b3: balancedConfirm.length,
@@ -262,7 +262,7 @@ export function UsScreenerPage() {
               <h1 className="text-xl font-bold">US 스크리너</h1>
               <Badge>A0 PRIMARY</Badge>
             </div>
-            <p className="mt-1 text-[11px] text-muted-foreground">
+            <p className="mt-1 text-xs text-muted-foreground">
               기준일 {query.data?.analysis.date ?? "-"} · 전략{" "}
               {query.data?.analysis.ruleVersion ?? "미확인"} · 자료 {rows.length}종목
             </p>
@@ -398,11 +398,11 @@ export function UsScreenerPage() {
             <div className="flex flex-wrap gap-1">
               {(
                 [
-                  ["PRIMARY_ENTRY", "A0 신규진입"],
+                  ["PRIMARY_ENTRY", "A0 진입 준비"],
                   ["PRIMARY_WATCH", "A0 보유·관찰 후보"],
                   ["PRIMARY_EXIT", "A0 청산"],
-                  ["A2_ENTRY", "A2 Shadow 진입"],
-                  ["B3_ENTRY", "B3 Shadow 진입"],
+                  ["A2_ENTRY", "A2 Shadow 진입 준비"],
+                  ["B3_ENTRY", "B3 Shadow 진입 준비"],
                   ["ALL", "산정 가능 전체"],
                 ] as Array<[Filter, string]>
               ).map(([id, label]) => (
@@ -412,7 +412,7 @@ export function UsScreenerPage() {
                     setFilter(id);
                     setPage(0);
                   }}
-                  className={`rounded-full border px-2.5 py-1 text-[11px] ${filter === id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card"}`}
+                  className={`rounded-full border px-2.5 py-1 text-xs ${filter === id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card"}`}
                 >
                   {label}
                 </button>
@@ -495,7 +495,7 @@ export function UsScreenerPage() {
               </Button>
             </nav>
             <div className="overflow-x-auto rounded-lg border border-border bg-card">
-              <table className="w-full min-w-[1280px] text-[11px]">
+              <table className="w-full min-w-[1280px] text-xs">
                 <thead>
                   <tr className="border-b bg-surface-strong text-muted-foreground [&>th]:px-2 [&>th]:py-2 [&>th]:text-right">
                     <SortableHeader
@@ -707,9 +707,9 @@ function ScreenerRow({ row: r, held }: { row: UsProspectiveCacheRow; held: boole
         )}
       </td>
       <td className="!text-left text-[10px]">
-        {r.a2Entry ? "A2 E " : ""}
+        {r.a2Entry ? "A2 진입 준비 " : ""}
         {held && r.a2Exit ? "A2 X " : ""}
-        {r.b3Entry ? "B3 E " : ""}
+        {r.b3Entry ? "B3 진입 준비 " : ""}
         {held && r.b3Exit ? `B3 X${r.b3BetaExit ? "(β)" : ""}` : ""}
       </td>
     </tr>

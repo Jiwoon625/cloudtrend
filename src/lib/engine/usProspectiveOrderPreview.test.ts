@@ -579,6 +579,12 @@ it.each([a0!, b3!])(
     expect(
       filled.trades.filter((t) => t.side === "BUY" && t.status !== "PENDING").map((t) => t.symbol),
     ).toEqual(expected);
+    const firstFill = filled.trades.find((t) => t.side === "BUY" && t.status !== "PENDING")!;
+    expect(firstFill.coreRank).toBe(0.99);
+    expect(firstFill.detail["coreRankBasis"]).toBe("EXECUTION_DAY_CLOSE");
+    expect(firstFill.detail["signalPriority"]).toMatchObject({ core: 0.95 });
+    expect(filled.state.positions[expected[0]!]!.entrySignalPriority?.core).toBe(0.95);
+    expect(filled.state.positions[expected[0]!]!.entrySignalDate).toBe("2026-10-12");
     const preview = buildUsOrderPreview(config, planned.state, q)!.nextSession;
     expect(preview.rows.filter((r) => r.side === "BUY").map((r) => r.symbol)).toEqual(expected);
   },

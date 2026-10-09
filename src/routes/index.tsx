@@ -285,7 +285,7 @@ function DashboardContent({
 
       <DashboardSignalCounts query={operations} counts={summary.counts} />
       <DashboardSignalLists query={operations} />
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="space-y-4">
         <div className="space-y-4">
           <Card
             title="KOSPI / KOSDAQ 포트폴리오"

@@ -5,7 +5,7 @@ import { ScreenerTable } from "./ScreenerTable";
 import { ScreenerView } from "./ScreenerView";
 import { CompactStockStatus } from "./CompactStockStatus";
 import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
-const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0 }));
+const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0, positionsFailed: false }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useState: (initial: unknown) => {
@@ -24,7 +24,12 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, ...props }: { children: ReactNode }) => <a {...props}>{children}</a>,
 }));
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => ({ data: { heldSymbols: [], lastSellDateBySymbol: {} } }),
+  useQuery: () => ({
+    data: { heldSymbols: [], lastSellDateBySymbol: {} },
+    isSuccess: !hooks.positionsFailed,
+    isError: hooks.positionsFailed,
+    refetch: vi.fn(),
+  }),
 }));
 vi.mock("@/lib/portfolioPositionContext", () => ({ loadDomesticPositionContext: vi.fn() }));
 const date = "2026-10-08";
@@ -158,18 +163,28 @@ describe("compact stock screener", () => {
     expect(html).toContain("주식 핵심 목록");
     expect(html).not.toContain("기준일 시가총액 미확인 · 판단 보류");
   });
-  it("allows repeated core-column hide/show without restoring removed columns", () => {
-    let view = render();
-    const toggle = () => {
-      view.nodes.find((node) => node.type === "button" && node.props.children === "상태")!.props
-        .onClick!();
-      view = render();
-    };
-    toggle();
-    expect((view.html.match(/<th(?:\s|>)/g) ?? []).length).toBe(5);
-    toggle();
+  it("keeps the same fixed core columns and accessible sorting as other screeners", () => {
+    const view = render();
     expect((view.html.match(/<th(?:\s|>)/g) ?? []).length).toBe(6);
+    expect(view.html).toContain('aria-sort="none"');
+    expect(
+      view.nodes.some((node) => node.type === "button" && node.props.children === "상태"),
+    ).toBe(false);
     for (const label of removed) expect(view.html).not.toContain(`>${label}<`);
+  });
+  it("marks failed KR holdings unknown with retry and disables the exit preset", () => {
+    hooks.positionsFailed = true;
+    const analysis = {
+      asOfDate: date,
+      rows: [row()],
+      tradeDates: [date],
+      marketGate: { status: "RISK_OFF", metCount: 0 },
+    } as AnalysisResult;
+    const html = renderToStaticMarkup(<ScreenerView mode="STOCK" analysis={analysis} />);
+    expect(html).toContain("보유 자료 조회 실패");
+    expect(html).toContain("보유 청산 (미확인)");
+    expect(html).toContain("다시 시도");
+    hooks.positionsFailed = false;
   });
   it("preserves technical sorting through repeated ascending/descending clicks", () => {
     const rows = [row("LOW", 7), row("HIGH", 9.5)];

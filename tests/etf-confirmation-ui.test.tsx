@@ -13,6 +13,7 @@ function page(
   state: "pending" | "confirmed" | "rejected",
   ledger?: DualPortfolioState,
   dataPending = false,
+  positionsAvailable = true,
 ) {
   const analysis = {
     asOfDate: date,
@@ -57,7 +58,20 @@ function page(
       },
     ],
   } as unknown as AnalysisResult;
-  return renderToStaticMarkup(<EtfScreener analysis={analysis} {...(ledger ? { ledger } : {})} />);
+  return renderToStaticMarkup(
+    <EtfScreener
+      analysis={analysis}
+      {...(ledger ? { ledger } : {})}
+      {...(positionsAvailable && ledger
+        ? {
+            positionContext: {
+              heldSymbols: ledger.etfActual.positions.map((p) => p.symbol),
+              lastSellDateBySymbol: {},
+            },
+          }
+        : {})}
+    />,
+  );
 }
 const book = {
   document: { executions: [] },
@@ -65,6 +79,12 @@ const book = {
   etfTrackedSymbols: [],
 } as unknown as DualPortfolioState;
 describe("ETF screener rendered state contract", () => {
+  it("does not present a partial actual-only holding read as a complete holding union", () => {
+    const html = page("confirmed", book, false, false);
+    expect(html).toContain("보유 미확인 · 청산 판정 대기");
+    expect(html).toContain("보유 확인 대기");
+    expect(html).not.toContain("진입 준비 · 다음 시가 진입");
+  });
   it("labels batch arrival separately from a normal exit", () => {
     const html = page("confirmed", book, true);
     expect(html).toContain("KRX 금액·기초지수 자료가 일괄 미수신");
@@ -90,7 +110,7 @@ describe("ETF screener rendered state contract", () => {
     expect(html).not.toContain('aria-label="360750 주문가격"');
   });
   it("requires real holdings and suppresses held or consumed entries", () => {
-    expect(page("confirmed")).toContain("보유정보 확인 필요");
+    expect(page("confirmed")).toContain("보유 미확인 · 청산 판정 대기");
     expect(page("confirmed")).not.toContain('aria-label="360750 주문가격"');
     expect(page("confirmed", { ...book, etfTrackedSymbols: ["360750"] })).not.toContain(
       "보유 · 추가 매수 없음",

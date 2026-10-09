@@ -76,7 +76,10 @@ export interface UsPortfolioPosition {
   shares: number;
   lastPrice: number;
   entryDate: string;
+  /** Execution-day close rank, retained for legacy compatibility; never allocation priority. */
   entryCoreRank: number | null;
+  entrySignalDate?: string;
+  entrySignalPriority?: UsPendingTarget["signalPriority"];
 }
 export const US_FIXED_SLOT_EFFECTIVE_DATE = "2026-10-05";
 export interface UsFixedSlotAllocationPolicy {
@@ -583,7 +586,15 @@ export function stepUsProspectivePortfolio(
       modelNotional: notional,
       feeUsd: fee,
       coreRank: o.row.coreRank,
-      detail: { targetWeight: o.pending.targetWeight },
+      detail: {
+        targetWeight: o.pending.targetWeight,
+        ...(useSignalOrder(analysis.date, executionPolicy)
+          ? {
+              coreRankBasis: "EXECUTION_DAY_CLOSE",
+              signalPriority: o.pending.signalPriority ?? null,
+            }
+          : {}),
+      },
     });
     if (p.shares <= 0) delete state.positions[o.row.symbol];
     if (!partial) delete state.pendingTargets[o.row.symbol];
@@ -634,6 +645,12 @@ export function stepUsProspectivePortfolio(
         lastPrice: o.px,
         entryDate: analysis.date,
         entryCoreRank: o.row.coreRank,
+        ...(useSignalOrder(analysis.date, executionPolicy) && o.pending.signalPriority
+          ? {
+              entrySignalDate: o.pending.signalDate,
+              entrySignalPriority: { ...o.pending.signalPriority },
+            }
+          : {}),
       };
     const partial =
       state.positions[o.row.symbol]!.shares < o.desired &&
@@ -661,7 +678,15 @@ export function stepUsProspectivePortfolio(
       modelNotional: notional,
       feeUsd: fee,
       coreRank: o.row.coreRank,
-      detail: { targetWeight: o.pending.targetWeight },
+      detail: {
+        targetWeight: o.pending.targetWeight,
+        ...(useSignalOrder(analysis.date, executionPolicy)
+          ? {
+              coreRankBasis: "EXECUTION_DAY_CLOSE",
+              signalPriority: o.pending.signalPriority ?? null,
+            }
+          : {}),
+      },
     });
     if (!partial) delete state.pendingTargets[o.row.symbol];
   }
@@ -820,7 +845,15 @@ export function stepUsProspectivePortfolio(
       modelNotional: Math.abs(deltaNotional),
       feeUsd: 0,
       coreRank: row?.coreRank ?? null,
-      detail: { targetWeight: pending.targetWeight },
+      detail: {
+        targetWeight: pending.targetWeight,
+        ...(useSignalOrder(analysis.date, executionPolicy)
+          ? {
+              coreRankBasis: "CURRENT_ANALYSIS_CLOSE",
+              signalPriority: pending.signalPriority ?? null,
+            }
+          : {}),
+      },
     });
   }
 

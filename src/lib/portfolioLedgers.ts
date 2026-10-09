@@ -415,7 +415,7 @@ export function simulateStrategy(
         markDate: plan.exitDate,
         currentPrice: plan.exitPrice,
         currentStatus: "전략 청산",
-        holdingDays: (bars[t.symbol] ?? []).filter(
+        holdingDays: ((unified ? entryBars : bars)[t.symbol] ?? []).filter(
           (b) => b.tradeDate >= t.entryDate && b.tradeDate <= plan.exitDate,
         ).length,
       });
@@ -641,8 +641,10 @@ export function simulateStrategy(
     t.currentTechnicalPoints = current?.technicalPoints ?? null;
     t.currentPriorityPoints = current?.priorityPoints ?? null;
     t.currentStatus = q?.exitSignal ? "전략 청산 대기" : "전략 보유";
-    t.holdingDays = (bars[t.symbol] ?? []).filter(
-      (b) => b.tradeDate >= t.entryDate && b.tradeDate <= t.markDate!,
+    t.holdingDays = ((unified ? entryBars : bars)[t.symbol] ?? []).filter(
+      (b) =>
+        b.tradeDate >= t.entryDate &&
+        b.tradeDate <= (unified ? (latest ?? t.markDate!) : t.markDate!),
     ).length;
     const v = t.shares * t.currentPrice;
     value += v;

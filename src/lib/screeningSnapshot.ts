@@ -34,6 +34,10 @@ export interface SnapshotEntry {
 }
 
 export interface ScreeningSnapshot {
+  dataHash?: string;
+  historySource?: "US_DAILY";
+  /** DB insertion time; never substituted for analysis or publication time. */
+  storedAt?: string;
   runId?: string;
   strategyVersion?: string;
   market?: "KR" | "US";

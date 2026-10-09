@@ -13,6 +13,9 @@ export const Route = createFileRoute("/history-instrument/$symbol")({
     runId: String(s["runId"] ?? ""),
     date: String(s["date"] ?? ""),
     savedAt: String(s["savedAt"] ?? ""),
+    market: String(s["market"] ?? "KR"),
+    strategyVersion: String(s["strategyVersion"] ?? ""),
+    dataHash: String(s["dataHash"] ?? ""),
   }),
   head: () => ({ meta: [{ title: "과거 신호 근거 | CloudTrend" }] }),
   component: HistoricalInstrument,
@@ -22,7 +25,7 @@ function HistoricalInstrument() {
     search = Route.useSearch();
   const q = useQuery({
     queryKey: ["historical-instrument", search],
-    queryFn: () => readScreeningArchive(search.runId, search.date, search.savedAt),
+    queryFn: () => readScreeningArchive(search.runId, search.date, search.savedAt, search),
     retry: false,
   });
   const s = q.data,
@@ -36,7 +39,9 @@ function HistoricalInstrument() {
       {q.isPending ? (
         <p>기록 불러오는 중…</p>
       ) : q.error ? (
-        <p role="alert">{q.error.message}</p>
+        <div role="alert">
+          {q.error.message} <button onClick={() => void q.refetch()}>다시 시도</button>
+        </div>
       ) : !row ? (
         <p>해당 실행에 종목 기록이 없습니다.</p>
       ) : (
@@ -48,13 +53,42 @@ function HistoricalInstrument() {
             <br />
             {s!.runId ? "실제 분석시각" : "과거 저장시각"} {formatKstDateTime(s!.savedAt)}
           </p>
+          {s!.storedAt ? (
+            <p className="text-xs text-muted-foreground">
+              기록 저장시각 {formatKstDateTime(s!.storedAt)} · 게시시각 미기록
+            </p>
+          ) : null}
           <section className="rounded-lg border p-4">
             <h2 className="text-sm font-semibold">당시 저장된 판정</h2>
             <p>{historyEntryStatus(row)}</p>
-            <p className="text-sm">
-              기술점수 {row.technicalPoints ?? "미관측"} · 우선점수 {row.priorityPoints} · 자격{" "}
-              {row.hardFilterStatus ?? (row.hardFilterPassed ? "PASS" : "FAIL")}
-            </p>
+            {row.market === "US" ? (
+              <div className="text-sm">
+                <p>
+                  {["coreRank", "betaRank", "tkRank", "relvolRank"]
+                    .map((key) => `${key.replace("Rank", "")} ${row.evidence?.[key] ?? "미관측"}`)
+                    .join(" · ")}
+                </p>
+                <p>
+                  자격{" "}
+                  {typeof row.evidence?.["eligibleBase"] === "boolean"
+                    ? row.evidence["eligibleBase"]
+                      ? "PASS"
+                      : "FAIL"
+                    : "미기록"}{" "}
+                  · 원신호{" "}
+                  {typeof row.evidence?.["rawOnset"] === "boolean"
+                    ? row.evidence["rawOnset"]
+                      ? "발생"
+                      : "없음"
+                    : "미기록"}
+                </p>
+              </div>
+            ) : (
+              <p className="text-sm">
+                기술점수 {row.technicalPoints ?? "미관측"} · 우선점수 {row.priorityPoints} · 자격{" "}
+                {row.hardFilterStatus ?? (row.hardFilterPassed ? "PASS" : "FAIL")}
+              </p>
+            )}
             <p className="text-xs">{row.pendingRules?.join(" · ")}</p>
             <OnsetProfileDetails profile={row.onsetProfile} />
             {row.kospiEntry ? <KospiEntryDetails entry={row.kospiEntry} /> : null}
@@ -64,7 +98,7 @@ function HistoricalInstrument() {
             <pre className="mt-3 overflow-auto text-xs">
               {JSON.stringify(row.evidence ?? row, null, 2)}
             </pre>
-            {!row.evidence ? (
+            {!row.evidence || s!.historySource === "US_DAILY" ? (
               <p className="text-xs text-muted-foreground">
                 이 과거 기록에는 저장된 신호·점수만 포함되어 있습니다. 당시 저장하지 않은 산식
                 세부값은 재구성하지 않습니다.

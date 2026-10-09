@@ -398,11 +398,19 @@ export function OctoberShadowSummaryContent({
                     {book.valuationStatus === "STALE" ? "일부 이전 시세 포함" : "자료 미확인"}
                   </p>
                 ) : null}
-                {book.warnings.map((warning) => (
-                  <p key={warning} role="alert" className="text-xs text-destructive">
-                    {warning}
-                  </p>
-                ))}
+                {book.warnings.length ? (
+                  <details
+                    open={book.status === "UNAVAILABLE" || book.valuationStatus === "MISSING"}
+                    className="rounded border p-2 text-xs"
+                  >
+                    <summary>계산·자료 진단 ({book.warnings.length})</summary>
+                    {book.warnings.map((warning) => (
+                      <p key={warning} className="mt-2 text-warn">
+                        {warning}
+                      </p>
+                    ))}
+                  </details>
+                ) : null}
                 {book.tax ? (
                   <UsTaxEstimatePanel
                     estimate={book.tax}
