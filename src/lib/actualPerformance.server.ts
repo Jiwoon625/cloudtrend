@@ -8,6 +8,7 @@ import {
   actualPerformanceView,
   appendActualPerformanceObservation,
   confirmActualPerformanceBaseline,
+  reconciliationDate,
   pendingActualPerformance,
   type ActualPerformanceSeries,
   type PerformanceBaseline,
@@ -117,6 +118,7 @@ async function prepareReviewedActualPerformance(
         throw new Error("Baseline source revisions no longer match the reconciled KR/US ledgers");
     }
     if (
+      input.baseline.betaArchive.asOfDate > reconciliationDate(now) ||
       Date.parse(input.baseline.confirmedAt) > Date.parse(now) ||
       Date.parse(input.baseline.valuation.recordedAt) > Date.parse(now)
     )

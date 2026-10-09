@@ -12,6 +12,7 @@ import {
 import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
 import {
   nextConfirmedEntry,
+  deriveExitPlan as unifiedExitPlan,
   normalizeSnapshots,
   heldDuringEntryWindow,
 } from "./portfolioStrategyRules";
@@ -182,5 +183,19 @@ describe("confirmation execution guards", () => {
     expect(
       heldDuringEntryWindow({ ...t, exitDate: "2026-09-30" }, "A", "2026-10-01", "2026-10-06"),
     ).toBe(false);
+  });
+});
+
+it("carries H60 with a missing maturity close to the next executable open, without requiring that next close", () => {
+  const prices = bars.map((b) => ({ ...b, volume: 100 }));
+  prices[59]!.close = 0;
+  prices[60]!.close = 0;
+  const dates = prices.map((b) => b.tradeDate);
+  expect(unifiedExitPlan(trade, [], prices, dates[59]!, dates, dates)).toBeNull();
+  expect(unifiedExitPlan(trade, [], prices, dates[60]!, dates, dates)).toMatchObject({
+    exitDate: dates[60],
+    exitPrice: prices[60]!.open,
+    timing: "OPEN",
+    reason: "60거래일 만기",
   });
 });

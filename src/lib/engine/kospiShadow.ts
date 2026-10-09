@@ -520,7 +520,18 @@ export function stepKospiShadow(
     }
     candidates.push(c);
   }
-  state.pendingEntries = carriedEntries;
+  state.pendingEntries = unified
+    ? carriedEntries.filter((candidate) => {
+        const cancelled =
+          candidate.originDate < session.date &&
+          up95(state.previousRows[candidate.symbol]?.score, rows.get(candidate.symbol)?.score);
+        if (cancelled) {
+          candidate.status = "EXCLUDED";
+          candidate.reason = "UP95_CANCELLED_PENDING_ENTRY";
+        }
+        return !cancelled;
+      })
+    : carriedEntries;
   for (const p of Object.values(state.positions)) {
     const row = rows.get(p.symbol);
     if (

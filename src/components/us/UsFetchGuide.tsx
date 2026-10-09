@@ -86,9 +86,9 @@ for sym in BENCH + SECTOR + ETFS + STOCKS:
         })
 
 df = pd.DataFrame(rows).dropna(subset=["close"]).drop_duplicates(["symbol","date"])
-df.to_csv("trendscore_us_input.csv", index=False, encoding="utf-8-sig")
+df.to_csv("cloudtrend_us_input.csv", index=False, encoding="utf-8-sig")
 print(df.groupby("symbol").size().describe())
-# → 생성된 trendscore_us_input.csv를 “2. 데이터 입력” 칸에 업로드하세요.
+# → 생성된 cloudtrend_us_input.csv를 “2. 데이터 입력” 칸에 업로드하세요.
 `;
 
 const COLUMNS: Array<[string, string, string]> = [

@@ -1,8 +1,8 @@
 import { MarketDataContent } from "@/components/MarketDataPage";
-import { StrategyDescription } from "@/components/StrategyDescription";
+
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Database, Play, ShieldCheck } from "lucide-react";
+import { Database, Play } from "lucide-react";
 import { useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
@@ -24,11 +24,10 @@ export const Route = createFileRoute("/scoring")({
       { title: "데이터 입력 및 V8 Final 산식 | CloudTrend" },
       {
         name: "description",
-        content:
-          "CloudTrend V8 Final 10점 기술점수, KOSPI 하루 확인·RSAccel·하락장 신규진입 차단과 KOSDAQ 원신호·Exit 규칙과 우선점수 구조를 확인하고 스크리닝 데이터를 입력합니다.",
+        content: "CloudTrend 한국·ETF·미국 자료 입력, 수집 상태와 기술점수 산식을 확인합니다.",
       },
       { property: "og:title", content: "데이터 입력 및 V8 Final 산식 | CloudTrend" },
-      { property: "og:description", content: "검증 완료된 V8 Final 운영모델과 데이터 입력 화면." },
+      { property: "og:description", content: "CloudTrend 데이터 입력, 상태와 계산 산식." },
     ],
   }),
   component: ScoringPage,
@@ -124,6 +123,36 @@ function ScoringPage() {
       </section>
 
       <MarketDataContent />
+      <details className="mt-4 rounded-lg border p-3">
+        <summary className="cursor-pointer text-sm font-semibold">
+          계산 산식 · {VF_MODEL_LABEL}
+        </summary>
+        <Section
+          title="기술점수 구성요소"
+          desc="각 조건의 충족 점수를 합산합니다. 채택·실험 전략의 진입·청산 규칙은 운영규칙 탭에서 관리합니다."
+        >
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr>
+                  <th>구성요소</th>
+                  <th>배점</th>
+                  <th>산식·판정</th>
+                </tr>
+              </thead>
+              <tbody>
+                {FEATURES.map(([name, weight, formula]) => (
+                  <tr key={name} className="border-t">
+                    <td className="py-2">{name}</td>
+                    <td>{weight}</td>
+                    <td>{formula}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      </details>
     </AppShell>
   );
 }

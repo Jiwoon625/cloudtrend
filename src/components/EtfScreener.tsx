@@ -97,10 +97,6 @@ export function EtfScreener({
   const heldSymbols = [
     ...(positionContext?.heldSymbols ?? []),
     ...(ledger?.etfActual?.positions.map((p) => p.symbol) ?? []),
-    ...(ledger?.etfTrackedSymbols ?? []).filter(
-      (symbol) =>
-        !ledger?.document.executions.some((e) => e.market === "ETF" && e.symbol === symbol),
-    ),
   ];
   const heldSet = new Set(heldSymbols);
   const blocked = (r: AnalysisResult["rows"][number]) =>

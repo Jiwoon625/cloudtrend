@@ -494,3 +494,45 @@ describe("fixed20 prospective order previews", () => {
     expect(isUsOrderPreviewBundle(preview, s.lastDate!)).toBe(true);
   });
 });
+
+it("spends cash in frozen signal priority in both preview and operating execution, not share-count order", () => {
+  const s = state("2026-10-12");
+  s.initializedDate = "2026-10-12";
+  s.cash = 100000;
+  s.positions = {};
+  s.allocationPolicy = usFixedSlotAllocationPolicy(100000);
+  const q = Array.from({ length: 20 }, (_, i) => ({
+    symbol: i === 0 ? "HIGH" : `LOW${i}`,
+    name: `synthetic${i}`,
+    sector: "IT",
+    close: i === 0 ? 100 : 5000,
+    date: s.lastDate!,
+  }));
+  s.adv20BySymbol = Object.fromEntries(q.map((r) => [r.symbol, 1e9]));
+  s.pendingTargets = Object.fromEntries(
+    q.map((r, i) => [
+      r.symbol,
+      {
+        symbol: r.symbol,
+        targetWeight: 0.05,
+        fixedBudgetUsd: "5000",
+        remainingBudgetUsd: "5000",
+        signalDate: s.lastDate!,
+        reason: "ENTRY_ONSET80",
+        signalPriority: { core: 1 - i / 100, beta: 1, confirmation: 1 },
+      },
+    ]),
+  );
+  const preview = buildUsOrderPreview(a0!, s, q)!.nextSession;
+  const day = analysis("2026-10-13", q);
+  // Execution-day ranks reverse, but are not available when these open orders are placed.
+  day.rows.forEach((r, i) => {
+    r.coreRank = i === 0 ? 0.8 : 1;
+  });
+  const result = stepUsProspectiveOperatingPortfolio(a0!, day, s, 100000);
+  expect(result.state.positions["HIGH"]?.shares).toBe(50);
+  expect(preview.rows.find((r) => r.symbol === "HIGH")?.estimatedShares).toBe(50);
+  expect(preview.cashAfterUsd).toBeCloseTo(result.state.cash, 6);
+  for (const r of preview.rows)
+    expect(r.estimatedShares).toBe(result.state.positions[r.symbol]?.shares ?? 0);
+});

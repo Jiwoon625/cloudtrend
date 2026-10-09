@@ -624,3 +624,41 @@ describe("new-capital allocations bind to existing real fills", () => {
     expect(db.writes).toHaveLength(2);
   });
 });
+
+it("rejects beta dates beyond evidence/current Korean day but accepts a Saturday review of Friday", async () => {
+  const db = client();
+  const b = baseline();
+  b.confirmedAt = "2026-10-09T09:00:00Z";
+  b.valuation.recordedAt = b.confirmedAt;
+  b.betaArchive.asOfDate = "2026-10-11";
+  await expect(
+    previewReviewedActualPerformance(
+      db.value,
+      uid,
+      { action: "confirmBaseline", expectedRevision: 8, baseline: b },
+      "2026-10-09T10:00:00Z",
+    ),
+  ).rejects.toThrow(/Future|boundary/);
+  b.betaArchive.asOfDate = "2026-10-10";
+  // The same instant with an offset must use the Korean date, not the textual prefix.
+  b.confirmedAt = "2026-10-09T16:00:00Z";
+  b.valuation.recordedAt = "2026-10-10T01:00:00+09:00";
+  await expect(
+    previewReviewedActualPerformance(
+      db.value,
+      uid,
+      { action: "confirmBaseline", expectedRevision: 8, baseline: b },
+      "2026-10-09T17:00:00Z",
+    ),
+  ).resolves.toBeDefined();
+  b.betaArchive.asOfDate = "2026-10-09";
+  await expect(
+    previewReviewedActualPerformance(
+      db.value,
+      uid,
+      { action: "confirmBaseline", expectedRevision: 8, baseline: b },
+      "2026-10-10T10:00:00Z",
+    ),
+  ).resolves.toBeDefined();
+  expect(db.writes).toEqual([]);
+});

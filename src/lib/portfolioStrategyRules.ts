@@ -361,11 +361,15 @@ export function deriveExitPlan(
         ]
       : undefined;
   const timeExecution =
-    unified && timeBar && !tradable(timeBar)
+    unified &&
+    timeBar &&
+    (!tradable(timeBar) || !Number.isFinite(timeBar.close) || timeBar.close <= 0)
       ? bars.find((bar) => bar.tradeDate > timeBar.tradeDate && tradable(bar))
       : timeBar;
   const timePlan: ExitPlan | null =
-    timeExecution && timeExecution.tradeDate <= latestDate && timeExecution.close > 0
+    timeExecution &&
+    timeExecution.tradeDate <= latestDate &&
+    (timeExecution !== timeBar || (Number.isFinite(timeExecution.close) && timeExecution.close > 0))
       ? {
           signalDate: null,
           exitDate: timeExecution.tradeDate,

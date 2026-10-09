@@ -68,7 +68,7 @@ export interface ShadowReplayStatusSummary {
   modelDecisionAt: string | null;
   executionAt: string | null;
   replayMode: "CONTEMPORANEOUS" | "RETROSPECTIVE";
-  status: "RECORDED" | "REUSED" | "WAITING_INPUT" | "FAILED";
+  status: "RECORDED" | "REUSED" | "WAITING_INPUT" | "FAILED" | "RESOLVED";
   reason: string | null;
 }
 export interface OctoberShadowSummary {
@@ -509,8 +509,39 @@ export async function loadOctoberShadowSummaryForOwner(
   const replayStatus: ShadowReplayStatusSummary[] = [];
   if (!replayQuery.error) {
     for (const market of ["KR", "US"] as const) {
-      const row = (replayQuery.data ?? []).find((item) => item.market === market);
+      const row = (replayQuery.data ?? []).find(
+        (item) =>
+          item.market === market &&
+          (version === RESTART_SERIES_VERSION
+            ? String(item.signal_date) >= "2026-10-12"
+            : String(item.signal_date) < "2026-10-12"),
+      );
       if (!row) continue;
+      let resolved = false;
+      if (row.status === "WAITING_INPUT" || row.status === "FAILED") {
+        const expected = books.filter(
+          (book) => (book.kind.startsWith("US_") ? "US" : "KR") === market,
+        );
+        // Exact immutable session matches, across every market book. Never infer from a newer date.
+        const sessions = await client
+          .from("ledger_model_sessions")
+          .select("series_id,session_date")
+          .eq("user_id", uid)
+          .eq("session_date", String(row.signal_date))
+          .in(
+            "series_id",
+            expected.map((book) => book.bookId),
+          );
+        resolved =
+          !sessions.error &&
+          expected.length > 0 &&
+          expected.every((book) =>
+            (sessions.data ?? []).some(
+              (session) =>
+                session.series_id === book.bookId && session.session_date === row.signal_date,
+            ),
+          );
+      }
       replayStatus.push({
         market,
         signalDate: String(row.signal_date),
@@ -519,8 +550,9 @@ export async function loadOctoberShadowSummaryForOwner(
         modelDecisionAt: row.model_decision_at ? String(row.model_decision_at) : null,
         executionAt: row.execution_at ? String(row.execution_at) : null,
         replayMode: row.replay_mode === "RETROSPECTIVE" ? "RETROSPECTIVE" : "CONTEMPORANEOUS",
-        status:
-          row.status === "WAITING_INPUT"
+        status: resolved
+          ? "RESOLVED"
+          : row.status === "WAITING_INPUT"
             ? "WAITING_INPUT"
             : row.status === "FAILED"
               ? "FAILED"

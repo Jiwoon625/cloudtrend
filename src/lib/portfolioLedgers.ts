@@ -449,6 +449,31 @@ export function simulateStrategy(
         });
       continue;
     }
+    // Cancel only an observed exit after the originating signal and before this open.
+    // An origin-day KOSDAQ U9 retains its existing entry priority; unknown rows do not cancel.
+    if (
+      unified &&
+      snapshots.some(
+        (snapshot) =>
+          snapshot.asOfDate > (c.originDate ?? c.signalDate) &&
+          snapshot.asOfDate < (c.entryDate ?? "9999") &&
+          snapshot.asOfDate <= (latest ?? "") &&
+          snapshot.entries.some(
+            (entry) => entry.symbol === c.symbol && operationalExit(entry, c.market, true),
+          ),
+      )
+    ) {
+      const cancelled = {
+        ...c,
+        entryDate: null,
+        price: null,
+        decision: "청산 신호 관측 · 미체결 진입 취소",
+      };
+      const prior = candidates.findIndex((item) => item.key === c.key);
+      if (prior >= 0) candidates[prior] = cancelled;
+      else candidates.push(cancelled);
+      continue;
+    }
     const priorCandidate = candidates.findIndex((item) => item.key === c.key);
     if (priorCandidate >= 0) candidates[priorCandidate] = c;
     else candidates.push(c);

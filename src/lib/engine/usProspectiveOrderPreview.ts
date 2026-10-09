@@ -6,6 +6,8 @@ import {
   usFixedSlotPendingTargets,
   usFixedSlotBudget,
   usOperatingOneWayCost,
+  compareUsTargetOrders,
+  useSignalOrder,
   type UsFixedSlotAllocationPolicy,
   type UsPendingTarget,
   type UsPortfolioState,
@@ -304,7 +306,13 @@ function plan(
         remainingBudget,
       };
     })
-    .sort((a, b) => a.delta - b.delta);
+    .sort((a, b) =>
+      compareUsTargetOrders(
+        { pending: a.t, delta: a.delta },
+        { pending: b.t, delta: b.delta },
+        useSignalOrder(executionDate, state.executionPolicy),
+      ),
+    );
   for (const { t, current, desired, delta, remainingBudget } of orders) {
     const r = makeRow(t.symbol, t.reason, t.targetWeight);
     r.side = delta < 0 ? "SELL" : delta > 0 ? "BUY" : "HOLD";

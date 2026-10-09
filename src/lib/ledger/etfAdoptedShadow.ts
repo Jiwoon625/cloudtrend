@@ -709,6 +709,13 @@ export async function stepEtfAdoptedShadow(
         sourceHash: signal.sourceHash,
         reason: "MA60",
       });
+    if (unified && s.exit === "MA60") {
+      // Only the close can cancel an unfilled intent; today's open has already executed.
+      for (let i = pendingEntries.length - 1; i >= 0; i--)
+        if (pendingEntries[i]!.symbol === signal.symbol && pendingEntries[i]!.originDate < s.date)
+          pendingEntries.splice(i, 1);
+      continue;
+    }
     if (s.exit === "DATA_UNAVAILABLE") issue(signal.symbol, "SIGNAL_DATA_UNAVAILABLE", "CLOSE");
     if (
       s.entryState === "pending" &&

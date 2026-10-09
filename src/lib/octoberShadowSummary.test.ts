@@ -189,3 +189,77 @@ it("consolidation waits for all eight verified holdings/tax shapes, including ex
     ),
   ).toBe(false);
 });
+
+it.each([3, 2, 0])(
+  "resolves a historical wait only with all three exact US series/date sessions (%s)",
+  async (count) => {
+    const series = await Promise.all((["US_A0", "US_A2", "US_B3"] as const).map(fixtureSeries));
+    const seen: Array<{ table: string; fields: string; filters: Array<[string, unknown]> }> = [];
+    const uid = "11111111-1111-4111-8111-111111111111";
+    const client = {
+      from(table: string) {
+        const query = { table, fields: "", filters: [] as Array<[string, unknown]> };
+        seen.push(query);
+        const b = {
+          select(fields: string) {
+            query.fields = fields;
+            return b;
+          },
+          eq(k: string, v: unknown) {
+            query.filters.push([k, v]);
+            return b;
+          },
+          in(k: string, v: unknown) {
+            query.filters.push([k, v]);
+            return b;
+          },
+          order() {
+            return b;
+          },
+          range() {
+            return b;
+          },
+          limit() {
+            return b;
+          },
+          then(resolve: (v: unknown) => unknown) {
+            return Promise.resolve(
+              resolve({
+                error: null,
+                data:
+                  table === "ledger_model_series"
+                    ? series.map(registry)
+                    : table === "shadow_replay_audit"
+                      ? [
+                          { market: "US", signal_date: "2026-10-12", status: "WAITING_INPUT" },
+                          {
+                            market: "US",
+                            signal_date: "2026-10-06",
+                            calculated_at: "2026-10-08T00:00:00Z",
+                            status: "WAITING_INPUT",
+                            reason: "old missing input",
+                          },
+                        ]
+                      : query.fields === "series_id,session_date"
+                        ? series
+                            .slice(0, count)
+                            .map((s) => ({ series_id: s.bookId, session_date: "2026-10-06" }))
+                        : [],
+              }),
+            );
+          },
+        };
+        return b;
+      },
+    } as unknown as SupabaseClient;
+    const result = await loadOctoberShadowSummaryForOwner(client, uid, series[0]!.version);
+    expect(result.replayStatus[0]).toMatchObject({
+      signalDate: "2026-10-06",
+      status: count === 3 ? "RESOLVED" : "WAITING_INPUT",
+      reason: "old missing input",
+    });
+    const exact = seen.find((q) => q.fields === "series_id,session_date")!;
+    expect(exact.filters).toContainEqual(["user_id", uid]);
+    expect(exact.filters).toContainEqual(["session_date", "2026-10-06"]);
+  },
+);
