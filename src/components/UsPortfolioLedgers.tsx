@@ -294,7 +294,8 @@ export function UsPortfolioLedgers({
             </span>
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            입력한 체결만 반영 · 보유 {actual?.summary.openPositions ?? 0}종목 · 기록 한도 30종목
+            기존 원장 누적손익 · 입력한 체결만 반영 · 보유 {actual?.summary.openPositions ?? 0}종목
+            · 기록 한도 30종목
           </p>
 
           <p className="mt-2 text-xs">

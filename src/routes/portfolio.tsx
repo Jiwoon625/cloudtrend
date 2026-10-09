@@ -88,7 +88,9 @@ function SummaryCard({
         {formatWon(s.totalPnl)}{" "}
         <span className="text-base">({formatPercent(s.totalReturn, 2)})</span>
       </p>
-      <p className="text-xs text-muted-foreground">누적손익 · 기준자금 {formatWon(capital)}</p>
+      <p className="text-xs text-muted-foreground">
+        기존 원장 누적손익 · 기준자금 {formatWon(capital)}
+      </p>
       <dl className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
         {[
           [actual ? "운용자금 기준 평가자산" : "총 평가자산", s.equity],
