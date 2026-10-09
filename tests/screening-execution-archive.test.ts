@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { listScreeningArchive, readScreeningArchive } from "../src/lib/screeningArchiveQuery";
+import { QueryClient } from "@tanstack/react-query";
+import {
+  listScreeningArchive,
+  readScreeningArchive,
+  screeningArchiveQueryOptions,
+} from "../src/lib/screeningArchiveQuery";
 import { archiveScreeningRun } from "../src/lib/screeningRunArchive";
 import type { ScreeningSnapshot } from "../src/lib/screeningSnapshot";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -161,6 +166,35 @@ describe("US daily history bridge", () => {
       ).rejects.toThrow("요청한 기록과");
     },
   );
+  it("reuses a list snapshot in detail while rejecting changed archive identity", async () => {
+    fixture.us = record;
+    const client = new QueryClient();
+    const listed = (await listScreeningArchive(record.date))[0]!;
+    fixture.filters = [];
+    const first = await client.fetchQuery(screeningArchiveQueryOptions(listed));
+    const detail = await client.fetchQuery(
+      screeningArchiveQueryOptions({
+        runId: "",
+        asOfDate: record.date,
+        savedAt: record.created_at,
+        market: "US",
+        strategyVersion: record.rule_version,
+        dataHash: record.data_hash,
+      }),
+    );
+    expect(detail).toBe(first);
+    expect(fixture.filters.filter((value) => value === "us_screening_history")).toHaveLength(1);
+    await expect(
+      client.fetchQuery(
+        screeningArchiveQueryOptions({
+          ...listed,
+          dataHash: "replaced-input",
+        }),
+      ),
+    ).rejects.toThrow("요청한 기록과");
+    expect(fixture.filters.filter((value) => value === "us_screening_history")).toHaveLength(2);
+    client.clear();
+  });
   it("keeps different markets and strategy signals distinct", async () => {
     const { usHistorySnapshot, historyRecordKey, usHistorySignals } =
       await import("../src/lib/usScreeningHistory");

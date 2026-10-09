@@ -8,13 +8,9 @@ import {
   writeBinaryObject,
   writeObject,
 } from "@/lib/cloud";
-import { chartSeries, scoreHistory, type AnalysisResult } from "@/lib/engine/pipeline";
-import { historicalSectorDataset } from "@/lib/engine/historicalInstrumentScore";
+import type { AnalysisResult } from "@/lib/engine/pipeline";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
-import { ensureManualDataset, getManualDataMeta } from "@/lib/manualDataStore";
-import { computeLocalAnalysis } from "@/lib/localAnalysis";
 import type { AnalysisPayload, InstrumentDetailPayload } from "@/lib/market.functions";
-import { buildSnapshot, hydrateSnapshots, saveSnapshot } from "@/lib/screeningHistory";
 import { listRegisteredSources } from "@/lib/sourceRegistry";
 import {
   buildDashboardSummary,
@@ -62,7 +58,8 @@ async function currentInputFingerprint() {
     listRegisteredSources("screening", ["active"]),
     Promise.resolve(getActiveScoringConfig()),
   ]);
-  const meta = getManualDataMeta();
+  // Registered sources define the identity without loading the legacy CSV/parser bundle.
+  const meta = sources.length ? null : (await import("./manualDataStore")).getManualDataMeta();
   return sha256Text(
     stableCacheJson({
       version: SCREENING_CACHE_VERSION,
@@ -154,6 +151,15 @@ export async function buildAndPersistScreeningCaches(): Promise<{
   screening: ScreeningCachePayload;
   dashboard: DashboardSummary;
 }> {
+  const [
+    { ensureManualDataset },
+    { computeLocalAnalysis },
+    { buildSnapshot, hydrateSnapshots, saveSnapshot },
+  ] = await Promise.all([
+    import("./manualDataStore"),
+    import("./localAnalysis"),
+    import("./screeningHistory"),
+  ]);
   await ensureManualDataset();
   const inputFingerprint = await currentInputFingerprint();
   const previous = await readObject<ScreeningCachePayload>(await screeningPath());
@@ -244,6 +250,12 @@ export async function getCachedInstrumentDetail(symbol: string): Promise<Instrum
     }
   }
 
+  const [{ ensureManualDataset }, { historicalSectorDataset }, { chartSeries, scoreHistory }] =
+    await Promise.all([
+      import("./manualDataStore"),
+      import("./engine/historicalInstrumentScore"),
+      import("./engine/pipeline"),
+    ]);
   const parsed = await ensureManualDataset();
   if (!parsed) throw new Error("종목 상세 차트를 만들 원천 시세가 없습니다.");
   const targetDataset = historicalSectorDataset(parsed.dataset);

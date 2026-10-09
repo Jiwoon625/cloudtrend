@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { KospiShadowContent } from "../src/components/KospiShadowPanel";
 import { UsPortfolioView } from "../src/components/UsPortfolioView";
-import { ShadowPage } from "../src/routes/shadow";
+import { ShadowPage } from "../src/components/ShadowPage";
 import { stepKospiShadow } from "../src/lib/engine/kospiShadow";
 import type { KospiShadowView } from "../src/lib/kospiShadowStore";
 const ids = ["A0_QUARTER_PRIMARY", "A2_QUARTER_SHADOW", "B3_BETA_SHADOW", "SPY_BENCHMARK"];

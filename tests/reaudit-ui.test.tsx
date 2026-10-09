@@ -1,7 +1,7 @@
 import React from "react";
 import { describe, it, expect, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { UsScreenerPage } from "../src/routes/us.screener";
+import { UsScreenerPage } from "../src/components/UsScreenerPage";
 const query = vi.hoisted(() => ({ failed: true }));
 vi.mock("@/lib/portfolioPositionContext", () => ({ loadDomesticPositionContext: vi.fn() }));
 vi.mock("@/lib/usProspectiveCloud", () => ({ loadUsProspectiveCache: vi.fn() }));
