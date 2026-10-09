@@ -1,0 +1,32 @@
+name: Adopted full-period backtest
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/adopted-full-period-backtest]
+    paths:
+      - .github/workflows/adopted-full-period-backtest.yml
+      - scripts/adopted-backtest-source-inventory.py
+permissions:
+  contents: read
+concurrency:
+  group: adopted-full-period-backtest
+  cancel-in-progress: false
+jobs:
+  source-inventory:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.14'
+      - run: python -m pip install --disable-pip-version-check pyarrow==23.0.1 requests==2.32.5
+      - name: Inspect existing private inputs without changing CM research
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: python scripts/adopted-backtest-source-inventory.py
+      # No input, price row, position, NAV, or private result is uploaded to Actions artifacts/cache.
