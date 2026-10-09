@@ -6,6 +6,8 @@ export default defineConfig({
   test: {
     include: [
       "src/lib/octoberShadowSummary.test.ts",
+      "src/lib/octoberShadowSummary.functions.test.ts",
+      "src/lib/websitePerformanceBoundary.test.ts",
       "src/lib/octoberShadowPublication.test.ts",
       "src/lib/shadowReplay.test.ts",
       "src/lib/ledger/octoberShadowTax.test.ts",

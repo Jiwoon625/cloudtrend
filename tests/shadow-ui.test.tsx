@@ -114,14 +114,22 @@ function view(): KospiShadowView {
   };
 }
 describe("unified Shadow UI", () => {
-  it("uses descriptive KOSPI terminology, distinct currencies and all four historical models", () => {
+  it("mounts only the October 12 page, never hidden legacy research controls", () => {
     const html = renderToStaticMarkup(<ShadowPage />);
-    expect(html).toContain("KOSPI 하루확인·불황 시 RSAccel 필터");
-    expect(html).toContain("미국 A0 모델 기록 · USD");
-    expect(html).toContain("미국 A2 모델 기록 · USD");
-    expect(html).toContain("미국 B3 Beta · USD");
-    expect(html).toContain("KRW와 USD 금액을 합산하지 않습니다");
-    expect(html).not.toContain("223");
+    expect(html).toContain("Shadow · 10월 12일 신규 기록");
+    expect(html).toContain("2026-10-12");
+    for (const text of [
+      "미국 A0 모델 기록 · USD",
+      "미국 A2 모델 기록 · USD",
+      "기존 연구·진단 기록",
+      "2026-10-02",
+      "USsaved",
+      "베타 보관",
+      "전체 기간",
+    ])
+      expect(html).not.toContain(text);
+    expect(html).not.toContain("SAVED_MODEL_TRADE");
+    expect(html).not.toContain('aria-label="시리즈"');
   });
   it("shows a truthful uninitialized state with research/actual separation", () => {
     const html = renderToStaticMarkup(

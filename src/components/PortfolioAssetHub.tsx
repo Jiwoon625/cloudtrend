@@ -4,8 +4,6 @@ import { ActualPerformancePanel } from "./ActualPerformancePanel";
 import { actualPerformanceServer } from "@/lib/actualPerformance.functions";
 import { DomesticAssessmentPanel } from "./DomesticAssessmentPanel";
 import { domesticPortfolioQueryOptions } from "@/lib/portfolioPositionContext";
-import { usePortfolioModelConsolidation } from "@/lib/usePortfolioModelConsolidation";
-import { UsModelExecutionJournal } from "./UsModelExecutionJournal";
 import {
   projectExecutionMemo,
   rejectExecutionMemoUrls,
@@ -23,7 +21,6 @@ import { UsPortfolioLedgers } from "./UsPortfolioLedgers";
 import { supabase } from "@/lib/cloud";
 import { portfolioLedgersServer } from "@/lib/portfolioLedgers.functions";
 import { usActualLedgerServer } from "@/lib/usActualLedger.functions";
-import { loadUsPortfolioSnapshots } from "@/lib/usProspectiveCloud";
 import type { LedgerRequest } from "@/lib/portfolioLedgers.server";
 import type { UsActualRequest } from "@/lib/usActualLedger";
 import type { ActualExecution, ActualLedger } from "@/lib/portfolioLedgers";
@@ -54,8 +51,6 @@ const assetOf = (market: string): Asset =>
 const usd = (value: number) =>
   `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const amount = (value: number, asset: Asset) => (asset === "US" ? usd(value) : formatWon(value));
-const color = (value: number) =>
-  value > 0 ? "text-up" : value < 0 ? "text-down" : "text-muted-foreground";
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
 async function token() {
   const { data, error } = await supabase.auth.getSession();
@@ -137,12 +132,6 @@ export function PortfolioAssetHub({
     staleTime: 30_000,
     retry: false,
   });
-  const snapshots = useQuery({
-    queryKey: ["us-portfolio-snapshots"],
-    queryFn: () => loadUsPortfolioSnapshots(370),
-    staleTime: 60_000,
-    retry: false,
-  });
   const [localAsset, setLocalAsset] = useState<Asset>("KR");
   const asset = selectedAsset ?? localAsset;
   function selectAsset(next: PortfolioAsset) {
@@ -200,19 +189,6 @@ export function PortfolioAssetHub({
     );
   const krxPending = etfRows.find((r) => r.etfEntry?.dataStatus === "krx_batch_pending");
   const staleEtfPolicy = etfRows.some((r) => r.etfEntry?.version !== ETF_POLICY.version);
-  const model = snapshots.data?.find((s) => s.strategy_id === "A0_QUARTER_PRIMARY");
-  const modelPositions = Object.values(
-    (
-      model?.state as
-        | {
-            positions?: Record<
-              string,
-              { symbol: string; name: string; shares: number; lastPrice: number; entryDate: string }
-            >;
-          }
-        | undefined
-    )?.positions ?? {},
-  );
   const writeGuard = useRef(createLedgerWriteGuard());
   const editSession = useRef<LedgerEditSession | null>(null);
   const capitalSession = useRef<LedgerEditSession | null>(null);
@@ -239,7 +215,6 @@ export function PortfolioAssetHub({
     const succeeded = !krResult.isError && !usResult.isError;
     acknowledgeLedgerReload(writeGuard.current, succeeded);
     if (succeeded) setWriteError(null);
-    void snapshots.refetch();
   }
   async function mutate(
     input: LedgerRequest | UsActualRequest,
@@ -368,8 +343,8 @@ export function PortfolioAssetHub({
         </Button>
       </header>
       <p className="mb-3 text-sm text-muted-foreground">
-        통합 원장 · 실제 체결을 저장하면 보유·거래내역·손익에 함께 반영됩니다. 체결 삭제는 취소
-        이력으로 남습니다.
+        통합 원장 · 실제 체결을 저장하면 원본 보유·거래내역에 반영됩니다. 체결 삭제는 취소 이력으로
+        남습니다.
       </p>
       <p className="mb-3 text-xs text-muted-foreground">{LEDGER_CASH_NOTE}</p>
       {writeError ? (
@@ -384,70 +359,11 @@ export function PortfolioAssetHub({
         error={kr.error || us.error || performance.error}
       />
       <ActualPerformanceReview />
-      <div className="mb-4 rounded-lg border bg-card p-4" aria-label="전체 실제 투자 요약">
-        <h2 className="font-semibold">전체 실제 투자 · 기존 원장 누적</h2>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <p>
-            원화 평가금액{" "}
-            <strong>
-              {kr.data && books.ETF
-                ? formatWon(kr.data.actual.summary.marketValue + books.ETF.summary.marketValue)
-                : "-"}
-            </strong>
-            <br />
-            <span className="text-sm text-muted-foreground">
-              기존 원장 누적손익{" "}
-              {kr.data && books.ETF
-                ? formatWon(kr.data.actual.summary.totalPnl + books.ETF.summary.totalPnl)
-                : "-"}
-            </span>
-          </p>
-          <p>
-            달러 평가금액 <strong>{books.US ? usd(books.US.summary.marketValue) : "-"}</strong>
-            <br />
-            <span className="text-sm text-muted-foreground">
-              기존 원장 누적손익 {books.US ? usd(books.US.summary.totalPnl) : "-"}
-            </span>
-          </p>
-        </div>
-        <p className="mt-2 text-sm text-muted-foreground">
-          평가금액은 실제 보유 종목 기준입니다. 체결 미입력 ETF는 합계에서 제외합니다. 환율
-          환산·환차손익은 적용하지 않습니다.
-        </p>
-      </div>
-      <div className="mb-5 grid gap-3 sm:grid-cols-3">
-        {(["KR", "US", "ETF"] as const).map((key) => {
-          const book = books[key];
-          return (
-            <section
-              key={key}
-              className="rounded-lg border bg-card p-4"
-              aria-label={`${label[key]} 실제 투자 요약`}
-            >
-              <h2 className="font-semibold">
-                {label[key]} · {key === "US" ? "USD" : "KRW"}
-              </h2>
-              <p className={`mt-3 text-xl font-bold ${color(book?.summary.totalPnl ?? 0)}`}>
-                {book ? amount(book.summary.totalPnl, key) : "-"}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                기존 원장 누적손익 · 보유 {book?.positions.length ?? "-"}종목
-              </p>
-              <p className="mt-3 text-sm">
-                평가금액 {book ? amount(book.summary.marketValue, key) : "-"}
-                <br />
-                실현손익 {book ? amount(book.summary.realizedPnl, key) : "-"}
-                <br />
-                평가손익 {book ? amount(book.summary.unrealizedPnl, key) : "-"}
-              </p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                평가 기준 {book?.summary.latestDate ?? "체결가 기준"}
-              </p>
-            </section>
-          );
-        })}
-      </div>
-      {[kr.error, us.error, snapshots.error].filter(Boolean).map((error, i) => (
+      <p className="mb-4 text-sm text-muted-foreground">
+        성과는 2026-10-12 신규 운용분만 표시합니다. 아래 원본 보유·체결 정보는 대조와 관리용이며 새
+        성과에 자동 편입하지 않습니다.
+      </p>
+      {[kr.error, us.error].filter(Boolean).map((error, i) => (
         <p key={i} role="alert" className="mb-3 rounded border border-destructive p-3 text-sm">
           {error instanceof Error ? error.message : "포트폴리오 조회 실패"}
         </p>
@@ -475,13 +391,18 @@ export function PortfolioAssetHub({
         {asset === "US" ? (
           <div className="min-w-0 space-y-4">
             <p className="text-xs text-muted-foreground">
-              모델 보유·성과·매매·세금 비교는{" "}
+              10월 12일 이후 독립 모델 기록은{" "}
               <Link to="/shadow" className="text-primary underline">
                 Shadow
               </Link>
               에서 확인합니다.
             </p>
-            <UsPortfolioLedgers model={model} hideHistory initialTab="actual" modelComparisonMoved>
+            <UsPortfolioLedgers
+              model={undefined}
+              hideHistory
+              initialTab="actual"
+              modelComparisonMoved
+            >
               {null}
             </UsPortfolioLedgers>
           </div>
@@ -631,7 +552,6 @@ export function PortfolioAssetHub({
                 "평균원가",
                 "현재가 · 기준일",
                 "평가금액",
-                "평가손익",
                 "청산 신호",
                 "체결",
               ]}
@@ -652,9 +572,6 @@ export function PortfolioAssetHub({
                     {p.markDate ?? "체결가 기준"}
                   </td>
                   <td className={td}>{formatWon(p.marketValue)}</td>
-                  <td className={`${td} ${color(p.unrealizedPnl)}`}>
-                    {formatWon(p.unrealizedPnl)}
-                  </td>
                   <td className={td}>
                     {krxPending
                       ? "KRX 자료 대기 · 판단 보류"
@@ -794,18 +711,7 @@ export function PortfolioAssetHub({
       </div>
       <Table
         title="실제 매수·매도 내역 · 전체 자산군"
-        heads={[
-          "체결일",
-          "자산군",
-          "종목",
-          "구분",
-          "가격",
-          "수량",
-          "수수료·세금",
-          "실현손익",
-          "메모",
-          "관리",
-        ]}
+        heads={["체결일", "자산군", "종목", "구분", "가격", "수량", "수수료·세금", "메모", "관리"]}
         empty={!histories.length}
       >
         {histories.map((e) => (
@@ -823,9 +729,6 @@ export function PortfolioAssetHub({
             <td className={td}>{amount(e.price, e.asset)}</td>
             <td className={td}>{e.shares}주</td>
             <td className={td}>{amount(e.fee, e.asset)}</td>
-            <td className={`${td} ${color(e.realizedPnl ?? 0)}`}>
-              {e.realizedPnl === null ? "-" : amount(e.realizedPnl, e.asset)}
-            </td>
             <td className="max-w-[240px] px-3 py-3">{splitExecutionMemo(e.note).note}</td>
             <td className={td}>
               <Button

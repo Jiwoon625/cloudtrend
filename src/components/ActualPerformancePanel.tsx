@@ -104,24 +104,6 @@ export function ActualPerformancePanel({
           ) : null}
         </div>
       ) : null}
-      {series?.baseline?.betaArchive && !invalid && !error ? (
-        <details className="mt-3 rounded border p-3 text-sm">
-          <summary className="cursor-pointer font-medium">
-            베타 종료 요약 · {series.baseline.betaArchive.asOfDate}
-          </summary>
-          <dl className="mt-2 grid gap-2 sm:grid-cols-2">
-            {Object.entries(series.baseline.betaArchive.summaries).map(([label, value]) => (
-              <div key={label}>
-                <dt className="text-muted-foreground">{label}</dt>
-                <dd>{value ?? "미확정"}</dd>
-              </div>
-            ))}
-          </dl>
-          <p className="mt-2 text-xs text-muted-foreground">
-            시작 기준점 대조 때 보관한 기존 성과 요약입니다. 원본 거래는 계속 보존됩니다.
-          </p>
-        </details>
-      ) : null}
       <p className="mt-3 text-xs text-muted-foreground">
         기존 실제 보유·거래·취득원가는 유지하되 새 성과에는 포함하지 않습니다. 10/12 이후 신규
         운용분만 계산하고 공용현금 중 실제 배정한 부분만 한 번 포함합니다. 기존 보유 매도대금을 새

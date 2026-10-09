@@ -303,18 +303,9 @@ function DashboardContent({
                   : portfolioFallback
               }
             />
-            <KeyValue
-              label="평가손익"
-              value={
-                portfolio ? formatWon(portfolio.actual.summary.unrealizedPnl) : portfolioFallback
-              }
-            />
-            <KeyValue
-              label="실현손익"
-              value={
-                portfolio ? formatWon(portfolio.actual.summary.realizedPnl) : portfolioFallback
-              }
-            />
+            <p className="mt-2 text-xs text-muted-foreground">
+              성과는 10월 12일 신규 운용 구간에서만 확인합니다.
+            </p>
             <PortfolioFreshnessSummary
               state={portfolio}
               screeningDate={summary.asOfDate}

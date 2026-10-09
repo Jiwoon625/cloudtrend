@@ -75,26 +75,23 @@ beforeEach(() => {
 const render = () =>
   renderToStaticMarkup(<PortfolioAssetHub domestic={<p>한국 실제 내용</p>} selectedAsset="US" />);
 describe("unified portfolio comparison transition", () => {
-  it("keeps old reference cards while replacement coverage is unverified and always keeps the A0 journal", () => {
+  it("hides beta references and cumulative actual tax even before replacement coverage", () => {
     const html = render();
     expect(html).not.toContain("A0 모델 포트폴리오");
     expect(html).not.toContain("A0 모델 · 양도소득세 추정");
-    expect(html).toContain("실제 투자 · 양도소득세 추정");
+    expect(html).not.toContain("실제 투자 · 양도소득세 추정");
     expect(html).not.toContain("A0 실행 참조");
     expect(html).toContain('href="/shadow"');
   });
-  it("removes only model-comparison cards after readiness, preserving actual tax, holdings, controls and A0 journal", () => {
+  it("keeps holdings and management controls without beta performance or tax", () => {
     gate.ready = true;
     const html = render();
     expect(html).not.toContain("A0 모델 포트폴리오");
     expect(html).not.toContain("A0 모델 · 양도소득세 추정");
     expect(html).not.toContain("A0 전략 보유");
-    for (const text of [
-      "실제 투자 · 양도소득세 추정",
-      "실제 보유 종목",
-      "실제 운용자금 설정",
-      "A0 신호 · 미매수",
-    ])
+    for (const text of ["실제 투자 · 양도소득세 추정", "실현손익", "미실현", "총 손익", "평가손익"])
+      expect(html).not.toContain(text);
+    for (const text of ["실제 보유 종목", "실제 운용자금 설정", "A0 신호 · 미매수"])
       expect(html).toContain(text);
 
     expect(html).toContain('href="/shadow"');

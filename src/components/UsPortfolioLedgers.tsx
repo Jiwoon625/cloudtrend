@@ -8,7 +8,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { UsTaxEstimatePanel } from "./UsTaxEstimatePanel";
 import { UsModelTaxEstimatePanel } from "./UsModelTaxEstimatePanel";
 import { UsA0AllocationRules } from "./UsA0AllocationRules";
 import { supabase } from "@/lib/cloud";
@@ -20,7 +19,6 @@ import type {
   UsExecution,
 } from "@/lib/usActualLedger";
 import type { UsPortfolioSnapshotRecord } from "@/lib/usProspectiveCloud";
-import { actualUsTaxOverlay } from "@/lib/usTaxOverlay";
 import {
   acknowledgeLedgerReload,
   createLedgerEditSession,
@@ -35,7 +33,6 @@ const QUERY = ["us-actual-ledger"];
 const usd = (v: number) =>
   `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-const taxToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
 const td = "whitespace-nowrap px-3 py-2";
 type Editor = Omit<UsExecution, "price" | "shares" | "fee"> & {
   price: string;
@@ -114,14 +111,6 @@ export function UsPortfolioLedgers({
   const data = query.data,
     doc = data?.document,
     actual = data?.actual;
-  const actualTaxEstimate = actualUsTaxOverlay({
-    document: doc,
-    revision: data?.revision,
-    navUsd: actual?.summary.equity,
-    capitalUsd: doc?.capital,
-    // Tax coverage is current through the Korean observation date, even if quotes are stale.
-    asOf: taxToday(),
-  });
   const [tab, setTab] = useState<"model" | "actual" | "signals">(initialTab);
   const activeTab = modelComparisonMoved && tab === "model" ? "actual" : tab;
   const [edit, setEdit] = useState<Editor | null>(null),
@@ -287,36 +276,14 @@ export function UsPortfolioLedgers({
         ) : null}
         <section className="rounded-lg border bg-card p-4" aria-label="US 실제 투자">
           <h3 className="text-sm font-semibold">실제 투자 · A0 목표 20종목</h3>
-          <p className="mt-3 text-xl font-bold">
-            {actual ? usd(actual.summary.totalPnl) : "-"}{" "}
-            <span className="text-sm">
-              ({actual ? `${actual.summary.totalReturn.toFixed(2)}%` : "-"})
-            </span>
+          <p className="mt-2 text-xs text-muted-foreground">
+            원본 보유·체결 관리용입니다. 성과는 10월 12일 신규 운용분만 별도로 표시합니다. 보유{" "}
+            {actual?.summary.openPositions ?? "미확인"}종목.
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            기존 원장 누적손익 · 입력한 체결만 반영 · 보유 {actual?.summary.openPositions ?? 0}종목
-            · 기록 한도 30종목
-          </p>
-
           <p className="mt-2 text-xs">
             설정 운용자금 기준 종목당 참고 매입예산:{" "}
             {actual ? usd(actual.summary.slotTargetAmount) : "-"}
           </p>
-          {actual ? (
-            <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
-              {[
-                ["운용자금 기준 평가자산", actual.summary.equity],
-                ["운용자금 기준 계산 현금", actual.summary.cash],
-                ["실현손익", actual.summary.realizedPnl],
-                ["평가손익", actual.summary.unrealizedPnl],
-              ].map(([k, v]) => (
-                <div key={k}>
-                  <dt className="text-muted-foreground">{k}</dt>
-                  <dd>{usd(Number(v))}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : null}
           <Button
             size="sm"
             variant="ghost"
@@ -336,7 +303,6 @@ export function UsPortfolioLedgers({
         {!modelComparisonMoved ? (
           <UsModelTaxEstimatePanel snapshot={model} title="A0 모델 · 양도소득세 추정" />
         ) : null}
-        <UsTaxEstimatePanel estimate={actualTaxEstimate} title="실제 투자 · 양도소득세 추정" />
       </div>
       <p className="text-xs text-muted-foreground">
         실제 원장은 모델의 매수·매도를 자동 체결하지 않습니다. USD 기준 이동평균 원가와 입력한
@@ -344,7 +310,7 @@ export function UsPortfolioLedgers({
         현지 날짜입니다.
       </p>
       <p className="text-xs text-muted-foreground">
-        통합 원장 · 저장한 실제 체결을 기준으로 보유·손익을 조회하며, 삭제는 취소 이력으로 남습니다.{" "}
+        통합 원장 · 저장한 실제 체결을 기준으로 보유·원가를 조회하며, 삭제는 취소 이력으로 남습니다.{" "}
         {LEDGER_CASH_NOTE}
       </p>
       {writeError ? (
@@ -514,7 +480,6 @@ export function UsPortfolioLedgers({
               "평균원가",
               "현재가 · 기준일",
               "평가금액",
-              "평가손익",
               "A0 청산 신호",
               "실제 체결",
             ]}
@@ -535,7 +500,6 @@ export function UsPortfolioLedgers({
                   {p.markDate ?? "체결가 기준"}
                 </td>
                 <td className={td}>{usd(p.marketValue)}</td>
-                <td className={td}>{usd(p.unrealizedPnl)}</td>
                 <td className={td}>
                   {p.exitSignal ?? "없음"}
                   <br />
@@ -572,7 +536,7 @@ export function UsPortfolioLedgers({
           {!hideHistory ? (
             <Table
               title="실제 매수·매도 내역"
-              heads={["체결일", "종목", "구분", "가격", "수량", "비용", "실현손익", "메모", "수정"]}
+              heads={["체결일", "종목", "구분", "가격", "수량", "비용", "메모", "수정"]}
               empty={!actual.executions.filter(matches).length}
             >
               {[...actual.executions]
@@ -586,7 +550,6 @@ export function UsPortfolioLedgers({
                     <td className={td}>{usd(e.price)}</td>
                     <td className={td}>{e.shares}주</td>
                     <td className={td}>{usd(e.fee)}</td>
-                    <td className={td}>{e.realizedPnl === null ? "-" : usd(e.realizedPnl)}</td>
                     <td className="max-w-[220px] p-3">{splitExecutionMemo(e.note).note}</td>
                     <td className={td}>
                       <Button

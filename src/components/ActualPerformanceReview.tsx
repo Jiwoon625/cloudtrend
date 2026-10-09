@@ -1,3 +1,4 @@
+import { visiblePerformanceEvidence } from "@/lib/websitePerformanceBoundary";
 import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/cloud";
@@ -253,9 +254,9 @@ export function ActualPerformanceReview() {
             </table>
           </div>
           <details className="mt-3 text-xs">
-            <summary className="cursor-pointer">가격·환율·입출금 및 증빙 전체 확인</summary>
+            <summary className="cursor-pointer">신규 구간 가격·환율·입출금 및 증빙 확인</summary>
             <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded bg-muted p-3">
-              {JSON.stringify(preview.input, null, 2)}
+              {visiblePerformanceEvidence(preview.input)}
             </pre>
           </details>
           <label className="mt-4 flex items-start gap-2 text-sm">

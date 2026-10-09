@@ -6,6 +6,7 @@ import {
   DashboardSignalCounts,
   DashboardSignalLists,
   DashboardStrategyRules,
+  UsDashboardPortfolio,
 } from "./DashboardOperations";
 import type {
   DashboardMarket,
@@ -327,4 +328,31 @@ describe("Korean sector-limit badges", () => {
     expect(html).not.toContain("data-sector-status");
     expect(html).not.toContain("섹터 보유 수는");
   });
+});
+
+it("shows original holding counts without beta P&L on the US dashboard", () => {
+  const value = data(0, 0);
+  value.usPortfolio = {
+    capital: 12000,
+    unpricedPositions: 0,
+    summary: {
+      cash: 11000,
+      marketValue: 2000,
+      equity: 13000,
+      realizedPnl: 87654,
+      unrealizedPnl: 98765,
+      totalPnl: 186419,
+      totalReturn: 1553,
+      openPositions: 1,
+      slotTargetAmount: 600,
+      latestDate: "2026-10-09",
+    },
+  };
+  const before = structuredClone(value);
+  const html = renderToStaticMarkup(<UsDashboardPortfolio query={query(value)} />);
+  expect(html).toContain("1종목");
+  expect(html).toContain("10월 12일 신규 운용 구간");
+  for (const text of ["실현손익", "평가손익", "87,654", "98,765", "186,419"])
+    expect(html).not.toContain(text);
+  expect(value).toEqual(before);
 });
