@@ -1,9 +1,9 @@
 {
   "mode": "full",
-  "market": "kr",
+  "market": "etf",
   "catalog_sha": "78e59c019a579b704a40c1d9a6a5de414dfaad8e71da1312f583327c2306ca89",
   "source_manifest_sha": "0a87b02838ea0cd2c084c98c82cdc9f798beb6d10d3c6e563b55595577e2daf6",
-  "start": "2017-08-21",
+  "start": "2017-01-11",
   "through": "2026-09-11",
   "smoke_sessions": 20
 }
