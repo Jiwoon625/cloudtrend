@@ -1,3 +1,4 @@
+import { kospiPolicyVersionAt } from "./kospiEntryConfirmation";
 import { evaluateKospiMarketGateAtDate, type KospiMarketGateEvidence } from "./kospiMarketGate";
 import {
   buildKospiEntrySnapshot,
@@ -159,6 +160,7 @@ export interface ScreeningRow {
 }
 
 export interface AnalysisResult {
+  observationDates?: Record<string, string[]>;
   asOfDate: string;
   strategyVersion: string;
   scoringConfig: ScoringConfig;
@@ -527,6 +529,7 @@ export function runAnalysis(
       previousOperatingScore10,
       operatingScore10,
       universe.passed,
+      ds.asOfDate,
     );
     const { exitSignal } = signals;
     const technicalNormalized = inst.instrumentType === "STOCK" ? stockPercent : normalize(tech);
@@ -599,6 +602,7 @@ export function runAnalysis(
         dated.previous?.score ?? null,
         dated.current.score,
         dated.current.observed && dated.current.eligible,
+        ds.asOfDate,
       ),
     );
     // Preserve the raw onset for a blocked badge; readiness is independently guarded.
@@ -711,7 +715,7 @@ export function runAnalysis(
 
   return {
     asOfDate: ds.asOfDate,
-    strategyVersion: `${STRATEGY_VERSION} / ${ETF_POLICY.version} / ${KOSPI_ENTRY_POLICY.version}`,
+    strategyVersion: `${STRATEGY_VERSION} / ${ETF_POLICY.version} / ${kospiPolicyVersionAt(ds.asOfDate)}`,
     scoringConfig: {
       ...cfg,
       weights: {
@@ -733,6 +737,19 @@ export function runAnalysis(
     rows,
     sectors,
     sectorRotation,
+    ...(ds.asOfDate >= "2026-10-12"
+      ? {
+          observationDates: Object.fromEntries(
+            Object.entries(ds.observedBars ?? ds.bars).map(([symbol, bars]) => [
+              symbol,
+              bars
+                .filter((bar) => bar.tradeDate <= ds.asOfDate)
+                .slice(-60)
+                .map((bar) => bar.tradeDate),
+            ]),
+          ),
+        }
+      : {}),
     tradeDates: ds.tradeDates,
     calculatedAt: new Date().toISOString(),
   };

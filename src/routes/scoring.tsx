@@ -1,3 +1,4 @@
+import { MarketDataContent } from "@/components/MarketDataPage";
 import { StrategyDescription } from "@/components/StrategyDescription";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
@@ -24,7 +25,7 @@ export const Route = createFileRoute("/scoring")({
       {
         name: "description",
         content:
-          "CloudTrend V8 Final 10점 기술점수, KOSPI 하루 확인·RSAccel·하락장 신규진입 차단과 KOSDAQ Onset·Exit 규칙과 우선점수 구조를 확인하고 스크리닝 데이터를 입력합니다.",
+          "CloudTrend V8 Final 10점 기술점수, KOSPI 하루 확인·RSAccel·하락장 신규진입 차단과 KOSDAQ 원신호·Exit 규칙과 우선점수 구조를 확인하고 스크리닝 데이터를 입력합니다.",
       },
       { property: "og:title", content: "데이터 입력 및 V8 Final 산식 | CloudTrend" },
       { property: "og:description", content: "검증 완료된 V8 Final 운영모델과 데이터 입력 화면." },
@@ -90,10 +91,9 @@ function ScoringPage() {
   return (
     <AppShell>
       <div className="mb-4">
-        <h1 className="text-xl font-bold tracking-tight">데이터 입력 및 {VF_MODEL_LABEL} 산식</h1>
+        <h1 className="text-xl font-bold tracking-tight">데이터 관리</h1>
         <p className="text-[12px] text-muted-foreground">
-          V8 Final 10점 기술점수와 KOSPI 하루 확인·RSAccel·하락장 신규진입 차단, KOSDAQ 운영규칙을
-          사용합니다. 운영 배점은 고정되어 있으며 화면에서 직접 변경하지 않습니다.
+          한국·ETF·미국 자료 입력, 수집·검증·계산·게시 상태를 한 곳에서 관리합니다.
         </p>
       </div>
 
@@ -116,117 +116,14 @@ function ScoringPage() {
             </Button>
             <span className="text-[11px] text-muted-foreground">
               {hasData
-                ? "V8 Final 10점 점수, KOSPI 하루 확인·RSAccel·하락장 신규진입 차단, KOSDAQ Onset과 Exit 신호를 계산합니다."
+                ? "V8 Final 10점 점수, KOSPI 하루 확인·RSAccel·하락장 신규진입 차단, KOSDAQ 원신호과 Exit 신호를 계산합니다."
                 : "먼저 데이터를 입력하고 데이터 적용을 눌러 주세요."}
             </span>
           </div>
         </div>
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Section
-          title="2. V8 Final 기술점수 — 10.0점"
-          desc="주식은 아래 원점수 합계를 그대로 사용하며 결측 시 남은 피처로 재정규화하지 않습니다."
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full text-[12px]">
-              <thead>
-                <tr className="border-b border-border text-left text-[11px] text-muted-foreground">
-                  <th className="pb-2">피처</th>
-                  <th className="pb-2 text-right">배점</th>
-                  <th className="pb-2 pl-3">판정</th>
-                </tr>
-              </thead>
-              <tbody>
-                {FEATURES.map(([name, points, rule]) => (
-                  <tr key={name} className="border-b border-border last:border-0">
-                    <td className="py-2 font-medium">{name}</td>
-                    <td className="num py-2 text-right font-semibold">{points.toFixed(1)}</td>
-                    <td className="py-2 pl-3 text-muted-foreground">{rule}</td>
-                  </tr>
-                ))}
-                <tr className="border-t border-border font-semibold">
-                  <td className="pt-2">합계</td>
-                  <td className="num pt-2 text-right">10.0</td>
-                  <td />
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-3 rounded-md border border-border bg-surface p-2 text-[11px] leading-relaxed text-muted-foreground">
-            Sector PL 데이터가 없는 경우에는 해당 슬롯을 0점으로 처리합니다. 나머지 핵심 피처 중
-            하나라도 NO_DATA이면 운영 기술점수는{" "}
-            <strong className="text-foreground">산정 불가</strong>로 처리하며, 8.0 Onset을 만들기
-            위해 분모를 줄여 재환산하지 않습니다.
-          </p>
-        </Section>
-
-        <Section
-          title="3. KOSPI / KOSDAQ 최종 운영규칙"
-          desc="시장 Gate와 분리된 V8 Final 명시적 신호입니다."
-        >
-          <div className="space-y-2 text-[12px]">
-            <StrategyDescription />
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-md bg-surface p-2">
-                <p className="num font-semibold">30</p>
-                <p className="text-[10px] text-muted-foreground">최대 종목</p>
-              </div>
-              <div className="rounded-md bg-surface p-2">
-                <p className="num font-semibold">3.33%</p>
-                <p className="text-[10px] text-muted-foreground">균등 슬롯</p>
-              </div>
-              <div className="rounded-md bg-surface p-2">
-                <p className="num font-semibold">0.30%</p>
-                <p className="text-[10px] text-muted-foreground">왕복 비용 가정</p>
-              </div>
-            </div>
-          </div>
-        </Section>
-
-        <Section
-          title="4. 우선점수 — 최대 5점"
-          desc="기술점수와 분리해 같은 진입후보 안에서 우선순위를 정하는 보조 점수입니다."
-        >
-          <div className="grid grid-cols-2 gap-2 text-[12px]">
-            <div className="rounded-md border border-border p-2">
-              <strong>지수 편입 2점</strong>
-              <p className="text-[11px] text-muted-foreground">KOSPI200 / KOSDAQ150 / KRX300</p>
-            </div>
-            <div className="rounded-md border border-border p-2">
-              <strong>규모 1점</strong>
-              <p className="text-[11px] text-muted-foreground">시가총액 기준</p>
-            </div>
-            <div className="rounded-md border border-border p-2">
-              <strong>상대성과 1점</strong>
-              <p className="text-[11px] text-muted-foreground">당일 벤치마크 대비</p>
-            </div>
-            <div className="rounded-md border border-border p-2">
-              <strong>Sector Rotation 0~1점</strong>
-              <p className="text-[11px] text-muted-foreground">Rotation Score 0~100 비례</p>
-            </div>
-          </div>
-          <p className="mt-2 text-[11px] text-muted-foreground">
-            외국인 20D 순매수와 52주 신고가 근접은 이미 10점 기술점수에 포함되므로 우선점수에서는
-            중복 가점하지 않습니다.
-          </p>
-        </Section>
-
-        <Section
-          title="5. Market Gate"
-          desc="KOSPI 신규 진입에는 Onset일과 체결 직전 마지막 완료 거래일의 non-bear 시장국면 확인을 적용합니다. KOSDAQ·ETF의 기존 진입·청산 규칙은 유지합니다."
-        >
-          <div className="flex gap-2 text-[12px]">
-            <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
-            <p className="leading-relaxed text-muted-foreground">
-              KOSPI MA60·일목 구름, 변동성, 외국인 5일 수급으로 Risk-On / Neutral / Risk-Off를 계속
-              표시합니다. 날짜에 맞는 시장자료가 없거나 오래되면 Unknown으로 진입을 차단합니다.
-              취소된 후보는 새 Onset이 있어야 다시 평가하며, 기존 보유종목의 U9.5·H60 청산은 하락장
-              진입 차단과 관계없이 유지합니다.
-            </p>
-          </div>
-        </Section>
-      </div>
+      <MarketDataContent />
     </AppShell>
   );
 }

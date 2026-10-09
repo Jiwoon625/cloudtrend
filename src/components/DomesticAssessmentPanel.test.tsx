@@ -96,7 +96,7 @@ const markets = [
 ] as unknown as DashboardMarketSignals[];
 describe("evening assessment UI", () => {
   it("shows existing score/crossing/exit evidence and separates the final entry boundary", () => {
-    const html = renderToStaticMarkup(<StockAssessmentDetails assessment={assessment} />);
+    const html = renderToStaticMarkup(<StockAssessmentDetails assessment={assessment} held />);
     for (const text of [
       "8/10",
       "A등급",

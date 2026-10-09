@@ -1,3 +1,4 @@
+import { KOSPI_CONSISTENCY_VERSION } from "./engine/kospiEntryConfirmation";
 import type { ScreeningRow } from "./engine/pipeline";
 import { getHeldOperationalExitSignal, isOperationalEntry } from "./engine/operationalStrategy";
 
@@ -65,15 +66,18 @@ export function stockAssessmentDisplay(
           : `확인일 8점 유지 ${score >= 8 ? "충족" : "미충족"}`,
       );
       conditions.push(
-        finite(entry.rsAccel)
-          ? `확인일 RSAccel > 0 ${entry.rsAccel > 0 ? "충족" : "미충족"} · ${value(entry.rsAccel)}%p`
-          : "확인일 RSAccel 미확인",
+        entry.version === KOSPI_CONSISTENCY_VERSION &&
+          entry.marketGate?.origin?.status !== "RISK_OFF"
+          ? "원신호일 비하락장 · RSAccel 양수 조건 미적용"
+          : finite(entry.rsAccel)
+            ? `확인일 RSAccel > 0 ${entry.rsAccel > 0 ? "충족" : "미충족"} · ${value(entry.rsAccel)}%p`
+            : "확인일 RSAccel 미확인",
       );
     } else if (finite(row.rs20) && finite(row.rs60)) {
       conditions.push(`현재 RSAccel ${value(row.rs20 - row.rs60)}%p · 확인 전 참고`);
     }
     for (const [label, evidence, expected] of [
-      ["Onset일 시장", entry.marketGate?.origin, entry.originDate],
+      ["원신호일 시장", entry.marketGate?.origin, entry.originDate],
       ["확인일 시장", entry.marketGate?.confirmation, entry.confirmationDate],
     ] as const) {
       if (!expected) continue;

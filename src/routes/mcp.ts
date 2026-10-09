@@ -133,30 +133,30 @@ function resolveMode(sourceType: SourceType, mode?: SourceRegistrationMode) {
 function parseRegisterArgs(value: unknown): RegisterArgs {
   if (!value || typeof value !== "object") throw new Error("도구 인자가 필요합니다.");
   const input = value as Record<string, unknown>;
-  const sourceType = input.sourceType;
+  const sourceType = input["sourceType"];
   if (sourceType !== "screening" && sourceType !== "backtest")
     throw new Error("sourceType은 screening 또는 backtest여야 합니다.");
 
-  const fileValue = input.file;
+  const fileValue = input["file"];
   if (!fileValue || typeof fileValue !== "object") throw new Error("file 입력이 필요합니다.");
   const file = fileValue as Record<string, unknown>;
-  if (typeof file.download_url !== "string" || !file.download_url.startsWith("https://"))
+  if (typeof file["download_url"] !== "string" || !file["download_url"].startsWith("https://"))
     throw new Error("file.download_url은 HTTPS URL이어야 합니다.");
-  if (typeof file.file_id !== "string" || !file.file_id.trim())
+  if (typeof file["file_id"] !== "string" || !file["file_id"].trim())
     throw new Error("file.file_id가 필요합니다.");
 
-  const mode = input.mode;
+  const mode = input["mode"];
   if (mode !== undefined && typeof mode !== "string")
     throw new Error("mode 형식이 올바르지 않습니다.");
 
   return {
     sourceType,
-    mode: mode as SourceRegistrationMode | undefined,
+    ...(mode !== undefined ? { mode: mode as SourceRegistrationMode } : {}),
     file: {
-      download_url: file.download_url,
-      file_id: file.file_id,
-      mime_type: typeof file.mime_type === "string" ? file.mime_type : undefined,
-      file_name: typeof file.file_name === "string" ? file.file_name : undefined,
+      download_url: file["download_url"],
+      file_id: file["file_id"],
+      ...(typeof file["mime_type"] === "string" ? { mime_type: file["mime_type"] } : {}),
+      ...(typeof file["file_name"] === "string" ? { file_name: file["file_name"] } : {}),
     },
   };
 }
@@ -263,7 +263,7 @@ async function handleRpc(body: JsonRpcRequest) {
   if (method === "initialize") {
     return rpcResult(id, {
       protocolVersion:
-        typeof params?.protocolVersion === "string" ? params.protocolVersion : "2025-06-18",
+        typeof params?.["protocolVersion"] === "string" ? params["protocolVersion"] : "2025-06-18",
       capabilities: { tools: { listChanged: false } },
       serverInfo: { name: "cloudtrend", version: "1.0.0" },
       instructions:
@@ -282,10 +282,10 @@ async function handleRpc(body: JsonRpcRequest) {
   }
 
   if (method === "tools/call") {
-    const name = params?.name;
+    const name = params?.["name"];
     if (name !== REGISTER_TOOL.name) return rpcError(id, -32601, `Unknown tool: ${String(name)}`);
     try {
-      return rpcResult(id, await callRegisterTool(params?.arguments));
+      return rpcResult(id, await callRegisterTool(params?.["arguments"]));
     } catch (error) {
       const message = error instanceof Error ? error.message : "알 수 없는 오류";
       return rpcResult(id, {

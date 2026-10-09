@@ -1,3 +1,4 @@
+import { archiveScreeningRun } from "./screeningRunArchive";
 import { hydrateScreeningSnapshot, serializeScreeningSnapshot } from "./screeningSnapshotStorage";
 import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
 import type { ScreeningRow, V8ExitSignal } from "@/lib/engine/pipeline";
@@ -5,6 +6,8 @@ import { getDisplayStatus } from "@/lib/statusDisplay";
 import { sourceTimingEvidence } from "./sourceTimingEvidence";
 
 export interface SnapshotEntry {
+  market?: string | undefined;
+  evidence?: Record<string, unknown>;
   symbol: string;
   name: string;
   instrumentType: "STOCK" | "ETF";
@@ -31,6 +34,9 @@ export interface SnapshotEntry {
 }
 
 export interface ScreeningSnapshot {
+  runId?: string;
+  strategyVersion?: string;
+  market?: "KR" | "US";
   /** 실제 자료 기준일 (YYYY-MM-DD) — 같은 기준일 재스크리닝 시 갱신한다. */
   date: string;
   savedAt: string;
@@ -80,13 +86,24 @@ export function buildSnapshot(
   analysis: {
     asOfDate: string;
     calculatedAt: string;
+    strategyVersion?: string;
     marketGate: { status: string };
     kospiMarketGate?: import("./engine/kospiMarketGate").KospiMarketGateEvidence | undefined;
     rows: ScreeningRow[];
   },
   sourceRegisteredAt?: string,
+  runId?: string,
 ): ScreeningSnapshot {
   const entries: SnapshotEntry[] = analysis.rows.map((row) => ({
+    ...(runId
+      ? {
+          market: row.instrument.market,
+          evidence:
+            row.instrument.instrumentType === "ETF"
+              ? { etfStrategy: row.etfStrategy }
+              : { technical: row.vf ?? row.technical, failedRules: row.failedRules },
+        }
+      : {}),
     symbol: row.instrument.symbol,
     name: row.instrument.name,
     instrumentType: row.instrument.instrumentType,
@@ -116,6 +133,9 @@ export function buildSnapshot(
   }));
   const passed = entries.filter((entry) => entry.hardFilterPassed);
   return {
+    ...(runId
+      ? { runId, market: "KR" as const, strategyVersion: analysis.strategyVersion ?? "UNRECORDED" }
+      : {}),
     date: analysis.asOfDate,
     savedAt: analysis.calculatedAt,
     ...(sourceRegisteredAt ? { sourceRegisteredAt } : {}),
@@ -169,6 +189,7 @@ export async function persistScreeningSnapshot(
   userId: string,
   incoming: ScreeningSnapshot,
 ) {
+  await archiveScreeningRun(client, userId, incoming);
   const { data, error } = await client
     .from("screening_history")
     .select("snapshot")
@@ -185,7 +206,17 @@ export async function persistScreeningSnapshot(
     {
       user_id: userId,
       date: snapshot.asOfDate,
-      snapshot: serializeScreeningSnapshot({ ...snapshot, date: snapshot.asOfDate }),
+      snapshot: serializeScreeningSnapshot({
+        ...snapshot,
+        date: snapshot.asOfDate,
+        entries: snapshot.entries.map(({ evidence, ...entry }) => entry),
+        ...(snapshot.topStocks
+          ? { topStocks: snapshot.topStocks.map(({ evidence, ...entry }) => entry) }
+          : {}),
+        ...(snapshot.topEtfs
+          ? { topEtfs: snapshot.topEtfs.map(({ evidence, ...entry }) => entry) }
+          : {}),
+      }),
     },
     { onConflict: "user_id,date" },
   );

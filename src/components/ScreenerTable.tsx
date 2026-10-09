@@ -172,6 +172,7 @@ export function ScreenerTable({
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("entry");
   const [dir, setDir] = useState<"asc" | "desc">("desc");
+  const [page, setPage] = useState(0);
   const [hidden, setHidden] = useState<string[]>([]);
 
   const sorted = useMemo(() => {
@@ -210,6 +211,8 @@ export function ScreenerTable({
     : COLUMNS;
   const visible = columns.filter((c) => !hidden.includes(c.id));
 
+  const pageCount = Math.max(1, Math.ceil(sorted.length / 100));
+  const currentPage = Math.min(page, pageCount - 1);
   const downloadCsv = () => {
     const header = visible.map((c) => c.label).join(",");
     const lines = sorted.map((r, i) => {
@@ -319,7 +322,25 @@ export function ScreenerTable({
               </button>
             ))}
         </div>
-        <span className="ml-auto text-xs text-muted-foreground">{sorted.length}건</span>
+        <span className="ml-auto text-xs text-muted-foreground">
+          {sorted.length}건 · {currentPage + 1}/{pageCount}페이지
+        </span>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={currentPage === 0}
+          onClick={() => setPage(currentPage - 1)}
+        >
+          이전
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={currentPage + 1 >= pageCount}
+          onClick={() => setPage(currentPage + 1)}
+        >
+          다음
+        </Button>
       </div>
 
       <div className="max-h-[70vh] overflow-auto rounded-lg border border-border bg-card">
@@ -331,7 +352,8 @@ export function ScreenerTable({
             <tr>{visible.map((c) => th(c))}</tr>
           </thead>
           <tbody>
-            {sorted.map((r, i) => {
+            {sorted.slice(currentPage * 100, (currentPage + 1) * 100).map((r, offset) => {
+              const i = currentPage * 100 + offset;
               const tech = technicalValue(r);
               const techBlock = r.vf ?? r.technical;
               const displayWarnings = compactStock
@@ -495,6 +517,7 @@ export function ScreenerTable({
                     <UniverseFilterDetails row={r} compact />
                     {r.instrument.instrumentType === "STOCK" ? (
                       <StockAssessmentDetails
+                        held={positionContext?.heldSymbols.includes(r.instrument.symbol) ?? false}
                         assessment={stockAssessmentDisplay(r, signalDate, tradeDates)}
                       />
                     ) : null}

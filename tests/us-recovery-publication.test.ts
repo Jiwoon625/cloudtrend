@@ -1,3 +1,4 @@
+import { createImmutableArchiveFixture } from "./immutable-archive-fixture";
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
@@ -86,8 +87,10 @@ function setup() {
   const mutateDatabase = vi.fn(() => {
     throw new Error("Database writes are forbidden");
   });
+  const archive = createImmutableArchiveFixture();
   const c = {
     from(table: string) {
+      if (table === "screening_run_archive") return archive();
       reads.push(table);
       if (!["us_screening_ingest", "us_screening_history"].includes(table))
         throw new Error(`Unexpected database read: ${table}`);

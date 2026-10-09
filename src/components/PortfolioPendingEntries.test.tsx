@@ -193,10 +193,8 @@ describe("KR portfolio pending-entry and sync presentation", () => {
     expect(html).toContain("실제 체결 기록 있음");
     expect(html).toContain("오늘 진입 예정 · 시가 미확인");
     expect(html).toContain("실제 보유 종목 · 1 / 30");
-    button("전략 원장").onClick!();
-    const model = render();
-    expect(model).toContain("전략 진입 0건");
-    expect(model).toContain("표시할 기록이 없습니다");
+    expect(html).not.toContain(">전략 원장<");
+    expect(html).toContain("Shadow");
   });
 
   it("shows the explicit sync busy state and blocks same-tick repeat clicks", async () => {

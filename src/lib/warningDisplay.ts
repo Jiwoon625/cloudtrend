@@ -47,7 +47,7 @@ export function getDisplayWarnings(row: ScreeningRow): string[] {
     row.sectorPriceLeadership >= VF_SECTOR_PL_OVERHEAT_THRESHOLD
   )
     out.push(`Sector PL 과열 · ${row.sectorPriceLeadership.toFixed(1)}`);
-  if (row.warnings.includes("HEAD_FAKE")) out.push(WARNING_LABELS.HEAD_FAKE ?? "Head Fake 의심");
+  if (row.warnings.includes("HEAD_FAKE")) out.push(WARNING_LABELS["HEAD_FAKE"] ?? "Head Fake 의심");
 
   const snapshot = row.snapshot as SnapshotWithOptionalBreakout;
   const hasDetailedBreakout =

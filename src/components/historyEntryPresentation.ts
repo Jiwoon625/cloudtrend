@@ -12,13 +12,23 @@ export function isHistoryOperationalEntry(entry: SnapshotEntry, asOfDate: string
 export function historyEntryStatus(entry: SnapshotEntry): string {
   if (entry.hardFilterStatus === "PENDING")
     return `판단 보류 · ${entry.pendingRules?.join(" · ") || "필수 자료 미확인"}`;
-  const status = entry.status?.trim() || (entry.hardFilterPassed ? "관찰" : "실격");
+  const status = (entry.status?.trim() || (entry.hardFilterPassed ? "관찰" : "실격")).replace(
+    /onset/gi,
+    "원신호",
+  );
   if (getStoredOperationalExit(entry, "KOSPI")) return status;
   if (entry.kospiEntry && entry.kospiEntry.state !== "none")
     return `KOSPI ${kospiEntryStateLabel(entry.kospiEntry)}`;
   if (!entry.kospiEntry && (entry.kospi80Onset || entry.kospiEightPointEntry))
     return `기존 운영 기록: ${status} · 하루 확인 기록 없음`;
   return status
-    .replace(/KOSDAQ80 Onset/gi, "KOSDAQ 8 ONSET")
-    .replace(/KOSDAQ 80 Onset/gi, "KOSDAQ 8 ONSET");
+    .replace(/KOSDAQ80 원신호/gi, "KOSDAQ 8 원신호")
+    .replace(/KOSDAQ 80 원신호/gi, "KOSDAQ 8 원신호");
+}
+
+export function historyEtfEvidence(entry: SnapshotEntry) {
+  const evidence = entry.evidence?.["etfStrategy"];
+  return evidence && typeof evidence === "object"
+    ? (evidence as Partial<import("@/lib/engine/etfStrategy").EtfStrategySnapshot>)
+    : undefined;
 }

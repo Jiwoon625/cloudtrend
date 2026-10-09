@@ -1,3 +1,4 @@
+import { krExecutionBar } from "./octoberShadowArchive";
 import {
   krDailyInputArchive,
   resolveKrInputArchive,
@@ -17,6 +18,7 @@ import {
   verifyFrozenSeries,
   MODEL_ACCOUNTING_START,
   ADOPTED_SERIES_VERSION,
+  activeSeriesVersion,
   type AdoptedSeriesKind,
   type FrozenModelSeries,
   type SeriesHash,
@@ -93,8 +95,7 @@ function verifyPublication(input: OctoberPublication, calendar: ModelCalendar) {
     !Number.isFinite(Date.parse(input.availableAt)) ||
     !Number.isFinite(Date.parse(input.decisionAt)) ||
     Date.parse(input.availableAt) > Date.parse(input.decisionAt) ||
-    (input.runtimeCodeHash !== undefined &&
-      !/^sha256:[a-f0-9]{64}$/.test(input.runtimeCodeHash)) ||
+    (input.runtimeCodeHash !== undefined && !/^sha256:[a-f0-9]{64}$/.test(input.runtimeCodeHash)) ||
     Date.parse(input.availableAt) < Date.parse(regularCloseAt(input.market, date)) ||
     (input.market === "US"
       ? marketDate("US", input.availableAt) !== date || marketDate("US", input.decisionAt) !== date
@@ -119,7 +120,7 @@ function verifyPublication(input: OctoberPublication, calendar: ModelCalendar) {
       expected.asOfDate >= date ||
       !/^sha256:[a-f0-9]{64}$/.test(expected.sourceHash) ||
       new Set(expected.symbols).size !== expected.symbols.length ||
-      expected.symbols.some((symbol) => !currentSymbols.has(symbol)) ||
+      (date < "2026-10-12" && expected.symbols.some((symbol) => !currentSymbols.has(symbol))) ||
       !currentSources.length ||
       currentSources.some(
         (source) =>
@@ -180,7 +181,10 @@ function publicationValue(input: OctoberPublication) {
       asOfDate: input.dataset.asOfDate,
       isLive: input.dataset.isLive,
       currentBars: Object.fromEntries(
-        Object.entries(input.dataset.bars).map(([symbol, rows]) => [
+        Object.entries(
+          (input.analysis.asOfDate >= "2026-10-12" ? input.dataset.observedBars : undefined) ??
+            input.dataset.bars,
+        ).map(([symbol, rows]) => [
           symbol,
           rows.filter((row) => row.tradeDate === input.analysis.asOfDate),
         ]),
@@ -316,7 +320,7 @@ export async function recordOctoberPublication(
     reused: boolean;
   }> = [];
   for (const kind of kinds) {
-    const series = await store.readSeries(`${ADOPTED_SERIES_VERSION}:${kind}`);
+    const series = await store.readSeries(`${activeSeriesVersion(date)}:${kind}`);
     if (!series) throw new Error(`October model registry is not initialized: ${kind}`);
     await verifyFrozenSeries(series);
     if (series.codeHash !== input.codeHash)
@@ -334,7 +338,7 @@ export async function recordOctoberPublication(
     }
     const previous = await store.readLatest<OctoberRun>(series.bookId);
     if (previous) await assertStoredOctoberRun(series, previous);
-    if (previous) {
+    if (previous && (input.market === "US" || date < "2026-10-12")) {
       const held =
         input.market === "US"
           ? Object.keys((previous as AdoptedUsRun).result.state.positions)
@@ -384,7 +388,12 @@ export async function recordOctoberPublication(
         input.analysis,
       );
       session.previousSessionDate = calendar.regularSessions.filter((d) => d < date).at(-1) ?? null;
-      if (!previous && date === "2026-10-06") {
+      if (
+        !previous &&
+        date === (series.accountingStartDate === "2026-10-12" ? "2026-10-12" : "2026-10-06")
+      ) {
+        const warmupDate =
+          series.accountingStartDate === "2026-10-12" ? "2026-10-08" : "2026-10-02";
         // Read-only warmup produced by the same point-in-time calculation, with its exact date.
         // It can establish an Oct6 onset; it cannot import Oct2 orders or candidate state.
         const analysisRows = new Map(
@@ -392,17 +401,17 @@ export async function recordOctoberPublication(
         );
         session.warmupRows = session.rows.flatMap((row) => {
           const observed = analysisRows.get(row.symbol);
-          const bar = input.dataset.bars[row.symbol]?.find((b) => b.tradeDate === "2026-10-02");
+          const bar = input.dataset.bars[row.symbol]?.find((b) => b.tradeDate === warmupDate);
           if (
             !bar ||
-            observed?.previousOperatingScoreDate !== "2026-10-02" ||
+            observed?.previousOperatingScoreDate !== warmupDate ||
             observed.previousOperatingScore10 == null
           )
             return [];
           return [
             {
               ...row,
-              date: "2026-10-02",
+              date: warmupDate,
               open: bar.open,
               close: bar.close,
               volume: bar.volume,
@@ -450,9 +459,37 @@ export async function recordOctoberPublication(
             configHash: series.configHash,
             sourceHash: input.sourceHash,
             prices: rows.map((row) => {
-              const bar = input.dataset.bars[row.instrument.symbol]?.find(
-                (b) => b.tradeDate === date,
-              );
+              const bar = (
+                (date >= "2026-10-12"
+                  ? input.dataset.observedBars?.[row.instrument.symbol]
+                  : undefined) ?? input.dataset.bars[row.instrument.symbol]
+              )?.find((b) => b.tradeDate === date);
+              if (date >= "2026-10-12")
+                return {
+                  symbol: row.instrument.symbol,
+                  open: {
+                    asOfDate: date,
+                    availableAt: openAt,
+                    sourceHash: input.sourceHash,
+                    price:
+                      bar && bar.openObserved !== false && Number.isFinite(bar.open) && bar.open > 0
+                        ? fromLegacyNumber(bar.open)
+                        : null,
+                    volume:
+                      bar && bar.volumeObserved !== false && Number.isFinite(bar.volume)
+                        ? bar.volume
+                        : null,
+                  },
+                  close: {
+                    asOfDate: date,
+                    availableAt: input.availableAt,
+                    sourceHash: input.sourceHash,
+                    price:
+                      bar && Number.isFinite(bar.close) && bar.close > 0
+                        ? fromLegacyNumber(bar.close)
+                        : null,
+                  },
+                };
               if (
                 !bar ||
                 !Number.isFinite(bar.open) ||
@@ -500,7 +537,11 @@ export async function recordOctoberPublication(
           const overlap = input.dataset.bars[symbol]?.find(
             (row) => row.tradeDate === old.tradeDate,
           );
-          if (overlap && canonicalSeriesJson(overlap) !== canonicalSeriesJson(old))
+          if (
+            overlap &&
+            canonicalSeriesJson(krExecutionBar(overlap)) !==
+              canonicalSeriesJson(krExecutionBar(old))
+          )
             throw new Error("KR source revises archived historical OHLC");
         }
         bars[symbol] = [...rows, ...(bars[symbol] ?? [])];

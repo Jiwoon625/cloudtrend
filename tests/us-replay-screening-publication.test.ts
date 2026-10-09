@@ -1,3 +1,4 @@
+import { createImmutableArchiveFixture } from "./immutable-archive-fixture";
 import { describe, expect, it } from "vitest";
 import { gunzipSync } from "node:zlib";
 import { readFileSync } from "node:fs";
@@ -68,8 +69,10 @@ function setup() {
   };
   let failMarker: string | null = null;
   let onHistoryInsert: (() => void) | null = null;
+  const archive = createImmutableArchiveFixture();
   const c = {
     from(table: string) {
+      if (table === "screening_run_archive") return archive();
       reads.push(table);
       if (!["us_screening_ingest", "us_screening_history"].includes(table))
         throw new Error(`Forbidden ledger access: ${table}`);

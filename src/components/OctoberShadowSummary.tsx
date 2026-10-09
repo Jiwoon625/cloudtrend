@@ -1,3 +1,10 @@
+import { ShadowTimeline } from "./ShadowTimeline";
+import {
+  activeSeriesVersion,
+  ADOPTED_SERIES_VERSION,
+  RESTART_SERIES_VERSION,
+  type AdoptedSeriesKind,
+} from "@/lib/ledger/modelSeries";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/cloud";
@@ -46,6 +53,10 @@ const money = (value: string | null, currency: "KRW" | "USD", residual = false) 
       )}${currency === "KRW" ? "원" : ""}`;
 
 export function OctoberShadowSummary() {
+  const [version, setVersion] = useState(
+    activeSeriesVersion(new Date().toISOString().slice(0, 10)),
+  );
+  const [kind, setKind] = useState<AdoptedSeriesKind>("KR_MIXED");
   const [owner, setOwner] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   useEffect(() => {
@@ -78,7 +89,7 @@ export function OctoberShadowSummary() {
     };
   }, []);
   const query = useQuery({
-    queryKey: ["october-shadow-summary", owner],
+    queryKey: ["october-shadow-summary", owner, version, kind],
     enabled: !!owner,
     staleTime: 60_000,
     gcTime: 0,
@@ -88,17 +99,43 @@ export function OctoberShadowSummary() {
       const { data, error } = await supabase.auth.getSession();
       if (error || !data.session || data.session.user.id !== owner)
         throw new Error("로그인 소유자 확인 필요");
-      return octoberShadowSummaryServer({ data: { accessToken: data.session.access_token } });
+      return octoberShadowSummaryServer({
+        data: { accessToken: data.session.access_token, version, detailKind: kind },
+      });
     },
   });
   return (
-    <OctoberShadowSummaryContent
-      summary={owner ? (query.data ?? null) : null}
-      loading={!authError && query.isPending}
-      refreshing={query.isFetching}
-      error={authError ?? query.error?.message ?? null}
-      refresh={() => void query.refetch()}
-    />
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-3">
+        <select
+          aria-label="시리즈 시작일"
+          value={version}
+          onChange={(e) => setVersion(e.target.value as typeof version)}
+        >
+          <option value={ADOPTED_SERIES_VERSION}>10월 5일 베타 · 10월 9일까지</option>
+          <option value={RESTART_SERIES_VERSION}>10월 12일 새 성과측정</option>
+        </select>
+        <select
+          aria-label="시장·전략"
+          value={kind}
+          onChange={(e) => setKind(e.target.value as AdoptedSeriesKind)}
+        >
+          {Object.entries(labels).map(([id, label]) => (
+            <option key={id} value={id}>
+              {label} ·{" "}
+              {["US_A2", "US_B3", "KR_KOSPI_CONFIRM1_BEAR"].includes(id) ? "실험" : "채택"}
+            </option>
+          ))}
+        </select>
+      </div>
+      <OctoberShadowSummaryContent
+        summary={owner ? (query.data ?? null) : null}
+        loading={!authError && query.isPending}
+        refreshing={query.isFetching}
+        error={authError ?? query.error?.message ?? null}
+        refresh={() => void query.refetch()}
+      />
+    </div>
   );
 }
 
@@ -123,7 +160,8 @@ export function OctoberShadowSummaryContent({
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="october-shadow-title" className="text-lg font-semibold">
-            2026-10-05 신규 Shadow · 독립 장부
+            {summary?.version === RESTART_SERIES_VERSION ? "10월 12일 성과측정" : "베타 기록"} ·
+            독립 Shadow
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             장부당 시작자본 1억원 · 기존 연구 이력과 분리 · 읽기 전용
@@ -162,7 +200,9 @@ export function OctoberShadowSummaryContent({
           {summary.replayStatus.map((replay) => (
             <div key={replay.market} className="space-y-1 rounded-lg border p-3 text-xs">
               <div className="flex items-center justify-between gap-2">
-                <strong>{replay.market === "KR" ? "한국 Shadow replay" : "미국 Shadow replay"}</strong>
+                <strong>
+                  {replay.market === "KR" ? "한국 Shadow replay" : "미국 Shadow replay"}
+                </strong>
                 <span>{replayStateLabel(replay.status)}</span>
               </div>
               <p className="text-muted-foreground">
@@ -187,7 +227,7 @@ export function OctoberShadowSummaryContent({
         </div>
       ) : null}
       {summary ? (
-        <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+        <div className="grid min-w-0 gap-4">
           {summary.books.map((book) => (
             <article key={book.bookId} className="min-w-0 space-y-3 rounded-lg border p-4">
               <div className="flex flex-wrap justify-between gap-2">
@@ -234,6 +274,7 @@ export function OctoberShadowSummaryContent({
                   </>
                 ) : null}
               </dl>
+              <ShadowTimeline book={book} />
               <div className="space-y-2 border-t pt-3">
                 <h4 className="text-sm font-medium">모델 보유종목</h4>
                 {book.holdings.length ? (
@@ -279,7 +320,7 @@ export function OctoberShadowSummaryContent({
                     수량·현금·비용·거래대금 한도를 적용합니다
                   </p>
                 ) : null}
-                {book.kind === "US_A0" ? <UsA0AllocationRules /> : null}
+
                 {book.kind === "KR_KOSDAQ" ? (
                   <p className="text-xs text-muted-foreground">
                     실제 매수 여부·수동 제외·실계좌 현금과 분리된 가상 1억원/30 장부입니다. 실제

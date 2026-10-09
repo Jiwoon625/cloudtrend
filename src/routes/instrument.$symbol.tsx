@@ -1,3 +1,4 @@
+import { EtfInstrumentDetail } from "@/components/EtfInstrumentDetail";
 import { entrySuppressionReason } from "@/lib/positionSignalContext";
 import { loadDomesticPositionContext } from "@/lib/portfolioPositionContext";
 import { StrategyDescription } from "@/components/StrategyDescription";
@@ -35,9 +36,9 @@ export const Route = createFileRoute("/instrument/$symbol")({
   head: ({ loaderData }) => {
     if (!loaderData)
       return {
-        meta: [{ title: "종목 정보 없음 | TrendScore KR" }, { name: "robots", content: "noindex" }],
+        meta: [{ title: "종목 정보 없음 | CloudTrend" }, { name: "robots", content: "noindex" }],
       };
-    const title = `${loaderData.name}(${loaderData.symbol}) 점수 근거 | TrendScore KR`;
+    const title = `${loaderData.name}(${loaderData.symbol}) 점수 근거 | CloudTrend`;
     const description = `${loaderData.name} 종목의 V8 Final 기술점수·일목균형표·볼린저밴드·이동평균·거래량 조건과 경고 신호를 확인합니다.`;
     return {
       meta: [
@@ -71,7 +72,6 @@ function InstrumentDetail() {
     refetchOnWindowFocus: false,
   });
   const [showLog, setShowLog] = useState(false);
-  const [watched, setWatched] = useState(false);
   const analysis = payload.analysis;
   const originalRow = analysis.rows.find((item) => item.instrument.symbol === symbol);
   if (!originalRow) throw notFound();
@@ -85,20 +85,25 @@ function InstrumentDetail() {
           vf: originalRow.vf ? withThreeDecimalClv(originalRow.vf, clv) : originalRow.vf,
         };
 
+  if (["ETF"].includes(row.instrument.instrumentType))
+    return (
+      <EtfInstrumentDetail
+        row={row}
+        calculatedAt={analysis.calculatedAt}
+        held={positionContext?.heldSymbols.includes(symbol)}
+      />
+    );
+
   const score = row.vf ?? row.technical;
   const cardPoints =
     row.instrument.instrumentType === "ETF"
-      ? (row.etfStrategy?.technical ?? row.technicalNormalized)
+      ? (row.etfStrategy?.score ?? row.technicalNormalized)
       : row.operatingScore10;
   const cardMax = row.instrument.instrumentType === "ETF" ? 100 : 10;
   const snap = row.snapshot;
   const ich = snap.ichimoku;
-  const displayWarnings = getDisplayWarnings(row).map((warning) =>
-    row.instrument.instrumentType === "STOCK" &&
-    !positionContext?.heldSymbols.includes(symbol) &&
-    /Exit|청산/i.test(warning)
-      ? `${positionContext ? "미보유" : "보유 미확인"} · 관측 조건 참고 · ${warning}`
-      : warning,
+  const displayWarnings = getDisplayWarnings(row).filter(
+    (warning) => positionContext?.heldSymbols.includes(symbol) || !/Exit|청산/i.test(warning),
   );
 
   const log = {
@@ -156,7 +161,7 @@ function InstrumentDetail() {
     pendingRules: row.pendingRules ?? [],
     warnings: row.warnings,
     displayWarnings,
-    timestamps: { calculatedAt: new Date().toISOString() },
+    timestamps: { calculatedAt: analysis.calculatedAt },
   };
 
   const explanation = (() => {
@@ -198,11 +203,6 @@ function InstrumentDetail() {
 
   return (
     <AppShell>
-      <div className="mb-4">
-        <StrategyDescription
-          market={row.instrument.instrumentType === "STOCK" ? row.instrument.market : undefined}
-        />
-      </div>
       <header className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight">
@@ -219,13 +219,6 @@ function InstrumentDetail() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant={watched ? "secondary" : "default"}
-            onClick={() => setWatched((w) => !w)}
-          >
-            {watched ? "관심종목에 추가됨" : "관심종목 추가"}
-          </Button>
           <Button size="sm" variant="outline" onClick={() => setShowLog((s) => !s)}>
             계산 근거 보기
           </Button>
@@ -278,8 +271,8 @@ function InstrumentDetail() {
             )}
           />
           <p className="mt-2 text-[10px] text-muted-foreground">
-            신규 후보는 Onset일과 체결 직전 마지막 완료 거래일의 Risk-On/Neutral 확인이 필요합니다.
-            하락장·결측·오래된 시장자료로 취소된 후보는 새 Onset 없이 다시 진입하지 않습니다.
+            신규 후보는 원신호일과 체결 직전 마지막 완료 거래일의 Risk-On/Neutral 확인이 필요합니다.
+            하락장·결측·오래된 시장자료로 취소된 후보는 새 원신호 없이 다시 진입하지 않습니다.
           </p>
         </section>
       ) : null}
@@ -398,7 +391,7 @@ function InstrumentDetail() {
 
       {row.instrument.instrumentType !== "STOCK" && row.onsetProfile ? (
         <section className="mt-5 rounded-lg border border-border bg-card p-4">
-          <h2 className="mb-1 text-sm font-semibold">Onset 발생 경로</h2>
+          <h2 className="mb-1 text-sm font-semibold">원신호 발생 경로</h2>
           <OnsetProfileDetails profile={row.onsetProfile} />
           <p className="mt-2 text-[11px] text-muted-foreground">
             유형·신규 획득 점수·MA20 이격은 신호 설명 정보이며 진입 점수나 매매규칙을 변경하지

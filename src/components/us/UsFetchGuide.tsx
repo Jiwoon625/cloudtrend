@@ -3,7 +3,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
-export const US_JUPYTER_SNIPPET = `# TrendScore US 입력 데이터 생성 (로컬 Jupyter)
+export const US_JUPYTER_SNIPPET = `# CloudTrend 입력 데이터 생성 (로컬 Jupyter)
 # 토스증권 API 키/시크릿은 로컬 OS 환경변수에만 두고, 브라우저·클라우드에 올리지 않습니다.
 # pip install requests pandas
 import os, time, requests, pandas as pd

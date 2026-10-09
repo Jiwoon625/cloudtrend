@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   ADOPTED_SERIES_KINDS,
   freezeAdoptedSeries,
+  freezeRestartSeries,
   hashSeriesValue,
   VERIFIED_INITIAL_FX,
   type FrozenModelSeries,
@@ -504,4 +505,40 @@ it("exports synthetic application-shaped payloads only for optional local Postgr
   };
   const { writeFile } = await import("node:fs/promises");
   await writeFile(output, JSON.stringify(value), { mode: 0o600 });
+});
+
+it("records October 12 in separate books without importing a beta holding or pending order", async () => {
+  const f = await fixture();
+  for (const kind of ADOPTED_SERIES_KINDS)
+    await f.store.insertSeries(
+      await freezeRestartSeries({ kind, frozenAt: "2026-10-09T00:00:00Z", codeHash, sourceHash }),
+    );
+  const kr = krEvidenceSource("2026-10-12");
+  kr.dataset.tradeDates = ["2026-10-08", "2026-10-12"];
+  kr.dataset.kospiGateDates = kr.dataset.tradeDates;
+  const first = await recordOctoberPublication(f.store, kr);
+  expect(first).toBeTruthy();
+  const us = { ...source("2026-10-12"), previousSessionDate: "2026-10-09" };
+  await recordOctoberPublication(f.store, us);
+  expect(f.sessions.size).toBe(8);
+  for (const run of f.sessions.values()) {
+    expect(run.bookId).toContain("2026-10-12-v1:");
+    expect(run.receipt.date).toBe("2026-10-12");
+    expect(run.previousStateHash).toBeNull();
+  }
+  const output = process.env["CLOUDTREND_RESTART_APP_FIXTURES"];
+  if (output) {
+    const prepared = [...f.prepared.values()];
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(
+      output,
+      JSON.stringify({
+        series: [...f.registry.values()].filter((s) => s.accountingStartDate === "2026-10-12"),
+        archives: [...f.archives].map(([hash, payload]) => ({ date: payload.date, hash, payload })),
+        prepared,
+        preparedPayloadHashes: await Promise.all(prepared.map(hashSeriesValue)),
+      }),
+      { mode: 0o600 },
+    );
+  }
 });

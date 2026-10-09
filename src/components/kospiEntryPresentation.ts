@@ -1,5 +1,9 @@
 import type { ScreeningRow } from "@/lib/engine/pipeline";
-import { KOSPI_ENTRY_POLICY, isKospiEntryReady } from "@/lib/engine/kospiEntryConfirmation";
+import {
+  KOSPI_ENTRY_POLICY,
+  kospiPolicyVersionAt,
+  isKospiEntryReady,
+} from "@/lib/engine/kospiEntryConfirmation";
 
 export function kospiMarketGateLabel(status: string | undefined): string {
   switch (status) {
@@ -20,15 +24,15 @@ export function kospiEntryStateLabel(entry: ScreeningRow["kospiEntry"]): string 
     case "pending":
       return "하루 확인 대기";
     case "confirmed":
-      if (isKospiEntryReady(entry)) return "하루 확인 완료 · 시장국면 통과";
+      if (isKospiEntryReady(entry)) return "진입 준비 · 시장국면 통과";
       return entry.date < KOSPI_ENTRY_POLICY.effectiveConfirmationDate ||
-        entry.version !== KOSPI_ENTRY_POLICY.version
+        entry.version !== kospiPolicyVersionAt(entry.date)
         ? "과거 확인 참고 · 운영 진입 제외"
         : "확인 기록 미충족 · 진입 제외";
     case "rejected":
-      return "확인 탈락 · 진입 제외 · 새 Onset 필요";
+      return "확인 탈락 · 진입 제외 · 새 원신호 필요";
     case "unobservable":
-      return "확인 불가 · 진입 제외 · 새 Onset 필요";
+      return "확인 불가 · 진입 제외 · 새 원신호 필요";
     case "none":
       return "확인 대상 없음";
   }

@@ -1,3 +1,4 @@
+import { createImmutableArchiveFixture } from "./immutable-archive-fixture";
 import { mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -72,9 +73,11 @@ beforeEach(async () => {
       return { error: null };
     },
   };
+  const archive = createImmutableArchiveFixture();
   mocks.trusted.mockReturnValue({
     storage: { from: () => storage },
     from: (table: string) => {
+      if (table === "screening_run_archive") return archive();
       let previousQuery = false;
       const query: MockQuery = {
         maybeSingle: async () => ({

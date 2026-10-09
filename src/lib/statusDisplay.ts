@@ -39,21 +39,12 @@ function heldExitStatus(row: ScreeningRow): string | null {
   return null;
 }
 
-/** A threshold in generic screening is not a sell instruction for an unheld stock. */
-function exitConditionStatus(
-  row: ScreeningRow,
-  holdingLabel: "미보유" | "보유 미확인",
-): string | null {
-  const exit = getStoredOperationalExit(row, row.instrument.market);
-  const condition =
-    exit === "UP95"
-      ? "KOSPI 9.5점 상향돌파"
-      : exit === "UP90"
-        ? "KOSDAQ 9.0점 상향 재돌파"
-        : exit === "DOWN30"
-          ? "KOSDAQ 3.0점 하향 이탈"
-          : null;
-  return condition ? `${holdingLabel} · ${condition} 조건 충족` : null;
+/** The filter and table share the exact same holding-perspective predicate. */
+export function isHeldExit(row: ScreeningRow, context: DomesticPositionContext | null | undefined) {
+  return !!context?.heldSymbols.includes(row.instrument.symbol) && heldExitStatus(row) !== null;
+}
+function unheldStatus(row: ScreeningRow) {
+  return getStoredOperationalExit(row, row.instrument.market) ? "관찰" : getDisplayStatus(row);
 }
 
 export function isPortfolioAwareOperationalEntry(
@@ -80,8 +71,7 @@ export function getPortfolioAwareDisplayStatus(
     return pending ? `${heldStatus} · 신규 진입 ${pending}` : heldStatus;
   }
   if (pending) {
-    const exit = exitConditionStatus(row, context ? "미보유" : "보유 미확인");
-    return exit ? `${pending} · ${exit}` : pending;
+    return pending;
   }
   if (
     row.kospiEntry?.state === "confirmed" &&
@@ -89,7 +79,7 @@ export function getPortfolioAwareDisplayStatus(
     !context?.heldSymbols.includes(row.instrument.symbol)
   )
     return "기한 지난 확인 · 진입 제외";
-  if (!context) return exitConditionStatus(row, "보유 미확인") ?? getDisplayStatus(row);
+  if (!context) return unheldStatus(row);
   const symbol = row.instrument.symbol;
   if (
     isOnsetSuppressed(context, symbol, row.kospiEntry?.originDate ?? signalDate) &&
@@ -98,5 +88,5 @@ export function getPortfolioAwareDisplayStatus(
     return "당일 매도 · 재진입 제외";
   if (row.kospiEntry?.state === "confirmed" && row.kospiEntry.date !== signalDate)
     return "기한 지난 확인 · 진입 제외";
-  return exitConditionStatus(row, "미보유") ?? getDisplayStatus(row);
+  return unheldStatus(row);
 }

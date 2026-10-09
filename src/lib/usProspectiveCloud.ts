@@ -4,6 +4,9 @@ import type { UsOrderPreviewBundle } from "./engine/usProspectiveOrderPreview";
 import { ownerPath, readObject, readBinaryObject, supabase, userId } from "@/lib/cloud";
 
 export interface UsProspectiveCacheRow {
+  previousCoreRank?: number | null;
+  previousCoreDate?: string | null;
+  eligibleBase?: boolean;
   date: string;
   symbol: string;
   name: string;

@@ -227,7 +227,7 @@ describe("Korean dashboard strategy-sector annotation", () => {
     );
     expect(signals.pendingCount).toBe(1);
     expect(signals.pending?.[0]).toMatchObject({
-      reason: "8.0 Onset · 다음 거래일 종가 확인 대기",
+      reason: "8.0 원신호 · 다음 거래일 종가 확인 대기",
       sectorLimit: { count: 0, limit: 3 },
     });
     expect(signals.onsetCount).toBe(0);

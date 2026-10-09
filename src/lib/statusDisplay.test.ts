@@ -51,24 +51,24 @@ describe("V8 display status", () => {
   it("does not promote old raw KOSPI onset to a new-policy entry", () => {
     expect(
       getDisplayStatus(row({ kospiEightPointEntry: true, kospi80Onset: true, rs20: 4, rs60: 5 })),
-    ).toBe("KOSPI 8.0 Onset · 확인 기록 없음 · 진입 제외");
+    ).toBe("KOSPI 8.0 원신호 · 확인 기록 없음 · 진입 제외");
   });
 
   it("does not promote onset-day positive RS without next-day confirmation", () => {
     expect(
       getDisplayStatus(row({ kospiEightPointEntry: true, kospi80Onset: true, rs20: 6, rs60: 2 })),
-    ).toBe("KOSPI 8.0 Onset · 확인 기록 없음 · 진입 제외");
+    ).toBe("KOSPI 8.0 원신호 · 확인 기록 없음 · 진입 제외");
   });
 
   it("does not confirm relative momentum when RSAccel is zero or unavailable", () => {
     expect(
       getDisplayStatus(row({ kospiEightPointEntry: true, kospi80Onset: true, rs20: 3, rs60: 3 })),
-    ).toBe("KOSPI 8.0 Onset · 확인 기록 없음 · 진입 제외");
+    ).toBe("KOSPI 8.0 원신호 · 확인 기록 없음 · 진입 제외");
     expect(
       getDisplayStatus(
         row({ kospiEightPointEntry: true, kospi80Onset: true, rs20: null, rs60: 3 }),
       ),
-    ).toBe("KOSPI 8.0 Onset · 확인 기록 없음 · 진입 제외");
+    ).toBe("KOSPI 8.0 원신호 · 확인 기록 없음 · 진입 제외");
   });
 
   it("keeps bear-blocked raw onset visibly excluded", () => {
@@ -117,7 +117,7 @@ describe("V8 display status", () => {
     ).toBe("KOSPI 청산 · 9.5점 상향돌파");
   });
 
-  it("uses the operational KOSDAQ 8.0 Onset · 신규 진입 label", () => {
+  it("uses the operational KOSDAQ 8.0 원신호 · 신규 진입 label", () => {
     expect(
       getDisplayStatus(
         row({
@@ -127,7 +127,7 @@ describe("V8 display status", () => {
           rs60: 2,
         }),
       ),
-    ).toBe("KOSDAQ 8.0 Onset · 신규 진입");
+    ).toBe("KOSDAQ 8.0 원신호 · 신규 진입");
   });
 
   it("shows the validated KOSDAQ aggressive exit labels", () => {
@@ -246,18 +246,14 @@ describe("unheld exit conditions are not actual sell instructions", () => {
 
   it("labels the unheld condition while retaining confirmation rejection and immutable raw status", () => {
     const original = structuredClone(rejected);
-    expect(getPortfolioAwareDisplayStatus(rejected, empty, "2026-10-02")).toBe(
-      "미보유 · KOSPI 9.5점 상향돌파 조건 충족",
-    );
+    expect(getPortfolioAwareDisplayStatus(rejected, empty, "2026-10-02")).toBe("관찰");
     expect(isPortfolioAwareOperationalEntry(rejected, empty, "2026-10-02")).toBe(false);
     expect(getDisplayStatus(rejected)).toBe("KOSPI 청산 · 9.5점 상향돌파");
     expect(rejected).toEqual(original);
   });
 
   it("does not claim a holding or a sell action while actual holdings are unavailable", () => {
-    expect(getPortfolioAwareDisplayStatus(rejected, undefined, "2026-10-02")).toBe(
-      "보유 미확인 · KOSPI 9.5점 상향돌파 조건 충족",
-    );
+    expect(getPortfolioAwareDisplayStatus(rejected, undefined, "2026-10-02")).toBe("관찰");
   });
 
   it("preserves actual held-position exit priority", () => {
@@ -283,7 +279,7 @@ describe("unheld exit conditions are not actual sell instructions", () => {
         empty,
         "2026-10-02",
       ),
-    ).toBe(`미보유 · ${condition} 조건 충족`);
+    ).toBe("관찰");
   });
 });
 
@@ -346,9 +342,11 @@ describe("missing market-cap judgment and held exits", () => {
   it("keeps unheld exit conditions informational alongside pending judgment", () => {
     const input = pending({ instrument: instrument("KOSDAQ"), exitSignal: "UP90" });
     expect(getPortfolioAwareDisplayStatus(input, empty, "2026-10-07")).toBe(
-      "판단 보류 · 현재 시가총액 미확인 · 미보유 · KOSDAQ 9.0점 상향 재돌파 조건 충족",
+      "판단 보류 · 현재 시가총액 미확인",
     );
-    expect(getPortfolioAwareDisplayStatus(input, undefined, "2026-10-07")).toContain("보유 미확인");
+    expect(getPortfolioAwareDisplayStatus(input, undefined, "2026-10-07")).toBe(
+      "판단 보류 · 현재 시가총액 미확인",
+    );
   });
 
   it("does not modify the existing ETF missing-KRX display", () => {

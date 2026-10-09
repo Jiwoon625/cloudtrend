@@ -2,6 +2,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   ADOPTED_SERIES_KINDS,
   ADOPTED_SERIES_VERSION,
+  RESTART_SERIES_VERSION,
+  activeSeriesVersion,
   MODEL_ACCOUNTING_START,
   firstModelSession,
   guardModelRun,
@@ -20,6 +22,16 @@ import { octoberShadowTax } from "./ledger/octoberShadowTax";
 import type { UsTaxOverlayResult } from "./engine/usCapitalGainsTax";
 
 export interface OctoberShadowBookSummary {
+  history?: Array<{ date: string; nav: number | null; benchmark: number | null }>;
+  trades?: Array<{
+    date: string;
+    symbol: string;
+    side: string;
+    quantity: string;
+    price: string;
+    reason: string;
+  }>;
+  mddPercent?: number | null;
   bookId: string;
   kind: AdoptedSeriesKind;
   role: "ADOPTED_SHADOW" | "ALTERNATIVE_SHADOW";
@@ -86,13 +98,16 @@ const roleFor = (kind: AdoptedSeriesKind) =>
   ["US_A2", "US_B3", "KR_KOSPI_CONFIRM1_BEAR"].includes(kind)
     ? ("ALTERNATIVE_SHADOW" as const)
     : ("ADOPTED_SHADOW" as const);
-const empty = (kind: AdoptedSeriesKind): OctoberShadowBookSummary => ({
-  bookId: `${ADOPTED_SERIES_VERSION}:${kind}`,
+const empty = (
+  kind: AdoptedSeriesKind,
+  version: string = ADOPTED_SERIES_VERSION,
+): OctoberShadowBookSummary => ({
+  bookId: `${version}:${kind}`,
   kind,
   role: roleFor(kind),
   currency: isAdoptedUsSeriesKind(kind) ? "USD" : "KRW",
   status: "NOT_INITIALIZED",
-  scheduledStart: MODEL_ACCOUNTING_START,
+  scheduledStart: version === RESTART_SERIES_VERSION ? "2026-10-12" : MODEL_ACCOUNTING_START,
   frozenAt: null,
   firstSessionDate: null,
   latestSessionDate: null,
@@ -145,7 +160,7 @@ export async function summarizeOctoberShadowBook(
   historyComplete: boolean,
   checkedAt: string,
 ): Promise<OctoberShadowBookSummary> {
-  const output = empty(kind);
+  const output = empty(kind, registry?.payload.version);
   if (!registry) return output;
   try {
     const series = registry.payload;
@@ -280,6 +295,92 @@ export async function summarizeOctoberShadowBook(
       // KR replay candidates are not a persisted pending-order queue.
       output.pending = null;
     }
+    if (historyComplete) {
+      output.history = [];
+      output.trades = [];
+      const seen = new Set<string>();
+      for (const row of rows) {
+        await verifySession(series, row, checkedAt);
+        let nav: number | null = null,
+          benchmark: number | null = null;
+        if (isAdoptedUsSeriesKind(kind)) {
+          const r = (row.payload as AdoptedUsRun).result;
+          nav = r.nav;
+          benchmark = r.benchmarkNav;
+          for (const t of r.trades)
+            if (t.executionDate && t.modelShares && t.modelPrice && t.status !== "PENDING")
+              output.trades.push({
+                date: t.executionDate,
+                symbol: t.symbol,
+                side: t.side,
+                quantity: String(t.modelShares),
+                price: String(t.modelPrice),
+                reason: t.reason,
+              });
+        } else if (kind === "ETF_V02") {
+          const r = (row.payload as AdoptedEtfRun).result;
+          nav = r.state.valuation.nav === null ? null : Number(r.state.valuation.nav);
+          for (const t of r.record.fills)
+            output.trades.push({
+              date: t.executionDate,
+              symbol: t.symbol,
+              side: t.side,
+              quantity: t.quantity,
+              price: t.price,
+              reason: t.reason,
+            });
+        } else if (kind === "KR_KOSPI_CONFIRM1_BEAR") {
+          const r = (row.payload as AdoptedKospiShadowRun).result;
+          nav = r.daily.navKrw;
+          benchmark = r.daily.benchmarkNavKrw;
+          for (const t of r.trades)
+            output.trades.push({
+              date: t.executionDate,
+              symbol: t.symbol,
+              side: t.side,
+              quantity: String(t.shares),
+              price: String(t.price),
+              reason: t.reason,
+            });
+        } else {
+          const r = (row.payload as AdoptedKrRun).result;
+          nav = r.modelAccounting?.nav === undefined ? null : Number(r.modelAccounting.nav);
+          for (const t of r.trades) {
+            if (!seen.has(t.id + ":BUY")) {
+              output.trades.push({
+                date: t.entryDate,
+                symbol: t.symbol,
+                side: "BUY",
+                quantity: String(t.shares),
+                price: String(t.entryPrice),
+                reason: t.entryStatus,
+              });
+              seen.add(t.id + ":BUY");
+            }
+            if (t.exitDate && t.exitPrice && !seen.has(t.id + ":SELL")) {
+              output.trades.push({
+                date: t.exitDate,
+                symbol: t.symbol,
+                side: "SELL",
+                quantity: String(t.shares),
+                price: String(t.exitPrice),
+                reason: t.exitReason ?? "",
+              });
+              seen.add(t.id + ":SELL");
+            }
+          }
+        }
+        output.history.push({ date: row.session_date, nav, benchmark });
+      }
+      let peak = Number(output.initialCapital),
+        mdd = 0;
+      for (const day of output.history)
+        if (day.nav !== null) {
+          peak = Math.max(peak, day.nav);
+          mdd = Math.min(mdd, day.nav / peak - 1);
+        }
+      output.mddPercent = output.history.some((day) => day.nav === null) ? null : mdd * 100;
+    }
     output.returnPercent =
       output.nav !== null && output.initialCapital !== null && Number(output.initialCapital) > 0
         ? (Number(output.nav) / Number(output.initialCapital) - 1) * 100
@@ -287,7 +388,7 @@ export async function summarizeOctoberShadowBook(
     return output;
   } catch (error) {
     return {
-      ...empty(kind),
+      ...empty(kind, registry?.payload.version),
       status: "UNAVAILABLE",
       warnings: [error instanceof Error ? error.message : "신규 Shadow 확인 실패"],
     };
@@ -316,10 +417,15 @@ const fields = "series_id,session_date,previous_session_date,state_hash,payload"
 export async function loadOctoberShadowSummaryForOwner(
   client: SupabaseClient,
   uid: string,
+  requestedVersion?: string,
+  detailKind?: AdoptedSeriesKind,
 ): Promise<OctoberShadowSummary> {
   if (!/^[a-f\d-]{36}$/i.test(uid)) throw new Error("로그인 소유자 확인 필요");
   const checkedAt = new Date().toISOString();
-  const ids = ADOPTED_SERIES_KINDS.map((kind) => `${ADOPTED_SERIES_VERSION}:${kind}`);
+  const version = requestedVersion ?? activeSeriesVersion(checkedAt.slice(0, 10));
+  if (![ADOPTED_SERIES_VERSION, RESTART_SERIES_VERSION].includes(version))
+    throw new Error("Unknown Shadow series version");
+  const ids = ADOPTED_SERIES_KINDS.map((kind) => `${version}:${kind}`);
   const registry = await client
     .from("ledger_model_series")
     .select("series_id,strategy_id,role,scheduled_start,config_hash,payload")
@@ -328,7 +434,7 @@ export async function loadOctoberShadowSummaryForOwner(
   if (registry.error) throw new Error(`신규 Shadow 등록정보 조회 실패: ${registry.error.message}`);
   const books = await Promise.all(
     ADOPTED_SERIES_KINDS.map(async (kind) => {
-      const base = empty(kind);
+      const base = empty(kind, version);
       const matches = (registry.data ?? []).filter((row) => row.series_id === base.bookId);
       if (matches.length > 1)
         return { ...base, status: "UNAVAILABLE" as const, warnings: ["중복 신규 Shadow 등록정보"] };
@@ -336,7 +442,7 @@ export async function loadOctoberShadowSummaryForOwner(
       try {
         const rows: OctoberSessionRow[] = [];
         let historyComplete = true;
-        if (isAdoptedUsSeriesKind(kind)) {
+        if (isAdoptedUsSeriesKind(kind) || kind === detailKind) {
           for (let offset = 0; ; offset += 100) {
             if (offset >= 20000)
               throw new Error("전체 세션 검증 한도 초과: 부분 이력으로 세금 산출 불가");
@@ -412,8 +518,7 @@ export async function loadOctoberShadowSummaryForOwner(
         sourceCapturedAt: row.source_captured_at ? String(row.source_captured_at) : null,
         modelDecisionAt: row.model_decision_at ? String(row.model_decision_at) : null,
         executionAt: row.execution_at ? String(row.execution_at) : null,
-        replayMode:
-          row.replay_mode === "RETROSPECTIVE" ? "RETROSPECTIVE" : "CONTEMPORANEOUS",
+        replayMode: row.replay_mode === "RETROSPECTIVE" ? "RETROSPECTIVE" : "CONTEMPORANEOUS",
         status:
           row.status === "WAITING_INPUT"
             ? "WAITING_INPUT"
@@ -427,7 +532,7 @@ export async function loadOctoberShadowSummaryForOwner(
     }
   }
   return {
-    version: ADOPTED_SERIES_VERSION,
+    version,
     checkedAt,
     viewVersion: "october-shadow-holdings-tax-v2",
     readyForPortfolioConsolidation: isOctoberShadowReady(books),
@@ -436,7 +541,11 @@ export async function loadOctoberShadowSummaryForOwner(
   };
 }
 
-export async function loadOctoberShadowSummary(accessToken: string) {
+export async function loadOctoberShadowSummary(
+  accessToken: string,
+  version?: string,
+  detailKind?: AdoptedSeriesKind,
+) {
   const client = createClient(
     import.meta.env["VITE_SUPABASE_URL"] || "https://ahbvrtugugwnbrfnbxzp.supabase.co",
     import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
@@ -448,5 +557,5 @@ export async function loadOctoberShadowSummary(accessToken: string) {
   );
   const { data, error } = await client.auth.getUser(accessToken);
   if (error || !data.user) throw new Error("로그인 세션을 확인해 주세요.");
-  return loadOctoberShadowSummaryForOwner(client, data.user.id);
+  return loadOctoberShadowSummaryForOwner(client, data.user.id, version, detailKind);
 }

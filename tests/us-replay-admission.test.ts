@@ -1,3 +1,4 @@
+import { createImmutableArchiveFixture } from "./immutable-archive-fixture";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { bytesHash } from "../scripts/us-replay-source";
 import { sourceCsv } from "./us-replay-fixtures";
@@ -37,8 +38,10 @@ function client(
     collected_at: "2026-10-06T21:00:00Z",
     metadata,
   };
+  const archive = createImmutableArchiveFixture();
   const c = {
     from(table: string) {
+      if (table === "screening_run_archive") return archive();
       const q = {
         select() {
           return q;

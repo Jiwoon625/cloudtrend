@@ -13,7 +13,7 @@ export interface AppShellSource {
 }
 
 const NAV = [
-  { to: "/scoring", label: "데이터/산식" },
+  { to: "/scoring", label: "데이터 관리" },
   { to: "/", label: "대시보드" },
   { to: "/portfolio", label: "포트폴리오" },
   { to: "/screener/stocks", label: "주식스크리너" },
@@ -22,7 +22,7 @@ const NAV = [
   { to: "/sectors", label: "섹터" },
   { to: "/history", label: "스크리닝 이력" },
   { to: "/shadow", label: "Shadow" },
-  { to: "/data-status", label: "데이터상태" },
+  { to: "/operating-rules", label: "운영규칙" },
 ] as const;
 
 const THEME_STORAGE_KEY = "cloudtrend-theme";

@@ -182,9 +182,9 @@ describe("missing market-cap judgment presentation", () => {
       } as AnalysisResult;
       const html = renderToStaticMarkup(<ScreenerView mode="STOCK" analysis={analysis} />);
       expect(html).toContain("진입 준비 (0)");
-      expect(html).toContain("KOSPI 하루 확인 대기 (0)");
-      expect(html).toContain("KOSDAQ Onset (0)");
-      if (market === "KOSPI") expect(html).toContain("KOSPI 원시 Onset (1)");
+      expect(html).toContain("확인 대기 (0)");
+      expect(html).toContain("진입 준비 (0)");
+      expect(html).not.toContain("KOSPI 원시 Onset");
     },
   );
 

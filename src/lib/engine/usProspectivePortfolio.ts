@@ -322,7 +322,7 @@ export function stepUsProspectivePortfolio(
     if (
       !adopted ||
       JSON.stringify(config) !== JSON.stringify(adopted) ||
-      p.bookId !== `adopted-shadow-2026-10-05-v1:${seriesKind}`
+      p.bookId !== `adopted-shadow-${p.accountingStartDate}-v1:${seriesKind}`
     )
       throw new Error(
         "Isolated US execution requires unchanged adopted strategy and matching series",

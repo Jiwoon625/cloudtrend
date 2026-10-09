@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { UsRecoveryNotice } from "@/components/UsRecoveryNotice";
-import { UsA0AllocationRules } from "@/components/UsA0AllocationRules";
+import { loadDomesticPositionContext } from "@/lib/portfolioPositionContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,15 @@ export const Route = createFileRoute("/us/screener")({
 const EMPTY_ROWS: UsProspectiveCacheRow[] = [];
 
 type Filter =
-  "PRIMARY_WATCH" | "PRIMARY_ENTRY" | "PRIMARY_EXIT" | "A2_ENTRY" | "B3_ENTRY" | "B3_EXIT" | "ALL";
+  | "FUNNEL_1"
+  | "FUNNEL_2"
+  | "FUNNEL_3"
+  | "PRIMARY_WATCH"
+  | "PRIMARY_ENTRY"
+  | "PRIMARY_EXIT"
+  | "A2_ENTRY"
+  | "B3_ENTRY"
+  | "ALL";
 
 type SortDirection = "asc" | "desc";
 type SortKey =
@@ -57,6 +65,12 @@ function money(v: number | null) {
 }
 
 function UsScreenerPage() {
+  const positions = useQuery({
+    queryKey: ["domestic-position-context"],
+    queryFn: loadDomesticPositionContext,
+    retry: false,
+    staleTime: 60000,
+  });
   const query = useQuery({
     queryKey: ["us-prospective-cache"],
     queryFn: loadUsProspectiveCache,
@@ -86,7 +100,7 @@ function UsScreenerPage() {
       {
         step: "2",
         label: "Beta 통과",
-        description: "Onset 중 Beta 상위 10% 이내",
+        description: "원신호 중 Beta 상위 10% 이내",
         a0: beta.length,
         b3: beta.length,
       },
@@ -112,15 +126,19 @@ function UsScreenerPage() {
       if (r.symbol === "SPY") return false;
       if (q && !r.symbol.includes(q) && !r.name.toUpperCase().includes(q)) return false;
       if (sector && (r.sector ?? "미분류") !== sector) return false;
+      if (filter === "FUNNEL_1") return r.onset80;
+      if (filter === "FUNNEL_2") return r.onset80 && (r.betaRank ?? -1) >= 0.9;
+      if (filter === "FUNNEL_3")
+        return r.onset80 && (r.betaRank ?? -1) >= 0.9 && (r.tkRank ?? -1) >= 0.8;
       if (filter === "PRIMARY_WATCH") return !r.a0Exit && (r.coreRank ?? 0) >= 0.7;
       if (filter === "PRIMARY_ENTRY") return r.a0Entry;
-      if (filter === "PRIMARY_EXIT") return r.a0Exit;
+      if (filter === "PRIMARY_EXIT")
+        return r.a0Exit && positions.data?.heldSymbols.includes(r.symbol);
       if (filter === "A2_ENTRY") return r.a2Entry;
       if (filter === "B3_ENTRY") return r.b3Entry;
-      if (filter === "B3_EXIT") return r.b3Exit;
       return r.coreRank !== null;
     });
-  }, [rows, filter, search, sector]);
+  }, [rows, filter, search, sector, positions.data]);
 
   const sortValue = (r: UsProspectiveCacheRow, key: SortKey): number | string | null => {
     if (key === "symbol") return `${r.symbol} ${r.name}`;
@@ -230,13 +248,8 @@ function UsScreenerPage() {
               <Badge>A0 PRIMARY</Badge>
             </div>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              기준일 {query.data?.analysis.date ?? "-"} · Core 상위 20% Onset / 상위 30% 밖 + Beta 상위 40% 밖×3 Anchor ·
-              Core ret120/252 50:50 · 숫자 재튜닝 금지
-            </p>
-            <UsA0AllocationRules />
-            <p className="text-[11px] text-muted-foreground">
-              아래 목록은 조건 충족 신호입니다. 실제 진입은 계좌별 기존 보유·빈 슬롯·현금과 정수
-              수량·거래대금 한도를 반영합니다.
+              기준일 {query.data?.analysis.date ?? "-"} · 전략{" "}
+              {query.data?.analysis.ruleVersion ?? "미확인"} · 자료 {rows.length}종목
             </p>
           </div>
           <div className="flex gap-2">
@@ -254,6 +267,8 @@ function UsScreenerPage() {
         <UsRecoveryNotice metadata={query.data?.source?.metadata} />
         {query.isError ? (
           <p role="alert">US 결과를 불러오지 못했습니다: {query.error.message}</p>
+        ) : query.isPending ? (
+          <p role="status">분석을 불러오는 중…</p>
         ) : !query.data ? (
           <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
             아직 GitHub 엔진이 생성한 US 결과가 없습니다. Colab 수집기를 실행한 뒤 workflow가
@@ -271,20 +286,28 @@ function UsScreenerPage() {
                 </div>
                 {entryFunnel[0]?.a0 === 0 ? (
                   <span className="text-[10px] text-muted-foreground">
-                    bootstrap 기준일에는 이전 Core가 없어 E80 Onset이 0건일 수 있습니다.
+                    bootstrap 기준일에는 이전 Core가 없어 E80 원신호이 0건일 수 있습니다.
                   </span>
                 ) : null}
               </div>
               <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                 {entryFunnel.map((item) => (
-                  <div key={item.step} className="rounded-md border border-border bg-background p-3">
+                  <button
+                    type="button"
+                    key={item.step}
+                    onClick={() => {
+                      setFilter(
+                        item.step === "4" ? "PRIMARY_ENTRY" : (`FUNNEL_${item.step}` as Filter),
+                      );
+                      setPage(0);
+                    }}
+                    className="rounded-md border border-border bg-background p-3 text-left hover:bg-accent"
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[10px] font-semibold text-muted-foreground">
                         STEP {item.step}
                       </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        A0/A2 · B3
-                      </span>
+                      <span className="text-[10px] text-muted-foreground">A0/A2 · B3</span>
                     </div>
                     <p className="mt-1 text-xs font-semibold">{item.label}</p>
                     <div className="mt-2 flex items-baseline gap-3">
@@ -300,10 +323,33 @@ function UsScreenerPage() {
                     <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
                       {item.description}
                     </p>
-                  </div>
+                  </button>
                 ))}
               </div>
             </section>
+            <details className="rounded-lg border p-3 text-xs">
+              <summary>단계별 탈락 집계</summary>
+              <p>
+                Core 원신호 없음 {rows.filter((r) => r.symbol !== "SPY" && !r.onset80).length} ·
+                Beta 미충족 {rows.filter((r) => r.onset80 && (r.betaRank ?? -1) < 0.9).length} · TK
+                미충족{" "}
+                {
+                  rows.filter(
+                    (r) => r.onset80 && (r.betaRank ?? -1) >= 0.9 && (r.tkRank ?? -1) < 0.8,
+                  ).length
+                }{" "}
+                · 공통 적격 미충족{" "}
+                {
+                  rows.filter(
+                    (r) =>
+                      r.onset80 &&
+                      (r.betaRank ?? -1) >= 0.9 &&
+                      (r.tkRank ?? -1) >= 0.8 &&
+                      !r.a0Entry,
+                  ).length
+                }
+              </p>
+            </details>
             <div className="flex flex-wrap gap-1">
               {(
                 [
@@ -312,8 +358,7 @@ function UsScreenerPage() {
                   ["PRIMARY_EXIT", "A0 청산"],
                   ["A2_ENTRY", "A2 Shadow 진입"],
                   ["B3_ENTRY", "B3 Shadow 진입"],
-                  ["B3_EXIT", "B3 Shadow 청산"],
-                  ["ALL", "전체"],
+                  ["ALL", "산정 가능 전체"],
                 ] as Array<[Filter, string]>
               ).map(([id, label]) => (
                 <button
@@ -382,29 +427,113 @@ function UsScreenerPage() {
               <table className="w-full min-w-[1280px] text-[11px]">
                 <thead>
                   <tr className="border-b bg-surface-strong text-muted-foreground [&>th]:px-2 [&>th]:py-2 [&>th]:text-right">
-                    <SortableHeader label="종목" sortKey="symbol" sort={sort} onSort={toggleSort} align="left" />
-                    <SortableHeader label="시장/섹터" sortKey="marketSector" sort={sort} onSort={toggleSort} align="left" />
+                    <SortableHeader
+                      label="종목"
+                      sortKey="symbol"
+                      sort={sort}
+                      onSort={toggleSort}
+                      align="left"
+                    />
+                    <SortableHeader
+                      label="시장/섹터"
+                      sortKey="marketSector"
+                      sort={sort}
+                      onSort={toggleSort}
+                      align="left"
+                    />
                     <SortableHeader label="종가" sortKey="close" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="Core 상위" sortKey="coreRank" sort={sort} onSort={toggleSort} />
+                    <SortableHeader
+                      label="Core 상위"
+                      sortKey="coreRank"
+                      sort={sort}
+                      onSort={toggleSort}
+                    />
+                    <th>전일 Core / 기준일</th>
                     <SortableHeader label="120D" sortKey="ret120" sort={sort} onSort={toggleSort} />
                     <SortableHeader label="252D" sortKey="ret252" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="120D 상위" sortKey="ret120Rank" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="252D 상위" sortKey="ret252Rank" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="Onset" sortKey="onset80" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="β 약화일" sortKey="betaWeakStreak" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="Beta 상위" sortKey="betaRank" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="TK 상위" sortKey="tkRank" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="RelVol 상위" sortKey="relvolRank" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="Liquidity 상위" sortKey="liquidityRank" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="Amihud 상위" sortKey="amihudRank" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="ADV20" sortKey="adv20Usd" sort={sort} onSort={toggleSort} />
-                    <SortableHeader label="A0" sortKey="a0Signal" sort={sort} onSort={toggleSort} align="left" />
-                    <SortableHeader label="Shadow" sortKey="shadowSignal" sort={sort} onSort={toggleSort} align="left" />
+                    <SortableHeader
+                      label="120D 상위"
+                      sortKey="ret120Rank"
+                      sort={sort}
+                      onSort={toggleSort}
+                    />
+                    <SortableHeader
+                      label="252D 상위"
+                      sortKey="ret252Rank"
+                      sort={sort}
+                      onSort={toggleSort}
+                    />
+                    <SortableHeader
+                      label="원신호"
+                      sortKey="onset80"
+                      sort={sort}
+                      onSort={toggleSort}
+                    />
+                    <SortableHeader
+                      label="β 약화일"
+                      sortKey="betaWeakStreak"
+                      sort={sort}
+                      onSort={toggleSort}
+                    />
+                    <SortableHeader
+                      label="Beta 상위"
+                      sortKey="betaRank"
+                      sort={sort}
+                      onSort={toggleSort}
+                    />
+                    <SortableHeader
+                      label="TK 상위"
+                      sortKey="tkRank"
+                      sort={sort}
+                      onSort={toggleSort}
+                    />
+                    <SortableHeader
+                      label="RelVol 상위"
+                      sortKey="relvolRank"
+                      sort={sort}
+                      onSort={toggleSort}
+                    />
+                    <SortableHeader
+                      label="Liquidity 상위"
+                      sortKey="liquidityRank"
+                      sort={sort}
+                      onSort={toggleSort}
+                    />
+                    <SortableHeader
+                      label="Amihud 상위"
+                      sortKey="amihudRank"
+                      sort={sort}
+                      onSort={toggleSort}
+                    />
+                    <SortableHeader
+                      label="ADV20"
+                      sortKey="adv20Usd"
+                      sort={sort}
+                      onSort={toggleSort}
+                    />
+                    <SortableHeader
+                      label="A0"
+                      sortKey="a0Signal"
+                      sort={sort}
+                      onSort={toggleSort}
+                      align="left"
+                    />
+                    <SortableHeader
+                      label="Shadow"
+                      sortKey="shadowSignal"
+                      sort={sort}
+                      onSort={toggleSort}
+                      align="left"
+                    />
                   </tr>
                 </thead>
                 <tbody>
                   {visibleRows.map((r) => (
-                    <ScreenerRow key={r.symbol} row={r} />
+                    <ScreenerRow
+                      key={r.symbol}
+                      row={r}
+                      held={positions.data?.heldSymbols.includes(r.symbol) ?? false}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -420,7 +549,6 @@ function UsScreenerPage() {
     </AppShell>
   );
 }
-
 
 function SortableHeader({
   label,
@@ -447,21 +575,30 @@ function SortableHeader({
         className={`inline-flex w-full items-center gap-1 rounded px-1 py-0.5 hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring ${
           align === "left" ? "justify-start" : "justify-end"
         }`}
-        title={active ? `${label} ${sort.direction === "asc" ? "오름차순" : "내림차순"} 정렬 중` : `${label} 정렬`}
+        title={
+          active
+            ? `${label} ${sort.direction === "asc" ? "오름차순" : "내림차순"} 정렬 중`
+            : `${label} 정렬`
+        }
       >
         <span>{label}</span>
-        <Icon className={`size-3 ${active ? "text-foreground" : "opacity-40"}`} aria-hidden="true" />
+        <Icon
+          className={`size-3 ${active ? "text-foreground" : "opacity-40"}`}
+          aria-hidden="true"
+        />
       </button>
     </th>
   );
 }
 
-function ScreenerRow({ row: r }: { row: UsProspectiveCacheRow }) {
+function ScreenerRow({ row: r, held }: { row: UsProspectiveCacheRow; held: boolean }) {
   return (
     <tr className="border-b border-border/60 last:border-0 [&>td]:px-2 [&>td]:py-2 [&>td]:text-right">
       <td className="!text-left">
-        <span className="font-semibold">{r.symbol}</span>
-        <span className="ml-1 text-muted-foreground">{r.name}</span>
+        <Link to="/us/instrument/$symbol" params={{ symbol: r.symbol }} className="hover:underline">
+          <span className="font-semibold">{r.symbol}</span>{" "}
+          <span className="ml-1 text-muted-foreground">{r.name}</span>
+        </Link>
       </td>
       <td className="!text-left text-muted-foreground">
         {r.market ?? "-"}
@@ -470,11 +607,16 @@ function ScreenerRow({ row: r }: { row: UsProspectiveCacheRow }) {
       </td>
       <td>{r.close?.toFixed(2) ?? "-"}</td>
       <td className="font-semibold">{topPct(r.coreRank)}</td>
+      <td>
+        {topPct(r.previousCoreRank ?? null)}
+        <br />
+        <span className="text-muted-foreground">{r.previousCoreDate ?? "이전 기록 미제공"}</span>
+      </td>
       <td>{pct(r.ret120)}</td>
       <td>{pct(r.ret252)}</td>
       <td>{topPct(r.ret120Rank)}</td>
       <td>{topPct(r.ret252Rank)}</td>
-      <td>{r.onset80 ? "신규진입" : "-"}</td>
+      <td>{r.onset80 ? "원신호" : "-"}</td>
       <td>{r.betaWeakStreak}</td>
       <td>{topPct(r.betaRank)}</td>
       <td>{topPct(r.tkRank)}</td>
@@ -484,8 +626,8 @@ function ScreenerRow({ row: r }: { row: UsProspectiveCacheRow }) {
       <td>{money(r.adv20Usd)}</td>
       <td className="!text-left">
         {r.a0Entry ? (
-          <Badge className="bg-up text-white">ENTRY</Badge>
-        ) : r.a0Exit ? (
+          <Badge className="bg-up text-white">진입 준비</Badge>
+        ) : held && r.a0Exit ? (
           <Badge variant="outline">{r.a0BetaExit ? "EXIT · β Anchor" : "EXIT"}</Badge>
         ) : (
           <span className="text-muted-foreground">-</span>
@@ -493,9 +635,9 @@ function ScreenerRow({ row: r }: { row: UsProspectiveCacheRow }) {
       </td>
       <td className="!text-left text-[10px]">
         {r.a2Entry ? "A2 E " : ""}
-        {r.a2Exit ? "A2 X " : ""}
+        {held && r.a2Exit ? "A2 X " : ""}
         {r.b3Entry ? "B3 E " : ""}
-        {r.b3Exit ? `B3 X${r.b3BetaExit ? "(β)" : ""}` : ""}
+        {held && r.b3Exit ? `B3 X${r.b3BetaExit ? "(β)" : ""}` : ""}
       </td>
     </tr>
   );

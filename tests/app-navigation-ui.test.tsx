@@ -23,7 +23,7 @@ describe("final consolidated navigation", () => {
       </AppShell>,
     );
     const labels = [
-      "데이터/산식",
+      "데이터 관리",
       "대시보드",
       "포트폴리오",
       "주식스크리너",
@@ -32,7 +32,7 @@ describe("final consolidated navigation", () => {
       "섹터",
       "스크리닝 이력",
       "Shadow",
-      "데이터상태",
+      "운영규칙",
     ];
     const positions = labels.map((text) => html.indexOf(`>${text}</a>`));
     expect(positions.every((position) => position >= 0)).toBe(true);

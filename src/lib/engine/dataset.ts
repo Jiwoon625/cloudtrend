@@ -36,6 +36,9 @@ export interface KospiVolatilityObservation {
 }
 
 export interface MarketDataset {
+  /** Canonical source observations, including zero-price suspension rows; never synthetic fills. */
+  observedBars?: Record<string, DailyPrice[]>;
+  liquidSymbolCountsByDate?: Record<string, number>;
   provider: string;
   version: string;
   asOfDate: string;

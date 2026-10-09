@@ -301,7 +301,8 @@ function rollingHigh(bars: DailyPrice[], window = 250, minimum = 60): number[] {
   let head = 0;
   for (let i = 0; i < bars.length; i++) {
     while (head < deque.length && deque[head]! < i - window + 1) head++;
-    while (deque.length > head && bars[deque[deque.length - 1]!]!.high <= bars[i]!.high) deque.pop();
+    while (deque.length > head && bars[deque[deque.length - 1]!]!.high <= bars[i]!.high)
+      deque.pop();
     deque.push(i);
     if (i >= minimum - 1) out[i] = bars[deque[head]!]!.high;
     if (head > 256 && head * 2 > deque.length) {
@@ -362,15 +363,11 @@ function memberMetric(prepared: PreparedInstrument, date: string): MemberMetric 
     aboveMa20: ma20 === null ? null : bar.close > ma20,
     aboveMa60: ma60 === null ? null : bar.close > ma60,
     aboveMa120: ma120 === null ? null : bar.close > ma120,
-    maAligned: ma20 === null || ma60 === null || ma120 === null ? null : ma20 > ma60 && ma60 > ma120,
-    nearHigh: Number.isFinite(high) ? bar.close >= high * 0.95 : null,
+    maAligned:
+      ma20 === null || ma60 === null || ma120 === null ? null : ma20 > ma60 && ma60 > ma120,
+    nearHigh: Number.isFinite(high) ? bar.close >= high! * 0.95 : null,
     advancing: bar.close > prepared.bars[index - 1]!.close,
-    foreign5: nullableWindowSum(
-      prepared.foreignPrefix,
-      prepared.foreignMissingPrefix,
-      index,
-      5,
-    ),
+    foreign5: nullableWindowSum(prepared.foreignPrefix, prepared.foreignMissingPrefix, index, 5),
     institution5: nullableWindowSum(
       prepared.institutionPrefix,
       prepared.institutionMissingPrefix,
@@ -384,7 +381,11 @@ function ratio(trueCount: number, validCount: number): number | null {
   return validCount > 0 ? (trueCount / validCount) * 100 : null;
 }
 
-function addBoolean(value: boolean | null, aggregate: SectorAggregate, key: "aboveMa20" | "aboveMa60" | "aboveMa120" | "maAligned" | "nearHigh" | "advancing") {
+function addBoolean(
+  value: boolean | null,
+  aggregate: SectorAggregate,
+  key: "aboveMa20" | "aboveMa60" | "aboveMa120" | "maAligned" | "nearHigh" | "advancing",
+) {
   if (value === null) return;
   const trueKey = `${key}True` as keyof SectorAggregate;
   const validKey = `${key}Valid` as keyof SectorAggregate;
@@ -442,7 +443,8 @@ function buildRawSectorDay(
     if (!allowed.has(code)) continue;
     const metric = memberMetric(item, date);
     if (!metric) continue;
-    const agg = aggregates.get(code) ?? createAggregate(code, names.get(code) ?? item.instrument.sectorName);
+    const agg =
+      aggregates.get(code) ?? createAggregate(code, names.get(code) ?? item.instrument.sectorName);
     agg.memberCount++;
     if (finite(metric.r20)) agg.r20.push(metric.r20);
     if (finite(metric.r60)) agg.r60.push(metric.r60);
@@ -527,10 +529,7 @@ function combine(parts: Array<{ weight: number; ratio: number | null }>): number
   const available = parts.filter((p) => p.ratio !== null);
   const weight = available.reduce((sum, p) => sum + p.weight, 0);
   if (weight === 0) return null;
-  return (
-    (available.reduce((sum, p) => sum + p.weight * (p.ratio ?? 0), 0) / weight) *
-    100
-  );
+  return (available.reduce((sum, p) => sum + p.weight * (p.ratio ?? 0), 0) / weight) * 100;
 }
 
 function averageRatios(values: Array<number | null>): number | null {
@@ -540,7 +539,10 @@ function averageRatios(values: Array<number | null>): number | null {
 
 function scoreLevel(raw: RawSectorDay[]): LevelScore[] {
   const sorted = (get: (row: RawSectorDay) => number | null) =>
-    raw.map(get).filter(finite).sort((a, b) => a - b);
+    raw
+      .map(get)
+      .filter(finite)
+      .sort((a, b) => a - b);
   const rs20s = sorted((r) => r.rs20);
   const rs60s = sorted((r) => r.rs60);
   const rs120s = sorted((r) => r.rs120);
@@ -681,7 +683,10 @@ function buildRankHistory(
   return output;
 }
 
-function strictEpisodes(history: DailyRanking[], sectorDefs: Array<{ code: string; name: string }>): Episode[] {
+function strictEpisodes(
+  history: DailyRanking[],
+  sectorDefs: Array<{ code: string; name: string }>,
+): Episode[] {
   const episodes: Episode[] = [];
   for (const sector of sectorDefs) {
     let current: Episode | null = null;
@@ -717,14 +722,17 @@ function strictEpisodes(history: DailyRanking[], sectorDefs: Array<{ code: strin
       previousMarketIndex = day.marketIndex;
     });
     if (current) {
-      current.rightCensored = true;
+      (current as Episode).rightCensored = true;
       episodes.push(current);
     }
   }
   return episodes;
 }
 
-function bufferedTopEpisodes(history: DailyRanking[], sectorDefs: Array<{ code: string; name: string }>): Episode[] {
+function bufferedTopEpisodes(
+  history: DailyRanking[],
+  sectorDefs: Array<{ code: string; name: string }>,
+): Episode[] {
   const episodes: Episode[] = [];
   for (const sector of sectorDefs) {
     let current: Episode | null = null;
@@ -762,14 +770,17 @@ function bufferedTopEpisodes(history: DailyRanking[], sectorDefs: Array<{ code: 
       previousMarketIndex = day.marketIndex;
     });
     if (current) {
-      current.rightCensored = true;
+      (current as Episode).rightCensored = true;
       episodes.push(current);
     }
   }
   return episodes;
 }
 
-function survival(episodes: Episode[], horizon: number): { eligible: number; survivors: number; rate: number | null } {
+function survival(
+  episodes: Episode[],
+  horizon: number,
+): { eligible: number; survivors: number; rate: number | null } {
   const entries = episodes.filter((e) => !e.leftCensored);
   let eligible = 0;
   let survivors = 0;
@@ -784,7 +795,11 @@ function survival(episodes: Episode[], horizon: number): { eligible: number; sur
   return { eligible, survivors, rate: eligible ? (survivors / eligible) * 100 : null };
 }
 
-function transitionStat(history: DailyRanking[], horizon: number, sectorDefs: Array<{ code: string; name: string }>): TransitionStat {
+function transitionStat(
+  history: DailyRanking[],
+  horizon: number,
+  sectorDefs: Array<{ code: string; name: string }>,
+): TransitionStat {
   const byIndex = new Map(history.map((day) => [day.marketIndex, day]));
   const groups: SectorRankGroup[] = ["TOP", "MID", "BOTTOM"];
   const counts = new Map(groups.map((group) => [group, { TOP: 0, MID: 0, BOTTOM: 0 }]));
@@ -866,12 +881,17 @@ function performanceStats(
       winRate: returns.length ? (returns.filter((x) => x > 0).length / returns.length) * 100 : null,
       avgExcessReturn: mean(excess),
       medianExcessReturn: median(excess),
-      excessWinRate: excess.length ? (excess.filter((x) => x > 0).length / excess.length) * 100 : null,
+      excessWinRate: excess.length
+        ? (excess.filter((x) => x > 0).length / excess.length) * 100
+        : null,
     };
   });
 }
 
-function topReentryGap(strictTopEpisodes: Episode[], sectorDefs: Array<{ code: string; name: string }>): EpisodeStats {
+function topReentryGap(
+  strictTopEpisodes: Episode[],
+  sectorDefs: Array<{ code: string; name: string }>,
+): EpisodeStats {
   const gaps: number[] = [];
   for (const sector of sectorDefs) {
     const starts = strictTopEpisodes
@@ -883,7 +903,9 @@ function topReentryGap(strictTopEpisodes: Episode[], sectorDefs: Array<{ code: s
   return statsFromDurations(gaps);
 }
 
-export function runSectorRotationBacktest(input: MarketDataset): SectorRotationBacktestResult | null {
+export function runSectorRotationBacktest(
+  input: MarketDataset,
+): SectorRotationBacktestResult | null {
   const dataset = buildFullUniverseSectorDataset(input);
   const kospi = dataset.indexSeries.find((s) => s.indexCode === "KOSPI");
   if (!kospi || kospi.bars.length <= MIN_LEVEL_INDEX + MOMENTUM_LOOKBACK) return null;
@@ -892,7 +914,8 @@ export function runSectorRotationBacktest(input: MarketDataset): SectorRotationB
     dataset.instruments.filter((i) => i.instrumentType === "STOCK").map((i) => i.sectorCode),
   );
   const sectorDefs = THEME_SECTORS.filter(
-    (sector) => sector.code !== "MARKET_IDX" && sector.code !== "ETC" && availableCodes.has(sector.code),
+    (sector) =>
+      sector.code !== "MARKET_IDX" && sector.code !== "ETC" && availableCodes.has(sector.code),
   );
   if (sectorDefs.length === 0) return null;
 

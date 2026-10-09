@@ -23,7 +23,7 @@ import { isKrOfficialShadowDecision } from "./krShadowDecision";
 
 export const ADOPTED_KOSPI_FIRST_SESSION = "2026-10-06";
 export interface AdoptedKospiShadowRun extends ModelJournalRun {
-  firstValidSessionDate: typeof ADOPTED_KOSPI_FIRST_SESSION;
+  firstValidSessionDate: string;
   calendar: ModelCalendar;
   result: KospiShadowSnapshot;
 }
@@ -76,7 +76,8 @@ export async function stepAdoptedKospiShadowSeries(
   if (
     !validDate(date) ||
     date < series.accountingStartDate ||
-    date >= KR_FIXED_BUDGET_END_EXCLUSIVE
+    date >=
+      (series.accountingStartDate === "2026-10-12" ? "2027-10-12" : KR_FIXED_BUDGET_END_EXCLUSIVE)
   )
     throw new Error("KOSPI model requires a post-start session within its fixed-budget first year");
   if (!/^sha256:[a-f0-9]{64}$/.test(session.sourceHash))
@@ -94,7 +95,11 @@ export async function stepAdoptedKospiShadowSeries(
     throw new Error("KOSPI session code/config must match the frozen run provenance");
   const first = firstModelSession(series, input.calendar);
   const sessions = [...input.calendar.regularSessions].sort();
-  if (first !== ADOPTED_KOSPI_FIRST_SESSION || !sessions.includes(date))
+  if (
+    first !==
+      (series.accountingStartDate === "2026-10-12" ? "2026-10-12" : ADOPTED_KOSPI_FIRST_SESSION) ||
+    !sessions.includes(date)
+  )
     throw new Error("KOSPI calendar must contain the verified first regular session on 2026-10-06");
   const preceding = sessions.filter((day) => day < date).at(-1) ?? null;
   if (session.previousSessionDate !== preceding)
@@ -143,7 +148,8 @@ export async function stepAdoptedKospiShadowSeries(
     codeHash: series.codeHash,
     configHash: series.configHash,
     accountingStartDate: series.accountingStartDate,
-    fixedBudgetEndExclusive: KR_FIXED_BUDGET_END_EXCLUSIVE,
+    fixedBudgetEndExclusive:
+      series.accountingStartDate === "2026-10-12" ? "2027-10-12" : KR_FIXED_BUDGET_END_EXCLUSIVE,
     initialCapitalKrw: series.initialKrw,
     oneWayCost: series.oneWayCost,
   };

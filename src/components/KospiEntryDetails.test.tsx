@@ -76,9 +76,9 @@ const row = (entry?: KospiEntrySnapshot): ScreeningRow =>
       sectorName: "반도체",
       indexMemberships: [],
     },
-    snapshot: { close: 70000, volumeRatio20: null, distanceFrom52wHigh: null },
+    snapshot: { tradeDate: date, close: 70000, volumeRatio20: null, distanceFrom52wHigh: null },
     operatingScore10: 8.5,
-    scoreDelta1d: 5,
+    scoreDelta1d: entry?.state === "pending" ? 15 : 5,
     priority: { points: 3, maxPoints: 5, availableMaxPoints: 5 },
     technical: { points: 8.5, maxPoints: 10, availableMaxPoints: 10 },
     grade: "A",
@@ -106,13 +106,13 @@ describe("KOSPI confirmation UI", () => {
   it("does not infer confirmation for an old record without a snapshot", () => {
     const html = renderToStaticMarkup(<KospiEntryDetails entry={undefined} showState />);
     expect(html).toContain("확인 기록 없음 · 진입 판정 제외");
-    expect(html).not.toContain("하루 확인 완료");
+    expect(html).not.toContain("진입 준비");
   });
   it.each([false, true])("shows dated market evidence in compact=%s mode", (compact) => {
     const html = renderToStaticMarkup(
       <KospiEntryDetails entry={confirmation()} compact={compact} />,
     );
-    expect(html).toContain("Onset일 시장 2026-10-01");
+    expect(html).toContain("원신호일 시장 2026-10-01");
     expect(html).toContain("확인일 시장 2026-10-02");
     expect(html).toContain("Neutral");
     expect(html).not.toContain("신규 진입 제외");
@@ -124,13 +124,13 @@ describe("KOSPI confirmation UI", () => {
       state: "rejected",
       eligible: false,
       marketGate: { origin: gate(date, { status: "RISK_OFF", metCount: 1 }), confirmation: null },
-      issues: ["발생일 불황(RISK_OFF) · 신규매수 제한 · 새 Onset 필요"],
+      issues: ["발생일 불황(RISK_OFF) · 신규매수 제한 · 새 원신호 필요"],
     });
     const html = renderToStaticMarkup(
       <KospiEntryDetails entry={entry} compact={compact} showState />,
     );
-    expect(html).toContain("확인 탈락 · 진입 제외 · 새 Onset 필요");
-    expect(html).toContain("Onset일 시장 2026-10-02 · Risk-Off(하락장) · 신규 진입 제외");
+    expect(html).toContain("확인 탈락 · 진입 제외 · 새 원신호 필요");
+    expect(html).toContain("원신호일 시장 2026-10-02 · Risk-Off(하락장) · 신규 진입 제외");
     expect(html).toContain("발생일 불황");
     expect(html).not.toContain("하루 확인 대기");
     expect(table(entry)).not.toContain("확인일 RS 통과");
@@ -143,14 +143,14 @@ describe("KOSPI confirmation UI", () => {
     const entry = confirmation({ marketGate: { origin, confirmation: gate(date) } });
     const html = renderToStaticMarkup(<KospiEntryDetails entry={entry} showState />);
     expect(html).toContain("진입 제외");
-    expect(html).not.toContain("하루 확인 완료");
+    expect(html).not.toContain("진입 준비");
     expect(table(entry)).not.toContain("확인일 RS 통과");
   });
   it("keeps older policy confirmation informational", () => {
     const entry = confirmation({ version: "kospi-e8-confirm1-rsaccel-v2" });
     const html = renderToStaticMarkup(<KospiEntryDetails entry={entry} showState />);
     expect(html).toContain("과거 확인 참고 · 운영 진입 제외");
-    expect(html).not.toContain("하루 확인 완료");
+    expect(html).not.toContain("진입 준비");
     expect(table(entry)).not.toContain("확인일 RS 통과");
   });
   it("shows raw onset pending, with RS labeled as pre-confirmation reference", () => {
@@ -163,14 +163,14 @@ describe("KOSPI confirmation UI", () => {
     });
     const html = renderToStaticMarkup(<KospiEntryDetails entry={entry} showState />);
     expect(html).toContain("하루 확인 대기");
-    expect(html).toContain("Onset 2026-10-02");
+    expect(html).toContain("원신호 2026-10-02");
     expect(html).toContain("다음 KOSPI 거래일 종가");
     expect(html).toContain("판정일 RSAccel · 확인 전 참고");
     expect(table(entry)).not.toContain("확인일 RS 통과");
   });
   it("shows confirmation dates and positive RS for current ready entry", () => {
     const html = renderToStaticMarkup(<KospiEntryDetails entry={confirmation()} showState />);
-    expect(html).toContain("하루 확인 완료");
+    expect(html).toContain("진입 준비");
     expect(html).toContain("판정일 2026-10-02");
     expect(html).toContain("확인 2026-10-02");
     expect(html).toContain("확인일 RSAccel: +1.25%p");
@@ -235,11 +235,12 @@ describe("KOSPI confirmation UI", () => {
         state: "rejected",
         eligible: false,
         marketGate: { origin: gate(date, { status: "RISK_OFF", metCount: 1 }), confirmation: null },
-        issues: ["발생일 불황(RISK_OFF) · 신규매수 제한 · 새 Onset 필요"],
+        issues: ["발생일 불황(RISK_OFF) · 신규매수 제한 · 새 원신호 필요"],
       }),
     );
     blocked.instrument = { ...blocked.instrument, symbol: "005380", name: "하락장 제외 종목" };
     blocked.kospi80Onset = true;
+    blocked.scoreDelta1d = 15;
     const analysis = {
       asOfDate: date,
       rows: [pending, ready, blocked],
@@ -250,9 +251,9 @@ describe("KOSPI confirmation UI", () => {
         <ScreenerView mode="STOCK" analysis={analysis} />
       </QueryClientProvider>,
     );
-    expect(html).toContain("KOSPI 원시 Onset (2)");
-    expect(html).toContain("KOSPI 하루 확인 대기 (1)");
-    expect(html).toContain("KOSPI 확인 완료 · 진입 준비 (1)");
+    expect(html).toContain("원신호 (2)");
+    expect(html).toContain("확인 대기 (1)");
+    expect(html).toContain("진입 준비 (1)");
     expect(html).toContain(">진입 준비 (1)<");
   });
 
@@ -266,7 +267,7 @@ describe("KOSPI confirmation UI", () => {
       price: 70000,
       score: 8.5,
       priority: 3,
-      reason: "하루 확인 완료 · 다음 거래일 시가 진입",
+      reason: "진입 준비 · 다음 거래일 시가 진입",
     };
     const data: DashboardOperations = {
       markets: [
@@ -358,10 +359,10 @@ describe("KOSPI market gate presentation", () => {
     const html = renderToStaticMarkup(<StrategyDescription />);
     expect(html).toContain("체결 직전 마지막 완료 KOSPI");
     expect(html).toContain("2026-10-02");
-    expect(html).toContain("새 Onset이 필요");
+    expect(html).toContain("새 원신호이 필요");
     expect(html).toContain("U9.5·H60 청산은 유지");
     expect(html).toContain(
-      "KOSDAQ: Stock PL 80 · 8.0 Onset 진입 · U9.0 상향 재돌파 / D3.0 하향 이탈",
+      "KOSDAQ: Stock PL 80 · 8.0 원신호 진입 · U9.0 상향 재돌파 / D3.0 하향 이탈",
     );
   });
 
@@ -420,13 +421,13 @@ describe("holding-aware KOSPI candidate reference", () => {
 
   it("keeps an unheld confirmation visible without a holding claim", () => {
     const html = renderToStaticMarkup(<KospiEntryDetails entry={confirmation()} showState />);
-    expect(html).toContain("하루 확인 완료");
+    expect(html).toContain("진입 준비");
     expect(html).not.toContain("보유 중");
     expect(html).not.toContain("<details>");
   });
 
   it("uses actual holdings in the screener to subordinate rejected candidate evidence", () => {
-    const html = table(confirmation({ state: "rejected", issues: ["새 Onset 필요"] }), {
+    const html = table(confirmation({ state: "rejected", issues: ["새 원신호 필요"] }), {
       heldSymbols: ["005930"],
       lastSellDateBySymbol: {},
     });
@@ -458,7 +459,7 @@ it("shows an unheld confirmation-UP95 condition without an actual sell label in 
   const html = renderToStaticMarkup(
     <ScreenerTable rows={[candidate]} positionContext={emptyContext} signalDate={date} />,
   );
-  expect(html).toContain("미보유 · KOSPI 9.5점 상향돌파 조건 충족");
+  expect(html).not.toContain("미보유 · KOSPI 9.5점 상향돌파 조건 충족");
   expect(html).toContain("확인일 U9.5 청산신호");
   expect(html).not.toContain("KOSPI 청산 ·");
   expect(html).not.toContain("청산 대기");

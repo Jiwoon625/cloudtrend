@@ -44,10 +44,10 @@ describe("cloud file persistence", () => {
       expect(await readObject(path)).toEqual({ revision: "old" });
       await writeObject(path, { revision: "new" });
       expect(await readObject(path)).toEqual({ revision: "new" });
-      expect(mocks.download.mock.calls[0][1].cacheNonce).not.toBe(
-        mocks.download.mock.calls[1][1].cacheNonce,
+      expect(mocks.download.mock.calls[0]![1]!.cacheNonce).not.toBe(
+        mocks.download.mock.calls[1]![1]!.cacheNonce,
       );
-      expect(mocks.upload.mock.calls[0][2].cacheControl).toBe("0");
+      expect(mocks.upload.mock.calls[0]![2]!.cacheControl).toBe("0");
     },
   );
   it("does not report network failures as empty data", async () => {

@@ -14,11 +14,13 @@ import { Route as BacktestRouteImport } from './routes/backtest'
 import { Route as DataStatusRouteImport } from './routes/data-status'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as McpRouteImport } from './routes/mcp'
+import { Route as OperatingRulesRouteImport } from './routes/operating-rules'
 import { Route as PortfolioRouteImport } from './routes/portfolio'
 import { Route as PositionSizingRouteImport } from './routes/position-sizing'
 import { Route as ScoringRouteImport } from './routes/scoring'
 import { Route as SectorsRouteImport } from './routes/sectors'
 import { Route as ShadowRouteImport } from './routes/shadow'
+import { Route as HistoryInstrumentSymbolRouteImport } from './routes/history-instrument.$symbol'
 import { Route as InstrumentSymbolRouteImport } from './routes/instrument.$symbol'
 import { Route as ScreenerEtfsRouteImport } from './routes/screener.etfs'
 import { Route as ScreenerStocksRouteImport } from './routes/screener.stocks'
@@ -53,6 +55,11 @@ const McpRoute = McpRouteImport.update({
   path: '/mcp',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OperatingRulesRoute = OperatingRulesRouteImport.update({
+  id: '/operating-rules',
+  path: '/operating-rules',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PortfolioRoute = PortfolioRouteImport.update({
   id: '/portfolio',
   path: '/portfolio',
@@ -76,6 +83,11 @@ const SectorsRoute = SectorsRouteImport.update({
 const ShadowRoute = ShadowRouteImport.update({
   id: '/shadow',
   path: '/shadow',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const HistoryInstrumentSymbolRoute = HistoryInstrumentSymbolRouteImport.update({
+  id: '/history-instrument/$symbol',
+  path: '/history-instrument/$symbol',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InstrumentSymbolRoute = InstrumentSymbolRouteImport.update({
@@ -125,11 +137,13 @@ export interface FileRoutesByFullPath {
   '/data-status': typeof DataStatusRoute
   '/history': typeof HistoryRoute
   '/mcp': typeof McpRoute
+  '/operating-rules': typeof OperatingRulesRoute
   '/portfolio': typeof PortfolioRoute
   '/position-sizing': typeof PositionSizingRoute
   '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
   '/shadow': typeof ShadowRoute
+  '/history-instrument/$symbol': typeof HistoryInstrumentSymbolRoute
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
   '/screener/stocks': typeof ScreenerStocksRoute
@@ -145,11 +159,13 @@ export interface FileRoutesByTo {
   '/data-status': typeof DataStatusRoute
   '/history': typeof HistoryRoute
   '/mcp': typeof McpRoute
+  '/operating-rules': typeof OperatingRulesRoute
   '/portfolio': typeof PortfolioRoute
   '/position-sizing': typeof PositionSizingRoute
   '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
   '/shadow': typeof ShadowRoute
+  '/history-instrument/$symbol': typeof HistoryInstrumentSymbolRoute
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
   '/screener/stocks': typeof ScreenerStocksRoute
@@ -166,11 +182,13 @@ export interface FileRoutesById {
   '/data-status': typeof DataStatusRoute
   '/history': typeof HistoryRoute
   '/mcp': typeof McpRoute
+  '/operating-rules': typeof OperatingRulesRoute
   '/portfolio': typeof PortfolioRoute
   '/position-sizing': typeof PositionSizingRoute
   '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
   '/shadow': typeof ShadowRoute
+  '/history-instrument/$symbol': typeof HistoryInstrumentSymbolRoute
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
   '/screener/stocks': typeof ScreenerStocksRoute
@@ -188,11 +206,13 @@ export interface FileRouteTypes {
     | '/data-status'
     | '/history'
     | '/mcp'
+    | '/operating-rules'
     | '/portfolio'
     | '/position-sizing'
     | '/scoring'
     | '/sectors'
     | '/shadow'
+    | '/history-instrument/$symbol'
     | '/instrument/$symbol'
     | '/screener/etfs'
     | '/screener/stocks'
@@ -208,11 +228,13 @@ export interface FileRouteTypes {
     | '/data-status'
     | '/history'
     | '/mcp'
+    | '/operating-rules'
     | '/portfolio'
     | '/position-sizing'
     | '/scoring'
     | '/sectors'
     | '/shadow'
+    | '/history-instrument/$symbol'
     | '/instrument/$symbol'
     | '/screener/etfs'
     | '/screener/stocks'
@@ -228,11 +250,13 @@ export interface FileRouteTypes {
     | '/data-status'
     | '/history'
     | '/mcp'
+    | '/operating-rules'
     | '/portfolio'
     | '/position-sizing'
     | '/scoring'
     | '/sectors'
     | '/shadow'
+    | '/history-instrument/$symbol'
     | '/instrument/$symbol'
     | '/screener/etfs'
     | '/screener/stocks'
@@ -249,11 +273,13 @@ export interface RootRouteChildren {
   DataStatusRoute: typeof DataStatusRoute
   HistoryRoute: typeof HistoryRoute
   McpRoute: typeof McpRoute
+  OperatingRulesRoute: typeof OperatingRulesRoute
   PortfolioRoute: typeof PortfolioRoute
   PositionSizingRoute: typeof PositionSizingRoute
   ScoringRoute: typeof ScoringRoute
   SectorsRoute: typeof SectorsRoute
   ShadowRoute: typeof ShadowRoute
+  HistoryInstrumentSymbolRoute: typeof HistoryInstrumentSymbolRoute
   InstrumentSymbolRoute: typeof InstrumentSymbolRoute
   ScreenerEtfsRoute: typeof ScreenerEtfsRoute
   ScreenerStocksRoute: typeof ScreenerStocksRoute
@@ -301,6 +327,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof McpRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/operating-rules': {
+      id: '/operating-rules'
+      path: '/operating-rules'
+      fullPath: '/operating-rules'
+      preLoaderRoute: typeof OperatingRulesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/portfolio': {
       id: '/portfolio'
       path: '/portfolio'
@@ -334,6 +367,13 @@ declare module '@tanstack/react-router' {
       path: '/shadow'
       fullPath: '/shadow'
       preLoaderRoute: typeof ShadowRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/history-instrument/$symbol': {
+      id: '/history-instrument/$symbol'
+      path: '/history-instrument/$symbol'
+      fullPath: '/history-instrument/$symbol'
+      preLoaderRoute: typeof HistoryInstrumentSymbolRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/instrument/$symbol': {
@@ -401,11 +441,13 @@ const rootRouteChildren: RootRouteChildren = {
   DataStatusRoute: DataStatusRoute,
   HistoryRoute: HistoryRoute,
   McpRoute: McpRoute,
+  OperatingRulesRoute: OperatingRulesRoute,
   PortfolioRoute: PortfolioRoute,
   PositionSizingRoute: PositionSizingRoute,
   ScoringRoute: ScoringRoute,
   SectorsRoute: SectorsRoute,
   ShadowRoute: ShadowRoute,
+  HistoryInstrumentSymbolRoute: HistoryInstrumentSymbolRoute,
   InstrumentSymbolRoute: InstrumentSymbolRoute,
   ScreenerEtfsRoute: ScreenerEtfsRoute,
   ScreenerStocksRoute: ScreenerStocksRoute,

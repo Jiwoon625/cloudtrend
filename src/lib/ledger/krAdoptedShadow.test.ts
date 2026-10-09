@@ -126,7 +126,7 @@ describe("new KR adopted-series opt-in", () => {
   });
 });
 
-import { freezeAdoptedSeries } from "./modelSeries";
+import { freezeAdoptedSeries, freezeRestartSeries } from "./modelSeries";
 import { stepAdoptedKrSeries } from "./krAdoptedShadow";
 const hash = `sha256:${"a".repeat(64)}` as const;
 it("freezes daily KR prefixes, enforces calendar sequence and reuses immutable same-date runs", async () => {
@@ -272,4 +272,77 @@ it("preserves the pre-patch frozen legacy prefix and next-session continuation b
   expect(await stepAdoptedKrSeries(series, nextInput, previous)).toEqual(legacyPrefix.next);
   expect(JSON.stringify(previous)).toBe(originalBytes);
   expect(legacyPrefix.next.run.result.trades).toHaveLength(1);
+});
+
+it("matches portfolio and adopted Shadow candidates, integer fills, cash and holdings for the same restart contract", async () => {
+  const series = await freezeRestartSeries({
+    kind: "KR_KOSDAQ",
+    codeHash: hash,
+    sourceHash: hash,
+    frozenAt: "2026-10-09T00:00:00Z",
+  });
+  const dates = ["2026-10-12", "2026-10-13", "2026-10-14"];
+  const calendar = {
+    market: "KR" as const,
+    sourceHash: hash,
+    coverageStart: dates[0]!,
+    coverageEnd: dates[2]!,
+    regularSessions: dates,
+  };
+  let previous: AdoptedKrRun | null = null;
+  const snapshots: ScreeningSnapshot[] = [];
+  for (const [index, date] of dates.entries()) {
+    const next = nextKrRegularSession(date)!;
+    snapshots.push(snapshot(date, index === 0 ? [entry("NEW")] : []));
+    const prices = {
+      NEW: dates
+        .slice(0, index + 1)
+        .filter((day) => day !== "2026-10-14")
+        .map((day) => bar(day, 99999)),
+      OTHER: dates.slice(0, index + 1).map((day) => bar(day, 100)),
+    };
+    const markets = { NEW: "KOSDAQ" as const, OTHER: "KOSPI" as const };
+    const input = {
+      date,
+      codeHash: hash,
+      sourceHash: hash,
+      configHash: series.configHash,
+      availableAt: `${next}T08:00:00+09:00`,
+      decisionAt: `${next}T08:10:00+09:00`,
+      confirmedClose: true,
+      snapshots: [...snapshots],
+      bars: prices,
+      markets,
+      marketGates: {},
+      calendar,
+    };
+    const { run } = await stepAdoptedKrSeries(series, input, previous);
+    const portfolio = simulateStrategy(
+      settings,
+      snapshots,
+      prices,
+      markets,
+      run.result.fingerprint,
+      dates.slice(0, index + 1),
+      {},
+      {
+        version: "kr-common-execution-20261012-v1",
+        startDate: "2026-10-12",
+        throughDate: date,
+        scope: "KOSDAQ",
+      },
+    );
+    portfolio.calculatedAt = run.result.calculatedAt;
+    expect(portfolio).toEqual(run.result);
+    if (index === 1) {
+      expect(portfolio.trades[0]!.shares).toBe(33);
+      expect(portfolio.modelAccounting!.cash).toBe("96695083.0495");
+    }
+    if (index === 2) {
+      expect(portfolio.trades[0]!.status).toBe("CLOSED");
+      expect(portfolio.trades[0]!.exitPrice).toBe(99999);
+      expect(portfolio.modelAccounting!.cash).toBe("99990100.099");
+    }
+    previous = run;
+  }
 });
