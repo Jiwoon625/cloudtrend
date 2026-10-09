@@ -51,7 +51,9 @@ function ScoreDelta({ value }: { value: number | null }) {
   if (value === null) return <span className="text-muted-foreground">-</span>;
   const Icon = value > 0 ? ArrowUp : value < 0 ? ArrowDown : Minus;
   const cls = value > 0 ? "text-up" : value < 0 ? "text-down" : "text-muted-foreground";
-  const signed = value > 0 ? `+${formatNumber(value, 1)}` : formatNumber(value, 1);
+  // Stored deltas use the legacy 100-point scale; the displayed score is /10.
+  const score10 = value / 10;
+  const signed = score10 > 0 ? `+${formatNumber(score10, 1)}` : formatNumber(score10, 1);
   return (
     <span
       className={`inline-flex items-center justify-end gap-0.5 font-semibold ${cls}`}
@@ -232,7 +234,7 @@ export function ScreenerTable({
             ? "산정 불가"
             : `${tech.toFixed(2)}/${r.instrument.instrumentType === "STOCK" ? "10" : (r.vf ?? r.technical).maxPoints}`,
         priority: `${r.priority.points.toFixed(2)}/${r.priority.maxPoints.toFixed(1)}`,
-        scoreDelta1d: r.scoreDelta1d?.toFixed(1) ?? "",
+        scoreDelta1d: r.scoreDelta1d == null ? "" : (r.scoreDelta1d / 10).toFixed(1),
         grade: r.grade,
         volumeRatio: r.snapshot.volumeRatio20?.toFixed(1) ?? "",
         rs20: r.rs20?.toFixed(2) ?? "",
@@ -352,6 +354,13 @@ export function ScreenerTable({
             <tr>{visible.map((c) => th(c))}</tr>
           </thead>
           <tbody>
+            {sorted.length === 0 ? (
+              <tr>
+                <td colSpan={visible.length} className="p-6 text-center text-muted-foreground">
+                  조건에 맞는 종목이 없습니다. 검색·필터를 조정해 주세요.
+                </td>
+              </tr>
+            ) : null}
             {sorted.slice(currentPage * 100, (currentPage + 1) * 100).map((r, offset) => {
               const i = currentPage * 100 + offset;
               const tech = technicalValue(r);

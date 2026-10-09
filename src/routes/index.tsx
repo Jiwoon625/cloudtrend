@@ -43,9 +43,12 @@ import { DomesticAssessmentPanel } from "@/components/DomesticAssessmentPanel";
 import { UniversePendingSummary } from "@/components/UniversePendingSummary";
 import { domesticPortfolioQueryOptions } from "@/lib/portfolioPositionContext";
 import type { DualPortfolioState } from "@/lib/portfolioLedgers";
-import type { DashboardSummary } from "@/lib/screeningCache";
+import { readDashboardCache, type DashboardSummary } from "@/lib/screeningCache";
 import { isScreeningStarted } from "@/lib/screeningRun";
-import { rebuildScreeningCachesServerFirst } from "@/lib/webScreeningClient";
+import {
+  getOrBuildDashboardSummaryServerFirst,
+  rebuildScreeningCachesServerFirst,
+} from "@/lib/webScreeningClient";
 
 export const Route = createFileRoute("/")({
   ssr: false,
@@ -128,9 +131,17 @@ function GateConditionValue({ comparison, met }: { comparison: string; met: bool
 
 function Dashboard() {
   const queryClient = useQueryClient();
-  const [started] = useState(() => isScreeningStarted());
+  const [requested] = useState(() => isScreeningStarted());
   const [rescreening, setRescreening] = useState(false);
-  const summaryQuery = useQuery({ ...dashboardQueryOptions, enabled: started });
+  const summaryQuery = useQuery({
+    queryKey: [...dashboardQueryOptions.queryKey],
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+    // A fresh device may read a published result; only explicit start may calculate.
+    queryFn: (): Promise<DashboardSummary | null> =>
+      requested ? getOrBuildDashboardSummaryServerFirst() : readDashboardCache(),
+  });
+  const started = requested || Boolean(summaryQuery.data);
   const operations = useDashboardOperations(started, summaryQuery.data?.resultDigest);
   const portfolioQuery = useQuery({
     ...domesticPortfolioQueryOptions,
@@ -199,7 +210,7 @@ function Dashboard() {
         </div>
       </div>
 
-      {!started ? (
+      {!started && !summaryQuery.isPending ? (
         <section className="rounded-lg border border-dashed border-primary/50 bg-card p-8 text-center">
           <SlidersHorizontal className="mx-auto mb-3 size-8 text-primary" />
           <h2 className="mb-1 text-base font-semibold">아직 스크리닝을 시작하지 않았습니다</h2>

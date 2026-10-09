@@ -116,7 +116,7 @@ function ScoringPage() {
             </Button>
             <span className="text-[11px] text-muted-foreground">
               {hasData
-                ? "V8 Final 10점 점수, KOSPI 하루 확인·RSAccel·하락장 신규진입 차단, KOSDAQ 원신호과 Exit 신호를 계산합니다."
+                ? "저장된 활성 자료를 분석하고 결과·계산 근거·실행 이력을 갱신합니다."
                 : "먼저 데이터를 입력하고 데이터 적용을 눌러 주세요."}
             </span>
           </div>

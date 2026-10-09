@@ -7,7 +7,7 @@ import { OnsetProfileDetails } from "@/components/OnsetProfileDetails";
 import { UniverseFilterDetails } from "@/components/UniverseFilterDetails";
 import { StockInstrumentSummary } from "@/components/StockInstrumentSummary";
 import { useQuery, useSuspenseQuery } from "@tanstack/react-query";
-import { createFileRoute, notFound } from "@tanstack/react-router";
+import { Link, createFileRoute, notFound } from "@tanstack/react-router";
 import { lazy, Suspense, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
@@ -270,10 +270,9 @@ function InstrumentDetail() {
               row.kospiEntry?.originDate ?? analysis.asOfDate,
             )}
           />
-          <p className="mt-2 text-[10px] text-muted-foreground">
-            신규 후보는 원신호일과 체결 직전 마지막 완료 거래일의 Risk-On/Neutral 확인이 필요합니다.
-            하락장·결측·오래된 시장자료로 취소된 후보는 새 원신호 없이 다시 진입하지 않습니다.
-          </p>
+          <Link to="/operating-rules" className="mt-2 inline-block text-xs underline">
+            운영규칙 보기
+          </Link>
         </section>
       ) : null}
 

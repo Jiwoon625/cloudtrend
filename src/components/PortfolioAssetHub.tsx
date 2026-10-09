@@ -504,7 +504,7 @@ export function PortfolioAssetHub({
               </p>
             )}
             <Link to="/screener/etfs" className="mb-3 block text-sm text-primary underline">
-              ETF 확인 상태·거래대금 우선순위·신규 비중 및 수량 계산
+              ETF 후보·확인 상태·거래대금 우선순위 확인
             </Link>
             {kr.data?.etfWarning ? (
               <p role="alert" className="mb-3 text-sm text-down">

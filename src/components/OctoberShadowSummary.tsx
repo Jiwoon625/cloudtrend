@@ -129,6 +129,7 @@ export function OctoberShadowSummary() {
         </select>
       </div>
       <OctoberShadowSummaryContent
+        selectedKind={kind}
         summary={owner ? (query.data ?? null) : null}
         loading={!authError && query.isPending}
         refreshing={query.isFetching}
@@ -143,12 +144,14 @@ export function OctoberShadowSummaryContent({
   summary,
   loading,
   refreshing = false,
+  selectedKind,
   error,
   refresh,
 }: {
   summary: Summary | null;
   loading: boolean;
   refreshing?: boolean;
+  selectedKind?: AdoptedSeriesKind;
   error: string | null;
   refresh: () => void;
 }) {
@@ -197,156 +200,162 @@ export function OctoberShadowSummaryContent({
       </p>
       {summary?.replayStatus.length ? (
         <div className="grid gap-3 sm:grid-cols-2">
-          {summary.replayStatus.map((replay) => (
-            <div key={replay.market} className="space-y-1 rounded-lg border p-3 text-xs">
-              <div className="flex items-center justify-between gap-2">
-                <strong>
-                  {replay.market === "KR" ? "한국 Shadow replay" : "미국 Shadow replay"}
-                </strong>
-                <span>{replayStateLabel(replay.status)}</span>
-              </div>
-              <p className="text-muted-foreground">
-                신호 기준일 {replay.signalDate} · 실제 계산{" "}
-                {new Date(replay.calculatedAt).toLocaleString("ko-KR")}
-              </p>
-              <p className="text-muted-foreground">
-                {replay.replayMode === "RETROSPECTIVE"
-                  ? "사후 복원 계산"
-                  : "다음 거래일 체결 전에 계산"}
-                {replay.executionAt
-                  ? ` · 다음 체결시각 ${new Date(replay.executionAt).toLocaleString("ko-KR")}`
-                  : ""}
-              </p>
-              {replay.reason ? (
-                <p role="status" className="text-warn">
-                  보류 사유: {replay.reason}
+          {summary.replayStatus
+            .filter(
+              (replay) =>
+                (!selectedKind ||
+                  replay.market === (selectedKind.startsWith("US_") ? "US" : "KR")) &&
+                (summary.version === RESTART_SERIES_VERSION
+                  ? replay.signalDate >= "2026-10-12"
+                  : replay.signalDate < "2026-10-12"),
+            )
+            .map((replay) => (
+              <div key={replay.market} className="space-y-1 rounded-lg border p-3 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <strong>
+                    {replay.market === "KR" ? "한국 Shadow replay" : "미국 Shadow replay"}
+                  </strong>
+                  <span>{replayStateLabel(replay.status)}</span>
+                </div>
+                <p className="text-muted-foreground">
+                  신호 기준일 {replay.signalDate} · 실제 계산{" "}
+                  {new Date(replay.calculatedAt).toLocaleString("ko-KR")}
                 </p>
-              ) : null}
-            </div>
-          ))}
+                <p className="text-muted-foreground">
+                  {replay.replayMode === "RETROSPECTIVE"
+                    ? "사후 복원 계산"
+                    : "다음 거래일 체결 전에 계산"}
+                  {replay.executionAt
+                    ? ` · 다음 체결시각 ${new Date(replay.executionAt).toLocaleString("ko-KR")}`
+                    : ""}
+                </p>
+                {replay.reason ? (
+                  <p role="status" className="text-warn">
+                    보류 사유: {replay.reason}
+                  </p>
+                ) : null}
+              </div>
+            ))}
         </div>
       ) : null}
       {summary ? (
         <div className="grid min-w-0 gap-4">
-          {summary.books.map((book) => (
-            <article key={book.bookId} className="min-w-0 space-y-3 rounded-lg border p-4">
-              <div className="flex flex-wrap justify-between gap-2">
-                <h3 className="min-w-0 break-words font-semibold">{labels[book.kind]}</h3>
-                <span className="text-xs text-muted-foreground">
-                  {book.role === "ALTERNATIVE_SHADOW" ? "대안 비교" : "채택 전략 비교"} ·{" "}
-                  {book.currency}
-                </span>
-              </div>
-              <p role="status" className="text-sm">
-                {states[book.status]}
-              </p>
-              <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                <dt className="text-muted-foreground">예정 회계 시작</dt>
-                <dd>{book.scheduledStart}</dd>
-                <dt className="text-muted-foreground">최초 실제 기록 세션</dt>
-                <dd>{book.firstSessionDate ?? "아직 없음"}</dd>
-                <dt className="text-muted-foreground">최근 기록 세션</dt>
-                <dd>{book.latestSessionDate ?? "아직 없음"}</dd>
-                <dt className="text-muted-foreground">초기 모델 현금</dt>
-                <dd>{money(book.initialCapital, book.currency)}</dd>
-                <dt className="text-muted-foreground">현재 모델 현금</dt>
-                <dd>{money(book.cash, book.currency)}</dd>
-                <dt className="text-muted-foreground">기록 세전 NAV</dt>
-                <dd>
-                  {book.status === "INITIALIZED_WAITING"
-                    ? "첫 세션 대기"
-                    : money(book.nav, book.currency)}
-                </dd>
-                <dt className="text-muted-foreground">독립 모델 누적수익률</dt>
-                <dd>
-                  {book.returnPercent === null
-                    ? "첫 세션 대기"
-                    : `${book.returnPercent.toFixed(2)}%`}
-                </dd>
-                <dt className="text-muted-foreground">보유 / 대기 신호</dt>
-                <dd>
-                  {book.positions ?? "미확인"} / {book.pending ?? "미확인"}
-                </dd>
-                {book.residualKrw !== null ? (
-                  <>
-                    <dt className="text-muted-foreground">별도 KRW 잔액</dt>
-                    <dd>{money(book.residualKrw, "KRW", true)}</dd>
-                  </>
-                ) : null}
-              </dl>
-              <ShadowTimeline book={book} />
-              <div className="space-y-2 border-t pt-3">
-                <h4 className="text-sm font-medium">모델 보유종목</h4>
-                {book.holdings.length ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr>
-                          <th>종목</th>
-                          <th className="text-right">수량</th>
-                          <th className="text-right">평가가격</th>
-                          <th className="text-right">평가금액</th>
-                          <th>편입일</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {book.holdings.map((holding) => (
-                          <tr key={holding.symbol} className="border-t">
-                            <td className="py-2">
-                              {holding.name}
-                              <span className="block text-muted-foreground">{holding.symbol}</span>
-                            </td>
-                            <td className="text-right">
-                              {Number(holding.quantity).toLocaleString()}
-                            </td>
-                            <td className="text-right">{money(holding.price, book.currency)}</td>
-                            <td className="text-right">{money(holding.value, book.currency)}</td>
-                            <td className="whitespace-nowrap pl-2">{holding.entryDate}</td>
+          {summary.books
+            .filter((book) => !selectedKind || book.kind === selectedKind)
+            .map((book) => (
+              <article key={book.bookId} className="min-w-0 space-y-3 rounded-lg border p-4">
+                <div className="flex flex-wrap justify-between gap-2">
+                  <h3 className="min-w-0 break-words font-semibold">{labels[book.kind]}</h3>
+                  <span className="text-xs text-muted-foreground">
+                    {book.role === "ALTERNATIVE_SHADOW" ? "대안 비교" : "채택 전략 비교"} ·{" "}
+                    {book.currency}
+                  </span>
+                </div>
+                <p role="status" className="text-sm">
+                  {states[book.status]}
+                </p>
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                  <dt className="text-muted-foreground">예정 회계 시작</dt>
+                  <dd>{book.scheduledStart}</dd>
+                  <dt className="text-muted-foreground">최초 실제 기록 세션</dt>
+                  <dd>{book.firstSessionDate ?? "아직 없음"}</dd>
+                  <dt className="text-muted-foreground">최근 기록 세션</dt>
+                  <dd>{book.latestSessionDate ?? "아직 없음"}</dd>
+                  <dt className="text-muted-foreground">초기 모델 현금</dt>
+                  <dd>{money(book.initialCapital, book.currency)}</dd>
+                  <dt className="text-muted-foreground">현재 모델 현금</dt>
+                  <dd>{money(book.cash, book.currency)}</dd>
+                  <dt className="text-muted-foreground">기록 세전 NAV</dt>
+                  <dd>
+                    {book.status === "INITIALIZED_WAITING"
+                      ? "첫 세션 대기"
+                      : money(book.nav, book.currency)}
+                  </dd>
+                  <dt className="text-muted-foreground">독립 모델 누적수익률</dt>
+                  <dd>
+                    {book.returnPercent === null
+                      ? "첫 세션 대기"
+                      : `${book.returnPercent.toFixed(2)}%`}
+                  </dd>
+                  <dt className="text-muted-foreground">보유 / 대기 신호</dt>
+                  <dd>
+                    {book.positions ?? "미확인"} / {book.pending ?? "미확인"}
+                  </dd>
+                  {book.residualKrw !== null ? (
+                    <>
+                      <dt className="text-muted-foreground">별도 KRW 잔액</dt>
+                      <dd>{money(book.residualKrw, "KRW", true)}</dd>
+                    </>
+                  ) : null}
+                </dl>
+                <ShadowTimeline book={book} />
+                <div className="space-y-2 border-t pt-3">
+                  <h4 className="text-sm font-medium">모델 보유종목</h4>
+                  {book.holdings.length ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr>
+                            <th>종목</th>
+                            <th className="text-right">수량</th>
+                            <th className="text-right">평가가격</th>
+                            <th className="text-right">평가금액</th>
+                            <th>편입일</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    {book.status === "UNAVAILABLE" || book.status === "NOT_INITIALIZED"
-                      ? "보유자료 확인 대기"
-                      : "모델 보유종목 없음"}
-                  </p>
-                )}
-                {book.currency === "USD" ? (
-                  <p className="text-xs text-muted-foreground">
-                    10월 5일 신규 장부: 초기자금 ÷ 목표 20종목 고정 매입 예산. 정수
-                    수량·현금·비용·거래대금 한도를 적용합니다
+                        </thead>
+                        <tbody>
+                          {book.holdings.map((holding) => (
+                            <tr key={holding.symbol} className="border-t">
+                              <td className="py-2">
+                                {holding.name}
+                                <span className="block text-muted-foreground">
+                                  {holding.symbol}
+                                </span>
+                              </td>
+                              <td className="text-right">
+                                {Number(holding.quantity).toLocaleString()}
+                              </td>
+                              <td className="text-right">{money(holding.price, book.currency)}</td>
+                              <td className="text-right">{money(holding.value, book.currency)}</td>
+                              <td className="whitespace-nowrap pl-2">{holding.entryDate}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      {book.status === "UNAVAILABLE" || book.status === "NOT_INITIALIZED"
+                        ? "보유자료 확인 대기"
+                        : "모델 보유종목 없음"}
+                    </p>
+                  )}
+                  {book.kind === "KR_KOSDAQ" ? (
+                    <p className="text-xs text-muted-foreground">
+                      실제 매수 여부·수동 제외·실계좌 현금과 분리된 가상 1억원/30 장부입니다. 실제
+                      원장과 시작일이 다를 수 있습니다
+                    </p>
+                  ) : null}
+                </div>
+                {book.valuationStatus === "STALE" || book.valuationStatus === "MISSING" ? (
+                  <p className="text-xs text-warn">
+                    평가가격{" "}
+                    {book.valuationStatus === "STALE" ? "일부 이전 시세 포함" : "자료 미확인"}
                   </p>
                 ) : null}
-
-                {book.kind === "KR_KOSDAQ" ? (
-                  <p className="text-xs text-muted-foreground">
-                    실제 매수 여부·수동 제외·실계좌 현금과 분리된 가상 1억원/30 장부입니다. 실제
-                    원장과 시작일이 다를 수 있습니다
+                {book.warnings.map((warning) => (
+                  <p key={warning} role="alert" className="text-xs text-destructive">
+                    {warning}
                   </p>
+                ))}
+                {book.tax ? (
+                  <UsTaxEstimatePanel
+                    estimate={book.tax}
+                    title="신규 Shadow 세금 · 독립 가상 납세자 추정"
+                  />
                 ) : null}
-              </div>
-              {book.valuationStatus === "STALE" || book.valuationStatus === "MISSING" ? (
-                <p className="text-xs text-warn">
-                  평가가격{" "}
-                  {book.valuationStatus === "STALE" ? "일부 이전 시세 포함" : "자료 미확인"}
-                </p>
-              ) : null}
-              {book.warnings.map((warning) => (
-                <p key={warning} role="alert" className="text-xs text-destructive">
-                  {warning}
-                </p>
-              ))}
-              {book.tax ? (
-                <UsTaxEstimatePanel
-                  estimate={book.tax}
-                  title="신규 Shadow 세금 · 독립 가상 납세자 추정"
-                />
-              ) : null}
-            </article>
-          ))}
+              </article>
+            ))}
         </div>
       ) : null}
       <aside

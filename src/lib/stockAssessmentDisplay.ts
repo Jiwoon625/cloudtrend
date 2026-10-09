@@ -57,7 +57,7 @@ export function stockAssessmentDisplay(
   if (row.instrument.market === "KOSPI" && entry?.date === asOfDate) {
     if (entry.originDate)
       conditions.push(
-        `Onset 기록 ${entry.originDate} · 확인 ${entry.confirmationDate ?? "다음 KOSPI 거래일 종가"}`,
+        `원신호 기록 ${entry.originDate} · 확인 ${entry.confirmationDate ?? "다음 KOSPI 거래일 종가"}`,
       );
     if (entry.confirmationDate === asOfDate) {
       conditions.push(
@@ -129,7 +129,7 @@ export function stockAssessmentDisplay(
     volumeRatio20:
       current && finite(row.snapshot.volumeRatio20) ? row.snapshot.volumeRatio20 : null,
     rawOnset,
-    conditions: [...new Set(conditions)],
+    conditions: [...new Set(conditions.map((text) => text.replace(/onset/gi, "원신호")))],
     pending,
     failed,
     finalEntry,
