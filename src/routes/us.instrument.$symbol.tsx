@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { HoldingsAvailability } from "@/components/HoldingsAvailability";
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
 import { loadUsProspectiveCache } from "@/lib/usProspectiveCloud";
@@ -19,7 +20,9 @@ function UsInstrumentPage() {
     retry: false,
     staleTime: 60000,
   });
-  const held = positions.data?.heldSymbols.includes(symbol.toUpperCase());
+  const held = positions.isSuccess
+    ? positions.data.heldSymbols.includes(symbol.toUpperCase())
+    : undefined;
   const query = useQuery({
     queryKey: ["us-prospective-cache"],
     queryFn: loadUsProspectiveCache,
@@ -52,6 +55,11 @@ function UsInstrumentPage() {
                 {formatKstDateTime(data!.generatedAt)}
               </p>
             </header>
+            <HoldingsAvailability
+              ready={positions.isSuccess}
+              failed={positions.isError}
+              retry={positions.refetch}
+            />
             <section className="grid gap-3 sm:grid-cols-4">
               {[
                 ["종가", row.close === null ? "미관측" : `$${row.close}`],
@@ -107,7 +115,7 @@ function UsInstrumentPage() {
                       row.adv20Usd === null ? "미관측" : row.adv20Usd >= 500000 ? "충족" : "미충족",
                     ],
                     [
-                      "최종 진입",
+                      "진입 준비",
                       row.a0Entry ? "진입 준비" : "해당 없음",
                       "공통 적격 포함 저장된 A0 판단",
                     ],

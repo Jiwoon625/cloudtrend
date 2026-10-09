@@ -9,6 +9,7 @@ import { Route } from "@/routes/instrument.$symbol";
 
 const state = vi.hoisted(() => ({
   row: null as ScreeningRow | null,
+  positionsFailed: false,
   positions: { heldSymbols: [], lastSellDateBySymbol: {} } as DomesticPositionContext,
 }));
 vi.mock("react", async (original) => ({
@@ -24,7 +25,12 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 }));
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => ({ data: state.positions }),
+  useQuery: () => ({
+    data: state.positions,
+    isSuccess: !state.positionsFailed,
+    isError: state.positionsFailed,
+    refetch: vi.fn(),
+  }),
   useSuspenseQuery: () => ({
     data: {
       analysis: {
@@ -137,6 +143,7 @@ const renderRoute = (input: ScreeningRow) => {
   return renderToStaticMarkup(React.createElement(Route.options.component as React.ComponentType));
 };
 beforeEach(() => {
+  state.positionsFailed = false;
   state.positions = { heldSymbols: [], lastSellDateBySymbol: {} };
 });
 
@@ -288,6 +295,19 @@ describe("stock instrument summary", () => {
 });
 
 describe("instrument route integration", () => {
+  it("does not reuse stale holdings after a query failure", () => {
+    const input = row({
+      operatingScore10: 9.5,
+      previousOperatingScore10: 8.5,
+      scoreDelta1d: 10,
+      exitSignal: "UP95",
+    });
+    state.positions.heldSymbols = [input.instrument.symbol];
+    state.positionsFailed = true;
+    const html = renderRoute(input);
+    expect(html).toContain("보유 자료 조회 실패");
+    expect(html).not.toContain("보유 · 청산 조건 충족");
+  });
   it("marks unheld exit warnings as observed conditions without changing held or ETF copy", () => {
     const input = row({
       operatingScore10: 9.5,

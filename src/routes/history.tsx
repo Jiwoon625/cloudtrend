@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
 import { listScreeningArchive, readScreeningArchive } from "@/lib/screeningArchiveQuery";
+import { historyRecordKey, usHistorySignals } from "@/lib/usScreeningHistory";
 import { formatKstDateTime } from "@/lib/format";
 import {
   isHistoryOperationalEntry,
@@ -16,6 +17,7 @@ export const Route = createFileRoute("/history")({
 });
 function HistoryPage() {
   const [market, setMarket] = useState("ALL"),
+    [strategy, setStrategy] = useState("ALL"),
     [version, setVersion] = useState("ALL"),
     [date, setDate] = useState(""),
     [run, setRun] = useState(""),
@@ -31,33 +33,44 @@ function HistoryPage() {
       (q.data ?? []).filter(
         (s) =>
           (!date || s.asOfDate === date) &&
+          (strategy === "ALL" || (strategy === "KR" ? s.market !== "US" : s.market === "US")) &&
           (version === "ALL" || (s.strategyVersion ?? "과거 버전 미기록") === version) &&
           (market === "ALL" ||
             (market === "US" && s.market === "US") ||
             (market !== "US" && s.market !== "US")),
       ),
-    [q.data, date, version, market],
+    [q.data, date, version, market, strategy],
   );
-  const selected = runs.find((s) => (s.runId ?? s.savedAt) === run) ?? runs[0];
+  const selected = runs.find((s) => historyRecordKey(s) === run) ?? runs[0];
   const detail = useQuery({
-    queryKey: ["screening-execution", selected?.runId, selected?.asOfDate, selected?.savedAt],
+    queryKey: ["screening-execution", selected ? historyRecordKey(selected) : undefined],
     enabled: !!selected,
     queryFn: () =>
-      readScreeningArchive(selected!.runId ?? "", selected!.asOfDate, selected!.savedAt),
+      readScreeningArchive(selected!.runId ?? "", selected!.asOfDate, selected!.savedAt, {
+        market: selected!.market ?? "KR",
+        strategyVersion: selected!.strategyVersion,
+        dataHash: selected!.dataHash,
+      }),
     retry: false,
   });
-  const entries = (detail.data?.entries ?? []).filter(
+  const entries = (detail.isError ? [] : (detail.data?.entries ?? [])).filter(
     (e) =>
       (market === "ALL" ||
         market === "US" ||
+        market === "KR" ||
         e.market === market ||
         (market === "ETF" && e.instrumentType === "ETF")) &&
+      (strategy === "ALL" ||
+        (e.market === "US"
+          ? usHistorySignals(e, strategy).entries.length > 0 ||
+            usHistorySignals(e, strategy).exits.length > 0
+          : strategy === "KR")) &&
       (!search || `${e.name} ${e.symbol}`.toLowerCase().includes(search.toLowerCase())),
   );
   const pages = Math.max(1, Math.ceil(entries.length / 50));
   const currentPage = Math.min(page, pages - 1);
   return (
-    <AppShell>
+    <AppShell loadAnalysis={false}>
       <header className="mb-4">
         <h1 className="text-xl font-bold">스크리닝 이력</h1>
         <p className="text-xs text-muted-foreground">
@@ -73,13 +86,36 @@ function HistoryPage() {
             setPage(0);
           }}
         >
-          {["ALL", "KOSPI", "KOSDAQ", "ETF", "US"].map((v) => (
+          {["ALL", "KR", "KOSPI", "KOSDAQ", "ETF", "US"].map((v) => (
             <option key={v} value={v}>
-              {v === "ALL" ? "전체 시장" : v}
+              {v === "ALL" ? "전체 시장" : v === "KR" ? "한국 전체" : v}
             </option>
           ))}
         </select>
-        <select aria-label="전략 버전" value={version} onChange={(e) => setVersion(e.target.value)}>
+        <select
+          aria-label="전략"
+          value={strategy}
+          onChange={(e) => {
+            setStrategy(e.target.value);
+            setPage(0);
+          }}
+        >
+          <option value="ALL">전체 전략</option>
+          <option value="KR">한국 채택 전략</option>
+          {["A0", "A2", "B3"].map((v) => (
+            <option key={v} value={v}>
+              {v} 신호
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="전략 버전"
+          value={version}
+          onChange={(e) => {
+            setVersion(e.target.value);
+            setPage(0);
+          }}
+        >
           <option value="ALL">전체 전략 버전</option>
           {[...new Set((q.data ?? []).map((s) => s.strategyVersion ?? "과거 버전 미기록"))].map(
             (v) => (
@@ -91,7 +127,10 @@ function HistoryPage() {
           aria-label="기준일"
           type="date"
           value={date}
-          onChange={(e) => setDate(e.target.value)}
+          onChange={(e) => {
+            setDate(e.target.value);
+            setPage(0);
+          }}
         />
         <input
           aria-label="종목 검색"
@@ -117,28 +156,39 @@ function HistoryPage() {
           <select
             className="w-full rounded border p-2 text-xs"
             aria-label="실행 기록"
-            value={selected.runId ?? selected.savedAt}
+            value={historyRecordKey(selected)}
             onChange={(e) => {
               setRun(e.target.value);
               setPage(0);
             }}
           >
             {runs.map((s) => (
-              <option key={s.runId ?? s.savedAt} value={s.runId ?? s.savedAt}>
+              <option key={historyRecordKey(s)} value={historyRecordKey(s)}>
                 {s.asOfDate} · {s.market ?? "KR"} · {formatKstDateTime(s.savedAt)} ·{" "}
                 {s.runId ?? "과거 일별 대표"}
               </option>
             ))}
           </select>
+          {!selected.runId && selected.market !== "US" ? (
+            <p className="text-xs text-muted-foreground">
+              과거 기록에서 시장이 저장되지 않은 종목은 한국 전체에서 조회할 수 있습니다.
+            </p>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             기준일 {selected.asOfDate} · 전략 {selected.strategyVersion ?? "과거 버전 미기록"} ·
             실행 ID {selected.runId ?? "미기록"} · {selected.runId ? "실제 분석" : "과거 저장시각"}{" "}
             {formatKstDateTime(selected.savedAt)}
+            {selected.historySource === "US_DAILY"
+              ? " · 과거 일별 신호 기록: 원신호·적격·실행 ID·분석시각 미기록"
+              : ""}
           </p>
           {detail.isPending ? (
             <p>선택한 실행 불러오는 중…</p>
           ) : detail.error ? (
-            <p role="alert">{detail.error.message}</p>
+            <div role="alert">
+              {detail.error.message}{" "}
+              <button onClick={() => void detail.refetch()}>다시 시도</button>
+            </div>
           ) : null}
           <div className="overflow-auto rounded-lg border">
             <table className="w-full min-w-[800px] text-xs">
@@ -154,6 +204,13 @@ function HistoryPage() {
                 </tr>
               </thead>
               <tbody>
+                {!entries.length && !detail.isPending && !detail.error ? (
+                  <tr>
+                    <td colSpan={7} className="p-6 text-center">
+                      선택한 조건의 저장 신호가 없습니다.
+                    </td>
+                  </tr>
+                ) : null}
                 {entries.slice(currentPage * 50, (currentPage + 1) * 50).map((e) => (
                   <tr key={e.symbol} className="border-b">
                     <td className="p-2">
@@ -164,6 +221,9 @@ function HistoryPage() {
                           runId: selected.runId ?? "",
                           date: selected.asOfDate,
                           savedAt: selected.savedAt,
+                          market: selected.market ?? "KR",
+                          strategyVersion: selected.strategyVersion ?? "",
+                          dataHash: selected.dataHash ?? "",
                         }}
                         className="text-primary hover:underline"
                       >
@@ -171,24 +231,36 @@ function HistoryPage() {
                       </Link>
                     </td>
                     <td>{e.market ?? (e.instrumentType === "ETF" ? "ETF" : "미기록")}</td>
-                    <td>{e.technicalPoints ?? "미관측"}</td>
                     <td>
-                      {e.kospi80Onset ||
-                      e.kosdaq80Onset ||
-                      e.evidence?.["rawOnset"] ||
-                      historyEtfEvidence(e)?.rawOnset
-                        ? "원신호"
-                        : "—"}
+                      {e.market === "US"
+                        ? `Core ${e.technicalPoints ?? "미관측"}`
+                        : (e.technicalPoints ?? "미관측")}
                     </td>
                     <td>
-                      {e.kospiEntry?.confirmationDate ??
-                        (isHistoryOperationalEntry(e, selected.asOfDate) ||
-                        historyEtfEvidence(e)?.entryState === "confirmed" ||
-                        e.evidence?.["a0Entry"] === true
-                          ? "진입 준비"
-                          : "—")}
+                      {e.market === "US" && usHistorySignals(e).onset === undefined
+                        ? "미기록"
+                        : e.kospi80Onset ||
+                            e.kosdaq80Onset ||
+                            e.evidence?.["rawOnset"] ||
+                            historyEtfEvidence(e)?.rawOnset
+                          ? "원신호"
+                          : "—"}
                     </td>
-                    <td>{e.exitSignal ?? "—"}</td>
+                    <td>
+                      {e.market === "US"
+                        ? usHistorySignals(e, strategy).entries.join(" · ") || "—"
+                        : (e.kospiEntry?.confirmationDate ??
+                          (isHistoryOperationalEntry(e, selected.asOfDate) ||
+                          historyEtfEvidence(e)?.entryState === "confirmed" ||
+                          e.evidence?.["a0Entry"] === true
+                            ? "진입 준비"
+                            : "—"))}
+                    </td>
+                    <td>
+                      {e.market === "US"
+                        ? usHistorySignals(e, strategy).exits.join(" · ") || "—"
+                        : (e.exitSignal ?? "—")}
+                    </td>
                     <td>{historyEntryStatus(e)}</td>
                   </tr>
                 ))}

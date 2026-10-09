@@ -220,7 +220,7 @@ export function UsPortfolioView({
                   <th className="text-right">수량</th>
                   <th className="text-right">현재가</th>
                   <th>진입일</th>
-                  <th className="text-right">진입 Core 상위</th>
+                  <th className="text-right">체결일 종가 Core 상위</th>
                 </tr>
               </thead>
               <tbody>

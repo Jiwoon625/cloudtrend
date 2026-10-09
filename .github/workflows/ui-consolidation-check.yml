@@ -4,6 +4,10 @@ on:
     paths:
       - src/components/**
       - src/routes/**
+      - src/lib/usScreeningHistory.ts
+      - src/lib/screeningArchiveQuery.ts
+      - tests/screening-execution-archive.test.ts
+      - vitest.history.config.ts
       - src/lib/usBrowserViews.ts
       - src/lib/usProspectiveCloud.ts
       - src/lib/usDataQuality.ts
@@ -35,6 +39,8 @@ jobs:
       - run: npm ci
       - name: Verify consolidated navigation, content, tax, owner changes and fallback states
         run: npx vitest run --config vitest.ui-reorg.config.ts
+      - name: Verify immutable and legacy market history identity
+        run: npx vitest run --config vitest.history.config.ts
       - name: Verify actual-ledger editing remains safe
         run: npx vitest run --config vitest.ledger-ui.config.ts
       - name: Lint consolidation components and contracts

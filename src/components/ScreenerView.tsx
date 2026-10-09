@@ -1,3 +1,4 @@
+import { HoldingsAvailability } from "./HoldingsAvailability";
 import { kospiMarketGateDisplay, kospiMarketGateLabel } from "./kospiEntryPresentation";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -51,13 +52,14 @@ const PRESETS: Array<{ id: PresetId; label: string; test: (r: ScreeningRow) => b
 ];
 
 export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: AnalysisResult }) {
-  const { data: positionContext } = useQuery({
+  const positions = useQuery({
     queryKey: ["domestic-position-context"],
     queryFn: loadDomesticPositionContext,
     enabled: mode === "STOCK",
     staleTime: 60_000,
     refetchOnWindowFocus: false,
   });
+  const positionContext = positions.isSuccess ? positions.data : undefined;
   const [query, setQuery] = useState("");
   const [minTechnical, setMinTechnical] = useState(0);
   const [minVolumeRatio, setMinVolumeRatio] = useState(0);
@@ -192,6 +194,13 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
           </p>
         </>
       ) : null}
+      {mode === "STOCK" ? (
+        <HoldingsAvailability
+          ready={positions.isSuccess}
+          failed={positions.isError}
+          retry={positions.refetch}
+        />
+      ) : null}
       <div className="flex flex-wrap gap-1">
         <button
           type="button"
@@ -203,11 +212,16 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         {PRESETS.map((p) => (
           <button
             key={p.id}
+            disabled={p.id === "EXIT" && !positions.isSuccess}
             type="button"
             onClick={() => setPreset(preset === p.id ? null : p.id)}
             className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${preset === p.id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-surface hover:bg-accent"}`}
           >
-            {p.label} ({base.filter((r) => presetMatches(r, p.id)).length})
+            {p.label} (
+            {p.id === "EXIT" && !positions.isSuccess
+              ? "미확인"
+              : base.filter((r) => presetMatches(r, p.id)).length}
+            )
           </button>
         ))}
       </div>
@@ -255,24 +269,30 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         ) : null}
       </div>
 
-      <ScreenerTable
-        paginationKey={JSON.stringify([
-          mode,
-          query,
-          minTechnical,
-          minVolumeRatio,
-          sector,
-          showDisqualified,
-          includeLeveraged,
-          preset,
-          analysis.asOfDate,
-        ])}
-        rows={filtered}
-        positionContext={positionContext}
-        signalDate={analysis.asOfDate}
-        tradeDates={analysis.tradeDates}
-        compactStock={mode === "STOCK"}
-      />
+      {preset === "EXIT" && !positions.isSuccess ? (
+        <p role="status" className="text-xs">
+          보유 조회가 완료되면 청산 목록을 표시합니다.
+        </p>
+      ) : (
+        <ScreenerTable
+          paginationKey={JSON.stringify([
+            mode,
+            query,
+            minTechnical,
+            minVolumeRatio,
+            sector,
+            showDisqualified,
+            includeLeveraged,
+            preset,
+            analysis.asOfDate,
+          ])}
+          rows={filtered}
+          positionContext={positionContext}
+          signalDate={analysis.asOfDate}
+          tradeDates={analysis.tradeDates}
+          compactStock={mode === "STOCK"}
+        />
+      )}
       <details className="rounded-lg border p-3 text-sm">
         <summary>운영규칙·산식</summary>
         <Link to="/operating-rules" className="text-primary">

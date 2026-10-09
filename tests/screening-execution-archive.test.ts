@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { readScreeningArchive } from "../src/lib/screeningArchiveQuery";
+import { listScreeningArchive, readScreeningArchive } from "../src/lib/screeningArchiveQuery";
 import { archiveScreeningRun } from "../src/lib/screeningRunArchive";
 import type { ScreeningSnapshot } from "../src/lib/screeningSnapshot";
 import type { SupabaseClient } from "@supabase/supabase-js";
 const fixture = vi.hoisted(() => ({
   snapshot: null as unknown,
+  us: null as Record<string, unknown> | null,
   filters: [] as unknown[],
   writes: [] as unknown[],
 }));
@@ -19,8 +20,18 @@ vi.mock("../src/lib/cloud", () => ({
           fixture.filters.push(values);
           return q;
         },
+        order: () => q,
+        limit: async () => ({
+          data: table === "us_screening_history" ? (fixture.us ? [fixture.us] : []) : [],
+          error: null,
+        }),
         maybeSingle: async () => ({
-          data: fixture.snapshot ? { snapshot: fixture.snapshot } : null,
+          data:
+            table === "us_screening_history"
+              ? fixture.us
+              : fixture.snapshot
+                ? { snapshot: fixture.snapshot }
+                : null,
           error: null,
         }),
       };
@@ -45,6 +56,7 @@ const snapshot = () =>
   }) as ScreeningSnapshot;
 beforeEach(() => {
   fixture.snapshot = snapshot();
+  fixture.us = null;
   fixture.filters = [];
   fixture.writes = [];
 });
@@ -92,5 +104,71 @@ describe("immutable execution history", () => {
     ]);
     fixture.snapshot = { ...snapshot(), strategyVersion: "changed" };
     await expect(archiveScreeningRun(db, "owner", snapshot())).rejects.toThrow("재사용");
+  });
+});
+
+describe("US daily history bridge", () => {
+  const record = {
+    date: "2026-10-07",
+    data_hash: "original-hash",
+    rule_version: "original-version",
+    created_at: "2026-10-08T02:35:30Z",
+    signals: [
+      {
+        symbol: "TEST",
+        name: "Test",
+        coreRank: 0.95,
+        betaRank: 0.92,
+        tkRank: 0.85,
+        a0Entry: true,
+        a2Exit: true,
+        b3Entry: false,
+      },
+    ],
+  };
+  it("lists and reads original US signals without synthesizing missing evidence", async () => {
+    fixture.us = record;
+    const listed = await listScreeningArchive(record.date);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({
+      market: "US",
+      dataHash: record.data_hash,
+      strategyVersion: record.rule_version,
+      storedAt: record.created_at,
+    });
+    const saved = await readScreeningArchive("", record.date, record.created_at, {
+      market: "US",
+      strategyVersion: record.rule_version,
+      dataHash: record.data_hash,
+    });
+    expect(saved.runId).toBeUndefined();
+    expect(saved.entries[0]?.evidence).toEqual(record.signals[0]);
+    expect(saved.entries[0]?.evidence).not.toHaveProperty("rawOnset");
+    expect(saved.entries[0]?.evidence).not.toHaveProperty("eligibleBase");
+    expect(fixture.filters).toContainEqual(["user_id", "owner"]);
+  });
+  it.each([{ strategyVersion: "recomputed-version" }, { dataHash: "replaced-input" }])(
+    "rejects a replaced US record instead of resolving to latest analysis",
+    async (changed) => {
+      fixture.us = record;
+      await expect(
+        readScreeningArchive("", record.date, record.created_at, {
+          market: "US",
+          strategyVersion: record.rule_version,
+          dataHash: record.data_hash,
+          ...changed,
+        }),
+      ).rejects.toThrow("요청한 기록과");
+    },
+  );
+  it("keeps different markets and strategy signals distinct", async () => {
+    const { usHistorySnapshot, historyRecordKey, usHistorySignals } =
+      await import("../src/lib/usScreeningHistory");
+    const us = usHistorySnapshot(record);
+    expect(historyRecordKey(us)).not.toEqual(historyRecordKey({ ...us, market: "KR" }));
+    expect(usHistorySignals(us.entries[0]!, "A0").entries).toEqual(["A0"]);
+    expect(usHistorySignals(us.entries[0]!, "A2").exits).toEqual(["A2"]);
+    expect(usHistorySignals(us.entries[0]!, "B3").entries).toEqual([]);
+    expect(usHistorySignals(us.entries[0]!).onset).toBeUndefined();
   });
 });

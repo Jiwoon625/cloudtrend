@@ -8,10 +8,12 @@ export function EtfInstrumentDetail({
   row,
   calculatedAt,
   held,
+  holdingsNotice,
 }: {
   row: ScreeningRow;
   calculatedAt: string;
   held: boolean | undefined;
+  holdingsNotice?: import("react").ReactNode;
 }) {
   const s = row.etfStrategy;
   const evidence = etfPartialEvidence(row, row.snapshot.tradeDate);
@@ -33,6 +35,7 @@ export function EtfInstrumentDetail({
           {s?.dataStatus ?? "미확인"}
         </p>
       </header>
+      {holdingsNotice}
       <div className="space-y-4">
         <section className="rounded-lg border p-4">
           <h2 className="text-sm font-semibold">M0 총점</h2>

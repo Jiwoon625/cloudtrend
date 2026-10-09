@@ -742,3 +742,38 @@ it.each([true, false])(
       expect(model.candidates.some((c) => c.decision.includes("진입 취소"))).toBe(true);
   },
 );
+
+it("counts observed rows including missing closes in H60 carried-exit holding metadata", () => {
+  const dates = Array.from({ length: 62 }, (_, i) =>
+    new Date(Date.UTC(2026, 9, 12 + i)).toISOString().slice(0, 10),
+  );
+  const signal = { ...entry("A"), ...getOperationalSignals("KOSDAQ", 7, 8, true) };
+  const prices = dates.map(
+    (d, i) => ({ tradeDate: d, open: 100, close: i >= 60 ? 0 : 100, volume: 100 }) as DailyPrice,
+  );
+  const run = (throughDate: string) =>
+    simulateStrategy(
+      { ...settings, roundTripCostRate: 0.003 },
+      [{ ...snapshot([signal]), date: dates[0]!, asOfDate: dates[0]! }],
+      { A: prices },
+      { A: "KOSDAQ" },
+      "",
+      dates,
+      {},
+      {
+        version: "kr-common-execution-20261012-v1",
+        startDate: "2026-10-12",
+        throughDate,
+        scope: "KOSDAQ",
+      },
+    );
+  const result = run(dates[61]!);
+  expect(run(dates[60]!).trades[0]).toMatchObject({ status: "OPEN", holdingDays: 60 });
+  expect(result.trades[0]).toMatchObject({
+    status: "CLOSED",
+    entryDate: dates[1],
+    exitDate: dates[61],
+    exitReason: "60거래일 만기",
+    holdingDays: 61,
+  });
+});

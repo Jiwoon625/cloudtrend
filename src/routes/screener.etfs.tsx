@@ -10,6 +10,7 @@ import {
 import { AnalysisRequired } from "@/components/AnalysisRequired";
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
+import { HoldingsAvailability } from "@/components/HoldingsAvailability";
 import { EtfScreener } from "@/components/EtfScreener";
 
 export const Route = createFileRoute("/screener/etfs")({
@@ -60,11 +61,16 @@ function EtfScreenerPage() {
   }
   return (
     <AppShell>
+      <HoldingsAvailability
+        ready={positions.isSuccess && ledger.isSuccess}
+        failed={positions.isError || ledger.isError}
+        retry={() => Promise.all([positions.refetch(), ledger.refetch()])}
+      />
       <EtfScreener
         analysis={cached.analysis}
-        ledger={ledger.data}
-        positionContext={positions.data}
-        ledgerError={ledger.error?.message}
+        ledger={ledger.isSuccess ? ledger.data : undefined}
+        positionContext={positions.isSuccess ? positions.data : undefined}
+        ledgerError={ledger.error?.message ?? positions.error?.message}
       />
     </AppShell>
   );

@@ -25,7 +25,7 @@
       "src/lib/engine/sectorScoreAdjustment.ts": "sha256:810cc969c35b129600bbc4ba3c243840def8bbb854bff9c2511ffd30a7753838",
       "src/lib/engine/stockSectorMaster.ts": "sha256:56485e45637b3b00423a9c98da6ed7410cbdd74aebd66baf4676b2270583090f",
       "src/lib/engine/usProspective.ts": "sha256:f971c957b03391ad166ddaa88d06badb7e64f94385088fb966469fe9853bd37a",
-      "src/lib/engine/usProspectivePortfolio.ts": "sha256:074f5ec30ce56a68aee293736ee8e79389600c6510dc5aaa2d4271ed7dc508ab",
+      "src/lib/engine/usProspectivePortfolio.ts": "sha256:b4067f8ea13cf42fa16c4065477bcba73a2d3cabf2bfcde9399feb93681a9048",
       "src/lib/engine/v8SectorPriceLeadership.ts": "sha256:1161aca2b8219712ce27df35a051f13a2177c3c965db34f163b204eaa1643078",
       "src/lib/engine/v8SectorPriceLeadershipPolicy.ts": "sha256:a20de64beb856963b466aaacbf5613a58d4d179ad076df7002171fb859b99fb6",
       "src/lib/engine/vfConfig.ts": "sha256:d5b6fa115ff765785ead12764a29f10df2da80833de63f68af48f97d76e77573",
@@ -39,7 +39,7 @@
       "src/lib/ledger/octoberShadowArchive.ts": "sha256:5904e2aa0403a255bee09e88dcea9148e9a0beb54afe5fb21f60d0ae403df9b8",
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:9c8b5e98035e53d81dedc58c43f7ddf8678ad835bbe449a21d63088dabd76a32",
       "src/lib/ledger/octoberShadowPipeline.ts": "sha256:ba45271dd874d0c9a5a177362d6581739fb72747a01dfef2a70cf9e65d058b84",
-      "src/lib/portfolioLedgers.ts": "sha256:1913212d0655b9d19c4b09742f8d70ce6b429b62aee4c67975e492fed73b50e7",
+      "src/lib/portfolioLedgers.ts": "sha256:919186777eaba9fa67edf07c7ac7a2a34ad2a3005080b0fe298e07d883d3e415",
       "src/lib/portfolioStrategyRules.ts": "sha256:9ccfc7b102f0b686e7a8da797eb78602360839034698000244d0fddd4aee4060",
       "src/lib/sourceData.ts": "sha256:b1e84d0b96523d2fc712c28749bcee80ebbdd3275213e35e9522d5608d51bd61",
       "src/lib/usCandidatePriority.ts": "sha256:b56ffa6bb73880e9f9ac737b70d42537d1e661c6970491a1a53381d1bbb4092b"
@@ -49,5 +49,5 @@
     },
     "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
   },
-  "codeHash": "sha256:db15b9e31a6268cb62d6154eb43c25d12ee0908658dcb2485038648ac6bd4e28"
+  "codeHash": "sha256:b6305169cdd429bc314a6e33626718cf0108f97a89be58200d01efba475a4f7b"
 }

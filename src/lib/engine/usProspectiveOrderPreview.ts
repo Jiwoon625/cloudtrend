@@ -7,7 +7,7 @@ import {
   usFixedSlotBudget,
   usOperatingOneWayCost,
   compareUsTargetOrders,
-  useSignalOrder,
+  shouldPreserveUsSignalPriority,
   type UsFixedSlotAllocationPolicy,
   type UsPendingTarget,
   type UsPortfolioState,
@@ -310,7 +310,7 @@ function plan(
       compareUsTargetOrders(
         { pending: a.t, delta: a.delta },
         { pending: b.t, delta: b.delta },
-        useSignalOrder(executionDate, state.executionPolicy),
+        shouldPreserveUsSignalPriority(executionDate, state.executionPolicy),
       ),
     );
   for (const { t, current, desired, delta, remainingBudget } of orders) {

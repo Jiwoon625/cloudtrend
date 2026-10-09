@@ -1,0 +1,27 @@
+name: CloudTrend re-audit read-only evidence
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/reaudit-live-readonly.ts
+      - .github/workflows/reaudit-live-readonly.yml
+permissions:
+  contents: read
+jobs:
+  evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Compare final selected prices and count data coverage without writes
+        run: npx vite-node --script scripts/reaudit-live-readonly.ts
