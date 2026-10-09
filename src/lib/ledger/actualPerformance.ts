@@ -257,6 +257,13 @@ function validateIdentity(series: ActualPerformanceSeries) {
   if (!series.baseline && series.observations.length)
     throw new Error("Observations require an approved baseline");
 }
+/** Calendar dates of reconciliation evidence use the Korean operating timezone. */
+export function reconciliationDate(timestamp: string): string {
+  const value = Date.parse(timestamp);
+  return Number.isFinite(value)
+    ? new Date(value + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    : "";
+}
 export function confirmActualPerformanceBaseline(
   series: ActualPerformanceSeries,
   baseline: PerformanceBaseline,
@@ -271,7 +278,9 @@ export function confirmActualPerformanceBaseline(
     !stamp(baseline.confirmedAt) ||
     Date.parse(baseline.confirmedAt) < Date.parse(baseline.valuation.recordedAt) ||
     !validDate(baseline.betaArchive.asOfDate) ||
-    baseline.betaArchive.asOfDate >= series.startDate
+    baseline.betaArchive.asOfDate >= series.startDate ||
+    baseline.betaArchive.asOfDate > reconciliationDate(baseline.confirmedAt) ||
+    baseline.betaArchive.asOfDate > reconciliationDate(baseline.valuation.recordedAt)
   )
     throw new Error("Invalid performance start or beta boundary");
   evidence(baseline.betaArchive.source);

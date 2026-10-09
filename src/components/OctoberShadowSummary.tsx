@@ -14,7 +14,6 @@ import type {
   OctoberShadowSummary as Summary,
 } from "@/lib/octoberShadowSummary.server";
 import { UsTaxEstimatePanel } from "./UsTaxEstimatePanel";
-import { UsA0AllocationRules } from "./UsA0AllocationRules";
 
 const labels: Record<OctoberShadowBookSummary["kind"], string> = {
   KR_MIXED: "한국 혼합",
@@ -33,13 +32,15 @@ const states: Record<OctoberShadowBookSummary["status"], string> = {
   UNAVAILABLE: "자료 확인 필요",
 };
 const replayStateLabel = (status: Summary["replayStatus"][number]["status"]) =>
-  status === "WAITING_INPUT"
-    ? "자료 대기"
-    : status === "FAILED"
-      ? "계산 실패"
-      : status === "REUSED"
-        ? "기존 기록 재사용"
-        : "기록 완료";
+  status === "RESOLVED"
+    ? "해결됨 · 과거 대기 기록"
+    : status === "WAITING_INPUT"
+      ? "자료 대기"
+      : status === "FAILED"
+        ? "계산 실패"
+        : status === "REUSED"
+          ? "기존 기록 재사용"
+          : "기록 완료";
 
 const money = (value: string | null, currency: "KRW" | "USD", residual = false) =>
   value === null
@@ -57,6 +58,17 @@ export function OctoberShadowSummary() {
     activeSeriesVersion(new Date().toISOString().slice(0, 10)),
   );
   const [kind, setKind] = useState<AdoptedSeriesKind>("KR_MIXED");
+  const [market, setMarket] = useState("KR");
+  const [role, setRole] = useState("ADOPTED");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const availableKinds = (m: string, r: string) =>
+    Object.keys(labels).filter(
+      (id) =>
+        (id.startsWith("US_") ? "US" : id === "ETF_V02" ? "ETF" : "KR") === m &&
+        (["US_A2", "US_B3", "KR_KOSPI_CONFIRM1_BEAR"].includes(id) ? "EXPERIMENT" : "ADOPTED") ===
+          r,
+    ) as AdoptedSeriesKind[];
   const [owner, setOwner] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   useEffect(() => {
@@ -108,6 +120,43 @@ export function OctoberShadowSummary() {
     <div className="space-y-3">
       <div className="flex flex-wrap gap-3">
         <select
+          aria-label="시장"
+          value={market}
+          onChange={(e) => {
+            const m = e.target.value;
+            const r = m === "ETF" ? "ADOPTED" : role;
+            setMarket(m);
+            setRole(r);
+            setKind(availableKinds(m, r)[0]!);
+          }}
+        >
+          <option value="KR">한국</option>
+          <option value="US">미국</option>
+          <option value="ETF">ETF</option>
+        </select>
+        <select
+          aria-label="채택·실험"
+          value={role}
+          onChange={(e) => {
+            setRole(e.target.value);
+            setKind(availableKinds(market, e.target.value)[0]!);
+          }}
+        >
+          <option value="ADOPTED">채택전략</option>
+          {market !== "ETF" ? <option value="EXPERIMENT">실험전략</option> : null}
+        </select>
+        <select
+          aria-label="전략"
+          value={kind}
+          onChange={(e) => setKind(e.target.value as AdoptedSeriesKind)}
+        >
+          {availableKinds(market, role).map((id) => (
+            <option key={id} value={id}>
+              {labels[id]}
+            </option>
+          ))}
+        </select>
+        <select
           aria-label="시리즈 시작일"
           value={version}
           onChange={(e) => setVersion(e.target.value as typeof version)}
@@ -115,21 +164,16 @@ export function OctoberShadowSummary() {
           <option value={ADOPTED_SERIES_VERSION}>10월 5일 베타 · 10월 9일까지</option>
           <option value={RESTART_SERIES_VERSION}>10월 12일 새 성과측정</option>
         </select>
-        <select
-          aria-label="시장·전략"
-          value={kind}
-          onChange={(e) => setKind(e.target.value as AdoptedSeriesKind)}
-        >
-          {Object.entries(labels).map(([id, label]) => (
-            <option key={id} value={id}>
-              {label} ·{" "}
-              {["US_A2", "US_B3", "KR_KOSPI_CONFIRM1_BEAR"].includes(id) ? "실험" : "채택"}
-            </option>
-          ))}
-        </select>
+        <label>
+          시작일 <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        </label>
+        <label>
+          종료일 <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        </label>
       </div>
       <OctoberShadowSummaryContent
         selectedKind={kind}
+        period={{ from, to }}
         summary={owner ? (query.data ?? null) : null}
         loading={!authError && query.isPending}
         refreshing={query.isFetching}
@@ -145,6 +189,7 @@ export function OctoberShadowSummaryContent({
   loading,
   refreshing = false,
   selectedKind,
+  period,
   error,
   refresh,
 }: {
@@ -152,6 +197,7 @@ export function OctoberShadowSummaryContent({
   loading: boolean;
   refreshing?: boolean;
   selectedKind?: AdoptedSeriesKind;
+  period?: { from: string; to: string };
   error: string | null;
   refresh: () => void;
 }) {
@@ -193,50 +239,59 @@ export function OctoberShadowSummaryContent({
           {error}
         </p>
       ) : null}
-      <p className="rounded border border-amber-500/30 bg-amber-500/5 p-3 text-xs leading-relaxed">
-        거래일 달력은 2026-12-31까지 확인했습니다. 한국 2026-11-19 특별 거래시간은 거래소 공지 확인
-        대기이며, 해당일 기록 전에 보완해야 합니다. 이후 거래일도 공식 달력을 확인해 연장하며,
-        확인되지 않은 날짜는 기록을 건너뛰지 않고 중단합니다.
-      </p>
+      <details className="rounded border p-3 text-xs">
+        <summary>거래일 달력 확인 범위</summary>
+        <p className="mt-2">
+          거래일 달력은 2026-12-31까지 확인했습니다. 한국 2026-11-19 특별 거래시간은 거래소 공지
+          확인 대기이며, 해당일 기록 전에 보완해야 합니다. 이후 거래일도 공식 달력을 확인해
+          연장하며, 확인되지 않은 날짜는 기록을 건너뛰지 않고 중단합니다.
+        </p>
+      </details>
       {summary?.replayStatus.length ? (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {summary.replayStatus
-            .filter(
-              (replay) =>
-                (!selectedKind ||
-                  replay.market === (selectedKind.startsWith("US_") ? "US" : "KR")) &&
-                (summary.version === RESTART_SERIES_VERSION
-                  ? replay.signalDate >= "2026-10-12"
-                  : replay.signalDate < "2026-10-12"),
-            )
-            .map((replay) => (
-              <div key={replay.market} className="space-y-1 rounded-lg border p-3 text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <strong>
-                    {replay.market === "KR" ? "한국 Shadow replay" : "미국 Shadow replay"}
-                  </strong>
-                  <span>{replayStateLabel(replay.status)}</span>
-                </div>
-                <p className="text-muted-foreground">
-                  신호 기준일 {replay.signalDate} · 실제 계산{" "}
-                  {new Date(replay.calculatedAt).toLocaleString("ko-KR")}
-                </p>
-                <p className="text-muted-foreground">
-                  {replay.replayMode === "RETROSPECTIVE"
-                    ? "사후 복원 계산"
-                    : "다음 거래일 체결 전에 계산"}
-                  {replay.executionAt
-                    ? ` · 다음 체결시각 ${new Date(replay.executionAt).toLocaleString("ko-KR")}`
-                    : ""}
-                </p>
-                {replay.reason ? (
-                  <p role="status" className="text-warn">
-                    보류 사유: {replay.reason}
+        <details
+          className="rounded border p-3"
+          open={summary.replayStatus.some((r) => r.status === "FAILED")}
+        >
+          <summary className="text-xs">Replay 진단·계산시각</summary>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {summary.replayStatus
+              .filter(
+                (replay) =>
+                  (!selectedKind ||
+                    replay.market === (selectedKind.startsWith("US_") ? "US" : "KR")) &&
+                  (summary.version === RESTART_SERIES_VERSION
+                    ? replay.signalDate >= "2026-10-12"
+                    : replay.signalDate < "2026-10-12"),
+              )
+              .map((replay) => (
+                <div key={replay.market} className="space-y-1 rounded-lg border p-3 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <strong>
+                      {replay.market === "KR" ? "한국 Shadow replay" : "미국 Shadow replay"}
+                    </strong>
+                    <span>{replayStateLabel(replay.status)}</span>
+                  </div>
+                  <p className="text-muted-foreground">
+                    신호 기준일 {replay.signalDate} · 실제 계산{" "}
+                    {new Date(replay.calculatedAt).toLocaleString("ko-KR")}
                   </p>
-                ) : null}
-              </div>
-            ))}
-        </div>
+                  <p className="text-muted-foreground">
+                    {replay.replayMode === "RETROSPECTIVE"
+                      ? "사후 복원 계산"
+                      : "다음 거래일 체결 전에 계산"}
+                    {replay.executionAt
+                      ? ` · 다음 체결시각 ${new Date(replay.executionAt).toLocaleString("ko-KR")}`
+                      : ""}
+                  </p>
+                  {replay.reason ? (
+                    <p role="status" className="text-warn">
+                      {replay.status === "RESOLVED" ? "과거 사유" : "보류 사유"}: {replay.reason}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+          </div>
+        </details>
       ) : null}
       {summary ? (
         <div className="grid min-w-0 gap-4">
@@ -288,7 +343,7 @@ export function OctoberShadowSummaryContent({
                     </>
                   ) : null}
                 </dl>
-                <ShadowTimeline book={book} />
+                <ShadowTimeline book={book} period={period} />
                 <div className="space-y-2 border-t pt-3">
                   <h4 className="text-sm font-medium">모델 보유종목</h4>
                   {book.holdings.length ? (

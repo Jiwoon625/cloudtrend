@@ -160,7 +160,7 @@ export async function stepAdoptedKospiShadowSeries(
     contractHash: series.contractHash,
     receipt: guarded.receipt,
     previousStateHash,
-    firstValidSessionDate: ADOPTED_KOSPI_FIRST_SESSION as typeof ADOPTED_KOSPI_FIRST_SESSION,
+    firstValidSessionDate: first,
     calendar: structuredClone(input.calendar),
     result: structuredClone(result),
   };

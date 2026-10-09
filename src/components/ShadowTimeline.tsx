@@ -1,8 +1,16 @@
 import { useState } from "react";
 import type { OctoberShadowBookSummary } from "@/lib/octoberShadowSummary.server";
-export function ShadowTimeline({ book }: { book: OctoberShadowBookSummary }) {
-  const [from, setFrom] = useState(""),
-    [to, setTo] = useState("");
+export function ShadowTimeline({
+  book,
+  period,
+}: {
+  book: OctoberShadowBookSummary;
+  period?: { from: string; to: string } | undefined;
+}) {
+  const [localFrom, setFrom] = useState(""),
+    [localTo, setTo] = useState("");
+  const from = period?.from ?? localFrom,
+    to = period?.to ?? localTo;
   const invalid = !!from && !!to && from > to;
   const days = (book.history ?? []).filter(
     (d) => (!from || d.date >= from) && (!to || d.date <= to),
@@ -33,12 +41,16 @@ export function ShadowTimeline({ book }: { book: OctoberShadowBookSummary }) {
     <section className="space-y-3 border-t pt-3">
       <h4 className="text-sm font-semibold">성과 곡선 · 매매</h4>
       <div className="flex flex-wrap gap-3 text-xs">
-        <label>
-          시작일 <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-        </label>
-        <label>
-          종료일 <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-        </label>
+        {!period ? (
+          <>
+            <label>
+              시작일 <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            </label>
+            <label>
+              종료일 <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            </label>
+          </>
+        ) : null}
         <span>
           전체 시리즈 MDD {book.mddPercent == null ? "산정 대기" : `${book.mddPercent.toFixed(2)}%`}
         </span>

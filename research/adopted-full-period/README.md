@@ -28,9 +28,12 @@ Shadow series are read-only and are never changed by this workflow.
   and nonempty ranked stock rows on the first selected session are required for
   full results. First-session rank state initializes the strategy; pre-start
   signal or holdings are not invented.
-- Execution ordering must include the separately reviewed signal-day
-  Core/Beta/TK/symbol priority fix before a final current-rule run. A result from
-  the former share-quantity ordering is not a final current-rule result.
+- Execution ordering includes PR #234 (main `5faca228`) signal-day
+  Core/Beta/TK/symbol priority. The isolated research opt-in applies that same
+  shared comparator to historical dates while preserving production date guards.
+  Trading `coreRank`/position `entryCoreRank` remain execution-close metadata;
+  frozen pending `signalPriority` alone determines the next-open buy order.
+  Do not interpret execution-close metadata as a signal-time rank.
 
 ## Input and output integrity
 

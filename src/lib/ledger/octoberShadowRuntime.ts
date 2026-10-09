@@ -30,6 +30,12 @@ export const A0_OPERATING_COST_ALIGNMENT_RUNTIME_HASH =
 export const OCTOBER12_CONSISTENCY_RUNTIME_HASH =
   "sha256:a33c617762d7eefcc55f958a78195bbecec8f264ba670378ec21e04e3bc37f6e" as const;
 
+/** October 9 re-audit: restart continuity, frozen US priority, carried-entry cancellation and H60 retry.
+ * Restart-specific branches preserve legacy beta calculations and immutable contract identity.
+ */
+export const OCTOBER12_REAUDIT_RUNTIME_HASH =
+  "sha256:afdb29eb9f475d48658213344fd2d2132245d86ed562a98bf05ae538f38e01f5" as const;
+
 export const REVIEWED_SHADOW_RUNTIME_CODE_HASHES = Object.freeze([
   ADOPTED_SHADOW_FROZEN_CODE_HASH,
   "sha256:ffd26d07d50564c6c734dc9c96ede00f7786e1122df3eb373ad56a4648929033",
@@ -37,6 +43,7 @@ export const REVIEWED_SHADOW_RUNTIME_CODE_HASHES = Object.freeze([
   PENDING_MARKET_CAP_FIX_RUNTIME_HASH,
   A0_OPERATING_COST_ALIGNMENT_RUNTIME_HASH,
   OCTOBER12_CONSISTENCY_RUNTIME_HASH,
+  OCTOBER12_REAUDIT_RUNTIME_HASH,
   "sha256:7986793771f362aaede80425f9259254035443dce0eb67e134ded9271241354d",
   "sha256:a321c97e37a3b55249b23597e811997b089943d8c56cb27088c60a2806691a80",
 ] as const);

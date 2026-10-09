@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     include: [
       "tests/market-data-ui.test.tsx",
+      "tests/reaudit-ui.test.tsx",
       "tests/app-navigation-ui.test.tsx",
       "tests/portfolio-model-consolidation.test.ts",
       "tests/portfolio-consolidated-ui.test.tsx",

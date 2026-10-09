@@ -4,6 +4,7 @@ import { runUsProspectiveAnalysis, type UsProspectiveInputRow } from "../engine/
 import {
   stepUsProspectivePortfolio,
   usFixedSlotAllocationPolicy,
+  useSignalOrder,
   US_PROSPECTIVE_STRATEGIES,
   type UsModelExecutionPolicy,
 } from "../engine/usProspectivePortfolio";
@@ -131,7 +132,7 @@ describe("current A0 historical adapter", () => {
     expect(runs[6]!.result.state.modelCashExact).toBe("74660.34");
   });
 
-  it("preserves production pending-buy delta order rather than inventing a new allocator", async () => {
+  it("uses the current signal-close priority across the full historical range", async () => {
     const inputs = dates.slice(0, 3).map(session);
     for (const [i, input] of inputs.entries()) {
       const a = input.rows.find((r) => r.symbol === "T00")!;
@@ -157,7 +158,59 @@ describe("current A0 historical adapter", () => {
     expect(Object.keys(runs[1]!.result.state.pendingTargets)).toEqual(["T00", "T01"]);
     expect(
       runs[2]!.result.trades.filter((t) => t.status === "EXECUTED").map((t) => t.symbol),
-    ).toEqual(["T01", "T00"]);
+    ).toEqual(["T00", "T01"]);
+  });
+
+  it("keeps signal priority under cash competition without execution-close lookahead", async () => {
+    const calendar = dates.slice(0, 3);
+    const inputs = calendar.map((date, day) => {
+      const template = session(date, 0).rows[0]!;
+      const rows = Array.from({ length: 200 }, (_, i): UsProspectiveInputRow => ({
+        ...template,
+        symbol: `C${String(i).padStart(3, "0")}`,
+        open: i === 0 ? 100 : 3733.572,
+        close: i === 0 ? 100 : 3733.572,
+        ret120: day > 0 && i < 20 ? 300 - i : i,
+        ret252: day > 0 && i < 20 ? 300 - i : i,
+        beta60Spy: i < 20 ? 300 - i : i,
+        ichimokuTkGap: i < 20 ? 300 - i : i,
+        adv20Usd: 1e9,
+      }));
+      rows.push({ ...template, symbol: "SPY", isCommonShare: false });
+      return { date, sourceHash: hash, rows };
+    });
+    const c = await contract(calendar);
+    const expected = await replayAdoptedUsBacktest(c, inputs);
+    expect(Object.keys(expected[1]!.result.state.pendingTargets)).toHaveLength(20);
+    expect(expected[1]!.result.state.pendingTargets["C000"]!.signalPriority?.core).toBe(1);
+    expect(expected[2]!.result.state.positions["C000"]?.shares).toBe(37);
+    expect(expected[2]!.result.trades.filter((t) => t.status === "EXECUTED")[0]?.symbol).toBe(
+      "C000",
+    );
+    const changed = structuredClone(inputs);
+    for (const row of changed[2]!.rows) {
+      if (row.symbol === "SPY") continue;
+      row.ret120 = -row.ret120!;
+      row.ret252 = -row.ret252!;
+      row.beta60Spy = -row.beta60Spy!;
+      row.ichimokuTkGap = -row.ichimokuTkGap!;
+      row.close = 50000;
+    }
+    const replayed = await replayAdoptedUsBacktest(c, changed);
+    const fills = (run: (typeof expected)[number]) =>
+      run.result.trades
+        .filter((t) => t.status === "EXECUTED" || t.status === "PARTIAL")
+        .map((t) => ({
+          symbol: t.symbol,
+          shares: t.modelShares,
+          price: t.modelPrice,
+          fee: t.feeUsd,
+          status: t.status,
+        }));
+    expect(fills(replayed[2]!)).toEqual(fills(expected[2]!));
+    expect(useSignalOrder("2017-12-29")).toBe(false);
+    expect(useSignalOrder("2026-10-12")).toBe(true);
+    expect(useSignalOrder("2017-12-29", undefined, CURRENT_RULES_RESEARCH)).toBe(true);
   });
 
   it("uses previous ADV, carries partial fills and freezes first executable quantity", async () => {

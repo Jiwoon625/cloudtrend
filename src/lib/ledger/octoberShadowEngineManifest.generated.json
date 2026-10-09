@@ -11,7 +11,7 @@
       "src/lib/engine/indicators.ts": "sha256:4862c805f7c1c3731fdeb60c08ab9ba47baaa37983aa408c2483346ef9e8032b",
       "src/lib/engine/kospiEntryConfirmation.ts": "sha256:fab80594dda2a76b67325457252b51ba9fb8cf7dcfea6ebe27a0df372922d37c",
       "src/lib/engine/kospiMarketGate.ts": "sha256:4187e60af90fa66cfc922c73003491efc0c5f01e63d64c57742960885aa8907a",
-      "src/lib/engine/kospiShadow.ts": "sha256:afa8ce993fadefdaaa3b4a1cb710598bf2779ac63377bd9c7cc1d68116bcaf7a",
+      "src/lib/engine/kospiShadow.ts": "sha256:98ed2b7f20e8d428e245332574283432e83851f37cc4b0aabfa5483adee21d03",
       "src/lib/engine/kospiShadowDataset.ts": "sha256:1db2fdac54771e428d049c6c82349c077ddc7d91b8ca4994a8640a0cb1d0bedd",
       "src/lib/engine/kospiVolatility.ts": "sha256:7c4d43f18ceef204c638274cb5e60f6dcb33f2a8f7b9ed565ee3d43f2f370585",
       "src/lib/engine/manualDataset.ts": "sha256:2cba3e1316e5b983fa721fd51b28b41a453e54f832f0cd4e1e561fe3a12dd69a",
@@ -25,22 +25,22 @@
       "src/lib/engine/sectorScoreAdjustment.ts": "sha256:810cc969c35b129600bbc4ba3c243840def8bbb854bff9c2511ffd30a7753838",
       "src/lib/engine/stockSectorMaster.ts": "sha256:56485e45637b3b00423a9c98da6ed7410cbdd74aebd66baf4676b2270583090f",
       "src/lib/engine/usProspective.ts": "sha256:f971c957b03391ad166ddaa88d06badb7e64f94385088fb966469fe9853bd37a",
-      "src/lib/engine/usProspectivePortfolio.ts": "sha256:f122d6c237632f8579c12d9a3a9b2d15910215bfda72246b1b003be7a86e26c9",
+      "src/lib/engine/usProspectivePortfolio.ts": "sha256:a7eb0fce03f6d407cc9df8a760c189d5da67851eca42fd6304d41248216c9ad6",
       "src/lib/engine/v8SectorPriceLeadership.ts": "sha256:1161aca2b8219712ce27df35a051f13a2177c3c965db34f163b204eaa1643078",
       "src/lib/engine/v8SectorPriceLeadershipPolicy.ts": "sha256:a20de64beb856963b466aaacbf5613a58d4d179ad076df7002171fb859b99fb6",
       "src/lib/engine/vfConfig.ts": "sha256:d5b6fa115ff765785ead12764a29f10df2da80833de63f68af48f97d76e77573",
       "src/lib/ledger/date.ts": "sha256:81b0ae4d40041a75f9fe940914a4aa7bd3db71ce8b152e73b152a5642014a9e0",
       "src/lib/ledger/decimal.ts": "sha256:a1cf43f22b0cf98287fc208cb3c058993d947c6d794f5bd7be540f5ba445f8e5",
-      "src/lib/ledger/etfAdoptedShadow.ts": "sha256:15250bbd9b336a1c98c36e684fa4713cfef28659750174dad8fe1c0d5b8e2bd9",
-      "src/lib/ledger/kospiAdoptedShadow.ts": "sha256:734800f4f5ce79cd60b34798f06e2f62205f5280ec72a1aa71a11024462fc2ef",
+      "src/lib/ledger/etfAdoptedShadow.ts": "sha256:48bce0ce57d0836fad94e02a99c9e47a662e620767e9b89bf86bcde699019a42",
+      "src/lib/ledger/kospiAdoptedShadow.ts": "sha256:d4840901ce8e9ade581b24827badd8300065145872a1b9ab063be7cc3a5fe632",
       "src/lib/ledger/krAdoptedShadow.ts": "sha256:a9e3cc5aa3143c75c4dd2f06323639ff16078e8cf72a8d32ea106940542083e8",
       "src/lib/ledger/krShadowDecision.ts": "sha256:119a087fa3d90b05ac0fa183ab9b40e4acbb6495871dd511d11a220c7bd180fc",
       "src/lib/ledger/modelSeries.ts": "sha256:63a758daf1abfc74bfcba395d6b21693f0185a48c206e064fa8eb76d4d1693ce",
       "src/lib/ledger/octoberShadowArchive.ts": "sha256:5904e2aa0403a255bee09e88dcea9148e9a0beb54afe5fb21f60d0ae403df9b8",
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:9c8b5e98035e53d81dedc58c43f7ddf8678ad835bbe449a21d63088dabd76a32",
       "src/lib/ledger/octoberShadowPipeline.ts": "sha256:ba45271dd874d0c9a5a177362d6581739fb72747a01dfef2a70cf9e65d058b84",
-      "src/lib/portfolioLedgers.ts": "sha256:e9ed8b4a1d5deafa104d53a1675ae7bdbee7e82bd1ee88509dbdd36023f61df5",
-      "src/lib/portfolioStrategyRules.ts": "sha256:8ac31db4d2f6d6bdd9c756cb4a3f76b49424f6e6fad4dbc13c1b40237cfd640a",
+      "src/lib/portfolioLedgers.ts": "sha256:1913212d0655b9d19c4b09742f8d70ce6b429b62aee4c67975e492fed73b50e7",
+      "src/lib/portfolioStrategyRules.ts": "sha256:9ccfc7b102f0b686e7a8da797eb78602360839034698000244d0fddd4aee4060",
       "src/lib/sourceData.ts": "sha256:b1e84d0b96523d2fc712c28749bcee80ebbdd3275213e35e9522d5608d51bd61"
     },
     "dependencies": {
@@ -48,5 +48,5 @@
     },
     "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
   },
-  "codeHash": "sha256:a33c617762d7eefcc55f958a78195bbecec8f264ba670378ec21e04e3bc37f6e"
+  "codeHash": "sha256:afdb29eb9f475d48658213344fd2d2132245d86ed562a98bf05ae538f38e01f5"
 }

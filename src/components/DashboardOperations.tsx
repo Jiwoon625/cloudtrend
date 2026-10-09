@@ -297,7 +297,11 @@ export function DashboardStrategyRules() {
 function SignalLink({ row }: { row: DashboardSignal }) {
   if (row.market === "US")
     return (
-      <Link to="/us/screener" className="font-medium hover:underline">
+      <Link
+        to="/us/instrument/$symbol"
+        params={{ symbol: row.symbol }}
+        className="font-medium hover:underline"
+      >
         {row.name}
         <span className="ml-1 text-[10px] text-muted-foreground">{row.symbol}</span>
       </Link>

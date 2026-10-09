@@ -64,7 +64,7 @@ function money(v: number | null) {
   return `$${v.toLocaleString()}`;
 }
 
-function UsScreenerPage() {
+export function UsScreenerPage() {
   const positions = useQuery({
     queryKey: ["domestic-position-context"],
     queryFn: loadDomesticPositionContext,
@@ -77,6 +77,9 @@ function UsScreenerPage() {
     staleTime: 60_000,
   });
   const [filter, setFilter] = useState<Filter>("PRIMARY_ENTRY");
+  const [funnelStrategy, setFunnelStrategy] = useState<"A0" | "B3">("A0");
+  const heldKnown = positions.isSuccess && !positions.isError;
+  const exitUnavailable = filter === "PRIMARY_EXIT" && !heldKnown;
   const [sector, setSector] = useState("");
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
@@ -113,7 +116,7 @@ function UsScreenerPage() {
       },
       {
         step: "4",
-        label: "최종 Entry",
+        label: "최종 진입 준비",
         description: "유동성·거래가능 등 공통 조건까지 통과",
         a0: candidates.filter((r) => r.a0Entry).length,
         b3: candidates.filter((r) => r.b3Entry).length,
@@ -129,16 +132,20 @@ function UsScreenerPage() {
       if (filter === "FUNNEL_1") return r.onset80;
       if (filter === "FUNNEL_2") return r.onset80 && (r.betaRank ?? -1) >= 0.9;
       if (filter === "FUNNEL_3")
-        return r.onset80 && (r.betaRank ?? -1) >= 0.9 && (r.tkRank ?? -1) >= 0.8;
+        return (
+          r.onset80 &&
+          (r.betaRank ?? -1) >= 0.9 &&
+          ((funnelStrategy === "B3" ? r.relvolRank : r.tkRank) ?? -1) >= 0.8
+        );
       if (filter === "PRIMARY_WATCH") return !r.a0Exit && (r.coreRank ?? 0) >= 0.7;
       if (filter === "PRIMARY_ENTRY") return r.a0Entry;
       if (filter === "PRIMARY_EXIT")
-        return r.a0Exit && positions.data?.heldSymbols.includes(r.symbol);
+        return heldKnown && r.a0Exit && positions.data?.heldSymbols.includes(r.symbol);
       if (filter === "A2_ENTRY") return r.a2Entry;
       if (filter === "B3_ENTRY") return r.b3Entry;
       return r.coreRank !== null;
     });
-  }, [rows, filter, search, sector, positions.data]);
+  }, [rows, filter, search, sector, positions.data, funnelStrategy, heldKnown]);
 
   const sortValue = (r: UsProspectiveCacheRow, key: SortKey): number | string | null => {
     if (key === "symbol") return `${r.symbol} ${r.name}`;
@@ -265,6 +272,18 @@ function UsScreenerPage() {
           </div>
         </header>
         <UsRecoveryNotice metadata={query.data?.source?.metadata} />
+        {!heldKnown ? (
+          <div role={positions.isError ? "alert" : "status"} className="rounded border p-3 text-sm">
+            {positions.isError
+              ? "보유 자료 조회 실패 · 보유 및 청산 판정 미확인"
+              : "보유 자료 확인 중 · 청산 판정 대기"}
+            {positions.isError ? (
+              <Button variant="outline" size="sm" onClick={() => void positions.refetch()}>
+                다시 시도
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
         {query.isError ? (
           <p role="alert">US 결과를 불러오지 못했습니다: {query.error.message}</p>
         ) : query.isPending ? (
@@ -280,6 +299,21 @@ function UsScreenerPage() {
               <div className="flex flex-wrap items-end justify-between gap-2">
                 <div>
                   <h2 className="text-sm font-semibold">신규 진입 Funnel</h2>
+                  <label className="text-xs">
+                    전략{" "}
+                    <select
+                      value={funnelStrategy}
+                      onChange={(e) => {
+                        const v = e.target.value as "A0" | "B3";
+                        setFunnelStrategy(v);
+                        setFilter("FUNNEL_1");
+                        setPage(0);
+                      }}
+                    >
+                      <option value="A0">A0/A2</option>
+                      <option value="B3">B3</option>
+                    </select>
+                  </label>
                   <p className="text-[10px] text-muted-foreground">
                     각 단계는 직전 단계 통과 종목 기준 · A0/A2는 동일 진입 신호
                   </p>
@@ -297,7 +331,11 @@ function UsScreenerPage() {
                     key={item.step}
                     onClick={() => {
                       setFilter(
-                        item.step === "4" ? "PRIMARY_ENTRY" : (`FUNNEL_${item.step}` as Filter),
+                        item.step === "4"
+                          ? funnelStrategy === "B3"
+                            ? "B3_ENTRY"
+                            : "PRIMARY_ENTRY"
+                          : (`FUNNEL_${item.step}` as Filter),
                       );
                       setPage(0);
                     }}
@@ -307,18 +345,13 @@ function UsScreenerPage() {
                       <span className="text-[10px] font-semibold text-muted-foreground">
                         STEP {item.step}
                       </span>
-                      <span className="text-[10px] text-muted-foreground">A0/A2 · B3</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {funnelStrategy === "B3" ? "B3" : "A0/A2"}
+                      </span>
                     </div>
                     <p className="mt-1 text-xs font-semibold">{item.label}</p>
-                    <div className="mt-2 flex items-baseline gap-3">
-                      <span className="text-lg font-bold tabular-nums">
-                        {item.a0.toLocaleString()}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">A0/A2</span>
-                      <span className="text-lg font-bold tabular-nums">
-                        {item.b3.toLocaleString()}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">B3</span>
+                    <div className="mt-2 text-lg font-bold tabular-nums">
+                      {(funnelStrategy === "B3" ? item.b3 : item.a0).toLocaleString()}
                     </div>
                     <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
                       {item.description}
@@ -331,11 +364,15 @@ function UsScreenerPage() {
               <summary>단계별 탈락 집계</summary>
               <p>
                 Core 원신호 없음 {rows.filter((r) => r.symbol !== "SPY" && !r.onset80).length} ·
-                Beta 미충족 {rows.filter((r) => r.onset80 && (r.betaRank ?? -1) < 0.9).length} · TK
+                Beta 미충족 {rows.filter((r) => r.onset80 && (r.betaRank ?? -1) < 0.9).length} ·{" "}
+                {funnelStrategy === "B3" ? "RelVol" : "TK"}
                 미충족{" "}
                 {
                   rows.filter(
-                    (r) => r.onset80 && (r.betaRank ?? -1) >= 0.9 && (r.tkRank ?? -1) < 0.8,
+                    (r) =>
+                      r.onset80 &&
+                      (r.betaRank ?? -1) >= 0.9 &&
+                      ((funnelStrategy === "B3" ? r.relvolRank : r.tkRank) ?? -1) < 0.8,
                   ).length
                 }{" "}
                 · 공통 적격 미충족{" "}
@@ -344,8 +381,8 @@ function UsScreenerPage() {
                     (r) =>
                       r.onset80 &&
                       (r.betaRank ?? -1) >= 0.9 &&
-                      (r.tkRank ?? -1) >= 0.8 &&
-                      !r.a0Entry,
+                      ((funnelStrategy === "B3" ? r.relvolRank : r.tkRank) ?? -1) >= 0.8 &&
+                      !(funnelStrategy === "B3" ? r.b3Entry : r.a0Entry),
                   ).length
                 }
               </p>
@@ -404,7 +441,9 @@ function UsScreenerPage() {
             </div>
             <nav aria-label="종목 페이지" className="flex items-center gap-3 text-xs">
               <span>
-                전체 {filtered.length.toLocaleString()}종목 · {currentPage + 1} / {pageCount}페이지
+                {exitUnavailable
+                  ? "보유 자료 미확인 · 청산 목록 산정 대기"
+                  : `전체 ${filtered.length.toLocaleString()}종목 · ${currentPage + 1} / ${pageCount}페이지`}
               </span>
               <Button
                 size="sm"
@@ -532,12 +571,12 @@ function UsScreenerPage() {
                     <ScreenerRow
                       key={r.symbol}
                       row={r}
-                      held={positions.data?.heldSymbols.includes(r.symbol) ?? false}
+                      held={heldKnown ? positions.data!.heldSymbols.includes(r.symbol) : null}
                     />
                   ))}
                 </tbody>
               </table>
-              {filtered.length === 0 ? (
+              {filtered.length === 0 && !exitUnavailable ? (
                 <p className="p-8 text-center text-[12px] text-muted-foreground">
                   해당 조건의 종목이 없습니다.
                 </p>
@@ -591,7 +630,7 @@ function SortableHeader({
   );
 }
 
-function ScreenerRow({ row: r, held }: { row: UsProspectiveCacheRow; held: boolean }) {
+function ScreenerRow({ row: r, held }: { row: UsProspectiveCacheRow; held: boolean | null }) {
   return (
     <tr className="border-b border-border/60 last:border-0 [&>td]:px-2 [&>td]:py-2 [&>td]:text-right">
       <td className="!text-left">
@@ -625,7 +664,9 @@ function ScreenerRow({ row: r, held }: { row: UsProspectiveCacheRow; held: boole
       <td>{topPct(r.amihudRank)}</td>
       <td>{money(r.adv20Usd)}</td>
       <td className="!text-left">
-        {r.a0Entry ? (
+        {held === null ? (
+          <span>보유 미확인</span>
+        ) : r.a0Entry ? (
           <Badge className="bg-up text-white">진입 준비</Badge>
         ) : held && r.a0Exit ? (
           <Badge variant="outline">{r.a0BetaExit ? "EXIT · β Anchor" : "EXIT"}</Badge>

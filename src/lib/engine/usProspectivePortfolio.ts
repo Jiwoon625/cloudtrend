@@ -124,8 +124,35 @@ export interface UsPendingTarget {
   remainingBudgetUsd?: string;
   /** Frozen at its first executable open. Partial fills cannot turn into rebalancing. */
   fixedTargetShares?: number;
+  /** Candidate priority captured at signal close; never rerank using execution-day close. */
+  signalPriority?: { core: number | null; beta: number | null; confirmation: number | null };
   signalDate: string;
   reason: string;
+}
+export function useSignalOrder(
+  date: string,
+  policy?: UsModelExecutionPolicy,
+  researchContext?: OperatingPolicyContext,
+): boolean {
+  return (
+    isCurrentRulesResearch(researchContext) || (policy?.accountingStartDate ?? date) >= "2026-10-12"
+  );
+}
+export function compareUsTargetOrders(
+  a: { pending: UsPendingTarget; delta: number },
+  b: { pending: UsPendingTarget; delta: number },
+  preserveSignalPriority: boolean,
+): number {
+  if (!preserveSignalPriority || a.delta <= 0 || b.delta <= 0) return a.delta - b.delta;
+  // Legacy pending intents lack rank evidence: retain their stable insertion order.
+  if (!a.pending.signalPriority || !b.pending.signalPriority)
+    return Number(!!a.pending.signalPriority) - Number(!!b.pending.signalPriority);
+  for (const key of ["core", "beta", "confirmation"] as const) {
+    const difference =
+      (b.pending.signalPriority[key] ?? -Infinity) - (a.pending.signalPriority[key] ?? -Infinity);
+    if (difference) return difference;
+  }
+  return a.pending.symbol.localeCompare(b.pending.symbol);
 }
 export interface UsPendingExit {
   symbol: string;
@@ -552,7 +579,9 @@ export function stepUsProspectivePortfolio(
         },
       ];
     })
-    .sort((a, b) => a.delta - b.delta);
+    .sort((a, b) =>
+      compareUsTargetOrders(a, b, useSignalOrder(analysis.date, executionPolicy, researchContext)),
+    );
 
   for (const o of orders.filter((x) => x.delta < 0)) {
     const p = state.positions[o.row.symbol];
@@ -738,6 +767,15 @@ export function stepUsProspectivePortfolio(
             ? {
                 fixedBudgetUsd: usFixedSlotBudget(allocationPolicy),
                 remainingBudgetUsd: usFixedSlotBudget(allocationPolicy),
+              }
+            : {}),
+          ...(useSignalOrder(analysis.date, executionPolicy, researchContext)
+            ? {
+                signalPriority: {
+                  core: r.coreRank,
+                  beta: r.betaRank,
+                  confirmation: config.style === "BALANCED" ? r.relvolRank : r.tkRank,
+                },
               }
             : {}),
           signalDate: analysis.date,

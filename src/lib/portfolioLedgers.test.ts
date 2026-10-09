@@ -699,3 +699,46 @@ describe("KOSPI suspended candidate cancellation boundary", () => {
     expect(filled.trades[0]?.entryDate).toBe("2026-10-08");
   });
 });
+
+it.each([true, false])(
+  "cancels carried KOSDAQ entries only for observed later exits: %s",
+  (observedExit) => {
+    const dates = ["2026-10-12", "2026-10-13", "2026-10-14"];
+    const signal = { ...entry("A"), ...getOperationalSignals("KOSDAQ", 7, 9.5, true) };
+    const subsequent = {
+      ...entry("A"),
+      ...getOperationalSignals("KOSDAQ", 8.5, observedExit ? 9.5 : 8.4, true),
+      technicalPoints: observedExit ? 9.5 : 8.4,
+      scoreDelta1d: observedExit ? 10 : -1,
+    };
+    const snapshots = [signal, subsequent].map((e, i) => ({
+      ...snapshot([e]),
+      asOfDate: dates[i]!,
+      date: dates[i]!,
+    }));
+    const prices = {
+      A: dates.map(
+        (d, i) =>
+          ({ tradeDate: d, open: 100, close: 100, volume: i === 1 ? 0 : 100 }) as DailyPrice,
+      ),
+    };
+    const model = simulateStrategy(
+      { ...settings, roundTripCostRate: 0.003 },
+      snapshots,
+      prices,
+      { A: "KOSDAQ" },
+      "",
+      dates,
+      {},
+      {
+        version: "kr-common-execution-20261012-v1",
+        startDate: "2026-10-12",
+        throughDate: dates[2]!,
+        scope: "KOSDAQ",
+      },
+    );
+    expect(model.trades).toHaveLength(observedExit ? 0 : 1);
+    if (observedExit)
+      expect(model.candidates.some((c) => c.decision.includes("진입 취소"))).toBe(true);
+  },
+);
