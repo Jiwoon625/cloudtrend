@@ -40,9 +40,12 @@ OPTIONAL_OUTPUT_NAMES = {"input-provenance.json"}
 BOOK_NAMES = {"KR_COMBINED_ADOPTED", "KOSPI_STANDALONE_DIAGNOSTIC", "KOSDAQ_STANDALONE_DIAGNOSTIC", "ETF_V02", "US_A0"}
 BOOK_SUFFIXES = {"daily-nav.jsonl", "trades.jsonl", "yearly-budgets.json", "evidence.json", "contract.json", "final-state.json", "accounting.json"}
 SUMMARY_FIELDS = {"schema", "status", "mode", "market", "start", "through", "codeCommit", "catalogSha256",
-                  "books", "measurements", "preparation", "resultManifestSha256", "sourceCoverage", "verifiedArithmetic", "checks", "extensionHashes", "extensionContinuity"}
+                  "books", "measurements", "preparation", "resultManifestSha256", "sourceCoverage", "verifiedArithmetic", "checks", "extensionHashes", "extensionContinuity", "closedTradeMetrics"}
 BOOK_SUMMARY_FIELDS = {"status", "startDate", "endDate", "observations", "cagr", "mdd", "cumulativeReturn",
                        "missingValuationCount", "staleValuationCount", "annualization"}
+TRADE_METRIC_CONTRACT = {"definition": "CLOSED_ROUND_TRIP_NET_RETURN_V1", "feeIncluded": True,
+                         "weighting": "EQUAL_CLOSED_POSITION", "denominator": "ENTRY_GROSS_PLUS_ENTRY_FEES", "unit": "RATIO"}
+TRADE_METRIC_FIELDS = {"status", "closedTradeCount", "excludedOpenPositionCount", "proxyClosedTradeCount", "meanNetReturn", "medianNetReturn"}
 MAX_METADATA_BYTES = 8 * 1024
 EXTENSION_AFTER = "2026-09-11"
 EXTENSION_THROUGH = "2026-09-30"
@@ -162,6 +165,19 @@ def safe_summary_metadata(metadata):
         if metadata["mode"] == "smoke":
             require(book["status"] == "SAMPLE_INCOMPLETE" and all(book[field] is None for field in
                     ["cagr", "mdd", "cumulativeReturn"]), "SMOKE_METADATA_CANNOT_CLAIM_PERFORMANCE")
+    trade_metrics = metadata["closedTradeMetrics"]
+    require(isinstance(trade_metrics, dict) and set(trade_metrics) == set(TRADE_METRIC_CONTRACT) | {"books"} and
+            all(trade_metrics[k] == value and type(trade_metrics[k]) is type(value) for k, value in TRADE_METRIC_CONTRACT.items()), "INVALID_TRADE_METRIC_CONTRACT")
+    require(isinstance(trade_metrics["books"], dict) and set(trade_metrics["books"]) == expected, "INVALID_TRADE_METRIC_BOOKS")
+    for name, metrics in trade_metrics["books"].items():
+        require(isinstance(metrics, dict) and set(metrics) == TRADE_METRIC_FIELDS, "INVALID_TRADE_METRIC_FIELDS")
+        complete = metadata["books"][name]["status"] == "COMPLETE"
+        require(metrics["status"] == ("VERIFIED" if complete else "WITHHELD_INCOMPLETE_RUN"), "INVALID_TRADE_METRIC_STATUS")
+        require(all(type(metrics[k]) is int and 0 <= metrics[k] <= 2**53-1 for k in ["closedTradeCount", "excludedOpenPositionCount", "proxyClosedTradeCount"]) and
+                metrics["proxyClosedTradeCount"] <= metrics["closedTradeCount"], "INVALID_TRADE_METRIC_COUNTS")
+        for key in ["meanNetReturn", "medianNetReturn"]:
+            value = metrics[key]
+            require((finite_number(value) and value >= -1) if complete and metrics["closedTradeCount"] else value is None, "INVALID_TRADE_METRIC_VALUE")
     require(metadata["verifiedArithmetic"] is True, "ARITHMETIC_NOT_VERIFIED")
     coverage = metadata["sourceCoverage"]
     require(isinstance(coverage, dict) and set(coverage) <= {"KOSPI", "KOSDAQ", "ETF"}, "INVALID_SOURCE_COVERAGE")
@@ -209,7 +225,7 @@ def build_summary_metadata(report, summary, manifest_hash):
     require(isinstance(summary, dict) and all(isinstance(value, dict) for value in summary.values()), "INVALID_RESULT_SUMMARY")
     metadata = {"schema": "adopted-backtest-summary-v1",
                 **{field: report[field] for field in ["status", "mode", "market", "start", "through", "codeCommit", "catalogSha256"]},
-                "preparation": report["preparation"], "checks": report["checks"], "extensionHashes": report.get("extensionHashes", []), "extensionContinuity": report.get("extensionContinuity"),
+                "closedTradeMetrics": report["closedTradeMetrics"], "preparation": report["preparation"], "checks": report["checks"], "extensionHashes": report.get("extensionHashes", []), "extensionContinuity": report.get("extensionContinuity"),
                 "sourceCoverage": report.get("sourceCoverage", {}), "verifiedArithmetic": report["verifiedArithmetic"],
                 "books": {book: {field: values.get(field) for field in BOOK_SUMMARY_FIELDS} for book, values in summary.items()},
                 "measurements": [{field: item[field] for field in ["elapsedSeconds", "maxRssKiB"]} for item in report["measurements"]],
@@ -229,6 +245,7 @@ def validate_options(options):
     except (ValueError, TypeError):
         raise JobError("INVALID_SELECTED_DATES") from None
     require(start.isoformat() == options.start and through.isoformat() == options.through and start <= through, "INVALID_SELECTED_DATES")
+    require(options.mode != "full" or options.market == "us" or options.through <= EXTENSION_AFTER, "UNVERIFIED_POST_CUTOFF_STOCK_ENVIRONMENT")
 
 
 def read_local_json(file, limit, code):
@@ -752,6 +769,15 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
         for file in run["files"]:
             outputs.append(storage.create_result(run["directory"].name + "/" + file.name, file))
     result_quality = read_local_json(root / "result" / "quality.json", 4*CHUNK, "INVALID_RESULT_QUALITY")
+    result_verification = read_local_json(root / "result" / "verification.json", 65536, "INVALID_ARITHMETIC_VERIFICATION")
+    verified_books = result_verification.get("books")
+    require(isinstance(verified_books, dict) and verified_books, "MISSING_CLOSED_TRADE_VERIFICATION")
+    closed_trade_metrics = {**TRADE_METRIC_CONTRACT, "books": {}}
+    for book, value in verified_books.items():
+        require(book in BOOK_NAMES and isinstance(value, dict) and isinstance(value.get("closedTradeMetrics"), dict), "MISSING_CLOSED_TRADE_VERIFICATION")
+        metrics = value["closedTradeMetrics"]
+        require(all(metrics.get(k) == expected for k, expected in TRADE_METRIC_CONTRACT.items()), "INVALID_TRADE_METRIC_CONTRACT")
+        closed_trade_metrics["books"][book] = {key: metrics.get(key) for key in TRADE_METRIC_FIELDS}
     readiness = result_quality.get("signalReadiness", {})
     checks = {
         "calendar": {"first": result_quality.get("sourceCalendarStart"), "last": result_quality.get("sourceCalendarEnd")},
@@ -774,7 +800,7 @@ def execute_job(options, storage, workspace, environment, command_runner=run_com
               "downloadedKrEtfBytes": sum(item["bytes"] for item in sources) if options.market != "us" else 0,
               "usInputProvenance": input_provenance,
               "preparation": preparation, "extensionHashes": extension_hashes, "inputExtensions": extension_evidence,
-              "verifiedArithmetic": True, "checks": checks, "extensionContinuity": result_quality.get("extensionContinuity"),
+              "verifiedArithmetic": True, "closedTradeMetrics": closed_trade_metrics, "checks": checks, "extensionContinuity": result_quality.get("extensionContinuity"),
               "sourceCoverage": result_quality.get("sourceCoverage", {}),
               "measurements": [{key: value for key, value in run.items() if key not in ("directory", "files")} for run in runs],
               "outputs": outputs, "rawInputsUploaded": False, "logsUploaded": False,

@@ -24,6 +24,84 @@ def fee(gross):
 def read_lines(path):
     return [json.loads(row) for row in path.read_text().splitlines() if row]
 
+def closed_trade_metrics(book, trades, *, publish=True):
+    """One fully closed position, not one fill, is one equally weighted observation."""
+    returns, open_positions, proxy_count = [], 0, 0
+    by_year = defaultdict(list)
+    if book == 'ETF_V02':
+        active = {}
+        previous = None
+        for t in trades:
+            require(t['side'] in ('BUY', 'SELL'), 'Unknown ETF fill side')
+            stamp = t['executionAt']
+            require(previous is None or stamp >= previous, 'ETF fills not chronological')
+            previous = stamp
+            symbol, quantity = t['symbol'], D(t['quantity'])
+            gross, cost = D(t['gross']), D(t['fee'])
+            require(quantity > 0 and quantity == int(quantity) and gross > 0 and cost >= 0, 'Invalid round-trip fill')
+            if t['side'] == 'BUY':
+                intent = (t['originDate'], t['signalDate'])
+                if symbol not in active:
+                    active[symbol] = {'intent': intent, 'quantity': D(0), 'cost': D(0), 'credit': D(0), 'sold': False, 'proxy': False}
+                position = active[symbol]
+                require(position['intent'] == intent and not position['sold'], 'Overlapping ETF entry intents')
+                position['quantity'] += quantity
+                position['cost'] += gross + cost
+            else:
+                require(symbol in active, 'ETF exit without entry')
+                position = active[symbol]
+                require(quantity <= position['quantity'], 'ETF exit exceeds held quantity')
+                position['quantity'] -= quantity
+                position['credit'] += gross - cost
+                position['sold'] = True
+                position['proxy'] |= t.get('reason') == 'MODEL_UNOBSERVED'
+                if position['quantity'] == 0:
+                    value = (position['credit'] - position['cost']) / position['cost']
+                    returns.append(value)
+                    by_year[t['executionDate'][:4]].append((value, position['proxy']))
+                    proxy_count += position['proxy']
+                    del active[symbol]
+        open_positions = len(active)
+    else:
+        seen = set()
+        for t in trades:
+            require(t['id'] not in seen, 'Duplicate KR position id')
+            seen.add(t['id'])
+            require(t['status'] in ('OPEN', 'CLOSED'), 'Unknown KR position status')
+            if t['status'] != 'CLOSED':
+                open_positions += 1
+                continue
+            quantity = D(t['shares'])
+            entry, exit = quantity * D(t['entryPrice']), quantity * D(t['exitPrice'])
+            require(quantity > 0 and entry > 0 and exit > 0, 'Invalid KR round-trip amount')
+            basis = entry + fee(entry)
+            value = (exit - fee(exit) - basis) / basis
+            proxy = str(t.get('exitReason', '')).startswith('모델 가정 청산')
+            returns.append(value)
+            by_year[t['exitDate'][:4]].append((value, proxy))
+            proxy_count += proxy
+    ordered = sorted(returns)
+    count = len(ordered)
+    mean = sum(ordered, D(0)) / count if count else None
+    median = (ordered[count//2] if count % 2 else (ordered[count//2-1] + ordered[count//2])/2) if count else None
+    yearly = []
+    for year, values in sorted(by_year.items()):
+        observations = sorted(v for v, _ in values)
+        n = len(observations)
+        med = observations[n//2] if n % 2 else (observations[n//2-1]+observations[n//2])/2
+        yearly.append({'exitYear': int(year), 'closedTradeCount': n, 'proxyClosedTradeCount': sum(p for _, p in values),
+                       'meanNetReturn': float(sum(observations, D(0))/n) if publish else None,
+                       'medianNetReturn': float(med) if publish else None})
+    return {'definition': 'CLOSED_ROUND_TRIP_NET_RETURN_V1',
+            'status': 'VERIFIED' if publish else 'WITHHELD_INCOMPLETE_RUN',
+            'closedTradeCount': count, 'excludedOpenPositionCount': open_positions, 'proxyClosedTradeCount': proxy_count,
+            'byFinalExitYear': yearly,
+            'meanNetReturn': float(mean) if publish and mean is not None else None,
+            'medianNetReturn': float(median) if publish and median is not None else None,
+            'feeIncluded': True, 'weighting': 'EQUAL_CLOSED_POSITION',
+            'denominator': 'ENTRY_GROSS_PLUS_ENTRY_FEES', 'unit': 'RATIO'}
+
+
 def verify(root: Path):
     summary = json.loads((root / 'summary.json').read_text())
     result = {'schema': 'adopted-kr-etf-independent-verification-v1', 'status': 'PASS', 'books': {}}
@@ -152,7 +230,9 @@ def verify(root: Path):
                 require(math.isclose(stats[key], value, rel_tol=1e-10, abs_tol=1e-10), 'Performance metric mismatch')
         else:
             require(all(stats[k] is None for k in ('cagr', 'mdd', 'cumulativeReturn')), 'Incomplete run published performance')
-        result['books'][book] = {'dailyCashReconciled': len(rows), 'tradeRowsChecked': len(trades), 'feesVerified': True,
+        trade_metrics = closed_trade_metrics(book, trades, publish=stats['status'] == 'COMPLETE')
+        require(trade_metrics['excludedOpenPositionCount'] == rows[-1].get('openPositions', rows[-1].get('positionCount')), 'Terminal position reconciliation mismatch')
+        result['books'][book] = {'closedTradeMetrics': trade_metrics, 'dailyCashReconciled': len(rows), 'tradeRowsChecked': len(trades), 'feesVerified': True,
                                 'navCashPlusMarksVerified': True, 'metricsVerified': stats['status'] == 'COMPLETE',
                                 'annualBudgetsVerified': True}
     with (root / 'verification.json').open('x') as stream:

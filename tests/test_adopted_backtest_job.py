@@ -120,7 +120,13 @@ class FakeCommands:
         if "--results" in command:
             self.verification_calls.append(command)
             target = Path(command[command.index("--results") + 1])
-            (target / "verification.json").write_bytes(job.json_bytes({"status": "PASS"}))
+            summary = json.loads((target / "summary.json").read_bytes())
+            verified = {book: {"closedTradeMetrics": {**job.TRADE_METRIC_CONTRACT,
+                "status": "VERIFIED" if value["status"] == "COMPLETE" else "WITHHELD_INCOMPLETE_RUN",
+                "closedTradeCount": 2, "excludedOpenPositionCount": 1, "proxyClosedTradeCount": 0,
+                "meanNetReturn": 0.1 if value["status"] == "COMPLETE" else None,
+                "medianNetReturn": 0.05 if value["status"] == "COMPLETE" else None}} for book, value in summary.items()}
+            (target / "verification.json").write_bytes(job.json_bytes({"status": "PASS", "books": verified}))
             return
         self.calls.append((command, log, environment))
         assert "SUPABASE_SERVICE_ROLE_KEY" not in environment
@@ -170,6 +176,14 @@ class FakeCommands:
 
 
 class JobTests(unittest.TestCase):
+    def test_full_rejects_unverified_late_stock_environment(self):
+        self.options.mode = "full"
+        self.options.through = "2026-09-30"
+        for market in ["kr", "etf", "kr-etf"]:
+            self.options.market = market
+            with self.assertRaisesRegex(job.JobError, "UNVERIFIED_POST_CUTOFF_STOCK_ENVIRONMENT"):
+                job.validate_options(self.options)
+
     def setUp(self):
         self.session, self.sha, self.manifest = fixture()
         self.options = argparse.Namespace(catalog_sha=self.sha, source_manifest_sha=hashlib.sha256(job.json_bytes(self.manifest)).hexdigest(), mode="smoke", market="kr-etf",
@@ -309,6 +323,12 @@ class JobTests(unittest.TestCase):
             invalid = changed()
             invalid["books"]["ETF_V02"][field] = value
             with self.assertRaises(job.JobError):
+                job.safe_summary_metadata(invalid)
+        invalid = changed()
+        for key, bad in [("meanNetReturn", 0.2), ("closedTradeCount", True), ("proxyClosedTradeCount", 99), ("extra", SECRET)]:
+            invalid = changed()
+            invalid["closedTradeMetrics"]["books"]["ETF_V02"][key] = bad
+            with self.assertRaisesRegex(job.JobError, "TRADE_METRIC"):
                 job.safe_summary_metadata(invalid)
         invalid = changed()
         invalid["books"]["ETF_V02"]["finalNAV"] = 100

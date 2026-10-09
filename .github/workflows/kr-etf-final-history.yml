@@ -71,6 +71,7 @@ jobs:
       - run: npx vitest run --config vitest.ledger.config.ts src/lib/ledger/etfAdoptedShadow.test.ts
       - run: python -m unittest discover -s tests -p 'test_adopted_kr_etf_input.py'
       - run: python -m unittest discover -s tests -p 'test_adopted_backtest_job.py'
+      - run: python -m unittest discover -s tests -p 'test_adopted_closed_trades.py'
       # Frozen Shadow runtime admission is not changed by research CI.
       # Promotion to main is a separate authorization and integrity review.
   replay:
