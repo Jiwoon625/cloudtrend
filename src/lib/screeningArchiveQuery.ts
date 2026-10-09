@@ -2,6 +2,38 @@ import { usHistorySnapshot } from "./usScreeningHistory";
 import { supabase, userId } from "./cloud";
 import { hydrateScreeningSnapshot } from "./screeningSnapshotStorage";
 import type { ScreeningSnapshot } from "./screeningSnapshot";
+import { queryOptions } from "@tanstack/react-query";
+
+/** One verified record shared by the list and all its instrument detail pages. */
+export function screeningArchiveQueryOptions(record: {
+  runId?: string | undefined;
+  asOfDate: string;
+  savedAt: string;
+  market?: string | undefined;
+  strategyVersion?: string | undefined;
+  dataHash?: string | undefined;
+}) {
+  const identity = {
+    market: record.market || "KR",
+    strategyVersion: record.strategyVersion || "",
+    dataHash: record.dataHash || "",
+  };
+  const runId = record.runId || "";
+  return queryOptions({
+    queryKey: [
+      "screening-execution",
+      identity.market,
+      runId,
+      record.asOfDate,
+      record.savedAt,
+      identity.strategyVersion,
+      identity.dataHash,
+    ] as const,
+    queryFn: () => readScreeningArchive(runId, record.asOfDate, record.savedAt, identity),
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+}
 
 export async function listScreeningArchive(date?: string): Promise<ScreeningSnapshot[]> {
   const uid = await userId();

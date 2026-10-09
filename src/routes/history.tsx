@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { AppShell } from "@/components/AppShell";
-import { listScreeningArchive, readScreeningArchive } from "@/lib/screeningArchiveQuery";
+import { listScreeningArchive, screeningArchiveQueryOptions } from "@/lib/screeningArchiveQuery";
 import { historyRecordKey, usHistorySignals } from "@/lib/usScreeningHistory";
 import { formatKstDateTime } from "@/lib/format";
 import {
@@ -43,15 +43,8 @@ function HistoryPage() {
   );
   const selected = runs.find((s) => historyRecordKey(s) === run) ?? runs[0];
   const detail = useQuery({
-    queryKey: ["screening-execution", selected ? historyRecordKey(selected) : undefined],
+    ...screeningArchiveQueryOptions(selected ?? { asOfDate: "", savedAt: "" }),
     enabled: !!selected,
-    queryFn: () =>
-      readScreeningArchive(selected!.runId ?? "", selected!.asOfDate, selected!.savedAt, {
-        market: selected!.market ?? "KR",
-        strategyVersion: selected!.strategyVersion,
-        dataHash: selected!.dataHash,
-      }),
-    retry: false,
   });
   const entries = (detail.isError ? [] : (detail.data?.entries ?? [])).filter(
     (e) =>

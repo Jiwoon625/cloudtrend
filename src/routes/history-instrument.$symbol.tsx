@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { KospiEntryDetails } from "@/components/KospiEntryDetails";
 import { OnsetProfileDetails } from "@/components/OnsetProfileDetails";
-import { readScreeningArchive } from "@/lib/screeningArchiveQuery";
+import { screeningArchiveQueryOptions } from "@/lib/screeningArchiveQuery";
 import { formatKstDateTime } from "@/lib/format";
 
 export const Route = createFileRoute("/history-instrument/$symbol")({
@@ -23,11 +23,7 @@ export const Route = createFileRoute("/history-instrument/$symbol")({
 function HistoricalInstrument() {
   const { symbol } = Route.useParams(),
     search = Route.useSearch();
-  const q = useQuery({
-    queryKey: ["historical-instrument", search],
-    queryFn: () => readScreeningArchive(search.runId, search.date, search.savedAt, search),
-    retry: false,
-  });
+  const q = useQuery(screeningArchiveQueryOptions({ ...search, asOfDate: search.date }));
   const s = q.data,
     row = s?.entries.find((r) => r.symbol === symbol);
   return (
