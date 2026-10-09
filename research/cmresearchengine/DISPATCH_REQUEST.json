@@ -1,8 +1,8 @@
 {
-  "request_id": "cm-manual-base27-20261009-001",
+  "request_id": "cm-manual-base31-20261009-001",
   "mode": "run",
   "stage": "base",
-  "offset": 27,
+  "offset": 31,
   "count": 4,
   "max_seconds": 3000,
   "workers": 2,
