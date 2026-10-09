@@ -42,6 +42,16 @@ class PreparedExpanded(unittest.TestCase):
         f=rows(['2020-01-02']);f.loc[0,'comparison_close']=np.nan;f.loc[1,'volume']=0
         out=prep.atomic_rows(f)
         self.assertEqual(out.symbol.iloc[0],'NA');self.assertTrue(pd.isna(out.close.iloc[0]));self.assertEqual(out.volume.iloc[1],0)
+    def test_multiline_metadata_fails_closed_without_changing_source(self):
+        for field in ['name','research_sector']:
+            for newline in ['\n','\r\n']:
+                f=rows(['2020-01-02']);value='Example'+newline+'Holdings';f.loc[0,field]=value
+                with self.assertRaisesRegex(ValueError,'Multiline metadata unsupported'):prep.atomic_rows(f)
+                self.assertEqual(f.loc[0,field],value)
+        f=rows(['2020-01-02']);f.loc[0,'name']='Example, "Holdings"'
+        self.assertEqual(prep.atomic_rows(f).loc[0,'name'],f.loc[0,'name'])
+        f.loc[0,'name']='Example\rHoldings'
+        self.assertEqual(prep.atomic_rows(f).loc[0,'name'],f.loc[0,'name'])
     def fixture(self,root):
         days=pd.bdate_range('2015-01-02',periods=260).strftime('%Y-%m-%d').tolist()
         u=root/prep.PREFIX/'U';u.mkdir(parents=True)

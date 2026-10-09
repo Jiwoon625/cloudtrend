@@ -135,6 +135,11 @@ with the existing eight-place money formatter; original source prices remain in
 trade detail and original feature/close valuation prices are unchanged. Quantity,
 cash and fees all use the same journal execution price. Values represented as zero
 fail closed. Production defaults remain strict.
+An extreme comparison quote that provably exceeds the exact remaining entry
+budget/cash or one-share participation capacity produces zero quantity before
+journal conversion. The source quote is neither capped nor replaced; executable
+prices still require the strict ledger representation. Source metadata with LF
+inside a CSV field fails closed rather than silently shifting price columns.
 
 Full expanded replay also runs an independent Python arithmetic check of CAGR,
 MDD, yearly returns, buy/sell counts, 15bp fees, cash/quantity conservation, annual

@@ -26,6 +26,7 @@ import {
 } from "../research/usAnnualEntryBudget";
 import {
   representedUsResearchTradePrice,
+  researchPriceExceedsExactBudget,
   usResearchTradePriceAudit,
   validateUsResearchTradePricePolicy,
   type UsResearchTradePricePolicy,
@@ -552,15 +553,18 @@ export function stepUsProspectivePortfolio(
   const record = (t: UsModelTrade) => trades.push(t);
   // Capacity is known at the preceding close, never today's ADV containing future volume.
   const used = new Map<string, number>();
-  const capacity = (row: UsProspectiveRow, px: number) =>
-    Math.max(
+  const capacity = (row: UsProspectiveRow, px: number) => {
+    const available = (state.adv20BySymbol?.[row.symbol] ?? 0) * US_PROSPECTIVE_PARTICIPATION -
+      (used.get(row.symbol) ?? 0);
+    if (researchTradePricePolicy && Number.isFinite(px) && px > Number.MAX_SAFE_INTEGER && available < px) return 0;
+    return Math.max(
       0,
       Math.floor(
-        ((state.adv20BySymbol?.[row.symbol] ?? 0) * US_PROSPECTIVE_PARTICIPATION -
-          (used.get(row.symbol) ?? 0)) /
+        available /
           (researchTradePricePolicy ? Number(journalPrice(px)) : px),
       ),
     );
+  };
   const consume = (symbol: string, notional: number) =>
     used.set(symbol, (used.get(symbol) ?? 0) + notional);
   // On a quarter boundary, rebalance at this open using only the preceding close's holdings/signals.
@@ -652,13 +656,20 @@ export function stepUsProspectivePortfolio(
       const current = state.positions[pending.symbol]?.shares ?? 0;
       if (fixedSlots && pending.fixedTargetShares === undefined) {
         const budget = decimal(pending.fixedBudgetUsd!);
-        const unit = decimal(journalPrice(px));
-        pending.fixedTargetShares = Math.max(current, Number(budget / unit));
-        // An inherited, partially filled entry reserves its existing shares at the cutover open.
-        // This is only an allocation reservation; historical fills/cost basis remain untouched.
-        pending.remainingBudgetUsd = format(
-          budget > unit * BigInt(current) ? budget - unit * BigInt(current) : 0n,
-        );
+        if (researchTradePricePolicy && researchPriceExceedsExactBudget(px, pending.fixedBudgetUsd!)) {
+          // The exact budget cannot buy one comparison unit. Preserve the
+          // ordinary zero-target outcome without creating any ledger price.
+          pending.fixedTargetShares = current;
+          pending.remainingBudgetUsd = current ? "0" : format(budget);
+        } else {
+          const unit = decimal(journalPrice(px));
+          pending.fixedTargetShares = Math.max(current, Number(budget / unit));
+          // An inherited, partially filled entry reserves its existing shares at the cutover open.
+          // This is only an allocation reservation; historical fills/cost basis remain untouched.
+          pending.remainingBudgetUsd = format(
+            budget > unit * BigInt(current) ? budget - unit * BigInt(current) : 0n,
+          );
+        }
       }
       const desired = fixedSlots
         ? pending.fixedTargetShares!
@@ -728,6 +739,10 @@ export function stepUsProspectivePortfolio(
       )
         continue;
     }
+    if (researchTradePricePolicy && (
+      researchPriceExceedsExactBudget(o.px, format(modelCash)) ||
+      (fixedSlots && researchPriceExceedsExactBudget(o.px, o.pending.remainingBudgetUsd!))
+    )) continue;
     const affordable = executionPolicy
       ? Number(
           integerBudgetQuantity(

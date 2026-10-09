@@ -18,6 +18,17 @@ export function representedUsResearchTradePrice(sourcePrice: number): string {
   return represented;
 }
 
+/** A non-executable extreme comparison quote needs no journal conversion.
+ * Above MAX_SAFE_INTEGER every finite IEEE-754 value is integral; BigInt keeps
+ * that observed value exactly for this strict budget comparison. No fill price
+ * is relaxed, capped, rounded down, or substituted.
+ */
+export function researchPriceExceedsExactBudget(sourcePrice: number, budgetUsd: string): boolean {
+  return Number.isFinite(sourcePrice) && sourcePrice > Number.MAX_SAFE_INTEGER &&
+    decimal(budgetUsd) >= 0n &&
+    BigInt(sourcePrice) * decimal("1") > decimal(budgetUsd);
+}
+
 export function usResearchTradePriceAudit(
   sourcePrice: number,
   accountedPrice: number,

@@ -10,6 +10,7 @@ import { US_LAST_VALID_CLOSE_POLICY_ID } from "./usLastValidClosePolicy";
 import {
   US_RESEARCH_TRADE_PRICE_POLICY_ID,
   representedUsResearchTradePrice,
+  researchPriceExceedsExactBudget,
 } from "./usResearchTradePrice";
 
 const hash = `sha256:${"d".repeat(64)}` as const;
@@ -77,6 +78,24 @@ const grossAndFee = (price: number, shares: number) => {
 };
 
 describe("research-only comparison price journal representation", () => {
+  it("treats a provably unaffordable extreme quote as zero shares without changing the quote", async () => {
+    const inputs = dates.map(session), huge = 1e30;
+    inputs[2]!.rows.find((r) => r.symbol === "T00")!.open = huge;
+    const original = JSON.stringify(inputs);
+    const runs = await replayAdoptedUsBacktest(await contract(), inputs);
+    expect(JSON.stringify(inputs)).toBe(original);
+    expect(runs[2]!.result.state.positions["T00"]).toBeUndefined();
+    expect(runs[2]!.result.state.pendingTargets["T00"]).toBeUndefined();
+    expect(runs[2]!.result.state.modelCashExact).toBe("74671.44");
+    expect(runs[2]!.result.trades.filter(t => t.executionDate)).toEqual([]);
+    expect(() => representedUsResearchTradePrice(huge)).toThrow("not safely representable");
+    expect(researchPriceExceedsExactBudget(huge, "3733.572")).toBe(true);
+    expect(researchPriceExceedsExactBudget(1e20, "100000000000000000000")).toBe(false);
+    expect(researchPriceExceedsExactBudget(1e20, "100000000000000000001")).toBe(false);
+    expect(researchPriceExceedsExactBudget(Infinity, "1")).toBe(false);
+    expect(researchPriceExceedsExactBudget(100, "1")).toBe(false);
+    await expect(replayAdoptedUsBacktest(await contract(false), inputs)).rejects.toThrow("not safely representable");
+  });
   it("preserves raw observations/NAV but uses the same represented price for quantity, gross and fee", async () => {
     const inputs = dates.map(session),
       original = JSON.stringify(inputs);
@@ -132,6 +151,17 @@ describe("research-only comparison price journal representation", () => {
     expect(sell.side).toBe("SELL");
     expect(sell.modelPrice).toBe(83.98765432);
     expect(sell.detail["source_price"]).toBe(83.987654321);
+  });
+
+  it("keeps an exit pending when an extreme quote makes participation capacity zero", async () => {
+    const inputs = dates.map(session);
+    Object.assign(inputs[3]!.rows.find(r => r.symbol === "T00")!, { ret120: -10, ret252: -10 });
+    inputs[4]!.rows.find(r => r.symbol === "T00")!.open = 1e30;
+    const runs = await replayAdoptedUsBacktest(await contract(), inputs);
+    expect(runs[4]!.result.trades.filter(t => t.executionDate)).toEqual([]);
+    expect(runs[4]!.result.state.positions["T00"]?.shares).toBe(37);
+    expect(runs[4]!.result.state.pendingExits["T00"]).toBeDefined();
+    expect(runs[4]!.result.state.modelCashExact).toBe(runs[3]!.result.state.modelCashExact);
   });
 
   it("preserves existing strict default behavior and binds a different contract", async () => {

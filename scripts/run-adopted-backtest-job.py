@@ -486,6 +486,7 @@ def run_command(command, log, environment):
             "Genuine 252-session feature warmup required":"SOURCE_WARMUP",
             "Full source coverage mismatch":"FULL_SOURCE_COVERAGE",
             "US dated row count/date mismatch":"US_DAY_ROW_COUNT",
+            "Multiline metadata unsupported":"MULTILINE_CSV_METADATA",
             "Legacy number is not safely representable":"UNSAFE_PRICE_MAGNITUDE",
             "Legacy number needs more than eight decimal places":"STRICT_PRICE_PRECISION",
             "Positive source price cannot be represented as zero":"ZERO_REPRESENTED_PRICE",

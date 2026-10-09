@@ -42,6 +42,12 @@ def atomic_rows(f):
     for col in ['active20','research_common_snapshot','research_exchange_eligible']:
         require(f[col].notna().all() and f[col].isin([True,False]).all(),'Explicit eligibility flags required')
     o['market']='US';o['currency']='USD';o['status']=None
+    # The shared production CSV reader consumes physical lines. Never allow a
+    # quoted metadata newline to shift prices/features silently. Preserve the
+    # source and stop for a parser fix instead of stripping the original text.
+    for col in ['symbol','date','name','sector','market','currency']:
+        require(not o[col].astype('string').str.contains('\n',regex=False,na=False).any(),
+                'Multiline metadata unsupported by current US CSV reader')
     # Provider categories and historical exchange eligibility are the approved
     # research proxy. The latest ACTIVE/toss broker list is never substituted.
     o.loc[o.symbol.eq('SPY'),['is_common_share','toss_tradable']]=False
