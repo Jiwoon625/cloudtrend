@@ -1,5 +1,5 @@
 {
-  "schemaVersion": "operating-rule-backtest-summary-v1",
+  "schemaVersion": "operating-rule-backtest-summary-v2",
   "policyFamily": "researchannualpolicy",
   "books": [
     {
@@ -30,7 +30,61 @@
       "returnDefinition": "종목별 수량 0에서 매수 후 전량 청산으로 수량 0이 될 때까지를 한 건으로 집계합니다. 부분체결을 합치고 이후 재진입은 별도 건입니다. 순손익을 매수금액과 매수비용의 합으로 나눈 수익률을 등가중 집계하며 연율화하지 않습니다.",
       "returnDefinitionId": "CLOSED_ROUND_TRIP_NET_RETURN_V1",
       "proxyClosedTradeCount": 3,
-      "excludedOpenPositionCount": 5
+      "excludedOpenPositionCount": 5,
+      "portfolioAnnualReturns": {
+        "status": "verified",
+        "definition": "FULL_CALENDAR_YEAR_NAV_RETURN_V1",
+        "weighting": "EQUAL_YEAR",
+        "partialYearsExcluded": true,
+        "years": [
+          {
+            "year": 2018,
+            "netReturn": -0.048039001455466405
+          },
+          {
+            "year": 2019,
+            "netReturn": -0.00043851956576671793
+          },
+          {
+            "year": 2020,
+            "netReturn": 0.13287396691466688
+          },
+          {
+            "year": 2021,
+            "netReturn": 0.08087663887008054
+          },
+          {
+            "year": 2022,
+            "netReturn": -0.08398229315798889
+          },
+          {
+            "year": 2023,
+            "netReturn": 0.18132611090923237
+          },
+          {
+            "year": 2024,
+            "netReturn": 0.18480421610559555
+          },
+          {
+            "year": 2025,
+            "netReturn": 0.2971026694990163
+          }
+        ],
+        "meanReturn": 0.0930654735149212,
+        "medianReturn": 0.10687530289237371
+      },
+      "benchmarkComparison": {
+        "status": "verified",
+        "definition": "FULL_PERIOD_CUMULATIVE_RETURN_DIFFERENCE_V1",
+        "label": "KOSPI",
+        "currency": "KRW",
+        "startDate": "2017-08-21",
+        "endDate": "2026-09-11",
+        "portfolioCumulativeReturn": 1.4453200164800002,
+        "benchmarkCumulativeReturn": 1.934144373673036,
+        "excessReturn": -0.48882435719303574,
+        "limitation": "동일한 채택 원천의 시장지수 종가를 사용하며, 배당을 재투자한 총수익지수는 아닙니다. 연구 시작일 종가를 기준으로 비교합니다."
+      }
     },
     {
       "book": "KOSDAQ_STANDALONE_DIAGNOSTIC",
@@ -60,7 +114,61 @@
       "returnDefinition": "종목별 수량 0에서 매수 후 전량 청산으로 수량 0이 될 때까지를 한 건으로 집계합니다. 부분체결을 합치고 이후 재진입은 별도 건입니다. 순손익을 매수금액과 매수비용의 합으로 나눈 수익률을 등가중 집계하며 연율화하지 않습니다.",
       "returnDefinitionId": "CLOSED_ROUND_TRIP_NET_RETURN_V1",
       "proxyClosedTradeCount": 14,
-      "excludedOpenPositionCount": 5
+      "excludedOpenPositionCount": 5,
+      "portfolioAnnualReturns": {
+        "status": "verified",
+        "definition": "FULL_CALENDAR_YEAR_NAV_RETURN_V1",
+        "weighting": "EQUAL_YEAR",
+        "partialYearsExcluded": true,
+        "years": [
+          {
+            "year": 2018,
+            "netReturn": -0.005269218486672634
+          },
+          {
+            "year": 2019,
+            "netReturn": 0.08898836463529287
+          },
+          {
+            "year": 2020,
+            "netReturn": 0.40144336650802703
+          },
+          {
+            "year": 2021,
+            "netReturn": 0.3217617162534953
+          },
+          {
+            "year": 2022,
+            "netReturn": -0.0899807297967028
+          },
+          {
+            "year": 2023,
+            "netReturn": 0.21888316436981956
+          },
+          {
+            "year": 2024,
+            "netReturn": 0.13725557797563334
+          },
+          {
+            "year": 2025,
+            "netReturn": 0.5478660243922728
+          }
+        ],
+        "meanReturn": 0.2026185332313957,
+        "medianReturn": 0.17806937117272645
+      },
+      "benchmarkComparison": {
+        "status": "verified",
+        "definition": "FULL_PERIOD_CUMULATIVE_RETURN_DIFFERENCE_V1",
+        "label": "KOSDAQ",
+        "currency": "KRW",
+        "startDate": "2017-08-21",
+        "endDate": "2026-09-11",
+        "portfolioCumulativeReturn": 5.09573712997,
+        "benchmarkCumulativeReturn": 0.2805492705001169,
+        "excessReturn": 4.815187859469883,
+        "limitation": "동일한 채택 원천의 시장지수 종가를 사용하며, 배당을 재투자한 총수익지수는 아닙니다. 연구 시작일 종가를 기준으로 비교합니다."
+      }
     },
     {
       "book": "US_A0",
@@ -91,7 +199,69 @@
       "returnDefinition": "종목별 수량 0에서 매수 후 전량 청산으로 수량 0이 될 때까지를 한 건으로 집계합니다. 부분체결을 합치고 이후 재진입은 별도 건입니다. 순손익을 매수금액과 매수비용의 합으로 나눈 수익률을 등가중 집계하며 연율화하지 않습니다.",
       "returnDefinitionId": "CLOSED_ROUND_TRIP_NET_RETURN_V1",
       "proxyClosedTradeCount": 11,
-      "excludedOpenPositionCount": 15
+      "excludedOpenPositionCount": 15,
+      "portfolioAnnualReturns": {
+        "status": "verified",
+        "definition": "FULL_CALENDAR_YEAR_NAV_RETURN_V1",
+        "weighting": "EQUAL_YEAR",
+        "partialYearsExcluded": true,
+        "years": [
+          {
+            "year": 2016,
+            "netReturn": 0.040843482095966006
+          },
+          {
+            "year": 2017,
+            "netReturn": 0.2731020312601886
+          },
+          {
+            "year": 2018,
+            "netReturn": -0.14437002025763274
+          },
+          {
+            "year": 2019,
+            "netReturn": 0.9497783196807482
+          },
+          {
+            "year": 2020,
+            "netReturn": 0.6682473537295398
+          },
+          {
+            "year": 2021,
+            "netReturn": 0.17278619714316745
+          },
+          {
+            "year": 2022,
+            "netReturn": 0.04086946273996135
+          },
+          {
+            "year": 2023,
+            "netReturn": 0.27530784884355497
+          },
+          {
+            "year": 2024,
+            "netReturn": 0.14733740002063483
+          },
+          {
+            "year": 2025,
+            "netReturn": 0.36207446906945046
+          }
+        ],
+        "meanReturn": 0.2785976544325579,
+        "medianReturn": 0.22294411420167803
+      },
+      "benchmarkComparison": {
+        "status": "verified",
+        "definition": "FULL_PERIOD_CUMULATIVE_RETURN_DIFFERENCE_V1",
+        "label": "SPY",
+        "currency": "USD",
+        "startDate": "2016-01-04",
+        "endDate": "2026-09-25",
+        "portfolioCumulativeReturn": 8.501738466218406,
+        "benchmarkCumulativeReturn": 3.5660384059858403,
+        "excessReturn": 4.935700060232565,
+        "limitation": "SPY는 원천 조정종가 기준이며 배당 총수익률 완전성은 인증하지 않았습니다. 연구 시작일 종가를 기준으로 동일한 평가일에 맞춰 비교합니다."
+      }
     },
     {
       "book": "ETF_V02",
@@ -120,7 +290,61 @@
       "returnDefinition": "종목별 수량 0에서 매수 후 전량 청산으로 수량 0이 될 때까지를 한 건으로 집계합니다. 부분체결을 합치고 이후 재진입은 별도 건입니다. 순손익을 매수금액과 매수비용의 합으로 나눈 수익률을 등가중 집계하며 연율화하지 않습니다.",
       "returnDefinitionId": "CLOSED_ROUND_TRIP_NET_RETURN_V1",
       "proxyClosedTradeCount": 2,
-      "excludedOpenPositionCount": 10
+      "excludedOpenPositionCount": 10,
+      "portfolioAnnualReturns": {
+        "status": "verified",
+        "definition": "FULL_CALENDAR_YEAR_NAV_RETURN_V1",
+        "weighting": "EQUAL_YEAR",
+        "partialYearsExcluded": true,
+        "years": [
+          {
+            "year": 2018,
+            "netReturn": 0.021705736447160215
+          },
+          {
+            "year": 2019,
+            "netReturn": -0.036749382572970286
+          },
+          {
+            "year": 2020,
+            "netReturn": 0.1541589150341183
+          },
+          {
+            "year": 2021,
+            "netReturn": 0.07416569610153426
+          },
+          {
+            "year": 2022,
+            "netReturn": -0.07689493066281722
+          },
+          {
+            "year": 2023,
+            "netReturn": 0.030736384467826606
+          },
+          {
+            "year": 2024,
+            "netReturn": 0.1942246659718089
+          },
+          {
+            "year": 2025,
+            "netReturn": 0.17411842020528975
+          }
+        ],
+        "meanReturn": 0.06693318812399382,
+        "medianReturn": 0.05245104028468043
+      },
+      "benchmarkComparison": {
+        "status": "verified",
+        "definition": "FULL_PERIOD_CUMULATIVE_RETURN_DIFFERENCE_V1",
+        "label": "KOSPI",
+        "currency": "KRW",
+        "startDate": "2017-01-11",
+        "endDate": "2026-09-11",
+        "portfolioCumulativeReturn": 1.2284301062249998,
+        "benchmarkCumulativeReturn": 2.3298043051894544,
+        "excessReturn": -1.1013741989644545,
+        "limitation": "동일한 채택 원천의 시장지수 종가를 사용하며, 배당을 재투자한 총수익지수는 아닙니다. 연구 시작일 종가를 기준으로 비교합니다."
+      }
     },
     {
       "book": "KR_COMBINED_ADOPTED",
@@ -150,7 +374,61 @@
       "returnDefinition": "종목별 수량 0에서 매수 후 전량 청산으로 수량 0이 될 때까지를 한 건으로 집계합니다. 부분체결을 합치고 이후 재진입은 별도 건입니다. 순손익을 매수금액과 매수비용의 합으로 나눈 수익률을 등가중 집계하며 연율화하지 않습니다.",
       "returnDefinitionId": "CLOSED_ROUND_TRIP_NET_RETURN_V1",
       "proxyClosedTradeCount": 10,
-      "excludedOpenPositionCount": 12
+      "excludedOpenPositionCount": 12,
+      "portfolioAnnualReturns": {
+        "status": "verified",
+        "definition": "FULL_CALENDAR_YEAR_NAV_RETURN_V1",
+        "weighting": "EQUAL_YEAR",
+        "partialYearsExcluded": true,
+        "years": [
+          {
+            "year": 2018,
+            "netReturn": 0.026392863926080208
+          },
+          {
+            "year": 2019,
+            "netReturn": 0.08503977458760063
+          },
+          {
+            "year": 2020,
+            "netReturn": 0.28305470983461106
+          },
+          {
+            "year": 2021,
+            "netReturn": 0.31415294579310216
+          },
+          {
+            "year": 2022,
+            "netReturn": -0.1230034178102484
+          },
+          {
+            "year": 2023,
+            "netReturn": 0.35491655613174256
+          },
+          {
+            "year": 2024,
+            "netReturn": 0.22042307905665653
+          },
+          {
+            "year": 2025,
+            "netReturn": 0.6784723114411102
+          }
+        ],
+        "meanReturn": 0.22993110287008187,
+        "medianReturn": 0.2517388944456338
+      },
+      "benchmarkComparison": {
+        "status": "verified",
+        "definition": "FULL_PERIOD_CUMULATIVE_RETURN_DIFFERENCE_V1",
+        "label": "KOSPI",
+        "currency": "KRW",
+        "startDate": "2017-08-21",
+        "endDate": "2026-09-11",
+        "portfolioCumulativeReturn": 5.05515324609,
+        "benchmarkCumulativeReturn": 1.934144373673036,
+        "excessReturn": 3.121008872416964,
+        "limitation": "동일한 채택 원천의 시장지수 종가를 사용하며, 배당을 재투자한 총수익지수는 아닙니다. 연구 시작일 종가를 기준으로 비교합니다."
+      }
     }
   ]
 }
