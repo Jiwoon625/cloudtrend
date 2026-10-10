@@ -294,13 +294,31 @@ describe("new-only portfolio presentation", () => {
     const html = render(
       <NewActualPortfolioContent data={pending()} asset="KR" onAssetChange={() => undefined} />,
     );
-    expect(html).toContain("실제 포트폴리오 · 2026-10-12 신규 운용분");
-    expect(html).toContain("준비 중 · 실제 배정 현금 확정 대기");
-    expect(html).toContain("등록된 신규 기록이 없습니다");
+    expect(html).toContain("실제 포트폴리오");
+    expect(html).toContain("자금 확인 대기");
+    expect(html).toContain("등록된 기록이 없습니다");
     expect(html).toContain("미확정");
-    expect(html).toContain("USD 환율·배정 기준 미확정");
-    expect(html).toContain("기록상 현금은 주문 가능 금액이 아님");
+    expect(html).toContain("USD 환율·배정 기준이 미확정");
+    expect(html).toContain("주문 가능 금액은 증권사 잔고·결제 현황에서 확인하세요");
     expect(html).not.toMatch(/0(?:\.00)?%|30,000,000|30000000/);
+  });
+  it("keeps concise labels and essential funding, pricing and cash guidance", () => {
+    const html = render(
+      <NewActualPortfolioContent data={pending()} asset="KR" onAssetChange={() => undefined} />,
+    );
+    for (const copy of [
+      "보유 내역",
+      "체결 내역",
+      "입출금 내역",
+      "배정 수량 / 전체 수량",
+      "배정 금액 · 비용",
+      "실제 입금·배정 금액을 입력해 주세요.",
+      "시세가 없거나 오래되면 평가자산·수익률은 대기 상태입니다.",
+      "실제 입금·배정한 금액만 기록하세요.",
+      "체결에 포함한 수수료·세금은 중복 입력하지 마세요.",
+    ])
+      expect(html.replace(/\s+/g, " ")).toContain(copy);
+    expect(html).not.toMatch(/신규|Notion|10월 12일|2026-10-12/);
   });
   it("hides cached data during loading/error, distinct from an empty confirmed load", () => {
     for (const props of [{ loading: true }, { error: "합성 조회 오류" }]) {
@@ -314,7 +332,7 @@ describe("new-only portfolio presentation", () => {
       );
       expect(html).not.toContain("신규 한국 합성 종목");
       expect(html).not.toContain("1,040 KRW");
-      expect(html).not.toContain("등록된 신규 기록이 없습니다");
+      expect(html).not.toContain("등록된 기록이 없습니다");
     }
   });
   it("renders confirmed native-currency figures, price dates and explicit allocated slices", () => {
@@ -359,10 +377,11 @@ describe("new-only portfolio presentation", () => {
       /UsPortfolioLedgers|ActualPerformanceReview|DomesticAssessmentPanel|ActualPerformancePanel|portfolioLedgersServer|signalRows/,
     );
   });
-  it("aligns the displayed Shadow/actual start without old-ledger links or fabricated timing", () => {
+  it("keeps only the requested Shadow sentence below the header", () => {
     const html = render(<PortfolioAssetHub domestic={<p>OLD_START_2026_10_05</p>} />);
-    expect(html).toContain("같은 2026-10-12를 비교 시작일");
-    expect(html).toContain("실제 배정자금·체결일·가격·비용은 확인된 사실대로");
+    const intro = html.match(/<\/header><p[^>]*>(.*?)<\/p>/)?.[1];
+    expect(intro?.replace(/<[^>]+>/g, "")).toBe("독립 모델 기록은 Shadow에서 확인합니다.");
+    expect(html).not.toMatch(/Notion|2026-10-12|10월 12일|신규 운용분|빈 보유|기존 기록|가상 거래/);
     expect(html).not.toContain("OLD_START_2026_10_05");
     expect(html).not.toContain("2026-10-05");
     expect(html).not.toContain('href="/us/portfolio"');
@@ -409,7 +428,7 @@ describe("new-only portfolio presentation", () => {
       <NewActualPortfolioContent data={data} asset="KR" onAssetChange={() => undefined} />,
     );
     expect(html).toContain("25 KRW");
-    expect(html).toContain("준비 중 · 실제 배정 현금 확정 대기");
+    expect(html).toContain("자금 확인 대기");
     expect(html).not.toMatch(/0(?:\.00)?%/);
   });
   it("formats arbitrary precision money without converting to binary numbers", () => {
@@ -422,6 +441,37 @@ describe("new-only portfolio presentation", () => {
 });
 
 describe("new portfolio editor safety", () => {
+  it("keeps execution inputs factual without archive or start commentary", () => {
+    openExecution();
+    const html = render(<NewActualPortfolio />);
+    const form = html.slice(html.indexOf("<aside>"));
+    for (const copy of [
+      "체결일·단가·수량·비용을 입력하세요",
+      "실제 체결일",
+      "원체결 단가",
+      "원체결 전체 수량",
+      "원체결 전체 비용·세금",
+      "증권사 체결 근거 (필수)",
+      "실제 체결이며 위 배정 수량·금액·비용을 확인했습니다",
+      "증권사 주문은 실행하지 않습니다.",
+    ])
+      expect(form.replace(/\s+/g, " ")).toContain(copy);
+    expect(form).toContain('min="2026-10-12"');
+    expect(form).not.toMatch(/Notion|신규 운용분|10월 12일/);
+    expect(server).not.toHaveBeenCalled();
+  });
+  it("keeps actual cash, duplicate fee and external-funding guidance in the cash form", () => {
+    render(<NewActualPortfolio />);
+    harness.buttons.find((b) => Array.isArray(b.children) && b.children[0] === "KRW")!.onClick!();
+    const html = render(<NewActualPortfolio />);
+    const form = html.slice(html.indexOf("<aside>")).replace(/\s+/g, " ");
+    expect(form).toContain("계획금액이나 입금 예정액은 입력하지 마세요");
+    expect(form).toContain("포트폴리오 외부의 매도대금은 실제 배정한 금액만 입금으로 기록하세요");
+    expect(form).toContain("체결에 포함한 수수료·세금은 중복 입력하지 마세요");
+    expect(form).toContain("실제 입금·배정 또는 현금 흐름이며 금액과 근거를 확인했습니다");
+    expect(form).not.toMatch(/Notion|신규 운용분|10월 12일/);
+    expect(server).not.toHaveBeenCalled();
+  });
   it("sends one write on same-tick double submit with opened revision and stable requestId", async () => {
     let resolve!: (value: NewActualPortfolioResponse) => void;
     server.mockImplementation(
@@ -561,7 +611,7 @@ describe("new portfolio editor safety", () => {
     button("정정").onClick!();
     const html = render(<NewActualPortfolio />);
     expect(draft()).toMatchObject({ originalMixed: true, mixed: true });
-    expect(html).toContain("혼합 체결 원본은 보호됩니다");
+    expect(html).toContain("혼합 체결은 배정 수량·금액·비용과 메모만 정정할 수 있습니다");
     for (const label of [
       "체결 구분",
       "실제 체결일",
@@ -573,9 +623,9 @@ describe("new portfolio editor safety", () => {
       const field = html.slice(start, html.indexOf("</label>", start));
       expect(field).toContain('disabled=""');
     }
-    const start = html.indexOf("신규 배정 수량</span>");
+    const start = html.indexOf("배정 수량</span>");
     expect(html.slice(start, html.indexOf("</label>", start))).not.toContain('disabled=""');
-    expect(html).toContain("당일 평가가격이 없는 휴장일·장 시작 전에는 평가 대기");
+    expect(html).toContain("시세가 없거나 오래되면 평가자산·수익률은 대기 상태입니다");
   });
   it("starts cash input empty and sends one real shared-KRW event after confirmation", async () => {
     render(<NewActualPortfolio />);
