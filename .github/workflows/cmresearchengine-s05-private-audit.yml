@@ -1,4 +1,4 @@
-name: CMresearchengine S40 private final audit
+name: CMresearchengine independent references private final audit
 on:
   push:
     branches: [main]
@@ -26,7 +26,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r research/cmresearchengine/requirements.txt
       - name: Test isolated private report exporter
         run: python scripts/test_cm_private_report.py -v
-      - name: Verify S40 private result accounting without exposing records
+      - name: Verify independent references private result accounting without exposing records
         run: |
           python - <<'PY'
           import csv, hashlib, io, json, zipfile
@@ -122,12 +122,11 @@ jobs:
                   'private_storage':True},sort_keys=True))
           
           targets = [
-              ('Q_K075_E025_U000_C000', 'd46722e57f05b74ff1639bcc3ee75d1e17edfe1f12d47a057dd560a78819fc2d'),
+              ('REF_K', '8f401d3a503d062a3f7cf9039724bdf4d7a30cb6567f9299e4de01208fdc39cb'),
+              ('REF_E', '1e831f27951622f1f91495fc603f7791842de82ddcc9f23bc6cdb9bfb56b000a'),
+              ('REF_U', 'ad1eefe33e36ddbe043e357356aed6c2651577a72d4c414eae6ffcb10f0c9330'),
           ]
           for candidate, identity in targets:
               audit(candidate, identity)
-          import runpy
-          report = runpy.run_path('scripts/export-cm-audited-report.py')
-          report['export_reports_safely'](targets, accounting_audit_passed=True)
           PY
 
