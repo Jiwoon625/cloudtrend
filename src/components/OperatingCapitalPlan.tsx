@@ -27,9 +27,9 @@ export function OperatingCapitalPlanContent({
   return (
     <section
       className="mb-4 space-y-2 rounded-lg border border-dashed bg-card p-4"
-      aria-label="통합 운용계획 준비 상태"
+      aria-label="운용계획"
     >
-      <h3 className="font-semibold">통합 운용계획 · 실제 / 전략 비교</h3>
+      <h3 className="font-semibold">운용계획</h3>
       {loading ? (
         <p role="status">개인 운용계획을 확인 중입니다.</p>
       ) : error ? (
@@ -42,33 +42,10 @@ export function OperatingCapitalPlanContent({
             {plan ? `총 계획금액 ${money(plan.plannedCapitalKrw)}` : "총 계획금액 미등록"}
           </p>
           <p role="status" className="text-sm">
-            10월 12일 시작 예정 · 시장 배분 미확정 · 통합 모델 진입 준비 중
+            시장 배분 미확정
           </p>
           <p className="text-xs text-muted-foreground">
-            한국·미국·ETF가 하나의 총자금을 나눠 씁니다. 실제와 전략 비교는 각각 기록하며 두 장부의
-            금액을 합산하지 않습니다. 계획금액은 확인된 현금이나 성과 NAV가 아닙니다.
-          </p>
-          {plan ? (
-            <>
-              <p className="text-xs text-muted-foreground">
-                연초 신규매수 예산: 한국 운용분 평가자산 ÷ 30, 미국 USD 평가자산 ÷ 20, ETF 운용분
-                평가자산 × 기존 변동성 비중(최대 10종목). ETF는 균등 1/10 배분이 아닙니다.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                기존 보유 리밸런싱 없음 · 확정된 연말 대기주문 예산 유지 · 기존 비용 가정 유지. 첫해
-                시장 배분과 연간 평가 근거 확정 후 별도 통합 계약을 연결하며, 아직 주문 실행이나
-                연초 자동평가는 활성화되지 않았습니다.
-              </p>
-            </>
-          ) : null}
-          <p className="text-xs text-muted-foreground">
-            Notion 종목마스터·거래내역은 전체 실제 원장입니다. CloudTrend는 빈 보유로 시작한 신규
-            운용분만 측정하며 자동 동기화하지 않습니다. 기존 보유 매도 예정은 체결로 기록하지
-            않습니다.
-          </p>
-          <p className="text-xs text-muted-foreground">
-            기존 매도대금이 계획금액에 포함되면 시작현금과 이후 입금에 한 번만 반영합니다.
-            공용현금과 내부 배분을 중복 자산이나 투자수익으로 세지 않습니다.
+            계획금액은 참고용입니다. 실제 입금·배정한 자금은 현금 내역에 별도로 기록하세요.
           </p>
         </>
       )}
@@ -200,9 +177,7 @@ export function OperatingCapitalPlan({ editable = false }: { editable?: boolean 
       });
       if (ownerRef.current === id) {
         setAmount("");
-        setMessage(
-          "운용계획만 저장했습니다. 실제 기준점·현금·거래와 모델 계약은 변경하지 않았습니다.",
-        );
+        setMessage("운용계획을 저장했습니다.");
         await Promise.all([
           qc.invalidateQueries({ queryKey: ["operating-capital-plan", id] }),
           qc.invalidateQueries({ queryKey: ["portfolio-ledgers"] }),
@@ -238,8 +213,8 @@ export function OperatingCapitalPlan({ editable = false }: { editable?: boolean 
             }}
           />
           <p className="mt-2 text-xs text-muted-foreground">
-            금액만 계획으로 저장합니다. 시장별 비중·현금·환율을 자동 배정하지 않습니다. 저장한 초기
-            계획은 이 화면에서 덮어쓰지 않습니다.
+            계획금액만 저장합니다. 실제 입금·배정은 현금 내역에 입력하세요. 저장 후 금액 수정은
+            지원하지 않습니다.
           </p>
           <Button
             type="button"
@@ -260,7 +235,7 @@ export function OperatingCapitalPlan({ editable = false }: { editable?: boolean 
                   disabled={busy}
                   onChange={(e) => setConfirmed(e.target.checked)}
                 />
-                계획금액이며 실제 현금·성과 기준점 확정이 아님을 확인했습니다.
+                실제 입금이 아닌 계획금액임을 확인했습니다.
               </label>
               <Button type="button" disabled={busy || !confirmed} onClick={() => void save()}>
                 운용계획만 저장

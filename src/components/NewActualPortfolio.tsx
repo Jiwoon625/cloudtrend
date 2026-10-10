@@ -15,7 +15,7 @@ import type { PortfolioAsset } from "./PortfolioAssetHub";
 const START_DATE = "2026-10-12";
 const labels = { KR: "한국주식", US: "미국주식", ETF: "ETF" };
 const cashLabels = {
-  DEPOSIT: "신규 운용분 입금·배정",
+  DEPOSIT: "입금·배정",
   WITHDRAWAL: "출금·배정 회수",
   DIVIDEND: "배당",
   INTEREST: "이자",
@@ -57,7 +57,7 @@ function money(value: string | null | undefined, currency: Currency) {
 }
 function issueLabel(issue: string) {
   const messages: Record<string, string> = {
-    funding_pending: "실제 배정 현금 확정 대기",
+    funding_pending: "실제 입금·배정 금액을 입력해 주세요.",
     funding_shortfall: "기록된 배정 현금 부족 · 입출금 내역 대조 필요",
     flow_adjusted_return_pending: "추가 입출금 반영 수익률 미확정",
     missing_price: "평가가격 미확인",
@@ -82,13 +82,13 @@ function Metric({ label, children }: { label: string; children: ReactNode }) {
 function PoolCard({ currency, pool }: { currency: Currency; pool: Pool | undefined }) {
   const pending = !pool || pool.fundingStatus === "PENDING";
   return (
-    <section className="rounded-lg border bg-card p-4" aria-label={`${currency} 신규 성과`}>
+    <section className="rounded-lg border bg-card p-4" aria-label={`${currency} 성과`}>
       <h3 className="font-semibold">
-        {currency === "KRW" ? "한국·ETF 공동 원화 현금" : "미국주식 달러 운용분"}
+        {currency === "KRW" ? "한국·ETF 공동 원화" : "미국주식 달러"}
       </h3>
       <p className="mt-1 text-sm" role="status">
         {pending
-          ? "준비 중 · 실제 배정 현금 확정 대기"
+          ? "자금 확인 대기"
           : pool.fundingStatus === "INCOMPLETE"
             ? "배정·평가 자료 확인 필요"
             : "실제 배정 현금 확인"}
@@ -148,7 +148,7 @@ function Table({
             {empty ? (
               <tr>
                 <td colSpan={heads.length} className="p-6 text-center text-muted-foreground">
-                  등록된 신규 기록이 없습니다.
+                  등록된 기록이 없습니다.
                 </td>
               </tr>
             ) : (
@@ -203,13 +203,7 @@ export function NewActualPortfolioContent({
   return (
     <div className="space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold">실제 포트폴리오 · 2026-10-12 신규 운용분</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            빈 보유로 시작하며, 실제 확인한 신규 배정 현금과 체결만 반영합니다. 시작 전 거래와 기존
-            보유 내역은 Notion에서 확인합니다.
-          </p>
-        </div>
+        <h1 className="text-xl font-bold">실제 포트폴리오</h1>
         {onReload && (
           <Button variant="outline" disabled={refreshing} onClick={onReload}>
             {refreshing ? "확인 중…" : "새로고침"}
@@ -217,25 +211,20 @@ export function NewActualPortfolioContent({
         )}
       </header>
       <p className="text-sm text-muted-foreground">
-        기존 기록은 삭제하지 않습니다. 기존 보유만 매도한 거래는 Notion에만 기록하며 신규 성과에
-        편입하지 않습니다. 같은 2026-10-12를 비교 시작일로 쓰는 독립 모델 기록은{" "}
+        독립 모델 기록은{" "}
         <Link to="/shadow" className="text-primary underline">
           Shadow
         </Link>
         에서 확인합니다.
       </p>
-      <p className="text-xs text-muted-foreground">
-        비교 시작일은 같지만 실제 배정자금·체결일·가격·비용은 확인된 사실대로 기록합니다. 모델에
-        맞추려고 실제 체결을 소급하거나 가상 거래를 만들지 않습니다.
-      </p>
       {children}
       {loading ? (
         <p role="status" className="rounded-lg border p-4">
-          신규 운용분을 불러오는 중입니다.
+          포트폴리오를 불러오는 중입니다.
         </p>
       ) : error ? (
         <p role="alert" className="rounded-lg border border-destructive p-4">
-          신규 운용분을 확인하지 못했습니다. {error}
+          포트폴리오를 확인하지 못했습니다. {error}
         </p>
       ) : (
         <>
@@ -251,20 +240,16 @@ export function NewActualPortfolioContent({
             <PoolCard currency="USD" pool={pools?.USD} />
           </div>
           <div className="space-y-1 rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
+            <p>USD 환율·배정 기준이 미확정이므로 원화 합산 수익률은 표시하지 않습니다.</p>
+            <p>주문 가능 금액은 증권사 잔고·결제 현황에서 확인하세요.</p>
             <p>
-              통화별 성과를 구분합니다. USD 환율·배정 기준 미확정으로 원화 합산 수익률은
-              미확정입니다.
-            </p>
-            <p>기록상 현금은 주문 가능 금액이 아님. 증권사 잔고·결제 현황은 별도로 확인하세요.</p>
-            <p>
-              평가가격 기준일은 아래 보유 내역에서 확인합니다. 누락·오래된 시세가 있으면 평가자산과
-              수익률을 확정하지 않습니다. 당일 평가가격이 없는 휴장일·장 시작 전에는 평가 대기
-              상태입니다.
+              평가가격·기준일은 보유 내역에서 확인하세요. 시세가 없거나 오래되면 평가자산·수익률은
+              대기 상태입니다.
             </p>
           </div>
         </>
       )}
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label="신규 포트폴리오 자산군">
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="포트폴리오 자산군">
         {(["KR", "US", "ETF"] as const).map((key) => (
           <Button
             key={key}
@@ -306,7 +291,7 @@ export function NewActualPortfolioContent({
         className="space-y-4"
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-semibold">{labels[asset]} · 신규 운용분</h2>
+          <h2 className="font-semibold">{labels[asset]}</h2>
           {onExecution && (
             <Button disabled={assetWriteDisabled} onClick={() => onExecution(asset)}>
               실제 체결 입력
@@ -315,14 +300,13 @@ export function NewActualPortfolioContent({
         </div>
         {available && revision == null && (
           <p className="text-xs text-warn">
-            저장 원장의 리비전을 확인하지 못했습니다. 조회는 가능하며 새로고침 후 입력을 다시 열어
-            주세요.
+            저장 정보를 확인하지 못했습니다. 새로고침 후 입력을 다시 열어 주세요.
           </p>
         )}
         {available && (
           <>
             <Table
-              title="신규 보유"
+              title="보유 내역"
               heads={[
                 "종목",
                 "수량",
@@ -357,13 +341,13 @@ export function NewActualPortfolioContent({
               ))}
             </Table>
             <Table
-              title="신규 배정 체결"
+              title="체결 내역"
               heads={[
                 "체결일",
                 "종목",
                 "구분",
-                "신규 수량 / 원체결",
-                "신규 금액 · 비용",
+                "배정 수량 / 전체 수량",
+                "배정 금액 · 비용",
                 "실현손익",
                 "증권사 체결 근거",
                 "관리",
@@ -423,20 +407,17 @@ export function NewActualPortfolioContent({
               ))}
             </Table>
             <p className="text-xs text-muted-foreground">
-              표의 수량·금액·비용은 신규 운용분에 배정한 부분입니다. 혼합 체결의 전체 원본은
-              보존합니다. 정정·취소는 기록 관리이며 증권사 주문을 실행하지 않습니다.
+              이 포트폴리오에 배정한 수량·금액·비용입니다. 정정·취소는 기록에만 반영됩니다.
             </p>
           </>
         )}
       </section>
       {available && (
-        <section className="space-y-4" aria-label="신규 운용 현금 내역">
-          <h2 className="font-semibold">실제 배정·입출금</h2>
+        <section className="space-y-4" aria-label="현금 내역">
+          <h2 className="font-semibold">입출금 내역</h2>
           <p className="text-sm">한국·ETF 공동 원화 현금, 한 번만 입력. USD는 별도 관리합니다.</p>
           <p className="text-xs text-muted-foreground">
-            총 계획금액을 입금으로 입력하지 마세요. 기존 보유 매도대금도 신규 운용분에 실제로 다시
-            배정한 금액만 입금으로 기록합니다. 체결에 포함한 비용·세금을 여기서 중복 입력하지
-            않습니다.
+            실제 입금·배정한 금액만 기록하세요. 체결에 포함한 수수료·세금은 중복 입력하지 마세요.
           </p>
           {(["KRW", "USD"] as const).map((ccy) => {
             const events = pools?.[ccy].cashEvents ?? [];
@@ -576,8 +557,8 @@ function ExecutionFields({
   return (
     <>
       <p className="text-sm">
-        실제 증권사 체결을 기록합니다. 기존 보유만 매도한 거래는 Notion에 기록하세요. 기존·신규 혼합
-        체결은 신규분만 명시적으로 배정합니다.
+        증권사에서 확인한 체결일·단가·수량·비용을 입력하세요. 혼합 체결은 이 포트폴리오에 배정할
+        부분을 따로 입력합니다.
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="종목코드">
@@ -676,17 +657,16 @@ function ExecutionFields({
           disabled={draft.originalMixed}
           onChange={(e) => patch({ mixed: e.target.checked })}
         />
-        기존·신규 혼합 체결
+        혼합 체결 (일부 수량만 배정)
       </label>
       {draft.originalMixed && (
         <p className="rounded border p-3 text-xs text-muted-foreground">
-          기존 운용분이 포함된 혼합 체결 원본은 보호됩니다. 체결 구분·날짜·단가·전체 수량·비용은
-          변경하지 않고 신규 배정분과 메모만 정정합니다.
+          혼합 체결은 배정 수량·금액·비용과 메모만 정정할 수 있습니다.
         </p>
       )}
       {draft.mixed ? (
         <div className="grid gap-3 rounded border p-3 sm:grid-cols-3">
-          <Field label="신규 배정 수량">
+          <Field label="배정 수량">
             <Input
               type="number"
               required
@@ -696,7 +676,7 @@ function ExecutionFields({
               onChange={(e) => patch({ quantity: e.target.value })}
             />
           </Field>
-          <Field label={`신규 배정 금액 (${ccy})`}>
+          <Field label={`배정 금액 (${ccy})`}>
             <Input
               type="number"
               required
@@ -706,7 +686,7 @@ function ExecutionFields({
               onChange={(e) => patch({ gross: e.target.value })}
             />
           </Field>
-          <Field label={`신규 배정 비용 (${ccy})`}>
+          <Field label={`배정 비용 (${ccy})`}>
             <Input
               type="number"
               required
@@ -719,7 +699,7 @@ function ExecutionFields({
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
-          원체결 수량·금액·비용 전부를 신규 운용분에 배정합니다.
+          체결 수량·금액·비용 전부를 이 포트폴리오에 반영합니다.
         </p>
       )}
       <Field label="증권사 체결 근거 (필수)">
@@ -752,7 +732,7 @@ function ExecutionFields({
           checked={draft.confirmed}
           onChange={(e) => onChange({ ...draft, confirmed: e.target.checked })}
         />
-        실제 체결이며 위 신규 배정 수량·금액·비용을 확인했습니다
+        실제 체결이며 위 배정 수량·금액·비용을 확인했습니다
       </label>
     </>
   );
@@ -773,8 +753,7 @@ function CashFields({
           : "미국주식 별도 USD 현금"}
       </p>
       <p className="text-sm">
-        신규 운용에 실제 배정한 자금과 이후 실제 현금 흐름만 기록합니다. 계획금액이나 미래 입금
-        예정액은 저장하지 마세요.
+        실제 입금·배정한 금액을 기록하세요. 계획금액이나 입금 예정액은 입력하지 마세요.
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="실제 발생일">
@@ -821,8 +800,8 @@ function CashFields({
         />
       </Field>
       <p className="text-xs text-muted-foreground">
-        기존 보유 매도대금은 신규 운용에 실제 재배정한 경우에만 입금으로 기록합니다. 체결 비용에
-        포함한 세금·수수료를 중복 입력하지 마세요. 비밀정보는 입력하지 마세요.
+        포트폴리오 외부의 매도대금은 실제 배정한 금액만 입금으로 기록하세요. 체결에 포함한
+        수수료·세금은 중복 입력하지 마세요. 비밀정보는 입력하지 마세요.
       </p>
       <label className="flex items-start gap-2 rounded border p-3 text-sm">
         <input
@@ -832,7 +811,7 @@ function CashFields({
           checked={draft.confirmed}
           onChange={(e) => onChange({ ...draft, confirmed: e.target.checked })}
         />
-        총 계획금액이 아닌 실제 신규 배정·현금 흐름이며 금액과 근거를 확인했습니다
+        실제 입금·배정 또는 현금 흐름이며 금액과 근거를 확인했습니다
       </label>
     </>
   );
@@ -1033,7 +1012,7 @@ export function NewActualPortfolio({
     const base = { expectedRevision: current.expectedRevision, requestId: current.requestId };
     try {
       if (current.kind === "execution") {
-        if (!current.confirmed) throw new Error("실제 체결과 신규 배정을 확인해 주세요.");
+        if (!current.confirmed) throw new Error("실제 체결과 배정 내용을 확인해 주세요.");
         if (
           !current.date ||
           current.date < START_DATE ||
@@ -1064,9 +1043,7 @@ export function NewActualPortfolio({
           quantity === shares &&
           (gross !== Number((price * shares).toFixed(8)) || allocatedFee !== fee)
         )
-          throw new Error(
-            "전체 수량을 신규 배정할 때는 원체결 금액과 비용 전부를 배정해야 합니다.",
-          );
+          throw new Error("전체 수량을 배정할 때는 원체결 금액과 비용 전부를 배정해야 합니다.");
         if (
           (current.mixed &&
             (!current.quantity.trim() || !current.gross.trim() || !current.allocatedFee.trim())) ||
@@ -1081,7 +1058,7 @@ export function NewActualPortfolio({
           allocatedFee > fee ||
           !current.brokerReference.trim()
         )
-          throw new Error("신규 배정 수량·금액·비용과 증권사 체결 근거를 확인해 주세요.");
+          throw new Error("배정 수량·금액·비용과 증권사 체결 근거를 확인해 주세요.");
         payload = {
           ...base,
           action: "execution",
@@ -1107,7 +1084,7 @@ export function NewActualPortfolio({
           confirmed: true,
         };
       } else if (current.kind === "cash") {
-        if (!current.confirmed) throw new Error("실제 신규 배정·현금 흐름을 확인해 주세요.");
+        if (!current.confirmed) throw new Error("실제 배정·현금 흐름을 확인해 주세요.");
         if (
           !current.date ||
           current.date < START_DATE ||
@@ -1248,7 +1225,7 @@ export function NewActualPortfolio({
                   : "기록 취소"}
             </DialogTitle>
             <DialogDescription>
-              2026-10-12 이후 신규 운용분만 관리합니다. 증권사 주문은 실행하지 않습니다.
+              실제 기록을 입력·정정합니다. 증권사 주문은 실행하지 않습니다.
             </DialogDescription>
           </DialogHeader>
           {draft && (

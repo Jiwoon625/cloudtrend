@@ -98,9 +98,9 @@ describe("unified portfolio comparison transition", () => {
       "한국 실제 내용",
     ])
       expect(html).not.toContain(text);
-    expect(html).toContain("2026-10-12 신규 운용분");
+    expect(html).toContain("실제 포트폴리오");
     expect(html).toContain("실제 체결 입력");
-    expect(html).toContain("Notion에서 확인");
+    expect(html).not.toContain("Notion");
 
     expect(html).toContain('href="/shadow"');
     expect(html).not.toContain('href="/us/portfolio"');

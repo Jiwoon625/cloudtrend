@@ -10,11 +10,8 @@ describe("private plan presentation", () => {
     const html = renderToStaticMarkup(<OperatingCapitalPlanContent plan={plan} />);
     expect(html).toContain("총 계획금액 12,765,432원");
     expect(html).toContain("시장 배분 미확정");
-    expect(html).toContain("현금이나 성과 NAV가 아닙니다");
-    expect(html).toContain("각각 기록하며 두 장부의 금액을 합산하지 않습니다");
-    expect(html).toContain("ETF 운용분 평가자산 × 기존 변동성 비중");
-    expect(html).toContain("기존 보유 리밸런싱 없음");
-    expect(html).toContain("연초 자동평가는 활성화되지 않았습니다");
+    expect(html).toContain("계획금액은 참고용입니다");
+    expect(html).toContain("실제 입금·배정한 자금은 현금 내역에 별도로 기록하세요");
     expect(html).not.toContain("수익률 0");
     expect(html).not.toContain("1339.2");
   });
@@ -29,12 +26,13 @@ describe("private plan presentation", () => {
       expect(html).not.toContain("12,765,432");
     }
   });
-  it("preserves boundary, duplicate funding and no-autosync warnings", () => {
+  it("omits start, archive and implementation commentary from the plan card", () => {
     const html = renderToStaticMarkup(<OperatingCapitalPlanContent plan={plan} />);
-    expect(html).toContain("Notion 종목마스터·거래내역");
-    expect(html).toContain("자동 동기화하지 않습니다");
-    expect(html).toContain("기존 보유 매도 예정은 체결로 기록하지 않습니다");
-    expect(html).toContain("시작현금과 이후 입금에 한 번만 반영");
+    expect(html).toContain('aria-label="운용계획"');
+    expect(html).not.toMatch(
+      /Notion|10월 12일|신규|원장|자동 동기화|연초|리밸런싱|통합 계약|두 장부/,
+    );
+    expect(html.match(/<p(?:\s|>)/g)).toHaveLength(3);
   });
   it("formats exact large totals without binary numeric rounding", () => {
     const p = prepareOperatingCapitalPlan("999999999999999999.12345678", "2026-10-09T12:00:00Z");
