@@ -204,6 +204,28 @@ async function priceInputs(
   };
 }
 
+/** Read-only marks for the newly allocated actual slice, without replaying or saving MODEL. */
+export async function loadNewActualDomesticQuotes(
+  client: SupabaseClient,
+  uid: string,
+  symbols: Set<string>,
+  from: string,
+  through: string,
+) {
+  if (!symbols.size) return {};
+  const sources = await listActiveSources(client, uid);
+  const input = await priceInputs(client, sources, symbols, from);
+  const quotes: Record<string, import("./portfolioLedgers").Quote> = {};
+  for (const symbol of symbols) {
+    const latest = (input.bars[symbol] ?? [])
+      .filter((bar) => bar.tradeDate <= through && bar.close > 0)
+      .sort((a, b) => a.tradeDate.localeCompare(b.tradeDate))
+      .at(-1);
+    if (latest) quotes[symbol] = { price: latest.close, date: latest.tradeDate, exitSignal: null };
+  }
+  return quotes;
+}
+
 // Shared only while a content-addressed refresh is running; never retain raw prices here.
 const strategyRefreshes = new Map<string, Promise<NonNullable<LedgerDocument["strategy"]>>>();
 class LedgerRevisionConflict extends Error {}

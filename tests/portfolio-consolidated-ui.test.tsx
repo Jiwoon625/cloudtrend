@@ -83,7 +83,7 @@ describe("unified portfolio comparison transition", () => {
     expect(html).not.toContain("A0 실행 참조");
     expect(html).toContain('href="/shadow"');
   });
-  it("keeps holdings and management controls without beta performance or tax", () => {
+  it("keeps only the new-series management surface without legacy holdings or signals", () => {
     gate.ready = true;
     const html = render();
     expect(html).not.toContain("A0 모델 포트폴리오");
@@ -91,20 +91,28 @@ describe("unified portfolio comparison transition", () => {
     expect(html).not.toContain("A0 전략 보유");
     for (const text of ["실제 투자 · 양도소득세 추정", "실현손익", "미실현", "총 손익", "평가손익"])
       expect(html).not.toContain(text);
-    for (const text of ["실제 보유 종목", "실제 운용자금 설정", "A0 신호 · 미매수"])
-      expect(html).toContain(text);
+    for (const text of [
+      "실제 보유 종목",
+      "실제 운용자금 설정",
+      "A0 신호 · 미매수",
+      "한국 실제 내용",
+    ])
+      expect(html).not.toContain(text);
+    expect(html).toContain("2026-10-12 신규 운용분");
+    expect(html).toContain("실제 체결 입력");
+    expect(html).toContain("Notion에서 확인");
 
     expect(html).toContain('href="/shadow"');
     expect(html).not.toContain('href="/us/portfolio"');
   });
   it("fails closed on readiness loading/error without hiding the actual investment surface", () => {
     gate.checking = true;
-    expect(render()).toContain("실제 원장 새로고침");
+    expect(render()).toContain("새로고침");
     gate.checking = false;
     gate.error = "fixture read failure";
     const html = render();
     expect(html).toContain('href="/shadow"');
-    expect(html).toContain("실제 원장 새로고침");
+    expect(html).toContain("새로고침");
     expect(html).not.toContain("A0 실행 참조");
   });
   it("resolves an old model-tab selection to actual controls once comparison content moves", () => {

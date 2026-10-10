@@ -59,7 +59,7 @@ async function candidatesFor(client: SupabaseClient, uid: string) {
   }
   return candidates;
 }
-async function quotesFor(client: SupabaseClient, uid: string, symbols: Set<string>) {
+export async function quotesFor(client: SupabaseClient, uid: string, symbols: Set<string>) {
   const quotes: Record<string, Quote> = {};
   if (!symbols.size) return quotes;
   const zipped = await downloadFreshObject(
