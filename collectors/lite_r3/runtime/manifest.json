@@ -1,5 +1,5 @@
 {
-  "version": "cloudtrend-lite-r3-daily-v1",
+  "version": "cloudtrend-lite-r4-daily-v2",
   "sourceNotebookHash": "8adb08efd219087a9bf887a873d2d22e8d4b79282b6ad853f2140c333941c434",
   "stageCount": 30,
   "files": [
@@ -7,7 +7,7 @@
       "path": "__init__.py",
       "bytes": 1582,
       "characters": 1582,
-      "sha256": "4902fb5c2f3313372ff496aa1d25b948e8155bc76d43b487186673f21e82774b"
+      "sha256": "bd7ec583766372b9e1bb3f654c441e114e3d02b5eee9724c18afd7e078e65112"
     },
     {
       "path": "helpers/kr_callback.py",
@@ -167,9 +167,9 @@
     },
     {
       "path": "stages/us_collection.py",
-      "bytes": 24769,
-      "characters": 23957,
-      "sha256": "56c2edf20d8d444d1eee8ca6536f98223f73823ef40042d3025a8b1278711299"
+      "bytes": 27731,
+      "characters": 27097,
+      "sha256": "34f64492c4b55b3496aca1f71354adfb74c4584ef8217937e07d6896ef1c964b"
     },
     {
       "path": "stages/us_diagnostics.py",
@@ -185,9 +185,9 @@
     },
     {
       "path": "stages/us_features.py",
-      "bytes": 7311,
-      "characters": 7247,
-      "sha256": "69c389f41bfd0544c264783e0f614b1e3886600f63000786012ba48ddd79784d"
+      "bytes": 7749,
+      "characters": 7685,
+      "sha256": "8d80de9fba8c8edc2f42e215e6d8f4ea6d5333e5a6e73db55e5eef75013c6944"
     },
     {
       "path": "stages/us_master.py",
@@ -203,9 +203,9 @@
     },
     {
       "path": "stages/us_setup.py",
-      "bytes": 5710,
-      "characters": 5140,
-      "sha256": "7f5af58c442d8cc6fa9df67fe95691f627d7cef9431389be03216f14a5d2e4f6"
+      "bytes": 5724,
+      "characters": 5126,
+      "sha256": "701ed18d98eaac2cc14ebf63c905dc66e694b45de853d0dc2ed2776175e7d4e2"
     },
     {
       "path": "stages/us_snapshot.py",
@@ -221,9 +221,9 @@
     },
     {
       "path": "stages/us_upload.py",
-      "bytes": 5336,
-      "characters": 5322,
-      "sha256": "1cbf7bbcff464e735e60ad663ca6ae129bc8affe7886bce214afb4a29db418e5"
+      "bytes": 5412,
+      "characters": 5398,
+      "sha256": "30a0b6c18d6df4c67d4e9be5bfb908aa69dbaef1fe21e2fec2b7826b82652d95"
     }
   ]
 }

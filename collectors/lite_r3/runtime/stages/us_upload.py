@@ -46,6 +46,7 @@ if RUN_US_MARKET:
             'providerGapCount':len(provider_gap_symbols),
             'providerGapSymbols':sorted(provider_gap_symbols),
             'providerGapLatestBarDates':provider_gap_latest_dates,
+            'providerGapReasons':globals().get('provider_gap_reasons', {}),
             'screenedSymbolCount':int(out.symbol.nunique()),
             'marketCalendarOk':bool(market_calendar.get('ok')),
             'exchangeRateOk':bool(exchange_rate.get('ok')),

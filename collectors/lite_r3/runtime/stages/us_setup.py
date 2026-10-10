@@ -48,14 +48,13 @@ if RUN_US_MARKET:
     ADJUST_COMPARE_RTOL = 1e-10
     ADJUST_COMPARE_ATOL = 1e-10
 
-    COLLECTOR_VERSION = 'integrated-2.0.4-lite-r3/us-incremental-2.0.4-r1'
+    COLLECTOR_VERSION = 'integrated-2.0.4-lite-r4/us-incremental-2.0.4-r2'
     CHECKPOINT_VERSION = 3
 
     # 개별 종목의 provider candle gap은 가짜 봉을 만들지 않고 해당 세션에서만 quarantine합니다.
-    # 단, 소수 종목/짧은 공백만 허용하여 대규모 API 장애를 숨기지 않습니다.
+    # 공백 기간과 관계없이 최신 가격 미확인으로 기록하며, 소수 제한으로 대규모 장애를 숨기지 않습니다.
     MAX_PROVIDER_GAP_SYMBOLS = 10
-    MAX_PROVIDER_GAP_CALENDAR_DAYS = 7
-    PROVIDER_GAP_POLICY_VERSION = 'provider-gap-quarantine-v1'
+    PROVIDER_GAP_POLICY_VERSION = 'latest-price-unconfirmed-quarantine-v2'
 
     # Provider ACTIVE flags can lag completed exchange corporate actions.
     # Only externally verified, effective-dated events may exempt a missing confirmed-session bar.

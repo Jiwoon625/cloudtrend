@@ -75,21 +75,38 @@ if RUN_US_MARKET:
                 print(_event['symbol'], _event['status'], _event['effective_date'], _event['reason'], _event['source_url'])
 
     def parse_candles(symbol, body):
+        from datetime import date as _candle_date
+        if not isinstance(body,dict):
+            raise RuntimeError('Malformed candle response: expected object')
         result = body.get('result', body.get('data', body))
-        if isinstance(result, dict): candles = result.get('candles', result.get('items', []))
+        for envelope in (body,result):
+            if isinstance(envelope,dict) and (envelope.get('error') or envelope.get('errors')
+                    or envelope.get('errorCode') or envelope.get('success') is False):
+                raise RuntimeError('Provider candle response reported an error')
+        if isinstance(result, dict) and ('candles' in result or 'items' in result):
+            candles = result.get('candles', result.get('items'))
         elif isinstance(result, list): candles = result
-        else: candles=[]
+        else: raise RuntimeError('Malformed candle response: missing candle list')
+        if not isinstance(candles,list):
+            raise RuntimeError('Malformed candle response: candles must be a list')
         out=[]
         for x in candles:
+            if not isinstance(x,dict):
+                raise RuntimeError('Malformed candle response: expected candle object')
             ts = x.get('timestamp') or x.get('date')
-            if not ts: continue
+            try:
+                candle_date=_candle_date.fromisoformat(str(ts)[:10]).isoformat()
+                close=float(x.get('closePrice',x.get('close')))
+                if not np.isfinite(close): raise ValueError('non-finite close')
+            except (TypeError,ValueError):
+                raise RuntimeError('Malformed candle response: invalid candle date/close') from None
             out.append({
                 'symbol':symbol,
-                'date':str(ts)[:10],
+                'date':candle_date,
                 'open':pd.to_numeric(x.get('openPrice',x.get('open')),errors='coerce'),
                 'high':pd.to_numeric(x.get('highPrice',x.get('high')),errors='coerce'),
                 'low':pd.to_numeric(x.get('lowPrice',x.get('low')),errors='coerce'),
-                'close':pd.to_numeric(x.get('closePrice',x.get('close')),errors='coerce'),
+                'close':close,
                 'volume':pd.to_numeric(x.get('volume'),errors='coerce'),
                 'currency':x.get('currency'),
             })
@@ -130,6 +147,16 @@ if RUN_US_MARKET:
                 latest=date
         return latest
 
+    class LatestPriceUnconfirmed(RuntimeError):
+        """A successful candle response did not establish a positive current bar.
+
+        Only this local QA outcome is quarantinable. HTTP, authentication,
+        timeout, malformed-response and unexpected failures must still stop.
+        """
+        def __init__(self, message, rows):
+            super().__init__(message)
+            self.latest_bar_date = latest_positive_bar_date(rows)
+
     def confirmed_session_covered(symbol, rows):
         return symbol in lifecycle_exempt_symbols or latest_positive_bar_date(rows) == AS_OF_DATE
 
@@ -140,7 +167,9 @@ if RUN_US_MARKET:
         old = _guard_history_frame(old)
         old=old.drop_duplicates(['symbol','date'],keep='last').sort_values(['symbol','date']).reset_index(drop=True)
         counts=old.groupby('symbol').size().to_dict()
-        last_dates=old.groupby('symbol')['date'].max().to_dict()
+        _valid_cached_close=pd.to_numeric(old['close'],errors='coerce')
+        last_dates=old.loc[np.isfinite(_valid_cached_close) & _valid_cached_close.gt(0) & old.date.le(AS_OF_DATE)].groupby('symbol')['date'].max().to_dict()
+        del _valid_cached_close
         # 비교에는 최근 구간만 필요하므로 작은 lookup만 메모리에 둡니다.
         recent_old=old.groupby('symbol',group_keys=False).tail(max(INCREMENTAL_BARS+2,20))
         old_recent_by_symbol={sym:frame.copy() for sym,frame in recent_old.groupby('symbol')}
@@ -152,6 +181,7 @@ if RUN_US_MARKET:
 
     symbols=seed.ticker.tolist()
     collected=[]; failures=[]
+    price_unconfirmed_evidence={}
     full_refresh_symbols=set()
     refresh_reasons={}
     mode_counts={
@@ -200,11 +230,11 @@ if RUN_US_MARKET:
         stale_checkpoint_rejected=False
         try:
             if sym in lifecycle_exempt_symbols:
-                return sym, [], None, 'verified_lifecycle_excluded', 'verified_exchange_lifecycle', False, False
+                return sym, [], None, 'verified_lifecycle_excluded', 'verified_exchange_lifecycle', False, False, None
             # 같은 기준일 재실행은 실제 캐시에 당일 확정봉이 있으면 API를 다시 호출하지 않습니다.
             # lifecycle 예외는 확인된 중단/상장폐지 등으로 당일 봉이 없어도 허용합니다.
             if not FORCE_FULL_REFRESH and last_dates.get(sym) == AS_OF_DATE:
-                return sym, [], None, 'cache_current', None, False, False
+                return sym, [], None, 'cache_current', None, False, False, None
 
             # 중간 중단 후 재실행 시 checkpoint를 재사용하되, 현재 확정세션까지 포함하는지 반드시 검증합니다.
             if checkpoint.exists() and not FORCE_FULL_REFRESH:
@@ -228,27 +258,31 @@ if RUN_US_MARKET:
 
                 rows = _guard_history_rows(sym, rows)
                 if rows and (not saved_asof or saved_asof == AS_OF_DATE) and confirmed_session_covered(sym, rows):
-                    return sym, rows, None, saved_mode, saved_reason, True, False
+                    return sym, rows, None, saved_mode, saved_reason, True, False, None
 
-                # 오래된/불완전 checkpoint는 현재 실행을 가로막지 않도록 폐기하고 live API로 재조회합니다.
+                # 오래된/불완전 checkpoint 원문을 보존한 뒤 live API로 재조회합니다.
                 stale_checkpoint_rejected=True
                 try:
+                    rejected_raw=checkpoint.read_bytes()
+                    rejected_dir=CHECKPOINT_DIR/'rejected'/sym
+                    rejected_dir.mkdir(parents=True,exist_ok=True)
+                    _CT_US_ARCHIVE['_ua_write_once'](rejected_dir/(hashlib.sha256(rejected_raw).hexdigest()+'.json'),rejected_raw)
                     checkpoint.unlink()
                 except FileNotFoundError:
                     pass
 
             if FORCE_FULL_REFRESH or counts.get(sym,0) == 0:
                 rows = fetch_history(sym, full=True)
-                if not rows: raise RuntimeError('empty candle history')
+                if not rows: raise LatestPriceUnconfirmed('empty candle history', rows)
                 if not confirmed_session_covered(sym, rows):
                     latest=latest_positive_bar_date(rows)
-                    raise RuntimeError(f'latest candle {latest or "NONE"} < confirmed session {AS_OF_DATE}')
+                    raise LatestPriceUnconfirmed(f'latest candle {latest or "NONE"} < confirmed session {AS_OF_DATE}', rows)
                 reason='forced' if FORCE_FULL_REFRESH else 'new_or_missing_cache'
                 write_checkpoint(checkpoint, rows, 'full_new_or_forced', reason)
-                return sym, rows, None, 'full_new_or_forced', reason, False, stale_checkpoint_rejected
+                return sym, rows, None, 'full_new_or_forced', reason, False, stale_checkpoint_rejected, None
 
             incremental = fetch_history(sym, full=False)
-            if not incremental: raise RuntimeError('empty incremental candle history')
+            if not incremental: raise LatestPriceUnconfirmed('empty incremental candle history', incremental)
             if not confirmed_session_covered(sym, incremental):
                 # API 전파 지연 가능성을 고려해 작은 최신-window 요청을 한 번 더 확인합니다.
                 time.sleep(0.25)
@@ -257,34 +291,39 @@ if RUN_US_MARKET:
                     incremental = retry_rows
                 if not confirmed_session_covered(sym, incremental):
                     latest=latest_positive_bar_date(incremental)
-                    raise RuntimeError(f'latest candle {latest or "NONE"} < confirmed session {AS_OF_DATE}')
+                    raise LatestPriceUnconfirmed(f'latest candle {latest or "NONE"} < confirmed session {AS_OF_DATE}', incremental)
 
             full_needed, reason = needs_full_refresh(sym, incremental)
             if full_needed:
                 rows = fetch_history(sym, full=True)
-                if not rows: raise RuntimeError('empty full-refresh candle history')
+                if not rows: raise RuntimeError('empty full-refresh candle history after current incremental; history QA failed')
                 if not confirmed_session_covered(sym, rows):
                     latest=latest_positive_bar_date(rows)
-                    raise RuntimeError(f'full refresh latest candle {latest or "NONE"} < confirmed session {AS_OF_DATE}')
+                    raise RuntimeError(f'full refresh latest candle {latest or "NONE"} < confirmed session {AS_OF_DATE}; history QA failed after current incremental')
                 mode = 'full_no_overlap' if reason == 'no_overlap' else 'full_adjustment_changed'
                 write_checkpoint(checkpoint, rows, mode, reason)
-                return sym, rows, None, mode, reason, False, stale_checkpoint_rejected
+                return sym, rows, None, mode, reason, False, stale_checkpoint_rejected, None
 
             write_checkpoint(checkpoint, incremental, 'incremental', None)
-            return sym, incremental, None, 'incremental', None, False, stale_checkpoint_rejected
+            return sym, incremental, None, 'incremental', None, False, stale_checkpoint_rejected, None
         except Exception as e:
-            return sym, [], type(e).__name__ + ': ' + str(e), None, None, False, stale_checkpoint_rejected
+            return sym, [], type(e).__name__ + ': ' + str(e), None, None, False, stale_checkpoint_rejected, (
+                {'reason':'latest_price_unconfirmed', 'providerLatestBarDate':e.latest_bar_date}
+                if isinstance(e, LatestPriceUnconfirmed) else None
+            )
 
     checkpoint_reuse_count=0
     stale_checkpoint_rejected_count=0
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
         futs=[ex.submit(task,s) for s in symbols]
         for f in tqdm(as_completed(futs), total=len(futs), desc='daily candles v2'):
-            sym, rows, err, mode, reason, checkpoint_reused, stale_checkpoint_rejected=f.result()
+            sym, rows, err, mode, reason, checkpoint_reused, stale_checkpoint_rejected, price_issue=f.result()
             if stale_checkpoint_rejected:
                 stale_checkpoint_rejected_count+=1
             if err:
                 failures.append((sym,err))
+                if price_issue is not None:
+                    price_unconfirmed_evidence[sym]=price_issue
                 continue
             if checkpoint_reused:
                 checkpoint_reuse_count+=1
@@ -300,45 +339,39 @@ if RUN_US_MARKET:
     for _ct_name in ('futs', 'f'):
         globals().pop(_ct_name, None)
 
-    # Toss가 시장 전체는 확정했지만 일부 개별 종목의 adjusted candle만 늦게/누락 제공할 수 있습니다.
-    # 캐시에 과거 정상봉이 있고 공백이 짧은 소수 종목은 그 날짜의 screening universe에서만 quarantine합니다.
-    # 절대 전일 종가로 9/30 봉을 합성하지 않습니다.
+    # A successful provider response may lack a confirmed bar for one symbol.
+    # Record that limited knowledge, regardless of how old its last bar is.
+    # Do not infer suspension/corporate actions or fabricate a current price.
+    # A valid prior cache bar is still required; do not broaden archive eligibility.
+    # All unexpected/systemic failures and the aggregate cap still fail closed.
     provider_gap_failures=[]
     unhandled_failures=[]
     provider_gap_latest_dates={}
+    provider_gap_reasons={}
     for sym, err in failures:
-        if sym in candidate_history_starts:
-            candidate_quarantine[sym] = 'post_event_history_unavailable: ' + err
-            continue
-        cached_last=str(last_dates.get(sym) or '')[:10]
-        gap_days=None
-        if cached_last:
-            try:
-                gap_days=(pd.Timestamp(AS_OF_DATE)-pd.Timestamp(cached_last)).days
-            except Exception:
-                gap_days=None
-        provider_gap_error=(
-            'latest candle' in err or
-            'empty incremental candle history' in err
-        )
-        eligible=(
-            sym != 'SPY' and
-            sym not in lifecycle_exempt_symbols and
-            bool(cached_last) and
-            gap_days is not None and
-            0 < gap_days <= MAX_PROVIDER_GAP_CALENDAR_DAYS and
-            provider_gap_error
-        )
+        issue=price_unconfirmed_evidence.get(sym)
+        cached_last=last_dates.get(sym)
+        latest=max(filter(None,[cached_last,(issue or {}).get('providerLatestBarDate')]),default=None)
+        gap_days=(pd.Timestamp(AS_OF_DATE)-pd.Timestamp(latest)).days if latest else None
+        eligible=(issue is not None and sym != 'SPY' and sym not in lifecycle_exempt_symbols
+                  and bool(cached_last) and gap_days is not None and gap_days > 0)
         if eligible:
             provider_gap_failures.append((sym,err))
-            provider_gap_latest_dates[sym]=cached_last
+            provider_gap_latest_dates[sym]=latest
+            provider_gap_reasons[sym]={
+                **issue, 'cachedLatestBarDate':cached_last, 'latestBarDate':latest,
+                'confirmedSessionDate':AS_OF_DATE, 'gapCalendarDays':gap_days,
+                'error':err, 'classification':'UNCONFIRMED_PRICE',
+            }
         else:
             unhandled_failures.append((sym,err))
 
-    if len(provider_gap_failures) > MAX_PROVIDER_GAP_SYMBOLS:
+    provider_gap_limit_exceeded=len(provider_gap_failures) > MAX_PROVIDER_GAP_SYMBOLS
+    if provider_gap_limit_exceeded:
         unhandled_failures.extend(provider_gap_failures)
         provider_gap_failures=[]
         provider_gap_latest_dates={}
+        provider_gap_reasons={}
     provider_gap_symbols={sym for sym,_ in provider_gap_failures}
 
     if candidate_quarantine:
@@ -411,6 +444,9 @@ if RUN_US_MARKET:
         'providerGapSymbols':sorted(provider_gap_symbols),
         'providerGapLatestBarDates':provider_gap_latest_dates,
         'providerGapDetails':provider_gap_failures,
+        'providerGapReasons':provider_gap_reasons,
+        'providerGapLimit':MAX_PROVIDER_GAP_SYMBOLS,
+        'providerGapLimitExceeded':provider_gap_limit_exceeded,
         'failures':unhandled_failures,
         'rawFailures':failures,
         'chartRequestsUsed':chart_requests_used,
@@ -427,7 +463,7 @@ if RUN_US_MARKET:
     if full_refresh_symbols:
         print('full refresh examples:',list(refresh_reasons.items())[:10])
     if provider_gap_symbols:
-        print('provider-gap quarantine:',[(sym,provider_gap_latest_dates[sym]) for sym in sorted(provider_gap_symbols)])
+        print('latest-price-unconfirmed quarantine:',[(sym,provider_gap_latest_dates[sym]) for sym in sorted(provider_gap_symbols)])
         print('NOTE: quarantined symbols are omitted from this session only; no synthetic bar is created.')
     if unhandled_failures:
         print('unhandled failure examples:',unhandled_failures[:10])
@@ -439,6 +475,8 @@ if RUN_US_MARKET:
         'symbols':sorted(provider_gap_symbols),
         'latestBarDates':provider_gap_latest_dates,
         'details':provider_gap_failures,
+        'reasons':provider_gap_reasons,
+        'limitExceeded':provider_gap_limit_exceeded,
     }, ensure_ascii=False, indent=2))
 
     # Date-scoped evidence is immutable; no extra full-history DataFrame copies.

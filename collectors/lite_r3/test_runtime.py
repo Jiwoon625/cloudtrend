@@ -1,6 +1,9 @@
 """Bounded daily-runtime regression checks. No external calls or publication."""
 from contextlib import redirect_stdout
-from datetime import datetime
+from datetime import datetime, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import math
+import time
 import hashlib
 import importlib
 import importlib.util
@@ -445,6 +448,243 @@ class RuntimeTests(unittest.TestCase):
         self.assertIn('/storage/v1/object/cloudtrend-data/',writes[0][0])
         self.assertEqual(writes[0][1]['data'],original)
         self.assertEqual(writes[0][1]['headers']['x-upsert'],'false')
+
+    def _collection_fixture(self, stale=None, extra=None, failures=None, no_cache=()):
+        """Run the real collection/feature code using successful provider-response fixtures."""
+        stale=dict({'DBRG':'2026-09-29'} if stale is None else stale)
+        symbols=list(dict.fromkeys(['SPY','GOOD',*stale,*(extra or []),*no_cache]))
+        histories={}
+        for symbol in symbols:
+            end=stale.get(symbol,'2026-10-09')
+            histories[symbol]=[{'symbol':symbol,'date':day,'open':100+i/10,'high':101+i/10,
+                'low':99+i/10,'close':100+i/10,'volume':1000000+i,'currency':'USD'}
+                for i,day in enumerate(pd.bdate_range(end=end,periods=400).strftime('%Y-%m-%d'))]
+        prior=[]
+        for symbol,rows in histories.items():
+            if symbol not in no_cache:
+                prior.extend(rows if symbol in stale else rows[:-1])
+        pd.DataFrame(prior).to_parquet(self.ns['CACHE_PATH'],index=False)
+        seed=pd.DataFrame({'ticker':symbols})
+        seed_path=self.ns['BASE_DIR']/'test_seed.csv';seed.to_csv(seed_path,index=False)
+        master=pd.DataFrame([{'symbol':symbol,'name':symbol,'englishName':symbol,'market':'NASDAQ',
+            'securityType':'ETF' if symbol=='SPY' else 'STOCK','status':'ACTIVE','currency':'USD',
+            'sharesOutstanding':1000,'isCommonShare':symbol!='SPY','sector':'TEST'} for symbol in symbols])
+        calendar={'result':{
+            'currentBusinessDay':{'date':'2026-10-09','regularMarket':{'endTime':'2026-10-09T20:00:00Z'}},
+            'previousBusinessDay':{'date':'2026-10-08','regularMarket':{'endTime':'2026-10-08T20:00:00Z'}}}}
+        calls=[]
+        def get(path,params=None,chart=False):
+            if path=='/api/v1/market-calendar/US':return calendar,{}
+            self.assertEqual(path,'/api/v1/candles')
+            symbol=params['symbol'];calls.append(symbol)
+            self.ns['_chart_request_count']+=1
+            failure=(failures or {}).get(symbol)
+            if isinstance(failure,Exception):raise failure
+            if failure is not None:return failure,{}
+            rows=histories[symbol][-params['count']:]
+            return {'result':{'candles':rows}},{}
+        self.ns.update(seed=seed,seed_path=seed_path,master=master,candidate_quarantine={},
+            VERIFIED_LIFECYCLE_EVENTS=[],toss_get=get,_chart_request_count=0,
+            time=types.SimpleNamespace(monotonic=time.monotonic,sleep=lambda _:None),math=math,
+            datetime=datetime,timezone=timezone,ThreadPoolExecutor=ThreadPoolExecutor,as_completed=as_completed,
+            tqdm=lambda sequence,**kwargs:sequence,truthy=lambda value:str(value).lower()=='true')
+        self.ns['_US_STAGE_RUN']['master']=self.ns['_US_RUN_ID']
+        return histories,calls
+
+    def test_long_gap_is_recorded_without_fabricating_price_and_healthy_upload_continues(self):
+        histories,calls=self._collection_fixture(stale={'DBRG':'2026-09-29','SHORT':'2026-10-08'})
+        original_stale=pd.read_parquet(self.ns['CACHE_PATH']).query("symbol == 'DBRG'").reset_index(drop=True)
+        self.run_stage('us_collection')
+        self.assertEqual(self.ns['provider_gap_symbols'],{'DBRG','SHORT'})
+        self.assertEqual(self.ns['unhandled_failures'],[])
+        reason=self.ns['provider_gap_reasons']['DBRG']
+        self.assertEqual(reason['reason'],'latest_price_unconfirmed')
+        self.assertEqual(reason['latestBarDate'],'2026-09-29')
+        self.assertEqual(reason['gapCalendarDays'],10)
+        self.assertEqual(reason['classification'],'UNCONFIRMED_PRICE')
+        self.assertEqual(calls.count('DBRG'),2)
+        cached=pd.read_parquet(self.ns['CACHE_PATH'])
+        pd.testing.assert_frame_equal(cached.query("symbol == 'DBRG'").reset_index(drop=True),original_stale)
+        self.assertEqual(cached.query("symbol == 'GOOD'").date.max(),'2026-10-09')
+        evidence=list((self.ns['BASE_DIR']/'dated_collection_evidence_v1').glob('*/*/collection.json'))
+        self.assertEqual(len(evidence),1)
+        self.assertEqual(json.loads(evidence[0].read_text())['diagnostics']['providerGapCount'],2)
+        self.run_stage('us_features')
+        self.assertEqual(self.ns['lifecycle_events'],[])
+        self.ns['_US_STAGE_RUN']['diagnostics']=self.ns['_US_RUN_ID']
+        posted=[];storage={};pointer=[]
+        def get(url,**kwargs):
+            if '/rest/v1/us_screening_ingest' in url:
+                return types.SimpleNamespace(json=lambda:pointer,raise_for_status=lambda:None)
+            return types.SimpleNamespace(content=next(iter(storage.values())),raise_for_status=lambda:None)
+        def post(url,**kwargs):
+            posted.append((url,kwargs))
+            if '/storage/v1/object/' in url:storage[url]=kwargs['data']
+            else:pointer[:]=[kwargs['json']]
+            return types.SimpleNamespace(status_code=200)
+        self.ns.update(requests=types.SimpleNamespace(get=get,post=post),
+            COLLECTION_UNIVERSE=self.ns['seed_path'],collection_universe_hash='test-hash',
+            market_calendar={'ok':True},exchange_rate={'ok':False},ranking_amount={'ok':False})
+        self.run_stage('us_snapshot');self.run_stage('us_upload')
+        out=self.ns['out'].set_index('symbol')
+        self.assertTrue(out.loc['GOOD','close']>0)
+        self.assertTrue(pd.isna(out.loc['DBRG','close']))
+        self.assertFalse(out.loc['DBRG','toss_tradable'])
+        self.assertFalse(out.loc['DBRG','active20'])
+        self.assertEqual(out.loc['DBRG','status'],'ACTIVE')  # no invented lifecycle
+        self.assertTrue(self.ns['_US_UPLOAD_VERIFIED'])
+        meta=self.ns['payload']['metadata']
+        self.assertFalse(meta['sourceCoverageComplete'])
+        self.assertEqual(meta['providerGapReasons']['DBRG']['gapCalendarDays'],10)
+        self.assertEqual(meta['failedSymbols'],0)
+        self.assertEqual(len(posted),2)
+        self.run_stage('us_archive')
+        dispatched=[]
+        api=types.SimpleNamespace(token='test-only',common_base=lambda:'2026-10-07',
+                                  dispatch=lambda inputs:dispatched.append(inputs) or 204)
+        self.ns['_CT_US_ARCHIVE']['UsArchiveApi']=lambda *args:api
+        self.run_stage('us_dispatch')
+        self.assertEqual(self.ns['_US_DISPATCH_STATUS'],'BLOCKED_REPLAY_PREFLIGHT')
+        self.assertEqual(dispatched,[])  # missing 10/08 evidence is never bypassed
+        api.common_base=lambda:'2026-10-08'
+        self.run_stage('us_dispatch')
+        self.assertEqual(self.ns['_US_DISPATCH_STATUS'],'REQUEST_ACCEPTED')
+        self.assertEqual(len(dispatched),1)
+        self.run_stage('us_dispatch')
+        self.assertEqual(self.ns['_US_DISPATCH_STATUS'],'REQUEST_ALREADY_RECORDED')
+        self.assertEqual(len(dispatched),1)
+
+    def test_history_length_hold_retains_current_prices_with_null_scores(self):
+        histories,calls=self._collection_fixture(extra=['VJET','WQEY'])
+        for symbol in ('VJET','WQEY'):
+            histories[symbol]=histories[symbol][-5:]
+        self.ns['seed']['history_start_date']=None
+        self.ns['seed'].loc[self.ns['seed'].ticker.isin(['VJET','WQEY']),'history_start_date']='2026-10-05'
+        self.run_stage('us_collection');self.run_stage('us_features')
+        snap=self.ns['snap'].set_index('symbol')
+        self.assertEqual(set(self.ns['candidate_scoring_holds']),{'VJET','WQEY'})
+        for symbol in ('VJET','WQEY'):
+            self.assertEqual(snap.loc[symbol,'date'],'2026-10-09')
+            self.assertGreater(snap.loc[symbol,'open'],0)
+            self.assertGreater(snap.loc[symbol,'close'],0)
+            self.assertTrue(pd.isna(snap.loc[symbol,'ret120']))
+            self.assertTrue(pd.isna(snap.loc[symbol,'ret252']))
+            self.assertFalse(snap.loc[symbol,'active20'])
+            self.assertEqual(snap.loc[symbol,'status'],'ACTIVE')
+
+    def test_short_and_long_quarantine_share_existing_ten_symbol_cap(self):
+        for count in (10,11):
+            with self.subTest(count=count):
+                self._collection_fixture(stale={f'GAP{i}':'2026-09-01' for i in range(count)})
+                if count==10:
+                    self.run_stage('us_collection')
+                    self.assertEqual(len(self.ns['provider_gap_symbols']),10)
+                else:
+                    with self.assertRaisesRegex(RuntimeError,'11 symbols failed'):self.run_stage('us_collection')
+                    self.assertTrue(self.ns['diagnostics']['providerGapLimitExceeded'])
+                    self.assertEqual(self.ns['provider_gap_symbols'],set())
+                    self.assertNotIn('collection',self.ns['_US_STAGE_RUN'])
+                    with self.assertRaises(RuntimeError):self.run_stage('us_features')
+
+    def test_stale_spy_always_stops(self):
+        self._collection_fixture(stale={'SPY':'2026-09-29'})
+        with self.assertRaisesRegex(RuntimeError,'SPY'):self.run_stage('us_collection')
+        self.assertEqual(self.ns['provider_gap_symbols'],set())
+        self.assertNotIn('collection',self.ns['_US_STAGE_RUN'])
+
+    def test_auth_network_and_malformed_errors_cannot_be_quarantined_even_for_candidate(self):
+        for failure in (RuntimeError('401 Unauthorized'),RuntimeError('403 Forbidden'),
+                        StubTimeout('network timeout'),RuntimeError('latest candle injected error'),
+                        {'result':{'error':'invalid-token'}},
+                        {'result':{'candles':[],'error':'Unauthorized'}},
+                        {'result':{'candles':[{'close':100}]}},
+                        {'result':{'candles':[{'date':'2026-10-08','close':'changed-schema'}]}},
+                        {'success':False,'result':{'candles':[]}},
+                        {'result':{'candles':[{'date':'2026-99-99','close':100}]}}):
+            with self.subTest(failure=str(failure)):
+                self._collection_fixture(failures={'DBRG':failure})
+                self.ns['seed']['history_start_date']='2026-01-01'
+                with self.assertRaisesRegex(RuntimeError,'DBRG'):self.run_stage('us_collection')
+                self.assertEqual(self.ns['provider_gap_symbols'],set())
+                self.assertNotIn('collection',self.ns['_US_STAGE_RUN'])
+                self.assertFalse(self.ns['_US_UPLOAD_VERIFIED'])
+
+    def test_missing_cached_evidence_still_stops_before_upload(self):
+        for response in ({'result':{'candles':[]}},
+                         {'result':{'candles':[{'date':'2026-09-29','close':100}]}}):
+            with self.subTest(response=response):
+                self._collection_fixture(stale={},no_cache=['NEW'],failures={'NEW':response})
+                with self.assertRaisesRegex(RuntimeError,'NEW'):self.run_stage('us_collection')
+                self.assertEqual(self.ns['provider_gap_symbols'],set())
+                self.assertEqual(self.ns['unhandled_failures'][0][0],'NEW')
+                self.assertNotIn('collection',self.ns['_US_STAGE_RUN'])
+                self.assertFalse(self.ns['_US_UPLOAD_VERIFIED'])
+
+    def test_provider_and_cached_latest_dates_remain_distinct(self):
+        histories,calls=self._collection_fixture()
+        frame=pd.read_parquet(self.ns['CACHE_PATH'])
+        extra={**histories['DBRG'][-1],'date':'2026-09-30','volume':0}
+        pd.concat([frame,pd.DataFrame([extra])],ignore_index=True).to_parquet(self.ns['CACHE_PATH'],index=False)
+        self.run_stage('us_collection')
+        reason=self.ns['provider_gap_reasons']['DBRG']
+        self.assertEqual(reason['providerLatestBarDate'],'2026-09-29')
+        self.assertEqual(reason['cachedLatestBarDate'],'2026-09-30')
+        self.assertEqual(reason['latestBarDate'],'2026-09-30')
+        self.assertEqual(reason['gapCalendarDays'],9)
+
+    def test_current_incremental_with_failed_adjusted_refresh_is_hard_qa_failure(self):
+        for response in ({'result':{'candles':[]}},
+                         {'result':{'candles':[{'date':'2026-09-29','close':100}]}}):
+            with self.subTest(response=response):
+                self._collection_fixture(stale={},extra=['DBRG'])
+                original_get=self.ns['toss_get']
+                def get(path,params=None,chart=False):
+                    if path=='/api/v1/candles' and params['symbol']=='DBRG':
+                        if params['count']>15:return response,{}
+                        body,headers=original_get(path,params,chart)
+                        rows=[dict(row) for row in body['result']['candles']]
+                        rows[-2]['close']*=1.1
+                        return {'result':{'candles':rows}},headers
+                    return original_get(path,params,chart)
+                self.ns['toss_get']=get
+                with self.assertRaisesRegex(RuntimeError,'history QA failed'):self.run_stage('us_collection')
+                self.assertEqual(self.ns['provider_gap_symbols'],set())
+                self.assertNotIn('collection',self.ns['_US_STAGE_RUN'])
+
+    def test_recovered_symbol_leaves_quarantine_on_next_confirmed_run(self):
+        histories,calls=self._collection_fixture()
+        self.run_stage('us_collection')
+        self.assertIn('DBRG',self.ns['provider_gap_symbols'])
+        last=histories['DBRG'][-1]
+        histories['DBRG'].append({**last,'date':'2026-10-09','close':last['close']+1})
+        self.run_stage('us_collection')
+        self.assertEqual(self.ns['provider_gap_symbols'],set())
+        self.assertEqual(self.ns['combined'].query("symbol == 'DBRG'").date.max(),'2026-10-09')
+        self.assertEqual(len(list((self.ns['BASE_DIR']/'dated_collection_evidence_v1').glob('*/*/collection.json'))),2)
+
+    def test_stale_checkpoint_preserved_and_current_cache_reused_on_rerun(self):
+        histories,calls=self._collection_fixture()
+        checkpoint=self.ns['BASE_DIR']/'checkpoints/2026-10-09/DBRG.json'
+        checkpoint.parent.mkdir(parents=True)
+        raw=json.dumps({'asOfDate':'2026-10-09','rows':histories['DBRG'][-15:]}).encode()
+        checkpoint.write_bytes(raw)
+        self.run_stage('us_collection')
+        preserved=checkpoint.parent/'rejected/DBRG'/(hashlib.sha256(raw).hexdigest()+'.json')
+        self.assertEqual(preserved.read_bytes(),raw)
+        self.assertFalse(checkpoint.exists())
+        self.assertEqual(self.ns['stale_checkpoint_rejected_count'],1)
+        calls.clear();self.run_stage('us_collection')
+        self.assertEqual(set(calls),{'DBRG'})
+        self.assertEqual(self.ns['mode_counts']['cache_current'],2)
+        self.assertEqual(preserved.read_bytes(),raw)
+
+    def test_release_manifest_matches_runtime_sources(self):
+        manifest=json.loads((ROOT/'runtime/manifest.json').read_text())
+        self.assertEqual(manifest['version'],rt.RUNTIME_VERSION)
+        for record in manifest['files']:
+            raw=(ROOT/'runtime'/record['path']).read_bytes()
+            self.assertEqual(record['sha256'],hashlib.sha256(raw).hexdigest(),record['path'])
+            self.assertEqual(record['bytes'],len(raw))
 
     def test_release_zip_matches_runtime_source_exactly(self):
         expected={str(p.relative_to(ROOT/'runtime')):p.read_bytes()
