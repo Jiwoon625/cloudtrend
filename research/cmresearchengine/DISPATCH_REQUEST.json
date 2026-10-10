@@ -1,9 +1,9 @@
 {
-  "request_id": "cm-manual-base39-20261010-001",
+  "request_id": "cm-manual-references0-20261010-001",
   "mode": "run",
-  "stage": "base",
-  "offset": 39,
-  "count": 1,
+  "stage": "references",
+  "offset": 0,
+  "count": 3,
   "max_seconds": 3000,
   "workers": 1,
   "hybrid_shared_us_analysis": false
