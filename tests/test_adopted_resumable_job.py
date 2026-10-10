@@ -62,6 +62,7 @@ class Commands(legacy.FakeCommands):
         self.rescore_in_replay = False
         self.empty_trades = False
         self.leak = False
+        self.identity_overrides = {}
 
     def __call__(self, command, log, environment):
         self.all_calls.append(command)
@@ -88,6 +89,7 @@ class Commands(legacy.FakeCommands):
             identity = {"version": job.CACHE_VERSION, "sourceHash": job.stable_hash(prepared["sourceCatalogSha256"]),
                 "calendarHash": job.stable_hash(self.calendar), "actualCalendarHash": job.stable_hash(self.calendar),
                 "codeHash": "sha256:" + "c"*64, "policyHash": "sha256:" + "d"*64}
+            identity.update(self.identity_overrides)
             identity_hash = job.stable_hash(identity)
             data = gzip.compress(("\n".join(json.dumps({"date": day}) for day in dates) + "\n").encode(), mtime=0)
             (target / "signal-cache.jsonl.gz").write_bytes(data)
@@ -168,7 +170,7 @@ class ResumableTests(unittest.TestCase):
             session_factory=lambda: self.session, command_runner=self.commands, emit=self.logs.append)
 
     def key(self, role, file):
-        return OWNER + "/research/adopted-full-period/resumable/12345/" + role + "/" + (file if file == "completion.json" else "attempt-1/" + file)
+        return OWNER + "/research/adopted-full-period/resumable/" + self.env["GITHUB_RUN_ID"] + "/" + role + "/" + (file if file == "completion.json" else "attempt-1/" + file)
 
     def assert_complete(self, result):
         self.assertEqual(result["status"], "COMPLETE", result)
@@ -481,6 +483,347 @@ class ResumableTests(unittest.TestCase):
                 calls = len(self.commands.all_calls)
                 result = self.run_job("replay", market="kr")
                 self.assertEqual(result["status"], "STOPPED", result)
+                self.assertEqual(len(self.commands.all_calls), calls)
+
+    def origin_fixture(self, completed=(0,)):
+        """Synthetic original objects, with an offline-only completion fixture pin."""
+        self.env["GITHUB_RUN_ID"] = job.RESUME_FROM_PIN["runId"]
+        self.env["GITHUB_SHA"] = job.RESUME_FROM_PIN["codeCommit"]
+        plan = self.plan()
+        for index in completed:
+            self.assert_complete(self.run_job("score", index))
+        original_prefix = OWNER + "/research/adopted-full-period/resumable/" + self.env["GITHUB_RUN_ID"] + "/"
+        originals = {key: value for key, value in self.session.objects.items() if key.startswith(original_prefix)}
+        pin = {**job.RESUME_FROM_PIN,
+               "planCompletionSha256": hashlib.sha256(self.session.objects[self.key("plan", "completion.json")]).hexdigest()}
+        patch = mock.patch.object(job, "RESUME_FROM_PIN", pin)
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.env["GITHUB_RUN_ID"], self.env["GITHUB_SHA"] = "12345", "1"*40
+        self.request["resume_from"] = dict(pin)
+        self.request_file.write_bytes(base.json_bytes(self.request))
+        return plan, originals, original_prefix
+
+    def test_resume_request_exact_pin_contract_and_old_request_compatibility(self):
+        self.assertEqual(job.request_value(job.parse_options(["--request", str(self.request_file), "--phase", "plan"])), self.request)
+        self.origin_fixture()
+        parsed = job.parse_options(["--request", str(self.request_file), "--phase", "plan"])
+        self.assertEqual(parsed.resume_from, job.RESUME_FROM_PIN)
+        job.authorize_trigger(parsed, self.env)
+        valid = dict(self.request["resume_from"])
+        for invalid in [None, [], {}, {**valid, "owner": OWNER}, {**valid, "runId": "1"},
+                        {**valid, "codeCommit": "2"*40}, {**valid, "planCompletionSha256": "a"*64}]:
+            with self.subTest(invalid=invalid):
+                self.request["resume_from"] = invalid
+                self.request_file.write_bytes(base.json_bytes(self.request))
+                self.assertEqual(self.run_job()["code"], "INVALID_RESUME_FROM_PIN")
+        self.request["resume_from"] = valid
+        self.request_file.write_bytes(base.json_bytes(self.request))
+        self.env["GITHUB_RUN_ID"] = valid["runId"]
+        self.assertEqual(self.run_job()["code"], "RESUME_REQUIRES_NEW_RUN")
+
+    def test_completed_origin_import_uses_exact_bytes_without_scoring_or_impersonation(self):
+        old_plan, originals, prefix = self.origin_fixture()
+        before = len(self.commands.all_calls)
+        new_plan = self.plan()
+        parity = [c for c in self.commands.all_calls[before:] if "--scoring-only" in c]
+        self.assertEqual(len(parity), 2)  # Fresh 10+10 parity scoring, never the historical plan.
+        self.assertNotEqual(new_plan["scope"], old_plan["scope"])
+        self.assertEqual(new_plan["identity"], old_plan["identity"])
+        calls = len(self.commands.all_calls)
+        env = dict(self.env)
+        result = self.run_job("score", 0)
+        self.assert_complete(result)
+        self.assertTrue(result["imported"])
+        self.assertEqual(self.env, env)
+        self.assertEqual(len(self.commands.all_calls), calls)
+        marker = json.loads(self.session.objects[self.key("score-000", "completion.json")])
+        old_marker = json.loads(originals[prefix + "score-000/completion.json"])
+        self.assertEqual(marker["scope"]["runId"], "12345")
+        self.assertEqual(marker["scope"]["codeCommit"], "1"*40)
+        self.assertEqual(marker["scope"]["request"], self.request)
+        self.assertNotEqual(marker["proof"]["planSha256"], old_marker["proof"]["planSha256"])
+        self.assertEqual(marker["origin"], {"runId": job.RESUME_FROM_PIN["runId"],
+            "codeCommit": job.RESUME_FROM_PIN["codeCommit"], "role": "score-000",
+            "completionSha256": hashlib.sha256(originals[prefix + "score-000/completion.json"]).hexdigest(),
+            "planSha256": old_marker["proof"]["planSha256"]})
+        for name in job.CACHE_NAMES:
+            self.assertEqual(self.session.objects[self.key("score-000", name)], originals[prefix + "score-000/attempt-1/" + name])
+        before = len(self.session.calls)
+        self.env["GITHUB_RUN_ATTEMPT"] = "2"
+        self.assertTrue(self.run_job("score", 0)["reused"])
+        self.assertFalse(any(method == "POST" for method, _, _ in self.session.calls[before:]))
+        self.assertEqual(len(self.commands.all_calls), calls)
+        for key, value in originals.items():
+            self.assertEqual(self.session.objects[key], value)
+
+    def test_missing_origin_completion_computes_normally_and_ignores_old_partial_files(self):
+        _, originals, prefix = self.origin_fixture()
+        del self.session.objects[prefix + "score-000/completion.json"]
+        self.plan()
+        calls = len(self.commands.all_calls)
+        result = self.run_job("score", 0)
+        self.assert_complete(result)
+        self.assertFalse(result["reused"])
+        self.assertEqual(len([c for c in self.commands.all_calls[calls:] if "--scoring-only" in c]), 1)
+        marker = json.loads(self.session.objects[self.key("score-000", "completion.json")])
+        self.assertNotIn("origin", marker)
+        for key, value in originals.items():
+            if not key.endswith("score-000/completion.json"):
+                self.assertEqual(self.session.objects[key], value)
+
+    def test_origin_changed_signal_code_source_policy_or_calendar_rejects_new_plan(self):
+        _, _, _ = self.origin_fixture()
+        baseline = dict(self.session.objects)
+        calendar = list(self.commands.calendar)
+        for field in ["codeHash", "sourceHash", "policyHash", "actualCalendarHash", "calendarHash", "calendar"]:
+            with self.subTest(field=field):
+                self.session.objects = dict(baseline)
+                self.commands.identity_overrides = {} if field == "calendar" else {field: "sha256:" + "f"*64}
+                self.commands.calendar = sorted(calendar + ["2019-01-02"]) if field == "calendar" else calendar
+                before = len(self.session.calls)
+                result = self.run_job()
+                self.assertEqual(result["status"], "STOPPED", result)
+                self.assertIn(result["code"], {"ORIGIN_PLAN_SEMANTICS_MISMATCH", "PLAN_IDENTITY_MISMATCH"})
+                self.assertFalse(any(method == "POST" for method, _, _ in self.session.calls[before:]))
+        self.commands.identity_overrides = {}
+        self.commands.calendar = calendar
+
+    def test_origin_request_economics_and_source_manifest_exactly_match(self):
+        _, _, prefix = self.origin_fixture()
+        # A valid current source manifest with different exact bytes still cannot
+        # import a plan committed under the previous request fingerprint.
+        key = base.input_prefix(OWNER) + self.catalog + "/source-manifest.json"
+        self.session.objects[key] += b" "
+        self.request["source_manifest_sha"] = hashlib.sha256(self.session.objects[key]).hexdigest()
+        self.request_file.write_bytes(base.json_bytes(self.request))
+        before = len(self.session.calls)
+        self.assertEqual(self.run_job()["code"], "CHECKPOINT_SCOPE_MISMATCH")
+        self.assertFalse(any(method == "POST" for method, _, _ in self.session.calls[before:]))
+
+    def test_origin_plan_completion_pin_checked_before_plan_files(self):
+        _, _, prefix = self.origin_fixture()
+        self.session.objects[prefix + "plan/completion.json"] += b" "
+        before = len(self.session.calls)
+        self.assertEqual(self.run_job()["code"], "ORIGIN_COMPLETION_HASH_MISMATCH")
+        self.assertFalse(any(method == "POST" or url.endswith("/plan/attempt-1/plan.json") for method, url, _ in self.session.calls[before:]))
+
+    def test_origin_chunk_scope_proof_and_every_file_hash_fail_closed(self):
+        _, _, prefix = self.origin_fixture()
+        self.plan()
+        baseline = dict(self.session.objects)
+        key = prefix + "score-000/completion.json"
+        for mutation in ["owner", "runId", "role", "codeCommit", "request", "proof", "cache", "quality", "manifest"]:
+            with self.subTest(mutation=mutation):
+                self.session.objects = dict(baseline)
+                marker = json.loads(self.session.objects[key])
+                if mutation in ["owner", "runId", "role", "codeCommit"]:
+                    marker["scope"][mutation] = "wrong"
+                elif mutation == "request":
+                    marker["scope"]["request"]["chunk_sessions"] = 119
+                elif mutation == "proof":
+                    marker["proof"]["sessions"] = 119
+                else:
+                    name = {"cache": "signal-cache.jsonl.gz", "quality": "quality.json", "manifest": "signal-cache.manifest.json"}[mutation]
+                    self.session.objects[prefix + "score-000/attempt-1/" + name] += b"corrupt"
+                self.session.objects[key] = base.json_bytes(marker)
+                calls, requests = len(self.commands.all_calls), len(self.session.calls)
+                self.assertEqual(self.run_job("score", 0)["status"], "STOPPED")
+                self.assertEqual(len(self.commands.all_calls), calls)
+                self.assertFalse(any(method == "POST" for method, _, _ in self.session.calls[requests:]))
+
+    def test_malformed_or_unapproved_import_origin_is_rejected(self):
+        self.origin_fixture()
+        self.plan()
+        self.assert_complete(self.run_job("score", 0))
+        key = self.key("score-000", "completion.json")
+        baseline = self.session.objects[key]
+        valid = json.loads(baseline)["origin"]
+        for invalid in [None, [], {}, {**valid, "owner": OWNER}, {**valid, "runId": "12345"},
+                        {**valid, "codeCommit": "2"*40}, {**valid, "role": "score-001"},
+                        {**valid, "completionSha256": "BAD"}, {**valid, "completionSha256": "f"*64}, {**valid, "planSha256": "f"*64}]:
+            with self.subTest(invalid=invalid):
+                marker = json.loads(baseline)
+                marker["origin"] = invalid
+                self.session.objects[key] = base.json_bytes(marker)
+                self.assertEqual(self.run_job("score", 0)["status"], "STOPPED")
+        # An origin receipt cannot be introduced into a legacy request scope.
+        scope = json.loads(baseline)["scope"]
+        del scope["request"]["resume_from"]
+        with self.assertRaisesRegex(base.JobError, "UNAUTHORIZED_IMPORT_ORIGIN"):
+            job.validate_origin(valid, scope)
+
+    def test_origin_storage_forbids_all_write_entrypoints(self):
+        self.origin_fixture()
+        storage = job.ReadOnlyOriginStorage(self.session, base.EXPECTED_SUPABASE_URL, OWNER, SECRET,
+            self.catalog, job.RESUME_FROM_PIN["runId"], "score-000")
+        local = self.root / "readonly-object"
+        local.write_bytes(b"private")
+        operations = [lambda: storage.key("score-000", "completion.json", write=True),
+                      lambda: storage._url("any", write=True),
+                      lambda: storage.put("signal-cache.jsonl.gz", local),
+                      lambda: storage.complete({}, {}, [], self.root),
+                      lambda: storage.create_result("run-manifest.json", local)]
+        before = len(self.session.calls)
+        for operation in operations:
+            with self.assertRaisesRegex(base.JobError, "ORIGIN_STORAGE_READ_ONLY"):
+                operation()
+        self.assertEqual(len(self.session.calls), before)
+        self.assertFalse(storage.output_keys)
+
+    def test_import_every_create_boundary_preserves_origin_and_receipt_on_retry(self):
+        _, originals, prefix = self.origin_fixture()
+        self.plan()
+        baseline = dict(self.session.objects)
+        for boundary in range(1, 5):
+            for stored in [False, True]:
+                with self.subTest(boundary=boundary, stored=stored):
+                    self.session.objects = dict(baseline)
+                    self.env["GITHUB_RUN_ATTEMPT"] = "1"
+                    original_request = self.session.request
+                    posts = [0]
+                    def interrupted(method, url, **kwargs):
+                        if method == "POST":
+                            posts[0] += 1
+                            if posts[0] == boundary:
+                                if stored:
+                                    original_request(method, url, **kwargs)
+                                raise RuntimeError(SECRET)
+                        return original_request(method, url, **kwargs)
+                    calls = len(self.commands.all_calls)
+                    with mock.patch.object(self.session, "request", side_effect=interrupted):
+                        first = self.run_job("score", 0)
+                    self.assertEqual(first["status"], "COMPLETE" if stored else "STOPPED")
+                    if not stored:
+                        self.assertEqual(first["code"], "UNCERTAIN_CHECKPOINT_CREATE")
+                    preserved = dict(self.session.objects)
+                    self.env["GITHUB_RUN_ATTEMPT"] = "2"
+                    self.assert_complete(self.run_job("score", 0))
+                    self.assertEqual(len(self.commands.all_calls), calls)
+                    marker = json.loads(self.session.objects[self.key("score-000", "completion.json")])
+                    self.assertEqual(marker["origin"]["runId"], job.RESUME_FROM_PIN["runId"])
+                    for key, value in preserved.items():
+                        self.assertEqual(self.session.objects[key], value)
+                    for key, value in originals.items():
+                        self.assertEqual(self.session.objects[key], value)
+                    for method, url, kwargs in self.session.calls:
+                        if method == "POST" and "/resumable/12345/" in url:
+                            self.assertEqual(kwargs["headers"]["x-upsert"], "false")
+
+    def test_import_conflicting_current_object_is_never_overwritten(self):
+        self.origin_fixture()
+        self.plan()
+        key = self.key("score-000", "signal-cache.jsonl.gz")
+        self.session.objects[key] = b"already-present-different-bytes"
+        before = len(self.session.calls)
+        self.assertEqual(self.run_job("score", 0)["status"], "STOPPED")
+        self.assertEqual(self.session.objects[key], b"already-present-different-bytes")
+        self.assertFalse(any(method == "POST" for method, _, _ in self.session.calls[before:]))
+
+    def test_replay_retains_import_origins_actual_run_and_actual_commit_privately(self):
+        self.origin_fixture()
+        plan = self.plan()
+        for chunk in plan["matrix"]["include"]:
+            self.assert_complete(self.run_job("score", chunk["chunkIndex"]))
+        for market in ["kr", "etf"]:
+            self.assert_complete(self.run_job("replay", market=market))
+            report = json.loads(self.session.objects[self.key("replay-" + market, "run-manifest.json")])
+            self.assertEqual(report["runId"], self.env["GITHUB_RUN_ID"])
+            self.assertEqual(report["codeCommit"], self.env["GITHUB_SHA"])
+            marker = json.loads(self.session.objects[self.key("score-000", "completion.json")])
+            self.assertEqual(report["importOrigins"], [marker["origin"]])
+            calls = len(self.commands.all_calls)
+            self.assertTrue(self.run_job("replay", market=market)["reused"])
+            self.assertEqual(len(self.commands.all_calls), calls)
+        for method, _, kwargs in self.session.calls:
+            if method == "POST" and "x-metadata" in kwargs["headers"]:
+                public = base64.b64decode(kwargs["headers"]["x-metadata"]).decode()
+                self.assertNotIn("importOrigins", public)
+                self.assertNotIn(OWNER, public)
+                self.assertNotIn(SECRET, public)
+        self.assertNotIn(OWNER, " ".join(self.logs))
+        self.assertNotIn(SECRET, " ".join(self.logs))
+
+    def test_interrupted_import_never_relabels_partial_copy_when_origin_marker_disappears(self):
+        _, _, prefix = self.origin_fixture()
+        self.plan()
+        original_request = self.session.request
+        def interrupted(method, url, **kwargs):
+            if method == "POST" and url.endswith("/score-000/completion.json"):
+                raise RuntimeError(SECRET)
+            return original_request(method, url, **kwargs)
+        with mock.patch.object(self.session, "request", side_effect=interrupted):
+            self.assertEqual(self.run_job("score", 0)["code"], "UNCERTAIN_CHECKPOINT_CREATE")
+        preserved = {key: value for key, value in self.session.objects.items() if "/resumable/12345/score-000/" in key}
+        self.assertEqual(len(preserved), 3)
+        del self.session.objects[prefix + "score-000/completion.json"]
+        self.env["GITHUB_RUN_ATTEMPT"] = "2"
+        calls = len(self.commands.all_calls)
+        result = self.run_job("score", 0)
+        self.assert_complete(result)
+        self.assertFalse(result["reused"])
+        self.assertEqual(len([c for c in self.commands.all_calls[calls:] if "--scoring-only" in c]), 1)
+        marker = json.loads(self.session.objects[self.key("score-000", "completion.json")])
+        self.assertNotIn("origin", marker)
+        self.assertTrue(all(entry["path"].startswith("attempt-2/") for entry in marker["files"]))
+        for key, value in preserved.items():
+            self.assertEqual(self.session.objects[key], value)
+
+    def test_legacy_replay_manifest_without_new_fields_remains_reusable(self):
+        self.all_scores()
+        self.assert_complete(self.run_job("replay", market="etf"))
+        report_key = self.key("replay-etf", "run-manifest.json")
+        report = json.loads(self.session.objects[report_key])
+        del report["runId"]
+        del report["importOrigins"]
+        payload = base.json_bytes(report)
+        self.session.objects[report_key] = payload
+        marker_key = self.key("replay-etf", "completion.json")
+        marker = json.loads(self.session.objects[marker_key])
+        item = next(entry for entry in marker["files"] if job.logical_path(entry["path"]) == "run-manifest.json")
+        item.update({"bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest()})
+        self.session.objects[marker_key] = base.json_bytes(marker)
+        calls = len(self.commands.all_calls)
+        self.assertTrue(self.run_job("replay", market="etf")["reused"])
+        self.assertEqual(len(self.commands.all_calls), calls)
+
+    def test_restored_replay_rejects_malformed_import_provenance_and_wrong_actual_run(self):
+        self.origin_fixture()
+        plan = self.plan()
+        for chunk in plan["matrix"]["include"]:
+            self.assert_complete(self.run_job("score", chunk["chunkIndex"]))
+        self.assert_complete(self.run_job("replay", market="etf"))
+        baseline = dict(self.session.objects)
+        marker_key = self.key("replay-etf", "completion.json")
+        report_key = self.key("replay-etf", "run-manifest.json")
+        for mutation in ["missing", "omitted-receipt", "non-list", "duplicate", "wrong-role", "wrong-plan", "wrong-run", "extra-field"]:
+            with self.subTest(mutation=mutation):
+                self.session.objects = dict(baseline)
+                report = json.loads(self.session.objects[report_key])
+                if mutation == "missing":
+                    del report["importOrigins"]
+                elif mutation == "omitted-receipt":
+                    report["importOrigins"] = []
+                elif mutation == "non-list":
+                    report["importOrigins"] = {}
+                elif mutation == "duplicate":
+                    report["importOrigins"] *= 2
+                elif mutation == "wrong-role":
+                    report["importOrigins"][0]["role"] = "score-999"
+                elif mutation == "wrong-plan":
+                    report["importOrigins"][0]["planSha256"] = "f"*64
+                elif mutation == "wrong-run":
+                    report["runId"] = job.RESUME_FROM_PIN["runId"]
+                else:
+                    report["importOrigins"][0]["owner"] = OWNER
+                payload = base.json_bytes(report)
+                self.session.objects[report_key] = payload
+                marker = json.loads(self.session.objects[marker_key])
+                item = next(entry for entry in marker["files"] if job.logical_path(entry["path"]) == "run-manifest.json")
+                item.update({"bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest()})
+                self.session.objects[marker_key] = base.json_bytes(marker)
+                calls = len(self.commands.all_calls)
+                self.assertEqual(self.run_job("replay", market="etf")["status"], "STOPPED")
                 self.assertEqual(len(self.commands.all_calls), calls)
 
 

@@ -26,6 +26,11 @@ if _SPEC is None or _SPEC.loader is None:
     raise RuntimeError("PRIVATE_JOB_HELPERS_UNAVAILABLE")
 base = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(base)
+_TRANSPORT_SPEC = importlib.util.spec_from_file_location("adopted_private_transport", ROOT / "scripts/adopted_private_transport.py")
+if _TRANSPORT_SPEC is None or _TRANSPORT_SPEC.loader is None:
+    raise RuntimeError("PRIVATE_TRANSPORT_UNAVAILABLE")
+transport = importlib.util.module_from_spec(_TRANSPORT_SPEC)
+_TRANSPORT_SPEC.loader.exec_module(transport)
 JobError, require = base.JobError, base.require
 REQUEST_VERSION = "adopted-resumable-request-v1"
 PLAN_VERSION = "adopted-resumable-plan-v1"
@@ -33,6 +38,14 @@ COMPLETE_VERSION = "adopted-resumable-completion-v1"
 CACHE_VERSION = "adopted-signal-cache-v1"
 INDEX_VERSION = "adopted-signal-cache-index-v1"
 REQUEST_FIELDS = {"version", "mode", "catalog_sha", "source_manifest_sha", "etf_start", "kr_start", "through", "chunk_sessions"}
+OPTIONAL_REQUEST_FIELDS = {"resume_from"}
+# This bounded recovery authorization identifies public run evidence only.
+RESUME_FROM_PIN = {
+    "runId": "37998687295",
+    "codeCommit": "0439d13393c6015e93db54018ddebaba2eb10ac1",
+    "planCompletionSha256": "50fdab59d0ac8363405107c143bbde32edb5515da49520ea49d674aa1b4f353c",
+}
+ORIGIN_FIELDS = {"runId", "codeCommit", "role", "completionSha256", "planSha256"}
 CACHE_NAMES = {"signal-cache.jsonl.gz", "signal-cache.manifest.json", "quality.json"}
 MAX_CHECKPOINT = 4 * base.CHUNK
 MAX_OBJECT = 8 * 1024 * base.CHUNK
@@ -40,11 +53,45 @@ IDENTITY_FIELDS = {"version", "sourceHash", "calendarHash", "actualCalendarHash"
 
 
 def request_value(options):
-    return {field: getattr(options, field) for field in REQUEST_FIELDS}
+    request = {field: getattr(options, field) for field in REQUEST_FIELDS}
+    if hasattr(options, "resume_from"):
+        request["resume_from"] = options.resume_from
+    return request
+
+
+def validate_resume_from(value):
+    require(isinstance(value, dict) and set(value) == set(RESUME_FROM_PIN) and
+            value == RESUME_FROM_PIN, "INVALID_RESUME_FROM_PIN")
+    return value
+
+
+def origin_scope_for(storage, options, role):
+    """Expected historical evidence scope, never a fabricated execution environment."""
+    origin = validate_resume_from(options.resume_from)
+    return {"owner": storage.owner, "runId": origin["runId"], "role": valid_role(role),
+            "codeCommit": origin["codeCommit"],
+            "request": {field: getattr(options, field) for field in REQUEST_FIELDS}}
+
+
+def validate_origin(origin, scope, *, plan_hash=None):
+    require(isinstance(origin, dict) and set(origin) == ORIGIN_FIELDS, "INVALID_IMPORT_ORIGIN")
+    request = scope.get("request", {})
+    require("resume_from" in request, "UNAUTHORIZED_IMPORT_ORIGIN")
+    pin = validate_resume_from(request["resume_from"])
+    require(origin["runId"] == pin["runId"] and origin["codeCommit"] == pin["codeCommit"] and
+            origin["runId"] != scope["runId"] and origin["role"] == scope["role"] and
+            isinstance(origin["role"], str) and re.fullmatch(r"score-[0-9]{3}", origin["role"]),
+            "IMPORT_ORIGIN_SCOPE_MISMATCH")
+    for field in ("completionSha256", "planSha256"):
+        base.check_hash(origin[field])
+    require(plan_hash is None or origin["planSha256"] == plan_hash, "IMPORT_ORIGIN_PLAN_MISMATCH")
+    return origin
 
 
 def validate_options(options):
     request = request_value(options)
+    if "resume_from" in request:
+        validate_resume_from(request["resume_from"])
     require(request["version"] == REQUEST_VERSION and request["mode"] == "full", "INVALID_RESUMABLE_REQUEST")
     base.check_hash(request["catalog_sha"])
     base.check_hash(request["source_manifest_sha"])
@@ -64,7 +111,7 @@ def authorize_trigger(options, environment):
             environment.get("GITHUB_WORKFLOW") == "KR ETF resumable final-strategy backtest" and
             environment.get("GITHUB_REF") == base.REQUEST_BRANCH, "EXPLICIT_RESUMABLE_JOB_REQUIRED")
     saved = base.read_local_json(options.request_file, 16384, "INVALID_REQUEST_FILE")
-    require(set(saved) == REQUEST_FIELDS and saved == request_value(options), "REQUEST_OPTIONS_MISMATCH")
+    require(REQUEST_FIELDS <= set(saved) <= REQUEST_FIELDS | OPTIONAL_REQUEST_FIELDS and saved == request_value(options), "REQUEST_OPTIONS_MISMATCH")
     event = base.read_local_json(environment.get("GITHUB_EVENT_PATH"), 10 * base.CHUNK, "INVALID_TRIGGER_EVENT")
     if environment.get("GITHUB_EVENT_NAME") == "workflow_dispatch":
         require(isinstance(event.get("inputs"), dict) and event["inputs"].get("mode") == "full", "EXPLICIT_FULL_DISPATCH_REQUIRED")
@@ -166,7 +213,7 @@ def stage_metadata(completion, evidence, *, summary=None):
              "sourceManifestSha256": scope["request"]["source_manifest_sha"],
              "completionSha256": evidence["sha256"], "files": len(completion["files"])}
     require(re.fullmatch(r"[1-9][0-9]*", value["runId"]), "INVALID_RUN_ID")
-    base.validated_code_commit({"GITHUB_SHA": value["codeCommit"]})
+    require(isinstance(value["codeCommit"], str) and re.fullmatch(r"[0-9a-f]{40}", value["codeCommit"]), "INVALID_CODE_COMMIT")
     for key in ("catalogSha256", "sourceManifestSha256", "completionSha256"):
         base.check_hash(value[key])
     if role.startswith("score-"):
@@ -193,6 +240,7 @@ class ResumableStorage(base.PrivateStorage):
         self.attempt_prefix = "attempt-" + attempt + "/"
         self.root_prefix = owner + "/research/adopted-full-period/resumable/" + run_id + "/"
         self.run_prefix = self.root_prefix + role + "/"
+        self.completion_hashes = {}
 
     def key(self, role, relative, *, write=False):
         valid_relative(role, relative)
@@ -251,15 +299,21 @@ class ResumableStorage(base.PrivateStorage):
             require(exists, "UNCERTAIN_CHECKPOINT_CREATE" if uncertain else "CHECKPOINT_READBACK_MISSING")
         return {"path": relative, **evidence}
 
-    def restore(self, role, expected_scope, directory, *, optional=False, expected_proof=None):
+    def read_completion(self, role, expected_scope, *, optional=False, expected_proof=None, expected_completion_sha=None):
         self.verify_private_bucket()
         payload = self.bounded(role, "completion.json", optional=optional)
         if payload is None:
             return None
+        completion_sha = hashlib.sha256(payload).hexdigest()
+        require(expected_completion_sha is None or completion_sha == expected_completion_sha,
+                "ORIGIN_COMPLETION_HASH_MISMATCH")
         value = parse_json(payload, "INVALID_COMPLETION_JSON")
-        require(set(value) == {"version", "status", "scope", "proof", "files"} and value["version"] == COMPLETE_VERSION and
+        require({"version", "status", "scope", "proof", "files"} <= set(value) <=
+                {"version", "status", "scope", "proof", "files", "origin"} and value["version"] == COMPLETE_VERSION and
                 value["status"] == "COMPLETE" and value["scope"] == expected_scope and isinstance(value["proof"], dict),
                 "CHECKPOINT_SCOPE_MISMATCH")
+        if "origin" in value:
+            validate_origin(value["origin"], expected_scope)
         if role == "plan":
             proof = value["proof"]
             require(set(proof) == {"planSha256", "calendarHash", "parityStatus"} and proof["parityStatus"] == "PASS", "INVALID_PLAN_COMPLETION_PROOF")
@@ -288,20 +342,52 @@ class ResumableStorage(base.PrivateStorage):
             require(seen == CACHE_NAMES, "INCOMPLETE_CHECKPOINT")
         else:
             require(seen == {"run-manifest.json"} | {"result/" + name for name in result_names(role[7:])}, "INCOMPLETE_CHECKPOINT")
+        self.completion_hashes[role] = completion_sha
+        return value
+
+    def restore(self, role, expected_scope, directory, *, optional=False, expected_proof=None, expected_completion_sha=None):
+        value = self.read_completion(role, expected_scope, optional=optional, expected_proof=expected_proof,
+                                     expected_completion_sha=expected_completion_sha)
+        if value is None:
+            return None
         directory.mkdir(mode=0o700)
-        for entry in entries:
+        for entry in value["files"]:
             target = directory / logical_path(entry["path"])
             target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             self.download(self.key(role, entry["path"]), target, entry)
         return value
 
-    def complete(self, scope, proof, files, workspace, *, summary=None):
+    def complete(self, scope, proof, files, workspace, *, summary=None, origin=None):
+        if origin is not None:
+            validate_origin(origin, scope)
         entries = [self.put(relative, local) for relative, local in files]
         value = {"version": COMPLETE_VERSION, "status": "COMPLETE", "scope": scope, "proof": proof, "files": entries}
+        if origin is not None:
+            value["origin"] = origin
         path = Path(workspace) / "completion.json"
         base.local_json(path, value)
         self.put("completion.json", path, completion=value, summary=summary)
         return value
+
+
+class ReadOnlyOriginStorage(ResumableStorage):
+    """Historical checkpoints may only be read; all storage write entrypoints fail."""
+    def key(self, role, relative, *, write=False):
+        require(not write, "ORIGIN_STORAGE_READ_ONLY")
+        return super().key(role, relative)
+
+    def _url(self, key, *, write=False):
+        require(not write, "ORIGIN_STORAGE_READ_ONLY")
+        return super()._url(key)
+
+    def put(self, *args, **kwargs):
+        raise JobError("ORIGIN_STORAGE_READ_ONLY")
+
+    def complete(self, *args, **kwargs):
+        raise JobError("ORIGIN_STORAGE_READ_ONLY")
+
+    def create_result(self, *args, **kwargs):
+        raise JobError("ORIGIN_STORAGE_READ_ONLY")
 
 
 def source_contract(storage, options, root):
@@ -479,8 +565,11 @@ def validate_plan(plan, parity, options, scope):
 
 def load_plan(storage, options, environment, root, *, optional=False):
     scope = scope_for(storage, options, environment, "plan")
-    target = root / "restored-plan"
-    completion = storage.restore("plan", scope, target, optional=optional)
+    return load_scoped_plan(storage, options, scope, root / "restored-plan", optional=optional)
+
+
+def load_scoped_plan(storage, options, scope, target, *, optional=False, expected_completion_sha=None):
+    completion = storage.restore("plan", scope, target, optional=optional, expected_completion_sha=expected_completion_sha)
     if completion is None:
         return None
     plan = base.read_local_json(target / "plan.json", MAX_CHECKPOINT, "INVALID_PLAN")
@@ -491,6 +580,75 @@ def load_plan(storage, options, environment, root, *, optional=False):
             completion["proof"] == {"planSha256": plan_hash, "calendarHash": plan["calendarHash"], "parityStatus": "PASS"},
             "INVALID_PLAN_COMPLETION_PROOF")
     return plan, parity, plan_hash
+
+
+def load_origin_plan(storage, options, root):
+    pin = validate_resume_from(options.resume_from)
+    return load_scoped_plan(storage, options, origin_scope_for(storage, options, "plan"), root / "origin-plan",
+                            expected_completion_sha=pin["planCompletionSha256"])
+
+
+def validate_origin_plan_match(plan, origin_plan):
+    # The full historical request was checked by load_scoped_plan. These are the
+    # actual fresh TS signal identity, full source calendar and exact chunk map.
+    for field in ("sessions", "calendarHash", "matrix", "identity", "identityHash"):
+        require(plan[field] == origin_plan[field], "ORIGIN_PLAN_SEMANTICS_MISMATCH")
+
+
+def import_origin_score(storage, origin_storage, options, scope, root, plan, plan_hash, chunk, origin_loaded):
+    origin_plan, _, origin_plan_hash = origin_loaded
+    validate_origin_plan_match(plan, origin_plan)
+    role = storage.role
+    origin_scope = origin_scope_for(origin_storage, options, role)
+    target = root / "origin-score"
+    completion = origin_storage.restore(role, origin_scope, target, optional=True,
+        expected_proof=score_proof(origin_plan, origin_plan_hash, chunk))
+    if completion is None:
+        return False
+    # Reject transitive imports and validate every old file against both plans.
+    require("origin" not in completion, "TRANSITIVE_ORIGIN_IMPORT_FORBIDDEN")
+    validate_score_completion(completion, target, origin_plan, origin_plan_hash, chunk)
+    proof = score_proof(plan, plan_hash, chunk)
+    validate_score_completion({"proof": proof}, target, plan, plan_hash, chunk)
+    receipt = {"runId": origin_scope["runId"], "codeCommit": origin_scope["codeCommit"], "role": role,
+               "completionSha256": origin_storage.completion_hashes[role], "planSha256": origin_plan_hash}
+    storage.complete(scope, proof, [(name, target / name) for name in
+        ("signal-cache.jsonl.gz", "quality.json", "signal-cache.manifest.json")], root, origin=receipt)
+    return True
+
+
+def verify_import_origin(completion, origin_storage, options, scope, chunk, origin_loaded):
+    """Bind a restored receipt to the exact original immutable completion.
+
+    Current files were already restored byte-for-byte. Requiring identical old
+    file evidence proves the original byte linkage without a second large copy.
+    """
+    if "origin" not in completion:
+        return None
+    origin_plan, _, origin_plan_hash = origin_loaded
+    receipt = validate_origin(completion["origin"], scope, plan_hash=origin_plan_hash)
+    original = origin_storage.read_completion(scope["role"], origin_scope_for(origin_storage, options, scope["role"]),
+        expected_proof=score_proof(origin_plan, origin_plan_hash, chunk), expected_completion_sha=receipt["completionSha256"])
+    require("origin" not in original, "TRANSITIVE_ORIGIN_IMPORT_FORBIDDEN")
+    def evidence(value):
+        return {logical_path(entry["path"]): {"bytes": entry["bytes"], "sha256": entry["sha256"]} for entry in value["files"]}
+    require(evidence(original) == evidence(completion), "IMPORT_ORIGIN_FILE_MISMATCH")
+    return receipt
+
+
+def restore_score_chunks(storage, origin_storage, options, environment, root, plan, plan_hash, origin_loaded):
+    cached, origins = [], []
+    for chunk in plan["matrix"]["include"]:
+        role = "score-%03d" % chunk["chunkIndex"]
+        scope = scope_for(storage, options, environment, role)
+        target = root / role
+        value = storage.restore(role, scope, target, expected_proof=score_proof(plan, plan_hash, chunk))
+        validate_score_completion(value, target, plan, plan_hash, chunk)
+        receipt = verify_import_origin(value, origin_storage, options, scope, chunk, origin_loaded)
+        if receipt is not None:
+            origins.append(receipt)
+        cached.append(target)
+    return cached, origins
 
 
 def score_proof(plan, plan_hash, chunk):
@@ -593,7 +751,7 @@ def validate_verification(verification, summary, market):
                 "INVALID_REPLAY_VERIFICATION_EVIDENCE")
 
 
-def validate_restored_replay(completion, target, options, scope, plan, plan_hash, proof):
+def validate_restored_replay(completion, target, options, scope, plan, plan_hash, proof, *, origin_plan_hash=None, import_origins=()):
     require(completion["proof"] == proof, "INVALID_REPLAY_COMPLETION_PROOF")
     report = base.read_local_json(target / "run-manifest.json", MAX_CHECKPOINT, "INVALID_REPLAY_REPORT")
     require(report.get("codeCommit") == scope["codeCommit"] and report.get("sourceManifestSha256") == options.source_manifest_sha and
@@ -601,6 +759,19 @@ def validate_restored_replay(completion, target, options, scope, plan, plan_hash
             report.get("market") == options.market and report.get("mode") == "full" and report.get("status") == "COMPLETE" and
             report.get("start") == proof["start"] and report.get("through") == options.through and report.get("verifiedArithmetic") is True,
             "REPLAY_REPORT_SCOPE_MISMATCH")
+    require((report.get("runId") == scope["runId"] if hasattr(options, "resume_from") or "runId" in report else True),
+            "REPLAY_REPORT_SCOPE_MISMATCH")
+    origins = report.get("importOrigins", [])
+    require(isinstance(origins, list) and (not hasattr(options, "resume_from") or "importOrigins" in report),
+            "INVALID_REPLAY_IMPORT_ORIGINS")
+    roles = {"score-%03d" % chunk["chunkIndex"] for chunk in plan["matrix"]["include"]}
+    seen = []
+    for origin in origins:
+        require(isinstance(origin, dict) and isinstance(origin.get("role"), str) and origin["role"] in roles,
+                "INVALID_REPLAY_IMPORT_ORIGINS")
+        validate_origin(origin, {**scope, "role": origin["role"]}, plan_hash=origin_plan_hash)
+        seen.append(origin["role"])
+    require(seen == sorted(set(seen)) and origins == list(import_origins), "INVALID_REPLAY_IMPORT_ORIGINS")
     require(report.get("outputs") == [entry for entry in completion["files"] if logical_path(entry["path"]) != "run-manifest.json"],
             "REPLAY_OUTPUT_MANIFEST_MISMATCH")
     require({file.name for file in base.output_files(target / "result")} == result_names(options.market), "INCOMPLETE_REPLAY_BOOK_FILES")
@@ -615,7 +786,7 @@ def validate_restored_replay(completion, target, options, scope, plan, plan_hash
     base.build_summary_metadata(report, summary, base.digest_file(target / "run-manifest.json")["sha256"])
 
 
-def result_report(options, scope, prepared_manifest, sources, plan_hash, parity, result, verification, outputs):
+def result_report(options, scope, prepared_manifest, sources, plan_hash, parity, result, verification, outputs, *, import_origins=()):
     quality = base.read_local_json(result / "quality.json", MAX_CHECKPOINT, "INVALID_RESULT_QUALITY")
     passes = validate_replay_quality(quality, options.market)
     summary = base.read_local_json(result / "summary.json", MAX_CHECKPOINT, "INVALID_RESULT_SUMMARY")
@@ -639,7 +810,7 @@ def result_report(options, scope, prepared_manifest, sources, plan_hash, parity,
                            for book in base.BOOK_NAMES if isinstance(quality.get(book), dict) and "tradeCount" in quality[book]}}
     return {"version": "adopted-private-resumable-backtest-job-v1", "status": "COMPLETE", "mode": "full", "market": options.market,
             "start": options.kr_start if options.market == "kr" else options.etf_start, "through": options.through,
-            "codeCommit": scope["codeCommit"], "catalogSha256": options.catalog_sha, "sourceManifestSha256": options.source_manifest_sha,
+            "runId": scope["runId"], "codeCommit": scope["codeCommit"], "catalogSha256": options.catalog_sha, "sourceManifestSha256": options.source_manifest_sha,
             "validatedCatalogFiles": 31, "validatedKrEtfCatalogFiles": 30, "downloadedKrEtfFiles": 30,
             "downloadedKrEtfBytes": sum(item["bytes"] for item in sources), "planSha256": plan_hash,
             "preparation": measurements(prepared_manifest["preparationMetrics"]), "extensionHashes": [], "extensionContinuity": None,
@@ -650,19 +821,26 @@ def result_report(options, scope, prepared_manifest, sources, plan_hash, parity,
             "annualPolicy": {"KR": "Prior-year final-close NAV / 30 new-entry budget; held quantities are not rebalanced",
                              "ETF": "ANNUAL_NAV_VOLATILITY_SIGNAL_YEAR_V1"},
             "signalCache": quality["signalCache"], "portfolioExecutionPasses": passes, "outputs": outputs,
+            "importOrigins": list(import_origins),
             "rawInputsUploaded": False, "logsUploaded": False, "cmAndOriginalSourcesUnmodified": True,
             "actionsArtifactsOrCacheUsed": False}
 
 
-def execute(options, storage, workspace, environment, runner=base.run_command):
+def execute(options, storage, workspace, environment, runner=base.run_command, *, origin_storage=None):
     validate_options(options)
     root = Path(workspace)
     require(root.is_dir() and not root.is_symlink() and not any(root.iterdir()), "PRIVATE_WORKSPACE_NOT_EMPTY")
     os.chmod(root, 0o700)
     scope = scope_for(storage, options, environment)
+    resume = hasattr(options, "resume_from")
+    require(not resume or isinstance(origin_storage, ReadOnlyOriginStorage), "ORIGIN_STORAGE_REQUIRED")
+    require(not resume or scope["runId"] != options.resume_from["runId"], "RESUME_REQUIRES_NEW_RUN")
     _, sources, source_file = source_contract(storage, options, root)
     child_env = base.child_environment(environment)
+    origin_loaded = load_origin_plan(origin_storage, options, root) if resume else None
     loaded = load_plan(storage, options, environment, root, optional=options.phase == "plan")
+    if loaded is not None and origin_loaded is not None:
+        validate_origin_plan_match(loaded[0], origin_loaded[0])
     if options.phase == "plan":
         if loaded is not None:
             write_matrix(loaded[0], environment)
@@ -675,6 +853,8 @@ def execute(options, storage, workspace, environment, runner=base.run_command):
                 "matrix": matrix_for(manifest["sessions"], options), "identity": identity, "identityHash": stable_hash(identity),
                 "preparation": measurements(manifest["preparationMetrics"]), "paritySha256": base.digest_file(parity_path)["sha256"]}
         validate_plan(plan, parity, options, scope)
+        if origin_loaded is not None:
+            validate_origin_plan_match(plan, origin_loaded[0])
         plan_path = root / "plan.json"
         base.local_json(plan_path, plan)
         storage.complete(scope, {"planSha256": base.digest_file(plan_path)["sha256"], "calendarHash": plan["calendarHash"], "parityStatus": "PASS"},
@@ -690,15 +870,21 @@ def execute(options, storage, workspace, environment, runner=base.run_command):
         completion = storage.restore(storage.role, scope, restored, optional=True, expected_proof=score_proof(plan, plan_hash, chunk))
         if completion is not None:
             validate_score_completion(completion, restored, plan, plan_hash, chunk)
+            verify_import_origin(completion, origin_storage, options, scope, chunk, origin_loaded)
             return {"status": "COMPLETE", "phase": "score", "chunkIndex": options.chunk_index, "reused": True}
-        if recover_partial_score(storage, scope, root, plan, plan_hash, chunk):
+        if origin_loaded is not None and import_origin_score(storage, origin_storage, options, scope, root, plan, plan_hash, chunk, origin_loaded):
+            return {"status": "COMPLETE", "phase": "score", "chunkIndex": options.chunk_index, "reused": True, "imported": True}
+        # A partial cross-run copy has no committed receipt. Never relabel its
+        # bytes as newly computed if the historical completion disappears.
+        if not resume and recover_partial_score(storage, scope, root, plan, plan_hash, chunk):
             return {"status": "COMPLETE", "phase": "score", "chunkIndex": options.chunk_index, "reused": True, "partialRecovered": True}
     else:
+        cached, import_origins = restore_score_chunks(storage, origin_storage, options, environment, root, plan, plan_hash, origin_loaded)
         proof = {"planSha256": plan_hash, "market": options.market, "start": options.kr_start if options.market == "kr" else options.etf_start,
                  "through": options.through, "cacheChunks": len(plan["matrix"]["include"]), "verifiedArithmetic": True}
         completion = storage.restore(storage.role, scope, restored, optional=True, expected_proof=proof)
         if completion is not None:
-            validate_restored_replay(completion, restored, options, scope, plan, plan_hash, proof)
+            validate_restored_replay(completion, restored, options, scope, plan, plan_hash, proof, origin_plan_hash=origin_loaded[2] if origin_loaded else None, import_origins=import_origins)
             return {"status": "COMPLETE", "phase": "replay", "market": options.market, "reused": True}
     prepared, manifest = prepare(storage, options, root, sources, source_file, child_env, runner)
     require(manifest["sessions"] == plan["sessions"], "PREPARED_CALENDAR_CHANGED")
@@ -710,13 +896,6 @@ def execute(options, storage, workspace, environment, runner=base.run_command):
         validate_score_completion({"proof": proof}, target, plan, plan_hash, chunk)
         storage.complete(scope, proof, [(name, target / name) for name in ("signal-cache.jsonl.gz", "quality.json", "signal-cache.manifest.json")], root)
         return {"status": "COMPLETE", "phase": "score", "chunkIndex": options.chunk_index, "reused": False}
-    cached = []
-    for chunk in plan["matrix"]["include"]:
-        role = "score-%03d" % chunk["chunkIndex"]
-        target = root / role
-        value = storage.restore(role, scope_for(storage, options, environment, role), target, expected_proof=score_proof(plan, plan_hash, chunk))
-        validate_score_completion(value, target, plan, plan_hash, chunk)
-        cached.append(target)
     index_path = root / "cache-index.json"
     make_index(index_path, cached)
     result = root / "result"
@@ -725,7 +904,7 @@ def execute(options, storage, workspace, environment, runner=base.run_command):
     files = base.output_files(result)
     require({file.name for file in files} == result_names(options.market), "INCOMPLETE_REPLAY_BOOK_FILES")
     outputs = [{"path": storage.attempt_prefix + "result/" + path.name, **base.digest_file(path)} for path in files]
-    report = result_report(options, scope, manifest, sources, plan_hash, parity, result, verification, outputs)
+    report = result_report(options, scope, manifest, sources, plan_hash, parity, result, verification, outputs, import_origins=import_origins)
     report_path = root / "run-manifest.json"
     base.local_json(report_path, report)
     summary = base.read_local_json(result / "summary.json", MAX_CHECKPOINT, "INVALID_RESULT_SUMMARY")
@@ -762,18 +941,22 @@ def public_failure_code(code):
 
 def run_github_job(options, *, environment=None, session_factory=None, command_runner=base.run_command, emit=print):
     environment = dict(os.environ if environment is None else environment)
-    storage = None
+    storage = origin_storage = None
     try:
         validate_options(options)
         authorize_trigger(options, environment)
         if session_factory is None:
             import requests
             session_factory = requests.Session
-        storage = ResumableStorage(session_factory(), environment.get("SUPABASE_URL", ""), environment.get("SUPABASE_USER_ID", ""),
+        storage = ResumableStorage(transport.PrivateBucketSession(session_factory), environment.get("SUPABASE_URL", ""), environment.get("SUPABASE_USER_ID", ""),
                                    environment.get("SUPABASE_SERVICE_ROLE_KEY", ""), options.catalog_sha,
                                    environment.get("GITHUB_RUN_ID", ""), role_for(options), environment.get("GITHUB_RUN_ATTEMPT", ""))
+        if hasattr(options, "resume_from"):
+            origin_storage = ReadOnlyOriginStorage(storage.session, base.EXPECTED_SUPABASE_URL, storage.owner,
+                environment.get("SUPABASE_SERVICE_ROLE_KEY", ""), options.catalog_sha,
+                options.resume_from["runId"], storage.role)
         with tempfile.TemporaryDirectory(prefix="adopted-resumable-", dir=environment.get("RUNNER_TEMP")) as workspace:
-            result = execute(options, storage, workspace, environment, command_runner)
+            result = execute(options, storage, workspace, environment, command_runner, origin_storage=origin_storage)
     except JobError as error:
         # Only our fixed codes or the original credential-free runner codes are public.
         code = str(error)
@@ -783,6 +966,8 @@ def run_github_job(options, *, environment=None, session_factory=None, command_r
     except Exception:
         result = {"status": "STOPPED", "code": "UNEXPECTED_JOB_ERROR_NO_DETAILS_LOGGED"}
     finally:
+        if origin_storage is not None:
+            origin_storage.headers.clear()
         if storage is not None:
             storage.close()
     emit(json.dumps(result, sort_keys=True))
@@ -797,7 +982,7 @@ def parse_options(argv=None):
     parser.add_argument("--market", choices=["kr", "etf"])
     options = parser.parse_args(argv)
     request = base.read_local_json(options.request_file, 16384, "INVALID_REQUEST_FILE")
-    require(set(request) == REQUEST_FIELDS, "INVALID_REQUEST_FIELDS")
+    require(REQUEST_FIELDS <= set(request) <= REQUEST_FIELDS | OPTIONAL_REQUEST_FIELDS, "INVALID_REQUEST_FIELDS")
     for key, value in request.items():
         setattr(options, key, value)
     validate_options(options)

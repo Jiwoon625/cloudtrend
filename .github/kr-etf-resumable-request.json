@@ -6,5 +6,10 @@
   "etf_start": "2017-01-11",
   "kr_start": "2017-08-21",
   "through": "2026-09-11",
-  "chunk_sessions": 120
+  "chunk_sessions": 120,
+  "resume_from": {
+    "runId": "37998687295",
+    "codeCommit": "0439d13393c6015e93db54018ddebaba2eb10ac1",
+    "planCompletionSha256": "50fdab59d0ac8363405107c143bbde32edb5515da49520ea49d674aa1b4f353c"
+  }
 }
