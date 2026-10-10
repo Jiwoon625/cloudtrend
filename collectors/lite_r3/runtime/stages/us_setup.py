@@ -73,6 +73,13 @@ if RUN_US_MARKET:
         'source_url':'https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2026-710',
         'reason':'Nasdaq suspension effective 2026-10-06; last trading day 2026-10-05.'})
 
+    # DBRG Class A common stock only. The preferred-series tickers have separate events.
+    # Keep roster/cache evidence; the verified lifecycle gate skips future candle requests.
+    VERIFIED_LIFECYCLE_EVENTS.append({'symbol':'DBRG','effective_date':'2026-09-30','status':'SUSPENDED',
+        'identity_name_contains':'DIGITALBRIDGE GROUP','event_type':'acquisition_completed_common_stock',
+        'source_url':'https://ir.digitalbridge.com/node/15466/html',
+        'reason':'Merger completed 2026-09-30; DBRG common stock removed from NYSE trading before that session opened (Form 8-K Item 3.01). Preferred-series tickers are not covered.'})
+
     FORCE_FULL_REFRESH = bool(globals().get("FORCE_FULL_REFRESH", False))
     DISPATCH_GITHUB_AFTER_UPLOAD = bool(globals().get("DISPATCH_GITHUB_AFTER_UPLOAD", True))
     GITHUB_REPO = 'Jiwoon625/cloudtrend'

@@ -160,10 +160,14 @@ if RUN_US_MARKET:
     def confirmed_session_covered(symbol, rows):
         return symbol in lifecycle_exempt_symbols or latest_positive_bar_date(rows) == AS_OF_DATE
 
-    if CACHE_PATH.exists() and not FORCE_FULL_REFRESH:
+    if CACHE_PATH.exists() and (not FORCE_FULL_REFRESH or lifecycle_exempt_symbols):
         old = pd.read_parquet(CACHE_PATH)
         old['symbol']=old['symbol'].astype(str).str.upper()
         old['date']=old['date'].astype(str).str.slice(0,10)
+        if FORCE_FULL_REFRESH:
+            # Effective lifecycle symbols make no candle request, so preserve their
+            # raw history only. All other symbols still start from a fresh base.
+            old=old.loc[old.symbol.isin(lifecycle_exempt_symbols)].copy()
         old = _guard_history_frame(old)
         old=old.drop_duplicates(['symbol','date'],keep='last').sort_values(['symbol','date']).reset_index(drop=True)
         counts=old.groupby('symbol').size().to_dict()
@@ -399,8 +403,9 @@ if RUN_US_MARKET:
     _ct_gc.collect()
     combined=combined.dropna(subset=['symbol','date','close']).drop_duplicates(['symbol','date'],keep='last')
     combined=combined.sort_values(['symbol','date']).reset_index(drop=True)
-    # 현재 운영 roster에서 빠진 과거 종목은 cache에서 제거합니다. 재편입 시 자동 full refresh됩니다.
-    combined=combined[combined.symbol.isin(symbols)].copy()
+    # Keep verified lifecycle raw history even after the provider drops its ACTIVE flag.
+    # Other out-of-roster symbols retain the existing removal/full-refresh-on-return policy.
+    combined=combined[combined.symbol.isin(set(symbols) | lifecycle_exempt_symbols)].copy()
     # rolling feature window가 무한히 커지지 않도록 최근 400봉만 유지합니다.
     combined=combined.groupby('symbol',group_keys=False).tail(CACHE_KEEP_BARS).reset_index(drop=True)
     # Keep verified post-event bars in cache, but do not invent an indicator history.

@@ -449,13 +449,13 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(writes[0][1]['data'],original)
         self.assertEqual(writes[0][1]['headers']['x-upsert'],'false')
 
-    def _collection_fixture(self, stale=None, extra=None, failures=None, no_cache=()):
+    def _collection_fixture(self, stale=None, extra=None, failures=None, no_cache=(), as_of='2026-10-09'):
         """Run the real collection/feature code using successful provider-response fixtures."""
         stale=dict({'DBRG':'2026-09-29'} if stale is None else stale)
         symbols=list(dict.fromkeys(['SPY','GOOD',*stale,*(extra or []),*no_cache]))
         histories={}
         for symbol in symbols:
-            end=stale.get(symbol,'2026-10-09')
+            end=stale.get(symbol,as_of)
             histories[symbol]=[{'symbol':symbol,'date':day,'open':100+i/10,'high':101+i/10,
                 'low':99+i/10,'close':100+i/10,'volume':1000000+i,'currency':'USD'}
                 for i,day in enumerate(pd.bdate_range(end=end,periods=400).strftime('%Y-%m-%d'))]
@@ -469,9 +469,10 @@ class RuntimeTests(unittest.TestCase):
         master=pd.DataFrame([{'symbol':symbol,'name':symbol,'englishName':symbol,'market':'NASDAQ',
             'securityType':'ETF' if symbol=='SPY' else 'STOCK','status':'ACTIVE','currency':'USD',
             'sharesOutstanding':1000,'isCommonShare':symbol!='SPY','sector':'TEST'} for symbol in symbols])
+        previous=(pd.Timestamp(as_of)-pd.offsets.BDay()).strftime('%Y-%m-%d')
         calendar={'result':{
-            'currentBusinessDay':{'date':'2026-10-09','regularMarket':{'endTime':'2026-10-09T20:00:00Z'}},
-            'previousBusinessDay':{'date':'2026-10-08','regularMarket':{'endTime':'2026-10-08T20:00:00Z'}}}}
+            'currentBusinessDay':{'date':as_of,'regularMarket':{'endTime':as_of+'T20:00:00Z'}},
+            'previousBusinessDay':{'date':previous,'regularMarket':{'endTime':previous+'T20:00:00Z'}}}}
         calls=[]
         def get(path,params=None,chart=False):
             if path=='/api/v1/market-calendar/US':return calendar,{}
@@ -490,6 +491,161 @@ class RuntimeTests(unittest.TestCase):
             tqdm=lambda sequence,**kwargs:sequence,truthy=lambda value:str(value).lower()=='true')
         self.ns['_US_STAGE_RUN']['master']=self.ns['_US_RUN_ID']
         return histories,calls
+
+    def _verified_dbrg_fixture(self, *, as_of='2026-10-09', issuer='DigitalBridge Group Inc'):
+        event=next(dict(e) for e in self.ns['VERIFIED_LIFECYCLE_EVENTS'] if e['symbol']=='DBRG')
+        stale={'DBRG':'2026-09-29'} if as_of>='2026-09-30' else {}
+        histories,calls=self._collection_fixture(stale=stale,
+            extra=['DBRG','DBRG.PRH','DBRG.PRI','DBRG.PRJ'],as_of=as_of)
+        self.ns['VERIFIED_LIFECYCLE_EVENTS']=[event]
+        self.ns['master'].loc[self.ns['master'].symbol.eq('DBRG'),'englishName']=issuer
+        self.ns['_normalized_issuer_name']=lambda v:' '.join(re.sub(r'[^A-Z0-9]+',' ',str(v).upper()).split())
+        return event,histories,calls
+
+    def test_dbrg_verified_event_exact_common_identity_and_other_events_unchanged(self):
+        events=self.ns['VERIFIED_LIFECYCLE_EVENTS']
+        self.assertEqual({e['symbol'] for e in events},{'TBPH','AMZE','GETY','GBTG','WBD','DBRG'})
+        event=next(e for e in events if e['symbol']=='DBRG')
+        self.assertEqual(event['effective_date'],'2026-09-30')
+        self.assertEqual(event['identity_name_contains'],'DIGITALBRIDGE GROUP')
+        self.assertEqual(event['source_url'],'https://ir.digitalbridge.com/node/15466/html')
+        self.assertEqual(event['event_type'],'acquisition_completed_common_stock')
+
+    def test_dbrg_day_before_effective_remains_collected_and_tradable(self):
+        _,_,calls=self._verified_dbrg_fixture(as_of='2026-09-29')
+        self.run_stage('us_collection');self.run_stage('us_features')
+        self.assertIn('DBRG',calls)
+        self.assertNotIn('DBRG',self.ns['lifecycle_exempt_symbols'])
+        row=self.ns['snap'].set_index('symbol').loc['DBRG']
+        self.assertGreater(row['close'],0)
+        self.assertTrue(row['toss_tradable'])
+        self.assertEqual(row['status'],'ACTIVE')
+
+    def test_dbrg_effective_gate_skips_candles_preserves_history_and_does_not_match_preferred(self):
+        for day in ('2026-09-30','2026-10-09'):
+            with self.subTest(day=day):
+                self.run_stage('us_setup')
+                event,_,calls=self._verified_dbrg_fixture(as_of=day)
+                old=pd.read_parquet(self.ns['CACHE_PATH']).query("symbol == 'DBRG'").reset_index(drop=True)
+                seed=self.ns['seed'].copy();master=self.ns['master'].copy()
+                prior_evidence=self.ns['BASE_DIR']/'original-evidence';prior_evidence.write_bytes(b'original')
+                self.run_stage('us_collection')
+                self.assertNotIn('DBRG',calls)
+                self.assertTrue({'SPY','GOOD','DBRG.PRH','DBRG.PRI','DBRG.PRJ'}.issubset(calls))
+                self.assertEqual(self.ns['lifecycle_exempt_symbols'],{'DBRG'})
+                self.assertEqual(self.ns['provider_gap_symbols'],set())
+                self.assertEqual(self.ns['diagnostics']['lifecycleExcludedSymbols'],['DBRG'])
+                self.assertEqual(self.ns['diagnostics']['verifiedLifecycleEvents'],[event])
+                now=pd.read_parquet(self.ns['CACHE_PATH']).query("symbol == 'DBRG'").reset_index(drop=True)
+                pd.testing.assert_frame_equal(old,now)
+                pd.testing.assert_frame_equal(seed,self.ns['seed'])
+                pd.testing.assert_frame_equal(master,self.ns['master'])
+                self.assertEqual(prior_evidence.read_bytes(),b'original')
+                self.run_stage('us_features')
+                row=self.ns['snap'].set_index('symbol').loc['DBRG']
+                self.assertEqual(row['status'],'SUSPENDED')
+                self.assertFalse(row['toss_tradable']);self.assertFalse(row['active20'])
+                self.assertTrue(pd.isna(row['close']));self.assertTrue(pd.isna(row['ret252']))
+                self.assertGreater(self.ns['snap'].set_index('symbol').loc['GOOD','close'],0)
+
+    def test_dbrg_reused_symbol_wrong_issuer_fails_before_candle_request(self):
+        _,_,calls=self._verified_dbrg_fixture(issuer='UNRELATED ISSUER INC')
+        with self.assertRaisesRegex(RuntimeError,'Lifecycle issuer identity changed/unverified: DBRG'):
+            self.run_stage('us_collection')
+        self.assertEqual(calls,[])
+
+    def test_dbrg_lifecycle_does_not_change_other_symbol_features(self):
+        self._verified_dbrg_fixture()
+        self.ns['VERIFIED_LIFECYCLE_EVENTS']=[]
+        self.run_stage('us_collection');self.run_stage('us_features')
+        baseline=self.ns['snap'].query("symbol != 'DBRG'").sort_values('symbol').reset_index(drop=True)
+        self.run_stage('us_setup')
+        self._verified_dbrg_fixture()
+        self.run_stage('us_collection');self.run_stage('us_features')
+        changed=self.ns['snap'].query("symbol != 'DBRG'").sort_values('symbol').reset_index(drop=True)
+        pd.testing.assert_frame_equal(baseline,changed)
+
+    def test_forced_refresh_preserves_only_excluded_raw_history_not_current_prices(self):
+        _,histories,calls=self._verified_dbrg_fixture()
+        cached=pd.read_parquet(self.ns['CACHE_PATH'])
+        # A later cached raw observation must not become an executable as-of price.
+        last=cached.loc[cached.symbol.eq('DBRG')].index[-1]
+        cached.loc[last,'date']='2026-10-12'
+        cached.to_parquet(self.ns['CACHE_PATH'],index=False)
+        dbrg_before=cached.query("symbol == 'DBRG'").reset_index(drop=True)
+        good_first=cached.query("symbol == 'GOOD'").date.min()
+        for row in histories['GOOD']:
+            for field in ('open','high','low','close'):row[field]+=55
+        self.ns['FORCE_FULL_REFRESH']=True
+        self.run_stage('us_collection')
+        after=pd.read_parquet(self.ns['CACHE_PATH'])
+        pd.testing.assert_frame_equal(dbrg_before,after.query("symbol == 'DBRG'").reset_index(drop=True))
+        self.assertNotIn('DBRG',calls)
+        self.assertEqual(self.ns['mode_counts']['verified_lifecycle_excluded'],1)
+        self.assertEqual(self.ns['mode_counts']['full_new_or_forced'],5)
+        self.assertEqual(len(after.query("symbol == 'GOOD'")),200)  # fixture full page; no old rows merged
+        self.assertGreater(after.query("symbol == 'GOOD'").date.min(),good_first)
+        self.assertAlmostEqual(after.query("symbol == 'GOOD'").close.iloc[-1],histories['GOOD'][-1]['close'])
+        self.run_stage('us_features')
+        row=self.ns['snap'].set_index('symbol').loc['DBRG']
+        self.assertEqual(row['date'],'2026-10-09')
+        self.assertTrue(pd.isna(row['close']));self.assertTrue(pd.isna(row['open']))
+        self.assertFalse(row['toss_tradable']);self.assertFalse(row['active20'])
+
+    def test_forced_refresh_does_not_fall_back_to_non_lifecycle_cache_on_error(self):
+        _,_,calls=self._verified_dbrg_fixture()
+        original_get=self.ns['toss_get']
+        def get(path,params=None,chart=False):
+            if path=='/api/v1/candles' and params['symbol']=='GOOD':
+                raise RuntimeError('provider HTTP 401')
+            return original_get(path,params,chart)
+        self.ns.update(toss_get=get,FORCE_FULL_REFRESH=True)
+        with self.assertRaisesRegex(RuntimeError,'symbols failed confirmed-session QA'):
+            self.run_stage('us_collection')
+        self.assertEqual(self.ns['provider_gap_symbols'],set())
+        self.assertNotIn('DBRG',calls)
+        self.assertNotIn('collection',self.ns['_US_STAGE_RUN'])
+
+    def test_lifecycle_raw_cache_survives_provider_removal_without_reentering_seed_or_snapshot(self):
+        for forced in (False,True):
+            with self.subTest(forced=forced):
+                self.run_stage('us_setup')
+                _,_,calls=self._verified_dbrg_fixture()
+                old=pd.read_parquet(self.ns['CACHE_PATH'])
+                dbrg=old.query("symbol == 'DBRG'").reset_index(drop=True)
+                unlisted=old.query("symbol == 'GOOD'").copy();unlisted['symbol']='UNLISTED'
+                pd.concat([old,unlisted]).to_parquet(self.ns['CACHE_PATH'],index=False)
+                self.ns['seed']=self.ns['seed'].loc[self.ns['seed'].ticker.ne('DBRG')].copy()
+                self.ns['master']=self.ns['master'].loc[self.ns['master'].symbol.ne('DBRG')].copy()
+                self.ns['FORCE_FULL_REFRESH']=forced
+                self.run_stage('us_collection')
+                cached=pd.read_parquet(self.ns['CACHE_PATH'])
+                pd.testing.assert_frame_equal(dbrg,cached.query("symbol == 'DBRG'").reset_index(drop=True))
+                self.assertNotIn('DBRG',calls)
+                self.assertNotIn('UNLISTED',set(cached.symbol))
+                self.assertNotIn('DBRG',set(self.ns['seed'].ticker))
+                self.assertNotIn('DBRG',set(self.ns['master'].symbol))
+                self.run_stage('us_features')
+                self.assertNotIn('DBRG',set(self.ns['snap'].symbol))
+
+    def test_dbrg_does_not_relax_registered_same_day_lifecycle_conflict(self):
+        path,original,pointer,_,calls=self._snapshot_fixture(date='2026-10-09')
+        frozen=pd.read_csv(io.BytesIO(original.replace(b'WBD',b'DBRG')))
+        mask=frozen.symbol.eq('DBRG')
+        stable=['open','high','low','close','volume','dollar_volume','ret120','ret252',
+                'beta60_spy','ichimoku_tk_gap','relvol1_20','adv20_usd','amihud20']
+        frozen.loc[mask,stable]=np.nan
+        frozen.loc[mask,['toss_tradable','active20']]=False
+        # The registered recovery source used unconfirmed-price quarantine, not suspension.
+        original=frozen.to_csv(index=False,lineterminator='\n').encode();path.write_bytes(original)
+        pointer['data_hash']='sha256:'+hashlib.sha256(original).hexdigest()
+        self.ns['snap']['symbol']=self.ns['snap']['symbol'].replace('WBD','DBRG')
+        self.ns['lifecycle_events']=[next(e for e in self.ns['VERIFIED_LIFECYCLE_EVENTS'] if e['symbol']=='DBRG')]
+        with self.assertRaisesRegex(RuntimeError,'Frozen source conflicts with verified lifecycle exclusion: DBRG'):
+            self.run_stage('us_snapshot')
+        self.assertEqual(path.read_bytes(),original)
+        self.assertEqual(len(calls),1)
+        self.assertFalse(self.ns['_US_SNAPSHOT_READY'])
 
     def test_long_gap_is_recorded_without_fabricating_price_and_healthy_upload_continues(self):
         histories,calls=self._collection_fixture(stale={'DBRG':'2026-09-29','SHORT':'2026-10-08'})

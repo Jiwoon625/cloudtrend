@@ -44,3 +44,21 @@ original notebook and all unrelated cells/settings/outputs.
 This policy does not relax original-atomic-input, replay, immutable-source,
 upload-readback or screening-dispatch guards. A historical session without a
 saved atomic input still requires separate evidence-backed recovery review.
+
+## Verified DBRG common-stock lifecycle (Lite r4 daily v3)
+
+The maintained roster remains in the owner's Drive at
+`CloudTrend/미국시장/reference/us_collection_universe_v1.csv`. Generated
+`us_universe_seed.csv` and `us_toss_master.parquet` are daily outputs, not the
+maintained source list. Verified lifecycle exclusions live in
+`runtime/stages/us_setup.py`.
+
+DBRG common stock is excluded from candle requests from 2026-09-30 using
+[DigitalBridge's Form 8-K, Item 3.01](https://ir.digitalbridge.com/node/15466/html)
+and an issuer-name guard. This exact-symbol event does not cover DBRG preferred
+series. Before the effective session, normal collection applies. The roster and
+historical cache evidence are retained; no historical source or result is edited.
+
+The published 2026-10-09 source remains immutable. A same-date rerun that conflicts
+with its prior DBRG classification stops for review rather than rewriting it.
+The updated lifecycle applies to the next newly confirmed US screening session.
