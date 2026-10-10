@@ -4,6 +4,11 @@ on:
     paths:
       - src/lib/ledger/**
       - src/lib/actualPerformance*
+      - src/lib/newActual*
+      - src/components/NewActualPortfolio*
+      - vitest.new-actual.config.ts
+      - tests/new-actual-bridge.test.mjs
+      - docs/new-actual-portfolio.md
       - src/lib/operatingCapitalPlan*
       - src/components/ActualPerformance*
       - src/components/OperatingCapitalPlan*
@@ -45,6 +50,9 @@ jobs:
       - run: npm ci
       - run: npx vitest run --config vitest.ledger.config.ts
       - run: npx vitest run --config vitest.actual-performance.config.ts
+      - run: npx vitest run --config vitest.new-actual.config.ts
+      - run: npx tsc --noEmit
+      - run: node tests/new-actual-bridge.test.mjs
       - run: npx eslint src/lib/operatingCapitalPlan*.ts src/components/OperatingCapitalPlan*.tsx
       - run: npx vitest run --config vitest.portfolio.config.ts
       - run: npx vitest run --config vitest.ledger-ui.config.ts
