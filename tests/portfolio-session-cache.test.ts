@@ -32,17 +32,13 @@ test("portfolio remount reuses shared fresh data and explicit changes invalidate
   }
 });
 
-test("dashboard and portfolio share bounded metadata freshness without discarding session data", () => {
+test("legacy dashboard consumers retain bounded metadata freshness without discarding session data", () => {
   expect(domesticPortfolioQueryOptions.queryKey).toEqual(["portfolio-ledgers"]);
   expect(domesticPortfolioQueryOptions.staleTime).toBe(60_000);
   expect(domesticPortfolioQueryOptions.gcTime).toBe(Infinity);
   expect(domesticPortfolioQueryOptions.refetchOnWindowFocus).toBe(true);
   expect(domesticPortfolioQueryOptions.retry).toBe(false);
-  for (const path of [
-    "src/components/PortfolioAssetHub.tsx",
-    "src/routes/portfolio.tsx",
-    "src/routes/index.tsx",
-  ]) {
+  for (const path of ["src/routes/portfolio.tsx", "src/routes/index.tsx"]) {
     expect(readFileSync(path, "utf8")).toMatch(
       /(?:\.\.\.|useQuery\()domesticPortfolioQueryOptions/,
     );
@@ -51,6 +47,55 @@ test("dashboard and portfolio share bounded metadata freshness without discardin
     expect(readFileSync(path, "utf8")).toMatch(
       /invalidateQueries\(\{\s*queryKey:\s*\["portfolio-ledgers"\]/,
     );
+  }
+});
+
+test("the portfolio hub reads only owner-scoped new-series data with bounded freshness", async () => {
+  const hub = readFileSync("src/components/PortfolioAssetHub.tsx", "utf8");
+  expect(hub).toContain("<NewActualPortfolio");
+  expect(hub).not.toContain("domesticPortfolioQueryOptions");
+  const component = readFileSync("src/components/NewActualPortfolio.tsx", "utf8");
+  expect(component).toContain('const queryKey = ["new-actual-portfolio", owner] as const;');
+  expect(component).toMatch(/useQuery\(\{\s*queryKey,\s*enabled:\s*!!owner,/);
+  expect(component).toMatch(/gcTime:\s*0,/);
+  expect(component).toMatch(/staleTime:\s*30_000,/);
+  expect(component).not.toContain("placeholderData:");
+
+  // Exercise the bounded, owner-keyed cache contract with synthetic responses.
+  // Keep observers mounted, as the component deliberately discards inactive data.
+  const client = new QueryClient();
+  const queryFn = vi.fn(async ({ queryKey }: { queryKey: readonly string[] }) => ({
+    owner: queryKey[1],
+    revision: queryFn.mock.calls.length,
+  }));
+  const options = (owner: string) => ({
+    queryKey: ["new-actual-portfolio", owner] as const,
+    queryFn,
+    staleTime: 30_000,
+    gcTime: 0,
+  });
+  const first = options("synthetic-owner-a");
+  const second = options("synthetic-owner-b");
+  const unsubscribes: (() => void)[] = [];
+  try {
+    const firstResponse = await client.fetchQuery(first);
+    unsubscribes.push(new QueryObserver(client, first).subscribe(() => {}));
+    expect(await client.fetchQuery(first)).toEqual(firstResponse);
+    expect(queryFn).toHaveBeenCalledTimes(1);
+    expect(client.getQueryData(second.queryKey)).toBeUndefined();
+    const secondResponse = await client.fetchQuery(second);
+    unsubscribes.push(new QueryObserver(client, second).subscribe(() => {}));
+    expect(secondResponse.owner).toBe("synthetic-owner-b");
+    expect(await client.fetchQuery(second)).toEqual(secondResponse);
+    expect(queryFn).toHaveBeenCalledTimes(2);
+    await client.invalidateQueries({ queryKey: first.queryKey, refetchType: "none" });
+    await client.fetchQuery(first);
+    expect(queryFn).toHaveBeenCalledTimes(3);
+    expect(await client.fetchQuery(second)).toEqual(secondResponse);
+    expect(queryFn).toHaveBeenCalledTimes(3);
+  } finally {
+    for (const unsubscribe of unsubscribes) unsubscribe();
+    client.clear();
   }
 });
 
