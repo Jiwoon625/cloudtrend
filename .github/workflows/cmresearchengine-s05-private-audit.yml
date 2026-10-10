@@ -1,4 +1,4 @@
-name: CMresearchengine O1 private final audit
+name: CMresearchengine O2 private final audit
 on:
   push:
     branches: [main]
@@ -26,7 +26,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r research/cmresearchengine/requirements.txt
       - name: Test isolated private report exporter
         run: python scripts/test_cm_private_report.py -v
-      - name: Verify O1 private result accounting without exposing records
+      - name: Verify O2 private result accounting without exposing records
         run: |
           python - <<'PY'
           import csv, hashlib, io, json, zipfile
@@ -122,7 +122,7 @@ jobs:
                   'private_storage':True},sort_keys=True))
           
           targets = [
-              ('O1', '39ecd66d6c80546b404c1ed77503c3dc33abf4817549fa9d4e9e4e5682f124b5'),
+              ('O2', 'c2cd57dca43d43dcd9b98dded5c2a5c8780162d5557638245b69c6c6289d0768'),
           ]
           for candidate, identity in targets:
               audit(candidate, identity)
