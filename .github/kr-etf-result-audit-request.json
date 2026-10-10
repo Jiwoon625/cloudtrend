@@ -1,0 +1,24 @@
+{
+  "version": "adopted-result-audit-request-v1",
+  "sourceRunId": "38016639367",
+  "sourceCommit": "38da620ced597eaae4e07b54f36a2173c70d9640",
+  "sourceRequest": {
+    "version": "adopted-resumable-request-v1",
+    "mode": "full",
+    "catalog_sha": "78e59c019a579b704a40c1d9a6a5de414dfaad8e71da1312f583327c2306ca89",
+    "source_manifest_sha": "0a87b02838ea0cd2c084c98c82cdc9f798beb6d10d3c6e563b55595577e2daf6",
+    "etf_start": "2017-01-11",
+    "kr_start": "2017-08-21",
+    "through": "2026-09-11",
+    "chunk_sessions": 120,
+    "resume_from": {
+      "runId": "37998687295",
+      "codeCommit": "0439d13393c6015e93db54018ddebaba2eb10ac1",
+      "planCompletionSha256": "50fdab59d0ac8363405107c143bbde32edb5515da49520ea49d674aa1b4f353c"
+    }
+  },
+  "sourceCompletionSha256": {
+    "replay-kr": "6d6796261fe59402c0118800e13f50d07f82a8b3e1cc54a1939287de1fd3d339",
+    "replay-etf": "01d641ede4b54c282d7244f6077b452307d58828dbaaa69c725a2f941aae75b7"
+  }
+}
