@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/AppShell";
+import { OperatingBacktestMetrics } from "@/components/OperatingBacktestMetrics";
 import {
   OPERATING_RULES,
   OPERATING_RULES_VERSION,
@@ -32,6 +33,7 @@ function RuleGroup({ role, detail }: { role: "운영" | "실험"; detail: boolea
           ) : (
             <p className="text-muted-foreground">{r.exit}</p>
           )}
+          {role === "운영" && !detail ? <OperatingBacktestMetrics market={r.market} /> : null}
         </article>
       ))}
     </div>
@@ -50,6 +52,10 @@ function OperatingRules() {
         <section className="space-y-3">
           <h2 className="font-semibold">운영규칙 요약</h2>
           <RuleGroup role="운영" detail={false} />
+          <article className="rounded-lg border bg-card p-4 space-y-2">
+            <h3 className="font-semibold">한국 통합 백테스트 참고</h3>
+            <OperatingBacktestMetrics market="한국 통합" />
+          </article>
         </section>
         <section className="space-y-3">
           <h2 className="font-semibold">운영규칙 상세</h2>
