@@ -1,4 +1,4 @@
-name: CMresearchengine S36 S39 private final audit
+name: CMresearchengine S40 private final audit
 on:
   push:
     branches: [main]
@@ -26,7 +26,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r research/cmresearchengine/requirements.txt
       - name: Test isolated private report exporter
         run: python scripts/test_cm_private_report.py -v
-      - name: Verify S36 through S39 private result accounting without exposing records
+      - name: Verify S40 private result accounting without exposing records
         run: |
           python - <<'PY'
           import csv, hashlib, io, json, zipfile
@@ -122,10 +122,7 @@ jobs:
                   'private_storage':True},sort_keys=True))
           
           targets = [
-              ('Q_K050_E025_U025_C000', 'e008e1c0ccb6030619e4b8034ec8308fd68e92890fd5185228443003eda9330e'),
-              ('Q_K050_E050_U000_C000', 'daf5fda3f6726536bbfc7c134deb1d8b59366227aa8a595e662bd4d49e485555'),
-              ('Q_K075_E000_U000_C025', '5c053d302862390de31423f627bbc41d3efa9eedb166edc99157e07d31a00a02'),
-              ('Q_K075_E000_U025_C000', 'f6a6a42c7afdc91eb235a6ec6e22a63fcb3185037156ee0cde32a8edbb4be081'),
+              ('Q_K075_E025_U000_C000', 'd46722e57f05b74ff1639bcc3ee75d1e17edfe1f12d47a057dd560a78819fc2d'),
           ]
           for candidate, identity in targets:
               audit(candidate, identity)
