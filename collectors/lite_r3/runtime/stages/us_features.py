@@ -2,7 +2,9 @@ if RUN_US_MARKET:
     _us_begin_stage('features')
     _us_require_stage('collection')
     # ===== 8. 전략 원자 피처 계산 =====
-    screening_seed = seed.loc[~seed.ticker.isin(globals().get('candidate_scoring_holds', {}))].copy()
+    # Keep genuine current prices/identity for explicit history-length holds.
+    # Coverage QA requires a row whose score inputs remain null, not an omitted symbol.
+    screening_seed = seed.copy()
     px=combined[combined.date.le(AS_OF_DATE) & combined.symbol.isin(screening_seed.ticker)].copy()
     for c in ['open','high','low','close','volume']:
         px[c]=pd.to_numeric(px[c],errors='coerce')
@@ -52,6 +54,12 @@ if RUN_US_MARKET:
     latest_date=AS_OF_DATE
     if px.loc[px.symbol.eq('SPY'),'date'].max() != latest_date: raise RuntimeError('SPY is stale')
     snap=px[px.date.eq(latest_date)].copy()
+    _history_hold=snap.symbol.isin(globals().get('candidate_scoring_holds', {}))
+    _score_columns=['ret120','ret252','beta60_spy','ichimoku_tk_gap',
+                    'relvol1_20','adv20_usd','amihud20']
+    snap.loc[_history_hold,_score_columns]=np.nan
+    snap.loc[_history_hold,'active20']=False
+    del _history_hold, _score_columns
     # 마스터 보강
     mcols=['symbol','name','englishName','market','securityType','status','currency','sharesOutstanding','isCommonShare','sector']
     meta=master[[c for c in mcols if c in master.columns]].copy()

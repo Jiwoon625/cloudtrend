@@ -117,7 +117,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: python -m pip install pandas==2.2.3
+      - run: python -m pip install pandas==2.2.3 pyarrow==23.0.1
       - run: python scripts/test-us-collector.py
       - run: python collectors/lite_r3/test_runtime.py
       - run: npm run build
