@@ -1,3 +1,5 @@
+import { loadUsDailyContinuation, runUsDailyContinuation } from "./us-daily-continuation";
+import { loadUsReconstructionContinuation } from "./us-replay-continuation";
 import { loadPublishedUsRecoveryView } from "./us-recovery-publication";
 import { compactRow, publishBrowserViews } from "./us-screening-publication";
 import { hydrateUsOperatingState } from "./us-operating-replay";
@@ -125,11 +127,13 @@ export async function runUsScreening(
     throw new Error(
       "US replay publication is incomplete; resume the same immutable replay manifest",
     );
+  const savedContinuation = await loadUsDailyContinuation(client, userId, ingest);
   const sourceMetadata = ingest.metadata as {
     previousSessionDate?: string;
     confirmedRegularClose?: boolean;
     failedSymbols?: number;
   };
+  let reconstruction: Awaited<ReturnType<typeof loadUsReconstructionContinuation>> | null = null;
   if (
     sourceMetadata.previousSessionDate &&
     lastHistory?.date !== sourceMetadata.previousSessionDate
@@ -141,15 +145,67 @@ export async function runUsScreening(
       `${userId}/results/us-replay-state/${sourceMetadata.previousSessionDate}.json`,
     );
     if (pendingPreviousReplay)
-      throw new Error(
-        "Previous US replay publication is incomplete; resume the same immutable replay manifest",
-      );
+      reconstruction = await loadUsReconstructionContinuation({
+        client,
+        userId,
+        currentDate: String(ingest.as_of_date),
+        previousSessionDate: sourceMetadata.previousSessionDate,
+        lastHistory,
+        rankArtifact: pendingPreviousReplay,
+        currentRows: allParsed.filter((r) => r.date === String(ingest.as_of_date)),
+        successor: savedContinuation,
+      });
   }
   assertUsScreeningCoverage(ingest.metadata as Record<string, unknown>, allParsed);
   if ((ingest.metadata as Record<string, unknown>)["sourceCoverageComplete"] === false)
     console.warn(
       "US source has explicit quarantines/holds; workflow success does not mean complete universe coverage.",
     );
+  if (savedContinuation && !reconstruction)
+    throw new Error("US continuation requires its exact reconstructed predecessor");
+  if (reconstruction) {
+    await runUsDailyContinuation({
+      client,
+      userId,
+      ingest,
+      reconstruction,
+      saved: savedContinuation,
+      rows: allParsed.filter((r) => r.date === String(ingest.as_of_date)),
+      admit: async (plan) => {
+        if (
+          await maybeDownloadJson(
+            client,
+            `${userId}/results/us-replay-state/${ingest.as_of_date}.json`,
+          )
+        )
+          throw new Error(
+            "US replay publication is incomplete; resume the same immutable replay manifest",
+          );
+        const { data: currentIngest, error } = await client
+          .from("us_screening_ingest")
+          .select("*")
+          .eq("user_id", userId)
+          .maybeSingle();
+        const currentPlan =
+          !error && currentIngest
+            ? await loadUsDailyContinuation(client, userId, currentIngest)
+            : null;
+        if (!currentPlan || currentPlan.planHash !== plan.planHash)
+          throw new Error("US continuation ingest changed during admission");
+        await loadUsReconstructionContinuation({
+          client,
+          userId,
+          currentDate: String(ingest.as_of_date),
+          previousSessionDate: sourceMetadata.previousSessionDate!,
+          lastHistory,
+          rankArtifact: reconstruction,
+          currentRows: allParsed.filter((r) => r.date === String(ingest.as_of_date)),
+          successor: plan,
+        });
+      },
+    });
+    return;
+  }
   const portfolioGap =
     Boolean(lastHistory) && sourceMetadata.previousSessionDate !== lastHistory?.date;
 
