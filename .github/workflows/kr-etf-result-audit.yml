@@ -30,7 +30,8 @@ jobs:
   audit:
     # Dispatch is verification-only. The driver independently checks the EXACT
     # first commit-message line, event head SHA, branch, and filled source pins.
-    if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'run(kr-etf-audit): annual-results')
+    if: >-
+      github.event_name == 'push' && startsWith(github.event.head_commit.message, 'run(kr-etf-audit): annual-results')
     needs: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 30
