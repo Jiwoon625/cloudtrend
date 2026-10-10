@@ -1,7 +1,10 @@
 import {
   OPERATING_BACKTESTS,
   formatBacktestRatio,
+  formatBacktestPercentagePoints,
+  isBenchmarkComparisonReady,
   isOperatingBacktestReleaseReady,
+  isPortfolioAnnualReturnsReady,
   type OperatingBacktestRelease,
 } from "@/lib/operatingBacktests";
 
@@ -15,10 +18,30 @@ export function OperatingBacktestMetrics({
   const summary = release.books.find((book) => book.markets.includes(market));
   if (!summary) return null;
   const ready = isOperatingBacktestReleaseReady(release);
+  const annual = summary.portfolioAnnualReturns;
+  const annualReady = ready && isPortfolioAnnualReturnsReady(annual, summary.book);
+  const benchmark = summary.benchmarkComparison;
+  const benchmarkReady = ready && isBenchmarkComparisonReady(summary);
   const metrics = [
-    ["평균수익률", summary.meanReturn],
-    ["중앙값", summary.medianReturn],
-    ["MDD", summary.mdd],
+    ["매매 평균수익률", summary.meanReturn],
+    ["매매 중앙값", summary.medianReturn],
+    ["계좌 MDD", summary.mdd],
+  ] as const;
+  const portfolioMetrics = [
+    [
+      "포트폴리오 평균수익률",
+      annualReady && annual?.meanReturn !== null ? formatBacktestRatio(annual!.meanReturn!) : "—",
+    ],
+    [
+      "포트폴리오 중앙값",
+      annualReady && annual?.medianReturn !== null
+        ? formatBacktestRatio(annual!.medianReturn!)
+        : "—",
+    ],
+    [
+      "전체기간 지수 대비",
+      benchmarkReady ? formatBacktestPercentagePoints(benchmark!.excessReturn) : "—",
+    ],
   ] as const;
 
   return (
@@ -28,16 +51,45 @@ export function OperatingBacktestMetrics({
         <p className="text-xs text-muted-foreground">{summary.scopeLabel}</p>
         <p className="text-xs text-muted-foreground">연초 예산 연구 기준 · 운영 엔진 연결 전</p>
       </div>
-      <dl className="grid grid-cols-3 gap-2">
+      <dl aria-label="개별매매 수익률과 계좌 최대낙폭" className="grid grid-cols-3 gap-2">
         {metrics.map(([label, value]) => (
-          <div key={label} className="min-w-0 rounded-md bg-muted/50 px-2 py-2">
-            <dt className="text-[11px] text-muted-foreground">{label}</dt>
-            <dd className="mt-1 font-semibold tabular-nums">
+          <div
+            key={label}
+            className="flex min-w-0 flex-col rounded-md bg-muted/50 px-1 py-2 sm:px-2"
+          >
+            <dt className="min-h-8 text-[11px] leading-4 text-muted-foreground">{label}</dt>
+            <dd className="mt-auto whitespace-nowrap pt-1 text-[11px] font-semibold tabular-nums min-[360px]:text-xs sm:text-sm">
               {ready && value !== null ? formatBacktestRatio(value) : "—"}
             </dd>
           </div>
         ))}
       </dl>
+      <dl aria-label="포트폴리오 성과" className="grid grid-cols-3 gap-2">
+        {portfolioMetrics.map(([label, value]) => (
+          <div
+            key={label}
+            className="flex min-w-0 flex-col rounded-md bg-muted/50 px-1 py-2 sm:px-2"
+          >
+            <dt className="min-h-8 text-[11px] leading-4 text-muted-foreground">{label}</dt>
+            <dd className="mt-auto whitespace-nowrap pt-1 text-[11px] font-semibold tabular-nums min-[360px]:text-xs sm:text-sm">
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {annualReady && annual ? (
+        <p className="text-xs text-muted-foreground">
+          포트폴리오 평균·중앙값: {annual.years[0]!.year}–{annual.years.at(-1)!.year} 연간수익률 ·
+          부분연도 제외
+        </p>
+      ) : null}
+      {benchmarkReady && benchmark ? (
+        <p className="text-xs text-muted-foreground">
+          지수 대비: {benchmark.label} · 전체기간 누적수익률 차이(%p)
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">동일기간 지수 비교 검증 후 표시합니다.</p>
+      )}
       {ready ? (
         <>
           <div className="space-y-1 text-xs text-muted-foreground">
@@ -66,6 +118,20 @@ export function OperatingBacktestMetrics({
                 미청산 {summary.excludedOpenPositionCount?.toLocaleString("ko-KR")}개 포지션 제외
               </p>
               <p>MDD는 미청산 보유분 평가를 포함한 전체기간 계좌 평가자산의 최대낙폭입니다.</p>
+              <p>
+                포트폴리오 평균과 중앙값은 비용 차감 후 계좌의 완전한 달력연도별 수익률을 등가중
+                집계합니다. 시작·종료 부분연도는 제외하며 복리 연평균수익률이 아닙니다.
+              </p>
+              {benchmarkReady && benchmark ? (
+                <>
+                  <p>
+                    지수 대비는 {benchmark.startDate}–{benchmark.endDate} 동안 포트폴리오
+                    누적수익률에서 {benchmark.label} 누적수익률을 뺀 퍼센트포인트 차이입니다.
+                    연간수익률 평균·중앙값과 달리 부분연도를 포함한 전체 연구기간을 비교합니다.
+                  </p>
+                  <p>{benchmark.limitation}</p>
+                </>
+              ) : null}
               <ul className="list-disc space-y-1 pl-4">
                 {summary.limitations.map((limitation) => (
                   <li key={limitation}>{limitation}</li>
