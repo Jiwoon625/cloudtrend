@@ -1,4 +1,4 @@
-name: CMresearchengine independent references private final audit
+name: CMresearchengine O1 private final audit
 on:
   push:
     branches: [main]
@@ -26,7 +26,7 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r research/cmresearchengine/requirements.txt
       - name: Test isolated private report exporter
         run: python scripts/test_cm_private_report.py -v
-      - name: Verify independent references private result accounting without exposing records
+      - name: Verify O1 private result accounting without exposing records
         run: |
           python - <<'PY'
           import csv, hashlib, io, json, zipfile
@@ -122,11 +122,33 @@ jobs:
                   'private_storage':True},sort_keys=True))
           
           targets = [
-              ('REF_K', '8f401d3a503d062a3f7cf9039724bdf4d7a30cb6567f9299e4de01208fdc39cb'),
-              ('REF_E', '1e831f27951622f1f91495fc603f7791842de82ddcc9f23bc6cdb9bfb56b000a'),
-              ('REF_U', 'ad1eefe33e36ddbe043e357356aed6c2651577a72d4c414eae6ffcb10f0c9330'),
+              ('O1', '39ecd66d6c80546b404c1ed77503c3dc33abf4817549fa9d4e9e4e5682f124b5'),
           ]
           for candidate, identity in targets:
               audit(candidate, identity)
+          import runpy
+          report = runpy.run_path('scripts/export-cm-audited-report.py')
+          report['export_reports_safely'](targets, accounting_audit_passed=True)
+          
+          # Read only allowlisted contract facts from the already audited result.
+          for candidate, identity in targets:
+              source = f'results/{report["PLAN"]}/{candidate}/{identity}/summary.json'
+              verified_summary = json.loads(SupabaseCMStore.from_env().get_object(source, max_bytes=1000000))
+              contract = verified_summary['execution_contract']
+              completed = json.loads(SupabaseCMStore.from_env().get_object(source.replace('summary.json', 'completion.json'), max_bytes=1000000))
+              assert report['sha256'](report['canonical'](completed['identity'])) == identity
+              assert completed['identity']['execution'] == contract
+              assert completed['identity']['original_experiment_sha256'] == 'b905b3d0a532b90f2762ae86c4373863589e07509fe3718cedb67cb036ce4df8'
+              fx = Decimal(str(contract['fx_spread']))
+              assert fx.is_finite() and Decimal('0') <= fx < Decimal('1')
+              print(json.dumps({
+                  'status': 'AUDITED_EXECUTION_CONTRACT_FACTS_VERIFIED',
+                  'candidate_id': candidate,
+                  'fx_spread_zero': fx == Decimal('0'),
+                  'fx_spread_one_per_mille': fx == Decimal('0.001'),
+                  'cash_movement_monthly': contract['cash_movement'] == 'MONTHLY',
+                  'initial_capital_100m_krw': contract['initial_capital_krw'] == 100000000,
+                  'long_run_budget_fixed_initial_sleeves': contract['long_run_budget'] == 'initial sleeve capital remains fixed beyond year one; research assumption',
+              }, sort_keys=True))
           PY
 
