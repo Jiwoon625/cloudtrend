@@ -8,6 +8,7 @@ import {
 import {
   stepUsProspectiveOperatingPortfolio,
   usFixedSlotAllocationPolicy,
+  usOperatingOneWayCost,
   US_PROSPECTIVE_STRATEGIES,
   type UsPortfolioState,
   type UsModelTrade,
@@ -291,7 +292,7 @@ function reconcile(
     near(t.modelPrice, row!.open!, "fill must use current open");
     const amount = t.modelShares * t.modelPrice;
     near(t.modelNotional!, amount, "fill notional");
-    near(t.feeUsd, amount * 0.0025, "fill fee");
+    near(t.feeUsd, amount * usOperatingOneWayCost(t.strategyId, analysis.date), "fill fee");
     const buy = t.side === "BUY" || t.side === "REBALANCE_BUY";
     cash += (buy ? -amount : amount) - t.feeUsd;
     quantities.set(

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {
   planUsOperatingReplay,
   hydrateUsOperatingState,
   usOperatingTradeProjection,
+  usOperatingStableJson,
   US_OPERATING_STRATEGY_IDS,
   type UsOperatingSnapshot,
   type UsOperatingTrade,
@@ -545,4 +546,245 @@ describe("stored US allocation policy order", () => {
     } as UsPortfolioState["allocationPolicy"];
     expect(() => planUsOperatingReplay(f)).toThrow("capital or identity");
   });
+});
+
+/** Each strategy inherits a real executable order; no zero-ADV/non-filling surrogate. */
+function feeBoundaryFixture(date: "2026-10-07" | "2026-10-08" | "2026-10-09", sell = false) {
+  const f = fixture();
+  const base = {
+    "2026-10-07": "2026-10-06",
+    "2026-10-08": "2026-10-07",
+    "2026-10-09": "2026-10-08",
+  }[date];
+  f.dates = [{ analysis: analysis(date), previousSessionDate: base, sourceHash: H }];
+  for (const id of US_OPERATING_STRATEGY_IDS) {
+    const snapshot = f.priorSnapshots[id];
+    snapshot.date = base;
+    if (id === "SPY_BENCHMARK") continue;
+    const state = operating(f, id);
+    state.lastDate = base;
+    if (sell) {
+      state.positions["ABC"] = {
+        symbol: "ABC",
+        name: "ABC",
+        sector: "Technology",
+        shares: 10,
+        lastPrice: 100,
+        entryDate: "2026-10-05",
+        entryCoreRank: 0.9,
+      };
+      state.cash = snapshot.cash_usd = 99000;
+      snapshot.positions_count = 1;
+      state.pendingExits["ABC"] = { symbol: "ABC", signalDate: base, reason: "CORE_BELOW_0.70" };
+    } else {
+      state.pendingTargets["ABC"] = {
+        symbol: "ABC",
+        signalDate: base,
+        reason: "ENTRY_ONSET80",
+        targetWeight: 0.05,
+      };
+    }
+  }
+  return f;
+}
+
+const feeBoundaryCases = ["2026-10-07", "2026-10-08", "2026-10-09"] as const;
+describe("US operating replay fee execution-date boundary", () => {
+  it.each(feeBoundaryCases)(
+    "reconciles real buys and sells on %s without changing other strategies",
+    (date) => {
+      for (const sell of [false, true]) {
+        const f = feeBoundaryFixture(date, sell),
+          before = structuredClone(f),
+          plan = planUsOperatingReplay(f);
+        const fills = plan.trades.filter((t) => t.execution_date !== null);
+        expect(fills).toHaveLength(3);
+        for (const t of fills) {
+          const rate =
+            t.strategy_id === "A0_QUARTER_PRIMARY" && date >= "2026-10-08" ? 0.0015 : 0.0025;
+          expect(t.status).toBe("EXECUTED");
+          expect(t.side).toBe(sell ? "SELL" : "BUY");
+          expect(t.fee_usd).toBeCloseTo(t.model_notional! * rate, 10);
+          expect(plan.snapshots.find((s) => s.strategy_id === t.strategy_id)!.fees_usd).toBe(
+            t.fee_usd,
+          );
+        }
+        expect(f).toEqual(before);
+        expect(planUsOperatingReplay(f)).toEqual(plan);
+      }
+    },
+  );
+  it("prices one A0 order's partial fills at each execution day's rate across the cutover", () => {
+    const f = feeBoundaryFixture("2026-10-07");
+    operating(f).adv20BySymbol = { ABC: 50000, SPY: 1e8 };
+    f.dates.push({
+      analysis: analysis("2026-10-08"),
+      previousSessionDate: "2026-10-07",
+      sourceHash: H,
+    });
+    const plan = planUsOperatingReplay(f);
+    const fills = plan.trades.filter(
+      (t) => t.strategy_id === "A0_QUARTER_PRIMARY" && t.execution_date !== null,
+    );
+    expect(fills).toHaveLength(2);
+    expect(fills[0]).toMatchObject({
+      signal_date: "2026-10-06",
+      execution_date: "2026-10-07",
+      status: "PARTIAL",
+      model_shares: 5,
+      model_notional: 500,
+      fee_usd: 1.25,
+    });
+    expect(fills[1]).toMatchObject({
+      signal_date: "2026-10-06",
+      execution_date: "2026-10-08",
+      status: "EXECUTED",
+      model_shares: 45,
+      model_notional: 4500,
+      fee_usd: 6.75,
+    });
+    expect(
+      (
+        plan.snapshots.find(
+          (s) => s.strategy_id === "A0_QUARTER_PRIMARY" && s.date === "2026-10-08",
+        )!.state as UsPortfolioState
+      ).totalFees,
+    ).toBe(8);
+  });
+  it("migrates the real PostgreSQL RPC, preserving permissions and rejecting wrong rates before writes", async () => {
+    const { PGlite } = await import("@electric-sql/pglite");
+    const db = new PGlite();
+    const dir = new URL("../supabase/migrations/", import.meta.url);
+    const migration = (name: string) => readFileSync(new URL(name, dir), "utf8");
+    const feeFiles = readdirSync(dir).filter((name) =>
+      name.endsWith("_us_operating_replay_a0_fee_boundary.sql"),
+    );
+    expect(feeFiles).toHaveLength(1);
+    try {
+      await db.exec(
+        "create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls; create schema auth; create table auth.users(id uuid primary key); create function auth.uid() returns uuid language sql stable as $$select null::uuid$$; grant usage on schema public,auth to anon,authenticated,service_role;",
+      );
+      await db.exec(migration("20260928064908_us_prospective_pipeline_v1.sql"));
+      await db.exec(migration("20261008030458_atomic_us_operating_replay.sql"));
+      await db.exec(
+        "grant select,insert,update on public.us_strategy_registry,public.us_portfolio_snapshots,public.us_portfolio_trades to service_role;",
+      );
+      const identitySql =
+        "select prosecdef,proacl::text,proconfig from pg_proc where oid='public.apply_us_operating_replay(uuid,jsonb,boolean)'::regprocedure";
+      const identity = await db.query(identitySql);
+      await db.exec(migration(feeFiles[0]!));
+      expect((await db.query(identitySql)).rows).toEqual(identity.rows);
+      expect(identity.rows[0]).toMatchObject({ prosecdef: false });
+      await db.exec("set role authenticated");
+      await expect(
+        db.query("select public.apply_us_operating_replay(null,'{}',false)"),
+      ).rejects.toThrow(/permission denied/);
+      await db.exec("reset role");
+      let ownerIndex = 1;
+      for (const date of feeBoundaryCases)
+        for (const sell of [false, true]) {
+          const owner = `11111111-1111-4111-8111-${String(ownerIndex++).padStart(12, "0")}`;
+          const f = feeBoundaryFixture(date, sell),
+            plan = planUsOperatingReplay(f);
+          await db.query("insert into auth.users(id) values ($1)", [owner]);
+          const insert = async (table: string, row: Record<string, unknown>) => {
+            const entries = Object.entries({ user_id: owner, ...row });
+            await db.query(
+              `insert into public.${table} (${entries.map(([k]) => k).join(",")}) values (${entries.map((_, i) => `$${i + 1}`).join(",")})`,
+              entries.map(([, v]) => (v !== null && typeof v === "object" ? JSON.stringify(v) : v)),
+            );
+          };
+          for (const row of f.registries)
+            await insert("us_strategy_registry", { ...row, frozen_at: "2026-09-28T00:00:00Z" });
+          for (const row of Object.values(f.priorSnapshots))
+            await insert("us_portfolio_snapshots", { ...row });
+          await db.exec("set role service_role");
+          const call = async (value: typeof plan, apply: boolean) =>
+            (
+              await db.query<{
+                receipt: { validated?: boolean; alreadyApplied?: boolean; planHash: string };
+              }>("select public.apply_us_operating_replay($1,$2::jsonb,$3) receipt", [
+                owner,
+                JSON.stringify(value),
+                apply,
+              ])
+            ).rows[0]!.receipt;
+          const sign = (value: typeof plan) => {
+            const { planHash: ignoredHash, canonicalPayload: ignoredCanonical, ...payload } = value;
+            const canonicalPayload = usOperatingStableJson(payload);
+            return {
+              ...payload,
+              canonicalPayload,
+              planHash: `sha256:${createHash("sha256").update(canonicalPayload).digest("hex")}`,
+            };
+          };
+          for (const id of ["A0_QUARTER_PRIMARY", "A2_QUARTER_SHADOW", "B3_BETA_SHADOW"] as const) {
+            const wrong = structuredClone(plan);
+            const trade = wrong.trades.find(
+              (t) => t.strategy_id === id && t.execution_date !== null,
+            )!;
+            const correct = id === "A0_QUARTER_PRIMARY" && date >= "2026-10-08" ? 0.0015 : 0.0025;
+            trade.fee_usd = trade.model_notional! * (correct === 0.0015 ? 0.0025 : 0.0015);
+            await expect(call(sign(wrong), true)).rejects.toThrow(
+              "Invalid US model fill accounting",
+            );
+          }
+          expect(
+            (
+              await db.query(
+                "select count(*)::int count from public.us_portfolio_snapshots where user_id=$1",
+                [owner],
+              )
+            ).rows[0],
+          ).toEqual({ count: 4 });
+          expect(
+            (
+              await db.query(
+                "select count(*)::int count from public.us_portfolio_trades where user_id=$1",
+                [owner],
+              )
+            ).rows[0],
+          ).toEqual({ count: 0 });
+          expect(await call(plan, false)).toMatchObject({
+            validated: true,
+            alreadyApplied: false,
+            planHash: plan.planHash,
+          });
+          const receipt = await call(plan, true);
+          expect(await call(plan, true)).toEqual(receipt);
+          expect(await call(plan, false)).toMatchObject({
+            validated: true,
+            alreadyApplied: true,
+            planHash: plan.planHash,
+          });
+          expect(
+            (
+              await db.query(
+                "select count(*)::int count from public.us_portfolio_snapshots where user_id=$1",
+                [owner],
+              )
+            ).rows[0],
+          ).toEqual({ count: 8 });
+          expect(
+            (
+              await db.query(
+                "select count(*)::int count from public.us_portfolio_trades where user_id=$1 and execution_date is not null",
+                [owner],
+              )
+            ).rows[0],
+          ).toEqual({ count: 3 });
+          expect(
+            (
+              await db.query(
+                "select count(*)::int count from public.us_portfolio_trades where user_id=$1 and (actual_price is not null or actual_shares is not null or actual_fee_usd is not null)",
+                [owner],
+              )
+            ).rows[0],
+          ).toEqual({ count: 0 });
+          await db.exec("reset role");
+        }
+    } finally {
+      await db.close();
+    }
+  }, 30000);
 });

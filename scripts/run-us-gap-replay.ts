@@ -405,6 +405,17 @@ export async function runUsGapReplay(input: {
   };
   if (!input.apply) return { ...summary, applied: false };
   // Complete source, identity, chronology, frozen-engine and cash/price preflight ends here.
+  // Retain the exact reviewed manifest bytes, including its original digest.
+  // Continuation reads this evidence without inventing an ordinary source/history.
+  const manifestCopy = `${prefix}/manifest.json`;
+  const { error: manifestCopyError } = await client.storage
+    .from(ANALYSIS_BUCKET)
+    .upload(manifestCopy, source, { contentType: "application/json", upsert: false });
+  const manifestReadback = await readText(client, manifestCopy, true);
+  if (manifestReadback !== source)
+    throw new Error(
+      `Immutable US replay manifest copy conflict${manifestCopyError ? ": upload failed" : ""}`,
+    );
   await immutableJson(client, `${prefix}/plan.json`, plan);
   // Persist every deterministic continuation state before advancing either book.
   // With the ordinary predecessor guard, a failed artifact write cannot advance

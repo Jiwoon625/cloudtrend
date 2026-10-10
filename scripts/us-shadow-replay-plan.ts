@@ -32,7 +32,13 @@ export async function planUsShadowReplay(input: {
   store: OctoberShadowStore;
   baseDate: string;
   previousRankState: UsProspectivePreviousState;
-  sessions: VerifiedUsReplaySession[];
+  sessions: Array<{
+    rows: VerifiedUsReplaySession["rows"];
+    source: Pick<
+      VerifiedUsReplaySession["source"],
+      "date" | "previousSessionDate" | "dataHash" | "sourceCapturedAt"
+    >;
+  }>;
   calculatedAt: string;
 }) {
   const { store } = input;
