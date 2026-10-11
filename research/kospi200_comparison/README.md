@@ -30,7 +30,7 @@ A source tagged as `kr-annual-signal-year-research-v2` **cannot** be promoted to
 
 ### Required next data operations (without replacing originals)
 
-1. Re-run and QA the **October 12 adopted stock strategy** from source, retaining daily end-of-session equity, after-cost open holdings, cash, and invested fraction. Hash the code/config, source data, results; verify fixed initial-budget policy, current entry/exit ordering, PIT stocks/sector and corporate-action treatment. Do **not** copy the October 10 NAV into this input under a new label.
+1. Re-run and QA the **October 12 adopted stock strategy** from source, retaining daily end-of-session equity, after-cost open holdings, cash, and invested fraction. Obtain an independently reviewed, historical point-in-time KOSPI investable universe and complete stock cash-dividend and corporate-action accounting; unreviewed historical membership is not certified. Hash the code/config, source data, results; verify fixed initial-budget policy, current entry/exit ordering, PIT stocks/sector and corporate-action treatment. Do **not** copy the October 10 NAV into this input under a new label.
 2. Reconcile official KODEX 200 distribution history against daily adjusted prices (or produce a separately audited total-return synthetic OHLC series with documented methodology), avoiding dividend double count. Confirm traded ETF choice and dates.
 3. Reconstruct daily KOSPI gate statuses strictly from observations available by **that day's close**. UNKNOWN stays UNKNOWN. Preserve evidence and as-of timestamp, including 63+ session warmup.
 4. Verify the exchange session calendar, common full-year coverage (2018–2025) and 2026 through 2026-09-11, and create hashed input CSVs with a *separate* signed-off provenance manifest.
@@ -55,8 +55,8 @@ All ETF arms use 0.15% one-way simulated transaction cost, zero cash interest, n
 - For each arm: cumulative, 252-session equivalent CAGR, annualized volatility and Sharpe (cash rate assumed 0), maximum drawdown, Calmar.
 - **Remove 2025 *daily returns* and stitch** (non-executable sensitivity), plus leave-one-**full**-year-out sensitivities for 2018–2025. Neither creates a hindsight-skipped live strategy.
 - Every rolling 504-session window: share of windows in which stocks outperform ETF on cumulative return and Sharpe.
-- Paired 20-session block-bootstrap confidence intervals for annualized mean **daily** excess return vs ETF arms. These are exploratory, not independent out-of-sample evidence; if 2025 does all the work or OOS is lacking, do not conclude genuine superiority.
-- If any date, provenance, price, corporate-action sign-off, ETF total-return evidence, gate point-in-time sign-off or hash is missing, fail **before writing any output**.
+- Paired 20-session block-bootstrap confidence intervals for annualized mean **daily** excess return vs ETF arms, separately for the **2018–2024 pre-2025 window** and full period. A non-significant interval is inconclusive, not evidence of equality. These are exploratory, not independent out-of-sample evidence; if 2025 does all the work or OOS is lacking, do not conclude genuine superiority.
+- If any date, provenance, price, corporate-action or stock dividend sign-off, point-in-time stock universe, ETF total-return evidence, gate point-in-time sign-off or hash is missing, fail **before writing any output**.
 - No publishing or running on CloudTrend's production web app; no unreviewed automatic deployment. Outputs stay private and user-owned.
 
 ## Input contract
@@ -70,7 +70,7 @@ A verified manifest (copy `manifest.example.json` to a **private** input directo
 | `kospi_market_gate.csv` | `date,status,asof_date,available_after_close` | Each dated gate computed with no future observations; `asof_date` must equal `date` and `available_after_close=true`. |
 | `krx_sessions.csv` | `date` | Audited unique official Korean market sessions, including >=64 pre-start days. |
 
-The manifest has `stock_policy_id` fixed to `kospi-20261012-fixedcapital-e8-confirm1-u95-h60-v1`, as well as review flags, source manifest SHA-256, policy SHA-256 and evidence locators. These flags and strings record external reviewer sign-off, **not cryptographic proof that the underlying economic assumptions are correct**. Review underlying evidence separately.
+The manifest additionally requires independently verified stock dividend/cash-flow handling, point-in-time historical investable universe and execution replay. It has `stock_policy_id` fixed to `kospi-20261012-fixedcapital-e8-confirm1-u95-h60-v1`, as well as review flags, source manifest SHA-256, policy SHA-256 and evidence locators. These flags and strings record external reviewer sign-off, **not cryptographic proof that the underlying economic assumptions are correct**. Review underlying evidence separately.
 
 Preflight:
 ```sh
