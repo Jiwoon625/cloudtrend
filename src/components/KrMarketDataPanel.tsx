@@ -1,5 +1,3 @@
-import { useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { formatCount } from "@/lib/format";
 import type { DataStatusPayload } from "@/lib/market.functions";
 
@@ -14,14 +12,6 @@ const CAPABILITY_LABELS: Record<string, string> = {
 };
 
 export function KrMarketDataPanel({ data }: { data: DataStatusPayload }) {
-  const [barSort, setBarSort] = useState<"asc" | "desc" | null>(null);
-  const barCoverage = useMemo(() => {
-    if (barSort === null) return data.barCoverage;
-    return [...data.barCoverage].sort((a, b) =>
-      barSort === "asc" ? a.bars - b.bars : b.bars - a.bars,
-    );
-  }, [data.barCoverage, barSort]);
-  const BarSortIcon = barSort === null ? ArrowUpDown : barSort === "asc" ? ArrowUp : ArrowDown;
   const validations = [
     { label: "OHLC 논리 오류", value: data.checks.ohlcErrors },
     { label: "음수 거래량", value: data.checks.negativeVolume },
@@ -147,29 +137,13 @@ export function KrMarketDataPanel({ data }: { data: DataStatusPayload }) {
               <tr>
                 <th className="px-2 py-1.5 text-left">종목</th>
                 <th className="px-2 py-1.5 text-left">심볼</th>
-                <th
-                  className="px-2 py-1.5 text-right"
-                  scope="col"
-                  aria-sort={
-                    barSort === null ? "none" : barSort === "asc" ? "ascending" : "descending"
-                  }
-                >
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 rounded-sm hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    onClick={() => setBarSort((current) => (current === "asc" ? "desc" : "asc"))}
-                    aria-label={`봉 수 ${barSort === "asc" ? "내림차순" : "오름차순"} 정렬`}
-                  >
-                    봉 수
-                    <BarSortIcon className="size-3" aria-hidden="true" />
-                  </button>
-                </th>
+                <th className="px-2 py-1.5 text-right">봉 수</th>
                 <th className="px-2 py-1.5 text-left">시작일</th>
                 <th className="px-2 py-1.5 text-left">최종일</th>
               </tr>
             </thead>
             <tbody>
-              {barCoverage.map((b) => (
+              {data.barCoverage.map((b) => (
                 <tr key={b.symbol} className="border-t border-border">
                   <td className="px-2 py-1.5">{b.name}</td>
                   <td className="num px-2 py-1.5">{b.symbol}</td>
