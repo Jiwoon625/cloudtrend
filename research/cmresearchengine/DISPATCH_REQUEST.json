@@ -1,8 +1,8 @@
 {
-  "request_id": "cm-manual-base44-V1-20261010-001",
+  "request_id": "cm-manual-base45-V2-20261011-001",
   "mode": "run",
   "stage": "base",
-  "offset": 44,
+  "offset": 45,
   "count": 1,
   "max_seconds": 3000,
   "workers": 1,
