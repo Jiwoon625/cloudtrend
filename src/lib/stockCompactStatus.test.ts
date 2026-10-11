@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ScreeningRow } from "./engine/pipeline";
 import { OPERATIONAL_SIGNAL_VERSION } from "./engine/operationalStrategy";
 import { getCompactStockStatus, getCompactStockWarnings } from "./stockCompactStatus";
-const date = "2026-10-08";
+const date = "2026-11-05";
 const row = (overrides: Partial<ScreeningRow> = {}): ScreeningRow =>
   ({
     instrument: { symbol: "S", market: "KOSPI", instrumentType: "STOCK" },
@@ -84,12 +84,12 @@ describe("stock list two-line status", () => {
   });
   it("does not infer a new signal from stale/nonadjacent evidence", () => {
     const stale = row({
-      snapshot: { tradeDate: "2026-10-07", close: 100 } as ScreeningRow["snapshot"],
+      snapshot: { tradeDate: "2026-11-04", close: 100 } as ScreeningRow["snapshot"],
     });
     expect(getCompactStockStatus(stale, empty, date).primary).toBe("판단 미확인");
-    const gap = row({ previousOperatingScoreDate: "2026-10-06" });
+    const gap = row({ previousOperatingScoreDate: "2026-11-03" });
     expect(
-      getCompactStockStatus(gap, empty, date, ["2026-10-06", "2026-10-07", date]).primary,
+      getCompactStockStatus(gap, empty, date, ["2026-11-03", "2026-11-04", date]).primary,
     ).toBe("진입 미확정");
   });
   it("keeps sold signal suppression and missing score separate", () => {
@@ -124,11 +124,11 @@ describe("stock list two-line status", () => {
 
 it("keeps held stale/nonadjacent observations unconfirmed rather than emitting an undefined exit label", () => {
   const stale = row({
-    snapshot: { tradeDate: "2026-10-13", close: 100 } as ScreeningRow["snapshot"],
+    snapshot: { tradeDate: "2026-11-10", close: 100 } as ScreeningRow["snapshot"],
   });
-  expect(getCompactStockStatus(stale, held, "2026-10-14").primary).toBe("보유 · 판단 미확인");
-  const gap = row({ previousOperatingScoreDate: "2026-10-06" });
-  const status = getCompactStockStatus(gap, held, date, ["2026-10-06", "2026-10-07", date]);
+  expect(getCompactStockStatus(stale, held, "2026-11-11").primary).toBe("보유 · 판단 미확인");
+  const gap = row({ previousOperatingScoreDate: "2026-11-03" });
+  const status = getCompactStockStatus(gap, held, date, ["2026-11-03", "2026-11-04", date]);
   expect(status).toMatchObject({
     primary: "보유 · 청산 판단 미확인",
     secondary: "기술점수 확인 필요",

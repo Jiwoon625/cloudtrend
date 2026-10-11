@@ -509,6 +509,7 @@ export function ScreenerTable({
                     {r.instrument.instrumentType === "STOCK" && r.instrument.market === "KOSPI" ? (
                       <KospiEntryDetails
                         entry={r.kospiEntry}
+                        operationalDate={signalDate}
                         compact
                         entryJudgmentPending={r.hardFilterStatus === "PENDING"}
                         entrySuppression={entrySuppressionReason(
@@ -522,6 +523,8 @@ export function ScreenerTable({
                     <UniverseFilterDetails row={r} compact />
                     {r.instrument.instrumentType === "STOCK" ? (
                       <StockAssessmentDetails
+                        signalDate={signalDate}
+                        originDate={r.kospiEntry?.originDate}
                         held={positionContext?.heldSymbols.includes(r.instrument.symbol) ?? false}
                         assessment={stockAssessmentDisplay(r, signalDate, tradeDates)}
                       />

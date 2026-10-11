@@ -1,3 +1,8 @@
+import {
+  isOperationalSignalDate,
+  isOperationalSignalOrigin,
+  OPERATIONAL_START_NOTICE,
+} from "@/lib/operationalSignalStart";
 import { HoldingsAvailability } from "./HoldingsAvailability";
 import { kospiMarketGateDisplay, kospiMarketGateLabel } from "./kospiEntryPresentation";
 import { Link } from "@tanstack/react-router";
@@ -75,6 +80,19 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
   const base = analysis.rows.filter((r) => r.instrument.instrumentType === mode);
   const sectors = [...new Set(base.map((r) => r.instrument.sectorName))];
   const presetMatches = (r: ScreeningRow, id: PresetId) => {
+    if (
+      [
+        "TECHNICAL_ONSET",
+        "ENTRY",
+        "EXIT",
+        "KOSDAQ_ENTRY_8",
+        "KOSPI_ENTRY_8",
+        "KOSPI_PENDING",
+        "KOSPI_CONFIRMED",
+      ].includes(id) &&
+      !isOperationalSignalDate(analysis.asOfDate)
+    )
+      return false;
     if (mode === "STOCK") {
       if (id === "EXIT")
         return isHeldExit(r, positionContext, analysis.asOfDate, analysis.tradeDates);
@@ -90,11 +108,13 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         return isPortfolioAwareOperationalEntry(r, positionContext, analysis.asOfDate);
       if (id === "KOSDAQ_ENTRY_8")
         return (
+          r.snapshot.tradeDate === analysis.asOfDate &&
           r.kosdaq80Onset &&
           !isOnsetSuppressed(positionContext, r.instrument.symbol, analysis.asOfDate)
         );
       if (id === "KOSPI_ENTRY_8")
         return (
+          r.snapshot.tradeDate === analysis.asOfDate &&
           r.kospi80Onset &&
           !isOnsetSuppressed(positionContext, r.instrument.symbol, analysis.asOfDate)
         );
@@ -103,6 +123,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
           r.instrument.market === "KOSPI" &&
           r.kospiEntry?.state === "pending" &&
           r.kospiEntry.date === analysis.asOfDate &&
+          isOperationalSignalOrigin(analysis.asOfDate, r.kospiEntry.originDate) &&
           !isOnsetSuppressed(
             positionContext,
             r.instrument.symbol,
@@ -154,6 +175,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
 
   return (
     <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">{OPERATIONAL_START_NOTICE}</p>
       <header className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h1 className="text-xl font-bold tracking-tight">

@@ -36,9 +36,9 @@ const obs = (date: string, score: number) => ({
   marketGate: kospiGate(date),
 });
 const state = kospiEntryConfirmation(
-  obs("2026-10-05", 8.5),
-  obs("2026-10-02", 8),
-  obs("2026-10-01", 7.5),
+  obs("2026-11-02", 8.5),
+  obs("2026-10-30", 8),
+  obs("2026-10-29", 7.5),
 );
 const row = {
   ...base,
@@ -88,15 +88,15 @@ describe("confirmation projections and actual-position context", () => {
     ).toBe(0);
     expect(
       marketSignals(projectKrDashboard(current), "KOSPI", [
-        { symbol: row.instrument.symbol, name: "x", shares: 1, firstEntryDate: "2026-10-01" },
+        { symbol: row.instrument.symbol, name: "x", shares: 1, firstEntryDate: "2026-10-29" },
       ]).onsetCount,
     ).toBe(0);
   });
   it("does not label stale rows entry-ready even without holdings context", () => {
-    expect(isPortfolioAwareOperationalEntry(row, undefined, "2026-10-06")).toBe(false);
-    expect(getPortfolioAwareDisplayStatus(row, undefined, "2026-10-06")).toContain("기한 지난");
+    expect(isPortfolioAwareOperationalEntry(row, undefined, "2026-11-03")).toBe(false);
+    expect(getPortfolioAwareDisplayStatus(row, undefined, "2026-11-03")).toContain("기한 지난");
     expect(
-      marketSignals(projectKrDashboard({ ...current, asOfDate: "2026-10-06" }), "KOSPI", [])
+      marketSignals(projectKrDashboard({ ...current, asOfDate: "2026-11-03" }), "KOSPI", [])
         .onsetCount,
     ).toBe(0);
   });
@@ -106,7 +106,7 @@ describe("CLI summary structural signals", () => {
     const pending = {
       ...row,
       instrument: { ...row.instrument, symbol: "PENDING" },
-      kospiEntry: kospiEntryConfirmation(obs("2026-10-05", 8), obs("2026-10-02", 7.5), null),
+      kospiEntry: kospiEntryConfirmation(obs("2026-11-02", 8), obs("2026-10-30", 7.5), null),
       kospi80Onset: true,
       kospiEightPointEntry: false,
     };

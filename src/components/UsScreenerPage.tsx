@@ -1,3 +1,8 @@
+import {
+  isOperationalSignalDate,
+  OPERATIONAL_SIGNAL_START,
+  OPERATIONAL_START_NOTICE,
+} from "@/lib/operationalSignalStart";
 import { compareUsCandidates } from "@/lib/usCandidatePriority";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -80,8 +85,17 @@ export function UsScreenerPage() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection } | null>(null);
   const rows = query.data?.analysis.rows ?? EMPTY_ROWS;
+  // Keep the saved rows intact; the operating view is bounded by each market signal date.
+  const operationalRows = useMemo(
+    () => rows.filter((r) => r.symbol !== "SPY" && isOperationalSignalDate(r.date)),
+    [rows],
+  );
+  const historicalRows = useMemo(
+    () => rows.filter((r) => r.symbol !== "SPY" && !isOperationalSignalDate(r.date)),
+    [rows],
+  );
   const entryFunnel = useMemo(() => {
-    const candidates = rows.filter((r) => r.symbol !== "SPY");
+    const candidates = operationalRows;
     const onset = candidates.filter((r) => r.onset80);
     const beta = onset.filter((r) => (r.betaRank ?? -1) >= 0.9);
     const aggressiveConfirm = beta.filter((r) => (r.tkRank ?? -1) >= 0.8);
@@ -117,11 +131,12 @@ export function UsScreenerPage() {
         b3: candidates.filter((r) => r.b3Entry).length,
       },
     ];
-  }, [rows]);
+  }, [operationalRows]);
   const filtered = useMemo(() => {
     const q = search.trim().toUpperCase();
     return rows.filter((r) => {
       if (r.symbol === "SPY") return false;
+      if (filter !== "ALL" && !isOperationalSignalDate(r.date)) return false;
       if (q && !r.symbol.includes(q) && !r.name.toUpperCase().includes(q)) return false;
       if (sector && (r.sector ?? "미분류") !== sector) return false;
       if (filter === "FUNNEL_1") return r.onset80;
@@ -202,6 +217,9 @@ export function UsScreenerPage() {
   const download = () => {
     const header = [
       "date",
+      "operationalStartDate",
+      "operationalSignalEligible",
+      "signalContext",
       "symbol",
       "name",
       "market",
@@ -228,14 +246,17 @@ export function UsScreenerPage() {
       "b3Entry",
       "b3Exit",
     ];
-    const body = sorted.map((r) =>
-      header
-        .map(
-          (k) =>
-            `"${String((r as unknown as Record<string, unknown>)[k] ?? "").replaceAll('"', '""')}"`,
-        )
-        .join(","),
-    );
+    const body = sorted.map((r) => {
+      const evidence = {
+        ...r,
+        operationalStartDate: OPERATIONAL_SIGNAL_START,
+        operationalSignalEligible: isOperationalSignalDate(r.date),
+        signalContext: isOperationalSignalDate(r.date)
+          ? "신규 운용 기간"
+          : "시작 전 과거 계산 근거",
+      } as Record<string, unknown>;
+      return header.map((k) => `"${String(evidence[k] ?? "").replaceAll('"', '""')}"`).join(",");
+    });
     const blob = new Blob([[header.join(","), ...body].join("\n")], {
       type: "text/csv;charset=utf-8",
     });
@@ -273,6 +294,7 @@ export function UsScreenerPage() {
             </Button>
           </div>
         </header>
+        <p className="rounded-lg border bg-muted/30 p-3 text-xs">{OPERATIONAL_START_NOTICE}</p>
         <UsRecoveryNotice metadata={query.data?.source?.metadata} />
         {!heldKnown ? (
           <div role={positions.isError ? "alert" : "status"} className="rounded border p-3 text-sm">
@@ -320,7 +342,7 @@ export function UsScreenerPage() {
                     각 단계는 직전 단계 통과 종목 기준 · A0/A2는 동일 진입 신호
                   </p>
                 </div>
-                {entryFunnel[0]?.a0 === 0 ? (
+                {operationalRows.length > 0 && entryFunnel[0]?.a0 === 0 ? (
                   <span className="text-[10px] text-muted-foreground">
                     bootstrap 기준일에는 이전 Core가 없어 E80 원신호이 0건일 수 있습니다.
                   </span>
@@ -363,14 +385,15 @@ export function UsScreenerPage() {
               </div>
             </section>
             <details className="rounded-lg border p-3 text-xs">
-              <summary>단계별 탈락 집계</summary>
+              <summary>신규 운용 단계별 탈락 집계</summary>
               <p>
-                Core 원신호 없음 {rows.filter((r) => r.symbol !== "SPY" && !r.onset80).length} ·
-                Beta 미충족 {rows.filter((r) => r.onset80 && (r.betaRank ?? -1) < 0.9).length} ·{" "}
-                {funnelStrategy === "B3" ? "RelVol" : "TK"}
+                Core 원신호 없음{" "}
+                {operationalRows.filter((r) => r.symbol !== "SPY" && !r.onset80).length} · Beta
+                미충족 {operationalRows.filter((r) => r.onset80 && (r.betaRank ?? -1) < 0.9).length}{" "}
+                · {funnelStrategy === "B3" ? "RelVol" : "TK"}
                 미충족{" "}
                 {
-                  rows.filter(
+                  operationalRows.filter(
                     (r) =>
                       r.onset80 &&
                       (r.betaRank ?? -1) >= 0.9 &&
@@ -379,7 +402,7 @@ export function UsScreenerPage() {
                 }{" "}
                 · 공통 적격 미충족{" "}
                 {
-                  rows.filter(
+                  operationalRows.filter(
                     (r) =>
                       r.onset80 &&
                       (r.betaRank ?? -1) >= 0.9 &&
@@ -389,6 +412,29 @@ export function UsScreenerPage() {
                 }
               </p>
             </details>
+            {historicalRows.length > 0 ? (
+              <details className="rounded-lg border p-3 text-xs">
+                <summary>시작 전 과거 계산 근거 · {historicalRows.length}종목</summary>
+                <p className="mt-2">
+                  신규 운용 대상이 아닙니다. 저장된 원신호·조건 통과 여부는 산정 가능 전체와 종목
+                  상세에서 확인할 수 있습니다.
+                </p>
+                <p className="mt-1">
+                  과거 Core 원신호 {historicalRows.filter((r) => r.onset80).length} · 과거 A0 진입
+                  조건 통과 {historicalRows.filter((r) => r.a0Entry).length} · 과거 A0 청산 조건
+                  충족 {historicalRows.filter((r) => r.a0Exit).length}
+                </p>
+                <p>
+                  과거 A2 진입 조건 통과 {historicalRows.filter((r) => r.a2Entry).length} · 과거 A2
+                  청산 조건 충족 {historicalRows.filter((r) => r.a2Exit).length} · 과거 B3 진입 조건
+                  통과 {historicalRows.filter((r) => r.b3Entry).length} · 과거 B3 청산 조건 충족{" "}
+                  {historicalRows.filter((r) => r.b3Exit).length}
+                </p>
+                <Link to="/history" className="mt-2 inline-block text-primary hover:underline">
+                  날짜·전략·실행별 과거 기록 보기
+                </Link>
+              </details>
+            ) : null}
             <div className="flex flex-wrap gap-1">
               {(
                 [
@@ -657,6 +703,7 @@ function SortableHeader({
 }
 
 function ScreenerRow({ row: r, held }: { row: UsProspectiveCacheRow; held: boolean | null }) {
+  const operational = isOperationalSignalDate(r.date);
   return (
     <tr className="border-b border-border/60 last:border-0 [&>td]:px-2 [&>td]:py-2 [&>td]:text-right">
       <td className="!text-left">
@@ -664,6 +711,11 @@ function ScreenerRow({ row: r, held }: { row: UsProspectiveCacheRow; held: boole
           <span className="font-semibold">{r.symbol}</span>{" "}
           <span className="ml-1 text-muted-foreground">{r.name}</span>
         </Link>
+        {!operational ? (
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            {r.date} · 시작 전 과거 계산 근거
+          </p>
+        ) : null}
       </td>
       <td className="!text-left text-muted-foreground">
         {r.market ?? "-"}
@@ -681,7 +733,7 @@ function ScreenerRow({ row: r, held }: { row: UsProspectiveCacheRow; held: boole
       <td>{pct(r.ret252)}</td>
       <td>{topPct(r.ret120Rank)}</td>
       <td>{topPct(r.ret252Rank)}</td>
-      <td>{r.onset80 ? "원신호" : "-"}</td>
+      <td>{r.onset80 ? (operational ? "원신호" : "과거 원신호") : "-"}</td>
       <td>{r.betaWeakStreak}</td>
       <td>{topPct(r.betaRank)}</td>
       <td>{topPct(r.tkRank)}</td>
@@ -690,7 +742,13 @@ function ScreenerRow({ row: r, held }: { row: UsProspectiveCacheRow; held: boole
       <td>{topPct(r.amihudRank)}</td>
       <td>{money(r.adv20Usd)}</td>
       <td className="!text-left">
-        {held === null ? (
+        {!operational ? (
+          <span className="text-muted-foreground">
+            {r.a0Entry ? "과거 진입 조건 통과 " : ""}
+            {r.a0Exit ? "과거 청산 조건 충족 " : ""}
+            {!r.a0Entry && !r.a0Exit ? "시작 전 과거 신호" : ""}
+          </span>
+        ) : held === null ? (
           <span>보유 미확인</span>
         ) : r.a0Entry ? (
           <Badge className="bg-up text-white">진입 준비</Badge>
@@ -701,10 +759,21 @@ function ScreenerRow({ row: r, held }: { row: UsProspectiveCacheRow; held: boole
         )}
       </td>
       <td className="!text-left text-[10px]">
-        {r.a2Entry ? "A2 진입 준비 " : ""}
-        {held && r.a2Exit ? "A2 X " : ""}
-        {r.b3Entry ? "B3 진입 준비 " : ""}
-        {held && r.b3Exit ? `B3 X${r.b3BetaExit ? "(β)" : ""}` : ""}
+        {!operational ? (
+          <span className="text-muted-foreground">
+            {r.a2Entry ? "과거 A2 진입 조건 통과 " : ""}
+            {r.a2Exit ? "과거 A2 청산 조건 충족 " : ""}
+            {r.b3Entry ? "과거 B3 진입 조건 통과 " : ""}
+            {r.b3Exit ? "과거 B3 청산 조건 충족 " : ""}
+          </span>
+        ) : (
+          <>
+            {r.a2Entry ? "A2 진입 준비 " : ""}
+            {held && r.a2Exit ? "A2 X " : ""}
+            {r.b3Entry ? "B3 진입 준비 " : ""}
+            {held && r.b3Exit ? `B3 X${r.b3BetaExit ? "(β)" : ""}` : ""}
+          </>
+        )}
       </td>
     </tr>
   );

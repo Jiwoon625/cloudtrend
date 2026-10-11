@@ -5,7 +5,13 @@ import { Button } from "@/components/ui/button";
 import type { DomesticPositionContext } from "@/lib/positionSignalContext";
 import { ETF_POLICY } from "@/lib/engine/etfStrategy";
 import type { DualPortfolioState } from "@/lib/portfolioLedgers";
-import { ACTUAL_PERFORMANCE_START } from "@/lib/ledger/actualPerformance";
+import {
+  isOperationalSignalDate,
+  isOperationalSignalOrigin,
+  OPERATIONAL_START_NOTICE,
+  BEFORE_OPERATIONAL_START,
+  operationalEntryStartNotice,
+} from "@/lib/operationalSignalStart";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
 import { etfPartialEvidence } from "@/lib/etfPartialEvidence";
 
@@ -104,15 +110,16 @@ export function EtfScreener({
   const actionable = (r: AnalysisResult["rows"][number]) =>
     !!positionContext &&
     !ledgerError &&
+    evidenceFor(r).current &&
     r.etfStrategy?.version === ETF_POLICY.version &&
     r.etfStrategy.onset &&
-    analysis.asOfDate >= ACTUAL_PERFORMANCE_START &&
-    (r.etfStrategy.originDate ?? "") >= ACTUAL_PERFORMANCE_START &&
+    isOperationalSignalOrigin(analysis.asOfDate, r.etfStrategy.originDate) &&
     r.etfStrategy.dataStatus !== "krx_batch_pending" &&
     !heldSet.has(r.instrument.symbol) &&
     !blocked(r);
   const getSignalLabel = (r: AnalysisResult["rows"][number]) => {
     const s = r.etfStrategy;
+    if (!isOperationalSignalDate(analysis.asOfDate)) return BEFORE_OPERATIONAL_START;
     const symbol = r.instrument.symbol;
     const confirmed = s?.version === ETF_POLICY.version;
     if (!confirmed || !evidenceFor(r).current) return "기준일 자료 미확인 · 재계산 필요";
@@ -124,16 +131,16 @@ export function EtfScreener({
         : s.exit === "DATA_UNAVAILABLE"
           ? "데이터 오류 · 청산 점검"
           : "보유 · 추가 매수 없음";
+    const originNotice = operationalEntryStartNotice(
+      analysis.asOfDate,
+      s.originDate,
+      s.entryState === "pending" || s.entryState === "confirmed" || s.onset,
+    );
+    if (originNotice) return originNotice;
     if (blocked(r)) return "청산한 신호 · 재진입 제외";
     if (s.entryState === "rejected") return "하루 확인 탈락";
     if (!s.eligible) return "대상·데이터 점검";
     if (s.entryState === "pending") return "하루 확인 대기";
-    if (
-      s.onset &&
-      (analysis.asOfDate < ACTUAL_PERFORMANCE_START ||
-        (s.originDate ?? "") < ACTUAL_PERFORMANCE_START)
-    )
-      return "시작 전 원신호 · 신규 운용 승계 안 함";
     if (s.onset)
       return positionContext ? "진입 준비 · 다음 시가 진입" : "진입 준비 · 보유정보 확인 필요";
     return s.score !== null && s.score >= 80 ? "80 이상 유지" : "관찰";
@@ -200,11 +207,17 @@ export function EtfScreener({
         return false;
       if (filter === "entry") return actionable(r);
       if (filter === "pending")
-        return s?.entryState === "pending" || s?.entryState === "data_pending";
+        return (
+          e.current &&
+          isOperationalSignalOrigin(analysis.asOfDate, s?.originDate) &&
+          (s?.entryState === "pending" || s?.entryState === "data_pending")
+        );
       if (filter === "partial") return evidenceFor(r).krxPending;
       if (filter === "rejected") return s?.entryState === "rejected";
       if (filter === "exit")
         return (
+          isOperationalSignalDate(analysis.asOfDate) &&
+          evidenceFor(r).current &&
           heldSet.has(r.instrument.symbol) &&
           (s?.exit != null || s?.dataStatus === "krx_batch_pending")
         );
@@ -282,12 +295,29 @@ export function EtfScreener({
           </p>
         </section>
       )}
+      <p className="text-xs text-muted-foreground">{OPERATIONAL_START_NOTICE}</p>
       <div className="grid gap-3 sm:grid-cols-3 text-sm">
         <div className="rounded-lg border p-3">
-          원신호 {rows.filter((r) => r.etfStrategy?.rawOnset).length}
+          원신호{" "}
+          {
+            rows.filter(
+              (r) =>
+                isOperationalSignalDate(analysis.asOfDate) &&
+                evidenceFor(r).current &&
+                r.etfStrategy?.rawOnset,
+            ).length
+          }
         </div>
         <div className="rounded-lg border p-3">
-          확인 대기 {rows.filter((r) => r.etfStrategy?.entryState === "pending").length}
+          확인 대기{" "}
+          {
+            rows.filter(
+              (r) =>
+                evidenceFor(r).current &&
+                isOperationalSignalOrigin(analysis.asOfDate, r.etfStrategy?.originDate) &&
+                r.etfStrategy?.entryState === "pending",
+            ).length
+          }
         </div>
         <div className="rounded-lg border p-3">
           진입 준비{" "}

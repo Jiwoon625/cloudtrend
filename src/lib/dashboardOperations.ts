@@ -1,3 +1,9 @@
+import {
+  OPERATIONAL_SIGNAL_START,
+  isOperationalSignalDate,
+  isOperationalSignalOrigin,
+  operationalEntryStartNotice,
+} from "./operationalSignalStart";
 import { etfPartialEvidence } from "./etfPartialEvidence";
 import { validDate } from "./ledger/date";
 import { stockAssessmentDisplay, type StockAssessmentDisplay } from "./stockAssessmentDisplay";
@@ -36,6 +42,7 @@ export interface DashboardSignal {
   assessment?: StockAssessmentDisplay | undefined;
   etfAssessment?: ReturnType<typeof etfPartialEvidence> | undefined;
   held?: boolean | undefined;
+  operationalEntryNotice?: string | null | undefined;
 }
 export interface DashboardIndexRow extends Omit<DashboardSignal, "reason"> {
   onset: boolean;
@@ -253,7 +260,13 @@ export function marketSignals(
     exits: [],
     assessments: [],
   };
-  if (!index || (signalStartDate && (!validDate(index.date) || index.date < signalStartDate)))
+  if (
+    !index ||
+    (signalStartDate &&
+      (signalStartDate === OPERATIONAL_SIGNAL_START
+        ? !isOperationalSignalDate(index.date)
+        : !validDate(index.date) || index.date < signalStartDate))
+  )
     return result;
   const held = new Map((holdings ?? []).filter((p) => p.shares > 0).map((p) => [p.symbol, p]));
   const sold = soldSymbolsSinceSignal(executions, market, index.date);
@@ -265,6 +278,13 @@ export function marketSignals(
       result.assessments!.push({
         ...row,
         held: isHeld,
+        operationalEntryNotice: signalStartDate
+          ? operationalEntryStartNotice(
+              index.date,
+              row.kospiEntry?.originDate,
+              row.kospiEntry?.state === "confirmed" || row.kospiEntry?.state === "pending",
+            )
+          : null,
         reason: isHeld ? "보유 · 추가 진입 제외" : holdings === null ? "보유 미확인" : "미보유",
       });
     }
@@ -281,12 +301,14 @@ export function marketSignals(
     // This is a website action-list boundary, not a change to the strategy engine.
     const entryInSeries =
       !signalStartDate ||
-      Boolean(
-        originDate &&
-        validDate(originDate) &&
-        originDate >= signalStartDate &&
-        originDate <= index.date,
-      );
+      (signalStartDate === OPERATIONAL_SIGNAL_START
+        ? isOperationalSignalOrigin(index.date, originDate)
+        : Boolean(
+            originDate &&
+            validDate(originDate) &&
+            originDate >= signalStartDate &&
+            originDate <= index.date,
+          ));
     const consumed =
       (market === "ETF" && row.etfEntry?.originDate) ||
       (market === "KOSPI" && row.kospiEntry?.originDate)

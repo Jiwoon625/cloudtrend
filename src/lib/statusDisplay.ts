@@ -1,3 +1,9 @@
+import {
+  isOperationalSignalDate,
+  isOperationalSignalOrigin,
+  BEFORE_OPERATIONAL_START,
+  operationalEntryStartNotice,
+} from "./operationalSignalStart";
 import { stockAssessmentDisplay, type StockAssessmentDisplay } from "./stockAssessmentDisplay";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
 import {
@@ -49,6 +55,7 @@ export function isHeldExit(
   tradeDates?: readonly string[],
 ) {
   return (
+    isOperationalSignalDate(asOfDate) &&
     !!context?.heldSymbols.includes(row.instrument.symbol) &&
     heldExitStatus(row, stockAssessmentDisplay(row, asOfDate, tradeDates)) !== null
   );
@@ -63,6 +70,10 @@ export function isPortfolioAwareOperationalEntry(
   signalDate: string,
 ): boolean {
   return (
+    isOperationalSignalOrigin(
+      signalDate,
+      row.instrument.market === "KOSPI" ? row.kospiEntry?.originDate : row.snapshot.tradeDate,
+    ) &&
     isOperationalEntry(row, signalDate) &&
     !isOnsetSuppressed(context, row.instrument.symbol, row.kospiEntry?.originDate ?? signalDate)
   );
@@ -75,6 +86,7 @@ export function getPortfolioAwareDisplayStatus(
   signalDate: string,
   tradeDates?: readonly string[],
 ): string {
+  if (!isOperationalSignalDate(signalDate)) return BEFORE_OPERATIONAL_START;
   if (row.instrument.instrumentType !== "STOCK") return getDisplayStatus(row);
   const pending = pendingStatus(row);
   if (context?.heldSymbols.includes(row.instrument.symbol)) {
@@ -85,6 +97,16 @@ export function getPortfolioAwareDisplayStatus(
     const heldStatus = heldExitStatus(row, assessment) ?? "보유";
     return pending ? `${heldStatus} · 신규 진입 ${pending}` : heldStatus;
   }
+  if (row.snapshot.tradeDate !== signalDate)
+    return row.kospiEntry?.state === "confirmed" && row.kospiEntry.date !== signalDate
+      ? "기한 지난 확인 · 진입 제외"
+      : "판단 미확인 · 기준일 가격 확인 필요";
+  const originNotice = operationalEntryStartNotice(
+    signalDate,
+    row.kospiEntry?.originDate,
+    row.kospiEntry?.state === "pending" || row.kospiEntry?.state === "confirmed",
+  );
+  if (originNotice) return originNotice;
   if (pending) {
     return pending;
   }

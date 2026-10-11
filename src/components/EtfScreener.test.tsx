@@ -24,7 +24,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 }));
 
-const date = "2026-10-07";
+const date = "2026-11-04";
 function row(overrides: Partial<EtfStrategySnapshot> = {}): ScreeningRow {
   return {
     instrument: {
@@ -37,7 +37,7 @@ function row(overrides: Partial<EtfStrategySnapshot> = {}): ScreeningRow {
     etfStrategy: {
       version: ETF_POLICY.version,
       date,
-      previousDate: "2026-10-06",
+      previousDate: "2026-11-03",
       score: null,
       previousScore: 83,
       technical: 80,
@@ -47,7 +47,7 @@ function row(overrides: Partial<EtfStrategySnapshot> = {}): ScreeningRow {
       environmentSource: "own_index_lag1",
       eligible: false,
       dataStatus: "krx_batch_pending",
-      krxReferenceDate: "2026-10-06",
+      krxReferenceDate: "2026-11-03",
       onset: false,
       rawOnset: false,
       entryState: "none",
@@ -161,7 +161,7 @@ describe("ETF available-evidence screen", () => {
     expect(html).toContain("통상 다음 영업일 오전 8시(KST)");
     expect(values[1]).toContain("산정 불가");
     expect(values[2]).toContain("83");
-    expect(values[2]).toContain("2026-10-06 · 과거 참고");
+    expect(values[2]).toContain("2026-11-03 · 과거 참고");
     expect(values[3]).toBe("50");
     expect(values[4]).toBe("0");
     expect(values[5]).toContain("산정 불가");
@@ -197,9 +197,9 @@ describe("ETF available-evidence screen", () => {
 
   it("marks legacy or stale saved records unverified without a misleading current batch banner", () => {
     state.filter = "all";
-    const html = render(row({ date: "2026-10-06", technical: 100, health: 100, score: 95 }));
+    const html = render(row({ date: "2026-11-03", technical: 100, health: 100, score: 95 }));
     expect(cells(html).slice(1, 7)).toEqual(Array(6).fill("산정 불가"));
-    expect(html).toContain("저장 기준일 2026-10-06");
+    expect(html).toContain("저장 기준일 2026-11-03");
     expect(html).not.toContain("KRX 금액·기초지수 자료가 일괄 미수신 상태입니다");
   });
 });

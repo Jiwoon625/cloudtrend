@@ -20,7 +20,7 @@ import {
 } from "./dashboardOperations";
 
 import { loadWebsitePositionContextForOwner } from "./websitePositionContext.server";
-import { ACTUAL_PERFORMANCE_START } from "./ledger/actualPerformance";
+import { OPERATIONAL_SIGNAL_START, isOperationalSignalDate } from "./operationalSignalStart";
 import type { NewActualPool } from "./newActualPortfolio";
 
 const BUCKET = "cloudtrend-data";
@@ -195,7 +195,7 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
         asOfDate: null,
         issue: "신규 시리즈 확인 대기",
       },
-      ACTUAL_PERFORMANCE_START,
+      OPERATIONAL_SIGNAL_START,
     ),
   );
   if (!context)
@@ -205,7 +205,7 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
     ["미국", us, "US"],
   ] as const) {
     if (!index) continue;
-    if (index.date < ACTUAL_PERFORMANCE_START) {
+    if (!isOperationalSignalDate(index.date)) {
       warnings.push(
         `${label} ${index.date}: 신규 운용 시작 전 자료입니다. 10월 12일 이후 새 신호부터 진입 준비·EXIT를 표시합니다.`,
       );

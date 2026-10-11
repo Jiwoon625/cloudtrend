@@ -98,6 +98,7 @@ function InstrumentDetail() {
     return (
       <EtfInstrumentDetail
         row={row}
+        asOfDate={analysis.asOfDate}
         calculatedAt={analysis.calculatedAt}
         holdingsNotice={holdingsNotice}
         held={positionContext?.heldSymbols.includes(symbol)}
@@ -278,6 +279,7 @@ function InstrumentDetail() {
           <h2 className="mb-1 text-xs font-semibold">KOSPI 신규 후보 확인 기록</h2>
           <KospiEntryDetails
             entry={row.kospiEntry}
+            operationalDate={analysis.asOfDate}
             showState
             entryJudgmentPending={row.hardFilterStatus === "PENDING"}
             entrySuppression={entrySuppressionReason(
