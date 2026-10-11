@@ -36,7 +36,7 @@ export function getCompactStockStatus(
       tone: "warn",
     };
   if (suppression === "held") {
-    if (isHeldExit(row, context))
+    if (isHeldExit(row, context, asOfDate, tradeDates))
       return {
         primary: "보유 · 청산 조건 충족",
         secondary: a.exit.split(" · ")[1]!,

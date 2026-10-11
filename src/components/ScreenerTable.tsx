@@ -249,7 +249,7 @@ export function ScreenerTable({
         marketCap: r.marketCap ?? "",
         status: compactStatus
           ? [compactStatus.primary, compactStatus.secondary].join(" · ")
-          : getPortfolioAwareDisplayStatus(r, positionContext, signalDate),
+          : getPortfolioAwareDisplayStatus(r, positionContext, signalDate, tradeDates),
         warnings: getDisplayWarnings(r).join("|"),
       };
       return visible.map((c) => values[c.id] ?? "").join(",");
@@ -359,7 +359,12 @@ export function ScreenerTable({
               const displayWarnings = compactStock
                 ? getCompactStockWarnings(r)
                 : getDisplayWarnings(r);
-              const displayStatus = getPortfolioAwareDisplayStatus(r, positionContext, signalDate);
+              const displayStatus = getPortfolioAwareDisplayStatus(
+                r,
+                positionContext,
+                signalDate,
+                tradeDates,
+              );
               const instrumentLink = (
                 <Link
                   to="/instrument/$symbol"

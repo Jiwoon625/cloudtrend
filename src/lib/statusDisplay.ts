@@ -1,3 +1,4 @@
+import { stockAssessmentDisplay, type StockAssessmentDisplay } from "./stockAssessmentDisplay";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
 import {
   getHeldOperationalExitSignal,
@@ -27,11 +28,12 @@ export function getDisplayStatus(row: ScreeningRow): string {
   return row.actionLabelText || "관찰";
 }
 
-function heldExitStatus(row: ScreeningRow): string | null {
+function heldExitStatus(row: ScreeningRow, assessment: StockAssessmentDisplay): string | null {
+  if (assessment.score === null || assessment.previousScore === null) return null;
   const exit = getHeldOperationalExitSignal(
     row.instrument.market,
-    row.operatingScore10,
-    row.scoreDelta1d,
+    assessment.score,
+    (assessment.score - assessment.previousScore) * 10,
   );
   if (exit === "UP95") return "청산 대기 · KOSPI 9.5점 상향돌파";
   if (exit === "UP90") return "청산 대기 · KOSDAQ 9.0점 상향 재돌파";
@@ -40,8 +42,16 @@ function heldExitStatus(row: ScreeningRow): string | null {
 }
 
 /** The filter and table share the exact same holding-perspective predicate. */
-export function isHeldExit(row: ScreeningRow, context: DomesticPositionContext | null | undefined) {
-  return !!context?.heldSymbols.includes(row.instrument.symbol) && heldExitStatus(row) !== null;
+export function isHeldExit(
+  row: ScreeningRow,
+  context: DomesticPositionContext | null | undefined,
+  asOfDate: string,
+  tradeDates?: readonly string[],
+) {
+  return (
+    !!context?.heldSymbols.includes(row.instrument.symbol) &&
+    heldExitStatus(row, stockAssessmentDisplay(row, asOfDate, tradeDates)) !== null
+  );
 }
 function unheldStatus(row: ScreeningRow) {
   return getStoredOperationalExit(row, row.instrument.market) ? "관찰" : getDisplayStatus(row);
@@ -63,11 +73,16 @@ export function getPortfolioAwareDisplayStatus(
   row: ScreeningRow,
   context: DomesticPositionContext | null | undefined,
   signalDate: string,
+  tradeDates?: readonly string[],
 ): string {
   if (row.instrument.instrumentType !== "STOCK") return getDisplayStatus(row);
   const pending = pendingStatus(row);
   if (context?.heldSymbols.includes(row.instrument.symbol)) {
-    const heldStatus = heldExitStatus(row) ?? "보유";
+    const assessment = stockAssessmentDisplay(row, signalDate, tradeDates);
+    if (!assessment.current) return "보유 · 판단 미확인";
+    if (assessment.score === null || assessment.previousScore === null)
+      return "보유 · 청산 판단 미확인";
+    const heldStatus = heldExitStatus(row, assessment) ?? "보유";
     return pending ? `${heldStatus} · 신규 진입 ${pending}` : heldStatus;
   }
   if (pending) {
