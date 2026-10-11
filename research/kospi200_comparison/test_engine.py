@@ -71,6 +71,9 @@ class ValidSyntheticCase(unittest.TestCase):
             "gate_point_in_time_verified": True,
             "krx_calendar_verified": True,
             "stock_corporate_actions_reviewed": True,
+            "stock_cash_distributions_verified": True,
+            "stock_pit_universe_verified": True,
+            "stock_execution_replay_verified": True,
             "stock_replay_commit": "0123456789abcdef123456789abcdef12345678",
             "stock_replay_evidence": "SYNTHETIC_CERT_STOCK",
             "benchmark_distribution_evidence": "SYNTHETIC_CERT_DISTRIBUTIONS",
@@ -105,6 +108,8 @@ class ValidSyntheticCase(unittest.TestCase):
         self.assertTrue((self.root / "results" / "summary.json").exists())
         self.assertEqual(summary["judgement"], "DESCRIPTIVE_ONLY_REQUIRES_HUMAN_INTERPRETATION")
         self.assertIn("2025", summary["annual"])
+        self.assertIn("etf_100", summary["paired_bootstrap_2018_2024"])
+        self.assertIn("etf_vol_matched", summary["robustness_checks_not_an_investment_verdict"])
         self.assertIn("2018_2024", summary["segments"])
         self.assertIn("excluding_2025_daily_return_stitch_not_executable", summary["segments"])
         self.assertEqual(len(summary["leave_one_full_year_out_stitched"]), 8)
@@ -117,6 +122,18 @@ class ValidSyntheticCase(unittest.TestCase):
         with self.assertRaisesRegex(DataNotReady, "benchmark_distribution_verified"):
             run(self.path, output)
         self.assertFalse(output.exists())
+
+    def test_pit_universe_uncertified_blocks(self):
+        self.manifest["stock_pit_universe_verified"] = False
+        self.refresh()
+        with self.assertRaisesRegex(DataNotReady, "stock_pit_universe_verified"):
+            load_verified_inputs(self.path)
+
+    def test_stock_cash_distributions_uncertified_blocks(self):
+        self.manifest["stock_cash_distributions_verified"] = False
+        self.refresh()
+        with self.assertRaisesRegex(DataNotReady, "stock_cash_distributions_verified"):
+            load_verified_inputs(self.path)
 
     def test_wrong_budgets_block(self):
         self.manifest["stock_budget_policy"] = "annual_prior_nav_divided_by_30"
