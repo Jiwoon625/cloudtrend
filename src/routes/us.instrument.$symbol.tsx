@@ -5,11 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
 import { loadUsProspectiveCache } from "@/lib/usProspectiveCloud";
 import { loadDomesticPositionContext } from "@/lib/portfolioPositionContext";
-import {
-  isOperationalSignalDate,
-  OPERATIONAL_SIGNAL_START,
-  OPERATIONAL_START_NOTICE,
-} from "@/lib/operationalSignalStart";
+import { isOperationalSignalDate, OPERATIONAL_SIGNAL_START } from "@/lib/operationalSignalStart";
 import { formatKstDateTime } from "@/lib/format";
 export const Route = createFileRoute("/us/instrument/$symbol")({
   ssr: false,
@@ -61,7 +57,6 @@ function UsInstrumentPage() {
                 {formatKstDateTime(data!.generatedAt)} KST
               </p>
             </header>
-            <p className="rounded-lg border bg-muted/30 p-3 text-xs">{OPERATIONAL_START_NOTICE}</p>
             {!operational ? (
               <p className="text-sm text-muted-foreground">
                 {row.date} · 시작 전 과거 계산 근거입니다. 아래 저장된 조건 판정은 신규 운용 후보가

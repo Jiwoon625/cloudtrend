@@ -1,8 +1,4 @@
-import {
-  isOperationalSignalDate,
-  isOperationalSignalOrigin,
-  OPERATIONAL_START_NOTICE,
-} from "@/lib/operationalSignalStart";
+import { isOperationalSignalDate, isOperationalSignalOrigin } from "@/lib/operationalSignalStart";
 import { HoldingsAvailability } from "./HoldingsAvailability";
 import { kospiMarketGateDisplay, kospiMarketGateLabel } from "./kospiEntryPresentation";
 import { Link } from "@tanstack/react-router";
@@ -176,7 +172,6 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
 
   return (
     <div className="space-y-4">
-      <p className="text-xs text-muted-foreground">{OPERATIONAL_START_NOTICE}</p>
       <header className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h1 className="text-xl font-bold tracking-tight">

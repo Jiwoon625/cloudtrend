@@ -1,9 +1,5 @@
 import { etfDataJudgment, etfOperationalDisplay } from "@/lib/etfOperationalDisplay";
-import {
-  isOperationalSignalDate,
-  OPERATIONAL_START_NOTICE,
-  BEFORE_OPERATIONAL_START,
-} from "@/lib/operationalSignalStart";
+import { isOperationalSignalDate, BEFORE_OPERATIONAL_START } from "@/lib/operationalSignalStart";
 import { AppShell } from "./AppShell";
 import { Link } from "@tanstack/react-router";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
@@ -44,7 +40,6 @@ export function EtfInstrumentDetail({
           {s?.dataStatus ?? "미확인"}
         </p>
       </header>
-      <p className="mb-3 text-xs text-muted-foreground">{OPERATIONAL_START_NOTICE}</p>
       {holdingsNotice}
       <div className="space-y-4">
         <section className="rounded-lg border p-4">

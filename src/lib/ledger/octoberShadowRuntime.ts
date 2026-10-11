@@ -62,6 +62,13 @@ export const EXACT_PREVIEW_MISSING_CLOSE_RUNTIME_HASH =
 export const LINT_EQUIVALENT_SYNTAX_RUNTIME_HASH =
   "sha256:3ebfcb975969aaaff05b358bb6a1d0e9c14e20cb474c10391dcc633dedb264b2" as const;
 
+/** Reviewed restart replay observation transport fix. Current execution observations
+ * survive independently of score availability; beta and complete-input replay
+ * semantics are golden-verified. Frozen contracts and completed artifacts remain.
+ */
+export const REPLAY_OBSERVATION_PRESERVATION_RUNTIME_HASH =
+  "sha256:269e327dbf3750a7c91933be6e312adae9e19bb5bd6e3d11ba3b931f4879b201" as const;
+
 export const REVIEWED_SHADOW_RUNTIME_CODE_HASHES = Object.freeze([
   ADOPTED_SHADOW_FROZEN_CODE_HASH,
   "sha256:ffd26d07d50564c6c734dc9c96ede00f7786e1122df3eb373ad56a4648929033",
@@ -75,6 +82,7 @@ export const REVIEWED_SHADOW_RUNTIME_CODE_HASHES = Object.freeze([
   REAUDIT_SIGNAL_POLICY_NAMING_RUNTIME_HASH,
   EXACT_PREVIEW_MISSING_CLOSE_RUNTIME_HASH,
   LINT_EQUIVALENT_SYNTAX_RUNTIME_HASH,
+  REPLAY_OBSERVATION_PRESERVATION_RUNTIME_HASH,
   "sha256:7986793771f362aaede80425f9259254035443dce0eb67e134ded9271241354d",
   "sha256:a321c97e37a3b55249b23597e811997b089943d8c56cb27088c60a2806691a80",
 ] as const);

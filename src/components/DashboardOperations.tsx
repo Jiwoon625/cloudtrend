@@ -1,4 +1,3 @@
-import { OPERATIONAL_START_NOTICE } from "@/lib/operationalSignalStart";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -91,7 +90,7 @@ export function DashboardSignalCounts({
       </h2>
       <p className="mb-2 text-[10px] leading-relaxed text-muted-foreground">
         시장별 최신 확정 거래일 기준입니다. 진입 준비는 주문 후보이며 체결 기록은 포트폴리오에서
-        확인합니다. {OPERATIONAL_START_NOTICE}
+        확인합니다.
       </p>
       <table className="w-full text-[12px]">
         <thead>
@@ -201,9 +200,6 @@ export function UsDashboardPortfolio({ query }: { query: OperationsQuery }) {
         <Row label="신규 실제 보유 종목수">
           {portfolio ? `${portfolio.openPositions}종목` : fallback}
         </Row>
-        <p className="mt-2 text-xs text-muted-foreground">
-          성과는 10월 12일 신규 운용 구간에서만 확인합니다.
-        </p>
         {portfolio?.fundingStatus === "INCOMPLETE" ? (
           <p className="mt-2 text-[10px] text-warn">
             신규 입출금·체결의 자금 연결을 확인해 주세요.

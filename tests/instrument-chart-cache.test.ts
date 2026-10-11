@@ -1,4 +1,4 @@
-import type { AnalysisPayload } from "../src/lib/market.functions";
+import type { AnalysisPayload } from "../src/lib/marketPayload";
 import { beforeEach, expect, test, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   read: vi.fn(),

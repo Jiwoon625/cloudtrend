@@ -1,4 +1,4 @@
-import type { DataStatusPayload } from "./market.functions";
+import type { DataStatusPayload } from "./marketPayload";
 
 /** Small owner/revision-scoped QA summaries only; never retain raw source text. */
 export function createDataStatusCache(maxEntries = 4) {

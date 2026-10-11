@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { formatCount } from "@/lib/format";
-import type { DataStatusPayload } from "@/lib/market.functions";
+import type { DataStatusPayload } from "@/lib/marketPayload";
 
 const CAPABILITY_LABELS: Record<string, string> = {
   marketCap: "시가총액",

@@ -1,14 +1,9 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { useState } from "react";
-
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
-import { ipQueryOptions } from "@/lib/analysisQuery";
-import { resetTossConnection } from "@/lib/market.functions";
 
-/** 데이터 조회(토스 API) 실패 시 빈 화면 대신 원인과 대응 방법을 보여준다. */
+/** Saved/uploaded-data failures retry their existing query, never reset provider credentials. */
 export function DataError({
   error,
   reset,
@@ -20,35 +15,26 @@ export function DataError({
 }) {
   const message =
     error instanceof Error ? error.message : typeof error === "string" ? error : "알 수 없는 오류";
-  const { data: ip } = useQuery({ ...ipQueryOptions, retry: false });
-  const queryClient = useQueryClient();
-  const resetConnection = useServerFn(resetTossConnection);
   const [retrying, setRetrying] = useState(false);
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
-  const isAuth = /401|unidentified-client|인증/.test(message);
-  const isIp = /IP|403/.test(message);
-
   const retry = async () => {
     if (retrying) return;
     setRetrying(true);
-    setRetryMessage("서버 인증 상태와 출구 IP를 새로 확인하고 있습니다…");
+    setRetryMessage("저장된 자료를 다시 확인하고 있습니다…");
     try {
-      await resetConnection();
-      await queryClient.invalidateQueries({ queryKey: ipQueryOptions.queryKey });
       if (reset) await reset();
       else window.location.reload();
-      setRetryMessage("재연결 요청을 완료했습니다.");
+      setRetryMessage("다시 조회했습니다.");
     } catch (retryError) {
       setRetryMessage(
         retryError instanceof Error
-          ? `재연결 실패: ${retryError.message}`
-          : "재연결에 실패했습니다. 새로 표시된 출구 IP를 확인해 주세요.",
+          ? `조회 실패: ${retryError.message}`
+          : "자료를 다시 불러오지 못했습니다.",
       );
     } finally {
       setRetrying(false);
     }
   };
-
   const content = (
     <div className="mx-auto max-w-2xl space-y-4 py-10">
       <div className="flex items-center gap-2">
@@ -58,28 +44,10 @@ export function DataError({
       <p className="rounded-md border border-border bg-muted/40 p-3 font-mono text-[12px] leading-relaxed break-words">
         {message}
       </p>
-      {isAuth || isIp ? (
-        <ul className="list-disc space-y-1.5 pl-5 text-[13px] text-muted-foreground">
-          <li>
-            현재 서버 출구 IP:{" "}
-            <span className="num font-medium text-foreground">{ip ?? "확인 중"}</span>
-            {" — 토스증권 개발자센터 > 앱 설정의 허용 IP에 이 주소가 등록되어 있어야 합니다."}
-          </li>
-          <li>
-            게시(배포)된 주소에서는 요청이 전 세계 엣지 서버로 분산되어 출구 IP가 매 요청마다
-            바뀌므로, IP 허용목록 방식으로는 고정할 수 없습니다. 실제 스크리닝은 미리보기 주소에서
-            실행해 주세요.
-          </li>
-
-          <li>
-            TOSS_CLIENT_ID / TOSS_CLIENT_SECRET 값이 유효한지(재발급·오탈자·앞뒤 공백) 확인하세요.
-          </li>
-        </ul>
-      ) : (
-        <p className="text-[13px] text-muted-foreground">
-          잠시 후 다시 시도해 주세요. 반복되면 토스증권 API 상태와 호출 한도를 확인하세요.
-        </p>
-      )}
+      <p className="text-[13px] text-muted-foreground">
+        로그인 상태와 업로드된 자료를 확인한 뒤 다시 시도해 주세요. 자료 기준일이나 계산 결과가 갱신
+        중이면 잠시 후 다시 조회해 주세요.
+      </p>
       {retryMessage ? (
         <p role="status" className="text-[12px] text-muted-foreground">
           {retryMessage}
@@ -87,10 +55,9 @@ export function DataError({
       ) : null}
       <Button onClick={() => void retry()} disabled={retrying} className="gap-2">
         <RefreshCw className={`size-4 ${retrying ? "animate-spin" : ""}`} />
-        {retrying ? "재연결 중…" : "연결 상태 초기화 후 다시 시도"}
+        {retrying ? "조회 중…" : "다시 조회"}
       </Button>
     </div>
   );
-
   return embedded ? content : <AppShell dataUnavailable>{content}</AppShell>;
 }

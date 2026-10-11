@@ -206,7 +206,7 @@ describe("US operational signal start", () => {
     state.filter = filter;
     const before = JSON.stringify(state.cache);
     const oldHtml = renderScreener();
-    expect(oldHtml).toContain(OPERATIONAL_START_NOTICE);
+    expect(oldHtml).not.toContain(OPERATIONAL_START_NOTICE);
     expect(oldHtml).toContain("전체 0종목");
     expect(tableBody(oldHtml)).toBe("");
     expect(funnelCounts(oldHtml)).toEqual([0, 0, 0, 0]);
@@ -307,7 +307,7 @@ describe("US operational signal start", () => {
   it("suppresses pre-start detail entry actions while preserving the saved boolean and provenance", () => {
     const html = renderToStaticMarkup(<UsInstrumentPage />);
     const body = tableBody(html);
-    expect(html).toContain(OPERATIONAL_START_NOTICE);
+    expect(html).not.toContain(OPERATIONAL_START_NOTICE);
     expect(html).toContain("과거 종목별 판정 근거 · A0");
     expect(body).toContain("신규 운용 대상 아님");
     expect(body).toContain("저장된 A0 진입 조건</td><td>조건 통과");

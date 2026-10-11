@@ -9,7 +9,7 @@ import {
   INSTRUMENT_CHART_VERSION,
 } from "@/lib/screeningCache";
 import type { InstrumentChartRange } from "@/lib/engine/instrumentChart";
-import type { AnalysisPayload } from "@/lib/market.functions";
+import type { AnalysisPayload } from "@/lib/marketPayload";
 import { formatPrice } from "@/lib/format";
 import {
   Bar,

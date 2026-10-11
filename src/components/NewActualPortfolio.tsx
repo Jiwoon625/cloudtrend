@@ -275,7 +275,7 @@ export function NewActualPortfolioContent({
               event.preventDefault();
               const next = keys[nextIndex]!;
               onAssetChange(next);
-              document.getElementById(`new-asset-${next}`)?.focus();
+              document.getElementById(`new-asset-${next}`)?.focus({ preventScroll: true });
             }}
             variant={asset === key ? "default" : "outline"}
             onClick={() => onAssetChange(key)}

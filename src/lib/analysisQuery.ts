@@ -14,11 +14,7 @@ import {
   getOrBuildDashboardSummaryServerFirst,
   getOrBuildScreeningPayloadServerFirst,
 } from "@/lib/webScreeningClient";
-import {
-  getServerEgressIp,
-  type AnalysisPayload,
-  type AnalysisFailurePayload,
-} from "@/lib/market.functions";
+import { type AnalysisPayload, type AnalysisFailurePayload } from "@/lib/marketPayload";
 
 const V8_QUERY_VERSION = "manual-v8-final-10pt" as const;
 
@@ -98,10 +94,3 @@ export const instrumentQueryOptions = (symbol: string) =>
     staleTime: 5 * 60 * 1000,
     retry: false,
   });
-
-export const ipQueryOptions = queryOptions({
-  queryKey: ["server-egress-ip"],
-  queryFn: () => getServerEgressIp(),
-  staleTime: 0,
-  gcTime: 0,
-});
