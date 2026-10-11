@@ -40,7 +40,7 @@ const indexes: IndexSeries[] = [
   { indexCode: "KOSDAQ", indexName: "코스닥", bars: kosdaqBars },
 ];
 const series: BacktestInputSeries[] = [
-  { symbol: "000001", name: "KOSPI주", market: "KOSPI", bars: bars(420, 10_000, 0.0010) },
+  { symbol: "000001", name: "KOSPI주", market: "KOSPI", bars: bars(420, 10_000, 0.001) },
   { symbol: "000002", name: "KOSDAQ주", market: "KOSDAQ", bars: bars(420, 20_000, 0.0012) },
 ];
 
@@ -64,7 +64,9 @@ describe("Backtest V4", () => {
   it("calculates benchmark and market-adjusted returns", () => {
     expect(result.baselineMarketReturn).not.toBeNull();
     expect(result.baselineMarketAdjustedReturn).not.toBeNull();
-    expect(result.featureHorizons.some((f) => f.metrics.some((m) => m.marketAdjustedEdge !== null))).toBe(true);
+    expect(
+      result.featureHorizons.some((f) => f.metrics.some((m) => m.marketAdjustedEdge !== null)),
+    ).toBe(true);
   });
 
   it("adds cross-sectional robust statistics", () => {
@@ -79,7 +81,9 @@ describe("Backtest V4", () => {
   });
 
   it("breaks results down by market, regime, year and time split", () => {
-    expect(new Set(result.marketBreakdown.map((r) => r.segment))).toEqual(new Set(["KOSPI", "KOSDAQ"]));
+    expect(new Set(result.marketBreakdown.map((r) => r.segment))).toEqual(
+      new Set(["KOSPI", "KOSDAQ"]),
+    );
     expect(result.yearlyBreakdown.length).toBeGreaterThan(0);
     expect(result.regimeBreakdown.length).toBeGreaterThan(0);
     expect(new Set(result.splitBreakdown.map((r) => r.segment))).toEqual(

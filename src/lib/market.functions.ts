@@ -44,7 +44,6 @@ async function loadDataset(): Promise<{ dataset: MarketDataset; status: DataSour
   };
 }
 
-
 export interface AnalysisPayload {
   analysis: AnalysisResult;
   source: DataSourceStatus;
@@ -124,10 +123,7 @@ export const runFeatureBacktest = createServerFn({ method: "POST" })
           ? featureIds.filter((id) => rawFeatures.map(String).includes(id))
           : DEFAULT_BACKTEST_PARAMS.features,
         weights: Object.fromEntries(
-          BACKTEST_FEATURES.map((f) => [
-            f.id,
-            num(rawWeights[f.id], f.defaultWeight, 0, 10),
-          ]),
+          BACKTEST_FEATURES.map((f) => [f.id, num(rawWeights[f.id], f.defaultWeight, 0, 10)]),
         ),
       };
       return {
@@ -156,7 +152,11 @@ export const runFeatureBacktest = createServerFn({ method: "POST" })
           })
           .slice(0, data.limit);
 
-    const series = [] as Array<{ symbol: string; name: string; bars: typeof dataset.bars[string] }>;
+    const series = [] as Array<{
+      symbol: string;
+      name: string;
+      bars: (typeof dataset.bars)[string];
+    }>;
     let extended = false;
     for (const inst of pool) {
       let bars = dataset.bars[inst.symbol] ?? [];
@@ -224,39 +224,40 @@ async function fetchText(url: string): Promise<string> {
  * 토스증권 허용 IP 등록용이므로 IPv4를 우선하고, IPv4를 못 얻으면 IPv6라도 반환한다.
  * 여러 조회처를 순차 시도하며 모든 실패 시 원인을 문자열에 담아 사용자에게 노출한다.
  */
-export const getServerEgressIp = createServerFn({ method: "GET" }).handler(async (): Promise<string> => {
-  // IPv4 전용 조회처를 먼저, 그다음 일반 조회처(IPv6 가능)를 시도한다.
-  const endpoints = [
-    "https://api4.ipify.org",
-    "https://ipv4.icanhazip.com",
-    "https://checkip.amazonaws.com",
-    "https://api.ipify.org?format=json",
-    "https://ipinfo.io/ip",
-    "https://api.myip.com",
-    "https://www.cloudflare.com/cdn-cgi/trace",
-    "https://icanhazip.com",
-  ];
-  const errors: string[] = [];
-  let ipv6: string | null = null;
+export const getServerEgressIp = createServerFn({ method: "GET" }).handler(
+  async (): Promise<string> => {
+    // IPv4 전용 조회처를 먼저, 그다음 일반 조회처(IPv6 가능)를 시도한다.
+    const endpoints = [
+      "https://api4.ipify.org",
+      "https://ipv4.icanhazip.com",
+      "https://checkip.amazonaws.com",
+      "https://api.ipify.org?format=json",
+      "https://ipinfo.io/ip",
+      "https://api.myip.com",
+      "https://www.cloudflare.com/cdn-cgi/trace",
+      "https://icanhazip.com",
+    ];
+    const errors: string[] = [];
+    let ipv6: string | null = null;
 
-  for (const url of endpoints) {
-    try {
-      const text = await fetchText(url);
-      const v4 = text.match(IPV4_RE);
-      if (v4) return v4[0];
-      const v6 = text.match(IPV6_RE);
-      if (v6 && !ipv6) ipv6 = v6[0];
-      errors.push(`${new URL(url).hostname}: IPv4 없음`);
-    } catch (error) {
-      errors.push(`${new URL(url).hostname}: ${error instanceof Error ? error.message : "실패"}`);
+    for (const url of endpoints) {
+      try {
+        const text = await fetchText(url);
+        const v4 = text.match(IPV4_RE);
+        if (v4) return v4[0];
+        const v6 = text.match(IPV6_RE);
+        if (v6 && !ipv6) ipv6 = v6[0];
+        errors.push(`${new URL(url).hostname}: IPv4 없음`);
+      } catch (error) {
+        errors.push(`${new URL(url).hostname}: ${error instanceof Error ? error.message : "실패"}`);
+      }
     }
-  }
 
-  if (ipv6) return ipv6;
-  console.error("egress IP lookup failed", errors);
-  return `조회 실패 (${errors.slice(0, 3).join(" / ")})`;
-});
-
+    if (ipv6) return ipv6;
+    console.error("egress IP lookup failed", errors);
+    return `조회 실패 (${errors.slice(0, 3).join(" / ")})`;
+  },
+);
 
 export const getInstrumentDetail = createServerFn({ method: "GET" })
   .inputValidator((input: { symbol: string; config?: unknown }) => ({
@@ -437,9 +438,8 @@ export const setUniverse = createServerFn({ method: "POST" })
       .slice(0, 500),
   }))
   .handler(async ({ data }): Promise<UniverseUploadPayload> => {
-    const { setUniverseOverride, getUniverseOverride, getDefaultUniverseSymbols } = await import(
-      "@/lib/engine/toss.server"
-    );
+    const { setUniverseOverride, getUniverseOverride, getDefaultUniverseSymbols } =
+      await import("@/lib/engine/toss.server");
     setUniverseOverride(data.symbols);
     const cur = getUniverseOverride();
     if (!cur) {
@@ -451,9 +451,8 @@ export const setUniverse = createServerFn({ method: "POST" })
 
 export const getUniverse = createServerFn({ method: "GET" }).handler(
   async (): Promise<UniverseUploadPayload> => {
-    const { getUniverseOverride, getDefaultUniverseSymbols } = await import(
-      "@/lib/engine/toss.server"
-    );
+    const { getUniverseOverride, getDefaultUniverseSymbols } =
+      await import("@/lib/engine/toss.server");
     const cur = getUniverseOverride();
     if (!cur) {
       const def = getDefaultUniverseSymbols();
@@ -492,9 +491,8 @@ export const setEtfUniverse = createServerFn({ method: "POST" })
       .slice(0, 100),
   }))
   .handler(async ({ data }): Promise<EtfUniversePayload> => {
-    const { setEtfUniverseOverride, getEtfUniverseOverride } = await import(
-      "@/lib/engine/toss.server"
-    );
+    const { setEtfUniverseOverride, getEtfUniverseOverride } =
+      await import("@/lib/engine/toss.server");
     setEtfUniverseOverride(data.symbols);
     const cur = getEtfUniverseOverride();
     return { symbols: cur?.symbols ?? [], updatedAt: cur?.updatedAt ?? null };
@@ -507,4 +505,3 @@ export const getEtfUniverse = createServerFn({ method: "GET" }).handler(
     return { symbols: cur?.symbols ?? [], updatedAt: cur?.updatedAt ?? null };
   },
 );
-

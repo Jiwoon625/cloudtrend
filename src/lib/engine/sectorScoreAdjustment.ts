@@ -24,10 +24,8 @@ export function adjustSectorPenaltyScore(
     };
   }
 
-  const overheated =
-    overheatThreshold !== null && sectorPriceLeadership! >= overheatThreshold;
-  const score =
-    baseScore9p5 + SECTOR_SLOT_POINTS - (overheated ? SECTOR_PENALTY_POINTS : 0);
+  const overheated = overheatThreshold !== null && sectorPriceLeadership! >= overheatThreshold;
+  const score = baseScore9p5 + SECTOR_SLOT_POINTS - (overheated ? SECTOR_PENALTY_POINTS : 0);
   return {
     score: Math.min(10, Math.max(0, Math.round(score * 100) / 100)),
     sectorScoreAvailable: true,

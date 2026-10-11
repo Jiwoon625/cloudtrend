@@ -1,4 +1,5 @@
 import { etfPartialEvidence } from "./etfPartialEvidence";
+import { validDate } from "./ledger/date";
 import { stockAssessmentDisplay, type StockAssessmentDisplay } from "./stockAssessmentDisplay";
 import {
   getHeldOperationalExitSignal,
@@ -81,7 +82,16 @@ export interface DashboardMarketSignals {
   exits: DashboardSignal[];
   assessments?: DashboardSignal[];
 }
+export interface DashboardActualPoolSummary {
+  currency: import("./newActualPortfolio").NewActualCurrency;
+  fundingStatus: import("./newActualPortfolio").NewActualPool["fundingStatus"];
+  netContributions: string | null;
+  cash: string | null;
+  openPositions: number;
+  assetPositions: Record<import("./newActualPortfolio").NewActualAsset, number>;
+}
 export interface DashboardOperations {
+  newActualPools?: { KRW: DashboardActualPoolSummary; USD: DashboardActualPoolSummary } | null;
   usOrderPreview?: import("./engine/usProspectiveOrderPreview").UsOrderPreviewBundle | null;
   markets: DashboardMarketSignals[];
   usPortfolio: { capital: number; summary: PortfolioSummary; unpricedPositions: number } | null;
@@ -229,6 +239,7 @@ export function marketSignals(
     "symbol" | "market" | "date" | "side" | "shares"
   >[] = [],
   sectorContext: DashboardSectorContext | null = null,
+  signalStartDate?: string,
 ): DashboardMarketSignals {
   const result: DashboardMarketSignals = {
     market,
@@ -242,7 +253,8 @@ export function marketSignals(
     exits: [],
     assessments: [],
   };
-  if (!index) return result;
+  if (!index || (signalStartDate && (!validDate(index.date) || index.date < signalStartDate)))
+    return result;
   const held = new Map((holdings ?? []).filter((p) => p.shares > 0).map((p) => [p.symbol, p]));
   const sold = soldSymbolsSinceSignal(executions, market, index.date);
   const rows = new Map(index.rows.filter((r) => r.market === market).map((r) => [r.symbol, r]));
@@ -259,6 +271,22 @@ export function marketSignals(
     // A stale individual quote cannot create today's signal.
     if (row.date !== index.date) continue;
     const holding = held.get(row.symbol);
+    const originDate =
+      market === "KOSPI"
+        ? row.kospiEntry?.originDate
+        : market === "ETF"
+          ? row.etfEntry?.originDate
+          : row.date;
+    // Confirmation after the restart cannot revive a pre-start (or unknown) origin.
+    // This is a website action-list boundary, not a change to the strategy engine.
+    const entryInSeries =
+      !signalStartDate ||
+      Boolean(
+        originDate &&
+        validDate(originDate) &&
+        originDate >= signalStartDate &&
+        originDate <= index.date,
+      );
     const consumed =
       (market === "ETF" && row.etfEntry?.originDate) ||
       (market === "KOSPI" && row.kospiEntry?.originDate)
@@ -269,13 +297,20 @@ export function marketSignals(
           ).has(row.symbol)
         : sold.has(row.symbol);
     const sectorLimit = dashboardSectorLimit(row, sectorContext);
-    if (market === "KOSPI" && row.kospiEntry?.state === "pending" && !holding && !consumed)
+    if (
+      entryInSeries &&
+      market === "KOSPI" &&
+      row.kospiEntry?.state === "pending" &&
+      !holding &&
+      !consumed
+    )
       result.pending!.push({
         ...row,
         sectorLimit,
         reason: "8.0 원신호 · 다음 거래일 종가 확인 대기",
       });
     if (
+      entryInSeries &&
       market === "ETF" &&
       row.etfEntry?.version === ETF_POLICY.version &&
       row.etfEntry.entryState === "pending" &&
@@ -285,7 +320,7 @@ export function marketSignals(
       !consumed
     )
       result.pending!.push({ ...row, reason: "M0 80점 원신호 · 다음 거래일 종가 확인 대기" });
-    if (row.onset && !holding && !consumed) {
+    if (entryInSeries && row.onset && !holding && !consumed) {
       result.onsets.push({
         ...row,
         sectorLimit,

@@ -80,7 +80,9 @@ export function ManualDataInput({ onChanged }: Props) {
       try {
         await appendManualDataSource(source, name);
       } catch (e) {
-        failures.push(`${name ?? "데이터"}: ${e instanceof Error ? e.message : "저장하지 못했습니다."}`);
+        failures.push(
+          `${name ?? "데이터"}: ${e instanceof Error ? e.message : "저장하지 못했습니다."}`,
+        );
       }
     }
     sync();
@@ -104,7 +106,8 @@ export function ManualDataInput({ onChanged }: Props) {
   };
 
   const reset = async () => {
-    if (busy || !window.confirm("모든 기기에서 공유하는 스크리닝 원천파일을 전부 삭제할까요?")) return;
+    if (busy || !window.confirm("모든 기기에서 공유하는 스크리닝 원천파일을 전부 삭제할까요?"))
+      return;
     setBusy("삭제 중…");
     try {
       await clearManualData();
@@ -124,8 +127,8 @@ export function ManualDataInput({ onChanged }: Props) {
     <div className="space-y-3">
       <p className="text-xs leading-relaxed text-muted-foreground">
         장기 백테스트와 동일한 Toss+KRX 102컬럼 자료형을 여러 파일로 나눠 올릴 수 있습니다. 파일
-        1개는 45MB 이하이며 개수 제한은 두지 않습니다. 스크리닝 시작 시 활성 파일을 모두 합쳐
-        하나의 시계열로 사용합니다.
+        1개는 45MB 이하이며 개수 제한은 두지 않습니다. 스크리닝 시작 시 활성 파일을 모두 합쳐 하나의
+        시계열로 사용합니다.
       </p>
 
       <input
@@ -204,7 +207,8 @@ export function ManualDataInput({ onChanged }: Props) {
                 <div className="min-w-0">
                   <p className="truncate font-medium">{file.fileName}</p>
                   <p className="text-[10px] text-muted-foreground">
-                    {formatBytes(file.bytes)} · {formatCount(file.rows)}행 · {formatCount(file.symbols)}심볼
+                    {formatBytes(file.bytes)} · {formatCount(file.rows)}행 ·{" "}
+                    {formatCount(file.symbols)}심볼
                     {file.minDate && file.maxDate ? ` · ${file.minDate} ~ ${file.maxDate}` : ""}
                   </p>
                 </div>
@@ -243,12 +247,12 @@ export function ManualDataInput({ onChanged }: Props) {
         <div className="rounded-md border border-up/40 bg-up/10 p-2 text-[12px]">
           <p className="flex items-center gap-1.5 font-medium text-up">
             <CheckCircle2 className="size-3.5" />
-            통합 결과 · 주식 {formatCount(stats.stocks)}종목 · ETF {formatCount(stats.etfs)}종목 · 지수{" "}
-            {stats.indexes.join(", ") || "없음"} · 일봉 {formatCount(stats.bars)}건
+            통합 결과 · 주식 {formatCount(stats.stocks)}종목 · ETF {formatCount(stats.etfs)}종목 ·
+            지수 {stats.indexes.join(", ") || "없음"} · 일봉 {formatCount(stats.bars)}건
           </p>
           <p className="mt-0.5 text-muted-foreground">
-            기간 {stats.firstDate} ~ {stats.lastDate} · 아래 “스크리닝 시작”을 누르면 활성 파일 전체로
-            대시보드·스크리너·상세화면을 계산합니다.
+            기간 {stats.firstDate} ~ {stats.lastDate} · 아래 “스크리닝 시작”을 누르면 활성 파일
+            전체로 대시보드·스크리너·상세화면을 계산합니다.
           </p>
           {warnings.length > 0 ? (
             <ul className="mt-1 list-inside list-disc text-[11px] text-warn">

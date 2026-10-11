@@ -41,7 +41,10 @@ export function buildPriorityScoreV8(
   supplyRisk: PrioritySupplyRiskV8 | null = null,
 ): ScoreBlock {
   const scoredRows = legacy.rows.filter(
-    (row) => row.group !== "외국인 수급" && row.group !== "신고가" && row.group !== "참고지표 (점수 미반영)",
+    (row) =>
+      row.group !== "외국인 수급" &&
+      row.group !== "신고가" &&
+      row.group !== "참고지표 (점수 미반영)",
   );
   const referenceRows = legacy.rows.filter((row) => row.group === "참고지표 (점수 미반영)");
   const rotation =
@@ -49,9 +52,7 @@ export function buildPriorityScoreV8(
       ? null
       : Math.min(100, Math.max(0, sectorRotationScore));
   const rotationPoints =
-    rotation === null
-      ? 0
-      : Math.round((rotation / 100) * PRIORITY_ROTATION_MAX_POINTS * 100) / 100;
+    rotation === null ? 0 : Math.round((rotation / 100) * PRIORITY_ROTATION_MAX_POINTS * 100) / 100;
   const rotationRow: RuleRow = {
     group: "섹터 로테이션",
     rule: "섹터 Rotation Score (0~100 비례 반영)",

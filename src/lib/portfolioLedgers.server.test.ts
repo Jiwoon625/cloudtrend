@@ -13,7 +13,11 @@ import { kospiEntryGates, kospiGateDataset } from "../../tests/kospi-policy-fixt
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { operateLedgers, refreshPortfolioAfterScreening } from "./portfolioLedgers.server";
+import {
+  operateLedgers,
+  refreshPortfolioAfterScreening,
+  loadNewActualDomesticQuotes,
+} from "./portfolioLedgers.server";
 import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
 import { OPERATIONAL_SIGNAL_VERSION } from "./engine/operationalStrategy";
 import { simulateStrategy, type LedgerDocument } from "./portfolioLedgers";
@@ -812,4 +816,125 @@ it("changed calculation runtime invalidates a cached portfolio even when policy 
   } finally {
     runtime.default.codeHash = original;
   }
+});
+
+import { parseManualMarketData } from "./engine/manualDataset";
+
+it("preserves a zero-close KOSDAQ observation with the same missing valuation as Shadow", async () => {
+  csv = [
+    "symbol,date,market,open,high,low,close,volume",
+    "A,2026-10-12,KOSDAQ,100,110,90,105,1000",
+    "A,2026-10-13,KOSDAQ,100,110,90,105,1000",
+    "A,2026-10-14,KOSDAQ,100,110,0,0,1000",
+    "OTHER,2026-10-14,KOSDAQ,100,110,90,105,1000",
+  ].join("\n");
+  const db = database();
+  const s = db.tables["screening_history"]![0]!["snapshot"] as {
+    date: string;
+    asOfDate: string;
+    savedAt: string;
+  };
+  s.date = s.asOfDate = "2026-10-12";
+  s.savedAt = "2026-10-13T08:00:00+09:00";
+  const result = await operateLedgers(db.client, "owner", { action: "sync" });
+  const call = vi.mocked(simulateStrategy).mock.calls.at(-1)!;
+  const raw = parseManualMarketData(csv, { allowIncompleteIndex: true }).dataset;
+  const shadowEquivalent = simulateStrategy(
+    call[0],
+    call[1],
+    raw.observedBars!,
+    call[3],
+    call[4],
+    call[5],
+    call[6],
+    call[7],
+    raw.liquidSymbolCountsByDate,
+  );
+  expect(result.document.strategy!.trades[0]!.status).toBe("OPEN");
+  expect(result.document.strategy!.modelAccounting!.nav).toBeNull();
+  expect(result.document.strategy!.modelAccounting!.valuationStatus).toBe("MISSING");
+  expect(result.document.strategy!.trades[0]!.currentPrice).toBeNull();
+  expect(result.document.strategy!.trades).toEqual(shadowEquivalent.trades);
+  expect(result.document.strategy!.valuationReference!.marks["A"]).toEqual({
+    price: 105,
+    date: "2026-10-13",
+    source: "PREVIOUS_CLOSE",
+  });
+  expect(result.document.strategy!.trades[0]!.exitDate).toBeNull();
+  expect(shadowEquivalent.trades[0]!.status).toBe("OPEN");
+  expect(call[2]["A"]).toHaveLength(3);
+  expect(raw.observedBars!["A"]).toHaveLength(3);
+});
+
+it("matches Shadow H60 observation counts after a whole-market unobserved session", async () => {
+  const dates: string[] = [];
+  for (
+    let d = new Date("2026-10-12T00:00:00Z");
+    dates.length < 62;
+    d.setUTCDate(d.getUTCDate() + 1)
+  ) {
+    if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) dates.push(d.toISOString().slice(0, 10));
+  }
+  csv = [
+    "symbol,date,market,open,high,low,close,volume",
+    ...dates.map(
+      (date, i) =>
+        `A,${date},KOSDAQ,${i === 10 ? "0,0,0,0,0" : i === 61 ? "110,110,110,110,1000" : "100,100,100,100,1000"}`,
+    ),
+  ].join("\n");
+  const db = database();
+  const s = db.tables["screening_history"]![0]!["snapshot"] as {
+    date: string;
+    asOfDate: string;
+    savedAt: string;
+  };
+  s.date = s.asOfDate = dates[0]!;
+  s.savedAt = "2026-10-13T08:00:00+09:00";
+  const result = await operateLedgers(db.client, "owner", { action: "sync" });
+  const call = vi.mocked(simulateStrategy).mock.calls.at(-1)!;
+  const raw = parseManualMarketData(csv, { allowIncompleteIndex: true }).dataset;
+  const shadowEquivalent = simulateStrategy(
+    call[0],
+    call[1],
+    raw.observedBars!,
+    call[3],
+    call[4],
+    call[5],
+    call[6],
+    call[7],
+    raw.liquidSymbolCountsByDate,
+  );
+  const serverTrade = result.document.strategy!.trades[0]!,
+    shadowTrade = shadowEquivalent.trades[0]!;
+  expect(serverTrade.exitDate).toBe(dates[60]);
+  expect(shadowTrade.exitDate).toBe(dates[60]);
+  expect(serverTrade.exitPrice).toBe(100);
+  expect(shadowTrade.exitPrice).toBe(100);
+});
+
+it("does not relabel an earlier quote as current after a missing-close observation", async () => {
+  csv = [
+    "symbol,date,market,open,high,low,close,volume",
+    "A,2026-10-12,KOSDAQ,100,110,90,105,1000",
+    "A,2026-10-13,KOSDAQ,100,110,0,0,1000",
+  ].join("\n");
+  const db = database();
+  expect(
+    await loadNewActualDomesticQuotes(
+      db.client,
+      "owner",
+      new Set(["A"]),
+      "2026-10-12",
+      "2026-10-12",
+    ),
+  ).toEqual({ A: { price: 105, date: "2026-10-12", exitSignal: null } });
+  expect(
+    await loadNewActualDomesticQuotes(
+      db.client,
+      "owner",
+      new Set(["A"]),
+      "2026-10-12",
+      "2026-10-13",
+    ),
+  ).toEqual({});
 });

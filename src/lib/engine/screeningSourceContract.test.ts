@@ -27,7 +27,12 @@ const structuralHeader = [
 
 describe("main screening source contract", () => {
   it("accepts the current stock format when market and foreignNetBuyValue are supplied", async () => {
-    const header = [...structuralHeader, "marketCap", "foreignNetBuyValue", "institutionNetBuyValue"];
+    const header = [
+      ...structuralHeader,
+      "marketCap",
+      "foreignNetBuyValue",
+      "institutionNetBuyValue",
+    ];
     const row = [
       "005930",
       "삼성전자",
@@ -135,9 +140,7 @@ describe("main screening source contract", () => {
       `${structuralHeader.join(",")}\n${row.join(",")}\n`,
       "kospi-correction.csv",
     );
-    const report = buildV8InputQualityReport([
-      { fileName: "kospi-correction.csv", validation },
-    ]);
+    const report = buildV8InputQualityReport([{ fileName: "kospi-correction.csv", validation }]);
 
     expect(validation.stats.stockCount).toBe(0);
     expect(report.validForV8).toBe(true);

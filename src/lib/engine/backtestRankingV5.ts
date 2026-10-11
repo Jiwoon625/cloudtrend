@@ -83,7 +83,10 @@ function spearman(xs: number[], ys: number[]): number | null {
   return pearson(averageRanks(xs), averageRanks(ys));
 }
 
-function hacMeanStats(xs: number[], lag: number): {
+function hacMeanStats(
+  xs: number[],
+  lag: number,
+): {
   mean: number | null;
   t: number | null;
   low: number | null;
@@ -165,7 +168,10 @@ export function buildAlignedRankingAnalysis(
   const marketIndex = new Map<BacktestMarket, Map<string, { open: number; close: number }>>();
   for (const market of ["KOSPI", "KOSDAQ"] as BacktestMarket[]) {
     const idx = marketContext?.indexSeries.find((s) => s.indexCode.toUpperCase() === market);
-    marketIndex.set(market, new Map((idx?.bars ?? []).map((b) => [b.tradeDate, { open: b.open, close: b.close }])));
+    marketIndex.set(
+      market,
+      new Map((idx?.bars ?? []).map((b) => [b.tradeDate, { open: b.open, close: b.close }])),
+    );
   }
 
   const commonDates = new Set<string>();
@@ -191,7 +197,8 @@ export function buildAlignedRankingAnalysis(
 
       const exit = bars[i + RANKING_HORIZON]!;
       if (!(exit.close > 0)) continue;
-      const ret = (exit.close / entry.open - 1) * 100 - Math.max(0, params.roundTripCostBps ?? 0) / 100;
+      const ret =
+        (exit.close / entry.open - 1) * 100 - Math.max(0, params.roundTripCostBps ?? 0) / 100;
       const benchEntry = benchmark.get(entry.tradeDate)?.open;
       const benchExit = benchmark.get(exit.tradeDate)?.close;
       const benchmarkRet =
@@ -231,9 +238,7 @@ export function buildAlignedRankingAnalysis(
 
   for (const [date, rows] of [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     if (rows.length < minCrossSection) continue;
-    const ranked = [...rows].sort(
-      (a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol),
-    );
+    const ranked = [...rows].sort((a, b) => b.score - a.score || a.symbol.localeCompare(b.symbol));
     const rawIc = spearman(
       ranked.map((r) => r.score),
       ranked.map((r) => r.ret),

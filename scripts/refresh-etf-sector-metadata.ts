@@ -7,9 +7,14 @@ import { ETF_SECTOR_BY_SYMBOL, SECTOR_NAME_BY_CODE } from "../src/lib/engine/sec
 const client = trustedSupabaseClient();
 const userId = process.env["SUPABASE_USER_ID"];
 if (!userId) throw new Error("SUPABASE_USER_ID is required");
-const { data: files, error } = await client.from("analysis_source_files")
-  .select("id,original_filename,storage_bucket,storage_path,source_type,updated_at,file_hash,validation_result")
-  .eq("user_id", userId).eq("status", "active").in("source_type", ["backtest", "screening"]);
+const { data: files, error } = await client
+  .from("analysis_source_files")
+  .select(
+    "id,original_filename,storage_bucket,storage_path,source_type,updated_at,file_hash,validation_result",
+  )
+  .eq("user_id", userId)
+  .eq("status", "active")
+  .in("source_type", ["backtest", "screening"]);
 if (error) throw error;
 
 const etfs = new Map<string, { name: string; code: string }>();
@@ -40,9 +45,7 @@ for (const file of files ?? []) {
   ];
   const unmapped = instruments.filter((i) => i.sector === "ETC" || i.sector === "기타");
   const mappedCount = instruments.length - unmapped.length;
-  const targets = instruments.filter(
-    (i) => i.type === "ETF" && ETF_SECTOR_BY_SYMBOL[i.symbol],
-  );
+  const targets = instruments.filter((i) => i.type === "ETF" && ETF_SECTOR_BY_SYMBOL[i.symbol]);
 
   for (const i of instruments.filter((i) => i.type === "ETF")) {
     etfs.set(i.symbol, { name: i.name, code: i.sector });

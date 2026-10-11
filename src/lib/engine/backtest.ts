@@ -4,11 +4,7 @@
 // 미래 종가는 forward return 계산에만 사용한다.
 import { computeIndicators, periodReturn, type IndicatorSnapshot } from "./indicators";
 import { VF_FEATURE_WEIGHTS } from "./vfConfig";
-import {
-  DEFAULT_SCORING_CONFIG,
-  technicalFlagsV3,
-  type ScoringConfig,
-} from "./scoring";
+import { DEFAULT_SCORING_CONFIG, technicalFlagsV3, type ScoringConfig } from "./scoring";
 import type { DailyPrice } from "./types";
 
 export interface FeatureDef {
@@ -286,7 +282,12 @@ export interface BacktestResult {
   notes: string[];
   // ---- 확장 결과 (기존 필드는 그대로 유지) ----
   horizons: number[];
-  baselineByHorizon: Array<{ horizon: number; count: number; avgReturn: number | null; medianReturn: number | null }>;
+  baselineByHorizon: Array<{
+    horizon: number;
+    count: number;
+    avgReturn: number | null;
+    medianReturn: number | null;
+  }>;
   featureHorizons: FeatureHorizonResult[];
   bucketHorizons: BucketHorizonStat[];
   entryThresholds: EntryThresholdStat[];
@@ -809,10 +810,12 @@ export function runBacktest(
   });
 
   // ---- 피처 상관행렬 ----
-  const columns = active.map((f) => main.map((o) => {
-    const v = o.flags[f.id];
-    return v === null || v === undefined ? null : v ? 1 : 0;
-  }));
+  const columns = active.map((f) =>
+    main.map((o) => {
+      const v = o.flags[f.id];
+      return v === null || v === undefined ? null : v ? 1 : 0;
+    }),
+  );
   const correlation: CorrelationMatrix = {
     ids: active.map((f) => f.id),
     labels: active.map((f) => f.label),
@@ -843,7 +846,12 @@ export function runBacktest(
       if (!best || e > best.edge)
         best = { featureKey: fh.featureKey, label: fh.featureLabel, edge: e };
     }
-    return { horizon: h, featureKey: best?.featureKey ?? "-", label: best?.label ?? "-", edge: best?.edge ?? 0 };
+    return {
+      horizon: h,
+      featureKey: best?.featureKey ?? "-",
+      label: best?.label ?? "-",
+      edge: best?.edge ?? 0,
+    };
   });
   let worstFeature: BacktestSummary["worstFeature"] = null;
   let highestTStat: BacktestSummary["highestTStat"] = null;
@@ -877,7 +885,11 @@ export function runBacktest(
       .map((fh) => ({ featureKey: fh.featureKey, label: fh.featureLabel })),
     lowDiscriminationFeatures: featureHorizons
       .filter((fh) => fh.signalRate !== null && (fh.signalRate >= 95 || fh.signalRate <= 5))
-      .map((fh) => ({ featureKey: fh.featureKey, label: fh.featureLabel, signalRate: fh.signalRate! })),
+      .map((fh) => ({
+        featureKey: fh.featureKey,
+        label: fh.featureLabel,
+        signalRate: fh.signalRate!,
+      })),
   };
 
   const notes: string[] = [...capNotes];

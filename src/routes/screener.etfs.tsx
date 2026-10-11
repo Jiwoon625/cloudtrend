@@ -3,10 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { analysisQueryOptions, isAnalysisPayload } from "@/lib/analysisQuery";
 
-import {
-  loadDomesticPortfolioLedger,
-  loadDomesticPositionContext,
-} from "@/lib/portfolioPositionContext";
+import { loadDomesticPositionContext } from "@/lib/portfolioPositionContext";
 import { AnalysisRequired } from "@/components/AnalysisRequired";
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
@@ -43,12 +40,6 @@ function EtfScreenerPage() {
   });
   // 저장된 입력 데이터로 이 화면에서도 직접 계산한다(외부 API 호출 없음).
   const { data: cached, error, isError, isPending, refetch } = useQuery(analysisQueryOptions);
-  const ledger = useQuery({
-    queryKey: ["portfolio-ledgers"],
-    queryFn: loadDomesticPortfolioLedger,
-    staleTime: 60_000,
-    retry: false,
-  });
   if (isPending) return <AnalysisRequired loading />;
   if (isError) return <DataError error={error} reset={refetch} />;
   if (!isAnalysisPayload(cached)) {
@@ -62,15 +53,14 @@ function EtfScreenerPage() {
   return (
     <AppShell>
       <HoldingsAvailability
-        ready={positions.isSuccess && ledger.isSuccess}
-        failed={positions.isError || ledger.isError}
-        retry={() => Promise.all([positions.refetch(), ledger.refetch()])}
+        ready={positions.isSuccess}
+        failed={positions.isError}
+        retry={() => positions.refetch()}
       />
       <EtfScreener
         analysis={cached.analysis}
-        ledger={ledger.isSuccess ? ledger.data : undefined}
         positionContext={positions.isSuccess ? positions.data : undefined}
-        ledgerError={ledger.error?.message ?? positions.error?.message}
+        ledgerError={positions.error?.message}
       />
     </AppShell>
   );

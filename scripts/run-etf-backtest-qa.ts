@@ -9,20 +9,71 @@ import { resolveSectorCode } from "../src/lib/engine/sectors";
 import { visitDelimitedRows } from "../src/lib/sourceData";
 
 const EXPECTED_ETF_SECTOR: Readonly<Record<string, string>> = Object.freeze({
-  "091160": "SEMI", "091230": "SEMI", "395270": "SEMI", "396500": "SEMI", "455850": "SEMI",
-  "305720": "BATTERY", "305540": "BATTERY", "364980": "BATTERY", "461950": "BATTERY", "462010": "BATTERY",
-  "091180": "AUTO", "138540": "AUTO", "385520": "AUTO", "464600": "AUTO", "466930": "AUTO",
-  "143860": "BIO", "227540": "BIO", "244580": "BIO", "253280": "BIO", "261070": "BIO",
-  "266370": "IT_HW", "326240": "IT_HW", "363580": "IT_HW", "380340": "IT_HW", "487750": "IT_HW",
-  "157490": "SOFTWARE", "365000": "SOFTWARE", "407820": "SOFTWARE", "427120": "SOFTWARE", "0105D0": "SOFTWARE",
-  "091170": "FINANCE", "091220": "FINANCE", "102970": "FINANCE", "139270": "FINANCE", "140700": "FINANCE",
-  "102960": "SHIP_DEF", "139230": "SHIP_DEF", "441540": "SHIP_DEF", "463250": "SHIP_DEF", "466920": "SHIP_DEF",
-  "117680": "CHEM_STEEL", "139240": "CHEM_STEEL",
-  "117460": "ENERGY", "139250": "ENERGY", "367770": "ENERGY", "377990": "ENERGY", "434730": "ENERGY",
-  "139290": "CONSUMER", "227560": "CONSUMER", "228800": "CONSUMER", "266390": "CONSUMER", "266410": "CONSUMER",
-  "228790": "HEALTH_SVC", "307510": "HEALTH_SVC", "464610": "HEALTH_SVC", "479850": "HEALTH_SVC", "0008T0": "HEALTH_SVC",
-  "228810": "TELCO_MEDIA", "266360": "TELCO_MEDIA", "300950": "TELCO_MEDIA", "395290": "TELCO_MEDIA", "475050": "TELCO_MEDIA",
-  "117700": "CONSTRUCT", "139220": "CONSTRUCT", "140710": "CONSTRUCT",
+  "091160": "SEMI",
+  "091230": "SEMI",
+  "395270": "SEMI",
+  "396500": "SEMI",
+  "455850": "SEMI",
+  "305720": "BATTERY",
+  "305540": "BATTERY",
+  "364980": "BATTERY",
+  "461950": "BATTERY",
+  "462010": "BATTERY",
+  "091180": "AUTO",
+  "138540": "AUTO",
+  "385520": "AUTO",
+  "464600": "AUTO",
+  "466930": "AUTO",
+  "143860": "BIO",
+  "227540": "BIO",
+  "244580": "BIO",
+  "253280": "BIO",
+  "261070": "BIO",
+  "266370": "IT_HW",
+  "326240": "IT_HW",
+  "363580": "IT_HW",
+  "380340": "IT_HW",
+  "487750": "IT_HW",
+  "157490": "SOFTWARE",
+  "365000": "SOFTWARE",
+  "407820": "SOFTWARE",
+  "427120": "SOFTWARE",
+  "0105D0": "SOFTWARE",
+  "091170": "FINANCE",
+  "091220": "FINANCE",
+  "102970": "FINANCE",
+  "139270": "FINANCE",
+  "140700": "FINANCE",
+  "102960": "SHIP_DEF",
+  "139230": "SHIP_DEF",
+  "441540": "SHIP_DEF",
+  "463250": "SHIP_DEF",
+  "466920": "SHIP_DEF",
+  "117680": "CHEM_STEEL",
+  "139240": "CHEM_STEEL",
+  "117460": "ENERGY",
+  "139250": "ENERGY",
+  "367770": "ENERGY",
+  "377990": "ENERGY",
+  "434730": "ENERGY",
+  "139290": "CONSUMER",
+  "227560": "CONSUMER",
+  "228800": "CONSUMER",
+  "266390": "CONSUMER",
+  "266410": "CONSUMER",
+  "228790": "HEALTH_SVC",
+  "307510": "HEALTH_SVC",
+  "464610": "HEALTH_SVC",
+  "479850": "HEALTH_SVC",
+  "0008T0": "HEALTH_SVC",
+  "228810": "TELCO_MEDIA",
+  "266360": "TELCO_MEDIA",
+  "300950": "TELCO_MEDIA",
+  "395290": "TELCO_MEDIA",
+  "475050": "TELCO_MEDIA",
+  "117700": "CONSTRUCT",
+  "139220": "CONSTRUCT",
+  "140710": "CONSTRUCT",
 });
 
 const EXPECTED = Object.keys(EXPECTED_ETF_SECTOR).sort();
@@ -72,12 +123,14 @@ async function main() {
   if (!/^[0-9a-f-]{36}$/i.test(userId)) throw new Error("SUPABASE_USER_ID is required");
   const filename = process.env["ETF_STAGING_FILENAME"] ?? "trendscore_input_20260918_061658.csv";
   const stagingPath = `${userId}/source/backtest/${filename}`;
-  const manifestPath = process.env["BACKTEST_SOURCE_MANIFEST"] ?? ".cache/cloudtrend-backtest-manifest.json";
+  const manifestPath =
+    process.env["BACKTEST_SOURCE_MANIFEST"] ?? ".cache/cloudtrend-backtest-manifest.json";
   const cacheDir = process.env["BACKTEST_SOURCE_CACHE_DIR"] ?? ".cache/cloudtrend-backtest";
 
   const client = trustedSupabaseClient();
   const { data, error } = await client.storage.from(ANALYSIS_BUCKET).download(stagingPath);
-  if (error || !data) throw new Error(`ETF staging download failed: ${error?.message ?? "unknown"}`);
+  if (error || !data)
+    throw new Error(`ETF staging download failed: ${error?.message ?? "unknown"}`);
   const bytes = new Uint8Array(await data.arrayBuffer());
   const text = decode(bytes);
 
@@ -120,9 +173,10 @@ async function main() {
       malformedRows++;
       return;
     }
-    const type = (idxType >= 0 ? cells[idxType] ?? "" : "").trim().toUpperCase();
-    const market = (idxMarket >= 0 ? cells[idxMarket] ?? "" : "").trim().toUpperCase();
-    const isEtf = type.includes("ETF") || market === "ETF" || EXPECTED_ETF_SECTOR[symbol] !== undefined;
+    const type = (idxType >= 0 ? (cells[idxType] ?? "") : "").trim().toUpperCase();
+    const market = (idxMarket >= 0 ? (cells[idxMarket] ?? "") : "").trim().toUpperCase();
+    const isEtf =
+      type.includes("ETF") || market === "ETF" || EXPECTED_ETF_SECTOR[symbol] !== undefined;
     if (!isEtf) return;
 
     etfRows++;
@@ -224,7 +278,12 @@ async function main() {
 
   let dateSymbolOverlapCount = 0;
   let closeConflictCount = 0;
-  const closeConflictExamples: Array<{ symbol: string; date: string; staged: number; core: number }> = [];
+  const closeConflictExamples: Array<{
+    symbol: string;
+    date: string;
+    staged: number;
+    core: number;
+  }> = [];
   for (const symbol of symbolOverlap) {
     const staged = series.get(symbol)!;
     const coreBars = core.bars[symbol] ?? [];
@@ -250,7 +309,8 @@ async function main() {
   );
 
   const readyByDate = new Map<string, Record<string, number>>();
-  for (const date of tradeDates) readyByDate.set(date, Object.fromEntries(sectors.map((s) => [s, 0])));
+  for (const date of tradeDates)
+    readyByDate.set(date, Object.fromEntries(sectors.map((s) => [s, 0])));
   for (const symbol of EXPECTED) {
     const s = series.get(symbol);
     if (!s) continue;
@@ -263,7 +323,10 @@ async function main() {
 
   const coverageBySector = Object.fromEntries(
     sectors.map((sector) => {
-      const points = tradeDates.map((date) => ({ date, count: readyByDate.get(date)![sector] ?? 0 }));
+      const points = tradeDates.map((date) => ({
+        date,
+        count: readyByDate.get(date)![sector] ?? 0,
+      }));
       const firstAny = points.find((p) => p.count > 0)?.date ?? null;
       const fullCount = expectedPerSector[sector] as number;
       const firstFull = points.find((p) => p.count === fullCount)?.date ?? null;
@@ -343,7 +406,10 @@ async function main() {
       expected65Present: missingExpected.length === 0 && EXPECTED.length === 65,
       noDuplicateDateSymbol: etfRows === seenPairs.size,
       noInternalOrTrailingGapCandidates: perSymbol.every(
-        (x) => x.status === "missing_symbol" || x.status === "pre_listing_consistent" || x.status === "complete_from_global_start",
+        (x) =>
+          x.status === "missing_symbol" ||
+          x.status === "pre_listing_consistent" ||
+          x.status === "complete_from_global_start",
       ),
       noCoreCloseConflicts: closeConflictCount === 0,
     },
@@ -360,6 +426,8 @@ async function main() {
 }
 
 main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
+  process.stderr.write(
+    `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+  );
   process.exitCode = 1;
 });

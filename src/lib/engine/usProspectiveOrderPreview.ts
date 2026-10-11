@@ -1,4 +1,10 @@
-import { decimal, format, fromLegacyNumber } from "../ledger/decimal";
+import {
+  decimal,
+  format,
+  fromLegacyNumber,
+  integerBudgetQuantity,
+  exactNotionalFee,
+} from "../ledger/decimal";
 import {
   US_PROSPECTIVE_MAX_POSITIONS,
   US_PROSPECTIVE_ONE_WAY_COST,
@@ -205,7 +211,22 @@ function plan(
     status: "BLOCKED",
     limitReason: null,
   });
+  // Isolated models own an exact cash balance. Do not silently fall back to the
+  // display number if its accounting state is absent, malformed, or inconsistent.
+  let exactCash = 0n;
+  let invalidExactCash = false;
+  if (state.executionPolicy) {
+    try {
+      exactCash = decimal(state.modelCashExact!);
+      invalidExactCash = exactCash < 0n || Number(format(exactCash)) !== state.cash;
+      exactNotionalFee(0n, state.executionPolicy.oneWayCost);
+    } catch {
+      invalidExactCash = true;
+    }
+  }
+  let exactFees = 0n;
   const invalid =
+    invalidExactCash ||
     !Number.isFinite(state.cash) ||
     state.cash < 0 ||
     Object.values(holdings).some((p) => !Number.isInteger(p.shares) || p.shares < 0) ||
@@ -247,20 +268,19 @@ function plan(
     r.estimatedNotionalUsd = shares * r.referencePrice!;
     r.status = requested === 0 ? "NO_CHANGE" : shares < requested ? "PARTIAL" : "ESTIMATED";
     r.limitReason = limit;
-    const fee = state.executionPolicy
-      ? Number(
-          format(
-            (decimal(fromLegacyNumber(r.referencePrice!)) *
-              BigInt(shares) *
-              decimal(state.executionPolicy.oneWayCost) +
-              decimal("1") -
-              1n) /
-              decimal("1"),
-          ),
-        )
-      : r.estimatedNotionalUsd * oneWayCost;
-    fees += fee;
-    cash += r.side === "BUY" ? -r.estimatedNotionalUsd - fee : r.estimatedNotionalUsd - fee;
+    if (state.executionPolicy) {
+      const gross = decimal(fromLegacyNumber(r.referencePrice!)) * BigInt(shares);
+      const fee = exactNotionalFee(gross, state.executionPolicy.oneWayCost);
+      exactFees += fee;
+      exactCash += (r.side === "BUY" ? -gross : gross) - fee;
+      r.estimatedNotionalUsd = Number(format(gross));
+      fees = Number(format(exactFees));
+      cash = Number(format(exactCash));
+    } else {
+      const fee = r.estimatedNotionalUsd * oneWayCost;
+      fees += fee;
+      cash += r.side === "BUY" ? -r.estimatedNotionalUsd - fee : r.estimatedNotionalUsd - fee;
+    }
     result.rows.push(r);
   };
   for (const exit of exits) {
@@ -321,7 +341,16 @@ function plan(
     const reasons: string[] = [];
     if (shares < requested) reasons.push("직전 ADV20 1% 한도");
     if (delta > 0) {
-      const affordable = Math.max(0, Math.floor(cash / (price(t.symbol)! * (1 + oneWayCost))));
+      const affordable = state.executionPolicy
+        ? Number(
+            integerBudgetQuantity(
+              format(exactCash),
+              format(exactCash),
+              fromLegacyNumber(price(t.symbol)!),
+              state.executionPolicy.oneWayCost,
+            ),
+          )
+        : Math.max(0, Math.floor(cash / (price(t.symbol)! * (1 + oneWayCost))));
       if (affordable < shares) reasons.push("현금·비용 한도");
       shares = Math.min(shares, affordable);
       if (fixedSlots) {

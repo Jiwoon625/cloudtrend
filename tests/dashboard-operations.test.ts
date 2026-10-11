@@ -658,3 +658,106 @@ describe("ETF confirmed-entry projection", () => {
     expect(validateEtfHoldingSymbols(["0005G0"])).toEqual(["0005G0"]);
   });
 });
+
+describe("restart action-list signal provenance", () => {
+  const start = "2026-10-12";
+  const date = "2026-10-13";
+  const source = (rows: DashboardIndexRow[], dateOverride = date): DashboardIndex => ({
+    date: dateOverride,
+    rows,
+    tradeDates: [start, date],
+  });
+  const kospi = (originDate: string | null, state: "confirmed" | "pending" = "confirmed") =>
+    row("005930", {
+      market: "KOSPI",
+      date,
+      onset: true,
+      exitReason: "UP95",
+      kospiEntry: {
+        version: "test",
+        date,
+        originDate,
+        confirmationDate: date,
+        state,
+        issues: [],
+        rsAccel: 1,
+        score: 8.5,
+        originScore: 8,
+        eligible: true,
+      },
+    });
+  const etf = (originDate: string | null, entryState: "confirmed" | "pending" = "confirmed") =>
+    row("069500", {
+      market: "ETF",
+      date,
+      onset: true,
+      exitReason: "MA60",
+      etfEntry: {
+        version: ETF_POLICY.version,
+        originDate,
+        confirmationDate: date,
+        entryState,
+        confirmationIssues: [],
+        averageTradingValue20: 2e9,
+        entryWeight: 0.1,
+        dataStatus: "ready",
+        krxReferenceDate: date,
+      },
+    });
+  it.each(["KOSPI", "KOSDAQ", "ETF", "US"] as const)(
+    "hides all pre-start actionable %s rows",
+    (market) => {
+      const oldDate = "2026-10-09";
+      const result = marketSignals(
+        source([row("OLD", { market, date: oldDate, onset: true, exitReason: "DOWN30" })], oldDate),
+        market,
+        [hold("OLD")],
+        [],
+        null,
+        start,
+      );
+      expect(result).toMatchObject({
+        onsets: [],
+        pending: [],
+        exits: [],
+        onsetCount: 0,
+        pendingCount: 0,
+        exitCount: 0,
+      });
+    },
+  );
+  it.each([null, "2026-10-09", "2026-10-12-malformed", "2026-10-14"])(
+    "does not import an unknown, old, or future KOSPI origin %s",
+    (origin) => {
+      for (const state of ["confirmed", "pending"] as const) {
+        const result = marketSignals(source([kospi(origin, state)]), "KOSPI", [], [], null, start);
+        expect(result.onsets).toEqual([]);
+        expect(result.pending).toEqual([]);
+      }
+    },
+  );
+  it.each([null, "2026-10-09", "2026-10-12-malformed", "2026-10-14"])(
+    "does not import an unknown, old, or future ETF origin %s",
+    (origin) => {
+      const result = marketSignals(source([etf(origin)]), "ETF", [], [], null, start);
+      expect(result.onsets).toEqual([]);
+    },
+  );
+  it("accepts new-origin entries and pending confirmations at the restart boundary", () => {
+    expect(marketSignals(source([kospi(start)]), "KOSPI", [], [], null, start).onsetCount).toBe(1);
+    expect(
+      marketSignals(source([kospi(date, "pending")]), "KOSPI", [], [], null, start).pendingCount,
+    ).toBe(1);
+    expect(marketSignals(source([etf(start)]), "ETF", [], [], null, start).onsetCount).toBe(1);
+    expect(
+      marketSignals(source([etf(date, "pending")]), "ETF", [], [], null, start).pendingCount,
+    ).toBe(1);
+  });
+  it("preserves new-held EXIT even when the current entry origin is pre-start", () => {
+    const held = [hold("005930", 2, start)];
+    const result = marketSignals(source([kospi("2026-10-09")]), "KOSPI", held, [], null, start);
+    expect(result.onsetCount).toBe(0);
+    expect(result.exitCount).toBe(1);
+    expect(result.exits[0]?.symbol).toBe("005930");
+  });
+});

@@ -8,6 +8,7 @@ export default defineConfig({
       "tests/market-data-ui.test.tsx",
       "tests/reaudit-ui.test.tsx",
       "tests/app-navigation-ui.test.tsx",
+      "tests/v8-formula-location-ui.test.tsx",
       "tests/portfolio-model-consolidation.test.ts",
       "tests/portfolio-consolidated-ui.test.tsx",
       "tests/portfolio-consolidation-auth.test.ts",

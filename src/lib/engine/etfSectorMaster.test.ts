@@ -13,8 +13,11 @@ const cases = [
   ["483320", "ACE 엔비디아밸류체인액티브", "SEMI"],
   ["487240", "KODEX AI전력핵심설비", "ENERGY"],
 ];
-const csv = ["symbol,name,type,market,date,open,high,low,close,volume,tradingValue,sector",
-  ...cases.map(([symbol, name]) => `${symbol},${name},ETF,ETF,2026-09-11,100,110,90,100,1000,100000,ETC`),
+const csv = [
+  "symbol,name,type,market,date,open,high,low,close,volume,tradingValue,sector",
+  ...cases.map(
+    ([symbol, name]) => `${symbol},${name},ETF,ETF,2026-09-11,100,110,90,100,1000,100000,ETC`,
+  ),
 ].join("\n");
 describe("curated ETF sectors", () => {
   it("resolves historical names and normalized codes without affecting stocks or other ETFs", () => {
@@ -26,11 +29,15 @@ describe("curated ETF sectors", () => {
     expect(resolveSectorCode("069500", "KODEX 200", true).code).toBe("MARKET_IDX");
   });
   it("replaces stored ETC in the backtest parser", () => {
-    const { dataset } = parseManualMarketData(csv + "\n" + Array.from({ length: 60 }, (_, n) => {
-      const date = new Date(Date.UTC(2026, 0, 1 + n)).toISOString().slice(0, 10);
-      return `KOSPI,KOSPI,INDEX,INDEX,${date},100,110,90,100,1000,100000,MARKET_IDX`;
-    }).join("\n"));
-    expect(dataset!.instruments.map(i => i.sectorCode)).toEqual(cases.map(c => c[2]));
+    const { dataset } = parseManualMarketData(
+      csv +
+        "\n" +
+        Array.from({ length: 60 }, (_, n) => {
+          const date = new Date(Date.UTC(2026, 0, 1 + n)).toISOString().slice(0, 10);
+          return `KOSPI,KOSPI,INDEX,INDEX,${date},100,110,90,100,1000,100000,MARKET_IDX`;
+        }).join("\n"),
+    );
+    expect(dataset!.instruments.map((i) => i.sectorCode)).toEqual(cases.map((c) => c[2]));
   });
   it("uses the same mapping during source validation", async () => {
     const result = await validateSourceText(csv);

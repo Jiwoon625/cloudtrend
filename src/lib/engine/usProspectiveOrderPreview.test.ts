@@ -458,6 +458,7 @@ describe("fixed20 prospective order previews", () => {
     const s = state("2026-10-06");
     s.initialCapital = 73551.04;
     s.cash = 73050.29;
+    s.modelCashExact = "73050.29";
     s.positions = { A: { ...s.positions["A"]!, shares: 5 } };
     s.executionPolicy = {
       version: "isolated-us-model-v1",
@@ -589,3 +590,101 @@ it.each([a0!, b3!])(
     expect(preview.rows.filter((r) => r.side === "BUY").map((r) => r.symbol)).toEqual(expected);
   },
 );
+
+describe("isolated model exact cash parity", () => {
+  const policy = {
+    version: "isolated-us-model-v1" as const,
+    bookId: "adopted-shadow-2026-10-12-v1:US_A0",
+    contractHash: `sha256:${"a".repeat(64)}`,
+    accountingStartDate: "2026-10-12",
+    initialCapital: "100000",
+    oneWayCost: "0.0015",
+  };
+  const q = (date: string) =>
+    ["A", "B"].map((symbol) => ({
+      date,
+      symbol,
+      name: symbol,
+      sector: "IT",
+      close: 5.03,
+    }));
+  const initial = () =>
+    stepUsProspectivePortfolio(
+      a0!,
+      analysis("2026-10-12", q("2026-10-12")),
+      null,
+      null,
+      policy,
+      usFixedSlotAllocationPolicy("100000"),
+    );
+  function withCash(cash: string, symbols = ["A"]) {
+    const base = initial();
+    const s = base.state;
+    s.cash = Number(cash);
+    s.modelCashExact = cash;
+    for (const symbol of symbols)
+      s.pendingTargets[symbol] = {
+        symbol,
+        targetWeight: 0.05,
+        fixedBudgetUsd: "5000",
+        remainingBudgetUsd: "5.03",
+        fixedTargetShares: 1,
+        signalDate: "2026-10-12",
+        reason: "ENTRY_ONSET80",
+        signalPriority: { core: 0.95, beta: 0.95, confirmation: 0.95 },
+      };
+    return base;
+  }
+  it.each([
+    ["5.03754499", 0],
+    ["5.037545", 1],
+    ["5.03754501", 1],
+    ["10", 1],
+  ])("matches model quantity, fees, and cash at balance %s", (cash, shares) => {
+    const base = withCash(String(cash));
+    const unchanged = structuredClone(base.state);
+    const preview = buildUsOrderPreview(a0!, base.state, q("2026-10-12"))!.nextSession;
+    const model = stepUsProspectivePortfolio(
+      a0!,
+      analysis("2026-10-13", q("2026-10-13")),
+      base.state,
+      base.nav,
+      policy,
+    );
+    expect(preview.rows[0]!.estimatedShares).toBe(shares);
+    expect(preview.rows[0]!.estimatedShares).toBe(model.state.positions["A"]?.shares ?? 0);
+    expect(preview.cashAfterUsd).toBe(model.state.cash);
+    expect(preview.feesUsd).toBe(model.feesUsd);
+    expect(preview.cashAfterUsd).toBeGreaterThanOrEqual(0);
+    expect(base.state).toEqual(unchanged);
+  });
+  it.each(["10.07508999", "10.07509", "10.07509001"])(
+    "keeps exact remaining cash across candidates at %s",
+    (cash) => {
+      const base = withCash(cash, ["A", "B"]);
+      const preview = buildUsOrderPreview(a0!, base.state, q("2026-10-12"))!.nextSession;
+      const model = stepUsProspectivePortfolio(
+        a0!,
+        analysis("2026-10-13", q("2026-10-13")),
+        base.state,
+        base.nav,
+        policy,
+      );
+      for (const row of preview.rows)
+        expect(row.estimatedShares).toBe(model.state.positions[row.symbol]?.shares ?? 0);
+      expect(preview.cashAfterUsd).toBe(model.state.cash);
+      expect(preview.feesUsd).toBe(model.feesUsd);
+    },
+  );
+  it.each([undefined, "invalid", "-1", "99"])(
+    "blocks inconsistent exact accounting state %s",
+    (cash) => {
+      const base = withCash("5.037545");
+      if (cash === undefined) delete base.state.modelCashExact;
+      else base.state.modelCashExact = cash;
+      expect(buildUsOrderPreview(a0!, base.state, q("2026-10-12"))!.nextSession.status).toBe(
+        "BLOCKED",
+      );
+    },
+  );
+});

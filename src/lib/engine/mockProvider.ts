@@ -1,13 +1,7 @@
 // Mock data provider — 화면 테스트용 합성 데이터. 실제 시세/재무가 아닙니다.
 // 시드 기반 결정론적 생성: 같은 시드 = 같은 데이터 = 같은 점수.
 import { FULL_CAPABILITIES, type KospiVolatilityObservation, type MarketDataset } from "./dataset";
-import type {
-  DailyPrice,
-  EtfFacts,
-  FinancialFacts,
-  IndexSeries,
-  Instrument,
-} from "./types";
+import type { DailyPrice, EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
 
 export const DATA_PROVIDER = "MOCK_SYNTHETIC_V1";
 export const DATA_VERSION = "mock-2026-08-31";
@@ -85,39 +79,334 @@ export const SECTORS: Array<{ code: string; name: string }> = [
 ];
 
 const STOCK_SPECS: Spec[] = [
-  { symbol: "005930", name: "테스트전자", market: "KOSPI", sectorCode: "SEMI", sectorName: "반도체", scenario: "A_STRONG", basePrice: 74000, marketCap: 420_000_000_000_000, memberships: ["KOSPI200", "KRX300", "KOREA_VALUEUP"] },
-  { symbol: "000660", name: "테스트반도체", market: "KOSPI", sectorCode: "SEMI", sectorName: "반도체", scenario: "A_STRONG", basePrice: 182000, marketCap: 120_000_000_000_000, memberships: ["KOSPI200", "KRX300"] },
-  { symbol: "005380", name: "테스트모터스", market: "KOSPI", sectorCode: "AUTO", sectorName: "자동차", scenario: "NEUTRAL", basePrice: 235000, marketCap: 48_000_000_000_000, memberships: ["KOSPI200", "KOREA_VALUEUP"] },
-  { symbol: "105560", name: "테스트금융지주", market: "KOSPI", sectorCode: "FIN", sectorName: "금융", scenario: "B_RETEST", basePrice: 62000, marketCap: 24_000_000_000_000, memberships: ["KOSPI200", "KOREA_VALUEUP"] },
-  { symbol: "051910", name: "테스트화학", market: "KOSPI", sectorCode: "CHEM", sectorName: "화학·소재", scenario: "BELOW_CLOUD", basePrice: 320000, marketCap: 22_000_000_000_000, memberships: ["KOSPI200"] },
-  { symbol: "009150", name: "테스트전기부품", market: "KOSPI", sectorCode: "IT", sectorName: "IT·소프트웨어", scenario: "HEAD_FAKE", basePrice: 148000, marketCap: 11_000_000_000_000, memberships: ["KOSPI200", "KRX300"] },
-  { symbol: "010140", name: "테스트중공업", market: "KOSPI", sectorCode: "SHIP", sectorName: "조선·기계", scenario: "A_RISK_OFF_SENSITIVE", basePrice: 13500, marketCap: 9_500_000_000_000, memberships: ["KOSPI200"] },
-  { symbol: "068270", name: "테스트바이오로직", market: "KOSPI", sectorCode: "BIO", sectorName: "바이오·헬스케어", scenario: "MISSING_FUNDAMENTALS", basePrice: 780000, marketCap: 55_000_000_000_000, memberships: ["KOSPI200", "KRX300"] },
-  { symbol: "011200", name: "테스트해운", market: "KOSPI", sectorCode: "SHIP", sectorName: "조선·기계", scenario: "EXIT_CHECK", basePrice: 19800, marketCap: 6_200_000_000_000 },
-  { symbol: "034020", name: "테스트에너지", market: "KOSPI", sectorCode: "CHEM", sectorName: "화학·소재", scenario: "LOW_VOLUME", basePrice: 22400, marketCap: 3_400_000_000_000 },
-  { symbol: "247540", name: "테스트소재텍", market: "KOSDAQ", sectorCode: "CHEM", sectorName: "화학·소재", scenario: "A_STRONG", basePrice: 156000, marketCap: 11_000_000_000_000, memberships: ["KOSDAQ150", "KRX300"] },
-  { symbol: "086520", name: "테스트배터리소재", market: "KOSDAQ", sectorCode: "CHEM", sectorName: "화학·소재", scenario: "B_RETEST", basePrice: 108000, marketCap: 5_600_000_000_000, memberships: ["KOSDAQ150"] },
-  { symbol: "196170", name: "테스트제약", market: "KOSDAQ", sectorCode: "BIO", sectorName: "바이오·헬스케어", scenario: "A_STRONG", basePrice: 62500, marketCap: 4_100_000_000_000, memberships: ["KOSDAQ150"] },
-  { symbol: "263750", name: "테스트게임즈", market: "KOSDAQ", sectorCode: "IT", sectorName: "IT·소프트웨어", scenario: "HEAD_FAKE", basePrice: 41200, marketCap: 1_800_000_000_000, memberships: ["KOSDAQ150"] },
-  { symbol: "112040", name: "테스트콘텐츠", market: "KOSDAQ", sectorCode: "IT", sectorName: "IT·소프트웨어", scenario: "NEUTRAL", basePrice: 31500, marketCap: 1_200_000_000_000 },
-  { symbol: "058470", name: "테스트리노", market: "KOSDAQ", sectorCode: "SEMI", sectorName: "반도체", scenario: "A_STRONG", basePrice: 28900, marketCap: 900_000_000_000, memberships: ["KOSDAQ150"] },
-  { symbol: "240810", name: "테스트장비", market: "KOSDAQ", sectorCode: "SEMI", sectorName: "반도체", scenario: "LOW_VOLUME", basePrice: 24100, marketCap: 720_000_000_000 },
-  { symbol: "214150", name: "테스트로보틱스", market: "KOSDAQ", sectorCode: "SHIP", sectorName: "조선·기계", scenario: "MISSING_FUNDAMENTALS", basePrice: 33800, marketCap: 1_400_000_000_000 },
-  { symbol: "095340", name: "테스트에이치엠", market: "KOSDAQ", sectorCode: "IT", sectorName: "IT·소프트웨어", scenario: "EXIT_CHECK", basePrice: 15200, marketCap: 310_000_000_000 },
-  { symbol: "078600", name: "테스트바이오텍", market: "KOSDAQ", sectorCode: "BIO", sectorName: "바이오·헬스케어", scenario: "BELOW_CLOUD", basePrice: 9800, marketCap: 280_000_000_000 },
+  {
+    symbol: "005930",
+    name: "테스트전자",
+    market: "KOSPI",
+    sectorCode: "SEMI",
+    sectorName: "반도체",
+    scenario: "A_STRONG",
+    basePrice: 74000,
+    marketCap: 420_000_000_000_000,
+    memberships: ["KOSPI200", "KRX300", "KOREA_VALUEUP"],
+  },
+  {
+    symbol: "000660",
+    name: "테스트반도체",
+    market: "KOSPI",
+    sectorCode: "SEMI",
+    sectorName: "반도체",
+    scenario: "A_STRONG",
+    basePrice: 182000,
+    marketCap: 120_000_000_000_000,
+    memberships: ["KOSPI200", "KRX300"],
+  },
+  {
+    symbol: "005380",
+    name: "테스트모터스",
+    market: "KOSPI",
+    sectorCode: "AUTO",
+    sectorName: "자동차",
+    scenario: "NEUTRAL",
+    basePrice: 235000,
+    marketCap: 48_000_000_000_000,
+    memberships: ["KOSPI200", "KOREA_VALUEUP"],
+  },
+  {
+    symbol: "105560",
+    name: "테스트금융지주",
+    market: "KOSPI",
+    sectorCode: "FIN",
+    sectorName: "금융",
+    scenario: "B_RETEST",
+    basePrice: 62000,
+    marketCap: 24_000_000_000_000,
+    memberships: ["KOSPI200", "KOREA_VALUEUP"],
+  },
+  {
+    symbol: "051910",
+    name: "테스트화학",
+    market: "KOSPI",
+    sectorCode: "CHEM",
+    sectorName: "화학·소재",
+    scenario: "BELOW_CLOUD",
+    basePrice: 320000,
+    marketCap: 22_000_000_000_000,
+    memberships: ["KOSPI200"],
+  },
+  {
+    symbol: "009150",
+    name: "테스트전기부품",
+    market: "KOSPI",
+    sectorCode: "IT",
+    sectorName: "IT·소프트웨어",
+    scenario: "HEAD_FAKE",
+    basePrice: 148000,
+    marketCap: 11_000_000_000_000,
+    memberships: ["KOSPI200", "KRX300"],
+  },
+  {
+    symbol: "010140",
+    name: "테스트중공업",
+    market: "KOSPI",
+    sectorCode: "SHIP",
+    sectorName: "조선·기계",
+    scenario: "A_RISK_OFF_SENSITIVE",
+    basePrice: 13500,
+    marketCap: 9_500_000_000_000,
+    memberships: ["KOSPI200"],
+  },
+  {
+    symbol: "068270",
+    name: "테스트바이오로직",
+    market: "KOSPI",
+    sectorCode: "BIO",
+    sectorName: "바이오·헬스케어",
+    scenario: "MISSING_FUNDAMENTALS",
+    basePrice: 780000,
+    marketCap: 55_000_000_000_000,
+    memberships: ["KOSPI200", "KRX300"],
+  },
+  {
+    symbol: "011200",
+    name: "테스트해운",
+    market: "KOSPI",
+    sectorCode: "SHIP",
+    sectorName: "조선·기계",
+    scenario: "EXIT_CHECK",
+    basePrice: 19800,
+    marketCap: 6_200_000_000_000,
+  },
+  {
+    symbol: "034020",
+    name: "테스트에너지",
+    market: "KOSPI",
+    sectorCode: "CHEM",
+    sectorName: "화학·소재",
+    scenario: "LOW_VOLUME",
+    basePrice: 22400,
+    marketCap: 3_400_000_000_000,
+  },
+  {
+    symbol: "247540",
+    name: "테스트소재텍",
+    market: "KOSDAQ",
+    sectorCode: "CHEM",
+    sectorName: "화학·소재",
+    scenario: "A_STRONG",
+    basePrice: 156000,
+    marketCap: 11_000_000_000_000,
+    memberships: ["KOSDAQ150", "KRX300"],
+  },
+  {
+    symbol: "086520",
+    name: "테스트배터리소재",
+    market: "KOSDAQ",
+    sectorCode: "CHEM",
+    sectorName: "화학·소재",
+    scenario: "B_RETEST",
+    basePrice: 108000,
+    marketCap: 5_600_000_000_000,
+    memberships: ["KOSDAQ150"],
+  },
+  {
+    symbol: "196170",
+    name: "테스트제약",
+    market: "KOSDAQ",
+    sectorCode: "BIO",
+    sectorName: "바이오·헬스케어",
+    scenario: "A_STRONG",
+    basePrice: 62500,
+    marketCap: 4_100_000_000_000,
+    memberships: ["KOSDAQ150"],
+  },
+  {
+    symbol: "263750",
+    name: "테스트게임즈",
+    market: "KOSDAQ",
+    sectorCode: "IT",
+    sectorName: "IT·소프트웨어",
+    scenario: "HEAD_FAKE",
+    basePrice: 41200,
+    marketCap: 1_800_000_000_000,
+    memberships: ["KOSDAQ150"],
+  },
+  {
+    symbol: "112040",
+    name: "테스트콘텐츠",
+    market: "KOSDAQ",
+    sectorCode: "IT",
+    sectorName: "IT·소프트웨어",
+    scenario: "NEUTRAL",
+    basePrice: 31500,
+    marketCap: 1_200_000_000_000,
+  },
+  {
+    symbol: "058470",
+    name: "테스트리노",
+    market: "KOSDAQ",
+    sectorCode: "SEMI",
+    sectorName: "반도체",
+    scenario: "A_STRONG",
+    basePrice: 28900,
+    marketCap: 900_000_000_000,
+    memberships: ["KOSDAQ150"],
+  },
+  {
+    symbol: "240810",
+    name: "테스트장비",
+    market: "KOSDAQ",
+    sectorCode: "SEMI",
+    sectorName: "반도체",
+    scenario: "LOW_VOLUME",
+    basePrice: 24100,
+    marketCap: 720_000_000_000,
+  },
+  {
+    symbol: "214150",
+    name: "테스트로보틱스",
+    market: "KOSDAQ",
+    sectorCode: "SHIP",
+    sectorName: "조선·기계",
+    scenario: "MISSING_FUNDAMENTALS",
+    basePrice: 33800,
+    marketCap: 1_400_000_000_000,
+  },
+  {
+    symbol: "095340",
+    name: "테스트에이치엠",
+    market: "KOSDAQ",
+    sectorCode: "IT",
+    sectorName: "IT·소프트웨어",
+    scenario: "EXIT_CHECK",
+    basePrice: 15200,
+    marketCap: 310_000_000_000,
+  },
+  {
+    symbol: "078600",
+    name: "테스트바이오텍",
+    market: "KOSDAQ",
+    sectorCode: "BIO",
+    sectorName: "바이오·헬스케어",
+    scenario: "BELOW_CLOUD",
+    basePrice: 9800,
+    marketCap: 280_000_000_000,
+  },
 ];
 
 const ETF_SPECS: Spec[] = [
-  { symbol: "069500", name: "테스트 KOSPI200 ETF", market: "ETF", sectorCode: "MKT", sectorName: "시장대표", scenario: "A_STRONG", basePrice: 41200, marketCap: 6_800_000_000_000, etfTag: "시장대표" },
-  { symbol: "229200", name: "테스트 KOSDAQ150 ETF", market: "ETF", sectorCode: "MKT", sectorName: "시장대표", scenario: "NEUTRAL", basePrice: 13800, marketCap: 900_000_000_000, etfTag: "시장대표" },
-  { symbol: "364980", name: "테스트 반도체 ETF", market: "ETF", sectorCode: "SEMI", sectorName: "반도체", scenario: "A_STRONG", basePrice: 22500, marketCap: 720_000_000_000, etfTag: "섹터·테마" },
-  { symbol: "305720", name: "테스트 2차전지 ETF", market: "ETF", sectorCode: "CHEM", sectorName: "화학·소재", scenario: "B_RETEST", basePrice: 18700, marketCap: 480_000_000_000, etfTag: "섹터·테마" },
-  { symbol: "251340", name: "테스트 밸류업 ETF", market: "ETF", sectorCode: "FIN", sectorName: "금융", scenario: "A_STRONG", basePrice: 12600, marketCap: 350_000_000_000, etfTag: "밸류업" },
-  { symbol: "279530", name: "테스트 고배당 ETF", market: "ETF", sectorCode: "FIN", sectorName: "금융", scenario: "NEUTRAL", basePrice: 14300, marketCap: 260_000_000_000, etfTag: "배당" },
-  { symbol: "441640", name: "테스트 커버드콜 ETF", market: "ETF", sectorCode: "MKT", sectorName: "시장대표", scenario: "ETF_PREMIUM", basePrice: 10200, marketCap: 140_000_000_000, etfTag: "커버드콜" },
-  { symbol: "148070", name: "테스트 국채 ETF", market: "ETF", sectorCode: "BOND", sectorName: "채권", scenario: "LOW_VOLUME", basePrice: 108000, marketCap: 1_100_000_000_000, etfTag: "채권" },
-  { symbol: "122630", name: "테스트 레버리지 ETF", market: "ETF", sectorCode: "MKT", sectorName: "시장대표", scenario: "A_STRONG", basePrice: 21500, marketCap: 1_900_000_000_000, etfTag: "레버리지", isLeveraged: true },
-  { symbol: "114800", name: "테스트 인버스 ETF", market: "ETF", sectorCode: "MKT", sectorName: "시장대표", scenario: "BELOW_CLOUD", basePrice: 4100, marketCap: 1_300_000_000_000, etfTag: "인버스", isInverse: true },
+  {
+    symbol: "069500",
+    name: "테스트 KOSPI200 ETF",
+    market: "ETF",
+    sectorCode: "MKT",
+    sectorName: "시장대표",
+    scenario: "A_STRONG",
+    basePrice: 41200,
+    marketCap: 6_800_000_000_000,
+    etfTag: "시장대표",
+  },
+  {
+    symbol: "229200",
+    name: "테스트 KOSDAQ150 ETF",
+    market: "ETF",
+    sectorCode: "MKT",
+    sectorName: "시장대표",
+    scenario: "NEUTRAL",
+    basePrice: 13800,
+    marketCap: 900_000_000_000,
+    etfTag: "시장대표",
+  },
+  {
+    symbol: "364980",
+    name: "테스트 반도체 ETF",
+    market: "ETF",
+    sectorCode: "SEMI",
+    sectorName: "반도체",
+    scenario: "A_STRONG",
+    basePrice: 22500,
+    marketCap: 720_000_000_000,
+    etfTag: "섹터·테마",
+  },
+  {
+    symbol: "305720",
+    name: "테스트 2차전지 ETF",
+    market: "ETF",
+    sectorCode: "CHEM",
+    sectorName: "화학·소재",
+    scenario: "B_RETEST",
+    basePrice: 18700,
+    marketCap: 480_000_000_000,
+    etfTag: "섹터·테마",
+  },
+  {
+    symbol: "251340",
+    name: "테스트 밸류업 ETF",
+    market: "ETF",
+    sectorCode: "FIN",
+    sectorName: "금융",
+    scenario: "A_STRONG",
+    basePrice: 12600,
+    marketCap: 350_000_000_000,
+    etfTag: "밸류업",
+  },
+  {
+    symbol: "279530",
+    name: "테스트 고배당 ETF",
+    market: "ETF",
+    sectorCode: "FIN",
+    sectorName: "금융",
+    scenario: "NEUTRAL",
+    basePrice: 14300,
+    marketCap: 260_000_000_000,
+    etfTag: "배당",
+  },
+  {
+    symbol: "441640",
+    name: "테스트 커버드콜 ETF",
+    market: "ETF",
+    sectorCode: "MKT",
+    sectorName: "시장대표",
+    scenario: "ETF_PREMIUM",
+    basePrice: 10200,
+    marketCap: 140_000_000_000,
+    etfTag: "커버드콜",
+  },
+  {
+    symbol: "148070",
+    name: "테스트 국채 ETF",
+    market: "ETF",
+    sectorCode: "BOND",
+    sectorName: "채권",
+    scenario: "LOW_VOLUME",
+    basePrice: 108000,
+    marketCap: 1_100_000_000_000,
+    etfTag: "채권",
+  },
+  {
+    symbol: "122630",
+    name: "테스트 레버리지 ETF",
+    market: "ETF",
+    sectorCode: "MKT",
+    sectorName: "시장대표",
+    scenario: "A_STRONG",
+    basePrice: 21500,
+    marketCap: 1_900_000_000_000,
+    etfTag: "레버리지",
+    isLeveraged: true,
+  },
+  {
+    symbol: "114800",
+    name: "테스트 인버스 ETF",
+    market: "ETF",
+    sectorCode: "MKT",
+    sectorName: "시장대표",
+    scenario: "BELOW_CLOUD",
+    basePrice: 4100,
+    marketCap: 1_300_000_000_000,
+    etfTag: "인버스",
+    isInverse: true,
+  },
 ];
 
 export const ALL_SPECS = [...STOCK_SPECS, ...ETF_SPECS];
@@ -125,25 +414,115 @@ export const ALL_SPECS = [...STOCK_SPECS, ...ETF_SPECS];
 function scenarioProfile(s: Scenario) {
   switch (s) {
     case "A_STRONG":
-      return { drift: 0.0016, vol: 0.016, squeeze: true, breakout: true, volSpike: 2.6, headFake: false, belowCloud: false, exit: false };
+      return {
+        drift: 0.0016,
+        vol: 0.016,
+        squeeze: true,
+        breakout: true,
+        volSpike: 2.6,
+        headFake: false,
+        belowCloud: false,
+        exit: false,
+      };
     case "A_RISK_OFF_SENSITIVE":
-      return { drift: 0.0015, vol: 0.021, squeeze: true, breakout: true, volSpike: 2.3, headFake: false, belowCloud: false, exit: false };
+      return {
+        drift: 0.0015,
+        vol: 0.021,
+        squeeze: true,
+        breakout: true,
+        volSpike: 2.3,
+        headFake: false,
+        belowCloud: false,
+        exit: false,
+      };
     case "B_RETEST":
-      return { drift: 0.0011, vol: 0.017, squeeze: true, breakout: false, volSpike: 1.5, headFake: false, belowCloud: false, exit: false };
+      return {
+        drift: 0.0011,
+        vol: 0.017,
+        squeeze: true,
+        breakout: false,
+        volSpike: 1.5,
+        headFake: false,
+        belowCloud: false,
+        exit: false,
+      };
     case "HEAD_FAKE":
-      return { drift: 0.0006, vol: 0.019, squeeze: true, breakout: false, volSpike: 1.1, headFake: true, belowCloud: false, exit: false };
+      return {
+        drift: 0.0006,
+        vol: 0.019,
+        squeeze: true,
+        breakout: false,
+        volSpike: 1.1,
+        headFake: true,
+        belowCloud: false,
+        exit: false,
+      };
     case "LOW_VOLUME":
-      return { drift: 0.0008, vol: 0.013, squeeze: true, breakout: true, volSpike: 0.9, headFake: false, belowCloud: false, exit: false };
+      return {
+        drift: 0.0008,
+        vol: 0.013,
+        squeeze: true,
+        breakout: true,
+        volSpike: 0.9,
+        headFake: false,
+        belowCloud: false,
+        exit: false,
+      };
     case "MISSING_FUNDAMENTALS":
-      return { drift: 0.0013, vol: 0.02, squeeze: false, breakout: true, volSpike: 2.2, headFake: false, belowCloud: false, exit: false };
+      return {
+        drift: 0.0013,
+        vol: 0.02,
+        squeeze: false,
+        breakout: true,
+        volSpike: 2.2,
+        headFake: false,
+        belowCloud: false,
+        exit: false,
+      };
     case "EXIT_CHECK":
-      return { drift: 0.0009, vol: 0.018, squeeze: false, breakout: false, volSpike: 1.2, headFake: false, belowCloud: false, exit: true };
+      return {
+        drift: 0.0009,
+        vol: 0.018,
+        squeeze: false,
+        breakout: false,
+        volSpike: 1.2,
+        headFake: false,
+        belowCloud: false,
+        exit: true,
+      };
     case "BELOW_CLOUD":
-      return { drift: -0.0012, vol: 0.019, squeeze: false, breakout: false, volSpike: 1.0, headFake: false, belowCloud: true, exit: true };
+      return {
+        drift: -0.0012,
+        vol: 0.019,
+        squeeze: false,
+        breakout: false,
+        volSpike: 1.0,
+        headFake: false,
+        belowCloud: true,
+        exit: true,
+      };
     case "ETF_PREMIUM":
-      return { drift: 0.0005, vol: 0.011, squeeze: false, breakout: false, volSpike: 1.1, headFake: false, belowCloud: false, exit: false };
+      return {
+        drift: 0.0005,
+        vol: 0.011,
+        squeeze: false,
+        breakout: false,
+        volSpike: 1.1,
+        headFake: false,
+        belowCloud: false,
+        exit: false,
+      };
     default:
-      return { drift: 0.0004, vol: 0.015, squeeze: false, breakout: false, volSpike: 1.2, headFake: false, belowCloud: false, exit: false };
+      return {
+        drift: 0.0004,
+        vol: 0.015,
+        squeeze: false,
+        breakout: false,
+        volSpike: 1.2,
+        headFake: false,
+        belowCloud: false,
+        exit: false,
+      };
   }
 }
 
@@ -191,7 +570,9 @@ function generateBars(spec: Spec): DailyPrice[] {
 
     const tradingValue = Math.round(volume * close);
     const foreignBias = p.drift > 0.001 ? 1 : -1;
-    const foreignNetBuyValue = Math.round((rnd() - 0.35 + foreignBias * 0.25) * tradingValue * 0.12);
+    const foreignNetBuyValue = Math.round(
+      (rnd() - 0.35 + foreignBias * 0.25) * tradingValue * 0.12,
+    );
     const institutionNetBuyValue = Math.round((rnd() - 0.5) * tradingValue * 0.08);
 
     bars.push({
@@ -238,9 +619,21 @@ function generateIndexBars(code: string, base: number, drift: number, seed: stri
 }
 
 export const INDEX_SERIES: IndexSeries[] = [
-  { indexCode: "KOSPI", indexName: "코스피", bars: generateIndexBars("KOSPI", 2750, 0.0009, "kospi-idx") },
-  { indexCode: "KOSDAQ", indexName: "코스닥", bars: generateIndexBars("KOSDAQ", 780, 0.0006, "kosdaq-idx") },
-  { indexCode: "KRX300", indexName: "KRX300", bars: generateIndexBars("KRX300", 1580, 0.0008, "krx300-idx") },
+  {
+    indexCode: "KOSPI",
+    indexName: "코스피",
+    bars: generateIndexBars("KOSPI", 2750, 0.0009, "kospi-idx"),
+  },
+  {
+    indexCode: "KOSDAQ",
+    indexName: "코스닥",
+    bars: generateIndexBars("KOSDAQ", 780, 0.0006, "kosdaq-idx"),
+  },
+  {
+    indexCode: "KRX300",
+    indexName: "KRX300",
+    bars: generateIndexBars("KRX300", 1580, 0.0008, "krx300-idx"),
+  },
   ...SECTORS.map((s, i) => ({
     indexCode: `KRX_${s.code}`,
     indexName: `KRX ${s.name}`,
@@ -330,8 +723,7 @@ export function getEtfFacts(symbol: string): EtfFacts | undefined {
     spec.scenario === "ETF_PREMIUM"
       ? Math.round((1.2 + rnd() * 0.8) * 100) / 100
       : Math.round((rnd() * 0.8 - 0.4) * 100) / 100;
-  const avgValue20 =
-    bars.slice(-20).reduce((a, b) => a + b.tradingValue, 0) / 20;
+  const avgValue20 = bars.slice(-20).reduce((a, b) => a + b.tradingValue, 0) / 20;
   return {
     nav: Math.round(last.close / (1 + premium / 100)),
     premiumDiscountRate: premium,

@@ -10,7 +10,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -38,11 +38,8 @@ import {
   formatPercent,
   formatWon,
 } from "@/lib/format";
-import { PortfolioFreshnessSummary } from "@/components/PortfolioFreshnessSummary";
 import { DomesticAssessmentPanel } from "@/components/DomesticAssessmentPanel";
 import { UniversePendingSummary } from "@/components/UniversePendingSummary";
-import { domesticPortfolioQueryOptions } from "@/lib/portfolioPositionContext";
-import type { DualPortfolioState } from "@/lib/portfolioLedgers";
 import { readDashboardCache, type DashboardSummary } from "@/lib/screeningCache";
 import { isScreeningStarted } from "@/lib/screeningRun";
 import {
@@ -143,15 +140,6 @@ function Dashboard() {
   });
   const started = requested || Boolean(summaryQuery.data);
   const operations = useDashboardOperations(started, summaryQuery.data?.resultDigest);
-  const portfolioQuery = useQuery({
-    ...domesticPortfolioQueryOptions,
-    enabled: started && Boolean(summaryQuery.data),
-  });
-  useEffect(() => {
-    if (summaryQuery.data?.resultDigest)
-      void queryClient.invalidateQueries({ queryKey: domesticPortfolioQueryOptions.queryKey });
-  }, [queryClient, summaryQuery.data?.inputFingerprint, summaryQuery.data?.resultDigest]);
-
   const rescreen = async () => {
     setRescreening(true);
     try {
@@ -239,13 +227,7 @@ function Dashboard() {
           embedded
         />
       ) : (
-        <DashboardContent
-          summary={summaryQuery.data}
-          portfolio={portfolioQuery.data ?? null}
-          portfolioPending={portfolioQuery.isPending || portfolioQuery.isFetching}
-          portfolioError={portfolioQuery.isError}
-          operations={operations}
-        />
+        <DashboardContent summary={summaryQuery.data} operations={operations} />
       )}
     </AppShell>
   );
@@ -253,22 +235,21 @@ function Dashboard() {
 
 function DashboardContent({
   summary,
-  portfolio,
-  portfolioPending,
-  portfolioError,
   operations,
 }: {
   summary: DashboardSummary;
-  portfolio: DualPortfolioState | null;
-  portfolioPending: boolean;
-  portfolioError: boolean;
   operations: ReturnType<typeof useDashboardOperations>;
 }) {
   const gate = kospiMarketGateDisplay(summary.kospiMarketGate, summary.asOfDate);
   const gateColor =
     gate.status === "RISK_ON" ? "text-up" : gate.status === "RISK_OFF" ? "text-down" : "text-warn";
   const gateLabel = kospiMarketGateLabel(gate.status);
-  const portfolioFallback = portfolioPending ? "불러오는 중…" : "-";
+  const portfolio = operations.data?.newActualPools?.KRW;
+  const portfolioFallback = operations.isPending
+    ? "불러오는 중…"
+    : operations.isError
+      ? "조회 실패"
+      : "미확인";
 
   return (
     <>
@@ -291,27 +272,46 @@ function DashboardContent({
             title="KOSPI / KOSDAQ 포트폴리오"
             icon={<ShieldCheck className="size-4 text-primary" />}
           >
+            <p className="mb-2 text-[10px] text-muted-foreground">
+              신규 배정·입출금 기준 · KRW (ETF와 공유)
+            </p>
             <KeyValue
-              label="운용자금"
-              value={portfolio ? formatWon(portfolio.document.actualCapital) : portfolioFallback}
-            />
-            <KeyValue
-              label="보유 종목수"
+              label="신규 순입금"
               value={
                 portfolio
-                  ? `${portfolio.actual.summary.openPositions} / ${portfolio.document.settings.maxPositions}`
+                  ? portfolio.netContributions === null
+                    ? "자금 확인 대기"
+                    : formatWon(Number(portfolio.netContributions))
+                  : portfolioFallback
+              }
+            />
+            <KeyValue
+              label="신규 현금"
+              value={
+                portfolio
+                  ? portfolio.cash === null
+                    ? "자금 확인 대기"
+                    : formatWon(Number(portfolio.cash))
+                  : portfolioFallback
+              }
+            />
+            <KeyValue
+              label="신규 실제 보유 종목수"
+              value={
+                portfolio
+                  ? `국내주식 ${portfolio.assetPositions.KR}종목 · ETF ${portfolio.assetPositions.ETF}종목`
                   : portfolioFallback
               }
             />
             <p className="mt-2 text-xs text-muted-foreground">
-              성과는 10월 12일 신규 운용 구간에서만 확인합니다.
+              보유와 성과는 10월 12일 신규 운용 구간에서만 확인합니다. 기존 거래내역은 Notion에서
+              관리합니다.
             </p>
-            <PortfolioFreshnessSummary
-              state={portfolio}
-              screeningDate={summary.asOfDate}
-              pending={portfolioPending}
-              error={portfolioError}
-            />
+            {portfolio?.fundingStatus === "INCOMPLETE" ? (
+              <p className="mt-2 text-[10px] text-warn">
+                신규 입출금·체결의 자금 연결을 확인해 주세요.
+              </p>
+            ) : null}
             <Link
               to="/portfolio"
               className="mt-3 inline-flex text-[11px] font-medium text-primary hover:underline"

@@ -1,6 +1,10 @@
 vi.mock("./ledger/websiteRepository.server", () => ({
   readWebsiteDocument: async (client: SupabaseClient, uid: string, source: string) => {
-    const result = await client.from(source).select("revision,payload").eq("user_id", uid).maybeSingle();
+    const result = await client
+      .from(source)
+      .select("revision,payload")
+      .eq("user_id", uid)
+      .maybeSingle();
     if (result.error) throw new Error(result.error.message);
     return result.data;
   },

@@ -233,8 +233,7 @@ export function bollingerState(closes: number[], endIndex: number): BollingerSta
   }
 
   const prevBreakout = prev ? closes[endIndex - 1]! > prev.upper : null;
-  const headFake =
-    prevBreakout === null ? null : prevBreakout && !breakout && expanding !== true;
+  const headFake = prevBreakout === null ? null : prevBreakout && !breakout && expanding !== true;
 
   return {
     bb,
@@ -317,7 +316,8 @@ function changeFromLookback(
 ): number | null {
   const current = values[endIndex];
   const prior = values[endIndex - lookback];
-  if (current === null || current === undefined || prior === null || prior === undefined) return null;
+  if (current === null || current === undefined || prior === null || prior === undefined)
+    return null;
   if (!Number.isFinite(current) || !Number.isFinite(prior)) return null;
   return current - prior;
 }
@@ -335,7 +335,11 @@ function latestFiniteInWindow(
   return null;
 }
 
-function finiteCountInWindow(values: Array<number | null>, endIndex: number, window: number): number {
+function finiteCountInWindow(
+  values: Array<number | null>,
+  endIndex: number,
+  window: number,
+): number {
   const start = Math.max(0, endIndex - window + 1);
   let count = 0;
   for (let i = start; i <= endIndex; i++) {
@@ -380,7 +384,8 @@ export function computeIndicators(bars: DailyPrice[], endIndex: number): Indicat
     ma60,
     ma120,
     ma20Slope: ma20 !== null && ma20Prev5 !== null ? ma20 - ma20Prev5 : null,
-    maAligned: ma20 !== null && ma60 !== null && ma120 !== null ? ma20 > ma60 && ma60 > ma120 : null,
+    maAligned:
+      ma20 !== null && ma60 !== null && ma120 !== null ? ma20 > ma60 && ma60 > ma120 : null,
     atr14,
     bollinger: bollingerState(closes, endIndex),
     ichimoku: ichimoku(bars, endIndex),
@@ -397,10 +402,18 @@ export function computeIndicators(bars: DailyPrice[], endIndex: number): Indicat
     institutionNet20d: sumLast(inst, endIndex, 20),
     shortSellingVolumeRate20dChangePp: changeFromLookback(shortSellingVolumeRates, endIndex, 20),
     shortSellingVolumeRateLatest: latestFiniteInWindow(shortSellingVolumeRates, endIndex, 21),
-    shortSellingVolumeRateObservationCount: finiteCountInWindow(shortSellingVolumeRates, endIndex, 21),
+    shortSellingVolumeRateObservationCount: finiteCountInWindow(
+      shortSellingVolumeRates,
+      endIndex,
+      21,
+    ),
     lendingBalanceQuantity20dChange: changeFromLookback(lendingBalanceQuantities, endIndex, 20),
     lendingBalanceQuantityLatest: latestFiniteInWindow(lendingBalanceQuantities, endIndex, 21),
-    lendingBalanceQuantityObservationCount: finiteCountInWindow(lendingBalanceQuantities, endIndex, 21),
+    lendingBalanceQuantityObservationCount: finiteCountInWindow(
+      lendingBalanceQuantities,
+      endIndex,
+      21,
+    ),
     extensionFromMa20: ma20 !== null && ma20 !== 0 ? (close / ma20 - 1) * 100 : null,
     atrExtension: ma20 !== null && atr14 ? (close - ma20) / atr14 : null,
     closeLocationValue: barCloseLocationValue(bars[endIndex]!),

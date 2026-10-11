@@ -1,10 +1,6 @@
-import { readWebsiteDocument } from "./ledger/websiteRepository.server";
 import { gunzipSync } from "node:zlib";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
-import { loadUsOrderPreview } from "./usOrderPreview.server";
-import { calculateActual, type LedgerDocument, type Quote } from "./portfolioLedgers";
-import { calculateUsActual, type UsActualDocument } from "./usActualLedger";
 import type { AnalysisResult } from "./engine/pipeline";
 import {
   DASHBOARD_CACHE_VERSION,
@@ -23,7 +19,9 @@ import {
   type DashboardOperations,
 } from "./dashboardOperations";
 
-import { projectDashboardSectorContext } from "./dashboardOperationsSectorLimits";
+import { loadWebsitePositionContextForOwner } from "./websitePositionContext.server";
+import { ACTUAL_PERFORMANCE_START } from "./ledger/actualPerformance";
+import type { NewActualPool } from "./newActualPortfolio";
 
 const BUCKET = "cloudtrend-data";
 const VERSION = "dashboard-operations-partial-evidence-v6";
@@ -147,19 +145,19 @@ export async function portfolioEtfContext(client: SupabaseClient, uid: string) {
     date: index?.date ?? null,
   };
 }
-async function documentFor<T extends LedgerDocument | UsActualDocument>(
-  client: SupabaseClient,
-  uid: string,
-  table: "portfolio_ledgers" | "us_actual_portfolio_ledgers",
-): Promise<T | null> {
-  return (await readWebsiteDocument<T>(client, uid, table))?.payload ?? null;
-}
-function quotesFor(index: DashboardIndex | null): Record<string, Quote> {
-  return Object.fromEntries(
-    (index?.rows ?? [])
-      .filter((r) => r.price !== null && r.price > 0)
-      .map((r) => [r.symbol, { price: r.price!, date: r.date, exitSignal: r.exitReason }]),
-  );
+function poolSummary(pool: NewActualPool) {
+  return {
+    currency: pool.currency,
+    fundingStatus: pool.fundingStatus,
+    netContributions: pool.netContributions,
+    cash: pool.cash,
+    openPositions: pool.positions.length,
+    assetPositions: {
+      KR: pool.positions.filter((position) => position.asset === "KR").length,
+      US: pool.positions.filter((position) => position.asset === "US").length,
+      ETF: pool.positions.filter((position) => position.asset === "ETF").length,
+    },
+  };
 }
 
 export async function loadDashboardOperations(accessToken: string): Promise<DashboardOperations> {
@@ -173,117 +171,68 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
       return null;
     }
   }
-  const [kr, us, krDoc, usDoc, etfHoldings, usOrderPreview] = await Promise.all([
+  const [kr, us, context] = await Promise.all([
     safe("국내 신호", () => projection(client, uid, "kr")),
     safe("미국 신호", () => projection(client, uid, "us")),
-    safe("국내 실제 보유", () => documentFor<LedgerDocument>(client, uid, "portfolio_ledgers")),
-    safe("미국 실제 보유", () =>
-      documentFor<UsActualDocument>(client, uid, "us_actual_portfolio_ledgers"),
-    ),
-    safe("ETF 보유", () =>
-      readJson<NonNullable<DashboardOperations["etfHoldings"]>>(
-        client,
-        `${uid}/${ETF_HOLDINGS_PATH}`,
-      ),
-    ),
-    safe("US 주문 미리보기", () => loadUsOrderPreview(client, uid, "A0_QUARTER_PRIMARY")),
+    safe("신규 운용 보유", () => loadWebsitePositionContextForOwner(client, uid)),
   ]);
   if (kr?.rows.some((r) => r.market === "ETF" && r.etfEntry?.dataStatus === "krx_batch_pending")) {
     warnings.push(
       `ETF ${kr.date}: KRX 기준일 자료 확인 대기. 다음 영업일 08:00 KST부터 조회 가능하며, 저녁 미공표는 정상입니다. 가용한 조건별 판단은 ETF 스크리너에서 확인하고 최종 진입은 자료 확인 후 판단합니다.`,
     );
   }
-  const krActual = krDoc
-    ? await safe("국내 실제 원장", async () =>
-        calculateActual(
-          krDoc.actualCapital,
-          krDoc.executions.filter((e) => e.market !== "ETF"),
-          quotesFor(kr),
-          kr?.date ?? null,
-        ),
-      )
-    : null;
-  const usActual = usDoc
-    ? await safe("미국 실제 원장", async () =>
-        calculateUsActual(usDoc.capital, usDoc.executions, quotesFor(us), us?.date ?? null),
-      )
-    : null;
-  const etfActual = krDoc
-    ? await safe("ETF 실제 원장", async () =>
-        calculateActual(
-          krDoc.etfCapital ?? 10_000_000,
-          krDoc.executions.filter((e) => e.market === "ETF"),
-          quotesFor(kr),
-          kr?.date ?? null,
-        ),
-      )
-    : null;
-  const etf = etfHoldings
-    ? await safe("ETF 보유정보 검증", async () =>
-        validateEtfHoldingSymbols(etfHoldings.symbols).map((symbol) => ({
-          symbol,
-          name: symbol,
-          shares: 1,
-          firstEntryDate: "",
-        })),
-      )
-    : null;
-  const enteredEtfs = new Set(
-    krDoc?.executions.filter((e) => e.market === "ETF").map((e) => e.symbol) ?? [],
-  );
-  const etfPositions = etfActual
-    ? [...etfActual.positions, ...(etf ?? []).filter((p) => !enteredEtfs.has(p.symbol))]
-    : etf;
-  const sectorContext = projectDashboardSectorContext(krDoc, kr?.screeningCreatedAt);
+  // Old actual journals, beta ledgers and manually tracked ETF membership are
+  // never a fallback for website holdings. The shared reader validates each new slice.
   const markets = DASHBOARD_MARKETS.map((market) =>
     marketSignals(
       market === "US" ? us : kr,
       market,
-      market === "US"
-        ? (usActual?.positions ?? null)
-        : market === "ETF"
-          ? etfPositions
-          : (krActual?.positions ?? null),
-      market === "US"
-        ? (usActual?.executions ?? [])
-        : market === "ETF"
-          ? (etfActual?.executions ?? [])
-          : (krActual?.executions ?? []),
-      sectorContext,
+      context ? context.positions.filter((position) => position.market === market) : null,
+      context?.actualExecutions ?? [],
+      {
+        counts: null,
+        maxPositions: null,
+        asOfDate: null,
+        issue: "신규 시리즈 확인 대기",
+      },
+      ACTUAL_PERFORMANCE_START,
     ),
   );
-  if (!krDoc)
-    warnings.push("국내 실제 원장이 없거나 조회되지 않아 국내 EXIT는 집계하지 않았습니다.");
-  if (!usDoc)
-    warnings.push(
-      "미국 실제 원장이 없거나 조회되지 않아 A0 실제 포트폴리오와 EXIT는 미확인으로 표시합니다.",
-    );
-  for (const [label, index, positions] of [
-    ["국내", kr, krActual?.positions],
-    ["미국", us, usActual?.positions],
+  if (!context)
+    warnings.push("신규 운용 보유정보를 확인하지 못해 보유 EXIT는 미확인으로 표시합니다.");
+  for (const [label, index, market] of [
+    ["국내", kr, "KR"],
+    ["미국", us, "US"],
   ] as const) {
-    if (!index || !positions) continue;
-    const available = new Set(index.rows.filter((r) => r.date === index.date).map((r) => r.symbol));
-    const missing = positions.filter((p) => !available.has(p.symbol));
+    if (!index) continue;
+    if (index.date < ACTUAL_PERFORMANCE_START) {
+      warnings.push(
+        `${label} ${index.date}: 신규 운용 시작 전 자료입니다. 10월 12일 이후 새 신호부터 진입 준비·EXIT를 표시합니다.`,
+      );
+      continue;
+    }
+    if (!context) continue;
+    const positions = context.positions.filter((position) =>
+      market === "US" ? position.market === "US" : position.market !== "US",
+    );
+    const available = new Set(
+      index.rows.filter((row) => row.date === index.date).map((row) => row.symbol),
+    );
+    const missing = positions.filter((position) => !available.has(position.symbol));
     if (missing.length)
       warnings.push(
-        `${label} 보유 ${missing.length}종목은 최신 스크리닝에 없어 신호 확인이 필요합니다.`,
+        `${label} 신규 보유 ${missing.length}종목은 최신 스크리닝에 없어 신호 확인이 필요합니다.`,
       );
   }
   return {
     markets,
-    usOrderPreview,
-    usPortfolio:
-      usDoc && usActual
-        ? {
-            capital: usDoc.capital,
-            summary: usActual.summary,
-            unpricedPositions: usActual.positions.filter(
-              (p) => !p.markDate || p.markDate !== us?.date,
-            ).length,
-          }
-        : null,
-    etfHoldings: etf === null ? null : etfHoldings,
+    newActualPools: context
+      ? { KRW: poolSummary(context.actualPools.KRW), USD: poolSummary(context.actualPools.USD) }
+      : null,
+    // Keep old response keys empty for older clients; no old values cross this boundary.
+    usOrderPreview: null,
+    usPortfolio: null,
+    etfHoldings: null,
     warnings,
   };
 }

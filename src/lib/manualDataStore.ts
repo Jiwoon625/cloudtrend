@@ -1,8 +1,5 @@
 import { parseManualMarketData, type ManualParseResult } from "@/lib/engine/manualDataset";
-import {
-  buildV8InputQualityReport,
-  V8_INPUT_CONTRACT_VERSION,
-} from "@/lib/engine/v8InputQuality";
+import { buildV8InputQualityReport, V8_INPUT_CONTRACT_VERSION } from "@/lib/engine/v8InputQuality";
 import {
   ownerPath,
   readFile,
@@ -155,7 +152,9 @@ export async function ensureManualDataText(): Promise<string | null> {
         const previous = effective.get(key);
         if (!previous) effective.set(key, row);
         else if (sourceRowFingerprint(previous) !== sourceRowFingerprint(row))
-          throw new Error(`활성 스크리닝 파일 사이에 값이 다른 중복 행이 있습니다: ${row.symbol} ${row.date}`);
+          throw new Error(
+            `활성 스크리닝 파일 사이에 값이 다른 중복 행이 있습니다: ${row.symbol} ${row.date}`,
+          );
       }
     }
     rawText = toCanonicalCsv([...effective.values()]);
@@ -236,9 +235,7 @@ function formatInputContractFailure(report: ReturnType<typeof buildV8InputQualit
   const invalid = report.filesInvalidRequiredColumns[0];
   if (!invalid) return "현재 Toss+KRX 입력 계약을 충족하지 않습니다.";
   const details = [
-    ...(invalid.missingColumns.length
-      ? [`누락 열: ${invalid.missingColumns.join(", ")}`]
-      : []),
+    ...(invalid.missingColumns.length ? [`누락 열: ${invalid.missingColumns.join(", ")}`] : []),
     ...(invalid.emptyColumns.length
       ? [`전체 공란 필수 열: ${invalid.emptyColumns.join(", ")}`]
       : []),

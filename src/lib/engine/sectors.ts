@@ -735,7 +735,10 @@ export const ETF_SECTOR_BY_SYMBOL: Readonly<Record<string, string>> = Object.fre
 });
 
 export function resolveCuratedEtfSectorCode(symbol: string): string | undefined {
-  let normalized = String(symbol ?? "").trim().toUpperCase().replace(/^[\'\"]+/, "");
+  let normalized = String(symbol ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/^['"]+/, "");
   if (/^A[0-9A-Z]{6}$/.test(normalized)) normalized = normalized.slice(1);
   if (/^\d+\.0$/.test(normalized)) normalized = normalized.slice(0, -2);
   if (/^\d{1,6}$/.test(normalized)) normalized = normalized.padStart(6, "0");
@@ -789,7 +792,9 @@ export function resolveSectorCode(
   let code: string | undefined;
 
   if (isEtf) {
-    code = resolveCuratedEtfSectorCode(symbol) ?? ETF_KEYWORD_RULES.find(([re]) => re.test(safeName))?.[1];
+    code =
+      resolveCuratedEtfSectorCode(symbol) ??
+      ETF_KEYWORD_RULES.find(([re]) => re.test(safeName))?.[1];
   } else {
     code = SYMBOL_SECTOR[symbol];
     if (!code) code = STOCK_NAME_RULES.find(([re]) => re.test(safeName))?.[1];

@@ -1,3 +1,4 @@
+import { PortfolioValuationWarning } from "@/components/PortfolioValuationWarning";
 import type { PortfolioLedgerViewState } from "@/lib/portfolioFreshness";
 import { buildKrPendingEntryPreview } from "@/lib/portfolioPendingEntries";
 import { formatKstDateTime } from "@/lib/format";
@@ -32,10 +33,13 @@ export function PortfolioFreshnessSummary({
             ? "포트폴리오 확인 중…"
             : !strategy
               ? "포트폴리오 계산 결과 없음"
-              : portfolioDate === screeningDate
-                ? `스크리닝 ${screeningDate} · 포트폴리오 시세 기준일 일치`
-                : `스크리닝 ${screeningDate} · 포트폴리오 시세 ${portfolioDate ?? "미확인"}`}
+              : strategy.valuationReference
+                ? `스크리닝 ${screeningDate} · 포트폴리오 종가 결측 · 현재 평가 미확정`
+                : portfolioDate === screeningDate
+                  ? `스크리닝 ${screeningDate} · 포트폴리오 시세 기준일 일치`
+                  : `스크리닝 ${screeningDate} · 포트폴리오 시세 ${portfolioDate ?? "미확인"}`}
       </p>
+      <PortfolioValuationWarning strategy={strategy} />
       {strategy ? (
         <p className="mt-1 text-muted-foreground">
           모델 계산 {formatKstDateTime(strategy.calculatedAt)} · 입력이 같으면 저장 결과 재사용

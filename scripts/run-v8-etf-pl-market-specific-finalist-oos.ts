@@ -38,8 +38,18 @@ interface ModelDef {
 }
 
 const MODELS: ModelDef[] = [
-  { id: "A_STOCK_PL", label: "A. Existing V8", description: "Stock PL only, threshold 80", etfThreshold: null },
-  { id: "FINAL_MARKET_SPECIFIC", label: "Finalist. Market-specific ETF PL", description: "KOSPI ETF PL 84; KOSDAQ ETF PL 85; Stock fallback 80", etfThreshold: null },
+  {
+    id: "A_STOCK_PL",
+    label: "A. Existing V8",
+    description: "Stock PL only, threshold 80",
+    etfThreshold: null,
+  },
+  {
+    id: "FINAL_MARKET_SPECIFIC",
+    label: "Finalist. Market-specific ETF PL",
+    description: "KOSPI ETF PL 84; KOSDAQ ETF PL 85; Stock fallback 80",
+    etfThreshold: null,
+  },
 ];
 
 interface CacheManifestFile {
@@ -508,9 +518,18 @@ function buildPriceLeadershipMap(dataset: MarketDataset, sourceType: "STOCK" | "
         nearHigh: ratio(a.nearHighTrue, a.nearHighValid),
       };
     });
-    const rs20s = raw.map((r) => r.rs20).filter(finite).sort((a, b) => a - b);
-    const rs60s = raw.map((r) => r.rs60).filter(finite).sort((a, b) => a - b);
-    const rs120s = raw.map((r) => r.rs120).filter(finite).sort((a, b) => a - b);
+    const rs20s = raw
+      .map((r) => r.rs20)
+      .filter(finite)
+      .sort((a, b) => a - b);
+    const rs60s = raw
+      .map((r) => r.rs60)
+      .filter(finite)
+      .sort((a, b) => a - b);
+    const rs120s = raw
+      .map((r) => r.rs120)
+      .filter(finite)
+      .sort((a, b) => a - b);
     for (const r of raw) {
       const trend = avgRatio([r.aboveMa20, r.aboveMa60, r.aboveMa120]);
       const breadth = avgRatio([r.advancing, r.aboveMa20, r.maAligned]);
@@ -714,11 +733,7 @@ function evaluationDates(dataset: MarketDataset, market: Market, fold: FoldYear)
   return dates.slice(first, Math.min(dates.length, last + 66));
 }
 
-function simulate(
-  series: PortfolioSeries[],
-  candidates: Candidate[],
-  dates: string[],
-): Simulation {
+function simulate(series: PortfolioSeries[], candidates: Candidate[], dates: string[]): Simulation {
   const seriesMap = new Map(series.map((s) => [key(s.market, s.symbol), s]));
   const halfCost = ROUND_TRIP_COST_BPS / 20_000;
   const byEntry = new Map<string, Candidate[]>();
@@ -764,10 +779,7 @@ function simulate(
       if (p.candidate.exitDate === date && p.candidate.exitTiming === "OPEN")
         closePosition(k, p, p.candidate.exitPrice);
     }
-    const openMarked = [...positions.values()].reduce(
-      (sum, p) => sum + p.shares * p.lastMark,
-      0,
-    );
+    const openMarked = [...positions.values()].reduce((sum, p) => sum + p.shares * p.lastMark, 0);
     const openEquity = cash + openMarked;
     for (const candidate of byEntry.get(date) ?? []) {
       const k = key(candidate.market, candidate.symbol);
@@ -797,10 +809,7 @@ function simulate(
       if (p.candidate.exitDate === date && p.candidate.exitTiming === "CLOSE")
         closePosition(k, p, p.candidate.exitPrice);
     }
-    const marked = [...positions.values()].reduce(
-      (sum, p) => sum + p.shares * p.lastMark,
-      0,
-    );
+    const marked = [...positions.values()].reduce((sum, p) => sum + p.shares * p.lastMark, 0);
     const equity = cash + marked;
     peak = Math.max(peak, equity);
     points.push({
@@ -825,8 +834,7 @@ function benchmarkReturn(dataset: MarketDataset, market: Market, start: string, 
   const map = new Map(bars.map((b) => [b.tradeDate, b]));
   const a = map.get(start);
   const b = map.get(end);
-  if (!a || !b || !finite(a.open) || a.open <= 0 || !finite(b.close) || b.close <= 0)
-    return null;
+  if (!a || !b || !finite(a.open) || a.open <= 0 || !finite(b.close) || b.close <= 0) return null;
   return (b.close / a.open - 1) * 100;
 }
 function profitFactor(xs: number[]) {
@@ -888,8 +896,7 @@ function foldRow(
       : null,
     totalReturn: round(totalReturn),
     benchmarkReturn: round(benchmark),
-    excessReturn:
-      finite(totalReturn) && finite(benchmark) ? round(totalReturn - benchmark) : null,
+    excessReturn: finite(totalReturn) && finite(benchmark) ? round(totalReturn - benchmark) : null,
     cagr: round(cagr),
     mdd: points.length ? round(Math.min(...points.map((p) => p.drawdown))) : null,
     avgTradeReturn: round(average(returns)),
@@ -950,18 +957,36 @@ function aggregate(rows: FoldRow[]) {
 
 function buildRobustness(rows: FoldRow[]) {
   const out = [];
-  for (const market of ["KOSPI","KOSDAQ"] as const) {
-    const base = rows.filter(r=>r.model==="A_STOCK_PL" && r.market===market).sort((a,b)=>a.fold-b.fold);
-    const fin = rows.filter(r=>r.model==="FINAL_MARKET_SPECIFIC" && r.market===market).sort((a,b)=>a.fold-b.fold);
-    const pairs = base.map((a,i)=>({fold:a.fold, base:a.totalReturn!, finalist:fin[i]!.totalReturn!, delta:fin[i]!.totalReturn!-a.totalReturn!}));
-    const deltas=pairs.map(x=>x.delta).sort((a,b)=>a-b);
-    const trim=(xs:number[])=>xs.length>2?xs.slice(1,-1):xs;
-    const wins=pairs.filter(x=>x.delta>0).length, losses=pairs.filter(x=>x.delta<0).length;
-    out.push({market,pairs,wins,losses,ties:pairs.length-wins-losses,
-      medianAnnualDeltaPp:round(median(deltas)), trimmedMeanAnnualDeltaPp:round(average(trim(deltas))),
-      worstAnnualDeltaPp:round(Math.min(...deltas)), bestAnnualDeltaPp:round(Math.max(...deltas)),
-      positiveDeltaYears:pairs.filter(x=>x.delta>0).map(x=>x.fold),
-      negativeDeltaYears:pairs.filter(x=>x.delta<0).map(x=>x.fold)});
+  for (const market of ["KOSPI", "KOSDAQ"] as const) {
+    const base = rows
+      .filter((r) => r.model === "A_STOCK_PL" && r.market === market)
+      .sort((a, b) => a.fold - b.fold);
+    const fin = rows
+      .filter((r) => r.model === "FINAL_MARKET_SPECIFIC" && r.market === market)
+      .sort((a, b) => a.fold - b.fold);
+    const pairs = base.map((a, i) => ({
+      fold: a.fold,
+      base: a.totalReturn!,
+      finalist: fin[i]!.totalReturn!,
+      delta: fin[i]!.totalReturn! - a.totalReturn!,
+    }));
+    const deltas = pairs.map((x) => x.delta).sort((a, b) => a - b);
+    const trim = (xs: number[]) => (xs.length > 2 ? xs.slice(1, -1) : xs);
+    const wins = pairs.filter((x) => x.delta > 0).length,
+      losses = pairs.filter((x) => x.delta < 0).length;
+    out.push({
+      market,
+      pairs,
+      wins,
+      losses,
+      ties: pairs.length - wins - losses,
+      medianAnnualDeltaPp: round(median(deltas)),
+      trimmedMeanAnnualDeltaPp: round(average(trim(deltas))),
+      worstAnnualDeltaPp: round(Math.min(...deltas)),
+      bestAnnualDeltaPp: round(Math.max(...deltas)),
+      positiveDeltaYears: pairs.filter((x) => x.delta > 0).map((x) => x.fold),
+      negativeDeltaYears: pairs.filter((x) => x.delta < 0).map((x) => x.fold),
+    });
   }
   return out;
 }
@@ -992,7 +1017,11 @@ function deltaVsA(aggregateRows: ReturnType<typeof aggregate>) {
   return out;
 }
 
-function sourceCoverage(dataset: MarketDataset, etfMap: Map<string, number>, stockMap: Map<string, number>) {
+function sourceCoverage(
+  dataset: MarketDataset,
+  etfMap: Map<string, number>,
+  stockMap: Map<string, number>,
+) {
   const allEtfs = dataset.instruments.filter((i) => i.instrumentType === "ETF");
   const eligibleEtfs = allEtfs.filter(
     (i) =>
@@ -1004,8 +1033,7 @@ function sourceCoverage(dataset: MarketDataset, etfMap: Map<string, number>, sto
   for (const i of eligibleEtfs)
     eligibleBySector.set(i.sectorCode, (eligibleBySector.get(i.sectorCode) ?? 0) + 1);
   const allBySector = new Map<string, number>();
-  for (const i of allEtfs)
-    allBySector.set(i.sectorCode, (allBySector.get(i.sectorCode) ?? 0) + 1);
+  for (const i of allEtfs) allBySector.set(i.sectorCode, (allBySector.get(i.sectorCode) ?? 0) + 1);
 
   const oldestObservedEtfsBySector = [...new Set(allEtfs.map((i) => i.sectorCode))]
     .sort()
@@ -1027,7 +1055,9 @@ function sourceCoverage(dataset: MarketDataset, etfMap: Map<string, number>, sto
           (a, b) =>
             String(a.firstObservedDate ?? "9999-99-99").localeCompare(
               String(b.firstObservedDate ?? "9999-99-99"),
-            ) || b.observedBars - a.observedBars || a.symbol.localeCompare(b.symbol),
+            ) ||
+            b.observedBars - a.observedBars ||
+            a.symbol.localeCompare(b.symbol),
         )
         .slice(0, 5),
     }));
@@ -1051,14 +1081,8 @@ function sourceCoverage(dataset: MarketDataset, etfMap: Map<string, number>, sto
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const { texts, manifest } = await loadCachedTexts(
-    options.sourceManifest,
-    options.sourceCacheDir,
-  );
-  const etfSource = await loadEtfCachedText(
-    options.etfSourceManifest,
-    options.etfSourceCacheDir,
-  );
+  const { texts, manifest } = await loadCachedTexts(options.sourceManifest, options.sourceCacheDir);
+  const etfSource = await loadEtfCachedText(options.etfSourceManifest, options.etfSourceCacheDir);
   // Canonical ETF history comes first so its rows are authoritative on overlapping
   // (symbol, date) observations; the stock-core sources then fill stocks, indexes,
   // and any non-overlapping ETF history.
@@ -1106,16 +1130,26 @@ async function main() {
           stockFallbackSignals: candidates.filter((c) => c.plSource === "STOCK").length,
           slotEarned: candidates.filter((c) => {
             if (!finite(c.sectorPl)) return false;
-            const threshold = c.plSource === "ETF"
-              ? (model.id === "FINAL_MARKET_SPECIFIC" ? (market === "KOSPI" ? 84 : 85) : 80)
-              : STOCK_FALLBACK_THRESHOLD;
+            const threshold =
+              c.plSource === "ETF"
+                ? model.id === "FINAL_MARKET_SPECIFIC"
+                  ? market === "KOSPI"
+                    ? 84
+                    : 85
+                  : 80
+                : STOCK_FALLBACK_THRESHOLD;
             return finite(threshold) && c.sectorPl < threshold;
           }).length,
           overheated: candidates.filter((c) => {
             if (!finite(c.sectorPl)) return false;
-            const threshold = c.plSource === "ETF"
-              ? (model.id === "FINAL_MARKET_SPECIFIC" ? (market === "KOSPI" ? 84 : 85) : 80)
-              : STOCK_FALLBACK_THRESHOLD;
+            const threshold =
+              c.plSource === "ETF"
+                ? model.id === "FINAL_MARKET_SPECIFIC"
+                  ? market === "KOSPI"
+                    ? 84
+                    : 85
+                  : 80
+                : STOCK_FALLBACK_THRESHOLD;
             return finite(threshold) && c.sectorPl >= threshold;
           }).length,
         });
@@ -1183,7 +1217,7 @@ async function main() {
       "The separate canonical ETF history is parsed before stock-core inputs so overlapping ETF (symbol,date) rows use the verified canonical ETF copy; non-overlapping stock-core data are still retained.",
       "All threshold models use an identical market/fold evaluation calendar and P10 portfolio implementation.",
       "Final validation uses every complete annual OOS fold from 2018 through 2025; 2026 is excluded because the source year is incomplete.",
-    ]
+    ],
   };
 
   const outputDir = path.resolve("analysis-runs");
@@ -1232,7 +1266,7 @@ async function main() {
 
 main().catch((error: unknown) => {
   process.stderr.write(
-    (error instanceof Error ? error.stack ?? error.message : String(error)) + "\n",
+    (error instanceof Error ? (error.stack ?? error.message) : String(error)) + "\n",
   );
   process.exitCode = 1;
 });

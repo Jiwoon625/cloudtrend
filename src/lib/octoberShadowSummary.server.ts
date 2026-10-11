@@ -48,6 +48,7 @@ export interface OctoberShadowBookSummary {
   positions: number | null;
   pending: number | null;
   holdings: Array<{
+    market?: "KOSPI" | "KOSDAQ" | "ETF" | "US";
     symbol: string;
     name: string;
     quantity: string;
@@ -288,6 +289,7 @@ export async function summarizeOctoberShadowBook(
           symbol: p.symbol,
           name: p.name,
           quantity: String(p.shares),
+          market: p.market,
           price: money(p.currentPrice),
           value: p.currentPrice === null ? null : money(p.shares * p.currentPrice),
           entryDate: p.entryDate,
@@ -344,7 +346,7 @@ export async function summarizeOctoberShadowBook(
             });
         } else {
           const r = (row.payload as AdoptedKrRun).result;
-          nav = r.modelAccounting?.nav === undefined ? null : Number(r.modelAccounting.nav);
+          nav = r.modelAccounting?.nav == null ? null : Number(r.modelAccounting.nav);
           for (const t of r.trades) {
             if (!seen.has(t.id + ":BUY")) {
               output.trades.push({

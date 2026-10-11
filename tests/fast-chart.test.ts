@@ -93,7 +93,9 @@ function storage() {
       ? { data: new Blob([files.get(path)! as BlobPart]), error: null }
       : { data: null, error: { statusCode: "404", message: "Object not found" } },
   );
-  const client = { storage: { from: () => ({ upload, download }) } } as any;
+  const client = { storage: { from: () => ({ upload, download }) } } as unknown as Parameters<
+    typeof publishRecentPrices
+  >[0];
   return { client, files, upload, download };
 }
 test("prices are independently usable; warmup is resumable and reuses same revision; all history is demand-only", async () => {
@@ -143,7 +145,7 @@ test("failed cache writes return usable on-demand data but do not mark a warmup 
   const ctx = context(),
     s = storage(),
     symbol = ctx.analysis.rows[0]!.instrument.symbol;
-  s.upload.mockResolvedValue({ error: { message: "temporary upload failure" } } as any);
+  s.upload.mockResolvedValue({ error: { message: "temporary upload failure" } });
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   expect(
     (await prepareChartBucket(s.client, "owner", identity, ctx, symbol, "120", "scored", true))

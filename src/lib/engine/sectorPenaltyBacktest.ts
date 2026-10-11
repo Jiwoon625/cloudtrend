@@ -246,7 +246,8 @@ function rollingHigh(bars: DailyPrice[], window = 250, minimum = 60) {
   let head = 0;
   for (let i = 0; i < bars.length; i++) {
     while (head < deque.length && deque[head]! < i - window + 1) head++;
-    while (deque.length > head && bars[deque[deque.length - 1]!]!.high <= bars[i]!.high) deque.pop();
+    while (deque.length > head && bars[deque[deque.length - 1]!]!.high <= bars[i]!.high)
+      deque.pop();
     deque.push(i);
     if (i >= minimum - 1) out[i] = bars[deque[head]!]!.high;
     if (head > 256 && head * 2 > deque.length) {
@@ -276,7 +277,9 @@ function avgRatio(values: Array<number | null>) {
 function combine(parts: Array<{ weight: number; ratio: number | null }>) {
   const available = parts.filter((p) => finite(p.ratio));
   const weight = available.reduce((sum, p) => sum + p.weight, 0);
-  return weight ? (available.reduce((sum, p) => sum + p.weight * (p.ratio ?? 0), 0) / weight) * 100 : null;
+  return weight
+    ? (available.reduce((sum, p) => sum + p.weight * (p.ratio ?? 0), 0) / weight) * 100
+    : null;
 }
 
 function addBool(
@@ -369,7 +372,8 @@ function buildSectorPriceLeadershipMap(dataset: MarketDataset) {
       const tv5 = tv(5);
       const tv20 = tv(20);
       const code = item.instrument.sectorCode;
-      const agg = aggs.get(code) ?? createAgg(code, sectorNames.get(code) ?? item.instrument.sectorName);
+      const agg =
+        aggs.get(code) ?? createAgg(code, sectorNames.get(code) ?? item.instrument.sectorName);
       const r20 = periodReturn(item.bars, i, 20);
       const r60 = periodReturn(item.bars, i, 60);
       const r120 = periodReturn(item.bars, i, 120);
@@ -387,11 +391,17 @@ function buildSectorPriceLeadershipMap(dataset: MarketDataset) {
       addBool(agg, "aboveMa20", ma20 === null ? null : bar.close > ma20);
       addBool(agg, "aboveMa60", ma60 === null ? null : bar.close > ma60);
       addBool(agg, "aboveMa120", ma120 === null ? null : bar.close > ma120);
-      addBool(agg, "maAligned", ma20 === null || ma60 === null || ma120 === null ? null : ma20 > ma60 && ma60 > ma120);
+      addBool(
+        agg,
+        "maAligned",
+        ma20 === null || ma60 === null || ma120 === null ? null : ma20 > ma60 && ma60 > ma120,
+      );
       addBool(
         agg,
         "nearHigh",
-        Number.isFinite(item.rollingHigh250[i]) ? bar.close >= item.rollingHigh250[i]! * 0.95 : null,
+        Number.isFinite(item.rollingHigh250[i])
+          ? bar.close >= item.rollingHigh250[i]! * 0.95
+          : null,
       );
       addBool(agg, "advancing", bar.close > prev.close);
       aggs.set(code, agg);
@@ -418,9 +428,18 @@ function buildSectorPriceLeadershipMap(dataset: MarketDataset) {
         nearHigh: ratio(agg.nearHighTrue, agg.nearHighValid),
       };
     });
-    const rs20s = raw.map((r) => r.rs20).filter(finite).sort((a, b) => a - b);
-    const rs60s = raw.map((r) => r.rs60).filter(finite).sort((a, b) => a - b);
-    const rs120s = raw.map((r) => r.rs120).filter(finite).sort((a, b) => a - b);
+    const rs20s = raw
+      .map((r) => r.rs20)
+      .filter(finite)
+      .sort((a, b) => a - b);
+    const rs60s = raw
+      .map((r) => r.rs60)
+      .filter(finite)
+      .sort((a, b) => a - b);
+    const rs120s = raw
+      .map((r) => r.rs120)
+      .filter(finite)
+      .sort((a, b) => a - b);
     for (const r of raw) {
       const trend = avgRatio([r.aboveMa20, r.aboveMa60, r.aboveMa120]);
       const breadth = avgRatio([r.advancing, r.aboveMa20, r.maAligned]);
@@ -446,24 +465,36 @@ function buildSectorPriceLeadershipMap(dataset: MarketDataset) {
 }
 
 function normalize(values: number[] | undefined, fallback: number[]) {
-  return [...new Set((values ?? fallback).map((v) => Math.round(v)).filter((v) => v >= 0 && v <= 100))].sort((a, b) => a - b);
+  return [
+    ...new Set((values ?? fallback).map((v) => Math.round(v)).filter((v) => v >= 0 && v <= 100)),
+  ].sort((a, b) => a - b);
 }
 
 function normalizeDays(values: number[] | undefined, fallback: number[]) {
-  return [...new Set((values ?? fallback).map((v) => Math.round(v)).filter((v) => v >= 1 && v <= 252))].sort((a, b) => a - b);
+  return [
+    ...new Set((values ?? fallback).map((v) => Math.round(v)).filter((v) => v >= 1 && v <= 252)),
+  ].sort((a, b) => a - b);
 }
 
 function percent(score: number | null | undefined) {
   return finite(score) ? (score / SCORE_MAX) * 100 : null;
 }
 
-function crossedUp(prev: number | null | undefined, cur: number | null | undefined, threshold: number) {
+function crossedUp(
+  prev: number | null | undefined,
+  cur: number | null | undefined,
+  threshold: number,
+) {
   const p = percent(prev);
   const c = percent(cur);
   return p !== null && c !== null && p < threshold && c >= threshold;
 }
 
-function crossedDown(prev: number | null | undefined, cur: number | null | undefined, threshold: number) {
+function crossedDown(
+  prev: number | null | undefined,
+  cur: number | null | undefined,
+  threshold: number,
+) {
   const p = percent(prev);
   const c = percent(cur);
   return p !== null && c !== null && p >= threshold && c < threshold;
@@ -586,21 +617,60 @@ function simulateTrade(
   const entryIndex = signalIndex + 1;
   const plannedExit = signalIndex + scenario.maxHoldingDays;
   const entry = s.bars[entryIndex];
-  if (!entry || !finite(entry.open) || entry.open <= 0 || percent(s.scores[signalIndex]) === null) return null;
+  if (!entry || !finite(entry.open) || entry.open <= 0 || percent(s.scores[signalIndex]) === null)
+    return null;
   for (let j = entryIndex; j <= Math.min(plannedExit, s.bars.length - 1); j++) {
     const bar = s.bars[j]!;
     if (![bar.open, bar.close, bar.low, bar.high].every((v) => finite(v) && v > 0)) return null;
     if (j > entryIndex) {
       const scoreIndex = j - 1;
-      if (crossedDown(s.scores[scoreIndex - 1], s.scores[scoreIndex], scenario.downsideExitThreshold)) {
-        return makeTrade(s, scenario, signalIndex, entryIndex, j, entry.open, bar.open, "DOWNSIDE_SCORE", "OPEN", costBps, bench);
+      if (
+        crossedDown(s.scores[scoreIndex - 1], s.scores[scoreIndex], scenario.downsideExitThreshold)
+      ) {
+        return makeTrade(
+          s,
+          scenario,
+          signalIndex,
+          entryIndex,
+          j,
+          entry.open,
+          bar.open,
+          "DOWNSIDE_SCORE",
+          "OPEN",
+          costBps,
+          bench,
+        );
       }
       if (crossedUp(s.scores[scoreIndex - 1], s.scores[scoreIndex], scenario.upsideExitThreshold)) {
-        return makeTrade(s, scenario, signalIndex, entryIndex, j, entry.open, bar.open, "UPSIDE_SCORE", "OPEN", costBps, bench);
+        return makeTrade(
+          s,
+          scenario,
+          signalIndex,
+          entryIndex,
+          j,
+          entry.open,
+          bar.open,
+          "UPSIDE_SCORE",
+          "OPEN",
+          costBps,
+          bench,
+        );
       }
     }
     if (j === plannedExit) {
-      return makeTrade(s, scenario, signalIndex, entryIndex, j, entry.open, bar.close, "TIME", "CLOSE", costBps, bench);
+      return makeTrade(
+        s,
+        scenario,
+        signalIndex,
+        entryIndex,
+        j,
+        entry.open,
+        bar.close,
+        "TIME",
+        "CLOSE",
+        costBps,
+        bench,
+      );
     }
   }
   return null;
@@ -637,19 +707,17 @@ function scenariosFor(
   return entries.flatMap((entry) =>
     holds.flatMap((hold) =>
       ups.flatMap((up) =>
-        downs.map(
-          (down): SectorPenaltyScenario => ({
-            id: `${modelId}-e${entry}-h${hold}-u${up}-d${down}`,
-            label: `${modelLabel} · ${entry} Onset · 최대 ${hold}D · ↑${up} / ↓${down}`,
-            modelId,
-            modelLabel,
-            priceLeadershipOverheatThreshold: threshold,
-            entryThreshold: entry,
-            upsideExitThreshold: up,
-            downsideExitThreshold: down,
-            maxHoldingDays: hold,
-          }),
-        ),
+        downs.map((down): SectorPenaltyScenario => ({
+          id: `${modelId}-e${entry}-h${hold}-u${up}-d${down}`,
+          label: `${modelLabel} · ${entry} Onset · 최대 ${hold}D · ↑${up} / ↓${down}`,
+          modelId,
+          modelLabel,
+          priceLeadershipOverheatThreshold: threshold,
+          entryThreshold: entry,
+          upsideExitThreshold: up,
+          downsideExitThreshold: down,
+          maxHoldingDays: hold,
+        })),
       ),
     ),
   );
@@ -658,7 +726,11 @@ function scenariosFor(
 function baseSeries(dataset: MarketDataset, limit: number): Series[] {
   return [...dataset.instruments]
     .filter((inst) => inst.instrumentType === "STOCK")
-    .sort((a, b) => (dataset.bars[b.symbol]?.at(-1)?.tradingValue ?? 0) - (dataset.bars[a.symbol]?.at(-1)?.tradingValue ?? 0))
+    .sort(
+      (a, b) =>
+        (dataset.bars[b.symbol]?.at(-1)?.tradingValue ?? 0) -
+        (dataset.bars[a.symbol]?.at(-1)?.tradingValue ?? 0),
+    )
     .slice(0, limit)
     .map((inst): Series | null => {
       const bars = dataset.bars[inst.symbol] ?? [];
@@ -694,9 +766,14 @@ function baseSeries(dataset: MarketDataset, limit: number): Series[] {
     .filter((s): s is Series => s !== null);
 }
 
-function applyModel(source: Series[], sectorPriceByDate: Map<string, number>, threshold: number | null) {
+function applyModel(
+  source: Series[],
+  sectorPriceByDate: Map<string, number>,
+  threshold: number | null,
+) {
   const modelId = threshold === null ? "base10-no-penalty" : `sector-penalty-pl${threshold}`;
-  const modelLabel = threshold === null ? "10점 baseline(페널티 없음)" : `PL≥${threshold} 과열 페널티`;
+  const modelLabel =
+    threshold === null ? "10점 baseline(페널티 없음)" : `PL≥${threshold} 과열 페널티`;
   let scoredDays = 0;
   let penaltyAppliedDays = 0;
   const bases: number[] = [];
@@ -710,7 +787,7 @@ function applyModel(source: Series[], sectorPriceByDate: Map<string, number>, th
       const base = s.baseScores[i];
       if (base === null || base === undefined) continue;
       const date = s.bars[i]?.tradeDate;
-      const pl = date ? sectorPriceByDate.get(`${date}|${s.sectorCode}`) ?? null : null;
+      const pl = date ? (sectorPriceByDate.get(`${date}|${s.sectorCode}`) ?? null) : null;
       const sectorAdjusted = adjustSectorPenaltyScore(base, pl, threshold);
       scores[i] = sectorAdjusted.score;
       sectorPriceLeadership[i] = pl;
@@ -813,10 +890,18 @@ function summarize(
   };
 }
 
-function best(rows: SectorPenaltyMetricRow[], split: "ALL" | "OOS", metric: "avgExcessReturn" | "portfolioSharpe") {
-  return rows
-    .filter((r) => r.split === split && r.market === "ALL" && r.trades >= 20 && r[metric] !== null)
-    .sort((a, b) => (b[metric] ?? -Infinity) - (a[metric] ?? -Infinity))[0] ?? null;
+function best(
+  rows: SectorPenaltyMetricRow[],
+  split: "ALL" | "OOS",
+  metric: "avgExcessReturn" | "portfolioSharpe",
+) {
+  return (
+    rows
+      .filter(
+        (r) => r.split === split && r.market === "ALL" && r.trades >= 20 && r[metric] !== null,
+      )
+      .sort((a, b) => (b[metric] ?? -Infinity) - (a[metric] ?? -Infinity))[0] ?? null
+  );
 }
 
 export function runSectorPenaltyBacktest(
@@ -839,10 +924,18 @@ export function runSectorPenaltyBacktest(
   const oosStart = allDates[Math.max(0, Math.floor(allDates.length * 0.8))] ?? null;
   const benchmarkMaps = {
     KOSPI: dataset.indexSeries.find((s) => s.indexCode === "KOSPI")?.bars
-      ? new Map(dataset.indexSeries.find((s) => s.indexCode === "KOSPI")!.bars.map((b) => [b.tradeDate, b]))
+      ? new Map(
+          dataset.indexSeries
+            .find((s) => s.indexCode === "KOSPI")!
+            .bars.map((b) => [b.tradeDate, b]),
+        )
       : undefined,
     KOSDAQ: dataset.indexSeries.find((s) => s.indexCode === "KOSDAQ")?.bars
-      ? new Map(dataset.indexSeries.find((s) => s.indexCode === "KOSDAQ")!.bars.map((b) => [b.tradeDate, b]))
+      ? new Map(
+          dataset.indexSeries
+            .find((s) => s.indexCode === "KOSDAQ")!
+            .bars.map((b) => [b.tradeDate, b]),
+        )
       : undefined,
   } as Record<Market, Map<string, DailyPrice> | undefined>;
 
@@ -856,7 +949,15 @@ export function runSectorPenaltyBacktest(
   for (const threshold of thresholds) {
     const { series, summary } = applyModel(source, sectorPriceByDate, threshold);
     scoreModels.push(summary);
-    const scenarios = scenariosFor(summary.modelId, summary.modelLabel, threshold, entries, ups, downs, holds);
+    const scenarios = scenariosFor(
+      summary.modelId,
+      summary.modelLabel,
+      threshold,
+      entries,
+      ups,
+      downs,
+      holds,
+    );
     for (const scenario of scenarios) {
       const trades = series.flatMap((s) => simulateScenario(s, scenario, cost, benchmarkMaps));
       for (const split of ["ALL", "OOS"] as const) {

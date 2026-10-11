@@ -24,7 +24,8 @@ for (const record of records) {
   const { data: blob, error: downloadError } = await client.storage
     .from(record.storage_bucket)
     .download(record.storage_path);
-  if (downloadError || !blob) throw downloadError ?? new Error(`storage object not found: ${record.original_filename}`);
+  if (downloadError || !blob)
+    throw downloadError ?? new Error(`storage object not found: ${record.original_filename}`);
 
   const bytes = new Uint8Array(await blob.arrayBuffer());
   const logicalFileHash = "sha256:" + createHash("sha256").update(bytes).digest("hex");

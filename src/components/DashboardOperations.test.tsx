@@ -330,7 +330,7 @@ describe("Korean sector-limit badges", () => {
   });
 });
 
-it("shows original holding counts without beta P&L on the US dashboard", () => {
+it("ignores old US holdings and displays only new-series actual counts and funding", () => {
   const value = data(0, 0);
   value.usPortfolio = {
     capital: 12000,
@@ -348,11 +348,81 @@ it("shows original holding counts without beta P&L on the US dashboard", () => {
       latestDate: "2026-10-09",
     },
   };
+  value.newActualPools = {
+    KRW: {
+      currency: "KRW",
+      fundingStatus: "PENDING",
+      netContributions: null,
+      cash: null,
+      openPositions: 0,
+      assetPositions: { KR: 0, US: 0, ETF: 0 },
+    },
+    USD: {
+      currency: "USD",
+      fundingStatus: "CONFIRMED",
+      netContributions: "20000",
+      cash: "15000",
+      openPositions: 2,
+      assetPositions: { KR: 0, US: 2, ETF: 0 },
+    },
+  };
   const before = structuredClone(value);
   const html = renderToStaticMarkup(<UsDashboardPortfolio query={query(value)} />);
-  expect(html).toContain("1종목");
+  expect(html).toContain("2종목");
+  expect(html).toContain("$20,000.00");
+  expect(html).toContain("$15,000.00");
+  expect(html).not.toContain("$12,000.00");
+  expect(html).not.toContain("1종목");
   expect(html).toContain("10월 12일 신규 운용 구간");
   for (const text of ["실현손익", "평가손익", "87,654", "98,765", "186,419"])
     expect(html).not.toContain(text);
   expect(value).toEqual(before);
+});
+
+describe("dashboard restart-only controls and missing funding", () => {
+  it("does not offer manual ETF membership as a new holding source", () => {
+    const html = renderCounts(data(0, 0));
+    expect(html).not.toContain("ETF 보유종목 등록·수정");
+    expect(html).not.toContain("ETF 실제 보유종목 코드");
+    expect(html).toContain("10월 12일부터 시작한 신규 운용");
+  });
+  it("shows an unfunded empty new pool explicitly without inventing old capital", () => {
+    const value = data(0, 0);
+    value.newActualPools = {
+      KRW: {
+        currency: "KRW",
+        fundingStatus: "PENDING",
+        netContributions: null,
+        cash: null,
+        openPositions: 0,
+        assetPositions: { KR: 0, US: 0, ETF: 0 },
+      },
+      USD: {
+        currency: "USD",
+        fundingStatus: "PENDING",
+        netContributions: null,
+        cash: null,
+        openPositions: 0,
+        assetPositions: { KR: 0, US: 0, ETF: 0 },
+      },
+    };
+    const html = renderToStaticMarkup(<UsDashboardPortfolio query={query(value)} />);
+    expect(html).toContain("0종목");
+    expect(html).toContain("자금 확인 대기");
+    expect(html).not.toContain("$0.00");
+    expect(html).not.toContain("기존 원장 가격");
+  });
+});
+
+it("does not fall back to legacy US counts when a cached response lacks new-series metadata", () => {
+  const value = data(0, 0);
+  value.usPortfolio = {
+    capital: 12345,
+    unpricedPositions: 0,
+    summary: { openPositions: 19 },
+  } as DashboardOperations["usPortfolio"];
+  const html = renderToStaticMarkup(<UsDashboardPortfolio query={query(value)} />);
+  expect(html).toContain("미확인");
+  expect(html).not.toContain("19종목");
+  expect(html).not.toContain("$12,345.00");
 });

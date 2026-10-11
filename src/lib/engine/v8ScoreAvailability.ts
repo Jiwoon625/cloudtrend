@@ -46,7 +46,8 @@ function bucket(): V8ScoreAvailabilityBucket {
 function hasMissingForeign20d(bars: DailyPrice[], endIndex: number) {
   if (endIndex < 19) return true;
   for (let i = endIndex - 19; i <= endIndex; i++) {
-    if (bars[i]?.foreignNetBuyValue === null || bars[i]?.foreignNetBuyValue === undefined) return true;
+    if (bars[i]?.foreignNetBuyValue === null || bars[i]?.foreignNetBuyValue === undefined)
+      return true;
   }
   return false;
 }
@@ -72,7 +73,10 @@ function mark(
   year: V8ScoreAvailabilityBucket,
   key: keyof Pick<
     V8ScoreAvailabilityBucket,
-    "warmupBefore120Days" | "high52wWarmupDays" | "foreign20dMissingDays" | "otherTechnicalMissingDays"
+    | "warmupBefore120Days"
+    | "high52wWarmupDays"
+    | "foreign20dMissingDays"
+    | "otherTechnicalMissingDays"
   >,
 ) {
   root.unavailableDays++;
@@ -140,8 +144,7 @@ export function buildV8ScoreAvailabilityReport(
 
   const postWarmupCandidateDays =
     totals.totalDays - totals.warmupBefore120Days - totals.high52wWarmupDays;
-  const postWarmupUnavailableDays =
-    totals.foreign20dMissingDays + totals.otherTechnicalMissingDays;
+  const postWarmupUnavailableDays = totals.foreign20dMissingDays + totals.otherTechnicalMissingDays;
 
   return {
     version: V8_SCORE_AVAILABILITY_VERSION,

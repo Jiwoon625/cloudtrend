@@ -14,7 +14,9 @@ beforeEach(() => {
   capture.replay.mockResolvedValue({
     market: "KR",
     calculatedAt: "2026-10-08T00:00:00Z",
-    processed: [{ date: "2026-10-06", status: "RECORDED", replayMode: "RETROSPECTIVE", records: [] }],
+    processed: [
+      { date: "2026-10-06", status: "RECORDED", replayMode: "RETROSPECTIVE", records: [] },
+    ],
     deferred: null,
     latestRecordedDate: "2026-10-06",
     throughDate: "2026-10-06",
