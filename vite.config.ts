@@ -14,6 +14,8 @@ const codeVersion =
 
 export default defineConfig({
   vite: {
+    // Keep each release's asset URLs separate, including cached error responses.
+    build: { assetsDir: `assets/${codeVersion}` },
     define: {
       "import.meta.env.VITE_CLOUDTREND_CODE_VERSION": JSON.stringify(codeVersion),
     },
