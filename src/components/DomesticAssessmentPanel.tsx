@@ -1,3 +1,4 @@
+import { dashboardCopy } from "@/lib/dashboardCopy";
 import { isEveningReviewCandidate } from "@/lib/eveningReview";
 import { EtfAssessmentDetails } from "./EtfAssessmentDetails";
 import { useState } from "react";
@@ -65,14 +66,14 @@ export function DomesticAssessmentPanel({
         </p>
         {review ? (
           <p className="text-[10px] text-muted-foreground">
-            미보유 주식 기술 8점 이상·신규 돌파(확인된 필수조건 미충족 제외), ETF 전략 대상의 당일
-            기술 근거 · 신규 운용 시작 조건 적용
+            미보유 주식 기술 8점 이상·돌파(확인된 필수조건 미충족 제외), ETF 전략 대상의 당일 기술
+            근거 · 운용 시작 조건 적용
           </p>
         ) : null}
         {!review && stocks.length > 0 ? (
           <p className="text-xs">
             기술점수 확인 {counts.score} / {stocks.length}종목 · 기술 A {counts.a} / B {counts.b} ·
-            기술 8.0 신규 돌파 {counts.onset} · 자료 확인 대기 {counts.pending}
+            기술 8.0 돌파 {counts.onset} · 자료 확인 대기 {counts.pending}
           </p>
         ) : null}
         {!review && all.some((r) => r.market === "ETF") ? (
@@ -156,7 +157,7 @@ export function DomesticAssessmentPanel({
                     {r.symbol} · {r.market}
                   </p>
                   <p>{r.date}</p>
-                  <p className="mt-1">{r.reason}</p>
+                  <p className="mt-1">{review ? dashboardCopy(r.reason) : r.reason}</p>
                 </td>
                 <td className="p-3">
                   <p>
@@ -182,12 +183,17 @@ export function DomesticAssessmentPanel({
                       held={r.held ?? false}
                       signalDate={r.date}
                       entryNotice={r.operationalEntryNotice}
+                      formatText={review ? dashboardCopy : undefined}
                     />
                   ) : r.etfAssessment ? (
                     <>
                       <EtfAssessmentDetails evidence={r.etfAssessment} />
                       {r.operationalEntryNotice ? (
-                        <p className="text-warn">{r.operationalEntryNotice}</p>
+                        <p className="text-warn">
+                          {review
+                            ? dashboardCopy(r.operationalEntryNotice)
+                            : r.operationalEntryNotice}
+                        </p>
                       ) : null}
                     </>
                   ) : (

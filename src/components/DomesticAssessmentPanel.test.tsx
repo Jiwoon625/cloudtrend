@@ -229,3 +229,16 @@ it("switches review scope without changing strategy evidence and resets paginati
   expect(view.html).toContain("1/5페이지");
   expect(many[0]!.assessments[0]!.assessment?.pending).toEqual(["시가총액 미확인"]);
 });
+
+it("omits the legacy new label only from dashboard evidence, preserving stored meaning", () => {
+  const current = structuredClone(markets);
+  current[0]!.date = "2026-10-12";
+  current[0]!.assessments!.forEach((r) => {
+    r.date = "2026-10-12";
+  });
+  const before = structuredClone(current);
+  const html = renderToStaticMarkup(<DomesticAssessmentPanel markets={current} review />);
+  expect(html).not.toContain("신규");
+  expect(html).toContain("8.0점 돌파");
+  expect(current).toEqual(before);
+});

@@ -1,3 +1,4 @@
+import { dashboardCopy } from "@/lib/dashboardCopy";
 import {
   OperatingAllocationPanel,
   type OperatingAllocationCandidate,
@@ -92,8 +93,8 @@ export function DashboardSignalCounts({
         실제 포트폴리오 진입/EXIT
       </h2>
       <p className="mb-2 text-[10px] leading-relaxed text-muted-foreground">
-        시장별 최신 확정 거래일의 조건과 신규 실제 원장 체결을 함께 봅니다. 조건 충족은 주문·체결
-        확정이 아니며 현금·배분·수량 확인이 필요합니다. Shadow 보유는 실제 후보를 막지 않습니다.
+        시장별 최신 확정 거래일의 조건과 실제 원장 체결을 함께 봅니다. 조건 충족은 주문·체결 확정이
+        아니며 현금·배분·수량 확인이 필요합니다. Shadow 보유는 실제 후보를 막지 않습니다.
       </p>
       <table className="w-full text-[12px]">
         <thead>
@@ -166,7 +167,7 @@ export function DashboardSignalCounts({
           </summary>
           {query.data.warnings.map((w) => (
             <p key={w} className="mt-1 leading-relaxed">
-              {w}
+              {dashboardCopy(w)}
             </p>
           ))}
         </details>
@@ -188,28 +189,26 @@ export function UsDashboardPortfolio({ query }: { query: OperationsQuery }) {
           <ShieldCheck className="size-4 text-primary" />
           미국주식 A0 포트폴리오
         </h2>
-        <p className="mb-2 text-[10px] text-muted-foreground">신규 배정·입출금 기준 · USD</p>
-        <Row label="신규 순입금">
+        <p className="mb-2 text-[10px] text-muted-foreground">배정·입출금 기준 · USD</p>
+        <Row label="순입금">
           {portfolio
             ? portfolio.netContributions === null
               ? "자금 확인 대기"
               : usd(Number(portfolio.netContributions))
             : fallback}
         </Row>
-        <Row label="신규 현금">
+        <Row label="현금">
           {portfolio
             ? portfolio.cash === null
               ? "자금 확인 대기"
               : usd(Number(portfolio.cash))
             : fallback}
         </Row>
-        <Row label="신규 실제 보유 종목수">
+        <Row label="실제 보유 종목수">
           {portfolio ? `${portfolio.openPositions}종목` : fallback}
         </Row>
         {portfolio?.fundingStatus === "INCOMPLETE" ? (
-          <p className="mt-2 text-[10px] text-warn">
-            신규 입출금·체결의 자금 연결을 확인해 주세요.
-          </p>
+          <p className="mt-2 text-[10px] text-warn">입출금·체결의 자금 연결을 확인해 주세요.</p>
         ) : null}
         <Link
           to="/us/portfolio"
@@ -228,21 +227,21 @@ export function DashboardStrategyRules() {
       <DomesticStrategyRules />
       <div className="border-t border-border pt-2">
         <h3 className="font-semibold text-foreground">ETF · M0</h3>
-        <p>M0 80점 신규 돌파 진입 · 기초지수 MA60 하회 시 청산 · 데이터 오류 시 청산 점검.</p>
+        <p>M0 80점 돌파 진입 · 기초지수 MA60 하회 시 청산 · 데이터 오류 시 청산 점검.</p>
         <p>
-          최대 10종목 · 기본 비중 10% × min(1, 15% / 20일 연율 변동성). 신규 매수에 적용하며
-          진입·청산은 다음 거래일 시가 기준입니다.
+          최대 10종목 · 기본 비중 10% × min(1, 15% / 20일 연율 변동성). 매수에 적용하며 진입·청산은
+          다음 거래일 시가 기준입니다.
         </p>
       </div>
       <div className="border-t border-border pt-2">
         <h3 className="font-semibold text-foreground">미국 A0 · 실제 운용</h3>
         <p>
-          ret120/252 Core 상위 20% 신규 진입 + Beta 상위 10% 이내 + TK 상위 20% 이내 + 공통 유동성
-          조건 충족.
+          ret120/252 Core 상위 20% 진입 + Beta 상위 10% 이내 + TK 상위 20% 이내 + 공통 유동성 조건
+          충족.
         </p>
         <p>Core 상위 30% 밖 또는 산정 불가 시 청산. Beta 상위 40% 밖 3거래일 연속도 청산합니다.</p>
         <UsA0AllocationRules />
-        <p>신규 진입·청산 신호는 매일 확인하고 다음 미국 정규장 시가에 반영합니다.</p>
+        <p>진입·청산 신호는 매일 확인하고 다음 미국 정규장 시가에 반영합니다.</p>
       </div>
     </div>
   );
@@ -387,7 +386,7 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
           시장 간 점수를 서로 비교하지 않습니다. 확인대기는 KOSPI·ETF의 다음 거래일 확인 전
           종목이며, 자료 미수신·확인 탈락은 포함하지 않습니다. 조건 충족과 실제 미보유 후보를
           구분하며, 실제 체결을 포트폴리오에 기록하면 보유·청산·재진입 판단에 반영합니다. 실제
-          매도로 소진된 원신호는 다시 사용하지 않습니다. EXIT는 신규 실제 원장 보유종목 기준입니다.
+          매도로 소진된 원신호는 다시 사용하지 않습니다. EXIT는 실제 원장 보유종목 기준입니다.
           KOSPI는 체결 직전 완료 거래일 시장국면을 다시 확인합니다.
         </p>
         {tab !== "exits" && selectedMarkets.some((m) => m === "KOSPI" || m === "KOSDAQ") ? (
@@ -539,7 +538,7 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
                       </td>
                     ) : null}
                     <td className={`px-3 py-3 ${tab === "onsets" ? "text-up" : "text-warn"}`}>
-                      <div>{row.reason}</div>
+                      <div>{dashboardCopy(row.reason)}</div>
                       {row.signalOriginDate ? (
                         <div className="mt-1 text-[10px] text-muted-foreground">
                           원신호 {row.signalOriginDate}
