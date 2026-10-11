@@ -1,5 +1,5 @@
-name: CMresearchengine O1 demand snapshot private final audit
-# Manual historical monthly-zero summary request 2026-10-11; original results only.
+name: CMresearchengine M1 private final audit
+# Manual completed M1 private accounting audit request 2026-10-11.
 on:
   push:
     branches: [main]
@@ -30,7 +30,7 @@ jobs:
       - name: Test isolated O1 demand snapshot
         if: github.workflow == 'CMresearchengine O1 demand snapshot private final audit'
         run: python scripts/test_cm_o1_demand_snapshot.py -v
-      - name: Verify O1 private result accounting without exposing records
+      - name: Verify M1 private result accounting without exposing records
         run: |
           python - <<'PY'
           import csv, hashlib, io, json, zipfile
@@ -126,7 +126,7 @@ jobs:
                   'private_storage':True},sort_keys=True))
           
           targets = [
-              ('O1', '39ecd66d6c80546b404c1ed77503c3dc33abf4817549fa9d4e9e4e5682f124b5'),
+              ('M1', '23ee6b8707715aadb181583fc4e43ee0b46f443388177af01571d797239443ea'),
           ]
           for candidate, identity in targets:
               audit(candidate, identity)
