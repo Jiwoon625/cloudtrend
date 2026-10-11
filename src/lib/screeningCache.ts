@@ -1,3 +1,4 @@
+import { sourceFingerprintRecords } from "./sourceFingerprintRecords";
 import { type InstrumentChartRange } from "@/lib/engine/instrumentChart";
 import {
   supabase,
@@ -64,14 +65,7 @@ async function currentInputFingerprint() {
     stableCacheJson({
       version: SCREENING_CACHE_VERSION,
       strategyConfig: config,
-      sources: sources
-        .map((source) => ({
-          id: source.id,
-          dataHash: source.data_hash,
-          schemaHash: source.schema_hash,
-          activatedAt: source.activated_at,
-        }))
-        .sort((a, b) => a.id.localeCompare(b.id)),
+      sources: sourceFingerprintRecords(sources),
       legacyFallback: sources.length
         ? null
         : {

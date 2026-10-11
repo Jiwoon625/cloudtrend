@@ -189,6 +189,7 @@ it("carries receipt through the web active-source query without changing physica
   expect(order.mock.calls).toEqual([
     ["activated_at", { ascending: true, nullsFirst: true }],
     ["created_at", { ascending: true }],
+    ["id", { ascending: true }],
   ]);
   expect(loaded[0]!.validation_result).toEqual(source.validation_result);
   expect(sourceCaptureForDate(loaded, "2026-10-06")).toBe(originals[1]!.activated_at);

@@ -69,15 +69,93 @@ describe("Backtest V4", () => {
     ).toBe(true);
   });
 
-  it("adds cross-sectional robust statistics", () => {
-    expect(
-      result.featureHorizons.some((f) =>
-        f.metrics.some((m) => m.marketAdjustedCrossSectionalEdge !== null),
-      ),
-    ).toBe(true);
-    expect(result.featureHorizons[0]!.metrics[0]).toHaveProperty("robustTStat");
-    expect(result.featureHorizons[0]!.metrics[0]).toHaveProperty("ci95Low");
-    expect(result.featureHorizons[0]!.metrics[0]).toHaveProperty("ci95High");
+  it("does not invent paired daily statistics when both symbols have the same Onset states", () => {
+    // The original fixture shares the same feature transitions across symbols.
+    // A daily cross-section needs an Onset AND a non-Onset on the same date.
+    for (const feature of result.featureHorizons) {
+      for (const metric of feature.metrics) {
+        expect(metric.crossSectionalEdge).toBeNull();
+        expect(metric.marketAdjustedCrossSectionalEdge).toBeNull();
+        expect(metric.robustObservations).toBe(0);
+        expect(metric.robustTStat).toBeNull();
+        expect(metric.ci95Low).toBeNull();
+        expect(metric.ci95High).toBeNull();
+      }
+    }
+  });
+
+  it("calculates paired Onset spreads and HAC confidence intervals from different market returns", () => {
+    // Each pulse makes only the first stock's 20-day foreign flow positive.
+    // It turns negative again before the next pulse. Thus exactly these five
+    // sampled dates contain an Onset/control pair; persistent true days do not.
+    const onsetIndexes = [150, 190, 230, 270, 310];
+    const signalBars = bars(360, 10_000, 0.001).map((bar, i) => ({
+      ...bar,
+      foreignNetBuyValue: onsetIndexes.includes(i) ? 100 : -1,
+    }));
+    const controlBars = bars(360, 20_000, 0.0003).map((bar) => ({
+      ...bar,
+      foreignNetBuyValue: -1,
+    }));
+    const params = {
+      ...DEFAULT_BACKTEST_PARAMS,
+      features: ["FOREIGN_NET_POSITIVE"],
+      horizonDays: 20,
+      horizons: [20],
+      sampleEvery: 5,
+      intervalCandidates: [5],
+    };
+    const pairedSeries: BacktestInputSeries[] = [
+      { symbol: "SIGNAL", name: "signal", market: "KOSPI", bars: signalBars },
+      { symbol: "CONTROL", name: "control", market: "KOSDAQ", bars: controlBars },
+    ];
+    const paired = runBacktest(pairedSeries, params, { indexSeries: indexes });
+    const metric = paired.featureHorizons[0]!.metrics[0]!;
+
+    // Independent oracle: signal t, next-open fill t+1, close exit t+20,
+    // with each stock's own market benchmark on the same entry/exit dates.
+    const forward = (prices: DailyPrice[], i: number) =>
+      (prices[i + 20]!.close / prices[i + 1]!.open - 1) * 100;
+    const rawSpreads = onsetIndexes.map((i) => forward(signalBars, i) - forward(controlBars, i));
+    const adjustedSpreads = onsetIndexes.map(
+      (i) =>
+        forward(signalBars, i) -
+        forward(kospiBars, i) -
+        (forward(controlBars, i) - forward(kosdaqBars, i)),
+    );
+    const mean = (values: number[]) =>
+      values.reduce((sum, value) => sum + value, 0) / values.length;
+    const edge = mean(adjustedSpreads);
+    // Bartlett-kernel covariance matrix, bandwidth 20/5 - 1 = 3.
+    // This quadratic-form oracle is independent of the engine's lag loop.
+    const variance =
+      adjustedSpreads.reduce(
+        (sum, x, i) =>
+          sum +
+          adjustedSpreads.reduce(
+            (subtotal, y, j) =>
+              subtotal + Math.max(0, 1 - Math.abs(i - j) / 4) * (x - edge) * (y - edge),
+            0,
+          ),
+        0,
+      ) /
+      adjustedSpreads.length ** 2;
+    const standardError = Math.sqrt(variance);
+
+    expect(metric.signalCount).toBe(5);
+    expect(metric.robustObservations).toBe(5);
+    expect(metric.crossSectionalEdge).toBeCloseTo(mean(rawSpreads), 10);
+    expect(metric.marketAdjustedCrossSectionalEdge).toBeCloseTo(edge, 10);
+    expect(standardError).toBeGreaterThan(0);
+    expect(metric.robustTStat).toBeCloseTo(edge / standardError, 10);
+    expect(metric.ci95Low).toBeCloseTo(edge - 1.96 * standardError, 10);
+    expect(metric.ci95High).toBeCloseTo(edge + 1.96 * standardError, 10);
+
+    const withoutBenchmarks = runBacktest(pairedSeries, params).featureHorizons[0]!.metrics[0]!;
+    expect(withoutBenchmarks.crossSectionalEdge).toBeCloseTo(mean(rawSpreads), 10);
+    expect(withoutBenchmarks.marketAdjustedCrossSectionalEdge).toBeNull();
+    expect(withoutBenchmarks.robustObservations).toBe(0);
+    expect(withoutBenchmarks.robustTStat).toBeNull();
   });
 
   it("breaks results down by market, regime, year and time split", () => {

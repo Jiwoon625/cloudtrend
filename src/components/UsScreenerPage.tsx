@@ -3,7 +3,8 @@ import { compareUsCandidates } from "@/lib/usCandidatePriority";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ArrowUpDown, Download } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useSessionViewState, viewChoice, viewPage, viewText } from "@/lib/useSessionViewState";
 
 import { AppShell } from "@/components/AppShell";
 import { UsRecoveryNotice } from "@/components/UsRecoveryNotice";
@@ -47,6 +48,34 @@ type SortKey =
   | "a0Signal"
   | "shadowSignal";
 
+const validSortKey = viewChoice<SortKey>([
+  "symbol",
+  "marketSector",
+  "close",
+  "ret120",
+  "ret252",
+  "ret120Rank",
+  "ret252Rank",
+  "onset80",
+  "betaWeakStreak",
+  "coreRank",
+  "betaRank",
+  "tkRank",
+  "relvolRank",
+  "liquidityRank",
+  "amihudRank",
+  "adv20Usd",
+  "a0Signal",
+  "shadowSignal",
+]);
+type ScreenerSort = { key: SortKey; direction: SortDirection } | null;
+const validSort = (value: unknown): value is ScreenerSort => {
+  if (value === null) return true;
+  if (typeof value !== "object") return false;
+  const sort = value as Record<string, unknown>;
+  return validSortKey(sort["key"]) && (sort["direction"] === "asc" || sort["direction"] === "desc");
+};
+
 function pct(v: number | null, digits = 1) {
   return v === null ? "-" : `${(v * 100).toFixed(digits)}%`;
 }
@@ -72,14 +101,32 @@ export function UsScreenerPage() {
     queryFn: loadUsProspectiveCache,
     staleTime: 60_000,
   });
-  const [filter, setFilter] = useState<Filter>("PRIMARY_ENTRY");
-  const [funnelStrategy, setFunnelStrategy] = useState<"A0" | "B3">("A0");
+  const [filter, setFilter] = useSessionViewState<Filter>(
+    "us-screener:filter",
+    "PRIMARY_ENTRY",
+    viewChoice([
+      "FUNNEL_1",
+      "FUNNEL_2",
+      "FUNNEL_3",
+      "PRIMARY_WATCH",
+      "PRIMARY_ENTRY",
+      "PRIMARY_EXIT",
+      "A2_ENTRY",
+      "B3_ENTRY",
+      "ALL",
+    ]),
+  );
+  const [funnelStrategy, setFunnelStrategy] = useSessionViewState<"A0" | "B3">(
+    "us-screener:funnel-strategy",
+    "A0",
+    viewChoice(["A0", "B3"]),
+  );
   const heldKnown = positions.isSuccess && !positions.isError;
   const exitUnavailable = filter === "PRIMARY_EXIT" && !heldKnown;
-  const [sector, setSector] = useState("");
-  const [page, setPage] = useState(0);
-  const [search, setSearch] = useState("");
-  const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection } | null>(null);
+  const [sector, setSector] = useSessionViewState("us-screener:sector", "", viewText);
+  const [page, setPage] = useSessionViewState("us-screener:page", 0, viewPage);
+  const [search, setSearch] = useSessionViewState("us-screener:search", "", viewText);
+  const [sort, setSort] = useSessionViewState<ScreenerSort>("us-screener:sort", null, validSort);
   const rows = query.data?.analysis.rows ?? EMPTY_ROWS;
   // Keep the saved rows intact; the operating view is bounded by each market signal date.
   const operationalRows = useMemo(
@@ -456,6 +503,7 @@ export function UsScreenerPage() {
             <div className="rounded-lg border border-border bg-card p-3">
               <Input
                 className="h-8 max-w-sm text-[12px]"
+                aria-label="티커 또는 종목명"
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);

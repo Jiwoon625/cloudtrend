@@ -214,6 +214,20 @@ export function sliceKrDatasetForReplay(raw: MarketDataset, date: string): Marke
   copy.kospiGateDates = (raw.kospiGateDates ?? raw.tradeDates).filter((day) => day <= date);
   if (copy.vkospiObservations)
     copy.vkospiObservations = copy.vkospiObservations.filter((point) => point.date <= date);
+  // The legacy gate consumes the last array value. Rebuild it from dated history;
+  // an old undated array cannot establish which values were available on this day.
+  // Preserve the evidence itself (including duplicates/provenance issues) so the
+  // strict dated gate can still diagnose it. Match the provider's finite projection.
+  copy.vkospiSeries = (copy.vkospiObservations ?? [])
+    .filter(
+      (point) =>
+        /^\d{4}-\d{2}-\d{2}$/.test(point.date) &&
+        Number.isFinite(Date.parse(`${point.date}T00:00:00Z`)) &&
+        new Date(`${point.date}T00:00:00Z`).toISOString().slice(0, 10) === point.date,
+    )
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((point) => point.value)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
   if (copy.kospiPriceInputIssues)
     copy.kospiPriceInputIssues = Object.fromEntries(
       Object.entries(copy.kospiPriceInputIssues).filter(([day]) => day <= date),

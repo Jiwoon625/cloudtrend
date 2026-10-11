@@ -98,3 +98,47 @@ describe("audit display consistency", () => {
     expect(read("../src/components/ScreenerView.tsx")).toContain("aria-label={label}");
   });
 });
+
+it("shows current partial/missing field coverage without inheriting a green historical capability", () => {
+  const data = {
+    notes: [],
+    barCoverage: [],
+    capabilities: { marketCap: true, investorFlow: true },
+    coverage: [
+      {
+        provider: "manual",
+        kind: "시가총액",
+        count: 0,
+        availableEntities: 0,
+        entities: 2,
+        ok: false,
+        asOfDate: "2026-10-08",
+      },
+      {
+        provider: "manual",
+        kind: "투자자별 순매수",
+        count: 1,
+        availableEntities: 1,
+        entities: 2,
+        ok: false,
+        asOfDate: "2026-10-08",
+      },
+    ],
+    qualityDate: "2026-10-11",
+    checks: {
+      ohlcErrors: 0,
+      negativeVolume: 0,
+      duplicates: 0,
+      futureDates: 1,
+      afterAsOfDates: 0,
+      insufficient: 0,
+      abnormalMoves: 0,
+    },
+  } as DataStatusPayload;
+  const html = renderToStaticMarkup(<KrMarketDataPanel data={data} />);
+  expect(html).toContain("미제공 · 0/2종목 (기준일)");
+  expect(html).toContain("일부 제공 · 1/2종목 (기준일)");
+  expect(html).toContain("검사일 이후 미래 날짜 (2026-10-11 KST)");
+  expect(html).toContain("자료 기준일 이후 관측");
+  expect(html).toMatch(/text-muted-foreground[^>]*>미제공 · 0\/2종목/);
+});

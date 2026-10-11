@@ -221,7 +221,9 @@ describe("missing market-cap judgment presentation", () => {
     expect(html).toContain(pendingReason);
     expect(html).toContain("3건");
     expect(html).toContain("기술점수와 산정 가능 여부");
-    expect(html).not.toContain("실격");
+    expect(html).toContain("실격 종목을 포함한 전체 자료 미확인 종목 수");
+    expect(html).toContain("여러 사유가 중복될 수 있습니다");
+    expect(html).not.toContain("실격 3건");
     expect(renderToStaticMarkup(<UniversePendingSummary />)).toBe("");
   });
 

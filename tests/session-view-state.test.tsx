@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const state = vi.hoisted(() => ({ value: undefined as unknown, initialized: false }));
+const state = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0 }));
 vi.mock("react", () => ({
   useState: (initial: unknown) => {
-    if (!state.initialized) {
-      state.value = typeof initial === "function" ? initial() : initial;
-      state.initialized = true;
+    const index = state.cursor++;
+    if (!(index in state.values)) {
+      state.values[index] = typeof initial === "function" ? initial() : initial;
     }
     return [
-      state.value,
+      state.values[index],
       (next: unknown) => {
-        state.value = typeof next === "function" ? next(state.value) : next;
+        state.values[index] = typeof next === "function" ? next(state.values[index]) : next;
       },
     ];
   },
@@ -25,7 +25,8 @@ import {
 const storage = new Map<string, string>();
 beforeEach(() => {
   storage.clear();
-  state.initialized = false;
+  state.values = [];
+  state.cursor = 0;
   vi.stubGlobal("window", {
     sessionStorage: {
       getItem: (k: string) => storage.get(k) ?? null,
@@ -41,7 +42,8 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 function remount() {
-  state.initialized = false;
+  state.values = [];
+  state.cursor = 0;
 }
 describe("tab-local navigation filter restoration", () => {
   it("restores ETF search across detail/back and a remount, and honors explicit clearing", () => {
@@ -97,6 +99,46 @@ describe("tab-local navigation filter restoration", () => {
     const [initial, set] = useSessionViewState("etf:page", 0, viewPage);
     expect(initial).toBe(0);
     expect(() => set((p) => p + 1)).not.toThrow();
-    expect(state.value).toBe(1);
+    expect(state.values[0]).toBe(1);
+  });
+  it("does not read or write storage for callers without a persistence key", () => {
+    const getItem = vi.fn(() => {
+      throw new Error("must not read");
+    });
+    const setItem = vi.fn(() => {
+      throw new Error("must not write");
+    });
+    vi.stubGlobal("window", { sessionStorage: { getItem, setItem } });
+    const [initial, set] = useSessionViewState(undefined, 0, viewPage);
+    expect(initial).toBe(0);
+    set((page) => page + 1);
+    expect(state.values[0]).toBe(1);
+    expect(getItem).not.toHaveBeenCalled();
+    expect(setItem).not.toHaveBeenCalled();
+  });
+  it("restores the new key instead of carrying state between modes without a remount", () => {
+    useSessionViewState("kr-screener:query", "", viewText)[1]("삼성");
+    state.cursor = 0;
+    expect(useSessionViewState("legacy-etf-screener:query", "", viewText)[0]).toBe("");
+    state.cursor = 0;
+    useSessionViewState("legacy-etf-screener:query", "", viewText)[1]("ETF");
+    state.cursor = 0;
+    expect(useSessionViewState("kr-screener:query", "", viewText)[0]).toBe("삼성");
+    expect(readSessionViewState("legacy-etf-screener:query", "", viewText)).toBe("ETF");
+  });
+  it("resets mounted screen state on owner changes and logout", () => {
+    const [, staleSetter] = useSessionViewState("kr-screener:query", "", viewText);
+    staleSetter("private-query");
+    syncSessionViewOwner("owner-b");
+    staleSetter("old-owner-late-update");
+    expect(storage.has("cloudtrend-view-v1:kr-screener:query")).toBe(false);
+    state.cursor = 0;
+    expect(useSessionViewState("kr-screener:query", "", viewText)[0]).toBe("");
+    state.cursor = 0;
+    useSessionViewState("kr-screener:query", "", viewText)[1]("owner-b-query");
+    syncSessionViewOwner(null);
+    state.cursor = 0;
+    expect(useSessionViewState("kr-screener:query", "", viewText)[0]).toBe("");
+    expect(storage.has("cloudtrend-view-v1:kr-screener:query")).toBe(false);
   });
 });

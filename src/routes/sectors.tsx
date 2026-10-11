@@ -1,6 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, type SearchSchemaInput } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { AnalysisRequired } from "@/components/AnalysisRequired";
@@ -8,7 +8,6 @@ import { Delta } from "@/components/ScreenerTable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { analysisQueryOptions, isAnalysisPayload } from "@/lib/analysisQuery";
-import type { AnalysisPayload } from "@/lib/marketPayload";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
 import { formatKstDateTime, formatNumber } from "@/lib/format";
 import {
@@ -34,6 +33,12 @@ import {
 export const Route = createFileRoute("/sectors")({
   // 외부 시세 API 실패 시 SSR 500(빈 화면) 대신 클라이언트 에러 화면을 보여준다.
   ssr: false,
+  validateSearch: (search: Record<string, unknown> & SearchSchemaInput): { sector?: string } => {
+    const sector = search["sector"];
+    return typeof sector === "string" && sector.trim() && sector.length <= 100
+      ? { sector: sector.trim() }
+      : {};
+  },
   head: () => ({
     meta: [
       { title: "섹터 로테이션 엔진 | CloudTrend" },
@@ -88,6 +93,18 @@ const RELIABILITY_LABEL: Record<SectorRotationRow["reliabilityTag"], string> = {
   CAUTION: "주의",
   LIMITED: "판단 제한",
 };
+
+const INFLOW_STATUSES: readonly FlowStatus[] = [
+  "STRONG_INFLOW",
+  "EARLY_INFLOW",
+  "SUSTAINED_INFLOW",
+  "OVERHEATED",
+];
+const OUTFLOW_STATUSES: readonly FlowStatus[] = [
+  "EARLY_OUTFLOW",
+  "SUSTAINED_OUTFLOW",
+  "CAPITULATION",
+];
 
 function Card({
   title,
@@ -148,36 +165,47 @@ type SortKey =
 function SectorsRoute() {
   // 저장된 입력 데이터로 이 화면에서도 직접 계산한다(외부 API 호출 없음).
   const { data: cached, isPending } = useQuery(analysisQueryOptions);
+  const { sector } = Route.useSearch();
   if (isPending) return <AnalysisRequired loading />;
   if (!isAnalysisPayload(cached)) return <AnalysisRequired />;
-  return <SectorsPage analysis={cached.analysis} />;
+  return <SectorsPage key={sector ?? ""} analysis={cached.analysis} initialSector={sector ?? ""} />;
 }
 
-function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
+function SectorsPage({
+  analysis,
+  initialSector,
+}: {
+  analysis: AnalysisResult;
+  initialSector: string;
+}) {
   const rot = analysis.sectorRotation;
+  const selectedSector = rot?.sectors.find(
+    (row) => row.sectorCode === initialSector.toUpperCase() || row.sectorName === initialSector,
+  );
 
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialSector);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "INFLOW" | "OUTFLOW" | "NEUTRAL">("ALL");
   const [minReliability, setMinReliability] = useState(0);
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
     key: "rank",
     dir: "asc",
   });
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(selectedSector?.sectorCode ?? null);
   const [openLink, setOpenLink] = useState<number | null>(null);
 
   const rows = useMemo(() => {
     const src = rot?.sectors ?? [];
+    const search = query.trim().toLowerCase();
     const filtered = src.filter((r) => {
-      if (query && !r.sectorName.includes(query) && !r.sectorCode.includes(query.toUpperCase()))
+      if (
+        search &&
+        !r.sectorName.toLowerCase().includes(search) &&
+        !r.sectorCode.toLowerCase().includes(search)
+      )
         return false;
       if (r.reliability < minReliability) return false;
-      if (statusFilter === "INFLOW")
-        return ["STRONG_INFLOW", "EARLY_INFLOW", "SUSTAINED_INFLOW", "OVERHEATED"].includes(
-          r.status,
-        );
-      if (statusFilter === "OUTFLOW")
-        return ["EARLY_OUTFLOW", "SUSTAINED_OUTFLOW", "CAPITULATION"].includes(r.status);
+      if (statusFilter === "INFLOW") return INFLOW_STATUSES.includes(r.status);
+      if (statusFilter === "OUTFLOW") return OUTFLOW_STATUSES.includes(r.status);
       if (statusFilter === "NEUTRAL")
         return r.status === "NEUTRAL" || r.status === "INSUFFICIENT_DATA";
       return true;
@@ -327,12 +355,12 @@ function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
     );
   }
 
-  const bestInflow = [...rot.sectors].sort(
-    (a, b) => (b.moneyFlow.score ?? -1) - (a.moneyFlow.score ?? -1),
-  )[0];
-  const worstOutflow = [...rot.sectors].sort(
-    (a, b) => (a.moneyFlow.score ?? 101) - (b.moneyFlow.score ?? 101),
-  )[0];
+  const bestInflow = rot.sectors
+    .filter((row) => INFLOW_STATUSES.includes(row.status))
+    .sort((a, b) => (b.moneyFlow.score ?? -1) - (a.moneyFlow.score ?? -1))[0];
+  const worstOutflow = rot.sectors
+    .filter((row) => OUTFLOW_STATUSES.includes(row.status))
+    .sort((a, b) => (a.moneyFlow.score ?? 101) - (b.moneyFlow.score ?? 101))[0];
   const nextLeader = rot.sectors.find((r) => r.isNextLeaderCandidate);
   const foreignTop = [...rot.sectors].sort(
     (a, b) => (b.foreignNet5d ?? 0) - (a.foreignNet5d ?? 0),
@@ -385,13 +413,13 @@ function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
         />
         <Card
           title="최강 유입 섹터"
-          value={bestInflow ? bestInflow.sectorName : "판단 보류"}
+          value={bestInflow ? bestInflow.sectorName : "없음"}
           sub={bestInflow ? `자금흐름 ${scoreText(bestInflow.moneyFlow.score)}점` : undefined}
           tone="up"
         />
         <Card
           title="최대 유출 섹터"
-          value={worstOutflow ? worstOutflow.sectorName : "판단 보류"}
+          value={worstOutflow ? worstOutflow.sectorName : "없음"}
           sub={worstOutflow ? `자금흐름 ${scoreText(worstOutflow.moneyFlow.score)}점` : undefined}
           tone="down"
         />
@@ -464,6 +492,7 @@ function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
       {/* 필터 */}
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <Input
+          aria-label="섹터 검색"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="섹터 검색"
@@ -481,6 +510,7 @@ function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
             key={k}
             size="sm"
             variant={statusFilter === k ? "default" : "outline"}
+            aria-pressed={statusFilter === k}
             onClick={() => setStatusFilter(k)}
           >
             {label}
@@ -490,9 +520,14 @@ function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
           최소 신뢰도
           <Input
             type="number"
+            min={0}
+            max={100}
             value={minReliability}
             step={5}
-            onChange={(e) => setMinReliability(Number(e.target.value))}
+            onChange={(e) => {
+              const next = Number(e.target.value);
+              setMinReliability(Number.isFinite(next) ? Math.min(100, Math.max(0, next)) : 0);
+            }}
             className="h-8 w-20 text-right text-[12px]"
           />
         </label>
@@ -535,30 +570,65 @@ function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
               ).map(([key, label]) => (
                 <th
                   key={label}
-                  className={`px-2 py-2 ${key ? "cursor-pointer select-none hover:text-foreground" : ""} ${
+                  scope="col"
+                  aria-sort={
+                    key
+                      ? sort.key === key
+                        ? sort.dir === "asc"
+                          ? "ascending"
+                          : "descending"
+                        : "none"
+                      : undefined
+                  }
+                  className={`px-2 py-2 ${
                     label.includes("섹터") || label.includes("상태") || label.includes("ETF")
                       ? "text-left"
                       : "text-right"
                   }`}
-                  onClick={key ? () => toggleSort(key) : undefined}
                 >
-                  {label}
-                  {sort.key === key ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}
+                  {key ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(key)}
+                      className="w-full rounded text-right hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      {label}
+                      <span aria-hidden>
+                        {sort.key === key ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}
+                      </span>
+                    </button>
+                  ) : (
+                    label
+                  )}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {rows.map((s) => (
-              <>
+              <Fragment key={s.sectorCode}>
                 <tr
-                  key={s.sectorCode}
                   className="cursor-pointer border-t border-border hover:bg-surface-strong/50"
                   onClick={() => setExpanded(expanded === s.sectorCode ? null : s.sectorCode)}
                 >
                   <td className="num px-2 py-1.5">{s.rank}</td>
                   <td className="px-2 py-1.5 font-medium">
-                    {s.sectorName}
+                    <button
+                      type="button"
+                      aria-expanded={expanded === s.sectorCode}
+                      aria-controls={
+                        expanded === s.sectorCode ? `sector-detail-${s.sectorCode}` : undefined
+                      }
+                      aria-label={`${s.sectorName} 상세 ${expanded === s.sectorCode ? "접기" : "펼치기"}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setExpanded(expanded === s.sectorCode ? null : s.sectorCode);
+                      }}
+                      className="rounded text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span aria-hidden>{expanded === s.sectorCode ? "▾ " : "▸ "}</span>
+                      {s.sectorName}
+                    </button>
                     {s.anomalies.length > 0 ? (
                       <span className="ml-1 text-warn" title={s.anomalies.join(" / ")}>
                         ⚠
@@ -638,7 +708,10 @@ function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
                   <td className="px-2 py-1.5">{s.representativeEtf ?? "데이터 없음"}</td>
                 </tr>
                 {expanded === s.sectorCode ? (
-                  <tr key={`${s.sectorCode}-detail`} className="border-t border-border bg-surface">
+                  <tr
+                    id={`sector-detail-${s.sectorCode}`}
+                    className="border-t border-border bg-surface"
+                  >
                     <td colSpan={25} className="px-3 py-3">
                       <div className="grid gap-4 lg:grid-cols-3">
                         <ScoreBreakdown title="가격 리더십 점수 구성" block={s.priceLeadership} />
@@ -691,10 +764,15 @@ function SectorsPage({ analysis }: { analysis: AnalysisResult }) {
                     </td>
                   </tr>
                 ) : null}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
+        {rows.length === 0 ? (
+          <p role="status" className="p-6 text-center text-[12px] text-muted-foreground">
+            조건에 맞는 섹터가 없습니다. 검색어·상태·최소 신뢰도를 확인해 주세요.
+          </p>
+        ) : null}
       </div>
 
       {/* 11.3 히트맵 */}
@@ -887,6 +965,8 @@ function LinkRow({
       <button
         type="button"
         onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={open ? `rotation-link-${link.fromCode}-${link.toCode}` : undefined}
         className="flex w-full flex-wrap items-center gap-3 px-3 py-2 text-left text-[12px] hover:bg-surface-strong/50"
       >
         <span className="w-28 shrink-0 text-down">{link.fromName}</span>
@@ -903,7 +983,10 @@ function LinkRow({
         </span>
       </button>
       {open ? (
-        <div className="border-t border-border px-3 py-2 text-[11px] leading-relaxed">
+        <div
+          id={`rotation-link-${link.fromCode}-${link.toCode}`}
+          className="border-t border-border px-3 py-2 text-[11px] leading-relaxed"
+        >
           <p className="mb-2 text-[12px]">{link.sentence}</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
@@ -1074,7 +1157,7 @@ function TimelineChart({
     ordered.slice(0, 5).map((t) => t.sectorCode),
   );
 
-  const dates = ordered[0]?.points.map((p) => p.date) ?? [];
+  const dates = useMemo(() => ordered[0]?.points.map((p) => p.date) ?? [], [ordered]);
   const data = useMemo(
     () =>
       dates.map((date, i) => {
