@@ -33,7 +33,8 @@ jobs:
       - run: npx vitest run --config vitest.adopted-backtest.config.ts src/lib/research/adoptedKrBacktest.test.ts
       - run: python -m unittest discover -s research/kospi200_simple -p 'test_*.py' -v
   actual_replay:
-    if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'run(kospi200-lite): replay')
+    if: >-
+      github.event_name == 'push' && startsWith(github.event.head_commit.message, 'run(kospi200-lite): replay')
     needs: verify
     runs-on: ubuntu-24.04
     timeout-minutes: 180
