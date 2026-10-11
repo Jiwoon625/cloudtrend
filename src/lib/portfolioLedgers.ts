@@ -181,7 +181,7 @@ export type ProspectiveKrReplayPolicy =
       startDate: string;
       throughDate: string;
       scope: "MIXED" | "KOSPI" | "KOSDAQ";
-      entryBudgetPolicy: "ANNUAL_PRIOR_CLOSE_NAV";
+      entryBudgetPolicy: "ANNUAL_PRIOR_CLOSE_NAV" | "FIXED_INITIAL_CAPITAL";
     };
 
 /** Deterministic strategy replay. No personal executions, exclusions or edited legacy fills enter here. */
@@ -224,7 +224,7 @@ export function simulateStrategy(
       (!research && prospective.startDate !== (unified ? "2026-10-12" : "2026-10-05")) ||
       (research &&
         (!validDate(prospective.startDate) ||
-          prospective.entryBudgetPolicy !== "ANNUAL_PRIOR_CLOSE_NAV" ||
+          !["ANNUAL_PRIOR_CLOSE_NAV", "FIXED_INITIAL_CAPITAL"].includes(prospective.entryBudgetPolicy) ||
           settings.maxPositions !== 30)) ||
       !validDate(prospective.throughDate) ||
       prospective.throughDate < prospective.startDate ||
@@ -502,7 +502,13 @@ export function simulateStrategy(
     )
       throw new Error("Cannot reset annual KR budget without complete prior-close NAV");
     const nav = previousClose?.nav ?? fromLegacyNumber(settings.initialCapital);
-    entryBudget = divide(decimal(nav), decimal(String(settings.maxPositions)));
+    // Research-only fixed allocation alternative. Prior-year marks remain
+    // recorded, but never change the per-entry sizing after the first year.
+    entryBudget = divide(
+      decimal(research && prospective!.entryBudgetPolicy === "FIXED_INITIAL_CAPITAL"
+        ? fromLegacyNumber(settings.initialCapital) : nav),
+      decimal(String(settings.maxPositions)),
+    );
     yearlyBudgets.push({
       year,
       effectiveDate: date,
