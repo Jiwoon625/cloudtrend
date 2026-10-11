@@ -1,3 +1,4 @@
+import { matchesEtfReviewMinimum } from "@/lib/eveningReview";
 import { etfOperationalDisplay } from "@/lib/etfOperationalDisplay";
 import { useSessionViewState, viewText, viewPage, viewChoice } from "@/lib/useSessionViewState";
 import { Link } from "@tanstack/react-router";
@@ -191,16 +192,19 @@ export function EtfScreener({
       if (!text.includes(query.trim().toLowerCase())) return false;
       if (sector !== "ALL" && (s?.sector ?? r.instrument.sectorName) !== sector) return false;
       const e = evidenceFor(r);
-      if (minimums.score > 0 && (e.score === null || e.score < minimums.score)) return false;
+      const partialReview = filter === "partial" && e.krxPending;
+      if (!matchesEtfReviewMinimum(e.score, minimums.score, partialReview)) return false;
       if (
         minimums.environment > 0 &&
         (e.environment === null || e.environment < minimums.environment)
       )
         return false;
       if (
-        minimums.tradingValue > 0 &&
-        (e.averageTradingValue20 === null ||
-          e.averageTradingValue20 < minimums.tradingValue * 100_000_000)
+        !matchesEtfReviewMinimum(
+          e.averageTradingValue20,
+          minimums.tradingValue * 100_000_000,
+          partialReview,
+        )
       )
         return false;
       if (filter === "entry") return actionable(r);
@@ -410,6 +414,13 @@ export function EtfScreener({
           </label>
         ))}
       </div>
+      {filter === "partial" ? (
+        <p className="text-xs text-warn" role="status">
+          저녁 후보 검토: 미수신 M0·20일 거래대금은 최소값 필터에서 제외하고 ‘미확인’으로
+          표시합니다. 확인된 수치는 필터를 적용합니다. 필터값은 유지되며 다른 보기에서는 다시 모두
+          적용됩니다. 부분 근거는 최종 진입·청산 신호가 아닙니다.
+        </p>
+      ) : null}
       {unknownExit ? (
         <p role="status" className="text-xs">
           보유 조회가 완료되면 청산 목록을 표시합니다.

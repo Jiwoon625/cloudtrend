@@ -7,17 +7,28 @@ import { etfPartialEvidence } from "@/lib/etfPartialEvidence";
 import { ETF_POLICY, type EtfStrategySnapshot } from "@/lib/engine/etfStrategy";
 import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
 
-const state = vi.hoisted(() => ({ filter: "equity" }));
+const state = vi.hoisted(() => ({
+  filter: "equity",
+  minimums: { score: 0, environment: 0, tradingValue: 0 },
+}));
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
   return {
     ...actual,
-    useState: (initial: unknown) => actual.useState(initial === "equity" ? state.filter : initial),
+    useState: (initial: unknown) =>
+      actual.useState(
+        initial === "equity"
+          ? state.filter
+          : typeof initial === "object" && initial !== null && "tradingValue" in initial
+            ? state.minimums
+            : initial,
+      ),
   };
 });
 
 beforeEach(() => {
   state.filter = "equity";
+  state.minimums = { score: 0, environment: 0, tradingValue: 0 };
 });
 
 vi.mock("@tanstack/react-router", () => ({
@@ -202,4 +213,16 @@ describe("ETF available-evidence screen", () => {
     expect(html).toContain("저장 기준일 2026-11-03");
     expect(html).not.toContain("KRX 금액·기초지수 자료가 일괄 미수신 상태입니다");
   });
+});
+
+it("keeps saved M0 and turnover minimums from hiding explicit KRX review, and reapplies them on return", () => {
+  state.minimums = { score: 80, environment: 0, tradingValue: 10 };
+  state.filter = "partial";
+  expect(cells(render(row())).join(" ")).toContain("부분 판단 ETF");
+  expect(render(row())).toContain("필터값은 유지");
+  state.filter = "equity";
+  expect(cells(render(row())).join(" ")).not.toContain("부분 판단 ETF");
+  state.filter = "partial";
+  state.minimums.environment = 10;
+  expect(cells(render(row())).join(" ")).not.toContain("부분 판단 ETF");
 });

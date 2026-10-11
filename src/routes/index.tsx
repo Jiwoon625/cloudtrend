@@ -284,7 +284,20 @@ function DashboardContent({
       </div>
 
       <DashboardSignalCounts query={operations} counts={summary.counts} />
+      <h2 className="mt-5 text-sm font-semibold">아침 종목 판단 · 저장된 진입 준비 / 보유 청산</h2>
+      <p className="mb-2 text-[11px] text-muted-foreground">
+        자료 수신과 기존 전략 조건에 따른 상태입니다. 저녁 검토 후보와 구분해 확인하세요.
+      </p>
       <DashboardSignalLists query={operations} />
+      {operations.data ? (
+        <DomesticAssessmentPanel markets={operations.data.markets} review />
+      ) : (
+        <p className="my-4 text-xs text-muted-foreground" role="status">
+          {operations.isError
+            ? "후보 검토 자료 조회 실패 · 기존 판단 자료를 다시 확인해 주세요."
+            : "후보 검토 자료 불러오는 중…"}
+        </p>
+      )}
       <div className="space-y-4">
         <div className="space-y-4">
           <Card

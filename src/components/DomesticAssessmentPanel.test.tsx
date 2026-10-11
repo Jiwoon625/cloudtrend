@@ -168,3 +168,64 @@ it("resets pagination for search and market changes, then supports repeated back
   view = renderPanel(many);
   expect(view.html).toContain("1/3페이지");
 });
+
+it("defaults review to focused current candidates and transitions when saved KRX evidence arrives", () => {
+  const current = structuredClone(markets);
+  current[0]!.date = "2026-10-12";
+  current[0]!.assessments!.forEach((r) => {
+    r.date = "2026-10-12";
+  });
+  let html = renderToStaticMarkup(<DomesticAssessmentPanel markets={current} review />);
+  expect(html).toContain("저녁 후보 선정 · 아침 종목 판단 확정");
+  expect(html).toContain("미보유 종목");
+  expect(html).not.toContain("주성엔지니어링");
+  expect(html).toContain("최종 진입 미확정");
+  current[0]!.assessments![1]!.assessment = {
+    ...assessment,
+    pending: [],
+    finalEntry: "저장된 운영 진입 조건 충족 · 보유·체결 조건 별도 확인",
+  };
+  html = renderToStaticMarkup(<DomesticAssessmentPanel markets={current} review />);
+  expect(html).toContain("저장된 운영 진입 조건 충족");
+  expect(html).not.toContain("시가총액 미확인");
+});
+it("does not promote pre-start saved evidence to default review candidates", () => {
+  const html = renderToStaticMarkup(<DomesticAssessmentPanel markets={markets} review />);
+  expect(html).toContain("기준일의 검토 후보가 없습니다");
+  expect(html).not.toContain("미보유 종목");
+});
+
+it("switches review scope without changing strategy evidence and resets pagination", () => {
+  const many = [
+    {
+      ...markets[0]!,
+      date: "2026-10-12",
+      assessments: Array.from({ length: 25 }, (_, index) => ({
+        ...markets[0]!.assessments![1]!,
+        date: "2026-10-12",
+        symbol: `R${index}`,
+        name: `검토 ${index}`,
+      })),
+    },
+  ];
+  const renderReview = () => {
+    hooks.cursor = 0;
+    const tree = DomesticAssessmentPanel({ markets: many, review: true });
+    return { elements: nodes(tree), html: renderToStaticMarkup(tree) };
+  };
+  let view = renderReview();
+  view.elements.find((e) => e.type === "button" && e.props.children === "다음")!.props.onClick!();
+  view = renderReview();
+  expect(view.html).toContain("2/5페이지");
+  view.elements.filter((e) => e.type === "select")[0]!.props.onChange!({
+    target: { value: "all" },
+  });
+  view = renderReview();
+  expect(view.html).toContain("1/5페이지");
+  view.elements.filter((e) => e.type === "select")[0]!.props.onChange!({
+    target: { value: "candidates" },
+  });
+  view = renderReview();
+  expect(view.html).toContain("1/5페이지");
+  expect(many[0]!.assessments[0]!.assessment?.pending).toEqual(["시가총액 미확인"]);
+});

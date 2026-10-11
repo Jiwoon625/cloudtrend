@@ -1,3 +1,4 @@
+import { isEveningReviewCandidate } from "@/lib/eveningReview";
 import { EtfAssessmentDetails } from "./EtfAssessmentDetails";
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -8,23 +9,31 @@ import { StockAssessmentDetails } from "./StockAssessmentDetails";
 export function DomesticAssessmentPanel({
   markets,
   heldOnly = false,
+  review = false,
 }: {
   markets: DashboardMarketSignals[];
   heldOnly?: boolean;
+  review?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
   const [market, setMarket] = useState("ALL");
+  const [scope, setScope] = useState("candidates");
   const domestic = markets.filter(
     (m) => m.market === "KOSPI" || m.market === "KOSDAQ" || m.market === "ETF",
   );
   const all = domestic.flatMap((m) => m.assessments ?? []).filter((r) => !heldOnly || r.held);
-  const filtered = all.filter(
+  const candidates = domestic.flatMap((m) =>
+    (m.assessments ?? []).filter((r) => isEveningReviewCandidate(r, m)),
+  );
+  const visible = review && scope === "candidates" ? candidates : all;
+  const filtered = visible.filter(
     (r) =>
       (market === "ALL" || market === r.market) &&
       `${r.name} ${r.symbol}`.toLowerCase().includes(query.trim().toLowerCase()),
   );
-  const pages = Math.max(1, Math.ceil(filtered.length / 20));
+  const pageSize = review ? 5 : 20;
+  const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pages - 1);
   const stocks = all.filter((r) => r.market !== "ETF");
   const counts = {
@@ -37,33 +46,61 @@ export function DomesticAssessmentPanel({
   return (
     <section
       className="my-4 rounded-lg border border-border bg-card"
-      aria-label={heldOnly ? "보유종목 조건별 판단" : "저녁 스크리닝 조건별 판단"}
+      aria-label={
+        heldOnly ? "보유종목 조건별 판단" : review ? "저녁 후보 검토" : "저녁 스크리닝 조건별 판단"
+      }
     >
       <div className="space-y-2 border-b p-3">
         <h2 className="text-sm font-semibold">
-          {heldOnly ? "보유종목 조건별 판단" : "계산된 국내 조건별 판단"}
+          {heldOnly
+            ? "보유종목 조건별 판단"
+            : review
+              ? "저녁 후보 선정 · 아침 종목 판단 확정"
+              : "계산된 국내 조건별 판단"}
         </h2>
         <p className="text-[11px] text-muted-foreground">
-          KRX 시가총액 등은 다음 영업일 08:00 KST부터 확인 가능합니다. 저녁에는
-          가격·거래량·기술점수·돌파·청산·확인 조건을 먼저 표시하며, 최종 진입은 별도로 구분합니다.
-          보유 기간 청산은 기존 원장을 확인하세요.
+          {review
+            ? "저녁에는 저장된 기술 근거로 뉴스·재무를 먼저 검토하세요. 아침 KRX 자료 수신 후 위 진입 준비 목록에서 최종 판단합니다. 후보는 매수 신호가 아닙니다."
+            : "KRX 시가총액 등은 다음 영업일 08:00 KST부터 확인 가능합니다. 가격·거래량·기술점수 등 확인된 조건과 최종 진입을 구분합니다. 보유 기간 청산은 기존 원장을 확인하세요."}
         </p>
-        {stocks.length > 0 ? (
+        {review ? (
+          <p className="text-[10px] text-muted-foreground">
+            미보유 주식 기술 8점 이상·신규 돌파(확인된 필수조건 미충족 제외), ETF 전략 대상의 당일
+            기술 근거 · 신규 운용 시작 조건 적용
+          </p>
+        ) : null}
+        {!review && stocks.length > 0 ? (
           <p className="text-xs">
             기술점수 확인 {counts.score} / {stocks.length}종목 · 기술 A {counts.a} / B {counts.b} ·
             기술 8.0 신규 돌파 {counts.onset} · 자료 확인 대기 {counts.pending}
           </p>
         ) : null}
-        {all.some((r) => r.market === "ETF") ? (
+        {!review && all.some((r) => r.market === "ETF") ? (
           <p className="text-xs">
             ETF {all.filter((r) => r.market === "ETF").length}종목 · KRX 자료 확인 대기{" "}
             {all.filter((r) => r.etfAssessment?.krxPending).length}
           </p>
         ) : null}
-        <p className="text-[10px] text-muted-foreground">
-          기술 등급·돌파 집계는 보유·시가총액 조건과 독립적이며, 진입 준비 수가 아닙니다.
-        </p>
+        {!review ? (
+          <p className="text-[10px] text-muted-foreground">
+            기술 등급·돌파 집계는 보유·시가총액 조건과 독립적이며, 진입 준비 수가 아닙니다.
+          </p>
+        ) : null}
         <div className="flex flex-wrap gap-2">
+          {review ? (
+            <select
+              aria-label="후보 검토 범위"
+              value={scope}
+              onChange={(e) => {
+                setScope(e.target.value);
+                setPage(0);
+              }}
+              className="rounded border bg-background px-2 py-1 text-xs"
+            >
+              <option value="candidates">우선 검토 후보 {candidates.length}종목</option>
+              <option value="all">저장된 조건별 판단 전체 {all.length}종목</option>
+            </select>
+          ) : null}
           <input
             aria-label="조건별 판단 종목 검색"
             placeholder="종목명 / 코드"
@@ -105,7 +142,7 @@ export function DomesticAssessmentPanel({
             </tr>
           </thead>
           <tbody>
-            {filtered.slice(currentPage * 20, (currentPage + 1) * 20).map((r) => (
+            {filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize).map((r) => (
               <tr key={r.symbol} className="border-b align-top last:border-0">
                 <td className="p-3">
                   <Link
@@ -147,7 +184,12 @@ export function DomesticAssessmentPanel({
                       entryNotice={r.operationalEntryNotice}
                     />
                   ) : r.etfAssessment ? (
-                    <EtfAssessmentDetails evidence={r.etfAssessment} />
+                    <>
+                      <EtfAssessmentDetails evidence={r.etfAssessment} />
+                      {r.operationalEntryNotice ? (
+                        <p className="text-warn">{r.operationalEntryNotice}</p>
+                      ) : null}
+                    </>
                   ) : (
                     <p>조건별 판단 자료 미확인</p>
                   )}
@@ -158,7 +200,11 @@ export function DomesticAssessmentPanel({
         </table>
       </div>
       {!filtered.length ? (
-        <p className="p-4 text-xs text-muted-foreground">표시할 조건별 판단이 없습니다.</p>
+        <p className="p-4 text-xs text-muted-foreground">
+          {review && scope === "candidates"
+            ? "기준일의 검토 후보가 없습니다. 전체 조건별 판단에서 저장된 근거를 확인할 수 있습니다."
+            : "표시할 조건별 판단이 없습니다."}
+        </p>
       ) : null}
       <div className="flex items-center justify-end gap-3 border-t p-3 text-xs">
         <span>
