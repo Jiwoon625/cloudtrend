@@ -22,11 +22,33 @@ export function KrMarketDataPanel({ data }: { data: DataStatusPayload }) {
     );
   }, [data.barCoverage, barSort]);
   const BarSortIcon = barSort === null ? ArrowUpDown : barSort === "asc" ? ArrowUp : ArrowDown;
+  const coverageLabel = (row: DataStatusPayload["coverage"][number]) =>
+    row.availableEntities === undefined
+      ? row.ok
+        ? "정상"
+        : "미제공"
+      : row.availableEntities === 0
+        ? "미제공"
+        : row.availableEntities < row.entities
+          ? "일부 제공"
+          : "전체 제공";
+  const capabilityCoverage = (key: string) =>
+    data.coverage.find(
+      (row) =>
+        (key === "marketCap" && row.kind === "시가총액") ||
+        (key === "investorFlow" && row.kind === "투자자별 순매수"),
+    );
   const validations = [
     { label: "OHLC 논리 오류", value: data.checks.ohlcErrors },
     { label: "음수 거래량", value: data.checks.negativeVolume },
     { label: "동일 종목·일자 중복", value: data.checks.duplicates },
-    { label: "미래 날짜 데이터", value: data.checks.futureDates },
+    {
+      label: `검사일 이후 미래 날짜${data.qualityDate ? ` (${data.qualityDate} KST)` : ""}`,
+      value: data.checks.futureDates,
+    },
+    ...(data.checks.afterAsOfDates === undefined
+      ? []
+      : [{ label: "자료 기준일 이후 관측", value: data.checks.afterAsOfDates }]),
     { label: "지표 최소 기간(120봉) 미충족", value: data.checks.insufficient },
     { label: "비정상 급등락 (검토 플래그)", value: data.checks.abnormalMoves },
   ];
@@ -72,11 +94,18 @@ export function KrMarketDataPanel({ data }: { data: DataStatusPayload }) {
                 {data.coverage.map((r) => (
                   <tr key={r.kind} className="border-t border-border">
                     <td className="px-2 py-1.5">{r.provider}</td>
-                    <td className="px-2 py-1.5">{r.kind}</td>
+                    <td className="px-2 py-1.5">
+                      {r.kind}
+                      {r.asOfDate ? (
+                        <span className="block text-[10px] text-muted-foreground">
+                          기준일 {r.asOfDate} 유효 종목
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="num px-2 py-1.5 text-right">{formatCount(r.count)}</td>
                     <td className="num px-2 py-1.5 text-right">{formatCount(r.entities)}</td>
                     <td className={`px-2 py-1.5 ${r.ok ? "text-up" : "text-warn"}`}>
-                      {r.ok ? "정상" : "미제공"}
+                      {coverageLabel(r)}
                     </td>
                   </tr>
                 ))}
@@ -105,8 +134,9 @@ export function KrMarketDataPanel({ data }: { data: DataStatusPayload }) {
               </tbody>
             </table>
             <p className="px-3 py-2 text-[11px] text-muted-foreground">
-              비정상 급등락은 자동 삭제하지 않고 corporate action 또는 데이터 오류 검토 대상으로만
-              플래그합니다.
+              미래 날짜는 한국 시장 현지 검사일과 비교합니다. 늦게 업로드한 과거 자료는 미래 자료로
+              보지 않습니다. 비정상 급등락은 자동 삭제하지 않고 corporate action 또는 데이터 오류
+              검토 대상으로만 플래그합니다.
             </p>
           </div>
 
@@ -120,13 +150,15 @@ export function KrMarketDataPanel({ data }: { data: DataStatusPayload }) {
                   <tr key={key} className="border-b border-border last:border-0">
                     <td className="px-3 py-2">{CAPABILITY_LABELS[key] ?? key}</td>
                     <td
-                      className={`px-3 py-2 text-right font-semibold ${ok ? "text-up" : "text-muted-foreground"}`}
+                      className={`px-3 py-2 text-right font-semibold ${(capabilityCoverage(key)?.ok ?? ok) ? "text-up" : "text-muted-foreground"}`}
                     >
                       {key === "volatilityIndex"
                         ? (data.volatilityObservation?.label ?? "원본·대체 출처 미확인")
-                        : ok
-                          ? "제공"
-                          : "미제공 → 점수 산정에서 제외"}
+                        : capabilityCoverage(key)?.availableEntities !== undefined
+                          ? `${coverageLabel(capabilityCoverage(key)!)} · ${capabilityCoverage(key)!.availableEntities}/${capabilityCoverage(key)!.entities}종목 (기준일)`
+                          : ok
+                            ? "제공"
+                            : "미제공 → 점수 산정에서 제외"}
                     </td>
                   </tr>
                 ))}

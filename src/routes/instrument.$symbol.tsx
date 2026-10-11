@@ -226,7 +226,7 @@ function InstrumentDetail() {
           <p className="text-[12px] text-muted-foreground">
             기준일 {analysis.asOfDate} · 모델 {analysis.strategyVersion} · 벤치마크{" "}
             {row.benchmarkCode}
-            {row.benchmarkFallback ? " (대체 벤치마크 사용)" : ""} · 데이터 완전성{" "}
+            {row.benchmarkFallback ? " (대체 벤치마크 사용)" : ""} · 기술점수 입력 완전성{" "}
             {formatNumber(row.dataCompletenessRatio * 100, 0)}%
           </p>
         </div>

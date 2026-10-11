@@ -1,3 +1,4 @@
+import { sourceFingerprintRecords } from "../src/lib/sourceFingerprintRecords";
 import { memory } from "./screening-memory";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -34,15 +35,9 @@ function resultDigest(analysis: AnalysisResult) {
 }
 
 function inputFingerprint(inputs: LoadedSourceInput[], config: ScoringConfig) {
-  const sources = inputs
-    .filter((input) => input.sourceRecord)
-    .map((input) => ({
-      id: input.sourceRecord!.id,
-      dataHash: input.sourceRecord!.data_hash,
-      schemaHash: input.sourceRecord!.schema_hash,
-      activatedAt: input.sourceRecord!.activated_at,
-    }))
-    .sort((a, b) => a.id.localeCompare(b.id));
+  const sources = sourceFingerprintRecords(
+    inputs.flatMap((input) => (input.sourceRecord ? [input.sourceRecord] : [])),
+  );
   return sha256(
     stableJson({
       version: SCREENING_CACHE_VERSION,

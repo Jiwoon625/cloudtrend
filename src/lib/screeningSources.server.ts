@@ -1,3 +1,4 @@
+import { sourceFingerprintRecords } from "./sourceFingerprintRecords";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ScoringConfig } from "./engine/scoring";
@@ -26,14 +27,7 @@ export function inputFingerprint(sources: ActiveSourceRecord[], config: ScoringC
     stableCacheJson({
       version: SCREENING_CACHE_VERSION,
       strategyConfig: config,
-      sources: sources
-        .map((source) => ({
-          id: source.id,
-          dataHash: source.data_hash,
-          schemaHash: source.schema_hash,
-          activatedAt: source.activated_at,
-        }))
-        .sort((a, b) => a.id.localeCompare(b.id)),
+      sources: sourceFingerprintRecords(sources),
       legacyFallback: null,
     }),
   );
@@ -59,7 +53,8 @@ export async function listActiveSources(client: SupabaseClient, userId: string) 
     // parseManualMarketData는 뒤에 들어온 중복 행의 비어 있지 않은 값을
     // 덮어쓴다. 오래된 source부터 읽어 최신 활성 source가 최종 우선권을 갖게 한다.
     .order("activated_at", { ascending: true, nullsFirst: true })
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
   if (error) throw new Error(`스크리닝 원천데이터 목록 조회 실패: ${error.message}`);
   const sources = (data ?? []) as ActiveSourceRecord[];
   if (sources.length === 0) throw new Error("활성 스크리닝 원천데이터가 없습니다.");

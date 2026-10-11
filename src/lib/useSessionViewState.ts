@@ -24,12 +24,13 @@ export function syncSessionViewOwner(owner: string | null): void {
 }
 
 export function readSessionViewState<T>(
-  key: string,
+  key: string | undefined,
   initial: T,
   valid: (value: unknown) => value is T,
 ): T {
   try {
     if (
+      key === undefined ||
       typeof window === "undefined" ||
       !sessionViewOwner ||
       window.sessionStorage.getItem(prefix + "owner") !== sessionViewOwner
@@ -46,19 +47,30 @@ export function readSessionViewState<T>(
 
 /** Tab-local UI preferences only; no rows, holdings, tokens or raw results are stored. */
 export function useSessionViewState<T>(
-  key: string,
+  key: string | undefined,
   initial: T,
   valid: (value: unknown) => value is T,
 ): [T, Dispatch<SetStateAction<T>>] {
+  const owner = sessionViewOwner;
   const [value, setValue] = useState<T>(
     typeof window === "undefined" ? initial : () => readSessionViewState(key, initial, valid),
   );
+  const [scope, setScope] = useState({ key, owner });
+  const scopeChanged = scope.key !== key || scope.owner !== owner;
+  const current = scopeChanged ? readSessionViewState(key, initial, valid) : value;
+  if (scopeChanged) {
+    // A caller may change modes without unmounting. Never carry its previous view
+    // into another key/account, or write that view into the new scope.
+    setScope({ key, owner });
+    setValue(current);
+  }
   const set: Dispatch<SetStateAction<T>> = (next) =>
     setValue((previous) => {
+      if (owner !== sessionViewOwner) return previous;
       const resolved = typeof next === "function" ? (next as (value: T) => T)(previous) : next;
       const safe = valid(resolved) ? resolved : initial;
       try {
-        if (typeof window !== "undefined" && sessionViewOwner) {
+        if (key !== undefined && typeof window !== "undefined" && sessionViewOwner) {
           if (window.sessionStorage.getItem(prefix + "owner") !== sessionViewOwner)
             syncSessionViewOwner(sessionViewOwner);
           window.sessionStorage.setItem(prefix + key, JSON.stringify(safe));
@@ -68,7 +80,7 @@ export function useSessionViewState<T>(
       }
       return safe;
     });
-  return [value, set];
+  return [current, set];
 }
 export const viewText = (v: unknown): v is string => typeof v === "string" && v.length <= 500;
 export const viewPage = (v: unknown): v is number =>

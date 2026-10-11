@@ -151,7 +151,8 @@ export async function listRegisteredSources(
     .eq("source_type", sourceType)
     .in("status", statuses)
     .order("activated_at", { ascending: true, nullsFirst: true })
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
   if (error) throw new Error(`등록 원천데이터 목록을 불러오지 못했습니다: ${error.message}`);
   return (data ?? []) as AnalysisSourceFileRecord[];
 }

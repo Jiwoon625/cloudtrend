@@ -6,7 +6,7 @@ export function createDataStatusCache(maxEntries = 4) {
   const pending = new Map<string, Promise<DataStatusPayload>>();
   return {
     async get(owner: string, fingerprint: string, build: () => Promise<DataStatusPayload>) {
-      const key = JSON.stringify(["data-status-v2", owner, fingerprint]);
+      const key = JSON.stringify(["data-status-v3", owner, fingerprint]);
       const hit = completed.get(key);
       if (hit) return hit;
       const active = pending.get(key);

@@ -47,12 +47,23 @@ export interface DataStatusPayload {
   notes: string[];
   capabilities: AnalysisResult["capabilities"];
   volatilityObservation?: ReturnType<typeof dataStatusVolatility>;
-  coverage: Array<{ provider: string; kind: string; count: number; entities: number; ok: boolean }>;
+  qualityDate?: string;
+  qualityTimezone?: "Asia/Seoul";
+  coverage: Array<{
+    provider: string;
+    kind: string;
+    count: number;
+    entities: number;
+    ok: boolean;
+    availableEntities?: number;
+    asOfDate?: string;
+  }>;
   checks: {
     ohlcErrors: number;
     negativeVolume: number;
     duplicates: number;
     futureDates: number;
+    afterAsOfDates?: number;
     insufficient: number;
     abnormalMoves: number;
   };

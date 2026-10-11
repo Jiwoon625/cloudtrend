@@ -20,6 +20,7 @@ import {
 } from "@/lib/statusDisplay";
 import { entrySuppressionReason, type DomesticPositionContext } from "@/lib/positionSignalContext";
 import { getDisplayWarnings } from "@/lib/warningDisplay";
+import { useSessionViewState, viewChoice, viewPage } from "@/lib/useSessionViewState";
 
 export function GradeBadge({ grade }: { grade: "A" | "B" | "C" }) {
   const cls =
@@ -166,6 +167,7 @@ export function ScreenerTable({
   tradeDates,
   compactStock = false,
   paginationKey = "",
+  viewStateKey,
 }: {
   rows: ScreeningRow[];
   positionContext?: DomesticPositionContext | undefined;
@@ -173,10 +175,34 @@ export function ScreenerTable({
   tradeDates?: readonly string[];
   compactStock?: boolean;
   paginationKey?: string;
+  viewStateKey?: string;
 }) {
-  const [sortKey, setSortKey] = useState<SortKey>("entry");
-  const [dir, setDir] = useState<"asc" | "desc">("desc");
-  const [page, setPage] = useState(0);
+  const [sortKey, setSortKey] = useSessionViewState<SortKey>(
+    viewStateKey ? `${viewStateKey}:sort` : undefined,
+    "entry",
+    viewChoice([
+      "entry",
+      "scoreDelta1d",
+      "technical",
+      "priority",
+      "volumeRatio",
+      "rs20",
+      "rsAccel",
+      "distanceHigh",
+      "marketCap",
+      "close",
+    ]),
+  );
+  const [dir, setDir] = useSessionViewState<"asc" | "desc">(
+    viewStateKey ? `${viewStateKey}:direction` : undefined,
+    "desc",
+    viewChoice(["asc", "desc"]),
+  );
+  const [page, setPage] = useSessionViewState(
+    viewStateKey ? `${viewStateKey}:page` : undefined,
+    0,
+    viewPage,
+  );
   const [previousPaginationKey, setPreviousPaginationKey] = useState(paginationKey);
   if (previousPaginationKey !== paginationKey) {
     setPreviousPaginationKey(paginationKey);

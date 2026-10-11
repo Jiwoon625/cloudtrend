@@ -319,12 +319,18 @@ export const dataStatusServer = createServerFn({ method: "POST" })
     if (error || !auth.user) throw new Error("로그인 세션 검증에 실패했습니다.");
     const sources = await listActiveSources(client, auth.user.id);
     const fingerprint = inputFingerprint(sources, data.config);
-    return dataStatusCache.get(auth.user.id, fingerprint, async () => {
+    const checkedAt = new Date();
+    const qualityDate = checkedAt.toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+    return dataStatusCache.get(auth.user.id, `${fingerprint}:${qualityDate}`, async () => {
       const { sources: loadedSources, texts } = await loadActiveSources(client, auth.user.id, 3);
       if (inputFingerprint(loadedSources, data.config) !== fingerprint)
         throw new Error("원천자료가 변경됐습니다. 데이터 상태를 다시 조회해 주세요.");
       const { computeDatasetDataStatus } = await import("./datasetDataStatus");
-      const status = computeDatasetDataStatus(parseManualMarketData(texts).dataset, data.config);
+      const status = computeDatasetDataStatus(
+        parseManualMarketData(texts).dataset,
+        data.config,
+        checkedAt,
+      );
       const currentSources = await listActiveSources(client, auth.user.id);
       if (inputFingerprint(currentSources, data.config) !== fingerprint)
         throw new Error("검증 중 원천자료가 변경됐습니다. 데이터 상태를 다시 조회해 주세요.");

@@ -2,8 +2,8 @@ import { isOperationalSignalDate, isOperationalSignalOrigin } from "@/lib/operat
 import { HoldingsAvailability } from "./HoldingsAvailability";
 import { kospiMarketGateDisplay, kospiMarketGateLabel } from "./kospiEntryPresentation";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSessionViewState, viewText } from "@/lib/useSessionViewState";
 
 import { PdfExportButton } from "@/components/PdfExportButton";
 import { ScreenerTable } from "@/components/ScreenerTable";
@@ -61,13 +61,35 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
     refetchOnWindowFocus: false,
   });
   const positionContext = positions.isSuccess ? positions.data : undefined;
-  const [query, setQuery] = useState("");
-  const [minTechnical, setMinTechnical] = useState(0);
-  const [minVolumeRatio, setMinVolumeRatio] = useState(0);
-  const [sector, setSector] = useState("ALL");
-  const [showDisqualified, setShowDisqualified] = useState(true);
-  const [includeLeveraged, setIncludeLeveraged] = useState(true);
-  const [preset, setPreset] = useState<PresetId | null>(null);
+  const viewKey = mode === "STOCK" ? "kr-screener" : "legacy-etf-screener";
+  const technicalMax = mode === "STOCK" ? 10 : 100;
+  const [query, setQuery] = useSessionViewState(`${viewKey}:query`, "", viewText);
+  const [minTechnical, setMinTechnical] = useSessionViewState(
+    `${viewKey}:min-technical`,
+    0,
+    (v): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= technicalMax,
+  );
+  const [minVolumeRatio, setMinVolumeRatio] = useSessionViewState(
+    `${viewKey}:min-volume-ratio`,
+    0,
+    (v): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0,
+  );
+  const [sector, setSector] = useSessionViewState(`${viewKey}:sector`, "ALL", viewText);
+  const [showDisqualified, setShowDisqualified] = useSessionViewState(
+    `${viewKey}:show-disqualified`,
+    true,
+    (v): v is boolean => typeof v === "boolean",
+  );
+  const [includeLeveraged, setIncludeLeveraged] = useSessionViewState(
+    `${viewKey}:include-leveraged`,
+    true,
+    (v): v is boolean => typeof v === "boolean",
+  );
+  const [preset, setPreset] = useSessionViewState<PresetId | null>(
+    `${viewKey}:preset`,
+    null,
+    (v): v is PresetId | null => v === null || PRESETS.some((item) => item.id === v),
+  );
 
   const gate =
     mode === "STOCK"
@@ -156,17 +178,35 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
     return true;
   });
 
-  const numberField = (label: string, value: number, onChange: (v: number) => void, step = 1) => (
+  const numberField = (
+    label: string,
+    value: number,
+    onChange: (v: number) => void,
+    step = 1,
+    max?: number,
+    helper?: string,
+  ) => (
     <div className="space-y-1">
       <Label className="text-[11px] text-muted-foreground">{label}</Label>
       <Input
         type="number"
         aria-label={label}
         step={step}
+        min={0}
+        max={max}
         value={value}
-        onChange={(e) => onChange(Number(e.target.value) || 0)}
+        aria-describedby={helper ? `${viewKey}-technical-help` : undefined}
+        onChange={(e) => {
+          const next = Number(e.target.value);
+          onChange(Number.isFinite(next) ? Math.min(max ?? Infinity, Math.max(0, next)) : 0);
+        }}
         className="h-8 text-right text-[12px]"
       />
+      {helper ? (
+        <p id={`${viewKey}-technical-help`} className="text-[10px] text-muted-foreground">
+          {helper}
+        </p>
+      ) : null}
     </div>
   );
 
@@ -272,7 +312,14 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
             ))}
           </select>
         </div>
-        {numberField("기술점수 최소", minTechnical, setMinTechnical, 0.5)}
+        {numberField(
+          "기술점수 최소",
+          minTechnical,
+          setMinTechnical,
+          0.5,
+          technicalMax,
+          `0~${technicalMax}점 기준 · 0이면 제한 없음`,
+        )}
         {numberField("거래량 비율 최소(%)", minVolumeRatio, setMinVolumeRatio, 10)}
         <div className="flex items-center gap-2 lg:col-span-2">
           <Switch id="disq" checked={showDisqualified} onCheckedChange={setShowDisqualified} />
@@ -296,6 +343,8 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         </p>
       ) : (
         <ScreenerTable
+          key={mode}
+          viewStateKey={viewKey}
           paginationKey={JSON.stringify([
             mode,
             query,

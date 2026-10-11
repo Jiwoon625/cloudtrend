@@ -437,7 +437,11 @@ function DashboardContent({
                   <tr key={sector.sectorCode} className="border-b border-border last:border-0">
                     <td className="num px-3 py-2">{sector.rank}</td>
                     <td className="px-3 py-2 font-medium">
-                      <Link to="/sectors" className="hover:underline">
+                      <Link
+                        to="/sectors"
+                        search={{ sector: sector.sectorCode }}
+                        className="hover:underline"
+                      >
                         {sector.sectorName}
                       </Link>
                     </td>
