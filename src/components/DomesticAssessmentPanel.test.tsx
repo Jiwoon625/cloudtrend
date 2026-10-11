@@ -242,3 +242,51 @@ it("omits the legacy new label only from dashboard evidence, preserving stored m
   expect(html).toContain("8.0점 돌파");
   expect(current).toEqual(before);
 });
+
+it("does not present a domestic source outage or unknown holdings as zero confirmed candidates", () => {
+  const unavailable = [{ ...markets[0]!, date: null, assessments: [] }];
+  const html = renderToStaticMarkup(<DomesticAssessmentPanel markets={unavailable} review />);
+  expect(html).toContain("국내 기준일·조건별 판단 자료 미확인");
+  expect(html).not.toContain("기준일의 검토 후보가 없습니다");
+  const unknown = [{ ...markets[0]!, holdingsKnown: false }];
+  const unknownHtml = renderToStaticMarkup(<DomesticAssessmentPanel markets={unknown} review />);
+  expect(unknownHtml).toContain("실제 보유정보 확인 대기");
+  expect(unknownHtml).not.toContain("기준일의 검토 후보가 없습니다");
+});
+
+it("shows the ETF pre-start exclusion when browsing all saved evidence", () => {
+  hooks.values[3] = "all";
+  const etf = {
+    ...markets[0]!.assessments![1]!,
+    market: "ETF" as const,
+    date: "2026-10-12",
+    assessment: undefined,
+    operationalEntryNotice: null,
+    etfEntry: { entryState: "data_pending", originDate: "2026-10-08" },
+    etfAssessment: {
+      current: true,
+      krxPending: true,
+      isStrategyTarget: true,
+      score: null,
+      previousScore: null,
+      previousDate: null,
+      technical: 50,
+      priority: null,
+      health: null,
+      environment: null,
+      annualVolatility: null,
+      entryWeight: null,
+      averageTradingValue20: null,
+      underlyingClose: null,
+      underlyingMa60: null,
+      underlyingJudgment: "unconfirmed" as const,
+      provenanceLabel: "2026-10-12 저장 근거",
+    },
+  };
+  const input = [
+    { ...markets[0]!, market: "ETF" as const, date: "2026-10-12", assessments: [etf] },
+  ];
+  const html = renderToStaticMarkup(<DomesticAssessmentPanel markets={input} review />);
+  expect(html).toContain("시작 전 원신호 · 운용 승계 안 함");
+  expect(html).not.toContain("신규");
+});

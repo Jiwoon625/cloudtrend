@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { isEveningReviewCandidate, matchesEtfReviewMinimum } from "./eveningReview";
+import {
+  eveningReviewStartNotice,
+  isEveningReviewCandidate,
+  matchesEtfReviewMinimum,
+} from "./eveningReview";
 import type { DashboardIndexRow, DashboardMarketSignals } from "./dashboardOperations";
 import type { StockAssessmentDisplay } from "./stockAssessmentDisplay";
 const date = "2026-10-12";
-const market = { date } as DashboardMarketSignals;
+const market = { date, holdingsKnown: true } as DashboardMarketSignals;
 const row = {
   date,
   market: "KOSPI",
@@ -90,4 +94,28 @@ describe("review selection never creates operational signals", () => {
     expect(matchesEtfReviewMinimum(70, 80, true)).toBe(false);
     expect(matchesEtfReviewMinimum(90, 80, false)).toBe(true);
   });
+});
+
+it("does not label unknown holdings or rejected confirmations as review candidates", () => {
+  expect(isEveningReviewCandidate(row, { ...market, holdingsKnown: false })).toBe(false);
+  expect(
+    isEveningReviewCandidate(
+      { ...row, kospiEntry: { date, state: "rejected" } as DashboardIndexRow["kospiEntry"] },
+      market,
+    ),
+  ).toBe(false);
+});
+it("derives ETF operational exclusion notices from stored ETF entry evidence", () => {
+  const etf = {
+    ...row,
+    market: "ETF" as const,
+    etfEntry: {
+      entryState: "data_pending",
+      originDate: "2026-10-08",
+    } as DashboardIndexRow["etfEntry"],
+  };
+  expect(eveningReviewStartNotice(etf)).toContain("시작 전 원신호");
+  expect(
+    eveningReviewStartNotice({ ...etf, etfEntry: { ...etf.etfEntry!, originDate: null } }),
+  ).toContain("원신호 시점 미확인");
 });

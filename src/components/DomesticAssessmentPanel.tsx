@@ -1,5 +1,5 @@
 import { dashboardCopy } from "@/lib/dashboardCopy";
-import { isEveningReviewCandidate } from "@/lib/eveningReview";
+import { eveningReviewStartNotice, isEveningReviewCandidate } from "@/lib/eveningReview";
 import { EtfAssessmentDetails } from "./EtfAssessmentDetails";
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -23,6 +23,9 @@ export function DomesticAssessmentPanel({
   const domestic = markets.filter(
     (m) => m.market === "KOSPI" || m.market === "KOSDAQ" || m.market === "ETF",
   );
+  const incomplete =
+    !domestic.length || domestic.some((m) => !m.date || m.assessments === undefined);
+  const holdingsUnknown = domestic.some((m) => !m.holdingsKnown);
   const all = domestic.flatMap((m) => m.assessments ?? []).filter((r) => !heldOnly || r.held);
   const candidates = domestic.flatMap((m) =>
     (m.assessments ?? []).filter((r) => isEveningReviewCandidate(r, m)),
@@ -128,9 +131,16 @@ export function DomesticAssessmentPanel({
           </select>
         </div>
       </div>
-      {domestic.some((m) => m.assessments === undefined) ? (
+      {incomplete ? (
         <p className="p-3 text-xs text-warn">
-          조건별 판단 자료 미확인 · 새로고침 후 다시 확인하세요.
+          국내 기준일·조건별 판단 자료 미확인 · 후보가 없다는 뜻이 아닙니다. 새로고침 후 다시
+          확인하세요.
+        </p>
+      ) : null}
+      {review && holdingsUnknown ? (
+        <p className="p-3 text-xs text-warn" role="status">
+          실제 보유정보 확인 대기 · 해당 시장은 우선 검토 후보에서 제외합니다. 전체 조건별 판단에서
+          기술 근거를 볼 수 있습니다.
         </p>
       ) : null}
       <div className="overflow-x-auto">
@@ -182,17 +192,17 @@ export function DomesticAssessmentPanel({
                       assessment={r.assessment}
                       held={r.held ?? false}
                       signalDate={r.date}
-                      entryNotice={r.operationalEntryNotice}
+                      entryNotice={eveningReviewStartNotice(r)}
                       formatText={review ? dashboardCopy : undefined}
                     />
                   ) : r.etfAssessment ? (
                     <>
                       <EtfAssessmentDetails evidence={r.etfAssessment} />
-                      {r.operationalEntryNotice ? (
+                      {eveningReviewStartNotice(r) ? (
                         <p className="text-warn">
                           {review
-                            ? dashboardCopy(r.operationalEntryNotice)
-                            : r.operationalEntryNotice}
+                            ? dashboardCopy(eveningReviewStartNotice(r)!)
+                            : eveningReviewStartNotice(r)}
                         </p>
                       ) : null}
                     </>
@@ -207,9 +217,11 @@ export function DomesticAssessmentPanel({
       </div>
       {!filtered.length ? (
         <p className="p-4 text-xs text-muted-foreground">
-          {review && scope === "candidates"
-            ? "기준일의 검토 후보가 없습니다. 전체 조건별 판단에서 저장된 근거를 확인할 수 있습니다."
-            : "표시할 조건별 판단이 없습니다."}
+          {review && (incomplete || holdingsUnknown)
+            ? "자료 확인이 필요합니다. 확인된 시장의 근거만 표시합니다."
+            : review && scope === "candidates"
+              ? "기준일의 검토 후보가 없습니다. 전체 조건별 판단에서 저장된 근거를 확인할 수 있습니다."
+              : "표시할 조건별 판단이 없습니다."}
         </p>
       ) : null}
       <div className="flex items-center justify-end gap-3 border-t p-3 text-xs">

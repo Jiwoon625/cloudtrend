@@ -5,20 +5,25 @@ import type {
 } from "./dashboardOperations";
 import { isOperationalSignalDate, operationalEntryStartNotice } from "./operationalSignalStart";
 
-/** Read-only review selection. These rows never establish trading eligibility. */
-export function isEveningReviewCandidate(
-  row: DashboardSignal & Partial<Pick<DashboardIndexRow, "kospiEntry" | "etfEntry">>,
-  market: DashboardMarketSignals,
-) {
+type ReviewRow = DashboardSignal & Partial<Pick<DashboardIndexRow, "kospiEntry" | "etfEntry">>;
+
+export function eveningReviewStartNotice(row: ReviewRow) {
   const origin = row.market === "ETF" ? row.etfEntry?.originDate : row.kospiEntry?.originDate;
   const state = row.market === "ETF" ? row.etfEntry?.entryState : row.kospiEntry?.state;
   const requiresOrigin = state === "pending" || state === "confirmed" || state === "data_pending";
+  return (
+    row.operationalEntryNotice ?? operationalEntryStartNotice(row.date, origin, requiresOrigin)
+  );
+}
+
+/** Read-only review selection. These rows never establish trading eligibility. */
+export function isEveningReviewCandidate(row: ReviewRow, market: DashboardMarketSignals) {
   if (
+    !market.holdingsKnown ||
     row.held ||
     row.date !== market.date ||
     !isOperationalSignalDate(row.date) ||
-    row.operationalEntryNotice ||
-    operationalEntryStartNotice(row.date, origin, requiresOrigin)
+    eveningReviewStartNotice(row)
   )
     return false;
   if (row.market === "ETF") {
@@ -28,6 +33,7 @@ export function isEveningReviewCandidate(
   const evidence = row.assessment;
   return Boolean(
     evidence?.current &&
+    row.kospiEntry?.state !== "rejected" &&
     !evidence.failed.length &&
     (evidence.rawOnset || (evidence.score !== null && evidence.score >= 8)),
   );
