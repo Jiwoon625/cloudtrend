@@ -859,3 +859,149 @@ it("rejects an unreviewed runtime even when its contract and hashes are self-con
   const wrong = await prepareIntegratedInitialization("O1", `sha256:${"f".repeat(64)}`);
   await expect(invoke(wrong)).rejects.toThrow(/Reviewed integrated allocation runtime/);
 });
+
+it("reproduces the live float setting failure, then restores 0 after repaired success and canonical exceptions", async () => {
+  const repair = readFileSync("docs/integrated-allocation-numeric-rendering.sql", "utf8");
+  const numericRollback = readFileSync(
+    "docs/integrated-allocation-numeric-rendering.rollback.sql",
+    "utf8",
+  );
+  await db.exec("RESET ROLE");
+  await db.exec(patchedDefinition);
+  await db.exec("SET extra_float_digits=0");
+  await auth("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+  const value = await initialization();
+  const setting = async () =>
+    (await db.query<{ value: string }>("select current_setting('extra_float_digits') value"))
+      .rows[0]!.value;
+  expect(await setting()).toBe("0");
+  await expect(invoke(value)).rejects.toThrow("Canonical numeric rendering unavailable");
+  expect((await db.query("select * from public.ledger_model_series")).rows).toEqual([]);
+  expect(await setting()).toBe("0");
+  await db.exec("RESET ROLE");
+  const originalCatalog = await catalog(),
+    originalAcl = await acl();
+  const originalGenericBody = (
+    await db.query<{ body: string }>(
+      "select prosrc body from pg_proc where oid='public.ledger_append_model_session(uuid,jsonb,jsonb,date,text)'::regprocedure",
+    )
+  ).rows[0]!.body;
+  await db.exec(repair);
+  await db.exec(repair);
+  expect(await catalog()).toEqual(originalCatalog);
+  expect(await acl()).toEqual(originalAcl);
+  const repairedBody = (
+    await db.query<{ body: string; md5: string }>(
+      "select prosrc body, md5(prosrc) md5 from pg_proc where oid='public.ledger_append_own_october_model_session(jsonb,date,text)'::regprocedure",
+    )
+  ).rows[0]!;
+  expect(repairedBody.md5).toBe("d96be8e4843146bc5278d56aaca2c7c1");
+  expect(
+    repairedBody.body.replace(
+      / {2}-- BEGIN BOUNDED INTEGRATED ALLOCATION BRANCH[\s\S]*? {2}-- END BOUNDED INTEGRATED ALLOCATION BRANCH\n\n/,
+      "",
+    ),
+  ).toBe(originalBody);
+  expect(
+    (
+      await db.query<{ body: string }>(
+        "select prosrc body from pg_proc where oid='public.ledger_append_model_session(uuid,jsonb,jsonb,date,text)'::regprocedure",
+      )
+    ).rows[0]!.body,
+  ).toBe(originalGenericBody);
+  await auth("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+  await db.exec("BEGIN");
+  for (const kind of ["O1", "S07"] as const) {
+    expect(await invoke(await initialization(kind))).toMatchObject({
+      initialized: true,
+      reused: false,
+    });
+    expect(await setting()).toBe("0");
+    expect(await invoke(await initialization(kind))).toMatchObject({
+      initialized: true,
+      reused: true,
+    });
+    expect(await setting()).toBe("0");
+  }
+  await db.exec("COMMIT");
+  const bad = { ...value, canonicalPayload: ` ${value.canonicalPayload}` };
+  bad.stateHash = `sha256:${createHash("sha256").update(bad.canonicalPayload).digest("hex")}`;
+  await expect(invoke(bad)).rejects.toThrow(/canonical bytes mismatch/);
+  expect(await setting()).toBe("0");
+  // Also catch the failure inside the same outer transaction, rather than relying on autocommit rollback.
+  await db.exec(`DO $test$ BEGIN
+    BEGIN
+      PERFORM public.ledger_append_own_october_model_session($json$${JSON.stringify(bad)}$json$::jsonb,null,null);
+      RAISE EXCEPTION 'Unexpected canonical validation success';
+    EXCEPTION WHEN SQLSTATE 'P0001' THEN
+      IF SQLERRM NOT LIKE 'Integrated canonical bytes mismatch%' THEN RAISE; END IF;
+    END;
+    IF current_setting('extra_float_digits') <> '0' THEN RAISE EXCEPTION 'Caller setting leaked'; END IF;
+  END $test$;`);
+  expect(await setting()).toBe("0");
+  await db.exec("SET extra_float_digits=3; BEGIN");
+  expect(await invoke(value)).toMatchObject({ initialized: true, reused: true });
+  expect(await setting()).toBe("3");
+  await db.exec("COMMIT");
+  expect(await setting()).toBe("3");
+  await db.exec("RESET ROLE");
+  const rowsBefore = (
+    await db.query("select * from public.ledger_model_series order by user_id,series_id")
+  ).rows;
+  await db.exec(numericRollback);
+  await db.exec(numericRollback);
+  expect(
+    (
+      await db.query<{ md5: string }>(
+        "select md5(prosrc) md5 from pg_proc where oid='public.ledger_append_own_october_model_session(jsonb,date,text)'::regprocedure",
+      )
+    ).rows[0]!.md5,
+  ).toBe("604613388f3dfac68fafad59ab7f3950");
+  expect(
+    (await db.query("select * from public.ledger_model_series order by user_id,series_id")).rows,
+  ).toEqual(rowsBefore);
+  expect(await acl()).toEqual(originalAcl);
+  await db.exec(repair);
+  expect(await catalog()).toEqual(originalCatalog);
+});
+
+it("keeps owner/service state-hash parity under inherited extra_float_digits=0", async () => {
+  const ownerA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    ownerB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  await db.exec("RESET ROLE");
+  const repaired = (
+    await db.query<{ definition: string }>(
+      "select pg_get_functiondef('public.ledger_append_own_october_model_session(jsonb,date,text)'::regprocedure) definition",
+    )
+  ).rows[0]!.definition;
+  await db.exec(
+    repaired.replaceAll("pg_catalog.statement_timestamp()", "'2026-10-14T23:00:00Z'::timestamptz"),
+  );
+  await db.exec("SET extra_float_digits=0");
+  const run = await daily("2026-10-12", null, "S07");
+  await auth(ownerA);
+  await invoke(await initialization("S07"));
+  expect(await invoke(run)).toMatchObject({ stateHash: run.stateHash });
+  await auth(ownerB);
+  await invoke(await initialization("S07"));
+  await auth("", false, "service_role");
+  const service = await db.query<{ result: { stateHash: string } }>(
+    "select public.ledger_append_model_session($1::uuid,$2::jsonb,$3::jsonb,null,null) result",
+    [ownerB, JSON.stringify(run.registry), JSON.stringify(run)],
+  );
+  expect(service.rows[0]!.result.stateHash).toBe(run.stateHash);
+  const rows = (
+    await db.query<{ payload: unknown }>(
+      "select payload from public.ledger_model_sessions where user_id=any($1::uuid[]) and series_id=$2 order by user_id",
+      [[ownerA, ownerB], run.bookId],
+    )
+  ).rows;
+  expect(rows).toHaveLength(2);
+  expect(rows[0]!.payload).toEqual(rows[1]!.payload);
+  expect(
+    (await db.query<{ value: string }>("select current_setting('extra_float_digits') value"))
+      .rows[0]!.value,
+  ).toBe("0");
+  await db.exec("RESET ROLE; SET extra_float_digits=1");
+  await db.exec(repaired);
+});
