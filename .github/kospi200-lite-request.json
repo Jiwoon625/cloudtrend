@@ -1,0 +1,23 @@
+{
+  "version": "kospi200-lite-fixed-p30-v1",
+  "mode": "one-shot",
+  "userApprovedChange": "Use adjusted OHLC; no extra cash dividends or distributions; skip standalone historical market-gate certification",
+  "previousResearchRun": "38016639367",
+  "sourceDates": {
+    "from": "2017-08-21",
+    "through": "2026-09-11"
+  },
+  "capitalKRW": 100000000,
+  "slots": 30,
+  "stockReplayPolicy": "fixed-initial-P30-next-open",
+  "benchmark": "069500 KODEX 200 adjusted OHLC",
+  "costOneWay": 0.0015,
+  "requestedStudies": [
+    "2018-2024",
+    "2025",
+    "2026-partial",
+    "2018-2026-excluding-2025",
+    "rolling-504-sessions"
+  ],
+  "runOnce": true
+}
