@@ -555,7 +555,15 @@ export async function writeOperatingAllocation(
         sourceFingerprint: current.sourceFingerprint,
         cashAtReview: current.cash,
         claims: structuredClone(input.change.claims),
-        spendableCash: input.change.spendableCash,
+        // availableAt records this submitted review on the server, not a broker settlement/event date.
+        // Ignore legacy browser timestamps so clock skew cannot reject or backdate a review.
+        spendableCash: input.change.spendableCash
+          ? {
+              amount: input.change.spendableCash.amount,
+              reference: input.change.spendableCash.reference,
+              availableAt: new Date(now).toISOString(),
+            }
+          : null,
         reservations: structuredClone(authority?.reservations ?? []),
         reviewedAt: new Date(now).toISOString(),
       };

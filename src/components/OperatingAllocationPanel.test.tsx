@@ -253,6 +253,36 @@ describe("allocation presentation", () => {
   });
 });
 describe("review/save lifecycle", () => {
+  it.each(["2000-01-01T00:00:00Z", "2099-01-01T00:00:00Z"])(
+    "does not send the skewed browser clock %s as spendable-cash evidence",
+    async (browserTime) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(browserTime));
+      try {
+        render();
+        change("확인한 주문가능 현금", "1000");
+        render();
+        change("주문가능 현금 증빙 식별자", "broker-cash");
+        await previewClaims();
+        expect(callData(0)).toMatchObject({
+          change: { spendableCash: { amount: "1000", reference: "broker-cash" } },
+        });
+        expect(callData(0)).not.toHaveProperty("change.spendableCash.availableAt");
+        change("저장 내용 확인", "", true);
+        render();
+        button("검토한 내용 저장").onClick!();
+        await tick();
+        expect(callData(1)).toMatchObject({
+          action: "save",
+          reviewConfirmed: true,
+          change: { spendableCash: { amount: "1000", reference: "broker-cash" } },
+        });
+        expect(callData(1)).not.toHaveProperty("change.spendableCash.availableAt");
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
   it("preserves shared-currency unassigned cash and requires separate checked review", async () => {
     await previewClaims();
     expect(callData(0)).toMatchObject({

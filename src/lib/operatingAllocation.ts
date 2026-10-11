@@ -630,7 +630,9 @@ const changeSchema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("REVIEW_CLAIMS"),
       claims: operatingClaimsSchema,
-      spendableCash: spendableCashSchema.nullable(),
+      // Legacy clients may send their clock; the server ignores it and stamps its own review
+      // time. Persisted evidence still requires availableAt; this is not a cash event date.
+      spendableCash: spendableCashSchema.partial({ availableAt: true }).nullable(),
     })
     .strict(),
   z

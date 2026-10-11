@@ -5,10 +5,16 @@ import { integratedAllocationShadowServer } from "@/lib/integratedAllocationShad
 import {
   allocationTotalNav,
   type IntegratedAllocationLedger,
+  type AllocationRecord,
 } from "@/lib/integratedAllocationShadow";
 import { Button } from "./ui/button";
 const amount = (x: string | null) =>
   x === null ? "평가 미확정" : `${x.split(".")[0]!.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}원`;
+function allocationHistoryDate(record: Pick<AllocationRecord, "type" | "date">) {
+  if (record.type !== "MONTH_REVIEW") return record.date;
+  const [year, month] = record.date.split("-").map(Number);
+  return new Date(Date.UTC(year!, month!, 0)).toISOString().slice(0, 10);
+}
 export function IntegratedAllocationShadowContent({
   ledger,
   period,
@@ -19,9 +25,10 @@ export function IntegratedAllocationShadowContent({
   const nav = allocationTotalNav(ledger);
   const records = ledger.receipts
     .map((r) => r.record)
-    .filter(
-      (r) => (!period?.from || r.date >= period.from) && (!period?.to || r.date <= period.to),
-    );
+    .filter((r) => {
+      const date = allocationHistoryDate(r);
+      return (!period?.from || date >= period.from) && (!period?.to || date <= period.to);
+    });
   return (
     <div className="space-y-3">
       <p>모델 초기자산 3,000만원 · 평가자산 {amount(nav)}</p>
@@ -87,13 +94,18 @@ export function IntegratedAllocationShadowContent({
           </table>
         )}
         <h4 className="mt-3">선택 기간 거래·월말 판단</h4>
+        <p className="text-xs text-muted-foreground">
+          월말 판단의 기간 필터는 집계월 말일 기준이며, 실제 자료 전달·판단 완료 시각과 다릅니다.
+        </p>
         {!records.length ? (
           <p role="status">선택 기간 기록 없음 · 첫 세션 전에는 빈 장부를 유지합니다.</p>
         ) : (
           records.map((r) => (
             <div key={r.id} className="border-t py-2 text-xs">
               <p>
-                {r.date} · {r.type === "MONTH_REVIEW" ? "다음 달 비중 판단" : "시장 세션"}
+                {allocationHistoryDate(r)}
+                {r.type === "MONTH_REVIEW" ? " 집계월 말일" : ""} ·{" "}
+                {r.type === "MONTH_REVIEW" ? "다음 달 비중 판단" : "시장 세션"}
               </p>
               {r.fills.map((f, i) => (
                 <p key={i}>

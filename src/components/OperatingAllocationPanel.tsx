@@ -100,7 +100,7 @@ export function OperatingAllocationContent({
       </p>
       {data?.authority?.spendableCash ? (
         <p className="text-xs">
-          주문가능 현금 확인시각: {data.authority.spendableCash.availableAt}
+          주문가능 현금 검토 기록시각: {data.authority.spendableCash.availableAt}
         </p>
       ) : null}
       {currency === "USD" ? (
@@ -385,7 +385,6 @@ export function OperatingAllocationPanel({
         spendableCash: values.spendable
           ? {
               amount: format(decimal(values.spendable)),
-              availableAt: new Date().toISOString(),
               reference: values.reference.trim(),
             }
           : null,

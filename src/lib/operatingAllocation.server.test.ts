@@ -307,6 +307,68 @@ describe("same-document actual allocation CAS", () => {
     expect(state.rows["portfolio_ledgers"]!.payload["newActualPortfolio"]).toEqual(original);
     expect(c.writes.every((write) => write.table === "portfolio_ledgers")).toBe(true);
   });
+  it.each([undefined, "2099-01-01T00:00:00Z", "2000-01-01T00:00:00Z"])(
+    "stamps spendable-cash review with server time instead of the browser clock %s",
+    async (availableAt) => {
+      const c = client();
+      funded();
+      state.rows["portfolio_ledgers"]!.payload["operatingAllocation"] =
+        prepareOperatingAllocation(now);
+      const original = structuredClone(
+        state.rows["portfolio_ledgers"]!.payload["newActualPortfolio"],
+      );
+      const change: Write["change"] = {
+        ...claims,
+        spendableCash: {
+          amount: "1000",
+          reference: "verified-broker-cash",
+          ...(availableAt ? { availableAt } : {}),
+        },
+      };
+      const input = request(change);
+      const { reviewConfirmed: _confirmed, ...previewInput } = input as Extract<
+        Write,
+        { action: "save" }
+      >;
+      const preview = await writeOperatingAllocation(
+        c.value,
+        uid,
+        { ...previewInput, action: "preview" },
+        now,
+      );
+      expect(preview.authority?.spendableCash?.availableAt).toBe(new Date(now).toISOString());
+      expect(c.writes).toEqual([]);
+      const savedAt = "2026-10-12T15:01:00Z";
+      const saved = await writeOperatingAllocation(c.value, uid, input, savedAt);
+      expect(saved.authority?.spendableCash).toEqual({
+        amount: "1000",
+        reference: "verified-broker-cash",
+        availableAt: new Date(savedAt).toISOString(),
+      });
+      expect(saved.authority?.reviewedAt).toBe(new Date(savedAt).toISOString());
+      expect(saved.availability.status).toBe("CONFIRMED_CASH");
+      expect(state.rows["portfolio_ledgers"]!.payload["newActualPortfolio"]).toEqual(original);
+      const reused = await writeOperatingAllocation(c.value, uid, input, "2026-10-12T15:02:00Z");
+      expect(reused.reused).toBe(true);
+      expect(reused.authority).toEqual(saved.authority);
+      expect(c.writes).toHaveLength(1);
+    },
+  );
+  it("reads existing spendable-cash evidence without rewriting its saved timestamp", async () => {
+    const c = client();
+    funded();
+    state.rows["portfolio_ledgers"]!.payload["operatingAllocation"] =
+      prepareOperatingAllocation(now);
+    const reviewed = await writeOperatingAllocation(c.value, uid, request(claims), now);
+    const oldAuthority = structuredClone(reviewed.authority!);
+    oldAuthority.spendableCash!.availableAt = "2026-10-12T14:00:00Z";
+    state.rows["portfolio_ledgers"]!.payload["operatingCashAuthority"] = oldAuthority;
+    const before = structuredClone(state.rows);
+    const loaded = await loadOperatingAllocation(c.value, uid, "KRW", "2026-10-12T16:00:00Z");
+    expect(loaded.authority).toEqual(oldAuthority);
+    expect(state.rows).toEqual(before);
+    expect(c.writes).toHaveLength(1);
+  });
   it("does not double-reserve under a same-revision race", async () => {
     const c = client();
     funded();

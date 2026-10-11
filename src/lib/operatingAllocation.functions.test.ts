@@ -85,6 +85,26 @@ describe("owner-authenticated allocation endpoint", () => {
     expect(state.writes[0]?.[1]).toBe(state.uid);
     expect(state.writes[0]?.[2]).toEqual(save);
   });
+  it.each([undefined, "2099-01-01T00:00:00Z"])(
+    "accepts cash review without a client clock and tolerates the legacy clock %s",
+    async (availableAt) => {
+      const input = {
+        ...save,
+        change: {
+          kind: "REVIEW_CLAIMS",
+          claims: { KR: "600", ETF: "300", US: "0", UNASSIGNED: "100" },
+          spendableCash: {
+            amount: "1000",
+            reference: "broker-cash",
+            ...(availableAt ? { availableAt } : {}),
+          },
+        },
+      };
+      await call(input);
+      expect(state.writes[0]?.[1]).toBe(state.uid);
+      expect(state.writes[0]?.[2]).toEqual(input);
+    },
+  );
   it("never reuses another owner's identity", async () => {
     await call(load);
     state.uid = "00000000-0000-4000-8000-000000000020";
