@@ -269,3 +269,85 @@ it.each(["0", ""])(
     expect(dataset.liquidSymbolCountsByDate!["2026-10-12"]).toBe(1);
   },
 );
+
+it.each([0, null])("does not turn a missing close %s into an observed intraday low", (close) => {
+  const parsed = parseManualMarketData(
+    JSON.stringify([
+      {
+        symbol: "005930",
+        market: "KOSPI",
+        date: "2026-10-14",
+        open: 100,
+        high: 110,
+        low: 90,
+        close,
+        volume: 1000,
+      },
+    ]),
+    { allowIncompleteIndex: true },
+  );
+  expect(parsed.dataset.observedBars!["005930"]![0]).toMatchObject({
+    open: 100,
+    high: 110,
+    low: 90,
+    close: 0,
+  });
+});
+
+const partialMissingCloseCases = ["KOSDAQ", "ETF"].flatMap((market) =>
+  [null, 0, ""].flatMap((close) =>
+    [null, 0, 100].flatMap((open) =>
+      [null, 0, 110].flatMap((high) =>
+        [null, 0, 90].map((low) => ({ market, close, open, high, low })),
+      ),
+    ),
+  ),
+);
+it.each(partialMissingCloseCases)(
+  "preserves supplied OHLC independently for missing-close observation %j",
+  (input) => {
+    const { dataset } = parseManualMarketData(
+      JSON.stringify([{ ...input, symbol: "005930", date: "2026-10-14", volume: null }]),
+      { allowIncompleteIndex: true },
+    );
+    expect(dataset.observedBars!["005930"]![0]).toMatchObject({
+      open: input.open ?? 0,
+      high: input.high ?? 0,
+      low: input.low ?? 0,
+      close: 0,
+      openObserved: input.open !== null,
+      volume: 0,
+      volumeObserved: false,
+    });
+    expect(dataset.bars["005930"]).toEqual([]);
+  },
+);
+
+it("preserves prior observed OHLC and provenance when a duplicate only supplies enrichment", () => {
+  const { dataset } = parseManualMarketData(
+    JSON.stringify([
+      {
+        symbol: "005930",
+        market: "KOSPI",
+        date: "2026-10-14",
+        open: 100,
+        high: 110,
+        low: 90,
+        close: 0,
+        volume: 1000,
+      },
+      { symbol: "005930", market: "KOSPI", date: "2026-10-14", close: 0, foreignNetBuyValue: 5 },
+    ]),
+    { allowIncompleteIndex: true },
+  );
+  expect(dataset.observedBars!["005930"]![0]).toMatchObject({
+    open: 100,
+    high: 110,
+    low: 90,
+    close: 0,
+    volume: 1000,
+    openObserved: true,
+    volumeObserved: true,
+    foreignNetBuyValue: 5,
+  });
+});

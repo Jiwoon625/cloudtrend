@@ -14,7 +14,7 @@
       "src/lib/engine/kospiShadow.ts": "sha256:98ed2b7f20e8d428e245332574283432e83851f37cc4b0aabfa5483adee21d03",
       "src/lib/engine/kospiShadowDataset.ts": "sha256:1db2fdac54771e428d049c6c82349c077ddc7d91b8ca4994a8640a0cb1d0bedd",
       "src/lib/engine/kospiVolatility.ts": "sha256:7c4d43f18ceef204c638274cb5e60f6dcb33f2a8f7b9ed565ee3d43f2f370585",
-      "src/lib/engine/manualDataset.ts": "sha256:fe63bdde3f0e2e8c76301d6685227bd125e37978f6ae90083b54d99e7a5a038e",
+      "src/lib/engine/manualDataset.ts": "sha256:e77961837f9fa24ce0c316624b530177d1ad1f877eeabe4e063b1b8a1a7d110d",
       "src/lib/engine/operationalStrategy.ts": "sha256:643cec8514075360f7895bfa22a9d5117db370d13be2e737aee522e68115b1af",
       "src/lib/engine/pipeline.ts": "sha256:a3d3ac48786112ec02f11d4d58cc00c16877271c5a0afc5c624326da6c8ccdd3",
       "src/lib/engine/priorityScoreV8.ts": "sha256:9a263d860f1dcafc68f2168c35d4191158ffdaf7b3edf33f688948a95ee9418f",
@@ -52,5 +52,5 @@
     },
     "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
   },
-  "codeHash": "sha256:e1ce0e3d5326c6d57dc2906f4bd42a4a4897ca3eaf2393b998fc09b3b6873869"
+  "codeHash": "sha256:6d17bcaf79a6d0f224fce32030a6daf7e2e6a8bbaf4041fe8f90b8f817bcc424"
 }

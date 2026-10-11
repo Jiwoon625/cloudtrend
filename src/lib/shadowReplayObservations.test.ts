@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerSourceBlob, type AnalysisSourceFileRecord } from "./sourceRegistry";
 import { loadActiveSources } from "./screeningSources.server";
+import { ScreeningCompactor } from "../../scripts/screening-compaction-core";
+import { validateSourceBytes } from "./sourceData";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MarketDataset } from "./engine/dataset";
 import { parseManualMarketData } from "./engine/manualDataset";
@@ -94,7 +96,11 @@ function replayDataset(
 }
 
 /** Exercise web registration, immutable uploaded bytes and both production read paths. */
-async function uploadedReplayDataset(raw: MarketDataset, closeValue: number | null = 0) {
+async function uploadedReplayDataset(
+  raw: MarketDataset,
+  closeValue: number | null | "" = 0,
+  missingFields: Partial<Record<"open" | "high" | "low" | "volume", number | null>> = {},
+) {
   const records: AnalysisSourceFileRecord[] = [];
   const objects = new Map<string, Blob>();
   uploadClient.storage.from.mockImplementation(() => ({
@@ -156,9 +162,8 @@ async function uploadedReplayDataset(raw: MarketDataset, closeValue: number | nu
         type: instrument.instrumentType,
         sector: instrument.sectorCode,
         date: bar.tradeDate,
-        // Parser ranges can include its zero sentinel; upload actual positive intraday prices.
-        low: 99,
         close: bar.close === 0 ? closeValue : bar.close,
+        ...(bar.close === 0 ? missingFields : {}),
       })),
     ),
     ...raw.indexSeries.flatMap((index) =>
@@ -186,24 +191,84 @@ async function uploadedReplayDataset(raw: MarketDataset, closeValue: number | nu
   const loaded = await loadActiveSources(uploadClient as unknown as SupabaseClient, owner);
   const downloaded = parseManualMarketData(loaded.texts).dataset;
   const canonical = parseManualMarketData(registered.validation.canonicalCsv).dataset;
+  const compactor = new ScreeningCompactor();
+  compactor.addCanonicalCsv(registered.validation.canonicalCsv);
+  compactor.addCanonicalCsv(registered.validation.canonicalCsv);
+  const compactedTexts = [...compactor.chunks()].map((chunk) => chunk.text);
+  const compacted = parseManualMarketData(compactedTexts).dataset;
+  expect(compactor.duplicateRows).toBe(rows.length);
+  for (const text of compactedTexts) {
+    const validation = await validateSourceBytes({
+      bytes: new TextEncoder().encode(text),
+      filename: "compacted.csv",
+    });
+    expect(validation.valid).toBe(true);
+  }
+  const priceFields = (bar: {
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+    tradingValue: number;
+    openObserved?: boolean;
+    volumeObserved?: boolean;
+  }) => ({
+    open: bar.open,
+    high: bar.high,
+    low: bar.low,
+    close: bar.close,
+    volume: bar.volume,
+    tradingValue: bar.tradingValue,
+    openObserved: bar.openObserved,
+    volumeObserved: bar.volumeObserved,
+  });
   for (const instrument of raw.instruments) {
-    for (const dataset of [downloaded, canonical]) {
-      expect(
-        dataset.observedBars![instrument.symbol]?.map((bar) => [
-          bar.tradeDate,
-          bar.close,
-          bar.openObserved,
-          bar.volumeObserved,
-        ]),
-      ).toEqual(
-        raw.observedBars![instrument.symbol]?.map((bar) => [
-          bar.tradeDate,
-          bar.close,
-          bar.openObserved,
-          bar.volumeObserved,
-        ]),
-      );
+    const sourceRows = rows.filter((row) => row.symbol === instrument.symbol);
+    for (const dataset of [downloaded, canonical, compacted]) {
+      for (const source of sourceRows) {
+        const bar = dataset.observedBars![instrument.symbol]!.find(
+          (row) => row.tradeDate === source.date,
+        )!;
+        const close = Number(source.close ?? 0);
+        const expected = {
+          open: source.open ?? close,
+          high: source.high ?? 0,
+          low: source.low ?? 0,
+          close,
+          volume: source.volume ?? 0,
+          tradingValue: source.tradingValue,
+          openObserved: source.open !== null && source.open !== undefined,
+          volumeObserved: source.volume !== null && source.volume !== undefined,
+        };
+        expect(priceFields(bar), `${instrument.symbol} ${source.date}`).toEqual(expected);
+      }
       expect(dataset.bars[instrument.symbol]?.every((bar) => bar.close > 0)).toBe(true);
+      const date = dataset.asOfDate;
+      const last = sourceRows.find((row) => row.date === date)!;
+      const sliced = sliceKrDatasetForReplay(dataset, date);
+      const serialized = JSON.parse(JSON.stringify(sliced)) as MarketDataset;
+      expect(priceFields(serialized.observedBars![instrument.symbol]!.at(-1)!)).toEqual(
+        priceFields(dataset.observedBars![instrument.symbol]!.at(-1)!),
+      );
+      if (instrument.instrumentType === "STOCK") {
+        const archive = krDailyInputArchive(
+          sliced,
+          signalSnapshot(date, false),
+          `${date}T23:10:00Z`,
+        );
+        const restored = JSON.parse(JSON.stringify(archive)) as KrDailyInputArchive;
+        expect(priceFields(restored.inputs.bars[instrument.symbol]![0]!)).toEqual({
+          open: last.open ?? 0,
+          high: last.high ?? 0,
+          low: last.low ?? 0,
+          close: Number(last.close ?? 0),
+          volume: last.volume ?? 0,
+          tradingValue: last.tradingValue,
+          openObserved: last.open !== null && last.open !== undefined,
+          volumeObserved: last.volume !== null && last.volume !== undefined,
+        });
+      }
     }
   }
   return downloaded;
@@ -940,3 +1005,57 @@ it.each([false, true])(
     }
   },
 );
+
+it.each([
+  {},
+  { high: null },
+  { low: null },
+  { open: null },
+  { open: null, high: null },
+  { open: null, low: null },
+  { open: null, high: null, low: null, volume: null },
+])(
+  "preserves partial OHLC fields through upload, normalization, reload, compaction and serialized replay: %j",
+  async (fields) => {
+    for (const close of [0, null, ""] as const) {
+      const raw = await uploadedReplayDataset(
+        replayDataset(["000001", "000002", "069500"]),
+        close,
+        fields,
+      );
+      for (const symbol of ["000001", "000002", "069500"]) {
+        expect(raw.bars[symbol]!.at(-1)!.tradeDate).toBe(days[1]);
+        expect(raw.observedBars![symbol]!.at(-1)!.close).toBe(0);
+      }
+    }
+  },
+);
+
+it("corrects archived intraday evidence without changing the missing-close execution or NAV", async () => {
+  const corrected = await uploadedReplayDataset(replayDataset(), null);
+  const oldSentinelRange = structuredClone(corrected);
+  oldSentinelRange.observedBars!["000002"]!.at(-1)!.low = 0;
+  const actual = runCommon(corrected);
+  const previous = runCommon(oldSentinelRange);
+  expect(actual.trades).toEqual(previous.trades);
+  expect(actual.modelAccounting).toEqual(previous.modelAccounting);
+  expect(actual.modelAccounting).toMatchObject({ nav: null, valuationStatus: "MISSING" });
+  expect(actual.trades[0]).toMatchObject({ status: "OPEN", currentPrice: null });
+  const archive = (raw: MarketDataset) =>
+    krDailyInputArchive(
+      sliceKrDatasetForReplay(raw, days[2]!),
+      signalSnapshot(days[2]!, false),
+      `${days[2]}T23:10:00Z`,
+    );
+  expect(archive(corrected).inputs.bars["000002"]![0]!.low).toBe(99);
+  expect(archive(oldSentinelRange).inputs.bars["000002"]![0]!.low).toBe(0);
+  expect(await hashSeriesValue(archive(corrected))).not.toBe(
+    await hashSeriesValue(archive(oldSentinelRange)),
+  );
+});
+
+it("does not relax upload validation for an explicit zero intraday low", async () => {
+  await expect(uploadedReplayDataset(replayDataset(), 0, { low: 0 })).rejects.toThrow(
+    "원천데이터 검증 실패",
+  );
+});
