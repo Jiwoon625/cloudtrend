@@ -69,6 +69,8 @@ export interface ReplayOptions {
   smokeSessions?: number;
   scoringOnly?: boolean;
   cacheInput?: string;
+  fixedInitialBudget?: boolean;
+  historicalSignalCodeHash?: string;
 }
 interface FileEvidence {
   path: string;
@@ -210,6 +212,11 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
   const sessions = selectBacktestSessions(manifest.sessions, start, through, options.smokeSessions);
   const end = sessions.at(-1)!;
   const code = await codeFingerprint();
+  if (options.fixedInitialBudget && (options.market !== "kr" || !options.cacheInput || !options.historicalSignalCodeHash))
+    throw new Error("Fixed P30 research requires KR-only verified historical cached signals");
+  if (options.historicalSignalCodeHash &&
+      (!options.fixedInitialBudget || !/^sha256:[0-9a-f]{64}$/.test(options.historicalSignalCodeHash)))
+    throw new Error("Invalid historical signal code hash provenance");
   const sourceFiles: Array<{ file: string; bytes: number; sha256: string }> = [];
   let dataset: MarketDataset | undefined;
   let extensionContinuity: ReturnType<typeof verifyExtensionPriceContinuity> | null = null;
@@ -287,7 +294,7 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
           rows: kr.extension.continuityEvidence.rows,
         }
       : null,
-    codeHash: code.sha256,
+    codeHash: options.historicalSignalCodeHash ?? code.sha256,
     policy: CURRENT_RULES_RESEARCH,
   });
   const out = path.resolve(options.out);
@@ -311,6 +318,8 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
     sourceHash: identity.sourceHash,
     signalIdentityHash: stableSignalHash(identity),
     codeHash: code.sha256,
+    signalGeneratorCodeHash: identity.codeHash,
+    fixedInitialBudget: options.fixedInitialBudget ?? false,
     extensionContinuity,
     inputFiles: sourceFiles,
     sourceSessions: manifest.sessions.length,
@@ -513,7 +522,7 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
           };
         }
         if (withKr)
-          for (const scope of ["MIXED", "KOSPI", "KOSDAQ"] as const) {
+          for (const scope of (options.fixedInitialBudget ? ["KOSPI"] : ["MIXED", "KOSPI", "KOSDAQ"]) as Array<"MIXED" | "KOSPI" | "KOSDAQ">) {
             const result = runAdoptedKrBacktest({
               snapshots,
               bars: raw.observedBars!,
@@ -523,12 +532,14 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
               startDate: start,
               throughDate: end,
               scope,
+              ...(options.fixedInitialBudget ? { entryBudgetPolicy: "FIXED_INITIAL_CAPITAL" as const } : {}),
               fingerprint: identity.sourceHash,
               ...(raw.liquidSymbolCountsByDate
                 ? { marketLiquidCounts: raw.liquidSymbolCountsByDate }
                 : {}),
             });
             const book =
+              options.fixedInitialBudget ? "KOSPI_FIXED_P30" :
               scope === "MIXED" ? "KR_COMBINED_ADOPTED" : `${scope}_STANDALONE_DIAGNOSTIC`;
             await lines(out, `${book}.daily-nav.jsonl`, result.dailyNAV);
             await lines(out, `${book}.trades.jsonl`, result.trades);
@@ -554,6 +565,19 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
             };
           }
       }
+      if (options.fixedInitialBudget) {
+        const etfBars = raw.observedBars?.["069500"] ?? [];
+        const byDate = new Map(etfBars.map((bar) => [bar.tradeDate, bar]));
+        const prices = sessions.map((date) => {
+          const bar = byDate.get(date);
+          if (!bar || !Number.isFinite(bar.open) || bar.open <= 0 ||
+              !Number.isFinite(bar.close) || bar.close <= 0 ||
+              bar.volumeObserved === false || !(bar.volume > 0))
+            throw new Error("Missing observed adjusted KODEX 200 069500 data: " + date);
+          return {date, symbol:"069500", adjustedOpen:bar.open, adjustedClose:bar.close};
+        });
+        await lines(out, "KODEX200_069500.adjusted-daily.jsonl", prices);
+      }
       quality["scoringSessions"] = sessions.length;
       quality["generatedScoringSessions"] = generatedScoringSessions;
       quality["portfolioExecutionPasses"] = options.scoringOnly
@@ -566,8 +590,9 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
         : {
             ETF_V02: withEtf ? 1 : 0,
             KR_COMBINED_ADOPTED: withKr ? 1 : 0,
-            KOSPI_STANDALONE_DIAGNOSTIC: withKr ? 1 : 0,
-            KOSDAQ_STANDALONE_DIAGNOSTIC: withKr ? 1 : 0,
+            KOSPI_STANDALONE_DIAGNOSTIC: withKr && !options.fixedInitialBudget ? 1 : 0,
+            KOSDAQ_STANDALONE_DIAGNOSTIC: withKr && !options.fixedInitialBudget ? 1 : 0,
+            ...(options.fixedInitialBudget ? { KOSPI_FIXED_P30: 1 } : {}),
           };
       quality["signalQuality"] = signalCounts.signalQuality;
       quality["signalReadiness"] = signalCounts.readiness;
@@ -594,7 +619,7 @@ export async function runAdoptedFullPeriodBacktest(options: ReplayOptions) {
           ? "Signals only; no portfolio executor called and no performance metrics generated."
           : "Current production scoring and adopted executors; no forced terminal liquidation.",
         "KR_COMBINED_ADOPTED shares 30 slots; KOSPI/KOSDAQ standalone books are independent 30-slot diagnostics.",
-        "KR yearly new-entry budget uses prior-year final-close NAV / 30; held quantities are not rebalanced.",
+        options.fixedInitialBudget ? "KR standalone entry budget is fixed initial capital / 30; existing positions not rebalanced." : "KR yearly new-entry budget uses prior-year final-close NAV / 30; held quantities are not rebalanced.",
         "Only COMPLETE non-smoke selected-range valuations publish return/CAGR/MDD. CAGR uses calendar days / 365.2425.",
         "",
         "See summary.json, quality.json, provenance.json and each book's daily-nav/trades/yearly-budgets files.",
@@ -631,11 +656,18 @@ export function parseReplayArgs(argv: string[]): ReplayOptions {
     "--through",
     "--smoke-sessions",
     "--cache-input",
+    "--historical-signal-code-hash",
   ]);
   const values = new Map<string, string>();
   let scoringOnly = false;
+  let fixedInitialBudget = false;
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i]!;
+    if (flag === "--fixed-initial-budget") {
+      if (fixedInitialBudget) throw new Error("Duplicate fixed initial budget");
+      fixedInitialBudget = true;
+      continue;
+    }
     if (flag === "--scoring-only") {
       if (scoringOnly) throw new Error("Duplicate --scoring-only argument");
       scoringOnly = true;
@@ -660,6 +692,8 @@ export function parseReplayArgs(argv: string[]): ReplayOptions {
     manifest,
     out,
     ...(scoringOnly ? { scoringOnly: true } : {}),
+    ...(fixedInitialBudget ? {fixedInitialBudget: true} : {}),
+    ...(values.has("--historical-signal-code-hash") ? {historicalSignalCodeHash: values.get("--historical-signal-code-hash")!} : {}),
     ...(values.has("--cache-input") ? { cacheInput: values.get("--cache-input")! } : {}),
     ...(values.has("--start") ? { start: values.get("--start")! } : {}),
     ...(values.has("--through") ? { through: values.get("--through")! } : {}),
