@@ -294,8 +294,8 @@ export function UsScreenerPage() {
             </Button>
           </div>
         </header>
-        <p className="rounded-lg border bg-muted/30 p-3 text-xs">{OPERATIONAL_START_NOTICE}</p>
         <UsRecoveryNotice metadata={query.data?.source?.metadata} />
+        <p className="rounded-lg border bg-muted/30 p-3 text-xs">{OPERATIONAL_START_NOTICE}</p>
         {!heldKnown ? (
           <div role={positions.isError ? "alert" : "status"} className="rounded border p-3 text-sm">
             {positions.isError
