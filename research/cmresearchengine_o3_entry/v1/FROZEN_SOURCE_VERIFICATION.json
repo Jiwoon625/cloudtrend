@@ -1,0 +1,148 @@
+{
+  "schema": "CM_O3_FROZEN_SOURCE_VERIFICATION_V1",
+  "repository": "Jiwoon625/cloudtrend",
+  "frozen_commit": "feb420594935151770a03f9bced171061799b59c",
+  "verification_date_utc": "2026-10-11",
+  "method": "Read-only GitHub fetch_file at exact commit. Nine core fetched UTF-8 contents were directly compared to local bytes and independently hashed; local Git blob identities are also checked. Four supplementary K-scope files are verified by recomputing local Git blob identities against exact fetched blob IDs.",
+  "local_checkout_root": ".",
+  "local_checkout_head": "f7a4014cafb0695f7072bbb54f8ab07525601c9c",
+  "scope": "Listed files only, not whole checkout equality",
+  "files": [
+    {
+      "path": "research/cmresearchengine/vendor/resumable_allocation/runtime/cm06_comparison_signals.py",
+      "git_blob_sha": "14276b2921f5c56430604489d8ed9ff797e113f3",
+      "source_url": "https://github.com/Jiwoon625/cloudtrend/blob/feb420594935151770a03f9bced171061799b59c/research/cmresearchengine/vendor/resumable_allocation/runtime/cm06_comparison_signals.py",
+      "sha256": "aafffa083285d25cd51b20791578e7c914b2ce8aa73e2a9f0c1af2a4d2014f8d",
+      "local_byte_match": true,
+      "local_git_blob_sha": "14276b2921f5c56430604489d8ed9ff797e113f3",
+      "bytes": 26522
+    },
+    {
+      "path": "research/cmresearchengine/vendor/resumable_allocation/runtime/cm06_shared_us_analysis_v1.py",
+      "git_blob_sha": "a3e04916d6c1911b672b9716b9b6ba59a672ed41",
+      "source_url": "https://github.com/Jiwoon625/cloudtrend/blob/feb420594935151770a03f9bced171061799b59c/research/cmresearchengine/vendor/resumable_allocation/runtime/cm06_shared_us_analysis_v1.py",
+      "sha256": "4ddb22c649964a7ddf1d9f334f3668c18cb862ce8927c25ee451a12b6bf2302a",
+      "local_byte_match": true,
+      "local_git_blob_sha": "a3e04916d6c1911b672b9716b9b6ba59a672ed41",
+      "bytes": 2139
+    },
+    {
+      "path": "research/cmresearchengine/cmresearchengine/replay.py",
+      "git_blob_sha": "7df545df47e1f42c45b9ec9519184b4bbbb64902",
+      "source_url": "https://github.com/Jiwoon625/cloudtrend/blob/feb420594935151770a03f9bced171061799b59c/research/cmresearchengine/cmresearchengine/replay.py",
+      "sha256": "990b7cad16026c09283bd64ab711327dd80c84419729128adcc731dd9d5342dc",
+      "local_byte_match": true,
+      "local_git_blob_sha": "7df545df47e1f42c45b9ec9519184b4bbbb64902",
+      "bytes": 12533
+    },
+    {
+      "path": "research/cmresearchengine/cmresearchengine/runtime.py",
+      "git_blob_sha": "b5a549156a256fb8615a7cace49042b8ad0684d8",
+      "source_url": "https://github.com/Jiwoon625/cloudtrend/blob/feb420594935151770a03f9bced171061799b59c/research/cmresearchengine/cmresearchengine/runtime.py",
+      "sha256": "145a72190eb608a0bd661dc228ad42f59ef9add34fbbd842861a828482ea816c",
+      "local_byte_match": true,
+      "local_git_blob_sha": "b5a549156a256fb8615a7cace49042b8ad0684d8",
+      "bytes": 2477
+    },
+    {
+      "path": "research/cmresearchengine/vendor/resumable_allocation/runtime/cm06_comparison_execution.py",
+      "git_blob_sha": "28cbbb3bc4f86978aa80d2c8773aeeacda329daa",
+      "source_url": "https://github.com/Jiwoon625/cloudtrend/blob/feb420594935151770a03f9bced171061799b59c/research/cmresearchengine/vendor/resumable_allocation/runtime/cm06_comparison_execution.py",
+      "sha256": "6d6e04d99b0f41d3d6f15c1abebf28102cc652d49e8402345d2c28bef80d9184",
+      "local_byte_match": true,
+      "local_git_blob_sha": "28cbbb3bc4f86978aa80d2c8773aeeacda329daa",
+      "bytes": 27899
+    },
+    {
+      "path": "research/cmresearchengine/vendor/checkpoint_launcher/s05_fresh_policy_v11/cm06_fresh_host_v1.py",
+      "git_blob_sha": "45618b8c24ff8d876332455a329caf73e95b6493",
+      "source_url": "https://github.com/Jiwoon625/cloudtrend/blob/feb420594935151770a03f9bced171061799b59c/research/cmresearchengine/vendor/checkpoint_launcher/s05_fresh_policy_v11/cm06_fresh_host_v1.py",
+      "sha256": "09ce66b13391ad728e154453c1faf83df7b5b7dd154961ba8fd21c3fcd9f5ff0",
+      "local_byte_match": true,
+      "local_git_blob_sha": "45618b8c24ff8d876332455a329caf73e95b6493",
+      "bytes": 18274
+    },
+    {
+      "path": "research/cmresearchengine/vendor/checkpoint_launcher/corporate_action_handlers_20261005/exact_units/cm06_exact_units_execution_v1.py",
+      "git_blob_sha": "866d71122a76428a8cfa6c72a7c85b9e2e3ca6de",
+      "source_url": "https://github.com/Jiwoon625/cloudtrend/blob/feb420594935151770a03f9bced171061799b59c/research/cmresearchengine/vendor/checkpoint_launcher/corporate_action_handlers_20261005/exact_units/cm06_exact_units_execution_v1.py",
+      "sha256": "79a938ad3caa23647ffab5153370d897883e98c25202a89a57cdd14d6bccb46a",
+      "local_byte_match": true,
+      "local_git_blob_sha": "866d71122a76428a8cfa6c72a7c85b9e2e3ca6de",
+      "bytes": 8945
+    },
+    {
+      "path": "research/cmresearchengine/UPSTREAM_SOURCE_MANIFEST.json",
+      "git_blob_sha": "146d910919cb80507eec90633770a8e1379bbaba",
+      "source_url": "https://github.com/Jiwoon625/cloudtrend/blob/feb420594935151770a03f9bced171061799b59c/research/cmresearchengine/UPSTREAM_SOURCE_MANIFEST.json",
+      "sha256": "13766db279574b105131238d7917b63e0668c0e0b5476d9f3fdf0612e7e5dfc5",
+      "local_byte_match": true,
+      "local_git_blob_sha": "146d910919cb80507eec90633770a8e1379bbaba",
+      "bytes": 5440
+    },
+    {
+      "path": "research/cmresearchengine/RUNTIME_PATHS.json",
+      "git_blob_sha": "880960d03c69c0dcf83f967a9cdc61511b181371",
+      "source_url": "https://github.com/Jiwoon625/cloudtrend/blob/feb420594935151770a03f9bced171061799b59c/research/cmresearchengine/RUNTIME_PATHS.json",
+      "sha256": "29c17e92a5e113e66fbab8d73ab9a8edfc5a66614aef07b8c3273216e8d012c1",
+      "local_byte_match": true,
+      "local_git_blob_sha": "880960d03c69c0dcf83f967a9cdc61511b181371",
+      "bytes": 857
+    }
+  ],
+  "supplementary_k_scope_files": [
+    {
+      "path": "research/cmresearchengine/cmresearchengine/prepared.py",
+      "git_blob_sha": "aa1a3569d9ec0664905a8e29ec8d7571cd3ba792",
+      "source_url": "https://github.com/Jiwoon625/cloudtrend/blob/feb420594935151770a03f9bced171061799b59c/research/cmresearchengine/cmresearchengine/prepared.py",
+      "sha256": "60718188328f142c1968fdf5906c6d46bdae387369535e5078eaf1ec993147a5",
+      "local_byte_match": true,
+      "local_git_blob_sha": "aa1a3569d9ec0664905a8e29ec8d7571cd3ba792",
+      "bytes": 5050
+    },
+    {
+      "path": "research/cmresearchengine/vendor/resumable_allocation/runtime/cm06_comparison_panels.py",
+      "git_blob_sha": "f87ae8293f4b4beac7f4a9afc4e20d2cc2df8b4f",
+      "source_url": "https://github.com/Jiwoon625/cloudtrend/blob/feb420594935151770a03f9bced171061799b59c/research/cmresearchengine/vendor/resumable_allocation/runtime/cm06_comparison_panels.py",
+      "sha256": "eca7bc076d317a26f9f468ea6c240ad67699ddc15fb6a85c4912b0e2b3eaa375",
+      "local_byte_match": true,
+      "local_git_blob_sha": "f87ae8293f4b4beac7f4a9afc4e20d2cc2df8b4f",
+      "bytes": 6296
+    },
+    {
+      "path": "research/cmresearchengine/vendor/resumable_allocation/runtime/cm06_prepare_comparison.py",
+      "git_blob_sha": "0acb6d58e0757b53c1679b5164a826f2459a9203",
+      "source_url": "https://github.com/Jiwoon625/cloudtrend/blob/feb420594935151770a03f9bced171061799b59c/research/cmresearchengine/vendor/resumable_allocation/runtime/cm06_prepare_comparison.py",
+      "sha256": "e1f8f647bdf70719183090b0ac873383cfcabdff56b884d4afad9f34ad2cb2e5",
+      "local_byte_match": true,
+      "local_git_blob_sha": "0acb6d58e0757b53c1679b5164a826f2459a9203",
+      "bytes": 15241
+    },
+    {
+      "path": "research/cmresearchengine/cmresearchengine/ingest.py",
+      "git_blob_sha": "e467ed42915d0f7f30cd2768457da191a4feb726",
+      "source_url": "https://github.com/Jiwoon625/cloudtrend/blob/feb420594935151770a03f9bced171061799b59c/research/cmresearchengine/cmresearchengine/ingest.py",
+      "sha256": "402c22fb4e5925d758065f20e83cecbcfb9aeb8599c2b451f6830ee2dfb30461",
+      "local_byte_match": true,
+      "local_git_blob_sha": "e467ed42915d0f7f30cd2768457da191a4feb726",
+      "bytes": 21318
+    }
+  ],
+  "all_local_bytes_match": true,
+  "upstream_signal_sha256": "82716e3d67634fec29f4da8cebce52bbaaa486fab2ea5ba77bb7becbc9adcf03",
+  "frozen_runtime_signal_sha256": "aafffa083285d25cd51b20791578e7c914b2ce8aa73e2a9f0c1af2a4d2014f8d",
+  "shared_us_analysis_present_at_frozen_commit": true,
+  "pure_function_ast_equality_verified": [
+    "finite",
+    "positive",
+    "percentile_rank",
+    "us_analysis",
+    "normalized_us_row",
+    "kr_operational_signals",
+    "kospi_confirmation",
+    "etf_confirmation",
+    "etf_entry_weight"
+  ],
+  "research_run_performed": false,
+  "original_files_modified": false
+}
