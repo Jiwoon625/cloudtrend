@@ -7,7 +7,7 @@ import { format } from "prettier";
 import {
   ADOPTED_SHADOW_FROZEN_CODE_HASH,
   adoptedShadowFrozenCodeHash,
-  REPLAY_OBSERVATION_PRESERVATION_RUNTIME_HASH,
+  VERIFIED_INPUT_PROVENANCE_RUNTIME_HASH,
   REVIEWED_SHADOW_RUNTIME_CODE_HASHES,
   shadowEngineManifest,
   shadowExecutableSyntax,
@@ -173,7 +173,7 @@ export const list = [
 
 it("keeps reviewed runtime provenance compatible with the eight frozen Shadow contracts", async () => {
   const runtime = await shadowEngineManifest();
-  expect(runtime.codeHash).toBe(REPLAY_OBSERVATION_PRESERVATION_RUNTIME_HASH);
+  expect(runtime.codeHash).toBe(VERIFIED_INPUT_PROVENANCE_RUNTIME_HASH);
   expect(REVIEWED_SHADOW_RUNTIME_CODE_HASHES).toContain(runtime.codeHash);
   expect(adoptedShadowFrozenCodeHash(runtime.codeHash)).toBe(ADOPTED_SHADOW_FROZEN_CODE_HASH);
   expect(ADOPTED_SHADOW_FROZEN_CODE_HASH).toBe(
@@ -186,7 +186,7 @@ it("keeps reviewed runtime provenance compatible with the eight frozen Shadow co
 
 it("freezes calculation sources independently of deployment/UI/docs while detecting engine changes", async () => {
   const original = await shadowEngineManifest();
-  expect(Object.keys(original.manifest.files)).toHaveLength(41);
+  expect(Object.keys(original.manifest.files)).toHaveLength(44);
   expect(original).toEqual(
     JSON.parse(await readFile("src/lib/ledger/octoberShadowEngineManifest.generated.json", "utf8")),
   );
@@ -198,6 +198,10 @@ it("freezes calculation sources independently of deployment/UI/docs while detect
     "src/lib/ledger/octoberShadowCalendarEvidence.json",
   );
   expect(original.manifest.files).toHaveProperty("src/lib/ledger/octoberShadowCalendar.ts");
+  expect(original.manifest.files).toHaveProperty("src/lib/shadowReplayCalculation.ts");
+  expect(original.manifest.files).toHaveProperty(
+    "src/lib/engine/verifiedKrIndexMembership.generated.json",
+  );
   const root = await mkdtemp(path.join(os.tmpdir(), "shadow-manifest-"));
   try {
     for (const file of Object.keys(original.manifest.files)) {
@@ -218,6 +222,28 @@ it("freezes calculation sources independently of deployment/UI/docs while detect
         useTabs: true,
       }),
     );
+    expect((await shadowEngineManifest(root)).codeHash).toBe(original.codeHash);
+    const replayFile = "src/lib/shadowReplayCalculation.ts";
+    const replaySource = await readFile(replayFile, "utf8");
+    for (const [from, to] of [
+      ["bar.close > 0", "bar.close > 1"],
+      ["point.date <= date", "point.date < date"],
+    ]) {
+      expect(replaySource).toContain(from);
+      await writeFile(path.join(root, replayFile), replaySource.replace(from!, to!));
+      expect((await shadowEngineManifest(root)).codeHash).not.toBe(original.codeHash);
+    }
+    await writeFile(path.join(root, replayFile), replaySource);
+    expect((await shadowEngineManifest(root)).codeHash).toBe(original.codeHash);
+    const referenceFile = "src/lib/engine/verifiedKrIndexMembership.generated.json";
+    const referenceSource = await readFile(referenceFile, "utf8");
+    expect(referenceSource).toContain('"005930"');
+    await writeFile(
+      path.join(root, referenceFile),
+      referenceSource.replace('"005930"', '"999999"'),
+    );
+    expect((await shadowEngineManifest(root)).codeHash).not.toBe(original.codeHash);
+    await writeFile(path.join(root, referenceFile), referenceSource);
     expect((await shadowEngineManifest(root)).codeHash).toBe(original.codeHash);
     const changed = "src/lib/engine/usProspectivePortfolio.ts";
     await writeFile(

@@ -4,6 +4,7 @@ import { NO_CAPABILITIES, type MarketDataset } from "./dataset";
 import { resolveSectorCode, resolveCuratedEtfSectorCode, THEME_SECTORS } from "./sectors";
 import type { DailyPrice, EtfFacts, FinancialFacts, IndexSeries, Instrument } from "./types";
 import { visitDelimitedRows } from "../sourceData";
+import { resolveVerifiedKrIndexMembership } from "./verifiedKrIndexMembership";
 import { buildDatedVolatilityObservations } from "./kospiVolatility";
 export { realizedVolatilitySeries } from "./kospiVolatility";
 
@@ -240,16 +241,16 @@ export function parseManualMarketData(
     const rawMarket = String(pick(rec, "market") ?? "")
       .trim()
       .toUpperCase();
-    // A domestic stock observation can have executable open/volume but no close.
+    // A domestic stock/ETF observation can have executable open/volume but no close.
     // Zero is retained only in observedBars as the existing missing-close sentinel;
     // analytical bars below continue to require a positive close.
-    const missingStockClose =
+    const missingDomesticClose =
       close === null &&
       !INDEX_SYMBOLS.has(symbol) &&
-      rawType !== "ETF" &&
       rawType !== "INDEX" &&
-      ["KOSPI", "KOSDAQ", "코스피", "코스닥"].includes(rawMarket);
-    if (missingStockClose) close = 0;
+      (["KOSPI", "KOSDAQ", "코스피", "코스닥", "ETF"].includes(rawMarket) ||
+        (!rawMarket && rawType === "ETF"));
+    if (missingDomesticClose) close = 0;
     // Retain independent session evidence even when a KOSPI price row is absent
     // or rejected. Do not promote ETF/overseas dates into the Korean calendar.
     if (
@@ -424,6 +425,9 @@ export function parseManualMarketData(
     .filter((value): value is number => value !== null && Number.isFinite(value));
   const volatilityIsProxy = !vkospi && volatilitySeries.length > 0;
 
+  const tradeDates = kospi.bars.map((b) => b.tradeDate);
+  const asOfDate = tradeDates[tradeDates.length - 1] ?? [...kospiGateDates].sort().at(-1) ?? "";
+
   const instruments: Instrument[] = [];
   const bars: Record<string, DailyPrice[]> = {};
   const observedBars: Record<string, DailyPrice[]> = {};
@@ -466,7 +470,8 @@ export function parseManualMarketData(
       instrumentType: isEtf ? "ETF" : "STOCK",
       sectorCode: resolved.code,
       sectorName: resolved.name,
-      indexMemberships: isEtf ? [] : ["KOSPI200", "KRX300"],
+      ...(isEtf ? { indexMemberships: [] } : resolveVerifiedKrIndexMembership(s.symbol, asOfDate)),
+      valueUpMembershipKnown: false,
       isPreferredStock: !isEtf && /우(B|\(전환\))?$/.test(name),
       isManagementIssue: false,
       isInvestmentWarning: false,
@@ -482,8 +487,6 @@ export function parseManualMarketData(
     throw new Error("분석할 종목 일봉이 없습니다. 지수 외에 개별 종목 행을 포함해 주세요.");
   }
 
-  const tradeDates = kospi.bars.map((b) => b.tradeDate);
-  const asOfDate = tradeDates[tradeDates.length - 1] ?? [...kospiGateDates].sort().at(-1) ?? "";
   const shortSeries = instruments.filter((i) => (bars[i.symbol]?.length ?? 0) < 120).length;
   if (shortSeries > 0)
     warnings.push(

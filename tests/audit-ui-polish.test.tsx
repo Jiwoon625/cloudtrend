@@ -101,7 +101,10 @@ describe("audit display consistency", () => {
 
 it("shows current partial/missing field coverage without inheriting a green historical capability", () => {
   const data = {
-    notes: [],
+    notes: [
+      "시가총액은 입력값을 사용합니다(2/2종목).",
+      "외국인·기관 순매수는 입력값을 사용합니다(2/2종목).",
+    ],
     barCoverage: [],
     capabilities: { marketCap: true, investorFlow: true },
     coverage: [
@@ -136,6 +139,9 @@ it("shows current partial/missing field coverage without inheriting a green hist
     },
   } as DataStatusPayload;
   const html = renderToStaticMarkup(<KrMarketDataPanel data={data} />);
+  expect(html).toContain(
+    "입력 전체 기간·전체 종목 기준이며, 최신 기준일 제공 여부는 아래 표를 확인하세요.",
+  );
   expect(html).toContain("미제공 · 0/2종목 (기준일)");
   expect(html).toContain("일부 제공 · 1/2종목 (기준일)");
   expect(html).toContain("검사일 이후 미래 날짜 (2026-10-11 KST)");

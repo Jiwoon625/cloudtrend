@@ -85,6 +85,30 @@ test("a private disk cache is reusable across cache instances only with fresh re
   expect(second.metrics.hits).toBe(1);
 });
 
+test("source normalization changes invalidate old disk proofs even for identical stored bytes", async () => {
+  const f = await fixture();
+  const directory = await temporary();
+  const root = await temporary();
+  await mkdir(path.join(root, "src/lib"), { recursive: true });
+  await writeFile(path.join(root, "package-lock.json"), "{}");
+  const source = path.join(root, "src/lib/sourceData.ts");
+  await writeFile(source, "export const retainMissingClose = false;");
+  const before = await sourceValidatorVersion(root);
+  await new SourceValidationCache({ directory, root }).load(f.client, f.record, f.validate);
+  const warm = new SourceValidationCache({ directory, root });
+  await warm.load(f.client, f.record, f.validate);
+  expect(warm.metrics.hits).toBe(1);
+  expect(f.validate).toHaveBeenCalledTimes(1);
+
+  await writeFile(source, "export const retainMissingClose = true;");
+  expect(await sourceValidatorVersion(root)).not.toBe(before);
+  const updated = new SourceValidationCache({ directory, root });
+  await updated.load(f.client, f.record, f.validate);
+  expect(updated.metrics.hits).toBe(0);
+  expect(updated.metrics.fullValidations).toBe(1);
+  expect(f.validate).toHaveBeenCalledTimes(2);
+});
+
 test("separate Node processes reuse verified disk proofs without normalizing again", async () => {
   const f = await fixture(),
     directory = await temporary();

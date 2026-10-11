@@ -6,6 +6,7 @@ import { hashSeriesValue } from "../src/lib/ledger/modelSeries";
 
 /** Transitive calculation sources only: no git HEAD, UI, deployment config, or unrelated docs. */
 export const SHADOW_ENGINE_ROOTS = [
+  "src/lib/shadowReplayCalculation.ts",
   "src/lib/ledger/octoberShadowPipeline.ts",
   "src/lib/ledger/modelSeries.ts",
   "src/lib/ledger/krAdoptedShadow.ts",
@@ -32,6 +33,7 @@ export {
   EXACT_PREVIEW_MISSING_CLOSE_RUNTIME_HASH,
   LINT_EQUIVALENT_SYNTAX_RUNTIME_HASH,
   REPLAY_OBSERVATION_PRESERVATION_RUNTIME_HASH,
+  VERIFIED_INPUT_PROVENANCE_RUNTIME_HASH,
   REVIEWED_SHADOW_RUNTIME_CODE_HASHES,
   adoptedShadowFrozenCodeHash,
   assertAdoptedShadowRuntime,

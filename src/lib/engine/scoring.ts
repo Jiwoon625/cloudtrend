@@ -506,15 +506,28 @@ export function priorityScore(
 ): ScoreBlock {
   const rows: RuleRow[] = [];
   const c = cfg.priority;
-  const inIndex = ["KOSPI200", "KOSDAQ150", "KRX300"].some((code) =>
-    inst.indexMemberships.includes(code),
+  const membershipKnown = inst.indexMembershipsKnown !== false;
+  const priorityIndexes = inst.indexMemberships.filter((code) =>
+    ["KOSPI200", "KOSDAQ150", "KRX300"].includes(code),
   );
+  const inIndex = membershipKnown && priorityIndexes.length > 0;
+  const provenance = inst.indexMembershipsProvenance;
+  const membershipActual = !membershipKnown
+    ? "데이터 없음"
+    : inst.indexMemberships.length
+      ? inst.indexMemberships.join(", ")
+      : "미편입";
+  const membershipSource = provenance?.snapshotAsOfDate
+    ? ` · KRX 공식 ${provenance.snapshotAsOfDate} 확인${provenance.evaluationAsOfDate > provenance.snapshotAsOfDate ? " (최신 확인본 이월)" : ""}`
+    : provenance
+      ? " · 해당 기준일의 검증된 구성종목 없음"
+      : "";
   rows.push({
     group: "지수 편입",
     rule: "KOSPI200 / KOSDAQ150 / KRX300 편입 (중복 1회)",
-    actual: inst.indexMemberships.length ? inst.indexMemberships.join(", ") : "미편입",
+    actual: `${membershipActual}${membershipSource}`,
     threshold: `편입 시 +${c.indexPoints}`,
-    status: inIndex ? "PASS" : "FAIL",
+    status: !membershipKnown ? "NO_DATA" : inIndex ? "PASS" : "FAIL",
     points: inIndex ? c.indexPoints : 0,
     maxPoints: c.indexPoints,
   });
@@ -564,13 +577,14 @@ export function priorityScore(
     points: excessOk ? c.relativePoints : 0,
     maxPoints: c.relativePoints,
   });
-  const valueUp = inst.indexMemberships.includes("KOREA_VALUEUP");
+  const valueUpKnown = inst.valueUpMembershipKnown ?? membershipKnown;
+  const valueUp = valueUpKnown && inst.indexMemberships.includes("KOREA_VALUEUP");
   rows.push({
     group: "참고지표 (점수 미반영)",
     rule: "코리아 밸류업 지수 편입",
-    actual: valueUp ? "편입" : "미편입",
+    actual: !valueUpKnown ? "데이터 없음" : valueUp ? "편입" : "미편입",
     threshold: "점수 미반영 (참고 정보)",
-    status: valueUp ? "PASS" : "FAIL",
+    status: !valueUpKnown ? "NO_DATA" : valueUp ? "PASS" : "FAIL",
     points: 0,
     maxPoints: 0,
   });
