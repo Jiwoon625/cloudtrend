@@ -722,6 +722,55 @@ describe("same-document actual allocation CAS", () => {
       ),
     ).rejects.toThrow(errors.input);
   });
+  it("confirms first-year USD sizing from KST cash evidence before New York midnight", async () => {
+    const instant = "2026-10-11T15:40:00Z";
+    const c = client();
+    funded("us_actual_portfolio_ledgers");
+    state.rows["portfolio_ledgers"]!.payload["operatingAllocation"] =
+      prepareOperatingAllocation("2026-10-11T12:00:00Z");
+    const before = structuredClone(state.rows["us_actual_portfolio_ledgers"]!.payload);
+    const change = {
+      kind: "CONFIRM_USD_SIZING" as const,
+      amountUsd: "900",
+      fundingEventIds: ["funding-1"],
+      confirmedAt: "2026-10-11T15:00:00Z",
+      reference: "synthetic-native-allocation",
+    };
+    for (const confirmedAt of ["2026-10-11T14:59:59Z", "2026-10-11T15:41:00Z"]) {
+      await expect(
+        writeOperatingAllocation(
+          c.value,
+          uid,
+          request({ ...change, confirmedAt }, { currency: "USD", expectedRevision: 7 }),
+          instant,
+        ),
+      ).rejects.toThrow(errors.input);
+    }
+    expect(c.writes).toHaveLength(0);
+    const result = await writeOperatingAllocation(
+      c.value,
+      uid,
+      request(change, { currency: "USD", expectedRevision: 7 }),
+      instant,
+    );
+    expect(result.usdSizingEvidence).toMatchObject({
+      amountUsd: "900",
+      effectiveSessionDate: "2026-10-12",
+    });
+    expect(result.sizing.annualSnapshots[0]).toMatchObject({
+      nav: "900",
+      currency: "USD",
+      valuationDate: "2026-10-11",
+      firstSessionAt: "2026-10-12T13:30:00Z",
+    });
+    expect(state.rows["us_actual_portfolio_ledgers"]!.payload["newActualPortfolio"]).toEqual(
+      before["newActualPortfolio"],
+    );
+    expect(state.rows["us_actual_portfolio_ledgers"]!.payload["executions"]).toEqual(
+      before["executions"],
+    );
+    expect(result.availability.spendableAvailable).toBeNull();
+  });
   it("records real native USD sizing without creating cash or assuming the Shadow FX", async () => {
     const c = client();
     funded("us_actual_portfolio_ledgers");

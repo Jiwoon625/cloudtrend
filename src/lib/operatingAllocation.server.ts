@@ -482,7 +482,7 @@ export async function writeOperatingAllocation(
       .sort((a, b) => a.id.localeCompare(b.id));
     if (
       selected.length !== change.fundingEventIds.length ||
-      selected.some((source) => source.date > localDay("USD", change.confirmedAt)) ||
+      selected.some((source) => source.date > newActualCashDay(change.confirmedAt)) ||
       decimal(change.amountUsd) > selected.reduce((sum, source) => sum + decimal(source.amount), 0n)
     )
       throw new Error(errors.input);
