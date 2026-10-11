@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MarketDataset } from "./engine/dataset";
 import { runFullMarketAnalysis } from "./engine/fullMarketAnalysis";
+import { buildFullUniverseSectorDataset } from "./engine/sectorRotationFullUniverse";
 import type { ScoringConfig } from "./engine/scoring";
 import { buildSnapshot, type ScreeningSnapshot } from "./screeningSnapshot";
 import { sourceTimingEvidence, type SourceTimingRecord } from "./sourceTimingEvidence";
@@ -179,8 +180,11 @@ export function sliceKrDatasetForReplay(raw: MarketDataset, date: string): Marke
   const copy = structuredClone(raw);
   const current = new Set(
     raw.instruments
-      .filter((instrument) =>
-        (raw.bars[instrument.symbol] ?? []).some((bar) => bar.tradeDate === date),
+      .filter(
+        (instrument) =>
+          (raw.bars[instrument.symbol] ?? []).some((bar) => bar.tradeDate === date) ||
+          (date >= RESTART_ACCOUNTING_START &&
+            (raw.observedBars?.[instrument.symbol] ?? []).some((bar) => bar.tradeDate === date)),
       )
       .map((instrument) => instrument.symbol),
   );
@@ -217,6 +221,24 @@ export function sliceKrDatasetForReplay(raw: MarketDataset, date: string): Marke
   copy.asOfDate = date;
   copy.version = `${raw.version}@shadow-${date}`;
   return copy;
+}
+
+/** Keep execution observations separate from the current-close scoring universe. */
+function analyzeKrReplayDataset(dataset: MarketDataset, config: ScoringConfig) {
+  if (dataset.asOfDate < RESTART_ACCOUNTING_START) return runFullMarketAnalysis(dataset, config);
+  const executionDataset = buildFullUniverseSectorDataset(dataset);
+  const scoringDataset = {
+    ...executionDataset,
+    instruments: executionDataset.instruments.filter((instrument) =>
+      (executionDataset.bars[instrument.symbol] ?? []).some(
+        (bar) => bar.tradeDate === dataset.asOfDate && Number.isFinite(bar.close) && bar.close > 0,
+      ),
+    ),
+  };
+  const { analysis } = runFullMarketAnalysis(scoringDataset, config);
+  // Historical valid closes remain available to archive integrity checks and held
+  // position adapters, but cannot manufacture a current score or close signal.
+  return { analysis, dataset: executionDataset };
 }
 
 function currentDateEvidence(dataset: MarketDataset, snapshot: ScreeningSnapshot) {
@@ -307,7 +329,7 @@ async function priorSnapshot(
   const sliced = sliceKrDatasetForReplay(rawDataset, prior);
   if (!sliced.instruments.length) return null;
   try {
-    const { analysis } = runFullMarketAnalysis(sliced, config);
+    const { analysis } = analyzeKrReplayDataset(sliced, config);
     const clock = shadowReplayClock("KR", prior, new Date().toISOString());
     return { ...buildSnapshot(analysis), savedAt: clock.modelAvailableAt };
   } catch {
@@ -442,7 +464,7 @@ export async function replayKrShadow(input: {
     }
 
     try {
-      const { analysis, dataset } = runFullMarketAnalysis(sliced, input.config);
+      const { analysis, dataset } = analyzeKrReplayDataset(sliced, input.config);
       if (analysis.asOfDate !== date)
         throw new Error("날짜별 분석 기준일이 replay 대상일과 다릅니다.");
       const snapshot: ScreeningSnapshot = {

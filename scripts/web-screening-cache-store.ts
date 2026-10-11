@@ -6,7 +6,7 @@ import type { AnalysisResult } from "../src/lib/engine/pipeline";
 import type { ScoringConfig } from "../src/lib/engine/scoring";
 import type { ScreeningSnapshot } from "../src/lib/screeningSnapshot";
 import { CANONICAL_SOURCE_COLUMNS, visitDelimitedRows } from "../src/lib/sourceData";
-import type { AnalysisPayload } from "../src/lib/market.functions";
+import type { AnalysisPayload } from "../src/lib/marketPayload";
 import {
   ANALYSIS_BUCKET,
   downloadJson,

@@ -217,7 +217,7 @@ export function OctoberShadowSummaryContent({
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="october-shadow-title" className="text-lg font-semibold">
-            10월 12일 성과측정 · 독립 Shadow
+            독립 Shadow 원장
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             장부당 시작자본 1억원 · 기존 연구 이력과 분리 · 읽기 전용

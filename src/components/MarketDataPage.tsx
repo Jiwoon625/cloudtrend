@@ -8,7 +8,7 @@ import { UsMarketDataPanel } from "@/components/UsMarketDataPanel";
 import { Button } from "@/components/ui/button";
 import { dataStatusQueryOptions } from "@/lib/analysisQuery";
 import { loadUsMarketDataSummary, loadUsScreeningHistory } from "@/lib/usProspectiveCloud";
-import type { DataStatusPayload } from "@/lib/market.functions";
+import type { DataStatusPayload } from "@/lib/marketPayload";
 import type { UsProspectiveSummary } from "@/lib/usBrowserViews";
 
 export function MarketDataOverview({

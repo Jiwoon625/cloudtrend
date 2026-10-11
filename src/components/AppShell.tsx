@@ -118,21 +118,13 @@ export function AppShell({
             )}
             <span>
               {dataUnavailable
-                ? "실데이터 연결 오류 — 아래 안내에 따라 토스증권 API 접속 설정을 확인해 주세요."
+                ? "자료 조회 오류 — 로그인 상태와 업로드된 자료를 확인해 주세요."
                 : `실데이터 모드 (${resolved?.provider ?? "-"}) — 일봉 기준 계산이며 투자 판단 및 자동 주문 기능은 제공하지 않습니다.`}
             </span>
           </div>
         ) : null}
       </header>
       <main className="mx-auto max-w-[1500px] px-4 py-6">{children}</main>
-      <footer
-        data-no-print
-        className="mx-auto max-w-[1500px] px-4 pb-10 text-[11px] leading-relaxed text-muted-foreground"
-      >
-        본 서비스는 규칙 기반 스크리닝 결과와 계산 근거만 제공합니다. “관심 후보”, “리테스트 대기”,
-        “관망”, “청산 점검” 등의 라벨은 매수·매도 권유가 아니며, 최종 판단과 책임은 이용자에게
-        있습니다.
-      </footer>
     </div>
   );
 }

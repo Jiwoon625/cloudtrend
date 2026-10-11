@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "./cloud";
-import type { AnalysisPayload } from "./market.functions";
+import type { AnalysisPayload } from "./marketPayload";
 
 // React Query must not merge different payloads just because calculatedAt is equal.
 // Storage reuse is still based on the full input fingerprint and result digest.

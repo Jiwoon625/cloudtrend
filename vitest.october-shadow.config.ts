@@ -10,6 +10,7 @@ export default defineConfig({
       "src/lib/websitePerformanceBoundary.test.ts",
       "src/lib/octoberShadowPublication.test.ts",
       "src/lib/shadowReplay.test.ts",
+      "src/lib/shadowReplayObservations.test.ts",
       "src/lib/ledger/octoberShadowTax.test.ts",
       "src/components/OctoberShadowSummary.test.tsx",
     ],

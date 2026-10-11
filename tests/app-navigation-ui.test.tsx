@@ -41,6 +41,8 @@ describe("final consolidated navigation", () => {
     expect(html).not.toContain('href="/us"');
     expect(html).not.toContain('href="/position-sizing"');
     expect(html).toContain('aria-label="주 메뉴"');
+    expect(html).not.toContain("본 서비스는 규칙 기반 스크리닝");
+    expect(html).not.toContain("최종 판단과 책임은 이용자에게");
   });
   it("keeps the old position-sizing bookmark safe without showing the removed calculator", () => {
     expect(

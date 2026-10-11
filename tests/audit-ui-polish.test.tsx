@@ -7,7 +7,7 @@ import { KrMarketDataPanel } from "../src/components/KrMarketDataPanel";
 import { formatKstDateTime } from "../src/lib/format";
 import { ETF_POLICY } from "../src/lib/engine/etfStrategy";
 import type { ScreeningRow } from "../src/lib/engine/pipeline";
-import type { DataStatusPayload } from "../src/lib/market.functions";
+import type { DataStatusPayload } from "../src/lib/marketPayload";
 import type { UsProspectiveSummary } from "../src/lib/usBrowserViews";
 import { readFileSync } from "node:fs";
 vi.mock("@tanstack/react-router", () => ({

@@ -6,11 +6,7 @@ import { Button } from "@/components/ui/button";
 import type { DomesticPositionContext } from "@/lib/positionSignalContext";
 import { ETF_POLICY } from "@/lib/engine/etfStrategy";
 import type { DualPortfolioState } from "@/lib/portfolioLedgers";
-import {
-  isOperationalSignalDate,
-  isOperationalSignalOrigin,
-  OPERATIONAL_START_NOTICE,
-} from "@/lib/operationalSignalStart";
+import { isOperationalSignalDate, isOperationalSignalOrigin } from "@/lib/operationalSignalStart";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
 import { etfPartialEvidence } from "@/lib/etfPartialEvidence";
 
@@ -297,7 +293,6 @@ export function EtfScreener({
           </p>
         </section>
       )}
-      <p className="text-xs text-muted-foreground">{OPERATIONAL_START_NOTICE}</p>
       <div className="grid gap-3 sm:grid-cols-3 text-sm">
         <div className="rounded-lg border p-3">
           원신호{" "}

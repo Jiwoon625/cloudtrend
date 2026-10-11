@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { expect, test, vi } from "vitest";
 import { loadActiveSources, type ActiveSourceRecord } from "../src/lib/screeningSources.server";
 import { instrumentChartQueryRevision } from "../src/lib/instrumentChartCache";
-import type { AnalysisPayload } from "../src/lib/market.functions";
+import type { AnalysisPayload } from "../src/lib/marketPayload";
 
 function sourceClient() {
   const bodies = [

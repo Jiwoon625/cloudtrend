@@ -6,7 +6,7 @@ import { getMockDataset } from "../src/lib/engine/mockProvider";
 import { DEFAULT_SCORING_CONFIG } from "../src/lib/engine/scoring";
 import { runAnalysis } from "../src/lib/engine/pipeline";
 import { buildFullUniverseSectorDataset } from "../src/lib/engine/sectorRotationFullUniverse";
-import type { DataStatusPayload } from "../src/lib/market.functions";
+import type { DataStatusPayload } from "../src/lib/marketPayload";
 import { readFileSync } from "node:fs";
 
 describe("data quality without screening recalculation", () => {

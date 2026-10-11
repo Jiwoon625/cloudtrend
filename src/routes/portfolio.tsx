@@ -141,7 +141,7 @@ function PortfolioPage() {
       domestic={<KoreaPortfolioContent />}
       selectedAsset={asset}
       onAssetChange={(next) => {
-        void navigate({ search: { asset: next } });
+        void navigate({ search: { asset: next }, resetScroll: false });
       }}
     />
   );

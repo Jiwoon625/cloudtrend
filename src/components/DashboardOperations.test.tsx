@@ -373,7 +373,7 @@ it("ignores old US holdings and displays only new-series actual counts and fundi
   expect(html).toContain("$15,000.00");
   expect(html).not.toContain("$12,000.00");
   expect(html).not.toContain("1종목");
-  expect(html).toContain("10월 12일 신규 운용 구간");
+  expect(html).not.toContain("10월 12일 신규 운용 구간");
   for (const text of ["실현손익", "평가손익", "87,654", "98,765", "186,419"])
     expect(html).not.toContain(text);
   expect(value).toEqual(before);
@@ -384,7 +384,7 @@ describe("dashboard restart-only controls and missing funding", () => {
     const html = renderCounts(data(0, 0));
     expect(html).not.toContain("ETF 보유종목 등록·수정");
     expect(html).not.toContain("ETF 실제 보유종목 코드");
-    expect(html).toContain("신규 운용은 2026-10-12 신호부터");
+    expect(html).not.toContain("신규 운용은 2026-10-12 신호부터");
   });
   it("shows an unfunded empty new pool explicitly without inventing old capital", () => {
     const value = data(0, 0);

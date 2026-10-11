@@ -17,7 +17,7 @@ import type {
   DataSourceStatus,
   InstrumentDetailPayload,
   MarketAnalysisPayload,
-} from "@/lib/market.functions";
+} from "@/lib/marketPayload";
 
 const SOURCE: DataSourceStatus = { live: true, credentialsConfigured: true, fallbackReason: null };
 

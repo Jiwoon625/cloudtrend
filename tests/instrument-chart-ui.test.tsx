@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, test, vi } from "vitest";
-import type { AnalysisPayload } from "../src/lib/market.functions";
+import type { AnalysisPayload } from "../src/lib/marketPayload";
 const state = vi.hoisted(() => ({
   owner: "owner" as string | null,
   prices: {} as Record<string, unknown>,

@@ -1,8 +1,4 @@
-import {
-  isOperationalSignalDate,
-  OPERATIONAL_SIGNAL_START,
-  OPERATIONAL_START_NOTICE,
-} from "@/lib/operationalSignalStart";
+import { isOperationalSignalDate, OPERATIONAL_SIGNAL_START } from "@/lib/operationalSignalStart";
 import { compareUsCandidates } from "@/lib/usCandidatePriority";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -295,7 +291,6 @@ export function UsScreenerPage() {
           </div>
         </header>
         <UsRecoveryNotice metadata={query.data?.source?.metadata} />
-        <p className="rounded-lg border bg-muted/30 p-3 text-xs">{OPERATIONAL_START_NOTICE}</p>
         {!heldKnown ? (
           <div role={positions.isError ? "alert" : "status"} className="rounded border p-3 text-sm">
             {positions.isError

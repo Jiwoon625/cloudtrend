@@ -388,7 +388,7 @@ describe("new-only portfolio presentation", () => {
     expect(html).not.toContain("실제 성과 자료 대조·확정");
     expect(html).not.toContain("기존 원장 누적손익");
     const shadowSource = readFileSync(new URL("./ShadowPage.tsx", import.meta.url), "utf8");
-    expect(shadowSource).toContain("2026-10-12 이후");
+    expect(shadowSource).toContain("한국·미국·ETF의 독립 모델");
     expect(shadowSource).not.toContain("KospiShadowPanel");
     expect(shadowSource).not.toContain("UsPortfolioView");
   });

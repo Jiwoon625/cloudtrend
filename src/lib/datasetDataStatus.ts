@@ -1,6 +1,6 @@
 import type { MarketDataset } from "./engine/dataset";
 import type { ScoringConfig } from "./engine/scoring";
-import type { DataStatusPayload } from "./market.functions";
+import type { DataStatusPayload } from "./marketPayload";
 import { buildFullUniverseSectorDataset } from "./engine/sectorRotationFullUniverse";
 import { dataStatusStrategyVersion, dataStatusVolatility } from "./dataStatusPresentation";
 const SOURCE = { live: true, credentialsConfigured: true, fallbackReason: null };

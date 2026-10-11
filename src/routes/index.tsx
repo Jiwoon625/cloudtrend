@@ -303,10 +303,6 @@ function DashboardContent({
                   : portfolioFallback
               }
             />
-            <p className="mt-2 text-xs text-muted-foreground">
-              보유와 성과는 10월 12일 신규 운용 구간에서만 확인합니다. 기존 거래내역은 Notion에서
-              관리합니다.
-            </p>
             {portfolio?.fundingStatus === "INCOMPLETE" ? (
               <p className="mt-2 text-[10px] text-warn">
                 신규 입출금·체결의 자금 연결을 확인해 주세요.

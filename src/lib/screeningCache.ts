@@ -10,7 +10,7 @@ import {
 } from "@/lib/cloud";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
-import type { AnalysisPayload, InstrumentDetailPayload } from "@/lib/market.functions";
+import type { AnalysisPayload, InstrumentDetailPayload } from "@/lib/marketPayload";
 import { listRegisteredSources } from "@/lib/sourceRegistry";
 import {
   buildDashboardSummary,

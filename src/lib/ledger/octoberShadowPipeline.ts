@@ -11,6 +11,7 @@ import { DEFAULT_SCORING_CONFIG, type ScoringConfig } from "../engine/scoring";
 import type { UsProspectiveAnalysis } from "../engine/usProspective";
 import type { ScreeningSnapshot } from "../screeningSnapshot";
 import { buildKospiShadowSession } from "../engine/kospiShadowDataset";
+import { etfKrxBatchPending } from "../engine/etfStrategy";
 import {
   canonicalSeriesJson,
   hashSeriesValue,
@@ -439,8 +440,27 @@ export async function recordOctoberPublication(
       ).run;
     } else if (kind === "ETF_V02") {
       const rows = input.analysis.rows.filter((r) => r.instrument.instrumentType === "ETF");
+      // Restart execution can use an observed open even when the current close
+      // cannot produce a scored row. Close signals still require current analysis.
+      const priceInstruments =
+        date >= "2026-10-12"
+          ? input.dataset.instruments.filter((instrument) => instrument.instrumentType === "ETF")
+          : rows.map((row) => row.instrument);
+      const observationBatchPending =
+        date >= "2026-10-12" &&
+        etfKrxBatchPending(
+          {
+            ...input.dataset,
+            bars: { ...input.dataset.bars, ...input.dataset.observedBars },
+          },
+          input.dataset.tradeDates
+            .filter((day) => day < date)
+            .sort()
+            .at(-1) ?? null,
+        );
       if (
-        !rows.length ||
+        !priceInstruments.length ||
+        observationBatchPending ||
         rows.some((r) => !r.etfStrategy || r.etfStrategy.dataStatus === "krx_batch_pending")
       )
         throw new Error("ETF completed close/strategy data is still pending");
@@ -458,15 +478,15 @@ export async function recordOctoberPublication(
             codeHash: input.codeHash,
             configHash: series.configHash,
             sourceHash: input.sourceHash,
-            prices: rows.map((row) => {
+            prices: priceInstruments.map((instrument) => {
               const bar = (
                 (date >= "2026-10-12"
-                  ? input.dataset.observedBars?.[row.instrument.symbol]
-                  : undefined) ?? input.dataset.bars[row.instrument.symbol]
+                  ? input.dataset.observedBars?.[instrument.symbol]
+                  : undefined) ?? input.dataset.bars[instrument.symbol]
               )?.find((b) => b.tradeDate === date);
               if (date >= "2026-10-12")
                 return {
-                  symbol: row.instrument.symbol,
+                  symbol: instrument.symbol,
                   open: {
                     asOfDate: date,
                     availableAt: openAt,
@@ -497,10 +517,10 @@ export async function recordOctoberPublication(
                 bar.open <= 0 ||
                 bar.close <= 0
               )
-                throw new Error(`ETF current OHLC missing: ${row.instrument.symbol}`);
+                throw new Error(`ETF current OHLC missing: ${instrument.symbol}`);
               // OHLC reference-time is the market event time; collection time is retained on publication.
               return {
-                symbol: row.instrument.symbol,
+                symbol: instrument.symbol,
                 open: {
                   asOfDate: date,
                   availableAt: openAt,
