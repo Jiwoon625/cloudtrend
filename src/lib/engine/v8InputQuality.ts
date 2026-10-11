@@ -43,8 +43,8 @@ export function buildV8InputQualityReport(
 ) {
   const files: V8InputQualityFile[] = inputs.map(({ fileName, validation }) => {
     const supplied = new Set(validation.columns);
-    const completelyEmptySuppliedColumns = validation.stats.completelyEmptyColumns.filter((column) =>
-      supplied.has(column),
+    const completelyEmptySuppliedColumns = validation.stats.completelyEmptyColumns.filter(
+      (column) => supplied.has(column),
     );
     const requiredColumns = v8RequiredColumnsForFile(validation.stats.stockCount);
     return {
@@ -66,7 +66,9 @@ export function buildV8InputQualityReport(
   const invalidRequired = files.filter(
     (file) => file.missingRequiredColumns.length > 0 || file.emptyRequiredColumns.length > 0,
   );
-  const allEmpty = [...new Set(files.flatMap((file) => file.completelyEmptySuppliedColumns))].sort();
+  const allEmpty = [
+    ...new Set(files.flatMap((file) => file.completelyEmptySuppliedColumns)),
+  ].sort();
   return {
     contractVersion: V8_INPUT_CONTRACT_VERSION,
     sourceContractColumnCount: 102,
@@ -98,7 +100,8 @@ export function buildV8InputQualityReport(
       stockScoreColumnsApplyOnlyToFilesContainingStockRows: true,
       foreignNetBuyValueMissing:
         "required for files containing STOCK rows; row-level nulls are allowed and make the rolling 20D foreign flow/full Vf score null for affected dates",
-      marketRequired: "KOSPI/KOSDAQ benchmark selection must not fall back from a missing market column",
+      marketRequired:
+        "KOSPI/KOSDAQ benchmark selection must not fall back from a missing market column",
       sectorFallback: "sector/sectorCode → reviewed symbol mapping → ETC",
       tradingValueFallback: "only close × volume when the input value is absent",
     },

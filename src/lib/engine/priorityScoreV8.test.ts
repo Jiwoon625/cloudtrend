@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { RuleRow, ScoreBlock } from "./scoring";
 import { buildPriorityScoreV8 } from "./priorityScoreV8";
 
-const row = (group: string, points: number, maxPoints: number, status: RuleRow["status"] = "PASS"): RuleRow => ({
+const row = (
+  group: string,
+  points: number,
+  maxPoints: number,
+  status: RuleRow["status"] = "PASS",
+): RuleRow => ({
   group,
   rule: group,
   actual: "test",
@@ -64,7 +69,9 @@ describe("buildPriorityScoreV8", () => {
     expect(result.maxPoints).toBe(5);
     expect(result.availableMaxPoints).toBe(5);
     expect(result.points).toBe(5);
-    expect(result.rows.filter((r) => r.group === "Supply Risk").every((r) => r.status === "NO_DATA")).toBe(true);
+    expect(
+      result.rows.filter((r) => r.group === "Supply Risk").every((r) => r.status === "NO_DATA"),
+    ).toBe(true);
   });
 
   it("shows recent supply data when 20D history is still insufficient", () => {

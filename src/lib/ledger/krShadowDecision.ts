@@ -1,8 +1,4 @@
-import {
-  OCTOBER_CALENDAR_EVIDENCE,
-  regularCloseAt,
-  regularOpenAt,
-} from "./octoberShadowCalendar";
+import { OCTOBER_CALENDAR_EVIDENCE, regularCloseAt, regularOpenAt } from "./octoberShadowCalendar";
 import { validDate } from "./date";
 
 const krDate = (at: string) =>

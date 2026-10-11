@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { V8FormulaSection } from "@/components/V8FormulaSection";
 import { AppShell } from "@/components/AppShell";
 import { OperatingBacktestMetrics } from "@/components/OperatingBacktestMetrics";
 import {
@@ -79,6 +80,7 @@ function OperatingRules() {
             않습니다.
           </p>
         </section>
+        <V8FormulaSection />
       </main>
     </AppShell>
   );

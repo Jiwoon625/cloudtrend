@@ -9,7 +9,10 @@ function parseCodes(text: string): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const raw of text.split(/[\s,;\t]+/)) {
-    const code = raw.trim().replace(/^["']|["']$/g, "").toUpperCase();
+    const code = raw
+      .trim()
+      .replace(/^["']|["']$/g, "")
+      .toUpperCase();
     if (!/^[0-9A-Z]{6}$/.test(code)) continue;
     if (seen.has(code)) continue;
     seen.add(code);

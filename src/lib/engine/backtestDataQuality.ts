@@ -130,9 +130,9 @@ function scanFieldQuality(inputs: QualityInput[]) {
       fileRows++;
       const date = dateIndex >= 0 ? qaDate(cells[dateIndex]) : null;
       const year = date?.slice(0, 4) ?? "UNKNOWN";
-      const symbol = (symbolIndex >= 0 ? cells[symbolIndex] ?? "" : "").trim().toUpperCase();
-      const rawType = (typeIndex >= 0 ? cells[typeIndex] ?? "" : "").trim().toUpperCase();
-      const rawMarket = (marketIndex >= 0 ? cells[marketIndex] ?? "" : "").trim().toUpperCase();
+      const symbol = (symbolIndex >= 0 ? (cells[symbolIndex] ?? "") : "").trim().toUpperCase();
+      const rawType = (typeIndex >= 0 ? (cells[typeIndex] ?? "") : "").trim().toUpperCase();
+      const rawMarket = (marketIndex >= 0 ? (cells[marketIndex] ?? "") : "").trim().toUpperCase();
       const isIndex =
         symbol === "KOSPI" ||
         symbol === "KOSDAQ" ||
@@ -184,7 +184,8 @@ function scanFieldQuality(inputs: QualityInput[]) {
           const stats = stockFieldStats[column]!;
           if (present) {
             stats.nonEmpty++;
-            if (!stats.firstObservedDate || date < stats.firstObservedDate) stats.firstObservedDate = date;
+            if (!stats.firstObservedDate || date < stats.firstObservedDate)
+              stats.firstObservedDate = date;
           } else if (!stats.lastMissingDate || date > stats.lastMissingDate) {
             stats.lastMissingDate = date;
           }
@@ -210,8 +211,12 @@ function scanFieldQuality(inputs: QualityInput[]) {
     const kospiRawDates = fileIndexes.KOSPI.rawDates;
     const kospiValidDates = fileIndexes.KOSPI.validDates;
     const kosdaqValidDates = [...fileIndexes.KOSDAQ.validDates].sort();
-    const kospiMissingWhereKosdaqValid = kosdaqValidDates.filter((date) => !kospiValidDates.has(date));
-    const kospiRawRowAbsentWhereKosdaqValid = kosdaqValidDates.filter((date) => !kospiRawDates.has(date));
+    const kospiMissingWhereKosdaqValid = kosdaqValidDates.filter(
+      (date) => !kospiValidDates.has(date),
+    );
+    const kospiRawRowAbsentWhereKosdaqValid = kosdaqValidDates.filter(
+      (date) => !kospiRawDates.has(date),
+    );
     const kospiRawPresentButInvalidCloseWhereKosdaqValid = kosdaqValidDates.filter(
       (date) => kospiRawDates.has(date) && !kospiValidDates.has(date),
     );
@@ -272,7 +277,9 @@ function scanFieldQuality(inputs: QualityInput[]) {
       let completeFromDate: string | null = null;
       if (stats.nonEmpty > 0) {
         if (!stats.lastMissingDate) completeFromDate = firstStockDate;
-        else completeFromDate = orderedStockDates.find((date) => date > stats.lastMissingDate!) ?? null;
+        else
+          completeFromDate =
+            orderedStockDates.find((date) => date > stats.lastMissingDate!) ?? null;
       }
       return [
         column,
@@ -298,12 +305,14 @@ function scanFieldQuality(inputs: QualityInput[]) {
     }
   >;
   const gatedColumns = CANONICAL_SOURCE_COLUMNS.filter((column) => column !== "sector");
-  const allFieldsComplete = gatedColumns.every((column) => Boolean(fieldAvailability[column]?.completeFromDate));
+  const allFieldsComplete = gatedColumns.every((column) =>
+    Boolean(fieldAvailability[column]?.completeFromDate),
+  );
   const allFieldsCompleteFromDate = allFieldsComplete
-    ? gatedColumns
+    ? (gatedColumns
         .map((column) => fieldAvailability[column]!.completeFromDate!)
         .sort()
-        .at(-1) ?? null
+        .at(-1) ?? null)
     : null;
 
   const fields = {
@@ -319,7 +328,8 @@ function scanFieldQuality(inputs: QualityInput[]) {
       ]),
     ),
     stockRows: {
-      basis: "STOCK rows with valid dates; sector excluded from all-fields gate because sector mapping is external",
+      basis:
+        "STOCK rows with valid dates; sector excluded from all-fields gate because sector mapping is external",
       rows: stockRowsWithDate,
       from: firstStockDate,
       to: lastStockDate,
@@ -376,7 +386,9 @@ function indexContinuity(dataset: MarketDataset) {
     INDEX_CODES.map((code) => [
       code,
       new Set(
-        dataset.indexSeries.find((item) => item.indexCode === code)?.bars.map((bar) => bar.tradeDate) ?? [],
+        dataset.indexSeries
+          .find((item) => item.indexCode === code)
+          ?.bars.map((bar) => bar.tradeDate) ?? [],
       ),
     ]),
   ) as Record<IndexCode, Set<string>>;
@@ -386,12 +398,13 @@ function indexContinuity(dataset: MarketDataset) {
       const dates = indexDateSets[code];
       const missingDates = expected.filter((date) => !dates.has(date));
       const otherCode: IndexCode = code === "KOSPI" ? "KOSDAQ" : "KOSPI";
-      const missingWhereOtherIndexPresent = missingDates.filter((date) => indexDateSets[otherCode].has(date));
+      const missingWhereOtherIndexPresent = missingDates.filter((date) =>
+        indexDateSets[otherCode].has(date),
+      );
       const missingByYear = Object.fromEntries(
-        [...new Set(missingDates.map((date) => date.slice(0, 4)))].sort().map((year) => [
-          year,
-          missingDates.filter((date) => date.startsWith(year)).length,
-        ]),
+        [...new Set(missingDates.map((date) => date.slice(0, 4)))]
+          .sort()
+          .map((year) => [year, missingDates.filter((date) => date.startsWith(year)).length]),
       );
       return [
         code,
@@ -414,7 +427,11 @@ function indexContinuity(dataset: MarketDataset) {
       ];
     }),
   );
-  return { expectedCalendar: "union of observed STOCK dates", expectedTradingDays: expected.length, indexes };
+  return {
+    expectedCalendar: "union of observed STOCK dates",
+    expectedTradingDays: expected.length,
+    indexes,
+  };
 }
 
 function universeCoverage(dataset: MarketDataset, limit: number) {

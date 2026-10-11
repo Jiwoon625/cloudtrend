@@ -30,8 +30,13 @@ export function simulateWithPositionCap(
     return now !== null && before !== null ? now - before : -Infinity;
   };
   const candidates: Array<{
-    s: StrategySeries; signalIndex: number; signalDate: string; entryDate: string;
-    score: number; rise5: number; rise10: number;
+    s: StrategySeries;
+    signalIndex: number;
+    signalDate: string;
+    entryDate: string;
+    score: number;
+    rise5: number;
+    rise10: number;
   }> = [];
 
   for (const s of series) {
@@ -41,14 +46,26 @@ export function simulateWithPositionCap(
       const entryDate = s.bars[i + 1]?.tradeDate;
       const score = legacy.scorePercent(s.scores[i]);
       if (!signalDate || !entryDate || score === null) continue;
-      candidates.push({ s, signalIndex: i, signalDate, entryDate, score,
-        rise5: rise(s, i, 5), rise10: rise(s, i, 10) });
+      candidates.push({
+        s,
+        signalIndex: i,
+        signalDate,
+        entryDate,
+        score,
+        rise5: rise(s, i, 5),
+        rise10: rise(s, i, 10),
+      });
     }
   }
 
-  candidates.sort((a, b) =>
-    a.entryDate.localeCompare(b.entryDate) || b.score - a.score ||
-    b.rise5 - a.rise5 || b.rise10 - a.rise10 || a.s.symbol.localeCompare(b.s.symbol));
+  candidates.sort(
+    (a, b) =>
+      a.entryDate.localeCompare(b.entryDate) ||
+      b.score - a.score ||
+      b.rise5 - a.rise5 ||
+      b.rise10 - a.rise10 ||
+      a.s.symbol.localeCompare(b.s.symbol),
+  );
 
   const selected: SimulatedTrade[] = [];
   const skippedSignalDates: string[] = [];

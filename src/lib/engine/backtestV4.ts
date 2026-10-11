@@ -155,7 +155,7 @@ export interface EntryThresholdStat {
   marketAdjustedAvgReturn: number | null;
 }
 
-export interface ScoreOnsetStat extends EntryThresholdStat {}
+export type ScoreOnsetStat = EntryThresholdStat;
 
 export interface IntervalSensitivityStat {
   interval: number;

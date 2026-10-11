@@ -102,3 +102,32 @@ describe("dashboard portfolio freshness", () => {
     expect(failed).not.toContain("반영 완료");
   });
 });
+
+it("warns that missing current closes have only dated reference estimates", () => {
+  const incomplete = {
+    ...state,
+    document: {
+      ...state.document,
+      strategy: {
+        ...strategy,
+        valuationReference: {
+          status: "MISSING" as const,
+          marks: { A: { price: 105, date: "2026-10-13", source: "PREVIOUS_CLOSE" as const } },
+        },
+      },
+    },
+  };
+  const html = renderToStaticMarkup(
+    <PortfolioFreshnessSummary
+      state={incomplete}
+      screeningDate="2026-10-14"
+      pending={false}
+      error={false}
+    />,
+  );
+  expect(html).toContain('role="alert"');
+  expect(html).toContain("종가 결측 · 현재 평가·수익률·종가 신호 미확정");
+  expect(html).toContain("확정 NAV·수익률이 아닙니다");
+  expect(html).toContain("2026-10-13");
+  expect(html).toContain("참고가격");
+});

@@ -78,12 +78,11 @@ describe("multi horizon backtest", () => {
     }
   });
 
-
   it("drops only the horizons whose future bar is missing", () => {
-    const short = runBacktest(
-      [{ symbol: "X", name: "X", bars: uptrend.bars.slice(0, 141) }],
-      { ...params, sampleEvery: 20 },
-    );
+    const short = runBacktest([{ symbol: "X", name: "X", bars: uptrend.bars.slice(0, 141) }], {
+      ...params,
+      sampleEvery: 20,
+    });
     const by = Object.fromEntries(short.baselineByHorizon.map((b) => [b.horizon, b.count]));
     expect(by[5]).toBeGreaterThan(0);
     expect(by[10]).toBeGreaterThan(0);

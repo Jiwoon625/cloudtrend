@@ -22,9 +22,15 @@ const { historicalTechnicalScore, vfStockScore, DEFAULT_SCORING_CONFIG } =
 
 const bars = Array.from({ length: 1250 }, (_, i) => ({
   tradeDate: new Date(Date.UTC(2021, 0, i + 1)).toISOString().slice(0, 10),
-  open: 100 + i, high: 102 + i, low: 99 + i, close: 101 + i,
-  volume: 1000, tradingValue: 100000, marketCap: 1e12,
-  foreignNetBuyValue: 1000000, institutionNetBuyValue: null,
+  open: 100 + i,
+  high: 102 + i,
+  low: 99 + i,
+  close: 101 + i,
+  volume: 1000,
+  tradingValue: 100000,
+  marketCap: 1e12,
+  foreignNetBuyValue: 1000000,
+  institutionNetBuyValue: null,
 }));
 const dataset = (prices, instrumentType = "STOCK") => ({
   bars: { TEST: prices },
@@ -47,8 +53,10 @@ test("full chart covers all 1,250 supplied dates, including warm-up", () => {
   assert.equal(chart[0].historicalTechnicalPoints, null);
   assert.equal(chart.at(-1).tradeDate, bars.at(-1).tradeDate);
   for (const point of chart) {
-    assert.ok(point.historicalTechnicalPoints === null ||
-      (point.historicalTechnicalPoints >= 0 && point.historicalTechnicalPoints <= 9.5));
+    assert.ok(
+      point.historicalTechnicalPoints === null ||
+        (point.historicalTechnicalPoints >= 0 && point.historicalTechnicalPoints <= 9.5),
+    );
   }
 });
 
@@ -92,8 +100,10 @@ test("selected chart window uses preceding history and honors active settings", 
   const full = chartSeries(dataset(bars.slice(0, 150)), "TEST", Infinity, cfg);
   const tail = chartSeries(dataset(bars.slice(0, 150)), "TEST", 10, cfg);
   assert.deepEqual(tail, full.slice(-10));
-  assert.equal(tail.at(-1).historicalTechnicalPoints,
-    historicalTechnicalScore(computeIndicators(bars, 149), cfg).points);
+  assert.equal(
+    tail.at(-1).historicalTechnicalPoints,
+    historicalTechnicalScore(computeIndicators(bars, 149), cfg).points,
+  );
 });
 
 test("empty symbols stay empty; ETFs use the same full score overlay", () => {
@@ -101,5 +111,8 @@ test("empty symbols stay empty; ETFs use the same full score overlay", () => {
   assert.deepEqual(chartSeries(dataset(bars), "MISSING"), []);
   const etf = chartSeries(dataset(bars.slice(0, 300), "ETF"), "TEST");
   assert.ok(etf.slice(0, 251).every((p) => p.historicalTechnicalPoints === null));
-  assert.equal(etf[251].historicalTechnicalPoints, vfStockScore(computeIndicators(bars, 251)).points);
+  assert.equal(
+    etf[251].historicalTechnicalPoints,
+    vfStockScore(computeIndicators(bars, 251)).points,
+  );
 });

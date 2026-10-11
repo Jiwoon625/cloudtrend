@@ -36,9 +36,7 @@ export const ADDITIONAL_STOCK_SECTOR_BY_SYMBOL: Readonly<Record<string, string>>
   "394800": "BIO", // 쓰리빌리언 — AI 기반 희귀질환 유전체 진단
 });
 
-export const ADDITIONAL_STOCK_SECTOR_COUNT = Object.keys(
-  ADDITIONAL_STOCK_SECTOR_BY_SYMBOL,
-).length;
+export const ADDITIONAL_STOCK_SECTOR_COUNT = Object.keys(ADDITIONAL_STOCK_SECTOR_BY_SYMBOL).length;
 
 export function resolveAdditionalStockSectorCode(symbol: string): string | undefined {
   return ADDITIONAL_STOCK_SECTOR_BY_SYMBOL[normalizeReviewedStockSymbol(symbol)];

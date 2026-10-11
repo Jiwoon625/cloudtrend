@@ -512,9 +512,18 @@ function buildPriceLeadershipMap(dataset: MarketDataset, sourceType: "STOCK" | "
         nearHigh: ratio(a.nearHighTrue, a.nearHighValid),
       };
     });
-    const rs20s = raw.map((r) => r.rs20).filter(finite).sort((a, b) => a - b);
-    const rs60s = raw.map((r) => r.rs60).filter(finite).sort((a, b) => a - b);
-    const rs120s = raw.map((r) => r.rs120).filter(finite).sort((a, b) => a - b);
+    const rs20s = raw
+      .map((r) => r.rs20)
+      .filter(finite)
+      .sort((a, b) => a - b);
+    const rs60s = raw
+      .map((r) => r.rs60)
+      .filter(finite)
+      .sort((a, b) => a - b);
+    const rs120s = raw
+      .map((r) => r.rs120)
+      .filter(finite)
+      .sort((a, b) => a - b);
     for (const r of raw) {
       const trend = avgRatio([r.aboveMa20, r.aboveMa60, r.aboveMa120]);
       const breadth = avgRatio([r.advancing, r.aboveMa20, r.maAligned]);
@@ -567,9 +576,7 @@ function etfPrimaryFallbackMap(stock: Map<string, number>, etf: Map<string, numb
 function attachPl(series: PortfolioSeries[], map: Map<string, number>) {
   return series.map((s) => ({
     ...s,
-    sectorPriceLeadership: s.bars.map(
-      (bar) => map.get(bar.tradeDate + "|" + s.sectorCode) ?? null,
-    ),
+    sectorPriceLeadership: s.bars.map((bar) => map.get(bar.tradeDate + "|" + s.sectorCode) ?? null),
   }));
 }
 
@@ -703,11 +710,7 @@ function evaluationDates(dataset: MarketDataset, market: Market, fold: FoldYear)
   return dates.slice(first, Math.min(dates.length, last + 66));
 }
 
-function simulate(
-  series: PortfolioSeries[],
-  candidates: Candidate[],
-  dates: string[],
-): Simulation {
+function simulate(series: PortfolioSeries[], candidates: Candidate[], dates: string[]): Simulation {
   const seriesMap = new Map(series.map((s) => [key(s.market, s.symbol), s]));
   const halfCost = ROUND_TRIP_COST_BPS / 20_000;
   const byEntry = new Map<string, Candidate[]>();
@@ -753,10 +756,7 @@ function simulate(
       if (p.candidate.exitDate === date && p.candidate.exitTiming === "OPEN")
         closePosition(k, p, p.candidate.exitPrice);
     }
-    const openMarked = [...positions.values()].reduce(
-      (sum, p) => sum + p.shares * p.lastMark,
-      0,
-    );
+    const openMarked = [...positions.values()].reduce((sum, p) => sum + p.shares * p.lastMark, 0);
     const openEquity = cash + openMarked;
     for (const candidate of byEntry.get(date) ?? []) {
       const k = key(candidate.market, candidate.symbol);
@@ -786,10 +786,7 @@ function simulate(
       if (p.candidate.exitDate === date && p.candidate.exitTiming === "CLOSE")
         closePosition(k, p, p.candidate.exitPrice);
     }
-    const marked = [...positions.values()].reduce(
-      (sum, p) => sum + p.shares * p.lastMark,
-      0,
-    );
+    const marked = [...positions.values()].reduce((sum, p) => sum + p.shares * p.lastMark, 0);
     const equity = cash + marked;
     peak = Math.max(peak, equity);
     points.push({
@@ -814,8 +811,7 @@ function benchmarkReturn(dataset: MarketDataset, market: Market, start: string, 
   const map = new Map(bars.map((b) => [b.tradeDate, b]));
   const a = map.get(start);
   const b = map.get(end);
-  if (!a || !b || !finite(a.open) || a.open <= 0 || !finite(b.close) || b.close <= 0)
-    return null;
+  if (!a || !b || !finite(a.open) || a.open <= 0 || !finite(b.close) || b.close <= 0) return null;
   return (b.close / a.open - 1) * 100;
 }
 function profitFactor(xs: number[]) {
@@ -866,8 +862,7 @@ function foldRow(
       : null,
     totalReturn: round(totalReturn),
     benchmarkReturn: round(benchmark),
-    excessReturn:
-      finite(totalReturn) && finite(benchmark) ? round(totalReturn - benchmark) : null,
+    excessReturn: finite(totalReturn) && finite(benchmark) ? round(totalReturn - benchmark) : null,
     cagr: round(cagr),
     mdd: points.length ? round(Math.min(...points.map((p) => p.drawdown))) : null,
     avgTradeReturn: round(average(returns)),
@@ -952,7 +947,11 @@ function deltaVsA(aggregateRows: ReturnType<typeof aggregate>) {
   return out;
 }
 
-function sourceCoverage(dataset: MarketDataset, etfMap: Map<string, number>, stockMap: Map<string, number>) {
+function sourceCoverage(
+  dataset: MarketDataset,
+  etfMap: Map<string, number>,
+  stockMap: Map<string, number>,
+) {
   const allEtfs = dataset.instruments.filter((i) => i.instrumentType === "ETF");
   const eligibleEtfs = allEtfs.filter(
     (i) =>
@@ -964,8 +963,7 @@ function sourceCoverage(dataset: MarketDataset, etfMap: Map<string, number>, sto
   for (const i of eligibleEtfs)
     eligibleBySector.set(i.sectorCode, (eligibleBySector.get(i.sectorCode) ?? 0) + 1);
   const allBySector = new Map<string, number>();
-  for (const i of allEtfs)
-    allBySector.set(i.sectorCode, (allBySector.get(i.sectorCode) ?? 0) + 1);
+  for (const i of allEtfs) allBySector.set(i.sectorCode, (allBySector.get(i.sectorCode) ?? 0) + 1);
 
   const oldestObservedEtfsBySector = [...new Set(allEtfs.map((i) => i.sectorCode))]
     .sort()
@@ -987,7 +985,9 @@ function sourceCoverage(dataset: MarketDataset, etfMap: Map<string, number>, sto
           (a, b) =>
             String(a.firstObservedDate ?? "9999-99-99").localeCompare(
               String(b.firstObservedDate ?? "9999-99-99"),
-            ) || b.observedBars - a.observedBars || a.symbol.localeCompare(b.symbol),
+            ) ||
+            b.observedBars - a.observedBars ||
+            a.symbol.localeCompare(b.symbol),
         )
         .slice(0, 5),
     }));
@@ -1011,14 +1011,8 @@ function sourceCoverage(dataset: MarketDataset, etfMap: Map<string, number>, sto
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const { texts, manifest } = await loadCachedTexts(
-    options.sourceManifest,
-    options.sourceCacheDir,
-  );
-  const etfSource = await loadEtfCachedText(
-    options.etfSourceManifest,
-    options.etfSourceCacheDir,
-  );
+  const { texts, manifest } = await loadCachedTexts(options.sourceManifest, options.sourceCacheDir);
+  const etfSource = await loadEtfCachedText(options.etfSourceManifest, options.etfSourceCacheDir);
   // Canonical ETF history comes first so its rows are authoritative on overlapping
   // (symbol, date) observations; the stock-core sources then fill stocks, indexes,
   // and any non-overlapping ETF history.
@@ -1175,7 +1169,7 @@ async function main() {
 
 main().catch((error: unknown) => {
   process.stderr.write(
-    (error instanceof Error ? error.stack ?? error.message : String(error)) + "\n",
+    (error instanceof Error ? (error.stack ?? error.message) : String(error)) + "\n",
   );
   process.exitCode = 1;
 });

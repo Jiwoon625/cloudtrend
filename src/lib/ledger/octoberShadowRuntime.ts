@@ -48,6 +48,20 @@ export const REAUDIT_OBSERVATION_METADATA_RUNTIME_HASH =
 export const REAUDIT_SIGNAL_POLICY_NAMING_RUNTIME_HASH =
   "sha256:b6305169cdd429bc314a6e33626718cf0108f97a89be58200d01efba475a4f7b" as const;
 
+/** Reviewed October 11 boundary fixes: exact US preview arithmetic and common KR
+ * missing-close observations/valuation. Beta US/KR replay outputs match the clean
+ * prior runtime; frozen contract identities and completed artifacts stay unchanged.
+ */
+export const EXACT_PREVIEW_MISSING_CLOSE_RUNTIME_HASH =
+  "sha256:5360df78a2d4f27de2ec0c1cb467baabc63603747b53bf4934d2a91d7b44afd5" as const;
+
+/** Repository-wide lint cleanup: redundant arithmetic grouping and quote-regex
+ * escapes only. Executable-tree equivalence and direct quote-normalization tests
+ * preserve results. Frozen contracts and all previously reviewed runtimes remain.
+ */
+export const LINT_EQUIVALENT_SYNTAX_RUNTIME_HASH =
+  "sha256:3ebfcb975969aaaff05b358bb6a1d0e9c14e20cb474c10391dcc633dedb264b2" as const;
+
 export const REVIEWED_SHADOW_RUNTIME_CODE_HASHES = Object.freeze([
   ADOPTED_SHADOW_FROZEN_CODE_HASH,
   "sha256:ffd26d07d50564c6c734dc9c96ede00f7786e1122df3eb373ad56a4648929033",
@@ -59,6 +73,8 @@ export const REVIEWED_SHADOW_RUNTIME_CODE_HASHES = Object.freeze([
   US_PRIORITY_SHARED_COMPARATOR_RUNTIME_HASH,
   REAUDIT_OBSERVATION_METADATA_RUNTIME_HASH,
   REAUDIT_SIGNAL_POLICY_NAMING_RUNTIME_HASH,
+  EXACT_PREVIEW_MISSING_CLOSE_RUNTIME_HASH,
+  LINT_EQUIVALENT_SYNTAX_RUNTIME_HASH,
   "sha256:7986793771f362aaede80425f9259254035443dce0eb67e134ded9271241354d",
   "sha256:a321c97e37a3b55249b23597e811997b089943d8c56cb27088c60a2806691a80",
 ] as const);

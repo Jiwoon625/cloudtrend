@@ -777,3 +777,85 @@ it("counts observed rows including missing closes in H60 carried-exit holding me
     holdingDays: 61,
   });
 });
+
+describe("common execution preserves missing-close observations", () => {
+  const dates = ["2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15"];
+  function run(close: number, exitSignal = false) {
+    const signal = { ...entry("A"), ...getOperationalSignals("KOSDAQ", 7, 8, true) };
+    const snapshots = [{ ...snapshot([signal]), date: dates[0]!, asOfDate: dates[0]! }];
+    if (exitSignal)
+      snapshots.push({
+        ...snapshot([
+          {
+            ...entry("A"),
+            ...getOperationalSignals("KOSDAQ", 8, 9.5, true),
+            technicalPoints: 9.5,
+            scoreDelta1d: 1.5,
+          },
+        ]),
+        date: dates[1]!,
+        asOfDate: dates[1]!,
+      });
+    return simulateStrategy(
+      { ...settings, roundTripCostRate: 0.003 },
+      snapshots,
+      {
+        A: dates.slice(0, exitSignal ? 3 : 2).map(
+          (d, i) =>
+            ({
+              tradeDate: d,
+              open: 100,
+              close: i === 1 ? close : 105,
+              volume: 100,
+              openObserved: true,
+              volumeObserved: true,
+            }) as DailyPrice,
+        ),
+      },
+      { A: "KOSDAQ" },
+      "",
+      dates.slice(0, exitSignal ? 3 : 2),
+      {},
+      {
+        version: "kr-common-execution-20261012-v1",
+        startDate: "2026-10-12",
+        throughDate: dates[exitSignal ? 2 : 1]!,
+        scope: "KOSDAQ",
+      },
+    );
+  }
+  it.each([0, Number.NaN])(
+    "fills the existing entry at valid open when close is %s, with incomplete valuation",
+    (close) => {
+      const result = run(close);
+      expect(result.trades[0]).toMatchObject({
+        entryDate: dates[1],
+        entryPrice: 100,
+        status: "OPEN",
+        currentPrice: null,
+        markDate: null,
+        holdingDays: 1,
+        currentTechnicalPoints: null,
+      });
+      expect(result.quotes["A"]).toBeUndefined();
+      expect(result.modelAccounting).toMatchObject({ nav: null, valuationStatus: "MISSING" });
+      expect(result.valuationReference!.marks["A"]).toEqual({
+        price: 100,
+        date: dates[1],
+        source: "ENTRY_PRICE",
+      });
+      expect(result.summary.marketValue).toBe(result.trades[0]!.shares * 100);
+      expect(JSON.stringify(result)).not.toContain("NaN");
+    },
+  );
+  it("keeps normal close valuations complete", () => {
+    const result = run(105);
+    expect(result.modelAccounting!.valuationStatus).toBe("COMPLETE");
+    expect(result.trades[0]!.currentPrice).toBe(105);
+    expect(result.valuationReference).toBeUndefined();
+  });
+  it("does not use a close-dependent exit on the invalid-close observation", () => {
+    expect(run(0, true).trades[0]!.status).toBe("OPEN");
+    expect(run(105, true).trades[0]!.status).toBe("CLOSED");
+  });
+});

@@ -10,9 +10,7 @@ const pct = (value: number | null) =>
   value === null || !Number.isFinite(value) ? "—" : `${value.toFixed(1)}%`;
 
 const ret = (value: number | null) =>
-  value === null || !Number.isFinite(value)
-    ? "—"
-    : `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+  value === null || !Number.isFinite(value) ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 
 const groupLabel: Record<SectorRankGroup, string> = {
   TOP: "상위권",
@@ -38,9 +36,9 @@ export function SectorRotationBacktestResults({
             </span>
           </div>
           <p className="mt-1 max-w-4xl text-[10px] leading-relaxed text-muted-foreground">
-            CloudTrend V7 섹터 분석입니다. 매 거래일 로테이션 점수를 다시 계산해 {result.sectorCount}개 섹터를 상위 1~4위,
-            중위 5~10위, 하위 11~14위로 나누고 체류기간·생존율·그룹 전이·신규 Top4 이후
-            성과를 측정합니다.
+            CloudTrend V7 섹터 분석입니다. 매 거래일 로테이션 점수를 다시 계산해{" "}
+            {result.sectorCount}개 섹터를 상위 1~4위, 중위 5~10위, 하위 11~14위로 나누고
+            체류기간·생존율·그룹 전이·신규 Top4 이후 성과를 측정합니다.
           </p>
         </div>
         <p className="text-[10px] text-muted-foreground">

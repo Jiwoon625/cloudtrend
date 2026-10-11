@@ -1,9 +1,6 @@
 import { validDate } from "../src/lib/ledger/date";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  adoptedShadowFrozenCodeHash,
-  shadowEngineManifest,
-} from "./october-shadow-code-manifest";
+import { adoptedShadowFrozenCodeHash, shadowEngineManifest } from "./october-shadow-code-manifest";
 import { octoberShadowStore } from "../src/lib/ledger/octoberShadowRepository.server";
 import {
   recordOctoberPublication,

@@ -17,7 +17,10 @@ export const PORTFOLIO_DETAIL_FIELDS = [
 
 export type PortfolioDetailField = (typeof PORTFOLIO_DETAIL_FIELDS)[number];
 
-export type PortfolioResultSummary = Omit<SectorPenaltyPortfolioBacktestResult, PortfolioDetailField>;
+export type PortfolioResultSummary = Omit<
+  SectorPenaltyPortfolioBacktestResult,
+  PortfolioDetailField
+>;
 
 export interface PortfolioResultDetails {
   version: typeof PORTFOLIO_RESULT_STORAGE_VERSION;
@@ -44,14 +47,8 @@ export function splitPortfolioResult(result: SectorPenaltyPortfolioBacktestResul
   summary: PortfolioResultSummary;
   details: PortfolioResultDetails;
 } {
-  const {
-    yearlyReturns,
-    monthlyReturns,
-    regimeReturns,
-    equityCurve,
-    drawdownSeries,
-    ...summary
-  } = result;
+  const { yearlyReturns, monthlyReturns, regimeReturns, equityCurve, drawdownSeries, ...summary } =
+    result;
 
   return {
     summary,

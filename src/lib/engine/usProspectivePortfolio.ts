@@ -5,6 +5,7 @@ import {
   format,
   fromLegacyNumber,
   integerBudgetQuantity,
+  exactNotionalFee,
 } from "../ledger/decimal";
 import type {
   UsProspectiveAnalysis,
@@ -414,8 +415,7 @@ export function stepUsProspectivePortfolio(
       if (!Number.isSafeInteger(shares) || shares <= 0)
         throw new Error("Model fills require positive safe integer shares");
       const gross = decimal(fromLegacyNumber(price)) * BigInt(shares);
-      const scale = decimal("1");
-      const exactFee = (gross * decimal(executionPolicy.oneWayCost) + scale - 1n) / scale;
+      const exactFee = exactNotionalFee(gross, executionPolicy.oneWayCost);
       modelCash += (side === "BUY" ? -gross : gross) - exactFee;
       if (modelCash < 0n) throw new Error("Isolated model fill exceeds exact cash");
       modelFees += exactFee;

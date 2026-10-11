@@ -50,6 +50,14 @@ export interface StrategyLedger {
   quotes: Record<string, Quote>;
   fingerprint: string;
   calculatedAt: string;
+  /** Numeric legacy summary is a reference estimate only when current marks are missing. */
+  valuationReference?: {
+    status: "MISSING";
+    marks: Record<
+      string,
+      { price: number; date: string; source: "PREVIOUS_CLOSE" | "ENTRY_PRICE" }
+    >;
+  };
   modelAccounting?: {
     cash: string;
     nav: string | null;
@@ -222,19 +230,36 @@ export function simulateStrategy(
     );
     marketDates = marketDates.filter((date) => date <= prospective.throughDate);
   }
-  const snapshots = normalizeSnapshots(input);
-  const entryBars = bars;
-  // Source loading historically excluded invalid opens/closes. Keep that exact replay/quote
-  // boundary while the confirmation executor alone sees raw observed suspension and gap evidence.
-  bars = Object.fromEntries(
-    Object.entries(bars).map(([symbol, series]) => [
-      symbol,
-      series.filter(
-        (bar) =>
-          Number.isFinite(bar.open) && bar.open > 0 && Number.isFinite(bar.close) && bar.close > 0,
-      ),
-    ]),
+  // An observed invalid close cannot establish a close-dependent entry/exit.
+  // Keep the row in the execution stream; only its same-day signal is unavailable.
+  const snapshots = normalizeSnapshots(
+    unified
+      ? input.map((snapshot) => ({
+          ...snapshot,
+          entries: snapshot.entries.filter((entry) => {
+            const observed = bars[entry.symbol]?.find((bar) => bar.tradeDate === snapshot.asOfDate);
+            return !observed || (Number.isFinite(observed.close) && observed.close > 0);
+          }),
+        }))
+      : input,
   );
+  const entryBars = bars;
+  // Historical replay keeps its original boundary. The common execution contract
+  // preserves raw sessions for valid-open fills, suspension evidence and H60.
+  bars = unified
+    ? entryBars
+    : Object.fromEntries(
+        Object.entries(bars).map(([symbol, series]) => [
+          symbol,
+          series.filter(
+            (bar) =>
+              Number.isFinite(bar.open) &&
+              bar.open > 0 &&
+              Number.isFinite(bar.close) &&
+              bar.close > 0,
+          ),
+        ]),
+      );
   let latest = Object.values(bars).reduce<string | null>((d, b) => {
     const x = b.at(-1)?.tradeDate;
     return x && (!d || x > d) ? x : d;
@@ -614,7 +639,13 @@ export function simulateStrategy(
   }
   if (latest) closeDue(latest, false);
   const quotes: Record<string, Quote> = {};
+  const missingClose = new Set<string>();
   for (const [symbol, series] of Object.entries(bars)) {
+    const observed = series.at(-1);
+    if (unified && observed && (!Number.isFinite(observed.close) || observed.close <= 0)) {
+      missingClose.add(symbol);
+      continue;
+    }
     const mark = [...series].reverse().find((bar) => Number.isFinite(bar.close) && bar.close > 0);
     if (!mark) continue;
     const current = latestSnapshotEntry(snapshots, symbol);
@@ -629,24 +660,42 @@ export function simulateStrategy(
     unrealized = 0,
     realized = 0,
     count = 0;
+  const referenceMarks: NonNullable<StrategyLedger["valuationReference"]>["marks"] = {};
   for (const t of trades) {
     if (t.status === "CLOSED") {
       realized += t.realizedPnl ?? 0;
       continue;
     }
     const q = quotes[t.symbol];
-    t.currentPrice = q?.price ?? t.entryPrice;
-    t.markDate = q?.date ?? t.entryDate;
-    const current = latestSnapshotEntry(snapshots, t.symbol);
+    const closeMissing = missingClose.has(t.symbol);
+    t.currentPrice = closeMissing ? null : (q?.price ?? t.entryPrice);
+    t.markDate = closeMissing ? null : (q?.date ?? t.entryDate);
+    const current = closeMissing ? null : latestSnapshotEntry(snapshots, t.symbol);
     t.currentTechnicalPoints = current?.technicalPoints ?? null;
     t.currentPriorityPoints = current?.priorityPoints ?? null;
-    t.currentStatus = q?.exitSignal ? "전략 청산 대기" : "전략 보유";
+    t.currentStatus = closeMissing
+      ? "종가 결측 · 평가·종가 신호 미확정"
+      : q?.exitSignal
+        ? "전략 청산 대기"
+        : "전략 보유";
+    if (closeMissing) {
+      const priorMark = [...(entryBars[t.symbol] ?? [])]
+        .reverse()
+        .find((bar) => bar.tradeDate >= t.entryDate && Number.isFinite(bar.close) && bar.close > 0);
+      referenceMarks[t.symbol] = {
+        price: priorMark?.close ?? t.entryPrice,
+        date: priorMark?.tradeDate ?? t.entryDate,
+        source: priorMark ? "PREVIOUS_CLOSE" : "ENTRY_PRICE",
+      };
+    }
     t.holdingDays = ((unified ? entryBars : bars)[t.symbol] ?? []).filter(
       (b) =>
         b.tradeDate >= t.entryDate &&
         b.tradeDate <= (unified ? (latest ?? t.markDate!) : t.markDate!),
     ).length;
-    const v = t.shares * t.currentPrice;
+    // Retain the asset in legacy numeric summaries, explicitly tagged as a
+    // reference estimate. Authoritative model NAV below remains null/MISSING.
+    const v = t.shares * (t.currentPrice ?? referenceMarks[t.symbol]!.price);
     value += v;
     unrealized += v - t.buyAmount - t.entryFee;
     count++;
@@ -668,6 +717,9 @@ export function simulateStrategy(
     quotes,
     fingerprint,
     calculatedAt: new Date().toISOString(),
+    ...(Object.keys(referenceMarks).length
+      ? { valuationReference: { status: "MISSING" as const, marks: referenceMarks } }
+      : {}),
     ...(prospective
       ? {
           modelAccounting: {

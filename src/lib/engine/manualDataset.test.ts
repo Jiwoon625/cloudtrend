@@ -246,3 +246,26 @@ describe("parseManualMarketData large-column CSV path", () => {
     expect(parsed.dataset.bars["5930"]).toBeUndefined();
   });
 });
+
+it.each(["0", ""])(
+  "retains a domestic stock observation with close '%s' for execution, but not indicator prices",
+  (close) => {
+    const { dataset } = parseManualMarketData(
+      [
+        "symbol,date,market,open,high,low,close,volume",
+        `A,2026-10-12,KOSDAQ,100,110,90,${close},1000`,
+      ].join("\n"),
+      { allowIncompleteIndex: true },
+    );
+    expect(dataset.observedBars!["A"]).toHaveLength(1);
+    expect(dataset.observedBars!["A"]![0]).toMatchObject({
+      open: 100,
+      volume: 1000,
+      openObserved: true,
+      volumeObserved: true,
+      close: 0,
+    });
+    expect(dataset.bars["A"]).toEqual([]);
+    expect(dataset.liquidSymbolCountsByDate!["2026-10-12"]).toBe(1);
+  },
+);

@@ -263,3 +263,131 @@ it.each([3, 2, 0])(
     expect(exact.filters).toContainEqual(["session_date", "2026-10-06"]);
   },
 );
+
+it("keeps missing KR NAV null in current value, history, returns and drawdown", async () => {
+  const { freezeRestartSeries, hashSeriesValue } = await import("./ledger/modelSeries");
+  const { stepAdoptedKrSeries } = await import("./ledger/krAdoptedShadow");
+  const hash = `sha256:${"a".repeat(64)}` as const;
+  const series = await freezeRestartSeries({
+    kind: "KR_KOSDAQ",
+    codeHash: hash,
+    sourceHash: hash,
+    frozenAt: "2026-10-09T00:00:00Z",
+  });
+  const dates = ["2026-10-12", "2026-10-13"];
+  const calendar = {
+    market: "KR" as const,
+    sourceHash: hash,
+    coverageStart: dates[0]!,
+    coverageEnd: dates[1]!,
+    regularSessions: dates,
+  };
+  const snapshots: import("./screeningSnapshot").ScreeningSnapshot[] = [
+    {
+      date: dates[0]!,
+      asOfDate: dates[0]!,
+      savedAt: "2026-10-13T08:00:00+09:00",
+      entries: [
+        {
+          symbol: "A",
+          name: "A",
+          instrumentType: "STOCK" as const,
+          sectorCode: "IT",
+          sectorName: "IT",
+          kosdaq80Onset: true,
+          grade: "A",
+          status: "",
+          totalScore: 80,
+          scoreDelta1d: 1,
+          hardFilterPassed: true,
+          technicalPoints: 8,
+          priorityPoints: 5,
+        },
+      ],
+      marketGateStatus: "",
+      totalCount: 1,
+      passedCount: 1,
+      gradeACount: 1,
+      gradeBCount: 0,
+    },
+  ];
+  let previous: import("./ledger/krAdoptedShadow").AdoptedKrRun | null = null;
+  let previousPublished: import("./ledger/octoberShadowPipeline").OctoberRun | null = null;
+  const sessions: import("./octoberShadowSummary.server").OctoberSessionRow[] = [];
+  for (const [index, date] of dates.entries()) {
+    const next = index === 0 ? "2026-10-13" : "2026-10-14";
+    if (index > 0)
+      snapshots.push({
+        ...snapshots[0]!,
+        date,
+        asOfDate: date,
+        savedAt: `${next}T08:00:00+09:00`,
+        entries: [],
+      });
+    const { run } = await stepAdoptedKrSeries(
+      series,
+      {
+        date,
+        codeHash: hash,
+        sourceHash: hash,
+        configHash: series.configHash,
+        availableAt: `${next}T08:00:00+09:00`,
+        decisionAt: `${next}T08:10:00+09:00`,
+        confirmedClose: true,
+        snapshots,
+        calendar,
+        marketGates: {},
+        markets: { A: "KOSDAQ" },
+        bars: {
+          A: dates.slice(0, index + 1).map((day, n) => ({
+            tradeDate: day,
+            open: 100,
+            high: 105,
+            low: 100,
+            close: n === 1 ? 0 : 105,
+            volume: 1000,
+            tradingValue: 100000,
+            marketCap: null,
+            foreignNetBuyValue: null,
+            institutionNetBuyValue: null,
+          })),
+        },
+      },
+      previous,
+    );
+    const { stateHash: _stateHash, ...body } = run;
+    const publishedBody = {
+      ...body,
+      previousStateHash: previousPublished?.stateHash ?? null,
+      publication: {
+        version: "october-manual-publication-v1" as const,
+        inputHash: hash,
+        sourceHash: hash,
+        availableAt: `${next}T08:00:00+09:00`,
+        decisionAt: `${next}T08:10:00+09:00`,
+      },
+    };
+    const published = {
+      ...publishedBody,
+      stateHash: await hashSeriesValue(publishedBody),
+    } as import("./ledger/octoberShadowPipeline").OctoberRun;
+    sessions.push(sessionRow(published, previousPublished));
+    previous = run;
+    previousPublished = published;
+  }
+  const result = await summarizeOctoberShadowBook(
+    "KR_KOSDAQ",
+    registry(series),
+    sessions,
+    true,
+    "2026-10-14T09:00:00+09:00",
+  );
+  expect(result.status).toBe("RECORDED");
+  expect(result.valuationStatus).toBe("MISSING");
+  expect(result.nav).toBeNull();
+  expect(result.history!.at(-1)!.nav).toBeNull();
+  expect(result.returnPercent).toBeNull();
+  expect(result.mddPercent).toBeNull();
+  expect(result.positions).toBe(1);
+  expect(result.holdings[0]).toMatchObject({ price: null, value: null });
+});

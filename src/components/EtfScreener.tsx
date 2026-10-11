@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import type { DomesticPositionContext } from "@/lib/positionSignalContext";
 import { ETF_POLICY } from "@/lib/engine/etfStrategy";
 import type { DualPortfolioState } from "@/lib/portfolioLedgers";
-import { soldSymbolsSinceSignal } from "@/lib/dashboardOperations";
+import { ACTUAL_PERFORMANCE_START } from "@/lib/ledger/actualPerformance";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
 import { etfPartialEvidence } from "@/lib/etfPartialEvidence";
 
@@ -73,7 +73,6 @@ const compareNullable = (
 
 export function EtfScreener({
   analysis,
-  ledger,
   ledgerError,
   positionContext,
 }: {
@@ -98,18 +97,17 @@ export function EtfScreener({
     evidenceBySymbol.get(r.instrument.symbol)!;
   const krxPending = rows.find((r) => evidenceFor(r).krxPending)?.etfStrategy;
   const heldSet = new Set(positionContext?.heldSymbols ?? []);
-  const blocked = (r: AnalysisResult["rows"][number]) =>
-    soldSymbolsSinceSignal(
-      ledger?.document.executions ?? [],
-      "ETF",
-      r.etfStrategy?.originDate ?? analysis.asOfDate,
-    ).has(r.instrument.symbol);
+  const blocked = (r: AnalysisResult["rows"][number]) => {
+    const sold = positionContext?.lastSellDateBySymbol[r.instrument.symbol];
+    return !!sold && sold >= (r.etfStrategy?.originDate ?? analysis.asOfDate);
+  };
   const actionable = (r: AnalysisResult["rows"][number]) =>
-    !!ledger &&
     !!positionContext &&
     !ledgerError &&
     r.etfStrategy?.version === ETF_POLICY.version &&
     r.etfStrategy.onset &&
+    analysis.asOfDate >= ACTUAL_PERFORMANCE_START &&
+    (r.etfStrategy.originDate ?? "") >= ACTUAL_PERFORMANCE_START &&
     r.etfStrategy.dataStatus !== "krx_batch_pending" &&
     !heldSet.has(r.instrument.symbol) &&
     !blocked(r);
@@ -130,7 +128,14 @@ export function EtfScreener({
     if (s.entryState === "rejected") return "하루 확인 탈락";
     if (!s.eligible) return "대상·데이터 점검";
     if (s.entryState === "pending") return "하루 확인 대기";
-    if (s.onset) return ledger ? "진입 준비 · 다음 시가 진입" : "진입 준비 · 보유정보 확인 필요";
+    if (
+      s.onset &&
+      (analysis.asOfDate < ACTUAL_PERFORMANCE_START ||
+        (s.originDate ?? "") < ACTUAL_PERFORMANCE_START)
+    )
+      return "시작 전 원신호 · 신규 운용 승계 안 함";
+    if (s.onset)
+      return positionContext ? "진입 준비 · 다음 시가 진입" : "진입 준비 · 보유정보 확인 필요";
     return s.score !== null && s.score >= 80 ? "80 이상 유지" : "관찰";
   };
   const getSortValue = (r: AnalysisResult["rows"][number], key: SortKey) => {

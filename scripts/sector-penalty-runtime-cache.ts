@@ -22,7 +22,14 @@ export interface RuntimeSourceFile {
   schemaHash: string;
 }
 
-type CompactBar = [dateIndex: number, open: number, high: number, low: number, close: number, tradingValue: number];
+type CompactBar = [
+  dateIndex: number,
+  open: number,
+  high: number,
+  low: number,
+  close: number,
+  tradingValue: number,
+];
 type CompactIndexBar = [dateIndex: number, close: number];
 
 interface CompactInstrument {
@@ -134,11 +141,13 @@ export async function buildBacktestSourceManifest(
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
 
   const entries = [...registeredEntries, ...legacyEntries];
-  const fingerprint = sha256(stableJson({
-    version: PORTFOLIO_RUNTIME_CACHE_VERSION,
-    limit,
-    entries,
-  }));
+  const fingerprint = sha256(
+    stableJson({
+      version: PORTFOLIO_RUNTIME_CACHE_VERSION,
+      limit,
+      entries,
+    }),
+  );
 
   return {
     fingerprint,
@@ -230,7 +239,9 @@ function compactPortfolioDataset(
   dataset: MarketDataset,
   featureCache: PortfolioFeatureCache,
 ): CompactDataset {
-  const instrumentBySymbol = new Map(dataset.instruments.map((instrument) => [instrument.symbol, instrument]));
+  const instrumentBySymbol = new Map(
+    dataset.instruments.map((instrument) => [instrument.symbol, instrument]),
+  );
   const selected = featureCache.series
     .map((item) => instrumentBySymbol.get(item.symbol))
     .filter((instrument): instrument is Instrument => Boolean(instrument));
@@ -285,10 +296,17 @@ function compactPortfolioDataset(
 function restorePortfolioDataset(dataset: CompactDataset): MarketDataset {
   const tradeDates = dataset.tradeDates;
   const instruments = dataset.instruments.map(restoreInstrument);
-  const sectors = [...new Map(instruments.map((instrument) => [instrument.sectorCode, {
-    code: instrument.sectorCode,
-    name: instrument.sectorName,
-  }])).values()];
+  const sectors = [
+    ...new Map(
+      instruments.map((instrument) => [
+        instrument.sectorCode,
+        {
+          code: instrument.sectorCode,
+          name: instrument.sectorName,
+        },
+      ]),
+    ).values(),
+  ];
 
   return {
     provider: dataset.provider,
@@ -341,7 +359,11 @@ export async function maybeDownloadPortfolioRuntimeCache(
   expectedManifestFingerprint: string,
   expectedLimit: number,
 ): Promise<{
-  cache: { dataset: MarketDataset; featureCache: PortfolioFeatureCache; sourceFiles: RuntimeSourceFile[] } | null;
+  cache: {
+    dataset: MarketDataset;
+    featureCache: PortfolioFeatureCache;
+    sourceFiles: RuntimeSourceFile[];
+  } | null;
   compressedBytes: number | null;
   uncompressedBytes: number | null;
 }> {
@@ -393,6 +415,7 @@ export async function uploadPortfolioRuntimeCache(
     contentType: "application/octet-stream",
     upsert: true,
   });
-  if (error) throw new Error(`Supabase runtime cache 업로드 실패 (${objectPath}): ${error.message}`);
+  if (error)
+    throw new Error(`Supabase runtime cache 업로드 실패 (${objectPath}): ${error.message}`);
   return { uncompressedBytes: raw.byteLength, compressedBytes: compressed.byteLength };
 }

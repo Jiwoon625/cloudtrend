@@ -15,10 +15,7 @@ import {
   type SectorRotationRow,
 } from "./sectorRotation";
 import { SECTOR_NAME_BY_CODE, THEME_SECTORS, resolveSectorCode } from "./sectors";
-import {
-  normalizeReviewedStockSymbol,
-  resolveReviewedStockSectorCode,
-} from "./stockSectorMaster";
+import { normalizeReviewedStockSymbol, resolveReviewedStockSectorCode } from "./stockSectorMaster";
 import { resolveAdditionalStockSectorCode } from "./additionalStockSectorMaster";
 
 export type { SectorRotationResult } from "./sectorRotation";
@@ -72,12 +69,7 @@ function canonicalSector(symbol: string, name: string, currentCode: string, curr
 export function buildFullUniverseSectorDataset(ds: MarketDataset): MarketDataset {
   const instruments = ds.instruments.map((inst) => {
     if (inst.instrumentType !== "STOCK") return inst;
-    const resolved = canonicalSector(
-      inst.symbol,
-      inst.name,
-      inst.sectorCode,
-      inst.sectorName,
-    );
+    const resolved = canonicalSector(inst.symbol, inst.name, inst.sectorCode, inst.sectorName);
     if (resolved.code === inst.sectorCode && resolved.name === inst.sectorName) return inst;
     return {
       ...inst,
@@ -94,7 +86,11 @@ export function buildFullUniverseSectorDataset(ds: MarketDataset): MarketDataset
 function representativeStocks(ds: MarketDataset): Map<string, { symbol: string; name: string }> {
   const best = new Map<string, { symbol: string; name: string; value: number }>();
   for (const inst of ds.instruments) {
-    if (inst.instrumentType !== "STOCK" || inst.sectorCode === "ETC" || inst.sectorCode === "MARKET_IDX")
+    if (
+      inst.instrumentType !== "STOCK" ||
+      inst.sectorCode === "ETC" ||
+      inst.sectorCode === "MARKET_IDX"
+    )
       continue;
     const bars = ds.bars[inst.symbol] ?? [];
     const last = bars.at(-1);
@@ -172,21 +168,29 @@ export function computeFullUniverseSectorRotation(
 
   const fullStockCount = stocks.length;
   const includedCount = [...fullBySector.values()].reduce((a, x) => a + x.length, 0);
-  const reviewedCount = stocks.filter((i) => resolveReviewedStockSectorCode(i.symbol) !== undefined).length;
-  const additionalCount = stocks.filter((i) => resolveAdditionalStockSectorCode(i.symbol) !== undefined).length;
+  const reviewedCount = stocks.filter(
+    (i) => resolveReviewedStockSectorCode(i.symbol) !== undefined,
+  ).length;
+  const additionalCount = stocks.filter(
+    (i) => resolveAdditionalStockSectorCode(i.symbol) !== undefined,
+  ).length;
   const curatedCount = reviewedCount + additionalCount;
   const unmapped = stocks.filter(
     (i) => i.sectorCode === "ETC" || !SECTOR_NAME_BY_CODE[i.sectorCode],
   );
   const indexCodes = canonical.indexSeries.map((s) => s.indexCode);
-  const benchmarkText = ["KOSPI", "KOSDAQ"].filter((x) => indexCodes.includes(x)).join("/") || "없음";
+  const benchmarkText =
+    ["KOSPI", "KOSDAQ"].filter((x) => indexCodes.includes(x)).join("/") || "없음";
   const coverageComment =
     `섹터 유니버스: 데이터 내 주식 ${fullStockCount}종목 중 ${includedCount}종목을 구성원으로 집계` +
     ` · 고정 섹터 마스터 일치 ${curatedCount}종목(엑셀 ${reviewedCount} + 추가수동 ${additionalCount})` +
     ` · 기준지수 ${benchmarkText}` +
     (unmapped.length === 0
       ? " · 기타(ETC) 0종목"
-      : ` · 미매핑 ${unmapped.length}종목(${unmapped.slice(0, 8).map((i) => `${i.name}/${i.symbol}`).join(", ")}${unmapped.length > 8 ? " 외" : ""})`);
+      : ` · 미매핑 ${unmapped.length}종목(${unmapped
+          .slice(0, 8)
+          .map((i) => `${i.name}/${i.symbol}`)
+          .join(", ")}${unmapped.length > 8 ? " 외" : ""})`);
 
   const overallCompleteness =
     corrected.length === 0

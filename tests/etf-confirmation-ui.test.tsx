@@ -8,13 +8,14 @@ import type { DualPortfolioState } from "../src/lib/portfolioLedgers";
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 }));
-const date = "2026-10-01";
+const date = "2026-10-13";
 function page(
   state: "pending" | "confirmed" | "rejected",
   ledger?: DualPortfolioState,
   dataPending = false,
   positionsAvailable = true,
   heldSymbols?: string[],
+  lastSellDateBySymbol: Record<string, string> = {},
 ) {
   const analysis = {
     asOfDate: date,
@@ -29,13 +30,13 @@ function page(
         snapshot: { tradeDate: date, close: 10000 },
         etfStrategy: {
           dataStatus: dataPending ? "krx_batch_pending" : "ready",
-          krxReferenceDate: dataPending ? "2026-09-30" : null,
+          krxReferenceDate: dataPending ? "2026-10-12" : null,
           version: ETF_POLICY.version,
           date,
           eligible: true,
           score: state === "rejected" ? 79 : 81,
           previousScore: 81,
-          previousDate: "2026-09-30",
+          previousDate: "2026-10-12",
           technical: 90,
           priority: 0,
           health: 100,
@@ -49,7 +50,7 @@ function page(
           underlyingMa60: 99,
           onset: state === "confirmed",
           entryState: state,
-          originDate: "2026-09-30",
+          originDate: "2026-10-12",
           confirmationDate: state === "pending" ? null : date,
           confirmationIssues: state === "rejected" ? ["확인일 M0 80 미만 또는 결측"] : [],
           averageTradingValue20: 2e9,
@@ -67,7 +68,7 @@ function page(
         ? {
             positionContext: {
               heldSymbols: heldSymbols ?? ledger.etfActual.positions.map((p) => p.symbol),
-              lastSellDateBySymbol: {},
+              lastSellDateBySymbol,
             },
           }
         : {})}
@@ -104,7 +105,7 @@ describe("ETF screener rendered state contract", () => {
   it("shows pending dates without an order input", () => {
     const html = page("pending", book);
     expect(html).toContain("하루 확인 대기");
-    expect(html).toContain("원신호 2026-09-30");
+    expect(html).toContain("원신호 2026-10-12");
     expect(html).not.toContain('aria-label="360750 주문가격"');
   });
   it("shows confirmed next-open entry, liquidity, and order price", () => {
@@ -135,11 +136,14 @@ describe("ETF screener rendered state contract", () => {
       ...book,
       document: {
         executions: [
-          { symbol: "360750", market: "ETF", side: "SELL", shares: 1, date: "2026-09-30" },
+          { symbol: "360750", market: "ETF", side: "SELL", shares: 1, date: "2026-10-12" },
         ],
       },
     } as unknown as DualPortfolioState;
-    expect(page("confirmed", sold)).toContain("청산한 신호 · 재진입 제외");
+    expect(page("confirmed", sold)).not.toContain("청산한 신호 · 재진입 제외");
+    expect(page("confirmed", sold, false, true, [], { "360750": "2026-10-12" })).toContain(
+      "청산한 신호 · 재진입 제외",
+    );
     expect(page("confirmed", sold)).not.toContain('aria-label="360750 주문가격"');
   });
 });

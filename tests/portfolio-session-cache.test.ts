@@ -32,17 +32,22 @@ test("portfolio remount reuses shared fresh data and explicit changes invalidate
   }
 });
 
-test("legacy dashboard consumers retain bounded metadata freshness without discarding session data", () => {
+test("legacy ledger cache remains bounded while dashboard no longer loads legacy holdings", () => {
   expect(domesticPortfolioQueryOptions.queryKey).toEqual(["portfolio-ledgers"]);
   expect(domesticPortfolioQueryOptions.staleTime).toBe(60_000);
   expect(domesticPortfolioQueryOptions.gcTime).toBe(Infinity);
   expect(domesticPortfolioQueryOptions.refetchOnWindowFocus).toBe(true);
   expect(domesticPortfolioQueryOptions.retry).toBe(false);
-  for (const path of ["src/routes/portfolio.tsx", "src/routes/index.tsx"]) {
+  for (const path of ["src/routes/portfolio.tsx"]) {
     expect(readFileSync(path, "utf8")).toMatch(
       /(?:\.\.\.|useQuery\()domesticPortfolioQueryOptions/,
     );
   }
+  const dashboard = readFileSync("src/routes/index.tsx", "utf8");
+  expect(dashboard).not.toContain("domesticPortfolioQueryOptions");
+  expect(dashboard).not.toContain("PortfolioFreshnessSummary");
+  expect(dashboard).toContain("newActualPools?.KRW");
+  expect(dashboard).not.toContain("portfolio.document.actualCapital");
   for (const path of ["src/routes/index.tsx", "src/routes/scoring.tsx"]) {
     expect(readFileSync(path, "utf8")).toMatch(
       /invalidateQueries\(\{\s*queryKey:\s*\["portfolio-ledgers"\]/,

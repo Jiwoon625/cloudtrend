@@ -1,11 +1,10 @@
 import type { PortfolioLedgerViewState } from "./portfolioFreshness";
 import { validateExecutionSourceLinks } from "./ledger/executionMemo";
-import { readWebsiteDocument } from "./ledger/websiteRepository.server";
+import { loadWebsitePositionContextForOwner } from "./websitePositionContext.server";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { operateLedgers } from "./portfolioLedgers.server";
-import { calculateActual, type LedgerDocument } from "./portfolioLedgers";
 import type { DomesticPositionContext } from "./positionSignalContext";
 
 const sourceLinks = z
@@ -76,50 +75,6 @@ export const portfolioPositionContextServer = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }): Promise<DomesticPositionContext> => {
     const { client, uid } = await authenticate(data.accessToken);
-    const [row, usRow] = await Promise.all([
-      readWebsiteDocument<LedgerDocument>(client, uid, "portfolio_ledgers"),
-      readWebsiteDocument<import("./usActualLedger").UsActualDocument>(
-        client,
-        uid,
-        "us_actual_portfolio_ledgers",
-      ),
-    ]);
-    const doc = row?.payload;
-
-    const executions = doc?.executions ?? [];
-    const actual = calculateActual(doc?.actualCapital ?? 0, executions, {}, null);
-    const lastSellDateBySymbol: Record<string, string> = {};
-    for (const execution of [...executions, ...(usRow?.payload.executions ?? [])]) {
-      if (execution.side !== "SELL" || execution.shares <= 0) continue;
-      const previous = lastSellDateBySymbol[execution.symbol];
-      if (!previous || execution.date > previous)
-        lastSellDateBySymbol[execution.symbol] = execution.date;
-    }
-    const { loadOctoberShadowSummary } = await import("./octoberShadowSummary.server");
-    const shadow = await loadOctoberShadowSummary(data.accessToken);
-    if (shadow.books.some((book) => book.status === "UNAVAILABLE"))
-      throw new Error("Shadow 보유를 확인하지 못했습니다. 보유 상태를 미보유로 대체하지 않습니다.");
-    const usActual = calculateActual(
-      usRow?.payload.capital ?? 0,
-      usRow?.payload.executions ?? [],
-      {},
-      null,
-    );
-    const modelHeld = shadow.books
-      .filter((book) => book.status === "RECORDED")
-      .flatMap((book) =>
-        book.holdings
-          .filter((holding) => Number(holding.quantity) > 0)
-          .map((holding) => holding.symbol),
-      );
-    return {
-      heldSymbols: [
-        ...new Set([
-          ...actual.positions.map((position) => position.symbol),
-          ...usActual.positions.map((position) => position.symbol),
-          ...modelHeld,
-        ]),
-      ].sort(),
-      lastSellDateBySymbol,
-    };
+    const context = await loadWebsitePositionContextForOwner(client, uid);
+    return { heldSymbols: context.heldSymbols, lastSellDateBySymbol: context.lastSellDateBySymbol };
   });

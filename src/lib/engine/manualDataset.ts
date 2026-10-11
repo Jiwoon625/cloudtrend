@@ -233,13 +233,23 @@ export function parseManualMarketData(
       date && priorSeries?.dates.has(date)
         ? priorSeries.bars.find((bar) => bar.tradeDate === date)
         : undefined;
-    const close = num(pick(rec, "close")) ?? prior?.close ?? null;
+    let close = num(pick(rec, "close")) ?? prior?.close ?? null;
     const rawType = String(pick(rec, "type") ?? "")
       .trim()
       .toUpperCase();
     const rawMarket = String(pick(rec, "market") ?? "")
       .trim()
       .toUpperCase();
+    // A domestic stock observation can have executable open/volume but no close.
+    // Zero is retained only in observedBars as the existing missing-close sentinel;
+    // analytical bars below continue to require a positive close.
+    const missingStockClose =
+      close === null &&
+      !INDEX_SYMBOLS.has(symbol) &&
+      rawType !== "ETF" &&
+      rawType !== "INDEX" &&
+      ["KOSPI", "KOSDAQ", "코스피", "코스닥"].includes(rawMarket);
+    if (missingStockClose) close = 0;
     // Retain independent session evidence even when a KOSPI price row is absent
     // or rejected. Do not promote ETF/overseas dates into the Korean calendar.
     if (

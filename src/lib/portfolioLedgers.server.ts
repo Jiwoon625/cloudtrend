@@ -185,9 +185,9 @@ async function priceInputs(
   const bars = Object.fromEntries(
     gateDataset.instruments.map((i) => [
       i.symbol,
-      (gateDataset.observedBars?.[i.symbol] ?? gateDataset.bars[i.symbol] ?? []).filter(
-        (bar) => i.market === "KOSPI" || bar.close > 0,
-      ),
+      // Preserve every observed session for all domestic markets. A missing close
+      // does not erase executable open/volume evidence or advance the H60 clock.
+      gateDataset.observedBars?.[i.symbol] ?? gateDataset.bars[i.symbol] ?? [],
     ]),
   );
   const markets = Object.fromEntries(gateDataset.instruments.map((i) => [i.symbol, i.market]));
@@ -218,10 +218,11 @@ export async function loadNewActualDomesticQuotes(
   const quotes: Record<string, import("./portfolioLedgers").Quote> = {};
   for (const symbol of symbols) {
     const latest = (input.bars[symbol] ?? [])
-      .filter((bar) => bar.tradeDate <= through && bar.close > 0)
+      .filter((bar) => bar.tradeDate <= through)
       .sort((a, b) => a.tradeDate.localeCompare(b.tradeDate))
       .at(-1);
-    if (latest) quotes[symbol] = { price: latest.close, date: latest.tradeDate, exitSignal: null };
+    if (latest && Number.isFinite(latest.close) && latest.close > 0)
+      quotes[symbol] = { price: latest.close, date: latest.tradeDate, exitSignal: null };
   }
   return quotes;
 }

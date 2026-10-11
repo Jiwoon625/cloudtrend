@@ -6,6 +6,8 @@ export default defineConfig({
   esbuild: { jsx: "automatic" },
   test: {
     include: [
+      "src/lib/engine/symbolQuoteNormalization.test.ts",
+      "src/lib/websitePositionContext.test.ts",
       "src/lib/stockCompactStatus.test.ts",
       "src/components/CompactStockScreener.test.tsx",
       "src/components/StockInstrumentSummary.test.tsx",

@@ -1,3 +1,4 @@
+import { PortfolioValuationWarning } from "@/components/PortfolioValuationWarning";
 import {
   projectExecutionMemo,
   rejectExecutionMemoUrls,
@@ -435,6 +436,7 @@ export function KoreaPortfolioContent() {
               운용자금 설정
             </Button>
           </div>
+          <PortfolioValuationWarning strategy={strategy} />
           {capitals ? (
             <section className="mb-4 rounded-lg border bg-card p-4">
               <div className="flex flex-wrap items-end gap-3">

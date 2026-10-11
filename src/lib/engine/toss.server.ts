@@ -14,7 +14,6 @@ const CACHE_TTL_MS = 10 * 60 * 1000;
 
 export class TossConfigError extends Error {}
 
-
 function credentials() {
   const clientId = process.env["TOSS_CLIENT_ID"];
   const clientSecret = process.env["TOSS_CLIENT_SECRET"];
@@ -135,7 +134,6 @@ async function api<T>(
   return json as T;
 }
 
-
 async function mapLimited<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>) {
   const out: R[] = new Array(items.length);
   let cursor = 0;
@@ -195,7 +193,6 @@ interface StockInvestorRecord {
   foreigner: { buyVolume: string; sellVolume: string; netBuyVolume: string } | null;
   institution: { buyVolume: string; sellVolume: string; netBuyVolume: string } | null;
 }
-
 
 const num = (v: string | null | undefined) => (v === null || v === undefined ? 0 : Number(v));
 /** ISO 타임스탬프 → KST 거래일(YYYY-MM-DD) */
@@ -292,8 +289,6 @@ async function fetchStockInfos(symbols: string[]): Promise<Map<string, StockInfo
   }
   return out;
 }
-
-
 
 async function fetchIndex(symbol: string, name: string): Promise<IndexSeries | null> {
   try {
@@ -404,14 +399,17 @@ function startCollection(symbols: string[]): Promise<void> {
   return collecting;
 }
 
-
 const ETF_TYPES = new Set(["ETF", "FOREIGN_ETF", "ETN"]);
 const isLeveragedName = (n: string) => /레버리지|2X|2배|곱버스/i.test(n);
 const isInverseName = (n: string) => /인버스|곱버스/i.test(n);
 
 let cache: { dataset: MarketDataset; at: number } | null = null;
-let indexCache: { kospi: IndexSeries; kosdaq: IndexSeries | null; flowOk: boolean; at: number } | null =
-  null;
+let indexCache: {
+  kospi: IndexSeries;
+  kosdaq: IndexSeries | null;
+  flowOk: boolean;
+  at: number;
+} | null = null;
 
 // 사용자가 홈 화면에서 업로드한 유니버스(코스피200 CSV). 설정되면 내장 스냅샷 대신 사용한다.
 let universeOverride: { symbols: string[]; at: number } | null = null;
@@ -472,9 +470,6 @@ export function getEtfUniverseOverride(): { symbols: string[]; updatedAt: string
     ? { symbols: etfOverride.symbols, updatedAt: new Date(etfOverride.at).toISOString() }
     : null;
 }
-
-
-
 
 export interface TossDatasetOptions {
   /** 함께 스크리닝할 ETF 수 (거래대금 상위) */
@@ -629,7 +624,6 @@ export async function buildTossDataset(opts: TossDatasetOptions = {}): Promise<M
     const m = meta.get(symbol)!;
     const isEtf = ETF_TYPES.has(m.listed.securityType);
     const b = hit.bars.map((bar) => ({ ...bar }));
-
 
     // 최신 봉의 거래대금은 랭킹 실측값으로 교체
     const amount = amountBySymbol.get(symbol) ?? 0;

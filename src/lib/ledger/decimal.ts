@@ -45,3 +45,10 @@ export function integerBudgetQuantity(
   // Exact rational division keeps the target inclusive of fees and cannot round a share up.
   return (((b < c ? b : c) * SCALE) / (p * (SCALE + f))).toString();
 }
+
+/** Round a nonnegative execution fee up to the journal's eight-decimal unit. */
+export function exactNotionalFee(notional: bigint, oneWayCost: string): bigint {
+  const rate = decimal(oneWayCost);
+  if (notional < 0n || rate < 0n || rate >= SCALE) throw new Error("Invalid execution fee");
+  return (notional * rate + SCALE - 1n) / SCALE;
+}

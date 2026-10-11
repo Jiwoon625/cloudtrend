@@ -56,7 +56,10 @@ function authorize(request: Request) {
   const header = request.headers.get("authorization") ?? "";
   const supplied = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
   if (!supplied || supplied !== expected)
-    return { ok: false as const, response: json({ ok: false, error: "인증에 실패했습니다." }, 401) };
+    return {
+      ok: false as const,
+      response: json({ ok: false, error: "인증에 실패했습니다." }, 401),
+    };
   return { ok: true as const };
 }
 
@@ -136,7 +139,8 @@ async function finalizeUpload(body: FinalizeRequest) {
 
   const client = trustedSupabaseClient();
   const { data, error } = await client.storage.from(ANALYSIS_BUCKET).download(body.tempPath);
-  if (error || !data) throw new Error(`임시 업로드 파일 다운로드 실패: ${error?.message ?? "unknown"}`);
+  if (error || !data)
+    throw new Error(`임시 업로드 파일 다운로드 실패: ${error?.message ?? "unknown"}`);
   const bytes = new Uint8Array(await data.arrayBuffer());
   if (bytes.byteLength > SOURCE_MAX_FILE_BYTES)
     throw new Error("파일 1개 크기는 45MB 이하여야 합니다.");
@@ -186,7 +190,9 @@ async function finalizeUpload(body: FinalizeRequest) {
       },
     };
   } finally {
-    const { error: cleanupError } = await client.storage.from(ANALYSIS_BUCKET).remove([body.tempPath]);
+    const { error: cleanupError } = await client.storage
+      .from(ANALYSIS_BUCKET)
+      .remove([body.tempPath]);
     if (cleanupError) console.error("GPT 임시 업로드 정리 실패", cleanupError);
   }
 }

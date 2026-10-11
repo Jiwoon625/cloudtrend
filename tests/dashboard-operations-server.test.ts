@@ -1,14 +1,3 @@
-vi.mock("../src/lib/ledger/websiteRepository.server", () => ({
-  readWebsiteDocument: async (client: SupabaseClient, uid: string, source: string) => {
-    const result = await client
-      .from(source)
-      .select("revision,payload")
-      .eq("user_id", uid)
-      .maybeSingle();
-    if (result.error) throw new Error(result.error.message);
-    return result.data;
-  },
-}));
 import { describe, it, expect, vi } from "vitest";
 import {
   SCREENING_CACHE_VERSION,
@@ -17,10 +6,12 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { loadDashboardOperations, projection } from "../src/lib/dashboardOperations.server";
 import { downloadFreshObject } from "../src/lib/freshStorage";
+import { loadWebsitePositionContextForOwner } from "../src/lib/websitePositionContext.server";
+import { projectNewActualPool } from "../src/lib/newActualPortfolio";
 import type { SupabaseClient } from "@supabase/supabase-js";
 vi.mock("@supabase/supabase-js", () => ({ createClient: vi.fn() }));
-vi.mock("../src/lib/usOrderPreview.server", () => ({
-  loadUsOrderPreview: vi.fn(async () => null),
+vi.mock("../src/lib/websitePositionContext.server", () => ({
+  loadWebsitePositionContextForOwner: vi.fn(),
 }));
 vi.mock("../src/lib/freshStorage", () => ({ downloadFreshObject: vi.fn() }));
 const client = {
@@ -179,141 +170,231 @@ describe("dashboard projection policy cache identity", () => {
   });
 });
 
-describe("dashboard saved strategy-sector transport", () => {
+describe("dashboard new-series holdings boundary", () => {
   let run = 0;
-  const signalDate = "2026-10-01";
-  const strategyDoc = () => ({
-    actualCapital: 100000,
-    executions: [],
-    settings: { maxPositions: 30, sectorCap: 0.3 },
-    strategy: {
-      summary: { latestDate: signalDate },
-      calculatedAt: "2026-10-02T00:30:00.000Z",
-      trades: Array.from({ length: 6 }, (_, i) => ({
-        symbol: `HELD${i}`,
-        market: "KOSDAQ",
-        sectorCode: "SEMI",
-        sectorName: "반도체",
-        status: "OPEN",
-        shares: 1,
-        entryDate: "2026-09-01",
-        exitDate: null,
-      })),
+  const signalDate = "2026-10-13";
+  const emptyContext = () => ({
+    positions: [] as {
+      symbol: string;
+      name: string;
+      market: "KOSDAQ" | "ETF" | "US";
+      shares: number;
+      firstEntryDate: string;
+    }[],
+    heldSymbols: [],
+    lastSellDateBySymbol: {},
+    actualExecutions: [] as {
+      symbol: string;
+      market: "KOSDAQ";
+      date: string;
+      side: "SELL";
+      shares: number;
+    }[],
+    actualPools: {
+      KRW: projectNewActualPool({
+        currency: "KRW",
+        executions: [],
+        quotes: {},
+        valuationDate: null,
+        today: signalDate,
+      }),
+      USD: projectNewActualPool({
+        currency: "USD",
+        executions: [],
+        quotes: {},
+        valuationDate: null,
+        today: signalDate,
+      }),
     },
   });
-  function mockRead(doc: unknown, error: string | null = null) {
-    const uid = `sector-owner-${++run}`;
-    const generation = { createdAt: "2026-10-02T00:20:00.000Z" };
-    const requests: { table: string; columns: string; owner: string }[] = [];
-    const upload = vi.fn(async () => ({ error: null }));
-    const from = vi.fn((table: string) => {
-      const call = { table, columns: "", owner: "" };
-      requests.push(call);
-      const query = {
-        select: (columns: string) => {
-          call.columns = columns;
-          return query;
-        },
-        eq: (column: string, owner: string) => {
-          expect(column).toBe("user_id");
-          call.owner = owner;
-          return query;
-        },
-        maybeSingle: async () => ({
-          data: table === "portfolio_ledgers" && doc ? { payload: doc } : null,
-          error: table === "portfolio_ledgers" && error ? { message: error } : null,
-        }),
-      };
-      return query;
+  const legacyDoc = () => ({
+    actualCapital: 99999999,
+    executions: [
+      {
+        id: "old-buy",
+        symbol: "NEW",
+        market: "KOSDAQ",
+        side: "BUY",
+        shares: 100,
+        date: "2026-09-01",
+      },
+      {
+        id: "old-sell",
+        symbol: "LEGACY",
+        market: "KOSDAQ",
+        side: "SELL",
+        shares: 100,
+        date: signalDate,
+      },
+    ],
+    settings: { maxPositions: 30 },
+    strategy: { trades: [{ symbol: "NEW", market: "KOSDAQ", status: "OPEN", shares: 100 }] },
+  });
+  function mockRead(context = emptyContext(), date = signalDate) {
+    const uid = `new-series-owner-${++run}`;
+    const oldDocument = legacyDoc();
+    const from = vi.fn(() => {
+      throw new Error("Dashboard must not request the old complete ledger");
     });
+    const upload = vi.fn(async () => ({ error: null }));
     const client = {
       from,
       auth: { getUser: vi.fn(async () => ({ data: { user: { id: uid } }, error: null })) },
       storage: { from: () => ({ upload }) },
     } as unknown as SupabaseClient;
     vi.mocked(createClient).mockReturnValue(client);
+    vi.mocked(loadWebsitePositionContextForOwner).mockImplementation(async (readClient, owner) => {
+      expect(readClient).toBe(client);
+      expect(owner).toBe(uid);
+      return context as unknown as Awaited<ReturnType<typeof loadWebsitePositionContextForOwner>>;
+    });
+    const paths: string[] = [];
     vi.mocked(downloadFreshObject).mockImplementation(async (_client, _bucket, path) => {
+      paths.push(path);
       const value = path.endsWith("dashboard/latest.json")
-        ? { version: DASHBOARD_CACHE_VERSION, resultDigest: uid, createdAt: generation.createdAt }
+        ? {
+            version: DASHBOARD_CACHE_VERSION,
+            resultDigest: uid,
+            createdAt: `${date}T08:00:00.000Z`,
+          }
         : path.endsWith("screening/latest.json")
           ? {
               version: SCREENING_CACHE_VERSION,
               resultDigest: uid,
               payload: {
                 analysis: {
-                  asOfDate: signalDate,
-                  tradeDates: [signalDate],
-                  rows: [
-                    {
-                      instrument: {
-                        symbol: "NEW",
-                        name: "신규",
-                        market: "KOSDAQ",
-                        instrumentType: "STOCK",
-                        sectorCode: "SEMI",
-                        sectorName: "반도체",
-                      },
-                      snapshot: { tradeDate: signalDate, close: 1000 },
-                      priority: { points: 1 },
-                      operatingScore10: 8.5,
-                      kosdaq80Onset: true,
+                  asOfDate: date,
+                  tradeDates: [date],
+                  rows: ["NEW", "LEGACY"].map((symbol) => ({
+                    instrument: {
+                      symbol,
+                      name: symbol,
+                      market: "KOSDAQ",
+                      instrumentType: "STOCK",
+                      sectorCode: "SEMI",
+                      sectorName: "반도체",
                     },
-                  ],
+                    snapshot: { tradeDate: date, close: 1000 },
+                    priority: { points: 1 },
+                    operatingScore10: 9.5,
+                    scoreDelta1d: 20,
+                    kosdaq80Onset: true,
+                  })),
                 },
               },
             }
-          : null;
+          : path.endsWith("portfolio/etf-holdings/latest.json")
+            ? { symbols: ["069500"], updatedAt: "2026-09-01" }
+            : null;
       return { data: value ? new Blob([JSON.stringify(value)]) : null, error: null };
     });
-    return { requests, uid, upload, generation };
+    return { from, uid, paths, oldDocument };
   }
-  it("reads strategy and actual book together once, with owner-scoped SELECT and no ledger mutation", async () => {
-    const doc = strategyDoc();
-    const before = structuredClone(doc);
-    const { requests, uid } = mockRead(doc);
+  it("does not read complete old actual, beta, or manual ETF holdings or inherit old capital", async () => {
+    const { from, paths, oldDocument } = mockRead();
+    const before = structuredClone(oldDocument);
     const result = await loadDashboardOperations("valid-session-token-for-test");
-    expect(result.markets.find((m) => m.market === "KOSDAQ")?.onsets[0]?.sectorLimit).toMatchObject(
-      { count: 6, limit: 6, status: "blocked" },
-    );
-    expect(requests.filter((r) => r.table === "portfolio_ledgers")).toEqual([
-      { table: "portfolio_ledgers", columns: "revision,payload", owner: uid },
-    ]);
-    expect(doc).toEqual(before);
+    const market = result.markets.find((item) => item.market === "KOSDAQ")!;
+    expect(market.onsets.map((row) => row.symbol)).toEqual(["LEGACY", "NEW"]);
+    expect(market.exitCount).toBe(0);
+    expect(market.holdingsKnown).toBe(true);
+    expect(market.onsets[0]?.sectorLimit).toMatchObject({
+      status: "unknown",
+      count: null,
+      issue: "신규 시리즈 확인 대기",
+    });
+    expect(result.newActualPools?.KRW).toMatchObject({
+      fundingStatus: "PENDING",
+      netContributions: null,
+      cash: null,
+      openPositions: 0,
+    });
+    expect(result.usPortfolio).toBeNull();
+    expect(result.etfHoldings).toBeNull();
+    expect(result.usOrderPreview).toBeNull();
+    expect(from).not.toHaveBeenCalled();
+    expect(paths.some((path) => path.includes("etf-holdings"))).toBe(false);
+    expect(oldDocument).toEqual(before);
   });
-  it.each(["missing", "failure", "stale"])(
-    "keeps signals visible when the strategy ledger is %s",
-    async (kind) => {
-      const doc = strategyDoc();
-      if (kind === "stale") doc.strategy.summary.latestDate = "2026-09-30";
-      mockRead(kind === "missing" ? null : doc, kind === "failure" ? "read failed" : null);
-      const result = await loadDashboardOperations("valid-session-token-for-test");
-      const market = result.markets.find((m) => m.market === "KOSDAQ")!;
-      expect(market.onsetCount).toBe(1);
-      expect(market.onsets[0]?.sectorLimit?.status).toBe("unknown");
-      expect(market.onsets[0]?.sectorLimit?.count).toBe(kind === "stale" ? 6 : null);
-    },
-  );
-  it("overlays newer generation metadata even when the projection digest is cached", async () => {
-    const { generation } = mockRead(strategyDoc());
-    const first = await loadDashboardOperations("valid-session-token-for-test");
-    generation.createdAt = "2026-10-02T00:40:00.000Z";
-    const second = await loadDashboardOperations("valid-session-token-for-test");
-    expect(first.markets.find((m) => m.market === "KOSDAQ")?.onsets[0]?.sectorLimit?.status).toBe(
-      "blocked",
-    );
-    expect(second.markets.find((m) => m.market === "KOSDAQ")?.onsets[0]?.sectorLimit).toMatchObject(
-      { count: 6, status: "unknown", issue: "최신 신호보다 이전 전략 장부" },
-    );
+  it("uses only validated new actual/restarted holdings for EXIT and duplicate-entry suppression", async () => {
+    const context = emptyContext();
+    context.positions.push({
+      symbol: "NEW",
+      name: "신규 보유",
+      market: "KOSDAQ",
+      shares: 2,
+      firstEntryDate: "2026-10-12",
+    });
+    // A ticker in a different market cannot consume the Korean stock holding slot.
+    context.positions.push({
+      symbol: "LEGACY",
+      name: "다른 시장",
+      market: "US",
+      shares: 1,
+      firstEntryDate: "2026-10-12",
+    });
+    mockRead(context);
+    const result = await loadDashboardOperations("valid-session-token-for-test");
+    const market = result.markets.find((item) => item.market === "KOSDAQ")!;
+    expect(market.onsets.map((row) => row.symbol)).toEqual(["LEGACY"]);
+    expect(market.exits.map((row) => row.symbol)).toEqual(["NEW"]);
   });
-  it("refreshes ledger counts for the same screening digest without replaying its strategy", async () => {
-    const doc = strategyDoc();
-    mockRead(doc);
-    const first = await loadDashboardOperations("valid-session-token-for-test");
-    doc.strategy.trades = [];
-    const second = await loadDashboardOperations("valid-session-token-for-test");
-    expect(first.markets.find((m) => m.market === "KOSDAQ")?.onsets[0]?.sectorLimit?.count).toBe(6);
-    expect(second.markets.find((m) => m.market === "KOSDAQ")?.onsets[0]?.sectorLimit).toMatchObject(
-      { count: 0, status: "room" },
+  it("consumes only the new-series allocated sell signal", async () => {
+    const context = emptyContext();
+    context.actualExecutions.push({
+      symbol: "NEW",
+      market: "KOSDAQ",
+      side: "SELL",
+      shares: 1,
+      date: signalDate,
+    });
+    mockRead(context);
+    const result = await loadDashboardOperations("valid-session-token-for-test");
+    expect(
+      result.markets.find((item) => item.market === "KOSDAQ")?.onsets.map((row) => row.symbol),
+    ).toEqual(["LEGACY"]);
+  });
+  it("keeps pre-start screening out of actionable entry and EXIT lists", async () => {
+    mockRead(emptyContext(), "2026-10-09");
+    const result = await loadDashboardOperations("valid-session-token-for-test");
+    const market = result.markets.find((item) => item.market === "KOSDAQ")!;
+    expect(market).toMatchObject({
+      date: "2026-10-09",
+      onsetCount: 0,
+      pendingCount: 0,
+      exitCount: 0,
+      onsets: [],
+      pending: [],
+      exits: [],
+    });
+    expect(result.warnings.join(" ")).toContain("신규 운용 시작 전 자료");
+  });
+  it("fails closed when new-series validation fails instead of falling back to old books", async () => {
+    const { from } = mockRead();
+    vi.mocked(loadWebsitePositionContextForOwner).mockRejectedValueOnce(
+      new Error("Invalid new allocation"),
     );
+    const result = await loadDashboardOperations("valid-session-token-for-test");
+    expect(result.newActualPools).toBeNull();
+    expect(result.markets.every((item) => !item.holdingsKnown && item.exitCount === null)).toBe(
+      true,
+    );
+    expect(result.warnings.join(" ")).toContain("신규 운용 보유정보를 확인하지 못해");
+    expect(from).not.toHaveBeenCalled();
+  });
+  it("refreshes new holdings for the same screening digest without caching old context", async () => {
+    const context = emptyContext();
+    mockRead(context);
+    const first = await loadDashboardOperations("valid-session-token-for-test");
+    context.positions.push({
+      symbol: "NEW",
+      name: "신규",
+      market: "KOSDAQ",
+      shares: 2,
+      firstEntryDate: "2026-10-12",
+    });
+    const second = await loadDashboardOperations("valid-session-token-for-test");
+    expect(first.markets.find((item) => item.market === "KOSDAQ")?.onsetCount).toBe(2);
+    expect(second.markets.find((item) => item.market === "KOSDAQ")?.onsetCount).toBe(1);
   });
 });

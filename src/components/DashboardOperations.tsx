@@ -2,18 +2,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ShieldCheck, TrendingUp } from "lucide-react";
-import { toast } from "sonner";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
 import { DomesticStrategyRules } from "./DomesticStrategyRules";
 import { UsA0AllocationRules } from "./UsA0AllocationRules";
 import { OnsetProfileDetails } from "./OnsetProfileDetails";
 import { supabase } from "@/lib/cloud";
-import { formatCount, formatKstDateTime } from "@/lib/format";
-import {
-  dashboardOperationsServer,
-  dashboardEtfHoldingsServer,
-} from "@/lib/dashboardOperations.functions";
+import { formatCount } from "@/lib/format";
+import { dashboardOperationsServer } from "@/lib/dashboardOperations.functions";
 import { compareDashboardCandidates } from "@/lib/dashboardOperations";
 import type {
   DashboardMarket,
@@ -29,7 +24,7 @@ const LABEL: Record<DashboardMarket, string> = {
   US: "미국 A0",
 };
 const MARKETS: DashboardMarket[] = ["KOSPI", "KOSDAQ", "ETF", "US"];
-export const DASHBOARD_OPERATIONS_QUERY = ["dashboard-operations"];
+export const DASHBOARD_OPERATIONS_QUERY = ["dashboard-operations", "new-series-2026-10-12"];
 async function accessToken() {
   const { data, error } = await supabase.auth.getSession();
   if (error || !data.session) throw new Error("먼저 로그인해 주세요.");
@@ -43,7 +38,9 @@ export function useDashboardOperations(started: boolean, digest: string | undefi
         if (
           event.type === "updated" &&
           event.action.type === "success" &&
-          ["portfolio-ledgers", "us-actual-ledger"].includes(String(event.query.queryKey[0]))
+          ["new-actual-portfolio", "october-shadow-summary"].includes(
+            String(event.query.queryKey[0]),
+          )
         ) {
           void qc.invalidateQueries({ queryKey: DASHBOARD_OPERATIONS_QUERY });
         }
@@ -71,61 +68,6 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
     </div>
   );
 }
-function EtfHoldings({ query }: { query: OperationsQuery }) {
-  const qc = useQueryClient();
-  const [input, setInput] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const saved = query.data?.etfHoldings;
-  const text = input ?? saved?.symbols.join(", ") ?? "";
-  async function save() {
-    setSaving(true);
-    try {
-      const symbols = text
-        .split(/[\s,]+/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-      await dashboardEtfHoldingsServer({ data: { accessToken: await accessToken(), symbols } });
-      await qc.invalidateQueries({ queryKey: DASHBOARD_OPERATIONS_QUERY });
-      setInput(null);
-      toast.success("ETF 보유종목을 저장했습니다.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "ETF 보유종목 저장 실패");
-    } finally {
-      setSaving(false);
-    }
-  }
-  return (
-    <details className="mt-3 text-[11px]" data-no-print>
-      <summary className="cursor-pointer font-medium text-primary">ETF 보유종목 등록·수정</summary>
-      <p className="my-2 leading-relaxed text-muted-foreground">
-        실제 보유 ETF의 6자리 코드를 쉼표로 구분해 저장하세요. 보유가 없으면 빈칸으로 저장합니다.
-        미등록은 0건으로 간주하지 않습니다. 매매 주문은 실행하지 않습니다.
-      </p>
-      <Input
-        aria-label="ETF 실제 보유종목 코드"
-        placeholder="예: 069500, 229200"
-        value={text}
-        disabled={saving || query.isPending}
-        onChange={(e) => setInput(e.target.value)}
-        className="text-xs"
-      />
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-[10px] text-muted-foreground">
-          {saved ? `${saved.symbols.length}종목 · ${formatKstDateTime(saved.updatedAt)}` : "미등록"}
-        </span>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={saving || query.isPending || query.isError}
-          onClick={() => void save()}
-        >
-          {saving ? "저장 중…" : "보유종목 저장"}
-        </Button>
-      </div>
-    </details>
-  );
-}
-
 export function DashboardSignalCounts({
   query,
   counts,
@@ -148,7 +90,7 @@ export function DashboardSignalCounts({
       </h2>
       <p className="mb-2 text-[10px] leading-relaxed text-muted-foreground">
         시장별 최신 확정 거래일 기준입니다. 진입 준비는 주문 후보이며 체결 기록은 포트폴리오에서
-        확인합니다.
+        확인합니다. 보유·청산은 10월 12일부터 시작한 신규 운용 기준입니다.
       </p>
       <table className="w-full text-[12px]">
         <thead>
@@ -205,7 +147,6 @@ export function DashboardSignalCounts({
           {counts.pending == null ? "미확인" : formatCount(counts.pending)}
         </Row>
       </div>
-      <EtfHoldings query={query} />
       <Link
         to="/screener/etfs"
         className="mt-2 inline-flex text-[11px] font-medium text-primary hover:underline"
@@ -229,7 +170,7 @@ export function DashboardSignalCounts({
 }
 
 export function UsDashboardPortfolio({ query }: { query: OperationsQuery }) {
-  const portfolio = query.data?.usPortfolio;
+  const portfolio = query.data?.newActualPools?.USD;
   const fallback = query.isPending ? "불러오는 중…" : query.isError ? "조회 실패" : "미확인";
   return (
     <div className="min-w-0 space-y-4">
@@ -241,21 +182,30 @@ export function UsDashboardPortfolio({ query }: { query: OperationsQuery }) {
           <ShieldCheck className="size-4 text-primary" />
           미국주식 A0 포트폴리오
         </h2>
-        <p className="mb-2 text-[10px] text-muted-foreground">실제 체결 원장 기준 · USD</p>
-        <Row label="운용자금">{portfolio ? usd(portfolio.capital) : fallback}</Row>
-        <Row label="A0 종목당 참고 매입예산">
-          {portfolio ? usd(portfolio.summary.slotTargetAmount) : fallback}
+        <p className="mb-2 text-[10px] text-muted-foreground">신규 배정·입출금 기준 · USD</p>
+        <Row label="신규 순입금">
+          {portfolio
+            ? portfolio.netContributions === null
+              ? "자금 확인 대기"
+              : usd(Number(portfolio.netContributions))
+            : fallback}
         </Row>
-        <Row label="보유 종목수">
-          {portfolio ? `${portfolio.summary.openPositions}종목` : fallback}
+        <Row label="신규 현금">
+          {portfolio
+            ? portfolio.cash === null
+              ? "자금 확인 대기"
+              : usd(Number(portfolio.cash))
+            : fallback}
+        </Row>
+        <Row label="신규 실제 보유 종목수">
+          {portfolio ? `${portfolio.openPositions}종목` : fallback}
         </Row>
         <p className="mt-2 text-xs text-muted-foreground">
           성과는 10월 12일 신규 운용 구간에서만 확인합니다.
         </p>
-        {portfolio?.unpricedPositions ? (
+        {portfolio?.fundingStatus === "INCOMPLETE" ? (
           <p className="mt-2 text-[10px] text-warn">
-            {portfolio.unpricedPositions}종목은 최신 평가가격을 확인하지 못해 기존 원장 가격을
-            사용했습니다.
+            신규 입출금·체결의 자금 연결을 확인해 주세요.
           </p>
         ) : null}
         <Link

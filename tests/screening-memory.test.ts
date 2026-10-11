@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import type { ReadStream } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test, vi } from "vitest";
@@ -109,10 +110,20 @@ test("compact registry retains hash verification and activation order while rele
     active--;
     return { error: null, data: new Blob([files[Number(key)]!]) };
   });
-  const chain: any = {};
-  for (const method of ["select", "eq", "in", "order"]) chain[method] = () => chain;
-  chain.then = (resolve: any) => Promise.resolve({ data: records, error: null }).then(resolve);
-  const client = { from: () => chain, storage: { from: () => ({ download }) } } as any;
+  type SourceQuery = PromiseLike<{ data: SourceRecord[]; error: null }> &
+    Record<"select" | "eq" | "in" | "order", () => SourceQuery>;
+  const result = Promise.resolve({ data: records, error: null });
+  const chain: SourceQuery = {
+    select: () => chain,
+    eq: () => chain,
+    in: () => chain,
+    order: () => chain,
+    then: result.then.bind(result),
+  };
+  const client = {
+    from: () => chain,
+    storage: { from: () => ({ download }) },
+  } as unknown as Parameters<typeof loadAnalysisSourceInputs>[0];
   const inputs = await loadAnalysisSourceInputs(client, "user", "screening", { compact: true });
   expect(peak).toBe(1);
   expect(inputs.map((i) => i.id)).toEqual(["0", "1"]);
@@ -148,11 +159,13 @@ test("streamed bundle keeps native JSON values and uploads the existing single o
     const file = path.join(dir, "bundle.json");
     await writeScreeningJson(file, bundle);
     let actual = "";
-    const upload = vi.fn(async (_path, stream) => {
+    const upload = vi.fn(async (_path: string, stream: ReadStream) => {
       for await (const chunk of stream) actual += chunk.toString();
       return { error: null };
     });
-    const client = { storage: { from: () => ({ upload }) } } as any;
+    const client = { storage: { from: () => ({ upload }) } } as unknown as Parameters<
+      typeof uploadScreeningJsonFile
+    >[0];
     const result = await uploadScreeningJsonFile(client, "user/results/screening/run.json", file);
     expect(actual).toBe(await readFile(file, "utf8"));
     expect(JSON.parse(actual)).toEqual(JSON.parse(JSON.stringify(bundle)));
@@ -196,7 +209,9 @@ test("legacy and compact normalization yield identical full analysis, candidates
         ? { data: new Blob([files.get(key)!]), error: null }
         : { data: null, error: { message: "Object not found" } },
   };
-  const client = { storage: { from: () => storage } } as any;
+  const client = { storage: { from: () => storage } } as unknown as Parameters<
+    typeof persistWebScreeningCaches
+  >[0]["client"];
   const base = { client, userId: "user", config: DEFAULT_SCORING_CONFIG, previous: null };
   const first = await persistWebScreeningCaches({
     ...base,

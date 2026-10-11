@@ -231,7 +231,6 @@ export interface SectorRotationResult {
   timeline: SectorTimeline[];
 }
 
-
 // ───────────────────────── helpers ─────────────────────────
 
 const median = (xs: number[]): number | null => {
@@ -307,7 +306,12 @@ interface MemberMetric {
   halted: boolean;
 }
 
-function memberMetric(symbol: string, name: string, bars: DailyPrice[], offset: number): MemberMetric | null {
+function memberMetric(
+  symbol: string,
+  name: string,
+  bars: DailyPrice[],
+  offset: number,
+): MemberMetric | null {
   const li = bars.length - 1 - offset;
   if (li < 1) return null;
   const closes = bars.map((b) => b.close);
@@ -338,13 +342,15 @@ function memberMetric(symbol: string, name: string, bars: DailyPrice[], offset: 
     aboveMa20: ma20 === null ? null : last.close > ma20,
     aboveMa60: ma60 === null ? null : last.close > ma60,
     aboveMa120: ma120 === null ? null : last.close > ma120,
-    maAligned: ma20 === null || ma60 === null || ma120 === null ? null : ma20 > ma60 && ma60 > ma120,
+    maAligned:
+      ma20 === null || ma60 === null || ma120 === null ? null : ma20 > ma60 && ma60 > ma120,
     newHigh: high52 === null ? null : last.close >= high52 * 0.999,
     nearHigh: high52 === null ? null : last.close >= high52 * 0.95,
     newLow: low52 === null ? null : last.close <= low52 * 1.001,
     advancing: prev.close > 0 ? last.close > prev.close : null,
     up5: (periodReturn(closes, li, 5) ?? null) === null ? null : periodReturn(closes, li, 5)! > 0,
-    up20: (periodReturn(closes, li, 20) ?? null) === null ? null : periodReturn(closes, li, 20)! > 0,
+    up20:
+      (periodReturn(closes, li, 20) ?? null) === null ? null : periodReturn(closes, li, 20)! > 0,
     foreign1: finite(fgn[li]) ? fgn[li]! : null,
     foreign5: sumWindow(fgn, li, 5),
     foreign20: sumWindow(fgn, li, 20),
@@ -453,7 +459,9 @@ function buildFrame(ds: MarketDataset, offset: number): Frame | null {
     const t1 = members.reduce((a, m) => a + m.turnover1, 0);
     const t5 = members.reduce((a, m) => a + (m.turnover5 ?? 0), 0);
     const t20 = members.reduce((a, m) => a + (m.turnover20 ?? 0), 0);
-    const nets5 = members.map((m) => (finite(m.foreign5) ? m.foreign5 : 0) + (finite(m.inst5) ? m.inst5 : 0));
+    const nets5 = members.map(
+      (m) => (finite(m.foreign5) ? m.foreign5 : 0) + (finite(m.inst5) ? m.inst5 : 0),
+    );
     const absTotal = nets5.reduce((a, x) => a + Math.abs(x), 0);
     const maxAbs = nets5.length > 0 ? Math.max(...nets5.map(Math.abs)) : 0;
 
@@ -512,7 +520,9 @@ function buildFrame(ds: MarketDataset, offset: number): Frame | null {
     totalTurnover5,
     totalTurnover20,
     advancingRatio:
-      advancingAll.length === 0 ? null : (advancingAll.filter(Boolean).length / advancingAll.length) * 100,
+      advancingAll.length === 0
+        ? null
+        : (advancingAll.filter(Boolean).length / advancingAll.length) * 100,
     foreignNet5d: sumOrNull(sectors.map((s) => s.foreignNet5d)),
     institutionNet5d: sumOrNull(sectors.map((s) => s.institutionNet5d)),
   };
@@ -542,7 +552,10 @@ const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 function scoreFrame(frame: Frame): Map<string, { price: ComponentScore; flow: ComponentScore }> {
   const s = frame.sectors;
   const sortAsc = (get: (r: RawSector) => number | null) =>
-    s.map(get).filter(finite).sort((a, b) => a - b);
+    s
+      .map(get)
+      .filter(finite)
+      .sort((a, b) => a - b);
 
   const rs20s = sortAsc((r) => r.rs20);
   const rs60s = sortAsc((r) => r.rs60);
@@ -616,8 +629,7 @@ function scoreFrame(frame: Frame): Map<string, { price: ComponentScore; flow: Co
         label: "상대 거래대금 (5일/20일)",
         weight: 5,
         ratio: r.relativeTurnover === null ? null : clamp01((r.relativeTurnover - 0.7) / 0.8),
-        detail:
-          r.relativeTurnover === null ? "데이터 없음" : `${r.relativeTurnover.toFixed(2)}배`,
+        detail: r.relativeTurnover === null ? "데이터 없음" : `${r.relativeTurnover.toFixed(2)}배`,
       },
     ]);
 
@@ -728,10 +740,16 @@ function classify(input: {
     ((nearHighBreadth ?? 0) >= 50 || (relativeTurnover ?? 0) >= 1.6) &&
     (return20 ?? 0) >= 15
   )
-    return { status: "OVERHEATED", reason: "가격·수급 모두 강하나 단기 급등·거래 과열로 반전 위험" };
+    return {
+      status: "OVERHEATED",
+      reason: "가격·수급 모두 강하나 단기 급등·거래 과열로 반전 위험",
+    };
 
   if (flow >= 70 && buy5 && shareChange5d > 0 && (flowChange ?? 0) >= 0)
-    return { status: "STRONG_INFLOW", reason: "자금흐름 70점 이상 + 5일 순매수 + 거래대금 점유율 상승" };
+    return {
+      status: "STRONG_INFLOW",
+      reason: "자금흐름 70점 이상 + 5일 순매수 + 거래대금 점유율 상승",
+    };
 
   if (buy5 && buy20 && (rs20 ?? 0) > 0 && (rs60 ?? 0) > 0)
     return { status: "SUSTAINED_INFLOW", reason: "5일·20일 수급과 RS20·RS60이 모두 양호" };
@@ -740,7 +758,10 @@ function classify(input: {
     return { status: "EARLY_INFLOW", reason: "5일 수급·점유율은 개선, 20일 수급은 아직 약함" };
 
   if (bothSell5 && bothSell20 && (rs20 ?? 0) < 0 && shareChange5d < 0 && (return20 ?? 0) <= -12)
-    return { status: "CAPITULATION", reason: "강한 자금 유출 + 단기 낙폭 과대 (반등 가능성은 있으나 자금흐름 반전 미확인)" };
+    return {
+      status: "CAPITULATION",
+      reason: "강한 자금 유출 + 단기 낙폭 과대 (반등 가능성은 있으나 자금흐름 반전 미확인)",
+    };
 
   if (sell5 && sell20 && (rs20 ?? 0) < 0 && (rs60 ?? 0) < 0 && shareChange5d < 0)
     return { status: "SUSTAINED_OUTFLOW", reason: "5일·20일 순매도 + RS 약화 + 점유율 감소" };
@@ -782,7 +803,16 @@ export function computeSectorRotation(
   const prevByCode = new Map((prev?.sectors ?? []).map((s) => [s.sectorCode, s]));
   const prev20ByCode = new Map((prev20?.sectors ?? []).map((s) => [s.sectorCode, s]));
 
-  interface Draft extends Omit<SectorRotationRow, "rank" | "prevRank" | "rotationMomentum" | "rotationScore" | "quadrantMove" | "isNextLeaderCandidate" | "isDistributionCandidate"> {
+  interface Draft extends Omit<
+    SectorRotationRow,
+    | "rank"
+    | "prevRank"
+    | "rotationMomentum"
+    | "rotationScore"
+    | "quadrantMove"
+    | "isNextLeaderCandidate"
+    | "isDistributionCandidate"
+  > {
     momentumRaw: number[];
   }
 
@@ -804,11 +834,14 @@ export function computeSectorRotation(
         : null;
 
     const anomalies: string[] = [];
-    if (r.members.length < 3) anomalies.push(`섹터 구성 종목 수 ${r.members.length}개로 통계 신뢰도 낮음`);
+    if (r.members.length < 3)
+      anomalies.push(`섹터 구성 종목 수 ${r.members.length}개로 통계 신뢰도 낮음`);
     if (finite(r.capConcentration) && r.capConcentration >= 50)
       anomalies.push(`단일 종목 시가총액 비중 ${r.capConcentration.toFixed(1)}% (지수 왜곡 가능)`);
     if (finite(r.supplyConcentration) && r.supplyConcentration >= 70)
-      anomalies.push(`단일 종목이 섹터 순매수의 ${r.supplyConcentration.toFixed(1)}% 차지 (수급 집중도 높음)`);
+      anomalies.push(
+        `단일 종목이 섹터 순매수의 ${r.supplyConcentration.toFixed(1)}% 차지 (수급 집중도 높음)`,
+      );
     const halted = r.members.filter((m) => m.halted).length;
     if (halted > 0) anomalies.push(`거래 없음(정지 의심) 종목 ${halted}개 포함`);
     const shortHist = r.members.filter((m) => m.barCount < 120).length;
@@ -827,7 +860,9 @@ export function computeSectorRotation(
     const flowCoverage =
       r.members.length === 0
         ? 0
-        : (r.members.filter((m) => finite(m.foreign5) || finite(m.inst5)).length / r.members.length) * 100;
+        : (r.members.filter((m) => finite(m.foreign5) || finite(m.inst5)).length /
+            r.members.length) *
+          100;
     const priceCoverage =
       r.members.length === 0
         ? 0
@@ -845,7 +880,13 @@ export function computeSectorRotation(
       ),
     );
     const reliabilityTag: SectorRotationRow["reliabilityTag"] =
-      reliability >= 85 ? "HIGH" : reliability >= 70 ? "MEDIUM" : reliability >= 50 ? "CAUTION" : "LIMITED";
+      reliability >= 85
+        ? "HIGH"
+        : reliability >= 70
+          ? "MEDIUM"
+          : reliability >= 50
+            ? "CAUTION"
+            : "LIMITED";
 
     const status = classify({
       flow: flowNow,
@@ -941,13 +982,18 @@ export function computeSectorRotation(
 
   // 로테이션 모멘텀: 변화량들의 섹터 간 백분위 평균
   const momentumSeries = [0, 1, 2, 3].map((i) =>
-    drafts.map((d) => d.momentumRaw[i]!).filter((v) => Number.isFinite(v)).sort((a, b) => a - b),
+    drafts
+      .map((d) => d.momentumRaw[i]!)
+      .filter((v) => Number.isFinite(v))
+      .sort((a, b) => a - b),
   );
   const withMomentum = drafts.map((d) => {
     const parts = [0, 1, 2, 3]
-      .map((i) => pctRatio(momentumSeries[i]!, Number.isFinite(d.momentumRaw[i]!) ? d.momentumRaw[i]! : null))
+      .map((i) =>
+        pctRatio(momentumSeries[i]!, Number.isFinite(d.momentumRaw[i]!) ? d.momentumRaw[i]! : null),
+      )
       .filter((v): v is number => v !== null);
-    const momentum = parts.length === 0 ? null : (mean(parts)! * 100);
+    const momentum = parts.length === 0 ? null : mean(parts)! * 100;
     const price = d.priceLeadership.score;
     const flow = d.moneyFlow.score;
     const w = weights;
@@ -968,7 +1014,8 @@ export function computeSectorRotation(
         .map(([code, v]) => ({
           code,
           score:
-            (v.price.score ?? 0) * weights.priceLeadership + (v.flow.score ?? 0) * weights.moneyFlow,
+            (v.price.score ?? 0) * weights.priceLeadership +
+            (v.flow.score ?? 0) * weights.moneyFlow,
         }))
         .sort((a, b) => b.score - a.score)
         .map((x) => x.code)
@@ -991,8 +1038,10 @@ export function computeSectorRotation(
         quadrantMove: moved
           ? `${QUADRANT_LABEL[prevQuadrant]} → ${QUADRANT_LABEL[d.quadrant]}`
           : `${QUADRANT_LABEL[d.quadrant]} 유지`,
-        isNextLeaderCandidate: isNext || (d.quadrant === "IMPROVING" && (d.moneyFlowChange5d ?? 0) > 3),
-        isDistributionCandidate: isDist || (d.quadrant === "WEAKENING" && (d.moneyFlowChange5d ?? 0) < -3),
+        isNextLeaderCandidate:
+          isNext || (d.quadrant === "IMPROVING" && (d.moneyFlowChange5d ?? 0) > 3),
+        isDistributionCandidate:
+          isDist || (d.quadrant === "WEAKENING" && (d.moneyFlowChange5d ?? 0) < -3),
       };
       return row;
     });
@@ -1012,7 +1061,10 @@ export function computeSectorRotation(
     [20, prev20],
   ]);
   const timelineByCode = new Map<string, SectorTimeline>(
-    ranked.map((r) => [r.sectorCode, { sectorCode: r.sectorCode, sectorName: r.sectorName, points: [] }]),
+    ranked.map((r) => [
+      r.sectorCode,
+      { sectorCode: r.sectorCode, sectorName: r.sectorName, points: [] },
+    ]),
   );
   for (const offset of offsets) {
     const frame = frameCache.get(offset) ?? buildFrame(ds, offset);
@@ -1043,19 +1095,30 @@ export function computeSectorRotation(
     overallCompleteness,
     timeline: [...timelineByCode.values()],
   };
-
 }
 
 const eok = (v: number | null): string =>
-  finite(v) ? `${(v / 100_000_000).toLocaleString("ko-KR", { maximumFractionDigits: 0 })}억 원` : "데이터 없음";
+  finite(v)
+    ? `${(v / 100_000_000).toLocaleString("ko-KR", { maximumFractionDigits: 0 })}억 원`
+    : "데이터 없음";
 
 function buildLinks(rows: SectorRotationRow[]): RotationLink[] {
   const outflow = rows
-    .filter((r) => r.status === "EARLY_OUTFLOW" || r.status === "SUSTAINED_OUTFLOW" || r.status === "CAPITULATION")
+    .filter(
+      (r) =>
+        r.status === "EARLY_OUTFLOW" ||
+        r.status === "SUSTAINED_OUTFLOW" ||
+        r.status === "CAPITULATION",
+    )
     .sort((a, b) => (a.moneyFlow.score ?? 50) - (b.moneyFlow.score ?? 50))
     .slice(0, 3);
   const inflow = rows
-    .filter((r) => r.status === "STRONG_INFLOW" || r.status === "EARLY_INFLOW" || r.status === "SUSTAINED_INFLOW")
+    .filter(
+      (r) =>
+        r.status === "STRONG_INFLOW" ||
+        r.status === "EARLY_INFLOW" ||
+        r.status === "SUSTAINED_INFLOW",
+    )
     .sort((a, b) => (b.moneyFlow.score ?? 0) - (a.moneyFlow.score ?? 0))
     .slice(0, 3);
 
@@ -1092,7 +1155,10 @@ function buildLinks(rows: SectorRotationRow[]): RotationLink[] {
         inEv.push(`가격 리더십 점수 +${to.priceLeadershipChange5d!.toFixed(1)}점 상승`);
 
       const investorOpposite =
-        finite(from.foreignNet5d) && finite(to.foreignNet5d) && from.foreignNet5d < 0 && to.foreignNet5d > 0
+        finite(from.foreignNet5d) &&
+        finite(to.foreignNet5d) &&
+        from.foreignNet5d < 0 &&
+        to.foreignNet5d > 0
           ? 1
           : 0;
       const instOpposite =
@@ -1111,7 +1177,8 @@ function buildLinks(rows: SectorRotationRow[]): RotationLink[] {
 
       let confidence: RotationLink["confidence"];
       if (from.dataCompleteness < 40 || to.dataCompleteness < 40) confidence = "UNKNOWN";
-      else if (investorOpposite && instOpposite && shareOpposite && priceOpposite) confidence = "VERY_HIGH";
+      else if (investorOpposite && instOpposite && shareOpposite && priceOpposite)
+        confidence = "VERY_HIGH";
       else if ((investorOpposite || instOpposite) && shareOpposite) confidence = "HIGH";
       else if (shareOpposite || priceOpposite) confidence = "MEDIUM";
       else confidence = "LOW";
@@ -1154,13 +1221,17 @@ function marketState(now: Frame, prev: Frame | null, rows: SectorRotationRow[]):
     ["EARLY_OUTFLOW", "SUSTAINED_OUTFLOW", "CAPITULATION"].includes(r.status),
   ).length;
   const turnoverChange =
-    prev && prev.totalTurnover5 > 0 ? ((now.totalTurnover5 - prev.totalTurnover5) / prev.totalTurnover5) * 100 : null;
+    prev && prev.totalTurnover5 > 0
+      ? ((now.totalTurnover5 - prev.totalTurnover5) / prev.totalTurnover5) * 100
+      : null;
   const total = sumOrNull([now.foreignNet5d, now.institutionNet5d]);
   const reasons: string[] = [];
   reasons.push(`외국인 5일 순매수 합계 ${eok(now.foreignNet5d)}`);
   reasons.push(`기관 5일 순매수 합계 ${eok(now.institutionNet5d)}`);
   if (turnoverChange !== null)
-    reasons.push(`5일 평균 거래대금 5거래일 전 대비 ${turnoverChange >= 0 ? "+" : ""}${turnoverChange.toFixed(1)}%`);
+    reasons.push(
+      `5일 평균 거래대금 5거래일 전 대비 ${turnoverChange >= 0 ? "+" : ""}${turnoverChange.toFixed(1)}%`,
+    );
   if (now.advancingRatio !== null) reasons.push(`상승 종목 비율 ${now.advancingRatio.toFixed(1)}%`);
   reasons.push(`유입 판정 섹터 ${inflowCount}개 / 유출 판정 섹터 ${outflowCount}개`);
 
@@ -1168,7 +1239,8 @@ function marketState(now: Frame, prev: Frame | null, rows: SectorRotationRow[]):
   const capScale = rows.reduce((a, r) => a + (r.marketCap ?? 0), 0) || 1;
   const netRatio = finite(total) ? (total / capScale) * 10000 : null; // bp
   if (netRatio === null) state = "UNCLEAR";
-  else if (netRatio > 2 && (turnoverChange ?? 0) > -5 && inflowCount >= outflowCount) state = "MARKET_INFLOW";
+  else if (netRatio > 2 && (turnoverChange ?? 0) > -5 && inflowCount >= outflowCount)
+    state = "MARKET_INFLOW";
   else if (netRatio < -2 && outflowCount >= inflowCount) state = "MARKET_OUTFLOW";
   else if (inflowCount >= 2 && outflowCount >= 2) state = "ROTATION";
   else state = "UNCLEAR";
@@ -1200,7 +1272,9 @@ function buildCommentary(rows: SectorRotationRow[], market: MarketFlowState): st
     out.push(
       `${strong.sectorName}는 최근 5거래일 외국인 ${eok(strong.foreignNet5d)}, 기관 ${eok(strong.institutionNet5d)} 순매수를 기록했고 거래대금 점유율도 20일 평균 대비 ${strong.turnoverShareChange5d >= 0 ? "+" : ""}${strong.turnoverShareChange5d.toFixed(2)}%p 변화해 ${FLOW_STATUS_LABEL[strong.status]}으로 분류됩니다.`,
     );
-  const weakening = rows.find((r) => r.status === "EARLY_OUTFLOW" || r.status === "SUSTAINED_OUTFLOW");
+  const weakening = rows.find(
+    (r) => r.status === "EARLY_OUTFLOW" || r.status === "SUSTAINED_OUTFLOW",
+  );
   if (weakening)
     out.push(
       `${weakening.sectorName}는 RS20 ${weakening.rs20 === null ? "데이터 없음" : `${weakening.rs20.toFixed(2)}%p`}인 가운데 외국인 20일 누적 ${eok(weakening.foreignNet20d)}, 거래대금 점유율 ${weakening.turnoverShareChange5d.toFixed(2)}%p 변화로 기존 주도주 약화 가능성이 있습니다.`,
@@ -1211,7 +1285,10 @@ function buildCommentary(rows: SectorRotationRow[], market: MarketFlowState): st
       `${next.sectorName}는 가격 리더십 ${next.priceLeadership.score?.toFixed(1) ?? "판단 보류"}점보다 자금흐름 ${next.moneyFlow.score?.toFixed(1) ?? "판단 보류"}점이 먼저 개선(5일 ${next.moneyFlowChange5d === null ? "변화 미확인" : `${next.moneyFlowChange5d >= 0 ? "+" : ""}${next.moneyFlowChange5d.toFixed(1)}점`})되어 차기 주도 섹터 후보로 분류됩니다.`,
     );
   const concentrated = rows.find(
-    (r) => finite(r.breadth.bothBuy5d) && r.breadth.bothBuy5d < 30 && (r.priceLeadership.score ?? 0) >= 60,
+    (r) =>
+      finite(r.breadth.bothBuy5d) &&
+      r.breadth.bothBuy5d < 30 &&
+      (r.priceLeadership.score ?? 0) >= 60,
   );
   if (concentrated)
     out.push(

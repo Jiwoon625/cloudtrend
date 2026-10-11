@@ -24,8 +24,7 @@ export interface PortfolioMetric {
 const mean = (xs: number[]): number | null =>
   xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 
-const meanOrZero = (xs: number[]) =>
-  xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
+const meanOrZero = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
 function key(market: string | undefined, symbol: string) {
   return `${market === "KOSDAQ" ? "KOSDAQ" : "KOSPI"}:${symbol}`;
@@ -108,9 +107,16 @@ export function portfolioMetric(
   const daily = portfolioDaily(trades, series, dates, startDate, costBps);
   if (!daily.length) {
     return {
-      trades: trades.length, totalReturn: null, cagr: null, mdd: null, sharpe: null,
-      activeDayRate: null, avgActivePositions: null, peakActivePositions: 0,
-      averageHoldingDays: mean(trades.map((t) => t.holdingDays)), daily,
+      trades: trades.length,
+      totalReturn: null,
+      cagr: null,
+      mdd: null,
+      sharpe: null,
+      activeDayRate: null,
+      avgActivePositions: null,
+      peakActivePositions: 0,
+      averageHoldingDays: mean(trades.map((t) => t.holdingDays)),
+      daily,
     };
   }
 
@@ -124,9 +130,8 @@ export function portfolioMetric(
   }
   const returns = daily.map((d) => d.ret);
   const avg = returns.reduce((a, b) => a + b, 0) / returns.length;
-  const variance = returns.length > 1
-    ? returns.reduce((a, b) => a + (b - avg) ** 2, 0) / (returns.length - 1)
-    : 0;
+  const variance =
+    returns.length > 1 ? returns.reduce((a, b) => a + (b - avg) ** 2, 0) / (returns.length - 1) : 0;
   const sd = Math.sqrt(Math.max(0, variance));
   const activeDays = daily.filter((d) => d.active > 0).length;
 
