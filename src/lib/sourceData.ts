@@ -533,7 +533,9 @@ function normalizeRecords(
   const inferredMarketSymbols = new Set<string>();
   let duplicates = 0;
 
-  for (const required of ["symbol", "date", "close"] as CanonicalSourceColumn[]) {
+  // A domestic execution observation may omit the close column entirely.
+  // Other instruments still require a positive close through row validation.
+  for (const required of ["symbol", "date"] as CanonicalSourceColumn[]) {
     if (!recordSet.columns.includes(required)) {
       errors.push(issue("MISSING_COLUMN", `필수 열 ${required}이(가) 없습니다.`));
     }
@@ -560,11 +562,17 @@ function normalizeRecords(
         }),
       );
 
+    const domesticObservation =
+      type !== "INDEX" &&
+      (["KOSPI", "KOSDAQ", "ETF"].includes(market) || (!market && type === "ETF"));
     const numeric = {
       open: normalizedNumber(record["open"], { positive: true }),
       high: normalizedNumber(record["high"], { positive: true }),
       low: normalizedNumber(record["low"], { positive: true }),
-      close: normalizedNumber(record["close"], { required: true, positive: true }),
+      close: normalizedNumber(
+        record["close"],
+        domesticObservation ? { nonNegative: true } : { required: true, positive: true },
+      ),
       volume: normalizedNumber(record["volume"], { nonNegative: true }),
       tradingValue: normalizedNumber(record["tradingValue"], { nonNegative: true }),
       marketCap: normalizedNumber(record["marketCap"], { nonNegative: true }),
@@ -575,12 +583,20 @@ function normalizeRecords(
       if (result.error)
         errors.push(issue("INVALID_NUMBER", `${column}: ${result.error}`, { row: rowNumber }));
     }
-    if (numeric.close.error) return;
+    if (Object.values(numeric).some((result) => result.error)) return;
+    const missingClose = domesticObservation && Number(numeric.close.value) === 0;
     const close = Number(numeric.close.value);
     const open = numeric.open.value ? Number(numeric.open.value) : close;
+    // Missing close is an execution-only sentinel, not an observed zero price.
+    // Validate ranges against actual prices, without using it as the session low.
+    const prices = missingClose ? (numeric.open.value ? [open] : []) : [open, close];
     const high = numeric.high.value ? Number(numeric.high.value) : Math.max(open, close);
     const low = numeric.low.value ? Number(numeric.low.value) : Math.min(open, close);
-    if (high < low || high < Math.max(open, close) || low > Math.min(open, close)) {
+    if (
+      (numeric.high.value && numeric.low.value && high < low) ||
+      (numeric.high.value && prices.some((price) => high < price)) ||
+      (numeric.low.value && prices.some((price) => low > price))
+    ) {
       errors.push(
         issue("INVALID_OHLC", "OHLC 가격의 고가·저가 관계가 맞지 않습니다.", { row: rowNumber }),
       );
@@ -620,11 +636,12 @@ function normalizeRecords(
       market: resolvedMarket,
       type,
       date,
-      open: String(open),
-      high: String(high),
-      low: String(low),
+      // Preserve absent open/volume evidence instead of synthesizing executable inputs.
+      open: missingClose ? numeric.open.value : String(open),
+      high: missingClose ? numeric.high.value : String(high),
+      low: missingClose ? numeric.low.value : String(low),
       close: String(close),
-      volume: numeric.volume.value || "0",
+      volume: missingClose ? numeric.volume.value : numeric.volume.value || "0",
       tradingValue:
         numeric.tradingValue.value || String(close * Number(numeric.volume.value || "0")),
       marketCap: numeric.marketCap.value,
@@ -636,6 +653,14 @@ function normalizeRecords(
       if (column in row) continue;
       row[column] = String(record[column] ?? "").trim();
     }
+    if (missingClose)
+      warnings.push(
+        issue(
+          "MISSING_CLOSE_OBSERVATION",
+          `${symbol} ${date}: 종가 없이 관측된 행을 보존합니다. 분석·확정 평가에는 사용하지 않습니다.`,
+          { row: rowNumber },
+        ),
+      );
     const key = sourceRowKey(row);
     const previous = unique.get(key);
     if (!previous) unique.set(key, row);

@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { parseManualMarketData } from "./engine/manualDataset";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -147,5 +148,159 @@ describe("CloudTrend source validation", () => {
     );
     const overlap = compareSourceRows(incoming.rows, [{ sourceId: "old", rows: existing.rows }]);
     expect(overlap).toMatchObject({ incomingRows: 2, newRows: 1, conflictingRows: 1 });
+  });
+});
+
+describe("missing-close upload observations", () => {
+  it.each(["", "0"])("retains a legitimate close '%s' from uploaded CSV bytes", async (close) => {
+    const result = await validateSourceBlob(
+      new Blob([
+        `symbol,date,market,open,high,low,close,volume\n005930,2026-10-14,KOSPI,100,110,90,${close},1000\n`,
+      ]),
+      "observed.csv",
+    );
+    expect(result.valid, JSON.stringify(result.errors)).toBe(true);
+    expect(result.rows[0]).toMatchObject({
+      symbol: "005930",
+      close: "0",
+      open: "100",
+      volume: "1000",
+    });
+  });
+});
+
+const observation = {
+  symbol: "005930",
+  market: "KOSPI",
+  date: "2026-10-14",
+  open: 100,
+  high: 110,
+  low: 90,
+  close: null,
+  volume: 1000,
+};
+
+describe("canonical observation safety", () => {
+  it.each(["csv", "streaming-csv", "json", "xlsx"])(
+    "retains missing-close observations through %s upload bytes",
+    async (format) => {
+      const rows = [observation, { ...observation, symbol: "069500", market: "ETF", type: "ETF" }];
+      let bytes: Uint8Array;
+      if (format === "xlsx") {
+        const workbook = new ExcelJS.Workbook();
+        const sheet = workbook.addWorksheet("data");
+        const columns = [...Object.keys(observation), "type"];
+        sheet.addRow(columns);
+        for (const row of rows)
+          sheet.addRow(columns.map((column) => (row as Record<string, unknown>)[column]));
+        bytes = new Uint8Array(await workbook.xlsx.writeBuffer());
+      } else if (format === "json") bytes = new TextEncoder().encode(JSON.stringify(rows));
+      else
+        bytes = new TextEncoder().encode(
+          "symbol,market,date,open,high,low,close,volume,type\n005930,KOSPI,2026-10-14,100,110,90,,1000,STOCK\n069500,ETF,2026-10-14,100,110,90,,1000,ETF\n",
+        );
+      const validation = await validateSourceBytes({
+        bytes,
+        filename: `source.${format === "streaming-csv" ? "csv" : format}`,
+        streamingCsv: format === "streaming-csv",
+      });
+      expect(validation.valid, JSON.stringify(validation.errors)).toBe(true);
+      expect(validation.rows.map((row) => row.close)).toEqual(["0", "0"]);
+      expect(
+        validation.warnings.filter((issue) => issue.code === "MISSING_CLOSE_OBSERVATION"),
+      ).toHaveLength(2);
+      const dataset = parseManualMarketData(validation.canonicalCsv, {
+        allowIncompleteIndex: true,
+      }).dataset;
+      for (const symbol of ["005930", "069500"]) {
+        expect(dataset.bars[symbol]).toEqual([]);
+        expect(dataset.observedBars![symbol]![0]).toMatchObject({
+          open: 100,
+          close: 0,
+          volume: 1000,
+          openObserved: true,
+          volumeObserved: true,
+        });
+      }
+      const again = await validateSourceText(validation.canonicalCsv);
+      expect(again.valid).toBe(true);
+      expect(again.dataHash).toBe(validation.dataHash);
+    },
+  );
+
+  it("accepts omitted close columns for domestic observations while preserving missing execution evidence", async () => {
+    const validation = await validateSourceText(
+      "symbol,market,date,high,low\n005930,KOSPI,2026-10-14,110,90\n",
+    );
+    expect(validation.valid).toBe(true);
+    expect(validation.rows[0]).toMatchObject({ open: "", volume: "", close: "0" });
+    const dataset = parseManualMarketData(validation.canonicalCsv, {
+      allowIncompleteIndex: true,
+    }).dataset;
+    expect(dataset.observedBars!["005930"]![0]).toMatchObject({
+      openObserved: false,
+      volumeObserved: false,
+      close: 0,
+    });
+    expect(dataset.bars["005930"]).toEqual([]);
+  });
+
+  it.each([
+    { close: "garbage" },
+    { close: -1 },
+    { close: "Infinity" },
+    { open: -1 },
+    { open: "bad" },
+    { high: 99 },
+    { low: 101 },
+    { high: 80, low: 90 },
+    { high: 0 },
+    { low: 0 },
+    { volume: -1 },
+    { volume: "bad" },
+    { tradingValue: -1 },
+    { marketCap: -1 },
+    { date: "2026-02-30" },
+    { symbol: "" },
+  ])("rejects malformed or contradictory observation %j", async (bad) => {
+    const validation = await validateSourceText(
+      JSON.stringify([{ ...observation, ...bad }]),
+      "source.json",
+    );
+    expect(validation.valid).toBe(false);
+    expect(validation.rows).toEqual([]);
+    expect(validation.errors.length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    { symbol: "KOSPI", market: "INDEX", type: "INDEX" },
+    { symbol: "SPY", market: "NYSE", type: "ETF" },
+    { symbol: "AAPL", market: "NASDAQ", type: "STOCK" },
+    { symbol: "UNKNOWN", market: "", type: "STOCK" },
+  ])(
+    "does not relax positive-close validation outside recognized domestic observations: %j",
+    async (instrument) => {
+      for (const close of [null, 0]) {
+        const validation = await validateSourceText(
+          JSON.stringify([{ ...observation, ...instrument, close }]),
+          "source.json",
+        );
+        expect(validation.valid).toBe(false);
+        expect(validation.rows).toEqual([]);
+      }
+    },
+  );
+
+  it("retains observed zero volume without turning it into liquidity", async () => {
+    const validation = await validateSourceText(
+      JSON.stringify([{ ...observation, volume: 0 }]),
+      "source.json",
+    );
+    expect(validation.valid).toBe(true);
+    const dataset = parseManualMarketData(validation.canonicalCsv, {
+      allowIncompleteIndex: true,
+    }).dataset;
+    expect(dataset.observedBars!["005930"]![0]).toMatchObject({ volume: 0, volumeObserved: true });
+    expect(dataset.liquidSymbolCountsByDate![observation.date]).toBe(0);
   });
 });

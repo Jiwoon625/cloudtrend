@@ -1,3 +1,4 @@
+import { resolveInstrumentMembershipAtDate } from "./verifiedKrIndexMembership";
 import { kospiPolicyVersionAt } from "./kospiEntryConfirmation";
 import { evaluateKospiMarketGateAtDate, type KospiMarketGateEvidence } from "./kospiMarketGate";
 import {
@@ -385,7 +386,8 @@ export function runAnalysis(
 
   const groups = new Map<string, number[]>();
   const prepared = ds.instruments
-    .map((inst) => {
+    .map((sourceInstrument) => {
+      const inst = resolveInstrumentMembershipAtDate(sourceInstrument, ds.asOfDate);
       const bars = ds.bars[inst.symbol] ?? [];
       if (!bars.length) return null;
       const snap = computeIndicators(bars, bars.length - 1);

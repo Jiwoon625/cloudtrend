@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { registerSourceBlob, type AnalysisSourceFileRecord } from "./sourceRegistry";
+import { loadActiveSources } from "./screeningSources.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MarketDataset } from "./engine/dataset";
 import { parseManualMarketData } from "./engine/manualDataset";
@@ -30,6 +32,17 @@ import {
 import manifest from "./ledger/octoberShadowEngineManifest.generated.json";
 
 const persistence = vi.hoisted(() => ({ store: vi.fn() }));
+const uploadClient = vi.hoisted(() => ({
+  from: vi.fn(),
+  rpc: vi.fn(),
+  storage: { from: vi.fn() },
+}));
+vi.mock("./cloud", () => ({
+  supabase: uploadClient,
+  userId: async () => "11111111-1111-4111-8111-111111111111",
+  ownerPath: async (path: string) => `11111111-1111-4111-8111-111111111111/${path}`,
+  removeObjects: vi.fn(),
+}));
 vi.mock("./ledger/octoberShadowRepository.server", () => ({
   octoberShadowStore: persistence.store,
 }));
@@ -78,6 +91,122 @@ function replayDataset(
       ),
     ),
   ).dataset;
+}
+
+/** Exercise web registration, immutable uploaded bytes and both production read paths. */
+async function uploadedReplayDataset(raw: MarketDataset, closeValue: number | null = 0) {
+  const records: AnalysisSourceFileRecord[] = [];
+  const objects = new Map<string, Blob>();
+  uploadClient.storage.from.mockImplementation(() => ({
+    async upload(path: string, blob: Blob) {
+      objects.set(path, blob);
+      return { error: null };
+    },
+    async download(path: string) {
+      return { data: objects.get(path), error: null };
+    },
+  }));
+  uploadClient.from.mockImplementation((table: string) => {
+    expect(table).toBe("analysis_source_files");
+    let inserted: AnalysisSourceFileRecord | undefined;
+    const query = {
+      select() {
+        return query;
+      },
+      eq() {
+        return query;
+      },
+      in() {
+        return query;
+      },
+      order() {
+        return query;
+      },
+      insert(row: AnalysisSourceFileRecord) {
+        inserted = { ...row, created_at: "2026-10-14T23:00:00Z" };
+        records.push(inserted);
+        return query;
+      },
+      async single() {
+        return { data: inserted, error: null };
+      },
+      then(resolve: (result: { data: AnalysisSourceFileRecord[]; error: null }) => unknown) {
+        return Promise.resolve({
+          data: records.filter((row) => row.status === "active"),
+          error: null,
+        }).then(resolve);
+      },
+    };
+    return query;
+  });
+  uploadClient.rpc.mockImplementation(async (name: string, args: { p_source_id: string }) => {
+    expect(name).toBe("activate_analysis_source_file");
+    const record = records.find((row) => row.id === args.p_source_id)!;
+    record.status = "active";
+    record.activated_at = record.created_at;
+    return { data: record, error: null };
+  });
+  const rows = [
+    ...raw.instruments.flatMap((instrument) =>
+      (raw.observedBars![instrument.symbol] ?? []).map((bar) => ({
+        ...bar,
+        symbol: instrument.symbol,
+        name: instrument.name,
+        market: instrument.market,
+        type: instrument.instrumentType,
+        sector: instrument.sectorCode,
+        date: bar.tradeDate,
+        // Parser ranges can include its zero sentinel; upload actual positive intraday prices.
+        low: 99,
+        close: bar.close === 0 ? closeValue : bar.close,
+      })),
+    ),
+    ...raw.indexSeries.flatMap((index) =>
+      index.bars.map((bar) => ({
+        ...bar,
+        symbol: index.indexCode,
+        name: index.indexName,
+        type: "INDEX",
+        market: "INDEX",
+        date: bar.tradeDate,
+      })),
+    ),
+  ];
+  const blob = new Blob([JSON.stringify(rows)], { type: "application/json" });
+  const registered = await registerSourceBlob({
+    blob,
+    filename: "observations.json",
+    sourceType: "screening",
+    mode: "replace",
+  });
+  expect(registered.source.status).toBe("active");
+  expect(registered.validation.valid).toBe(true);
+  expect(registered.validation.stats.rowCount).toBe(rows.length);
+  expect(objects.get(registered.source.storage_path)).toBe(blob);
+  const loaded = await loadActiveSources(uploadClient as unknown as SupabaseClient, owner);
+  const downloaded = parseManualMarketData(loaded.texts).dataset;
+  const canonical = parseManualMarketData(registered.validation.canonicalCsv).dataset;
+  for (const instrument of raw.instruments) {
+    for (const dataset of [downloaded, canonical]) {
+      expect(
+        dataset.observedBars![instrument.symbol]?.map((bar) => [
+          bar.tradeDate,
+          bar.close,
+          bar.openObserved,
+          bar.volumeObserved,
+        ]),
+      ).toEqual(
+        raw.observedBars![instrument.symbol]?.map((bar) => [
+          bar.tradeDate,
+          bar.close,
+          bar.openObserved,
+          bar.volumeObserved,
+        ]),
+      );
+      expect(dataset.bars[instrument.symbol]?.every((bar) => bar.close > 0)).toBe(true);
+    }
+  }
+  return downloaded;
 }
 
 /** Only persistence is replaced; replay, snapshots, hashing and all five book engines run. */
@@ -542,6 +671,219 @@ describe("restart replay observation universe", () => {
   });
 });
 
+describe("registered source bytes through replay execution", () => {
+  it("fills a pending entry from its uploaded observed open while leaving authoritative NAV missing", async () => {
+    const raw = await uploadedReplayDataset(replayDataset(["000002"], days[1]!), null);
+    const result = runCommon(raw, days.slice(0, 2));
+    expect(result.trades).toHaveLength(1);
+    expect(result.trades[0]).toMatchObject({
+      entryDate: days[1],
+      entryPrice: 100,
+      shares: 9,
+      status: "OPEN",
+      currentPrice: null,
+      holdingDays: 1,
+    });
+    expect(result.modelAccounting).toMatchObject({
+      cash: "29098.65",
+      nav: null,
+      valuationStatus: "MISSING",
+    });
+  });
+
+  it("retains an uploaded held observation without false liquidation or extra fee", async () => {
+    const result = runCommon(await uploadedReplayDataset(replayDataset(), null));
+    expect(result.trades[0]).toMatchObject({ status: "OPEN", currentPrice: null, holdingDays: 2 });
+    expect(result.modelAccounting).toMatchObject({
+      cash: "29098.65",
+      nav: null,
+      valuationStatus: "MISSING",
+    });
+    expect(result.trades[0]!.exitReason).toBeNull();
+  });
+
+  it.each(
+    ["000001", "000002", "069500"].flatMap((symbol) =>
+      [0, null].map((close) => ({ symbol, close })),
+    ),
+  )(
+    "publishes uploaded $symbol with close $close without creating stale scores",
+    async ({ symbol, close }) => {
+      const f = await replayPersistence();
+      const raw = await uploadedReplayDataset(replayDataset([symbol]), close);
+      const publicationSpy = vi.spyOn(publication, "recordOctoberPublication");
+      const etfSpy = vi.spyOn(etfShadow, "stepAdoptedEtfSeries");
+      const result = await replayKrShadow({
+        client: f.client,
+        userId: owner,
+        dataset: raw,
+        config: DEFAULT_SCORING_CONFIG,
+        sources: [],
+        calculatedAt: "2026-10-14T23:20:00Z",
+      });
+      expect(result.deferred).toBeNull();
+      expect(result.processed.map((d) => d.date)).toEqual(days);
+      expect(result.processed.every((d) => d.records.length === 5)).toBe(true);
+      expect(f.sessions.size).toBe(15);
+      expect(f.audits.at(-1)?.["status"]).toBe("RECORDED");
+      const input = publicationSpy.mock.calls.at(-1)![1];
+      if (input.market !== "KR") throw new Error("Expected KR publication");
+      expect(input.dataset.instruments.some((i) => i.symbol === symbol)).toBe(true);
+      expect(input.dataset.bars[symbol]!.at(-1)!.tradeDate).toBe(days[1]);
+      expect(input.analysis.rows.some((row) => row.instrument.symbol === symbol)).toBe(false);
+      expect(input.snapshot.entries.some((row) => row.symbol === symbol)).toBe(false);
+      expect(input.analysis.rows.every((row) => row.snapshot.tradeDate === days[2])).toBe(true);
+      if (symbol !== "069500") {
+        const archive = [...f.archives.values()].find((value) => value.date === days[2])!;
+        expect(archive.inputs.bars[symbol]).toEqual([raw.observedBars![symbol]!.at(-1)]);
+      }
+      if (symbol === "000001") {
+        const session = buildKospiShadowSession(
+          input.dataset,
+          input.config,
+          {
+            sourceHash: input.sourceHash,
+            configHash: "test",
+            codeVersion: input.codeHash,
+            sourceCollectedAt: input.availableAt,
+            now: input.decisionAt,
+          },
+          days[2],
+          input.analysis,
+        );
+        expect(session.rows.find((row) => row.symbol === symbol)).toMatchObject({
+          open: 100,
+          close: 0,
+          volume: 100_000,
+          priceObserved: true,
+          score: null,
+          priority: null,
+          onsetEligible: false,
+        });
+      }
+      if (symbol === "069500") {
+        const etfInput = etfSpy.mock.calls.at(-1)![1];
+        expect(etfInput.prices.find((row) => row.symbol === symbol)).toMatchObject({
+          open: { price: "100", volume: 100_000 },
+          close: { price: null },
+        });
+        expect(etfInput.closeSignals.some((row) => row.symbol === symbol)).toBe(false);
+      }
+    },
+  );
+
+  it("executes the published ETF observation at its valid open and preserves a held missing-close day", async () => {
+    const f = await replayPersistence();
+    const spy = vi.spyOn(etfShadow, "stepAdoptedEtfSeries");
+    await replayKrShadow({
+      client: f.client,
+      userId: owner,
+      dataset: await uploadedReplayDataset(replayDataset(["069500"]), null),
+      config: DEFAULT_SCORING_CONFIG,
+      sources: [],
+      calculatedAt: "2026-10-14T23:20:00Z",
+    });
+    const [series, input, previous] = spy.mock.calls.at(-1)!;
+    const state = structuredClone(previous!.result.state);
+    state.pendingEntries = [
+      {
+        symbol: "069500",
+        originDate: days[0]!,
+        confirmationDate: days[1]!,
+        availableAt: state.lastCloseAt!,
+        sourceHash: input.sourceHash,
+        entryWeight: "0.05",
+        averageTradingValue20: 1_000_000_000,
+      },
+    ];
+    const filled = await etfShadow.stepEtfAdoptedShadow(series, state, input);
+    const fullClose = structuredClone(input);
+    fullClose.prices[0]!.close!.price = "100";
+    const control = await etfShadow.stepEtfAdoptedShadow(series, state, fullClose);
+    expect(filled.record.fills).toEqual(control.record.fills);
+    expect(filled.state.cash).toBe(control.state.cash);
+    expect(filled.record.fills).toHaveLength(1);
+    expect(filled.record.fills[0]).toMatchObject({
+      symbol: "069500",
+      side: "BUY",
+      executionDate: days[2],
+      price: "100",
+    });
+    expect(filled.state.valuation).toMatchObject({ nav: null, status: "MISSING" });
+    const next = structuredClone(input);
+    next.sessionDate = "2026-10-15";
+    next.previousSessionDate = days[2]!;
+    next.openAt = "2026-10-15T00:00:00Z";
+    next.closeAt = "2026-10-16T08:10:00+09:00";
+    next.closeSignals = [];
+    next.calendar.coverageEnd = next.sessionDate;
+    next.calendar.regularSessions.push(next.sessionDate);
+    for (const row of next.prices) {
+      row.open!.asOfDate = next.sessionDate;
+      row.open!.availableAt = next.openAt;
+      row.close!.asOfDate = next.sessionDate;
+      row.close!.availableAt = next.closeAt;
+    }
+    next.prices.push({ ...structuredClone(next.prices[0]!), symbol: "069501" });
+    const held = await etfShadow.stepEtfAdoptedShadow(series, filled.state, next);
+    expect(held.record.fills).toEqual([]);
+    expect(held.state.positions).toHaveLength(1);
+    expect(held.state.cash).toBe(filled.state.cash);
+    expect(held.state.valuation).toMatchObject({ nav: null, status: "MISSING" });
+    for (const mode of ["absent", "zero-volume"]) {
+      const missing = structuredClone(next);
+      if (mode === "absent") missing.prices.shift();
+      else missing.prices[0]!.open!.volume = 0;
+      const liquidated = await etfShadow.stepEtfAdoptedShadow(series, filled.state, missing);
+      expect(liquidated.state.positions).toEqual([]);
+      expect(liquidated.record.fills[0]).toMatchObject({
+        symbol: "069500",
+        side: "SELL",
+        reason: "MODEL_UNOBSERVED",
+        priceAsOfDate: days[2],
+      });
+    }
+  });
+
+  it.each([false, true])(
+    "keeps a market-wide KRX batch pending with missing-close observations (all=%s)",
+    async (allMissing) => {
+      const f = await replayPersistence();
+      const raw = replayDataset([]);
+      const etf = raw.instruments.find((instrument) => instrument.symbol === "069500")!;
+      const etfBars = structuredClone(raw.observedBars!["069500"]!);
+      for (let i = 0; i < 10; i++) {
+        const symbol = i === 0 ? "069500" : String(69500 + i).padStart(6, "0");
+        if (i > 0) raw.instruments.push({ ...etf, id: symbol, symbol });
+        const observations = structuredClone(etfBars);
+        const current = observations.at(-1)!;
+        current.etfMarketCap = null;
+        current.etfTradingValue = null;
+        current.etfUnderlyingIndexClose = null;
+        if (allMissing || i === 0) current.close = 0;
+        raw.observedBars![symbol] = observations;
+        raw.bars[symbol] = observations.filter((bar) => bar.close > 0);
+      }
+      const result = await replayKrShadow({
+        client: f.client,
+        userId: owner,
+        dataset: await uploadedReplayDataset(raw, null),
+        config: DEFAULT_SCORING_CONFIG,
+        sources: [],
+        calculatedAt: "2026-10-14T23:20:00Z",
+      });
+      expect(result.deferred?.date, result.deferred?.reason).toBe(days[2]);
+      expect(result.processed.map((day) => day.date)).toEqual(days.slice(0, 2));
+      expect(result.deferred).toMatchObject({
+        date: days[2],
+        reason: "ETF completed close/strategy data is still pending",
+      });
+      expect(f.sessions.size).toBe(10);
+      expect(f.audits.at(-1)?.["status"]).toBe("WAITING_INPUT");
+    },
+  );
+});
+
 // Exact fixture hashes reproduced against pristine source at
 // 524597bb1edcd4fd33e89de080ca91a59b96e956 before this observation-only fix.
 it.each([false, true])(
@@ -554,10 +896,21 @@ it.each([false, true])(
     try {
       const f = await replayPersistence(ADOPTED_SHADOW_FROZEN_CODE_HASH, undefined, restart);
       const dates = restart ? ["2026-10-08", ...days] : ["2026-10-06", "2026-10-07"];
+      // This golden compares the same previously supplied historical instrument
+      // metadata, not the parser's corrected current-reference enrichment. Keep
+      // its input contract explicit; membership/parser changes are tested separately.
+      const dataset = replayDataset([], "", dates);
+      for (const instrument of dataset.instruments) {
+        delete instrument.indexMembershipsKnown;
+        delete instrument.indexMembershipsProvenance;
+        delete instrument.valueUpMembershipKnown;
+        instrument.indexMemberships =
+          instrument.instrumentType === "STOCK" ? ["KOSPI200", "KRX300"] : [];
+      }
       const result = await replayKrShadow({
         client: f.client,
         userId: owner,
-        dataset: replayDataset([], "", dates),
+        dataset,
         config: DEFAULT_SCORING_CONFIG,
         sources: [],
         calculatedAt: restart ? "2026-10-14T23:20:00Z" : "2026-10-07T23:20:00Z",

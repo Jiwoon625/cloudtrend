@@ -17,6 +17,17 @@ export interface Instrument {
   isLeveraged: boolean;
   isInverse: boolean;
   isActive: boolean;
+  /** Known coverage of KOSPI200 / KOSDAQ150 / KRX300; false is not non-membership. */
+  indexMembershipsKnown?: boolean;
+  /** Only this marker authorizes re-resolution against a dated official snapshot. */
+  indexMembershipsProvenance?: {
+    source: "KRX_OFFICIAL_CONSTITUENTS";
+    snapshotAsOfDate: string | null;
+    evaluationAsOfDate: string;
+    sourceUrls: string[];
+  };
+  /** The three priority indexes do not establish Korea Value-Up membership. */
+  valueUpMembershipKnown?: boolean;
   indexMemberships: string[]; // KOSPI200 / KOSDAQ150 / KRX300 / KOREA_VALUEUP
   etfTag?: string | undefined;
 }

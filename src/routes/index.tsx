@@ -32,6 +32,11 @@ import {
 } from "@/components/DashboardOperations";
 import { dashboardQueryOptions } from "@/lib/analysisQuery";
 import {
+  dashboardCacheEmptyPresentation,
+  dashboardCacheReadQueryOptions,
+  readDashboardSourceAvailability,
+} from "@/lib/dashboardCachePresentation";
+import {
   formatCount,
   formatKstDateTime,
   formatNumber,
@@ -40,7 +45,7 @@ import {
 } from "@/lib/format";
 import { DomesticAssessmentPanel } from "@/components/DomesticAssessmentPanel";
 import { UniversePendingSummary } from "@/components/UniversePendingSummary";
-import { readDashboardCache, type DashboardSummary } from "@/lib/screeningCache";
+import { type DashboardSummary } from "@/lib/screeningCache";
 import { isScreeningStarted } from "@/lib/screeningRun";
 import {
   getOrBuildDashboardSummaryServerFirst,
@@ -130,14 +135,29 @@ function Dashboard() {
   const queryClient = useQueryClient();
   const [requested] = useState(() => isScreeningStarted());
   const [rescreening, setRescreening] = useState(false);
-  const summaryQuery = useQuery({
-    queryKey: [...dashboardQueryOptions.queryKey],
-    staleTime: 5 * 60 * 1000,
+  // Availability is metadata-only and only needed after a successful empty cache read.
+  const cachedSummary = queryClient.getQueryState<DashboardSummary | null>(
+    dashboardQueryOptions.queryKey,
+  );
+  const sourceAvailability = useQuery({
+    queryKey: ["dashboard-source-availability"],
+    queryFn: readDashboardSourceAvailability,
+    enabled: cachedSummary?.status === "success" && cachedSummary.data === null,
+    staleTime: 60_000,
     retry: false,
-    // A fresh device may read a published result; only explicit start may calculate.
-    queryFn: (): Promise<DashboardSummary | null> =>
-      requested ? getOrBuildDashboardSummaryServerFirst() : readDashboardCache(),
   });
+  // A fresh device may read a published result; only explicit start may calculate.
+  const readOnlyOptions = dashboardCacheReadQueryOptions(
+    dashboardQueryOptions.queryKey,
+    sourceAvailability.isError,
+  );
+  const summaryQuery = useQuery<DashboardSummary | null>({
+    ...readOnlyOptions,
+    queryFn: requested ? getOrBuildDashboardSummaryServerFirst : readOnlyOptions.queryFn,
+    refetchInterval: requested ? false : readOnlyOptions.refetchInterval,
+  });
+  const cacheMissing = summaryQuery.isSuccess && summaryQuery.data === null;
+  const emptyPresentation = dashboardCacheEmptyPresentation(sourceAvailability.data);
   const started = requested || Boolean(summaryQuery.data);
   const operations = useDashboardOperations(started, summaryQuery.data?.resultDigest);
   const rescreen = async () => {
@@ -198,13 +218,29 @@ function Dashboard() {
         </div>
       </div>
 
-      {!started && !summaryQuery.isPending ? (
-        <section className="rounded-lg border border-dashed border-primary/50 bg-card p-8 text-center">
+      {summaryQuery.isPending ? (
+        <section className="rounded-lg border border-border bg-card p-8">
+          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            V8 Final 대시보드를 불러오는 중입니다…
+          </div>
+        </section>
+      ) : summaryQuery.isError || (cacheMissing && sourceAvailability.isError) ? (
+        <DataError
+          error={summaryQuery.error ?? sourceAvailability.error}
+          reset={() => Promise.all([summaryQuery.refetch(), sourceAvailability.refetch()])}
+          embedded
+        />
+      ) : !summaryQuery.data ? (
+        <section
+          className="rounded-lg border border-dashed border-primary/50 bg-card p-8 text-center"
+          role="status"
+        >
           <SlidersHorizontal className="mx-auto mb-3 size-8 text-primary" />
-          <h2 className="mb-1 text-base font-semibold">아직 스크리닝을 시작하지 않았습니다</h2>
+          <h2 className="mb-1 text-base font-semibold">{emptyPresentation.title}</h2>
           <p className="mx-auto mb-4 max-w-md text-[12px] leading-relaxed text-muted-foreground">
-            데이터 관리 탭에서 시세 데이터를 입력한 뒤 스크리닝 시작을 누르면 V8 Final 캐시가
-            생성됩니다.
+            {emptyPresentation.detail}
+            {!requested ? " 이 화면에서는 새 계산을 시작하지 않습니다." : null}
           </p>
           <Button asChild size="lg" className="gap-2">
             <Link to="/scoring">
@@ -213,19 +249,6 @@ function Dashboard() {
             </Link>
           </Button>
         </section>
-      ) : summaryQuery.isPending ? (
-        <section className="rounded-lg border border-border bg-card p-8">
-          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
-            V8 Final 대시보드를 불러오는 중입니다…
-          </div>
-        </section>
-      ) : summaryQuery.isError || !summaryQuery.data ? (
-        <DataError
-          error={summaryQuery.error ?? "대시보드 요약을 불러오지 못했습니다."}
-          reset={() => summaryQuery.refetch()}
-          embedded
-        />
       ) : (
         <DashboardContent summary={summaryQuery.data} operations={operations} />
       )}

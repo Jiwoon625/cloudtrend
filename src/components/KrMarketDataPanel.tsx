@@ -64,7 +64,12 @@ export function KrMarketDataPanel({ data }: { data: DataStatusPayload }) {
       {data.notes.length > 0 ? (
         <ul className="mb-4 space-y-1 rounded-lg border border-border bg-card p-3 text-[12px] leading-relaxed text-muted-foreground">
           {data.notes.map((n) => (
-            <li key={n}>· {n}</li>
+            <li key={n}>
+              · {n}
+              {/^(시가총액은 입력값|외국인·기관 순매수는 입력값)/.test(n)
+                ? " (입력 전체 기간·전체 종목 기준이며, 최신 기준일 제공 여부는 아래 표를 확인하세요.)"
+                : null}
+            </li>
           ))}
         </ul>
       ) : null}
