@@ -1,0 +1,38 @@
+{
+  "schema": "KOSPI200_COMPARISON_INPUT_V1",
+  "stock_policy_id": "kospi-20261012-fixedcapital-e8-confirm1-u95-h60-v1",
+  "stock_budget_policy": "initial_capital_divided_by_30",
+  "stock_one_way_fee": 0.0015,
+  "stock_nav_basis": "post_cost_mark_to_market",
+  "benchmark_symbol": "069500",
+  "benchmark_price_basis": "UNVERIFIED_adjusted_price_is_not_total_return",
+  "stock_replay_verified": false,
+  "benchmark_distribution_verified": false,
+  "gate_point_in_time_verified": false,
+  "krx_calendar_verified": false,
+  "stock_corporate_actions_reviewed": false,
+  "stock_replay_commit": "",
+  "stock_replay_policy_sha256": "",
+  "stock_replay_evidence": "",
+  "benchmark_distribution_evidence": "",
+  "gate_evidence": "",
+  "calendar_evidence": "",
+  "sources": {
+    "stock_nav": {
+      "path": "stock_nav.csv",
+      "sha256": ""
+    },
+    "kodex200_total_return": {
+      "path": "kodex200_total_return.csv",
+      "sha256": ""
+    },
+    "kospi_market_gate": {
+      "path": "kospi_market_gate.csv",
+      "sha256": ""
+    },
+    "krx_sessions": {
+      "path": "krx_sessions.csv",
+      "sha256": ""
+    }
+  }
+}
