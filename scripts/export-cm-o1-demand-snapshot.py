@@ -29,6 +29,8 @@ SOURCES = {
 MAX_BYTES = 8192
 SCOPE = "Historical research targets only; no current signal or actual holdings inference"
 POLICY_CONTRACT = "First eligible record per engine/demand_id; positive amount in each market's last20 open sessions; any-demand O1 equal split; cap60%; excess central cash"
+HISTORY_SCHEMA = "CM_O1_PRIVATE_MONTHLY_ZERO_SUMMARY_V1"
+HISTORY_SCOPE = "All recorded historical month reviews; BUY means positive executed fill events in the same last20 market-session window, not the target signal"
 
 
 class SnapshotError(RuntimeError):
@@ -252,9 +254,137 @@ def validate_report(report):
             timestamp(report["virtual_asof"]["cutoff"]), "INVALID_REVIEW_TIMELINE")
 
 
+def derive_monthly_history(o1_files, reference_files, calendars, calendar_sources, context):
+    from cmresearchengine.runner import build_references
+    from cm06.policies import policy_target
+    references = build_references(reference_files)
+    reviews = json.loads(o1_files["reviews.json"])
+    require(isinstance(reviews, list) and reviews, "NO_MONTHLY_REVIEW")
+    times = pd.DatetimeIndex([pd.Timestamp(row["at"]) for row in reviews])
+    require(times.is_monotonic_increasing and not times.has_duplicates, "INVALID_MONTHLY_REVIEW_ORDER")
+    require(len({row["month"] for row in reviews}) == len(reviews), "DUPLICATE_MONTHLY_REVIEW")
+    sessions = {e: [row["open_at"] for row in calendars[e]] for e in "KEU"}
+
+    def buys(files):
+        events = pd.read_csv(io.BytesIO(files["events.csv"]))
+        require({"at", "kind", "sleeve", "quantity", "id"}.issubset(events.columns), "BUY_EVENT_COLUMNS_MISSING")
+        selected = events.loc[events["kind"].eq("BUY")].copy()
+        require(not selected["id"].isna().any() and not selected["id"].duplicated().any(), "DUPLICATE_BUY_EVENT")
+        require(selected["sleeve"].isin(list("KEU")).all(), "UNKNOWN_BUY_SLEEVE")
+        quantity = pd.to_numeric(selected["quantity"], errors="raise")
+        require((quantity > 0).all(), "NONPOSITIVE_BUY_FILL")
+        selected["at"] = pd.to_datetime(selected["at"], utc=True)
+        return selected
+
+    o1_buys = buys(o1_files)
+    ref_buys = {e: buys(reference_files[e]) for e in "KEU"}
+    keys = ("zero_target_reviews", "zero_demand_valid_reviews", "zero_o1_buys_valid_reviews",
+            "zero_ref_buys_valid_reviews", "nonzero_target_zero_o1_buys_valid_reviews",
+            "positive_demand_zero_ref_buys_valid_reviews")
+    stats = {e: {**dict.fromkeys(keys, 0), "zero_target_examples": [], "nonzero_target_zero_o1_buys_examples": []}
+             for e in "KEU"}
+    previous = {"K": 1/3, "E": 1/3, "U": 1/3, "C": 0.}
+    valid_count = fallback_count = 0
+    for review, cutoff in zip(reviews, times):
+        recorded = clean_weights(review["movement"]["targets"])
+        policy = review["policy"]
+        require(policy["policy_id"] == "O1", "MONTHLY_POLICY_CHANGED")
+        expected = policy_target("O1", references["nav"], cutoff, previous,
+            demand_events=references["demands"], reference_capital=references["capital"], engine_sessions=sessions)
+        require(equal_weights(recorded, clean_weights(expected.weights)) and
+                policy["fallback"] == expected.diagnostics["fallback"], "HISTORICAL_TARGET_RECONCILIATION_FAILED")
+        for e in "KEU":
+            stats[e]["zero_target_reviews"] += int(recorded[e] == 0)
+        if policy["fallback"]:
+            fallback_count += 1
+            require(equal_weights(recorded, previous), "HISTORICAL_FALLBACK_TARGET_CHANGED")
+            previous = recorded
+            continue
+        valid_count += 1
+        derived = evaluate(cutoff, references, calendars)
+        counts = derived["unique_positive_demand_counts"]
+        require(policy["status"] == "ok" and counts == policy["demand_unique_positive_counts"],
+                "HISTORICAL_DEMAND_RECONCILIATION_FAILED")
+        for e in "KEU":
+            require((recorded[e] == 0) == (counts[e] == 0), "ZERO_TARGET_DEMAND_MISMATCH")
+            window = [row for row in calendars[e] if pd.Timestamp(row["open_at"]) <= cutoff][-20:]
+            first = pd.Timestamp(window[0]["open_at"])
+            def count_fills(frame):
+                return int((frame["sleeve"].eq(e) & frame["at"].ge(first) & frame["at"].le(cutoff)).sum())
+            own_count, ref_count = count_fills(o1_buys), count_fills(ref_buys[e])
+            stat = stats[e]
+            stat["zero_demand_valid_reviews"] += int(counts[e] == 0)
+            stat["zero_o1_buys_valid_reviews"] += int(own_count == 0)
+            stat["zero_ref_buys_valid_reviews"] += int(ref_count == 0)
+            stat["nonzero_target_zero_o1_buys_valid_reviews"] += int(recorded[e] > 0 and own_count == 0)
+            stat["positive_demand_zero_ref_buys_valid_reviews"] += int(counts[e] > 0 and ref_count == 0)
+            example = {"month": review["month"], "window_first": window[0]["session_date"],
+                       "window_last": window[-1]["session_date"], "demands": counts[e],
+                       "target": recorded[e], "o1_buys": own_count, "ref_buys": ref_count}
+            if recorded[e] == 0 and len(stat["zero_target_examples"]) < 3:
+                stat["zero_target_examples"].append(example)
+            if recorded[e] > 0 and own_count == 0 and len(stat["nonzero_target_zero_o1_buys_examples"]) < 2:
+                stat["nonzero_target_zero_o1_buys_examples"].append(example)
+        previous = recorded
+    return {"schema": HISTORY_SCHEMA, "status": "PRIVATE_O1_MONTHLY_ZERO_SUMMARY_VERIFIED",
+            "plan_sha256": PLAN, "candidate_id": "O1", "identity": SOURCES["O1"][0], "audit": context,
+            "source_results": {k: {"identity": v[0], "zip_sha256": v[1]} for k, v in SOURCES.items()},
+            "review_count": len(reviews), "valid_review_count": valid_count, "fallback_review_count": fallback_count,
+            "first_review_month": reviews[0]["month"], "last_review_month": reviews[-1]["month"],
+            "markets": stats, "all_valid_targets_reconciled": True, "scope": HISTORY_SCOPE}
+
+
+def validate_history_report(report):
+    require(set(report) == {"schema", "status", "plan_sha256", "candidate_id", "identity", "audit", "source_results",
+            "review_count", "valid_review_count", "fallback_review_count", "first_review_month", "last_review_month",
+            "markets", "all_valid_targets_reconciled", "scope"}, "HISTORY_FIELDS_CHANGED")
+    require(report["schema"] == HISTORY_SCHEMA and report["status"] == "PRIVATE_O1_MONTHLY_ZERO_SUMMARY_VERIFIED" and
+            report["plan_sha256"] == PLAN and report["candidate_id"] == "O1" and report["identity"] == SOURCES["O1"][0] and
+            report["all_valid_targets_reconciled"] is True and report["scope"] == HISTORY_SCOPE, "HISTORY_IDENTITY_CHANGED")
+    require(report["source_results"] == {k: {"identity": v[0], "zip_sha256": v[1]} for k, v in SOURCES.items()},
+            "HISTORY_SOURCE_PINS_CHANGED")
+    audit = report["audit"]
+    require(set(audit) == {"run_id", "attempt", "commit"} and isinstance(audit["run_id"], str) and
+            re.fullmatch(r"[1-9][0-9]*", audit["run_id"]) and type(audit["attempt"]) is int and audit["attempt"] > 0 and
+            isinstance(audit["commit"], str) and re.fullmatch(r"[0-9a-f]{40}", audit["commit"]), "INVALID_AUDIT_CONTEXT")
+    total = report["review_count"]
+    require(type(total) is int and 0 < total < 200 and
+            all(type(report[k]) is int and 0 <= report[k] <= total for k in ("valid_review_count", "fallback_review_count")) and
+            total == report["valid_review_count"] + report["fallback_review_count"], "INVALID_HISTORY_COUNTS")
+    def month(value):
+        return isinstance(value, str) and re.fullmatch(r"20(?:1[7-9]|2[0-6])-(?:0[1-9]|1[0-2])", value)
+    require(month(report["first_review_month"]) and month(report["last_review_month"]) and
+            report["first_review_month"] <= report["last_review_month"], "INVALID_HISTORY_MONTHS")
+    require(set(report["markets"]) == set("KEU"), "INVALID_HISTORY_MARKETS")
+    count_keys = {"zero_target_reviews", "zero_demand_valid_reviews", "zero_o1_buys_valid_reviews",
+                  "zero_ref_buys_valid_reviews", "nonzero_target_zero_o1_buys_valid_reviews",
+                  "positive_demand_zero_ref_buys_valid_reviews"}
+    for stat in report["markets"].values():
+        require(set(stat) == count_keys | {"zero_target_examples", "nonzero_target_zero_o1_buys_examples"} and
+                all(type(stat[k]) is int and 0 <= stat[k] <= total for k in count_keys), "INVALID_HISTORY_STAT_FIELDS")
+        for field, limit in (("zero_target_examples", 3), ("nonzero_target_zero_o1_buys_examples", 2)):
+            examples = stat[field]
+            require(isinstance(examples, list) and len(examples) <= limit, "INVALID_HISTORY_EXAMPLE_COUNT")
+            for example in examples:
+                require(set(example) == {"month", "window_first", "window_last", "demands", "target", "o1_buys", "ref_buys"} and
+                        month(example["month"]) and report["first_review_month"] <= example["month"] <= report["last_review_month"],
+                        "INVALID_HISTORY_EXAMPLE_FIELDS")
+                require(all(type(example[k]) is int and 0 <= example[k] < 10000000 for k in ("demands", "o1_buys", "ref_buys")) and
+                        type(example["target"]) is float and math.isfinite(example["target"]) and 0 <= example["target"] <= .6,
+                        "INVALID_HISTORY_EXAMPLE_VALUES")
+                require(all(isinstance(example[k], str) and re.fullmatch(r"20(?:1[7-9]|2[0-6])-[0-9]{2}-[0-9]{2}", example[k])
+                            for k in ("window_first", "window_last")) and example["window_first"] <= example["window_last"],
+                        "INVALID_HISTORY_WINDOW")
+                require((example["target"] == 0 and example["demands"] == 0) if field == "zero_target_examples" else
+                        (example["target"] > 0 and example["demands"] > 0 and example["o1_buys"] == 0), "INVALID_HISTORY_EXAMPLE_MEANING")
+
+
 def publish(store, report):
     from cmresearchengine.storage import _DuplicateObject, ImmutableConflict
-    validate_report(report)
+    if report.get("schema") == HISTORY_SCHEMA:
+        validate_history_report(report)
+    else:
+        validate_report(report)
     raw = canonical(report)
     digest = sha(raw)
     metadata = {**report, "report_sha256": digest}
@@ -290,7 +420,10 @@ def export_snapshot(*, accounting_audit_passed, store=None, environ=None):
     calendars, calendar_sources = verified_calendars(store)
     report = derive_snapshot(files["O1"], {e: files["REF_" + e] for e in "KEU"}, calendars, calendar_sources, context)
     publish(store, report)
+    history = derive_monthly_history(files["O1"], {e: files["REF_" + e] for e in "KEU"}, calendars, calendar_sources, context)
+    publish(store, history)
     print('{"status":"PRIVATE_O1_DEMAND_SNAPSHOT_VERIFIED","private_storage":true}')
+    print('{"status":"PRIVATE_O1_MONTHLY_ZERO_SUMMARY_VERIFIED","private_storage":true}')
 
 
 def export_snapshot_safely(**kwargs):
