@@ -107,7 +107,7 @@ export function OperatingAllocationContent({
         data?.usdSizingEvidence ? (
           <p>
             미국 첫해 기준: {money(data.usdSizingEvidence.amountUsd)} USD ÷ 20 ·{" "}
-            {data.usdSizingEvidence.effectiveSessionDate} 이후 신규 확정 신호부터
+            {data.usdSizingEvidence.effectiveSessionDate} 이후 확정 신호부터
           </p>
         ) : (
           <p role="status">미국 첫해 USD 예산 근거 확인 대기</p>

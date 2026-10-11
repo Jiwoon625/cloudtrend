@@ -60,7 +60,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "CloudTrend V8 Final 10점 기술점수의 KOSPI 하루 확인·RSAccel·하락장 신규진입 차단, KOSDAQ 8.0 원신호, KOSPI U9.5 / DX, KOSDAQ U9.0 / D3.0 Exit, 섹터 로테이션과 시장 상태를 한 화면에서 확인합니다.",
+          "CloudTrend V8 Final 10점 기술점수의 KOSPI 하루 확인·RSAccel·하락장 진입 차단, KOSDAQ 8.0 원신호, KOSPI U9.5 / DX, KOSDAQ U9.0 / D3.0 Exit, 섹터 로테이션과 시장 상태를 한 화면에서 확인합니다.",
       },
       { property: "og:title", content: "대시보드 | CloudTrend V8 Final" },
       {
@@ -284,7 +284,20 @@ function DashboardContent({
       </div>
 
       <DashboardSignalCounts query={operations} counts={summary.counts} />
+      <h2 className="mt-5 text-sm font-semibold">아침 종목 판단 · 저장된 진입 준비 / 보유 청산</h2>
+      <p className="mb-2 text-[11px] text-muted-foreground">
+        자료 수신과 기존 전략 조건에 따른 상태입니다. 저녁 검토 후보와 구분해 확인하세요.
+      </p>
       <DashboardSignalLists query={operations} />
+      {operations.data ? (
+        <DomesticAssessmentPanel markets={operations.data.markets} review />
+      ) : (
+        <p className="my-4 text-xs text-muted-foreground" role="status">
+          {operations.isError
+            ? "후보 검토 자료 조회 실패 · 기존 판단 자료를 다시 확인해 주세요."
+            : "후보 검토 자료 불러오는 중…"}
+        </p>
+      )}
       <div className="space-y-4">
         <div className="space-y-4">
           <Card
@@ -292,10 +305,10 @@ function DashboardContent({
             icon={<ShieldCheck className="size-4 text-primary" />}
           >
             <p className="mb-2 text-[10px] text-muted-foreground">
-              신규 배정·입출금 기준 · KRW (ETF와 공유)
+              배정·입출금 기준 · KRW (ETF와 공유)
             </p>
             <KeyValue
-              label="신규 순입금"
+              label="순입금"
               value={
                 portfolio
                   ? portfolio.netContributions === null
@@ -305,7 +318,7 @@ function DashboardContent({
               }
             />
             <KeyValue
-              label="신규 현금"
+              label="현금"
               value={
                 portfolio
                   ? portfolio.cash === null
@@ -315,7 +328,7 @@ function DashboardContent({
               }
             />
             <KeyValue
-              label="신규 실제 보유 종목수"
+              label="실제 보유 종목수"
               value={
                 portfolio
                   ? `국내주식 ${portfolio.assetPositions.KR}종목 · ETF ${portfolio.assetPositions.ETF}종목`
@@ -323,9 +336,7 @@ function DashboardContent({
               }
             />
             {portfolio?.fundingStatus === "INCOMPLETE" ? (
-              <p className="mt-2 text-[10px] text-warn">
-                신규 입출금·체결의 자금 연결을 확인해 주세요.
-              </p>
+              <p className="mt-2 text-[10px] text-warn">입출금·체결의 자금 연결을 확인해 주세요.</p>
             ) : null}
             <Link
               to="/portfolio"
@@ -338,7 +349,7 @@ function DashboardContent({
         </div>
 
         <Card
-          title="KOSPI 시장 상태 · 신규 진입 조건"
+          title="KOSPI 시장 상태 · 진입 조건"
           icon={<Activity className="size-4 text-primary" />}
         >
           <div className={`mb-2 flex items-center gap-2 text-lg font-bold ${gateColor}`}>
@@ -358,7 +369,7 @@ function DashboardContent({
           </p>
           {gate.incomplete ? (
             <p className="mb-2 text-[11px] text-warn">
-              시장국면 미확인 · KOSPI 신규 진입 제외 · {gate.issues.join(" · ")}
+              시장국면 미확인 · KOSPI 진입 제외 · {gate.issues.join(" · ")}
             </p>
           ) : null}
           <KeyValue

@@ -168,3 +168,125 @@ it("resets pagination for search and market changes, then supports repeated back
   view = renderPanel(many);
   expect(view.html).toContain("1/3페이지");
 });
+
+it("defaults review to focused current candidates and transitions when saved KRX evidence arrives", () => {
+  const current = structuredClone(markets);
+  current[0]!.date = "2026-10-12";
+  current[0]!.assessments!.forEach((r) => {
+    r.date = "2026-10-12";
+  });
+  let html = renderToStaticMarkup(<DomesticAssessmentPanel markets={current} review />);
+  expect(html).toContain("저녁 후보 선정 · 아침 종목 판단 확정");
+  expect(html).toContain("미보유 종목");
+  expect(html).not.toContain("주성엔지니어링");
+  expect(html).toContain("최종 진입 미확정");
+  current[0]!.assessments![1]!.assessment = {
+    ...assessment,
+    pending: [],
+    finalEntry: "저장된 운영 진입 조건 충족 · 보유·체결 조건 별도 확인",
+  };
+  html = renderToStaticMarkup(<DomesticAssessmentPanel markets={current} review />);
+  expect(html).toContain("저장된 운영 진입 조건 충족");
+  expect(html).not.toContain("시가총액 미확인");
+});
+it("does not promote pre-start saved evidence to default review candidates", () => {
+  const html = renderToStaticMarkup(<DomesticAssessmentPanel markets={markets} review />);
+  expect(html).toContain("기준일의 검토 후보가 없습니다");
+  expect(html).not.toContain("미보유 종목");
+});
+
+it("switches review scope without changing strategy evidence and resets pagination", () => {
+  const many = [
+    {
+      ...markets[0]!,
+      date: "2026-10-12",
+      assessments: Array.from({ length: 25 }, (_, index) => ({
+        ...markets[0]!.assessments![1]!,
+        date: "2026-10-12",
+        symbol: `R${index}`,
+        name: `검토 ${index}`,
+      })),
+    },
+  ];
+  const renderReview = () => {
+    hooks.cursor = 0;
+    const tree = DomesticAssessmentPanel({ markets: many, review: true });
+    return { elements: nodes(tree), html: renderToStaticMarkup(tree) };
+  };
+  let view = renderReview();
+  view.elements.find((e) => e.type === "button" && e.props.children === "다음")!.props.onClick!();
+  view = renderReview();
+  expect(view.html).toContain("2/5페이지");
+  view.elements.filter((e) => e.type === "select")[0]!.props.onChange!({
+    target: { value: "all" },
+  });
+  view = renderReview();
+  expect(view.html).toContain("1/5페이지");
+  view.elements.filter((e) => e.type === "select")[0]!.props.onChange!({
+    target: { value: "candidates" },
+  });
+  view = renderReview();
+  expect(view.html).toContain("1/5페이지");
+  expect(many[0]!.assessments[0]!.assessment?.pending).toEqual(["시가총액 미확인"]);
+});
+
+it("omits the legacy new label only from dashboard evidence, preserving stored meaning", () => {
+  const current = structuredClone(markets);
+  current[0]!.date = "2026-10-12";
+  current[0]!.assessments!.forEach((r) => {
+    r.date = "2026-10-12";
+  });
+  const before = structuredClone(current);
+  const html = renderToStaticMarkup(<DomesticAssessmentPanel markets={current} review />);
+  expect(html).not.toContain("신규");
+  expect(html).toContain("8.0점 돌파");
+  expect(current).toEqual(before);
+});
+
+it("does not present a domestic source outage or unknown holdings as zero confirmed candidates", () => {
+  const unavailable = [{ ...markets[0]!, date: null, assessments: [] }];
+  const html = renderToStaticMarkup(<DomesticAssessmentPanel markets={unavailable} review />);
+  expect(html).toContain("국내 기준일·조건별 판단 자료 미확인");
+  expect(html).not.toContain("기준일의 검토 후보가 없습니다");
+  const unknown = [{ ...markets[0]!, holdingsKnown: false }];
+  const unknownHtml = renderToStaticMarkup(<DomesticAssessmentPanel markets={unknown} review />);
+  expect(unknownHtml).toContain("실제 보유정보 확인 대기");
+  expect(unknownHtml).not.toContain("기준일의 검토 후보가 없습니다");
+});
+
+it("shows the ETF pre-start exclusion when browsing all saved evidence", () => {
+  hooks.values[3] = "all";
+  const etf = {
+    ...markets[0]!.assessments![1]!,
+    market: "ETF" as const,
+    date: "2026-10-12",
+    assessment: undefined,
+    operationalEntryNotice: null,
+    etfEntry: { entryState: "data_pending", originDate: "2026-10-08" },
+    etfAssessment: {
+      current: true,
+      krxPending: true,
+      isStrategyTarget: true,
+      score: null,
+      previousScore: null,
+      previousDate: null,
+      technical: 50,
+      priority: null,
+      health: null,
+      environment: null,
+      annualVolatility: null,
+      entryWeight: null,
+      averageTradingValue20: null,
+      underlyingClose: null,
+      underlyingMa60: null,
+      underlyingJudgment: "unconfirmed" as const,
+      provenanceLabel: "2026-10-12 저장 근거",
+    },
+  };
+  const input = [
+    { ...markets[0]!, market: "ETF" as const, date: "2026-10-12", assessments: [etf] },
+  ];
+  const html = renderToStaticMarkup(<DomesticAssessmentPanel markets={input} review />);
+  expect(html).toContain("시작 전 원신호 · 운용 승계 안 함");
+  expect(html).not.toContain("신규");
+});

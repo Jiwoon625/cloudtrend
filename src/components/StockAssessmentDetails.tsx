@@ -12,12 +12,14 @@ export function StockAssessmentDetails({
   signalDate,
   originDate,
   entryNotice,
+  formatText = (text) => text,
 }: {
   assessment: StockAssessmentDisplay;
   held?: boolean;
   signalDate?: string | undefined;
   originDate?: string | null | undefined;
   entryNotice?: string | null | undefined;
+  formatText?: ((text: string) => string) | undefined;
 }) {
   const excluded =
     signalDate !== undefined
@@ -30,18 +32,18 @@ export function StockAssessmentDetails({
   return (
     <div className="space-y-1 text-[11px] leading-relaxed" aria-label="계산된 조건별 판단">
       {assessment.conditions.map((condition) => (
-        <p key={condition}>{condition}</p>
+        <p key={condition}>{formatText(condition)}</p>
       ))}
       {held && (signalDate === undefined || isOperationalSignalDate(signalDate)) ? (
-        <p>{assessment.exit}</p>
+        <p>{formatText(assessment.exit)}</p>
       ) : null}
       {assessment.failed.length ? (
-        <p className="text-down">확인된 미충족: {assessment.failed.join(" · ")}</p>
+        <p className="text-down">확인된 미충족: {formatText(assessment.failed.join(" · "))}</p>
       ) : null}
       {assessment.pending.length ? (
-        <p className="text-warn">자료 확인 대기: {assessment.pending.join(" · ")}</p>
+        <p className="text-warn">자료 확인 대기: {formatText(assessment.pending.join(" · "))}</p>
       ) : null}
-      <p className="font-medium">{entryNotice ?? excluded ?? assessment.finalEntry}</p>
+      <p className="font-medium">{formatText(entryNotice ?? excluded ?? assessment.finalEntry)}</p>
     </div>
   );
 }

@@ -412,7 +412,7 @@ describe("dashboard portfolio without the model preview card", () => {
   it("keeps the actual account summary and legacy link into the unified portfolio", () => {
     const html = renderToStaticMarkup(<UsDashboardPortfolio query={query()} />);
     expect(html).toContain('aria-label="미국주식 A0 포트폴리오"');
-    expect(html).toContain("신규 배정·입출금 기준 · USD");
+    expect(html).toContain("배정·입출금 기준 · USD");
     expect(html).toContain('href="/us/portfolio"');
     expect(html).toContain("포트폴리오 상세 보기 →");
     expect(html).toContain("min-w-0");

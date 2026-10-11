@@ -87,7 +87,7 @@ describe("concise dashboard strategy rules", () => {
     expect(html).not.toContain("기존 운영 전략 유지");
     expect(html).not.toContain("되살리지 않으며");
     expect(html).toContain(
-      "M0 80점 신규 돌파 진입 · 기초지수 MA60 하회 시 청산 · 데이터 오류 시 청산 점검.",
+      "M0 80점 돌파 진입 · 기초지수 MA60 하회 시 청산 · 데이터 오류 시 청산 점검.",
     );
     expect(html).toContain(
       "Core 상위 30% 밖 또는 산정 불가 시 청산. Beta 상위 40% 밖 3거래일 연속도 청산합니다.",
@@ -470,4 +470,17 @@ describe("actual action context remains separate from entry evidence", () => {
     expect(actual).not.toContain("consumed-condition");
     expect(actual).not.toContain("unknown-condition");
   });
+});
+
+it("uses one actual-account dashboard vocabulary without changing source records", () => {
+  const value = data(0, 0);
+  value.warnings = ["신규 운용은 2026-10-12 신호부터 시작합니다."];
+  const before = structuredClone(value);
+  const html =
+    renderCounts(value) + renderToStaticMarkup(<UsDashboardPortfolio query={query(value)} />);
+  expect(html).not.toContain("신규");
+  expect(html).toContain("운용은 2026-10-12 신호부터 시작합니다.");
+  expect(html).toContain("순입금");
+  expect(html).toContain("현금");
+  expect(value).toEqual(before);
 });
