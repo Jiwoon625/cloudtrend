@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "postbuild": "node scripts/write-deployment-manifest.mjs",
+    "verify:deployment": "node scripts/verify-deployment-assets.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "data:ingest": "vite-node --script scripts/ingest-source.ts",

@@ -49,7 +49,18 @@ export default {
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      const normalized = await normalizeCatastrophicSsrResponse(response);
+      const headers = new Headers(normalized.headers);
+      headers.set("x-cloudtrend-code-version", import.meta.env["VITE_CLOUDTREND_CODE_VERSION"]);
+      // HTML references this release's hashed assets. Never reuse it across deployments.
+      if (headers.get("content-type")?.includes("text/html")) {
+        headers.set("cache-control", "private, no-store");
+      }
+      return new Response(normalized.body, {
+        status: normalized.status,
+        statusText: normalized.statusText,
+        headers,
+      });
     } catch (error) {
       console.error(error);
       return new Response(renderErrorPage(), {

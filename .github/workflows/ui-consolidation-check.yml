@@ -23,6 +23,10 @@ on:
       - vitest.ui-reorg.config.ts
       - package.json
       - package-lock.json
+      - vite.config.ts
+      - src/server.ts
+      - scripts/*deployment*.mjs
+      - tests/deployment-assets.test.mjs
       - .github/workflows/ui-consolidation-check.yml
 permissions:
   contents: read
@@ -37,6 +41,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Reject stale HTML, missing startup files and mismatched asset contents
+        run: node --test tests/deployment-assets.test.mjs
       - name: Verify consolidated navigation, content, tax, owner changes and fallback states
         run: npx vitest run --config vitest.ui-reorg.config.ts
       - name: Verify immutable and legacy market history identity
