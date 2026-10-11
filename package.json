@@ -16,8 +16,8 @@
     "format": "prettier --write .",
     "us:screening": "vite-node --script scripts/run-us-screening.ts",
     "test:us": "vitest run src/lib/engine/usProspective.test.ts",
-    "prebuild": "vite-node --script scripts/build-october-shadow-manifest.ts",
-    "predev": "vite-node --script scripts/build-october-shadow-manifest.ts",
+    "prebuild": "vite-node --script scripts/build-october-shadow-manifest.ts && vite-node --script scripts/build-integrated-allocation-manifest.ts",
+    "predev": "vite-node --script scripts/build-october-shadow-manifest.ts && vite-node --script scripts/build-integrated-allocation-manifest.ts",
     "us:replay": "vite-node --script scripts/run-us-gap-replay.ts"
   },
   "overrides": {

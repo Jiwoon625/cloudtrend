@@ -21,11 +21,10 @@ export interface WebsiteHolding {
   shares: number;
   firstEntryDate: string;
 }
-/** Only reviewed new-series allocations and explicitly selected restart Shadow books. */
-export function projectWebsitePositionContext(
+/** Only reviewed allocations in the new actual pools; independent of model books. */
+export function projectActualPositionContext(
   domestic: NewActualDocument | null,
   us: NewActualDocument | null,
-  inputShadow: OctoberShadowSummary,
   now = new Date(),
 ) {
   const today = (currency: "KRW" | "USD") =>
@@ -45,16 +44,6 @@ export function projectWebsitePositionContext(
     KRW: pool("KRW", domestic),
     USD: pool("USD", us),
   };
-  const shadow = websiteShadowSummary(inputShadow);
-  if (
-    !shadow ||
-    shadow.books.length !== ADOPTED_SERIES_KINDS.length ||
-    new Set(shadow.books.map((b) => b.kind)).size !== ADOPTED_SERIES_KINDS.length ||
-    shadow.books.some((b) => b.status === "UNAVAILABLE")
-  )
-    throw new Error(
-      "신규 Shadow 보유를 확인하지 못했습니다. 과거 보유나 미보유로 대체하지 않습니다.",
-    );
   const actualExecutions: NewActualExecution[] = Object.values(actualPools).flatMap((p) =>
     p.trades.map(({ execution, allocation }) => ({
       ...execution,
@@ -81,6 +70,44 @@ export function projectWebsitePositionContext(
       firstEntryDate: cycles.get(`${position.market}:${position.symbol}`)!.entryDate,
     })),
   );
+  const lastSellDateBySymbol: Record<string, string> = {};
+  for (const e of actualExecutions)
+    if (
+      e.side === "SELL" &&
+      (!lastSellDateBySymbol[e.symbol] || e.date > lastSellDateBySymbol[e.symbol]!)
+    )
+      lastSellDateBySymbol[e.symbol] = e.date;
+  return {
+    positions,
+    actualPools,
+    actualExecutions,
+    heldSymbols: [...new Set(positions.map((p) => p.symbol))].sort(),
+    lastSellDateBySymbol,
+  };
+}
+/** Screener compatibility: actual holdings plus validated restart Shadow holdings. */
+export function projectWebsitePositionContext(
+  domestic: NewActualDocument | null,
+  us: NewActualDocument | null,
+  inputShadow: OctoberShadowSummary,
+  now = new Date(),
+) {
+  const actual = projectActualPositionContext(domestic, us, now);
+  const positions = [...actual.positions];
+  const today = (currency: "KRW" | "USD") =>
+    now.toLocaleDateString("en-CA", {
+      timeZone: currency === "KRW" ? "Asia/Seoul" : "America/New_York",
+    });
+  const shadow = websiteShadowSummary(inputShadow);
+  if (
+    !shadow ||
+    shadow.books.length !== ADOPTED_SERIES_KINDS.length ||
+    new Set(shadow.books.map((b) => b.kind)).size !== ADOPTED_SERIES_KINDS.length ||
+    shadow.books.some((b) => b.status === "UNAVAILABLE")
+  )
+    throw new Error(
+      "신규 Shadow 보유를 확인하지 못했습니다. 과거 보유나 미보유로 대체하지 않습니다.",
+    );
   for (const book of shadow.books) {
     if (book.status !== "RECORDED") {
       if (book.holdings.length) throw new Error("미기록 신규 Shadow에 보유가 있습니다.");
@@ -116,21 +143,29 @@ export function projectWebsitePositionContext(
         });
     }
   }
-  const lastSellDateBySymbol: Record<string, string> = {};
-  for (const e of actualExecutions)
-    if (
-      e.side === "SELL" &&
-      (!lastSellDateBySymbol[e.symbol] || e.date > lastSellDateBySymbol[e.symbol]!)
-    )
-      lastSellDateBySymbol[e.symbol] = e.date;
   return {
+    ...actual,
     positions,
-    actualPools,
-    actualExecutions,
     heldSymbols: [...new Set(positions.map((p) => p.symbol))].sort(),
-    lastSellDateBySymbol,
   };
 }
+
+/** Read the owner's actual journals only. Shadow availability cannot block this context. */
+export async function loadActualPositionSnapshotForOwner(client: SupabaseClient, uid: string) {
+  const [domestic, us] = await Promise.all([
+    readWebsiteDocument<NewActualDocument>(client, uid, "portfolio_ledgers"),
+    readWebsiteDocument<NewActualDocument>(client, uid, "us_actual_portfolio_ledgers"),
+  ]);
+  return {
+    context: projectActualPositionContext(domestic?.payload ?? null, us?.payload ?? null),
+    domestic,
+    us,
+  };
+}
+export async function loadActualPositionContextForOwner(client: SupabaseClient, uid: string) {
+  return (await loadActualPositionSnapshotForOwner(client, uid)).context;
+}
+
 export async function loadWebsitePositionContextForOwner(client: SupabaseClient, uid: string) {
   const [domestic, us, shadow] = await Promise.all([
     readWebsiteDocument<NewActualDocument>(client, uid, "portfolio_ledgers"),

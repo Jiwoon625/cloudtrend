@@ -1,3 +1,4 @@
+import { dashboardSectorLimit } from "./dashboardOperationsSectorLimits";
 import { gunzipSync } from "node:zlib";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
@@ -19,7 +20,7 @@ import {
   type DashboardOperations,
 } from "./dashboardOperations";
 
-import { loadWebsitePositionContextForOwner } from "./websitePositionContext.server";
+import { loadActualPositionSnapshotForOwner } from "./websitePositionContext.server";
 import { OPERATIONAL_SIGNAL_START, isOperationalSignalDate } from "./operationalSignalStart";
 import type { NewActualPool } from "./newActualPortfolio";
 
@@ -171,18 +172,31 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
       return null;
     }
   }
-  const [kr, us, context] = await Promise.all([
+  const [kr, us, actualSnapshot] = await Promise.all([
     safe("국내 신호", () => projection(client, uid, "kr")),
     safe("미국 신호", () => projection(client, uid, "us")),
-    safe("신규 운용 보유", () => loadWebsitePositionContextForOwner(client, uid)),
+    safe("신규 실제 보유", () => loadActualPositionSnapshotForOwner(client, uid)),
   ]);
+  const context = actualSnapshot?.context ?? null;
   if (kr?.rows.some((r) => r.market === "ETF" && r.etfEntry?.dataStatus === "krx_batch_pending")) {
     warnings.push(
       `ETF ${kr.date}: KRX 기준일 자료 확인 대기. 다음 영업일 08:00 KST부터 조회 가능하며, 저녁 미공표는 정상입니다. 가용한 조건별 판단은 ETF 스크리너에서 확인하고 최종 진입은 자료 확인 후 판단합니다.`,
     );
   }
-  // Old actual journals, beta ledgers and manually tracked ETF membership are
-  // never a fallback for website holdings. The shared reader validates each new slice.
+  const actualSectorCounts = new Map<string, number>();
+  let actualSectorsKnown = !!context && !!kr;
+  for (const position of context?.positions ?? []) {
+    if (position.market !== "KOSPI" && position.market !== "KOSDAQ") continue;
+    const row = kr?.rows.find(
+      (row) =>
+        row.symbol === position.symbol && row.market === position.market && row.date === kr.date,
+    );
+    const sector = row?.sectorCode;
+    if (!sector || ["UNKNOWN", "ETC", "OTHER", "-"].includes(sector)) actualSectorsKnown = false;
+    else actualSectorCounts.set(sector, (actualSectorCounts.get(sector) ?? 0) + 1);
+  }
+  // Only allocated actual fills determine dashboard holdings and consumed signals.
+  // Shadow, old journals and manually tracked ETF membership are never a fallback.
   const markets = DASHBOARD_MARKETS.map((market) =>
     marketSignals(
       market === "US" ? us : kr,
@@ -190,16 +204,16 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
       context ? context.positions.filter((position) => position.market === market) : null,
       context?.actualExecutions ?? [],
       {
-        counts: null,
-        maxPositions: null,
-        asOfDate: null,
-        issue: "신규 시리즈 확인 대기",
+        counts: actualSectorsKnown ? actualSectorCounts : null,
+        maxPositions: 30,
+        asOfDate: kr?.date ?? null,
+        issue: actualSectorsKnown ? null : "실제 보유 섹터 자료 미확인",
       },
       OPERATIONAL_SIGNAL_START,
     ),
   );
   if (!context)
-    warnings.push("신규 운용 보유정보를 확인하지 못해 보유 EXIT는 미확인으로 표시합니다.");
+    warnings.push("신규 실제 보유정보를 확인하지 못해 보유 EXIT는 미확인으로 표시합니다.");
   for (const [label, index, market] of [
     ["국내", kr, "KR"],
     ["미국", us, "US"],
@@ -224,8 +238,29 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
         `${label} 신규 보유 ${missing.length}종목은 최신 스크리닝에 없어 신호 확인이 필요합니다.`,
       );
   }
+  const actualAllocation = actualSnapshot
+    ? await safe("실제 배분 예산", async () => {
+        const { projectDashboardActualAllocation } =
+          await import("./dashboardActualAllocation.server");
+        return projectDashboardActualAllocation({ actual: actualSnapshot, kr, us, markets });
+      })
+    : null;
+  if (actualAllocation) {
+    const sector = actualAllocation.sectorContext;
+    const sectorContext = {
+      ...sector,
+      counts: sector.counts ? new Map(Object.entries(sector.counts)) : null,
+      issue: sector.counts ? null : "실제 보유·미체결 예약 섹터 미확인",
+    };
+    for (const group of markets)
+      for (const row of [...(group.conditions ?? []), ...group.onsets, ...(group.pending ?? [])]) {
+        const limit = dashboardSectorLimit(row, sectorContext);
+        if (limit) row.sectorLimit = limit;
+      }
+  }
   return {
     markets,
+    actualAllocation,
     newActualPools: context
       ? { KRW: poolSummary(context.actualPools.KRW), USD: poolSummary(context.actualPools.USD) }
       : null,

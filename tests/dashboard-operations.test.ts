@@ -433,7 +433,7 @@ describe("ETF registration and dashboard preservation", () => {
     expect(server).toContain("auth.getUser(accessToken)");
     expect(server).toContain("memory.size >= 8");
     expect(ui).not.toMatch(
-      /loadUsProspectiveCache|analysisQueryOptions|usPortfolioSnapshots|Shadow|SHADOW/,
+      /loadUsProspectiveCache|analysisQueryOptions|usPortfolioSnapshots|loadOctoberShadow|october-shadow-summary/,
     );
     expect(ui).toContain("rows.slice(currentPage * 25");
   });
@@ -760,4 +760,77 @@ describe("restart action-list signal provenance", () => {
     expect(result.exitCount).toBe(1);
     expect(result.exits[0]?.symbol).toBe("005930");
   });
+});
+
+describe("actual lifecycle and independent entry-condition evidence", () => {
+  const asOf = "2026-10-14";
+  const source = (market: DashboardIndexRow["market"], signalDate = asOf) => ({
+    date: signalDate,
+    tradeDates: ["2026-10-12", "2026-10-13", signalDate],
+    rows: [
+      row("LIFE", {
+        market,
+        date: signalDate,
+        onset: true,
+        exitReason: "DATA_UNAVAILABLE",
+        ...(market === "KOSPI"
+          ? {
+              kospiEntry: {
+                state: "confirmed",
+                originDate: signalDate,
+              } as DashboardIndexRow["kospiEntry"],
+            }
+          : {}),
+        ...(market === "ETF"
+          ? {
+              etfEntry: {
+                version: ETF_POLICY.version,
+                entryState: "confirmed",
+                originDate: signalDate,
+                dataStatus: "ready",
+              } as DashboardIndexRow["etfEntry"],
+            }
+          : {}),
+      }),
+    ],
+  });
+  it.each(["KOSPI", "KOSDAQ", "ETF", "US"] as const)(
+    "keeps conditions while actual %s holdings and sales change actions",
+    (market) => {
+      const current = source(market);
+      const evaluate = (
+        positions: DashboardHolding[] | null,
+        executions: Parameters<typeof marketSignals>[3] = [],
+        input = current,
+      ) => marketSignals(input, market, positions, executions, null, "2026-10-12");
+      const unbought = evaluate([]);
+      expect(unbought.conditionCount).toBe(1);
+      expect(unbought.onsetCount).toBe(1);
+      expect(unbought.conditions![0]!.actualState).toBe("READY");
+      expect(evaluate([])).toEqual(unbought); // Re-reading is not a new signal or an order.
+      const held = evaluate([hold("LIFE", 10, "2026-10-13")]);
+      expect(held.conditionCount).toBe(1);
+      expect(held.onsetCount).toBe(0);
+      expect(held.conditions![0]).toMatchObject({ actualState: "HELD", actualQuantity: 10 });
+      expect(held.exitCount).toBe(1);
+      const sell = { symbol: "LIFE", market, date: asOf, side: "SELL" as const, shares: 4 };
+      const partial = evaluate([hold("LIFE", 6, "2026-10-13")], [sell]);
+      expect(partial.exits[0]).toMatchObject({ actualQuantity: 6, actualEntryDate: "2026-10-13" });
+      const closed = evaluate([], [{ ...sell, shares: 10 }]);
+      expect(closed.conditionCount).toBe(1);
+      expect(closed.conditions![0]!.actualState).toBe("CONSUMED");
+      expect(closed.onsetCount).toBe(0);
+      expect(closed.exitCount).toBe(0);
+      expect(evaluate([], [sell], source(market, "2026-10-15")).onsetCount).toBe(1);
+      const unknown = evaluate(null);
+      expect(unknown.conditionCount).toBe(1);
+      expect(unknown.conditions![0]!.actualState).toBe("UNKNOWN");
+      expect(unknown.onsetCount).toBeNull();
+      expect(unknown.exitCount).toBeNull();
+      expect(unknown.onsets).toEqual([]);
+      const stale = { ...current, date: "2026-10-15" };
+      expect(evaluate([], [], stale).conditionCount).toBe(0);
+      expect(evaluate([hold("LIFE")], [], stale).exitCount).toBe(0);
+    },
+  );
 });

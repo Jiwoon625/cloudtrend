@@ -277,8 +277,9 @@ describe("Korean dashboard strategy-sector annotation", () => {
     );
     expect(source).toContain("dashboard-operations-partial-evidence-v6");
     expect(source).not.toContain("projectDashboardSectorContext(krDoc");
-    expect(source).toContain("loadWebsitePositionContextForOwner(client, uid)");
-    expect(source).toContain('issue: "신규 시리즈 확인 대기"');
+    expect(source).toContain("loadActualPositionSnapshotForOwner(client, uid)");
+    expect(source).toContain("maxPositions: 30");
+    expect(source).toContain("projectDashboardActualAllocation");
     expect(source).not.toMatch(/operateLedgers|simulateStrategy|refreshStrategy/);
   });
 });

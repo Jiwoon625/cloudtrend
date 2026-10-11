@@ -9,6 +9,8 @@ vi.mock("./octoberShadowSummary.server", async (original) => ({
 }));
 import { describe, expect, it, vi } from "vitest";
 import {
+  projectActualPositionContext,
+  loadActualPositionContextForOwner,
   projectWebsitePositionContext,
   loadWebsitePositionContextForOwner,
 } from "./websitePositionContext.server";
@@ -221,3 +223,165 @@ it.each(["actual", "restart-shadow"])(
     expect(isHeldExit(row, context, "2026-10-14")).toBe(true);
   },
 );
+
+describe("actual-only dashboard position context", () => {
+  const allocatedDocument = (executions: NewActualExecution[], quantity = 1) => {
+    const metadata = emptyNewActualMetadata();
+    for (const execution of executions)
+      metadata.assignments[execution.id] = {
+        executionId: execution.id,
+        quantity,
+        gross: quantity * execution.price,
+        fee: 0,
+        brokerReference: execution.id,
+      };
+    return {
+      executions: [...executions, fill("OLD", "2026-10-09"), fill("UNASSIGNED", "2026-10-13")],
+      newActualPortfolio: metadata,
+    };
+  };
+
+  it.each(["KOSPI", "KOSDAQ", "ETF", "US"] as const)(
+    "retains only allocated %s slices and preserves the screener union",
+    async (market) => {
+      const doc = allocatedDocument([{ ...fill("ACTUAL", "2026-10-12"), market }]);
+      doc.executions.push({
+        ...fill("UNASSIGNED_SELL", "2026-10-13"),
+        market,
+        symbol: "ACTUAL",
+        side: "SELL",
+      });
+      const domestic = market === "US" ? null : doc;
+      const us = market === "US" ? doc : null;
+      const original = structuredClone(doc);
+      const actual = projectActualPositionContext(domestic, us, now);
+      expect(actual.positions).toEqual([
+        { symbol: "ACTUAL", name: "ACTUAL", market, shares: 1, firstEntryDate: "2026-10-12" },
+      ]);
+      expect(actual.actualExecutions).toEqual([
+        { ...fill("ACTUAL", "2026-10-12"), market, shares: 1 },
+      ]);
+      expect(actual.lastSellDateBySymbol).toEqual({});
+      const shadow = await summary();
+      const kind = market === "US" ? "US_A0" : market === "ETF" ? "ETF_V02" : "KR_MIXED";
+      const book = shadow.books.find((item) => item.kind === kind)!;
+      book.status = "RECORDED";
+      book.firstSessionDate = "2026-10-12";
+      book.latestSessionDate = "2026-10-13";
+      book.holdings = ["ACTUAL", "SHADOW_ONLY"].map((symbol) => ({
+        symbol,
+        name: symbol,
+        market,
+        quantity: "99",
+        price: null,
+        value: null,
+        entryDate: "2026-10-13",
+      }));
+      const union = projectWebsitePositionContext(domestic, us, shadow, now);
+      expect(union.positions).toEqual([
+        ...actual.positions,
+        {
+          symbol: "SHADOW_ONLY",
+          name: "SHADOW_ONLY",
+          market,
+          shares: 99,
+          firstEntryDate: "2026-10-13",
+        },
+      ]);
+      expect(union.heldSymbols).toEqual(["ACTUAL", "SHADOW_ONLY"]);
+      expect(union.actualPools).toEqual(actual.actualPools);
+      expect(union.actualExecutions).toEqual(actual.actualExecutions);
+      expect(union.lastSellDateBySymbol).toEqual(actual.lastSellDateBySymbol);
+      expect(projectActualPositionContext(domestic, us, now)).toEqual(actual);
+      expect(doc).toEqual(original);
+    },
+  );
+
+  it.each(["KOSDAQ", "ETF", "US"] as const)(
+    "keeps %s partial-sale entry date and resets it only after a fully closed cycle",
+    (market) => {
+      const execution = (id: string, date: string, side: "BUY" | "SELL", order = 0) => ({
+        ...fill(id, date),
+        symbol: "SAME",
+        name: "SAME",
+        market,
+        side,
+        order,
+      });
+      const executions = [
+        execution("buy-1", "2026-10-12", "BUY"),
+        execution("buy-2", "2026-10-12", "BUY", 1),
+        execution("sell-1", "2026-10-13", "SELL"),
+      ];
+      const project = () => {
+        const doc = allocatedDocument(executions);
+        return projectActualPositionContext(
+          market === "US" ? null : doc,
+          market === "US" ? doc : null,
+          now,
+        );
+      };
+      expect(project().positions[0]).toMatchObject({ shares: 1, firstEntryDate: "2026-10-12" });
+      executions.push(execution("sell-2", "2026-10-13", "SELL", 1));
+      expect(project().positions).toEqual([]);
+      expect(project().lastSellDateBySymbol).toEqual({ SAME: "2026-10-13" });
+      executions.push(execution("buy-3", "2026-10-14", "BUY"));
+      expect(project().positions[0]).toMatchObject({ shares: 1, firstEntryDate: "2026-10-14" });
+    },
+  );
+
+  it("keeps unassigned pre/post-start journals empty and rejects invalid assigned dates", () => {
+    const doc = { executions: [fill("OLD", "2026-10-09"), fill("UNASSIGNED", "2026-10-13")] };
+    for (const clock of [new Date("2026-10-11T12:00:00Z"), now]) {
+      const actual = projectActualPositionContext(doc, null, clock);
+      expect(actual.heldSymbols).toEqual([]);
+      expect(actual.actualExecutions).toEqual([]);
+      expect(actual.actualPools.KRW.fundingStatus).toBe("PENDING");
+    }
+    for (const date of ["2026-10-09", "2026-10-16"])
+      expect(() =>
+        projectActualPositionContext(allocatedDocument([fill("ASSIGNED", date)]), null, now),
+      ).toThrow("pre-start/future");
+  });
+
+  it("reads exactly the two owner's actual journals without consulting unavailable Shadow", async () => {
+    mocks.read.mockReset();
+    mocks.shadow.mockReset();
+    mocks.shadow.mockRejectedValue(new Error("Shadow unavailable"));
+    const domestic = allocatedDocument([{ ...fill("KR", "2026-10-12"), market: "ETF" }]);
+    const us = allocatedDocument([{ ...fill("US", "2026-10-12"), market: "US" }]);
+    mocks.read.mockImplementation(async (_client, _uid, table) => ({
+      payload: table === "portfolio_ledgers" ? domestic : us,
+    }));
+    const client = {} as SupabaseClient;
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    try {
+      const actual = await loadActualPositionContextForOwner(client, "actual-owner");
+      expect(actual).toEqual(projectActualPositionContext(domestic, us, now));
+      expect(mocks.read.mock.calls).toEqual([
+        [client, "actual-owner", "portfolio_ledgers"],
+        [client, "actual-owner", "us_actual_portfolio_ledgers"],
+      ]);
+      expect(mocks.shadow).not.toHaveBeenCalled();
+      await expect(loadWebsitePositionContextForOwner(client, "actual-owner")).rejects.toThrow(
+        "Shadow unavailable",
+      );
+      expect(mocks.shadow).toHaveBeenCalledWith(client, "actual-owner", RESTART_SERIES_VERSION);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("propagates actual-source failures rather than inventing an empty actual book", async () => {
+    mocks.read.mockReset();
+    mocks.shadow.mockReset();
+    mocks.read
+      .mockRejectedValueOnce(new Error("Actual journal unavailable"))
+      .mockResolvedValue(null);
+    await expect(loadActualPositionContextForOwner({} as SupabaseClient, "owner")).rejects.toThrow(
+      "Actual journal unavailable",
+    );
+    expect(mocks.shadow).not.toHaveBeenCalled();
+  });
+});

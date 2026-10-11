@@ -9,7 +9,7 @@ describe("private plan presentation", () => {
   it("shows planned shared total without claiming baseline or funded NAV", () => {
     const html = renderToStaticMarkup(<OperatingCapitalPlanContent plan={plan} />);
     expect(html).toContain("총 계획금액 12,765,432원");
-    expect(html).toContain("시장 배분 미확정");
+    expect(html).toContain("시장 배분·실제 현금은 자산배분 내역에서 별도로 확인합니다");
     expect(html).toContain("계획금액은 참고용입니다");
     expect(html).toContain("실제 입금·배정한 자금은 현금 내역에 별도로 기록하세요");
     expect(html).not.toContain("수익률 0");

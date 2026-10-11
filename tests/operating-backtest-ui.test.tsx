@@ -62,7 +62,7 @@ describe("operating-rule backtest release gate", () => {
     expect(isOperatingBacktestReleaseReady(pending)).toBe(false);
     const html = render("미국 A0", pending);
     expect(html).toContain("평균수익률");
-    expect(html).toContain("연초 예산 연구 기준 · 운영 엔진 연결 전");
+    expect(html).toContain("과거 연초 예산 연구 기준 · 현재 통합 자산배분 성과와 구분");
     expect(html).toContain("중앙값");
     expect(html).toContain("MDD");
     expect(html).toContain("전체 시장의 청산완료 매매 수익률과 계좌 최대낙폭 검증 후 표시");
@@ -133,7 +133,9 @@ describe("concise verified metrics", () => {
     expect(html).toContain("모델 가정 청산 3건 포함");
     expect(html).toContain("미청산 2개 포지션 제외");
     expect(html).toContain("researchannualpolicy");
-    expect(html).toContain("운영 엔진 연결 전");
+    expect(html).toContain("현재 통합 자산배분 성과와 구분");
+    expect(html).toContain("ETF의 현재 통합 운영은 직전 완료 종가 자산");
+    expect(html).not.toContain("운영 엔진 연결 전");
     expect(html).toContain("<details");
     expect(html).not.toContain("CAGR");
     expect(html).not.toContain("78.90%");

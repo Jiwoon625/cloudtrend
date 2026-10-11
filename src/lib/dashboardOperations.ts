@@ -42,6 +42,10 @@ export interface DashboardSignal {
   assessment?: StockAssessmentDisplay | undefined;
   etfAssessment?: ReturnType<typeof etfPartialEvidence> | undefined;
   held?: boolean | undefined;
+  signalOriginDate?: string | undefined;
+  actualQuantity?: number | undefined;
+  actualEntryDate?: string | undefined;
+  actualState?: "READY" | "HELD" | "CONSUMED" | "UNKNOWN" | undefined;
   operationalEntryNotice?: string | null | undefined;
 }
 export interface DashboardIndexRow extends Omit<DashboardSignal, "reason"> {
@@ -81,6 +85,8 @@ export interface DashboardMarketSignals {
   market: DashboardMarket;
   date: string | null;
   holdingsKnown: boolean;
+  conditionCount?: number | null;
+  conditions?: DashboardSignal[];
   onsetCount: number | null;
   exitCount: number | null;
   onsets: DashboardSignal[];
@@ -98,6 +104,9 @@ export interface DashboardActualPoolSummary {
   assetPositions: Record<import("./newActualPortfolio").NewActualAsset, number>;
 }
 export interface DashboardOperations {
+  actualAllocation?: Awaited<
+    ReturnType<typeof import("./dashboardActualAllocation.server").projectDashboardActualAllocation>
+  > | null;
   newActualPools?: { KRW: DashboardActualPoolSummary; USD: DashboardActualPoolSummary } | null;
   usOrderPreview?: import("./engine/usProspectiveOrderPreview").UsOrderPreviewBundle | null;
   markets: DashboardMarketSignals[];
@@ -252,7 +261,9 @@ export function marketSignals(
     market,
     date: index?.date ?? null,
     holdingsKnown: holdings !== null,
-    onsetCount: index ? 0 : null,
+    conditionCount: index ? 0 : null,
+    conditions: [],
+    onsetCount: index && holdings !== null ? 0 : null,
     exitCount: index && holdings !== null ? 0 : null,
     onsets: [],
     pendingCount: index ? 0 : null,
@@ -342,9 +353,32 @@ export function marketSignals(
       !consumed
     )
       result.pending!.push({ ...row, reason: "M0 80점 원신호 · 다음 거래일 종가 확인 대기" });
-    if (entryInSeries && row.onset && !holding && !consumed) {
+    if (entryInSeries && row.onset) {
+      const actualState =
+        holdings === null ? "UNKNOWN" : holding ? "HELD" : consumed ? "CONSUMED" : "READY";
+      result.conditions!.push({
+        ...row,
+        sectorLimit,
+        held: Boolean(holding),
+        actualState,
+        signalOriginDate: originDate ?? undefined,
+        actualQuantity: holding?.shares,
+        actualEntryDate: holding?.firstEntryDate,
+        reason:
+          actualState === "HELD"
+            ? "진입 조건 충족 · 실제 보유 중, 추가 진입 제외"
+            : actualState === "CONSUMED"
+              ? "진입 조건 충족 · 실제 매도로 소진된 신호, 새 원신호 대기"
+              : actualState === "UNKNOWN"
+                ? "진입 조건 충족 · 실제 보유정보 미확인"
+                : "진입 조건 충족 · 실제 미보유 후보",
+      });
+    }
+    if (entryInSeries && row.onset && holdings !== null && !holding && !consumed) {
       result.onsets.push({
         ...row,
+        actualState: "READY",
+        signalOriginDate: originDate ?? undefined,
         sectorLimit,
         reason:
           market === "US"
@@ -367,7 +401,13 @@ export function marketSignals(
     ) {
       reason = reason ? `${exitLabel(reason)} · ${exitLabel("H60")}` : "H60";
     }
-    if (reason) result.exits.push({ ...row, reason: exitLabel(reason) });
+    if (reason)
+      result.exits.push({
+        ...row,
+        actualQuantity: holding.shares,
+        actualEntryDate: holding.firstEntryDate,
+        reason: exitLabel(reason),
+      });
   }
   result.assessments!.sort(
     (a, b) =>
@@ -376,11 +416,13 @@ export function marketSignals(
       (b.assessment?.score ?? -Infinity) - (a.assessment?.score ?? -Infinity) ||
       a.symbol.localeCompare(b.symbol),
   );
+  result.conditions!.sort(compareDashboardCandidates);
+  result.conditionCount = result.conditions!.length;
   result.onsets.sort(compareDashboardCandidates);
   result.exits.sort((a, b) => a.symbol.localeCompare(b.symbol));
   result.pending!.sort(compareDashboardCandidates);
   result.pendingCount = result.pending!.length;
-  result.onsetCount = result.onsets.length;
+  if (holdings !== null) result.onsetCount = result.onsets.length;
   if (holdings !== null) result.exitCount = result.exits.length;
   return result;
 }

@@ -1,3 +1,4 @@
+import { IntegratedAllocationShadowPanel } from "./IntegratedAllocationShadowPanel";
 import { ShadowTimeline } from "./ShadowTimeline";
 import { OperatingCapitalPlan } from "./OperatingCapitalPlan";
 import { RESTART_SERIES_VERSION, type AdoptedSeriesKind } from "@/lib/ledger/modelSeries";
@@ -97,7 +98,7 @@ export function OctoberShadowSummary() {
   }, []);
   const query = useQuery({
     queryKey: ["october-shadow-summary", owner, version, kind],
-    enabled: !!owner,
+    enabled: !!owner && market !== "ALLOCATION",
     staleTime: 60_000,
     gcTime: 0,
     refetchOnWindowFocus: false,
@@ -119,6 +120,10 @@ export function OctoberShadowSummary() {
           value={market}
           onChange={(e) => {
             const m = e.target.value;
+            if (m === "ALLOCATION") {
+              setMarket(m);
+              return;
+            }
             const r = m === "ETF" ? "ADOPTED" : role;
             setMarket(m);
             setRole(r);
@@ -128,29 +133,34 @@ export function OctoberShadowSummary() {
           <option value="KR">한국</option>
           <option value="US">미국</option>
           <option value="ETF">ETF</option>
+          <option value="ALLOCATION">자산배분</option>
         </select>
-        <select
-          aria-label="채택·실험"
-          value={role}
-          onChange={(e) => {
-            setRole(e.target.value);
-            setKind(availableKinds(market, e.target.value)[0]!);
-          }}
-        >
-          <option value="ADOPTED">채택전략</option>
-          {market !== "ETF" ? <option value="EXPERIMENT">실험전략</option> : null}
-        </select>
-        <select
-          aria-label="전략"
-          value={kind}
-          onChange={(e) => setKind(e.target.value as AdoptedSeriesKind)}
-        >
-          {availableKinds(market, role).map((id) => (
-            <option key={id} value={id}>
-              {labels[id]}
-            </option>
-          ))}
-        </select>
+        {market !== "ALLOCATION" ? (
+          <>
+            <select
+              aria-label="채택·실험"
+              value={role}
+              onChange={(e) => {
+                setRole(e.target.value);
+                setKind(availableKinds(market, e.target.value)[0]!);
+              }}
+            >
+              <option value="ADOPTED">채택전략</option>
+              {market !== "ETF" ? <option value="EXPERIMENT">실험전략</option> : null}
+            </select>
+            <select
+              aria-label="전략"
+              value={kind}
+              onChange={(e) => setKind(e.target.value as AdoptedSeriesKind)}
+            >
+              {availableKinds(market, role).map((id) => (
+                <option key={id} value={id}>
+                  {labels[id]}
+                </option>
+              ))}
+            </select>
+          </>
+        ) : null}
         <p className="self-center text-sm">성과 시작일: 2026-10-12</p>
         <label>
           시작일{" "}
@@ -175,16 +185,20 @@ export function OctoberShadowSummary() {
           />
         </label>
       </div>
-      <OctoberShadowSummaryContent
-        capitalPlan={<OperatingCapitalPlan />}
-        selectedKind={kind}
-        period={{ from, to }}
-        summary={owner ? (query.data ?? null) : null}
-        loading={!authError && query.isPending}
-        refreshing={query.isFetching}
-        error={authError ?? query.error?.message ?? null}
-        refresh={() => void query.refetch()}
-      />
+      {market === "ALLOCATION" ? (
+        <IntegratedAllocationShadowPanel owner={owner} period={{ from, to }} />
+      ) : (
+        <OctoberShadowSummaryContent
+          capitalPlan={<OperatingCapitalPlan />}
+          selectedKind={kind}
+          period={{ from, to }}
+          summary={owner ? (query.data ?? null) : null}
+          loading={!authError && query.isPending}
+          refreshing={query.isFetching}
+          error={authError ?? query.error?.message ?? null}
+          refresh={() => void query.refetch()}
+        />
+      )}
     </div>
   );
 }

@@ -6,12 +6,17 @@ import {
 import { createClient } from "@supabase/supabase-js";
 import { loadDashboardOperations, projection } from "../src/lib/dashboardOperations.server";
 import { downloadFreshObject } from "../src/lib/freshStorage";
-import { loadWebsitePositionContextForOwner } from "../src/lib/websitePositionContext.server";
+import {
+  loadActualPositionSnapshotForOwner,
+  loadWebsitePositionContextForOwner,
+} from "../src/lib/websitePositionContext.server";
+import { ETF_POLICY } from "../src/lib/engine/etfStrategy";
 import { projectNewActualPool } from "../src/lib/newActualPortfolio";
 import type { SupabaseClient } from "@supabase/supabase-js";
 vi.mock("@supabase/supabase-js", () => ({ createClient: vi.fn() }));
 vi.mock("../src/lib/websitePositionContext.server", () => ({
   loadWebsitePositionContextForOwner: vi.fn(),
+  loadActualPositionSnapshotForOwner: vi.fn(),
 }));
 vi.mock("../src/lib/freshStorage", () => ({ downloadFreshObject: vi.fn() }));
 const client = {
@@ -230,7 +235,11 @@ describe("dashboard new-series holdings boundary", () => {
     settings: { maxPositions: 30 },
     strategy: { trades: [{ symbol: "NEW", market: "KOSDAQ", status: "OPEN", shares: 100 }] },
   });
-  function mockRead(context = emptyContext(), date = signalDate) {
+  function mockRead(
+    context = emptyContext(),
+    date = signalDate,
+    market: "KOSDAQ" | "ETF" | "US" = "KOSDAQ",
+  ) {
     const uid = `new-series-owner-${++run}`;
     const oldDocument = legacyDoc();
     const from = vi.fn(() => {
@@ -243,14 +252,43 @@ describe("dashboard new-series holdings boundary", () => {
       storage: { from: () => ({ upload }) },
     } as unknown as SupabaseClient;
     vi.mocked(createClient).mockReturnValue(client);
-    vi.mocked(loadWebsitePositionContextForOwner).mockImplementation(async (readClient, owner) => {
+    vi.mocked(loadActualPositionSnapshotForOwner).mockImplementation(async (readClient, owner) => {
       expect(readClient).toBe(client);
       expect(owner).toBe(uid);
-      return context as unknown as Awaited<ReturnType<typeof loadWebsitePositionContextForOwner>>;
+      return { context, domestic: null, us: null } as unknown as Awaited<
+        ReturnType<typeof loadActualPositionSnapshotForOwner>
+      >;
     });
+    vi.mocked(loadWebsitePositionContextForOwner).mockClear();
+    vi.mocked(loadWebsitePositionContextForOwner).mockRejectedValue(
+      new Error("Shadow unavailable; actual dashboard must not request the union reader"),
+    );
     const paths: string[] = [];
     vi.mocked(downloadFreshObject).mockImplementation(async (_client, _bucket, path) => {
       paths.push(path);
+      if (market === "US") {
+        const value =
+          path.endsWith("us-screening/summary-v1.json") || path.endsWith("us-screening/latest.json")
+            ? {
+                dataHash: uid,
+                generatedAt: `${date}T22:00:00.000Z`,
+                analysis: {
+                  date,
+                  rows: ["NEW", "LEGACY"].map((symbol) => ({
+                    symbol,
+                    name: symbol,
+                    date,
+                    close: 100,
+                    coreRank: symbol === "NEW" ? 0.6 : 0.9,
+                    a0Entry: symbol === "LEGACY",
+                    a0Exit: symbol === "NEW",
+                    a0BetaExit: false,
+                  })),
+                },
+              }
+            : null;
+        return { data: value ? new Blob([JSON.stringify(value)]) : null, error: null };
+      }
       const value = path.endsWith("dashboard/latest.json")
         ? {
             version: DASHBOARD_CACHE_VERSION,
@@ -269,8 +307,8 @@ describe("dashboard new-series holdings boundary", () => {
                     instrument: {
                       symbol,
                       name: symbol,
-                      market: "KOSDAQ",
-                      instrumentType: "STOCK",
+                      market: market === "ETF" ? "KOSPI" : market,
+                      instrumentType: market === "ETF" ? "ETF" : "STOCK",
                       sectorCode: "SEMI",
                       sectorName: "반도체",
                     },
@@ -279,6 +317,25 @@ describe("dashboard new-series holdings boundary", () => {
                     operatingScore10: 9.5,
                     scoreDelta1d: 20,
                     kosdaq80Onset: true,
+                    ...(market === "ETF"
+                      ? {
+                          etfStrategy: {
+                            version: ETF_POLICY.version,
+                            date,
+                            dataStatus: "ready",
+                            eligible: true,
+                            entryState: symbol === "LEGACY" ? "confirmed" : "none",
+                            originDate: "2026-10-12",
+                            confirmationDate: date,
+                            confirmationIssues: [],
+                            onset: symbol === "LEGACY",
+                            exit: symbol === "NEW" ? "MA60" : null,
+                            score: 85,
+                            issues: [],
+                            averageTradingValue20: 1000000,
+                          },
+                        }
+                      : {}),
                   })),
                 },
               },
@@ -299,9 +356,9 @@ describe("dashboard new-series holdings boundary", () => {
     expect(market.exitCount).toBe(0);
     expect(market.holdingsKnown).toBe(true);
     expect(market.onsets[0]?.sectorLimit).toMatchObject({
-      status: "unknown",
-      count: null,
-      issue: "신규 시리즈 확인 대기",
+      status: "room",
+      count: 0,
+      issue: null,
     });
     expect(result.newActualPools?.KRW).toMatchObject({
       fundingStatus: "PENDING",
@@ -313,10 +370,11 @@ describe("dashboard new-series holdings boundary", () => {
     expect(result.etfHoldings).toBeNull();
     expect(result.usOrderPreview).toBeNull();
     expect(from).not.toHaveBeenCalled();
+    expect(loadWebsitePositionContextForOwner).not.toHaveBeenCalled();
     expect(paths.some((path) => path.includes("etf-holdings"))).toBe(false);
     expect(oldDocument).toEqual(before);
   });
-  it("uses only validated new actual/restarted holdings for EXIT and duplicate-entry suppression", async () => {
+  it("uses only validated new actual holdings for EXIT and duplicate-entry suppression", async () => {
     const context = emptyContext();
     context.positions.push({
       symbol: "NEW",
@@ -339,6 +397,62 @@ describe("dashboard new-series holdings boundary", () => {
     expect(market.onsets.map((row) => row.symbol)).toEqual(["LEGACY"]);
     expect(market.exits.map((row) => row.symbol)).toEqual(["NEW"]);
   });
+  it.each(["KOSDAQ", "ETF", "US"] as const)(
+    "shows %s conditions at zero cash, using actual holdings even when the union reader contains Shadow holdings and sells",
+    async (market) => {
+      const context = emptyContext();
+      context.positions.push({
+        symbol: "NEW",
+        name: "실제 보유",
+        market,
+        shares: 1,
+        firstEntryDate: "2026-10-12",
+      });
+      context.actualPools[market === "US" ? "USD" : "KRW"].cash = "0";
+      mockRead(context, signalDate, market);
+      const shadowContext = structuredClone(context);
+      shadowContext.positions.push({
+        symbol: "LEGACY",
+        name: "Shadow only",
+        market,
+        shares: 99,
+        firstEntryDate: "2026-10-12",
+      });
+      // Neither Shadow holdings nor a model sale may consume actual entry conditions.
+      vi.mocked(loadWebsitePositionContextForOwner).mockResolvedValue({
+        ...shadowContext,
+        actualExecutions: [
+          { symbol: "LEGACY", market, side: "SELL", shares: 99, date: signalDate },
+        ],
+      } as unknown as Awaited<ReturnType<typeof loadWebsitePositionContextForOwner>>);
+      const result = await loadDashboardOperations("valid-session-token-for-test");
+      const signals = result.markets.find((item) => item.market === market)!;
+      expect(signals.onsets.map((row) => row.symbol)).toEqual(["LEGACY"]);
+      expect(signals.exits.map((row) => row.symbol)).toEqual(["NEW"]);
+      expect(signals.holdingsKnown).toBe(true);
+      expect(signals.conditionCount).toBe(market === "KOSDAQ" ? 2 : 1);
+      expect(signals.conditions?.find((row) => row.symbol === "LEGACY")).toMatchObject({
+        actualState: "READY",
+        held: false,
+      });
+      if (market === "KOSDAQ")
+        expect(signals.conditions?.find((row) => row.symbol === "NEW")).toMatchObject({
+          actualState: "HELD",
+          held: true,
+        });
+      if (market === "KOSDAQ")
+        expect(signals.onsets[0]?.sectorLimit).toMatchObject({
+          count: 1,
+          limit: 6,
+          maxPositions: 30,
+          status: "room",
+          issue: null,
+        });
+      expect(result.newActualPools?.[market === "US" ? "USD" : "KRW"].cash).toBe("0");
+      expect(result.warnings).toEqual([]);
+      expect(loadWebsitePositionContextForOwner).not.toHaveBeenCalled();
+    },
+  );
   it("consumes only the new-series allocated sell signal", async () => {
     const context = emptyContext();
     context.actualExecutions.push({
@@ -353,6 +467,12 @@ describe("dashboard new-series holdings boundary", () => {
     expect(
       result.markets.find((item) => item.market === "KOSDAQ")?.onsets.map((row) => row.symbol),
     ).toEqual(["LEGACY"]);
+    const signals = result.markets.find((item) => item.market === "KOSDAQ")!;
+    expect(signals.conditionCount).toBe(2);
+    expect(signals.conditions?.find((row) => row.symbol === "NEW")).toMatchObject({
+      actualState: "CONSUMED",
+      held: false,
+    });
   });
   it("keeps pre-start screening out of actionable entry and EXIT lists", async () => {
     mockRead(emptyContext(), "2026-10-09");
@@ -361,6 +481,8 @@ describe("dashboard new-series holdings boundary", () => {
     expect(market).toMatchObject({
       date: "2026-10-09",
       onsetCount: 0,
+      conditionCount: 0,
+      conditions: [],
       pendingCount: 0,
       exitCount: 0,
       onsets: [],
@@ -371,7 +493,7 @@ describe("dashboard new-series holdings boundary", () => {
   });
   it("fails closed when new-series validation fails instead of falling back to old books", async () => {
     const { from } = mockRead();
-    vi.mocked(loadWebsitePositionContextForOwner).mockRejectedValueOnce(
+    vi.mocked(loadActualPositionSnapshotForOwner).mockRejectedValueOnce(
       new Error("Invalid new allocation"),
     );
     const result = await loadDashboardOperations("valid-session-token-for-test");
@@ -379,8 +501,12 @@ describe("dashboard new-series holdings boundary", () => {
     expect(result.markets.every((item) => !item.holdingsKnown && item.exitCount === null)).toBe(
       true,
     );
-    expect(result.warnings.join(" ")).toContain("신규 운용 보유정보를 확인하지 못해");
+    const signals = result.markets.find((item) => item.market === "KOSDAQ")!;
+    expect(signals).toMatchObject({ conditionCount: 2, onsetCount: null, onsets: [] });
+    expect(signals.conditions?.every((row) => row.actualState === "UNKNOWN")).toBe(true);
+    expect(result.warnings.join(" ")).toContain("신규 실제 보유정보를 확인하지 못해");
     expect(from).not.toHaveBeenCalled();
+    expect(loadWebsitePositionContextForOwner).not.toHaveBeenCalled();
   });
   it("refreshes new holdings for the same screening digest without caching old context", async () => {
     const context = emptyContext();
@@ -396,5 +522,12 @@ describe("dashboard new-series holdings boundary", () => {
     const second = await loadDashboardOperations("valid-session-token-for-test");
     expect(first.markets.find((item) => item.market === "KOSDAQ")?.onsetCount).toBe(2);
     expect(second.markets.find((item) => item.market === "KOSDAQ")?.onsetCount).toBe(1);
+    expect(first.markets.find((item) => item.market === "KOSDAQ")?.conditionCount).toBe(2);
+    expect(second.markets.find((item) => item.market === "KOSDAQ")?.conditionCount).toBe(2);
+    expect(
+      second.markets
+        .find((item) => item.market === "KOSDAQ")
+        ?.conditions?.find((row) => row.symbol === "NEW")?.actualState,
+    ).toBe("HELD");
   });
 });

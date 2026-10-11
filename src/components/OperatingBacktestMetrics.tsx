@@ -49,7 +49,9 @@ export function OperatingBacktestMetrics({
       <div className="space-y-1">
         <p className="font-medium">백테스트 전체기간 성과</p>
         <p className="text-xs text-muted-foreground">{summary.scopeLabel}</p>
-        <p className="text-xs text-muted-foreground">연초 예산 연구 기준 · 운영 엔진 연결 전</p>
+        <p className="text-xs text-muted-foreground">
+          과거 연초 예산 연구 기준 · 현재 통합 자산배분 성과와 구분
+        </p>
       </div>
       <dl aria-label="개별매매 수익률과 계좌 최대낙폭" className="grid grid-cols-3 gap-2">
         {metrics.map(([label, value]) => (
@@ -110,7 +112,8 @@ export function OperatingBacktestMetrics({
               </p>
               <p>
                 연초 예산 연구 기준의 과거 검증입니다. 위 운영규칙의 현행 배분 설명과 구분하며, 운영
-                엔진 연결 전입니다.
+                결과와 동일한 성과를 보장하지 않습니다. ETF의 현재 통합 운영은 직전 완료 종가 자산을
+                사용하므로 이 연초 예산 연구와 예산 시점이 다릅니다.
               </p>
               <p>{summary.returnDefinition}</p>
               <p>
