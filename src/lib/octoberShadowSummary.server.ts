@@ -505,6 +505,7 @@ export async function loadOctoberShadowSummaryForOwner(
       "market,signal_date,calculated_at,source_captured_at,model_decision_at,execution_at,replay_mode,status,reason",
     )
     .eq("user_id", uid)
+    .eq("strategy_version", version)
     .order("calculated_at", { ascending: false })
     .order("id", { ascending: false })
     .limit(100);

@@ -1,0 +1,41 @@
+name: Integrated allocation integrity
+on:
+  pull_request:
+    paths:
+      - src/lib/integratedAllocation*
+      - src/lib/operatingAllocation*
+      - src/lib/operatingAnnualSizing*
+      - src/lib/operatingEtfSizing*
+      - src/lib/actualAllocationPreview*
+      - src/lib/dashboardActualAllocation*
+      - src/lib/shadowReplay*
+      - src/components/OperatingAllocationPanel*
+      - src/components/IntegratedAllocationShadowPanel*
+      - scripts/*integrated-allocation*
+      - tests/*allocation*
+      - docs/integrated-allocation*
+      - supabase/migrations/*integrated_allocation*
+      - vitest.*allocation*.ts
+      - package.json
+      - package-lock.json
+      - .github/workflows/integrated-allocation-check.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vite-node --script scripts/build-integrated-allocation-manifest.ts
+      - run: npx vite-node --script scripts/export-integrated-allocation-sql-fixtures.ts && python scripts/build-integrated-allocation-sql.py
+      - run: git diff --exit-code -- src/lib/integratedAllocationRuntime.generated.json scripts/integrated-allocation-contract-templates.generated.json docs/integrated-allocation-owner-append.sql docs/integrated-allocation-owner-append.rollback.sql
+      - run: npx vitest run --config vitest.operating-allocation.config.ts
+      - run: npx vitest run --config vitest.integrated-allocation-replay.config.ts
+      - run: npx vitest run --config vitest.integrated-allocation-postgres.config.ts
+      - run: npx tsc --noEmit

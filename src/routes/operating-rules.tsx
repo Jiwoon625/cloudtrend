@@ -47,9 +47,39 @@ function OperatingRules() {
         <header>
           <h1 className="text-xl font-bold">운영규칙</h1>
           <p className="text-muted-foreground">
-            {OPERATING_RULES_VERSION} · 적용 시작 {OPERATING_RULES_START} · 10월 9일 사용자 결정
+            {OPERATING_RULES_VERSION} · 적용 시작 {OPERATING_RULES_START} · 신호 10월 9일 / 자산배분
+            10월 11일 사용자 결정
           </p>
         </header>
+        <section aria-label="실제·통합 자산배분 규칙" className="space-y-2 rounded border p-4">
+          <h2 className="font-semibold">실제 S06 · 자산배분 Shadow</h2>
+          <p>
+            실제 총 배정계획 3,000만원: 한국 1,200만원 / ETF 600만원 / 미국 1,200만원. 배정계획
+            자체로 실제 현금이 생기지 않습니다. 실제 보유·입출금·환전·미체결 예약을 같은 통화
+            원장에서 확인합니다.
+          </p>
+          <p>
+            한국·미국 신규 매수예산은 연초 시장별 자산을 30·20슬롯으로 나눕니다. ETF는 확인일 완료
+            종가 기준 시장 보유자산과 귀속현금에 변동성 비중을 적용하며, 결측 평가액으로 새 수량을
+            확정하지 않습니다.
+          </p>
+          <p>
+            통합 Shadow는 각각 3,000만원입니다. O1 초기 한국/ETF/미국 각 1/3, S07은 60/20/20입니다.
+            O1은 달력 전월 전달 진입신호가 있는 시장을 균등 배분하며 한 시장만 있으면 60%와
+            현금40%입니다. 10월 첫 집계는 10/12부터의 부분월로 11월 목표에 반영합니다. 관측 누락은
+            무신호와 구분합니다.
+          </p>
+          <p>
+            O1 목표 0% 시장의 미체결 진입은 취소하고 예약 현금을 해제합니다. 유휴현금만 이동하며
+            기존 보유는 강제매도하지 않습니다. 이 월별 전달 신호 방식은 원본 O1 연구의 독립
+            참조·20세션 방식과 별도 운영 버전입니다.
+          </p>
+          <p>
+            대시보드 조건 충족은 현금 부족에도 보존합니다. 실제 행동은 실제 체결 원장으로 판단하며
+            Shadow 전용 보유는 실제 후보를 막지 않습니다. 수정가격과 별도로 모델 분배금 현금을 임의
+            가산하지 않습니다.
+          </p>
+        </section>
         <section className="space-y-3">
           <h2 className="font-semibold">운영규칙 요약</h2>
           <RuleGroup role="운영" detail={false} />

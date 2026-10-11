@@ -287,7 +287,7 @@ export function sourceCaptureForDate(sources: SourceTimingRecord[], date: string
   );
 }
 
-export async function replayKrShadow(input: {
+async function replayKrShadowMarket(input: {
   client: SupabaseClient;
   userId: string;
   dataset: MarketDataset;
@@ -409,6 +409,17 @@ export async function replayKrShadow(input: {
       const sourceHash = (await hashSeriesValue(
         currentDateEvidence(dataset, snapshot),
       )) as SeriesHash;
+      if (date >= "2026-10-12") {
+        const { stageIntegratedKrEvidence } = await import("./integratedAllocationReplay.server");
+        await stageIntegratedKrEvidence(input.client, input.userId, {
+          dataset,
+          analysis,
+          sourceHash,
+          availableAt: clock.modelAvailableAt,
+          decisionAt: clock.modelDecisionAt,
+          calculatedAt,
+        });
+      }
       const currentSymbols = new Set(snapshot.entries.map((entry) => entry.symbol));
       const priorSymbols = previousSnapshot?.entries
         .map((entry) => entry.symbol)
@@ -583,7 +594,7 @@ export interface UsShadowReplayBatchResult extends ShadowReplayBatchResult {
  * Replays every missing US Shadow session from dated rows.
  * The source may contain one day or many days; upload/collection time never gates the model.
  */
-export async function replayUsShadow(input: {
+async function replayUsShadowMarket(input: {
   client: SupabaseClient;
   userId: string;
   rows: UsProspectiveInputRow[];
@@ -712,6 +723,16 @@ export async function replayUsShadow(input: {
         date,
         rows: [...rows].sort((a, b) => a.symbol.localeCompare(b.symbol)),
       })) as SeriesHash;
+      if (date >= "2026-10-12") {
+        const { stageIntegratedUsEvidence } = await import("./integratedAllocationReplay.server");
+        await stageIntegratedUsEvidence(input.client, input.userId, {
+          analysis,
+          sourceHash,
+          availableAt: clock.modelAvailableAt,
+          decisionAt: clock.modelDecisionAt,
+          calculatedAt,
+        });
+      }
       const codeHash = await reviewedReplayCodeHash(store, US_KINDS, date);
       const previousSessionDate =
         calendar.regularSessions.filter((session) => session < date).at(-1) ?? "2026-10-02";
@@ -813,4 +834,39 @@ export async function replayUsShadow(input: {
     throughDate,
     latestAnalysis,
   };
+}
+
+async function finishIntegratedReplay<T extends ShadowReplayBatchResult>(
+  input: { client: SupabaseClient; userId: string; mode?: "service" | "authenticated-owner" },
+  result: T,
+) {
+  if (result.throughDate < "2026-10-12") return result;
+  try {
+    const { replayIntegratedAllocationAvailable } =
+      await import("./integratedAllocationReplay.server");
+    return {
+      ...result,
+      integratedAllocation: await replayIntegratedAllocationAvailable(
+        input.client,
+        input.userId,
+        result.throughDate,
+        result.calculatedAt,
+        input.mode ?? "service",
+      ),
+    };
+  } catch (error) {
+    return {
+      ...result,
+      integratedAllocation: {
+        recorded: 0,
+        waiting: error instanceof Error ? error.message : "통합 자산배분 연결 확인 필요",
+      },
+    };
+  }
+}
+export async function replayKrShadow(input: Parameters<typeof replayKrShadowMarket>[0]) {
+  return finishIntegratedReplay(input, await replayKrShadowMarket(input));
+}
+export async function replayUsShadow(input: Parameters<typeof replayUsShadowMarket>[0]) {
+  return finishIntegratedReplay(input, await replayUsShadowMarket(input));
 }

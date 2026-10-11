@@ -113,6 +113,8 @@ const data = (kospi: number | null, etf: number | null): DashboardOperations => 
       market,
       date,
       holdingsKnown: true,
+      conditionCount: 1,
+      conditions: [signal(market, 99, "condition")],
       onsetCount: 1,
       exitCount: 0,
       pendingCount,
@@ -240,13 +242,13 @@ describe("combined dashboard confirmation list", () => {
     expect(html).not.toContain("ETF pending 1");
     expect(html).toContain("27종목 · 1 / 2");
   });
-  it("keeps ETF pending out of entry-ready and exit lists", () => {
+  it("includes ETF actual candidates while keeping confirmation-only rows out of action lists", () => {
     for (const tab of ["onsets", "exits"]) {
       state.tab = tab;
       const html = renderList(data(3, 1));
       expect(html).not.toContain("pending 0");
-      expect(html).not.toContain("ETF ready 99");
-      expect(html).not.toContain('option value="ETF"');
+      expect(html.includes("ETF ready 99")).toBe(tab === "onsets");
+      expect(html).toContain('option value="ETF"');
     }
   });
 });
@@ -275,16 +277,16 @@ describe("Korean sector-limit badges", () => {
     expect(html).toContain("섹터 제한 · 6/3종목");
     expect(html).toContain("섹터 제한 · 6/6종목");
     expect(html).toContain("추가 진입 제한");
-    expect(html).toContain(`전략 장부 기준 ${date}`);
+    expect(html).toContain(`실제 배분 기준 ${date}`);
     expect(html).toContain("KOSPI 한도 10% · 국내 30슬롯");
     expect(html).toContain("KOSDAQ 한도 20% · 국내 30슬롯");
     expect(html).toContain("KOSPI ready 99");
     expect(html).toContain("KOSDAQ ready 99");
     expect(html).toContain("8.5 / 10");
-    expect(html).toContain("진입 준비 (3)");
-    expect(html).toContain("예정 청산은 미차감");
-    expect(html).toContain("슬롯은 미예약");
-    expect(html).toContain("진입을 보장하지 않습니다");
+    expect(html).toContain("실제 미보유 후보 (4)");
+    expect(html).toContain("실제 S06 배분은 한국/ETF/미국 40/20/40입니다");
+    expect(html).toContain("진입 조건 충족은 계속 표시합니다");
+    expect(html).toContain("실제 주문 전에 체결가와 주문가능 현금을 다시 확인하세요");
   });
   it("labels pending KOSPI without implying confirmation completion or restricting ETFs", () => {
     state.tab = "pending";
@@ -313,7 +315,7 @@ describe("Korean sector-limit badges", () => {
     const html = renderList(value);
     expect(html).toContain("섹터 미확인 · 6/3종목");
     expect(html).toContain("신호·장부 기준일 불일치");
-    expect(html).toContain("전략 장부 기준 2026-09-30");
+    expect(html).toContain("실제 배분 기준 2026-09-30");
   });
   it("keeps labels and Korean-sector notes off US-only and EXIT views", () => {
     state.market = "US";
@@ -425,4 +427,47 @@ it("does not fall back to legacy US counts when a cached response lacks new-seri
   expect(html).toContain("미확인");
   expect(html).not.toContain("19종목");
   expect(html).not.toContain("$12,345.00");
+});
+
+describe("actual action context remains separate from entry evidence", () => {
+  it("shows held, consumed and unknown conditions without claiming executable orders", () => {
+    state.tab = "conditions";
+    const value = data(0, 0);
+    const kr = value.markets[0]!;
+    kr.conditions = [
+      {
+        ...signal("KOSPI", 1, "held-condition"),
+        actualState: "HELD",
+        reason: "실제 보유 중",
+        actualQuantity: 0.00001,
+        actualEntryDate: "2026-10-12",
+        signalOriginDate: "2026-10-13",
+      },
+      {
+        ...signal("KOSPI", 2, "consumed-condition"),
+        actualState: "CONSUMED",
+        reason: "새 원신호 대기",
+      },
+      {
+        ...signal("KOSPI", 3, "unknown-condition"),
+        actualState: "UNKNOWN",
+        reason: "실제 보유정보 미확인",
+      },
+    ];
+    kr.conditionCount = 3;
+    kr.onsets = [];
+    kr.onsetCount = 0;
+    const html = renderList(value);
+    expect(html).toContain("held-condition");
+    expect(html).toContain("consumed-condition");
+    expect(html).toContain("unknown-condition");
+    expect(html).toContain("0.00001");
+    expect(html).toContain("2026-10-12");
+    expect(html).toContain("원신호 2026-10-13");
+    state.tab = "onsets";
+    const actual = renderList(value);
+    expect(actual).not.toContain("held-condition");
+    expect(actual).not.toContain("consumed-condition");
+    expect(actual).not.toContain("unknown-condition");
+  });
 });

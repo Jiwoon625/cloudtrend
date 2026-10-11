@@ -14,6 +14,11 @@ export const CAPITAL_PLAN_POLICY = Object.freeze({
   rebalance: false,
   costs: "EXISTING_KR_ETF_FEE_INCLUSIVE_US_GROSS_PLUS_FEE",
 } as const);
+/** Current execution sizing; the original v1 document literals remain readable unchanged. */
+export const CURRENT_OPERATING_CAPITAL_POLICY = Object.freeze({
+  ...CAPITAL_PLAN_POLICY,
+  etf: "PRIOR_CLOSE_ETF_SLEEVE_NAV_TIMES_SIGNAL_VOLATILITY_WEIGHT",
+} as const);
 const messages = {
   input:
     "운용계획 입력을 확인하세요. 총 계획금액은 양수 원화 문자열이며 실제 현금·배분·환율은 입력하지 않습니다.",

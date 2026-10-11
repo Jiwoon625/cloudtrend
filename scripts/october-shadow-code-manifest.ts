@@ -128,7 +128,12 @@ export function shadowExecutableSyntax(content: string, fileName = "engine.ts") 
   return { executable: result.outputText, canonicalSyntax: JSON.stringify(syntax(source)) };
 }
 
-export async function shadowEngineManifest(root = process.cwd()) {
+export async function shadowEngineManifest(
+  root = process.cwd(),
+  roots: readonly string[] = SHADOW_ENGINE_ROOTS,
+  version = "october-shadow-engine-manifest-v2",
+  ignoredImports: readonly string[] = [],
+) {
   const files = new Map<string, string>();
   async function visit(relative: string): Promise<void> {
     if (files.has(relative)) return;
@@ -142,6 +147,7 @@ export async function shadowEngineManifest(root = process.cwd()) {
     const imports = ts.preProcessFile(executable).importedFiles;
     for (const imported of imports) {
       const name = imported.fileName;
+      if (ignoredImports.some((suffix) => name.endsWith(suffix))) continue;
       if (!name.startsWith(".") && !name.startsWith("@/")) continue;
       // Calendar evidence may be extended without redefining strategy calculations.
       if (name.endsWith("/octoberShadowCalendarEvidence.json")) continue;
@@ -163,9 +169,9 @@ export async function shadowEngineManifest(root = process.cwd()) {
       await visit(resolved);
     }
   }
-  for (const entry of SHADOW_ENGINE_ROOTS) await visit(entry);
+  for (const entry of roots) await visit(entry);
   const manifest = {
-    version: "october-shadow-engine-manifest-v2",
+    version,
     files: Object.fromEntries([...files].sort(([a], [b]) => a.localeCompare(b))),
     dependencies: { typescript: ts.version },
     normalization: "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1",

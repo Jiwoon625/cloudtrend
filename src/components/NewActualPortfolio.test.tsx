@@ -3,6 +3,7 @@ import React, { type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import { DASHBOARD_OPERATIONS_QUERY } from "@/lib/dashboardActualRefresh";
 import type { NewActualPortfolioResponse } from "@/lib/newActualPortfolio.functions";
 
 type ButtonProps = {
@@ -504,13 +505,40 @@ describe("new portfolio editor safety", () => {
     await tick();
     expect(harness.states[3]).toBeNull();
   });
+  it("invalidates actual views even when navigation unmounts the editor before save settles", async () => {
+    harness.client.setQueryData(DASHBOARD_OPERATIONS_QUERY, { state: "OLD_UNHELD" });
+    let finish!: (value: NewActualPortfolioResponse) => void;
+    server.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    openExecution();
+    completeExecution();
+    submit();
+    await tick();
+    expect(server).toHaveBeenCalledTimes(1);
+    // Mirrors the auth effect cleanup on component unmount.
+    harness.refs[0]!.current = null;
+    finish(pending());
+    await vi.waitFor(() =>
+      expect(harness.client.getQueryState(DASHBOARD_OPERATIONS_QUERY)?.isInvalidated).toBe(true),
+    );
+    expect(server).toHaveBeenCalledTimes(1);
+  });
   it("requires explicit reload AND reopening after a lost response, never replaying automatically", async () => {
+    harness.client.setQueryData(DASHBOARD_OPERATIONS_QUERY, { state: "OLD_UNHELD" });
+    harness.client.setQueryData(["domestic-position-context"], { state: "OLD_UNHELD" });
     server.mockRejectedValueOnce(new Error("synthetic lost response"));
     openExecution();
     completeExecution();
     const firstId = draft()["requestId"];
     submit();
-    await tick();
+    await vi.waitFor(() => {
+      expect(harness.client.getQueryState(DASHBOARD_OPERATIONS_QUERY)?.isInvalidated).toBe(true);
+      expect(harness.client.getQueryState(["domestic-position-context"])?.isInvalidated).toBe(true);
+    });
     render(<NewActualPortfolio />);
     expect(draft()["needsReview"]).toBe(true);
     expect(button("확인한 내용 저장").disabled).toBe(true);
@@ -719,7 +747,7 @@ describe("new portfolio editor safety", () => {
     render(<NewActualPortfolio />);
     server.mockResolvedValue(data);
     submit();
-    await tick();
+    await vi.waitFor(() => expect(harness.states[3]).toBeNull());
     expect(server.mock.calls[0]![0]!.data).toMatchObject({
       action: "cash",
       currency: "USD",

@@ -309,7 +309,7 @@ describe("KOSPI confirmation UI", () => {
     );
     expect(html).toContain("확인대기(KOSPI/ETF)");
     expect(html).toContain("2/—");
-    expect(html).toContain("진입 준비 (1)");
+    expect(html).toContain("실제 미보유 후보 (1)");
     expect(html).toContain("확인대기 (2)");
     expect(html).toContain("확인 준비 종목");
     expect(html).not.toContain("원시 대기 종목");

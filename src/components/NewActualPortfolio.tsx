@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/cloud";
+import { invalidateActualPositionViews } from "@/lib/dashboardActualRefresh";
 import {
   newActualPortfolioServer,
   type NewActualPortfolioResponse,
@@ -1171,6 +1172,9 @@ export function NewActualPortfolio({
       await qc.cancelQueries({ queryKey });
       await qc.invalidateQueries({ queryKey, refetchType: "none" });
     } finally {
+      // A write can commit after navigation or despite a lost response. Never publish
+      // its owner data here; refresh only already-mounted authenticated readers.
+      await invalidateActualPositionViews(qc, true);
       guard.current.pending = false;
       setBusy(false);
     }

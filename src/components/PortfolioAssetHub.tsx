@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { AppShell } from "./AppShell";
+import { OperatingAllocationPanel } from "./OperatingAllocationPanel";
 import { OperatingCapitalPlan } from "./OperatingCapitalPlan";
 import { NewActualPortfolio } from "./NewActualPortfolio";
 
@@ -18,6 +19,7 @@ export function PortfolioAssetHub({
     <AppShell loadAnalysis={false}>
       <NewActualPortfolio selectedAsset={selectedAsset} onAssetChange={onAssetChange}>
         <OperatingCapitalPlan editable />
+        <OperatingAllocationPanel editable />
       </NewActualPortfolio>
     </AppShell>
   );

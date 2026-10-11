@@ -42,7 +42,7 @@ export function OperatingCapitalPlanContent({
             {plan ? `총 계획금액 ${money(plan.plannedCapitalKrw)}` : "총 계획금액 미등록"}
           </p>
           <p role="status" className="text-sm">
-            시장 배분 미확정
+            시장 배분·실제 현금은 자산배분 내역에서 별도로 확인합니다
           </p>
           <p className="text-xs text-muted-foreground">
             계획금액은 참고용입니다. 실제 입금·배정한 자금은 현금 내역에 별도로 기록하세요.
