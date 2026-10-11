@@ -242,8 +242,11 @@ export function projectNewActualPool(input: {
   quotes: Record<string, Quote>;
   valuationDate: string | null;
   today: string;
+  /** Operating-day cutoff for cash; defaults to the observation date for historical projections. */
+  cashToday?: string;
 }): NewActualPool {
-  const { currency, executions, quotes, valuationDate, today } = input;
+  const { currency, executions, quotes, valuationDate, today, cashToday = today } = input;
+  if (!validDate(cashToday)) throw new Error("Invalid cash observation date");
   if (!["KRW", "USD"].includes(currency) || !validDate(today) || !Array.isArray(executions))
     throw new Error("Invalid new actual pool currency or observation date");
   if (valuationDate !== null && !validDate(valuationDate))
@@ -347,7 +350,7 @@ export function projectNewActualPool(input: {
     (a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id),
   );
   for (const event of cashEvents) {
-    if (event.date > today) throw new Error("Future new actual cash event is not allowed");
+    if (event.date > cashToday) throw new Error("Future new actual cash event is not allowed");
   }
   const activeCash = cashEvents.filter((event) => !event.voided);
   const externalFlows = activeCash.filter(

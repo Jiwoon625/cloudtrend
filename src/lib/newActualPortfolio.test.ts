@@ -374,6 +374,25 @@ describe("funding and cash events", () => {
     expect(project([], metadata([], [original])).fundingStatus).toBe("PENDING");
   });
 
+  it("keeps historical cash cutoffs and market-date guards when a live cash cutoff is supplied", () => {
+    const nextDay = "2026-10-21";
+    const events = [cashEvent("later", { date: nextDay })];
+    const options = { currency: "USD" as const };
+    expect(() => project([], metadata([], events), options)).toThrow(/Future new actual cash/);
+    expect(project([], metadata([], events), { ...options, cashToday: nextDay }).cash).toBe("1000");
+    const futureFill = execution("future", { market: "US", date: nextDay });
+    expect(() =>
+      project([futureFill], metadata([futureFill], events), { ...options, cashToday: nextDay }),
+    ).toThrow(/pre-start\/future/);
+    const fill = execution("current", { market: "US", date: today });
+    const marked = project([fill], metadata([fill]), {
+      ...options,
+      cashToday: nextDay,
+      quotes: { "US:SYNTH": { price: 15, date: nextDay, exitSignal: null } },
+    });
+    expect(marked.issues).toContain("future_price");
+  });
+
   it("sorts cash facts by date without changing their stored order", () => {
     const events = [
       cashEvent("later", { date: "2026-10-13", kind: "INTEREST", amount: 1 }),

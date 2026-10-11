@@ -834,3 +834,16 @@ describe("actual lifecycle and independent entry-condition evidence", () => {
     },
   );
 });
+
+describe("dashboard heading", () => {
+  it("keeps the title and PDF export while omitting the requested subtitle", () => {
+    const route = readFileSync(new URL("../src/routes/index.tsx", import.meta.url), "utf8");
+    const header = route.slice(
+      route.indexOf('<div className="mb-5'),
+      route.indexOf("<PdfExportButton"),
+    );
+    expect(header).toContain("대시보드 · V8 Final</h1>");
+    expect(header).not.toContain("<p ");
+    expect(route).toContain('<PdfExportButton documentTitle="CloudTrend V8 Final 대시보드" />');
+  });
+});
