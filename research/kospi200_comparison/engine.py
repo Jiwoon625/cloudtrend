@@ -109,11 +109,11 @@ def load_verified_inputs(manifest_path: Path, start: str = START, end: str = END
     _assert(config.get("stock_policy_id") == POLICY_ID, "Stock replay is not the pinned 2026-10-12 strategy")
     _assert(config.get("benchmark_symbol") == BENCHMARK_SYMBOL, "Only KODEX 200 (069500) is certified in this run")
     _assert(config.get("benchmark_price_basis") == "audited_total_return_adjusted_ohlc", "Adjusted raw prices are NOT a verified dividend-reinvested total-return series")
-    for name in ("stock_replay_verified", "benchmark_distribution_verified", "gate_point_in_time_verified", "krx_calendar_verified", "stock_corporate_actions_reviewed"):
+    for name in ("stock_replay_verified", "benchmark_distribution_verified", "gate_point_in_time_verified", "krx_calendar_verified", "stock_corporate_actions_reviewed", "stock_cash_distributions_verified", "stock_pit_universe_verified", "stock_execution_replay_verified"):
         _assert(config.get(name) is True, f"Certification missing: {name}")
     for name in ("stock_replay_commit", "stock_replay_evidence", "benchmark_distribution_evidence", "gate_evidence", "calendar_evidence"):
         _assert(isinstance(config.get(name), str) and len(config[name].strip()) >= 12, f"Missing provenance: {name}")
-    _assert(isinstance(config.get("stock_replay_policy_sha256"), str) and len(config["stock_replay_policy_sha256"]) == 64, "Missing stock replay policy hash")
+    _assert(isinstance(config.get("stock_replay_policy_sha256"), str) and len(config["stock_replay_policy_sha256"]) == 64 and all(c in "0123456789abcdef" for c in config["stock_replay_policy_sha256"]), "Missing stock replay policy hash")
     _assert(config.get("stock_budget_policy") == "initial_capital_divided_by_30", "Historical annual-prior-NAV budget is NOT today's policy")
     _assert(config.get("stock_one_way_fee") == ONE_WAY_FEE, "Stock fees differ from compared 0.15% one-way ETF cost")
     _assert(config.get("stock_nav_basis") == "post_cost_mark_to_market", "Stock NAV must include open holdings and trading fees")
@@ -151,6 +151,13 @@ def load_verified_inputs(manifest_path: Path, start: str = START, end: str = END
     # explicitly pinned end. Earlier or later periods must be declared separately.
     if start == START and end == END:
         _assert(all(str(y) in {d[:4] for d in sessions if start <= d <= end} for y in range(2018, 2027)), "Missing full research-year coverage")
+    # A mere dated file is not proof of complete historical coverage.
+    # Each full calendar year has many sessions; the separate certified KRX
+    # calendar is the stronger authority on exact holiday/session dates.
+    for year in range(2018, 2026):
+        if start <= f"{year}-01-02" and end >= f"{year}-12-28":
+            count = sum(dt.startswith(str(year)) for dt in sessions)
+            _assert(count >= 190, f"Suspiciously sparse KRX calendar year {year}: {count}")
     for dt in relevant:
         stock = parsed["stock_nav"][dt]
         _number(stock["nav"], f"stock NAV {dt}", min_value=0.000001)
@@ -386,6 +393,32 @@ def analyze(rows: list[dict[str, Any]], *, first_year: int = 2018) -> dict[str, 
         arm: block_bootstrap_mean_spread(all_ret["stock"], all_ret[arm])
         for arm in ARMS[1:]
     }
+    pre2025_returns = {
+        arm: [value for dt, value in dated[arm] if "2018" <= dt[:4] <= "2024"]
+        for arm in ARMS
+    }
+    inference_pre2025 = {
+        arm: block_bootstrap_mean_spread(pre2025_returns["stock"], pre2025_returns[arm])
+        for arm in ARMS[1:]
+    }
+    checks = {}
+    for arm in ARMS[1:]:
+        before = segments["2018_2024"]
+        skipped = segments["excluding_2025_daily_return_stitch_not_executable"]
+        ci = inference_pre2025[arm]
+        checks[arm] = {
+            "pre2025_sharpe_higher": before["stock"]["sharpe"] is not None
+                and before[arm]["sharpe"] is not None
+                and before["stock"]["sharpe"] > before[arm]["sharpe"],
+            "pre2025_cagr_higher": before["stock"]["cagr"] > before[arm]["cagr"],
+            "pre2025_mdd_smaller_absolute_loss": before["stock"]["mdd"] > before[arm]["mdd"],
+            "without2025_stitched_sharpe_higher": skipped["stock"]["sharpe"] is not None
+                and skipped[arm]["sharpe"] is not None
+                and skipped["stock"]["sharpe"] > skipped[arm]["sharpe"],
+            "pre2025_bootstrap_mean_daily_excess_ci95_above_zero": ci["ci95_low"] > 0,
+            "full_rolling_two_year_return_majority": rolling_summary[arm]["stock_higher_504d_cumulative_share"] > 0.5,
+            "interpretation": "Descriptive comparison only; no independent OOS or causal proof.",
+        }
     return {
         "period": {"start": dates[0], "end": dates[-1], "sessions": len(rows)},
         "annual": by_year,
@@ -393,6 +426,8 @@ def analyze(rows: list[dict[str, Any]], *, first_year: int = 2018) -> dict[str, 
         "leave_one_full_year_out_stitched": left_out,
         "rolling_504_session": rolling_summary,
         "paired_bootstrap_full_sample": inference,
+        "paired_bootstrap_2018_2024": inference_pre2025,
+        "robustness_checks_not_an_investment_verdict": checks,
         "methodology": {
             "policy": POLICY_ID,
             "benchmark": "069500 KODEX 200 audited synthetic total-return OHLC",
