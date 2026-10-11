@@ -1,0 +1,57 @@
+{
+  "schema": "CM_O3_ENTRY_EXTENSION_CONTRACT_V1",
+  "candidate_id": "O3",
+  "separate_from_approved_300": true,
+  "base_plan_sha256": "ce6be8c497e45fa22a41d3a7b924913a23b18588fd05efd33ee14eb961ec7c2c",
+  "base_engine_commit": "feb420594935151770a03f9bced171061799b59c",
+  "live_definition_reference_commit": "a0a79bc9423f0b21580167ec82bcd1fea8016fdc",
+  "policy_version": "o3-delivered-entry-calendar-month-v1",
+  "signal_source": "Original frozen CM pure ENTRY functions over the exact original market panels; before holdings, cash, pending reservations, slots, sizing and execution",
+  "signal_model_substitution": false,
+  "reference_demand_reuse": false,
+  "window": "Previous calendar month by confirmation/session date, available by month-end decision",
+  "deduplication": "First available delivery for engine+symbol+origin_date globally, before selecting the confirmation month",
+  "source_warmup": "Original full K/E two-session feature history and U rank-state warmup; no prestart-origin entry",
+  "weight_rule": "market ENTRY count / total ENTRY count, then explicit boundary_options",
+  "boundary_options": {
+    "cap": 0.6,
+    "zero_signal_month": "CASH100",
+    "first_partial_month": "USE_RESEARCH_PREFIX",
+    "initial_weights": {
+      "K": 0.3333333333333333,
+      "E": 0.3333333333333333,
+      "U": 0.3333333333333333,
+      "C": 0.0
+    }
+  },
+  "boundary_approval_status": "APPROVED_DEFINITION",
+  "first_partial_month": "Approved live-aligned choice: 2017-08-21 onward is the defined first-month prefix; prestart dates are not missing. All expected prefix sessions must be observed",
+  "missing_observation": "Keep previous target; never count missing market observations as zero signals",
+  "cap_excess": "Retain in central cash, no redistribution",
+  "zero_target_orders": "Cancel pending BUY, preserve SELL and held positions; no forced sale",
+  "movement": "Original monthly settled idle cash only, no budget reset",
+  "period": {
+    "start": "2017-08-21",
+    "end": "2026-09-11"
+  },
+  "initial_capital_krw": 100000000,
+  "budget": "Original fixed initial K/30 and U/20 budgets; original ETF prior-close NAV volatility budget",
+  "costs": {
+    "one_way_fee": "0.0015",
+    "fx_spread": "0"
+  },
+  "parallelism": {
+    "workers": 1,
+    "hybrid": false
+  },
+  "us_analysis_reuse": "Existing frozen exact-row/prior-rank-state memo scoped to one observer/executor close event; one pure US computation, verified reuse once; no monkeypatch or persistent cache",
+  "execution_priority": [
+    "D2",
+    "O3",
+    "split25_70",
+    "split10_100",
+    "fine78"
+  ],
+  "storage": "Create-only new extension plan+identity under existing private owner research/cm/; original300 unchanged",
+  "execution_status": "APPROVED_MANUAL_ENTRY_EXTENSION"
+}
