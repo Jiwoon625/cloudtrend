@@ -781,6 +781,38 @@ describe("new portfolio editor safety", () => {
     expect(harness.refetch).toHaveBeenCalledTimes(1);
     expect(server).not.toHaveBeenCalled();
   });
+  it("accepts opening USD cash after Korean midnight without allowing a future operating day", async () => {
+    vi.setSystemTime(new Date("2026-10-11T15:40:00Z"));
+    render(<NewActualPortfolio />);
+    harness.buttons.find((b) => Array.isArray(b.children) && b.children[0] === "USD")!.onClick!();
+    expect(draft()).toMatchObject({ date: "2026-10-12", currency: "USD" });
+    harness.states[3] = {
+      ...draft(),
+      amount: "1234",
+      reference: "synthetic allocation",
+      confirmed: true,
+    };
+    const html = render(<NewActualPortfolio />);
+    expect(html).toContain('min="2026-10-12"');
+    expect(html).toContain('max="2026-10-12"');
+    expect(html).not.toContain("10월 12일 시작 전입니다");
+    harness.states[3] = { ...draft(), date: "2026-10-13" };
+    render(<NewActualPortfolio />);
+    submit();
+    await tick();
+    expect(server).not.toHaveBeenCalled();
+    harness.states[3] = { ...draft(), date: "2026-10-12" };
+    render(<NewActualPortfolio />);
+    submit();
+    await tick();
+    expect(server).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: "cash",
+        currency: "USD",
+        event: expect.objectContaining({ date: "2026-10-12", amount: 1234 }),
+      }),
+    });
+  });
   it("rejects unconfirmed and future cash without inventing starting funds", async () => {
     render(<NewActualPortfolio />);
     harness.buttons.find((b) => Array.isArray(b.children) && b.children[0] === "KRW")!.onClick!();

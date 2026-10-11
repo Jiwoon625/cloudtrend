@@ -1,3 +1,4 @@
+import { newActualCashDay } from "./newActualCashDate";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -99,6 +100,7 @@ function sourceCash(row: Row, currency: OperatingCurrency, now: string) {
     quotes: {},
     valuationDate: today,
     today,
+    cashToday: newActualCashDay(now),
   }).cash;
 }
 function auditOf(document: Document) {

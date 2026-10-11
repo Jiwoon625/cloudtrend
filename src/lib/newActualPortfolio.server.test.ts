@@ -341,6 +341,44 @@ describe("new-only portfolio persistence", () => {
     await expect(saveNewActualPortfolio(db.value, uid, changed, now)).rejects.toThrow(/혼합/);
     expect(state.rows[kr]!.payload.executions[1]!.shares).toBe(20);
   });
+  it("records USD cash on the Korean operating day while US execution dates stay market-local", async () => {
+    const instant = "2026-10-11T15:40:00Z";
+    const db = client();
+    const cash = {
+      accessToken: "synthetic",
+      action: "cash",
+      expectedRevision: 7,
+      requestId: "00000000-0000-4000-8000-000000000071",
+      currency: "USD",
+      event: {
+        id: "",
+        date: "2026-10-12",
+        kind: "DEPOSIT",
+        amount: 1234,
+        reference: "synthetic confirmed allocation",
+      },
+      confirmed: true,
+    } as const;
+    for (const date of ["2026-10-11", "2026-10-13"]) {
+      await expect(
+        saveNewActualPortfolio(db.value, uid, { ...cash, event: { ...cash.event, date } }, instant),
+      ).rejects.toThrow(/한국 기준/);
+    }
+    await expect(
+      saveNewActualPortfolio(db.value, uid, cash, "2026-10-11T14:59:59Z"),
+    ).rejects.toThrow(/한국 기준/);
+    expect(db.writes).toHaveLength(0);
+    await saveNewActualPortfolio(db.value, uid, cash, instant);
+    const loaded = await loadNewActualPortfolio(db.value, uid, instant);
+    expect(loaded.pools.USD.cash).toBe("1234");
+    expect(loaded.pools.USD.netContributions).toBe("1234");
+    expect(loaded.pools.USD.trades).toEqual([]);
+    const fill = buy({ asset: "US", expectedRevision: 8 });
+    fill.execution = { ...fill.execution, market: "US", date: "2026-10-12" };
+    await expect(saveNewActualPortfolio(db.value, uid, fill, instant)).rejects.toThrow(/현지 날짜/);
+    expect(db.writes).toHaveLength(1);
+    expect(state.rows[us]!.payload.executions).toEqual([legacy("US")]);
+  });
   it("records KR+ETF shared cash only once, treats old sale proceeds as contribution, keeps correction/cancel history", async () => {
     const db = client();
     const cash = {

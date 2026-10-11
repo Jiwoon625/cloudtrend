@@ -1,3 +1,4 @@
+import { newActualCashDay } from "./newActualCashDate";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decimal, fromLegacyNumber } from "./ledger/decimal";
 import { readWebsiteDocument } from "./ledger/websiteRepository.server";
@@ -39,6 +40,7 @@ export function projectActualPositionContext(
       quotes: {},
       valuationDate: null,
       today: today(currency),
+      cashToday: newActualCashDay(now),
     });
   const actualPools: { KRW: NewActualPool; USD: NewActualPool } = {
     KRW: pool("KRW", domestic),

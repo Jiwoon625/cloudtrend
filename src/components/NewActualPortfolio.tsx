@@ -13,6 +13,8 @@ import { Input } from "./ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "./ui/dialog";
 import type { PortfolioAsset } from "./PortfolioAssetHub";
 
+import { newActualCashDay } from "@/lib/newActualCashDate";
+
 const START_DATE = "2026-10-12";
 const labels = { KR: "한국주식", US: "미국주식", ETF: "ETF" };
 const cashLabels = {
@@ -757,12 +759,12 @@ function CashFields({
         실제 입금·배정한 금액을 기록하세요. 계획금액이나 입금 예정액은 입력하지 마세요.
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="실제 발생일">
+        <Field label="실제 발생일 (한국 기준)">
           <Input
             type="date"
             required
             min={START_DATE}
-            max={newActualMarketDay(draft.currency)}
+            max={newActualCashDay()}
             value={draft.date}
             onChange={(e) => patch({ date: e.target.value })}
           />
@@ -950,7 +952,7 @@ export function NewActualPortfolio({
       kind: "cash",
       currency,
       id: event?.id ?? "",
-      date: event?.date ?? newActualMarketDay(currency),
+      date: event?.date ?? newActualCashDay(),
       cashKind: event?.kind ?? "DEPOSIT",
       amount: event ? String(event.amount) : "",
       reference: event?.reference ?? "",
@@ -1086,13 +1088,9 @@ export function NewActualPortfolio({
         };
       } else if (current.kind === "cash") {
         if (!current.confirmed) throw new Error("실제 배정·현금 흐름을 확인해 주세요.");
-        if (
-          !current.date ||
-          current.date < START_DATE ||
-          current.date > newActualMarketDay(current.currency)
-        )
+        if (!current.date || current.date < START_DATE || current.date > newActualCashDay())
           throw new Error(
-            "발생일은 2026-10-12부터 현지 오늘까지 입력할 수 있습니다. 시작 전 준비는 입금이 아닙니다.",
+            "발생일은 2026-10-12부터 한국 기준 오늘까지 입력할 수 있습니다. 시작 전 준비는 입금이 아닙니다.",
           );
         const amount = Number(current.amount);
         if (
@@ -1259,11 +1257,9 @@ export function NewActualPortfolio({
                   </>
                 )}
               </fieldset>
-              {newActualMarketDay(
-                draft.kind === "cash" || draft.kind === "cancelCash"
-                  ? draft.currency
-                  : currencyOf(draft.asset),
-              ) < START_DATE && (
+              {(draft.kind === "cash" || draft.kind === "cancelCash"
+                ? newActualCashDay()
+                : newActualMarketDay(currencyOf(draft.asset))) < START_DATE && (
                 <p className="text-xs text-warn">
                   10월 12일 시작 전입니다. 미래 체결·배정금은 저장할 수 없습니다.
                 </p>

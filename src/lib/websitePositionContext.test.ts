@@ -63,6 +63,23 @@ describe("website holdings new series boundary", () => {
     expect(result.actualExecutions).toEqual([]);
     expect(result.actualPools.KRW.fundingStatus).toBe("PENDING");
   });
+  it("reads USD operating-day cash across Korean midnight without inventing US holdings", () => {
+    const metadata = emptyNewActualMetadata();
+    metadata.cashEvents.push({
+      id: "funding",
+      kind: "DEPOSIT",
+      date: "2026-10-12",
+      amount: 1234,
+      reference: "synthetic allocation",
+    });
+    const result = projectActualPositionContext(
+      null,
+      { executions: [], newActualPortfolio: metadata },
+      new Date("2026-10-11T15:40:00Z"),
+    );
+    expect(result.actualPools.USD.cash).toBe("1234");
+    expect(result.actualExecutions).toEqual([]);
+  });
   it("never infers new membership from a post-start fill date", async () => {
     const result = projectWebsitePositionContext(
       { executions: [fill("UNASSIGNED", "2026-10-13")] },

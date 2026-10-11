@@ -190,10 +190,6 @@ function Dashboard() {
       <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
         <div>
           <h1 className="text-xl font-bold tracking-tight">대시보드 · V8 Final</h1>
-          <p className="text-[12px] text-muted-foreground">
-            KOSPI 하루·시장국면 확인 대기·진입 준비, KOSDAQ 8.0 원신호, 점수 Exit와 섹터 Rotation을
-            확인합니다.
-          </p>
         </div>
         <div className="flex items-center gap-2" data-no-print>
           {started && !summaryQuery.isPending ? (

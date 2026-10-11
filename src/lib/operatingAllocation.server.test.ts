@@ -263,6 +263,12 @@ describe("same-document actual allocation CAS", () => {
       errors.conflict,
     );
   });
+  it("reads actual USD funding on the Korean operating day before US midnight", async () => {
+    funded("us_actual_portfolio_ledgers");
+    const c = client();
+    const result = await loadOperatingAllocation(c.value, uid, "USD", "2026-10-11T15:40:00Z");
+    expect(result.cash).toBe("1000");
+  });
   it("cannot interpret plan approval as a USD funding event", async () => {
     const c = client();
     await expect(

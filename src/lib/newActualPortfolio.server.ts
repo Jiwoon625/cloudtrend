@@ -1,3 +1,4 @@
+import { newActualCashDay } from "./newActualCashDate";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ACTUAL_PERFORMANCE_START } from "./ledger/actualPerformance";
@@ -67,6 +68,7 @@ function project(
     // Recording remains available on every day; only today's valuation waits for dated inputs.
     valuationDate: today,
     today,
+    cashToday: newActualCashDay(now),
   });
 }
 
@@ -227,7 +229,8 @@ export async function saveNewActualPortfolio(
     doc.executions = doc.executions.filter((e) => e.id !== existing.id);
     delete metadata.assignments[existing.id];
   } else if (input.action === "cash") {
-    validateDate(input.event.date, currency, now);
+    if (input.event.date < ACTUAL_PERFORMANCE_START || input.event.date > newActualCashDay(now))
+      throw new Error("현금 발생일은 2026-10-12부터 한국 기준 오늘까지 입력할 수 있습니다.");
     const existing = input.event.id
       ? metadata.cashEvents.find((e) => e.id === input.event.id)
       : undefined;
