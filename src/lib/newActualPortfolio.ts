@@ -1,3 +1,4 @@
+import { actualDateWindow, couldCashTimingExplainShortfall } from "./newActualCashTiming";
 import type { ActualExecution, Quote } from "./portfolioLedgers";
 import { ACTUAL_PERFORMANCE_SERIES, ACTUAL_PERFORMANCE_START } from "./ledger/actualPerformance";
 import { validDate } from "./ledger/date";
@@ -302,8 +303,15 @@ export function projectNewActualPool(input: {
   const issues = new Set<string>();
   const holdings = new Map<string, Holding>();
   const dailyCash = new Map<string, bigint>();
-  const cashChange = (date: string, change: bigint) =>
+  const timedChanges: Parameters<typeof couldCashTimingExplainShortfall>[0] = [];
+  const cashChange = (date: string, change: bigint, cashEvent = false) => {
     dailyCash.set(date, (dailyCash.get(date) ?? 0n) + change);
+    timedChanges.push({
+      date,
+      change,
+      timeZone: currency === "USD" && !cashEvent ? "America/New_York" : "Asia/Seoul",
+    });
+  };
   let realized = 0n;
   const trades: NewActualTrade[] = [];
   for (const { execution, allocation, quantity, gross, fee } of assigned) {
@@ -361,7 +369,7 @@ export function projectNewActualPool(input: {
   for (const event of activeCash) {
     const amount = exactNumber(event.amount);
     const incoming = ["DEPOSIT", "DIVIDEND", "INTEREST"].includes(event.kind);
-    cashChange(event.date, incoming ? amount : -amount);
+    cashChange(event.date, incoming ? amount : -amount, true);
     if (event.kind === "DEPOSIT") netContributions += amount;
     if (event.kind === "WITHDRAWAL") netContributions -= amount;
   }
@@ -373,7 +381,13 @@ export function projectNewActualPool(input: {
     if (cash < 0n) shortfall = true;
   }
   if (!funded) issues.add("funding_pending");
-  else if (shortfall) issues.add("funding_shortfall");
+  else if (shortfall) {
+    issues.add(
+      currency === "USD" && cash >= 0n && couldCashTimingExplainShortfall(timedChanges)
+        ? "cash_timing_unconfirmed"
+        : "funding_shortfall",
+    );
+  }
 
   let marketValue = 0n,
     unrealized = 0n,
@@ -384,9 +398,29 @@ export function projectNewActualPool(input: {
   ].sort();
   // A prior-session mark cannot close a later cash/trade snapshot, even for a
   // different security. Keep dated individual marks, but suppress combined totals.
-  if (holdings.size > 0 && valuationDate !== null && activityDates.at(-1)! > valuationDate) {
-    allMarked = false;
-    issues.add("stale_price");
+  const latestTradeDate = assigned.at(-1)?.execution.date;
+  // USD cash days and US price days are different clocks. Overlap is not proof
+  // of a common valuation cutoff: retain market marks but withhold combined NAV.
+  const valuationEnd =
+    currency === "USD" && valuationDate !== null
+      ? actualDateWindow(valuationDate, "America/New_York").end
+      : null;
+  let cashAfterValuation = false;
+  let cashValuationTimingUnknown = false;
+  if (holdings.size > 0 && valuationDate !== null) {
+    for (const event of activeCash) {
+      if (valuationEnd === null) cashAfterValuation ||= event.date > valuationDate;
+      else {
+        const cashWindow = actualDateWindow(event.date, "Asia/Seoul");
+        if (cashWindow.start >= valuationEnd) cashAfterValuation = true;
+        else if (cashWindow.end > valuationEnd) cashValuationTimingUnknown = true;
+      }
+    }
+    if ((latestTradeDate !== undefined && latestTradeDate > valuationDate) || cashAfterValuation) {
+      allMarked = false;
+      issues.add("stale_price");
+    }
+    if (cashValuationTimingUnknown) issues.add("cash_valuation_timing_unconfirmed");
   }
   const positions: NewActualPosition[] = [];
   for (const [key, holding] of [...holdings.entries()].sort(([a], [b]) => a.localeCompare(b))) {
@@ -430,7 +464,7 @@ export function projectNewActualPool(input: {
     });
   }
   const knownCash = funded && !shortfall;
-  const nav = knownCash && allMarked ? cash + marketValue : null;
+  const nav = knownCash && allMarked && !cashValuationTimingUnknown ? cash + marketValue : null;
   const totalPnl = nav === null ? null : nav - netContributions;
   const firstActivityDate = activityDates[0];
   const initialDeposit =
