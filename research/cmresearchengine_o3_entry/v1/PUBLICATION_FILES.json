@@ -1,0 +1,94 @@
+{
+  "schema": "CM_O3_ENTRY_PUBLICATION_FILES_V1",
+  "files": [
+    {
+      "local_filename": "FROZEN_SOURCE_VERIFICATION.json",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/FROZEN_SOURCE_VERIFICATION.json"
+    },
+    {
+      "local_filename": "O3_REQUEST.json",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/O3_REQUEST.json"
+    },
+    {
+      "local_filename": "README.md",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/README.md"
+    },
+    {
+      "local_filename": "SOURCE_BOUNDARY.md",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/SOURCE_BOUNDARY.md"
+    },
+    {
+      "local_filename": "cmresearchengine-o3-entry-run.yml",
+      "repository_path": ".github/workflows/cmresearchengine-o3-entry-run.yml"
+    },
+    {
+      "local_filename": "contract.json",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/contract.json"
+    },
+    {
+      "local_filename": "o3_audit.py",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/o3_audit.py"
+    },
+    {
+      "local_filename": "o3_cli.py",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/o3_cli.py"
+    },
+    {
+      "local_filename": "o3_manifest.py",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/o3_manifest.py"
+    },
+    {
+      "local_filename": "o3_policy.py",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/o3_policy.py"
+    },
+    {
+      "local_filename": "o3_prepared.py",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/o3_prepared.py"
+    },
+    {
+      "local_filename": "o3_replay.py",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/o3_replay.py"
+    },
+    {
+      "local_filename": "o3_report.py",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/o3_report.py"
+    },
+    {
+      "local_filename": "o3_signals.py",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/o3_signals.py"
+    },
+    {
+      "local_filename": "synthetic_support.py",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/synthetic_support.py"
+    },
+    {
+      "local_filename": "test_o3_policy.py",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/test_o3_policy.py"
+    },
+    {
+      "local_filename": "test_o3_replay.py",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/test_o3_replay.py"
+    },
+    {
+      "local_filename": "test_o3_report.py",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/test_o3_report.py"
+    },
+    {
+      "local_filename": "test_o3_signal_audit.py",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/test_o3_signal_audit.py"
+    },
+    {
+      "local_filename": "test_o3_signals.py",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/test_o3_signals.py"
+    },
+    {
+      "local_filename": "PUBLICATION_FILES.json",
+      "repository_path": "research/cmresearchengine_o3_entry/v1/PUBLICATION_FILES.json"
+    }
+  ],
+  "excluded": [
+    "__pycache__",
+    "DELIVERY_SUMMARY.json"
+  ],
+  "original_engine_changes": false
+}
