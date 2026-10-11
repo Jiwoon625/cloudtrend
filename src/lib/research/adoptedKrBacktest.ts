@@ -16,6 +16,7 @@ export interface AdoptedKrBacktestInput {
   throughDate: string;
   scope: "MIXED" | "KOSPI" | "KOSDAQ";
   initialCapital?: number;
+  entryBudgetPolicy?: "ANNUAL_PRIOR_CLOSE_NAV" | "FIXED_INITIAL_CAPITAL";
   fingerprint?: string;
   marketLiquidCounts?: Record<string, number>;
 }
@@ -75,7 +76,7 @@ export function runAdoptedKrBacktest(input: AdoptedKrBacktestInput) {
       startDate: input.startDate,
       throughDate: input.throughDate,
       scope: input.scope,
-      entryBudgetPolicy: "ANNUAL_PRIOR_CLOSE_NAV",
+      entryBudgetPolicy: input.entryBudgetPolicy ?? "ANNUAL_PRIOR_CLOSE_NAV",
     },
     input.marketLiquidCounts,
   );
@@ -86,11 +87,11 @@ export function runAdoptedKrBacktest(input: AdoptedKrBacktestInput) {
     yearlyBudgets: history.yearlyBudgets,
     trades: ledger.trades,
     evidence: {
-      policy: "kr-annual-signal-year-research-v2" as const,
+      policy: input.entryBudgetPolicy === "FIXED_INITIAL_CAPITAL" ? "kr-fixed-initial-P30-research-v1" : "kr-annual-signal-year-research-v2",
       scope: input.scope,
       accountRole:
         input.scope === "MIXED" ? "ADOPTED_SHARED_KR_30" : "INDEPENDENT_30_SLOT_DIAGNOSTIC",
-      entryBudgetPolicy: "ANNUAL_PRIOR_CLOSE_NAV" as const,
+      entryBudgetPolicy: input.entryBudgetPolicy ?? "ANNUAL_PRIOR_CLOSE_NAV",
       initialCapital: input.initialCapital ?? 100_000_000,
       startDate: input.startDate,
       throughDate: input.throughDate,
