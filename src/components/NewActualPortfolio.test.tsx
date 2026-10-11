@@ -813,6 +813,16 @@ describe("new portfolio editor safety", () => {
       }),
     });
   });
+  it("explains unresolved cash timing without calling it a confirmed cash shortage", () => {
+    const data = confirmed();
+    data.pools.USD.issues = ["cash_timing_unconfirmed", "cash_valuation_timing_unconfirmed"];
+    const html = render(
+      <NewActualPortfolioContent data={data} asset="US" onAssetChange={() => undefined} />,
+    );
+    expect(html).toContain("현금 효력시점 확인 필요");
+    expect(html).toContain("현금·평가 기준시점 확인 필요");
+    expect(html).not.toContain("기록된 배정 현금 부족");
+  });
   it("rejects unconfirmed and future cash without inventing starting funds", async () => {
     render(<NewActualPortfolio />);
     harness.buttons.find((b) => Array.isArray(b.children) && b.children[0] === "KRW")!.onClick!();

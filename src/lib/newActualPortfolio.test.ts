@@ -393,6 +393,97 @@ describe("funding and cash events", () => {
     expect(marked.issues).toContain("future_price");
   });
 
+  it("keeps a mixed-date cash ordering uncertainty blocked without claiming proven shortage", () => {
+    const fill = execution("night", { market: "US", date: "2026-10-13" });
+    const meta = metadata([fill], [cashEvent("night-cash", { date: "2026-10-14" })]);
+    const before = structuredClone(meta);
+    const result = project([fill], meta, {
+      currency: "USD",
+      today: "2026-10-13",
+      cashToday: "2026-10-14",
+      valuationDate: "2026-10-13",
+      quotes: { "US:SYNTH": { price: 15, date: "2026-10-13", exitSignal: null } },
+    });
+    expect(result.issues).toContain("cash_timing_unconfirmed");
+    expect(result.issues).not.toContain("funding_shortfall");
+    expect(result.issues).not.toContain("stale_price");
+    expect(result).toMatchObject({
+      cash: null,
+      nav: null,
+      fundingStatus: "INCOMPLETE",
+      marketValue: "30",
+    });
+    expect(meta).toEqual(before);
+  });
+  it("does not stale a US market price just because a later KST cash day has started", () => {
+    const fill = execution("funded", { market: "US", date: "2026-10-13" });
+    const meta = metadata(
+      [fill],
+      [cashEvent(), cashEvent("later", { date: "2026-10-14", amount: 100 })],
+    );
+    const result = project([fill], meta, {
+      currency: "USD",
+      today: "2026-10-13",
+      cashToday: "2026-10-14",
+      valuationDate: "2026-10-13",
+      quotes: { "US:SYNTH": { price: 15, date: "2026-10-13", exitSignal: null } },
+    });
+    expect(result).toMatchObject({
+      cash: "1079.8",
+      marketValue: "30",
+      nav: null,
+      totalPnl: null,
+      returnPercent: null,
+    });
+    expect(result.issues).toContain("cash_valuation_timing_unconfirmed");
+    expect(result.issues).not.toContain("stale_price");
+  });
+  it("still withholds a combined valuation when the cash day is wholly after its US market day", () => {
+    const fill = execution("old-mark", { market: "US", date: "2026-10-13" });
+    const result = project(
+      [fill],
+      metadata([fill], [cashEvent(), cashEvent("later", { date: "2026-10-15", amount: 100 })]),
+      {
+        currency: "USD",
+        today: "2026-10-14",
+        cashToday: "2026-10-15",
+        valuationDate: "2026-10-13",
+        quotes: { "US:SYNTH": { price: 15, date: "2026-10-13", exitSignal: null } },
+      },
+    );
+    expect(result.issues).toContain("stale_price");
+    expect(result.nav).toBeNull();
+  });
+  it.each([
+    { cashDate: "2026-10-14", amount: 1 },
+    { cashDate: "2026-10-15", amount: 1000 },
+  ])(
+    "retains proven shortage for negative totals or nonoverlapping funding %j",
+    ({ cashDate, amount }) => {
+      const fill = execution("short", { market: "US", date: "2026-10-13" });
+      const result = project(
+        [fill],
+        metadata([fill], [cashEvent("late", { date: cashDate, amount })]),
+        { currency: "USD", cashToday: today },
+      );
+      expect(result.issues).toContain("funding_shortfall");
+      expect(result.issues).not.toContain("cash_timing_unconfirmed");
+      expect(result.cash).toBeNull();
+    },
+  );
+  it("keeps the initial same-calendar-date cash and first US buy confirmed", () => {
+    const fill = execution("opening", { market: "US" });
+    const result = project([fill], metadata([fill]), {
+      currency: "USD",
+      today: start,
+      cashToday: "2026-10-13",
+      valuationDate: start,
+      quotes: { "US:SYNTH": { price: 15, date: start, exitSignal: null } },
+    });
+    expect(result).toMatchObject({ fundingStatus: "CONFIRMED", cash: "979.8", nav: "1009.8" });
+    expect(result.issues).toEqual([]);
+  });
+
   it("sorts cash facts by date without changing their stored order", () => {
     const events = [
       cashEvent("later", { date: "2026-10-13", kind: "INTEREST", amount: 1 }),

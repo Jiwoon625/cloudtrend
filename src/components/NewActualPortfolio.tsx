@@ -61,6 +61,8 @@ function money(value: string | null | undefined, currency: Currency) {
 function issueLabel(issue: string) {
   const messages: Record<string, string> = {
     funding_pending: "실제 입금·배정 금액을 입력해 주세요.",
+    cash_valuation_timing_unconfirmed: "현금·평가 기준시점 확인 필요 · 합산 평가·수익률 미확정",
+    cash_timing_unconfirmed: "현금 효력시점 확인 필요 · 한국 입금일과 미국 체결일의 순서 미확정",
     funding_shortfall: "기록된 배정 현금 부족 · 입출금 내역 대조 필요",
     flow_adjusted_return_pending: "추가 입출금 반영 수익률 미확정",
     missing_price: "평가가격 미확인",
