@@ -324,8 +324,11 @@ export function parseManualMarketData(
         : "KOSPI";
 
     const open = num(pick(rec, "open")) ?? prior?.open ?? close;
-    const high = num(pick(rec, "high")) ?? prior?.high ?? Math.max(open, close);
-    const low = num(pick(rec, "low")) ?? prior?.low ?? Math.min(open, close);
+    // Missing-close rows are execution observations, not analytical OHLC bars.
+    // Preserve supplied/prior ranges verbatim and leave absent ranges unknown (0);
+    // a missing open/close sentinel must not overwrite another observed price.
+    const high = num(pick(rec, "high")) ?? prior?.high ?? (close > 0 ? Math.max(open, close) : 0);
+    const low = num(pick(rec, "low")) ?? prior?.low ?? (close > 0 ? Math.min(open, close) : 0);
     const volume = num(pick(rec, "volume")) ?? prior?.volume ?? 0;
     const tradingValue = num(pick(rec, "tradingValue")) ?? prior?.tradingValue ?? close * volume;
 
@@ -344,8 +347,8 @@ export function parseManualMarketData(
       openObserved: num(pick(rec, "open")) !== null || prior?.openObserved === true,
       volumeObserved: num(pick(rec, "volume")) !== null || prior?.volumeObserved === true,
       open,
-      high: Math.max(high, open, close, low),
-      low: Math.min(low, open, close, high),
+      high: close > 0 ? Math.max(high, open, close, low) : high,
+      low: close > 0 ? Math.min(low, open, close, high) : low,
       close,
       volume,
       tradingValue,

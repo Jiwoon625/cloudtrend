@@ -77,6 +77,13 @@ export const REPLAY_OBSERVATION_PRESERVATION_RUNTIME_HASH =
 export const VERIFIED_INPUT_PROVENANCE_RUNTIME_HASH =
   "sha256:e1ce0e3d5326c6d57dc2906f4bd42a4a4897ca3eaf2393b998fc09b3b6873869" as const;
 
+/** Missing-close observations retain supplied high/low without mixing unknown
+ * sentinels into price ranges. Complete-input goldens and execution/NAV are
+ * unchanged; newly built observation archives correctly retain original fields.
+ */
+export const MISSING_CLOSE_OHLC_PRESERVATION_RUNTIME_HASH =
+  "sha256:6d17bcaf79a6d0f224fce32030a6daf7e2e6a8bbaf4041fe8f90b8f817bcc424" as const;
+
 export const REVIEWED_SHADOW_RUNTIME_CODE_HASHES = Object.freeze([
   ADOPTED_SHADOW_FROZEN_CODE_HASH,
   "sha256:ffd26d07d50564c6c734dc9c96ede00f7786e1122df3eb373ad56a4648929033",
@@ -92,6 +99,7 @@ export const REVIEWED_SHADOW_RUNTIME_CODE_HASHES = Object.freeze([
   LINT_EQUIVALENT_SYNTAX_RUNTIME_HASH,
   REPLAY_OBSERVATION_PRESERVATION_RUNTIME_HASH,
   VERIFIED_INPUT_PROVENANCE_RUNTIME_HASH,
+  MISSING_CLOSE_OHLC_PRESERVATION_RUNTIME_HASH,
   "sha256:7986793771f362aaede80425f9259254035443dce0eb67e134ded9271241354d",
   "sha256:a321c97e37a3b55249b23597e811997b089943d8c56cb27088c60a2806691a80",
 ] as const);
