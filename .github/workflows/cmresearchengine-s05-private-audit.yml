@@ -1,4 +1,5 @@
 name: CMresearchengine O1 demand snapshot private final audit
+# Manual historical monthly-zero summary request 2026-10-11; original results only.
 on:
   push:
     branches: [main]
