@@ -632,7 +632,8 @@ const changeSchema = z.discriminatedUnion("kind", [
       claims: operatingClaimsSchema,
       // Legacy clients may send their clock; the server ignores it and stamps its own review
       // time. Persisted evidence still requires availableAt; this is not a cash event date.
-      spendableCash: spendableCashSchema.partial({ availableAt: true }).nullable(),
+      // Omitted by the cash-attribution-only UI; preserve existing private evidence.
+      spendableCash: spendableCashSchema.partial({ availableAt: true }).nullable().optional(),
     })
     .strict(),
   z

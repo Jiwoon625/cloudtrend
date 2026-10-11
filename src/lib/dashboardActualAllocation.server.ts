@@ -13,6 +13,7 @@ import {
 import { buildOperatingEtfSizingSnapshot } from "./operatingEtfSizing.server";
 import {
   previewActualAllocationBatch,
+  currencyCashForEstimate,
   actualAllocationLimits,
   isKnownActualSector,
   type ActualBudgetCandidate,
@@ -25,6 +26,8 @@ export async function projectDashboardActualAllocation(input: {
   us: DashboardIndex | null;
   markets: DashboardMarketSignals[];
   now?: string;
+  /** Reservation writes retain the existing broker-confirmed cash gate. */
+  requireConfirmedCash?: boolean;
 }) {
   const now = input.now ?? new Date().toISOString();
   const domestic = input.actual.domestic as OperatingAllocationSourceRow | null,
@@ -137,8 +140,12 @@ export async function projectDashboardActualAllocation(input: {
       US: pools.USD.availability.available.US,
     },
     currencyCash: {
-      KRW: pools.KRW.availability.spendableAvailable,
-      USD: pools.USD.availability.spendableAvailable,
+      KRW: input.requireConfirmedCash
+        ? pools.KRW.availability.spendableAvailable
+        : currencyCashForEstimate(pools.KRW.availability, "KRW"),
+      USD: input.requireConfirmedCash
+        ? pools.USD.availability.spendableAvailable
+        : currencyCashForEstimate(pools.USD.availability, "USD"),
     },
   });
   return {

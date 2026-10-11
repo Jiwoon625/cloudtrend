@@ -11,6 +11,7 @@ import type { OperatingAllocationResponse } from "@/lib/operatingAllocation.serv
 import { decimal, format } from "@/lib/ledger/decimal";
 import { invalidateActualPositionViews } from "@/lib/dashboardActualRefresh";
 import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 
 type Write = Exclude<OperatingAllocationRequest, { action: "load" }>;
 type Change = Write["change"];
@@ -22,11 +23,9 @@ const money = (value: string | null | undefined) => {
   return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}${fraction ? `.${fraction}` : ""}`;
 };
 const emptyValues = () => ({
-  KR: "",
-  ETF: "",
-  US: "",
-  spendable: "",
-  reference: "",
+  KR: null as string | null,
+  ETF: null as string | null,
+  US: null as string | null,
   nativeAmount: "",
   nativeReference: "",
   nativeConfirmedAt: "",
@@ -64,17 +63,14 @@ export function OperatingAllocationContent({
         실제 기록상 현금: {money(data?.cash)} {unit}
       </p>
       <p className="text-xs text-muted-foreground">
-        실제 현금 귀속과 주문가능 금액을 확인한 뒤 수량을 계산합니다. 계획만으로 입금·환전 기록을
-        만들지 않습니다.
+        기록된 입출금·체결과 현금 귀속을 기준으로 계산한 금액입니다. 실제 주문가능 금액은 증권사에서
+        최종 확인하세요.
       </p>
       {!data?.plan ? <p role="status">승인 배분계획 등록 대기</p> : null}
       {data?.availability.status === "RECONCILIATION_REQUIRED" ? (
         <p role="status">
           실제 체결·현금이 변경되어 시장별 귀속을 다시 대조해야 합니다. 기존 예약도 함께 확인하세요.
         </p>
-      ) : null}
-      {data?.availability.status === "ESTIMATED_CASH" ? (
-        <p role="status">기록상 현금 기준 예상 · 증권사 주문가능 현금 확인 필요</p>
       ) : null}
       {data?.availability.status === "CLAIMS_PENDING" ? (
         <p role="status">시장별 현금 귀속 확인 대기</p>
@@ -95,14 +91,6 @@ export function OperatingAllocationContent({
           </dd>
         </div>
       </dl>
-      <p>
-        확인된 주문가능 현금: {money(data?.availability.spendableAvailable)} {unit}
-      </p>
-      {data?.authority?.spendableCash ? (
-        <p className="text-xs">
-          주문가능 현금 검토 기록시각: {data.authority.spendableCash.availableAt}
-        </p>
-      ) : null}
       {currency === "USD" ? (
         data?.usdSizingEvidence ? (
           <p>
@@ -369,9 +357,18 @@ export function OperatingAllocationPanel({
     try {
       if (query.data?.cash == null) throw new Error("현금 미확정");
       const claims = {
-        KR: currency === "KRW" ? format(decimal(values.KR || "0")) : "0",
-        ETF: currency === "KRW" ? format(decimal(values.ETF || "0")) : "0",
-        US: currency === "USD" ? format(decimal(values.US || "0")) : "0",
+        KR:
+          currency === "KRW"
+            ? format(decimal((values.KR ?? query.data.authority?.claims.KR) || "0"))
+            : "0",
+        ETF:
+          currency === "KRW"
+            ? format(decimal((values.ETF ?? query.data.authority?.claims.ETF) || "0"))
+            : "0",
+        US:
+          currency === "USD"
+            ? format(decimal((values.US ?? query.data.authority?.claims.US) || "0"))
+            : "0",
         UNASSIGNED: "0",
       };
       claims.UNASSIGNED = format(
@@ -382,15 +379,9 @@ export function OperatingAllocationPanel({
       void prepare({
         kind: "REVIEW_CLAIMS",
         claims,
-        spendableCash: values.spendable
-          ? {
-              amount: format(decimal(values.spendable)),
-              reference: values.reference.trim(),
-            }
-          : null,
       });
     } catch {
-      setMessage("실제 현금 안에서 시장 귀속액과 증빙을 입력하세요.");
+      setMessage("실제 현금 안에서 시장 귀속액을 입력하세요.");
     }
   }
   function reviewUsdSizing() {
@@ -489,7 +480,9 @@ export function OperatingAllocationPanel({
                     disabled ||
                     !query.data.plan ||
                     (!!pinned &&
-                      (candidate.status !== "ESTIMATED" || candidate.cashRequired === null))
+                      (candidate.status !== "ESTIMATED" ||
+                        candidate.cashRequired === null ||
+                        query.data.availability.status !== "CONFIRMED_CASH"))
                   }
                   onClick={() => {
                     if (!pinned)
@@ -500,7 +493,10 @@ export function OperatingAllocationPanel({
                         signalOriginDate: candidate.signalOriginDate,
                         sourceDate: candidate.sourceDate,
                       });
-                    else if (candidate.cashRequired !== null)
+                    else if (
+                      candidate.cashRequired !== null &&
+                      query.data.availability.status === "CONFIRMED_CASH"
+                    )
                       void prepare({
                         kind: "RESERVE",
                         reservation: {
@@ -514,7 +510,11 @@ export function OperatingAllocationPanel({
                       });
                   }}
                 >
-                  {pinned ? "후보 현금 예약 검토" : "후보 예산 확정 검토"}
+                  {pinned
+                    ? query.data.availability.status === "CONFIRMED_CASH"
+                      ? "후보 현금 예약 검토"
+                      : "예상 수량 · 현금 예약 보류"
+                    : "후보 예산 확정 검토"}
                 </Button>
               )}
             </div>
@@ -529,39 +529,41 @@ export function OperatingAllocationPanel({
             </Button>
           ) : null}
           {query.data.plan ? (
-            <fieldset disabled={disabled || query.data.cash === null} className="space-y-2">
-              <legend>실제 현금 귀속 대조</legend>
-              {(currency === "KRW" ? (["KR", "ETF"] as const) : (["US"] as const)).map((m) => (
-                <label key={m} className="block">
-                  {labels[m]} 귀속액{" "}
-                  <input
-                    aria-label={`${labels[m]} 귀속액`}
-                    inputMode="decimal"
-                    value={values[m]}
-                    onChange={(event) => edit({ [m]: event.target.value })}
-                  />
-                </label>
-              ))}
-              <label className="block">
-                확인한 주문가능 현금(선택){" "}
-                <input
-                  aria-label="확인한 주문가능 현금"
-                  inputMode="decimal"
-                  value={values.spendable}
-                  onChange={(event) => edit({ spendable: event.target.value })}
-                />
-              </label>
-              <label className="block">
-                주문가능 현금 증빙 식별자{" "}
-                <input
-                  aria-label="주문가능 현금 증빙 식별자"
-                  value={values.reference}
-                  onChange={(event) => edit({ reference: event.target.value })}
-                />
-              </label>
+            <fieldset disabled={disabled || query.data.cash === null} className="min-w-0 space-y-4">
+              <legend className="font-medium">실제 현금 귀속 대조</legend>
+              <p className="text-sm text-muted-foreground">
+                각 시장에 배정할 최종 귀속액을 직접 입력하세요. 추가 입금액이 아닌 총액이며, 빈칸은
+                0으로 검토합니다. 입력 후 검토 내용을 확인하고 저장하세요.
+              </p>
+              <p className="text-sm">
+                기록상 현금 {money(query.data.cash)} {currency === "KRW" ? "원" : "USD"}
+                {" · "}현재 미귀속 {money(query.data.authority?.claims.UNASSIGNED)}{" "}
+                {currency === "KRW" ? "원" : "USD"}
+              </p>
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                {(currency === "KRW" ? (["KR", "ETF"] as const) : (["US"] as const)).map((m) => (
+                  <label key={m} className="block min-w-0 space-y-1.5">
+                    <span>
+                      {labels[m]} 귀속액 ({currency === "KRW" ? "원" : "USD"})
+                    </span>
+                    <Input
+                      aria-label={`${labels[m]} 귀속액`}
+                      inputMode="decimal"
+                      placeholder="0"
+                      className="h-11 border-slate-400 bg-background text-base text-foreground dark:border-slate-500"
+                      value={values[m] ?? query.data.authority?.claims[m] ?? ""}
+                      onChange={(event) => edit({ [m]: event.target.value })}
+                    />
+                    <span className="block text-xs text-muted-foreground">
+                      현재 귀속 {money(query.data.authority?.claims[m])}{" "}
+                      {currency === "KRW" ? "원" : "USD"}
+                    </span>
+                  </label>
+                ))}
+              </div>
               <p className="text-xs">
                 남는 실제 현금은 미귀속으로 보존합니다. 체결된 예약은 해제한 뒤 귀속액을 다시
-                대조하세요.
+                대조하세요. 귀속액 검토만으로는 저장되지 않습니다.
               </p>
               <Button
                 type="button"

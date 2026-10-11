@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   previewActualAllocationBatch,
+  currencyCashForEstimate,
   type ActualBudgetCandidate,
 } from "../src/lib/actualAllocationPreview";
 const candidate = (market: "KOSPI" | "ETF" | "US", symbol: string): ActualBudgetCandidate => ({
@@ -156,4 +157,54 @@ it("marks existing pending sector provenance unknown after a current classificat
   expect(result.slots.KR).toBe(29);
   expect(result.unknown.has("KR")).toBe(true);
   expect(result.sectorsKnown).toBe(false);
+});
+
+describe("ledger-based currency estimate", () => {
+  const availability = {
+    status: "ESTIMATED_CASH" as const,
+    available: { KR: "99.25", ETF: "300", US: "75.12345678" },
+    spendableAvailable: null,
+  };
+  it("uses exact reservation-netted claims without borrowing between currencies", () => {
+    expect(currencyCashForEstimate(availability, "KRW")).toBe("399.25");
+    expect(currencyCashForEstimate(availability, "USD")).toBe("75.12345678");
+    expect(availability.status).toBe("ESTIMATED_CASH");
+    expect(availability.spendableAvailable).toBeNull();
+  });
+  it("keeps confirmed broker cash as a tighter shared-currency limit", () => {
+    expect(
+      currencyCashForEstimate(
+        { ...availability, status: "CONFIRMED_CASH", spendableAvailable: "50" },
+        "KRW",
+      ),
+    ).toBe("50");
+  });
+  it("blocks unreconciled, pending and incomplete cash instead of inventing buying power", () => {
+    expect(
+      currencyCashForEstimate({ ...availability, status: "RECONCILIATION_REQUIRED" }, "KRW"),
+    ).toBeNull();
+    expect(
+      currencyCashForEstimate({ ...availability, status: "CLAIMS_PENDING" }, "KRW"),
+    ).toBeNull();
+    expect(
+      currencyCashForEstimate(
+        { ...availability, available: { ...availability.available, ETF: null } },
+        "KRW",
+      ),
+    ).toBeNull();
+  });
+  it("retains fee-inclusive quantities and shared KRW consumption for estimated cash", () => {
+    const kr = candidate("KOSPI", "K"),
+      etf = candidate("ETF", "E");
+    kr.budget!.amount = etf.budget!.amount = "101";
+    const available = { ...availability, available: { KR: "101", ETF: "49", US: "200" } };
+    const request = input([kr, etf]);
+    request.marketCash = available.available;
+    request.currencyCash.KRW = currencyCashForEstimate(available, "KRW")!;
+    const rows = previewActualAllocationBatch(request);
+    expect(rows[0]).toMatchObject({ status: "ESTIMATED", quantity: "1", cashRequired: "100.15" });
+    expect(rows[0]?.reason).toContain("증권사에서 최종 확인");
+    expect(rows[1]?.status).toBe("SKIPPED");
+    expect(request.currencyCash.KRW).toBe("150");
+  });
 });
