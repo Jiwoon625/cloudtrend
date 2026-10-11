@@ -1,3 +1,9 @@
+import {
+  isOperationalSignalDate,
+  isOperationalSignalOrigin,
+  BEFORE_OPERATIONAL_START,
+  PRE_START_ORIGIN,
+} from "@/lib/operationalSignalStart";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
 import { kospiEntryStateLabel, kospiMarketGateLabel } from "./kospiEntryPresentation";
 
@@ -36,12 +42,14 @@ function MarketEvidenceLine({
 /** Render the stored assessment only. Never reconstruct confirmation from raw Onset or RS. */
 export function KospiEntryDetails({
   entry,
+  operationalDate,
   compact = false,
   showState = false,
   entrySuppression = null,
   entryJudgmentPending = false,
 }: {
   entry: Entry;
+  operationalDate?: string | undefined;
   compact?: boolean;
   showState?: boolean;
   entrySuppression?: "held" | "sold" | null;
@@ -52,8 +60,17 @@ export function KospiEntryDetails({
       <span className="text-[10px] text-muted-foreground">확인 기록 없음 · 진입 판정 제외</span>
     );
   if (entry.state === "none" && !showState && !entryJudgmentPending) return null;
+  const startNotice =
+    operationalDate !== undefined
+      ? !isOperationalSignalDate(operationalDate)
+        ? BEFORE_OPERATIONAL_START
+        : entry.originDate && !isOperationalSignalOrigin(operationalDate, entry.originDate)
+          ? PRE_START_ORIGIN
+          : null
+      : null;
   const record = (
     <div className={`${compact ? "text-[10px]" : "text-[11px]"} space-y-0.5 text-muted-foreground`}>
+      {startNotice ? <p>{startNotice} · 아래는 당시 저장 근거</p> : null}
       {showState ? (
         <p className="font-medium">
           종목 공통 저장 상태: {kospiEntryStateLabel(entry)} · 판정일 {entry.date}

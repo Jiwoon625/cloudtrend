@@ -1,3 +1,9 @@
+import {
+  isOperationalSignalDate,
+  operationalEntryStartNotice,
+  OPERATIONAL_START_NOTICE,
+  BEFORE_OPERATIONAL_START,
+} from "@/lib/operationalSignalStart";
 import { AppShell } from "./AppShell";
 import { Link } from "@tanstack/react-router";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
@@ -6,17 +12,25 @@ import { formatKstDateTime } from "@/lib/format";
 
 export function EtfInstrumentDetail({
   row,
+  asOfDate,
   calculatedAt,
   held,
   holdingsNotice,
 }: {
   row: ScreeningRow;
+  asOfDate?: string;
   calculatedAt: string;
   held: boolean | undefined;
   holdingsNotice?: import("react").ReactNode;
 }) {
   const s = row.etfStrategy;
-  const evidence = etfPartialEvidence(row, row.snapshot.tradeDate);
+  const signalDate = asOfDate ?? s?.date ?? row.snapshot.tradeDate;
+  const startNotice = operationalEntryStartNotice(
+    signalDate,
+    s?.originDate,
+    s?.entryState === "pending" || s?.entryState === "confirmed" || s?.onset === true,
+  );
+  const evidence = etfPartialEvidence(row, signalDate);
   const value = (n: number | null | undefined) =>
     n === null || n === undefined || !Number.isFinite(n)
       ? "미관측"
@@ -35,6 +49,7 @@ export function EtfInstrumentDetail({
           {s?.dataStatus ?? "미확인"}
         </p>
       </header>
+      <p className="mb-3 text-xs text-muted-foreground">{OPERATIONAL_START_NOTICE}</p>
       {holdingsNotice}
       <div className="space-y-4">
         <section className="rounded-lg border p-4">
@@ -43,13 +58,17 @@ export function EtfInstrumentDetail({
             {value(evidence.score)} <span className="text-sm">/ 100</span>
           </p>
           <p className="text-sm">
-            {evidence.score !== null && s?.entryState === "confirmed"
-              ? "진입 준비"
-              : s?.rawOnset
-                ? "원신호 · 확인 대기"
-                : s?.entryState === "data_pending"
-                  ? "자료 확인 대기"
-                  : "관찰"}
+            {startNotice
+              ? startNotice
+              : !evidence.current
+                ? "기준일 자료 미확인 · 신호 판단 보류"
+                : evidence.score !== null && s?.entryState === "confirmed"
+                  ? "진입 준비"
+                  : s?.rawOnset
+                    ? "원신호 · 확인 대기"
+                    : s?.entryState === "data_pending"
+                      ? "자료 확인 대기"
+                      : "관찰"}
           </p>
         </section>
         <section className="rounded-lg border p-4">
@@ -86,15 +105,19 @@ export function EtfInstrumentDetail({
         <section className="rounded-lg border p-4">
           <h2 className="text-sm font-semibold">보유 시 행동</h2>
           <p className="mt-2 text-sm">
-            {held === undefined
-              ? "보유 확인 중"
-              : !held
-                ? "미보유"
-                : s?.exit === "MA60"
-                  ? "청산 준비"
-                  : s?.exit === "DATA_UNAVAILABLE"
-                    ? "자료 미관측 · 모델 청산 기록 확인"
-                    : "보유 유지"}
+            {!isOperationalSignalDate(signalDate)
+              ? BEFORE_OPERATIONAL_START
+              : held === undefined
+                ? "보유 확인 중"
+                : !held
+                  ? "미보유"
+                  : !evidence.current
+                    ? "보유 · 판단 미확인"
+                    : s?.exit === "MA60"
+                      ? "청산 준비"
+                      : s?.exit === "DATA_UNAVAILABLE"
+                        ? "자료 미관측 · 모델 청산 기록 확인"
+                        : "보유 유지"}
           </p>
           <Link to="/portfolio" className="text-xs text-primary hover:underline">
             포트폴리오에서 보유·체결 확인

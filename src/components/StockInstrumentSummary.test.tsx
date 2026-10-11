@@ -34,8 +34,8 @@ vi.mock("@tanstack/react-query", () => ({
   useSuspenseQuery: () => ({
     data: {
       analysis: {
-        asOfDate: "2026-10-08",
-        tradeDates: ["2026-10-06", "2026-10-07", "2026-10-08"],
+        asOfDate: "2026-11-05",
+        tradeDates: ["2026-11-03", "2026-11-04", "2026-11-05"],
         rows: [state.row],
         strategyVersion: "fixture-v8",
         dataVersion: "fixture-data",
@@ -56,8 +56,8 @@ vi.mock("@/components/StrategyDescription", () => ({
   StrategyDescription: () => <p>전략 설명</p>,
 }));
 
-const date = "2026-10-08";
-const tradeDates = ["2026-10-06", "2026-10-07", date];
+const date = "2026-11-05";
+const tradeDates = ["2026-11-03", "2026-11-04", date];
 const pendingReason = "기준일 시가총액 미확인 · 판단 보류";
 function row(overrides: Partial<ScreeningRow> = {}): ScreeningRow {
   const block = { points: 8, maxPoints: 10, availableMaxPoints: 10, rows: [] };
@@ -98,7 +98,7 @@ function row(overrides: Partial<ScreeningRow> = {}): ScreeningRow {
     quality: { ...block, points: 70, maxPoints: 100, availableMaxPoints: 100 },
     operatingScore10: 8,
     previousOperatingScore10: 5.5,
-    previousOperatingScoreDate: "2026-10-07",
+    previousOperatingScoreDate: "2026-11-04",
     scoreDelta1d: 25,
     grade: "A",
     rs20: 3,
@@ -205,7 +205,7 @@ describe("stock instrument summary", () => {
       kospiEntry: {
         version: OPERATIONAL_SIGNAL_VERSION,
         date,
-        originDate: "2026-10-07",
+        originDate: "2026-11-04",
         confirmationDate: date,
         state: "rejected",
         issues: ["확인일 RSAccel 0 이하", "확인일 시장 RISK_OFF"],
@@ -213,7 +213,7 @@ describe("stock instrument summary", () => {
         score: 8.5,
         originScore: 8,
         eligible: false,
-        marketGate: { origin: gate("2026-10-07"), confirmation: gate(date) },
+        marketGate: { origin: gate("2026-11-04"), confirmation: gate(date) },
       } as unknown as ScreeningRow["kospiEntry"],
     });
     const html = render(input);
@@ -272,14 +272,14 @@ describe("stock instrument summary", () => {
 
   it("does not turn stale or nonadjacent data into current evidence", () => {
     const input = row();
-    input.snapshot.tradeDate = "2026-10-07";
+    input.snapshot.tradeDate = "2026-11-04";
     expect(metrics(render(input))).toMatchObject({
       종가: "기준일 가격 미확인",
       기술점수: "산정 불가",
       "거래량 비율(20일)": "데이터 없음",
       시가총액: "데이터 없음",
     });
-    const gap = render(row({ previousOperatingScoreDate: "2026-10-06" }));
+    const gap = render(row({ previousOperatingScoreDate: "2026-11-03" }));
     expect(gap).not.toContain("8.0 신규 돌파 ·");
     expect(gap).toContain("8.0점 신규 돌파 미확인");
   });

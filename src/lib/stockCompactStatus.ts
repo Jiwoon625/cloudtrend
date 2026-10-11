@@ -1,3 +1,8 @@
+import {
+  isOperationalSignalDate,
+  operationalEntryStartNotice,
+  BEFORE_OPERATIONAL_START,
+} from "./operationalSignalStart";
 import { isHeldExit } from "./statusDisplay";
 import type { ScreeningRow } from "./engine/pipeline";
 import { isOperationalEntry } from "./engine/operationalStrategy";
@@ -19,6 +24,12 @@ export function getCompactStockStatus(
   asOfDate: string,
   tradeDates?: readonly string[],
 ): CompactStockStatus {
+  if (!isOperationalSignalDate(asOfDate))
+    return {
+      primary: BEFORE_OPERATIONAL_START,
+      secondary: "10월 12일 신호부터 신규 후보 표시",
+      tone: "normal",
+    };
   const a = stockAssessmentDisplay(row, asOfDate, tradeDates);
   const suppression = entrySuppressionReason(
     context,
@@ -50,6 +61,12 @@ export function getCompactStockStatus(
       tone: "normal",
     };
   }
+  const originNotice = operationalEntryStartNotice(
+    asOfDate,
+    row.kospiEntry?.originDate,
+    row.kospiEntry?.state === "pending" || row.kospiEntry?.state === "confirmed",
+  );
+  if (originNotice) return { primary: originNotice, secondary: "새 원신호 필요", tone: "normal" };
   if (suppression === "sold")
     return {
       primary: "매도한 신호 · 재진입 제외",

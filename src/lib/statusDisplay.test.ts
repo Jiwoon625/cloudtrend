@@ -1,3 +1,4 @@
+import { kospiGate } from "../../tests/kospi-policy-fixtures";
 import { kospiEntryConfirmation } from "./engine/kospiEntryConfirmation";
 import {
   OPERATIONAL_SIGNAL_VERSION,
@@ -38,7 +39,7 @@ function row(overrides: Partial<ScreeningRow> = {}): ScreeningRow {
   return {
     instrument: instrument("KOSPI"),
     snapshot: {
-      tradeDate: overrides.kospiEntry?.date ?? "2026-09-30",
+      tradeDate: overrides.kospiEntry?.date ?? "2026-10-28",
       close: 100,
     } as ScreeningRow["snapshot"],
     operationalSignalVersion: "kospi-e8-u95-dx-v1",
@@ -82,8 +83,8 @@ describe("V8 display status", () => {
       kospi80Onset: true,
       kospiEntry: {
         ...kospiEntryConfirmation(
-          { date: "2026-10-02", score: 8, rsAccel: 1, eligible: true, observed: true },
-          { date: "2026-10-01", score: 7.5, rsAccel: 1, eligible: true, observed: true },
+          { date: "2026-10-30", score: 8, rsAccel: 1, eligible: true, observed: true },
+          { date: "2026-10-29", score: 7.5, rsAccel: 1, eligible: true, observed: true },
           null,
         ),
         state: "rejected",
@@ -93,7 +94,7 @@ describe("V8 display status", () => {
     expect(getDisplayStatus(candidate)).toContain("확인 실패 · 진입 제외");
     expect(getDisplayStatus(candidate)).toContain("발생일 불황");
     expect(getDisplayStatus(candidate)).not.toContain("확인 대기");
-    expect(isPortfolioAwareOperationalEntry(candidate, null, "2026-10-02")).toBe(false);
+    expect(isPortfolioAwareOperationalEntry(candidate, null, "2026-10-30")).toBe(false);
   });
 
   it("preserves the reason when market evidence is unobservable", () => {
@@ -101,8 +102,8 @@ describe("V8 display status", () => {
       operationalSignalVersion: OPERATIONAL_SIGNAL_VERSION,
       kospi80Onset: true,
       kospiEntry: kospiEntryConfirmation(
-        { date: "2026-10-02", score: 8, rsAccel: 1, eligible: true, observed: true },
-        { date: "2026-10-01", score: 7.5, rsAccel: 1, eligible: true, observed: true },
+        { date: "2026-10-30", score: 8, rsAccel: 1, eligible: true, observed: true },
+        { date: "2026-10-29", score: 7.5, rsAccel: 1, eligible: true, observed: true },
         null,
       ),
     });
@@ -151,27 +152,34 @@ describe("V8 display status", () => {
       operatingScore10: 8,
       scoreDelta1d: 25,
     });
-    expect(isPortfolioAwareOperationalEntry(candidate, held, "2026-09-30")).toBe(false);
-    expect(getPortfolioAwareDisplayStatus(candidate, held, "2026-09-30")).toBe("보유");
+    expect(isPortfolioAwareOperationalEntry(candidate, held, "2026-10-28")).toBe(false);
+    expect(getPortfolioAwareDisplayStatus(candidate, held, "2026-10-28")).toBe("보유");
   });
 
   it("suppresses same-day re-entry after an actual sale", () => {
     const sold: DomesticPositionContext = {
       heldSymbols: [],
-      lastSellDateBySymbol: { "000000": "2026-09-30" },
+      lastSellDateBySymbol: { "000000": "2026-10-28" },
     };
     const candidate = row({
       kospiEightPointEntry: false,
       kospi80Onset: true,
       operationalSignalVersion: OPERATIONAL_SIGNAL_VERSION,
       kospiEntry: kospiEntryConfirmation(
-        { date: "2026-09-30", score: 8, rsAccel: 1, eligible: true, observed: true },
-        { date: "2026-09-29", score: 7.5, rsAccel: 1, eligible: true, observed: true },
+        {
+          date: "2026-10-28",
+          score: 8,
+          rsAccel: 1,
+          eligible: true,
+          observed: true,
+          marketGate: kospiGate("2026-10-28", "NEUTRAL"),
+        },
+        { date: "2026-10-27", score: 7.5, rsAccel: 1, eligible: true, observed: true },
         null,
       ),
     });
-    expect(isPortfolioAwareOperationalEntry(candidate, sold, "2026-09-30")).toBe(false);
-    expect(getPortfolioAwareDisplayStatus(candidate, sold, "2026-09-30")).toBe(
+    expect(isPortfolioAwareOperationalEntry(candidate, sold, "2026-10-28")).toBe(false);
+    expect(getPortfolioAwareDisplayStatus(candidate, sold, "2026-10-28")).toBe(
       "당일 매도 · 재진입 제외",
     );
   });
@@ -184,7 +192,7 @@ describe("V8 display status", () => {
       operatingScore10: 9.5,
       scoreDelta1d: 40,
     });
-    expect(getPortfolioAwareDisplayStatus(candidate, held, "2026-09-30")).toBe(
+    expect(getPortfolioAwareDisplayStatus(candidate, held, "2026-10-28")).toBe(
       "청산 대기 · KOSDAQ 9.0점 상향 재돌파",
     );
   });
@@ -200,8 +208,8 @@ describe("KOSPI held entry and exit remain distinct", () => {
       scoreDelta1d: (score - previous) * 10,
       kospiEntry: {
         ...kospiEntryConfirmation(
-          { date: "2026-10-02", score, rsAccel: 1, eligible: true, observed: true },
-          { date: "2026-10-01", score: previous, rsAccel: 1, eligible: true, observed: true },
+          { date: "2026-10-30", score, rsAccel: 1, eligible: true, observed: true },
+          { date: "2026-10-29", score: previous, rsAccel: 1, eligible: true, observed: true },
           null,
         ),
         state: "rejected",
@@ -211,21 +219,21 @@ describe("KOSPI held entry and exit remain distinct", () => {
 
   it("keeps an already-held sub-9.5 raw Onset as held, with no fresh entry or fabricated exit", () => {
     const input = candidate(8, 5.5);
-    expect(getPortfolioAwareDisplayStatus(input, held, "2026-10-02")).toBe("보유");
-    expect(isPortfolioAwareOperationalEntry(input, held, "2026-10-02")).toBe(false);
-    expect(isPortfolioAwareOperationalEntry(input, null, "2026-10-02")).toBe(false);
+    expect(getPortfolioAwareDisplayStatus(input, held, "2026-10-30")).toBe("보유");
+    expect(isPortfolioAwareOperationalEntry(input, held, "2026-10-30")).toBe(false);
+    expect(isPortfolioAwareOperationalEntry(input, null, "2026-10-30")).toBe(false);
   });
 
   it("retains KOSPI 9.5 upward-cross exit priority despite rejected raw entry evidence", () => {
     const input = candidate(9.5, 5.5);
-    expect(getPortfolioAwareDisplayStatus(input, held, "2026-10-02")).toBe(
+    expect(getPortfolioAwareDisplayStatus(input, held, "2026-10-30")).toBe(
       "청산 대기 · KOSPI 9.5점 상향돌파",
     );
-    expect(isPortfolioAwareOperationalEntry(input, held, "2026-10-02")).toBe(false);
+    expect(isPortfolioAwareOperationalEntry(input, held, "2026-10-30")).toBe(false);
   });
 
   it("does not emit a new exit merely for remaining at or above 9.5", () => {
-    expect(getPortfolioAwareDisplayStatus(candidate(9.5, 9.5), held, "2026-10-02")).toBe("보유");
+    expect(getPortfolioAwareDisplayStatus(candidate(9.5, 9.5), held, "2026-10-30")).toBe("보유");
   });
 });
 
@@ -239,9 +247,9 @@ describe("unheld exit conditions are not actual sell instructions", () => {
     exitSignal: "UP95",
     kospiEntry: {
       ...kospiEntryConfirmation(
-        { date: "2026-10-02", score: 9.5, rsAccel: 1, eligible: true, observed: true },
-        { date: "2026-10-01", score: 8.5, rsAccel: 1, eligible: true, observed: true },
-        { date: "2026-09-30", score: 7.5, rsAccel: 1, eligible: true, observed: true },
+        { date: "2026-10-30", score: 9.5, rsAccel: 1, eligible: true, observed: true },
+        { date: "2026-10-29", score: 8.5, rsAccel: 1, eligible: true, observed: true },
+        { date: "2026-10-28", score: 7.5, rsAccel: 1, eligible: true, observed: true },
       ),
       state: "rejected",
       eligible: false,
@@ -251,14 +259,14 @@ describe("unheld exit conditions are not actual sell instructions", () => {
 
   it("labels the unheld condition while retaining confirmation rejection and immutable raw status", () => {
     const original = structuredClone(rejected);
-    expect(getPortfolioAwareDisplayStatus(rejected, empty, "2026-10-02")).toBe("관찰");
-    expect(isPortfolioAwareOperationalEntry(rejected, empty, "2026-10-02")).toBe(false);
+    expect(getPortfolioAwareDisplayStatus(rejected, empty, "2026-10-30")).toBe("관찰");
+    expect(isPortfolioAwareOperationalEntry(rejected, empty, "2026-10-30")).toBe(false);
     expect(getDisplayStatus(rejected)).toBe("KOSPI 청산 · 9.5점 상향돌파");
     expect(rejected).toEqual(original);
   });
 
   it("does not claim a holding or a sell action while actual holdings are unavailable", () => {
-    expect(getPortfolioAwareDisplayStatus(rejected, undefined, "2026-10-02")).toBe("관찰");
+    expect(getPortfolioAwareDisplayStatus(rejected, undefined, "2026-10-30")).toBe("관찰");
   });
 
   it("preserves actual held-position exit priority", () => {
@@ -269,7 +277,7 @@ describe("unheld exit conditions are not actual sell instructions", () => {
           heldSymbols: ["008930"],
           lastSellDateBySymbol: {},
         },
-        "2026-10-02",
+        "2026-10-30",
       ),
     ).toBe("청산 대기 · KOSPI 9.5점 상향돌파");
   });
@@ -280,9 +288,13 @@ describe("unheld exit conditions are not actual sell instructions", () => {
   ] as const)("also labels unheld %s as a condition", (exitSignal, condition) => {
     expect(
       getPortfolioAwareDisplayStatus(
-        row({ instrument: instrument("KOSDAQ"), exitSignal }),
+        row({
+          instrument: instrument("KOSDAQ"),
+          exitSignal,
+          snapshot: { tradeDate: "2026-10-30", close: 100 } as ScreeningRow["snapshot"],
+        }),
         empty,
-        "2026-10-02",
+        "2026-10-30",
       ),
     ).toBe("관찰");
   });
@@ -291,7 +303,7 @@ describe("unheld exit conditions are not actual sell instructions", () => {
 describe("missing market-cap judgment and held exits", () => {
   const pending = (overrides: Partial<ScreeningRow> = {}) =>
     row({
-      snapshot: { tradeDate: "2026-10-07", close: 100 } as ScreeningRow["snapshot"],
+      snapshot: { tradeDate: "2026-11-04", close: 100 } as ScreeningRow["snapshot"],
       hardFilterPassed: false,
       hardFilterStatus: "PENDING",
       pendingRules: ["현재 시가총액 미확인"],
@@ -307,10 +319,10 @@ describe("missing market-cap judgment and held exits", () => {
       const input = pending({ instrument: instrument(market), kosdaq80Onset: true });
       const before = structuredClone(input);
       expect(getDisplayStatus(input)).toBe("판단 보류 · 현재 시가총액 미확인");
-      expect(getPortfolioAwareDisplayStatus(input, empty, "2026-10-07")).toBe(
+      expect(getPortfolioAwareDisplayStatus(input, empty, "2026-11-04")).toBe(
         "판단 보류 · 현재 시가총액 미확인",
       );
-      expect(isPortfolioAwareOperationalEntry(input, empty, "2026-10-07")).toBe(false);
+      expect(isPortfolioAwareOperationalEntry(input, empty, "2026-11-04")).toBe(false);
       expect(input).toEqual(before);
     },
   );
@@ -328,10 +340,10 @@ describe("missing market-cap judgment and held exits", () => {
         scoreDelta1d: delta,
       });
       const held = { heldSymbols: [input.instrument.symbol], lastSellDateBySymbol: {} };
-      expect(getPortfolioAwareDisplayStatus(input, held, "2026-10-07")).toBe(
+      expect(getPortfolioAwareDisplayStatus(input, held, "2026-11-04")).toBe(
         `청산 대기 · ${label} · 신규 진입 판단 보류 · 현재 시가총액 미확인`,
       );
-      expect(isPortfolioAwareOperationalEntry(input, held, "2026-10-07")).toBe(false);
+      expect(isPortfolioAwareOperationalEntry(input, held, "2026-11-04")).toBe(false);
     },
   );
 
@@ -340,17 +352,17 @@ describe("missing market-cap judgment and held exits", () => {
       getPortfolioAwareDisplayStatus(
         pending(),
         { heldSymbols: ["000000"], lastSellDateBySymbol: {} },
-        "2026-10-07",
+        "2026-11-04",
       ),
     ).toBe("보유 · 신규 진입 판단 보류 · 현재 시가총액 미확인");
   });
 
   it("keeps unheld exit conditions informational alongside pending judgment", () => {
     const input = pending({ instrument: instrument("KOSDAQ"), exitSignal: "UP90" });
-    expect(getPortfolioAwareDisplayStatus(input, empty, "2026-10-07")).toBe(
+    expect(getPortfolioAwareDisplayStatus(input, empty, "2026-11-04")).toBe(
       "판단 보류 · 현재 시가총액 미확인",
     );
-    expect(getPortfolioAwareDisplayStatus(input, undefined, "2026-10-07")).toBe(
+    expect(getPortfolioAwareDisplayStatus(input, undefined, "2026-11-04")).toBe(
       "판단 보류 · 현재 시가총액 미확인",
     );
   });
@@ -361,12 +373,12 @@ describe("missing market-cap judgment and held exits", () => {
       actionLabelText: "KRX 자료 대기 · 신호 판단 보류",
     });
     expect(getDisplayStatus(input)).toBe("KRX 자료 대기 · 신호 판단 보류");
-    expect(getPortfolioAwareDisplayStatus(input, empty, "2026-10-07")).toBe(input.actionLabelText);
+    expect(getPortfolioAwareDisplayStatus(input, empty, "2026-11-04")).toBe(input.actionLabelText);
   });
 });
 
 describe("held exit uses the same dated evidence as table assessment", () => {
-  const date = "2026-10-14";
+  const date = "2026-11-11";
   const held = { heldSymbols: ["000000"], lastSellDateBySymbol: {} };
   const candidate = (close: number | null = 100, tradeDate = date) =>
     row({
@@ -376,7 +388,7 @@ describe("held exit uses the same dated evidence as table assessment", () => {
       scoreDelta1d: 25,
     });
   it("rejects the exact October 14 query / October 13 observation mismatch", () => {
-    const old = candidate(100, "2026-10-13");
+    const old = candidate(100, "2026-11-10");
     const before = structuredClone(old);
     expect(isHeldExit(old, held, date)).toBe(false);
     expect(getPortfolioAwareDisplayStatus(old, held, date)).toBe("보유 · 판단 미확인");
@@ -394,7 +406,7 @@ describe("held exit uses the same dated evidence as table assessment", () => {
     },
   );
   it("rejects future rows and unknown or unheld membership", () => {
-    expect(isHeldExit(candidate(100, "2026-10-15"), held, date)).toBe(false);
+    expect(isHeldExit(candidate(100, "2026-11-12"), held, date)).toBe(false);
     for (const context of [undefined, null, { heldSymbols: [], lastSellDateBySymbol: {} }])
       expect(isHeldExit(candidate(), context, date)).toBe(false);
   });
@@ -406,8 +418,8 @@ describe("held exit uses the same dated evidence as table assessment", () => {
   });
   it("shares previous-observation validity instead of falling back to a conflicting raw delta", () => {
     const input = candidate();
-    input.previousOperatingScoreDate = "2026-10-12";
-    const dates = ["2026-10-12", "2026-10-13", date];
+    input.previousOperatingScoreDate = "2026-11-09";
+    const dates = ["2026-11-09", "2026-11-10", date];
     expect(isHeldExit(input, held, date, dates)).toBe(false);
     expect(getPortfolioAwareDisplayStatus(input, held, date, dates)).toBe(
       "보유 · 청산 판단 미확인",

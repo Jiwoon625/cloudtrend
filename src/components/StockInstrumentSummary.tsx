@@ -61,6 +61,8 @@ export function StockInstrumentSummary({
         </p>
         <StockAssessmentDetails
           assessment={assessment}
+          signalDate={asOfDate}
+          originDate={row.kospiEntry?.originDate}
           held={positionContext?.heldSymbols.includes(row.instrument.symbol) ?? false}
         />
       </div>

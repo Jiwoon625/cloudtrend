@@ -384,7 +384,7 @@ describe("dashboard restart-only controls and missing funding", () => {
     const html = renderCounts(data(0, 0));
     expect(html).not.toContain("ETF 보유종목 등록·수정");
     expect(html).not.toContain("ETF 실제 보유종목 코드");
-    expect(html).toContain("10월 12일부터 시작한 신규 운용");
+    expect(html).toContain("신규 운용은 2026-10-12 신호부터");
   });
   it("shows an unfunded empty new pool explicitly without inventing old capital", () => {
     const value = data(0, 0);

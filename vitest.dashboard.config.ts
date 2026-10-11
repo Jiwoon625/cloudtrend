@@ -6,6 +6,9 @@ export default defineConfig({
   esbuild: { jsx: "automatic" },
   test: {
     include: [
+      "src/lib/operationalSignalStart.test.ts",
+      "tests/us-operational-start-ui.test.tsx",
+      "tests/operational-start-ui.test.tsx",
       "src/lib/engine/symbolQuoteNormalization.test.ts",
       "src/lib/websitePositionContext.test.ts",
       "src/lib/stockCompactStatus.test.ts",
