@@ -259,7 +259,12 @@ function InstrumentDetail() {
           <Stat label="모델등급" value={<GradeBadge grade={row.grade} />} />
           <Stat
             label="상태"
-            value={getPortfolioAwareDisplayStatus(row, positionContext, analysis.asOfDate)}
+            value={getPortfolioAwareDisplayStatus(
+              row,
+              positionContext,
+              analysis.asOfDate,
+              analysis.tradeDates,
+            )}
           />
           <Stat label="52주 고점 거리" value={<Delta value={snap.distanceFrom52wHigh} />} />
         </div>

@@ -1,3 +1,5 @@
+import { isHeldExit } from "./statusDisplay";
+import type { ScreeningRow } from "./engine/pipeline";
 import type { SupabaseClient } from "@supabase/supabase-js";
 const mocks = vi.hoisted(() => ({ read: vi.fn(), shadow: vi.fn() }));
 vi.mock("./ledger/websiteRepository.server", () => ({ readWebsiteDocument: mocks.read }));
@@ -168,3 +170,54 @@ describe("website holdings new series boundary", () => {
     },
   );
 });
+
+it.each(["actual", "restart-shadow"])(
+  "applies dated exit checks to validated %s-only holdings",
+  async (source) => {
+    const shadow = await summary();
+    const metadata = emptyNewActualMetadata();
+    if (source === "actual")
+      metadata.assignments["NEW"] = {
+        executionId: "NEW",
+        quantity: 2,
+        gross: 200,
+        fee: 0,
+        brokerReference: "approved-new",
+      };
+    else {
+      const book = shadow.books.find((b) => b.kind === "KR_MIXED")!;
+      book.status = "RECORDED";
+      book.firstSessionDate = "2026-10-12";
+      book.latestSessionDate = "2026-10-14";
+      book.holdings = [
+        {
+          symbol: "NEW",
+          name: "NEW",
+          market: "KOSPI",
+          quantity: "2",
+          price: "100",
+          value: "200",
+          entryDate: "2026-10-13",
+        },
+      ];
+    }
+    const context = projectWebsitePositionContext(
+      { executions: [fill("NEW", "2026-10-13")], newActualPortfolio: metadata },
+      null,
+      shadow,
+      now,
+    );
+    expect(context.heldSymbols).toEqual(["NEW"]);
+    const row = {
+      instrument: { symbol: "NEW", market: "KOSPI", instrumentType: "STOCK" },
+      snapshot: { tradeDate: "2026-10-13", close: 100 },
+      operatingScore10: 9.5,
+      previousOperatingScore10: 7,
+      scoreDelta1d: 25,
+      grade: "A",
+    } as ScreeningRow;
+    expect(isHeldExit(row, context, "2026-10-14")).toBe(false);
+    row.snapshot.tradeDate = "2026-10-14";
+    expect(isHeldExit(row, context, "2026-10-14")).toBe(true);
+  },
+);

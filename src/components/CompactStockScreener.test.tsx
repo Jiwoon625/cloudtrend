@@ -5,7 +5,12 @@ import { ScreenerTable } from "./ScreenerTable";
 import { ScreenerView } from "./ScreenerView";
 import { CompactStockStatus } from "./CompactStockStatus";
 import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
-const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0, positionsFailed: false }));
+const hooks = vi.hoisted(() => ({
+  values: [] as unknown[],
+  cursor: 0,
+  positionsFailed: false,
+  heldSymbols: [] as string[],
+}));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
   useState: (initial: unknown) => {
@@ -25,7 +30,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({
-    data: { heldSymbols: [], lastSellDateBySymbol: {} },
+    data: { heldSymbols: hooks.heldSymbols, lastSellDateBySymbol: {} },
     isSuccess: !hooks.positionsFailed,
     isError: hooks.positionsFailed,
     refetch: vi.fn(),
@@ -82,6 +87,7 @@ const removed = [
 beforeEach(() => {
   hooks.values = [];
   hooks.cursor = 0;
+  hooks.heldSymbols = [];
 });
 function nodes(
   node: ReactNode,
@@ -203,4 +209,34 @@ describe("compact stock screener", () => {
     toggle();
     expect(view.html.indexOf("종목 LOW")).toBeLessThan(view.html.indexOf("종목 HIGH"));
   });
+});
+
+it("uses the same October 14 holding policy for count, filtered rows and table labels", () => {
+  hooks.heldSymbols = ["OLD", "CURRENT"];
+  const old = row("OLD"),
+    current = row("CURRENT"),
+    unheld = row("UNHELD");
+  old.snapshot.tradeDate = "2026-10-13";
+  current.snapshot.tradeDate = unheld.snapshot.tradeDate = "2026-10-14";
+  const analysis = {
+    asOfDate: "2026-10-14",
+    rows: [old, current, unheld],
+    tradeDates: ["2026-10-13", "2026-10-14"],
+    marketGate: { status: "RISK_OFF", metCount: 0 },
+  } as AnalysisResult;
+  let tree = ScreenerView({ mode: "STOCK", analysis });
+  const html = renderToStaticMarkup(tree);
+  expect(html).toContain("보유 청산 (1)");
+  expect(html).toContain("보유 · 판단 미확인");
+  expect(html).toContain("보유 · 청산 조건 충족");
+  const exitButton = nodes(tree).find(
+    (n) => n.type === "button" && renderToStaticMarkup(n).includes("보유 청산"),
+  )!;
+  exitButton.props.onClick!();
+  hooks.cursor = 0;
+  tree = ScreenerView({ mode: "STOCK", analysis });
+  const filtered = renderToStaticMarkup(tree);
+  expect(filtered).toContain("종목 CURRENT");
+  expect(filtered).not.toContain("종목 OLD");
+  expect(filtered).not.toContain("종목 UNHELD");
 });

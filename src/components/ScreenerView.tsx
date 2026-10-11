@@ -76,7 +76,8 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
   const sectors = [...new Set(base.map((r) => r.instrument.sectorName))];
   const presetMatches = (r: ScreeningRow, id: PresetId) => {
     if (mode === "STOCK") {
-      if (id === "EXIT") return isHeldExit(r, positionContext);
+      if (id === "EXIT")
+        return isHeldExit(r, positionContext, analysis.asOfDate, analysis.tradeDates);
       if (id === "TECHNICAL_ONSET")
         return stockAssessmentDisplay(r, analysis.asOfDate, analysis.tradeDates).rawOnset === true;
       if (

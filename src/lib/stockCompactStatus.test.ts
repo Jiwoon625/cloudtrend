@@ -121,3 +121,16 @@ describe("stock list two-line status", () => {
     expect(getCompactStockStatus(r, undefined, date).secondary).toBe("보유정보 확인 필요");
   });
 });
+
+it("keeps held stale/nonadjacent observations unconfirmed rather than emitting an undefined exit label", () => {
+  const stale = row({
+    snapshot: { tradeDate: "2026-10-13", close: 100 } as ScreeningRow["snapshot"],
+  });
+  expect(getCompactStockStatus(stale, held, "2026-10-14").primary).toBe("보유 · 판단 미확인");
+  const gap = row({ previousOperatingScoreDate: "2026-10-06" });
+  const status = getCompactStockStatus(gap, held, date, ["2026-10-06", "2026-10-07", date]);
+  expect(status).toMatchObject({
+    primary: "보유 · 청산 판단 미확인",
+    secondary: "기술점수 확인 필요",
+  });
+});

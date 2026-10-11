@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { ScreeningRow } from "./engine/pipeline";
 import type { Instrument } from "./engine/types";
 import {
+  isHeldExit,
   getDisplayStatus,
   getPortfolioAwareDisplayStatus,
   isPortfolioAwareOperationalEntry,
@@ -36,6 +37,10 @@ function instrument(market: "KOSPI" | "KOSDAQ"): Instrument {
 function row(overrides: Partial<ScreeningRow> = {}): ScreeningRow {
   return {
     instrument: instrument("KOSPI"),
+    snapshot: {
+      tradeDate: overrides.kospiEntry?.date ?? "2026-09-30",
+      close: 100,
+    } as ScreeningRow["snapshot"],
     operationalSignalVersion: "kospi-e8-u95-dx-v1",
     kosdaq80Onset: false,
     kospiEightPointEntry: false,
@@ -286,6 +291,7 @@ describe("unheld exit conditions are not actual sell instructions", () => {
 describe("missing market-cap judgment and held exits", () => {
   const pending = (overrides: Partial<ScreeningRow> = {}) =>
     row({
+      snapshot: { tradeDate: "2026-10-07", close: 100 } as ScreeningRow["snapshot"],
       hardFilterPassed: false,
       hardFilterStatus: "PENDING",
       pendingRules: ["현재 시가총액 미확인"],
@@ -356,5 +362,55 @@ describe("missing market-cap judgment and held exits", () => {
     });
     expect(getDisplayStatus(input)).toBe("KRX 자료 대기 · 신호 판단 보류");
     expect(getPortfolioAwareDisplayStatus(input, empty, "2026-10-07")).toBe(input.actionLabelText);
+  });
+});
+
+describe("held exit uses the same dated evidence as table assessment", () => {
+  const date = "2026-10-14";
+  const held = { heldSymbols: ["000000"], lastSellDateBySymbol: {} };
+  const candidate = (close: number | null = 100, tradeDate = date) =>
+    row({
+      snapshot: { tradeDate, close } as ScreeningRow["snapshot"],
+      operatingScore10: 9.5,
+      previousOperatingScore10: 7,
+      scoreDelta1d: 25,
+    });
+  it("rejects the exact October 14 query / October 13 observation mismatch", () => {
+    const old = candidate(100, "2026-10-13");
+    const before = structuredClone(old);
+    expect(isHeldExit(old, held, date)).toBe(false);
+    expect(getPortfolioAwareDisplayStatus(old, held, date)).toBe("보유 · 판단 미확인");
+    expect(old).toEqual(before);
+    expect(isHeldExit(candidate(), held, date)).toBe(true);
+    expect(getPortfolioAwareDisplayStatus(candidate(), held, date)).toContain("청산 대기");
+  });
+  it.each([null, undefined, 0, -1, NaN, Infinity])(
+    "does not promote invalid close %s to an exit",
+    (close) => {
+      const input = candidate();
+      input.snapshot.close = close as number;
+      expect(isHeldExit(input, held, date)).toBe(false);
+      expect(getPortfolioAwareDisplayStatus(input, held, date)).toBe("보유 · 판단 미확인");
+    },
+  );
+  it("rejects future rows and unknown or unheld membership", () => {
+    expect(isHeldExit(candidate(100, "2026-10-15"), held, date)).toBe(false);
+    for (const context of [undefined, null, { heldSymbols: [], lastSellDateBySymbol: {} }])
+      expect(isHeldExit(candidate(), context, date)).toBe(false);
+  });
+  it("uses the same explicit prior score as the displayed assessment when legacy delta differs", () => {
+    const input = candidate();
+    input.previousOperatingScore10 = 9.5;
+    expect(isHeldExit(input, held, date)).toBe(false);
+    expect(getPortfolioAwareDisplayStatus(input, held, date)).toBe("보유");
+  });
+  it("shares previous-observation validity instead of falling back to a conflicting raw delta", () => {
+    const input = candidate();
+    input.previousOperatingScoreDate = "2026-10-12";
+    const dates = ["2026-10-12", "2026-10-13", date];
+    expect(isHeldExit(input, held, date, dates)).toBe(false);
+    expect(getPortfolioAwareDisplayStatus(input, held, date, dates)).toBe(
+      "보유 · 청산 판단 미확인",
+    );
   });
 });
