@@ -228,6 +228,33 @@ afterEach(() => {
   harness.client.clear();
 });
 describe("allocation presentation", () => {
+  it.each(["KRW", "USD"] as const)(
+    "renders visible, labeled editable %s cash inputs",
+    (currency) => {
+      harness.states[1] = currency;
+      const html = render();
+      const labels = currency === "KRW" ? ["한국 귀속액", "ETF 귀속액"] : ["미국 귀속액"];
+      for (const label of labels) {
+        const input = html.match(new RegExp(`<input[^>]*aria-label="${label}"[^>]*>`))?.[0];
+        expect(input).toBeDefined();
+        expect(input).toContain("border-slate-400");
+        expect(input).toContain("dark:border-slate-500");
+        expect(input).toContain("bg-background");
+        expect(input).toContain("text-foreground");
+        expect(input).toContain("h-11");
+        expect(input).toContain("w-full");
+        expect(input).not.toMatch(/ disabled(?:=|[ >])/);
+        expect(input).not.toContain("readOnly");
+        expect(harness.controls[label]?.onChange).toBeTypeOf("function");
+      }
+      expect(html).toContain(currency === "KRW" ? "한국 귀속액 (원)" : "미국 귀속액 (USD)");
+      expect(html).toContain("현재 귀속");
+      expect(html).toContain("현재 미귀속");
+      expect(html).toContain("추가 입금액이 아닌 총액");
+      expect(html).toContain("귀속액 검토만으로는 저장되지 않습니다");
+      expect(server).not.toHaveBeenCalled();
+    },
+  );
   it("labels native currencies and keeps decimal strings exact", () => {
     const data = response("USD");
     data.cash = "999999999999999999.12345678";
@@ -253,36 +280,84 @@ describe("allocation presentation", () => {
   });
 });
 describe("review/save lifecycle", () => {
-  it.each(["2000-01-01T00:00:00Z", "2099-01-01T00:00:00Z"])(
-    "does not send the skewed browser clock %s as spendable-cash evidence",
-    async (browserTime) => {
-      vi.useFakeTimers({ toFake: ["Date"] });
-      vi.setSystemTime(new Date(browserTime));
-      try {
-        render();
-        change("확인한 주문가능 현금", "1000");
-        render();
-        change("주문가능 현금 증빙 식별자", "broker-cash");
-        await previewClaims();
-        expect(callData(0)).toMatchObject({
-          change: { spendableCash: { amount: "1000", reference: "broker-cash" } },
-        });
-        expect(callData(0)).not.toHaveProperty("change.spendableCash.availableAt");
-        change("저장 내용 확인", "", true);
-        render();
-        button("검토한 내용 저장").onClick!();
-        await tick();
-        expect(callData(1)).toMatchObject({
-          action: "save",
-          reviewConfirmed: true,
-          change: { spendableCash: { amount: "1000", reference: "broker-cash" } },
-        });
-        expect(callData(1)).not.toHaveProperty("change.spendableCash.availableAt");
-      } finally {
-        vi.useRealTimers();
-      }
+  it("hydrates saved claims on async read and preserves dirty input across newer reads", async () => {
+    render();
+    const data = response();
+    data.authority = {
+      version: 1,
+      currency: "KRW",
+      sourceRevision: 4,
+      sourceFingerprint: hash,
+      cashAtReview: "1000",
+      claims: { KR: "600", ETF: "300", US: "0", UNASSIGNED: "100" },
+      spendableCash: null,
+      reviewedAt: "2026-10-12T00:00:00Z",
+      reservations: [],
+    };
+    harness.client.setQueryData(["operating-allocation", "owner-a", "KRW"], data);
+    let html = render();
+    expect(html).toMatch(/aria-label="한국 귀속액"[^>]*value="600"/);
+    expect(html).toMatch(/aria-label="ETF 귀속액"[^>]*value="300"/);
+    expect(server).not.toHaveBeenCalled();
+    button("귀속액 검토").onClick!();
+    await tick();
+    expect(callData(0)).toMatchObject({
+      action: "preview",
+      change: { claims: { KR: "600", ETF: "300", US: "0", UNASSIGNED: "100" } },
+    });
+    render();
+    change("한국 귀속액", "500");
+    data.revision = 5;
+    data.authority.claims = { KR: "550", ETF: "350", US: "0", UNASSIGNED: "100" };
+    harness.client.setQueryData(["operating-allocation", "owner-a", "KRW"], { ...data });
+    html = render();
+    expect(html).toMatch(/aria-label="한국 귀속액"[^>]*value="500"/);
+    expect(html).toMatch(/aria-label="ETF 귀속액"[^>]*value="350"/);
+    expect(html).not.toContain("저장 전 검토");
+    button("귀속액 검토").onClick!();
+    await tick();
+    expect(callData(1)).toMatchObject({
+      action: "preview",
+      expectedRevision: 5,
+      change: { claims: { KR: "500", ETF: "350", US: "0", UNASSIGNED: "150" } },
+    });
+    render();
+    change("ETF 귀속액", "");
+    render();
+    button("귀속액 검토").onClick!();
+    await tick();
+    expect(callData(2)).toMatchObject({
+      action: "preview",
+      change: { claims: { KR: "500", ETF: "0", US: "0", UNASSIGNED: "500" } },
+    });
+    expect(server.mock.calls.every((_, index) => callData(index).action === "preview")).toBe(true);
+  });
+  it.each(["1001", "-1", "abc"])(
+    "rejects invalid or over-limit entered claims: %s",
+    async (amount) => {
+      render();
+      change("한국 귀속액", amount);
+      render();
+      button("귀속액 검토").onClick!();
+      await tick();
+      expect(render()).toContain("실제 현금 안에서 시장 귀속액을 입력하세요.");
+      expect(server).not.toHaveBeenCalled();
     },
   );
+  it("omits broker evidence controls and leaves private evidence unchanged", async () => {
+    const html = render();
+    expect(html).not.toContain("확인된 주문가능 현금");
+    expect(html).not.toContain("주문가능 현금 증빙 식별자");
+    expect(harness.controls["확인한 주문가능 현금"]).toBeUndefined();
+    expect(html).toContain("증권사에서 최종 확인하세요");
+    await previewClaims();
+    expect(callData(0)).not.toHaveProperty("change.spendableCash");
+    change("저장 내용 확인", "", true);
+    render();
+    button("검토한 내용 저장").onClick!();
+    await tick();
+    expect(callData(1)).not.toHaveProperty("change.spendableCash");
+  });
   it("preserves shared-currency unassigned cash and requires separate checked review", async () => {
     await previewClaims();
     expect(callData(0)).toMatchObject({
@@ -291,7 +366,6 @@ describe("review/save lifecycle", () => {
       change: {
         kind: "REVIEW_CLAIMS",
         claims: { KR: "600", ETF: "300", US: "0", UNASSIGNED: "100" },
-        spendableCash: null,
       },
     });
     expect(button("검토한 내용 저장").disabled).toBe(true);
@@ -487,6 +561,8 @@ describe("selected dashboard candidate", () => {
   const panel = (value = candidate) => <OperatingAllocationPanel editable candidate={value} />;
   function pinnedResponse() {
     const data = response();
+    data.availability.status = "CONFIRMED_CASH";
+    data.availability.spendableAvailable = "1000";
     data.sizing.signalBudgets = [
       {
         id: "opaque-server-budget",
@@ -538,6 +614,18 @@ describe("selected dashboard candidate", () => {
     button("검토한 내용 저장").onClick!();
     await tick();
     expect(callData(1)).toMatchObject({ action: "save", change: { reviewFingerprint: hash } });
+  });
+  it("shows estimated quantities without enabling unconfirmed cash reservation", async () => {
+    const data = pinnedResponse();
+    data.availability.status = "ESTIMATED_CASH";
+    data.availability.spendableAvailable = null;
+    harness.client.setQueryData(["operating-allocation", "owner-a", "KRW"], data);
+    expect(render(panel())).toContain("종가 기준 예상 5주");
+    const held = button("예상 수량 · 현금 예약 보류");
+    expect(held.disabled).toBe(true);
+    held.onClick!();
+    await tick();
+    expect(server).not.toHaveBeenCalled();
   });
   it("reserves only the opaque pinned budget identity with the reviewed cash amount", async () => {
     const data = pinnedResponse();

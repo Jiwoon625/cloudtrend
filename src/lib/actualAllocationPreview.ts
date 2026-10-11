@@ -2,6 +2,7 @@ import { compareDashboardCandidates, type DashboardSignal } from "./dashboardOpe
 import { decimal, format } from "./ledger/decimal";
 import {
   operatingBudgetQuantity,
+  type projectOperatingAvailability,
   type OperatingCurrency,
   type OperatingMarket,
   type OperatingSignalBudget,
@@ -28,6 +29,26 @@ export interface ActualAllocationPreviewRow {
 }
 const assetFor = (market: DashboardSignal["market"]): OperatingMarket =>
   market === "US" ? "US" : market === "ETF" ? "ETF" : "KR";
+
+/** Use only validated, reservation-netted claims for a ledger-based estimate.
+ * Unassigned cash and unreconciled/unknown pools must never fund a candidate.
+ * This does not promote estimated cash to broker-confirmed availability.
+ */
+export function currencyCashForEstimate(
+  availability: ReturnType<typeof projectOperatingAvailability>,
+  currency: OperatingCurrency,
+): string | null {
+  if (availability.status === "CONFIRMED_CASH") return availability.spendableAvailable;
+  if (availability.status !== "ESTIMATED_CASH") return null;
+  const assets = currency === "KRW" ? (["KR", "ETF"] as const) : (["US"] as const);
+  let total = 0n;
+  for (const asset of assets) {
+    const cash = availability.available[asset];
+    if (cash === null) return null;
+    total += decimal(cash);
+  }
+  return format(total);
+}
 
 /** A deterministic batch over already-ranked actual candidates. It never creates orders.
  * Market claims and the shared currency pool are both reduced once per preview fill.
@@ -94,7 +115,7 @@ export function previewActualAllocationBatch(input: {
         currencyCash: currencyCash[currency],
       });
       if (estimate.status === "BLOCKED")
-        return { ...base, status: "WAITING", reason: "실제 시장 귀속·주문가능 현금 확인 필요" };
+        return { ...base, status: "WAITING", reason: "기록상 현금과 시장 귀속 확인 필요" };
       if (estimate.quantity === "0")
         return { ...base, status: "SKIPPED", reason: "비용 포함 1주 매수금액 부족" };
       slots[asset] = slotsLeft - 1;
@@ -107,7 +128,8 @@ export function previewActualAllocationBatch(input: {
       return {
         ...base,
         status: "ESTIMATED",
-        reason: "현재 종가 기준 예상 · 실제 체결가·주문가능 현금 재확인",
+        reason:
+          "기록상 가용 현금·현재 종가 기준 예상 · 실제 체결가·주문가능 현금은 증권사에서 최종 확인",
         quantity: estimate.quantity,
         cashRequired: estimate.cashRequired,
       };

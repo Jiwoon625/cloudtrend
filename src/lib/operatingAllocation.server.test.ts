@@ -360,6 +360,68 @@ describe("same-document actual allocation CAS", () => {
       expect(c.writes).toHaveLength(1);
     },
   );
+  it("preserves omitted private cash evidence, including its original review timestamp", async () => {
+    const c = client();
+    funded();
+    state.rows["portfolio_ledgers"]!.payload["operatingAllocation"] =
+      prepareOperatingAllocation(now);
+    const first = await writeOperatingAllocation(c.value, uid, request(claims), now);
+    const original = structuredClone(
+      state.rows["portfolio_ledgers"]!.payload["newActualPortfolio"],
+    );
+    const change: Write["change"] = {
+      kind: "REVIEW_CLAIMS",
+      claims: { KR: "500", ETF: "400", US: "0", UNASSIGNED: "100" },
+    };
+    const later = "2026-10-12T16:00:00Z";
+    const input = request(change, {
+      expectedRevision: 10,
+      requestId: "00000000-0000-4000-8000-000000000011",
+    });
+    const saved = await writeOperatingAllocation(c.value, uid, input, later);
+    expect(saved.authority?.spendableCash).toEqual(first.authority?.spendableCash);
+    expect(saved.authority?.spendableCash?.availableAt).toBe(new Date(now).toISOString());
+    expect(saved.authority?.reviewedAt).toBe(new Date(later).toISOString());
+    expect(saved.authority?.claims).toEqual(change.claims);
+    expect(state.rows["portfolio_ledgers"]!.payload["newActualPortfolio"]).toEqual(original);
+    const cleared = await writeOperatingAllocation(
+      c.value,
+      uid,
+      request(
+        { ...change, spendableCash: null },
+        { expectedRevision: 11, requestId: "00000000-0000-4000-8000-000000000012" },
+      ),
+      later,
+    );
+    expect(cleared.authority?.spendableCash).toBeNull();
+    expect(cleared.availability.status).toBe("ESTIMATED_CASH");
+  });
+  it("keeps absent broker evidence estimated and retains cash and reservation limits", async () => {
+    const c = client();
+    funded();
+    state.rows["portfolio_ledgers"]!.payload["operatingAllocation"] =
+      prepareOperatingAllocation(now);
+    const change: Write["change"] = {
+      kind: "REVIEW_CLAIMS",
+      claims: { KR: "600", ETF: "300", US: "0", UNASSIGNED: "100" },
+    };
+    const saved = await writeOperatingAllocation(c.value, uid, request(change), now);
+    expect(saved.authority?.spendableCash).toBeNull();
+    expect(saved.availability.status).toBe("ESTIMATED_CASH");
+    expect(saved.availability.available.KR).toBe("600");
+    await expect(
+      writeOperatingAllocation(
+        c.value,
+        uid,
+        request(
+          { ...change, claims: { KR: "1001", ETF: "0", US: "0", UNASSIGNED: "0" } },
+          { expectedRevision: 10, requestId: "00000000-0000-4000-8000-000000000012" },
+        ),
+        now,
+      ),
+    ).rejects.toThrow();
+    expect(c.writes).toHaveLength(1);
+  });
   it("reads existing spendable-cash evidence without rewriting its saved timestamp", async () => {
     const c = client();
     funded();

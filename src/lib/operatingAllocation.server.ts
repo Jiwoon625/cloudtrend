@@ -185,6 +185,7 @@ async function verifyReservationCandidate(
     us: currency === "USD" ? index : null,
     markets,
     now,
+    requireConfirmedCash: true,
   });
   const candidate = fresh.previews.find(
     (preview) =>
@@ -559,13 +560,16 @@ export async function writeOperatingAllocation(
         claims: structuredClone(input.change.claims),
         // availableAt records this submitted review on the server, not a broker settlement/event date.
         // Ignore legacy browser timestamps so clock skew cannot reject or backdate a review.
-        spendableCash: input.change.spendableCash
-          ? {
-              amount: input.change.spendableCash.amount,
-              reference: input.change.spendableCash.reference,
-              availableAt: new Date(now).toISOString(),
-            }
-          : null,
+        spendableCash:
+          input.change.spendableCash === undefined
+            ? structuredClone(authority?.spendableCash ?? null)
+            : input.change.spendableCash
+              ? {
+                  amount: input.change.spendableCash.amount,
+                  reference: input.change.spendableCash.reference,
+                  availableAt: new Date(now).toISOString(),
+                }
+              : null,
         reservations: structuredClone(authority?.reservations ?? []),
         reviewedAt: new Date(now).toISOString(),
       };
