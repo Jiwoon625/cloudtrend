@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
+import { useScoringConfig } from "@/lib/scoringConfigStore";
+import { instrumentChartQueryRevision, useInstrumentChartOwner } from "@/lib/instrumentChartCache";
 import {
   getCachedInstrumentChart,
   getCachedInstrumentPrices,
@@ -23,6 +24,38 @@ import {
   YAxis,
 } from "recharts";
 
+function ChartLoadingStatus({
+  phase,
+  range,
+}: {
+  phase: "prices" | "scored";
+  range: InstrumentChartRange;
+}) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const started = Date.now();
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <div className="text-center text-xs text-muted-foreground">
+      <p role="status">
+        {phase === "prices"
+          ? "가격·거래량을 불러오는 중…"
+          : "가격·거래량 표시 완료 · 기술점수 준비 중…"}
+      </p>
+      <p className="mt-1" aria-hidden="true">
+        {elapsed}초 경과
+      </p>
+      {range === "all" ? (
+        <p className="mt-1">
+          전체 기간은 처음 열 때 원천자료 확인과 계산에 시간이 걸릴 수 있습니다.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export default function InstrumentCharts({
   symbol,
   payload,
@@ -31,6 +64,8 @@ export default function InstrumentCharts({
   payload: AnalysisPayload;
 }) {
   const [range, setRange] = useState<InstrumentChartRange>("120");
+  const [config] = useScoringConfig();
+  const { owner, authError, retryOwner } = useInstrumentChartOwner();
   const [visible, setVisible] = useState({ technical: true });
   const row = payload.analysis.rows.find((row) => row.instrument.symbol === symbol)!;
   const isEtf = row.instrument.instrumentType === "ETF";
@@ -38,14 +73,16 @@ export default function InstrumentCharts({
   const key = [
     "instrument-chart",
     INSTRUMENT_CHART_VERSION,
+    owner,
     symbol,
-    payload.analysis.calculatedAt,
-    getActiveScoringConfig(),
+    instrumentChartQueryRevision(payload),
+    config,
     range,
   ];
   const priceQuery = useQuery({
     queryKey: [...key, "prices"],
     queryFn: () => getCachedInstrumentPrices(symbol, range, payload),
+    enabled: owner !== null,
     staleTime: Infinity,
     gcTime: 30 * 60 * 1000,
     retry: false,
@@ -53,6 +90,7 @@ export default function InstrumentCharts({
   const query = useQuery({
     queryKey: [...key, "scored"],
     queryFn: () => getCachedInstrumentChart(symbol, range, payload),
+    enabled: owner !== null,
     staleTime: Infinity,
     gcTime: 30 * 60 * 1000,
     retry: false,
@@ -60,6 +98,8 @@ export default function InstrumentCharts({
   const chart = query.data?.chart ?? priceQuery.data?.chart ?? [];
   const history = query.data?.history ?? [];
   const snap = row.snapshot;
+  const loading = query.isFetching || priceQuery.isFetching || (!owner && !authError);
+  const progressKey = `${key.slice(0, 5).join(":")}:${range}`;
   return (
     <>
       <section className="mt-5 rounded-lg border border-border bg-card p-4">
@@ -87,23 +127,24 @@ export default function InstrumentCharts({
             </button>
           </div>
         </div>
-        {query.isPending && priceQuery.isPending ? (
-          <div
-            className="flex h-[420px] items-center justify-center text-sm text-muted-foreground"
-            role="status"
-          >
-            차트 데이터를 불러오는 중입니다…
+        {!chart.length && loading ? (
+          <div className="flex h-[420px] items-center justify-center">
+            <ChartLoadingStatus key={progressKey} phase="prices" range={range} />
           </div>
-        ) : !chart.length && (query.isError || priceQuery.isError) ? (
+        ) : !chart.length && (authError || query.isError || priceQuery.isError) ? (
           <div className="p-4" role="alert">
             <p>차트를 불러오지 못했습니다.</p>
             <p className="mt-2 text-xs text-muted-foreground">
-              {query.error?.message ?? priceQuery.error?.message}
+              {authError ?? query.error?.message ?? priceQuery.error?.message}
             </p>
             <Button
               variant="outline"
               size="sm"
               onClick={() => {
+                if (authError) {
+                  retryOwner();
+                  return;
+                }
                 void query.refetch();
                 void priceQuery.refetch();
               }}
@@ -207,10 +248,10 @@ export default function InstrumentCharts({
             </ResponsiveContainer>
           </div>
         )}
-        {chart.length > 0 && query.isPending ? (
-          <p role="status" className="mt-2 text-xs text-muted-foreground">
-            가격·거래량 표시 완료 · 기술점수 준비 중…
-          </p>
+        {chart.length > 0 && query.isFetching && !query.data ? (
+          <div className="mt-2">
+            <ChartLoadingStatus key={`${progressKey}:scored`} phase="scored" range={range} />
+          </div>
         ) : null}
         {chart.length > 0 && query.isError ? (
           <div role="alert" className="mt-2 text-xs">

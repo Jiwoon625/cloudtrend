@@ -5,7 +5,9 @@ import { gzipSync, gunzipSync } from "node:zlib";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   compactChartSeries,
+  instrumentChartPoint,
   chartScoreHistory,
+  type InstrumentChart,
   type InstrumentChartRange,
 } from "./engine/instrumentChart";
 import type { MarketDataset } from "./engine/dataset";
@@ -50,8 +52,10 @@ export function primeChartContext(
   recent = { key: key(uid, { inputFingerprint, resultDigest }), at: Date.now(), context };
 }
 export function cachedChartContext(uid: string, i: ChartIdentity) {
-  if (recent && Date.now() - recent.at > 120000) recent = undefined;
-  return recent?.key === key(uid, i) ? recent.context : undefined;
+  if (recent && Date.now() - recent.at > 5 * 60_000) recent = undefined;
+  if (recent?.key !== key(uid, i)) return undefined;
+  recent.at = Date.now();
+  return recent.context;
 }
 export function priceChart(ctx: ChartContext, symbol: string, range: InstrumentChartRange) {
   const bars = ctx.dataset.bars[symbol] ?? [];
@@ -66,6 +70,31 @@ export function priceChart(ctx: ChartContext, symbol: string, range: InstrumentC
 }
 export function scoredChart(ctx: ChartContext, symbol: string, range: InstrumentChartRange) {
   const chart = compactChartSeries(ctx.dataset, symbol, range, ctx.config);
+  assertChartMatchesCard(chart, ctx.analysis, symbol);
+  return { chart, history: chartScoreHistory(chart) };
+}
+/** Same point evaluator, yielding on a time budget instead of a timer per five points. */
+async function responsiveScoredChart(
+  ctx: ChartContext,
+  symbol: string,
+  range: InstrumentChartRange,
+) {
+  const bars = ctx.dataset.bars[symbol] ?? [];
+  const chart: InstrumentChart = [];
+  // Give the parallel price-only request a turn even for short, already-warm series.
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  let batchStarted = performance.now();
+  for (
+    let index = range === "all" ? 0 : Math.max(0, bars.length - 120);
+    index < bars.length;
+    index++
+  ) {
+    chart.push(instrumentChartPoint(ctx.dataset, symbol, index, ctx.config));
+    if (index < bars.length - 1 && performance.now() - batchStarted >= 32) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      batchStarted = performance.now();
+    }
+  }
   assertChartMatchesCard(chart, ctx.analysis, symbol);
   return { chart, history: chartScoreHistory(chart) };
 }
@@ -128,6 +157,8 @@ export async function publishRecentPrices(
     );
   await writeBundle(client, uid, chartReadyPath(identity, "prices"), { ready: true });
 }
+// Only in-flight computations are shared; completed bundles remain in existing owner paths.
+const preparing = new Map<string, Promise<Record<string, PreparedChart | PriceChart>>>();
 export async function prepareChartBucket(
   client: SupabaseClient,
   uid: string,
@@ -137,27 +168,48 @@ export async function prepareChartBucket(
   range: InstrumentChartRange,
   kind: ChartKind,
   allowUncached = false,
+  cacheAlreadyChecked = false,
 ) {
   const path = chartPath(identity, symbol, range, kind);
-  const existing = await readChartBundle<PreparedChart | PriceChart>(client, uid, path);
-  if (existing?.[symbol]) return existing[symbol]!;
-  const symbols =
-    range === "all"
-      ? [symbol]
-      : ctx.analysis.rows
-          .map((r) => r.instrument.symbol)
-          .filter((s) => chartPath(identity, s, range, kind) === path);
-  const bundle: Record<string, PreparedChart | PriceChart> = {};
-  for (const s of symbols)
-    bundle[s] = kind === "prices" ? priceChart(ctx, s, range) : scoredChart(ctx, s, range);
-  try {
-    await writeBundle(client, uid, path, bundle);
-  } catch (error) {
-    if (!allowUncached) throw error;
-    console.warn("차트 저장 실패: 계산 결과를 먼저 반환합니다.", error);
+  // Keep strict warmup writes separate from best-effort on-demand writes.
+  const pendingKey = `${uid}:${path}:${stableCacheJson(ctx.config)}:${allowUncached}`;
+  let pending = preparing.get(pendingKey);
+  if (!pending) {
+    pending = prepare().finally(() => preparing.delete(pendingKey));
+    preparing.set(pendingKey, pending);
   }
-  if (!bundle[symbol]) throw new Error("종목 차트가 없습니다.");
-  return bundle[symbol]!;
+  const result = (await pending)[symbol];
+  if (!result) throw new Error("종목 차트가 없습니다.");
+  return result;
+
+  async function prepare() {
+    const symbols =
+      range === "all"
+        ? [symbol]
+        : ctx.analysis.rows
+            .map((r) => r.instrument.symbol)
+            .filter((s) => chartPath(identity, s, range, kind) === path);
+    const existing = cacheAlreadyChecked
+      ? null
+      : await readChartBundle<PreparedChart | PriceChart>(client, uid, path);
+    // A partial legacy/corrupt bundle must not satisfy a coalesced request for another symbol.
+    if (existing?.[symbol] && symbols.every((s) => existing[s])) return existing;
+    const bundle: Record<string, PreparedChart | PriceChart> = {};
+    for (const s of symbols) {
+      if (kind === "prices") bundle[s] = priceChart(ctx, s, range);
+      else {
+        // Let independent price responses and other requests progress between score batches.
+        bundle[s] = await responsiveScoredChart(ctx, s, range);
+      }
+    }
+    try {
+      await writeBundle(client, uid, path, bundle);
+    } catch (error) {
+      if (!allowUncached) throw error;
+      console.warn("차트 저장 실패: 계산 결과를 먼저 반환합니다.", error);
+    }
+    return bundle;
+  }
 }
 // Each completed bucket is resumable; a failed request cannot publish a partial bucket.
 export async function warmRecentCharts(

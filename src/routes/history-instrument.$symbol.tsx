@@ -47,11 +47,11 @@ function HistoricalInstrument() {
             {s!.strategyVersion ?? row.operationalSignalVersion ?? "과거 버전 미기록"} · 실행 ID{" "}
             {s!.runId ?? "과거 일별 대표 기록 · 실행 ID 미기록"}
             <br />
-            {s!.runId ? "실제 분석시각" : "과거 저장시각"} {formatKstDateTime(s!.savedAt)}
+            {s!.runId ? "실제 분석시각" : "과거 저장시각"} {formatKstDateTime(s!.savedAt)} KST
           </p>
           {s!.storedAt ? (
             <p className="text-xs text-muted-foreground">
-              기록 저장시각 {formatKstDateTime(s!.storedAt)} · 게시시각 미기록
+              기록 저장시각 {formatKstDateTime(s!.storedAt)} KST · 게시시각 미기록
             </p>
           ) : null}
           <section className="rounded-lg border p-4">

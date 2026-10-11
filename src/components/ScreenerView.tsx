@@ -165,6 +165,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
       <Label className="text-[11px] text-muted-foreground">{label}</Label>
       <Input
         type="number"
+        aria-label={label}
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value) || 0)}
@@ -253,6 +254,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         <div className="space-y-1 lg:col-span-2">
           <Label className="text-[11px] text-muted-foreground">종목명 또는 코드</Label>
           <Input
+            aria-label="종목명 또는 코드"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="예: 삼성전자 / 005930"
@@ -262,6 +264,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         <div className="space-y-1">
           <Label className="text-[11px] text-muted-foreground">섹터</Label>
           <select
+            aria-label="섹터"
             value={sector}
             onChange={(e) => setSector(e.target.value)}
             className="h-8 w-full rounded-md border border-input bg-background px-2 text-[12px]"

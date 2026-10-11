@@ -1,3 +1,4 @@
+import { formatKstDateTime } from "@/lib/format";
 import { Link } from "@tanstack/react-router";
 import { Database, ExternalLink, ShieldCheck, TimerReset } from "lucide-react";
 import type { ReactNode } from "react";
@@ -8,7 +9,7 @@ import type { UsProspectiveSummary } from "@/lib/usBrowserViews";
 
 function fmtDate(value: string | undefined | null) {
   if (!value) return "-";
-  return new Date(value).toLocaleString("ko-KR", { hour12: false });
+  return `${formatKstDateTime(value)} KST`;
 }
 
 export function UsMarketDataPanel({

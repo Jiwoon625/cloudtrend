@@ -114,3 +114,40 @@ test("prices return without a technical score; mismatched score cache is refused
   await expect(getCachedInstrumentChart("TEST", "120", payload())).rejects.toThrow("카드와 차트");
   expect(mocks.raw).not.toHaveBeenCalled();
 });
+
+test("the same payload rechecks active sources on later calls but coalesces simultaneous phases", async () => {
+  const input = payload();
+  mocks.read.mockResolvedValue(await compressed({ TEST: scored }));
+  await Promise.all([
+    getCachedInstrumentChart("TEST", "120", input),
+    getCachedInstrumentPrices("TEST", "120", input),
+  ]);
+  expect(mocks.sources).toHaveBeenCalledOnce();
+  const firstPath = mocks.read.mock.calls[0]![0];
+  mocks.sources.mockResolvedValue([{ id: "new", data_hash: "new" }]);
+  await getCachedInstrumentChart("TEST", "120", input);
+  expect(mocks.sources).toHaveBeenCalledTimes(2);
+  expect(mocks.read.mock.calls.at(-1)![0]).not.toBe(firstPath);
+});
+
+test("owner changes during a chart read fail closed; later owners receive their own path", async () => {
+  const input = payload();
+  mocks.read.mockImplementationOnce(async () => {
+    mocks.owner.mockResolvedValue("different-owner");
+    return compressed({ TEST: scored });
+  });
+  await expect(getCachedInstrumentChart("TEST", "120", input)).rejects.toThrow("계정이 변경");
+  await getCachedInstrumentChart("TEST", "120", input);
+  expect(mocks.read.mock.calls.at(-1)![0]).toMatch(/^different-owner\//);
+});
+
+test("settings changes during a read cannot label old points with a new configuration", async () => {
+  mocks.read.mockImplementationOnce(async () => {
+    mocks.config.value = { changed: true };
+    return compressed({ TEST: scored });
+  });
+  await expect(getCachedInstrumentChart("TEST", "120", payload())).rejects.toThrow(
+    "점수 설정이 변경",
+  );
+  expect(mocks.server).not.toHaveBeenCalled();
+});

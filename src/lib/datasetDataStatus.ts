@@ -2,11 +2,11 @@ import type { MarketDataset } from "./engine/dataset";
 import type { ScoringConfig } from "./engine/scoring";
 import type { DataStatusPayload } from "./market.functions";
 import { buildFullUniverseSectorDataset } from "./engine/sectorRotationFullUniverse";
-import { runAnalysis } from "./engine/pipeline";
+import { dataStatusStrategyVersion, dataStatusVolatility } from "./dataStatusPresentation";
 const SOURCE = { live: true, credentialsConfigured: true, fallbackReason: null };
 export function computeDatasetDataStatus(
   raw: MarketDataset,
-  config: ScoringConfig,
+  _config: ScoringConfig,
 ): DataStatusPayload {
   const dataset = buildFullUniverseSectorDataset(raw);
   const today = dataset.asOfDate;
@@ -59,7 +59,8 @@ export function computeDatasetDataStatus(
     asOfDate: dataset.asOfDate,
     dataProvider: dataset.provider,
     dataVersion: dataset.version,
-    strategyVersion: runAnalysis(dataset, config).strategyVersion,
+    strategyVersion: dataStatusStrategyVersion(dataset.asOfDate),
+    volatilityObservation: dataStatusVolatility(dataset),
     isLive: dataset.isLive,
     notes: dataset.notes,
     capabilities: dataset.capabilities,

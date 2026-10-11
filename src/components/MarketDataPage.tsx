@@ -157,8 +157,8 @@ export function MarketDataContent() {
           <a className="rounded-md border bg-card px-4 py-2" href="#us-data">
             미국 데이터
           </a>
-          <Link className="rounded-md border px-4 py-2" to="/scoring">
-            데이터 입력·산식
+          <Link className="rounded-md border px-4 py-2" to="/operating-rules" hash="v8-formula">
+            운영규칙·계산 산식
           </Link>
         </nav>
         <MarketDataOverview

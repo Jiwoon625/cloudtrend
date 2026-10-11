@@ -74,11 +74,11 @@ async function context(input: Input, ctx: Awaited<ReturnType<typeof session>>) {
   const config = mergeScoringConfig(input.config),
     cached = cachedChartContext(ctx.uid, input);
   if (cached && stableCacheJson(cached.config) === stableCacheJson(config)) return cached;
-  const key = `${ctx.uid}:${input.inputFingerprint}:${input.resultDigest}`;
+  const key = `${ctx.uid}:${input.inputFingerprint}:${input.resultDigest}:${stableCacheJson(config)}`;
   const existing = contexts.get(key);
   if (existing) return existing;
   const pending = (async () => {
-    const { sources, texts } = await loadActiveSources(ctx.client, ctx.uid);
+    const { sources, texts } = await loadActiveSources(ctx.client, ctx.uid, 3);
     if (inputFingerprint(sources, config) !== input.inputFingerprint)
       throw new Error("원천자료 또는 점수 설정이 변경됐습니다. 새로고침해 주세요.");
     const parsed = parseManualMarketData(texts);
@@ -94,7 +94,7 @@ export const warmInstrumentChartsServer = createServerFn({ method: "POST" })
   .inputValidator(validate)
   .handler(async ({ data }) => {
     const ctx = await session(data),
-      key = `${ctx.uid}:${data.inputFingerprint}:${data.resultDigest}`;
+      key = `${ctx.uid}:${data.inputFingerprint}:${data.resultDigest}:${stableCacheJson(mergeScoringConfig(data.config))}`;
     const ready = await readChartBundle<{ buckets: number }>(
       ctx.client,
       ctx.uid,
@@ -130,6 +130,7 @@ export const getInstrumentChartServer = createServerFn({ method: "POST" })
       symbol,
       data.range,
       data.kind,
+      true,
       true,
     );
   });

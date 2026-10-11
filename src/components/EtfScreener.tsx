@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { etfOperationalDisplay } from "@/lib/etfOperationalDisplay";
+import { useSessionViewState, viewText, viewPage, viewChoice } from "@/lib/useSessionViewState";
 import { Link } from "@tanstack/react-router";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -9,8 +10,6 @@ import {
   isOperationalSignalDate,
   isOperationalSignalOrigin,
   OPERATIONAL_START_NOTICE,
-  BEFORE_OPERATIONAL_START,
-  operationalEntryStartNotice,
 } from "@/lib/operationalSignalStart";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
 import { etfPartialEvidence } from "@/lib/etfPartialEvidence";
@@ -87,14 +86,38 @@ export function EtfScreener({
   ledgerError?: string | undefined;
   positionContext?: DomesticPositionContext | undefined;
 }) {
-  const [page, setPage] = useState(0);
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState("equity");
-  const [sector, setSector] = useState("ALL");
-  const [minimums, setMinimums] = useState({ score: 0, environment: 0, tradingValue: 0 });
+  const [page, setPage] = useSessionViewState("etf:page", 0, viewPage);
+  const [query, setQuery] = useSessionViewState("etf:query", "", viewText);
+  const [filter, setFilter] = useSessionViewState(
+    "etf:filter",
+    "equity",
+    viewChoice(["equity", "all", "entry", "pending", "partial", "rejected", "exit", "missing"]),
+  );
+  const [sector, setSector] = useSessionViewState("etf:sector", "ALL", viewText);
+  const [minimums, setMinimums] = useSessionViewState(
+    "etf:minimums",
+    { score: 0, environment: 0, tradingValue: 0 },
+    (v): v is { score: number; environment: number; tradingValue: number } =>
+      !!v &&
+      typeof v === "object" &&
+      ["score", "environment", "tradingValue"].every(
+        (k) =>
+          typeof (v as Record<string, unknown>)[k] === "number" &&
+          Number.isFinite((v as Record<string, number>)[k]) &&
+          (v as Record<string, number>)[k]! >= 0,
+      ),
+  );
   const unknownExit = filter === "exit" && (!positionContext || !!ledgerError);
-  const [sortKey, setSortKey] = useState<SortKey | null>(null);
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+  const [sortKey, setSortKey] = useSessionViewState<SortKey | null>(
+    "etf:sortKey",
+    null,
+    (v): v is SortKey | null => v === null || ETF_TABLE_COLUMNS.some((c) => c.key === v),
+  );
+  const [sortDirection, setSortDirection] = useSessionViewState<SortDirection>(
+    "etf:sortDirection",
+    "asc",
+    viewChoice(["asc", "desc"]),
+  );
   const rows = analysis.rows.filter((r) => r.instrument.instrumentType === "ETF");
   const evidenceBySymbol = new Map(
     rows.map((r) => [r.instrument.symbol, etfPartialEvidence(r, analysis.asOfDate)]),
@@ -117,34 +140,13 @@ export function EtfScreener({
     r.etfStrategy.dataStatus !== "krx_batch_pending" &&
     !heldSet.has(r.instrument.symbol) &&
     !blocked(r);
-  const getSignalLabel = (r: AnalysisResult["rows"][number]) => {
-    const s = r.etfStrategy;
-    if (!isOperationalSignalDate(analysis.asOfDate)) return BEFORE_OPERATIONAL_START;
-    const symbol = r.instrument.symbol;
-    const confirmed = s?.version === ETF_POLICY.version;
-    if (!confirmed || !evidenceFor(r).current) return "기준일 자료 미확인 · 재계산 필요";
-    if (s.dataStatus === "krx_batch_pending") return "KRX 자료 대기 · 신호 판단 보류";
-    if (!positionContext || ledgerError) return "보유 미확인 · 청산 판정 대기";
-    if (heldSet.has(symbol))
-      return s.exit === "MA60"
-        ? "다음 시가 청산"
-        : s.exit === "DATA_UNAVAILABLE"
-          ? "데이터 오류 · 청산 점검"
-          : "보유 · 추가 매수 없음";
-    const originNotice = operationalEntryStartNotice(
+  const getSignalLabel = (r: AnalysisResult["rows"][number]) =>
+    etfOperationalDisplay(
+      r,
       analysis.asOfDate,
-      s.originDate,
-      s.entryState === "pending" || s.entryState === "confirmed" || s.onset,
+      !positionContext || ledgerError ? undefined : heldSet.has(r.instrument.symbol),
+      blocked(r),
     );
-    if (originNotice) return originNotice;
-    if (blocked(r)) return "청산한 신호 · 재진입 제외";
-    if (s.entryState === "rejected") return "하루 확인 탈락";
-    if (!s.eligible) return "대상·데이터 점검";
-    if (s.entryState === "pending") return "하루 확인 대기";
-    if (s.onset)
-      return positionContext ? "진입 준비 · 다음 시가 진입" : "진입 준비 · 보유정보 확인 필요";
-    return s.score !== null && s.score >= 80 ? "80 이상 유지" : "관찰";
-  };
   const getSortValue = (r: AnalysisResult["rows"][number], key: SortKey) => {
     const s = r.etfStrategy;
     const e = evidenceFor(r);

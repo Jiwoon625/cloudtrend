@@ -36,6 +36,7 @@ export function formatCount(value: number | null | undefined): string {
 export function formatKstDateTime(iso: string | undefined): string {
   if (!iso) return "-";
   const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return "-";
   const fmt = new Intl.DateTimeFormat("ko-KR", {
     timeZone: "Asia/Seoul",
     year: "numeric",

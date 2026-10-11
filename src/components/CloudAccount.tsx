@@ -1,3 +1,4 @@
+import { syncSessionViewOwner } from "@/lib/useSessionViewState";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { supabase } from "@/lib/cloud";
 import loginBgAsset from "@/assets/login-bg.webp.asset.json";
@@ -18,11 +19,14 @@ export function CloudAccount({ children }: { children: ReactNode }) {
   const lastAuthenticatedUserId = useRef<string | null>(null);
   useEffect(() => {
     let alive = true;
+    let authEvents = 0;
 
     const applySession = (
       session: Awaited<ReturnType<typeof supabase.auth.getSession>>["data"]["session"],
     ) => {
+      if (!alive) return;
       const nextId = session?.user.id ?? null;
+      syncSessionViewOwner(nextId);
 
       // A real user switch must still clear module-level caches before exposing another
       // account's data. Transient loss/recovery of the same session no longer reloads.
@@ -40,6 +44,7 @@ export function CloudAccount({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      authEvents++;
       applySession(session);
     });
 
@@ -47,7 +52,7 @@ export function CloudAccount({ children }: { children: ReactNode }) {
       .getSession()
       .then(({ data, error }) => {
         if (error) throw error;
-        applySession(data.session);
+        if (!authEvents) applySession(data.session);
       })
       .catch((e: Error) => {
         if (!alive) return;

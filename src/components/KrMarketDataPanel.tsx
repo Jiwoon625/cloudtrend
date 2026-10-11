@@ -9,7 +9,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
   etfFacts: "ETF NAV·총보수·순자산",
   sectors: "업종 분류·섹터지수",
   investorFlow: "투자자별 순매수",
-  volatilityIndex: "변동성지수(VKOSPI)",
+  volatilityIndex: "변동성 판단 입력",
   exactTradingValue: "거래대금 실측값",
 };
 
@@ -122,7 +122,11 @@ export function KrMarketDataPanel({ data }: { data: DataStatusPayload }) {
                     <td
                       className={`px-3 py-2 text-right font-semibold ${ok ? "text-up" : "text-muted-foreground"}`}
                     >
-                      {ok ? "제공" : "미제공 → 점수 산정에서 제외"}
+                      {key === "volatilityIndex"
+                        ? (data.volatilityObservation?.label ?? "원본·대체 출처 미확인")
+                        : ok
+                          ? "제공"
+                          : "미제공 → 점수 산정에서 제외"}
                     </td>
                   </tr>
                 ))}

@@ -289,14 +289,15 @@ export async function getCachedInstrumentDetail(symbol: string): Promise<Instrum
 export { FAST_CHART_VERSION as INSTRUMENT_CHART_VERSION } from "./instrumentChartContract";
 import { chartPath, assertChartMatchesCard, type ChartKind } from "./instrumentChartContract";
 import type { PreparedChart, PriceChart } from "./instrumentChartStore.server";
-// Share metadata work between price and score requests, without sharing across users/settings.
+// Deduplicate only concurrent metadata reads. Recheck sources on later requests, even
+// when the caller still holds the same analysis object after a source refresh.
 const identities = new WeakMap<
   AnalysisPayload,
   Map<string, Promise<{ inputFingerprint: string; resultDigest: string }>>
 >();
-async function chartIdentity(payload: AnalysisPayload) {
-  const uid = await userId(),
-    key = uid + stableCacheJson(getActiveScoringConfig());
+const chartDigests = new WeakMap<AnalysisPayload, Promise<string>>();
+async function chartIdentity(payload: AnalysisPayload, uid: string, configKey: string) {
+  const key = `${uid}:${configKey}`;
   let values = identities.get(payload);
   if (!values) {
     values = new Map();
@@ -304,11 +305,16 @@ async function chartIdentity(payload: AnalysisPayload) {
   }
   let pending = values.get(key);
   if (!pending) {
-    pending = Promise.all([currentInputFingerprint(), analysisDigest(payload.analysis)]).then(
-      ([inputFingerprint, resultDigest]) => ({ inputFingerprint, resultDigest }),
-    );
+    let digest = chartDigests.get(payload);
+    if (!digest) {
+      digest = analysisDigest(payload.analysis);
+      chartDigests.set(payload, digest);
+      void digest.catch(() => chartDigests.delete(payload));
+    }
+    pending = Promise.all([currentInputFingerprint(), digest])
+      .then(([inputFingerprint, resultDigest]) => ({ inputFingerprint, resultDigest }))
+      .finally(() => values!.delete(key));
     values.set(key, pending);
-    pending.catch(() => values!.delete(key));
   }
   return pending;
 }
@@ -318,9 +324,18 @@ async function fastChart(
   payload: AnalysisPayload,
   kind: ChartKind,
 ) {
-  const normalized = symbol.trim().toUpperCase(),
-    identity = await chartIdentity(payload);
-  const path = await ownerPath(chartPath(identity, normalized, range, kind));
+  const normalized = symbol.trim().toUpperCase();
+  const uid = await userId();
+  const config = getActiveScoringConfig();
+  const configKey = stableCacheJson(config);
+  const identity = await chartIdentity(payload, uid, configKey);
+  const assertCurrentRequest = async () => {
+    if (uid !== (await userId())) throw new Error("로그인 계정이 변경됐습니다. 새로고침해 주세요.");
+    if (configKey !== stableCacheJson(getActiveScoringConfig()))
+      throw new Error("점수 설정이 변경됐습니다. 새로고침해 주세요.");
+  };
+  await assertCurrentRequest();
+  const path = `${uid}/${chartPath(identity, normalized, range, kind)}`;
   let data: PreparedChart | PriceChart | undefined;
   try {
     const bytes = await readBinaryObject(path);
@@ -332,18 +347,20 @@ async function fastChart(
   if (!data) {
     const { data: session, error } = await supabase.auth.getSession();
     if (error || !session.session) throw new Error("로그인이 필요합니다.");
+    await assertCurrentRequest();
     const { getInstrumentChartServer } = await import("./instrumentCharts.functions");
     data = await getInstrumentChartServer({
       data: {
         ...identity,
         accessToken: session.session.access_token,
-        config: getActiveScoringConfig(),
+        config,
         symbol: normalized,
         range,
         kind,
       },
     });
   }
+  await assertCurrentRequest();
   if (kind === "scored")
     assertChartMatchesCard((data as PreparedChart).chart, payload.analysis, normalized);
   return data;

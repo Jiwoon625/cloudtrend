@@ -1,3 +1,4 @@
+import { dataStatusStrategyVersion, dataStatusVolatility } from "./dataStatusPresentation";
 // 시세 데이터 조회 서버 함수.
 // 토스증권 Open API 키(TOSS_CLIENT_ID / TOSS_CLIENT_SECRET)가 설정되어 있으면 실데이터를,
 // 없거나 조회 실패 시 합성(mock) 데이터로 폴백하고 그 사실을 응답에 담아 화면에 노출한다.
@@ -293,6 +294,7 @@ export interface DataStatusPayload {
   isLive: boolean;
   notes: string[];
   capabilities: AnalysisResult["capabilities"];
+  volatilityObservation?: ReturnType<typeof dataStatusVolatility>;
   coverage: Array<{ provider: string; kind: string; count: number; entities: number; ok: boolean }>;
   checks: {
     ohlcErrors: number;
@@ -360,7 +362,8 @@ export const getDataStatus = createServerFn({ method: "GET" }).handler(
       asOfDate: dataset.asOfDate,
       dataProvider: dataset.provider,
       dataVersion: dataset.version,
-      strategyVersion: runAnalysis(dataset).strategyVersion,
+      strategyVersion: dataStatusStrategyVersion(dataset.asOfDate),
+      volatilityObservation: dataStatusVolatility(dataset),
       isLive: dataset.isLive,
       notes: dataset.notes,
       capabilities: dataset.capabilities,

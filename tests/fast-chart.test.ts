@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { gzipSync } from "node:zlib";
 import { deterministicAnalysis, stableCacheJson } from "../src/lib/screeningCacheContract";
 import { expect, test, vi } from "vitest";
 import { getMockDataset } from "../src/lib/engine/mockProvider";
@@ -172,4 +173,98 @@ test("restored context preserves full-universe card parity without rescreening",
   expect(() =>
     restoreChartContext(raw, original.analysis, original.config, "0".repeat(64)),
   ).toThrow("검증");
+});
+
+test("context reuse stays owner/revision scoped and expires after five idle minutes", async () => {
+  const { primeChartContext, cachedChartContext } =
+    await import("../src/lib/instrumentChartStore.server");
+  const ctx = context();
+  const now = vi.spyOn(Date, "now");
+  now.mockReturnValue(1000);
+  primeChartContext("owner-cache", identity.inputFingerprint, identity.resultDigest, ctx);
+  expect(cachedChartContext("other-owner", identity)).toBeUndefined();
+  expect(
+    cachedChartContext("owner-cache", { ...identity, inputFingerprint: "c".repeat(64) }),
+  ).toBeUndefined();
+  expect(
+    cachedChartContext("owner-cache", { ...identity, resultDigest: "d".repeat(64) }),
+  ).toBeUndefined();
+  now.mockReturnValue(241000);
+  expect(cachedChartContext("owner-cache", identity)).toBe(ctx);
+  now.mockReturnValue(481000);
+  expect(cachedChartContext("owner-cache", identity)).toBe(ctx);
+  now.mockReturnValue(782000);
+  expect(cachedChartContext("owner-cache", identity)).toBeUndefined();
+  now.mockRestore();
+});
+
+test("simultaneous bucket requests coalesce without returning another symbol's prices", async () => {
+  const ctx = context(),
+    s = storage();
+  const [a, b] = ctx.analysis.rows;
+  const chartContext = {
+    ...ctx,
+    analysis: {
+      ...ctx.analysis,
+      rows: [
+        { ...a!, instrument: { ...a!.instrument, symbol: "AA" } },
+        { ...b!, instrument: { ...b!.instrument, symbol: "CC" } },
+      ],
+    },
+    dataset: {
+      ...ctx.dataset,
+      bars: {
+        AA: ctx.dataset.bars[a!.instrument.symbol]!,
+        CC: ctx.dataset.bars[b!.instrument.symbol]!,
+      },
+    },
+  };
+  expect(chartPath(identity, "AA", "120", "prices")).toBe(
+    chartPath(identity, "CC", "120", "prices"),
+  );
+  // Seed the older partial-bundle edge case: both callers must recover complete data.
+  s.files.set(
+    `coalesced/${chartPath(identity, "AA", "120", "prices")}`,
+    gzipSync(JSON.stringify({ AA: priceChart(chartContext, "AA", "120") })),
+  );
+  const [first, second, duplicate] = await Promise.all([
+    prepareChartBucket(s.client, "coalesced", identity, chartContext, "AA", "120", "prices"),
+    prepareChartBucket(s.client, "coalesced", identity, chartContext, "CC", "120", "prices"),
+    prepareChartBucket(s.client, "coalesced", identity, chartContext, "AA", "120", "prices"),
+  ]);
+  expect(first).toEqual(priceChart(chartContext, "AA", "120"));
+  expect(second).toEqual(priceChart(chartContext, "CC", "120"));
+  expect(duplicate).toEqual(first);
+  expect(s.upload).toHaveBeenCalledOnce();
+});
+
+test("full scored preparation yields to prices and preserves every chart/history point", async () => {
+  const ctx = context(),
+    s = storage(),
+    symbol = ctx.analysis.rows[0]!.instrument.symbol;
+  let scoreFinished = false;
+  const score = prepareChartBucket(
+    s.client,
+    "yielding",
+    identity,
+    ctx,
+    symbol,
+    "all",
+    "scored",
+  ).then((value) => {
+    scoreFinished = true;
+    return value;
+  });
+  const price = await prepareChartBucket(
+    s.client,
+    "yielding",
+    identity,
+    ctx,
+    symbol,
+    "all",
+    "prices",
+  );
+  expect(scoreFinished).toBe(false);
+  expect(price).toEqual(priceChart(ctx, symbol, "all"));
+  expect(await score).toEqual(scoredChart(ctx, symbol, "all"));
 });
