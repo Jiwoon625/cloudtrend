@@ -1,4 +1,4 @@
-name: CMresearchengine R2 private final audit
+name: CMresearchengine O1 demand snapshot private final audit
 on:
   push:
     branches: [main]
@@ -26,7 +26,10 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r research/cmresearchengine/requirements.txt
       - name: Test isolated private report exporter
         run: python scripts/test_cm_private_report.py -v
-      - name: Verify R2 private result accounting without exposing records
+      - name: Test isolated O1 demand snapshot
+        if: github.workflow == 'CMresearchengine O1 demand snapshot private final audit'
+        run: python scripts/test_cm_o1_demand_snapshot.py -v
+      - name: Verify O1 private result accounting without exposing records
         run: |
           python - <<'PY'
           import csv, hashlib, io, json, zipfile
@@ -122,7 +125,7 @@ jobs:
                   'private_storage':True},sort_keys=True))
           
           targets = [
-              ('R2', 'c282dd5eaeece62f648d465e187c72439f78159bba4daaf5b5bc9bdf62d937ca'),
+              ('O1', '39ecd66d6c80546b404c1ed77503c3dc33abf4817549fa9d4e9e4e5682f124b5'),
           ]
           for candidate, identity in targets:
               audit(candidate, identity)
@@ -150,5 +153,7 @@ jobs:
                   'initial_capital_100m_krw': contract['initial_capital_krw'] == 100000000,
                   'long_run_budget_fixed_initial_sleeves': contract['long_run_budget'] == 'initial sleeve capital remains fixed beyond year one; research assumption',
               }, sort_keys=True))
+          if __import__('os').environ.get('GITHUB_WORKFLOW') == 'CMresearchengine O1 demand snapshot private final audit':
+              snapshot=runpy.run_path('scripts/export-cm-o1-demand-snapshot.py')
+              snapshot['export_snapshot_safely'](accounting_audit_passed=True)
           PY
-
