@@ -88,6 +88,10 @@ def derive_inputs():
                "archive_sha256": "1272caccc39531d4db2bc958570775bc6a002778c923d9e15e3b4adbb35a6c8a",
                "calendars_sha256": {e: "c" * 64 for e in "KEU"}}
     context = {"run_id": "123", "attempt": 1, "commit": "d" * 40}
+    empty_events = pd.DataFrame(columns=["at", "kind", "sleeve", "quantity", "id"]).to_csv(index=False).encode()
+    o1["events.csv"] = empty_events
+    for fileset in files.values():
+        fileset["events.csv"] = empty_events
     return o1, files, cal, sources, context
 
 
@@ -370,6 +374,86 @@ class PrivatePublicationTests(unittest.TestCase):
     def test_invalid_cap_is_rejected(self):
         with self.assertRaises(snapshot.SnapshotError):
             snapshot.clean_weights({"K": .7, "E": 0., "U": 0., "C": .3})
+
+
+class HistoricalMonthlyTests(unittest.TestCase):
+    def test_incomplete_early_window_is_fallback_not_zero_demand(self):
+        args = derive_inputs()
+        rows = json.loads(args[0]["reviews.json"])
+        first = {"at": "2026-07-08T22:00:00+00:00", "month": "2026-07",
+                 "policy": {"policy_id": "O1", "status": "fallback", "fallback": True},
+                 "movement": {"targets": {"K": 1/3, "E": 1/3, "U": 1/3, "C": 0.}}}
+        args[0]["reviews.json"] = snapshot.canonical([first] + rows)
+        value = snapshot.derive_monthly_history(*args)
+        self.assertEqual(value["review_count"], 2)
+        self.assertEqual(value["fallback_review_count"], 1)
+        self.assertEqual(value["valid_review_count"], 1)
+        self.assertEqual(value["markets"]["E"]["zero_demand_valid_reviews"], 1)
+        self.assertEqual(value["markets"]["E"]["zero_target_reviews"], 1)
+
+    def test_positive_demand_with_no_actual_buy_preserves_nonzero_target(self):
+        args = derive_inputs()
+        before = deepcopy(args)
+        value = snapshot.derive_monthly_history(*args)
+        self.assertEqual(args, before)
+        self.assertEqual(value["review_count"], 1)
+        self.assertEqual(value["markets"]["K"]["zero_target_reviews"], 0)
+        self.assertEqual(value["markets"]["K"]["nonzero_target_zero_o1_buys_valid_reviews"], 1)
+        self.assertEqual(value["markets"]["K"]["positive_demand_zero_ref_buys_valid_reviews"], 1)
+        self.assertEqual(value["markets"]["E"]["zero_target_examples"][0]["demands"], 0)
+        snapshot.validate_history_report(value)
+
+    def test_buy_occurrence_and_target_zero_are_independent(self):
+        args = derive_inputs()
+        args[0]["events.csv"] = pd.DataFrame([
+            {"at": "2026-08-28T00:00:00Z", "kind": "BUY", "sleeve": "E", "quantity": 1, "id": "e-buy"},
+            {"at": "2026-07-01T00:00:00Z", "kind": "BUY", "sleeve": "K", "quantity": 1, "id": "old-buy"},
+            {"at": "2026-09-01T00:00:00Z", "kind": "BUY", "sleeve": "K", "quantity": 1, "id": "future-buy"},
+            {"at": "2026-08-28T00:00:00Z", "kind": "SELL", "sleeve": "K", "quantity": 1, "id": "sell"},
+        ]).to_csv(index=False).encode()
+        value = snapshot.derive_monthly_history(*args)
+        self.assertEqual(value["markets"]["E"]["zero_target_examples"][0]["o1_buys"], 1)
+        self.assertEqual(value["markets"]["E"]["zero_o1_buys_valid_reviews"], 0)
+        self.assertEqual(value["markets"]["K"]["zero_o1_buys_valid_reviews"], 1)
+
+    def test_any_historical_count_or_target_mismatch_blocks(self):
+        for field in ("count", "target"):
+            args = derive_inputs()
+            rows = json.loads(args[0]["reviews.json"])
+            if field == "count":
+                rows[0]["policy"]["demand_unique_positive_counts"]["E"] = 1
+            else:
+                rows[0]["movement"]["targets"] = {"K": .5, "E": .5, "U": 0., "C": 0.}
+            args[0]["reviews.json"] = snapshot.canonical(rows)
+            with self.assertRaises(snapshot.SnapshotError):
+                snapshot.derive_monthly_history(*args)
+
+    def test_duplicate_buy_fill_and_duplicate_month_block(self):
+        args = derive_inputs()
+        event = {"at": "2026-08-28T00:00:00Z", "kind": "BUY", "sleeve": "K", "quantity": 1, "id": "same"}
+        args[0]["events.csv"] = pd.DataFrame([event, event]).to_csv(index=False).encode()
+        with self.assertRaisesRegex(snapshot.SnapshotError, "DUPLICATE_BUY_EVENT"):
+            snapshot.derive_monthly_history(*args)
+        args = derive_inputs()
+        rows = json.loads(args[0]["reviews.json"])
+        repeated = deepcopy(rows[0])
+        repeated["at"] = "2026-09-01T22:00:00+00:00"
+        args[0]["reviews.json"] = snapshot.canonical(rows + [repeated])
+        with self.assertRaisesRegex(snapshot.SnapshotError, "DUPLICATE_MONTHLY_REVIEW"):
+            snapshot.derive_monthly_history(*args)
+
+    def test_private_history_is_bounded_create_only_and_rejects_raw_fields(self):
+        value = snapshot.derive_monthly_history(*derive_inputs())
+        store = MemoryStore()
+        snapshot.publish(store, value)
+        snapshot.publish(store, value)
+        self.assertEqual(len(store.posts), 1)
+        self.assertLessEqual(len(store.posts[0][2]["x-metadata"]), snapshot.MAX_BYTES)
+        for place in (value, value["markets"]["K"], value["markets"]["E"]["zero_target_examples"][0]):
+            place["raw_id"] = "not-allowed"
+            with self.assertRaises(snapshot.SnapshotError):
+                snapshot.publish(MemoryStore(), value)
+            del place["raw_id"]
 
 
 class IntegrityTests(unittest.TestCase):
