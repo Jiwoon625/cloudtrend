@@ -67,10 +67,17 @@ export async function listActiveSources(client: SupabaseClient, userId: string) 
   return sources;
 }
 
-export async function loadActiveSources(client: SupabaseClient, userId: string) {
+export async function loadActiveSources(
+  client: SupabaseClient,
+  userId: string,
+  downloadConcurrency = 1,
+) {
   const sources = await listActiveSources(client, userId);
-  const texts: string[] = [];
-  for (const source of sources) {
+  const texts = new Array<string>(sources.length);
+  // Keep source precedence independent of response order and bound peak download memory.
+  const concurrency = Math.max(1, Math.min(3, Math.floor(downloadConcurrency) || 1));
+  async function downloadSource(index: number) {
+    const source = sources[index]!;
     const { data: blob, error: downloadError } = await client.storage
       .from(source.storage_bucket)
       .download(source.storage_path);
@@ -82,7 +89,11 @@ export async function loadActiveSources(client: SupabaseClient, userId: string) 
     const fileHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
     if (fileHash !== source.file_hash)
       throw new Error(`스크리닝 원천파일 해시가 등록정보와 다릅니다: ${source.original_filename}`);
-    texts.push(decodeSource(bytes));
+    texts[index] = decodeSource(bytes);
   }
+  for (let i = 0; i < sources.length; i += concurrency)
+    await Promise.all(
+      sources.slice(i, i + concurrency).map((_, offset) => downloadSource(i + offset)),
+    );
   return { sources, texts };
 }

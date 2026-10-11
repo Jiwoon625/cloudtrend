@@ -1,6 +1,6 @@
+import { etfDataJudgment, etfOperationalDisplay } from "@/lib/etfOperationalDisplay";
 import {
   isOperationalSignalDate,
-  operationalEntryStartNotice,
   OPERATIONAL_START_NOTICE,
   BEFORE_OPERATIONAL_START,
 } from "@/lib/operationalSignalStart";
@@ -25,11 +25,6 @@ export function EtfInstrumentDetail({
 }) {
   const s = row.etfStrategy;
   const signalDate = asOfDate ?? s?.date ?? row.snapshot.tradeDate;
-  const startNotice = operationalEntryStartNotice(
-    signalDate,
-    s?.originDate,
-    s?.entryState === "pending" || s?.entryState === "confirmed" || s?.onset === true,
-  );
   const evidence = etfPartialEvidence(row, signalDate);
   const value = (n: number | null | undefined) =>
     n === null || n === undefined || !Number.isFinite(n)
@@ -57,21 +52,12 @@ export function EtfInstrumentDetail({
           <p className="text-3xl font-bold">
             {value(evidence.score)} <span className="text-sm">/ 100</span>
           </p>
-          <p className="text-sm">
-            {startNotice
-              ? startNotice
-              : !evidence.current
-                ? "기준일 자료 미확인 · 신호 판단 보류"
-                : evidence.score !== null && s?.entryState === "confirmed"
-                  ? "진입 준비"
-                  : s?.rawOnset
-                    ? "원신호 · 확인 대기"
-                    : s?.entryState === "data_pending"
-                      ? "자료 확인 대기"
-                      : "관찰"}
-          </p>
+          <p className="text-sm">{etfOperationalDisplay(row, signalDate, held)}</p>
         </section>
         <section className="rounded-lg border p-4">
+          {etfDataJudgment(row, signalDate) ? (
+            <p className="mb-2 text-sm text-warn">{etfDataJudgment(row, signalDate)}</p>
+          ) : null}
           <h2 className="mb-2 text-sm font-semibold">구성요소</h2>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {[
@@ -113,11 +99,7 @@ export function EtfInstrumentDetail({
                   ? "미보유"
                   : !evidence.current
                     ? "보유 · 판단 미확인"
-                    : s?.exit === "MA60"
-                      ? "청산 준비"
-                      : s?.exit === "DATA_UNAVAILABLE"
-                        ? "자료 미관측 · 모델 청산 기록 확인"
-                        : "보유 유지"}
+                    : etfOperationalDisplay(row, signalDate, true)}
           </p>
           <Link to="/portfolio" className="text-xs text-primary hover:underline">
             포트폴리오에서 보유·체결 확인

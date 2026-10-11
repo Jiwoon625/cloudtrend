@@ -42,7 +42,7 @@ const FEATURES = [
 
 export function V8FormulaSection() {
   return (
-    <details className="mt-4 rounded-lg border p-3">
+    <details id="v8-formula" className="mt-4 rounded-lg border p-3">
       <summary className="cursor-pointer text-sm font-semibold">
         계산 산식 · {VF_MODEL_LABEL}
       </summary>

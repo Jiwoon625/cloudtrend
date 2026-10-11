@@ -58,7 +58,7 @@ function UsInstrumentPage() {
               </h1>
               <p className="text-xs text-muted-foreground">
                 기준일 {row.date} · 전략 {data!.analysis.ruleVersion} · 계산시각{" "}
-                {formatKstDateTime(data!.generatedAt)}
+                {formatKstDateTime(data!.generatedAt)} KST
               </p>
             </header>
             <p className="rounded-lg border bg-muted/30 p-3 text-xs">{OPERATIONAL_START_NOTICE}</p>

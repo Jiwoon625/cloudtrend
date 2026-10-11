@@ -5,6 +5,9 @@ export default defineConfig({
   esbuild: { jsx: "automatic" },
   test: {
     include: [
+      "tests/audit-data-status.test.ts",
+      "tests/audit-ui-polish.test.tsx",
+      "tests/session-view-state.test.tsx",
       "tests/market-data-ui.test.tsx",
       "tests/reaudit-ui.test.tsx",
       "tests/app-navigation-ui.test.tsx",

@@ -185,7 +185,7 @@ describe("latest website starts all operational signals on October 12", () => {
     expect(list).toContain(label!);
     expect(detail).toContain(label!);
     expect(list).not.toContain("진입 준비 · 다음 시가 진입");
-    expect(detail).not.toContain(">진입 준비<");
+    expect(detail).not.toContain(">진입 준비 · 다음 시가 진입<");
     expect(detail).toContain("원신호");
     expect(r.etfStrategy?.onset).toBe(true);
   });
@@ -205,7 +205,7 @@ describe("latest website starts all operational signals on October 12", () => {
       ),
     ]) {
       expect(html).toContain("원신호 시점 미확인 · 진입 제외");
-      expect(html).not.toContain(">진입 준비<");
+      expect(html).not.toContain(">진입 준비 · 다음 시가 진입<");
       expect(html).not.toContain("진입 준비 · 다음 시가 진입");
     }
   });
@@ -237,6 +237,6 @@ describe("latest website starts all operational signals on October 12", () => {
           held={false}
         />,
       ),
-    ).toContain(">진입 준비<");
+    ).toContain(">진입 준비 · 다음 시가 진입<");
   });
 });

@@ -1,6 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useSessionViewState, viewText, viewPage, viewChoice } from "@/lib/useSessionViewState";
+import { validDate } from "@/lib/ledger/date";
 import { AppShell } from "@/components/AppShell";
 import { listScreeningArchive, screeningArchiveQueryOptions } from "@/lib/screeningArchiveQuery";
 import { historyRecordKey, usHistorySignals } from "@/lib/usScreeningHistory";
@@ -16,13 +18,25 @@ export const Route = createFileRoute("/history")({
   component: HistoryPage,
 });
 function HistoryPage() {
-  const [market, setMarket] = useState("ALL"),
-    [strategy, setStrategy] = useState("ALL"),
-    [version, setVersion] = useState("ALL"),
-    [date, setDate] = useState(""),
-    [run, setRun] = useState(""),
-    [search, setSearch] = useState(""),
-    [page, setPage] = useState(0);
+  const [market, setMarket] = useSessionViewState(
+      "history:market",
+      "ALL",
+      viewChoice(["ALL", "KR", "US", "KOSPI", "KOSDAQ", "ETF"]),
+    ),
+    [strategy, setStrategy] = useSessionViewState(
+      "history:strategy",
+      "ALL",
+      viewChoice(["ALL", "KR", "A0", "A2", "B3"]),
+    ),
+    [version, setVersion] = useSessionViewState("history:version", "ALL", viewText),
+    [date, setDate] = useSessionViewState(
+      "history:date",
+      "",
+      (v): v is string => typeof v === "string" && (v === "" || validDate(v)),
+    ),
+    [run, setRun] = useSessionViewState("history:run", "", viewText),
+    [search, setSearch] = useSessionViewState("history:search", "", viewText),
+    [page, setPage] = useSessionViewState("history:page", 0, viewPage);
   const q = useQuery({
     queryKey: ["screening-execution-history", date],
     queryFn: () => listScreeningArchive(date || undefined),
@@ -157,7 +171,7 @@ function HistoryPage() {
           >
             {runs.map((s) => (
               <option key={historyRecordKey(s)} value={historyRecordKey(s)}>
-                {s.asOfDate} · {s.market ?? "KR"} · {formatKstDateTime(s.savedAt)} ·{" "}
+                {s.asOfDate} · {s.market ?? "KR"} · {formatKstDateTime(s.savedAt)} KST ·{" "}
                 {s.runId ?? "과거 일별 대표"}
               </option>
             ))}
@@ -170,7 +184,7 @@ function HistoryPage() {
           <p className="text-xs text-muted-foreground">
             기준일 {selected.asOfDate} · 전략 {selected.strategyVersion ?? "과거 버전 미기록"} ·
             실행 ID {selected.runId ?? "미기록"} · {selected.runId ? "실제 분석" : "과거 저장시각"}{" "}
-            {formatKstDateTime(selected.savedAt)}
+            {formatKstDateTime(selected.savedAt)} KST
             {selected.historySource === "US_DAILY"
               ? " · 과거 일별 신호 기록: 원신호·적격·실행 ID·분석시각 미기록"
               : ""}
