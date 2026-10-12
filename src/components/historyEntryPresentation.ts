@@ -1,4 +1,5 @@
 import { getStoredOperationalExit, isOperationalEntry } from "@/lib/engine/operationalStrategy";
+import { validDate } from "@/lib/ledger/date";
 import type { SnapshotEntry } from "@/lib/screeningSnapshot";
 import { kospiEntryStateLabel } from "./kospiEntryPresentation";
 
@@ -57,6 +58,21 @@ export function historyScoreLabel(entry: SnapshotEntry, asOfDate: string): strin
 export function historyEtfOnsetLabel(entry: SnapshotEntry, asOfDate: string): string {
   const evidence = historyEtfEvidence(entry);
   if (!evidence || typeof evidence.rawOnset !== "boolean") return "미기록";
-  if (evidence.date !== asOfDate || evidence.dataStatus !== "ready") return "미확인";
+  if (
+    evidence.date !== asOfDate ||
+    evidence.dataStatus !== "ready" ||
+    typeof evidence.previousDate !== "string" ||
+    !validDate(evidence.previousDate) ||
+    evidence.previousDate >= asOfDate ||
+    typeof evidence.previousScore !== "number" ||
+    !Number.isFinite(evidence.previousScore) ||
+    evidence.previousScore < 0 ||
+    evidence.previousScore > 100 ||
+    typeof evidence.score !== "number" ||
+    !Number.isFinite(evidence.score) ||
+    evidence.score < 0 ||
+    evidence.score > 100
+  )
+    return "미확인";
   return evidence.rawOnset ? "원신호" : "없음";
 }

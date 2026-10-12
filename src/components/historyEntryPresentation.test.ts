@@ -36,7 +36,16 @@ describe("archived score labels", () => {
     expect(
       historyEtfOnsetLabel(
         entry({
-          evidence: { etfStrategy: { date: "2026-10-12", dataStatus: "ready", rawOnset: false } },
+          evidence: {
+            etfStrategy: {
+              date: "2026-10-12",
+              dataStatus: "ready",
+              rawOnset: false,
+              score: 79,
+              previousDate: "2026-10-08",
+              previousScore: 81,
+            },
+          },
         }),
         "2026-10-12",
       ),
@@ -65,4 +74,44 @@ describe("archived score labels", () => {
       "Core 미관측",
     );
   });
+});
+
+it("keeps a ready ETF onset unconfirmed without valid earlier and current M0 observations", () => {
+  const ready = {
+    date: "2026-10-12",
+    dataStatus: "ready",
+    rawOnset: false,
+    score: 82,
+    previousDate: "2026-10-08",
+    previousScore: 83,
+  };
+  for (const patch of [
+    { previousScore: null },
+    { previousScore: undefined },
+    { previousScore: NaN },
+    { previousScore: Infinity },
+    { previousScore: -1 },
+    { previousScore: 101 },
+    { previousDate: undefined },
+    { previousDate: "invalid" },
+    { previousDate: "2026-02-31" },
+    { previousDate: "2026-10-12" },
+    { previousDate: "2026-10-13" },
+    { score: null },
+    { score: Infinity },
+  ]) {
+    for (const rawOnset of [false, true]) {
+      const input = entry({ evidence: { etfStrategy: { ...ready, ...patch, rawOnset } } });
+      expect(historyEtfOnsetLabel(input, "2026-10-12")).toBe("미확인");
+    }
+  }
+  expect(historyEtfOnsetLabel(entry({ evidence: { etfStrategy: ready } }), "2026-10-12")).toBe(
+    "없음",
+  );
+  expect(
+    historyEtfOnsetLabel(
+      entry({ evidence: { etfStrategy: { ...ready, rawOnset: true } } }),
+      "2026-10-12",
+    ),
+  ).toBe("원신호");
 });
