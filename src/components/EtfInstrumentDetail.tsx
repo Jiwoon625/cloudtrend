@@ -1,3 +1,4 @@
+import { KrxReviewReferenceDetails } from "./KrxReviewReferenceDetails";
 import { etfDataJudgment, etfOperationalDisplay } from "@/lib/etfOperationalDisplay";
 import { isOperationalSignalDate, BEFORE_OPERATIONAL_START } from "@/lib/operationalSignalStart";
 import { AppShell } from "./AppShell";
@@ -40,6 +41,7 @@ export function EtfInstrumentDetail({
           {s?.dataStatus ?? "미확인"}
         </p>
       </header>
+      <KrxReviewReferenceDetails reference={row.krxReviewReference} etf />
       {holdingsNotice}
       <div className="space-y-4">
         <section className="rounded-lg border p-4">
@@ -103,8 +105,8 @@ export function EtfInstrumentDetail({
         <details className="rounded-lg border p-4">
           <summary className="text-sm font-semibold">원자료</summary>
           <p className="my-2 text-xs">
-            실제 계산시각 {formatKstDateTime(calculatedAt)} · KRX 기준일{" "}
-            {s?.krxReferenceDate ?? "미관측"}
+            실제 계산시각 {formatKstDateTime(calculatedAt)} · 전략의 직전 비교 거래일{" "}
+            {s?.previousDate ?? "미관측"}
           </p>
           <pre className="overflow-auto text-xs">
             {JSON.stringify({ strategy: s, snapshot: row.snapshot }, null, 2)}

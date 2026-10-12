@@ -1,3 +1,4 @@
+import { KrxReviewReferenceDetails } from "@/components/KrxReviewReferenceDetails";
 import { EtfInstrumentDetail } from "@/components/EtfInstrumentDetail";
 import { entrySuppressionReason } from "@/lib/positionSignalContext";
 import { loadDomesticPositionContext } from "@/lib/portfolioPositionContext";
@@ -237,6 +238,7 @@ function InstrumentDetail() {
         </div>
       </header>
 
+      <KrxReviewReferenceDetails reference={row.krxReviewReference} />
       {row.instrument.instrumentType === "STOCK" ? (
         <StockInstrumentSummary
           row={row}

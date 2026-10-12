@@ -1,3 +1,4 @@
+import { parseManualMarketDataWithReferences } from "../src/lib/krxReviewReferenceParser";
 import { describe, expect, it } from "vitest";
 import {
   CANONICAL_SOURCE_COLUMNS,
@@ -174,3 +175,92 @@ describe("screening source compaction", () => {
     expect(stableValueHash([0, null])).not.toBe(stableValueHash([null, 0]));
   });
 });
+
+it.each(["", "-", "--", "NA", "null", "0", "-1", "NaN"])(
+  "preserves read-only KRX reference facts through compaction when later optional cells contain %s",
+  (sentinel) => {
+    const stock = row({
+      date: "2026-10-08",
+      marketCap: "200000000000",
+      marketCapSource: "KRX_STOCK",
+      listedShares: "1000",
+    });
+    const etf = row({
+      symbol: "360750",
+      name: "ETF",
+      type: "ETF",
+      market: "ETF",
+      date: "2026-10-08",
+      marketCapSource: "KRX_ETF",
+      tradingValueSource: "KRX_ETF",
+      etfMarketCap: "100000000000",
+      etfTradingValue: "10000",
+      etfNav: "100",
+      etfNetAssetTotalAmount: "200000000000",
+      etfListedUnits: "2000",
+      etfUnderlyingIndexName: "S&P 500",
+      etfUnderlyingIndexClose: "6000",
+    });
+    const textSentinel = ["0", "-1"].includes(sentinel) ? "NA" : sentinel;
+    const inputs = [
+      toCanonicalCsv([stock, etf]),
+      toCanonicalCsv([
+        { ...stock, listedShares: sentinel },
+        {
+          ...etf,
+          etfNav: sentinel,
+          etfNetAssetTotalAmount: sentinel,
+          etfListedUnits: sentinel,
+          etfUnderlyingIndexName: textSentinel,
+        },
+      ]),
+    ];
+    const compactor = new ScreeningCompactor();
+    for (const text of inputs) compactor.addCanonicalCsv(text);
+    const output = [...compactor.chunks()].map((chunk) => chunk.text);
+    const options = { allowIncompleteIndex: true };
+    expect(
+      parseManualMarketDataWithReferences(output, options).dataset.krxReviewObservations,
+    ).toEqual(parseManualMarketDataWithReferences(inputs, options).dataset.krxReviewObservations);
+    expect(parseManualMarketData(output, options).dataset).toEqual(
+      parseManualMarketData(inputs, options).dataset,
+    );
+  },
+);
+
+it.each([
+  ["etfMarketCap", "marketCap", "0"],
+  ["etfMarketCap", "marketCap", "-1"],
+  ["etfUnderlyingIndexClose", "underlyingIndexClose", "0"],
+  ["etfUnderlyingIndexClose", "underlyingIndexClose", "-1"],
+] as const)(
+  "keeps existing calculation merge semantics for %s=%s and conservatively omits an unavailable reference",
+  (column, field, invalid) => {
+    const stock = row({ date: "2026-10-08" });
+    const etf = row({
+      symbol: "360750",
+      name: "ETF",
+      type: "ETF",
+      market: "ETF",
+      date: "2026-10-08",
+      marketCapSource: "KRX_ETF",
+      etfMarketCap: "100000000000",
+      etfUnderlyingIndexClose: "6000",
+    });
+    const inputs = [toCanonicalCsv([stock, etf]), toCanonicalCsv([{ ...etf, [column]: invalid }])];
+    const compact = new ScreeningCompactor();
+    for (const input of inputs) compact.addCanonicalCsv(input);
+    const output = [...compact.chunks()].map((chunk) => chunk.text);
+    const options = { allowIncompleteIndex: true };
+    const before = parseManualMarketDataWithReferences(inputs, options).dataset
+      .krxReviewObservations!["360750"]!;
+    const after = parseManualMarketDataWithReferences(output, options).dataset
+      .krxReviewObservations!["360750"]!;
+    expect(before.some((observation) => observation.values[field] != null)).toBe(true);
+    expect(after.every((observation) => observation.values[field] == null)).toBe(true);
+    // Reference facts must not repair raw calculation inputs or resurrect a false zero.
+    expect(parseManualMarketData(output, options).dataset).toEqual(
+      parseManualMarketData(inputs, options).dataset,
+    );
+  },
+);

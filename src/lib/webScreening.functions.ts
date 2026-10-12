@@ -15,7 +15,10 @@ import { downloadFreshObject } from "./freshStorage";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
 
-import { parseManualMarketData } from "@/lib/engine/manualDataset";
+import {
+  parseManualMarketDataWithReferences as parseManualMarketData,
+  withKrxReviewReferences,
+} from "./krxReviewReferenceParser";
 import { runFullMarketAnalysis } from "@/lib/engine/fullMarketAnalysis";
 import { mergeScoringConfig, type ScoringConfig } from "@/lib/engine/scoring";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
@@ -197,7 +200,10 @@ export async function runWebScreeningForUser(
       throw new Error("계산 중 원천데이터가 변경됐습니다. 최신 입력으로 다시 시도하세요.");
     const parsed = parseManualMarketData(texts);
     const { analysis: engineAnalysis, dataset } = runFullMarketAnalysis(parsed.dataset, config);
-    const analysis = withOnsetProfiles(engineAnalysis, dataset, config);
+    const analysis = withKrxReviewReferences(
+      withOnsetProfiles(engineAnalysis, dataset, config),
+      dataset,
+    );
 
     const digest = resultDigest(analysis);
     const source = { live: true, credentialsConfigured: true, fallbackReason: null };
