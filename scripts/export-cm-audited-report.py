@@ -158,7 +158,11 @@ def audit_cash_only(candidate, identity, *, store=None):
     """Narrow historical pure-cash audit; zero executions are required, not invented."""
     from cmresearchengine.storage import SupabaseCMStore
     from cmresearchengine.runner import read_result
-    require(candidate == "Q_K000_E000_U000_C100", "PURE_CASH_CANDIDATE_ONLY")
+    cash_weights = {
+        "Q_K000_E000_U000_C100": {"K": 0, "E": 0, "U": 0, "C": 1},
+        "K25_P000_Q000_E000_U000_C100": {"P": 0, "Q": 0, "E": 0, "U": 0, "C": 1},
+    }
+    require(candidate in cash_weights, "PURE_CASH_CANDIDATE_ONLY")
     hash_value(identity)
     store = SupabaseCMStore.from_env() if store is None else store
     require(store.verify_private_bucket()["public"] is False, "PRIVATE_BUCKET_REQUIRED")
@@ -170,7 +174,7 @@ def audit_cash_only(candidate, identity, *, store=None):
     completion = json.loads(completion_raw)
     require(sha256(canonical(completion["identity"])) == identity and
             completion["identity"]["candidate"]["candidate_id"] == candidate and
-            completion["identity"]["candidate"]["initial_weights"] == {"K": 0, "E": 0, "U": 0, "C": 1},
+            completion["identity"]["candidate"]["initial_weights"] == cash_weights[candidate],
             "PURE_CASH_IDENTITY_MISMATCH")
     files = read_result(completion, checkpoint)
     require(files["summary.json"] == summary_raw, "SUMMARY_BYTES_MISMATCH")
