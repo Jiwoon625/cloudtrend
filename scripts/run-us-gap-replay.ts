@@ -20,6 +20,7 @@ import {
 import { commitUsShadowReplay, planUsShadowReplay } from "./us-shadow-replay-plan";
 import { octoberShadowStore } from "../src/lib/ledger/octoberShadowRepository.server";
 import {
+  runUsProspectiveAnalysis,
   US_PROSPECTIVE_RULE_VERSION,
   type UsProspectivePreviousState,
 } from "../src/lib/engine/usProspective";
@@ -155,9 +156,17 @@ export async function runUsGapReplay(input: {
   const manifest = await validateUsReplayManifest(JSON.parse(source), userId);
   if (
     input.publishDailyScreen &&
-    manifest.sessions.some((s) => s.pit.kind !== "ATOMIC_DATED_SNAPSHOT" || s.originalSource)
+    manifest.sessions.some(
+      (s) =>
+        !(
+          (s.pit.kind === "ATOMIC_DATED_SNAPSHOT" && !s.originalSource) ||
+          (s.pit.kind === "REVIEWED_ATOMIC_QUARANTINE" && s.originalSource)
+        ),
+    )
   )
-    throw new Error("Automatic daily publication requires preserved ATOMIC inputs only");
+    throw new Error(
+      "Automatic daily publication requires preserved ATOMIC or reviewed quarantine inputs",
+    );
   const prefix = `${userId}/results/us-gap-replay/${input.manifestHash.slice(7)}`;
   const savedText = await readText(client, `${prefix}/plan.json`, true);
   type SavedPlan = {
@@ -265,6 +274,111 @@ export async function runUsGapReplay(input: {
     break;
   }
   if (!rank) throw new Error("US recovery has no exact predecessor rank state");
+  // A completed atomic day may be displayed with a reviewed lifecycle exclusion,
+  // but must never be replayed under a new source hash into either model series.
+  // This single-session route validates the existing committed plan in read-only
+  // mode and recalculates screening only. It writes no continuation/rank state.
+  const reviewed =
+    sessions.length === 1 && sessions[0]!.source.pit.kind === "REVIEWED_ATOMIC_QUARANTINE"
+      ? sessions[0]!
+      : null;
+  const reviewedOriginal = protectedRows.find((row) => row.date === reviewed?.source.date);
+  if (input.publishDailyScreen && reviewed && reviewedOriginal) {
+    const { data: completed, error: completedError } = await client
+      .from("us_operating_replays")
+      .select("plan_hash,base_date,through_date,plan,receipt")
+      .eq("user_id", userId)
+      .eq("base_date", manifest.baseDate)
+      .eq("through_date", manifest.throughDate)
+      .maybeSingle();
+    if (completedError) throw completedError;
+    if (completed) {
+      const originalHash = reviewed.source.originalSource!.dataHash;
+      const plan = completed.plan;
+      const receipt = completed.receipt;
+      if (
+        completed.base_date !== manifest.baseDate ||
+        completed.through_date !== manifest.throughDate ||
+        reviewedOriginal.data_hash !== originalHash ||
+        reviewedOriginal.rule_version !== US_PROSPECTIVE_RULE_VERSION ||
+        plan?.version !== "us-operating-replay-v1" ||
+        plan.ruleVersion !== US_PROSPECTIVE_RULE_VERSION ||
+        plan.planHash !== completed.plan_hash ||
+        plan.baseDate !== manifest.baseDate ||
+        plan.throughDate !== manifest.throughDate ||
+        !/^sha256:[a-f0-9]{64}$/.test(completed.plan_hash) ||
+        stableJson(plan.dates) !==
+          stableJson([
+            {
+              date: reviewed.source.date,
+              previousSessionDate: manifest.baseDate,
+              sourceHash: originalHash,
+            },
+          ]) ||
+        receipt?.version !== plan.version ||
+        receipt.planHash !== completed.plan_hash ||
+        receipt.baseDate !== manifest.baseDate ||
+        receipt.throughDate !== manifest.throughDate ||
+        !Number.isFinite(Date.parse(receipt.committedAt)) ||
+        (input.expectedOperatingPlanHash && input.expectedOperatingPlanHash !== completed.plan_hash)
+      )
+        throw new Error("Completed original US replay identity differs from reviewed publication");
+      const { data: validation, error: validationError } = await client.rpc(
+        "apply_us_operating_replay",
+        {
+          p_user_id: userId,
+          p_plan: plan,
+          p_apply: false,
+        },
+      );
+      if (validationError || validation?.validated !== true || validation?.alreadyApplied !== true)
+        throw new Error(
+          `Completed original US replay verification failed: ${validationError?.message ?? "missing committed acknowledgement"}`,
+        );
+      const publicationPlanPath = `${prefix}/reviewed-publication-plan.json`;
+      const priorPublicationText = await readText(client, publicationPlanPath, true);
+      const publicationTime = priorPublicationText
+        ? JSON.parse(priorPublicationText).generatedAt
+        : calculatedAt;
+      if (
+        !Number.isFinite(Date.parse(publicationTime)) ||
+        Date.parse(publicationTime) < Date.parse(reviewed.source.sourceCapturedAt)
+      )
+        throw new Error("Invalid reviewed US publication calculation time");
+      const publication: UsReplayScreeningInput = {
+        client,
+        userId,
+        analyses: [runUsProspectiveAnalysis(reviewed.rows, rank)],
+        sources: [reviewed.source],
+        manifestHash: input.manifestHash,
+        operatingPlanHash: completed.plan_hash,
+        generatedAt: publicationTime,
+        protectedHistory: protectedRows,
+      };
+      await preflightUsReplayScreening(publication);
+      await immutableJson(client, publicationPlanPath, {
+        version: "us-reviewed-publication-only-v1",
+        manifestHash: input.manifestHash,
+        operatingPlanHash: completed.plan_hash,
+        generatedAt: publication.generatedAt,
+        protectedHistory: protectedRows,
+        analysis: publication.analyses[0],
+      });
+      await finishDailyScreening(publication);
+      return {
+        mode: "PUBLICATION_ONLY",
+        baseDate: manifest.baseDate,
+        throughDate: manifest.throughDate,
+        sessions: 1,
+        operatingPlanHash: completed.plan_hash,
+        sourceCoverageComplete: reviewed.source.sourceCoverageComplete,
+        protectedOriginalResults: protectedRows.length,
+        applied: true,
+        screeningPublished: true,
+        originalModelsPreserved: true,
+      };
+    }
+  }
   const store = octoberShadowStore(client, userId, "service");
   const shadow = await planUsShadowReplay({
     store,

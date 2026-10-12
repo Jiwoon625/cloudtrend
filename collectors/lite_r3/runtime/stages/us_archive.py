@@ -6,7 +6,7 @@ if RUN_US_MARKET:
         raise RuntimeError('이번 실행의 업로드 검증과 날짜별 원본 보존이 필요합니다.')
     if _US_DAILY_ARCHIVE_SOURCE['date'] != AS_OF_DATE or _US_DAILY_ARCHIVE_SOURCE['dataHash'] != data_hash:
         raise RuntimeError('이번 실행의 날짜별 원본이 일치하지 않습니다.')
-    _US_ARCHIVE_STATUS = {'runId':_US_RUN_ID, 'status':'ATOMIC_CHAIN_READY', 'dates':[AS_OF_DATE]}
+    _US_ARCHIVE_STATUS = {'runId':_US_RUN_ID, 'status':('REVIEWED_INPUT_READY' if globals().get('_US_LIFECYCLE_DERIVATIVE') else 'ATOMIC_CHAIN_READY'), 'dates':[AS_OF_DATE]}
     _previous_by_date = {AS_OF_DATE: PREVIOUS_SESSION}
     _us_finish_stage('archive')
 else:

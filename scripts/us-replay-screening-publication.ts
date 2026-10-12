@@ -73,7 +73,7 @@ async function assertCurrent(input: UsReplayScreeningInput) {
     !ingest ||
     ingest.storage_bucket !== ANALYSIS_BUCKET ||
     ingest.as_of_date !== last.date ||
-    ingest.data_hash !== last.dataHash
+    ingest.data_hash !== (last.originalSource?.dataHash ?? last.dataHash)
   )
     throw new Error("Current US ingest differs from the preserved ATOMIC final session");
   const latest = await read(client, `${userId}/cache/us-screening/latest.json`);
@@ -90,8 +90,10 @@ export async function preflightUsReplayScreening(input: UsReplayScreeningInput) 
     analyses.length !== sources.length ||
     sources.some(
       (source, i) =>
-        source.pit.kind !== "ATOMIC_DATED_SNAPSHOT" ||
-        source.originalSource ||
+        !(
+          (source.pit.kind === "ATOMIC_DATED_SNAPSHOT" && !source.originalSource) ||
+          (source.pit.kind === "REVIEWED_ATOMIC_QUARANTINE" && source.originalSource)
+        ) ||
         source.date !== analyses[i]?.date ||
         analyses[i]?.state.lastDate !== source.date ||
         analyses[i]?.ruleVersion !== US_PROSPECTIVE_RULE_VERSION ||
@@ -110,10 +112,17 @@ export async function preflightUsReplayScreening(input: UsReplayScreeningInput) 
     const original = input.protectedHistory.find((row) => row.date === source.date);
     // The recovery driver's immutable protection checks cover these original objects.
     if (original) {
-      if (original.data_hash !== source.dataHash || original.rule_version !== analysis.ruleVersion)
+      if (
+        original.data_hash !== (source.originalSource?.dataHash ?? source.dataHash) ||
+        original.rule_version !== analysis.ruleVersion
+      )
         throw new Error("Original US history differs from the preserved ATOMIC source");
       continue;
     }
+    // A reviewed derivative must use the separate recovery view, never occupy
+    // the immutable original result/history identity with a different hash.
+    if (source.originalSource)
+      throw new Error("Reviewed US quarantine publication requires protected original history");
     const payload = {
       generatedAt: input.generatedAt,
       dataHash: source.dataHash,

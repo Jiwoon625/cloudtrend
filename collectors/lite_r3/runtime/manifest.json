@@ -1,5 +1,5 @@
 {
-  "version": "cloudtrend-lite-r4-daily-v3",
+  "version": "cloudtrend-lite-r4-daily-v4",
   "sourceNotebookHash": "8adb08efd219087a9bf887a873d2d22e8d4b79282b6ad853f2140c333941c434",
   "stageCount": 30,
   "files": [
@@ -7,7 +7,7 @@
       "path": "__init__.py",
       "bytes": 1582,
       "characters": 1582,
-      "sha256": "bfb5ed246c473df5d9e56c8baa9e124b40fb074fad08a391710d8d5c36086d02"
+      "sha256": "9c8d846569b83cd718d3e47d6eff571e73ef6770665f05136bf4dce71478cebd"
     },
     {
       "path": "helpers/kr_callback.py",
@@ -41,9 +41,9 @@
     },
     {
       "path": "helpers/us_archive.py",
-      "bytes": 13672,
-      "characters": 13600,
-      "sha256": "adf51b6207a5250ffde2f0aaaf02a55dad62c16ad4b20ae3bb1063ccdf15ec91"
+      "bytes": 19030,
+      "characters": 18958,
+      "sha256": "8508d835b24c76386f9ac4dc5f697ec17072f4f918a47b22f935b6b159bdb39c"
     },
     {
       "path": "stages/common_init.py",
@@ -155,9 +155,9 @@
     },
     {
       "path": "stages/us_archive.py",
-      "bytes": 742,
-      "characters": 656,
-      "sha256": "62cbcb35b45f8d64f63dc0fe351b3e6dddf8c8be640635278c3699154a784c8a"
+      "bytes": 817,
+      "characters": 731,
+      "sha256": "d67b34010cdd559303f93c2562eac0b9a0c859b0518819ba38ad2937019bea68"
     },
     {
       "path": "stages/us_auth.py",
@@ -179,9 +179,9 @@
     },
     {
       "path": "stages/us_dispatch.py",
-      "bytes": 2485,
-      "characters": 2215,
-      "sha256": "3effc9e24d5ca3d6fed13fdc8c5c621c623f4d213fbf1a73961dda65f3100c19"
+      "bytes": 2888,
+      "characters": 2558,
+      "sha256": "cd1937befa9d57f50788eb321623f8c711b32e14bce6307589aa9f15a9438852"
     },
     {
       "path": "stages/us_features.py",
@@ -209,9 +209,9 @@
     },
     {
       "path": "stages/us_snapshot.py",
-      "bytes": 12186,
-      "characters": 11736,
-      "sha256": "59bee24bb081d8e38d1bb6ffa19057138eab0075d896330aed02aeb9e403a7db"
+      "bytes": 13483,
+      "characters": 12947,
+      "sha256": "7143087ede1c85f91c4ae8319b3dcf2cc64de391f10aa135e55949b2f65fe6fc"
     },
     {
       "path": "stages/us_summary.py",
@@ -221,9 +221,9 @@
     },
     {
       "path": "stages/us_upload.py",
-      "bytes": 5412,
-      "characters": 5398,
-      "sha256": "30a0b6c18d6df4c67d4e9be5bfb908aa69dbaef1fe21e2fec2b7826b82652d95"
+      "bytes": 6730,
+      "characters": 6649,
+      "sha256": "9e95ce3836f481ad3ce4b90705f1c4edb546d5df8b177eb1688f71a68c222e28"
     }
   ]
 }

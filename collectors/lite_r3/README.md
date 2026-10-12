@@ -59,6 +59,31 @@ and an issuer-name guard. This exact-symbol event does not cover DBRG preferred
 series. Before the effective session, normal collection applies. The roster and
 historical cache evidence are retained; no historical source or result is edited.
 
-The published 2026-10-09 source remains immutable. A same-date rerun that conflicts
-with its prior DBRG classification stops for review rather than rewriting it.
-The updated lifecycle applies to the next newly confirmed US screening session.
+The published 2026-10-09 source remains immutable. Lite r4 daily v4 handles a
+registered same-date DBRG conflict by deriving a separate reviewed CSV from the
+hash-verified original archive. It retains every row and all unaffected values;
+only DBRG (and WBD if simultaneously conflicting) becomes non-scoreable with
+blank price/score fields. `SUSPENDED` is the engine's existing exclusion state,
+not a new exchange-status claim. Existing seven-symbol price holds are retained.
+
+The original CSV, dated `source.json`, roster and ingest pointer are never
+replaced. The derivative has its own content hash and reviewed manifest, which
+references the original source hash and the already maintained lifecycle
+citations. All four objects (original, roster, derivative, manifest) are uploaded
+without upsert and read back before dispatch. Same-date reruns reproduce the
+same manifest and use the existing request journal to avoid duplicate or
+uncertain dispatches. Ordinary same-session price corrections, SPY changes,
+unknown lifecycle conflicts and missing/mismatched originals still stop safely.
+
+The paired server change admits this reviewed manifest to daily publication
+using the original hash for ingest/history identity and a separate recovered
+view. Original results, ledgers and conflicting completed batches remain
+immutable. A pending request must finish its publication receipt before the
+next collection proceeds. The next new confirmed session uses the existing
+lifecycle collection policy without deriving an older source.
+
+Release order matters: merge/deploy the paired server changes before pointing
+a notebook at this runtime. Rebuild twice to verify the ZIP hash, publish the
+exact commit, then update both private notebook pins together. Never use a
+local-only commit as a downloadable notebook pin. No production replay is run
+by the release build or tests.

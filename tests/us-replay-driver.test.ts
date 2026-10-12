@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { trustedSupabaseClient } from "../scripts/analysis-run-store";
 import { runUsGapReplay } from "../scripts/run-us-gap-replay";
 import { bytesHash, type VerifiedUsReplaySession } from "../scripts/us-replay-source";
-import { sourceCsv } from "./us-replay-fixtures";
+import { reviewedSourceCsv, sourceCsv } from "./us-replay-fixtures";
 import {
   parseUsProspectiveCsv,
   US_PROSPECTIVE_RULE_VERSION,
@@ -131,6 +131,7 @@ function setup() {
   });
   files.set(manifestPath, manifest);
   let rpcError: string | null = null;
+  let completedReplay: Record<string, unknown> | null = null;
   const client = {
     storage: {
       from: () => ({
@@ -169,6 +170,9 @@ function setup() {
         order() {
           return q;
         },
+        async maybeSingle() {
+          return { data: table === "us_operating_replays" ? completedReplay : null, error: null };
+        },
         then(resolve: (value: { data: unknown[]; error: null }) => unknown) {
           return Promise.resolve({
             data:
@@ -196,7 +200,7 @@ function setup() {
       rpcCalls.push(args);
       return rpcError
         ? { data: null, error: { message: rpcError } }
-        : { data: { validated: true }, error: null };
+        : { data: { validated: true, alreadyApplied: Boolean(completedReplay) }, error: null };
     },
   };
   return {
@@ -213,11 +217,80 @@ function setup() {
       apply: false,
       calculatedAt: "2026-10-08T02:00:00Z",
     },
+    setCompletedReplay: (value: Record<string, unknown>) => {
+      completedReplay = value;
+    },
     setRpcError: (v: string) => {
       rpcError = v;
     },
   };
 }
+function completedReviewedSetup() {
+  const f = setup();
+  const manifest = JSON.parse(f.files.get(f.input.manifestPath)!);
+  const source = manifest.sessions[1];
+  manifest.sessions = [source];
+  manifest.baseDate = source.previousSessionDate;
+  const base = JSON.parse(f.files.get(`${uid}/results/us-screening/2026-10-05.json`)!);
+  base.analysis.date = manifest.baseDate;
+  base.analysis.state.lastDate = manifest.baseDate;
+  f.files.set(`${uid}/results/us-screening/${manifest.baseDate}.json`, JSON.stringify(base));
+  source.originalSource = {
+    storagePath: source.storagePath,
+    dataHash: source.dataHash,
+    sourceCapturedAt: source.sourceCapturedAt,
+  };
+  source.storagePath = `${uid}/us-replay/2026-10-07.reviewed.csv`;
+  const csv = reviewedSourceCsv(source.date);
+  f.files.set(source.storagePath, csv);
+  source.dataHash = bytesHash(csv);
+  source.pit.kind = "REVIEWED_ATOMIC_QUARANTINE";
+  source.sourceCoverageComplete = false;
+  source.quarantinedSymbols = ["TEST"];
+  source.lifecycleQuarantines = [
+    {
+      symbol: "TEST",
+      effectiveDate: source.date,
+      evidenceUrls: ["https://www.nasdaqtrader.com/fixture"],
+    },
+  ];
+  const text = JSON.stringify(manifest);
+  f.files.set(f.input.manifestPath, text);
+  const plan = {
+    version: "us-operating-replay-v1",
+    ruleVersion: US_PROSPECTIVE_RULE_VERSION,
+    planHash: bytesHash("existing original plan"),
+    baseDate: manifest.baseDate,
+    throughDate: manifest.throughDate,
+    dates: [
+      {
+        date: source.date,
+        previousSessionDate: manifest.baseDate,
+        sourceHash: source.originalSource.dataHash,
+      },
+    ],
+  };
+  const completed = {
+    plan_hash: plan.planHash,
+    base_date: plan.baseDate,
+    through_date: plan.throughDate,
+    plan,
+    receipt: {
+      version: plan.version,
+      planHash: plan.planHash,
+      baseDate: plan.baseDate,
+      throughDate: plan.throughDate,
+      committedAt: "2026-10-08T01:00:00Z",
+    },
+  };
+  f.setCompletedReplay(completed);
+  return {
+    ...f,
+    completed,
+    input: { ...f.input, manifestHash: bytesHash(text), apply: true, publishDailyScreen: true },
+  };
+}
+
 describe("guarded US recovery driver", () => {
   it("preflights all files and backend CAS without writing anything", async () => {
     const f = setup();
@@ -365,6 +438,100 @@ describe("guarded US recovery driver", () => {
       screeningPublished: true,
     });
   });
+  it("automatically applies reviewed quarantine and resumes publication without duplicate model steps", async () => {
+    const f = setup();
+    const manifest = JSON.parse(f.files.get(f.input.manifestPath)!);
+    const source = manifest.sessions[1];
+    source.originalSource = {
+      storagePath: source.storagePath,
+      dataHash: source.dataHash,
+      sourceCapturedAt: source.sourceCapturedAt,
+    };
+    source.storagePath = `${uid}/us-replay/2026-10-07.reviewed.csv`;
+    const csv = reviewedSourceCsv(source.date);
+    f.files.set(source.storagePath, csv);
+    source.dataHash = bytesHash(csv);
+    source.pit.kind = "REVIEWED_ATOMIC_QUARANTINE";
+    source.sourceCoverageComplete = false;
+    source.quarantinedSymbols = ["TEST"];
+    source.lifecycleQuarantines = [
+      {
+        symbol: "TEST",
+        effectiveDate: source.date,
+        evidenceUrls: ["https://www.nasdaqtrader.com/fixture"],
+      },
+    ];
+    const text = JSON.stringify(manifest);
+    f.files.set(f.input.manifestPath, text);
+    const input = {
+      ...f.input,
+      manifestHash: bytesHash(text),
+      apply: true,
+      publishDailyScreen: true,
+    };
+    mocks.dailyPublish.mockRejectedValueOnce(new Error("publication interrupted"));
+    await expect(runUsGapReplay(input)).rejects.toThrow("publication interrupted");
+    expect(mocks.commit).toHaveBeenCalledTimes(1);
+    expect(mocks.dailyPreflight.mock.calls[0]![0].sources[1].originalSource.dataHash).toBe(
+      source.originalSource.dataHash,
+    );
+    expect(await runUsGapReplay(input)).toMatchObject({
+      applied: true,
+      screeningPublished: true,
+      reused: true,
+    });
+    expect(mocks.commit).toHaveBeenCalledTimes(1);
+    expect(mocks.shadow).toHaveBeenCalledTimes(1);
+    expect(f.rpcCalls.map((call) => call["p_apply"])).toEqual([false, true]);
+    expect(f.files.get(`${uid}/results/us-screening/2026-10-07.json`)).toBe(f.original);
+  });
+  it("automatically republishes a completed reviewed day without stepping either legacy or new models", async () => {
+    const f = completedReviewedSetup();
+    mocks.dailyPublish.mockRejectedValueOnce(new Error("publication interrupted"));
+    await expect(runUsGapReplay(f.input)).rejects.toThrow("publication interrupted");
+    expect(await runUsGapReplay(f.input)).toMatchObject({
+      mode: "PUBLICATION_ONLY",
+      screeningPublished: true,
+      originalModelsPreserved: true,
+    });
+    expect(
+      await runUsGapReplay({ ...f.input, calculatedAt: "2026-10-09T04:00:00Z" }),
+    ).toMatchObject({ mode: "PUBLICATION_ONLY" });
+    expect(mocks.dailyPublish.mock.calls[2]![0].generatedAt).toBe(f.input.calculatedAt);
+    expect(f.rpcCalls.map((call) => call["p_apply"])).toEqual([false, false, false]);
+    for (const call of f.rpcCalls) expect(call["p_plan"]).toEqual(f.completed.plan);
+    expect(mocks.shadow).not.toHaveBeenCalled();
+    expect(mocks.operating).not.toHaveBeenCalled();
+    expect(mocks.commit).not.toHaveBeenCalled();
+    expect(f.reads).not.toContain("us_strategy_registry");
+    expect(f.reads).not.toContain("us_portfolio_snapshots");
+    expect(f.writes.some((path) => /us-replay-state|shadow-replay/.test(path))).toBe(false);
+    expect(f.files.get(`${uid}/results/us-screening/2026-10-07.json`)).toBe(f.original);
+    const published = mocks.dailyPublish.mock.calls[1]![0];
+    expect(published.operatingPlanHash).toBe(f.completed.plan_hash);
+    expect(
+      published.analyses[0].rows.find((row: { symbol: string }) => row.symbol === "TEST"),
+    ).toMatchObject({ close: null, a0Entry: false });
+  });
+  it("blocks a completed-day source identity mismatch and invalid receipt before any writes", async () => {
+    for (const corrupt of [
+      (f: ReturnType<typeof completedReviewedSetup>) => {
+        f.completed.plan.dates[0]!.sourceHash = bytesHash("different original");
+      },
+      (f: ReturnType<typeof completedReviewedSetup>) => {
+        f.completed.receipt.planHash = bytesHash("different plan");
+      },
+      (f: ReturnType<typeof completedReviewedSetup>) => {
+        f.setRpcError("Committed US replay snapshot changed");
+      },
+    ]) {
+      const f = completedReviewedSetup();
+      corrupt(f);
+      await expect(runUsGapReplay(f.input)).rejects.toThrow(/identity differs|verification failed/);
+      expect(f.writes).toEqual([]);
+      expect(mocks.commit).not.toHaveBeenCalled();
+    }
+  });
   it("never publishes daily results before both ledgers acknowledge or in a dry run", async () => {
     const f = setup();
     mocks.commit.mockRejectedValueOnce(new Error("Shadow failed"));
@@ -390,7 +557,7 @@ describe("guarded US recovery driver", () => {
         apply: true,
         publishDailyScreen: true,
       }),
-    ).rejects.toThrow("preserved ATOMIC inputs only");
+    ).rejects.toThrow("preserved ATOMIC or reviewed quarantine inputs");
     expect(f.writes).toEqual([]);
     expect(mocks.shadow).not.toHaveBeenCalled();
   });
