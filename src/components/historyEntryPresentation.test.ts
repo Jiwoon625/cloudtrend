@@ -115,3 +115,38 @@ it("keeps a ready ETF onset unconfirmed without valid earlier and current M0 obs
     ),
   ).toBe("원신호");
 });
+
+it("uses the same valid M0 range for score and onset labels", () => {
+  for (const score of [-1, 101, NaN, Infinity, null, undefined]) {
+    const row = entry({
+      evidence: {
+        etfStrategy: {
+          date: "2026-10-12",
+          dataStatus: "ready",
+          score,
+          previousDate: "2026-10-08",
+          previousScore: 81,
+          rawOnset: false,
+        },
+      },
+    });
+    expect(historyScoreLabel(row, "2026-10-12")).toContain("M0 미확인");
+    expect(historyEtfOnsetLabel(row, "2026-10-12")).toBe("미확인");
+  }
+  for (const score of [0, 100]) {
+    const row = entry({
+      evidence: {
+        etfStrategy: {
+          date: "2026-10-12",
+          dataStatus: "ready",
+          score,
+          previousDate: "2026-10-08",
+          previousScore: 81,
+          rawOnset: false,
+        },
+      },
+    });
+    expect(historyScoreLabel(row, "2026-10-12")).toContain(`M0 ${score}`);
+    expect(historyEtfOnsetLabel(row, "2026-10-12")).toBe("없음");
+  }
+});

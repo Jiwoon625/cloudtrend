@@ -38,6 +38,9 @@ export function historyEtfEvidence(entry: SnapshotEntry) {
     : undefined;
 }
 
+const validM0 = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
+
 /** Archived observations only: never infer M0 from the technical subtotal. */
 export function historyScoreLabel(entry: SnapshotEntry, asOfDate: string): string {
   const number = (value: unknown) =>
@@ -49,7 +52,7 @@ export function historyScoreLabel(entry: SnapshotEntry, asOfDate: string): strin
   const evidence = historyEtfEvidence(entry);
   const m0 = !evidence
     ? "미기록"
-    : evidence.date !== asOfDate || evidence.dataStatus !== "ready"
+    : evidence.date !== asOfDate || evidence.dataStatus !== "ready" || !validM0(evidence.score)
       ? "미확인"
       : number(evidence.score);
   return `기술 ${number(entry.technicalPoints)}/100 · M0 ${m0}`;
@@ -64,14 +67,8 @@ export function historyEtfOnsetLabel(entry: SnapshotEntry, asOfDate: string): st
     typeof evidence.previousDate !== "string" ||
     !validDate(evidence.previousDate) ||
     evidence.previousDate >= asOfDate ||
-    typeof evidence.previousScore !== "number" ||
-    !Number.isFinite(evidence.previousScore) ||
-    evidence.previousScore < 0 ||
-    evidence.previousScore > 100 ||
-    typeof evidence.score !== "number" ||
-    !Number.isFinite(evidence.score) ||
-    evidence.score < 0 ||
-    evidence.score > 100
+    !validM0(evidence.previousScore) ||
+    !validM0(evidence.score)
   )
     return "미확인";
   return evidence.rawOnset ? "원신호" : "없음";
