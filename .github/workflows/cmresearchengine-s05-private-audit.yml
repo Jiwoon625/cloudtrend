@@ -1,5 +1,5 @@
-name: CMresearchengine split25 000 003 private final audit
-# Manual completed split25 offsets 0-3 private accounting audit request 2026-10-12.
+name: CMresearchengine split25 004 007 private final audit
+# Manual completed split25 offsets 4-7 private accounting audit request 2026-10-12.
 on:
   push:
     branches: [main]
@@ -30,7 +30,7 @@ jobs:
       - name: Test isolated O1 demand snapshot
         if: github.workflow == 'CMresearchengine O1 demand snapshot private final audit'
         run: python scripts/test_cm_o1_demand_snapshot.py -v
-      - name: Verify split25 000-003 private result accounting without exposing records
+      - name: Verify split25 004-007 private result accounting without exposing records
         run: |
           python - <<'PY'
           import csv, hashlib, io, json, zipfile
@@ -126,10 +126,10 @@ jobs:
                   'private_storage':True},sort_keys=True))
           
           targets = [
-              ('K25_P000_Q000_E000_U000_C100', '3e3289224da0b24aace43a75857d0695e7b4ea4edb717f62c8dc14e221f5d40f'),
-              ('K25_P000_Q000_E000_U025_C075', '88e9e9aa0668d2cd28093ebeb93daf824e77079d923963c788c6a1e29d241790'),
-              ('K25_P000_Q000_E000_U050_C050', 'e1c9cf37922d111f67ede6d96a02bd19ea2b541b4b778a718f6cf0f67acbddc3'),
-              ('K25_P000_Q000_E000_U075_C025', 'b6ccc8c3588bcb1a3b5704989959f309a56c166d400e73457cb4e6b9a5b011f5'),
+              ('K25_P000_Q000_E000_U100_C000', '0a23debfa12b80482ebc46c70c3ce4232b84d66f0e695ce9311e7adffefbd8ff'),
+              ('K25_P000_Q000_E025_U000_C075', '3f556fcb2794ffe7ad633b12b5993100006d54873876365b95d990a6936cc8a6'),
+              ('K25_P000_Q000_E025_U025_C050', 'f869697439f4c64daa0d9560758ff199668502c2add3a628396c2f5df5b1bdf2'),
+              ('K25_P000_Q000_E025_U050_C025', 'fa73b458576eef666ed650e4c2037e8229e3165aaa248f38aa0ddb8d126a4d4d'),
           ]
           import runpy
           report = runpy.run_path('scripts/export-cm-audited-report.py')
