@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   eveningReviewStartNotice,
   isEveningReviewCandidate,
+  isTechnicalReviewReference,
+  isReviewOnsetUnknown,
   matchesEtfReviewMinimum,
 } from "./eveningReview";
 import type { DashboardIndexRow, DashboardMarketSignals } from "./dashboardOperations";
@@ -21,20 +23,20 @@ const row = {
 } as DashboardIndexRow & { reason: string };
 describe("review selection never creates operational signals", () => {
   it("keeps strong stored technical evidence while KRX is pending", () => {
-    expect(isEveningReviewCandidate(row, market)).toBe(true);
-    expect(isEveningReviewCandidate({ ...row, held: true }, market)).toBe(false);
-    expect(isEveningReviewCandidate({ ...row, date: "2026-10-08" }, market)).toBe(false);
+    expect(isTechnicalReviewReference(row, market)).toBe(true);
+    expect(isTechnicalReviewReference({ ...row, held: true }, market)).toBe(false);
+    expect(isTechnicalReviewReference({ ...row, date: "2026-10-08" }, market)).toBe(false);
     expect(
-      isEveningReviewCandidate(
+      isTechnicalReviewReference(
         { ...row, assessment: { ...row.assessment!, current: false } },
         market,
       ),
     ).toBe(false);
     expect(
-      isEveningReviewCandidate({ ...row, assessment: { ...row.assessment!, score: 5 } }, market),
+      isTechnicalReviewReference({ ...row, assessment: { ...row.assessment!, score: 5 } }, market),
     ).toBe(false);
     expect(
-      isEveningReviewCandidate(
+      isTechnicalReviewReference(
         { ...row, assessment: { ...row.assessment!, failed: ["시가총액 미달"] } },
         market,
       ),
@@ -43,7 +45,7 @@ describe("review selection never creates operational signals", () => {
   it("excludes pre-start or unknown confirmation origins for both markets", () => {
     for (const originDate of ["2026-10-08", null]) {
       expect(
-        isEveningReviewCandidate(
+        isTechnicalReviewReference(
           {
             ...row,
             kospiEntry: { state: "confirmed", originDate } as DashboardIndexRow["kospiEntry"],
@@ -52,7 +54,7 @@ describe("review selection never creates operational signals", () => {
         ),
       ).toBe(false);
       expect(
-        isEveningReviewCandidate(
+        isTechnicalReviewReference(
           {
             ...row,
             market: "ETF",
@@ -79,10 +81,10 @@ describe("review selection never creates operational signals", () => {
         score: null,
       } as DashboardIndexRow["etfAssessment"],
     };
-    expect(isEveningReviewCandidate(etf, market)).toBe(true);
+    expect(isTechnicalReviewReference(etf, market)).toBe(true);
     expect(etf.etfAssessment?.score).toBeNull();
     expect(
-      isEveningReviewCandidate(
+      isTechnicalReviewReference(
         { ...etf, etfAssessment: { ...etf.etfAssessment!, isStrategyTarget: false } },
         market,
       ),
@@ -97,9 +99,9 @@ describe("review selection never creates operational signals", () => {
 });
 
 it("does not label unknown holdings or rejected confirmations as review candidates", () => {
-  expect(isEveningReviewCandidate(row, { ...market, holdingsKnown: false })).toBe(false);
+  expect(isTechnicalReviewReference(row, { ...market, holdingsKnown: false })).toBe(false);
   expect(
-    isEveningReviewCandidate(
+    isTechnicalReviewReference(
       { ...row, kospiEntry: { date, state: "rejected" } as DashboardIndexRow["kospiEntry"] },
       market,
     ),
@@ -118,4 +120,80 @@ it("derives ETF operational exclusion notices from stored ETF entry evidence", (
   expect(
     eveningReviewStartNotice({ ...etf, etfEntry: { ...etf.etfEntry!, originDate: null } }),
   ).toContain("원신호 시점 미확인");
+});
+
+describe("raw signals and technical references are separate", () => {
+  it("keeps the actual 6→8 onset even when market entry is rejected", () => {
+    const onset = {
+      ...row,
+      assessment: { ...row.assessment!, previousScore: 6, rawOnset: true, failed: ["RISK_OFF"] },
+      kospiEntry: { date, state: "rejected", originDate: date } as DashboardIndexRow["kospiEntry"],
+    };
+    expect(isEveningReviewCandidate(onset, market)).toBe(true);
+    expect(isTechnicalReviewReference(onset, market)).toBe(false);
+    expect(isEveningReviewCandidate({ ...onset, held: true }, market)).toBe(true);
+    expect(isEveningReviewCandidate(onset, { ...market, holdingsKnown: false })).toBe(true);
+  });
+  it("never promotes maintained or falling scores or yesterday's signals", () => {
+    for (const previousScore of [8, 9.5]) {
+      expect(
+        isEveningReviewCandidate(
+          { ...row, assessment: { ...row.assessment!, previousScore, rawOnset: false } },
+          market,
+        ),
+      ).toBe(false);
+    }
+    expect(
+      isEveningReviewCandidate(
+        { ...row, date: "2026-10-08", assessment: { ...row.assessment!, rawOnset: true } },
+        market,
+      ),
+    ).toBe(false);
+  });
+  it("keeps missing ETF M0 and older cached fields unknown, not zero", () => {
+    const etf = {
+      ...row,
+      market: "ETF" as const,
+      etfAssessment: {
+        current: true,
+        isStrategyTarget: true,
+        technical: 50,
+        score: null,
+        rawOnset: null,
+      } as DashboardIndexRow["etfAssessment"],
+    };
+    expect(isEveningReviewCandidate(etf, market)).toBe(false);
+    expect(isReviewOnsetUnknown(etf, market)).toBe(true);
+    expect(isTechnicalReviewReference(etf, market)).toBe(true);
+    expect(
+      isReviewOnsetUnknown(
+        {
+          ...etf,
+          etfAssessment: {
+            ...etf.etfAssessment!,
+            rawOnset: undefined,
+          } as unknown as DashboardIndexRow["etfAssessment"],
+        },
+        market,
+      ),
+    ).toBe(true);
+    expect(
+      isReviewOnsetUnknown(
+        { ...etf, etfAssessment: { ...etf.etfAssessment!, rawOnset: false } },
+        market,
+      ),
+    ).toBe(false);
+    expect(
+      isEveningReviewCandidate(
+        { ...etf, etfAssessment: { ...etf.etfAssessment!, rawOnset: true } },
+        market,
+      ),
+    ).toBe(true);
+  });
+});
+
+it("keeps missing ETF assessment projections explicitly unknown", () => {
+  expect(isReviewOnsetUnknown({ ...row, market: "ETF", etfAssessment: undefined }, market)).toBe(
+    true,
+  );
 });

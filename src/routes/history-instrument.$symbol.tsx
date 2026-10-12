@@ -1,4 +1,4 @@
-import { historyEntryStatus } from "@/components/historyEntryPresentation";
+import { historyEntryStatus, historyScoreLabel } from "@/components/historyEntryPresentation";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
@@ -81,8 +81,11 @@ function HistoricalInstrument() {
               </div>
             ) : (
               <p className="text-sm">
-                기술점수 {row.technicalPoints ?? "미관측"} · 우선점수 {row.priorityPoints} · 자격{" "}
-                {row.hardFilterStatus ?? (row.hardFilterPassed ? "PASS" : "FAIL")}
+                {historyScoreLabel(row, s!.asOfDate)} · 우선점수{" "}
+                {Number.isFinite(row.priorityPoints)
+                  ? Number(row.priorityPoints.toFixed(2))
+                  : "미관측"}{" "}
+                · 자격 {row.hardFilterStatus ?? (row.hardFilterPassed ? "PASS" : "FAIL")}
               </p>
             )}
             <p className="text-xs">{row.pendingRules?.join(" · ")}</p>
@@ -90,7 +93,10 @@ function HistoricalInstrument() {
             {row.kospiEntry ? <KospiEntryDetails entry={row.kospiEntry} /> : null}
           </section>
           <details open className="rounded-lg border p-4">
-            <summary>당시 계산 근거 · 원신호·확인·청산 기록</summary>
+            <summary>당시 계산 근거 · 원신호·확인·계산 청산신호</summary>
+            <p className="text-xs text-muted-foreground">
+              당시 저장된 계산 신호입니다. 실제 보유 여부나 매수·매도 체결을 뜻하지 않습니다.
+            </p>
             <pre className="mt-3 overflow-auto text-xs">
               {JSON.stringify(row.evidence ?? row, null, 2)}
             </pre>

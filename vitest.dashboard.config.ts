@@ -16,6 +16,8 @@ export default defineConfig({
       "src/components/StockInstrumentSummary.test.tsx",
       "src/lib/stockAssessmentDisplay.test.ts",
       "src/lib/eveningReview.test.ts",
+      "src/components/historyEntryPresentation.test.ts",
+      "src/components/BreakdownTable.test.tsx",
       "src/lib/krxReviewReference.test.ts",
       "tests/web-screening-server-only.test.ts",
       "src/components/KrxReviewReferenceDetails.test.tsx",

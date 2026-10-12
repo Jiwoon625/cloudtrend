@@ -65,7 +65,10 @@ export function KrMarketDataPanel({ data }: { data: DataStatusPayload }) {
         <ul className="mb-4 space-y-1 rounded-lg border border-border bg-card p-3 text-[12px] leading-relaxed text-muted-foreground">
           {data.notes.map((n) => (
             <li key={n}>
-              · {n}
+              ·{" "}
+              {n.startsWith("재무제표·ETF NAV/총보수는 입력 대상이 아니므로")
+                ? "주식 재무제표는 현행 기술 전략 점수에 포함하지 않습니다. ETF M0는 KRX 시가총액·거래대금 등 필수 자료가 없으면 건전성·최종 점수와 진입 판단을 보류하며, 결측 항목을 제외해 재가중하지 않습니다."
+                : n}
               {/^(시가총액은 입력값|외국인·기관 순매수는 입력값)/.test(n)
                 ? " (입력 전체 기간·전체 종목 기준이며, 최신 기준일 제공 여부는 아래 표를 확인하세요.)"
                 : null}
@@ -161,9 +164,11 @@ export function KrMarketDataPanel({ data }: { data: DataStatusPayload }) {
                         ? (data.volatilityObservation?.label ?? "원본·대체 출처 미확인")
                         : capabilityCoverage(key)?.availableEntities !== undefined
                           ? `${coverageLabel(capabilityCoverage(key)!)} · ${capabilityCoverage(key)!.availableEntities}/${capabilityCoverage(key)!.entities}종목 (기준일)`
-                          : ok
-                            ? "제공"
-                            : "미제공 → 점수 산정에서 제외"}
+                          : key === "etfFacts"
+                            ? `${ok ? "제공" : "미제공"} · ETF M0 필수 KRX 자료는 별도 확인; 미수신 시 최종 판단 보류`
+                            : ok
+                              ? "제공"
+                              : "미제공 → 점수 산정에서 제외"}
                     </td>
                   </tr>
                 ))}

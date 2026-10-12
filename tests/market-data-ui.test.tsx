@@ -2,6 +2,7 @@ import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { KrMarketDataPanel } from "../src/components/KrMarketDataPanel";
 import { MarketDataPage } from "../src/components/MarketDataPage";
 import { UsModelExecutionJournal } from "../src/components/UsModelExecutionJournal";
 import { UsPortfolioView, NavChart } from "../src/components/UsPortfolioView";
@@ -306,4 +307,20 @@ describe("market/data consolidation and mobile portfolio layout", () => {
       ),
     ).toContain("KOSPI 가격지수");
   });
+});
+
+it("corrects legacy ETF health-weight copy without changing stored source notes", () => {
+  const data = {
+    ...kr,
+    notes: [
+      "재무제표·ETF NAV/총보수는 입력 대상이 아니므로 펀더멘털·상품건전성 점수는 가중치에서 제외됩니다.",
+    ],
+  };
+  const html = renderToStaticMarkup(
+    <KrMarketDataPanel data={data as Parameters<typeof KrMarketDataPanel>[0]["data"]} />,
+  );
+  expect(html).toContain("결측 항목을 제외해 재가중하지 않습니다");
+  expect(html).toContain("ETF M0 필수 KRX 자료는 별도 확인; 미수신 시 최종 판단 보류");
+  expect(html).not.toContain("상품건전성 점수는 가중치에서 제외");
+  expect(data.notes[0]).toContain("가중치에서 제외");
 });

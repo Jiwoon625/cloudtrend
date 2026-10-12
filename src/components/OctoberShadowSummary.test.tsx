@@ -76,6 +76,8 @@ describe("October Shadow registry cards", () => {
     });
     expect(html).toContain("한국 Shadow replay");
     expect(html).toContain("신호 기준일 2026-10-12");
+    expect(html).toContain("2026-10-14 09:00:00 KST");
+    expect(html).toContain("다음 체결시각 2026-10-13 09:00:00 KST");
     expect(html).toContain("사후 복원 계산");
     expect(html).toContain("자료 대기");
     expect(html).toContain("보류 사유: 해당 거래일 종목 행이 없습니다.");

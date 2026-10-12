@@ -226,3 +226,42 @@ it("keeps saved M0 and turnover minimums from hiding explicit KRX review, and re
   state.minimums.environment = 10;
   expect(cells(render(row())).join(" ")).not.toContain("부분 판단 ETF");
 });
+
+it("distinguishes all three confirmed stage counts from an unconfirmed KRX result", () => {
+  const html = render(row()).replace(/<[^>]+>/g, "");
+  expect(html).toContain("당일 원신호 · 확인된 0종목 · 판단 미확정 1종목");
+  expect(html).toContain("하루 확인 대기 · 확인된 0종목 · 자료 판단 보류 1종목");
+  expect(html).toContain("진입 준비 · 확인된 보유 확인 대기 · 자료 판단 보류 1종목");
+});
+
+it("keeps raw and technical filters separate and applies the same technical scope as dashboard", () => {
+  const good = row();
+  const missing = row({ issues: ["기술점수 이력 부족"] });
+  missing.instrument = { ...missing.instrument, symbol: "133690", name: "기술미확인" };
+  const old = row({ originDate: "2026-10-08", entryState: "data_pending" });
+  old.instrument = { ...old.instrument, symbol: "360750", name: "시작전원신호" };
+  const renderRows = () =>
+    renderToStaticMarkup(
+      <EtfScreener
+        analysis={{ asOfDate: date, rows: [good, missing, old] } as AnalysisResult}
+        positionContext={{ heldSymbols: [], lastSellDateBySymbol: {} }}
+      />,
+    );
+  state.filter = "raw";
+  let html = renderRows();
+  expect(cells(html)).toHaveLength(0);
+  state.filter = "technical";
+  state.minimums = { score: 80, environment: 0, tradingValue: 10 };
+  html = renderRows();
+  expect(cells(html)).toHaveLength(12);
+  expect(html).toContain("부분 판단 ETF");
+  expect(html).not.toContain("기술미확인");
+  expect(html).not.toContain("시작전원신호");
+});
+
+it("does not show an empty technical reference scope as confirmed zero when holdings are unknown", () => {
+  state.filter = "technical";
+  const html = render(row());
+  expect(html).toContain("미보유 기술조건 참고");
+  expect(html).toContain("미확인/1종목");
+});

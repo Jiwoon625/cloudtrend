@@ -10,8 +10,12 @@ export function isHistoryOperationalEntry(entry: SnapshotEntry, asOfDate: string
 }
 
 export function historyEntryStatus(entry: SnapshotEntry): string {
-  if (entry.hardFilterStatus === "PENDING")
-    return `판단 보류 · ${entry.pendingRules?.join(" · ") || "필수 자료 미확인"}`;
+  if (entry.hardFilterStatus === "PENDING") {
+    const pending = `판단 보류 · ${entry.pendingRules?.join(" · ") || "필수 자료 미확인"}`;
+    return entry.kospiEntry?.state === "rejected"
+      ? `KOSPI ${kospiEntryStateLabel(entry.kospiEntry)} · 신규 진입 제외 · ${pending}`
+      : pending;
+  }
   const status = (entry.status?.trim() || (entry.hardFilterPassed ? "관찰" : "실격")).replace(
     /onset/gi,
     "원신호",
@@ -31,4 +35,28 @@ export function historyEtfEvidence(entry: SnapshotEntry) {
   return evidence && typeof evidence === "object"
     ? (evidence as Partial<import("@/lib/engine/etfStrategy").EtfStrategySnapshot>)
     : undefined;
+}
+
+/** Archived observations only: never infer M0 from the technical subtotal. */
+export function historyScoreLabel(entry: SnapshotEntry, asOfDate: string): string {
+  const number = (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value)
+      ? Number(value.toFixed(2)).toString()
+      : "미관측";
+  if (entry.market === "US") return `Core ${number(entry.technicalPoints)}`;
+  if (entry.instrumentType !== "ETF") return `기술 ${number(entry.technicalPoints)}/10`;
+  const evidence = historyEtfEvidence(entry);
+  const m0 = !evidence
+    ? "미기록"
+    : evidence.date !== asOfDate || evidence.dataStatus !== "ready"
+      ? "미확인"
+      : number(evidence.score);
+  return `기술 ${number(entry.technicalPoints)}/100 · M0 ${m0}`;
+}
+
+export function historyEtfOnsetLabel(entry: SnapshotEntry, asOfDate: string): string {
+  const evidence = historyEtfEvidence(entry);
+  if (!evidence || typeof evidence.rawOnset !== "boolean") return "미기록";
+  if (evidence.date !== asOfDate || evidence.dataStatus !== "ready") return "미확인";
+  return evidence.rawOnset ? "원신호" : "없음";
 }

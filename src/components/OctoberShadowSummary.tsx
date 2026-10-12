@@ -1,3 +1,4 @@
+import { formatKstDateTime } from "@/lib/format";
 import { IntegratedAllocationShadowPanel } from "./IntegratedAllocationShadowPanel";
 import { ShadowTimeline } from "./ShadowTimeline";
 import { OperatingCapitalPlan } from "./OperatingCapitalPlan";
@@ -294,14 +295,14 @@ export function OctoberShadowSummaryContent({
                   </div>
                   <p className="text-muted-foreground">
                     신호 기준일 {replay.signalDate} · 실제 계산{" "}
-                    {new Date(replay.calculatedAt).toLocaleString("ko-KR")}
+                    {formatKstDateTime(replay.calculatedAt)} KST
                   </p>
                   <p className="text-muted-foreground">
                     {replay.replayMode === "RETROSPECTIVE"
                       ? "사후 복원 계산"
                       : "다음 거래일 체결 전에 계산"}
                     {replay.executionAt
-                      ? ` · 다음 체결시각 ${new Date(replay.executionAt).toLocaleString("ko-KR")}`
+                      ? ` · 다음 체결시각 ${formatKstDateTime(replay.executionAt)} KST`
                       : ""}
                   </p>
                   {replay.reason ? (

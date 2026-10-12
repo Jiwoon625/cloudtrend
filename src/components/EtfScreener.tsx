@@ -1,4 +1,4 @@
-import { matchesEtfReviewMinimum } from "@/lib/eveningReview";
+import { matchesEtfReviewMinimum, isTechnicalReviewReference } from "@/lib/eveningReview";
 import { etfOperationalDisplay } from "@/lib/etfOperationalDisplay";
 import { useSessionViewState, viewText, viewPage, viewChoice } from "@/lib/useSessionViewState";
 import { Link } from "@tanstack/react-router";
@@ -88,7 +88,18 @@ export function EtfScreener({
   const [filter, setFilter] = useSessionViewState(
     "etf:filter",
     "equity",
-    viewChoice(["equity", "all", "entry", "pending", "partial", "rejected", "exit", "missing"]),
+    viewChoice([
+      "equity",
+      "all",
+      "entry",
+      "pending",
+      "partial",
+      "raw",
+      "technical",
+      "rejected",
+      "exit",
+      "missing",
+    ]),
   );
   const [sector, setSector] = useSessionViewState("etf:sector", "ALL", viewText);
   const [minimums, setMinimums] = useSessionViewState(
@@ -104,7 +115,8 @@ export function EtfScreener({
           (v as Record<string, number>)[k]! >= 0,
       ),
   );
-  const unknownExit = filter === "exit" && (!positionContext || !!ledgerError);
+  const unknownExit =
+    (filter === "exit" || filter === "technical") && (!positionContext || !!ledgerError);
   const [sortKey, setSortKey] = useSessionViewState<SortKey | null>(
     "etf:sortKey",
     null,
@@ -121,6 +133,14 @@ export function EtfScreener({
   );
   const evidenceFor = (r: AnalysisResult["rows"][number]) =>
     evidenceBySymbol.get(r.instrument.symbol)!;
+  const rawUnknownCount = rows.filter(
+    (r) => evidenceFor(r).isStrategyTarget && evidenceFor(r).rawOnset == null,
+  ).length;
+  const decisionUnknownCount = rows.filter(
+    (r) =>
+      evidenceFor(r).isStrategyTarget &&
+      (!evidenceFor(r).current || r.etfStrategy?.dataStatus !== "ready"),
+  ).length;
   const krxPending = rows.find((r) => evidenceFor(r).krxPending)?.etfStrategy;
   const heldSet = new Set(positionContext?.heldSymbols ?? []);
   const blocked = (r: AnalysisResult["rows"][number]) => {
@@ -192,7 +212,7 @@ export function EtfScreener({
       if (!text.includes(query.trim().toLowerCase())) return false;
       if (sector !== "ALL" && (s?.sector ?? r.instrument.sectorName) !== sector) return false;
       const e = evidenceFor(r);
-      const partialReview = filter === "partial" && e.krxPending;
+      const partialReview = (filter === "partial" || filter === "technical") && e.krxPending;
       if (!matchesEtfReviewMinimum(e.score, minimums.score, partialReview)) return false;
       if (
         minimums.environment > 0 &&
@@ -207,6 +227,22 @@ export function EtfScreener({
         )
       )
         return false;
+      if (filter === "raw")
+        return isOperationalSignalDate(analysis.asOfDate) && e.rawOnset === true;
+      if (filter === "technical")
+        return isTechnicalReviewReference(
+          {
+            market: "ETF",
+            date: s?.date ?? "",
+            held: heldSet.has(r.instrument.symbol),
+            etfAssessment: e,
+            etfEntry: s,
+          },
+          {
+            date: analysis.asOfDate,
+            holdingsKnown: !!positionContext && !ledgerError,
+          },
+        );
       if (filter === "entry") return actionable(r);
       if (filter === "pending")
         return (
@@ -299,18 +335,19 @@ export function EtfScreener({
       )}
       <div className="grid gap-3 sm:grid-cols-3 text-sm">
         <div className="rounded-lg border p-3">
-          원신호{" "}
+          당일 원신호 · 확인된{" "}
           {
             rows.filter(
-              (r) =>
-                isOperationalSignalDate(analysis.asOfDate) &&
-                evidenceFor(r).current &&
-                r.etfStrategy?.rawOnset,
+              (r) => isOperationalSignalDate(analysis.asOfDate) && evidenceFor(r).rawOnset === true,
             ).length
           }
+          종목
+          {rawUnknownCount > 0
+            ? ` · 판단 미확정 ${rawUnknownCount}종목 (전체 원신호 수 미확정)`
+            : ""}
         </div>
         <div className="rounded-lg border p-3">
-          확인 대기{" "}
+          하루 확인 대기 · 확인된{" "}
           {
             rows.filter(
               (r) =>
@@ -319,10 +356,12 @@ export function EtfScreener({
                 r.etfStrategy?.entryState === "pending",
             ).length
           }
+          종목{decisionUnknownCount > 0 ? ` · 자료 판단 보류 ${decisionUnknownCount}종목` : ""}
         </div>
         <div className="rounded-lg border p-3">
-          진입 준비{" "}
+          진입 준비 · 확인된{" "}
           {positionContext && !ledgerError ? rows.filter(actionable).length : "보유 확인 대기"}
+          {decisionUnknownCount > 0 ? ` · 자료 판단 보류 ${decisionUnknownCount}종목` : ""}
         </div>
       </div>
       <p className="text-xs">
@@ -351,8 +390,10 @@ export function EtfScreener({
           }}
         >
           <option value="equity">전략 대상 · 부분 판단 포함</option>
-          <option value="partial">KRX 대기 · 부분 판단</option>
-          <option value="entry">진입 준비 · 신규 진입</option>
+          <option value="partial">KRX 대기 · 부분 판단 (기술 미확인 포함)</option>
+          <option value="raw">당일 원신호 · 확인된 종목</option>
+          <option value="technical">기술조건 참고 · 미보유 전략 대상</option>
+          <option value="entry">진입 준비</option>
           <option value="pending">하루 확인 대기</option>
           <option value="rejected">하루 확인 탈락</option>
           <option value="exit" disabled={!positionContext || !!ledgerError}>
@@ -362,9 +403,10 @@ export function EtfScreener({
           <option value="all">전체 ETF</option>
         </select>
         <span className="text-sm text-muted-foreground">
-          {unknownExit ? "미확인" : shown.length}/{rows.length}종목 · 신규 신호{" "}
-          {positionContext && !ledgerError ? rows.filter(actionable).length : "미확인"}건 · KRX 대기{" "}
-          {rows.filter((r) => evidenceFor(r).krxPending).length}건 · 데이터·대상 점검{" "}
+          {unknownExit ? "미확인" : shown.length}/{rows.length}종목 · 진입 준비{" "}
+          {positionContext && !ledgerError ? rows.filter(actionable).length : "미확인"}건
+          {decisionUnknownCount > 0 ? ` · 진입 자료 판단 보류 ${decisionUnknownCount}종목` : ""} ·
+          KRX 대기 {rows.filter((r) => evidenceFor(r).krxPending).length}건 · 데이터·대상 점검{" "}
           {rows.filter((r) => !r.etfStrategy?.eligible && !evidenceFor(r).krxPending).length}건
         </span>
       </div>
@@ -414,16 +456,17 @@ export function EtfScreener({
           </label>
         ))}
       </div>
-      {filter === "partial" ? (
+      {filter === "partial" || filter === "technical" ? (
         <p className="text-xs text-warn" role="status">
-          저녁 후보 검토: 미수신 M0·20일 거래대금은 최소값 필터에서 제외하고 ‘미확인’으로
+          KRX 대기 부분 근거 검토: 미수신 M0·20일 거래대금은 최소값 필터에서 제외하고 ‘미확인’으로
           표시합니다. 확인된 수치는 필터를 적용합니다. 필터값은 유지되며 다른 보기에서는 다시 모두
           적용됩니다. 부분 근거는 최종 진입·청산 신호가 아닙니다.
         </p>
       ) : null}
       {unknownExit ? (
         <p role="status" className="text-xs">
-          보유 조회가 완료되면 청산 목록을 표시합니다.
+          보유 조회가 완료되면 {filter === "technical" ? "미보유 기술조건 참고" : "청산"} 목록을
+          표시합니다.
         </p>
       ) : (
         <>

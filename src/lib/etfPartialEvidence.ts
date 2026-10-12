@@ -65,6 +65,17 @@ export function etfPartialEvidence(row: EvidenceRow, asOfDate: string) {
       !krxPending && [technical, priority, health, environment].every((value) => value !== null)
         ? score(s?.score)
         : null,
+    // Read-only signal evidence. A missing final M0 cannot establish a zero-onset result.
+    rawOnset:
+      current &&
+      !krxPending &&
+      s?.dataStatus === "ready" &&
+      [technical, priority, health, environment].every((value) => value !== null) &&
+      score(s?.score) !== null &&
+      previousDate &&
+      score(s?.previousScore) !== null
+        ? s.rawOnset
+        : null,
     previousScore: previousDate ? score(s?.previousScore) : null,
     previousDate,
     technical: technical === null ? null : technical * 0.625,
