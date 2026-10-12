@@ -5,7 +5,11 @@ import type {
 } from "./dashboardOperations";
 import { isOperationalSignalDate, operationalEntryStartNotice } from "./operationalSignalStart";
 
-type ReviewRow = DashboardSignal & Partial<Pick<DashboardIndexRow, "kospiEntry" | "etfEntry">>;
+type ReviewRow = Pick<
+  DashboardSignal,
+  "date" | "market" | "held" | "assessment" | "etfAssessment" | "operationalEntryNotice"
+> &
+  Partial<Pick<DashboardIndexRow, "kospiEntry" | "etfEntry">>;
 
 export function eveningReviewStartNotice(row: ReviewRow) {
   const origin = row.market === "ETF" ? row.etfEntry?.originDate : row.kospiEntry?.originDate;
@@ -16,8 +20,11 @@ export function eveningReviewStartNotice(row: ReviewRow) {
   );
 }
 
-/** Read-only review selection. These rows never establish trading eligibility. */
-export function isEveningReviewCandidate(row: ReviewRow, market: DashboardMarketSignals) {
+/** Optional technical reference scope. Never a raw-signal or trading-eligibility count. */
+export function isTechnicalReviewReference(
+  row: ReviewRow,
+  market: Pick<DashboardMarketSignals, "date" | "holdingsKnown">,
+) {
   if (
     !market.holdingsKnown ||
     row.held ||
@@ -37,6 +44,34 @@ export function isEveningReviewCandidate(row: ReviewRow, market: DashboardMarket
     !evidence.failed.length &&
     (evidence.rawOnset || (evidence.score !== null && evidence.score >= 8)),
   );
+}
+
+/** Today's recorded raw signal, including signals rejected by subsequent entry gates.
+ * Holdings and entry eligibility are deliberately separate from raw-signal evidence.
+ */
+export function isEveningReviewCandidate(
+  row: ReviewRow,
+  market: Pick<DashboardMarketSignals, "date" | "holdingsKnown">,
+) {
+  if (row.date !== market.date || !isOperationalSignalDate(row.date)) return false;
+  return row.market === "ETF"
+    ? row.etfAssessment?.current === true && row.etfAssessment.rawOnset === true
+    : row.assessment?.current === true && row.assessment.rawOnset === true;
+}
+
+/** Missing or old cached projection fields stay unknown; never force a screening refresh. */
+export function isReviewOnsetUnknown(
+  row: ReviewRow,
+  market: Pick<DashboardMarketSignals, "date" | "holdingsKnown">,
+) {
+  if (row.date !== market.date || !isOperationalSignalDate(row.date)) return true;
+  if (row.market === "ETF")
+    return (
+      !row.etfAssessment ||
+      (row.etfAssessment.isStrategyTarget === true &&
+        (!row.etfAssessment.current || row.etfAssessment.rawOnset == null))
+    );
+  return !row.assessment?.current || row.assessment.rawOnset == null;
 }
 
 /** Missing KRX fields are skipped only in the explicitly selected partial-review view. */

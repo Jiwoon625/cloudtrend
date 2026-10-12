@@ -176,9 +176,9 @@ it("defaults review to focused current candidates and transitions when saved KRX
     r.date = "2026-10-12";
   });
   let html = renderToStaticMarkup(<DomesticAssessmentPanel markets={current} review />);
-  expect(html).toContain("저녁 후보 선정 · 아침 종목 판단 확정");
+  expect(html).toContain("당일 원신호 · 진입 판단 구분");
   expect(html).toContain("미보유 종목");
-  expect(html).not.toContain("주성엔지니어링");
+  expect(html).toContain("주성엔지니어링");
   expect(html).toContain("최종 진입 미확정");
   current[0]!.assessments![1]!.assessment = {
     ...assessment,
@@ -187,11 +187,11 @@ it("defaults review to focused current candidates and transitions when saved KRX
   };
   html = renderToStaticMarkup(<DomesticAssessmentPanel markets={current} review />);
   expect(html).toContain("저장된 운영 진입 조건 충족");
-  expect(html).not.toContain("시가총액 미확인");
+  expect(html).toContain("시가총액 미확인");
 });
 it("does not promote pre-start saved evidence to default review candidates", () => {
   const html = renderToStaticMarkup(<DomesticAssessmentPanel markets={markets} review />);
-  expect(html).toContain("기준일의 검토 후보가 없습니다");
+  expect(html).toContain("기준일에 확인된 원신호가 없습니다");
   expect(html).not.toContain("미보유 종목");
 });
 
@@ -247,11 +247,11 @@ it("does not present a domestic source outage or unknown holdings as zero confir
   const unavailable = [{ ...markets[0]!, date: null, assessments: [] }];
   const html = renderToStaticMarkup(<DomesticAssessmentPanel markets={unavailable} review />);
   expect(html).toContain("국내 기준일·조건별 판단 자료 미확인");
-  expect(html).not.toContain("기준일의 검토 후보가 없습니다");
+  expect(html).not.toContain("기준일에 확인된 원신호가 없습니다");
   const unknown = [{ ...markets[0]!, holdingsKnown: false }];
   const unknownHtml = renderToStaticMarkup(<DomesticAssessmentPanel markets={unknown} review />);
   expect(unknownHtml).toContain("실제 보유정보 확인 대기");
-  expect(unknownHtml).not.toContain("기준일의 검토 후보가 없습니다");
+  expect(unknownHtml).not.toContain("기준일에 확인된 원신호가 없습니다");
 });
 
 it("shows the ETF pre-start exclusion when browsing all saved evidence", () => {
@@ -268,6 +268,7 @@ it("shows the ETF pre-start exclusion when browsing all saved evidence", () => {
       krxPending: true,
       isStrategyTarget: true,
       score: null,
+      rawOnset: null,
       previousScore: null,
       previousDate: null,
       technical: 50,
@@ -289,4 +290,84 @@ it("shows the ETF pre-start exclusion when browsing all saved evidence", () => {
   const html = renderToStaticMarkup(<DomesticAssessmentPanel markets={input} review />);
   expect(html).toContain("시작 전 원신호 · 운용 승계 안 함");
   expect(html).not.toContain("신규");
+});
+
+it("separates the October 12 actual onset from 717 technical references and 54 missing technical plus four pre-start origins", () => {
+  const date = "2026-10-12";
+  const base = markets[0]!.assessments![1]!;
+  const stocks = Array.from({ length: 7 }, (_, i) => ({
+    ...base,
+    market: "KOSPI" as const,
+    date,
+    symbol: `S${i}`,
+    name: `기술유지 ${i}`,
+    assessment: { ...assessment, rawOnset: false, previousScore: i ? 8 : 9.5 },
+  }));
+  const onset = {
+    ...base,
+    market: "KOSPI" as const,
+    date,
+    symbol: "028670",
+    name: "팬오션",
+    assessment: {
+      ...assessment,
+      rawOnset: true,
+      failed: ["RISK_OFF"],
+      finalEntry: "시장 조건 탈락 · 진입 제외",
+    },
+  };
+  const etfs = Array.from({ length: 768 }, (_, i) => ({
+    ...base,
+    market: "ETF" as const,
+    date,
+    symbol: `E${i}`,
+    name: `ETF참고 ${i}`,
+    etfEntry:
+      i >= 710 && i < 714 ? { entryState: "data_pending", originDate: "2026-10-08" } : undefined,
+    assessment: undefined,
+    etfAssessment: {
+      current: true,
+      krxPending: true,
+      isStrategyTarget: true,
+      technical: i < 714 ? 50 : null,
+      rawOnset: null,
+      score: null,
+      priority: null,
+      health: null,
+      environment: null,
+      underlyingClose: null,
+      underlyingMa60: null,
+      underlyingJudgment: "unconfirmed",
+      provenanceLabel: date,
+    },
+  }));
+  const input = [
+    { ...markets[0]!, market: "KOSPI", date, assessments: [...stocks, onset] },
+    { ...markets[0]!, market: "KOSDAQ", date, assessments: [] },
+    { ...markets[0]!, market: "ETF", date, assessments: etfs },
+  ] as unknown as DashboardMarketSignals[];
+  const before = structuredClone(input);
+  const show = () => {
+    hooks.cursor = 0;
+    const tree = DomesticAssessmentPanel({ markets: input, review: true });
+    return { html: renderToStaticMarkup(tree), elements: nodes(tree) };
+  };
+  let view = show();
+  expect(view.html).toContain("팬오션");
+  expect(view.html).toContain("시장 조건 탈락 · 진입 제외");
+  expect(view.html).toContain("판단 미확정 768종목");
+  expect(view.html).not.toContain("기술유지 0");
+  expect(view.html).not.toContain("717");
+  view.elements.filter((e) => e.type === "select")[0]!.props.onChange!({
+    target: { value: "reference" },
+  });
+  view = show();
+  expect(view.html).toContain("기술조건 참고 717종목");
+  expect(view.html).toContain("기술유지 0");
+  view.elements.filter((e) => e.type === "select")[1]!.props.onChange!({
+    target: { value: "KOSDAQ" },
+  });
+  view = show();
+  expect(view.html).toContain("기술조건 참고 0종목");
+  expect(input).toEqual(before);
 });

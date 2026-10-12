@@ -18,7 +18,9 @@ export function BreakdownTable({
       <div className="flex items-baseline justify-between border-b border-border bg-surface-strong px-3 py-2">
         <h3 className="text-sm font-semibold">{title}</h3>
         <span className="num text-xs text-muted-foreground">
-          획득 {block.points} / 산정 가능 {block.availableMaxPoints} (만점 {block.maxPoints})
+          {block.rows.length === 0 && block.availableMaxPoints === 0
+            ? "표시할 산정 항목 없음"
+            : `획득 ${block.points} / 산정 가능 ${block.availableMaxPoints} (만점 ${block.maxPoints})`}
         </span>
       </div>
       <div className="overflow-x-auto">
@@ -61,7 +63,7 @@ export function BreakdownTable({
                   )}
                 </td>
                 <td className="num px-2 py-1.5">
-                  {r.points > 0 ? `+${r.points}` : r.status === "NO_DATA" ? "-" : "0"}
+                  {r.status === "NO_DATA" ? "-" : r.points > 0 ? `+${r.points}` : r.points}
                 </td>
                 <td className="num px-2 py-1.5 text-muted-foreground">
                   {r.status === "NO_DATA" ? "산정 불가" : r.maxPoints}

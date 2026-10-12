@@ -226,3 +226,30 @@ describe("ETF partial evidence presentation", () => {
     });
   });
 });
+
+it("keeps raw onset unknown until current and previous final M0 evidence is ready", () => {
+  expect(etfPartialEvidence(row(), date).rawOnset).toBeNull();
+  const ready = row({
+    dataStatus: "ready",
+    score: 82,
+    previousScore: 79,
+    health: 80,
+    issues: [],
+    rawOnset: true,
+  });
+  expect(etfPartialEvidence(ready, date).rawOnset).toBe(true);
+  expect(
+    etfPartialEvidence({ ...ready, etfStrategy: { ...ready.etfStrategy!, rawOnset: false } }, date)
+      .rawOnset,
+  ).toBe(false);
+  expect(
+    etfPartialEvidence(
+      { ...ready, etfStrategy: { ...ready.etfStrategy!, previousDate: date } },
+      date,
+    ).rawOnset,
+  ).toBeNull();
+  expect(
+    etfPartialEvidence({ ...ready, snapshot: { ...ready.snapshot, tradeDate: "2026-10-06" } }, date)
+      .rawOnset,
+  ).toBeNull();
+});

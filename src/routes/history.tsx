@@ -11,6 +11,8 @@ import {
   isHistoryOperationalEntry,
   historyEtfEvidence,
   historyEntryStatus,
+  historyScoreLabel,
+  historyEtfOnsetLabel,
 } from "@/components/historyEntryPresentation";
 export const Route = createFileRoute("/history")({
   ssr: false,
@@ -197,6 +199,10 @@ function HistoryPage() {
               <button onClick={() => void detail.refetch()}>다시 시도</button>
             </div>
           ) : null}
+          <p className="text-xs text-muted-foreground">
+            당시 저장된 계산 신호이며 실제 매수·매도 체결 기록이 아닙니다. ETF 기술점수는 M0와
+            별개이며, 미기록·미확인 M0는 기술점수로 대체하지 않습니다.
+          </p>
           <div className="overflow-auto rounded-lg border">
             <table className="w-full min-w-[800px] text-xs">
               <thead>
@@ -206,7 +212,7 @@ function HistoryPage() {
                   <th>점수</th>
                   <th>원신호</th>
                   <th>확인·진입 준비</th>
-                  <th>청산 기록</th>
+                  <th>계산 청산신호</th>
                   <th>당시 상태</th>
                 </tr>
               </thead>
@@ -238,20 +244,18 @@ function HistoryPage() {
                       </Link>
                     </td>
                     <td>{e.market ?? (e.instrumentType === "ETF" ? "ETF" : "미기록")}</td>
+                    <td>{historyScoreLabel(e, selected.asOfDate)}</td>
                     <td>
-                      {e.market === "US"
-                        ? `Core ${e.technicalPoints ?? "미관측"}`
-                        : (e.technicalPoints ?? "미관측")}
-                    </td>
-                    <td>
-                      {e.market === "US" && usHistorySignals(e).onset === undefined
-                        ? "미기록"
-                        : e.kospi80Onset ||
-                            e.kosdaq80Onset ||
-                            e.evidence?.["rawOnset"] ||
-                            historyEtfEvidence(e)?.rawOnset
-                          ? "원신호"
-                          : "—"}
+                      {e.instrumentType === "ETF"
+                        ? historyEtfOnsetLabel(e, selected.asOfDate)
+                        : e.market === "US" && usHistorySignals(e).onset === undefined
+                          ? "미기록"
+                          : e.kospi80Onset ||
+                              e.kosdaq80Onset ||
+                              e.evidence?.["rawOnset"] ||
+                              historyEtfEvidence(e)?.rawOnset
+                            ? "원신호"
+                            : "—"}
                     </td>
                     <td>
                       {e.market === "US"

@@ -1,6 +1,11 @@
 import { KrxReviewReferenceDetails } from "./KrxReviewReferenceDetails";
 import { dashboardCopy } from "@/lib/dashboardCopy";
-import { eveningReviewStartNotice, isEveningReviewCandidate } from "@/lib/eveningReview";
+import {
+  eveningReviewStartNotice,
+  isEveningReviewCandidate,
+  isTechnicalReviewReference,
+  isReviewOnsetUnknown,
+} from "@/lib/eveningReview";
 import { EtfAssessmentDetails } from "./EtfAssessmentDetails";
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -31,12 +36,24 @@ export function DomesticAssessmentPanel({
   const candidates = domestic.flatMap((m) =>
     (m.assessments ?? []).filter((r) => isEveningReviewCandidate(r, m)),
   );
-  const visible = review && scope === "candidates" ? candidates : all;
-  const filtered = visible.filter(
-    (r) =>
-      (market === "ALL" || market === r.market) &&
-      `${r.name} ${r.symbol}`.toLowerCase().includes(query.trim().toLowerCase()),
+  const references = domestic.flatMap((m) =>
+    (m.assessments ?? []).filter((r) => isTechnicalReviewReference(r, m)),
   );
+  const unknown = domestic.flatMap((m) =>
+    (m.assessments ?? []).filter((r) => isReviewOnsetUnknown(r, m)),
+  );
+  const visible =
+    !review || scope === "all"
+      ? all
+      : scope === "reference"
+        ? references
+        : scope === "unknown"
+          ? unknown
+          : candidates;
+  const matchesView = (r: (typeof all)[number]) =>
+    (market === "ALL" || market === r.market) &&
+    `${r.name} ${r.symbol}`.toLowerCase().includes(query.trim().toLowerCase());
+  const filtered = visible.filter(matchesView);
   const pageSize = review ? 5 : 20;
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pages - 1);
@@ -52,7 +69,11 @@ export function DomesticAssessmentPanel({
     <section
       className="my-4 rounded-lg border border-border bg-card"
       aria-label={
-        heldOnly ? "보유종목 조건별 판단" : review ? "저녁 후보 검토" : "저녁 스크리닝 조건별 판단"
+        heldOnly
+          ? "보유종목 조건별 판단"
+          : review
+            ? "당일 원신호 검토"
+            : "저녁 스크리닝 조건별 판단"
       }
     >
       <div className="space-y-2 border-b p-3">
@@ -60,18 +81,18 @@ export function DomesticAssessmentPanel({
           {heldOnly
             ? "보유종목 조건별 판단"
             : review
-              ? "저녁 후보 선정 · 아침 종목 판단 확정"
+              ? "당일 원신호 · 진입 판단 구분"
               : "계산된 국내 조건별 판단"}
         </h2>
         <p className="text-[11px] text-muted-foreground">
           {review
-            ? "저녁에는 저장된 기술 근거로 뉴스·재무를 먼저 검토하세요. 아침 KRX 자료 수신 후 위 진입 준비 목록에서 최종 판단합니다. 후보는 매수 신호가 아닙니다."
+            ? "당일 원신호 발생 사실을 먼저 확인합니다. 시장·필수조건 탈락과 보유종목도 원신호에 포함되며, 매수 가능한 종목 수가 아닙니다. 최종 진입 판단은 위 진입 준비 목록에서 확인하세요."
             : "KRX 시가총액 등은 다음 영업일 08:00 KST부터 확인 가능합니다. 가격·거래량·기술점수 등 확인된 조건과 최종 진입을 구분합니다. 보유 기간 청산은 기존 원장을 확인하세요."}
         </p>
         {review ? (
           <p className="text-[10px] text-muted-foreground">
-            미보유 주식 기술 8점 이상·돌파(확인된 필수조건 미충족 제외), ETF 전략 대상의 당일 기술
-            근거 · 운용 시작 조건 적용
+            주식은 전일 8점 미만 → 당일 8점 이상 돌파만 집계합니다. 기술 8점 유지·하락과 ETF 기술
+            근거는 별도 참고 범위입니다. ETF 당일 M0 미확정은 원신호 0건을 뜻하지 않습니다.
           </p>
         ) : null}
         {!review && stocks.length > 0 ? (
@@ -102,8 +123,16 @@ export function DomesticAssessmentPanel({
               }}
               className="rounded border bg-background px-2 py-1 text-xs"
             >
-              <option value="candidates">우선 검토 후보 {candidates.length}종목</option>
-              <option value="all">저장된 조건별 판단 전체 {all.length}종목</option>
+              <option value="candidates">
+                당일 원신호 · 확인된 {candidates.filter(matchesView).length}종목
+              </option>
+              <option value="unknown">
+                원신호 판단 미확정 {unknown.filter(matchesView).length}종목
+              </option>
+              <option value="reference">기술조건 참고 목록 펼치기</option>
+              <option value="all">
+                저장된 조건별 판단 전체 {all.filter(matchesView).length}종목
+              </option>
             </select>
           ) : null}
           <input
@@ -132,6 +161,33 @@ export function DomesticAssessmentPanel({
           </select>
         </div>
       </div>
+      {review ? (
+        <div className="space-y-1 border-b p-3 text-xs">
+          {domestic
+            .filter((m) => market === "ALL" || market === m.market)
+            .map((m) => {
+              const rows = m.assessments ?? [];
+              const unavailable = !m.date || m.assessments === undefined;
+              const confirmed = rows.filter((r) => isEveningReviewCandidate(r, m)).length;
+              const pending = rows.filter((r) => isReviewOnsetUnknown(r, m)).length;
+              return (
+                <p key={m.market}>
+                  {m.market} 시장 전체 · 기준일 {m.date ?? "미확인"} ·{" "}
+                  {unavailable ? "원신호 자료 미확인" : `확인된 원신호 ${confirmed}종목`}
+                  {pending > 0 ? ` · 판단 미확정 ${pending}종목 (전체 원신호 수 미확정)` : ""}
+                </p>
+              );
+            })}
+          {scope === "reference" ? (
+            <p>
+              기술조건 참고 {filtered.length}종목 · 원신호·진입 준비와 별도 집계입니다. ETF는 전략
+              대상 중 당일 기술 근거가 있는 미보유 종목만 포함하며 시작 전 원신호·원신호 시점
+              미확인은 제외합니다. KRX 대기 전체 범위에는 기술 미확인과 시작 전 원신호도 포함되어
+              수가 다를 수 있습니다.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       {incomplete ? (
         <p className="p-3 text-xs text-warn">
           국내 기준일·조건별 판단 자료 미확인 · 후보가 없다는 뜻이 아닙니다. 새로고침 후 다시
@@ -140,8 +196,7 @@ export function DomesticAssessmentPanel({
       ) : null}
       {review && holdingsUnknown ? (
         <p className="p-3 text-xs text-warn" role="status">
-          실제 보유정보 확인 대기 · 해당 시장은 우선 검토 후보에서 제외합니다. 전체 조건별 판단에서
-          기술 근거를 볼 수 있습니다.
+          실제 보유정보 확인 대기 · 원신호 발생 여부와 별개로 진입 가능 여부는 확정할 수 없습니다.
         </p>
       ) : null}
       <div className="overflow-x-auto">
@@ -225,7 +280,7 @@ export function DomesticAssessmentPanel({
           {review && (incomplete || holdingsUnknown)
             ? "자료 확인이 필요합니다. 확인된 시장의 근거만 표시합니다."
             : review && scope === "candidates"
-              ? "기준일의 검토 후보가 없습니다. 전체 조건별 판단에서 저장된 근거를 확인할 수 있습니다."
+              ? "기준일에 확인된 원신호가 없습니다. 미확정 항목이 있으면 원신호 0건으로 확정할 수 없습니다."
               : "표시할 조건별 판단이 없습니다."}
         </p>
       ) : null}
