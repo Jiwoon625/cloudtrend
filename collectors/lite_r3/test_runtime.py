@@ -647,15 +647,20 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(len(calls),1)
         self.assertFalse(self.ns['_US_SNAPSHOT_READY'])
 
-    def _dbrg_snapshot_fixture(self, multiple=False, holds=False):
+    def _dbrg_snapshot_fixture(self, multiple=False, holds=False, lifecycle_symbols=None, held_lifecycle=()):
         date='2026-10-09'
         path,_,pointer,_,calls=self._snapshot_fixture(date=date, frozen=False)
         frame=self.ns['snap'].copy()
         frame=frame.loc[frame.symbol.ne('WBD')].copy()
         base=frame.iloc[0].to_dict()
-        frame=pd.concat([frame,pd.DataFrame([{**base,'symbol':'DBRG','name':'DIGITALBRIDGE GROUP INC'}])],ignore_index=True)
-        if multiple:
-            frame=pd.concat([frame,pd.DataFrame([{**base,'symbol':'WBD','name':'WBD'}])],ignore_index=True)
+        lifecycle_symbols=lifecycle_symbols or (['DBRG','WBD'] if multiple else ['DBRG'])
+        registry={e['symbol']:e for e in self.ns['VERIFIED_LIFECYCLE_EVENTS']}
+        for symbol in lifecycle_symbols:
+            row={**base,'symbol':symbol,'name':registry[symbol].get('identity_name_contains',symbol)+' INC'}
+            if symbol in held_lifecycle:
+                row.update(toss_tradable=False,active20=False)
+                for col in ['open','high','low','close','volume','dollar_volume','ret120','ret252','beta60_spy','ichimoku_tk_gap','relvol1_20','adv20_usd','amihud20']:row[col]=np.nan
+            frame=pd.concat([frame,pd.DataFrame([row])],ignore_index=True)
         gaps=['BLFS','DRCT','FSEA','ILLR','NSTS','QRVO','SLP'] if holds else []
         for symbol in gaps:
             row={**base,'symbol':symbol,'name':symbol,'toss_tradable':False,'active20':False}
@@ -663,13 +668,63 @@ class RuntimeTests(unittest.TestCase):
             frame=pd.concat([frame,pd.DataFrame([row])],ignore_index=True)
         original=frame.to_csv(index=False,lineterminator='\n').encode();path.write_bytes(original)
         pointer.update(data_hash='sha256:'+hashlib.sha256(original).hexdigest(),row_count=len(frame),symbol_count=len(frame))
-        events=[e.copy() for e in self.ns['VERIFIED_LIFECYCLE_EVENTS'] if e['symbol'] in (['DBRG','WBD'] if multiple else ['DBRG'])]
+        events=[e.copy() for e in self.ns['VERIFIED_LIFECYCLE_EVENTS'] if e['symbol'] in lifecycle_symbols]
         self.ns.update(snap=frame.loc[~frame.symbol.isin([e['symbol'] for e in events])].copy(),lifecycle_events=events,provider_gap_symbols=set(gaps),PREVIOUS_SESSION='2026-10-08')
         ingest={**pointer,'user_id':'test-owner','collected_at':'2026-10-09T21:00:00+00:00',
                 'metadata':{'confirmedRegularClose':True,'failedSymbols':0,'previousSessionDate':'2026-10-08',
-                            'sourceCoverageComplete':not bool(gaps),'providerGapSymbols':gaps,'lifecycleExcludedSymbols':[]}}
+                            'sourceCoverageComplete':not bool(gaps or held_lifecycle),'providerGapSymbols':gaps+list(held_lifecycle),'lifecycleExcludedSymbols':[]}}
         self.ns['_CT_US_ARCHIVE']['freeze_us_atomic_archive'](raw=original,ingest=ingest,root=self.ns['DATED_ARCHIVE_DIR'],user_id='test-owner')
         return path,original,pointer,calls
+
+    def _synthetic_lifecycle_registry(self):
+        events=[{'symbol':symbol,'effective_date':'2026-10-08','status':'SUSPENDED',
+                 'identity_name_contains':symbol+' VERIFIED ISSUER',
+                 'source_url':'https://example.invalid/verified/'+symbol}
+                for symbol in ['NEWCO','OTHERCO']]
+        self.ns['VERIFIED_LIFECYCLE_EVENTS'].extend(events)
+        return events
+
+    def test_new_registry_issuers_share_derivative_path_preserving_hold_and_receipts(self):
+        self._synthetic_lifecycle_registry()
+        path,original,pointer,_=self._dbrg_snapshot_fixture(
+            lifecycle_symbols=['NEWCO','OTHERCO'],held_lifecycle=['OTHERCO'],holds=True)
+        receipt=self.ns['DATED_ARCHIVE_DIR']/'2026-10-09/source.json'
+        original_receipt=receipt.read_bytes()
+        self.run_stage('us_snapshot')
+        correction=self.ns['_US_LIFECYCLE_DERIVATIVE']
+        self.assertEqual({e['symbol'] for e in correction['source']['lifecycleQuarantines']},{'NEWCO','OTHERCO'})
+        self.assertEqual(correction['source']['originalSource']['dataHash'],pointer['data_hash'])
+        old=pd.read_csv(io.BytesIO(original)).set_index('symbol');new=self.ns['out'].set_index('symbol')
+        pd.testing.assert_frame_equal(old.drop(['NEWCO','OTHERCO']),new.drop(['NEWCO','OTHERCO']))
+        self.assertTrue(pd.isna(new.loc['OTHERCO','close']))
+        self.assertEqual(new.loc['OTHERCO','status'],'SUSPENDED')
+        self.assertTrue(new.loc[['NEWCO','OTHERCO'],'close'].isna().all())
+        self.run_stage('us_snapshot')
+        self.assertEqual(self.ns['_US_LIFECYCLE_DERIVATIVE'],correction)
+        self.assertEqual(path.read_bytes(),original);self.assertEqual(receipt.read_bytes(),original_receipt)
+
+    def test_registry_derivative_rejects_unknown_future_bad_evidence_and_reused_issuer(self):
+        for case in ['unknown','future','invalid_date','evidence','issuer','missing_issuer','empty_issuer','duplicate']:
+            with self.subTest(case=case):
+                if case!='unknown':self.tearDown();self.setUp()
+                events=self._synthetic_lifecycle_registry()
+                path,original,_,_=self._dbrg_snapshot_fixture(lifecycle_symbols=['NEWCO'])
+                if case=='unknown':self.ns['VERIFIED_LIFECYCLE_EVENTS']=[e for e in self.ns['VERIFIED_LIFECYCLE_EVENTS'] if e['symbol']!='NEWCO']
+                elif case=='duplicate':self.ns['VERIFIED_LIFECYCLE_EVENTS'].append(events[0].copy())
+                elif case=='missing_issuer':
+                    events[0].pop('identity_name_contains');self.ns['lifecycle_events'][0].pop('identity_name_contains')
+                elif case=='empty_issuer':
+                    events[0]['identity_name_contains']='...';self.ns['lifecycle_events'][0]['identity_name_contains']='...'
+                elif case=='future':
+                    events[0]['effective_date']='2026-10-12';self.ns['lifecycle_events'][0]['effective_date']='2026-10-12'
+                elif case=='invalid_date':
+                    events[0]['effective_date']='2026-09-99';self.ns['lifecycle_events'][0]['effective_date']='2026-09-99'
+                elif case=='evidence':
+                    events[0]['source_url']='http://example.invalid/unverified';self.ns['lifecycle_events'][0]['source_url']=events[0]['source_url']
+                else:
+                    events[0]['identity_name_contains']='DIFFERENT REUSED TICKER';self.ns['lifecycle_events'][0]['identity_name_contains']=events[0]['identity_name_contains']
+                with self.assertRaisesRegex(RuntimeError,'lifecycle exclusion|lifecycle correction|issuer identity'):self.run_stage('us_snapshot')
+                self.assertFalse(self.ns['_US_SNAPSHOT_READY']);self.assertEqual(path.read_bytes(),original)
 
     def test_dbrg_derivative_preserves_original_and_seven_holds_idempotently(self):
         for multiple in [False,True]:
@@ -728,13 +783,31 @@ class RuntimeTests(unittest.TestCase):
             path=url.split('/cloudtrend-data/')[1];posts.append(path);objects.setdefault(path,kwargs['data'])
             return types.SimpleNamespace(status_code=409)
         self.ns['requests']=types.SimpleNamespace(get=get,post=post)
-        self.run_stage('us_upload');self.run_stage('us_archive');self.run_stage('us_dispatch')
+        # Execute the entire remaining runtime STAGES sequence, including both
+        # user-visible summaries. A fresh namespace must not inherit storage_path.
+        self.assertNotIn('storage_path',self.ns)
+        log=io.StringIO()
+        with redirect_stdout(log):
+            for stage in rt.STAGES[rt.STAGES.index('us_upload'):]:rt.run_stage(stage,self.ns)
+        self.assertEqual(self.ns['storage_path'],self.ns['_US_LIFECYCLE_DERIVATIVE']['source']['storagePath'])
+        self.assertIn('Supabase: '+self.ns['storage_path']+' data hash: '+self.ns['data_hash'],log.getvalue())
+        self.assertIn('US storage: '+self.ns['storage_path'],log.getvalue())
+        self.assertNotIn('stale-prior-run.csv',log.getvalue())
         self.assertTrue(self.ns['_US_UPLOAD_VERIFIED']);self.assertEqual(len(posts),5)
         self.assertEqual(self.ns['_US_DISPATCH_STATUS'],'REQUEST_ACCEPTED')
         self.run_stage('us_dispatch')
         self.assertEqual(self.ns['_US_DISPATCH_STATUS'],'REQUEST_ALREADY_RECORDED')
         self.assertEqual(posts.count('dispatch'),1)
-        self.run_stage('us_upload')
+        # A later corrected run cannot display the original/previous upload path.
+        self.ns['storage_path']='stale-prior-run.csv'
+        log=io.StringIO()
+        with redirect_stdout(log):
+            for stage in rt.STAGES[rt.STAGES.index('us_upload'):]:rt.run_stage(stage,self.ns)
+        self.assertEqual(self.ns['storage_path'],self.ns['_US_LIFECYCLE_DERIVATIVE']['source']['storagePath'])
+        self.assertIn('Supabase: '+self.ns['storage_path']+' data hash: '+self.ns['data_hash'],log.getvalue())
+        self.assertIn('US storage: '+self.ns['storage_path'],log.getvalue())
+        self.assertNotIn('stale-prior-run.csv',log.getvalue())
+        self.assertEqual(posts.count('dispatch'),1)
         self.assertEqual(len(objects),4)
         objects[self.ns['_US_LIFECYCLE_DERIVATIVE']['source']['storagePath']]=b'changed'
         with self.assertRaisesRegex(RuntimeError,'readback mismatch'):self.run_stage('us_upload')

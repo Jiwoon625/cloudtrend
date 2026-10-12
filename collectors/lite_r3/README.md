@@ -62,7 +62,7 @@ historical cache evidence are retained; no historical source or result is edited
 The published 2026-10-09 source remains immutable. Lite r4 daily v4 handles a
 registered same-date DBRG conflict by deriving a separate reviewed CSV from the
 hash-verified original archive. It retains every row and all unaffected values;
-only DBRG (and WBD if simultaneously conflicting) becomes non-scoreable with
+only conflicting securities from the verified lifecycle registry become non-scoreable with
 blank price/score fields. `SUSPENDED` is the engine's existing exclusion state,
 not a new exchange-status claim. Existing seven-symbol price holds are retained.
 
@@ -87,3 +87,16 @@ a notebook at this runtime. Rebuild twice to verify the ZIP hash, publish the
 exact commit, then update both private notebook pins together. Never use a
 local-only commit as a downloadable notebook pin. No production replay is run
 by the release build or tests.
+
+Lite r4 daily v5 also sets the verified derivative Storage path for both final
+summary stages. The regression runs every stage from upload through the final
+integrated summary in fresh and repeated sessions, without a stale path from
+a preceding ordinary upload.
+
+The same-date derivative path is issuer-neutral: adding a verified registry
+event does not require another collector exception. Exact registry membership,
+valid effective session, HTTPS evidence and mandatory nonempty issuer identity are
+checked; future events, unknown events and reused ticker identities cannot
+change the frozen source. The WBD-only previously published-view reuse contract
+remains supported. Missing provider prices alone remain temporary holds and
+never create permanent lifecycle exclusions.
