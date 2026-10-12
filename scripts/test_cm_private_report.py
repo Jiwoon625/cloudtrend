@@ -19,6 +19,10 @@ report = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(report)
 ENV = {"GITHUB_ACTIONS": "true", "GITHUB_WORKFLOW": "CMresearchengine S20 S23 private final audit",
        "GITHUB_EVENT_NAME": "push", "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_SHA": "a" * 40}
+CASH_CANDIDATES = {
+    "Q_K000_E000_U000_C100": {"K": 0, "E": 0, "U": 0, "C": 1},
+    "K25_P000_Q000_E000_U000_C100": {"P": 0, "Q": 0, "E": 0, "U": 0, "C": 1},
+}
 
 
 class FakeStore:
@@ -53,10 +57,12 @@ class FakeStore:
         self.objects[route] = data
 
 
-def fixture(cash=False, bad_cash=False):
+def fixture(cash=False, bad_cash=False, *, cash_candidate="Q_K000_E000_U000_C100",
+            cash_weights=None, mutate_files=None):
     store = FakeStore()
-    candidate = "Q_K000_E000_U000_C100" if cash else "S05"
-    identity = {"candidate": {"candidate_id": candidate, "initial_weights": {"K": 0, "E": 0, "U": 0, "C": 1} if cash else {"K": 1/3, "E": 1/3, "U": 1/3, "C": 0}}, "plan_sha256": report.PLAN}
+    candidate = cash_candidate if cash else "S05"
+    weights = CASH_CANDIDATES[candidate] if cash and cash_weights is None else cash_weights
+    identity = {"candidate": {"candidate_id": candidate, "initial_weights": weights if cash else {"K": 1/3, "E": 1/3, "U": 1/3, "C": 0}}, "plan_sha256": report.PLAN}
     identity_hash = report.sha256(report.canonical(identity))
     nav = pd.DataFrame({"at": ["2017-08-21T22:00:00+00:00", "2020-01-02T22:00:00+00:00", "2026-09-11T22:00:00+00:00"],
                         "gross_nav_krw": [99900000.0, 90000000.0, 140000000.0]})
@@ -77,6 +83,10 @@ def fixture(cash=False, bad_cash=False):
     if cash:
         files["events.csv"] = b"kind,id\n"
         files["retrospective_exit_proxy_audit.csv"] = b"fill_id\n"
+    if mutate_files is not None:
+        # Rebuild valid manifests and ZIP hashes so semantic checks must reject
+        # the changed contents, rather than merely noticing stale checksums.
+        mutate_files(files)
     files["file_manifest.json"] = report.canonical({"files": {name: {"sha256": report.sha256(raw), "size": len(raw)} for name, raw in files.items()}})
     archive = io.BytesIO()
     with zipfile.ZipFile(archive, "w") as z:
@@ -204,6 +214,107 @@ class PrivateReportTests(unittest.TestCase):
         with self.assertRaises(report.ReportError):
             report.audit_cash_only("Q_K000_E000_U000_C100", identity, store=store)
         self.assertFalse(store.posts)
+
+    def test_both_approved_pure_cash_candidates_pass_without_writes(self):
+        approved = json.loads((runtime.ROOT / "REPRESENTATIVE_300_APPROVED.json").read_text())
+        self.assertEqual({row["id"] for row in approved["candidates"] if row["id"].endswith("_C100")},
+                         set(CASH_CANDIDATES))
+        for candidate in CASH_CANDIDATES:
+            with self.subTest(candidate=candidate):
+                store, identity = fixture(cash=True, cash_candidate=candidate)
+                before = deepcopy(store.objects)
+                output = io.StringIO()
+                with redirect_stdout(output):
+                    report.audit_cash_only(candidate, identity, store=store)
+                result = json.loads(output.getvalue())
+                self.assertEqual(result["status"], candidate + "_PRIVATE_AUDIT_VERIFIED")
+                self.assertTrue(result["pure_cash_contract_verified"])
+                self.assertEqual(result["nav_rows_checked"], 3)
+                for field in ("trade_fee_checks", "cash_settlement_checks", "proxy_exit_checks"):
+                    self.assertEqual(result[field], 0)
+                self.assertEqual(store.objects, before)
+                self.assertFalse(store.posts)
+
+    def assert_cash_rejected(self, candidate, error, **fixture_options):
+        store, identity = fixture(cash=True, cash_candidate=candidate, **fixture_options)
+        before = deepcopy(store.objects)
+        output = io.StringIO()
+        with redirect_stdout(output), self.assertRaisesRegex(report.ReportError, "^" + error + "$"):
+            report.audit_cash_only(candidate, identity, store=store)
+        self.assertEqual(output.getvalue(), "")
+        self.assertEqual(store.objects, before)
+        self.assertFalse(store.posts)
+
+    def test_pure_cash_rejects_other_candidate_ids_even_with_cash_weights(self):
+        for candidate in ("S05", "K25_P000_Q000_E000_U025_C075", "UNKNOWN_C100",
+                          "K25_P000_Q000_E000_U000_C100_extra", "../Q_K000_E000_U000_C100"):
+            with self.subTest(candidate=candidate):
+                self.assert_cash_rejected(candidate, "PURE_CASH_CANDIDATE_ONLY",
+                                          cash_weights={"P": 0, "Q": 0, "E": 0, "U": 0, "C": 1})
+
+    def test_pure_cash_rejects_changed_missing_extra_or_cross_schema_weights(self):
+        for candidate, expected in CASH_CANDIDATES.items():
+            bad_weights = [{}, {**expected, "C": 0.999}, {**expected, "extra": 0},
+                           {key: value for key, value in expected.items() if key != "C"}]
+            bad_weights.extend({**expected, key: 0.001, "C": 0.999}
+                               for key in expected if key != "C")
+            bad_weights.extend(weights for other, weights in CASH_CANDIDATES.items() if other != candidate)
+            for weights in bad_weights:
+                with self.subTest(candidate=candidate, weights=weights):
+                    self.assert_cash_rejected(candidate, "PURE_CASH_IDENTITY_MISMATCH", cash_weights=weights)
+
+    def test_pure_cash_rejects_buy_and_sell_with_valid_archive_hashes(self):
+        for candidate in CASH_CANDIDATES:
+            for kind in ("BUY", "SELL"):
+                with self.subTest(candidate=candidate, kind=kind):
+                    self.assert_cash_rejected(candidate, "PURE_CASH_EXECUTION_FOUND",
+                                              mutate_files=lambda files: files.update(
+                                                  {"events.csv": f"kind,id\n{kind},trade-1\n".encode()}))
+
+    def test_pure_cash_rejects_each_changed_nav_component(self):
+        for candidate in CASH_CANDIDATES:
+            for field in ("gross_nav_krw", "cash_krw", "receivable_krw", "market_value_krw"):
+                with self.subTest(candidate=candidate, field=field):
+                    def change_nav(files):
+                        nav = pd.read_csv(io.BytesIO(files["nav.csv"]))
+                        nav.loc[1, field] += 1
+                        files["nav.csv"] = nav.to_csv(index=False).encode()
+                    self.assert_cash_rejected(candidate, "PURE_CASH_NAV_CHANGED", mutate_files=change_nav)
+
+    def test_pure_cash_rejects_proxy_rights_bridge_and_performance_changes(self):
+        changes = [(("proxy_exit_count",), 1, "PURE_CASH_RIGHTS_FOUND"),
+                   (("unresolved_rights_encounter_count",), 1, "PURE_CASH_RIGHTS_FOUND"),
+                   (("final_snapshot", "bridge_residual_krw"), "0.01", "PURE_CASH_BRIDGE_FAILED")]
+        changes += [(("performance", field), 0.001, "PURE_CASH_PERFORMANCE_CHANGED")
+                    for field in ("cagr", "mdd", "cumulative_return", "annualized_volatility")]
+        for candidate in CASH_CANDIDATES:
+            with self.subTest(candidate=candidate, proxy=True):
+                self.assert_cash_rejected(candidate, "PURE_CASH_EXECUTION_FOUND",
+                                          mutate_files=lambda files: files.update(
+                                              {"retrospective_exit_proxy_audit.csv": b"fill_id\nproxy-1\n"}))
+            for path, value, error in changes:
+                with self.subTest(candidate=candidate, path=path):
+                    def change_summary(files):
+                        summary = json.loads(files["summary.json"])
+                        target = summary
+                        for key in path[:-1]:
+                            target = target[key]
+                        target[path[-1]] = value
+                        files["summary.json"] = report.canonical(summary)
+                    self.assert_cash_rejected(candidate, error, mutate_files=change_summary)
+
+    def test_split_cash_exports_aggregate_after_cash_audit(self):
+        candidate = "K25_P000_Q000_E000_U000_C100"
+        store, identity = fixture(cash=True, cash_candidate=candidate)
+        with redirect_stdout(io.StringIO()):
+            report.audit_cash_only(candidate, identity, store=store)
+            report.export_reports([[candidate, identity]], accounting_audit_passed=True, environ=ENV,
+                                  store=store, approved_path=runtime.ROOT / "REPRESENTATIVE_300_APPROVED.json")
+        self.assertEqual(len(store.posts), 1)
+        result = json.loads(store.posts[0][1])
+        self.assertEqual(result["candidate_id"], candidate)
+        self.assertEqual(result["metrics"]["cumulative_return"], 0)
+        self.assertEqual(set(result), report.REPORT_FIELDS)
 
 
 if __name__ == "__main__":
