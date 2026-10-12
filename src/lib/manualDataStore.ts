@@ -1,4 +1,5 @@
-import { parseManualMarketData, type ManualParseResult } from "@/lib/engine/manualDataset";
+import type { ManualParseResult } from "@/lib/engine/manualDataset";
+import { parseManualMarketDataWithReferences as parseManualMarketData } from "./krxReviewReferenceParser";
 import { buildV8InputQualityReport, V8_INPUT_CONTRACT_VERSION } from "@/lib/engine/v8InputQuality";
 import {
   ownerPath,

@@ -1,3 +1,4 @@
+import { withKrxReviewReferences } from "./krxReviewReferenceParser";
 import { computeDatasetDataStatus } from "./datasetDataStatus";
 // 직접 입력한 데이터로 브라우저에서 분석을 실행한다(외부 시세 API 호출 없음).
 import { runBacktest, type BacktestParams, type BacktestResult } from "@/lib/engine/backtestV4";
@@ -36,7 +37,10 @@ function runLocalMarketAnalysis(
   const result = runFullMarketAnalysis(rawDataset, config);
   return {
     ...result,
-    analysis: withOnsetProfiles(result.analysis, result.dataset, config),
+    analysis: withKrxReviewReferences(
+      withOnsetProfiles(result.analysis, result.dataset, config),
+      result.dataset,
+    ),
   };
 }
 

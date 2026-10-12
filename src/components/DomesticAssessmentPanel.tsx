@@ -1,3 +1,4 @@
+import { KrxReviewReferenceDetails } from "./KrxReviewReferenceDetails";
 import { dashboardCopy } from "@/lib/dashboardCopy";
 import { eveningReviewStartNotice, isEveningReviewCandidate } from "@/lib/eveningReview";
 import { EtfAssessmentDetails } from "./EtfAssessmentDetails";
@@ -177,6 +178,10 @@ export function DomesticAssessmentPanel({
                       ? `${r.price.toLocaleString("ko-KR")}원`
                       : "기준일 가격 미확인"}
                   </p>
+                  <KrxReviewReferenceDetails
+                    reference={r.krxReviewReference}
+                    etf={r.market === "ETF"}
+                  />
                   {r.market !== "ETF" ? (
                     <p>
                       20일 거래량 비율{" "}

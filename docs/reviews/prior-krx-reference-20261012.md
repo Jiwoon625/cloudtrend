@@ -1,0 +1,44 @@
+# Prior KRX reference display (2026-10-12)
+
+## Scope
+Show read-only KRX context in the existing evening-candidate table and stock/ETF instrument detail. Use a shared native disclosure, without new dashboard cards. The summary and every fact show their actual reference dates; unavailable fields say “미수신 / 기준일 미확인”. Each field independently uses the latest valid exact observation at or before the review date. Older observations are marked “직전 참고”; same-day arrivals replace the displayed value/date for that field.
+
+Stock: market capitalization and listed shares. ETF: trading value, market capitalization, NAV, total net assets, listed units, underlying index name and close.
+
+No previous observation substitutes into strategy bars, market-cap eligibility, ETF M0, signal origins, candidate ranking, allocation, quantity, cash or ledgers. Existing October 12 operational-origin guards remain unchanged. No October 8 signal becomes an October 12 candidate.
+
+## Verified date provenance
+The deployed Korean collector bundle `cloudtrend_kr_v3_3_3_runtime.zip` has SHA-256 `91d4992be9a2d06916ee2e425cb43d210350eed5e73a83429dbb4d041c8b7aba`.
+- `step_06.py`, `official_normalize`: rejects a response unless BAS_DD equals the requested date; normalized date is that verified day.
+- `step_11.py`: stock cap/share enrichment merges on date and symbol, then sets KRX_STOCK source.
+- `step_12.py`: exact-date enrichment merges without forward filling; exact ETF/stock values are tagged KRX_ETF/KRX_STOCK. Price data has separate Toss provenance.
+
+The display parser requires these exact source tags. It does not infer KRX provenance from a row date alone or use close-times-volume proxies. ETF product fields can be retained when exact KRX trading-value provenance exists even if market cap is missing. Zero trading value is an observed value; nonpositive capitalization, NAV, assets, shares/units or index close is unusable. Invalid/future dates and nonfinite values are excluded.
+
+## Architecture and preservation
+- Original `manualDataset` executable parser and frozen calculation pipeline are unchanged.
+- A separate presentation parser scans only relevant columns and retains at most the latest usable fact for each field, avoiding a second full history in memory.
+- The read-only context is attached after calculation in browser, server-screening and CLI display payloads, and preserved in compact dashboard projections.
+- Type-only additions to dataset/row interfaces do not alter executable engine provenance.
+- Existing Shadow engine hash remains `sha256:6d17bcaf79a6d0f224fce32030a6daf7e2e6a8bbaf4041fe8f90b8f817bcc424`, with 44 calculation sources. Frozen manifests are unchanged.
+- Screening/dashboard/instrument display-cache versions and dashboard sidecar version are bumped so older cached rows cannot hide reference facts.
+- No r4/vf collector changes, stored-source edits, raw-data uploads or remote publication are part of this patch.
+
+## Verification
+- Reference model/parser/render tests: 7 passed. Coverage includes October 8 to October 12 holiday/weekend gap, absent/null/zero/nonfinite/future values, individual field date replacement, partial ETF provenance, bounded retained observations and original-engine dataset equality.
+- Full analysis excluding display context, snapshot output and deterministic portfolio ledger output remain equal, including policy/score/ranking/quantity/cash fields.
+- Dashboard config: 604 passed. ETF date-label copy changes were followed by 17 passing ETF UI tests.
+- Engine contracts: 648 passed.
+- Portfolio config: 140 passed.
+- Source-pipeline config: 103 passed.
+- October Shadow config: 105 passed, 1 pre-existing summary-state failure. That exact failure reproduces in the prior released checkout, independent of this patch. Frozen-manifest tests pass (37).
+- Changed-file ESLint and TypeScript no-emit checks passed.
+- Production build (`npm run build`) passed; final ETF copy-only change was also rebuilt.
+- Independent review: no blocking defects; 69 independent regression tests and TypeScript check passed.
+
+An unconfigured broad Vitest invocation also encounters Node-test files and router/server mocks intended for separate configurations; the project-specific configurations above are the meaningful regression runs.
+
+## Release boundary
+Changes are local pending publication authorization. A live post-deployment UI check has not been performed. Today’s technical preliminary candidates can only appear after today’s screening actually supplies them.
+
+The old ETF `krxReferenceDate` display was also corrected: it represented a strategy previous-session comparison, not independently verified fact availability. Product pages now label that date as the strategy comparison date and direct KRX fact-date checks to the shared reference disclosure.

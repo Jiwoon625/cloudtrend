@@ -110,6 +110,8 @@ export interface SectorScore {
 export type V8ExitSignal = "UP90" | "DOWN30" | "UP95" | "DOWN25" | null;
 
 export interface ScreeningRow {
+  /** Display-only context attached outside the frozen calculation pipeline. */
+  krxReviewReference?: import("../krxReviewReference").KrxReviewReference;
   kospiEntry?: KospiEntrySnapshot | undefined;
   etfStrategy?: EtfStrategySnapshot;
   instrument: Instrument;

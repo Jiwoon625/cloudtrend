@@ -25,6 +25,7 @@ import {
 
 export type DashboardMarket = "KOSPI" | "KOSDAQ" | "ETF" | "US";
 export interface DashboardSignal {
+  krxReviewReference?: import("./krxReviewReference").KrxReviewReference | undefined;
   symbol: string;
   name: string;
   market: DashboardMarket;
@@ -130,6 +131,7 @@ export function projectKrDashboard(analysis: AnalysisResult): DashboardIndex {
     const strategy = r.etfStrategy;
     const currentEtf = strategy?.version === ETF_POLICY.version;
     rows.push({
+      krxReviewReference: r.krxReviewReference,
       symbol: r.instrument.symbol,
       name: r.instrument.name,
       market,

@@ -7,6 +7,7 @@ export function compactDashboardRow(row: ScreeningRow): ScreeningRow {
   const vf = row.vf;
 
   return {
+    krxReviewReference: row.krxReviewReference,
     instrument: {
       symbol: row.instrument.symbol,
       name: row.instrument.name,

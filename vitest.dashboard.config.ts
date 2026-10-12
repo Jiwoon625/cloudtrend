@@ -16,6 +16,8 @@ export default defineConfig({
       "src/components/StockInstrumentSummary.test.tsx",
       "src/lib/stockAssessmentDisplay.test.ts",
       "src/lib/eveningReview.test.ts",
+      "src/lib/krxReviewReference.test.ts",
+      "src/components/KrxReviewReferenceDetails.test.tsx",
       "src/components/DomesticAssessmentPanel.test.tsx",
       "src/lib/etfPartialEvidence.test.ts",
       "src/components/EtfScreener.test.tsx",

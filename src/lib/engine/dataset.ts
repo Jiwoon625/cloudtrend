@@ -36,6 +36,8 @@ export interface KospiVolatilityObservation {
 }
 
 export interface MarketDataset {
+  /** Display-only KRX facts; never fill analytical bars or ETF facts from these. */
+  krxReviewObservations?: Record<string, import("../krxReviewReference").KrxReviewObservation[]>;
   /** Canonical source observations, including zero-price suspension rows; never synthetic fills. */
   observedBars?: Record<string, DailyPrice[]>;
   liquidSymbolCountsByDate?: Record<string, number>;

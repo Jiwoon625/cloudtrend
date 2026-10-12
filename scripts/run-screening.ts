@@ -11,7 +11,10 @@ import process from "node:process";
 import { buildScreeningSummary } from "../src/lib/analysisRunBundle";
 import { withOnsetProfiles } from "../src/lib/onsetProfile";
 import { runFullMarketAnalysis } from "../src/lib/engine/fullMarketAnalysis";
-import { parseManualMarketData } from "../src/lib/engine/manualDataset";
+import {
+  parseManualMarketDataWithReferences as parseManualMarketData,
+  withKrxReviewReferences,
+} from "../src/lib/krxReviewReferenceParser";
 import {
   DEFAULT_SCORING_CONFIG,
   mergeScoringConfig,
@@ -165,7 +168,10 @@ export async function runScreening(argv = process.argv.slice(2)) {
 
   memory("parse-start");
   const { analysis: engineAnalysis, dataset, stats } = analyzeInputs(inputs, config);
-  const analysis = withOnsetProfiles(engineAnalysis, dataset, config);
+  const analysis = withKrxReviewReferences(
+    withOnsetProfiles(engineAnalysis, dataset, config),
+    dataset,
+  );
   const sourceRegisteredAt = latestSourceRegistration(
     inputs.flatMap((input) => (input.sourceRecord ? [input.sourceRecord] : [])),
     analysis.asOfDate,
