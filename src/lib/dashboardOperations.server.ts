@@ -25,7 +25,7 @@ import { OPERATIONAL_SIGNAL_START, isOperationalSignalDate } from "./operational
 import type { NewActualPool } from "./newActualPortfolio";
 
 const BUCKET = "cloudtrend-data";
-const VERSION = "dashboard-operations-krx-reference-v7";
+const VERSION = "dashboard-operations-partial-evidence-v6";
 const memory = new Map<string, { expires: number; index: DashboardIndex }>();
 const inFlight = new Map<string, Promise<DashboardIndex>>();
 

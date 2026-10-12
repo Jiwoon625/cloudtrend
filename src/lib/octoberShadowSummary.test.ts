@@ -147,7 +147,7 @@ describe("October Shadow read-only summary", () => {
         return builder;
       },
     } as unknown as SupabaseClient;
-    const result = await loadOctoberShadowSummaryForOwner(client, uid);
+    const result = await loadOctoberShadowSummaryForOwner(client, uid, series.version);
     expect(result.books.find((book) => book.kind === "US_A0")?.status).toBe("UNAVAILABLE");
     expect(result.books.find((book) => book.kind === "US_A0")?.tax).toBeNull();
     expect(queries.length).toBe(3);

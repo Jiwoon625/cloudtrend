@@ -17,6 +17,12 @@ export function KrxReviewReferenceDetails({
   reference?: KrxReviewReference | undefined;
   etf?: boolean;
 }) {
+  if (!reference)
+    return (
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        KRX 참고값 준비 전 · 새 스크리닝 후 표시
+      </p>
+    );
   const fields: KrxReviewField[] = etf
     ? [
         "tradingValue",

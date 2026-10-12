@@ -21,17 +21,21 @@ The display parser requires these exact source tags. It does not infer KRX prove
 - The read-only context is attached after calculation in browser, server-screening and CLI display payloads, and preserved in compact dashboard projections.
 - Type-only additions to dataset/row interfaces do not alter executable engine provenance.
 - Existing Shadow engine hash remains `sha256:6d17bcaf79a6d0f224fce32030a6daf7e2e6a8bbaf4041fe8f90b8f817bcc424`, with 44 calculation sources. Frozen manifests are unchanged.
-- Screening/dashboard/instrument display-cache versions and dashboard sidecar version are bumped so older cached rows cannot hide reference facts.
+- All existing screening/dashboard/instrument and sidecar cache versions remain unchanged. A display release must not trigger automatic server screening, history updates, portfolio synchronization or Shadow replay.
+- Cached results lacking the new reference object say “KRX 참고값 준비 전 · 새 스크리닝 후 표시”, not “미수신” or zero. Facts appear naturally after the user's next authorized screening with changed inputs. No enrichment request fetches raw history or triggers a hidden backtest on page load.
+- A cached legacy-detail page regression asserts the write-capable server screening function is never called.
 - No r4/vf collector changes, stored-source edits, raw-data uploads or remote publication are part of this patch.
 
 ## Verification
 - Reference model/parser/render tests: 7 passed. Coverage includes October 8 to October 12 holiday/weekend gap, absent/null/zero/nonfinite/future values, individual field date replacement, partial ETF provenance, bounded retained observations and original-engine dataset equality.
 - Full analysis excluding display context, snapshot output and deterministic portfolio ledger output remain equal, including policy/score/ranking/quantity/cash fields.
-- Dashboard config: 604 passed. ETF date-label copy changes were followed by 17 passing ETF UI tests.
+- Dashboard config: 607 passed, including cached legacy-detail reads without server calculation calls. ETF date-label copy changes were followed by 17 passing ETF UI tests.
 - Engine contracts: 648 passed.
 - Portfolio config: 140 passed.
 - Source-pipeline config: 103 passed.
-- October Shadow config: 105 passed, 1 pre-existing summary-state failure. That exact failure reproduces in the prior released checkout, independent of this patch. Frozen-manifest tests pass (37).
+- October Shadow: the initial 105/106 result had a pre-existing date-dependent fixture failure, reproduced in the released checkout. The test uses the October 5 series but omitted requestedVersion; from October 12 the production loader correctly selects the restarted series. Passing the fixture's existing series.version at that one test call restores its intended error-path coverage without changing production or assertions. Final suite rerun follows this fix. Frozen-manifest tests pass (37).
+- Screening freshness: 56 passed; compaction: 54 passed; memory regression: 328 passed. Existing publication mocks were connected to the new presentation-wrapper boundary while keeping the original parser mock for legacy Shadow tests.
+- Automated review found one P2: compaction could replace new reference-only facts with unavailable sentinels. Fixed only display-only fields (listedShares, ETF NAV/AUM/units/index name), with eight sentinel cases proving pre/post-compaction reference equivalence and unchanged engine datasets. No actual compaction was executed.
 - Changed-file ESLint and TypeScript no-emit checks passed.
 - Production build (`npm run build`) passed; final ETF copy-only change was also rebuilt.
 - Independent review: no blocking defects; 69 independent regression tests and TypeScript check passed.
@@ -39,6 +43,6 @@ The display parser requires these exact source tags. It does not infer KRX prove
 An unconfigured broad Vitest invocation also encounters Node-test files and router/server mocks intended for separate configurations; the project-specific configurations above are the meaningful regression runs.
 
 ## Release boundary
-Changes are local pending publication authorization. A live post-deployment UI check has not been performed. Today’s technical preliminary candidates can only appear after today’s screening actually supplies them.
+Publication and review/CI/merge/deployment verification are authorized; PR #268 is under review. A live post-deployment UI check has not been performed. Today’s technical preliminary candidates can only appear after today’s screening actually supplies them.
 
 The old ETF `krxReferenceDate` display was also corrected: it represented a strategy previous-session comparison, not independently verified fact availability. Product pages now label that date as the strategy comparison date and direct KRX fact-date checks to the shared reference disclosure.

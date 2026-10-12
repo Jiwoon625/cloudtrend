@@ -96,7 +96,7 @@ describe("dashboard projection policy cache identity", () => {
             createdAt: "2026-10-02T00:40:00.000Z",
           }
         : {
-            key: "timestamp-sidecar:kr:dashboard-operations-krx-reference-v7:same-sidecar",
+            key: "timestamp-sidecar:kr:dashboard-operations-partial-evidence-v6:same-sidecar",
             index: {
               date: "2026-10-01",
               rows: [],

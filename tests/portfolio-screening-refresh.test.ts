@@ -31,7 +31,10 @@ vi.mock("../src/lib/screeningSources.server", async (original) => ({
   listActiveSources: mocks.list,
   loadActiveSources: mocks.load,
 }));
-vi.mock("../src/lib/engine/manualDataset", () => ({ parseManualMarketData: mocks.parse }));
+vi.mock("../src/lib/krxReviewReferenceParser", () => ({
+  parseManualMarketDataWithReferences: mocks.parse,
+  withKrxReviewReferences: (analysis: unknown) => analysis,
+}));
 vi.mock("../src/lib/engine/fullMarketAnalysis", () => ({ runFullMarketAnalysis: mocks.analyze }));
 vi.mock("../src/lib/onsetProfile", () => ({ withOnsetProfiles: (analysis: unknown) => analysis }));
 vi.mock("../src/lib/octoberShadowPublication.server", () => ({

@@ -28,6 +28,18 @@ describe("normal page loads", () => {
     expect(mocks.build).not.toHaveBeenCalled();
     expect(mocks.raw).not.toHaveBeenCalled();
   });
+  it("keeps pre-reference screening readable without calculation or write-capable server calls", async () => {
+    const payload = {
+      analysis: {
+        asOfDate: "2026-10-08",
+        rows: [{ instrument: { symbol: "005930" }, snapshot: { tradeDate: "2026-10-08" } }],
+      },
+    };
+    mocks.read.mockResolvedValue({ payload });
+    expect(await getOrBuildScreeningPayloadServerFirst()).toBe(payload);
+    expect(mocks.build).not.toHaveBeenCalled();
+    expect(mocks.raw).not.toHaveBeenCalled();
+  });
   it("deduplicates a cache miss and never falls back to downloading raw data when the server fails", async () => {
     mocks.read.mockResolvedValue(null);
     mocks.build.mockRejectedValue(new Error("timeout"));

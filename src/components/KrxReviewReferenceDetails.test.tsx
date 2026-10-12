@@ -27,6 +27,9 @@ describe("KRX reference presentation", () => {
     expect(html).toContain("기준일 2026-10-12");
     expect(html).toContain("(당일)");
     expect(html).not.toContain("직전 KRX 참고값");
-    expect(renderToStaticMarkup(<KrxReviewReferenceDetails />)).toContain("미수신 / 기준일 미확인");
+    const legacy = renderToStaticMarkup(<KrxReviewReferenceDetails />);
+    expect(legacy).toContain("KRX 참고값 준비 전 · 새 스크리닝 후 표시");
+    expect(legacy).not.toContain("미수신");
+    expect(legacy).not.toContain("0원");
   });
 });

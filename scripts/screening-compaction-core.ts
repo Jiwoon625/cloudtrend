@@ -20,6 +20,16 @@ const optionalBarNumbers = new Set([
   "etfMarketCap",
   "etfTradingValue",
 ]);
+// New display-only reference facts are not consumed by the frozen engine parser.
+// Preserve their last usable same-date cell across missing/invalid duplicates.
+const positiveReferenceNumbers = new Set([
+  "listedShares",
+  "etfNav",
+  "etfNetAssetTotalAmount",
+  "etfListedUnits",
+]);
+const referenceTextPresent = (value: string) =>
+  value.trim() !== "" && !/^(null|none|nan|na|-|--)$/i.test(value.trim());
 const cell = (value: string) => (/[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
 const line = (values: string[]) => values.map(cell).join(",");
 export const COMPACTION_HEADER = columns.join(",") + "\n";
@@ -111,7 +121,13 @@ export class ScreeningCompactor {
         // The analysis parser sets these from the first valid row of a symbol only.
         if (isFirstInstrumentRow && identity.has(column)) continue;
         const value = incoming[i]!;
-        const present = optionalBarNumbers.has(column) ? finiteManualNumber(value) : value !== "";
+        const present = positiveReferenceNumbers.has(column)
+          ? finiteManualNumber(value) && Number(value.replace(/[, ₩원%]/g, "").trim()) > 0
+          : column === "etfUnderlyingIndexName"
+            ? referenceTextPresent(value)
+            : optionalBarNumbers.has(column)
+              ? finiteManualNumber(value)
+              : value !== "";
         if (present) previous[i] = value;
         else if (previous[i] !== "") this.preservedEnrichmentCells++;
       }
