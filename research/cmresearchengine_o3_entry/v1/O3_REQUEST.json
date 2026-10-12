@@ -1,0 +1,7 @@
+{
+  "schema": "CM_O3_ENTRY_MANUAL_REQUEST_V1",
+  "request_id": "o3-entry-manual-20261012-approved",
+  "mode": "run",
+  "candidate_id": "O3",
+  "max_seconds": 3000
+}
