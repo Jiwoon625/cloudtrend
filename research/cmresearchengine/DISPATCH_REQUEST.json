@@ -1,9 +1,9 @@
 {
-  "request_id": "cm-manual-base51-D2-20261011-001",
+  "request_id": "cm-manual-split25-000-003-20261012-001",
   "mode": "run",
-  "stage": "base",
-  "offset": 51,
-  "count": 1,
+  "stage": "split25",
+  "offset": 0,
+  "count": 4,
   "max_seconds": 3000,
   "workers": 1,
   "hybrid_shared_us_analysis": false
