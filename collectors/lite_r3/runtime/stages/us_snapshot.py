@@ -1,6 +1,7 @@
 # Fail closed if a prior run left values in this Colab runtime.
 _US_SNAPSHOT_READY = False
 _US_UPLOAD_VERIFIED = False
+_US_LIFECYCLE_DERIVATIVE = None
 if RUN_US_MARKET:
     _us_begin_stage('snapshot')
     _us_require_stage('diagnostics')
@@ -72,7 +73,14 @@ if RUN_US_MARKET:
                           for _col in ['open','high','low','close','volume'] if _col in _held)
             if not _status_ok or not _tradable_ok or _priced:
                 _lifecycle_conflicts.append(_event)
-        if _lifecycle_conflicts:
+        _derive_lifecycle = bool(_lifecycle_conflicts and any(e['symbol'] == 'DBRG' for e in _lifecycle_conflicts))
+        if _derive_lifecycle:
+            _known_events = {e['symbol']: e for e in VERIFIED_LIFECYCLE_EVENTS}
+            if (not _registered_same_day or any(e['symbol'] not in {'DBRG', 'WBD'}
+                    or e != _known_events.get(e['symbol']) for e in _lifecycle_conflicts)):
+                raise RuntimeError('Frozen source conflicts with unreviewed lifecycle exclusion; original preserved')
+            _reviewed_exclusions = {e['symbol'] for e in _lifecycle_conflicts}
+        if _lifecycle_conflicts and not _derive_lifecycle:
             if (not _registered_same_day or len(_lifecycle_conflicts) != 1
                     or _lifecycle_conflicts[0]['symbol'] != 'WBD'
                     or _lifecycle_conflicts[0].get('status') != 'SUSPENDED'
@@ -162,6 +170,14 @@ if RUN_US_MARKET:
             print('Reusing frozen daily source')
         out = frozen
         raw = _frozen_raw
+        if _derive_lifecycle:
+            _US_LIFECYCLE_DERIVATIVE = _CT_US_ARCHIVE['prepare_us_lifecycle_derivative'](
+                root=DATED_ARCHIVE_DIR, date=latest_date, original_raw=_frozen_raw,
+                events=_lifecycle_conflicts, user_id=SUPABASE_USER_ID)
+            raw = _US_LIFECYCLE_DERIVATIVE['raw']
+            out_path = Path(_US_LIFECYCLE_DERIVATIVE['localPath'])
+            out = pd.read_csv(out_path, dtype={'symbol':str,'date':str})
+            print('원본 보존: 검증된 lifecycle 제외 파생자료를 별도 저장했습니다. 검증 제외 파생자료로 후속 스크리닝을 요청합니다.')
     else:
         # Newly frozen provider-gap rows must never remain tradable or scoreable.
         _provider_mask=out.symbol.isin(provider_gap_symbols)

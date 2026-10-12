@@ -7,6 +7,11 @@ if RUN_US_MARKET:
     _us_api = _CT_US_ARCHIVE['UsArchiveApi'](SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_USER_ID, GITHUB_TOKEN, requests)
     if not DISPATCH_GITHUB_AFTER_UPLOAD:
         _US_DISPATCH_STATUS = 'DISABLED'
+    elif globals().get('_US_LIFECYCLE_DERIVATIVE'):
+        _request = _CT_US_ARCHIVE['dispatch_us_lifecycle_derivative'](
+            api=_us_api, root=DATED_ARCHIVE_DIR, correction=_US_LIFECYCLE_DERIVATIVE)
+        _US_DISPATCH_STATUS = _request['status']
+        print('미국 검증 제외 파생자료 스크리닝 요청:', _US_DISPATCH_STATUS, '(요청 접수와 엔진 완료는 다릅니다)')
     else:
         try:
             _base = _us_api.common_base()

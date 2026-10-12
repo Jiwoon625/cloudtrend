@@ -641,11 +641,104 @@ class RuntimeTests(unittest.TestCase):
         pointer['data_hash']='sha256:'+hashlib.sha256(original).hexdigest()
         self.ns['snap']['symbol']=self.ns['snap']['symbol'].replace('WBD','DBRG')
         self.ns['lifecycle_events']=[next(e for e in self.ns['VERIFIED_LIFECYCLE_EVENTS'] if e['symbol']=='DBRG')]
-        with self.assertRaisesRegex(RuntimeError,'Frozen source conflicts with verified lifecycle exclusion: DBRG'):
+        with self.assertRaisesRegex(RuntimeError,'Original archive differs from frozen source'):
             self.run_stage('us_snapshot')
         self.assertEqual(path.read_bytes(),original)
         self.assertEqual(len(calls),1)
         self.assertFalse(self.ns['_US_SNAPSHOT_READY'])
+
+    def _dbrg_snapshot_fixture(self, multiple=False, holds=False):
+        date='2026-10-09'
+        path,_,pointer,_,calls=self._snapshot_fixture(date=date, frozen=False)
+        frame=self.ns['snap'].copy()
+        frame=frame.loc[frame.symbol.ne('WBD')].copy()
+        base=frame.iloc[0].to_dict()
+        frame=pd.concat([frame,pd.DataFrame([{**base,'symbol':'DBRG','name':'DIGITALBRIDGE GROUP INC'}])],ignore_index=True)
+        if multiple:
+            frame=pd.concat([frame,pd.DataFrame([{**base,'symbol':'WBD','name':'WBD'}])],ignore_index=True)
+        gaps=['BLFS','DRCT','FSEA','ILLR','NSTS','QRVO','SLP'] if holds else []
+        for symbol in gaps:
+            row={**base,'symbol':symbol,'name':symbol,'toss_tradable':False,'active20':False}
+            for col in ['open','high','low','close','volume','dollar_volume','ret120','ret252','beta60_spy','ichimoku_tk_gap','relvol1_20','adv20_usd','amihud20']:row[col]=np.nan
+            frame=pd.concat([frame,pd.DataFrame([row])],ignore_index=True)
+        original=frame.to_csv(index=False,lineterminator='\n').encode();path.write_bytes(original)
+        pointer.update(data_hash='sha256:'+hashlib.sha256(original).hexdigest(),row_count=len(frame),symbol_count=len(frame))
+        events=[e.copy() for e in self.ns['VERIFIED_LIFECYCLE_EVENTS'] if e['symbol'] in (['DBRG','WBD'] if multiple else ['DBRG'])]
+        self.ns.update(snap=frame.loc[~frame.symbol.isin([e['symbol'] for e in events])].copy(),lifecycle_events=events,provider_gap_symbols=set(gaps),PREVIOUS_SESSION='2026-10-08')
+        ingest={**pointer,'user_id':'test-owner','collected_at':'2026-10-09T21:00:00+00:00',
+                'metadata':{'confirmedRegularClose':True,'failedSymbols':0,'previousSessionDate':'2026-10-08',
+                            'sourceCoverageComplete':not bool(gaps),'providerGapSymbols':gaps,'lifecycleExcludedSymbols':[]}}
+        self.ns['_CT_US_ARCHIVE']['freeze_us_atomic_archive'](raw=original,ingest=ingest,root=self.ns['DATED_ARCHIVE_DIR'],user_id='test-owner')
+        return path,original,pointer,calls
+
+    def test_dbrg_derivative_preserves_original_and_seven_holds_idempotently(self):
+        for multiple in [False,True]:
+            with self.subTest(multiple=multiple):
+                if multiple:self.tearDown();self.setUp()
+                path,original,pointer,calls=self._dbrg_snapshot_fixture(multiple=multiple,holds=True)
+                receipt=self.ns['DATED_ARCHIVE_DIR']/'2026-10-09/source.json'
+                before=receipt.read_bytes()
+                self.run_stage('us_snapshot')
+                correction=self.ns['_US_LIFECYCLE_DERIVATIVE']
+                self.assertEqual(path.read_bytes(),original);self.assertEqual(receipt.read_bytes(),before)
+                self.assertNotEqual(self.ns['data_hash'],pointer['data_hash'])
+                self.assertEqual(correction['source']['originalSource']['dataHash'],pointer['data_hash'])
+                self.assertEqual(correction['source']['pit']['kind'],'REVIEWED_ATOMIC_QUARANTINE')
+                old=pd.read_csv(io.BytesIO(original)).set_index('symbol')
+                new=self.ns['out'].set_index('symbol')
+                changed=['DBRG','WBD'] if multiple else ['DBRG']
+                pd.testing.assert_frame_equal(old.drop(changed),new.drop(changed))
+                for symbol in changed:
+                    self.assertEqual(new.loc[symbol,'status'],'SUSPENDED')
+                    self.assertFalse(new.loc[symbol,'toss_tradable']);self.assertTrue(pd.isna(new.loc[symbol,'close']))
+                self.run_stage('us_snapshot')
+                self.assertEqual(self.ns['_US_LIFECYCLE_DERIVATIVE'],correction)
+                self.assertEqual(path.read_bytes(),original);self.assertEqual(receipt.read_bytes(),before)
+
+    def test_dbrg_derivative_blocks_normal_price_change_or_bad_archive(self):
+        for symbol in ['KEEP','SPY']:
+            path,original,_,_=self._dbrg_snapshot_fixture()
+            self.ns['snap'].loc[self.ns['snap'].symbol.eq(symbol),'close']=99
+            with self.assertRaisesRegex(RuntimeError,'Current same-session values differ'):self.run_stage('us_snapshot')
+            self.assertFalse(self.ns['_US_SNAPSHOT_READY']);self.assertEqual(path.read_bytes(),original)
+            self.tearDown();self.setUp()
+
+    def test_dbrg_corrupt_archive_roster_blocks_without_rewriting_source(self):
+        path,original,_,_=self._dbrg_snapshot_fixture()
+        source=json.loads((self.ns['DATED_ARCHIVE_DIR']/'2026-10-09/source.json').read_text())
+        roster=self.ns['DATED_ARCHIVE_DIR']/'2026-10-09'/source['dataHash'][7:]/'roster.json'
+        roster.write_bytes(b'corrupt')
+        with self.assertRaisesRegex(RuntimeError,'Dated archive changed'):self.run_stage('us_snapshot')
+        self.assertEqual(path.read_bytes(),original);self.assertFalse(self.ns['_US_SNAPSHOT_READY'])
+
+    def test_dbrg_upload_reads_back_each_blob_without_mutating_ingest(self):
+        _,_,pointer,_=self._dbrg_snapshot_fixture()
+        self.run_stage('us_snapshot')
+        objects={};posts=[]
+        def get(url,**kwargs):
+            if '/rest/v1/' in url:return types.SimpleNamespace(json=lambda:[pointer],raise_for_status=lambda:None)
+            path=url.split('/cloudtrend-data/')[1]
+            return types.SimpleNamespace(content=objects[path],raise_for_status=lambda:None)
+        def post(url,**kwargs):
+            self.assertNotIn('/rest/v1/',url)
+            if 'api.github.com' in url:
+                posts.append('dispatch');self.assertEqual(kwargs['json']['inputs']['replay_then_screen'],'true')
+                return types.SimpleNamespace(status_code=204)
+            self.assertEqual(kwargs['headers']['x-upsert'],'false')
+            path=url.split('/cloudtrend-data/')[1];posts.append(path);objects.setdefault(path,kwargs['data'])
+            return types.SimpleNamespace(status_code=409)
+        self.ns['requests']=types.SimpleNamespace(get=get,post=post)
+        self.run_stage('us_upload');self.run_stage('us_archive');self.run_stage('us_dispatch')
+        self.assertTrue(self.ns['_US_UPLOAD_VERIFIED']);self.assertEqual(len(posts),5)
+        self.assertEqual(self.ns['_US_DISPATCH_STATUS'],'REQUEST_ACCEPTED')
+        self.run_stage('us_dispatch')
+        self.assertEqual(self.ns['_US_DISPATCH_STATUS'],'REQUEST_ALREADY_RECORDED')
+        self.assertEqual(posts.count('dispatch'),1)
+        self.run_stage('us_upload')
+        self.assertEqual(len(objects),4)
+        objects[self.ns['_US_LIFECYCLE_DERIVATIVE']['source']['storagePath']]=b'changed'
+        with self.assertRaisesRegex(RuntimeError,'readback mismatch'):self.run_stage('us_upload')
+        self.assertFalse(self.ns['_US_UPLOAD_VERIFIED'])
 
     def test_long_gap_is_recorded_without_fabricating_price_and_healthy_upload_continues(self):
         histories,calls=self._collection_fixture(stale={'DBRG':'2026-09-29','SHORT':'2026-10-08'})

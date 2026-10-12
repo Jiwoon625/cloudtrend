@@ -15,7 +15,7 @@ import {
   runUsProspectiveAnalysis,
   US_PROSPECTIVE_RULE_VERSION,
 } from "../src/lib/engine/usProspective";
-import { sourceCsv } from "./us-replay-fixtures";
+import { reviewedSourceCsv, sourceCsv } from "./us-replay-fixtures";
 
 const uid = "11111111-1111-4111-8111-111111111111";
 const day = "2026-10-07";
@@ -169,6 +169,52 @@ function setup() {
   };
 }
 
+function reviewedSetup() {
+  const f = setup();
+  const source = f.input.sources[1]!;
+  const original = {
+    generatedAt: f.input.generatedAt,
+    dataHash: source.dataHash,
+    analysis: { date: day, ruleVersion: US_PROSPECTIVE_RULE_VERSION, summary: { a0Entries: 1 } },
+  };
+  const bytes = JSON.stringify(original);
+  f.files.set(`${uid}/results/us-screening/${day}.json`, bytes);
+  f.history.set(day, {
+    user_id: uid,
+    date: day,
+    data_hash: original.dataHash,
+    rule_version: US_PROSPECTIVE_RULE_VERSION,
+    summary: original.analysis.summary,
+    signals: [],
+  });
+  f.input.protectedHistory.push({
+    date: day,
+    data_hash: original.dataHash,
+    rule_version: US_PROSPECTIVE_RULE_VERSION,
+    resultHash: bytesHash(bytes),
+  });
+  source.originalSource = {
+    storagePath: source.storagePath,
+    dataHash: source.dataHash,
+    sourceCapturedAt: source.sourceCapturedAt,
+  };
+  source.storagePath = `${uid}/source/${day}.reviewed.csv`;
+  const csv = reviewedSourceCsv(day);
+  f.files.set(source.storagePath, csv);
+  source.dataHash = bytesHash(csv);
+  source.pit.kind = "REVIEWED_ATOMIC_QUARANTINE";
+  source.quarantinedSymbols = ["TEST"];
+  source.sourceCoverageComplete = false;
+  source.lifecycleQuarantines = [
+    { symbol: "TEST", effectiveDate: day, evidenceUrls: ["https://www.nasdaqtrader.com/fixture"] },
+  ];
+  f.input.analyses[1] = runUsProspectiveAnalysis(
+    parseUsProspectiveCsv(csv),
+    f.input.analyses[0]!.state,
+  );
+  return f;
+}
+
 describe("preserved ATOMIC replay to daily screening", () => {
   it("publishes every missing date with identical entries and state, then same-day screening only republishes", async () => {
     const f = setup();
@@ -247,6 +293,54 @@ describe("preserved ATOMIC replay to daily screening", () => {
     expect(f.history.get(day)).toBe(marker);
     expect(f.json(latestPath).analysis.summary.a0Entries).toBe(1);
     expect(f.files.has(`${uid}/results/us-recovered-screening/${day}.json`)).toBe(true);
+  });
+  it("publishes reviewed quarantine separately, preserving originals and same-day retry state", async () => {
+    const f = reviewedSetup();
+    const original = f.files.get(`${uid}/results/us-screening/${day}.json`);
+    const originalHistory = stableJson([...f.history]);
+    const originalSource = f.files.get(f.input.sources[1]!.originalSource!.storagePath);
+    const spy = f.input.analyses[1]!.rows.find((row) => row.symbol === "SPY");
+    await preflightUsReplayScreening(f.input);
+    expect(f.writes).toEqual([]);
+    await publishUsReplayScreening(f.input);
+    await publishUsReplayScreening(f.input);
+    const historyAfter = stableJson([...f.history]);
+    await runUsScreening(f.input.client, uid);
+    expect(stableJson([...f.history])).toBe(historyAfter);
+    expect(f.files.get(`${uid}/results/us-screening/${day}.json`)).toBe(original);
+    expect(f.files.get(f.input.sources[1]!.originalSource!.storagePath)).toBe(originalSource);
+    expect(stableJson([[day, f.history.get(day)]])).toBe(originalHistory);
+    const view = f.json(latestPath);
+    expect(view.dataHash).toBe(f.input.sources[1]!.dataHash);
+    expect(view.source.metadata.recoveryPublication.originalDataHash).toBe(f.ingest.data_hash);
+    expect(
+      view.analysis.rows.find((row: { symbol: string }) => row.symbol === "TEST"),
+    ).toMatchObject({ close: null, open: null, ret120: null, ret252: null, a0Entry: false });
+    expect(
+      view.analysis.rows.find((row: { symbol: string }) => row.symbol === "SPY"),
+    ).toMatchObject({ close: spy!.close, open: spy!.open });
+    expect(f.writes.filter((path) => path === `history:${day}`)).toHaveLength(0);
+    expect(f.reads.some((name) => /actual|portfolio|strategy|shadow/.test(name))).toBe(false);
+  });
+  it("blocks reviewed original hash mismatch, missing history, and revised ingest before writes", async () => {
+    for (const mutate of [
+      (f: ReturnType<typeof reviewedSetup>) => {
+        f.input.sources[1]!.originalSource!.dataHash = bytesHash("wrong");
+      },
+      (f: ReturnType<typeof reviewedSetup>) => {
+        f.input.protectedHistory = [];
+      },
+      (f: ReturnType<typeof reviewedSetup>) => {
+        f.ingest.data_hash = f.input.sources[1]!.dataHash;
+      },
+    ]) {
+      const f = reviewedSetup();
+      mutate(f);
+      await expect(publishUsReplayScreening(f.input)).rejects.toThrow(
+        /ingest differs|protected original history/,
+      );
+      expect(f.writes).toEqual([]);
+    }
   });
   it("retains honest partial-source holds without inventing coverage", async () => {
     const f = setup();

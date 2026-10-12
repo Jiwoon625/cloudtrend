@@ -195,3 +195,90 @@ def check_pending_us_publication(*, root, api):
         return {'status':'PRIOR_PUBLICATION_CONFIRMED','throughDate':pending['throughDate']}
     except Exception:
         raise RuntimeError('이전 미국 날짜별 요청의 게시 완료가 확인되지 않아 새 수집과 업로드를 중단했습니다.') from None
+
+
+def prepare_us_lifecycle_derivative(*, root, date, original_raw, events, user_id):
+    """Separate reviewed input; never relabel or replace the dated atomic receipt.
+
+    SUSPENDED is the existing engine's non-scoreable lifecycle state, not a new
+    claim about an exchange's terminology. Only maintained DBRG/WBD events enter
+    this correction path; ordinary future sessions retain their normal policy.
+    """
+    source, archived_raw, roster = read_us_atomic_archive(root, date)
+    _ua_require(archived_raw == original_raw, 'Original archive differs from frozen source')
+    _ua_require(source['rowCount'] == source['symbolCount'], 'Original archive counts differ')
+    reader = csv.DictReader(io.StringIO(original_raw.decode('utf-8-sig')))
+    fields = reader.fieldnames
+    rows = list(reader)
+    _ua_require(len(rows) == source['rowCount'], 'Original archive counts differ')
+    allowed = {'DBRG': '2026-09-30', 'WBD': '2026-10-06'}
+    changed = {event['symbol'] for event in events}
+    _ua_require(changed and len(changed) == len(events), 'Invalid lifecycle corrections')
+    evidence = []
+    nullable = ('open','high','low','close','volume','dollar_volume','market_cap',
+                'ret120','ret252','beta60_spy','ichimoku_tk_gap','relvol1_20','adv20_usd','amihud20')
+    for event in sorted(events, key=lambda e: e['symbol']):
+        symbol = event['symbol']
+        _ua_require(symbol in allowed and event.get('effective_date') == allowed[symbol]
+                    and event['effective_date'] <= date and event.get('status') == 'SUSPENDED'
+                    and str(event.get('source_url', '')).startswith('https://'),
+                    'Unreviewed lifecycle correction')
+        held = [row for row in rows if row['symbol'] == symbol]
+        _ua_require(len(held) == 1, 'Lifecycle correction symbol missing or duplicated')
+        row = held[0]
+        guard = event.get('identity_name_contains')
+        _ua_require(not guard or re.sub(r'[^A-Z0-9]', '', guard.upper()) in
+                    re.sub(r'[^A-Z0-9]', '', row.get('name', '').upper()), 'Original lifecycle issuer identity differs')
+        row['status'] = 'SUSPENDED'
+        row['toss_tradable'] = 'False'
+        row['active20'] = 'False'
+        for column in nullable:
+            if column in row: row[column] = ''
+        evidence.append({'symbol':symbol,'effectiveDate':event['effective_date'],'evidenceUrls':[event['source_url']]})
+    stream = io.StringIO(newline='')
+    writer = csv.DictWriter(stream, fieldnames=fields, lineterminator='\n')
+    writer.writeheader(); writer.writerows(rows)
+    raw = stream.getvalue().encode('utf-8'); dh = _ua_hash(raw)
+    reviewed = {**source, 'storagePath':f'{user_id}/us-replay/inputs/{date}/{dh[7:]}.csv',
+                'dataHash':dh, 'sourceCoverageComplete':False,
+                'quarantinedSymbols':sorted(set(source['quarantinedSymbols']) | changed),
+                'originalSource':{'storagePath':source['storagePath'],'dataHash':source['dataHash'],
+                                  'sourceCapturedAt':source['sourceCapturedAt']},
+                'lifecycleQuarantines':evidence,
+                'pit':{**source['pit'],'kind':'REVIEWED_ATOMIC_QUARANTINE'}}
+    manifest = {'version':'us-dated-replay-v1','baseDate':source['previousSessionDate'],
+                'throughDate':date,'sessions':[reviewed]}
+    manifest_raw = _ua_json(manifest); mh = _ua_hash(manifest_raw)
+    manifest_path = f'{user_id}/us-replay/manifests/{mh[7:]}.json'
+    folder = Path(root)/date/'reviewed'/dh[7:]
+    _ua_write_once(folder/'input.csv',raw)
+    _ua_write_once(folder/'source.json',_ua_json(reviewed))
+    _ua_write_once(folder/'manifest.json',manifest_raw)
+    return {'source':reviewed,'raw':raw,'manifestHash':mh,'manifestPath':manifest_path,
+            'localPath':str(folder/'input.csv'),
+            'blobs':[(source['storagePath'],original_raw,'text/csv'),
+                     (source['pit']['rosterStoragePath'],roster,'application/json'),
+                     (reviewed['storagePath'],raw,'text/csv'),
+                     (manifest_path,manifest_raw,'application/json')]}
+
+
+def upload_us_lifecycle_derivative(*, api, correction):
+    """Upload immutable, hash-addressed review artifacts only; never change ingest."""
+    for target, body, mime in correction['blobs']:
+        api.upload_verified(target,body,mime)
+    return correction['source']
+
+
+def dispatch_us_lifecycle_derivative(*, api, root, correction):
+    """Same immutable manifest on every retry; the server verifies both identities."""
+    if not api.token: return {'status':'MISSING_TOKEN'}
+    mh = correction['manifestHash']; path = correction['manifestPath']
+    pending_path = Path(root)/'active_replay.json'
+    pending_raw = _ua_json({'manifestHash':mh,'manifestPath':path,'throughDate':correction['source']['date']})
+    _ua_write_once(pending_path,pending_raw)
+    inputs = {'supabase_user_id':api.uid,'replay_manifest_path':path,'replay_manifest_hash':mh,
+              'replay_apply':'true','replay_then_screen':'true'}
+    result = dispatch_us_once(api=api,root=root,fingerprint=mh[7:],inputs=inputs)
+    if result['status'] in ('REQUEST_REJECTED','MISSING_TOKEN') and pending_path.exists():
+        if pending_path.read_bytes() == pending_raw: pending_path.unlink()
+    return {**result,'manifestHash':mh,'manifestPath':path}
