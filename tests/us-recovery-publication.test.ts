@@ -189,6 +189,7 @@ describe("publish-only recovered US screening", () => {
       "us_screening_ingest",
       latestPath,
       "us_screening_history",
+      `${uid}/results/us-recovered-screening/${day}/latest.json`,
       artifactPath,
     ]);
   });

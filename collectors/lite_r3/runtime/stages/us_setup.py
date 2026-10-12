@@ -60,6 +60,7 @@ if RUN_US_MARKET:
     # Only externally verified, effective-dated events may exempt a missing confirmed-session bar.
     VERIFIED_LIFECYCLE_EVENTS = [{
         'symbol':'TBPH', 'effective_date':'2026-09-24', 'status':'SUSPENDED',
+        'identity_name_contains':'THERAVANCE BIOPHARMA',
         'source_url':'https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2026-668',
         'reason':'Merger closed 2026-09-23; Nasdaq suspension effective 2026-09-24',
     }]
@@ -70,6 +71,7 @@ if RUN_US_MARKET:
     # 수집 후보는 reference/us_collection_universe_v1.csv에서 관리합니다.
     # strict PIT를 만들지 않으며, 앞으로의 일별 스크리닝 대상만 고정/갱신합니다.
     VERIFIED_LIFECYCLE_EVENTS.append({'symbol':'WBD','effective_date':'2026-10-06','status':'SUSPENDED',
+        'identity_name_contains':'WARNER BROS DISCOVERY',
         'source_url':'https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2026-710',
         'reason':'Nasdaq suspension effective 2026-10-06; last trading day 2026-10-05.'})
 

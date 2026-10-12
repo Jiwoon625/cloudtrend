@@ -197,12 +197,12 @@ def check_pending_us_publication(*, root, api):
         raise RuntimeError('이전 미국 날짜별 요청의 게시 완료가 확인되지 않아 새 수집과 업로드를 중단했습니다.') from None
 
 
-def prepare_us_lifecycle_derivative(*, root, date, original_raw, events, user_id):
+def prepare_us_lifecycle_derivative(*, root, date, original_raw, events, registry, user_id):
     """Separate reviewed input; never relabel or replace the dated atomic receipt.
 
     SUSPENDED is the existing engine's non-scoreable lifecycle state, not a new
-    claim about an exchange's terminology. Only maintained DBRG/WBD events enter
-    this correction path; ordinary future sessions retain their normal policy.
+    claim about an exchange's terminology. Only exact maintained lifecycle registry
+    events enter this path; temporary provider failures never establish lifecycle.
     """
     source, archived_raw, roster = read_us_atomic_archive(root, date)
     _ua_require(archived_raw == original_raw, 'Original archive differs from frozen source')
@@ -211,7 +211,8 @@ def prepare_us_lifecycle_derivative(*, root, date, original_raw, events, user_id
     fields = reader.fieldnames
     rows = list(reader)
     _ua_require(len(rows) == source['rowCount'], 'Original archive counts differ')
-    allowed = {'DBRG': '2026-09-30', 'WBD': '2026-10-06'}
+    allowed = {event['symbol']: event for event in registry}
+    _ua_require(len(allowed) == len(registry), 'Duplicate lifecycle registry symbol')
     changed = {event['symbol'] for event in events}
     _ua_require(changed and len(changed) == len(events), 'Invalid lifecycle corrections')
     evidence = []
@@ -219,15 +220,21 @@ def prepare_us_lifecycle_derivative(*, root, date, original_raw, events, user_id
                 'ret120','ret252','beta60_spy','ichimoku_tk_gap','relvol1_20','adv20_usd','amihud20')
     for event in sorted(events, key=lambda e: e['symbol']):
         symbol = event['symbol']
-        _ua_require(symbol in allowed and event.get('effective_date') == allowed[symbol]
-                    and event['effective_date'] <= date and event.get('status') == 'SUSPENDED'
-                    and str(event.get('source_url', '')).startswith('https://'),
+        try:
+            effective = datetime.fromisoformat(str(event.get('effective_date', ''))).date().isoformat()
+        except ValueError:
+            effective = None
+        _ua_require(symbol != 'SPY' and event == allowed.get(symbol)
+                    and effective is not None and effective == event.get('effective_date')
+                    and effective <= date and event.get('status') == 'SUSPENDED'
+                    and re.fullmatch(r'https://[^\s]+', str(event.get('source_url', ''))),
                     'Unreviewed lifecycle correction')
         held = [row for row in rows if row['symbol'] == symbol]
         _ua_require(len(held) == 1, 'Lifecycle correction symbol missing or duplicated')
         row = held[0]
         guard = event.get('identity_name_contains')
-        _ua_require(not guard or re.sub(r'[^A-Z0-9]', '', guard.upper()) in
+        normalized_guard = re.sub(r'[^A-Z0-9]', '', str(guard or '').upper())
+        _ua_require(normalized_guard and normalized_guard in
                     re.sub(r'[^A-Z0-9]', '', row.get('name', '').upper()), 'Original lifecycle issuer identity differs')
         row['status'] = 'SUSPENDED'
         row['toss_tradable'] = 'False'

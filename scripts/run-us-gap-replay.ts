@@ -167,6 +167,11 @@ export async function runUsGapReplay(input: {
     throw new Error(
       "Automatic daily publication requires preserved ATOMIC or reviewed quarantine inputs",
     );
+  const hasReviewedSource = manifest.sessions.some(
+    (s) => s.pit.kind === "REVIEWED_ATOMIC_QUARANTINE",
+  );
+  if (hasReviewedSource && (!input.publishDailyScreen || manifest.sessions.length !== 1))
+    throw new Error("Reviewed US inputs require single-session publication-only mode");
   const prefix = `${userId}/results/us-gap-replay/${input.manifestHash.slice(7)}`;
   const savedText = await readText(client, `${prefix}/plan.json`, true);
   type SavedPlan = {
@@ -185,7 +190,7 @@ export async function runUsGapReplay(input: {
     throw new Error("US recovery plan identity mismatch");
   // A completed model replay may have stopped while publishing history/cache. Reuse
   // its immutable analyses and receipt; never re-step models or re-read raw sources.
-  if (input.publishDailyScreen && saved) {
+  if (input.publishDailyScreen && saved && !hasReviewedSource) {
     const receiptText = await readText(client, `${prefix}/receipt.json`, true);
     if (receiptText) {
       const receipt = JSON.parse(receiptText);
@@ -283,7 +288,9 @@ export async function runUsGapReplay(input: {
       ? sessions[0]!
       : null;
   const reviewedOriginal = protectedRows.find((row) => row.date === reviewed?.source.date);
-  if (input.publishDailyScreen && reviewed && reviewedOriginal) {
+  if (hasReviewedSource) {
+    if (!reviewed || !reviewedOriginal)
+      throw new Error("Reviewed US publication requires protected original history");
     const { data: completed, error: completedError } = await client
       .from("us_operating_replays")
       .select("plan_hash,base_date,through_date,plan,receipt")
@@ -292,6 +299,8 @@ export async function runUsGapReplay(input: {
       .eq("through_date", manifest.throughDate)
       .maybeSingle();
     if (completedError) throw completedError;
+    if (!completed)
+      throw new Error("Reviewed US publication requires an exact completed original replay");
     if (completed) {
       const originalHash = reviewed.source.originalSource!.dataHash;
       const plan = completed.plan;

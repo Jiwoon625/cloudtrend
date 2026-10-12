@@ -13,6 +13,7 @@ if RUN_US_MARKET:
             api=_us_api, correction=_US_LIFECYCLE_DERIVATIVE)
         if _us_api.rows('us_screening_ingest', {'select':'as_of_date,data_hash,row_count,symbol_count'}) != _before:
             raise RuntimeError('Registered source changed during reviewed upload; no dispatch')
+        storage_path = _US_DAILY_ARCHIVE_SOURCE['storagePath']
         _US_UPLOAD_VERIFIED = True
         print('검토 파생자료 업로드·재조회 완료. 원본 ingest 유지; 파생자료 manifest로 스크리닝을 연결합니다.')
     else:

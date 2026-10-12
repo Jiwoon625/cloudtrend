@@ -73,11 +73,14 @@ if RUN_US_MARKET:
                           for _col in ['open','high','low','close','volume'] if _col in _held)
             if not _status_ok or not _tradable_ok or _priced:
                 _lifecycle_conflicts.append(_event)
-        _derive_lifecycle = bool(_lifecycle_conflicts and any(e['symbol'] == 'DBRG' for e in _lifecycle_conflicts))
+        # Retain the published WBD-only legacy reuse contract; all other verified
+        # registry events use the same issuer-neutral derived-input path.
+        _derive_lifecycle = bool(_lifecycle_conflicts and not (len(_lifecycle_conflicts) == 1
+                                 and _lifecycle_conflicts[0]['symbol'] == 'WBD'))
         if _derive_lifecycle:
             _known_events = {e['symbol']: e for e in VERIFIED_LIFECYCLE_EVENTS}
-            if (not _registered_same_day or any(e['symbol'] not in {'DBRG', 'WBD'}
-                    or e != _known_events.get(e['symbol']) for e in _lifecycle_conflicts)):
+            if (len(_known_events) != len(VERIFIED_LIFECYCLE_EVENTS) or not _registered_same_day
+                    or any(e != _known_events.get(e['symbol']) for e in _lifecycle_conflicts)):
                 raise RuntimeError('Frozen source conflicts with unreviewed lifecycle exclusion; original preserved')
             _reviewed_exclusions = {e['symbol'] for e in _lifecycle_conflicts}
         if _lifecycle_conflicts and not _derive_lifecycle:
@@ -173,7 +176,7 @@ if RUN_US_MARKET:
         if _derive_lifecycle:
             _US_LIFECYCLE_DERIVATIVE = _CT_US_ARCHIVE['prepare_us_lifecycle_derivative'](
                 root=DATED_ARCHIVE_DIR, date=latest_date, original_raw=_frozen_raw,
-                events=_lifecycle_conflicts, user_id=SUPABASE_USER_ID)
+                events=_lifecycle_conflicts, registry=VERIFIED_LIFECYCLE_EVENTS, user_id=SUPABASE_USER_ID)
             raw = _US_LIFECYCLE_DERIVATIVE['raw']
             out_path = Path(_US_LIFECYCLE_DERIVATIVE['localPath'])
             out = pd.read_csv(out_path, dtype={'symbol':str,'date':str})

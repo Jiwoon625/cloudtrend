@@ -132,6 +132,7 @@ function setup() {
   files.set(manifestPath, manifest);
   let rpcError: string | null = null;
   let completedReplay: Record<string, unknown> | null = null;
+  let includeOriginalHistory = true;
   const client = {
     storage: {
       from: () => ({
@@ -183,11 +184,15 @@ function setup() {
                       data_hash: base.dataHash,
                       rule_version: US_PROSPECTIVE_RULE_VERSION,
                     },
-                    {
-                      date: "2026-10-07",
-                      data_hash: sessions[1]!.dataHash,
-                      rule_version: US_PROSPECTIVE_RULE_VERSION,
-                    },
+                    ...(includeOriginalHistory
+                      ? [
+                          {
+                            date: "2026-10-07",
+                            data_hash: sessions[1]!.dataHash,
+                            rule_version: US_PROSPECTIVE_RULE_VERSION,
+                          },
+                        ]
+                      : []),
                   ]
                 : [],
             error: null,
@@ -217,8 +222,11 @@ function setup() {
       apply: false,
       calculatedAt: "2026-10-08T02:00:00Z",
     },
-    setCompletedReplay: (value: Record<string, unknown>) => {
+    setCompletedReplay: (value: Record<string, unknown> | null) => {
       completedReplay = value;
+    },
+    removeOriginalHistory: () => {
+      includeOriginalHistory = false;
     },
     setRpcError: (v: string) => {
       rpcError = v;
@@ -438,7 +446,7 @@ describe("guarded US recovery driver", () => {
       screeningPublished: true,
     });
   });
-  it("automatically applies reviewed quarantine and resumes publication without duplicate model steps", async () => {
+  it("rejects multi-session reviewed inputs before any model planning or writes", async () => {
     const f = setup();
     const manifest = JSON.parse(f.files.get(f.input.manifestPath)!);
     const source = manifest.sessions[1];
@@ -469,21 +477,13 @@ describe("guarded US recovery driver", () => {
       apply: true,
       publishDailyScreen: true,
     };
-    mocks.dailyPublish.mockRejectedValueOnce(new Error("publication interrupted"));
-    await expect(runUsGapReplay(input)).rejects.toThrow("publication interrupted");
-    expect(mocks.commit).toHaveBeenCalledTimes(1);
-    expect(mocks.dailyPreflight.mock.calls[0]![0].sources[1].originalSource.dataHash).toBe(
-      source.originalSource.dataHash,
-    );
-    expect(await runUsGapReplay(input)).toMatchObject({
-      applied: true,
-      screeningPublished: true,
-      reused: true,
-    });
-    expect(mocks.commit).toHaveBeenCalledTimes(1);
-    expect(mocks.shadow).toHaveBeenCalledTimes(1);
-    expect(f.rpcCalls.map((call) => call["p_apply"])).toEqual([false, true]);
-    expect(f.files.get(`${uid}/results/us-screening/2026-10-07.json`)).toBe(f.original);
+    await expect(runUsGapReplay(input)).rejects.toThrow("single-session publication-only");
+    expect(mocks.commit).not.toHaveBeenCalled();
+    expect(mocks.shadow).not.toHaveBeenCalled();
+    expect(mocks.operating).not.toHaveBeenCalled();
+    expect(mocks.dailyPublish).not.toHaveBeenCalled();
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.writes).toEqual([]);
   });
   it("automatically republishes a completed reviewed day without stepping either legacy or new models", async () => {
     const f = completedReviewedSetup();
@@ -531,6 +531,78 @@ describe("guarded US recovery driver", () => {
       expect(f.writes).toEqual([]);
       expect(mocks.commit).not.toHaveBeenCalled();
     }
+  });
+  it("never falls through from missing reviewed completion evidence into model replay", async () => {
+    for (const alter of [
+      (f: ReturnType<typeof completedReviewedSetup>) => {
+        f.setCompletedReplay(null);
+      },
+      (f: ReturnType<typeof completedReviewedSetup>) => {
+        f.removeOriginalHistory();
+      },
+      (f: ReturnType<typeof completedReviewedSetup>) => {
+        f.input.publishDailyScreen = false;
+      },
+    ]) {
+      const f = completedReviewedSetup();
+      alter(f);
+      await expect(runUsGapReplay(f.input)).rejects.toThrow(/Reviewed US/);
+      expect(mocks.shadow).not.toHaveBeenCalled();
+      expect(mocks.operating).not.toHaveBeenCalled();
+      expect(mocks.commit).not.toHaveBeenCalled();
+      expect(mocks.dailyPublish).not.toHaveBeenCalled();
+      expect(f.rpcCalls).toEqual([]);
+      expect(f.writes).toEqual([]);
+    }
+  });
+  it("does not use a saved model-replay receipt to bypass reviewed completion proof", async () => {
+    const f = completedReviewedSetup();
+    await runUsGapReplay(f.input);
+    const prefix = `${uid}/results/us-gap-replay/${f.input.manifestHash.slice(7)}`;
+    const publication = JSON.parse(f.files.get(`${prefix}/reviewed-publication-plan.json`)!);
+    const saved = {
+      version: "us-gap-replay-plan-v1",
+      manifestHash: f.input.manifestHash,
+      calculatedAt: f.input.calculatedAt,
+      protectedHistory: publication.protectedHistory,
+      operating: { planHash: f.completed.plan_hash },
+      shadow: { analyses: [publication.analysis] },
+    };
+    f.files.set(`${prefix}/plan.json`, JSON.stringify(saved));
+    f.files.set(
+      `${prefix}/receipt.json`,
+      JSON.stringify({
+        version: "us-gap-replay-receipt-v1",
+        applied: true,
+        operatingPlanHash: f.completed.plan_hash,
+        calculatedAt: f.input.calculatedAt,
+        baseDate: f.completed.base_date,
+        throughDate: f.completed.through_date,
+        sessions: 1,
+      }),
+    );
+    f.setCompletedReplay(null);
+    f.writes.length = 0;
+    f.rpcCalls.length = 0;
+    mocks.dailyPublish.mockClear();
+    await expect(runUsGapReplay(f.input)).rejects.toThrow("exact completed original replay");
+    expect(mocks.shadow).not.toHaveBeenCalled();
+    expect(mocks.operating).not.toHaveBeenCalled();
+    expect(mocks.commit).not.toHaveBeenCalled();
+    expect(mocks.dailyPublish).not.toHaveBeenCalled();
+    expect(f.rpcCalls).toEqual([]);
+    expect(f.writes).toEqual([]);
+  });
+  it("blocks newer ingest admission without replay fallback or any publication write", async () => {
+    const f = completedReviewedSetup();
+    mocks.dailyPreflight.mockRejectedValueOnce(new Error("Current US ingest differs"));
+    await expect(runUsGapReplay(f.input)).rejects.toThrow("Current US ingest differs");
+    expect(mocks.shadow).not.toHaveBeenCalled();
+    expect(mocks.operating).not.toHaveBeenCalled();
+    expect(mocks.commit).not.toHaveBeenCalled();
+    expect(mocks.dailyPublish).not.toHaveBeenCalled();
+    expect(f.rpcCalls.map((call) => call["p_apply"])).toEqual([false]);
+    expect(f.writes).toEqual([]);
   });
   it("never publishes daily results before both ledgers acknowledge or in a dry run", async () => {
     const f = setup();

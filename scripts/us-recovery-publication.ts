@@ -6,7 +6,7 @@ import {
   uploadJson,
 } from "./analysis-run-store";
 import { compactRow, publishBrowserViews } from "./us-screening-publication";
-import { assertOwnerReplayPath, type UsReplaySessionSource } from "./us-replay-source";
+import { assertOwnerReplayPath, bytesHash, type UsReplaySessionSource } from "./us-replay-source";
 import {
   US_PROSPECTIVE_RULE_VERSION,
   type UsProspectiveAnalysis,
@@ -230,7 +230,28 @@ export async function loadPublishedUsRecoveryView(
   identity: UsRecoveryPublicationIdentity,
 ): Promise<UsProspectiveCache | null> {
   assertIdentity(identity);
-  const text = await readText(client, artifactPath(userId, identity.date));
+  const legacyPath = artifactPath(userId, identity.date);
+  const pointerText = await readText(client, legacyPath.replace(/\.json$/, "/latest.json"));
+  if (pointerText !== null) {
+    const pointer = JSON.parse(pointerText);
+    if (
+      !record(pointer) ||
+      Object.keys(pointer).sort().join(",") !==
+        "date,originalDataHash,payloadHash,ruleVersion,version" ||
+      pointer.version !== "us-recovery-view-pointer-v1" ||
+      pointer.date !== identity.date ||
+      pointer.originalDataHash !== identity.dataHash ||
+      pointer.ruleVersion !== identity.ruleVersion ||
+      !hash(pointer.payloadHash)
+    )
+      throw new Error("Malformed or mismatched US recovery publication pointer");
+    const versionPath = legacyPath.replace(/\.json$/, `/${pointer.payloadHash.slice(7)}.json`);
+    const text = await readText(client, versionPath);
+    if (text === null || bytesHash(text) !== pointer.payloadHash)
+      throw new Error("US recovery publication version is missing or changed");
+    return assertPublishedView(JSON.parse(text), identity);
+  }
+  const text = await readText(client, legacyPath);
   if (text === null) return null;
   return assertPublishedView(JSON.parse(text), identity);
 }
@@ -258,6 +279,56 @@ async function assertCurrentPublication(input: UsRecoveryPublicationInput) {
       throw new Error("US recovery publication cannot roll back a newer latest cache");
   }
   return ingest;
+}
+
+/** Only a verified, strictly expanded lifecycle exclusion can supersede a saved view.
+ * Revisions retain the exact original result identity and security universe. */
+function assertRecoverySuccessor(
+  existing: UsProspectiveCache | null,
+  payload: UsProspectiveCache,
+  source: UsReplaySessionSource,
+) {
+  if (!existing || stableJson(existing) === stableJson(payload)) return;
+  const before = existing.source.metadata!;
+  const after = payload.source.metadata!;
+  const prior = before["recoveryPublication"] as Record<string, unknown>;
+  const next = after["recoveryPublication"] as Record<string, unknown>;
+  const oldSymbols = before["quarantinedSymbols"] as string[];
+  const newSymbols = after["quarantinedSymbols"] as string[];
+  // A previously temporary price hold already belongs to quarantinedSymbols.
+  // Its newly verified lifecycle exclusion expands meaning, not necessarily the
+  // union's size. Admit only an explicit validated ACTIVE/null -> SUSPENDED
+  // transition named in this manifest's dated lifecycle evidence.
+  const lifecyclePromotion =
+    source.lifecycleQuarantines?.some(({ symbol }) => {
+      const oldRow = existing.analysis.rows.find((row) => row.symbol === symbol);
+      const newRow = payload.analysis.rows.find((row) => row.symbol === symbol);
+      return (
+        oldSymbols.includes(symbol) &&
+        newSymbols.includes(symbol) &&
+        oldRow &&
+        newRow &&
+        oldRow.status?.toUpperCase() !== "SUSPENDED" &&
+        newRow.status === "SUSPENDED"
+      );
+    }) ?? false;
+  if (
+    next["sourceKind"] !== "REVIEWED_ATOMIC_QUARANTINE" ||
+    prior["originalDataHash"] !== next["originalDataHash"] ||
+    prior["originalResultHash"] !== next["originalResultHash"] ||
+    Date.parse(payload.generatedAt) < Date.parse(existing.generatedAt) ||
+    (newSymbols.length <= oldSymbols.length && !lifecyclePromotion) ||
+    oldSymbols.some((symbol) => !newSymbols.includes(symbol)) ||
+    oldSymbols.some(
+      (symbol) =>
+        existing.analysis.rows.find((row) => row.symbol === symbol)?.status?.toUpperCase() ===
+          "SUSPENDED" &&
+        payload.analysis.rows.find((row) => row.symbol === symbol)?.status !== "SUSPENDED",
+    ) ||
+    stableJson(existing.analysis.rows.map((row) => row.symbol).sort()) !==
+      stableJson(payload.analysis.rows.map((row) => row.symbol).sort())
+  )
+    throw new Error("Immutable US recovery publication conflict");
 }
 
 /** Read-only admission. Call before model/Shadow application and repeat before publication. */
@@ -347,8 +418,7 @@ export async function preflightUsRecoveryPublication(
   };
   assertPublishedView(payload, identity);
   const existing = await loadPublishedUsRecoveryView(client, userId, identity);
-  if (existing && stableJson(existing) !== stableJson(payload))
-    throw new Error("Immutable US recovery publication conflict");
+  assertRecoverySuccessor(existing, payload, source);
   return payload;
 }
 
@@ -356,8 +426,23 @@ export async function preflightUsRecoveryPublication(
 export async function publishUsRecoveryViews(input: UsRecoveryPublicationInput) {
   const payload = await preflightUsRecoveryPublication(input);
   const { client, userId, protectedOriginal: original } = input;
-  const path = artifactPath(userId, original.date);
+  const legacyPath = artifactPath(userId, original.date);
+  const pointerPath = legacyPath.replace(/\.json$/, "/latest.json");
+  const identity = {
+    date: original.date,
+    dataHash: original.data_hash,
+    ruleVersion: original.rule_version,
+  };
+  const existing = await loadPublishedUsRecoveryView(client, userId, identity);
+  assertRecoverySuccessor(existing, payload, input.source);
   const body = stableJson(payload);
+  const payloadHash = bytesHash(body);
+  const versioned =
+    Boolean(await readText(client, pointerPath)) ||
+    Boolean(existing && stableJson(existing) !== body);
+  const path = versioned
+    ? legacyPath.replace(/\.json$/, `/${payloadHash.slice(7)}.json`)
+    : legacyPath;
   const { error } = await client.storage.from(ANALYSIS_BUCKET).upload(path, body, {
     contentType: "application/json",
     upsert: false,
@@ -372,6 +457,25 @@ export async function publishUsRecoveryViews(input: UsRecoveryPublicationInput) 
   // Recheck only mutable current ingest/cache identity before refreshing views,
   // including retries after a partially completed cache publication.
   await assertCurrentPublication(input);
+  if (versioned) {
+    // The workflow serializes publication. Recheck again here so an old retry
+    // cannot replace an already selected, more complete lifecycle exclusion.
+    assertRecoverySuccessor(
+      await loadPublishedUsRecoveryView(client, userId, identity),
+      payload,
+      input.source,
+    );
+    const pointer = {
+      version: "us-recovery-view-pointer-v1",
+      date: original.date,
+      originalDataHash: original.data_hash,
+      ruleVersion: original.rule_version,
+      payloadHash,
+    };
+    await uploadJson(client, pointerPath, pointer);
+    if (stableJson(await loadPublishedUsRecoveryView(client, userId, identity)) !== body)
+      throw new Error("US recovery publication pointer readback mismatch");
+  }
   await uploadJson(client, `${userId}/cache/us-screening/latest.json`, payload);
   await publishBrowserViews(client, userId, payload);
   return payload;
