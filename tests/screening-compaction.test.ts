@@ -227,3 +227,40 @@ it.each(["", "-", "--", "NA", "null", "0", "-1", "NaN"])(
     );
   },
 );
+
+it.each([
+  ["etfMarketCap", "marketCap", "0"],
+  ["etfMarketCap", "marketCap", "-1"],
+  ["etfUnderlyingIndexClose", "underlyingIndexClose", "0"],
+  ["etfUnderlyingIndexClose", "underlyingIndexClose", "-1"],
+] as const)(
+  "keeps existing calculation merge semantics for %s=%s and conservatively omits an unavailable reference",
+  (column, field, invalid) => {
+    const stock = row({ date: "2026-10-08" });
+    const etf = row({
+      symbol: "360750",
+      name: "ETF",
+      type: "ETF",
+      market: "ETF",
+      date: "2026-10-08",
+      marketCapSource: "KRX_ETF",
+      etfMarketCap: "100000000000",
+      etfUnderlyingIndexClose: "6000",
+    });
+    const inputs = [toCanonicalCsv([stock, etf]), toCanonicalCsv([{ ...etf, [column]: invalid }])];
+    const compact = new ScreeningCompactor();
+    for (const input of inputs) compact.addCanonicalCsv(input);
+    const output = [...compact.chunks()].map((chunk) => chunk.text);
+    const options = { allowIncompleteIndex: true };
+    const before = parseManualMarketDataWithReferences(inputs, options).dataset
+      .krxReviewObservations!["360750"]!;
+    const after = parseManualMarketDataWithReferences(output, options).dataset
+      .krxReviewObservations!["360750"]!;
+    expect(before.some((observation) => observation.values[field] != null)).toBe(true);
+    expect(after.every((observation) => observation.values[field] == null)).toBe(true);
+    // Reference facts must not repair raw calculation inputs or resurrect a false zero.
+    expect(parseManualMarketData(output, options).dataset).toEqual(
+      parseManualMarketData(inputs, options).dataset,
+    );
+  },
+);

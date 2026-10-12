@@ -46,3 +46,8 @@ An unconfigured broad Vitest invocation also encounters Node-test files and rout
 Publication and review/CI/merge/deployment verification are authorized; PR #268 is under review. A live post-deployment UI check has not been performed. Today’s technical preliminary candidates can only appear after today’s screening actually supplies them.
 
 The old ETF `krxReferenceDate` display was also corrected: it represented a strategy previous-session comparison, not independently verified fact availability. Product pages now label that date as the strategy comparison date and direct KRX fact-date checks to the shared reference disclosure.
+
+## Conservative limitation for existing calculation fields
+The existing calculation merge deliberately preserves finite zero/negative values in ETF market capitalization and underlying-index close. If a later duplicate of the same date overwrites an earlier positive value with one of these invalid-for-reference numbers, compaction can remove the earlier usable display fact. After compaction, the reference disclosure conservatively omits it rather than showing a false zero, date or repaired trading input. Four explicit regression cases freeze this distinction and verify unchanged engine datasets. Fixing this by changing calculation merge rules is outside the display-only scope; no archived source history is silently reintroduced.
+
+The date-dependent legacy Shadow fixture correction subsequently passed the full 106-test suite. Final cache-preserving dashboard suite passed 607 tests; screening memory passed 328; final compaction suite includes the four limitation cases in addition to the eight new-field sentinel cases.
