@@ -123,10 +123,10 @@ def main(build_run_id=None):
         srcmarket='KR' if market=='US' else 'US'
         source=panel.loc[panel.market.eq(srcmarket)&panel.sector.eq(sec)]
         if source.empty:
-            g=g.copy();g['peer_X1']=np.nan;g['peer_X2']=np.nan;g['source_session']=None
+            g=g.copy();g['decision_at']=pd.to_datetime(g.decision_at,utc=True);g['peer_X1']=np.nan;g['peer_X2']=np.nan;g['source_session']=None;g['source_available_at']=pd.NaT;g['source_age_hours']=np.nan
         else:g=asof_peer(g,source)
         joined.append(g)
-    d=pd.concat(joined,ignore_index=True);d['period']=d.date.map(period);out.frame('confirmation_observations.parquet',d)
+    d=pd.concat(joined,ignore_index=True);d['decision_at']=pd.to_datetime(d.decision_at,utc=True);d['source_available_at']=pd.to_datetime(d.source_available_at,utc=True);d['period']=d.date.map(period);out.frame('confirmation_observations.parquet',d)
     results=[]
     for market in ['KOSPI','KOSDAQ','US']:
         for feature in ['X1','X2']:

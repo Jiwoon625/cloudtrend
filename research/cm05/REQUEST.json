@@ -1,1 +1,1 @@
-{"request":"cm05-build-and-analysis-20261013-07","mode":"build_and_analyze","workers":1,"max_minutes":90}
+{"request":"cm05-analysis-20261013-08","mode":"analyze","build_run_id":"38394794357","workers":1,"max_minutes":90}
