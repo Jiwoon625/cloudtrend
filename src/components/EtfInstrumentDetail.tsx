@@ -4,6 +4,7 @@ import { isOperationalSignalDate, BEFORE_OPERATIONAL_START } from "@/lib/operati
 import { AppShell } from "./AppShell";
 import { Link } from "@tanstack/react-router";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
+import { etfSignalDateLabels } from "@/lib/etfSignalDatePresentation";
 import { etfPartialEvidence } from "@/lib/etfPartialEvidence";
 import { formatKstDateTime } from "@/lib/format";
 
@@ -23,6 +24,7 @@ export function EtfInstrumentDetail({
   const s = row.etfStrategy;
   const signalDate = asOfDate ?? s?.date ?? row.snapshot.tradeDate;
   const evidence = etfPartialEvidence(row, signalDate);
+  const signalDates = etfSignalDateLabels(row, signalDate);
   const value = (n: number | null | undefined) =>
     n === null || n === undefined || !Number.isFinite(n)
       ? "미관측"
@@ -73,9 +75,7 @@ export function EtfInstrumentDetail({
         <section className="rounded-lg border p-4">
           <h2 className="text-sm font-semibold">원신호 · 확인일</h2>
           <p className="mt-2 text-sm">
-            원신호 {s?.originDate ?? "없음"} · 확인일{" "}
-            {s?.confirmationDate ??
-              (s?.entryState === "pending" ? "다음 정규 거래일 종가" : "없음")}
+            원신호 {signalDates.origin} · 확인일 {signalDates.confirmation}
           </p>
           <p className="text-xs text-muted-foreground">{s?.confirmationIssues?.join(" · ")}</p>
         </section>

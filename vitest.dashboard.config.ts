@@ -6,6 +6,9 @@ export default defineConfig({
   esbuild: { jsx: "automatic" },
   test: {
     include: [
+      "src/components/IntegratedAllocationShadowPanel.test.tsx",
+      "src/lib/etfSignalDatePresentation.test.ts",
+      "src/lib/allocationWarningPresentation.test.ts",
       "src/lib/operationalSignalStart.test.ts",
       "tests/us-operational-start-ui.test.tsx",
       "tests/operational-start-ui.test.tsx",

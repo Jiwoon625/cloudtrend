@@ -17,6 +17,11 @@ on:
       - src/components/PortfolioAssetHub.tsx
       - src/lib/stockAssessmentDisplay*
       - src/lib/etfPartialEvidence*
+      - src/lib/etfSignalDatePresentation*
+      - src/lib/allocationWarningPresentation*
+      - src/lib/integratedAllocationShadow.functions.ts
+      - src/components/EtfInstrumentDetail*
+      - src/components/IntegratedAllocationShadowPanel*
       - src/components/DashboardOperations.tsx
       - src/components/DashboardOperations.test.tsx
       - src/components/UsOrderPreview*

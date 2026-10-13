@@ -6,7 +6,7 @@ import type { DataStatusPayload } from "@/lib/marketPayload";
 const CAPABILITY_LABELS: Record<string, string> = {
   marketCap: "시가총액",
   fundamentals: "재무(펀더멘털)",
-  etfFacts: "ETF NAV·총보수·순자산",
+  etfFacts: "일반 ETF 상품 메타데이터",
   sectors: "업종 분류·섹터지수",
   investorFlow: "투자자별 순매수",
   volatilityIndex: "변동성 판단 입력",
@@ -165,7 +165,9 @@ export function KrMarketDataPanel({ data }: { data: DataStatusPayload }) {
                         : capabilityCoverage(key)?.availableEntities !== undefined
                           ? `${coverageLabel(capabilityCoverage(key)!)} · ${capabilityCoverage(key)!.availableEntities}/${capabilityCoverage(key)!.entities}종목 (기준일)`
                           : key === "etfFacts"
-                            ? `${ok ? "제공" : "미제공"} · ETF M0 필수 KRX 자료는 별도 확인; 미수신 시 최종 판단 보류`
+                            ? ok
+                              ? "제공"
+                              : "미제공"
                             : ok
                               ? "제공"
                               : "미제공 → 점수 산정에서 제외"}
@@ -174,6 +176,14 @@ export function KrMarketDataPanel({ data }: { data: DataStatusPayload }) {
                 ))}
               </tbody>
             </table>
+            <details className="px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+              <summary className="cursor-pointer">ETF 메타데이터와 KRX 참고값의 차이</summary>
+              <p className="mt-1">
+                일반 메타데이터(etfFacts)와 KRX NAV·순자산(AUM) 참고값은 별도 항목입니다. KRX
+                값·기준일은 종목 상세에서 확인하세요. 이 표는 전체 종목 제공이나 총보수 제공을
+                확인하지 않습니다. ETF M0 필수 KRX 자료는 별도 확인; 미수신 시 최종 판단 보류.
+              </p>
+            </details>
           </div>
         </div>
       </div>

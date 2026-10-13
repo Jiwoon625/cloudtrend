@@ -91,6 +91,8 @@ export interface DashboardMarketSignals {
   onsetCount: number | null;
   exitCount: number | null;
   onsets: DashboardSignal[];
+  /** Current strategy-target ETFs missing current data; distinct from next-session confirmation. */
+  dataUnconfirmedCount?: number | null;
   pendingCount?: number | null;
   pending?: DashboardSignal[];
   exits: DashboardSignal[];
@@ -272,6 +274,7 @@ export function marketSignals(
     pending: [],
     exits: [],
     assessments: [],
+    ...(market === "ETF" ? { dataUnconfirmedCount: null } : {}),
   };
   if (
     !index ||
@@ -284,6 +287,26 @@ export function marketSignals(
   const held = new Map((holdings ?? []).filter((p) => p.shares > 0).map((p) => [p.symbol, p]));
   const sold = soldSymbolsSinceSignal(executions, market, index.date);
   const rows = new Map(index.rows.filter((r) => r.market === market).map((r) => [r.symbol, r]));
+  // Missing/legacy/stale evidence cannot establish an observed zero. Counts refer to
+  // the displayed analysis session, never the browser clock or a holdings estimate.
+  if (market === "ETF" && validDate(index.date) && rows.size > 0) {
+    const etfs = [...rows.values()];
+    if (
+      etfs.every(
+        (row) =>
+          row.date === index.date &&
+          row.etfAssessment?.current &&
+          row.etfEntry?.version === ETF_POLICY.version,
+      )
+    ) {
+      result.dataUnconfirmedCount = etfs.filter(
+        (row) =>
+          row.etfAssessment?.isStrategyTarget &&
+          (row.etfEntry?.dataStatus === "incomplete" ||
+            row.etfEntry?.dataStatus === "krx_batch_pending"),
+      ).length;
+    }
+  }
   const dates = [...new Set(index.tradeDates)].filter((d) => d <= index.date).sort();
   for (const row of rows.values()) {
     if (row.assessment || row.etfAssessment) {

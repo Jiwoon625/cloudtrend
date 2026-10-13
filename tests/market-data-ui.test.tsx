@@ -160,8 +160,9 @@ const snapshots = ids.flatMap((id, i) =>
   })),
 ) as UsPortfolioSnapshotRecord[];
 let failed = new Set<string>();
+let krQueryOverride: Record<string, unknown> = {};
 function query(key: string) {
-  return {
+  const result = {
     isError: failed.has(key),
     isLoading: false,
     isPending: false,
@@ -201,9 +202,11 @@ function query(key: string) {
                     }))
                   : null,
   };
+  return key === "data-status" ? { ...result, ...krQueryOverride } : result;
 }
 beforeEach(() => {
   failed = new Set();
+  krQueryOverride = {};
 });
 function qa(name: string, html: string) {
   const out = process.env["UI_QA_DIR"];
@@ -323,4 +326,83 @@ it("corrects legacy ETF health-weight copy without changing stored source notes"
   expect(html).toContain("ETF M0 필수 KRX 자료는 별도 확인; 미수신 시 최종 판단 보류");
   expect(html).not.toContain("상품건전성 점수는 가중치에서 제외");
   expect(data.notes[0]).toContain("가중치에서 제외");
+});
+
+describe("KR loading and ETF metadata display", () => {
+  it("shows an honest long initial fetch without invented counts or progress", () => {
+    krQueryOverride = { data: undefined, isFetching: true, isPending: true };
+    const html = renderToStaticMarkup(<MarketDataPage />);
+    expect(html).toContain("처음 불러오는 중");
+    expect(html).toContain("약 30초 이상 걸릴 수");
+    expect(html).not.toContain('aria-label="한국 데이터 상세"');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).not.toContain("수집 0건");
+    expect(html).not.toContain("aria-valuenow");
+    expect(html).toContain("미국 · 항목별 제공 범위와 검증");
+  });
+  it.each([false, true])("shows paused connection status with cached data=%s", (cached) => {
+    krQueryOverride = {
+      data: cached ? kr : undefined,
+      isFetching: false,
+      isPending: !cached,
+      fetchStatus: "paused",
+    };
+    const html = renderToStaticMarkup(<MarketDataPage />);
+    expect(html).toContain("한국 데이터 연결 복구 대기 중");
+    expect(html).toContain('aria-busy="true"');
+    expect(html).not.toContain("약 30초 이상");
+    expect(html).not.toContain("한국 데이터 처음 불러오는 중");
+    expect(html).not.toContain("수집 0건");
+    if (cached) {
+      expect(html).toContain("이전 조회 결과 표시 중");
+      expect(html).toContain("종목별 일봉 수집 구간");
+    }
+  });
+  it("keeps an initial pending idle query visible and clears it after recovery", () => {
+    krQueryOverride = { data: undefined, isPending: true, isFetching: false, fetchStatus: "idle" };
+    expect(renderToStaticMarkup(<MarketDataPage />)).toContain("한국 데이터 조회 대기 중");
+    krQueryOverride = { data: kr, isPending: false, isFetching: false, fetchStatus: "idle" };
+    const html = renderToStaticMarkup(<MarketDataPage />);
+    expect(html).not.toContain("한국 데이터 조회 대기 중");
+    expect(html).not.toContain("연결 복구 대기 중");
+    expect(html).toContain('aria-busy="false"');
+  });
+  it("keeps and explicitly labels previous results during a refresh", () => {
+    krQueryOverride = { isFetching: true };
+    const html = renderToStaticMarkup(<MarketDataPage />);
+    expect(html).toContain("다시 확인 중");
+    expect(html).toContain("이전 조회 결과 표시 중");
+    expect(html).toContain("종목별 일봉 수집 구간");
+    expect(html.match(/id="kr-data"/g)).toHaveLength(1);
+  });
+  it("keeps previous results after a failed refresh without claiming freshness", () => {
+    krQueryOverride = { isError: true, error: new Error("fixture failed refresh") };
+    const html = renderToStaticMarkup(<MarketDataPage />);
+    expect(html).toContain("최신 상태는 확인되지 않았습니다");
+    expect(html).toContain("조회 실패는 수집 0건을 뜻하지 않습니다");
+    expect(html).toContain("종목별 일봉 수집 구간");
+    expect(html).not.toContain("다시 확인 중");
+  });
+  it("replaces a prior failure alert with retry progress while keeping previous results", () => {
+    krQueryOverride = { isError: true, isFetching: true };
+    const html = renderToStaticMarkup(<MarketDataPage />);
+    expect(html).toContain("다시 확인 중");
+    expect(html).not.toContain("한국 데이터 조회에 실패했습니다");
+    expect(html).toContain("종목별 일봉 수집 구간");
+  });
+  it("does not retain loading or stale notices after successful refresh", () => {
+    const html = renderToStaticMarkup(<MarketDataPage />);
+    expect(html).not.toContain("이전 조회 결과 표시 중");
+    expect(html).not.toContain("약 30초 이상");
+  });
+  it("distinguishes absent generic ETF metadata from separate KRX reference observations", () => {
+    const html = renderToStaticMarkup(<KrMarketDataPanel data={kr} />);
+    expect(html).toContain("일반 ETF 상품 메타데이터");
+    expect(html).toContain(
+      "일반 메타데이터(etfFacts)와 KRX NAV·순자산(AUM) 참고값은 별도 항목입니다",
+    );
+    expect(html).toContain("제공을 확인하지 않습니다");
+    expect(html).not.toContain("ETF NAV·총보수·순자산</td>");
+    expect(kr.capabilities.etfFacts).toBe(false);
+  });
 });

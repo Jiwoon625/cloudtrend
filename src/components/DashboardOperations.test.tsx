@@ -484,3 +484,21 @@ it("uses one actual-account dashboard vocabulary without changing source records
   expect(html).toContain("현금");
   expect(value).toEqual(before);
 });
+
+describe("ETF current-data count display", () => {
+  it("shows 17 data-unconfirmed separately from one confirmation wait", () => {
+    const value = data(0, 1);
+    value.markets.find((m) => m.market === "ETF")!.dataUnconfirmedCount = 17;
+    const html = renderCounts(value);
+    expect(html).toContain("ETF 자료 확인");
+    expect(html).toContain(">17종목</span>");
+    expect(html).toContain(">0/1</span>");
+  });
+  it("shows observed zero but keeps missing optional or owner data unknown", () => {
+    const value = data(0, 0);
+    expect(renderCounts(value)).toMatch(/ETF 자료 확인<\/span><span[^>]*>미확인/);
+    value.markets.find((m) => m.market === "ETF")!.dataUnconfirmedCount = 0;
+    expect(renderCounts(value)).toMatch(/ETF 자료 확인<\/span><span[^>]*>0종목/);
+    expect(renderCounts(undefined)).toMatch(/ETF 자료 확인<\/span><span[^>]*>미확인/);
+  });
+});
