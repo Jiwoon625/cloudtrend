@@ -5,6 +5,8 @@ export default defineConfig({
   test: {
     include: [
       "tests/fast-chart.test.ts",
+      "tests/etf-instrument-chart.test.ts",
+      "tests/etf-instrument-chart-ui.test.tsx",
       "tests/instrument-chart-cache.test.ts",
       "tests/instrument-chart-loading.test.ts",
       "tests/instrument-chart-ui.test.tsx",

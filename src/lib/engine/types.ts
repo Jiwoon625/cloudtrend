@@ -38,6 +38,8 @@ export interface DailyPrice {
   volumeObserved?: boolean;
   /** ETF V0.1 uses the dated underlying and KRX amounts, never NAV proxies. */
   etfUnderlyingIndexClose?: number | null;
+  /** Dated KRX index name, retained for display continuity; never a proxy. */
+  etfUnderlyingIndexName?: string | null;
   etfMarketCap?: number | null;
   etfTradingValue?: number | null;
   priceSource?: string;

@@ -26,6 +26,7 @@ export interface ManualParseResult {
 /** 입력 파일에서 인식하는 컬럼 이름(별칭 포함) */
 const FIELD_ALIASES: Record<string, string> = {
   etfunderlyingindexclose: "etfUnderlyingIndexClose",
+  etfunderlyingindexname: "etfUnderlyingIndexName",
   etfmarketcap: "etfMarketCap",
   etftradingvalue: "etfTradingValue",
   pricesource: "priceSource",
@@ -336,6 +337,10 @@ export function parseManualMarketData(
       ...(isEtf
         ? {
             etfUnderlyingIndexClose: num(pick(rec, "etfUnderlyingIndexClose")),
+            etfUnderlyingIndexName: (() => {
+              const name = String(pick(rec, "etfUnderlyingIndexName") ?? "").trim();
+              return name && !/^(null|none|nan|na|-|--)$/i.test(name) ? name : null;
+            })(),
             etfMarketCap: num(pick(rec, "etfMarketCap")),
             etfTradingValue: num(pick(rec, "etfTradingValue")),
             priceSource: String(pick(rec, "priceSource") ?? ""),

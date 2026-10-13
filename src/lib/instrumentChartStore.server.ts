@@ -14,9 +14,15 @@ import type { MarketDataset } from "./engine/dataset";
 import type { AnalysisResult } from "./engine/pipeline";
 import type { ScoringConfig } from "./engine/scoring";
 import {
+  buildEtfInstrumentChart,
+  etfObservedPriceChart,
+  type EtfInstrumentChartBundle,
+} from "./engine/etfInstrumentChart";
+import {
   chartPath,
   chartReadyPath,
   assertChartMatchesCard,
+  assertEtfChartMatchesCard,
   type ChartIdentity,
   type ChartKind,
 } from "./instrumentChartContract";
@@ -100,6 +106,8 @@ async function responsiveScoredChart(
 }
 export type PreparedChart = ReturnType<typeof scoredChart>;
 export type PriceChart = ReturnType<typeof priceChart>;
+export type EtfPriceChart = ReturnType<typeof etfObservedPriceChart>;
+export type ChartBundle = PreparedChart | PriceChart | EtfPriceChart | EtfInstrumentChartBundle;
 export async function readChartBundle<T>(
   client: SupabaseClient,
   uid: string,
@@ -158,7 +166,7 @@ export async function publishRecentPrices(
   await writeBundle(client, uid, chartReadyPath(identity, "prices"), { ready: true });
 }
 // Only in-flight computations are shared; completed bundles remain in existing owner paths.
-const preparing = new Map<string, Promise<Record<string, PreparedChart | PriceChart>>>();
+const preparing = new Map<string, Promise<Record<string, ChartBundle>>>();
 export async function prepareChartBucket(
   client: SupabaseClient,
   uid: string,
@@ -187,17 +195,23 @@ export async function prepareChartBucket(
       range === "all"
         ? [symbol]
         : ctx.analysis.rows
+            .filter((r) => !kind.startsWith("etf") || r.instrument.instrumentType === "ETF")
             .map((r) => r.instrument.symbol)
             .filter((s) => chartPath(identity, s, range, kind) === path);
     const existing = cacheAlreadyChecked
       ? null
-      : await readChartBundle<PreparedChart | PriceChart>(client, uid, path);
+      : await readChartBundle<ChartBundle>(client, uid, path);
     // A partial legacy/corrupt bundle must not satisfy a coalesced request for another symbol.
     if (existing?.[symbol] && symbols.every((s) => existing[s])) return existing;
-    const bundle: Record<string, PreparedChart | PriceChart> = {};
+    const bundle: Record<string, ChartBundle> = {};
     for (const s of symbols) {
       if (kind === "prices") bundle[s] = priceChart(ctx, s, range);
-      else {
+      else if (kind === "etf-prices") bundle[s] = etfObservedPriceChart(ctx.dataset, s, range);
+      else if (kind === "etf") {
+        const chart = await buildEtfInstrumentChart(ctx.dataset, s, range);
+        assertEtfChartMatchesCard(chart, ctx.analysis, s);
+        bundle[s] = chart;
+      } else {
         // Let independent price responses and other requests progress between score batches.
         bundle[s] = await responsiveScoredChart(ctx, s, range);
       }
@@ -220,7 +234,10 @@ export async function warmRecentCharts(
 ) {
   const readyPath = chartReadyPath(identity, "scored");
   const prior = await readChartBundle<{ buckets: number }>(client, uid, readyPath);
-  if (prior?.["ready"]) return prior["ready"];
+  if (prior?.["ready"]) {
+    await warmRecentEtfCharts(client, uid, identity, ctx);
+    return prior["ready"];
+  }
   await publishRecentPrices(client, uid, identity.inputFingerprint, identity.resultDigest, ctx);
   const representatives = new Map<string, string>();
   for (const row of ctx.analysis.rows) {
@@ -239,5 +256,35 @@ export async function warmRecentCharts(
   }
   const result = { buckets: representatives.size };
   await writeBundle(client, uid, readyPath, { ready: result });
+  await warmRecentEtfCharts(client, uid, identity, ctx);
   return result;
+}
+
+/** Recent-only ETF preparation; full history remains opt-in like the stock chart. */
+export async function warmRecentEtfCharts(
+  client: SupabaseClient,
+  uid: string,
+  identity: ChartIdentity,
+  ctx: ChartContext,
+) {
+  const readyPath = chartReadyPath(identity, "etf");
+  if (await readChartBundle(client, uid, readyPath)) return;
+  const representatives = new Map<string, string>();
+  for (const row of ctx.analysis.rows) {
+    if (row.instrument.instrumentType !== "ETF") continue;
+    const symbol = row.instrument.symbol;
+    representatives.set(chartPath(identity, symbol, "120", "etf"), symbol);
+  }
+  const symbols = [...representatives.values()];
+  for (let i = 0; i < symbols.length; i += 4) {
+    const results = await Promise.allSettled(
+      symbols.slice(i, i + 4).map(async (symbol) => {
+        await prepareChartBucket(client, uid, identity, ctx, symbol, "120", "etf-prices");
+        return prepareChartBucket(client, uid, identity, ctx, symbol, "120", "etf");
+      }),
+    );
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") throw failed.reason;
+  }
+  await writeBundle(client, uid, readyPath, { ready: { buckets: representatives.size } });
 }

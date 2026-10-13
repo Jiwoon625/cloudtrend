@@ -285,8 +285,20 @@ export async function getCachedInstrumentDetail(symbol: string): Promise<Instrum
 }
 
 export { FAST_CHART_VERSION as INSTRUMENT_CHART_VERSION } from "./instrumentChartContract";
-import { chartPath, assertChartMatchesCard, type ChartKind } from "./instrumentChartContract";
-import type { PreparedChart, PriceChart } from "./instrumentChartStore.server";
+export { ETF_CHART_VERSION as ETF_INSTRUMENT_CHART_VERSION } from "./instrumentChartContract";
+import {
+  chartPath,
+  assertChartMatchesCard,
+  assertEtfChartMatchesCard,
+  type ChartKind,
+} from "./instrumentChartContract";
+import type {
+  PreparedChart,
+  PriceChart,
+  EtfPriceChart,
+  ChartBundle,
+} from "./instrumentChartStore.server";
+import type { EtfInstrumentChartBundle } from "./engine/etfInstrumentChart";
 // Deduplicate only concurrent metadata reads. Recheck sources on later requests, even
 // when the caller still holds the same analysis object after a source refresh.
 const identities = new WeakMap<
@@ -334,11 +346,10 @@ async function fastChart(
   };
   await assertCurrentRequest();
   const path = `${uid}/${chartPath(identity, normalized, range, kind)}`;
-  let data: PreparedChart | PriceChart | undefined;
+  let data: ChartBundle | undefined;
   try {
     const bytes = await readBinaryObject(path);
-    if (bytes)
-      data = (await gunzipJson<Record<string, PreparedChart | PriceChart>>(bytes))[normalized];
+    if (bytes) data = (await gunzipJson<Record<string, ChartBundle>>(bytes))[normalized];
   } catch (error) {
     console.warn("차트 캐시 읽기 실패: 서버에서 재시도합니다.", error);
   }
@@ -360,6 +371,8 @@ async function fastChart(
   await assertCurrentRequest();
   if (kind === "scored")
     assertChartMatchesCard((data as PreparedChart).chart, payload.analysis, normalized);
+  if (kind === "etf")
+    assertEtfChartMatchesCard(data as EtfInstrumentChartBundle, payload.analysis, normalized);
   return data;
 }
 export async function getCachedInstrumentChart(
@@ -375,4 +388,20 @@ export async function getCachedInstrumentPrices(
   payload: AnalysisPayload,
 ): Promise<PriceChart> {
   return (await fastChart(symbol, range, payload, "prices")) as PriceChart;
+}
+
+export async function getCachedEtfInstrumentChart(
+  symbol: string,
+  range: InstrumentChartRange,
+  payload: AnalysisPayload,
+): Promise<EtfInstrumentChartBundle> {
+  return (await fastChart(symbol, range, payload, "etf")) as EtfInstrumentChartBundle;
+}
+
+export async function getCachedEtfInstrumentPrices(
+  symbol: string,
+  range: InstrumentChartRange,
+  payload: AnalysisPayload,
+): Promise<EtfPriceChart> {
+  return (await fastChart(symbol, range, payload, "etf-prices")) as EtfPriceChart;
 }

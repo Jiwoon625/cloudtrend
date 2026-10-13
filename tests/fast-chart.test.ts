@@ -268,3 +268,65 @@ test("full scored preparation yields to prices and preserves every chart/history
   expect(price).toEqual(priceChart(ctx, symbol, "all"));
   expect(await score).toEqual(scoredChart(ctx, symbol, "all"));
 });
+
+test("ETF warmup is recent-only, resumable, and stored separately from technical caches", async () => {
+  const { warmRecentEtfCharts } = await import("../src/lib/instrumentChartStore.server");
+  const { chartReadyPath, ETF_CHART_VERSION } = await import("../src/lib/instrumentChartContract");
+  const ctx = context(),
+    s = storage();
+  const etf = ctx.analysis.rows.find((row) => row.instrument.instrumentType === "ETF")!;
+  await warmRecentEtfCharts(s.client, "etf-owner", identity, ctx);
+  expect([...s.files.keys()].every((path) => path.includes(ETF_CHART_VERSION))).toBe(true);
+  expect([...s.files.keys()].some((path) => path.includes("-all"))).toBe(false);
+  expect(s.files.has(`etf-owner/${chartReadyPath(identity, "etf")}`)).toBe(true);
+  const calls = s.upload.mock.calls.length;
+  await warmRecentEtfCharts(s.client, "etf-owner", identity, ctx);
+  expect(s.upload).toHaveBeenCalledTimes(calls);
+  const recent = await prepareChartBucket(
+    s.client,
+    "etf-owner",
+    identity,
+    ctx,
+    etf.instrument.symbol,
+    "120",
+    "etf",
+  );
+  expect(s.upload).toHaveBeenCalledTimes(calls);
+  expect(recent.chart).toHaveLength(120);
+  expect(recent).toHaveProperty("previousTradingDate");
+  expect(recent).toHaveProperty("underlying");
+  expect(recent).not.toHaveProperty("history");
+});
+
+test("ETF bucket duplicate requests coalesce and a failed warmup never publishes a ready marker", async () => {
+  const { warmRecentEtfCharts } = await import("../src/lib/instrumentChartStore.server");
+  const ctx = context(),
+    s = storage();
+  const etf = ctx.analysis.rows.find((row) => row.instrument.instrumentType === "ETF")!;
+  const [first, second] = await Promise.all([
+    prepareChartBucket(
+      s.client,
+      "etf-coalesce",
+      identity,
+      ctx,
+      etf.instrument.symbol,
+      "120",
+      "etf",
+    ),
+    prepareChartBucket(
+      s.client,
+      "etf-coalesce",
+      identity,
+      ctx,
+      etf.instrument.symbol,
+      "120",
+      "etf",
+    ),
+  ]);
+  expect(first).toEqual(second);
+  expect(s.upload).toHaveBeenCalledOnce();
+  const failed = storage();
+  failed.upload.mockResolvedValue({ error: { message: "temporary upload failure" } });
+  await expect(warmRecentEtfCharts(failed.client, "etf-fail", identity, ctx)).rejects.toThrow();
+  expect([...failed.files.keys()].some((path) => path.endsWith("/etf-ready.json.gz"))).toBe(false);
+});

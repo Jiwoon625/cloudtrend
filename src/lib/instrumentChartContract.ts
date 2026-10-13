@@ -1,7 +1,11 @@
 import type { InstrumentChartRange } from "./engine/instrumentChart";
 import type { AnalysisResult } from "./engine/pipeline";
+import type { EtfInstrumentChartBundle } from "./engine/etfInstrumentChart";
+import { etfPartialEvidence } from "./etfPartialEvidence";
+import { ETF_POLICY } from "./engine/etfStrategy";
 export const FAST_CHART_VERSION = "chart-v3-full-universe";
-export type ChartKind = "prices" | "scored";
+export const ETF_CHART_VERSION = "etf-chart-v1-m0-underlying";
+export type ChartKind = "prices" | "scored" | "etf" | "etf-prices";
 export interface ChartIdentity {
   inputFingerprint: string;
   resultDigest: string;
@@ -23,7 +27,48 @@ export function chartPath(
   )
     throw new Error("Invalid chart identity");
   if (!/^[A-Z0-9]{1,20}$/.test(symbol)) throw new Error("Invalid symbol");
-  return `cache/charts/${FAST_CHART_VERSION}/${identity.inputFingerprint}/${identity.resultDigest}/${range === "120" ? "bucket-" + chartBucket(symbol) : symbol + "-all"}-${kind}.json.gz`;
+  const version = kind.startsWith("etf") ? ETF_CHART_VERSION : FAST_CHART_VERSION;
+  return `cache/charts/${version}/${identity.inputFingerprint}/${identity.resultDigest}/${range === "120" ? "bucket-" + chartBucket(symbol) : symbol + "-all"}-${kind}.json.gz`;
+}
+
+/** A cached historical series must never relabel a previous score as today's M0. */
+export function assertEtfChartMatchesCard(
+  bundle: EtfInstrumentChartBundle,
+  analysis: AnalysisResult,
+  symbol: string,
+) {
+  const row = analysis.rows.find((r) => r.instrument.symbol === symbol);
+  if (
+    !row ||
+    row.instrument.instrumentType !== "ETF" ||
+    row.etfStrategy?.version !== ETF_POLICY.version ||
+    bundle.symbol !== symbol ||
+    bundle.asOfDate !== analysis.asOfDate ||
+    bundle.version !== ETF_POLICY.version
+  )
+    throw new Error("ETF 차트 기준일·전략 버전이 다릅니다. 새로고침해 주세요.");
+  if (
+    bundle.chart.some((point) => point.tradeDate > analysis.asOfDate) ||
+    bundle.underlying.some((point) => point.tradeDate > analysis.asOfDate) ||
+    (bundle.underlyingAsOfDate !== null && bundle.underlyingAsOfDate > analysis.asOfDate)
+  )
+    throw new Error("ETF 차트에 기준일 이후 자료가 있습니다.");
+  const point = bundle.chart.at(-1);
+  if (point?.tradeDate === analysis.asOfDate) {
+    const expected = etfPartialEvidence(row, analysis.asOfDate).score;
+    const actual = point.m0Score;
+    if (expected === null ? actual !== null : actual === null || Math.abs(expected - actual) > 1e-8)
+      throw new Error(`${symbol}: 카드와 차트 M0 총점이 다릅니다.`);
+  }
+  if (
+    bundle.previousM0 &&
+    (bundle.previousM0.date !== bundle.previousTradingDate ||
+      bundle.previousM0.date >= analysis.asOfDate ||
+      !Number.isFinite(bundle.previousM0.score) ||
+      bundle.previousM0.score < 0 ||
+      bundle.previousM0.score > 100)
+  )
+    throw new Error("ETF 직전 거래일 M0 근거가 다릅니다.");
 }
 export function cardTechnicalScore(row: AnalysisResult["rows"][number]): number | null {
   return row.instrument.instrumentType === "STOCK"

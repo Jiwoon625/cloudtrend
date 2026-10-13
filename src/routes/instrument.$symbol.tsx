@@ -24,16 +24,23 @@ import { getPortfolioAwareDisplayStatus } from "@/lib/statusDisplay";
 import { getDisplayWarnings } from "@/lib/warningDisplay";
 
 const loadInstrumentCharts = () => import("@/components/InstrumentCharts");
+const loadEtfInstrumentCharts = () => import("@/components/EtfInstrumentCharts");
 const InstrumentCharts = lazy(loadInstrumentCharts);
 
 export const Route = createFileRoute("/instrument/$symbol")({
   ssr: false,
   loader: async ({ params, context }) => {
-    void loadInstrumentCharts().catch(() => undefined);
     const payload = await context.queryClient.ensureQueryData(analysisQueryOptions);
     const row = payload.analysis.rows.find((item) => item.instrument.symbol === params.symbol);
     if (!row) throw notFound();
-    return { name: row.instrument.name, symbol: row.instrument.symbol };
+    void (
+      row.instrument.instrumentType === "ETF" ? loadEtfInstrumentCharts() : loadInstrumentCharts()
+    ).catch(() => undefined);
+    return {
+      name: row.instrument.name,
+      symbol: row.instrument.symbol,
+      instrumentType: row.instrument.instrumentType,
+    };
   },
   head: ({ loaderData }) => {
     if (!loaderData)
@@ -41,7 +48,10 @@ export const Route = createFileRoute("/instrument/$symbol")({
         meta: [{ title: "종목 정보 없음 | CloudTrend" }, { name: "robots", content: "noindex" }],
       };
     const title = `${loaderData.name}(${loaderData.symbol}) 점수 근거 | CloudTrend`;
-    const description = `${loaderData.name} 종목의 V8 Final 기술점수·일목균형표·볼린저밴드·이동평균·거래량 조건과 경고 신호를 확인합니다.`;
+    const description =
+      loaderData.instrumentType === "ETF"
+        ? `${loaderData.name} ETF의 M0 총점·가격·거래량과 실제 기초지수·MA60 추이를 확인합니다.`
+        : `${loaderData.name} 종목의 V8 Final 기술점수·일목균형표·볼린저밴드·이동평균·거래량 조건과 경고 신호를 확인합니다.`;
     return {
       meta: [
         { title },
@@ -98,7 +108,9 @@ function InstrumentDetail() {
   if (["ETF"].includes(row.instrument.instrumentType))
     return (
       <EtfInstrumentDetail
+        key={symbol}
         row={row}
+        payload={payload}
         asOfDate={analysis.asOfDate}
         calculatedAt={analysis.calculatedAt}
         holdingsNotice={holdingsNotice}
