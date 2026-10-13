@@ -59,6 +59,12 @@ SPY controls; for US targets SPY is already its local benchmark and is not added
 twice. D reports full observed baseline, common-source baseline, selected/rejected
 outcomes, unavailable outcomes, missed outperformers and avoided absolute losses.
 
+A request can use `build`, `analyze` (with a completed `build_run_id`), or
+`build_and_analyze`. The last mode runs these two stages sequentially in the same
+bounded job, and does not restart on error. US Parquet native dates and numeric
+strings are normalized before calendar alignment. Unmapped original A0 candidates
+remain in the baseline with source coverage missing; they are not silently dropped.
+
 ## Deliberate distinctions and limits
 
 - KR C is a pooled stock-weighted sector basket. Each stock's excess uses its

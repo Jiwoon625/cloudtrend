@@ -29,9 +29,10 @@ def main():
     work=Path(os.environ['RUNNER_TEMP'])/'cm05-probe';work.mkdir(exist_ok=True)
     report={'cpu_count':os.cpu_count(),'memory_kib':int(Path('/proc/meminfo').read_text().split('MemTotal:')[1].split()[0]),'free_disk_bytes':shutil.disk_usage(work).free,'schemas':{}}
     cm=SupabaseCMStore.from_env();us=ExpandedReader.from_env()
-    req=urllib.request.Request(os.environ['SUPABASE_URL']+'/functions/v1/cm05-import-r2-once',method='POST',headers={'Authorization':'Bearer '+os.environ['SUPABASE_SERVICE_ROLE_KEY']})
-    with urllib.request.urlopen(req,timeout=120) as response:
-        if response.status !=200: raise RuntimeError('R2 import failed')
+    contract=json.loads((Path(__file__).parent/'CONTRACT.json').read_text())
+    expected=contract['mapping_r2_sha256']
+    cached=CM05Store.from_env().get_object('results/inputs/mapping_r2_'+expected+'.csv',max_bytes=6*1024**2)
+    if hashlib.sha256(cached).hexdigest()!=expected:raise ValueError('R2 cache hash mismatch')
     raw=KRReader.from_env().get_object('deffa0fb8503e8ab77a6c6d764c4485e0c2de603fb9b79726993a83c287822bb/stock_history/2021_1.parquet',max_bytes=32*1024**2)
     k=pd.read_parquet(io.BytesIO(raw));report['kr_raw']={'columns':list(k.columns),'index_symbols':k.loc[k.market.eq('INDEX'),'symbol'].value_counts().to_dict()}
     raw=KRReader.from_env().get_object('78e59c019a579b704a40c1d9a6a5de414dfaad8e71da1312f583327c2306ca89/source-manifest.json',max_bytes=1024**2)
