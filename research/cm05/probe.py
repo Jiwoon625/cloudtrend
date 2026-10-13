@@ -1,5 +1,5 @@
 """Bounded schema/resource probe. Private data never enters public artifacts."""
-import io,json,os,hashlib,resource,shutil
+import io,json,os,hashlib,resource,shutil,urllib.request
 from pathlib import Path
 import pandas as pd
 from cmresearchengine.storage import SupabaseCMStore, StorageSecurityError
@@ -17,10 +17,25 @@ class CM05Store(SupabaseCMStore):
         super().__init__(*args,**kwargs)
         self.prefix=self.prefix.replace('/research/cm/','/research/cm05/')
 
+class KRReader(SupabaseCMStore):
+    def object_key(self,key):
+        import re
+        if not re.fullmatch(r"[0-9a-f]{64}/(?:source-manifest.json|stock_history/[A-Za-z0-9_.-]+[.]parquet)",key):
+            raise StorageSecurityError('Unapproved KR source')
+        return self.prefix.split('/')[0]+'/research/adopted-full-period/inputs/'+key
+    def put_object(self,*args,**kwargs): raise StorageSecurityError('Read-only KR inputs')
+
 def main():
     work=Path(os.environ['RUNNER_TEMP'])/'cm05-probe';work.mkdir(exist_ok=True)
     report={'cpu_count':os.cpu_count(),'memory_kib':int(Path('/proc/meminfo').read_text().split('MemTotal:')[1].split()[0]),'free_disk_bytes':shutil.disk_usage(work).free,'schemas':{}}
     cm=SupabaseCMStore.from_env();us=ExpandedReader.from_env()
+    req=urllib.request.Request(os.environ['SUPABASE_URL']+'/functions/v1/cm05-import-r2-once',method='POST',headers={'Authorization':'Bearer '+os.environ['SUPABASE_SERVICE_ROLE_KEY']})
+    with urllib.request.urlopen(req,timeout=120) as response:
+        if response.status !=200: raise RuntimeError('R2 import failed')
+    raw=KRReader.from_env().get_object('deffa0fb8503e8ab77a6c6d764c4485e0c2de603fb9b79726993a83c287822bb/stock_history/2021_1.parquet',max_bytes=32*1024**2)
+    k=pd.read_parquet(io.BytesIO(raw));report['kr_raw']={'columns':list(k.columns),'index_symbols':k.loc[k.market.eq('INDEX'),'symbol'].value_counts().to_dict()}
+    raw=KRReader.from_env().get_object('78e59c019a579b704a40c1d9a6a5de414dfaad8e71da1312f583327c2306ca89/source-manifest.json',max_bytes=1024**2)
+    doc=json.loads(raw);report['kr_source_manifest']=doc
     for key in ['manifest.json','reference/sector_map_extended.csv','reference/verified_event_overrides.csv','prices/year=2025/data_0.parquet','benchmark/spy.parquet']:
         raw=us.get_object(key,max_bytes=64*1024**2)
         item={'bytes':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
@@ -34,7 +49,7 @@ def main():
     for expected in FROZEN_STAGES:
         raw=cm.get_object('inputs/cm06.batched.stage.'+expected['stage']+'.json',max_bytes=2*1024**2)
         doc,records=validate_stage(raw,expected)
-        selected=doc['archives'] if expected['stage']=='Stage2_reference_time' else [next(a for a in doc['archives'] if any('/K/' in n and n.endswith('.parquet') for n in a['members']))]
+        selected=doc['archives'] if expected['stage']=='Stage2_reference_time' else [next(a for a in doc['archives'] if any('/U/' in n and n.endswith('.parquet') for n in a['members']))]
         for a in selected:
             p=work/'probe.tar';cm.download_object('inputs/cm06.batched.'+expected['stage']+'.'+a['sha256']+'.tar',p,expected_size=a['size'],expected_sha256=a['sha256'])
             extract_archive(p,a,records,work);p.unlink()
@@ -42,7 +57,7 @@ def main():
         for p in paths:
             df=pd.read_parquet(p)
             report['schemas'][str(p.relative_to(work))]={'rows':len(df),'columns':{c:str(t) for c,t in df.dtypes.items()}}
-            if '/K/' in str(p): break
+            if '/U/' in str(p): break
     for p in work.rglob('*calendar.json'):
         obj=json.loads(p.read_text());report['schemas'][p.name]={'structure':str(obj)[:2400]}
     report['peak_rss_kib']=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
