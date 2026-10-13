@@ -528,6 +528,179 @@ describe("ETF pending-entry selection", () => {
     },
   );
 
+  const waitingIndex = (): DashboardIndex => {
+    const previous = "2027-06-25",
+      current = "2027-06-28";
+    return {
+      date: current,
+      tradeDates: ["2027-06-24", previous, current],
+      rows: [
+        pendingRow("SYN001", {
+          date: current,
+          score: null,
+          etfEntry: pendingEntry({
+            entryState: "data_pending",
+            dataStatus: "krx_batch_pending",
+            originDate: previous,
+            confirmationDate: current,
+            krxReferenceDate: previous,
+            entryWeight: null,
+            averageTradingValue20: null,
+            confirmationIssues: ["KRX 일괄 미수신으로 확인 대기"],
+          }),
+          etfAssessment: {
+            current: true,
+            krxPending: true,
+            previousDate: previous,
+            previousScore: 84,
+          } as NonNullable<DashboardIndexRow["etfAssessment"]>,
+        }),
+      ],
+    };
+  };
+
+  it("preserves an observed previous-session setup during the confirmation-day KRX delay", () => {
+    const input = waitingIndex(),
+      before = JSON.stringify(input);
+    for (let replay = 0; replay < 3; replay++) {
+      const result = marketSignals(input, "ETF", [], [], null, "2026-10-12");
+      expect(result.pendingCount).toBe(1);
+      expect(result.pending).toMatchObject([
+        {
+          symbol: "SYN001",
+          date: "2027-06-28",
+          score: null,
+          signalOriginDate: "2027-06-25",
+          reason: "KRX 자료 대기 · 기존 확인대기 유지",
+        },
+      ]);
+      expect(result.conditionCount).toBe(0);
+      expect(result.onsetCount).toBe(0);
+      expect(result.exitCount).toBe(0);
+    }
+    expect(JSON.stringify(input)).toBe(before);
+  });
+
+  it.each([
+    [
+      "no origin",
+      (r: DashboardIndexRow) => {
+        r.etfEntry!.originDate = null;
+      },
+    ],
+    [
+      "same-day origin",
+      (r: DashboardIndexRow) => {
+        r.etfEntry!.originDate = r.date;
+      },
+    ],
+    [
+      "older origin",
+      (r: DashboardIndexRow) => {
+        r.etfEntry!.originDate = "2027-06-24";
+      },
+    ],
+    [
+      "rejected",
+      (r: DashboardIndexRow) => {
+        r.etfEntry!.entryState = "rejected";
+      },
+    ],
+    [
+      "isolated incomplete",
+      (r: DashboardIndexRow) => {
+        r.etfEntry!.dataStatus = "incomplete";
+      },
+    ],
+    [
+      "stale quote",
+      (r: DashboardIndexRow) => {
+        r.date = "2027-06-25";
+      },
+    ],
+    [
+      "stale evidence",
+      (r: DashboardIndexRow) => {
+        r.etfAssessment!.current = false;
+      },
+    ],
+    [
+      "missing evidence",
+      (r: DashboardIndexRow) => {
+        r.etfAssessment = undefined;
+      },
+    ],
+    [
+      "missing prior score",
+      (r: DashboardIndexRow) => {
+        r.etfAssessment!.previousScore = null;
+      },
+    ],
+    [
+      "low prior score",
+      (r: DashboardIndexRow) => {
+        r.etfAssessment!.previousScore = 79;
+      },
+    ],
+    [
+      "wrong previous date",
+      (r: DashboardIndexRow) => {
+        r.etfAssessment!.previousDate = "2027-06-24";
+      },
+    ],
+    [
+      "wrong KRX date",
+      (r: DashboardIndexRow) => {
+        r.etfEntry!.krxReferenceDate = "2027-06-24";
+      },
+    ],
+    [
+      "wrong confirmation date",
+      (r: DashboardIndexRow) => {
+        r.etfEntry!.confirmationDate = null;
+      },
+    ],
+    [
+      "legacy policy",
+      (r: DashboardIndexRow) => {
+        r.etfEntry!.version = "legacy";
+      },
+    ],
+    [
+      "contradictory onset",
+      (r: DashboardIndexRow) => {
+        r.onset = true;
+      },
+    ],
+    [
+      "known exit",
+      (r: DashboardIndexRow) => {
+        r.exitReason = "MA60";
+      },
+    ],
+  ] as const)("does not manufacture KRX-waiting setups from %s", (_label, change) => {
+    const input = waitingIndex();
+    change(input.rows[0]!);
+    expect(marketSignals(input, "ETF", []).pendingCount).toBe(0);
+  });
+
+  it("requires a consecutive known market calendar and respects series start, holdings, and sales", () => {
+    const input = waitingIndex();
+    expect(marketSignals({ ...input, tradeDates: [] }, "ETF", []).pendingCount).toBe(0);
+    expect(marketSignals({ ...input, tradeDates: ["2027-06-25"] }, "ETF", []).pendingCount).toBe(0);
+    expect(marketSignals(input, "ETF", [], [], null, "2027-06-28").pendingCount).toBe(0);
+    expect(marketSignals(input, "ETF", [hold("SYN001")]).pendingCount).toBe(0);
+    expect(
+      marketSignals(input, "ETF", [], [sale("2027-06-25", { symbol: "SYN001" })]).pendingCount,
+    ).toBe(0);
+    expect(
+      marketSignals(input, "ETF", [], [sale("2027-06-28", { symbol: "SYN001" })]).pendingCount,
+    ).toBe(0);
+    expect(
+      marketSignals(input, "ETF", [], [sale("2027-06-24", { symbol: "SYN001" })]).pendingCount,
+    ).toBe(1);
+  });
+
   it("rejects an old policy and missing legacy confirmation fields", () => {
     const { entryState: _entryState, ...withoutState } = pendingEntry();
     const { dataStatus: _dataStatus, ...withoutDataStatus } = pendingEntry();

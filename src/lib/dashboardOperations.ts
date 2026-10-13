@@ -308,6 +308,7 @@ export function marketSignals(
     }
   }
   const dates = [...new Set(index.tradeDates)].filter((d) => d <= index.date).sort();
+  const previousSession = dates.at(-1) === index.date ? dates.at(-2) : undefined;
   for (const row of rows.values()) {
     if (row.assessment || row.etfAssessment) {
       const isHeld = held.has(row.symbol);
@@ -367,17 +368,44 @@ export function marketSignals(
         sectorLimit,
         reason: "8.0 원신호 · 다음 거래일 종가 확인 대기",
       });
+    // The engine preserves a previously observed crossover as data_pending while
+    // the confirmation session's KRX batch is unpublished. This is still the same
+    // waiting setup, not a new onset or a confirmed order. Require the immediately
+    // preceding session and matching current evidence; never revive an older setup.
+    const etfKrxConfirmationPending =
+      market === "ETF" &&
+      row.etfEntry?.entryState === "data_pending" &&
+      row.etfEntry.dataStatus === "krx_batch_pending" &&
+      row.etfAssessment?.current === true &&
+      row.etfAssessment.krxPending === true &&
+      previousSession !== undefined &&
+      validDate(previousSession) &&
+      row.etfAssessment.previousDate === previousSession &&
+      row.etfAssessment.previousScore !== null &&
+      row.etfAssessment.previousScore >= ETF_POLICY.entryScore &&
+      row.etfEntry.originDate === previousSession &&
+      row.etfEntry.krxReferenceDate === previousSession &&
+      row.etfEntry.confirmationDate === index.date &&
+      !row.onset &&
+      row.exitReason === null;
     if (
       entryInSeries &&
       market === "ETF" &&
       row.etfEntry?.version === ETF_POLICY.version &&
-      row.etfEntry.entryState === "pending" &&
-      row.etfEntry.dataStatus === "ready" &&
-      row.etfEntry.originDate === index.date &&
+      ((row.etfEntry.entryState === "pending" &&
+        row.etfEntry.dataStatus === "ready" &&
+        row.etfEntry.originDate === index.date) ||
+        etfKrxConfirmationPending) &&
       !holding &&
       !consumed
     )
-      result.pending!.push({ ...row, reason: "M0 80점 원신호 · 다음 거래일 종가 확인 대기" });
+      result.pending!.push({
+        ...row,
+        signalOriginDate: row.etfEntry.originDate ?? undefined,
+        reason: etfKrxConfirmationPending
+          ? "KRX 자료 대기 · 기존 확인대기 유지"
+          : "M0 80점 원신호 · 다음 거래일 종가 확인 대기",
+      });
     if (entryInSeries && row.onset) {
       const actualState =
         holdings === null ? "UNKNOWN" : holding ? "HELD" : consumed ? "CONSUMED" : "READY";

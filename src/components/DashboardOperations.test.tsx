@@ -188,6 +188,27 @@ describe("combined dashboard confirmation list", () => {
   beforeEach(() => {
     state.tab = "pending";
   });
+  it("keeps KRX-delayed confirmation compact with its original signal date and no invented score", () => {
+    const value = data(0, 1);
+    const etf = value.markets.find((m) => m.market === "ETF")!;
+    etf.pending![0] = {
+      ...etf.pending![0]!,
+      date: "2027-06-28",
+      score: null,
+      signalOriginDate: "2027-06-25",
+      reason: "KRX 자료 대기 · 기존 확인대기 유지",
+    };
+    const html = renderList(value);
+    expect(html).toContain("확인대기 (1)");
+    expect(html).toContain("KRX 자료 대기 · 기존 확인대기 유지");
+    expect(html).toContain("원신호 2027-06-25");
+    expect(html).toContain("2027-06-28");
+    expect(html).not.toContain("81.0 / 100");
+    expect(html).not.toContain("자료 미수신·확인 탈락은 포함하지 않습니다");
+    expect(html).not.toContain("실제 예산 · 예상 수량</th>");
+    expect(html.match(/<th /g)).toHaveLength(6);
+    expect(renderCounts(value)).toContain('aria-label="KOSPI 0종목, ETF 1종목"');
+  });
   it("merges KOSPI and ETF once, labels each market and score scale, and links each symbol", () => {
     const html = renderList(data(3, 1));
     expect(html).toContain("확인대기 (4)");
