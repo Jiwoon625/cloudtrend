@@ -340,6 +340,33 @@ describe("KR loading and ETF metadata display", () => {
     expect(html).not.toContain("aria-valuenow");
     expect(html).toContain("미국 · 항목별 제공 범위와 검증");
   });
+  it.each([false, true])("shows paused connection status with cached data=%s", (cached) => {
+    krQueryOverride = {
+      data: cached ? kr : undefined,
+      isFetching: false,
+      isPending: !cached,
+      fetchStatus: "paused",
+    };
+    const html = renderToStaticMarkup(<MarketDataPage />);
+    expect(html).toContain("한국 데이터 연결 복구 대기 중");
+    expect(html).toContain('aria-busy="true"');
+    expect(html).not.toContain("약 30초 이상");
+    expect(html).not.toContain("한국 데이터 처음 불러오는 중");
+    expect(html).not.toContain("수집 0건");
+    if (cached) {
+      expect(html).toContain("이전 조회 결과 표시 중");
+      expect(html).toContain("종목별 일봉 수집 구간");
+    }
+  });
+  it("keeps an initial pending idle query visible and clears it after recovery", () => {
+    krQueryOverride = { data: undefined, isPending: true, isFetching: false, fetchStatus: "idle" };
+    expect(renderToStaticMarkup(<MarketDataPage />)).toContain("한국 데이터 조회 대기 중");
+    krQueryOverride = { data: kr, isPending: false, isFetching: false, fetchStatus: "idle" };
+    const html = renderToStaticMarkup(<MarketDataPage />);
+    expect(html).not.toContain("한국 데이터 조회 대기 중");
+    expect(html).not.toContain("연결 복구 대기 중");
+    expect(html).toContain('aria-busy="false"');
+  });
   it("keeps and explicitly labels previous results during a refresh", () => {
     krQueryOverride = { isFetching: true };
     const html = renderToStaticMarkup(<MarketDataPage />);

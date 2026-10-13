@@ -124,6 +124,8 @@ export function MarketDataContent() {
     staleTime: 60_000,
     retry: false,
   });
+  const krPaused = kr.fetchStatus === "paused";
+  const krWaiting = kr.isFetching || krPaused || (!kr.data && kr.isPending);
   const pending = kr.isFetching || us.isFetching || history.isFetching;
   return (
     <div>
@@ -168,18 +170,25 @@ export function MarketDataContent() {
         <section
           id={kr.data ? undefined : "kr-data"}
           aria-label="한국 데이터 조회 상태"
-          aria-busy={kr.isFetching}
+          aria-busy={krWaiting}
         >
-          {kr.isFetching ? (
+          {krWaiting ? (
             <p role="status" className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
-              <RefreshCw className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
-              {kr.data
-                ? "한국 데이터 다시 확인 중 · 이전 조회 결과 표시 중"
-                : "한국 데이터 처음 불러오는 중"}
-              {" · 약 30초 이상 걸릴 수 있습니다."}
+              <RefreshCw
+                className={`size-3.5 shrink-0${kr.isFetching ? " animate-spin" : ""}`}
+                aria-hidden="true"
+              />
+              {krPaused
+                ? `한국 데이터 연결 복구 대기 중${kr.data ? " · 이전 조회 결과 표시 중" : ""}`
+                : kr.isFetching
+                  ? kr.data
+                    ? "한국 데이터 다시 확인 중 · 이전 조회 결과 표시 중"
+                    : "한국 데이터 처음 불러오는 중"
+                  : "한국 데이터 조회 대기 중"}
+              {kr.isFetching ? " · 약 30초 이상 걸릴 수 있습니다." : null}
             </p>
           ) : null}
-          {kr.isError && !kr.isFetching ? (
+          {kr.isError && !krWaiting ? (
             <div className="mb-4">
               <p role="alert" className="rounded-lg border border-destructive p-3 text-sm">
                 한국 데이터 조회에 실패했습니다. 조회 실패는 수집 0건을 뜻하지 않습니다.
