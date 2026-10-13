@@ -1,0 +1,20 @@
+{
+ "schema":"CM05_EXPLORATORY_V1", "scope":"A-D; portfolio E requires successful A-D and baseline parity",
+ "start":"2017-08-21", "end":"2026-09-11", "warmup_sessions":252,
+ "sectors":["SEMI","BATTERY","AUTO","BIO","IT_HW","SOFTWARE","FINANCE","SHIP_DEF","CHEM_STEEL","ENERGY","CONSUMER","HEALTH_SVC","TELCO_MEDIA","CONSTRUCT"],
+ "minimum_constituents":10,"minimum_coverage":0.8,"maximum_source_age_days":3,
+ "mapping":"STATIC_VINTAGE_NOT_PIT_CERTIFIED", "mapping_r2_sha256":"1a9014139900cc4179fbd7e72bca94cf36abb4e4eb14df4a775e97b4dd89c1cc",
+ "price_basis":"US_OHLC_times_closeadj_over_close; KR_frozen_comparison_prices",
+ "X1":"median_20_session_constituent_return_minus_local_benchmark_return",
+ "X2":"fraction_above_MA60_change_5_sessions",
+ "C_primary_count":56,"C_horizons":[1,5,10,20],"C_primary_horizon":5,
+ "C_KR_definition":"Pooled KR constituents, each excess measured against its own KOSPI or KOSDAQ benchmark; equal stock weighting. Local factor median of stock excess. Market controls equal eligible-constituent weighted local benchmark.",
+ "C_execution":"decision before target next market open; source and local features available strictly before open; daily previous-eligible equal-weight basket, first day open-to-close then close-to-close",
+ "D_primary_count":6,"D_horizons":[5,20,60],"D_primary_horizon":20,
+ "D_gates":["peer_X1>0","peer_X2>0"],"D_candidates":"all frozen-rule candidate signals before cash/slot/holdings restrictions; KOSPI confirmed and KOSDAQ/A0 onset",
+ "D_execution":"next target market open only with positive source volume; unavailable open marked unexecutable, never silently deferred",
+ "D_exit":"horizon market-session close; missing endpoint censored, not zero; proxy liquidation requires separate labeled diagnostic",
+ "evaluation":"2018-2021 discovery; 2022-2024 reused historical validation; 2025 and 2026 separate diagnostics; maximum60session boundary purge",
+ "bootstrap":{"seed":20261013,"replicates":499,"block_sessions":63,"sensitivity":21,"unit":"whole-date cross-section"},
+ "family_c":56,"family_d":6,"one_way_cost":0.0015,"workers":1,"auto_restart":false
+}
