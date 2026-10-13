@@ -1,5 +1,10 @@
 import { usesLegacyUsOperatingLedger } from "../src/lib/legacyUsLedgerBoundary";
-import { RESTART_ACCOUNTING_START } from "../src/lib/ledger/modelSeries";
+import {
+  RESTART_ACCOUNTING_START,
+  activeSeriesVersion,
+  hashSeriesValue,
+} from "../src/lib/ledger/modelSeries";
+import { assertStoredOctoberRun, type OctoberRun } from "../src/lib/ledger/octoberShadowPipeline";
 import type { UsReplayManifest } from "./us-replay-source";
 import {
   preflightUsRecoveryPublication,
@@ -24,6 +29,7 @@ import { commitUsShadowReplay, planUsShadowReplay } from "./us-shadow-replay-pla
 import { octoberShadowStore } from "../src/lib/ledger/octoberShadowRepository.server";
 import {
   runUsProspectiveAnalysis,
+  parseUsProspectiveCsv,
   US_PROSPECTIVE_RULE_VERSION,
   type UsProspectivePreviousState,
 } from "../src/lib/engine/usProspective";
@@ -157,8 +163,13 @@ export async function runUsGapReplay(input: {
   if (!source || bytesHash(source) !== input.manifestHash)
     throw new Error("US recovery manifest hash mismatch");
   const manifest = await validateUsReplayManifest(JSON.parse(source), userId);
-  if (!usesLegacyUsOperatingLedger(manifest.throughDate))
+  if (!usesLegacyUsOperatingLedger(manifest.throughDate)) {
+    if (
+      manifest.sessions.some((s) => s.originalSource || s.pit.kind === "REVIEWED_ATOMIC_QUARANTINE")
+    )
+      return runRestartReviewedPublication(input, manifest);
     return runRestartUsGapReplay(input, manifest, source);
+  }
   if (
     input.publishDailyScreen &&
     manifest.sessions.some(
@@ -595,6 +606,156 @@ export async function runUsGapReplay(input: {
     screeningPublished: Boolean(publicationInput || dailyPublicationInput),
   };
 }
+/** Correct the display of a completed restart day. Never step any model or rank continuation. */
+async function runRestartReviewedPublication(
+  input: Parameters<typeof runUsGapReplay>[0],
+  manifest: UsReplayManifest,
+) {
+  const { client, userId } = input;
+  if (
+    manifest.sessions.length !== 1 ||
+    manifest.sessions[0]!.date < RESTART_ACCOUNTING_START ||
+    manifest.sessions[0]!.pit.kind !== "REVIEWED_ATOMIC_QUARANTINE" ||
+    !manifest.sessions[0]!.originalSource ||
+    input.publishRecoveredView ||
+    (input.apply && !input.publishDailyScreen)
+  )
+    throw new Error("Restart reviewed input requires single-session publication-only mode");
+  const [reviewed] = await loadVerifiedUsReplaySessions(
+    manifest,
+    async (path) => (await readText(client, path))!,
+  );
+  const source = reviewed!.source;
+  const protectedRows = await protectedHistory(client, userId, manifest.baseDate, source.date);
+  const original = protectedRows.find((row) => row.date === source.date);
+  if (
+    !original ||
+    original.data_hash !== source.originalSource!.dataHash ||
+    original.rule_version !== US_PROSPECTIVE_RULE_VERSION
+  )
+    throw new Error("Restart reviewed publication requires exact completed original history");
+  const raw = (await readText(client, source.originalSource!.storagePath))!;
+  if (bytesHash(raw) !== original.data_hash)
+    throw new Error("Restart original source identity mismatch");
+  const originalRows = parseUsProspectiveCsv(raw);
+  const sourceHash = await hashSeriesValue({
+    version: "us-shadow-dated-input-v1",
+    date: source.date,
+    rows: [...originalRows].sort((a, b) => a.symbol.localeCompare(b.symbol)),
+  });
+  const store = octoberShadowStore(client, userId, "service");
+  async function completedModels() {
+    const proofs = [];
+    for (const kind of ["US_A0", "US_A2", "US_B3"]) {
+      const bookId = `${activeSeriesVersion(source.date)}:${kind}`;
+      const series = await store.readSeries(bookId);
+      const run = await store.readSession<OctoberRun>(bookId, source.date);
+      if (!series || !run) throw new Error("Restart original model completion is missing");
+      if (series.bookId !== bookId || series.policy.kind !== kind)
+        throw new Error("Restart model registry identity mismatch");
+      await assertStoredOctoberRun(series, run);
+      if (
+        series.accountingStartDate !== RESTART_ACCOUNTING_START ||
+        run.receipt.date !== source.date ||
+        run.publication?.sourceHash !== sourceHash
+      )
+        throw new Error("Restart original model source identity mismatch");
+      proofs.push({ bookId, contractHash: series.contractHash, stateHash: run.stateHash });
+    }
+    return proofs;
+  }
+  const models = await completedModels();
+  let rank: UsProspectivePreviousState | undefined;
+  if (source.date !== RESTART_ACCOUNTING_START) {
+    if (manifest.baseDate < RESTART_ACCOUNTING_START)
+      throw new Error("Restart reviewed predecessor crosses the restart boundary");
+    const predecessor = protectedRows.find((row) => row.date === manifest.baseDate);
+    if (!predecessor || predecessor.rule_version !== US_PROSPECTIVE_RULE_VERSION)
+      throw new Error("Restart reviewed predecessor history is missing");
+    const previous = JSON.parse(
+      (await readText(client, `${userId}/results/us-screening/${manifest.baseDate}.json`))!,
+    );
+    if (previous.analysis?.state?.lastDate !== manifest.baseDate)
+      throw new Error("Restart reviewed predecessor rank identity mismatch");
+    rank = previous.analysis.state;
+  }
+  const originalResult = JSON.parse(
+    (await readText(client, `${userId}/results/us-screening/${source.date}.json`))!,
+  );
+  const recomputedOriginal = runUsProspectiveAnalysis(originalRows, rank);
+  if (
+    stableJson(originalResult.analysis?.state) !== stableJson(recomputedOriginal.state) ||
+    stableJson(originalResult.analysis?.summary) !== stableJson(recomputedOriginal.summary)
+  )
+    throw new Error("Restart original screening rank state does not match its predecessor");
+  const prefix = `${userId}/results/us-gap-replay/${input.manifestHash.slice(7)}`;
+  const planPath = `${prefix}/reviewed-publication-plan.json`;
+  const prior = await readText(client, planPath, true);
+  const generatedAt = prior
+    ? JSON.parse(prior).generatedAt
+    : (input.calculatedAt ?? new Date().toISOString());
+  if (
+    !Number.isFinite(Date.parse(generatedAt)) ||
+    Date.parse(generatedAt) < Date.parse(source.sourceCapturedAt)
+  )
+    throw new Error("Invalid restart reviewed publication calculation time");
+  // This digest identifies read-only completion evidence, not an old operating ledger plan.
+  const proofHash = bytesHash(
+    stableJson({
+      version: "us-restart-publication-proof-v1",
+      protectedHistory: protectedRows,
+      sourceHash,
+      models,
+    }),
+  );
+  if (input.expectedOperatingPlanHash && input.expectedOperatingPlanHash !== proofHash)
+    throw new Error("Restart reviewed completion proof differs from expected identity");
+  const publication: UsReplayScreeningInput = {
+    client,
+    userId,
+    analyses: [runUsProspectiveAnalysis(reviewed!.rows, rank)],
+    sources: [source],
+    manifestHash: input.manifestHash,
+    operatingPlanHash: proofHash,
+    generatedAt,
+    protectedHistory: protectedRows,
+  };
+  await preflightUsReplayScreening(publication);
+  const plan = {
+    version: "us-restart-reviewed-publication-only-v1",
+    manifestHash: input.manifestHash,
+    operatingPlanHash: proofHash,
+    generatedAt,
+    protectedHistory: protectedRows,
+    models,
+    analysis: publication.analyses[0],
+  };
+  if (prior && stableJson(JSON.parse(prior)) !== stableJson(plan))
+    throw new Error("Restart reviewed immutable publication plan changed");
+  if (
+    stableJson(await protectedHistory(client, userId, manifest.baseDate, source.date)) !==
+      stableJson(protectedRows) ||
+    stableJson(await completedModels()) !== stableJson(models)
+  )
+    throw new Error("Restart original completion changed during publication preflight");
+  if (input.apply) {
+    await immutableJson(client, planPath, plan);
+    await finishDailyScreening(publication);
+  }
+  return {
+    mode: input.apply ? "PUBLICATION_ONLY" : "READ_ONLY",
+    baseDate: manifest.baseDate,
+    throughDate: source.date,
+    sessions: 1,
+    operatingPlanHash: proofHash,
+    sourceCoverageComplete: source.sourceCoverageComplete,
+    protectedOriginalResults: protectedRows.length,
+    applied: input.apply,
+    screeningPublished: input.apply,
+    originalModelsPreserved: true,
+  };
+}
+
 /** Current recovery is a separate restart-only journal. No legacy operating reads or RPCs. */
 async function runRestartUsGapReplay(
   input: Parameters<typeof runUsGapReplay>[0],
