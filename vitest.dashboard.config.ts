@@ -28,6 +28,7 @@ export default defineConfig({
       "src/lib/etfPartialEvidence.test.ts",
       "src/components/EtfScreener.test.tsx",
       "tests/etf-confirmation-ui.test.tsx",
+      "tests/etf-confirmation-waiting.test.ts",
       "src/components/KospiEntryDetails.test.tsx",
       "src/components/UniverseFilterDetails.test.tsx",
       "src/components/DashboardOperations.test.tsx",
