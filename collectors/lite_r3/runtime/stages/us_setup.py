@@ -48,8 +48,8 @@ if RUN_US_MARKET:
     ADJUST_COMPARE_RTOL = 1e-10
     ADJUST_COMPARE_ATOL = 1e-10
 
-    COLLECTOR_VERSION = 'integrated-2.0.4-lite-r4/us-incremental-2.0.4-r2'
-    CHECKPOINT_VERSION = 3
+    COLLECTOR_VERSION = 'integrated-2.0.4-lite-r4/us-incremental-2.0.4-r3'
+    CHECKPOINT_VERSION = 4
 
     # 개별 종목의 provider candle gap은 가짜 봉을 만들지 않고 해당 세션에서만 quarantine합니다.
     # 공백 기간과 관계없이 최신 가격 미확인으로 기록하며, 소수 제한으로 대규모 장애를 숨기지 않습니다.
@@ -81,6 +81,18 @@ if RUN_US_MARKET:
         'identity_name_contains':'DIGITALBRIDGE GROUP','event_type':'acquisition_completed_common_stock',
         'source_url':'https://ir.digitalbridge.com/node/15466/html',
         'reason':'Merger completed 2026-09-30; DBRG common stock removed from NYSE trading before that session opened (Form 8-K Item 3.01). Preferred-series tickers are not covered.'})
+
+    # Ongoing Nasdaq trading halt, not a completed delisting. SEC's initial
+    # 2025-11-17 suspension expired; Nasdaq continued the halt on 2025-12-02.
+    # The 2026-10-01 F-4 still reports the halt and pending appeal.
+    VERIFIED_LIFECYCLE_EVENTS.append({'symbol':'MAMK','effective_date':'2025-12-02','status':'SUSPENDED',
+        'identity_name_contains':'MAXSMAKING','event_type':'exchange_trading_halt',
+        'source_url':'https://ir.nasdaq.com/news-releases/news-release-details/nasdaq-halts-maxsmaking-inc',
+        'initial_sec_suspension_date':'2025-11-17',
+        'sec_suspension_url':'https://www.sec.gov/files/litigation/suspensions/2025/34-104180.pdf',
+        'continuing_halt_evidence_date':'2026-10-01',
+        'continuing_halt_evidence_url':'https://www.sec.gov/Archives/edgar/data/2008007/000121390026105846/ea0307124-f4_maxsmaking.htm',
+        'reason':'Nasdaq continued the MAMK trading halt on 2025-12-02 after the SEC suspension; the 2026-10-01 F-4 reports trading still halted with appeal pending. This is not a completed-delisting classification.'})
 
     FORCE_FULL_REFRESH = bool(globals().get("FORCE_FULL_REFRESH", False))
     DISPATCH_GITHUB_AFTER_UPLOAD = bool(globals().get("DISPATCH_GITHUB_AFTER_UPLOAD", True))

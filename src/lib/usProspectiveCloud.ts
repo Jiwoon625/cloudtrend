@@ -168,6 +168,7 @@ export async function loadUsStrategyRegistry() {
   return data ?? [];
 }
 
+/** @deprecated Historical September operating book only; current reports use currentReportContext. */
 export async function loadUsPortfolioSnapshots(limitPerStrategy = 370) {
   const uid = await userId();
   // Separate strategies avoid the REST row cap truncating a one-year, four-strategy chart.
@@ -266,6 +267,7 @@ export async function loadUsPortfolioSnapshots(limitPerStrategy = 370) {
     .sort((a, b) => b.date.localeCompare(a.date)) as UsPortfolioSnapshotRecord[];
 }
 
+/** @deprecated Model history, never current actual or October 12 Shadow executions. */
 export async function loadUsPortfolioTrades(limit = 500) {
   const uid = await userId();
   const results = await Promise.all([

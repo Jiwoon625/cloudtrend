@@ -8,6 +8,8 @@ import {
 import {
   ADOPTED_SERIES_VERSION,
   freezeAdoptedSeries,
+  freezeRestartSeries,
+  RESTART_SERIES_VERSION,
   hashSeriesValue,
   VERIFIED_INITIAL_FX,
   type FrozenModelSeries,
@@ -22,7 +24,7 @@ import { shadowReplayClock } from "../src/lib/shadowReplay.server";
 import { commitUsShadowReplay, planUsShadowReplay } from "../scripts/us-shadow-replay-plan";
 import { bytesHash, type VerifiedUsReplaySession } from "../scripts/us-replay-source";
 import { sourceCsv } from "./us-replay-fixtures";
-async function setup() {
+async function setup(restart = false) {
   const registry = new Map<string, FrozenModelSeries>();
   const sessions = new Map<string, ModelJournalRun>();
   const prepared = new Map<string, PreparedOctoberPublication>();
@@ -72,7 +74,7 @@ async function setup() {
   };
   for (const kind of ["US_A0", "US_A2", "US_B3"] as AdoptedSeriesKind[])
     await store.insertSeries(
-      await freezeAdoptedSeries({
+      await (restart ? freezeRestartSeries : freezeAdoptedSeries)({
         kind,
         frozenAt: "2026-10-03T00:00:00Z",
         codeHash: ADOPTED_SHADOW_FROZEN_CODE_HASH,
@@ -82,19 +84,20 @@ async function setup() {
     );
   const base = runUsProspectiveAnalysis(parseUsProspectiveCsv(sourceCsv("2026-10-05")));
   const clock = shadowReplayClock("US", base.date, "2026-10-08T00:00:00Z");
-  await recordOctoberPublication(store, {
-    market: "US",
-    analysis: base,
-    sourceHash: await hashSeriesValue({ test: "base" }),
-    codeHash: ADOPTED_SHADOW_FROZEN_CODE_HASH,
-    runtimeCodeHash: manifest.codeHash as SeriesHash,
-    availableAt: clock.modelAvailableAt,
-    decisionAt: clock.modelDecisionAt,
-    confirmedRegularClose: true,
-    failedSymbols: 0,
-    previousSessionDate: "2026-10-02",
-    marketCalendarOk: true,
-  });
+  if (!restart)
+    await recordOctoberPublication(store, {
+      market: "US",
+      analysis: base,
+      sourceHash: await hashSeriesValue({ test: "base" }),
+      codeHash: ADOPTED_SHADOW_FROZEN_CODE_HASH,
+      runtimeCodeHash: manifest.codeHash as SeriesHash,
+      availableAt: clock.modelAvailableAt,
+      decisionAt: clock.modelDecisionAt,
+      confirmedRegularClose: true,
+      failedSymbols: 0,
+      previousSessionDate: "2026-10-02",
+      marketCalendarOk: true,
+    });
   writes.length = 0;
   const dated = ["2026-10-06", "2026-10-07"].map(
     (date, i) =>
@@ -168,5 +171,94 @@ describe("complete-batch US Shadow recovery preflight", () => {
       "registry code hash",
     );
     expect(f.writes).toEqual([]);
+  });
+});
+
+describe("restart-only multi-day US Shadow recovery", () => {
+  async function fixture() {
+    const f = await setup(true);
+    f.dated = ["2026-10-12", "2026-10-13", "2026-10-14"].map((date, i) => ({
+      rows: parseUsProspectiveCsv(sourceCsv(date)),
+      source: {
+        date,
+        previousSessionDate: i ? `2026-10-${11 + i}` : "2026-10-09",
+        dataHash: bytesHash(sourceCsv(date)),
+        sourceCapturedAt: `${date}T21:00:00Z`,
+      },
+    })) as VerifiedUsReplaySession[];
+    const input = {
+      store: f.store,
+      baseDate: "2026-10-09",
+      previousRankState: f.base.state,
+      sessions: f.dated,
+      calculatedAt: "2026-10-15T02:00:00Z",
+    };
+    return { ...f, input };
+  }
+  it("starts cash-only on Oct12, preflights all dates without writes, and retries exactly", async () => {
+    const f = await fixture();
+    const plan = await planUsShadowReplay(f.input);
+    expect(f.writes).toEqual([]);
+    expect(plan.prepared).toHaveLength(3);
+    expect(
+      plan.prepared
+        .flatMap((p) => p.entries)
+        .every((e) => e.series.bookId.startsWith(RESTART_SERIES_VERSION)),
+    ).toBe(true);
+    expect(plan.prepared[0]!.entries.every((e) => e.run.previousStateHash === null)).toBe(true);
+    expect(plan.analyses[0]).toEqual(runUsProspectiveAnalysis(f.dated[0]!.rows));
+    await commitUsShadowReplay(f.store, plan);
+    const saved = structuredClone([...f.sessions]);
+    expect(saved).toHaveLength(9);
+    const retry = await planUsShadowReplay(f.input);
+    expect(retry).toEqual(plan);
+    await commitUsShadowReplay(f.store, retry);
+    expect([...f.sessions]).toEqual(saved);
+  });
+  it("resumes a partial book commit without duplicating or resetting previous days", async () => {
+    const f = await fixture();
+    const plan = await planUsShadowReplay(f.input);
+    const append = f.store.append;
+    let writes = 0;
+    f.store.append = async (...args) => {
+      if (++writes === 5) throw new Error("synthetic disconnect");
+      return append(...args);
+    };
+    await expect(commitUsShadowReplay(f.store, plan)).rejects.toThrow("synthetic disconnect");
+    expect(f.sessions.size).toBe(4);
+    const prefix = structuredClone([...f.sessions]);
+    f.store.append = append;
+    const resumed = await planUsShadowReplay(f.input);
+    expect(resumed).toEqual(plan);
+    await commitUsShadowReplay(f.store, resumed);
+    expect(f.sessions.size).toBe(9);
+    for (const [key, value] of prefix) expect(f.sessions.get(key)).toEqual(value);
+  });
+  it("rejects future sources and invalid final-day input before any persistence", async () => {
+    const f = await fixture();
+    await expect(
+      planUsShadowReplay({ ...f.input, calculatedAt: "2026-10-13T00:00:00Z" }),
+    ).rejects.toThrow();
+    f.dated[2]!.rows.push(f.dated[2]!.rows[0]!);
+    await expect(planUsShadowReplay(f.input)).rejects.toThrow("unique symbols");
+    expect(f.writes).toEqual([]);
+    expect(f.sessions.size).toBe(0);
+  });
+  it("does not bootstrap later restart dates or read legacy books", async () => {
+    const f = await fixture();
+    const read = f.store.readSeries;
+    f.store.readSeries = async (id) => {
+      expect(id.startsWith(RESTART_SERIES_VERSION)).toBe(true);
+      return read(id);
+    };
+    await expect(
+      planUsShadowReplay({
+        ...f.input,
+        baseDate: "2026-10-12",
+        previousRankState: undefined,
+        sessions: f.dated.slice(1),
+      }),
+    ).rejects.toThrow("bootstrap");
+    await planUsShadowReplay(f.input);
   });
 });

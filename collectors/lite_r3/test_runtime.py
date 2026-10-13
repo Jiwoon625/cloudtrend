@@ -504,7 +504,7 @@ class RuntimeTests(unittest.TestCase):
 
     def test_dbrg_verified_event_exact_common_identity_and_other_events_unchanged(self):
         events=self.ns['VERIFIED_LIFECYCLE_EVENTS']
-        self.assertEqual({e['symbol'] for e in events},{'TBPH','AMZE','GETY','GBTG','WBD','DBRG'})
+        self.assertEqual({e['symbol'] for e in events},{'TBPH','AMZE','GETY','GBTG','WBD','DBRG','MAMK'})
         event=next(e for e in events if e['symbol']=='DBRG')
         self.assertEqual(event['effective_date'],'2026-09-30')
         self.assertEqual(event['identity_name_contains'],'DIGITALBRIDGE GROUP')
@@ -999,6 +999,305 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(set(calls),{'DBRG'})
         self.assertEqual(self.ns['mode_counts']['cache_current'],2)
         self.assertEqual(preserved.read_bytes(),raw)
+
+    def _revision_fixture(self, *, as_of='2026-10-12', ratio=1.5):
+        histories,calls=self._collection_fixture(stale={},as_of=as_of)
+        prior=pd.DataFrame([dict(row) for row in histories['GOOD'][:-1]]).tail(20)
+        histories['GOOD'][-2]['volume']*=ratio
+        fresh=pd.DataFrame([dict(row) for row in histories['GOOD'][-15:]])
+        return histories,calls,prior,fresh
+
+    def test_recent_volume_revision_merges_only_recent_cache_and_keeps_evidence(self):
+        histories,calls,prior,fresh=self._revision_fixture()
+        original=pd.read_parquet(self.ns['CACHE_PATH'])
+        log=io.StringIO()
+        class StaleWidget:
+            def __init__(self, seq):self.seq=seq;self.closed=False;self.refreshed=False
+            def __iter__(self):return iter(self.seq)
+            def refresh(self):self.refreshed=True
+            def close(self):self.closed=True
+        widgets=[]
+        self.ns['tqdm']=lambda seq,**kw:widgets.append(StaleWidget(seq)) or widgets[-1]
+        with redirect_stdout(log):rt.run_stage('us_collection',self.ns)
+        self.assertEqual(calls.count('GOOD'),1)
+        self.assertEqual(self.ns['mode_counts']['incremental_recent_volume_revision'],1)
+        self.assertEqual(self.ns['mode_counts']['full_adjustment_changed'],0)
+        self.assertTrue(widgets[0].closed and widgets[0].refreshed)
+        self.assertIn('US 수집 QA 완료: 2/2 처리',log.getvalue())
+        current=pd.read_parquet(self.ns['CACHE_PATH'])
+        pd.testing.assert_frame_equal(original[original.date<'2026-10-09'].sort_values(['symbol','date']).reset_index(drop=True),
+                                      current[current.date<'2026-10-09'].reset_index(drop=True),check_dtype=False)
+        cp=self.ns['CHECKPOINT_DIR']/'GOOD.json'
+        proof=json.loads(cp.read_text())['recentVolumeRevision']
+        self.assertEqual(proof['date'],'2026-10-09')
+        self.assertEqual(proof['newVolume']/proof['oldVolume'],1.5)
+        # A restart before cache write reuses exactly the bounded checkpoint.
+        original.to_parquet(self.ns['CACHE_PATH'],index=False)
+        calls.clear();self.run_stage('us_collection')
+        self.assertEqual(calls,[])
+        self.assertEqual(self.ns['diagnostics']['recentVolumeRevisions']['GOOD'],proof)
+
+    def test_recent_volume_revision_accepts_bounded_ratios_and_weekend_session(self):
+        histories,calls,prior,fresh=self._revision_fixture()
+        self.run_stage('us_collection')
+        fn=self.ns['bounded_recent_volume_revision']
+        kw=dict(previous_session='2026-10-09',as_of='2026-10-12',cached_latest='2026-10-09')
+        for ratio in (0.25,0.5,1.5,4.0):
+            sample=fresh.copy();sample.loc[sample.date.eq('2026-10-09'),'volume']=prior.iloc[-1].volume*ratio
+            self.assertTrue(fn(prior,sample,**kw))
+            self.assertTrue(fn(prior,sample.iloc[::-1],**kw))
+        # Exercise the independent history-depth guard at the threshold.
+        self.ns['INCREMENTAL_BARS']=12
+        self.assertTrue(fn(prior,fresh.tail(12),**kw))
+        self.ns['INCREMENTAL_BARS']=11
+        self.assertFalse(fn(prior,fresh.tail(11),**kw))
+        self.ns['INCREMENTAL_BARS']=15
+
+    def test_recent_volume_revision_rejects_unsafe_boundary_inputs(self):
+        histories,calls,prior,fresh=self._revision_fixture();self.run_stage('us_collection')
+        fn=self.ns['bounded_recent_volume_revision']
+        kw=dict(previous_session='2026-10-09',as_of='2026-10-12',cached_latest='2026-10-09')
+        mutations={
+            'two volumes':lambda p,f:f.__setitem__('volume',f.volume*1.1),
+            'old only':lambda p,f:(f.__setitem__('volume',f.volume.where(~f.date.eq('2026-10-09'),prior.iloc[-1].volume)),f.loc.__setitem__((f.index[-3],'volume'),12)),
+            'OHLC adjustment':lambda p,f:f.__setitem__('close',f.close*0.5),
+            'tiny high correction':lambda p,f:f.loc.__setitem__((f.index[-2],'high'),float(f.iloc[-2].high)+0.01),
+            'zero':lambda p,f:f.loc.__setitem__((f.index[-2],'volume'),0),
+            'negative':lambda p,f:f.loc.__setitem__((f.index[-2],'volume'),-1),
+            'nan':lambda p,f:f.loc.__setitem__((f.index[-2],'volume'),float('nan')),
+            'inf':lambda p,f:f.loc.__setitem__((f.index[-2],'volume'),float('inf')),
+            'extreme ratio':lambda p,f:f.loc.__setitem__((f.index[-2],'volume'),float(p.iloc[-1].volume)*4.001),
+            'bad range':lambda p,f:f.loc.__setitem__((f.index[-1],'high'),1),
+            'duplicate date':lambda p,f:f.loc.__setitem__((f.index[0],'date'),f.iloc[1].date),
+            'weekend inserted':lambda p,f:f.loc.__setitem__((f.index[0],'date'),'2026-10-10'),
+            'malformed volume':lambda p,f:f.__setitem__('volume','not-a-number'),
+            'future date':lambda p,f:f.loc.__setitem__((f.index[-1],'date'),'2026-10-13'),
+            'missing current':lambda p,f:f.loc.__setitem__((f.index[-1],'date'),'2026-10-10'),
+            'invalid date':lambda p,f:f.loc.__setitem__((f.index[-1],'date'),'2026-99-99'),
+            'inserted date':lambda p,f:f.loc.__setitem__((f.index[0],'date'),'2026-09-20'),
+            'wrong symbol':lambda p,f:f.loc.__setitem__((f.index[0],'symbol'),'OTHER'),
+            'currency drift':lambda p,f:f.__setitem__('currency','KRW'),
+            'cached newer bar':lambda p,f:p.loc.__setitem__((p.index[-1],'date'),'2026-10-12'),
+            'cached zero':lambda p,f:p.loc.__setitem__((p.index[-1],'volume'),0),
+        }
+        for name,mutate in mutations.items():
+            with self.subTest(name=name):
+                p=prior.copy();f=fresh.copy();mutate(p,f)
+                self.assertFalse(fn(p,f,**kw))
+        self.assertFalse(fn(prior,fresh,**{**kw,'cached_latest':'2026-10-08'}))
+        self.assertFalse(fn(prior,fresh,**{**kw,'previous_session':'2026-10-12'}))
+        self.assertFalse(fn(prior,fresh,**kw,unsafe=True))
+        self.assertFalse(fn(prior,fresh.drop(fresh.index[1]),**kw))
+        self.assertFalse(fn(prior,fresh.iloc[[1,0,*range(2,len(fresh))]],**kw))
+
+    def test_recent_volume_revision_full_fallback_for_price_old_and_extreme_changes(self):
+        for kind in ('price','old_volume','extreme','zero_prior','duplicate_prior','future_response'):
+            with self.subTest(kind=kind):
+                histories,calls,prior,fresh=self._revision_fixture()
+                if kind=='price':histories['GOOD'][-2]['high']+=0.01
+                if kind=='old_volume':histories['GOOD'][-4]['volume']+=500
+                if kind=='extreme':histories['GOOD'][-2]['volume']*=10
+                if kind in ('zero_prior','duplicate_prior'):
+                    frame=pd.read_parquet(self.ns['CACHE_PATH'])
+                    if kind=='zero_prior':frame.loc[frame.symbol.eq('GOOD') & frame.date.eq('2026-10-09'),'volume']=0
+                    else:frame=pd.concat([frame,frame[frame.symbol.eq('GOOD')].tail(1)],ignore_index=True)
+                    frame.to_parquet(self.ns['CACHE_PATH'],index=False)
+                if kind=='future_response':
+                    histories['GOOD'].append({**histories['GOOD'][-1],'date':'2026-10-13'})
+                self.run_stage('us_collection')
+                self.assertEqual(calls.count('GOOD'),2)
+                self.assertEqual(self.ns['mode_counts']['incremental_recent_volume_revision'],0)
+                self.assertEqual(self.ns['mode_counts']['full_adjustment_changed'],1)
+                self.tearDown();self.setUp()
+
+    def test_duplicate_provider_dates_fail_closed_without_quarantine(self):
+        histories,calls,prior,fresh=self._revision_fixture()
+        histories['GOOD'][-3]['date']=histories['GOOD'][-2]['date']
+        with self.assertRaisesRegex(RuntimeError,'duplicate candle date'):self.run_stage('us_collection')
+        self.assertNotIn('collection',self.ns['_US_STAGE_RUN'])
+        self.assertFalse(self.ns['_US_UPLOAD_VERIFIED'])
+        self.assertEqual(self.ns['provider_gap_symbols'],set())
+
+    def test_summary_distinguishes_upload_steps_and_remote_engine(self):
+        self._upload_fixture()
+        self.ns['_US_UPLOAD_VERIFIED']=True
+        self.ns['storage_path']='test-owner/source.csv'
+        self.ns['out_path']=self.base/'source.csv'
+        for stage in self.ns['_US_STAGE_ORDER']:self.ns['_US_STAGE_RUN'][stage]=self.ns['_US_RUN_ID']
+        self.ns['_US_DISPATCH_STATUS']='REQUEST_ACCEPTED'
+        log=io.StringIO()
+        with redirect_stdout(log):
+            self.run_stage_visible('us_summary');self.run_stage_visible('integrated_summary')
+        self.assertIn('US 노트북 단계: 10/10 완료',log.getvalue())
+        self.assertIn('엔진 완료 여부: 별도 확인 필요',log.getvalue())
+        self.assertIn('REQUEST_ACCEPTED',log.getvalue())
+        self.ns['_us_begin_stage']('features')
+        log=io.StringIO()
+        with redirect_stdout(log):self.run_stage_visible('us_summary')
+        self.assertIn('US 미완료',log.getvalue())
+        self.assertIn('미완료 단계:',log.getvalue())
+        self.assertNotIn('test-owner/source.csv',log.getvalue())
+
+    def run_stage_visible(self, stage):
+        rt.run_stage(stage,self.ns)
+
+    def test_bounded_revision_collection_through_final_summary_and_frozen_rerun(self):
+        histories,calls,prior,fresh=self._revision_fixture()
+        # Auth/roster/master are fixture inputs; every subsequent production
+        # stage executes, with outbound requests replaced by in-memory storage.
+        for stage in ('auth','seed','master'):
+            self.ns['_US_STAGE_RUN'][stage]=self.ns['_US_RUN_ID']
+        objects={};pointer=[];dispatches=[]
+        def response(**kw):return types.SimpleNamespace(status_code=200,raise_for_status=lambda:None,**kw)
+        def get(url,**kw):
+            if '/rest/v1/us_screening_ingest' in url:return response(json=lambda:pointer)
+            return response(content=objects[url.split('/cloudtrend-data/')[1]])
+        def post(url,**kw):
+            if '/storage/v1/object/' in url:
+                self.assertEqual(kw['headers']['x-upsert'],'false')
+                key=url.split('/cloudtrend-data/')[1]
+                objects.setdefault(key,kw['data'])
+            elif '/rest/v1/us_screening_ingest' in url:pointer[:]=[kw['json']]
+            else:raise AssertionError('Unexpected external target')
+            return response()
+        self.ns.update(requests=types.SimpleNamespace(get=get,post=post,exceptions=REQUEST_EXCEPTIONS),
+                       COLLECTION_UNIVERSE=self.ns['seed_path'],collection_universe_hash='test-hash')
+        api=types.SimpleNamespace(token='test-only',common_base=lambda:'2026-10-09',
+                                 dispatch=lambda inputs:dispatches.append(inputs) or 204)
+        self.ns['_CT_US_ARCHIVE']['UsArchiveApi']=lambda *args:api
+        output=io.StringIO()
+        with redirect_stdout(output):
+            for stage in rt.STAGES[rt.STAGES.index('us_collection'):]:rt.run_stage(stage,self.ns)
+        self.assertIn('US 노트북 단계: 10/10 완료',output.getvalue())
+        self.assertIn('US 스크리닝 엔진 완료 여부: 별도 확인 필요',output.getvalue())
+        self.assertTrue(self.ns['_US_UPLOAD_VERIFIED'])
+        self.assertEqual(len(dispatches),1)
+        raw=self.ns['raw'];path=self.ns['out_path'];digest=self.ns['data_hash']
+        self.assertEqual(pointer[0]['data_hash'],digest)
+        self.assertEqual('sha256:'+hashlib.sha256(objects[self.ns['storage_path']]).hexdigest(),digest)
+        frozen={str(p):p.read_bytes() for p in self.ns['DATED_ARCHIVE_DIR'].rglob('*') if p.is_file()}
+        calls.clear()
+        with redirect_stdout(io.StringIO()):
+            for stage in rt.STAGES[rt.STAGES.index('us_collection'):]:rt.run_stage(stage,self.ns)
+        self.assertEqual(calls,[])  # same-session current cache remains authoritative
+        self.assertEqual(path.read_bytes(),raw)
+        self.assertEqual(self.ns['data_hash'],digest)
+        self.assertEqual(len(dispatches),1)
+        for name,data in frozen.items():self.assertEqual(Path(name).read_bytes(),data)
+
+    def test_interrupted_progress_closes_without_collection_success(self):
+        self._revision_fixture()
+        class InterruptedWidget:
+            closed=False
+            def __iter__(self):raise KeyboardInterrupt('simulated interrupt')
+            def refresh(self):pass
+            def close(self):self.closed=True
+        widget=InterruptedWidget();self.ns['tqdm']=lambda *a,**kw:widget
+        log=io.StringIO()
+        with redirect_stdout(log),self.assertRaises(KeyboardInterrupt):
+            rt.run_stage('us_collection',self.ns)
+        self.assertTrue(widget.closed)
+        self.assertNotIn('US 수집 QA 완료',log.getvalue())
+        self.assertNotIn('collection',self.ns['_US_STAGE_RUN'])
+
+    def test_mamk_verified_halt_keeps_raw_history_and_blank_executable_price(self):
+        event=next(dict(e) for e in self.ns['VERIFIED_LIFECYCLE_EVENTS'] if e['symbol']=='MAMK')
+        self.assertEqual(event['status'],'SUSPENDED')
+        self.assertEqual(event['event_type'],'exchange_trading_halt')
+        self.assertEqual(event['effective_date'],'2025-12-02')
+        self.assertEqual(event['initial_sec_suspension_date'],'2025-11-17')
+        self.assertEqual(event['continuing_halt_evidence_date'],'2026-10-01')
+        histories,calls=self._collection_fixture(stale={'MAMK':'2026-10-09'},as_of='2026-10-12')
+        frame=pd.read_parquet(self.ns['CACHE_PATH'])
+        frame.loc[frame.symbol.eq('MAMK') & frame.date.ge('2025-12-02'),['open','high','low','close','volume']]=[13,13,13,13,0]
+        frame.to_parquet(self.ns['CACHE_PATH'],index=False)
+        raw=frame.query("symbol == 'MAMK'").reset_index(drop=True)
+        self.ns['VERIFIED_LIFECYCLE_EVENTS']=[event]
+        self.ns['master'].loc[self.ns['master'].symbol.eq('MAMK'),'englishName']='MAXSMAKING INC'
+        self.ns['_normalized_issuer_name']=lambda v:' '.join(re.sub(r'[^A-Z0-9]+',' ',str(v).upper()).split())
+        self.run_stage('us_collection');self.run_stage('us_features')
+        self.assertNotIn('MAMK',calls)
+        self.assertNotIn('MAMK',self.ns['provider_gap_symbols'])
+        after=pd.read_parquet(self.ns['CACHE_PATH'])
+        pd.testing.assert_frame_equal(raw,after.query("symbol == 'MAMK'").reset_index(drop=True))
+        row=self.ns['snap'].set_index('symbol').loc['MAMK']
+        self.assertEqual(row['status'],'SUSPENDED')
+        self.assertFalse(row['toss_tradable']);self.assertFalse(row['active20'])
+        self.assertTrue(pd.isna(row['close']));self.assertTrue(pd.isna(row['ret252']))
+
+    def test_mamk_event_not_effective_early_and_wrong_issuer_blocks(self):
+        event=next(dict(e) for e in self.ns['VERIFIED_LIFECYCLE_EVENTS'] if e['symbol']=='MAMK')
+        self._collection_fixture(stale={},extra=['MAMK'])
+        self.run_stage('us_collection')
+        self.ns['master'].loc[self.ns['master'].symbol.eq('MAMK'),'englishName']='MAXSMAKING INC'
+        self.ns['_normalized_issuer_name']=lambda v:' '.join(re.sub(r'[^A-Z0-9]+',' ',str(v).upper()).split())
+        validate=self.ns['_validate_lifecycle_events']
+        self.assertEqual(validate([event],'2025-12-01'),set())
+        self.assertEqual(validate([event],'2025-12-02'),{'MAMK'})
+        self.ns['master'].loc[self.ns['master'].symbol.eq('MAMK'),'englishName']='OTHER COMPANY'
+        with self.assertRaisesRegex(RuntimeError,'identity changed/unverified: MAMK'):
+            validate([event],'2026-10-12')
+
+    def test_mamk_same_day_halt_derivative_preserves_original_and_other_holds(self):
+        path,original,pointer,_=self._dbrg_snapshot_fixture(lifecycle_symbols=['MAMK'],held_lifecycle=['MAMK'],holds=True)
+        receipt=self.ns['DATED_ARCHIVE_DIR']/'2026-10-09/source.json'
+        before=receipt.read_bytes()
+        self.run_stage('us_snapshot')
+        correction=self.ns['_US_LIFECYCLE_DERIVATIVE']
+        self.assertEqual(correction['source']['originalSource']['dataHash'],pointer['data_hash'])
+        old=pd.read_csv(io.BytesIO(original)).set_index('symbol');new=self.ns['out'].set_index('symbol')
+        pd.testing.assert_frame_equal(old.drop('MAMK'),new.drop('MAMK'))
+        self.assertEqual(new.loc['MAMK','status'],'SUSPENDED')
+        self.assertTrue(pd.isna(new.loc['MAMK','close']))
+        self.assertFalse(new.loc['MAMK','toss_tradable'])
+        self.run_stage('us_snapshot')
+        self.assertEqual(self.ns['_US_LIFECYCLE_DERIVATIVE'],correction)
+        self.assertEqual(path.read_bytes(),original);self.assertEqual(receipt.read_bytes(),before)
+
+    def test_raw_normalization_cannot_bypass_bounded_revision_guard(self):
+        for kind in ('wrong_row_symbol','wrong_envelope_symbol','cross_page_duplicate','malformed_date_suffix','blank_currency','iso_timestamp'):
+            with self.subTest(kind=kind):
+                histories,calls,prior,fresh=self._revision_fixture()
+                original_get=self.ns['toss_get']
+                if kind=='wrong_row_symbol':
+                    for row in histories['GOOD']:row['symbol']='OTHER'
+                if kind in ('malformed_date_suffix','iso_timestamp'):
+                    suffix='garbage' if kind=='malformed_date_suffix' else 'T00:00:00+00:00'
+                    for row in histories['GOOD']:row['date']+=suffix
+                if kind=='blank_currency':
+                    cache=pd.read_parquet(self.ns['CACHE_PATH'])
+                    cache.loc[cache.symbol.eq('GOOD'),'currency']='   '
+                    cache.to_parquet(self.ns['CACHE_PATH'],index=False)
+                    for row in histories['GOOD']:row['currency']='   '
+                if kind=='cross_page_duplicate':
+                    def get(path,params=None,chart=False):
+                        if path!='/api/v1/candles' or params['symbol']!='GOOD':return original_get(path,params,chart)
+                        calls.append('GOOD');self.ns['_chart_request_count']+=1
+                        rows=histories['GOOD']
+                        if not params.get('before'):
+                            return {'result':{'candles':list(reversed(rows[-14:])),'nextBefore':'page2'}},{}
+                        return {'result':{'candles':[rows[-14],rows[-15]]}},{}
+                    self.ns['toss_get']=get
+                if kind=='wrong_envelope_symbol':
+                    def get(path,params=None,chart=False):
+                        result,headers=original_get(path,params,chart)
+                        if path=='/api/v1/candles' and params['symbol']=='GOOD':result['result']['symbol']='OTHER'
+                        return result,headers
+                    self.ns['toss_get']=get
+                if kind in ('wrong_row_symbol','wrong_envelope_symbol'):
+                    with self.assertRaisesRegex(RuntimeError,'requested symbol mismatch'):self.run_stage('us_collection')
+                    self.assertNotIn('collection',self.ns['_US_STAGE_RUN'])
+                    self.assertEqual(self.ns['provider_gap_symbols'],set())
+                else:
+                    self.run_stage('us_collection')
+                    if kind=='iso_timestamp':
+                        self.assertEqual(self.ns['mode_counts']['incremental_recent_volume_revision'],1)
+                        self.assertEqual(calls.count('GOOD'),1)
+                    else:
+                        self.assertEqual(self.ns['mode_counts']['incremental_recent_volume_revision'],0)
+                        self.assertEqual(self.ns['mode_counts']['full_adjustment_changed'],1)
+                        self.assertGreater(calls.count('GOOD'),1)
+                self.tearDown();self.setUp()
 
     def test_release_manifest_matches_runtime_sources(self):
         manifest=json.loads((ROOT/'runtime/manifest.json').read_text())

@@ -332,3 +332,13 @@ it("reprojects a pre-cutover snapshot read-only once its next session uses fixed
   );
   expect(value).toEqual(before);
 });
+
+describe("retired current-date operating preview", () => {
+  it("does not derive a new order from an October 12 legacy snapshot", async () => {
+    const f = mockClient({ snapshot: { ...snapshot(), date: "2026-10-12" } });
+    await expect(loadUsOrderPreview(f.client, "owner", strategyId, "2026-10-12")).rejects.toThrow(
+      "historical-only",
+    );
+    expect(f.queries.map((q) => q.table)).toEqual(["us_portfolio_snapshots"]);
+  });
+});

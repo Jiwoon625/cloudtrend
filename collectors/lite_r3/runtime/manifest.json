@@ -1,5 +1,5 @@
 {
-  "version": "cloudtrend-lite-r4-daily-v5",
+  "version": "cloudtrend-lite-r4-daily-v6",
   "sourceNotebookHash": "8adb08efd219087a9bf887a873d2d22e8d4b79282b6ad853f2140c333941c434",
   "stageCount": 30,
   "files": [
@@ -7,7 +7,7 @@
       "path": "__init__.py",
       "bytes": 1582,
       "characters": 1582,
-      "sha256": "bbdd23cce970f61e3611528b653e49b152790f3ac5e680baa51e8dae4d57603f"
+      "sha256": "3f197a7e7adf0b7a74c097acf659b478f4fbd3450ff51aa92d0b643c0be99dc8"
     },
     {
       "path": "helpers/kr_callback.py",
@@ -41,9 +41,9 @@
     },
     {
       "path": "helpers/us_archive.py",
-      "bytes": 19439,
-      "characters": 19367,
-      "sha256": "d45976e248716a00a00de84b92bde3f435e9641823a7504a43d47bc636159722"
+      "bytes": 20158,
+      "characters": 20086,
+      "sha256": "7b128e41921845dc111a3196399a36edc63c744a70567b5dbb0550b1d7b1cbfa"
     },
     {
       "path": "stages/common_init.py",
@@ -167,9 +167,9 @@
     },
     {
       "path": "stages/us_collection.py",
-      "bytes": 28115,
-      "characters": 27539,
-      "sha256": "7370799682d512e836c3b1722653e3067169bdfd1d45da4521fe71809fd9110d"
+      "bytes": 35680,
+      "characters": 35027,
+      "sha256": "9ff31b5c8e5008990519ba322da68aea726ffa1d7e98e985fb3872373cadac5b"
     },
     {
       "path": "stages/us_diagnostics.py",
@@ -203,9 +203,9 @@
     },
     {
       "path": "stages/us_setup.py",
-      "bytes": 6487,
-      "characters": 5889,
-      "sha256": "f844ff31b2789ba1e03a4059192e1ea3ff71cf9c8a8ca2f35407f63b839ad58f"
+      "bytes": 7571,
+      "characters": 6973,
+      "sha256": "88d094ad58a64590f567da75df956a9e36e32659730bc301e972e1b22a0c165d"
     },
     {
       "path": "stages/us_snapshot.py",
@@ -215,9 +215,9 @@
     },
     {
       "path": "stages/us_summary.py",
-      "bytes": 1577,
-      "characters": 1320,
-      "sha256": "bc15e4543c34bc088aab997b208321960adcc30e327ed721a3f1227ad977eb0a"
+      "bytes": 2123,
+      "characters": 1765,
+      "sha256": "f19c2f8da7558cc64a871be013a56d845ae09d59ac4da96510bfc49644707192"
     },
     {
       "path": "stages/us_upload.py",

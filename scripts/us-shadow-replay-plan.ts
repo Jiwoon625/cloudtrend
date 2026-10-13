@@ -2,6 +2,8 @@ import type { UsProspectivePreviousState } from "../src/lib/engine/usProspective
 import { runUsProspectiveAnalysis } from "../src/lib/engine/usProspective";
 import {
   ADOPTED_SERIES_VERSION,
+  activeSeriesVersion,
+  RESTART_ACCOUNTING_START,
   hashSeriesValue,
   canonicalSeriesJson,
   type SeriesHash,
@@ -31,7 +33,7 @@ export const US_REPLAY_BOOK_IDS = ["US_A0", "US_A2", "US_B3"].map(
 export async function planUsShadowReplay(input: {
   store: OctoberShadowStore;
   baseDate: string;
-  previousRankState: UsProspectivePreviousState;
+  previousRankState?: UsProspectivePreviousState | undefined;
   sessions: Array<{
     rows: VerifiedUsReplaySession["rows"];
     source: Pick<
@@ -42,9 +44,24 @@ export async function planUsShadowReplay(input: {
   calculatedAt: string;
 }) {
   const { store } = input;
+  if (!Number.isFinite(Date.parse(input.calculatedAt)))
+    throw new Error("Invalid US replay calculation time");
+  const firstDate = input.sessions[0]?.source.date;
+  const openingRestart = firstDate === RESTART_ACCOUNTING_START;
+  if (!firstDate) throw new Error("Empty US recovery batch");
+  const bookIds = ["US_A0", "US_A2", "US_B3"].map(
+    (kind) => `${activeSeriesVersion(firstDate)}:${kind}`,
+  );
   if (
-    input.previousRankState.lastDate !== input.baseDate ||
-    !Object.keys(input.previousRankState.coreRanks ?? {}).length
+    input.sessions.some(
+      (session) => activeSeriesVersion(session.source.date) !== activeSeriesVersion(firstDate),
+    )
+  )
+    throw new Error("US replay must not cross the restart boundary");
+  if (
+    !openingRestart &&
+    (input.previousRankState?.lastDate !== input.baseDate ||
+      !Object.keys(input.previousRankState?.coreRanks ?? {}).length)
   )
     throw new Error("Recovery requires the exact predecessor rank state; bootstrap is forbidden");
   const throughDate = input.sessions.at(-1)?.source.date;
@@ -53,22 +70,27 @@ export async function planUsShadowReplay(input: {
   const virtualSessions = new Map<string, ModelJournalRun>();
   const virtualPrepared = new Map<string, PreparedOctoberPublication>();
   const codeHash = adoptedShadowFrozenCodeHash(manifest.codeHash);
-  for (const bookId of US_REPLAY_BOOK_IDS) {
+  for (const bookId of bookIds) {
     const series = await store.readSeries(bookId);
     if (!series) throw new Error(`US Shadow registry is missing: ${bookId}`);
     assertAdoptedShadowRuntime(manifest.codeHash, series.codeHash);
-    const base = await store.readSession<OctoberRun>(bookId, input.baseDate);
+    const base = openingRestart
+      ? null
+      : await store.readSession<OctoberRun>(bookId, input.baseDate);
     const latest = await store.readLatest<OctoberRun>(bookId);
     if (
-      !base ||
-      !latest ||
-      latest.receipt.date < input.baseDate ||
-      latest.receipt.date > throughDate
+      (!openingRestart && (!base || !latest)) ||
+      (latest &&
+        (latest.receipt.date < (openingRestart ? RESTART_ACCOUNTING_START : input.baseDate) ||
+          latest.receipt.date > throughDate))
     )
       throw new Error(`US recovery does not extend the protected Shadow prefix: ${bookId}`);
-    await assertStoredOctoberRun(series, base);
-    virtualLatest.set(bookId, base);
-    virtualSessions.set(`${bookId}:${input.baseDate}`, base);
+    if (latest) await assertStoredOctoberRun(series, latest);
+    if (base) {
+      await assertStoredOctoberRun(series, base);
+      virtualLatest.set(bookId, base);
+      virtualSessions.set(`${bookId}:${input.baseDate}`, base);
+    }
   }
   const virtual: OctoberShadowStore = {
     ...store,
@@ -97,10 +119,20 @@ export async function planUsShadowReplay(input: {
       throw new Error("US recovery cannot write KR inputs");
     },
   };
-  let rank = input.previousRankState;
+  // Rank signals, weak streaks and orders before the restart cannot seed current books.
+  let rank = openingRestart ? undefined : input.previousRankState;
+  let previousDate = input.baseDate;
   const publications: UsModelPublication[] = [];
   const planned: PreparedOctoberPublication[] = [];
   for (const session of input.sessions) {
+    if (
+      session.source.previousSessionDate !== previousDate ||
+      session.source.date <= previousDate ||
+      session.rows.some((row) => row.date !== session.source.date) ||
+      Date.parse(session.source.sourceCapturedAt) > Date.parse(input.calculatedAt)
+    )
+      throw new Error("US replay source chronology or capture time is invalid");
+    previousDate = session.source.date;
     const clock = shadowReplayClock("US", session.source.date, input.calculatedAt);
     if (Date.parse(input.calculatedAt) < Date.parse(clock.modelDecisionAt))
       throw new Error("US replay before regular-close decision time is forbidden");
@@ -125,7 +157,7 @@ export async function planUsShadowReplay(input: {
     };
     // The engine checks holdings. Recovery additionally requires current prices for
     // pending orders so a quarantined target cannot be silently rolled or filled stale.
-    for (const bookId of US_REPLAY_BOOK_IDS) {
+    for (const bookId of bookIds) {
       const previous = virtualLatest.get(bookId) as OctoberRun & {
         result: {
           state: {
@@ -134,6 +166,7 @@ export async function planUsShadowReplay(input: {
           };
         };
       };
+      if (!previous) continue;
       const state = previous.result.state;
       for (const symbol of new Set([
         ...Object.keys(state.pendingTargets ?? {}),
@@ -144,11 +177,19 @@ export async function planUsShadowReplay(input: {
           throw new Error(`Pending US Shadow security lacks current prices: ${symbol}`);
       }
     }
+    const previousHashes = new Map(
+      bookIds.map((bookId) => [bookId, virtualLatest.get(bookId)?.stateHash ?? null]),
+    );
     await recordOctoberPublication(virtual, publication);
     const prepared = await virtual.readPrepared("US", analysis.date);
     if (!prepared) throw new Error("US dry-run did not prepare a complete publication");
     // A reused saved run does not call append; advance virtual latest explicitly.
     for (const entry of prepared.entries) {
+      if (
+        !bookIds.includes(entry.series.bookId) ||
+        entry.run.previousStateHash !== (previousHashes.get(entry.series.bookId) ?? null)
+      )
+        throw new Error("US recovery prepared state chain mismatch");
       virtualLatest.set(entry.series.bookId, entry.run);
       virtualSessions.set(`${entry.series.bookId}:${analysis.date}`, entry.run);
     }

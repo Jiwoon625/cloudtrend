@@ -5,6 +5,12 @@ if RUN_US_MARKET:
     print('=== US 업로드 재조회 검증 완료 ===' if _us_verified else '=== US 미완료: 이번 실행 업로드 검증 없음 ===')
     print('이번 실행 완료 단계:', [stage for stage, token in globals().get('_US_STAGE_RUN', {}).items()
                                    if token == globals().get('_US_RUN_ID')])
+    _us_order=globals().get('_US_STAGE_ORDER', ())
+    _us_completed=[stage for stage in _us_order if globals().get('_US_STAGE_RUN', {}).get(stage) == globals().get('_US_RUN_ID')]
+    print(f'US 노트북 단계: {len(_us_completed)}/{len(_us_order)} 완료')
+    if len(_us_completed) != len(_us_order):
+        print('미완료 단계:', [stage for stage in _us_order if stage not in _us_completed])
+    print('단계 완료와 전체 종목 자료 완비는 다릅니다. 가격 미확인·점수 보류는 아래 명단을 확인하세요.')
     print('Candidate identity/history holds:', globals().get('candidate_quarantine', {}))
     print('Candidate scoring holds:', globals().get('candidate_scoring_holds', {}))
     print('공식 lifecycle 제외:', sorted(globals().get('lifecycle_exempt_symbols', set())))

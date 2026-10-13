@@ -238,16 +238,16 @@ export async function loadPublishedUsRecoveryView(
       !record(pointer) ||
       Object.keys(pointer).sort().join(",") !==
         "date,originalDataHash,payloadHash,ruleVersion,version" ||
-      pointer.version !== "us-recovery-view-pointer-v1" ||
-      pointer.date !== identity.date ||
-      pointer.originalDataHash !== identity.dataHash ||
-      pointer.ruleVersion !== identity.ruleVersion ||
-      !hash(pointer.payloadHash)
+      pointer["version"] !== "us-recovery-view-pointer-v1" ||
+      pointer["date"] !== identity.date ||
+      pointer["originalDataHash"] !== identity.dataHash ||
+      pointer["ruleVersion"] !== identity.ruleVersion ||
+      !hash(pointer["payloadHash"])
     )
       throw new Error("Malformed or mismatched US recovery publication pointer");
-    const versionPath = legacyPath.replace(/\.json$/, `/${pointer.payloadHash.slice(7)}.json`);
+    const versionPath = legacyPath.replace(/\.json$/, `/${pointer["payloadHash"].slice(7)}.json`);
     const text = await readText(client, versionPath);
-    if (text === null || bytesHash(text) !== pointer.payloadHash)
+    if (text === null || bytesHash(text) !== pointer["payloadHash"])
       throw new Error("US recovery publication version is missing or changed");
     return assertPublishedView(JSON.parse(text), identity);
   }

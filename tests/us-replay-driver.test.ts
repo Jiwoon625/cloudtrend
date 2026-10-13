@@ -15,6 +15,12 @@ const mocks = vi.hoisted(() => ({
   publish: vi.fn(),
   dailyPreflight: vi.fn(),
   dailyPublish: vi.fn(),
+  stageIntegrated: vi.fn(),
+  replayIntegrated: vi.fn(),
+}));
+vi.mock("../src/lib/integratedAllocationReplay.server", () => ({
+  stageIntegratedUsEvidence: mocks.stageIntegrated,
+  replayIntegratedAllocationAvailable: mocks.replayIntegrated,
 }));
 vi.mock("../scripts/us-replay-screening-publication", () => ({
   preflightUsReplayScreening: mocks.dailyPreflight,
@@ -632,5 +638,111 @@ describe("guarded US recovery driver", () => {
     ).rejects.toThrow("preserved ATOMIC or reviewed quarantine inputs");
     expect(f.writes).toEqual([]);
     expect(mocks.shadow).not.toHaveBeenCalled();
+  });
+});
+
+describe("restart gap driver isolation", () => {
+  function restartFixture() {
+    const f = setup();
+    const original = JSON.parse(f.files.get(f.input.manifestPath)!);
+    const sessions = ["2026-10-12", "2026-10-13"].map((date, i) => {
+      const csv = sourceCsv(date),
+        rows = parseUsProspectiveCsv(csv);
+      const storagePath = `${uid}/us-replay/${date}.csv`,
+        rosterStoragePath = `${uid}/us-replay/${date}.roster.json`;
+      const roster = JSON.stringify({
+        version: "us-dated-roster-v1",
+        asOfDate: date,
+        capturedAt: `${date}T21:00:00Z`,
+        rows,
+      });
+      f.files.set(storagePath, csv);
+      f.files.set(rosterStoragePath, roster);
+      return {
+        ...original.sessions[i],
+        date,
+        previousSessionDate: i ? "2026-10-12" : "2026-10-09",
+        storagePath,
+        dataHash: bytesHash(csv),
+        sourceCapturedAt: `${date}T21:00:00Z`,
+        pit: {
+          kind: "ATOMIC_DATED_SNAPSHOT",
+          asOfDate: date,
+          rosterCapturedAt: `${date}T21:00:00Z`,
+          rosterStoragePath,
+          rosterHash: bytesHash(roster),
+        },
+      };
+    });
+    const manifest = JSON.stringify({
+      version: "us-dated-replay-v1",
+      baseDate: "2026-10-09",
+      throughDate: "2026-10-13",
+      sessions,
+    });
+    f.files.set(f.input.manifestPath, manifest);
+    f.input.manifestHash = bytesHash(manifest);
+    f.input.calculatedAt = "2026-10-14T02:00:00Z";
+    const client = f.input.client as unknown as {
+      from: (table: string) => unknown;
+      rpc: () => unknown;
+    };
+    client.from = (table) => {
+      f.reads.push(table);
+      if (table !== "us_screening_history") throw new Error(`Forbidden restart table: ${table}`);
+      const q = {
+        select: () => q,
+        eq: () => q,
+        gte: () => q,
+        lte: () => q,
+        order: () => q,
+        then: (resolve: (value: unknown) => unknown) =>
+          Promise.resolve({ data: [], error: null }).then(resolve),
+      };
+      return q;
+    };
+    client.rpc = () => {
+      throw new Error("Forbidden operating RPC");
+    };
+    return f;
+  }
+  it("preflights a complete restart batch without any operating book or writes", async () => {
+    const f = restartFixture();
+    const result = await runUsGapReplay(f.input);
+    expect(result.applied).toBe(false);
+    expect(result.sessions).toBe(2);
+    expect(mocks.shadow).toHaveBeenCalledWith(
+      expect.objectContaining({ previousRankState: undefined }),
+    );
+    expect(mocks.operating).not.toHaveBeenCalled();
+    expect(f.writes).toEqual([]);
+    expect(f.reads.some((v) => /us_portfolio_|us_strategy_registry|us_operating/.test(v))).toBe(
+      false,
+    );
+  });
+  it("applies and retries using immutable restart plan/receipt and daily publication", async () => {
+    const f = restartFixture();
+    const first = await runUsGapReplay({ ...f.input, apply: true, publishDailyScreen: true });
+    expect(first.applied).toBe(true);
+    expect(first.screeningPublished).toBe(true);
+    const planPath = `${uid}/results/us-gap-replay/${f.input.manifestHash.slice(7)}/plan.json`;
+    expect(JSON.parse(f.files.get(planPath)!).version).toBe("us-restart-gap-replay-v1");
+    const saved = structuredClone([...f.files]);
+    const second = await runUsGapReplay({ ...f.input, apply: true, publishDailyScreen: true });
+    expect(second).toEqual(first);
+    expect([...f.files]).toEqual(saved);
+    expect(mocks.operating).not.toHaveBeenCalled();
+    expect(mocks.replayIntegrated).toHaveBeenCalledTimes(2);
+  });
+  it("rejects a damaged immutable plan before committing", async () => {
+    const f = restartFixture();
+    await runUsGapReplay({ ...f.input, apply: true });
+    const path = `${uid}/results/us-gap-replay/${f.input.manifestHash.slice(7)}/plan.json`;
+    const plan = JSON.parse(f.files.get(path)!);
+    plan.calculatedAt = "2026-10-15T02:00:00Z";
+    f.files.set(path, JSON.stringify(plan));
+    mocks.commit.mockClear();
+    await expect(runUsGapReplay({ ...f.input, apply: true })).rejects.toThrow("identity mismatch");
+    expect(mocks.commit).not.toHaveBeenCalled();
   });
 });

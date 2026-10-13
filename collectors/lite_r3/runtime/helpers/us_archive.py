@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 US_OPERATING_IDS = ('A0_QUARTER_PRIMARY','A2_QUARTER_SHADOW','B3_BETA_SHADOW','SPY_BENCHMARK')
+US_RESTART_START = '2026-10-12'
+US_RESTART_SHADOW_IDS = tuple('adopted-shadow-2026-10-12-v1:'+x for x in ('US_A0','US_A2','US_B3'))
 US_SHADOW_IDS = tuple('adopted-shadow-2026-10-05-v1:'+x for x in ('US_A0','US_A2','US_B3'))
 
 def _ua_require(ok, message):
@@ -102,11 +104,18 @@ class UsArchiveApi:
         check=self.session.get(self.url+'/storage/v1/object/authenticated/cloudtrend-data/'+path,headers=self.headers,timeout=120)
         check.raise_for_status(); _ua_require(check.content==raw,'Replay storage readback mismatch')
     def common_base(self):
-        dates=[]
-        for strategy in US_OPERATING_IDS:
-            rows=self.rows('us_portfolio_snapshots',{'strategy_id':'eq.'+strategy,'select':'date','order':'date.desc','limit':1})
-            _ua_require(len(rows)==1,'Operating book has no verified predecessor: '+strategy); dates.append(rows[0]['date'])
-        for book in US_SHADOW_IDS:
+        # Current operations depend on completed screening and the exact restart
+        # books, never the September operating or October 5 beta books.
+        history=self.rows('us_screening_history',{'select':'date','order':'date.desc','limit':1})
+        _ua_require(len(history)==1 and re.fullmatch(r'\d{4}-\d{2}-\d{2}',str(history[0].get('date'))),
+                    'US screening has no verified predecessor')
+        current=history[0]['date'] >= US_RESTART_START
+        dates=[history[0]['date']] if current else []
+        if not current:
+            for strategy in US_OPERATING_IDS:
+                rows=self.rows('us_portfolio_snapshots',{'strategy_id':'eq.'+strategy,'select':'date','order':'date.desc','limit':1})
+                _ua_require(len(rows)==1,'Operating book has no verified predecessor: '+strategy); dates.append(rows[0]['date'])
+        for book in (US_RESTART_SHADOW_IDS if current else US_SHADOW_IDS):
             rows=self.rows('ledger_model_sessions',{'series_id':'eq.'+book,'select':'session_date','order':'session_date.desc','limit':1})
             _ua_require(len(rows)==1,'Shadow book has no verified predecessor'); dates.append(rows[0]['session_date'])
         _ua_require(len(set(dates))==1,'US book dates differ; reviewed retry is required, automatic replay blocked')
