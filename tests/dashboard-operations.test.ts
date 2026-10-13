@@ -10,7 +10,7 @@ import {
   type DashboardHolding,
 } from "../src/lib/dashboardOperations";
 import { calculateActual, type ActualExecution } from "../src/lib/portfolioLedgers";
-import { ETF_POLICY } from "../src/lib/engine/etfStrategy";
+import { ETF_MAPPING, ETF_POLICY, isEtfStrategyAssetClass } from "../src/lib/engine/etfStrategy";
 import type { AnalysisResult, ScreeningRow } from "../src/lib/engine/pipeline";
 import type { UsProspectiveCache, UsProspectiveCacheRow } from "../src/lib/usProspectiveCloud";
 
@@ -845,5 +845,128 @@ describe("dashboard heading", () => {
     expect(header).toContain("대시보드 · V8 Final</h1>");
     expect(header).not.toContain("<p ");
     expect(route).toContain('<PdfExportButton documentTitle="CloudTrend V8 Final 대시보드" />');
+  });
+});
+
+describe("ETF current-data uncertainty on the dashboard", () => {
+  const pendingSymbol = Object.keys(ETF_MAPPING).find((symbol) =>
+    isEtfStrategyAssetClass(ETF_MAPPING[symbol]),
+  )!;
+  const session = "2024-04-15";
+  function fixture() {
+    const targets = Object.keys(ETF_MAPPING).filter(
+      (symbol) => symbol !== pendingSymbol && isEtfStrategyAssetClass(ETF_MAPPING[symbol]),
+    );
+    const incomplete = new Set(targets.slice(0, 17));
+    const previousMissing = new Set(targets.slice(17, 21));
+    const symbols = [...Object.keys(ETF_MAPPING), "999999"];
+    const rows = symbols.map((symbol) => {
+      const missing = incomplete.has(symbol);
+      const pending = symbol === pendingSymbol;
+      return krRow(symbol, {
+        instrument: {
+          symbol,
+          name: symbol,
+          market: "KOSPI",
+          instrumentType: "ETF",
+          isLeveraged: false,
+          isInverse: false,
+        } as ScreeningRow["instrument"],
+        snapshot: { tradeDate: session, close: 10000 } as ScreeningRow["snapshot"],
+        etfStrategy: {
+          version: ETF_POLICY.version,
+          date: session,
+          previousDate: "2024-04-12",
+          eligible: !missing,
+          score: missing ? null : pending ? 85 : 70,
+          previousScore: previousMissing.has(symbol) ? null : pending ? 75 : 90,
+          technical: missing ? null : 70,
+          priority: 70,
+          health: 70,
+          environment: 70,
+          environmentSource: "stock_sector",
+          region: "KR",
+          sector: "시장",
+          annualVolatility: 0.2,
+          entryWeight: 0.1,
+          underlyingClose: 110,
+          underlyingMa60: 100,
+          onset: false,
+          rawOnset: pending,
+          entryState: missing ? "data_pending" : pending ? "pending" : "none",
+          originDate: pending ? session : null,
+          confirmationDate: null,
+          confirmationIssues: [],
+          averageTradingValue20: 2e9,
+          dataStatus: missing ? "incomplete" : "ready",
+          krxReferenceDate: session,
+          exit: null,
+          issues: missing ? ["기술점수 이력 부족"] : [],
+        } as ScreeningRow["etfStrategy"],
+      });
+    });
+    return { asOfDate: session, tradeDates: ["2024-04-12", session], rows } as AnalysisResult;
+  }
+  const evaluate = (value: DashboardIndex | null) =>
+    marketSignals(value, "ETF", [], [], null, session);
+
+  it("separates synthetic current-data 17 from raw-onset unknown 21 and confirmation 1", () => {
+    const source = fixture();
+    const before = structuredClone(source);
+    const projected = projectKrDashboard(source);
+    expect(projected.rows).toHaveLength(Object.keys(ETF_MAPPING).length + 1);
+    expect(
+      projected.rows.filter(
+        (r) => r.etfAssessment?.isStrategyTarget && r.etfAssessment.rawOnset === null,
+      ),
+    ).toHaveLength(21);
+    const result = evaluate(projected);
+    expect(result.dataUnconfirmedCount).toBe(17);
+    expect(result.pendingCount).toBe(1);
+    expect(result.pending?.map((r) => r.symbol)).toEqual([pendingSymbol]);
+    expect(result.onsetCount).toBe(0);
+    expect(source).toEqual(before);
+  });
+
+  it("does not count non-target, leveraged, inverse or previous-score-only gaps", () => {
+    const source = fixture();
+    for (const r of source.rows) r.etfStrategy!.dataStatus = "ready";
+    const target = source.rows.find((r) => r.instrument.symbol === "360750")!;
+    target.etfStrategy!.dataStatus = "krx_batch_pending";
+    expect(evaluate(projectKrDashboard(source)).dataUnconfirmedCount).toBe(1);
+    target.instrument.isLeveraged = true;
+    expect(evaluate(projectKrDashboard(source)).dataUnconfirmedCount).toBe(0);
+    target.instrument.isLeveraged = false;
+    target.instrument.isInverse = true;
+    expect(evaluate(projectKrDashboard(source)).dataUnconfirmedCount).toBe(0);
+    source.rows.at(-1)!.etfStrategy!.dataStatus = "incomplete";
+    expect(evaluate(projectKrDashboard(source)).dataUnconfirmedCount).toBe(0);
+  });
+
+  it.each(["missing strategy", "stale strategy", "stale snapshot", "old policy"])(
+    "leaves %s unconfirmed rather than inventing zero",
+    (kind) => {
+      const source = fixture();
+      const r = source.rows[0]!;
+      if (kind === "missing strategy") r.etfStrategy = undefined;
+      if (kind === "stale strategy") r.etfStrategy!.date = "2024-04-12";
+      if (kind === "stale snapshot") r.snapshot.tradeDate = "2024-04-12";
+      if (kind === "old policy") r.etfStrategy!.version = "old";
+      expect(evaluate(projectKrDashboard(source)).dataUnconfirmedCount).toBeNull();
+    },
+  );
+
+  it("keeps absent, legacy, invalid and pre-start indexes unknown", () => {
+    expect(evaluate(null).dataUnconfirmedCount).toBeNull();
+    expect(evaluate({ date: session, rows: [], tradeDates: [] }).dataUnconfirmedCount).toBeNull();
+    const projected = projectKrDashboard(fixture());
+    const legacy = structuredClone(projected);
+    delete legacy.rows[0]!.etfAssessment;
+    expect(evaluate(legacy).dataUnconfirmedCount).toBeNull();
+    for (const date of ["2024-04-12", "2026-02-30", "invalid"]) {
+      expect(evaluate({ ...projected, date }).dataUnconfirmedCount).toBeNull();
+    }
+    // A valid session is not reinterpreted using UTC/KST wall-clock dates.
+    expect(evaluate(projected).dataUnconfirmedCount).toBe(17);
   });
 });

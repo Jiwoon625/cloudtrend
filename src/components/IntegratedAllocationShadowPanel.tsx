@@ -1,13 +1,20 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/cloud";
-import { integratedAllocationShadowServer } from "@/lib/integratedAllocationShadow.functions";
+import {
+  integratedAllocationShadowServer,
+  allocationWarningEvidenceServer,
+} from "@/lib/integratedAllocationShadow.functions";
 import {
   allocationTotalNav,
   type IntegratedAllocationLedger,
   type AllocationRecord,
 } from "@/lib/integratedAllocationShadow";
 import { Button } from "./ui/button";
+import {
+  allocationWarningGroups,
+  type AllocationWarningEvidence,
+} from "@/lib/allocationWarningPresentation";
 const amount = (x: string | null) =>
   x === null ? "평가 미확정" : `${x.split(".")[0]!.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}원`;
 function allocationHistoryDate(record: Pick<AllocationRecord, "type" | "date">) {
@@ -18,7 +25,11 @@ function allocationHistoryDate(record: Pick<AllocationRecord, "type" | "date">) 
 export function IntegratedAllocationShadowContent({
   ledger,
   period,
+  warningEvidence,
+  renderWarnings,
 }: {
+  warningEvidence?: Record<string, AllocationWarningEvidence> | undefined;
+  renderWarnings?: (record: AllocationRecord) => ReactNode;
   ledger: IntegratedAllocationLedger;
   period?: { from: string; to: string };
 }) {
@@ -125,11 +136,18 @@ export function IntegratedAllocationShadowContent({
                   미체결 예약 해제 {c.market} · {c.reason}
                 </p>
               ))}
-              {r.issues.map((issue, i) => (
-                <p key={i} className="text-warn">
-                  {issue}
-                </p>
-              ))}
+              {r.issues.length > 0 ? (
+                renderWarnings ? (
+                  renderWarnings(r)
+                ) : (
+                  <details>
+                    <summary className="cursor-pointer text-warn">
+                      자료 확인 {r.issues.length}건
+                    </summary>
+                    <AllocationWarningDetails record={r} evidence={warningEvidence?.[r.id]} />
+                  </details>
+                )
+              ) : null}
             </div>
           ))
         )}
@@ -155,6 +173,104 @@ export function IntegratedAllocationShadowContent({
         시장자산과 변동성 비중을 사용합니다.
       </p>
     </div>
+  );
+}
+export function AllocationWarningDetails({
+  record,
+  evidence,
+}: {
+  record: AllocationRecord;
+  evidence?: AllocationWarningEvidence | undefined;
+}) {
+  const groups = allocationWarningGroups(record, evidence);
+  const sections = [
+    ["전략 대상 제외", groups.excluded],
+    ["분류 미확인", groups.unclassified],
+    ["판단 자료 미확인", groups.unavailable],
+    ["분류 근거 미확인", groups.unverified],
+    ["기타 확인", groups.other],
+  ] as const;
+  return (
+    <div className="space-y-1 pl-2">
+      {sections
+        .filter(([, rows]) => rows.length)
+        .map(([label, rows]) => (
+          <details key={label}>
+            <summary>
+              {label} {rows.length}건
+            </summary>
+            <ul>
+              {rows.map((row, i) => (
+                <li key={i}>{row}</li>
+              ))}
+            </ul>
+          </details>
+        ))}
+      <p className="text-muted-foreground">
+        해당 세션 저장 근거로 구분합니다. 확인 건수는 수집 실패·주문 건수가 아닙니다.
+      </p>
+      <details>
+        <summary>저장 원문</summary>
+        <ul>
+          {record.issues.map((issue, i) => (
+            <li key={i}>{issue}</li>
+          ))}
+        </ul>
+      </details>
+    </div>
+  );
+}
+/** Each receipt owns its lazy state, isolated by owner/book/head React key at the caller. */
+export function LazyAllocationWarnings({
+  owner,
+  kind,
+  stateHash,
+  record,
+  getToken,
+}: {
+  owner: string;
+  kind: "O1" | "S07";
+  stateHash: string;
+  record: AllocationRecord;
+  getToken: (owner: string) => Promise<string>;
+}) {
+  const [open, setOpen] = useState(false);
+  const canClassify = /^session:E:\d{4}-\d{2}-\d{2}$/.test(record.id);
+  const query = useQuery({
+    queryKey: ["allocation-warning-evidence", owner, kind, stateHash, record.id],
+    enabled: open && canClassify,
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+    queryFn: async () =>
+      allocationWarningEvidenceServer({
+        data: {
+          accessToken: await getToken(owner),
+          kind,
+          receiptId: record.id,
+        },
+      }),
+  });
+  return (
+    <details onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary className="cursor-pointer text-warn">자료 확인 {record.issues.length}건</summary>
+      {open ? (
+        query.isFetching ? (
+          <p role="status">근거 확인 중</p>
+        ) : (
+          <AllocationWarningDetails record={record} evidence={query.data?.[record.id]} />
+        )
+      ) : null}
+      {open && canClassify && !query.isFetching && !query.data?.[record.id] ? (
+        <button
+          type="button"
+          className="text-primary underline"
+          onClick={() => void query.refetch()}
+        >
+          근거 다시 확인
+        </button>
+      ) : null}
+    </details>
   );
 }
 export function IntegratedAllocationShadowPanel({
@@ -233,7 +349,20 @@ export function IntegratedAllocationShadowPanel({
       ) : query.error ? (
         <p role="alert">배분 Shadow 기록 조회 실패. 기존 기록을 유지하고 재조회하세요.</p>
       ) : book?.ledger ? (
-        <IntegratedAllocationShadowContent ledger={book.ledger} {...(period ? { period } : {})} />
+        <IntegratedAllocationShadowContent
+          ledger={book.ledger}
+          {...(period ? { period } : {})}
+          renderWarnings={(record) => (
+            <LazyAllocationWarnings
+              key={`${owner}:${kind}:${book.ledger!.stateHash}:${record.id}`}
+              owner={owner}
+              kind={kind}
+              stateHash={book.ledger!.stateHash}
+              record={record}
+              getToken={token}
+            />
+          )}
+        />
       ) : (
         <div>
           <p>신규 배분 장부 등록 대기</p>

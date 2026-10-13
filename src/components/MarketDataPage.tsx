@@ -165,18 +165,41 @@ export function MarketDataContent() {
           {...(kr.data ? { kr: kr.data } : {})}
           {...(us.data ? { us: us.data } : {})}
         />
-        {kr.isError ? (
-          <section id="kr-data" aria-label="한국 데이터 조회 오류">
-            <h2 className="font-semibold">한국 데이터 조회 오류</h2>
-            <DataError embedded error={kr.error} reset={() => void kr.refetch()} />
-          </section>
-        ) : kr.data ? (
-          <KrMarketDataPanel data={kr.data} />
-        ) : (
-          <section id="kr-data" role="status" className="rounded-lg border p-4 text-sm">
-            한국 데이터 상태를 확인하는 중입니다…
-          </section>
-        )}
+        <section
+          id={kr.data ? undefined : "kr-data"}
+          aria-label="한국 데이터 조회 상태"
+          aria-busy={kr.isFetching}
+        >
+          {kr.isFetching ? (
+            <p role="status" className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+              <RefreshCw className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
+              {kr.data
+                ? "한국 데이터 다시 확인 중 · 이전 조회 결과 표시 중"
+                : "한국 데이터 처음 불러오는 중"}
+              {" · 약 30초 이상 걸릴 수 있습니다."}
+            </p>
+          ) : null}
+          {kr.isError && !kr.isFetching ? (
+            <div className="mb-4">
+              <p role="alert" className="rounded-lg border border-destructive p-3 text-sm">
+                한국 데이터 조회에 실패했습니다. 조회 실패는 수집 0건을 뜻하지 않습니다.
+                {kr.data
+                  ? " 아래는 이전 조회 결과이며, 최신 상태는 확인되지 않았습니다."
+                  : " 로그인 상태와 업로드된 자료를 확인한 뒤 다시 조회해 주세요."}
+              </p>
+              <DataError
+                embedded
+                error={kr.error}
+                reset={() =>
+                  kr.refetch().then((result) => {
+                    if (result.error) throw result.error;
+                  })
+                }
+              />
+            </div>
+          ) : null}
+          {kr.data ? <KrMarketDataPanel data={kr.data} /> : null}
+        </section>
         <div className="border-t border-border pt-6">
           {us.isError || history.isError ? (
             <p role="alert" className="mb-4 rounded-lg border border-destructive p-3 text-sm">

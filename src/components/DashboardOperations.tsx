@@ -80,7 +80,9 @@ export function DashboardSignalCounts({
   counts: DashboardSummary["counts"];
 }) {
   const kospiPending = query.data?.markets.find((m) => m.market === "KOSPI")?.pendingCount;
-  const etfPending = query.data?.markets.find((m) => m.market === "ETF")?.pendingCount;
+  const etfMarket = query.data?.markets.find((m) => m.market === "ETF");
+  const etfPending = etfMarket?.pendingCount;
+  const etfDataUnconfirmed = etfMarket?.dataUnconfirmedCount;
   const pendingCount = (value: number | null | undefined) =>
     value == null ? "—" : formatCount(value);
   return (
@@ -148,6 +150,9 @@ export function DashboardSignalCounts({
           >
             {pendingCount(kospiPending)}/{pendingCount(etfPending)}
           </span>
+        </Row>
+        <Row label="ETF 자료 확인">
+          {etfDataUnconfirmed == null ? "미확인" : `${formatCount(etfDataUnconfirmed)}종목`}
         </Row>
         <Row label="점수 산정 불가">{formatCount(counts.incomplete)}</Row>
         <Row label="주식 판단 보류">
