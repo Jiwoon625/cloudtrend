@@ -85,7 +85,9 @@ def main():
         idx.append(f.loc[f.symbol.isin(['KOSPI','KOSDAQ']),['date','symbol','open','close','volume']])
         stock_keys.append(f[['date','symbol']])
     keys=pd.concat(stock_keys,ignore_index=True);summary['counts']['kr_canonical_rows']=raw_count;summary['counts']['kr_duplicate_keys']=int(keys.duplicated().sum());del keys,stock_keys
-    indexes=pd.concat(idx,ignore_index=True);require(not indexes.duplicated(['date','symbol']).any(),'duplicate KR benchmark keys')
+    indexes=pd.concat(idx,ignore_index=True)
+    for field in ['open','close','volume']:indexes[field]=pd.to_numeric(indexes[field],errors='raise')
+    require(not indexes.duplicated(['date','symbol']).any(),'duplicate KR benchmark keys')
     benchmarks={mk:indexes.loc[indexes.symbol.eq(mk)].set_index('date').reindex(dates['K'])[['open','close']] for mk in ['KOSPI','KOSDAQ']}
     for mk,b in benchmarks.items():out.frame('benchmark_'+mk+'.parquet',b.reset_index())
     # Normalized K already contains frozen current-policy features; preserve these for D.
@@ -102,6 +104,8 @@ def main():
     require(not k.duplicated(['session_date','symbol']).any(),'duplicate K normalized key')
     summary['counts']['kr_normalized_rows']=len(k);summary['counts']['kr_sector_reconciled_rows']=int((k.sector!=k.frozen_sector).sum())
     out.frame('kr_mapping_crosswalk.parquet',k[['symbol','sector','frozen_sector','mapping_basis']].drop_duplicates())
+    out.save('source_inventory_kr.json',inventory)
+    out.save('source_summary_kr.json',summary)
     # Feature and event routines are frozen to the existing CM input provenance.
     from cmresearchengine import runtime
     runtime.activate()
@@ -124,7 +128,7 @@ def main():
                 c=kospi_confirmation(obs(row),obs(prev),obs(before),True);entry=c['eligible'] and c['state']=='confirmed';origin=c['originDate']
             else:
                 entry=kr_operational_signals(row['market'],prev.get('score') if prev else None,row.get('score'),bool(row.get('eligible')))['kosdaq80Onset'];origin=day
-            if entry and day>=CONTRACT['start']:
+            if entry and day>=CONTRACT['start'] and origin>=CONTRACT['start']:
                 events.append({'date':day,'symbol':symbol,'market':row['market'],'sector':row.get('sector'),'origin':origin,'decision_at':row['available_at']})
             history[symbol]=(h+[row])[-2:]
     kr_events=pd.DataFrame(events);summary['counts']['kr_candidates']=len(kr_events)

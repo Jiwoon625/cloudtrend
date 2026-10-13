@@ -22,7 +22,7 @@ def sector_panel(p,benchmark,calendar,minimum=10,coverage_min=.8):
     n=valid.sum(axis=1);cov=n/denominator.replace(0,np.nan)
     good=(n>=minimum)&(cov>=coverage_min)
     bench=benchmark.reindex(c.index) if isinstance(benchmark,pd.DataFrame) else benchmark
-    bc,bo=bench['close'],bench['open']
+    bc,bo=bench['close'].astype(float),bench['open'].astype(float)
     if isinstance(bc,pd.Series):
         bc=pd.DataFrame({s:bc for s in c.columns});bo=pd.DataFrame({s:bo for s in c.columns})
     bc=bc.reindex(index=c.index,columns=c.columns);bo=bo.reindex(index=c.index,columns=c.columns)
@@ -101,6 +101,7 @@ def bootstrap_coefficients(fit,date_universe,block=63,replicates=499,seed=202610
     return {'bootstrap_status':'COMPLETE','ci_lower':float(lo),'ci_upper':float(hi),'p_block':float(p),'replicates':len(vals)}
 
 def event_labels(events,p,bench,dates,h):
+    bench=bench[['open','close']].apply(pd.to_numeric,errors='raise')
     c,o,v=p['close'],p['open'],p['volume'];pos={d:i for i,d in enumerate(dates)};rows=[]
     for row in events.to_dict('records'):
         t=pos.get(row['date']);s=row['symbol'];item=dict(row,horizon=h,target=np.nan,status='CENSORED')

@@ -36,7 +36,7 @@ class TimeAndReturnTests(unittest.TestCase):
         dates=pd.bdate_range('2020-01-01',periods=70).strftime('%Y-%m-%d').tolist()
         c=pd.DataFrame({'A':np.arange(70)+100.},index=dates);o=c-1;v=c*0+1
         c.iloc[5,0]=np.nan
-        e=pd.DataFrame([{'date':dates[0],'symbol':'A'}]);b=pd.DataFrame({'open':100.,'close':100.},index=dates)
+        e=pd.DataFrame([{'date':dates[0],'symbol':'A'}]);b=pd.DataFrame({'open':'100','close':'100'},index=dates)
         out=event_labels(e,{'open':o,'close':c,'volume':v},b,dates,5)
         self.assertEqual(out.status.iloc[0],'MISSING_ENDPOINT')
         v.iloc[1,0]=0
