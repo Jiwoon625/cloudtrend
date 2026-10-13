@@ -207,3 +207,103 @@ test.each([
     expect(mocks.server.mock.calls.every(([request]) => request.data.range === "all")).toBe(true);
   },
 );
+
+function etfPayload() {
+  return {
+    analysis: {
+      asOfDate: "2026-10-13",
+      calculatedAt: "2026-10-13T09:00:00Z",
+      rows: [
+        {
+          instrument: { symbol: "360750", instrumentType: "ETF" },
+          snapshot: { tradeDate: "2026-10-13", close: 100 },
+          etfStrategy: {
+            version: "etf-v02-confirm1-liquidity-no-replacement",
+            date: "2026-10-13",
+            previousDate: "2026-10-12",
+            dataStatus: "krx_batch_pending",
+            score: null,
+            previousScore: 88,
+            technical: 90,
+            priority: 0,
+            health: null,
+            environment: 80,
+            environmentSource: "own_index_lag1",
+            region: "US",
+            issues: [],
+          },
+        },
+      ],
+    },
+  } as unknown as AnalysisPayload;
+}
+function etfBundle() {
+  return {
+    symbol: "360750",
+    asOfDate: "2026-10-13",
+    version: "etf-v02-confirm1-liquidity-no-replacement",
+    chart: [
+      { tradeDate: "2026-10-12", close: 99, volume: 10, m0Score: 88 },
+      { tradeDate: "2026-10-13", close: 100, volume: 11, m0Score: null },
+    ],
+    underlying: [{ tradeDate: "2026-10-12", close: 1000, ma60: 950 }],
+    underlyingName: "S&P 500",
+    underlyingAsOfDate: "2026-10-12",
+    previousM0: { date: "2026-10-12", score: 88 },
+    previousTradingDate: "2026-10-12",
+    issues: [],
+  };
+}
+test("ETF uses resident RPC and shared identity lookup; cold open only requests recent price and M0 bundles", async () => {
+  const { getCachedEtfInstrumentChart, getCachedEtfInstrumentPrices } =
+    await import("../src/lib/screeningCache");
+  const input = etfPayload();
+  mocks.server.mockImplementation(async ({ data }) =>
+    data.kind === "etf"
+      ? etfBundle()
+      : {
+          chart: [{ tradeDate: "2026-10-13", close: 100, volume: 11 }],
+          history: [],
+        },
+  );
+  const [bundle] = await Promise.all([
+    getCachedEtfInstrumentChart("360750", "120", input),
+    getCachedEtfInstrumentPrices("360750", "120", input),
+  ]);
+  expect(bundle.previousM0).toEqual({ date: "2026-10-12", score: 88 });
+  expect(bundle.chart.at(-1)?.m0Score).toBeNull();
+  expect(mocks.sources).toHaveBeenCalledOnce();
+  expect(mocks.server).toHaveBeenCalledTimes(2);
+  expect(mocks.server.mock.calls.every(([request]) => request.data.range === "120")).toBe(true);
+  expect(mocks.read).toHaveBeenCalledTimes(2);
+  expect(mocks.raw).not.toHaveBeenCalled();
+});
+test("warm ETF reads require no RPC, isolate technical caches, and load full history only when requested", async () => {
+  const { getCachedEtfInstrumentChart } = await import("../src/lib/screeningCache");
+  const input = etfPayload();
+  mocks.read.mockResolvedValue(await compressed({ "360750": etfBundle() }));
+  expect(await getCachedEtfInstrumentChart("360750", "120", input)).toEqual(etfBundle());
+  const recentPath = mocks.read.mock.calls[0]![0];
+  expect(recentPath).toContain("etf-chart-v2-m0-underlying");
+  expect(recentPath).not.toContain("-all-");
+  expect(mocks.server).not.toHaveBeenCalled();
+  await getCachedEtfInstrumentChart("360750", "all", input);
+  expect(mocks.read.mock.calls.at(-1)![0]).toContain("360750-all-etf");
+  expect(mocks.read.mock.calls.at(-1)![0]).not.toBe(recentPath);
+  expect(mocks.raw).not.toHaveBeenCalled();
+});
+test.each([
+  { symbol: "481180" },
+  { asOfDate: "2026-10-12" },
+  { version: "old-strategy" },
+  { chart: [{ tradeDate: "2026-10-13", close: 100, volume: 11, m0Score: 88 }] },
+  { chart: [{ tradeDate: "2026-10-14", close: 100, volume: 11, m0Score: 88 }] },
+  { previousM0: { date: "2026-10-09", score: 88 } },
+])(
+  "ETF caches reject wrong symbol/date/version, future values and stale prior-score labels: %o",
+  async (change) => {
+    const { getCachedEtfInstrumentChart } = await import("../src/lib/screeningCache");
+    mocks.read.mockResolvedValue(await compressed({ "360750": { ...etfBundle(), ...change } }));
+    await expect(getCachedEtfInstrumentChart("360750", "120", etfPayload())).rejects.toThrow();
+  },
+);

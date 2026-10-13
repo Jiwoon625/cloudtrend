@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
 import { mergeScoringConfig } from "./engine/scoring";
-import { parseManualMarketData } from "./engine/manualDataset";
+import { parseManualMarketDataWithReferences as parseManualMarketData } from "./krxReviewReferenceParser";
 import { stableCacheJson } from "./screeningCacheContract";
 import { loadActiveSources, inputFingerprint } from "./screeningSources.server";
 import {
@@ -15,6 +15,7 @@ import {
   type ChartContext,
   type PreparedChart,
   type PriceChart,
+  type ChartBundle,
 } from "./instrumentChartStore.server";
 import {
   chartReadyPath,
@@ -100,7 +101,12 @@ export const warmInstrumentChartsServer = createServerFn({ method: "POST" })
       ctx.uid,
       chartReadyPath(data, "scored"),
     );
-    if (ready?.["ready"]) return ready["ready"];
+    const etfReady = await readChartBundle<{ buckets: number }>(
+      ctx.client,
+      ctx.uid,
+      chartReadyPath(data, "etf"),
+    );
+    if (ready?.["ready"] && etfReady?.["ready"]) return ready["ready"];
     const existing = warming.get(key);
     if (existing) return existing;
     const promise = (async () => {
@@ -117,10 +123,23 @@ export const getInstrumentChartServer = createServerFn({ method: "POST" })
       .trim()
       .toUpperCase();
     if (data.range !== "120" && data.range !== "all") throw new Error("Invalid range");
-    if (data.kind !== "prices" && data.kind !== "scored") throw new Error("Invalid chart kind");
+    if (
+      data.kind !== "prices" &&
+      data.kind !== "scored" &&
+      data.kind !== "etf" &&
+      data.kind !== "etf-prices"
+    )
+      throw new Error("Invalid chart kind");
     const path = chartPath(data, symbol, data.range, data.kind),
       ctx = await session(data);
-    const cached = await readChartBundle<PreparedChart | PriceChart>(ctx.client, ctx.uid, path);
+    if (
+      data.kind.startsWith("etf") &&
+      !ctx.analysis.rows.some(
+        (row) => row.instrument.symbol === symbol && row.instrument.instrumentType === "ETF",
+      )
+    )
+      throw new Error("분석 결과에 없는 ETF입니다.");
+    const cached = await readChartBundle<ChartBundle>(ctx.client, ctx.uid, path);
     if (cached?.[symbol]) return cached[symbol]!;
     return await prepareChartBucket(
       ctx.client,

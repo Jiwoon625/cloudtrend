@@ -1,7 +1,7 @@
 import { chartReadyPath } from "../src/lib/instrumentChartContract";
 import { trustedSupabaseClient } from "./analysis-run-store";
 import { loadActiveSources, inputFingerprint } from "../src/lib/screeningSources.server";
-import { parseManualMarketData } from "../src/lib/engine/manualDataset";
+import { parseManualMarketDataWithReferences as parseManualMarketData } from "../src/lib/krxReviewReferenceParser";
 import { mergeScoringConfig } from "../src/lib/engine/scoring";
 import {
   readChartBundle,
@@ -22,7 +22,10 @@ async function main() {
   if (error) throw error;
   const saved = JSON.parse(await blob.text());
   stage("saved-result");
-  if (await readChartBundle(client, uid, chartReadyPath(saved, "scored"))) {
+  if (
+    (await readChartBundle(client, uid, chartReadyPath(saved, "scored"))) &&
+    (await readChartBundle(client, uid, chartReadyPath(saved, "etf")))
+  ) {
     stage("already-ready");
     process.exit(0);
   }
@@ -52,6 +55,9 @@ async function main() {
   stage("storage-verified", {
     files: objects?.length,
     ready: objects?.some((o) => o.name === "scored-ready.json.gz"),
+  });
+  stage("etf-storage-verified", {
+    ready: !!(await readChartBundle(client, uid, chartReadyPath(saved, "etf"))),
   });
   process.exit(0);
 }

@@ -8,6 +8,13 @@ import type { AnalysisResult } from "./engine/pipeline";
 const normalize = (key: string) => key.replace(/\s|_/g, "").toLowerCase();
 const referenceColumns = new Set([
   "symbol",
+  "close",
+  "종가",
+  "type",
+  "종류",
+  "securitytype",
+  "market",
+  "시장",
   "code",
   "종목코드",
   "단축코드",
@@ -37,6 +44,29 @@ const numeric = (value: unknown): number | null => {
   return Number.isFinite(number) ? number : null;
 };
 
+// Match the frozen parser's canonical-first JSON aliases. CSV rows are already
+// normalized below. Display metadata must never make a rejected source row win.
+const chartAliases: Record<string, string[]> = {
+  symbol: ["code", "종목코드", "단축코드"],
+  date: ["tradedate", "기준일", "일자"],
+  close: ["종가"],
+  type: ["종류", "securitytype"],
+  market: ["시장"],
+  etfUnderlyingIndexClose: ["etfunderlyingindexclose"],
+  marketCapSource: ["marketcapsource"],
+  tradingValueSource: ["tradingvaluesource"],
+};
+const chartCsvColumns = new Map(
+  Object.entries(chartAliases).flatMap(([field, aliases]) =>
+    [field, ...aliases].map((alias) => [normalize(alias), field] as const),
+  ),
+);
+const chartField = (raw: Record<string, unknown>, field: string): unknown => {
+  for (const key of [field, ...(chartAliases[field] ?? [])])
+    if (raw[key] !== undefined) return raw[key];
+  return undefined;
+};
+
 /** Minimal independent presentation parser: no edits to the frozen engine parser. */
 export function parseManualMarketDataWithReferences(
   ...args: Parameters<typeof parseManualMarketData>
@@ -48,6 +78,7 @@ export function parseManualMarketDataWithReferences(
     Map<string, { date: string; source: KrxReviewObservation["source"]; value: number | string }>
   >();
   const symbols = new Map(parsed.dataset.instruments.map((i) => [i.symbol, i.instrumentType]));
+  const acceptedCloses = new Map<string, number>();
   const consume = (raw: Record<string, unknown>) => {
     const row = Object.fromEntries(
       Object.entries(raw)
@@ -67,6 +98,78 @@ export function parseManualMarketDataWithReferences(
     const source = etf ? "KRX_ETF" : "KRX_STOCK";
     const capExact = row["marketcapsource"] === source;
     const valueExact = row["tradingvaluesource"] === source;
+    if (etf) {
+      // Replay only the frozen parser's acceptance/enrichment boundary. Its ETF
+      // values are written by accepted ETF rows, never rejected close rows or
+      // STOCK/INDEX duplicates, even when their numeric index values happen to match.
+      const sourceSymbol = normalizeKrxSymbol(chartField(raw, "symbol"));
+      const sourceDigits = String(chartField(raw, "date") ?? "")
+        .trim()
+        .replace(/[^\d]/g, "");
+      const sourceDate =
+        sourceDigits.length >= 8
+          ? `${sourceDigits.slice(0, 4)}-${sourceDigits.slice(4, 6)}-${sourceDigits.slice(6, 8)}`
+          : null;
+      const key = `${sourceSymbol}:${sourceDate}`;
+      const rawType = String(chartField(raw, "type") ?? "")
+        .trim()
+        .toUpperCase();
+      const rawMarket = String(chartField(raw, "market") ?? "")
+        .trim()
+        .toUpperCase();
+      const indexSymbol = ["KOSPI", "KOSDAQ", "VKOSPI"].includes(sourceSymbol);
+      let sourceClose = numeric(chartField(raw, "close")) ?? acceptedCloses.get(key) ?? null;
+      if (
+        sourceClose === null &&
+        !indexSymbol &&
+        rawType !== "INDEX" &&
+        (["KOSPI", "KOSDAQ", "코스피", "코스닥", "ETF"].includes(rawMarket) ||
+          (!rawMarket && rawType === "ETF"))
+      )
+        sourceClose = 0;
+      const options = args[1];
+      const filtered =
+        options?.symbols &&
+        !indexSymbol &&
+        (!options.symbols.has(sourceSymbol) ||
+          (sourceDate && options.from && sourceDate < options.from));
+      const accepted =
+        sourceSymbol === symbol &&
+        sourceDate === date &&
+        !filtered &&
+        sourceClose !== null &&
+        sourceClose >= 0 &&
+        !(sourceClose === 0 && indexSymbol);
+      if (accepted) acceptedCloses.set(key, sourceClose!);
+      const sourceIsEtf =
+        accepted &&
+        !indexSymbol &&
+        rawType !== "INDEX" &&
+        rawMarket !== "INDEX" &&
+        rawMarket !== "지수" &&
+        (rawType === "ETF" || rawMarket === "ETF");
+      const underlyingClose = numeric(chartField(raw, "etfUnderlyingIndexClose"));
+      if (etf && sourceIsEtf && underlyingClose !== null && underlyingClose > 0) {
+        const bars = parsed.dataset.observedBars?.[symbol] ?? parsed.dataset.bars[symbol] ?? [];
+        let lo = 0,
+          hi = bars.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >>> 1;
+          if (bars[mid]!.tradeDate < date) lo = mid + 1;
+          else hi = mid;
+        }
+        const bar = bars[lo];
+        if (bar?.tradeDate === date && bar.etfUnderlyingIndexClose === underlyingClose) {
+          const name = String(row["etfunderlyingindexname"] ?? "").trim();
+          const exact =
+            chartField(raw, "marketCapSource") === "KRX_ETF" ||
+            chartField(raw, "tradingValueSource") === "KRX_ETF";
+          bar.etfUnderlyingIndexSource = exact ? "KRX_ETF" : null;
+          bar.etfUnderlyingIndexName =
+            exact && name && !/^(null|none|nan|na|-|--)$/i.test(name) ? name : null;
+        }
+      }
+    }
     // Verified collector contract: BAS_DD == request date, exact date/symbol join.
     // No provenance inference from a row date alone, and no Toss/proxy fallback.
     if (!capExact && !valueExact) return;
@@ -113,7 +216,13 @@ export function parseManualMarketDataWithReferences(
       if (Array.isArray(json)) json.forEach((item) => flatten(item));
       else
         for (const key of ["instruments", "stocks", "etfs", "indexes", "indices", "rows", "data"]) {
-          if (Array.isArray(json[key])) json[key].forEach((item: unknown) => flatten(item));
+          if (Array.isArray(json[key]))
+            json[key].forEach((item: unknown) => {
+              const isIndex = key === "indexes" || key === "indices";
+              flatten(
+                isIndex && item && typeof item === "object" ? { ...item, type: "INDEX" } : item,
+              );
+            });
         }
     } else {
       let headers: Array<[string, number]> = [];
@@ -122,7 +231,16 @@ export function parseManualMarketDataWithReferences(
           headers = cells
             .map((header, i): [string, number] => [normalize(header), i])
             .filter(([header]) => referenceColumns.has(header));
-        else consume(Object.fromEntries(headers.map(([header, i]) => [header, cells[i]])));
+        else {
+          const row = Object.fromEntries(headers.map(([header, i]) => [header, cells[i]]));
+          // The frozen CSV parser canonicalizes aliases in header order, so the
+          // last column for a duplicated canonical field wins before acceptance.
+          for (const [header, i] of headers) {
+            const canonical = chartCsvColumns.get(header);
+            if (canonical) row[canonical] = cells[i];
+          }
+          consume(row);
+        }
       });
     }
   }

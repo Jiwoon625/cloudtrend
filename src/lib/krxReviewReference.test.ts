@@ -101,7 +101,22 @@ describe("read-only dated KRX reference", () => {
     expect(ds.etfFacts).toEqual({});
     expect(ds.capabilities.etfFacts).toBe(false);
     const { krxReviewObservations, ...engineDataset } = ds;
-    expect(engineDataset).toEqual(
+    const withoutChartNames = (dataset: typeof engineDataset) => ({
+      ...dataset,
+      bars: Object.fromEntries(
+        Object.entries(dataset.bars).map(([symbol, bars]) => [
+          symbol,
+          bars.map(({ etfUnderlyingIndexName, etfUnderlyingIndexSource, ...bar }) => bar),
+        ]),
+      ),
+      observedBars: Object.fromEntries(
+        Object.entries(dataset.observedBars ?? {}).map(([symbol, bars]) => [
+          symbol,
+          bars.map(({ etfUnderlyingIndexName, etfUnderlyingIndexSource, ...bar }) => bar),
+        ]),
+      ),
+    });
+    expect(withoutChartNames(engineDataset)).toEqual(
       parseEngineInput(JSON.stringify(rows), { allowIncompleteIndex: true }).dataset,
     );
     const partial = parseManualMarketData(
@@ -184,5 +199,182 @@ describe("read-only dated KRX reference", () => {
       projectKrDashboard(second).rows.find((r) => r.symbol === row.instrument.symbol)
         ?.krxReviewReference,
     ).toEqual(row.krxReviewReference);
+  });
+});
+
+it("retains dated chart-only index names with exact value provenance and source precedence", () => {
+  const oldRows = [
+    {
+      symbol: "360750",
+      market: "ETF",
+      date: "2026-10-12",
+      close: 100,
+      etfUnderlyingIndexClose: 1000,
+      etfUnderlyingIndexName: "First index",
+      marketCapSource: "KRX_ETF",
+    },
+    {
+      symbol: "360750",
+      market: "ETF",
+      date: "2026-10-13",
+      close: 101,
+      etfUnderlyingIndexClose: 1001,
+      etfUnderlyingIndexName: "First index",
+      marketCapSource: "KRX_ETF",
+    },
+  ];
+  const newerRows = [
+    { ...oldRows[1], etfUnderlyingIndexClose: 2000, etfUnderlyingIndexName: "Second index" },
+  ];
+  const sessions = oldRows.map(({ date }) => ({
+    symbol: "KOSPI",
+    type: "INDEX",
+    market: "INDEX",
+    date,
+    close: 100,
+  }));
+  const input = [JSON.stringify([...sessions, ...oldRows]), JSON.stringify(newerRows)];
+  const ds = parseManualMarketData(input, { allowIncompleteIndex: true }).dataset;
+  expect(
+    ds.bars["360750"]!.map((bar) => [bar.etfUnderlyingIndexName, bar.etfUnderlyingIndexSource]),
+  ).toEqual([
+    ["First index", "KRX_ETF"],
+    ["Second index", "KRX_ETF"],
+  ]);
+  expect(ds.observedBars!["360750"]!.at(-1)!.etfUnderlyingIndexName).toBe("Second index");
+  const missingName = parseManualMarketData(
+    [
+      ...input,
+      JSON.stringify([
+        { ...newerRows[0], etfUnderlyingIndexClose: 3000, etfUnderlyingIndexName: "" },
+      ]),
+    ],
+    { allowIncompleteIndex: true },
+  ).dataset;
+  expect(missingName.bars["360750"]!.at(-1)!.etfUnderlyingIndexName).toBeNull();
+  const untrusted = parseManualMarketData(
+    [
+      ...input,
+      JSON.stringify([{ ...newerRows[0], etfUnderlyingIndexClose: 3000, marketCapSource: "TOSS" }]),
+    ],
+    { allowIncompleteIndex: true },
+  ).dataset;
+  expect(untrusted.bars["360750"]!.at(-1)!.etfUnderlyingIndexName).toBeNull();
+  expect(untrusted.bars["360750"]!.at(-1)!.etfUnderlyingIndexSource).toBeNull();
+  const strategy = (value: ReturnType<typeof runAnalysis>) => ({ ...value, calculatedAt: "fixed" });
+  expect(strategy(runAnalysis(ds))).toEqual(
+    strategy(runAnalysis(parseEngineInput(input, { allowIncompleteIndex: true }).dataset)),
+  );
+});
+
+const chartIdentityRows = () => [
+  { symbol: "KOSPI", type: "INDEX", market: "INDEX", date: "2026-10-13", close: 2500 },
+  {
+    symbol: "360750",
+    type: "ETF",
+    market: "ETF",
+    date: "2026-10-13",
+    close: 100,
+    etfUnderlyingIndexClose: 99,
+    etfUnderlyingIndexName: "Original",
+    marketCapSource: "KRX_ETF",
+  },
+];
+
+it.each([
+  { type: "ETF", market: "ETF", close: -1, etfUnderlyingIndexName: "Rejected close" },
+  { type: "STOCK", market: "KOSPI", close: 105, etfUnderlyingIndexName: "Stock duplicate" },
+  { type: "INDEX", market: "ETF", close: 105, etfUnderlyingIndexName: "Index duplicate" },
+  { type: "ETF", market: "INDEX", close: 105, etfUnderlyingIndexName: "Index market" },
+])(
+  "keeps the accepted ETF identity when another source row cannot enrich ETF fields: %j",
+  (duplicate) => {
+    const rows = chartIdentityRows();
+    const input = JSON.stringify([...rows, { ...rows[1], ...duplicate }]);
+    const ds = parseManualMarketData(input, { allowIncompleteIndex: true }).dataset;
+    const original = parseEngineInput(input, { allowIncompleteIndex: true }).dataset;
+    expect(ds.bars["360750"]!.at(-1)).toMatchObject({
+      etfUnderlyingIndexClose: 99,
+      etfUnderlyingIndexName: "Original",
+      etfUnderlyingIndexSource: "KRX_ETF",
+      close: original.bars["360750"]!.at(-1)!.close,
+    });
+    const { etfUnderlyingIndexName, etfUnderlyingIndexSource, ...numericBar } =
+      ds.bars["360750"]!.at(-1)!;
+    expect(numericBar).toEqual(original.bars["360750"]!.at(-1));
+  },
+);
+
+it("keeps the accepted ETF identity across a rejected CSV duplicate using Korean aliases", () => {
+  const input =
+    "종목코드,종류,시장,일자,종가,etfUnderlyingIndexClose,etfUnderlyingIndexName,marketCapSource\n" +
+    "KOSPI,INDEX,INDEX,2026-10-13,2500,,,\n" +
+    "360750,ETF,ETF,2026-10-13,100,99,Original,KRX_ETF\n" +
+    "360750,ETF,ETF,2026-10-13,-1,99,Rejected,KRX_ETF";
+  const ds = parseManualMarketData(input, { allowIncompleteIndex: true }).dataset;
+  expect(ds.bars["360750"]!.at(-1)!.etfUnderlyingIndexName).toBe("Original");
+});
+
+it("retains accepted sparse ETF enrichment when its close falls back to the prior observation", () => {
+  const rows = chartIdentityRows();
+  const ds = parseManualMarketData(
+    JSON.stringify([
+      ...rows,
+      {
+        ...rows[1],
+        close: null,
+        market: "",
+        etfUnderlyingIndexName: "Accepted sparse name",
+      },
+    ]),
+    { allowIncompleteIndex: true },
+  ).dataset;
+  expect(ds.bars["360750"]!.at(-1)).toMatchObject({
+    close: 100,
+    etfUnderlyingIndexName: "Accepted sparse name",
+  });
+});
+
+it("treats indexes and indices containers as INDEX exactly as the frozen parser does", () => {
+  for (const key of ["indexes", "indices"]) {
+    const rows = chartIdentityRows();
+    const input = [
+      JSON.stringify(rows),
+      JSON.stringify({
+        [key]: [{ ...rows[1], etfUnderlyingIndexName: "Ignored index container" }],
+      }),
+    ];
+    const ds = parseManualMarketData(input, { allowIncompleteIndex: true }).dataset;
+    expect(ds.bars["360750"]!.at(-1)!.etfUnderlyingIndexName).toBe("Original");
+  }
+});
+
+it("does not treat unrecognized JSON underlying aliases as operational ETF enrichment", () => {
+  const rows = chartIdentityRows();
+  const { etfUnderlyingIndexClose, ...duplicate } = rows[1]!;
+  const ds = parseManualMarketData(
+    JSON.stringify([
+      ...rows,
+      {
+        ...duplicate,
+        ETFUNDERLYINGINDEXCLOSE: 99,
+        etfUnderlyingIndexName: "Unrecognized numeric field",
+      },
+    ]),
+    { allowIncompleteIndex: true },
+  ).dataset;
+  expect(ds.bars["360750"]!.at(-1)!.etfUnderlyingIndexName).toBe("Original");
+});
+
+it("matches frozen CSV header-order precedence for duplicate close aliases", () => {
+  const input =
+    "symbol,type,market,date,close,종가,etfUnderlyingIndexClose,etfUnderlyingIndexName,marketCapSource\n" +
+    "KOSPI,INDEX,INDEX,2026-10-13,2500,2500,,,\n" +
+    "360750,ETF,ETF,2026-10-13,100,100,99,Original,KRX_ETF\n" +
+    "360750,ETF,ETF,2026-10-13,-1,105,99,Accepted last alias,KRX_ETF";
+  const ds = parseManualMarketData(input, { allowIncompleteIndex: true }).dataset;
+  expect(ds.bars["360750"]!.at(-1)).toMatchObject({
+    close: 105,
+    etfUnderlyingIndexName: "Accepted last alias",
   });
 });
