@@ -31,5 +31,5 @@ jobs:
         run: python -m pip install --disable-pip-version-check -r research/cmresearchengine/requirements.txt
       - name: Verify time and return contracts
         run: python -m unittest discover -s research/cm05 -p "test_*.py" -v
-      - name: Build verified CM05 inputs panels and candidate outcomes
-        run: /usr/bin/time -v python research/cm05/build.py
+      - name: Execute one bounded CM05 build or analysis
+        run: /usr/bin/time -v python research/cm05/run.py
