@@ -73,8 +73,8 @@ def confirmation_cluster_diagnostic(d):
             'two_way_cluster_se':float(np.sqrt(variance)) if variance>=0 else None,
             'date_clusters':int(d.date.nunique()),'sector_clusters':int(d.sector.nunique())}
 
-def main():
-    start=time.monotonic();req=json.loads((Path(__file__).parent/'REQUEST.json').read_text());r=Reader(req['build_run_id']);out=Output();out.root='results/analysis-'+out.run
+def main(build_run_id=None):
+    start=time.monotonic();req=json.loads((Path(__file__).parent/'REQUEST.json').read_text());build_run_id=build_run_id or req['build_run_id'];r=Reader(build_run_id);out=Output();out.root='results/analysis-'+out.run
     require(json.loads(r.raw('contract.json'))==CONTRACT,'analysis contract changed after build')
     panel=r.frame('sector_panel.parquet');labels=r.frame('candidate_labels.parquet')
     fx=pd.read_csv(io.BytesIO(r.raw('h10_conservative_events.csv')))
@@ -95,7 +95,7 @@ def main():
                 t=local[['date','open_at']].rename(columns={'open_at':'decision_at'}).copy();t['target']=forward_basket(local,h)
                 t['boundary_ok']=boundary_mask(t.date,60)
                 t=asof_peer(t,source);t=add_context(t,local,spy,fx)
-                t=t.loc[t.date.ge(CONTRACT['start'])&t.date.le(CONTRACT['end'])&t.boundary_ok].copy();t['period']=t.date.map(period);t['market']=market;t['sector']=sec;t['horizon']=h
+                t=t.loc[t.date.ge('2018-01-01')&t.date.le(CONTRACT['end'])&t.boundary_ok].copy();t['period']=t.date.map(period);t['market']=market;t['sector']=sec;t['horizon']=h
                 cdatasets.append(t)
                 controls=['local_X1','local_X2','local_market_ret20','local_market_vol20','fx_change20']+(['global_spy20'] if market=='KR' else [])
                 for feature in ['X1','X2']:
@@ -131,7 +131,7 @@ def main():
     for market in ['KOSPI','KOSDAQ','US']:
         for feature in ['X1','X2']:
             for h in CONTRACT['D_horizons']:
-                allg=d.loc[d.market.eq(market)&d.horizon.eq(h)]
+                allg=d.loc[d.market.eq(market)&d.horizon.eq(h)&d.date.ge('2018-01-01')]
                 for name,g in [(name,allg.loc[allg.period.eq(name)]) for name in ['discovery','validation','2025','2026']]+[('all_reused',allg),('all_ex2025',allg.loc[~allg.date.str.startswith('2025')])]:
                     observed=g.loc[g.status.eq('OBSERVED')].copy();common=observed.loc[observed['peer_'+feature].notna()].copy();common['gate']=common['peer_'+feature]>0
                     selected=common.loc[common.gate];rejected=common.loc[~common.gate]
@@ -148,7 +148,7 @@ def main():
     require(int(dp.sum())==6,'D hypothesis family incomplete')
     dr.loc[dp,'q_fdr6']=fdr(dr.loc[dp,'p_block'].to_numpy(),6)
     out.frame('confirmation_results.parquet',dr.astype({c:'str' for c in ['block21'] if c in dr}))
-    summary={'status':'C_D_EXPLORATORY_STATISTICS_COMPLETE','build_run_id':str(req['build_run_id']),'C_primary_hypotheses':int(primary.sum()),'C_estimable':int((primary&leadframe.status.eq('ESTIMATED')).sum()),'C_q05':int((leadframe.loc[primary,'q_fdr56']<=.05).sum()),'D_primary_comparisons':int(dp.sum()),'D_estimable':int((dp&dr.status.eq('ESTIMATED')).sum()),'D_q05':int((dr.loc[dp,'q_fdr6']<=.05).sum()),'portfolio_E':'NOT_RUN; candidate-efficiency is not portfolio performance','mapping':'STATIC_VINTAGE_EXPLORATORY','elapsed_seconds':time.monotonic()-start,'peak_rss_kib':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
+    summary={'status':'C_D_EXPLORATORY_STATISTICS_COMPLETE','build_run_id':str(build_run_id),'C_primary_hypotheses':int(primary.sum()),'C_estimable':int((primary&leadframe.status.eq('ESTIMATED')).sum()),'C_q05':int((leadframe.loc[primary,'q_fdr56']<=.05).sum()),'D_primary_comparisons':int(dp.sum()),'D_estimable':int((dp&dr.status.eq('ESTIMATED')).sum()),'D_q05':int((dr.loc[dp,'q_fdr6']<=.05).sum()),'portfolio_E':'NOT_RUN; candidate-efficiency is not portfolio performance','mapping':'STATIC_VINTAGE_EXPLORATORY','elapsed_seconds':time.monotonic()-start,'peak_rss_kib':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
     out.save('summary.json',summary);out.save('completion.json',{'files':out.files,'summary':summary})
     # Aggregate counts only; detailed research results remain in private storage.
     print('CM05_ANALYSIS_SUMMARY '+json.dumps(summary,sort_keys=True),flush=True)

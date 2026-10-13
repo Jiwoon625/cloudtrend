@@ -18,6 +18,14 @@ def sha(b):return hashlib.sha256(b).hexdigest()
 def clean_json(x):
     return json.dumps(x,sort_keys=True,ensure_ascii=False,default=str,allow_nan=False).encode()
 
+def adjusted_us_prices(frame):
+    f=frame.copy()
+    f["date"]=pd.to_datetime(f.date,errors="raise").dt.strftime("%Y-%m-%d")
+    for col in ["open","close","closeadj","volume"]:f[col]=pd.to_numeric(f[col],errors="raise")
+    ratio=f.closeadj/f.close.where(f.close>0)
+    f["open"]=f.open*ratio;f["close"]=f.closeadj
+    return f
+
 def mapping_kr():
     repo=ROOT.parent.parent
     old=(repo/'src/lib/engine/sectors.ts').read_text();new=(repo/'src/lib/engine/stockSectorMaster.ts').read_text()
@@ -52,7 +60,7 @@ def main():
     require(not m.permaticker.duplicated().any(),'ambiguous issuer in r2')
     m.commonEquityEligible=m.commonEquityEligible.astype(str).str.lower().eq('true')
     oldraw=us.get_object('reference/sector_map_extended.csv',max_bytes=6*1024**2)
-    old=pd.read_csv(io.BytesIO(oldraw),dtype={'ticker':str,'permaticker':str})
+    old=pd.read_csv(io.BytesIO(oldraw),keep_default_na=False,dtype={'ticker':str,'permaticker':str})
     diff=m.merge(old[['ticker','sectorCode']],on='ticker',how='outer',suffixes=('_r2','_old'),validate='1:1')
     out.frame('mapping_diff.parquet',diff)
     mapdict=m.set_index('ticker').sectorCode.to_dict();allowed=set(m.loc[m.commonEquityEligible,'ticker'])
@@ -152,18 +160,18 @@ def main():
         key=f'prices/year={year}/data_0.parquet';raw=us.get_object(key,max_bytes=64*1024**2)
         f=pd.read_parquet(io.BytesIO(raw));require(not f.duplicated(['date','ticker']).any(),'duplicate expanded US price key')
         inventory.append({'source':key,'bytes':len(raw),'sha256':sha(raw),'rows':len(f),'min_date':str(f.date.min()),'max_date':str(f.date.max())})
-        ratio=f.closeadj/f.close.where(f.close>0)
-        f['open']=f.open*ratio;f['close']=f.closeadj;f=f.rename(columns={'ticker':'symbol'})
+        f=adjusted_us_prices(f).rename(columns={'ticker':'symbol'})
         f=f.loc[f.symbol.isin(allowed)&f.date.le(CONTRACT['end']),['date','symbol','open','close','volume']].copy();f['sector']=f.symbol.map(mapdict)
         p=work/f'us-{year}.parquet';f.to_parquet(p,index=False);paths.append(p)
         print('CM05_US_YEAR_VERIFIED',year,len(f),flush=True)
     raw=us.get_object('benchmark/spy.parquet',max_bytes=1024**2);spy=pd.read_parquet(io.BytesIO(raw))
-    spy['open']=spy.open*spy.closeadj/spy.close;spy['close']=spy.closeadj
+    spy=adjusted_us_prices(spy)
     spy=spy.set_index('date').reindex(dates['U'])[['open','close']];out.frame('benchmark_US.parquet',spy.reset_index())
     # A0 all candidates before portfolio cash/slots; state matches frozen universe exactly.
-    state={};uevents=[]
+    state={};uevents=[];unmapped_price_parts=[]
     for p in sorted((normalized/'U').glob('*.parquet')):
         f=pd.read_parquet(p);f=f.loc[f.session_date.le(CONTRACT['end'])]
+        unmapped_price_parts.append(f.loc[~f.symbol.isin(allowed),['session_date','symbol','comparison_open','comparison_close','source_volume']].rename(columns={'session_date':'date','comparison_open':'open','comparison_close':'close','source_volume':'volume'}))
         for day,g in f.groupby('session_date',sort=True):
             records=g.astype(object).where(g.notna(),None).to_dict('records');a=us_session_analysis(records,state);state=a['state']
             if day<CONTRACT['start']:continue
@@ -176,10 +184,16 @@ def main():
         f=pd.concat([pd.read_parquet(p,filters=[('sector','==',sec)]) for p in paths],ignore_index=True)
         if f.empty:continue
         p=prices(f,dates['U']);panel=sector_panel(p,spy,calendars['U']);panel['market']='US';panel['sector']=sec;panels.append(panel)
-        ev=ue.loc[ue.sector.eq(sec)]
+        ev=ue.loc[ue.sector.eq(sec)&ue.symbol.isin(allowed)]
         if len(ev):
             for h in CONTRACT['D_horizons']:labels.append(event_labels(ev,p,spy,dates['U'],h))
         del f,p;gc.collect();print('CM05_SECTOR_COMPLETED',sec,flush=True)
+    fallback=ue.loc[~ue.symbol.isin(allowed)|~ue.sector.isin(CONTRACT['sectors'])].copy()
+    summary['counts']['us_unmapped_candidates']=len(fallback)
+    if len(fallback):
+        fallback['sector']=fallback.sector.fillna('UNMAPPED')
+        f=pd.concat(unmapped_price_parts,ignore_index=True);p=prices(f,dates['U'])
+        for h in CONTRACT['D_horizons']:labels.append(event_labels(fallback,p,spy,dates['U'],h))
     panel=pd.concat(panels,ignore_index=True);require(not panel.duplicated(['market','sector','date']).any(),'duplicate final sector key')
     out.frame('sector_panel.parquet',panel)
     lab=pd.concat(labels,ignore_index=True);out.frame('candidate_labels.parquet',lab)

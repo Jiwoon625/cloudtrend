@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 import pandas as pd
 from core import prices,sector_panel,forward_basket,asof_peer,event_labels,fdr
-from build import mapping_kr
+from build import mapping_kr,adjusted_us_prices
 
 class TimeAndReturnTests(unittest.TestCase):
     def test_no_future_or_stale_join(self):
@@ -18,6 +18,11 @@ class TimeAndReturnTests(unittest.TestCase):
         self.assertTrue(np.isnan(forward_basket(p,2).iloc[-1]))
         p.loc[1,'daily_return']=np.nan
         self.assertTrue(np.isnan(forward_basket(p,2).iloc[0]))
+    def test_native_parquet_dates_and_numeric_strings(self):
+        import datetime
+        f=pd.DataFrame({"date":[datetime.date(2025,1,2)],"open":["100"],"close":["120"],"closeadj":["60"],"volume":["1000"]})
+        p=adjusted_us_prices(f)
+        self.assertEqual(p.date.iloc[0],"2025-01-02");self.assertEqual(p.open.iloc[0],50);self.assertEqual(p.close.iloc[0],60)
     def test_duplicate_rejected(self):
         f=pd.DataFrame({'date':['a','a'],'symbol':['x','x'],'open':[1,1],'close':[1,1],'volume':[1,1]})
         with self.assertRaises(ValueError):prices(f,['a'])

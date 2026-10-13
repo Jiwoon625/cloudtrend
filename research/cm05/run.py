@@ -6,6 +6,12 @@ def main():
     req=json.loads((Path(__file__).parent/'REQUEST.json').read_text())
     if req.get('workers')!=1:raise ValueError('CM05 is limited to one worker')
     mode=req.get('mode','build')
+    if mode=='build_and_analyze':
+        from build import main as build
+        from analyze import main as analyze
+        build()
+        analyze(os.environ['GITHUB_RUN_ID'])
+        return
     if mode=='build':
         from build import main as execute
     elif mode=='analyze':
