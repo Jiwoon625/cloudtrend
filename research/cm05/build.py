@@ -71,8 +71,10 @@ def main():
         out.save(p.name,p.read_bytes());summary.setdefault('fx_schemas',{})[p.name]=list(pd.read_csv(p,nrows=1).columns)
     # Full 29-file canonical source QA. Only index rows and inventory persist as derived inputs.
     raw=kr.get_object(KR_MANIFEST+'/source-manifest.json',max_bytes=1024**2)
-    require(sha(raw)==KR_MANIFEST,'canonical catalog hash mismatch')
-    catalog=json.loads(raw);idx=[];raw_count=0;stock_keys=[]
+    catalog=json.loads(raw)
+    require(catalog.get('catalogSha256')==KR_MANIFEST,'canonical catalog identity mismatch')
+    inventory.append({'source':'KR source transfer manifest','sha256':sha(raw),'catalogSha256':KR_MANIFEST})
+    idx=[];raw_count=0;stock_keys=[]
     for rec in catalog['orderedFiles']:
         if rec['sourceGroup']!='STOCK_KR':continue
         key=rec['sha256']+'/'+rec['sourcePath'];data=kr.get_object(key,max_bytes=32*1024**2)
