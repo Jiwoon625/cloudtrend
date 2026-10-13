@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   server: vi.fn(),
   sources: vi.fn(),
   owner: vi.fn(),
+  proxyLoaded: vi.fn(),
   config: { value: {} },
 }));
 vi.mock("@/lib/cloud", () => ({
@@ -35,9 +36,14 @@ vi.mock("@/lib/screeningHistory", () => ({
   hydrateSnapshots: vi.fn(),
   saveSnapshot: vi.fn(),
 }));
-vi.mock("@/lib/instrumentCharts.functions", () => ({ getInstrumentChartServer: mocks.server }));
+vi.mock("@/lib/instrumentCharts.functions", () => {
+  mocks.proxyLoaded();
+  return { getInstrumentChartServer: mocks.server };
+});
 const { getCachedInstrumentChart, getCachedInstrumentPrices } =
   await import("../src/lib/screeningCache");
+const proxyLoadedWithCacheModule = mocks.proxyLoaded.mock.calls.length;
+const callsBeforeChartRequest = mocks.server.mock.calls.length;
 function payload(time = "2026-09-24T00:36:00Z") {
   return {
     analysis: {
@@ -151,3 +157,53 @@ test("settings changes during a read cannot label old points with a new configur
   );
   expect(mocks.server).not.toHaveBeenCalled();
 });
+
+test("the RPC proxy is ready before opt-in without fetching or computing a chart", () => {
+  expect(proxyLoadedWithCacheModule).toBe(1);
+  expect(callsBeforeChartRequest).toBe(0);
+});
+
+test("a full-history cache miss uses the resident proxy after old release chunks disappear", async () => {
+  const lateImport = vi.fn(() => {
+    throw new TypeError(
+      "Failed to fetch dynamically imported module: https://example.test/assets/old-release/instrumentCharts.functions-old.js",
+    );
+  });
+  // Simulate a deployment retiring the old lazy-import target after opening the page.
+  // Static imports keep their loaded binding; a later dynamic import would fail.
+  vi.doMock("@/lib/instrumentCharts.functions", lateImport);
+  try {
+    expect(await getCachedInstrumentPrices("TEST", "all", payload())).toEqual(scored);
+    expect(await getCachedInstrumentChart("TEST", "all", payload())).toEqual(scored);
+    expect(lateImport).not.toHaveBeenCalled();
+    expect(
+      mocks.server.mock.calls.map(([request]) => [request.data.range, request.data.kind]),
+    ).toEqual([
+      ["all", "prices"],
+      ["all", "scored"],
+    ]);
+    expect(mocks.raw).not.toHaveBeenCalled();
+  } finally {
+    vi.doMock("@/lib/instrumentCharts.functions", () => ({
+      getInstrumentChartServer: mocks.server,
+    }));
+  }
+});
+
+test.each([
+  new Error("스크리닝 결과 조회 실패: private chart API unavailable"),
+  new TypeError("Failed to fetch"),
+])(
+  "real API and offline failures remain errors with one attempt and explicit retry: %s",
+  async (error) => {
+    mocks.server.mockRejectedValueOnce(error);
+    await expect(getCachedInstrumentPrices("TEST", "all", payload())).rejects.toBe(error);
+    expect(mocks.server).toHaveBeenCalledOnce();
+    expect(mocks.read).toHaveBeenCalledOnce();
+    expect(mocks.raw).not.toHaveBeenCalled();
+    // Only a new user retry invokes the RPC again, with the same requested range.
+    expect(await getCachedInstrumentPrices("TEST", "all", payload())).toEqual(scored);
+    expect(mocks.server).toHaveBeenCalledTimes(2);
+    expect(mocks.server.mock.calls.every(([request]) => request.data.range === "all")).toBe(true);
+  },
+);

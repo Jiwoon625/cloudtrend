@@ -117,3 +117,24 @@ test("authentication retry rechecks the owner without forcing disabled chart que
   expect(state.retryOwner).toHaveBeenCalledOnce();
   expect(state.refetch).not.toHaveBeenCalled();
 });
+
+test("the initial view stays recent-only and chart failures wait for explicit retry", () => {
+  const retryPrices = vi.fn();
+  const retryScored = vi.fn();
+  state.prices = { isError: true, error: new TypeError("Failed to fetch"), refetch: retryPrices };
+  state.scored = {
+    isError: true,
+    error: new Error("private chart API failure"),
+    refetch: retryScored,
+  };
+  const html = render();
+  expect(html).toContain("private chart API failure");
+  expect(html).not.toContain("표시할 차트 데이터가 없습니다");
+  expect(state.queries.every((q) => (q["queryKey"] as string[]).at(-2) === "120")).toBe(true);
+  expect(state.queries.every((q) => q["retry"] === false)).toBe(true);
+  expect(retryPrices).not.toHaveBeenCalled();
+  expect(retryScored).not.toHaveBeenCalled();
+  state.buttonClicks.at(-1)!();
+  expect(retryPrices).toHaveBeenCalledOnce();
+  expect(retryScored).toHaveBeenCalledOnce();
+});
