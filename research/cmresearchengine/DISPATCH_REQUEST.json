@@ -1,8 +1,8 @@
 {
-  "request_id": "cm-manual-split25-008-011-20261012-001",
+  "request_id": "cm-manual-split25-012-015-20261013-001",
   "mode": "run",
   "stage": "split25",
-  "offset": 8,
+  "offset": 12,
   "count": 4,
   "max_seconds": 3000,
   "workers": 1,
