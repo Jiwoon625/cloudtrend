@@ -1,3 +1,4 @@
+import { assertLegacyUsRecoveryDate } from "../src/lib/legacyUsLedgerBoundary";
 /** Same-input, resumable ordinary publication after a verified reconstructed predecessor.
  * This uses the existing four-book transactional operating RPC and immutable Shadow
  * preparations. It never fabricates the predecessor's missing screening history.
@@ -135,6 +136,7 @@ export async function runUsDailyContinuation(input: {
   admit: (plan: UsDailyContinuationPlan) => Promise<void>;
 }) {
   const { client, userId, ingest, saved } = input;
+  assertLegacyUsRecoveryDate(ingest.as_of_date);
   const date = ingest.as_of_date,
     previousDate = String(ingest.metadata["previousSessionDate"]);
   if (saved && saved.reconstructionManifestHash !== input.reconstruction.manifestHash)

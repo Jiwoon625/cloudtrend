@@ -1,3 +1,4 @@
+import { assertLegacyUsRecoveryDate } from "./legacyUsLedgerBoundary";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
 import { US_PROSPECTIVE_RULE_VERSION } from "./engine/usProspective";
@@ -61,6 +62,9 @@ export async function loadUsOrderPreview(
     (expectedDate !== undefined && snapshot.date !== expectedDate)
   )
     throw new Error("미국 모형 스냅샷이 갱신 중입니다. 새로고침해 주세요.");
+  // This endpoint reads September operating snapshots. It cannot generate a
+  // current order from a legacy position merely because that row has a new date.
+  assertLegacyUsRecoveryDate(snapshot.date);
   if (snapshot.rule_version !== US_PROSPECTIVE_RULE_VERSION)
     throw new Error("미국 모형 규칙 버전이 달라 주문 미리보기를 확인할 수 없습니다.");
 

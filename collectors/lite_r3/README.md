@@ -100,3 +100,76 @@ checked; future events, unknown events and reused ticker identities cannot
 change the frozen source. The WBD-only previously published-view reuse contract
 remains supported. Missing provider prices alone remain temporary holds and
 never create permanent lifecycle exclusions.
+
+## Bounded recent volume revisions and completion receipts (Lite r4 daily v6)
+
+A new mutable-cache path accepts a **volume-only revision of the immediately
+previous confirmed session**, provided the cache's actual latest date is exactly
+that previous session. It requires a complete 15-bar response, matching overlap
+date sets, at least ten older unchanged bars, unchanged OHLC throughout the
+overlap, canonical unique/monotonic dates, matching issuer symbol/currency,
+finite positive prices, valid OHLC ranges, and finite nonnegative volumes.
+The changed old/new volumes must both be positive and their ratio must be within
+0.25–4.0. This bound is a conservative heuristic, not proof that unrequested
+older history is unchanged. Every OHLC change, older/multi-date volume revision,
+extreme/zero transition, or insufficient/unsafe evidence retains the existing
+full-history fallback. Malformed duplicate candle dates fail closed. Existing
+ordinary unchanged-window behavior is not broadened.
+
+Accepted revisions are saved as `incremental_recent_volume_revision`, with
+policy, date and old/new volume evidence in the checkpoint and dated diagnostics.
+Only the rolling mutable cache is merged. Frozen dated input bytes, source
+receipts, hashes, same-session publication checks, lifecycle guards, gap limits,
+score holds and remote dispatch semantics remain unchanged. Same-session cache
+reuse still does not poll the provider for late corrections or rewrite an
+already published original.
+
+The collection iterator is explicitly refreshed/closed, including interruption,
+and the collector prints a plain-text processed-count receipt followed by a
+separate QA-success receipt only after validation. The final notebook summary
+counts its ten local stages, reports holds, and continues to distinguish a
+remote request being accepted from the remote screening engine completing.
+A stale Colab progress widget cannot replace these receipts. Stage completion
+and universe coverage are still different claims.
+
+The observed incident had 5,287 volume-first and 39 OHLC-first fallback reasons;
+no production-wide request reduction is claimed from those counts. Synthetic
+regressions cover bounded increases/decreases, unsafe boundaries, resume,
+collection-to-summary flow, immutable-source preservation and duplicate dispatch
+suppression. Publication and private notebook replacement remain separate
+release steps: a local runtime build is not an installed production update.
+
+### MAMK ongoing trading halt
+
+MAMK / MAXSMAKING INC is classified as `SUSPENDED` with issuer identity guard
+`MAXSMAKING`, using Nasdaq's continued-halt date of 2025-12-02. This is an
+exchange trading halt, **not completed delisting**. The earlier SEC suspension
+started 2025-11-17; the 2026-10-01 F-4 still reports halted trading and a pending
+appeal. The registry retains separate citations for these facts:
+
+- [Nasdaq continued halt](https://ir.nasdaq.com/news-releases/news-release-details/nasdaq-halts-maxsmaking-inc)
+- [SEC initial suspension](https://www.sec.gov/files/litigation/suspensions/2025/34-104180.pdf)
+- [October 1 F-4](https://www.sec.gov/Archives/edgar/data/2008007/000121390026105846/ea0307124-f4_maxsmaking.htm)
+
+Current-provider `ACTIVE` labels or repeated positive-close/zero-volume cached
+bars do not override this verified halt. MAMK candle requests stop while this
+registry entry applies; raw history and roster identity are retained. No prior
+frozen source is rewritten. Same-date status correction uses the existing
+verified derivative path and preserves other holds and original receipts.
+A future official resumption requires evidence-backed registry maintenance.
+
+### Paired current-ledger boundary
+
+This release also includes the separately reviewed current-ledger/reporting
+boundary. `UsArchiveApi.common_base()` uses completed screening plus the exact
+October 12 restart US books for current sessions; it does not require stale
+September operating or October 5 beta books to advance. Historical predecessor
+checks retain their prior path. The paired server replay, publication and
+reporting contracts must be deployed before updating the pinned private
+notebook. See [current report source contract](../../docs/current-report-source-contract.md).
+
+Collector revision rules and the new-ledger boundary were independently
+reviewed, then tested together. The US validation workflow runs both new
+TypeScript suites and the Python predecessor tests. This release does not
+authorize production data deletion, execute a replay, or erase historical
+research/actual records. The retirement planner is read-only.

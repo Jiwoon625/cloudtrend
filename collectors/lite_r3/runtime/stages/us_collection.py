@@ -74,6 +74,8 @@ if RUN_US_MARKET:
             if _event['symbol'] in lifecycle_exempt_symbols:
                 print(_event['symbol'], _event['status'], _event['effective_date'], _event['reason'], _event['source_url'])
 
+    revision_unsafe_symbols = set()
+
     def parse_candles(symbol, body):
         from datetime import date as _candle_date
         if not isinstance(body,dict):
@@ -89,17 +91,38 @@ if RUN_US_MARKET:
         else: raise RuntimeError('Malformed candle response: missing candle list')
         if not isinstance(candles,list):
             raise RuntimeError('Malformed candle response: candles must be a list')
+        for envelope in (body, result):
+            if isinstance(envelope, dict) and envelope.get('symbol') is not None and str(envelope['symbol']).strip().upper() != symbol:
+                raise RuntimeError('Malformed candle response: requested symbol mismatch')
         out=[]
+        page_dates=set()
         for x in candles:
             if not isinstance(x,dict):
                 raise RuntimeError('Malformed candle response: expected candle object')
+            if x.get('symbol') is not None and str(x['symbol']).strip().upper() != symbol:
+                raise RuntimeError('Malformed candle response: requested symbol mismatch')
             ts = x.get('timestamp') or x.get('date')
+            # Preserve existing date-prefix parsing, but do not let a malformed
+            # suffix masquerade as canonical evidence for the new exception.
+            _raw_candle_date=str(ts)
+            if len(_raw_candle_date) > 10:
+                try:
+                    if _raw_candle_date[10] not in ('T', ' '):
+                        raise ValueError('invalid datetime separator')
+                    datetime.fromisoformat(_raw_candle_date)
+                except (TypeError, ValueError):
+                    revision_unsafe_symbols.add(symbol)
             try:
                 candle_date=_candle_date.fromisoformat(str(ts)[:10]).isoformat()
                 close=float(x.get('closePrice',x.get('close')))
                 if not np.isfinite(close): raise ValueError('non-finite close')
             except (TypeError,ValueError):
                 raise RuntimeError('Malformed candle response: invalid candle date/close') from None
+            if candle_date in page_dates:
+                raise RuntimeError('Malformed candle response: duplicate candle date')
+            page_dates.add(candle_date)
+            if candle_date > AS_OF_DATE:
+                revision_unsafe_symbols.add(symbol)
             out.append({
                 'symbol':symbol,
                 'date':candle_date,
@@ -124,6 +147,8 @@ if RUN_US_MARKET:
             body,_=toss_get('/api/v1/candles',params,chart=True)
             part,next_before=parse_candles(symbol,body)
             if not part: break
+            if any(r['date'] in seen for r in part):
+                revision_unsafe_symbols.add(symbol)
             unique = [r for r in part if r['date'] not in seen and r['date'] <= AS_OF_DATE]
             rows.extend(unique)
             seen.update(r['date'] for r in unique)
@@ -163,12 +188,18 @@ if RUN_US_MARKET:
     if CACHE_PATH.exists() and (not FORCE_FULL_REFRESH or lifecycle_exempt_symbols):
         old = pd.read_parquet(CACHE_PATH)
         old['symbol']=old['symbol'].astype(str).str.upper()
-        old['date']=old['date'].astype(str).str.slice(0,10)
+        _raw_dates=old['date'].astype(str)
+        revision_unsafe_symbols.update(old.loc[_raw_dates.ne(_raw_dates.str.slice(0,10)), 'symbol'])
+        old['date']=_raw_dates.str.slice(0,10)
+        del _raw_dates
         if FORCE_FULL_REFRESH:
             # Effective lifecycle symbols make no candle request, so preserve their
             # raw history only. All other symbols still start from a fresh base.
             old=old.loc[old.symbol.isin(lifecycle_exempt_symbols)].copy()
         old = _guard_history_frame(old)
+        revision_unsafe_symbols.update(sym for sym, frame in old.groupby('symbol')
+                if not (frame.date.is_monotonic_increasing or frame.date.is_monotonic_decreasing))
+        revision_unsafe_symbols.update(old.loc[old.duplicated(['symbol','date'], keep=False) | old.date.gt(AS_OF_DATE), 'symbol'])
         old=old.drop_duplicates(['symbol','date'],keep='last').sort_values(['symbol','date']).reset_index(drop=True)
         counts=old.groupby('symbol').size().to_dict()
         _valid_cached_close=pd.to_numeric(old['close'],errors='coerce')
@@ -188,15 +219,76 @@ if RUN_US_MARKET:
     price_unconfirmed_evidence={}
     full_refresh_symbols=set()
     refresh_reasons={}
+    recent_volume_revisions={}
     mode_counts={
         'cache_current':0,
         'verified_lifecycle_excluded':0,
         'incremental':0,
+        'incremental_recent_volume_revision':0,
         'full_new_or_forced':0,
         'full_adjustment_changed':0,
         'full_no_overlap':0,
         'stale_checkpoint_rejected':0,
     }
+
+    def bounded_recent_volume_revision(prior, fresh, *, previous_session, as_of, cached_latest, unsafe=False):
+        """Permit one finalized recent volume revision, never a price adjustment.
+
+        All evidence comes from this request and the mutable cache. Dated source
+        files remain immutable. Ten older matching bars are a conservative guard,
+        not a claim that unqueried history was independently verified.
+        """
+        if unsafe or not (cached_latest == previous_session < as_of):
+            return False
+        if prior.empty or fresh.empty or len(fresh) != INCREMENTAL_BARS:
+            return False
+        from datetime import date as _revision_date
+        for frame in (prior, fresh):
+            try:
+                if any(_revision_date.fromisoformat(day).isoformat() != day for day in frame.date):
+                    return False
+            except (TypeError, ValueError):
+                return False
+            if (frame.symbol.nunique(dropna=False) != 1 or frame.currency.isna().any()
+                    or frame.currency.astype(str).str.strip().eq('').any() or frame.currency.nunique() != 1):
+                return False
+            if frame.date.duplicated().any() or frame.date.gt(as_of).any():
+                return False
+            if not (frame.date.is_monotonic_increasing or frame.date.is_monotonic_decreasing):
+                return False
+            values=frame[candle_cols].apply(pd.to_numeric, errors='coerce').to_numpy(dtype=float)
+            if not np.isfinite(values).all() or (values[:,:4] <= 0).any() or (values[:,4] < 0).any():
+                return False
+            if (values[:,1] < values[:,[0,2,3]].max(axis=1)).any() or (values[:,2] > values[:,[0,1,3]].min(axis=1)).any():
+                return False
+        if prior.symbol.iloc[0] != fresh.symbol.iloc[0] or prior.currency.iloc[0] != fresh.currency.iloc[0]:
+            return False
+        if set(fresh.loc[fresh.date.gt(previous_session), 'date']) != {as_of}:
+            return False
+        if fresh.date.max() != as_of or prior.date.max() != previous_session:
+            return False
+        # Every cached date inside the requested window must be present; no holes
+        # or silently dropped malformed/duplicate dates are eligible for this path.
+        expected=set(prior.loc[prior.date.ge(fresh.date.min()), 'date'])
+        common=fresh.merge(prior[['date',*candle_cols]], on='date', suffixes=('_new','_old'))
+        if set(fresh.loc[fresh.date.le(previous_session),'date']) != expected:
+            return False
+        if set(common.date) != expected or previous_session not in expected:
+            return False
+        if int(common.date.lt(previous_session).sum()) < 10:
+            return False
+        changed={}
+        for col in candle_cols:
+            same=np.isclose(common[f'{col}_new'].to_numpy(dtype=float),
+                            common[f'{col}_old'].to_numpy(dtype=float),
+                            rtol=ADJUST_COMPARE_RTOL, atol=ADJUST_COMPARE_ATOL, equal_nan=False)
+            changed[col]=set(common.loc[~same,'date'])
+        if any(changed[col] for col in candle_cols[:-1]) or changed['volume'] != {previous_session}:
+            return False
+        bar=common.loc[common.date.eq(previous_session)].iloc[0]
+        old_volume=float(bar.volume_old); new_volume=float(bar.volume_new)
+        # Zero transitions and extreme ratios are ambiguous; retain full refresh.
+        return old_volume > 0 and new_volume > 0 and 0.25 <= new_volume / old_volume <= 4.0
 
     def needs_full_refresh(sym, fresh_rows):
         prior = old_recent_by_symbol.get(sym)
@@ -208,6 +300,14 @@ if RUN_US_MARKET:
         common = fresh.merge(prior[['date',*candle_cols]], on='date', how='inner', suffixes=('_new','_old'))
         if common.empty:
             return True, 'no_overlap'
+        if bounded_recent_volume_revision(prior, fresh, previous_session=PREVIOUS_SESSION,
+                as_of=AS_OF_DATE, cached_latest=last_dates.get(sym), unsafe=sym in revision_unsafe_symbols):
+            recent_volume_revisions[sym]={
+                'policy':'previous-session-volume-only-v1', 'date':PREVIOUS_SESSION,
+                'oldVolume':float(prior.loc[prior.date.eq(PREVIOUS_SESSION),'volume'].iloc[0]),
+                'newVolume':float(fresh.loc[fresh.date.eq(PREVIOUS_SESSION),'volume'].iloc[0]),
+            }
+            return False, 'bounded_previous_session_volume_revision'
         for col in candle_cols:
             newv=pd.to_numeric(common[f'{col}_new'],errors='coerce').to_numpy(dtype=float)
             oldv=pd.to_numeric(common[f'{col}_old'],errors='coerce').to_numpy(dtype=float)
@@ -224,6 +324,7 @@ if RUN_US_MARKET:
             'mode':mode,
             'reason':reason,
             'rows':rows,
+            'recentVolumeRevision':recent_volume_revisions.get(rows[0]['symbol']) if rows else None,
         }
         tmp = path.with_suffix('.tmp')
         tmp.write_text(json.dumps(payload, allow_nan=False, default=lambda value: value.item()))
@@ -262,6 +363,8 @@ if RUN_US_MARKET:
 
                 rows = _guard_history_rows(sym, rows)
                 if rows and (not saved_asof or saved_asof == AS_OF_DATE) and confirmed_session_covered(sym, rows):
+                    if isinstance(saved,dict) and saved_mode == 'incremental_recent_volume_revision' and saved.get('recentVolumeRevision'):
+                        recent_volume_revisions[sym]=saved['recentVolumeRevision']
                     return sym, rows, None, saved_mode, saved_reason, True, False, None
 
                 # 오래된/불완전 checkpoint 원문을 보존한 뒤 live API로 재조회합니다.
@@ -308,8 +411,9 @@ if RUN_US_MARKET:
                 write_checkpoint(checkpoint, rows, mode, reason)
                 return sym, rows, None, mode, reason, False, stale_checkpoint_rejected, None
 
-            write_checkpoint(checkpoint, incremental, 'incremental', None)
-            return sym, incremental, None, 'incremental', None, False, stale_checkpoint_rejected, None
+            mode='incremental_recent_volume_revision' if reason == 'bounded_previous_session_volume_revision' else 'incremental'
+            write_checkpoint(checkpoint, incremental, mode, reason)
+            return sym, incremental, None, mode, reason, False, stale_checkpoint_rejected, None
         except Exception as e:
             return sym, [], type(e).__name__ + ': ' + str(e), None, None, False, stale_checkpoint_rejected, (
                 {'reason':'latest_price_unconfirmed', 'providerLatestBarDate':e.latest_bar_date}
@@ -318,26 +422,38 @@ if RUN_US_MARKET:
 
     checkpoint_reuse_count=0
     stale_checkpoint_rejected_count=0
+    collection_tasks_completed=0
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
         futs=[ex.submit(task,s) for s in symbols]
-        for f in tqdm(as_completed(futs), total=len(futs), desc='daily candles v2'):
-            sym, rows, err, mode, reason, checkpoint_reused, stale_checkpoint_rejected, price_issue=f.result()
-            if stale_checkpoint_rejected:
-                stale_checkpoint_rejected_count+=1
-            if err:
-                failures.append((sym,err))
-                if price_issue is not None:
-                    price_unconfirmed_evidence[sym]=price_issue
-                continue
-            if checkpoint_reused:
-                checkpoint_reuse_count+=1
-            if mode in mode_counts:
-                mode_counts[mode]+=1
-            if mode and mode.startswith('full_'):
-                full_refresh_symbols.add(sym)
-                refresh_reasons[sym]=reason
-            if rows:
-                collected.extend(rows)
+        _collection_progress=tqdm(as_completed(futs), total=len(futs), desc='daily candles v2')
+        try:
+            for f in _collection_progress:
+                collection_tasks_completed+=1
+                sym, rows, err, mode, reason, checkpoint_reused, stale_checkpoint_rejected, price_issue=f.result()
+                if stale_checkpoint_rejected:
+                    stale_checkpoint_rejected_count+=1
+                if err:
+                    failures.append((sym,err))
+                    if price_issue is not None:
+                        price_unconfirmed_evidence[sym]=price_issue
+                    continue
+                if checkpoint_reused:
+                    checkpoint_reuse_count+=1
+                if mode in mode_counts:
+                    mode_counts[mode]+=1
+                if mode and mode.startswith('full_'):
+                    full_refresh_symbols.add(sym)
+                    refresh_reasons[sym]=reason
+                if rows:
+                    collected.extend(rows)
+
+        finally:
+            if hasattr(_collection_progress, 'refresh'):
+                _collection_progress.refresh()
+            if hasattr(_collection_progress, 'close'):
+                _collection_progress.close()
+
+    print(f'US 수집 작업 처리: {collection_tasks_completed}/{len(symbols)} (성공 판정은 아래 QA 결과 기준)')
 
     # Future objects retain their candle payloads; collected already owns these rows.
     for _ct_name in ('futs', 'f'):
@@ -428,6 +544,9 @@ if RUN_US_MARKET:
     baseline_full_requests = len(symbols)*math.ceil(INITIAL_BARS/200)
     diagnostics={
         'collectorVersion':COLLECTOR_VERSION,
+        'recentRevisionPolicy':'previous-session-volume-only-v1',
+        'recentVolumeRevisions':recent_volume_revisions,
+        'collectionTasksCompleted':collection_tasks_completed,
         'asOfDate':AS_OF_DATE,
         'rosterIdentityGuardVersion':'issuer-start-v1',
         'guardedCandidateHistoryStarts':candidate_history_starts,
@@ -505,6 +624,7 @@ if RUN_US_MARKET:
         )
 
     _us_finish_stage('collection')
+    print(f'US 수집 QA 완료: {collection_tasks_completed}/{len(symbols)} 처리 · 가격 미확인 {len(provider_gap_symbols)}종 · lifecycle 제외 {len(lifecycle_exempt_symbols & set(symbols))}종 · 점수 보류 {len(candidate_scoring_holds)}종')
 
 else:
     print('SKIP: RUN_US_MARKET')

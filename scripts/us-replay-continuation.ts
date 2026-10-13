@@ -1,3 +1,4 @@
+import { assertLegacyUsRecoveryDate } from "../src/lib/legacyUsLedgerBoundary";
 /** Read-only admission of a completed reconstruction as an ordinary day's predecessor.
  * A rank file alone is a PREPARE marker, never evidence that either ledger committed.
  * No synthetic screening history, source, or actual-ledger record is created here.
@@ -68,6 +69,7 @@ export async function loadUsReconstructionContinuation(input: {
   successor?: { operating: UsOperatingReplayPlan; shadow: ShadowPlan } | null;
 }) {
   const { client, userId, currentDate, previousSessionDate: previousDate } = input;
+  assertLegacyUsRecoveryDate(currentDate);
   const rank = input.rankArtifact as { manifestHash?: string };
   if (
     !/^sha256:[a-f0-9]{64}$/.test(rank?.manifestHash ?? "") ||

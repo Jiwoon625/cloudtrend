@@ -1,3 +1,5 @@
+import { OPERATIONAL_SIGNAL_START } from "../src/lib/operationalSignalStart";
+import { usesLegacyUsOperatingLedger } from "../src/lib/legacyUsLedgerBoundary";
 import { loadUsDailyContinuation, runUsDailyContinuation } from "./us-daily-continuation";
 import { loadUsReconstructionContinuation } from "./us-replay-continuation";
 import { loadPublishedUsRecoveryView } from "./us-recovery-publication";
@@ -65,6 +67,7 @@ export async function runUsScreening(
     console.log("No US ingest yet; nothing to process.");
     return;
   }
+  const legacyOperating = usesLegacyUsOperatingLedger(String(ingest.as_of_date));
   if (ingest.storage_bucket !== ANALYSIS_BUCKET) throw new Error("Unexpected US storage bucket");
 
   const csv = await downloadText(client, String(ingest.storage_path));
@@ -127,14 +130,23 @@ export async function runUsScreening(
     throw new Error(
       "US replay publication is incomplete; resume the same immutable replay manifest",
     );
-  const savedContinuation = await loadUsDailyContinuation(client, userId, ingest);
+  const savedContinuation = legacyOperating
+    ? await loadUsDailyContinuation(client, userId, ingest)
+    : null;
   const sourceMetadata = ingest.metadata as {
     previousSessionDate?: string;
     confirmedRegularClose?: boolean;
     failedSymbols?: number;
   };
+  // The old continuation is tied to October 5 Shadow and September operating IDs.
+  // Never use it to bridge a missing restart-series predecessor.
+  if (!legacyOperating && (!lastHistory || sourceMetadata.previousSessionDate !== lastHistory.date))
+    throw new Error(
+      "Restart US screening requires its completed predecessor; use a reviewed restart-series recovery plan",
+    );
   let reconstruction: Awaited<ReturnType<typeof loadUsReconstructionContinuation>> | null = null;
   if (
+    legacyOperating &&
     sourceMetadata.previousSessionDate &&
     lastHistory?.date !== sourceMetadata.previousSessionDate
   ) {
@@ -258,7 +270,9 @@ export async function runUsScreening(
   if (!latestRows.length) throw new Error("US latest-date rows are missing");
   let analysis = runUsProspectiveAnalysis(
     latestRows,
-    portfolioGap ? {} : (previousResult?.analysis?.state ?? {}),
+    portfolioGap || String(ingest.as_of_date) === OPERATIONAL_SIGNAL_START
+      ? {}
+      : (previousResult?.analysis?.state ?? {}),
   );
   if (analysis.date !== String(ingest.as_of_date))
     throw new Error(`입력 기준일 불일치: DB ${ingest.as_of_date} / CSV ${analysis.date}`);
@@ -269,7 +283,7 @@ export async function runUsScreening(
     string,
     { state: UsPortfolioState; nav_usd: number; date: string } | null
   >();
-  for (const strategy of portfolioGap ? [] : US_PROSPECTIVE_STRATEGIES) {
+  for (const strategy of !legacyOperating || portfolioGap ? [] : US_PROSPECTIVE_STRATEGIES) {
     const { data: frozen, error: frozenError } = await client
       .from("us_strategy_registry")
       .select("rule_version,config")
@@ -359,6 +373,13 @@ export async function runUsScreening(
       },
     }),
   );
+  if (
+    !legacyOperating &&
+    (shadowReplay.deferred || shadowReplay.latestRecordedDate !== String(ingest.as_of_date))
+  )
+    throw new Error(
+      "Restart US Shadow has not completed this session; screening publication is held",
+    );
   if (shadowReplay.latestAnalysis?.date === String(ingest.as_of_date))
     analysis = shadowReplay.latestAnalysis;
 
@@ -393,7 +414,7 @@ export async function runUsScreening(
       "US operating portfolio snapshot gap detected; latest investment screen is refreshed, while the independent Shadow ledger was replayed date-by-date.",
     );
   }
-  for (const strategy of portfolioGap ? [] : US_PROSPECTIVE_STRATEGIES) {
+  for (const strategy of !legacyOperating || portfolioGap ? [] : US_PROSPECTIVE_STRATEGIES) {
     const { data: frozen, error: frozenError } = await client
       .from("us_strategy_registry")
       .select("rule_version,config")
@@ -501,7 +522,7 @@ export async function runUsScreening(
 
   // SPY benchmark gets its own daily snapshot for easy charting/comparison.
   const spy = analysis.rows.find((row) => row.symbol === "SPY");
-  if (!portfolioGap && spy?.close) {
+  if (legacyOperating && !portfolioGap && spy?.close) {
     const { data: firstSpy, error: firstSpyError } = await client
       .from("us_portfolio_snapshots")
       .select("state")
@@ -550,6 +571,8 @@ export async function runUsScreening(
     if (spySnapshotError) throw spySnapshotError;
   }
 
+  // October 12+ publication depends only on the restart Shadow books. Retired
+  // operating rows cannot block this marker or be recreated by ordinary retries.
   // History is the completion marker. A failed run is replayed only from the prior date.
   // Publish immutable daily result before the marker; publish latest only after all ledgers succeed.
   if (!existingResult) await uploadJson(client, resultPath, cachePayload);

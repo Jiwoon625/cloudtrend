@@ -1,3 +1,6 @@
+import { usesLegacyUsOperatingLedger } from "../src/lib/legacyUsLedgerBoundary";
+import { RESTART_ACCOUNTING_START } from "../src/lib/ledger/modelSeries";
+import type { UsReplayManifest } from "./us-replay-source";
 import {
   preflightUsRecoveryPublication,
   publishUsRecoveryViews,
@@ -154,6 +157,8 @@ export async function runUsGapReplay(input: {
   if (!source || bytesHash(source) !== input.manifestHash)
     throw new Error("US recovery manifest hash mismatch");
   const manifest = await validateUsReplayManifest(JSON.parse(source), userId);
+  if (!usesLegacyUsOperatingLedger(manifest.throughDate))
+    return runRestartUsGapReplay(input, manifest, source);
   if (
     input.publishDailyScreen &&
     manifest.sessions.some(
@@ -590,6 +595,245 @@ export async function runUsGapReplay(input: {
     screeningPublished: Boolean(publicationInput || dailyPublicationInput),
   };
 }
+/** Current recovery is a separate restart-only journal. No legacy operating reads or RPCs. */
+async function runRestartUsGapReplay(
+  input: Parameters<typeof runUsGapReplay>[0],
+  manifest: UsReplayManifest,
+  manifestBytes: string,
+) {
+  const { client, userId } = input;
+  if (manifest.sessions.some((s) => s.date < RESTART_ACCOUNTING_START))
+    throw new Error("Split historical and restart US recovery manifests at 2026-10-12");
+  if (
+    manifest.sessions.some((s) => s.originalSource || s.pit.kind === "REVIEWED_ATOMIC_QUARANTINE")
+  )
+    throw new Error(
+      "Restart model replay requires original dated sources, not publication-only quarantine",
+    );
+  if (
+    input.publishDailyScreen &&
+    manifest.sessions.some((s) => s.pit.kind !== "ATOMIC_DATED_SNAPSHOT")
+  )
+    throw new Error("Automatic daily publication requires preserved ATOMIC inputs");
+  const prefix = `${userId}/results/us-gap-replay/${input.manifestHash.slice(7)}`;
+  type RestartPlan = {
+    version: "us-restart-gap-replay-v1";
+    manifestHash: string;
+    calculatedAt: string;
+    protectedHistory: ProtectedSource[];
+    shadow: Awaited<ReturnType<typeof planUsShadowReplay>>;
+    planHash: string;
+  };
+  const savedText = await readText(client, `${prefix}/plan.json`, true);
+  const saved = savedText ? (JSON.parse(savedText) as RestartPlan) : null;
+  if (saved) {
+    const { planHash, ...payload } = saved;
+    if (
+      saved.version !== "us-restart-gap-replay-v1" ||
+      saved.manifestHash !== input.manifestHash ||
+      bytesHash(stableJson(payload)) !== planHash
+    )
+      throw new Error("Restart US recovery plan identity mismatch");
+  }
+  const sessions = await loadVerifiedUsReplaySessions(
+    manifest,
+    async (path) => (await readText(client, path))!,
+  );
+  const calculatedAt = saved?.calculatedAt ?? input.calculatedAt ?? new Date().toISOString();
+  if (
+    !Number.isFinite(Date.parse(calculatedAt)) ||
+    sessions.some((s) => Date.parse(s.source.sourceCapturedAt) > Date.parse(calculatedAt))
+  )
+    throw new Error("US replay cannot consume a future source");
+  const currentHistory = await protectedHistory(
+    client,
+    userId,
+    manifest.baseDate,
+    manifest.throughDate,
+  );
+  const protectedRows = saved?.protectedHistory ?? currentHistory;
+  if (
+    saved &&
+    stableJson(
+      currentHistory.filter((row) => protectedRows.some((old) => old.date === row.date)),
+    ) !== stableJson(protectedRows)
+  )
+    throw new Error("Protected US screening history changed since recovery preparation");
+  let rank: UsProspectivePreviousState | undefined;
+  if (sessions[0]!.source.date !== RESTART_ACCOUNTING_START) {
+    if (manifest.baseDate < RESTART_ACCOUNTING_START)
+      throw new Error("Missing restart opening session");
+    for (const path of [
+      `${userId}/results/us-replay-state/${manifest.baseDate}.json`,
+      `${userId}/results/shadow-replay/US/${manifest.baseDate}.json`,
+      `${userId}/results/us-screening/${manifest.baseDate}.json`,
+    ]) {
+      const text = await readText(client, path, true);
+      if (!text) continue;
+      const value = JSON.parse(text);
+      if (
+        value.analysis?.ruleVersion !== US_PROSPECTIVE_RULE_VERSION ||
+        value.analysis?.state?.lastDate !== manifest.baseDate
+      )
+        throw new Error("Restart US predecessor rank identity mismatch");
+      rank = value.analysis.state;
+      break;
+    }
+    if (!rank) throw new Error("Restart US recovery has no exact predecessor rank state");
+  }
+  const store = octoberShadowStore(client, userId, "service");
+  const shadow = await planUsShadowReplay({
+    store,
+    baseDate: manifest.baseDate,
+    previousRankState: rank,
+    sessions,
+    calculatedAt,
+  });
+  const payload = {
+    version: "us-restart-gap-replay-v1" as const,
+    manifestHash: input.manifestHash,
+    calculatedAt,
+    protectedHistory: protectedRows,
+    shadow,
+  };
+  const plan: RestartPlan = { ...payload, planHash: bytesHash(stableJson(payload)) };
+  if (
+    (saved && stableJson(saved) !== stableJson(plan)) ||
+    (input.expectedOperatingPlanHash && input.expectedOperatingPlanHash !== plan.planHash)
+  )
+    throw new Error("Restart US recovery differs from the exact immutable plan");
+  const rankArtifacts = shadow.analyses.map((analysis, i) => ({
+    path: `${userId}/results/us-replay-state/${analysis.date}.json`,
+    artifact: {
+      version: "us-replay-state-v1",
+      manifestHash: input.manifestHash,
+      dataHash: sessions[i]!.source.dataHash,
+      source: sessions[i]!.source,
+      replayMode: "RETROSPECTIVE",
+      originalScreeningPreserved: true,
+      analysis: {
+        date: analysis.date,
+        ruleVersion: analysis.ruleVersion,
+        summary: analysis.summary,
+        state: analysis.state,
+      },
+    },
+  }));
+  for (const item of rankArtifacts) {
+    const old = await readText(client, item.path, true);
+    if (old !== null && stableJson(JSON.parse(old)) !== stableJson(item.artifact))
+      throw new Error("Restart rank artifact conflict");
+  }
+  const daily: UsReplayScreeningInput = {
+    client,
+    userId,
+    analyses: shadow.analyses,
+    sources: manifest.sessions,
+    manifestHash: input.manifestHash,
+    operatingPlanHash: plan.planHash,
+    generatedAt: calculatedAt,
+    protectedHistory: protectedRows,
+  };
+  let recovered: UsRecoveryPublicationInput | undefined;
+  if (input.publishDailyScreen) await preflightUsReplayScreening(daily);
+  if (input.publishRecoveredView) {
+    const protectedOriginal = protectedRows.find((row) => row.date === manifest.throughDate);
+    if (!protectedOriginal)
+      throw new Error("Recovered current-date publication requires an original result");
+    recovered = {
+      client,
+      userId,
+      analysis: shadow.analyses.at(-1)!,
+      source: manifest.sessions.at(-1)!,
+      manifestHash: input.manifestHash,
+      operatingPlanHash: plan.planHash,
+      generatedAt: calculatedAt,
+      protectedOriginal,
+    };
+    await preflightUsRecoveryPublication(recovered);
+  }
+  const summary = {
+    mode: input.apply ? "APPLY" : "PREFLIGHT",
+    baseDate: manifest.baseDate,
+    throughDate: manifest.throughDate,
+    sessions: sessions.length,
+    restartPlanHash: plan.planHash,
+    operatingPlanHash: plan.planHash,
+    sourceCoverageComplete: sessions.every((s) => s.source.sourceCoverageComplete),
+    protectedOriginalResults: protectedRows.length,
+  };
+  if (!input.apply) return { ...summary, applied: false };
+  await client.storage.from(ANALYSIS_BUCKET).upload(`${prefix}/manifest.json`, manifestBytes, {
+    contentType: "application/json",
+    upsert: false,
+  });
+  if ((await readText(client, `${prefix}/manifest.json`)) !== manifestBytes)
+    throw new Error("Immutable restart manifest conflict");
+  await immutableJson(client, `${prefix}/plan.json`, plan);
+  for (const item of rankArtifacts) await immutableJson(client, item.path, item.artifact);
+  const { stageIntegratedUsEvidence, replayIntegratedAllocationAvailable } =
+    await import("../src/lib/integratedAllocationReplay.server");
+  for (const publication of shadow.publications)
+    await stageIntegratedUsEvidence(client, userId, {
+      analysis: publication.analysis,
+      sourceHash: publication.sourceHash,
+      availableAt: publication.availableAt,
+      decisionAt: publication.decisionAt,
+      calculatedAt,
+    });
+  const results = await commitUsShadowReplay(store, shadow);
+  const after = await protectedHistory(client, userId, manifest.baseDate, manifest.throughDate);
+  if (stableJson(after) !== stableJson(currentHistory))
+    throw new Error("Original US history changed during restart recovery");
+  await immutableJson(client, `${prefix}/receipt.json`, {
+    version: "us-restart-gap-replay-receipt-v1",
+    manifestHash: input.manifestHash,
+    planHash: plan.planHash,
+    calculatedAt,
+    baseDate: manifest.baseDate,
+    throughDate: manifest.throughDate,
+    applied: true,
+    shadowStateHashes: results.map((r) => ({
+      date: r.date,
+      records: r.records.map(({ bookId, stateHash }) => ({ bookId, stateHash })),
+    })),
+  });
+  let integratedAllocation;
+  try {
+    integratedAllocation = await replayIntegratedAllocationAvailable(
+      client,
+      userId,
+      manifest.throughDate,
+      calculatedAt,
+      "service",
+    );
+  } catch (error) {
+    integratedAllocation = {
+      recorded: 0,
+      waiting:
+        error instanceof Error ? error.message : "Integrated allocation evidence unavailable",
+    };
+  }
+  if (input.publishDailyScreen) await finishDailyScreening(daily);
+  if (recovered) {
+    const published = await publishUsRecoveryViews(recovered);
+    await immutableJson(client, `${prefix}/publication-receipt.json`, {
+      version: "us-restart-recovery-publication-receipt-v1",
+      manifestHash: input.manifestHash,
+      planHash: plan.planHash,
+      date: published.analysis.date,
+      dataHash: published.dataHash,
+      publishedHash: bytesHash(stableJson(published)),
+    });
+  }
+  return {
+    ...summary,
+    applied: true,
+    screeningPublished: Boolean(input.publishDailyScreen || recovered),
+    integratedAllocation,
+  };
+}
+
 async function main() {
   const userId = argument("--user") ?? process.env["SUPABASE_USER_ID"];
   const manifestPath = argument("--manifest");

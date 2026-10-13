@@ -58,6 +58,15 @@ on:
       - "tests/us-replay-*.test.ts"
       - "tests/us-operating-replay*"
       - "vitest.us-replay.config.ts"
+      - "src/lib/currentReportContext*"
+      - "src/lib/legacyUsLedgerBoundary.ts"
+      - "scripts/read-current-report-context.ts"
+      - "scripts/plan-legacy-ledger-retirement.ts"
+      - "tests/us-current-ledger-boundary.test.ts"
+      - "tests/legacy-ledger-retirement-plan.test.ts"
+      - "vitest.current-report.config.ts"
+      - "vitest.legacy-ledger.config.ts"
+      - "tsconfig.legacy-ledger.json"
       - "supabase/migrations/*us_operating_replay*"
       - "scripts/test-us-collector.py"
       - "collectors/lite_r3/**"
@@ -87,6 +96,15 @@ on:
       - "tests/us-replay-*.test.ts"
       - "tests/us-operating-replay*"
       - "vitest.us-replay.config.ts"
+      - "src/lib/currentReportContext*"
+      - "src/lib/legacyUsLedgerBoundary.ts"
+      - "scripts/read-current-report-context.ts"
+      - "scripts/plan-legacy-ledger-retirement.ts"
+      - "tests/us-current-ledger-boundary.test.ts"
+      - "tests/legacy-ledger-retirement-plan.test.ts"
+      - "vitest.current-report.config.ts"
+      - "vitest.legacy-ledger.config.ts"
+      - "tsconfig.legacy-ledger.json"
       - "supabase/migrations/*us_operating_replay*"
       - "scripts/test-us-collector.py"
       - "collectors/lite_r3/**"
@@ -112,6 +130,9 @@ jobs:
       - run: npm ci
       - run: npm run test:us
       - run: npx vitest run --config vitest.us-replay.config.ts
+      - run: npx vitest run --config vitest.legacy-ledger.config.ts
+      - run: npx vitest run --config vitest.current-report.config.ts
+      - run: npx tsc --noEmit -p tsconfig.legacy-ledger.json
       - name: Verify atomic US recovery and no-write preflight in isolated PostgreSQL
         run: |
           sudo apt-get update -qq
@@ -124,6 +145,7 @@ jobs:
       - run: python -m pip install pandas==2.2.3 pyarrow==23.0.1
       - run: python scripts/test-us-collector.py
       - run: python collectors/lite_r3/test_runtime.py
+      - run: python -m unittest collectors/lite_r3/test_us_ledger_boundary.py
       - run: npm run build
 
   screen:

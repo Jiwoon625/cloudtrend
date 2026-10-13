@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["vite/client", "node"] },
+  "include": [
+    "scripts/run-us-screening.ts",
+    "scripts/run-us-gap-replay.ts",
+    "scripts/us-daily-continuation.ts",
+    "scripts/us-replay-continuation.ts",
+    "scripts/us-shadow-replay-plan.ts",
+    "scripts/read-current-report-context.ts",
+    "scripts/plan-legacy-ledger-retirement.ts"
+  ]
+}
