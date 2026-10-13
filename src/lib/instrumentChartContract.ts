@@ -4,7 +4,7 @@ import type { EtfInstrumentChartBundle } from "./engine/etfInstrumentChart";
 import { etfPartialEvidence } from "./etfPartialEvidence";
 import { ETF_POLICY } from "./engine/etfStrategy";
 export const FAST_CHART_VERSION = "chart-v3-full-universe";
-export const ETF_CHART_VERSION = "etf-chart-v1-m0-underlying";
+export const ETF_CHART_VERSION = "etf-chart-v2-m0-underlying";
 export type ChartKind = "prices" | "scored" | "etf" | "etf-prices";
 export interface ChartIdentity {
   inputFingerprint: string;

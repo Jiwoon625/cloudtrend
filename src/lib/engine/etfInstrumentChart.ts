@@ -1,12 +1,8 @@
+import { createEtfScoreEvaluator } from "./etfHistoricalScore";
 import type { MarketDataset } from "./dataset";
 import type { DailyPrice } from "./types";
 import type { InstrumentChartRange } from "./instrumentChart";
-import {
-  createEtfScoreEvaluator,
-  ETF_MAPPING,
-  ETF_POLICY,
-  isEtfStrategyAssetClass,
-} from "./etfStrategy";
+import { ETF_MAPPING, ETF_POLICY, isEtfStrategyAssetClass } from "./etfStrategy";
 import { validDate } from "../ledger/date";
 
 export interface EtfInstrumentChartBundle {
@@ -45,7 +41,9 @@ const named = (name: string | null | undefined): string | null =>
 const normalizeName = (name: string) => name.toUpperCase().replace(/\s/g, "");
 const krxUnderlying = (bar: DailyPrice | undefined): number | null =>
   bar &&
-  (bar.marketCapSource === "KRX_ETF" || bar.tradingValueSource === "KRX_ETF") &&
+  (bar.etfUnderlyingIndexSource === undefined
+    ? bar.marketCapSource === "KRX_ETF" || bar.tradingValueSource === "KRX_ETF"
+    : bar.etfUnderlyingIndexSource === "KRX_ETF") &&
   positive(bar.etfUnderlyingIndexClose)
     ? bar.etfUnderlyingIndexClose
     : null;
@@ -56,7 +54,7 @@ const evaluators = new WeakMap<MarketDataset, ReturnType<typeof createEtfScoreEv
 function evaluatorFor(dataset: MarketDataset) {
   let evaluator = evaluators.get(dataset);
   if (!evaluator) {
-    evaluator = createEtfScoreEvaluator(dataset, ETF_MAPPING, true);
+    evaluator = createEtfScoreEvaluator(dataset, ETF_MAPPING);
     evaluators.set(dataset, evaluator);
   }
   return evaluator;

@@ -14,7 +14,14 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
-  lazy: () => () => <section aria-label="상세 차트">상세 차트</section>,
+  lazy:
+    () =>
+    ({ renderSummary }: { renderSummary?: () => React.ReactNode }) => (
+      <>
+        {renderSummary?.()}
+        <section aria-label="상세 차트">상세 차트</section>
+      </>
+    ),
 }));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: unknown) => ({
@@ -387,8 +394,8 @@ describe("instrument route integration", () => {
     const sections = [
       "M0 총점",
       "구성요소",
+      "상세 차트",
       "원신호 · 확인일",
-      "기초지수 MA60",
       "보유 시 행동",
       "원자료",
     ];

@@ -1,10 +1,6 @@
+import { createEtfScoreEvaluator } from "../src/lib/engine/etfHistoricalScore";
 import { describe, expect, it } from "vitest";
-import {
-  calculateEtfStrategies,
-  createEtfScoreEvaluator,
-  ETF_MAPPING,
-  ETF_POLICY,
-} from "../src/lib/engine/etfStrategy";
+import { calculateEtfStrategies, ETF_MAPPING, ETF_POLICY } from "../src/lib/engine/etfStrategy";
 import {
   buildEtfInstrumentChart,
   etfInstrumentChartSeries,
@@ -12,7 +8,7 @@ import {
 } from "../src/lib/engine/etfInstrumentChart";
 import { etfPartialEvidence } from "../src/lib/etfPartialEvidence";
 import { runAnalysis } from "../src/lib/engine/pipeline";
-import { parseManualMarketData } from "../src/lib/engine/manualDataset";
+import { parseManualMarketDataWithReferences as parseManualMarketData } from "../src/lib/krxReviewReferenceParser";
 
 import {
   createEtfChartFixture as fixture,
@@ -68,7 +64,7 @@ describe("ETF historical M0 and real underlying evidence", () => {
     peers(ds);
     const peerSymbols = ds.instruments.slice(1).map((value) => value.symbol);
     ds.bars[peerSymbols[0]!] = ds.bars[peerSymbols[0]!]!.slice(90);
-    const evaluator = createEtfScoreEvaluator(ds, ETF_MAPPING, true);
+    const evaluator = createEtfScoreEvaluator(ds, ETF_MAPPING);
     let peerCount = 0;
     for (const index of [60, 100, 119, 130, 155, 175, 189]) {
       const date = ds.tradeDates[index]!,
@@ -256,7 +252,7 @@ describe("ETF historical M0 and real underlying evidence", () => {
   it("uses the same stock-sector environment for original domestic historical dates", () => {
     const ds = fixture(270),
       target = addEtfChartDomesticSector(ds);
-    const evaluator = createEtfScoreEvaluator(ds, ETF_MAPPING, true);
+    const evaluator = createEtfScoreEvaluator(ds, ETF_MAPPING);
     for (const index of [119, 180, 252, 269]) {
       const date = ds.tradeDates[index]!,
         expected = calculateEtfStrategies({ ...ds, asOfDate: date }).get(target)!;

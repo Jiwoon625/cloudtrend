@@ -40,6 +40,8 @@ export interface DailyPrice {
   etfUnderlyingIndexClose?: number | null;
   /** Dated KRX index name, retained for display continuity; never a proxy. */
   etfUnderlyingIndexName?: string | null;
+  /** Display-only provenance of the final dated index value, not a proxy. */
+  etfUnderlyingIndexSource?: "KRX_ETF" | null;
   etfMarketCap?: number | null;
   etfTradingValue?: number | null;
   priceSource?: string;

@@ -1,7 +1,7 @@
 import { chartReadyPath } from "../src/lib/instrumentChartContract";
 import { trustedSupabaseClient } from "./analysis-run-store";
 import { loadActiveSources, inputFingerprint } from "../src/lib/screeningSources.server";
-import { parseManualMarketData } from "../src/lib/engine/manualDataset";
+import { parseManualMarketDataWithReferences as parseManualMarketData } from "../src/lib/krxReviewReferenceParser";
 import { mergeScoringConfig } from "../src/lib/engine/scoring";
 import {
   readChartBundle,

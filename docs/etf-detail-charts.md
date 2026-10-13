@@ -12,18 +12,20 @@
 
 ETF charts use the existing authenticated server RPC, immutable input fingerprint/result digest, owner-scoped gzip storage, recent bucket cache, request coalescing, five-minute server-context reuse, and React Query revision isolation. The RPC proxy remains statically imported to avoid requesting a retired release chunk.
 
-`etf-chart-v1-m0-underlying` separates both ETF M0/index bundles and safe `etf-prices` bundles from legacy technical-score/generic price caches. Recent 120-session bundles are prepared by existing screening/repair warmup. Full history is requested only after selecting `전체 기간`. Recent peer calculations are date-lazy and do not precompute the entire peer history. Price loading remains independent of score loading and explicit retry remains available.
+`etf-chart-v2-m0-underlying` separates both ETF M0/index bundles and safe `etf-prices` bundles from legacy technical-score/generic price caches. Recent 120-session bundles are prepared by existing screening/repair warmup. Full history is requested only after selecting `전체 기간`. Recent peer calculations are date-lazy and do not precompute the entire peer history. Price loading remains independent of score loading and explicit retry remains available.
 
-The source parser now retains dated `etfUnderlyingIndexName`. This is display metadata; original operational ETF snapshots were independently compared to the prior implementation with exact equality. Generated engine manifests are updated to honestly record the changed parser/evaluator source.
+The existing display-only reference parser retains dated `etfUnderlyingIndexName` and value provenance. The frozen operational parser, strategy module, ledger manifests, and SQL contracts remain byte-for-byte unchanged. A separate historical display evaluator mirrors private math, imports shared public scoring helpers, and has explicit dated parity tests against the untouched operational engine.
 
 ## Verification (2026-10-13)
 
 - Focused chart suite: 83 tests passed, including cache isolation, safe price fallback, historical parity/causality, exact prior session, index identity changes, 60-observation warmup, null gaps, old-history preservation, recent-only computation, loading/error/retry, and owner changes.
 - Engine-contract suite: 648 tests passed.
+- Dashboard suite: 706 tests passed, including 15 dated-reference/provenance tests.
+- Ledger suite: 410 tests passed; regenerating runtime manifests and SQL fixtures leaves the frozen contracts unchanged.
 - Existing ETF operational UI suite: 16 tests passed.
-- Existing ETF strategy tests: 40 passed; additional original-source comparisons matched 63 full strategy snapshots and an independent review's 24 fixture scenarios.
+- Existing ETF strategy tests: 40 passed; additional original-source comparisons matched 63 full strategy snapshots and an independent review's 24 fixture scenarios. After extracting display-only math, independent review also matched 156 dated snapshots to the original engine.
 - TypeScript noEmit and production build passed. Repository lint passed with eight pre-existing fast-refresh warnings outside the changed files.
-- Independent code review identified an unsafe provisional-price gap/volume fallback; it was fixed with the separate observed-price path and independently reproduced as resolved.
+- Independent code review identified an unsafe provisional-price gap/volume fallback; it was fixed with the separate observed-price path and independently reproduced as resolved. A second review found rejected/non-ETF duplicate rows could relabel an index; metadata now follows accepted ETF input boundaries, with regression coverage and independent recheck.
 - Production browser/network/deployment checks are separate from these local checks and must be recorded after release.
 
 ## Reproducible local profile

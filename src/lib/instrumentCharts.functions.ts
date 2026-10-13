@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
 import { mergeScoringConfig } from "./engine/scoring";
-import { parseManualMarketData } from "./engine/manualDataset";
+import { parseManualMarketDataWithReferences as parseManualMarketData } from "./krxReviewReferenceParser";
 import { stableCacheJson } from "./screeningCacheContract";
 import { loadActiveSources, inputFingerprint } from "./screeningSources.server";
 import {

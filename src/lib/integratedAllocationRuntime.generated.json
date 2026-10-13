@@ -4,7 +4,7 @@
     "files": {
       "src/lib/engine/additionalStockSectorMaster.ts": "sha256:654fbd023fe4c5b32b946c199d3db4c06259c32f77a90befb0fd35c7894ea378",
       "src/lib/engine/etfResearchMapping.json": "sha256:64f1c2583e55a5acef61e8a0ef79e3dcf3c34e2483770053a064f00bdbd1ba06",
-      "src/lib/engine/etfStrategy.ts": "sha256:5efad10c9c5476c30a3d5c1203644e0b633049d8d89bbe98522fce9a4f6246cd",
+      "src/lib/engine/etfStrategy.ts": "sha256:1bb6b888e83852b9b11ab3b0741fdd31ed8b1b6a4f1f5da3e4ed93514d82f07d",
       "src/lib/engine/fullMarketAnalysis.ts": "sha256:e07951891f14bbb6a0a81744f921b3f6fd27c794ff77186d67594dbe80e03f4a",
       "src/lib/engine/historicalInstrumentScore.ts": "sha256:f25068a6e9070b79cf454f189d130d12c8a5bc082ab0f11f2ef774d308956ee9",
       "src/lib/engine/indicators.ts": "sha256:4862c805f7c1c3731fdeb60c08ab9ba47baaa37983aa408c2483346ef9e8032b",
@@ -46,7 +46,7 @@
       "src/lib/ledger/modelSeries.ts": "sha256:63a758daf1abfc74bfcba395d6b21693f0185a48c206e064fa8eb76d4d1693ce",
       "src/lib/ledger/octoberShadowArchive.ts": "sha256:5904e2aa0403a255bee09e88dcea9148e9a0beb54afe5fb21f60d0ae403df9b8",
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:9c8b5e98035e53d81dedc58c43f7ddf8678ad835bbe449a21d63088dabd76a32",
-      "src/lib/ledger/octoberShadowEngineManifest.generated.json": "sha256:68eaa6438c6d421c2d72bbedfa8a5eed63ac05673dc2b8ab3c5a34b6e1de7f89",
+      "src/lib/ledger/octoberShadowEngineManifest.generated.json": "sha256:a4fbe3ddbf12e7dec91c5a9c88261af83a51892d953f00800e7c35ee0a2a121e",
       "src/lib/ledger/octoberShadowPipeline.ts": "sha256:22663d53695f52ac62ecd8178cf4769b828541680e4fb85d43ab67f06bd357b2",
       "src/lib/ledger/octoberShadowRepository.server.ts": "sha256:73aa02474b5fc3f734ef68cab7cd5f5e2bf3d8a85fc611668858c129fc69d26c",
       "src/lib/ledger/octoberShadowRuntime.ts": "sha256:428a5c8885a27be0442d9309df5525adb4ea8a79a1ea35b7651fb1f66680cd7b",
@@ -69,5 +69,5 @@
     },
     "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
   },
-  "codeHash": "sha256:9b104ae47be63ccc6ba243d9c0557d395e39c404823e1ec08fbe7351d5dfb8ca"
+  "codeHash": "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4"
 }
