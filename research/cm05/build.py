@@ -106,6 +106,8 @@ def main():
     from cmresearchengine import runtime
     runtime.activate()
     from cm06_comparison_signals import kospi_confirmation,kr_operational_signals,us_session_analysis
+    from cm06_prepare_comparison import clean
+    k["market_gate"]=k.market_gate.map(lambda value:clean(json.loads(value) if isinstance(value,str) else value))
     events=[];history={}
     def obs(r):
         if r is None:return None
