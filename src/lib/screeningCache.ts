@@ -1,4 +1,8 @@
 import { sourceFingerprintRecords } from "./sourceFingerprintRecords";
+// Load the small client RPC proxy with this module. Deferring its import until a
+// cache miss leaves open tabs requesting a deleted release's JS after deployment.
+// This does not call the server or load chart data until fastChart needs it.
+import { getInstrumentChartServer } from "./instrumentCharts.functions";
 import { type InstrumentChartRange } from "@/lib/engine/instrumentChart";
 import {
   supabase,
@@ -342,7 +346,6 @@ async function fastChart(
     const { data: session, error } = await supabase.auth.getSession();
     if (error || !session.session) throw new Error("로그인이 필요합니다.");
     await assertCurrentRequest();
-    const { getInstrumentChartServer } = await import("./instrumentCharts.functions");
     data = await getInstrumentChartServer({
       data: {
         ...identity,

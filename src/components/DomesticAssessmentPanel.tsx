@@ -253,6 +253,7 @@ export function DomesticAssessmentPanel({
                       held={r.held ?? false}
                       signalDate={r.date}
                       entryNotice={eveningReviewStartNotice(r)}
+                      pendingTone={review ? "neutral" : "warning"}
                       formatText={review ? dashboardCopy : undefined}
                     />
                   ) : r.etfAssessment ? (

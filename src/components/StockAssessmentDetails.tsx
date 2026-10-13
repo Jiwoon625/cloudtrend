@@ -12,6 +12,7 @@ export function StockAssessmentDetails({
   signalDate,
   originDate,
   entryNotice,
+  pendingTone = "warning",
   formatText = (text) => text,
 }: {
   assessment: StockAssessmentDisplay;
@@ -19,6 +20,7 @@ export function StockAssessmentDetails({
   signalDate?: string | undefined;
   originDate?: string | null | undefined;
   entryNotice?: string | null | undefined;
+  pendingTone?: "warning" | "neutral";
   formatText?: ((text: string) => string) | undefined;
 }) {
   const excluded =
@@ -41,7 +43,9 @@ export function StockAssessmentDetails({
         <p className="text-down">확인된 미충족: {formatText(assessment.failed.join(" · "))}</p>
       ) : null}
       {assessment.pending.length ? (
-        <p className="text-warn">자료 확인 대기: {formatText(assessment.pending.join(" · "))}</p>
+        <p className={pendingTone === "neutral" ? "text-foreground" : "text-warn"}>
+          자료 확인 대기: {formatText(assessment.pending.join(" · "))}
+        </p>
       ) : null}
       <p className="font-medium">{formatText(entryNotice ?? excluded ?? assessment.finalEntry)}</p>
     </div>

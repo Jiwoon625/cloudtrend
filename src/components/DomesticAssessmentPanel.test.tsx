@@ -195,6 +195,23 @@ it("does not promote pre-start saved evidence to default review candidates", () 
   expect(html).not.toContain("미보유 종목");
 });
 
+it("uses neutral pending text only in the daily raw-signal review without changing evidence", () => {
+  const current = structuredClone(markets);
+  current[0]!.date = "2026-10-12";
+  current[0]!.assessments!.forEach((row) => {
+    row.date = "2026-10-12";
+  });
+  const before = structuredClone(current);
+  const reviewHtml = renderToStaticMarkup(<DomesticAssessmentPanel markets={current} review />);
+  expect(reviewHtml).toContain('<p class="text-foreground">자료 확인 대기: 시가총액 미확인</p>');
+  expect(reviewHtml).not.toContain('<p class="text-warn">자료 확인 대기:');
+  expect(reviewHtml).toContain("확인된 원신호 2종목");
+  expect(reviewHtml).toContain("최종 진입 미확정");
+  const standardHtml = renderToStaticMarkup(<DomesticAssessmentPanel markets={current} />);
+  expect(standardHtml).toContain('<p class="text-warn">자료 확인 대기: 시가총액 미확인</p>');
+  expect(current).toEqual(before);
+});
+
 it("switches review scope without changing strategy evidence and resets pagination", () => {
   const many = [
     {
