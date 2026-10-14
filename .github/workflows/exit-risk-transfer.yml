@@ -23,9 +23,24 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
         run: python research/exit-risk-20261014/export_research_inputs.py
+      - run: split -b 256m encrypted-transfer/research.enc encrypted-transfer/part-
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: exit-research-encrypted-transfer
-          path: encrypted-transfer/*
+          name: exit-transfer-a
+          path: |
+            encrypted-transfer/part-aa
+            encrypted-transfer/envelope.json
+          retention-days: 1
+          compression-level: 0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: exit-transfer-b
+          path: encrypted-transfer/part-ab
+          retention-days: 1
+          compression-level: 0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: exit-transfer-c
+          path: encrypted-transfer/part-ac
           retention-days: 1
           compression-level: 0
