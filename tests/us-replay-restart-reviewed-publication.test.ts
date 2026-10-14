@@ -77,17 +77,23 @@ async function setup(day = "2026-10-12", baseDate = "2026-10-09", extraSymbol = 
       rows: parseUsProspectiveCsv(original).sort((a, b) => a.symbol.localeCompare(b.symbol)),
     });
     run.publication.sourceHash = publicationSourceHash;
+    run.calendar.coverageEnd = day;
+    run.calendar.regularSessions.push("2026-10-12");
+    if (day !== "2026-10-12") run.calendar.regularSessions.push(day);
     run.receipt = (
       await guardModelRun(s, {
         date: day,
         codeHash: s.codeHash,
         configHash: s.configHash,
-        sourceHash: publicationSourceHash,
+        sourceHash: await hashSeriesValue({
+          upstreamSourceHash: publicationSourceHash,
+          analysis,
+          calendar: run.calendar,
+          availableAt: run.publication.availableAt,
+          priorStateHash: run.previousStateHash,
+        }),
       })
     ).receipt;
-    run.calendar.coverageEnd = day;
-    run.calendar.regularSessions.push("2026-10-12");
-    if (day !== "2026-10-12") run.calendar.regularSessions.push(day);
     const { stateHash: _, ...body } = run;
     run.stateHash = await hashSeriesValue(body);
     sessions.set(`${s.bookId}:${day}`, run);
@@ -282,6 +288,89 @@ function assertNoModelWrites(f: Awaited<ReturnType<typeof setup>>) {
 }
 
 describe("restart reviewed lifecycle publication remains presentation-only", () => {
+  it.each(["analysis", "calendar", "availableAt", "predecessor"])(
+    "rejects internally rehashed %s evidence bound to a different canonical input",
+    async (field) => {
+      const f = await setup();
+      const run = f.sessions.values().next().value!;
+      if (field === "analysis") {
+        const different = runUsProspectiveAnalysis(parseUsProspectiveCsv(sourceCsv("2026-10-12")));
+        different.state.coreRanks.TEST = -123;
+        run.receipt = (
+          await guardModelRun(f.series[0]!, {
+            date: "2026-10-12",
+            codeHash: f.series[0]!.codeHash,
+            configHash: f.series[0]!.configHash,
+            sourceHash: await hashSeriesValue({
+              upstreamSourceHash: run.publication.sourceHash,
+              analysis: different,
+              calendar: run.calendar,
+              availableAt: run.publication.availableAt,
+              priorStateHash: run.previousStateHash,
+            }),
+          })
+        ).receipt;
+      }
+      if (field === "calendar") run.calendar.sourceHash = hash("9");
+      if (field === "availableAt") run.publication.availableAt = "2026-10-12T20:12:00Z";
+      if (field === "predecessor") run.previousStateHash = hash("9");
+      const { stateHash: _, ...body } = run;
+      run.stateHash = await hashSeriesValue(body);
+      await expect(runUsGapReplay(f.input)).rejects.toThrow("canonical receipt input mismatch");
+      expect(f.writes).toEqual([]);
+    },
+  );
+  it("rejects approval of another correction before any write; accepts its own proof", async () => {
+    const f = await setup();
+    const a = await runUsGapReplay({ ...f.input, apply: false, publishDailyScreen: false });
+    const source = structuredClone(f.source);
+    source.lifecycleQuarantines![0]!.evidenceUrls.push(
+      "https://www.nasdaqtrader.com/another-evidence",
+    );
+    const body = stableJson({
+      version: "us-dated-replay-v1",
+      baseDate: "2026-10-09",
+      throughDate: "2026-10-12",
+      sessions: [source],
+    });
+    const changed = {
+      ...f.input,
+      manifestPath: `${uid}/source/other-correction.json`,
+      manifestHash: bytesHash(body),
+    };
+    f.files.set(changed.manifestPath, body);
+    await expect(
+      runUsGapReplay({ ...changed, expectedOperatingPlanHash: a.operatingPlanHash }),
+    ).rejects.toThrow("expected identity");
+    expect(f.writes).toEqual([]);
+    const b = await runUsGapReplay({ ...changed, apply: false, publishDailyScreen: false });
+    expect(b.operatingPlanHash).not.toBe(a.operatingPlanHash);
+    expect(
+      await runUsGapReplay({ ...changed, expectedOperatingPlanHash: b.operatingPlanHash }),
+    ).toMatchObject({ screeningPublished: true });
+  });
+  it("preserves a v1 plan and completed receipt and refuses implicit upgrade", async () => {
+    const f = await setup();
+    const path = f.receiptPath.replace(
+      "daily-publication-receipt.json",
+      "reviewed-publication-plan.json",
+    );
+    f.files.set(
+      path,
+      stableJson({
+        version: "us-restart-reviewed-publication-only-v1",
+        generatedAt: f.input.calculatedAt,
+      }),
+    );
+    f.files.set(
+      f.receiptPath,
+      stableJson({ version: "us-daily-publication-receipt-v1", screeningPublished: true }),
+    );
+    const before = [...f.files];
+    await expect(runUsGapReplay(f.input)).rejects.toThrow("Legacy v1 publication plan preserved");
+    expect([...f.files]).toEqual(before);
+    expect(f.writes).toEqual([]);
+  });
   it("rejects a newer latest cache before publication writes", async () => {
     const f = await setup();
     f.files.set(
