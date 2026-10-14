@@ -39,6 +39,9 @@ def enrich_dates(frame, dates, ns):
         if not daily.date.astype(str).eq(str(day)).all() or daily.symbol.duplicated().any():
             raise ValueError('ETF KRX date/identity mismatch')
         daily = daily.set_index('symbol')
+        # The shared daily adapter calls this tradingValue; the ETF engine's
+        # provenance-qualified field is etfTradingValue. Refresh both together.
+        daily['etfTradingValue'] = daily['tradingValue']
         for column in fields:
             if column not in daily:
                 continue
@@ -47,6 +50,10 @@ def enrich_dates(frame, dates, ns):
             values = target.symbol.map(daily[column])
             valid = values.notna()
             out.loc[values.index[valid], column] = values[valid]
+        if 'etfTradingValue' not in out:
+            out['etfTradingValue'] = pd.NA
+        values = target.symbol.map(daily['etfTradingValue'])
+        out.loc[values.index[values.notna()], 'etfTradingValue'] = values[values.notna()]
         for col, provenance in [('marketCap', 'marketCapSource'), ('tradingValue', 'tradingValueSource')]:
             values = target.symbol.map(daily[col])
             if provenance not in out:

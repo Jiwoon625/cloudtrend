@@ -223,6 +223,7 @@ class RunnerHookTests(unittest.TestCase):
         self.assertEqual(out.priceSource.iloc[0],'TOSS_ADJUSTED_CANDLE')
         self.assertEqual(out.tradingValue.iloc[0],0)
         self.assertEqual(out.etfNav.iloc[0],101)
+        self.assertEqual(out.etfTradingValue.iloc[0],0)
         self.assertEqual(out.marketCapSource.iloc[0],'KRX_ETF')
 
 class HttpTests(unittest.TestCase):
