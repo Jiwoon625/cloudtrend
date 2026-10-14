@@ -411,4 +411,28 @@ class HttpTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'unresolved'):
             create_verified(read=lambda:None,create=create,expected=b'data')
 
+class FrozenFieldOrderTests(unittest.TestCase):
+    def test_only_column_order_is_restored(self):
+        from copy import deepcopy
+        from cloudtrend_lite_resume_v1.runner import _restore_field_order
+        frozen = {'schema': {'fields': [{'name': 'symbol', 'type': 'string'},
+                                       {'name': 'active', 'type': 'boolean'}],
+                             'primaryKey': ['symbol']},
+                  'data': [{'symbol': 'AAA', 'active': True}, {'symbol': 'BBB', 'active': False}]}
+        current = deepcopy(frozen)
+        current['schema']['fields'].reverse()
+        self.assertEqual(_restore_field_order(current, frozen), frozen)
+        self.assertNotEqual(current, frozen)  # input is not mutated
+        mutations = [
+            lambda x: x['data'][0].update(active=False),
+            lambda x: x['data'].reverse(),
+            lambda x: x['schema']['fields'][0].update(type='string'),
+            lambda x: x['schema'].update(primaryKey=['active']),
+            lambda x: x['schema']['fields'].append({'name': 'extra', 'type': 'string'}),
+        ]
+        for mutate in mutations:
+            changed = deepcopy(current)
+            mutate(changed)
+            self.assertNotEqual(_restore_field_order(changed, frozen), frozen)
+
 if __name__=='__main__': unittest.main()

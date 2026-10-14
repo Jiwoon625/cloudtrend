@@ -28,9 +28,27 @@ def _clock(ns):
     return datetime.fromisoformat(ns['_CT_RUN_CLOCK']).astimezone(ZoneInfo('Asia/Seoul'))
 
 
-def _json_frame(frame):
+def _json_frame(frame, frozen=None):
     # JSON records convert pandas null scalars without pickle/code execution.
-    return json.loads(frame.to_json(orient='table', date_format='iso'))
+    payload = json.loads(frame.to_json(orient='table', date_format='iso'))
+    if frozen is not None:
+        payload = _restore_field_order(payload, frozen)
+    return payload
+
+
+def _restore_field_order(payload, frozen):
+    """Canonical cache JSON sorts object keys; restore only proven column order.
+
+    Keep records, row order, field types, index and all other schema metadata
+    unchanged. The caller still compares the complete frozen identity exactly.
+    """
+    fields = payload['schema']['fields']
+    saved = frozen['schema']['fields']
+    current_map = {field['name']: field for field in fields}
+    saved_map = {field['name']: field for field in saved}
+    if len(current_map) == len(fields) == len(saved_map) == len(saved) and current_map == saved_map:
+        payload = dict(payload, schema=dict(payload['schema'], fields=list(saved)))
+    return payload
 
 
 def _freeze_api(ns, state, attribute=None):
@@ -193,7 +211,8 @@ def _after(stage, ns, state):
     if stage == 'us_auth' and ns['RUN_US_MARKET']:
         gap_inventory(ns, state)
     if stage == 'us_master' and ns['RUN_US_MARKET']:
-        payload = {'seed': _json_frame(ns['seed']), 'master': _json_frame(ns['master']),
+        frozen = state.frozen('us-input-identity') or {}
+        payload = {'seed': _json_frame(ns['seed'], frozen.get('seed')), 'master': _json_frame(ns['master'], frozen.get('master')),
                    'rosterHash': ns['collection_universe_hash'], 'lifecycle': ns['VERIFIED_LIFECYCLE_EVENTS']}
         if state.freeze('us-input-identity', payload) != payload:
             raise RuntimeError('Universe/lifecycle identity changed; create a reviewed separate run')
