@@ -195,6 +195,32 @@ describe("restart-only multi-day US Shadow recovery", () => {
     };
     return { ...f, input };
   }
+  it("matches daily execution with delayed batches for full model runs and ranks", async () => {
+    const batch = await fixture();
+    const daily = await fixture();
+    const full = await planUsShadowReplay(batch.input);
+    await commitUsShadowReplay(batch.store, full);
+    let previousRankState = daily.base.state;
+    let baseDate = "2026-10-09";
+    const analyses = [];
+    for (const session of daily.dated) {
+      const plan = await planUsShadowReplay({
+        ...daily.input,
+        baseDate,
+        previousRankState,
+        sessions: [session],
+        calculatedAt: session.source.date + "T22:00:00Z",
+      });
+      await commitUsShadowReplay(daily.store, plan);
+      analyses.push(...plan.analyses);
+      previousRankState = plan.analyses.at(-1)!.state;
+      baseDate = session.source.date;
+    }
+    // Full persisted states include orders, trades, quantities, cash, positions,
+    // NAV and receipt hashes. Rank arrays are compared independently as well.
+    expect([...daily.sessions]).toEqual([...batch.sessions]);
+    expect(analyses).toEqual(full.analyses);
+  });
   it("starts cash-only on Oct12, preflights all dates without writes, and retries exactly", async () => {
     const f = await fixture();
     const plan = await planUsShadowReplay(f.input);
