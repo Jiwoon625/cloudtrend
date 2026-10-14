@@ -28,11 +28,40 @@ plan without deleting previous state. Do not use NEW to bypass a pending request
 Changing runtime/configuration fails closed; source revisions require a separate
 review. A stopped Colab must be started by the user.
 
-Do not run VF and this preview concurrently. A local advisory lock prevents two
-processes from changing one journal; Drive/FUSE cross-runtime lock behavior has
-not been verified. Do not infer a distributed lock guarantee from local tests.
+Do not run VF and this preview concurrently. Actual two-VM testing on 2026-10-14
+proved that Drive flock does NOT exclude the second VM. The new runtime therefore
+requires a database guard on shared filesystems and fails closed if unavailable.
+`collector_run_locks.review.sql` is a review-only proposal; building this ZIP does
+not apply it. Until the table and live two-VM verification are complete, do not
+use this new bundle for Drive collection. Local filesystem locking remains local.
+
+The database guard has one immutable owner token per user and collector, no TTL,
+no automatic takeover, and token-conditional release. Tokens stay on the VM,
+never in Drive. Same-VM crash restart may reuse its token under a local lock.
+After a lost VM, confirm that the former VM is terminated before explicitly
+releasing its exact token; never delete a lock merely because it is old. A paused
+VM could otherwise resume writing after an automatic lease takeover. A release
+attempt retires its token before the request so delayed deletes cannot unlock a
+later attempt. This guard does not protect VF or older preview versions that do
+not participate. Stop those before starting the guarded collector.
 
 ## Verification and remaining gates
+
+### Actual verification update (2026-10-14)
+
+- A real same-VM Colab restart resumed from 308 completed instruments and finished
+  all 1,790 instruments; actual CSV parser/compaction preserved all dated values.
+- A different VM read and verified 9,812 content-addressed blobs, the frozen plan
+  and CSV. This is readback integrity, not a complete new-VM collection resume.
+- The simultaneous Drive flock exclusion test failed; the proposed remote guard
+  above is locally tested but not yet installed or certified across real VMs.
+- Ten saved KR/ETF model runs for October 12 and 13 were reproduced exactly,
+  including ETF and KOSPI confirmation from the original registered source bundle
+  and archived full analysis. This does not re-certify upstream indicator creation
+  or all historical point-in-time coverage. A reduced-input ETF diagnostic mismatch
+  is superseded by exact original-input reproduction.
+- New provider fetches can differ from preserved dated prices. Preserve versions;
+  do not replace historical evidence with a current adjusted-price fetch.
 
 ### Browser-deferred follow-up (2026-10-14)
 

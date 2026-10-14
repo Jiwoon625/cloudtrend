@@ -214,7 +214,7 @@ def run(ns):
     config = {name: ns.get(name) for name in CONFIG}
     config['version'] = 'resume-v1'
     root.mkdir(parents=True, exist_ok=True)
-    with RunLock(root):
+    with RunLock(root, settings=ns):
         requested = str(ns.get('RESUME_RUN_ID') or '').strip()
         active = root / 'active.json'
         if requested == 'NEW':

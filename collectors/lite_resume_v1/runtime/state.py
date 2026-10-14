@@ -1,7 +1,7 @@
 """Content-addressed, fail-closed run state. No credentials or scheduler.
 
-The caller must hold RunLock while changing a run. flock support is required;
-remote Drive/FUSE lock semantics must be verified before production adoption.
+The caller must hold RunLock while changing a run. Shared filesystems require
+the separate database single-writer guard; Drive flock is VM-local.
 """
 import contextlib
 import hashlib
@@ -40,11 +40,31 @@ def atomic_write(path, raw):
 
 
 class RunLock:
-    def __init__(self, root):
+    def __init__(self, root, settings=None):
         self.path = Path(root) / 'execution.lock'
         self.stream = None
+        self.shared = None
+        resolved = str(Path(root).resolve())
+        remote = resolved == '/content/drive' or resolved.startswith('/content/drive/')
+        mounts = []
+        try:
+            for line in Path('/proc/self/mountinfo').read_text().splitlines():
+                before, after = line.split(' - ', 1)
+                mount = before.split()[4].replace('\\040', ' ')
+                if resolved == mount or resolved.startswith(mount.rstrip('/') + '/'):
+                    mounts.append((len(mount), after.split()[0]))
+            kind = max(mounts)[1] if mounts else ''
+            remote = remote or kind.startswith('fuse') or kind in ('nfs', 'nfs4', 'cifs')
+        except (OSError, ValueError, IndexError):
+            # The known Colab Drive path still requires the remote guard.
+            pass
+        if remote:
+            from .remote_lock import SharedDriveLock
+            self.shared = SharedDriveLock(root, settings or {})
 
     def __enter__(self):
+        if self.shared is not None:
+            return self.shared.__enter__()
         import fcntl
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.stream = self.path.open('a+b')
@@ -56,6 +76,8 @@ class RunLock:
         return self
 
     def __exit__(self, *_):
+        if self.shared is not None:
+            return self.shared.__exit__(*_)
         import fcntl
         fcntl.flock(self.stream.fileno(), fcntl.LOCK_UN)
         self.stream.close()
