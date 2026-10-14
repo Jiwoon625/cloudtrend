@@ -225,7 +225,7 @@ def run(ns):
         print('실행 ID:', run_id, '/ 고정 시작시각:', state.plan['startedAt'])
         print('운영 업로드·요청:', '승인된 실행' if operational else '비활성 — 로컬/Drive 준비만')
         for stage in base.STAGES:
-            if stage in ('us_upload', 'us_archive', 'us_dispatch') and not operational:
+            if stage in ('kr_retry_saved', 'us_upload', 'us_archive', 'us_dispatch') and not operational:
                 continue
             # A stopped run repeats deterministic setup; provider metadata and price
             # checkpoints are reused only with exact saved dependencies.

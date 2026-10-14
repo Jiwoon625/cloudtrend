@@ -4,6 +4,8 @@ import multiprocessing
 import sys
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
+from types import ModuleType
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -14,6 +16,23 @@ spec.loader.exec_module(module)
 from cloudtrend_lite_resume_v1.state import RunState, RunLock, canonical, digest
 from cloudtrend_lite_resume_v1.planning import plan_market, common_allocation_dates, classify_us_input
 from cloudtrend_lite_resume_v1.kr import enrich_dates
+
+
+class OperationalWriteTests(unittest.TestCase):
+    def test_read_only_run_blocks_saved_kr_retry_from_prior_cell(self):
+        from cloudtrend_lite_resume_v1.runner import run
+        base = ModuleType('cloudtrend_lite_r3_runtime')
+        base.STAGES = ('kr_retry_saved', 'us_upload', 'us_archive', 'us_dispatch')
+        base.run_stage = Mock(side_effect=AssertionError('Operational stage executed'))
+        colab = ModuleType('google.colab')
+        colab.drive = Mock()
+        with tempfile.TemporaryDirectory() as root, patch.dict(sys.modules, {
+            'cloudtrend_lite_r3_runtime': base, 'google.colab': colab,
+        }):
+            run({'RESUME_ROOT': root, 'ALLOW_OPERATIONAL_WRITES': False,
+                 'RETRY_SAVED_UPLOAD': True, 'RUN_KR_MARKET': True,
+                 '_CT_RUNTIME_LOADED_SHA': 'test-runtime'})
+        base.run_stage.assert_not_called()
 
 
 def locked(root, pipe):
