@@ -10,13 +10,17 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from .state import RunState, RunLock, atomic_write, canonical, digest
-from .kr import enrich_dates, install_cache
+from .kr import enrich_dates, install_cache, install_official_cache
 from .us import gap_inventory
 
 CONFIG = ('RUN_PLAN', 'RUN_US_EVENING', 'UNIVERSE_MODE', 'ETF_UNIVERSE_MODE',
           'COLLECTION_DAYS', 'KR_COLLECTION_DAYS', 'SCHEMA_REVIEW_DATE',
           'FORCE_FULL_REFRESH', 'COLLECT_TOSS_SHORT', 'COLLECT_TOSS_LENDING',
-          'INPUT_REVISION', '_CT_RUNTIME_LOADED_SHA')
+          'INPUT_REVISION', '_CT_RUNTIME_LOADED_SHA', 'STOCK_CODES', 'ETF_CODES',
+          'KRX_BACKEND', 'MODE', 'STRICT_ALL_SYMBOLS', 'ETF_ISIN_OVERRIDES',
+          'ALLOW_RECENT_KRX_PUBLICATION_LAG', 'KRX_PUBLICATION_LAG_MAX_CALENDAR_DAYS',
+          'EVENING_SAME_DAY_CUTOFF_HOUR', 'COLLECT_SEIBRO_ETF_FEE',
+          'ALLOW_OPERATIONAL_WRITES')
 KR_BOOKS = ('KR_KOSPI', 'KR_KOSDAQ', 'KR_MIXED', 'KR_KOSPI_CONFIRM1_BEAR', 'ETF_V02')
 
 
@@ -58,7 +62,12 @@ def _freeze_api(ns, state, attribute=None):
 
 def _kr_watermarks(ns):
     rows = {}
-    for kind in KR_BOOKS:
+    mode = str(ns.get('UNIVERSE_MODE', 'ALL')).upper()
+    if mode not in ('ALL', 'STOCK_ONLY', 'ETF_ONLY'):
+        raise ValueError('Unknown KR universe mode')
+    books = (('ETF_V02',) if mode == 'ETF_ONLY' else
+             tuple(kind for kind in KR_BOOKS if kind != 'ETF_V02') if mode == 'STOCK_ONLY' else KR_BOOKS)
+    for kind in books:
         response = ns['requests'].get(ns['SUPABASE_URL'] + '/rest/v1/ledger_model_sessions',
             headers={'apikey': ns['SUPABASE_SERVICE_ROLE_KEY'],
                      'Authorization': 'Bearer ' + ns['SUPABASE_SERVICE_ROLE_KEY']},
@@ -67,7 +76,8 @@ def _kr_watermarks(ns):
                     'select': 'session_date,state_hash', 'order': 'session_date.desc', 'limit': '1'}, timeout=30)
         response.raise_for_status()
         value = response.json()
-        if not isinstance(value, list) or len(value) != 1:
+        if (not isinstance(value, list) or len(value) != 1
+                or not value[0].get('session_date') or not value[0].get('state_hash')):
             raise RuntimeError('Verified KR predecessor missing: ' + kind)
         rows[kind] = value[0]
     return rows
@@ -77,7 +87,8 @@ def _after(stage, ns, state):
     if stage == 'plan_init':
         ns['INTEGRATED_SLOT'], ns['RUN_KR_MARKET'], ns['RUN_US_MARKET'] = ns['resolve_integrated_run_plan'](ns['RUN_PLAN'], _clock(ns))
     if stage == 'common_init' and ns['RUN_KR_MARKET']:
-        ns['_CT_KR_WATERMARKS'] = state.freeze('kr-watermarks', _kr_watermarks(ns))
+        saved = state.frozen('kr-watermarks')
+        ns['_CT_KR_WATERMARKS'] = saved if saved is not None else state.freeze('kr-watermarks', _kr_watermarks(ns))
     if stage == 'kr_setup' and ns['RUN_KR_MARKET']:
         # Reference date is exclusive, resolved once. Explicit original user dates
         # retain their meaning. Current clock must not move the run on restart.
@@ -85,6 +96,7 @@ def _after(stage, ns, state):
         ns['SCHEMA_REVIEW_DATE'] = reference['reference']
         ns['REFRESH_CACHE'] = bool(ns.get('FORCE_FULL_REFRESH', False))
     if stage == 'kr_runtime' and ns['RUN_KR_MARKET']:
+        install_official_cache(ns, state)
         # Use in-memory copies of the verified ZIP. The private ZIP bytes are never
         # modified. These exact replacements fail closed on a different dependency.
         for name in ('step_07.py',):
@@ -189,6 +201,11 @@ def _after(stage, ns, state):
 
 
 def run(ns):
+    # Legacy stages assign derived dates/defaults into their execution globals.
+    # Keep those separate from the user's settings so re-running only the run
+    # cell cannot turn an automatic date into a changed explicit configuration.
+    caller = ns
+    ns = dict(ns)
     import cloudtrend_lite_r3_runtime as base
     from google.colab import drive
     if not Path('/content/drive/MyDrive').exists():
@@ -219,6 +236,7 @@ def run(ns):
         ns['_CT_RUN_CLOCK'] = state.plan['startedAt']
         ns['_CT_RESUME_STATE'] = state
         ns['RESUME_RUN_ID'] = run_id
+        caller['RESUME_RUN_ID'] = run_id
         operational = bool(ns.get('ALLOW_OPERATIONAL_WRITES', False))
         ns['AUTO_PUBLISH_TO_CLOUDTREND'] = operational
         ns['DISPATCH_GITHUB_AFTER_UPLOAD'] = operational
@@ -243,8 +261,29 @@ def run(ns):
             else:
                 base.run_stage(stage, ns)
             _after(stage, ns, state)
-            state.save_json('completed-' + stage, {'runtime': ns['_CT_RUNTIME_LOADED_SHA']},
-                            {'stage': stage, 'finishedAt': datetime.now(timezone.utc).isoformat()})
+            _record_stage(state, stage, ns)
         print('수집 단계 종료. 서버·Shadow·게시 완료는 별도 영수증 확인이 필요합니다.')
         # Keep active.json until a user selects a new plan. Completion of local
         # collection is not equivalent to publication or model completion.
+
+
+def _record_stage(state, stage, ns):
+    """A returned transport stage is not a completed server calculation.
+
+    Preserve the provider outcome and write an honest journal status, including
+    when the inherited dispatch stage catches an error and returns normally.
+    """
+    if ((stage.startswith('kr_') and not ns.get('RUN_KR_MARKET')) or
+            (stage.startswith('us_') and not ns.get('RUN_US_MARKET'))):
+        return
+    status, outcome = 'COMPLETE', None
+    if stage == 'us_dispatch':
+        outcome = ns.get('_US_DISPATCH_STATUS', 'NOT_REQUESTED')
+        status = {'REQUEST_ACCEPTED': 'REQUEST_ACCEPTED',
+                  'REQUEST_ALREADY_RECORDED': 'REQUEST_UNCERTAIN',
+                  'DISPATCH_UNCERTAIN': 'REQUEST_UNCERTAIN',
+                  'DISPATCHING': 'REQUEST_UNCERTAIN'}.get(outcome, 'WAITING_INPUT')
+    payload = {'stage': stage, 'finishedAt': datetime.now(timezone.utc).isoformat(),
+               'scope': 'collector-stage-only', 'transportOutcome': outcome}
+    state.save('completed-' + stage, {'runtime': ns['_CT_RUNTIME_LOADED_SHA']},
+               {'payload': state.put_blob(canonical(payload))}, status=status)

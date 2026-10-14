@@ -1,6 +1,34 @@
 """Exact date joins using the existing shared KRX daily adapter."""
 import io
+import uuid
+from pathlib import Path
 from .state import canonical, digest
+
+
+def install_official_cache(ns, state):
+    """Isolate provider caches, but retain the original shared API budget counter.
+
+    Missing dates after the frozen predecessor are rechecked once per attempt.
+    The official day's existing memory cache still coalesces symbol requests.
+    Previous responses remain immutable evidence in earlier attempt directories.
+    """
+    source = ns['_kr_steps']['step_06.py']
+    needle = "cache=self.root/'cache'/market/(day+'.json')"
+    if source.count(needle) != 1:
+        raise RuntimeError('Verified KRX cache adapter changed; refusing unsafe patch')
+    attempt = uuid.uuid4().hex
+    watermarks = ns['_CT_KR_WATERMARKS']
+    oldest = min(row['session_date'] for row in watermarks.values()).replace('-', '')
+
+    def cache_path(provider_root, market, day):
+        # Keep past preparation caches separate too. Never modify VF raw cache.
+        group = attempt if day > oldest else 'predecessor-history'
+        return state.root / 'kr-official-cache' / group / market / (day + '.json')
+
+    ns['_ct_official_cache_path'] = cache_path
+    ns['_kr_steps']['step_06.py'] = source.replace(
+        needle, 'cache=_ct_official_cache_path(self.root,market,day)')
+    ns['_CT_KRX_ATTEMPT_ID'] = attempt
 
 
 def enrich_dates(frame, dates, ns):
@@ -27,8 +55,12 @@ def enrich_dates(frame, dates, ns):
             values = pd.to_numeric(target.symbol.map(daily[source]), errors='coerce')
             valid = values.notna() & values.gt(0)
             out.loc[values.index[valid], column] = values[valid]
-        valid_cap = pd.to_numeric(out.loc[target.index, 'marketCap'], errors='coerce').gt(0)
-        out.loc[target.index[valid_cap], 'marketCapSource'] = 'KRX_STOCK'
+        # Only the exact dated response can establish this provenance. An older
+        # estimate already in the output must not become KRX just because another
+        # symbol was returned for the same market/day.
+        cap = pd.to_numeric(target.symbol.map(daily['krxLatestMarketCap']), errors='coerce')
+        valid_cap = cap.notna() & cap.gt(0)
+        out.loc[cap.index[valid_cap], 'marketCapSource'] = 'KRX_STOCK'
     etf = out.securityType.astype(str).eq('ETF') & out.date.astype(str).isin(wanted)
     fields = ('marketCap', 'listedShares', 'etfNav', 'etfMarketCap', 'etfListedUnits',
               'etfNetAssetTotalAmount', 'etfUnderlyingIndexClose', 'etfUnderlyingIndexName', 'tradingValue')

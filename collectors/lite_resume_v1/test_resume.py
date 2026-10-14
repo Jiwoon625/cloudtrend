@@ -19,6 +19,33 @@ from cloudtrend_lite_resume_v1.kr import enrich_dates
 
 
 class OperationalWriteTests(unittest.TestCase):
+    def test_rerun_cell_keeps_user_settings_and_plan_after_partial_setup(self):
+        from cloudtrend_lite_resume_v1.runner import run
+        base = ModuleType('cloudtrend_lite_r3_runtime')
+        base.STAGES = ('custom_setup',)
+        calls = []
+        def stage(name, ns):
+            calls.append(ns['_CT_RUN_CLOCK'])
+            ns['SCHEMA_REVIEW_DATE'] = '2026-10-14'
+            ns['STOCK_CODES'] = ['DERIVED']
+            if len(calls) == 1:
+                raise InterruptedError('stopped after setup')
+        base.run_stage = stage
+        colab = ModuleType('google.colab')
+        colab.drive = Mock()
+        with tempfile.TemporaryDirectory() as root, patch.dict(sys.modules, {
+                'cloudtrend_lite_r3_runtime': base, 'google.colab': colab}):
+            ns = dict(RESUME_ROOT=root, _CT_RUNTIME_LOADED_SHA='test',
+                      SCHEMA_REVIEW_DATE=None, STOCK_CODES=['000001'])
+            with self.assertRaises(InterruptedError):
+                run(ns)
+            first_id = ns['RESUME_RUN_ID']
+            run(ns)
+            self.assertEqual(ns['RESUME_RUN_ID'], first_id)
+            self.assertIsNone(ns['SCHEMA_REVIEW_DATE'])
+            self.assertEqual(ns['STOCK_CODES'], ['000001'])
+            self.assertEqual(calls[0], calls[1])
+
     def test_read_only_run_blocks_saved_kr_retry_from_prior_cell(self):
         from cloudtrend_lite_resume_v1.runner import run
         base = ModuleType('cloudtrend_lite_r3_runtime')
@@ -173,6 +200,45 @@ class PlannerTests(unittest.TestCase):
 
 
 class KrTests(unittest.TestCase):
+    def test_official_cache_refreshes_gap_dates_without_touching_shared_budget_or_vf(self):
+        from cloudtrend_lite_resume_v1.kr import install_official_cache
+        source = "cache=self.root/'cache'/market/(day+'.json')\ncounter=self.root/'usage'/(today+'.json')"
+        with tempfile.TemporaryDirectory() as root:
+            state = RunState(root, 'run', {}, started_at='2026-10-14T01:00:00+00:00')
+            def setup():
+                ns = {'_kr_steps': {'step_06.py': source}, '_CT_KR_WATERMARKS': {
+                    'ETF_V02': {'session_date': '2026-10-12', 'state_hash': 'h'}}}
+                install_official_cache(ns, state)
+                return ns
+            first, second = setup(), setup()
+            path1 = first['_ct_official_cache_path']('/original', 'ETF', '20261013')
+            path1.parent.mkdir(parents=True)
+            path1.write_text('evening reference-only response')
+            path2 = second['_ct_official_cache_path']('/original', 'ETF', '20261013')
+            self.assertNotEqual(path1, path2)
+            self.assertFalse(path2.exists())
+            self.assertEqual(path1.read_text(), 'evening reference-only response')
+            self.assertEqual(first['_ct_official_cache_path']('/original','ETF','20261012'),
+                             second['_ct_official_cache_path']('/original','ETF','20261012'))
+            self.assertIn("counter=self.root/'usage'", second['_kr_steps']['step_06.py'])
+            self.assertTrue(path1.is_relative_to(state.root))
+
+    def test_unknown_official_adapter_is_not_silently_patched(self):
+        from cloudtrend_lite_resume_v1.kr import install_official_cache
+        with self.assertRaisesRegex(RuntimeError, 'adapter changed'):
+            install_official_cache({'_kr_steps': {'step_06.py': 'changed source'}}, None)
+
+    def test_missing_symbol_does_not_relabel_estimated_cap_as_krx(self):
+        import pandas as pd
+        f = pd.DataFrame([
+            dict(symbol=s, date='2026-10-13', securityType='STOCK', market='KOSPI',
+                 marketCap=900, marketCapSource='TOSS_ESTIMATED') for s in ('000001', '000002')])
+        daily = pd.DataFrame([dict(symbol='000001', date='2026-10-13',
+                                  krxLatestMarketCap=100, krxLatestListedShares=10)])
+        out = enrich_dates(f, ['2026-10-13'], {'get_krx_market_cap_market_day': lambda *_: daily})
+        self.assertEqual(out.marketCap.tolist(), [100, 900])
+        self.assertEqual(out.marketCapSource.tolist(), ['KRX_STOCK', 'TOSS_ESTIMATED'])
+
     def test_each_date_uses_own_cap_no_current_share_copy_and_one_request_per_market(self):
         import pandas as pd
         frame=pd.DataFrame([dict(symbol='000001',date=d,securityType='STOCK',market='KOSPI',close=10)
@@ -200,6 +266,81 @@ class KrTests(unittest.TestCase):
         with self.assertRaises(ValueError): enrich_dates(f,['2026-10-13'],{'get_krx_market_cap_market_day':lambda *_:pd.DataFrame([dict(symbol='000001',date='2026-10-14')])})
 
 class RunnerHookTests(unittest.TestCase):
+    def test_market_selection_does_not_require_unselected_shadow(self):
+        from cloudtrend_lite_resume_v1.runner import _kr_watermarks
+        for mode, count in [('ETF_ONLY', 1), ('STOCK_ONLY', 4), ('ALL', 5)]:
+            request = Mock()
+            request.get.return_value.json.return_value = [
+                {'session_date': '2026-10-13', 'state_hash': 'hash'}]
+            ns = dict(UNIVERSE_MODE=mode, requests=request, SUPABASE_URL='https://example.invalid',
+                      SUPABASE_SERVICE_ROLE_KEY='test', SUPABASE_USER_ID='test')
+            result = _kr_watermarks(ns)
+            self.assertEqual(len(result), count)
+            self.assertEqual(request.get.call_count, count)
+            self.assertEqual('ETF_V02' in result, mode != 'STOCK_ONLY')
+
+    def test_missing_selected_predecessor_is_not_an_empty_portfolio(self):
+        from cloudtrend_lite_resume_v1.runner import _kr_watermarks
+        request = Mock()
+        ns = dict(UNIVERSE_MODE='ETF_ONLY', requests=request, SUPABASE_URL='https://example.invalid',
+                  SUPABASE_SERVICE_ROLE_KEY='test', SUPABASE_USER_ID='test')
+        for rows in ([], [{'session_date': '2026-10-13'}]):
+            request.get.return_value.json.return_value = rows
+            with self.assertRaisesRegex(RuntimeError, 'predecessor missing'):
+                _kr_watermarks(ns)
+
+    def test_saved_watermark_is_reused_without_remote_reread(self):
+        from cloudtrend_lite_resume_v1.runner import _after
+        with tempfile.TemporaryDirectory() as root:
+            state = RunState(root, 'run', {}, started_at='2026-10-14T01:00:00+00:00')
+            saved = {'ETF_V02': {'session_date': '2026-10-13', 'state_hash': 'original'}}
+            state.freeze('kr-watermarks', saved)
+            ns = {'RUN_KR_MARKET': True}
+            with patch('cloudtrend_lite_resume_v1.runner._kr_watermarks', side_effect=AssertionError('remote reread')):
+                _after('common_init', ns, state)
+            self.assertEqual(ns['_CT_KR_WATERMARKS'], saved)
+
+    def test_changed_symbol_selection_and_write_mode_cannot_reuse_run(self):
+        from cloudtrend_lite_resume_v1.runner import run
+        base = ModuleType('cloudtrend_lite_r3_runtime')
+        base.STAGES = ()
+        colab = ModuleType('google.colab')
+        colab.drive = Mock()
+        with tempfile.TemporaryDirectory() as root, patch.dict(sys.modules, {
+                'cloudtrend_lite_r3_runtime': base, 'google.colab': colab}):
+            original = dict(RESUME_ROOT=root, _CT_RUNTIME_LOADED_SHA='test',
+                            STOCK_CODES=['000001'], ALLOW_OPERATIONAL_WRITES=False)
+            run(original.copy())
+            for change in ({'STOCK_CODES': ['000002']}, {'ALLOW_OPERATIONAL_WRITES': True},
+                           {'ETF_CODES': ['123456']}, {'STRICT_ALL_SYMBOLS': True}):
+                with self.assertRaisesRegex(RuntimeError, 'changed'):
+                    run({**original, **change})
+
+    def test_dispatch_journal_never_calls_request_acceptance_completion(self):
+        from cloudtrend_lite_resume_v1.runner import _record_stage
+        with tempfile.TemporaryDirectory() as root:
+            state = RunState(root, 'run', {}, started_at='2026-10-14T01:00:00+00:00')
+            cases = {'REQUEST_ACCEPTED': 'REQUEST_ACCEPTED',
+                     'REQUEST_ALREADY_RECORDED': 'REQUEST_UNCERTAIN',
+                     'DISPATCH_UNCERTAIN': 'REQUEST_UNCERTAIN',
+                     'BLOCKED_REPLAY_PREFLIGHT': 'WAITING_INPUT',
+                     'MISSING_TOKEN': 'WAITING_INPUT', 'REQUEST_REJECTED': 'WAITING_INPUT'}
+            for outcome, expected in cases.items():
+                _record_stage(state, 'us_dispatch', {'RUN_US_MARKET': True,
+                    '_CT_RUNTIME_LOADED_SHA': 'r', '_US_DISPATCH_STATUS': outcome})
+                saved = state.load('completed-us_dispatch', {'runtime': 'r'})
+                self.assertEqual(saved['status'], expected)
+                self.assertIsNone(state.load_json('completed-us_dispatch', {'runtime': 'r'}))
+                payload = json.loads(state.blob(saved['artifacts']['payload']))
+                self.assertEqual(payload['transportOutcome'], outcome)
+
+    def test_skipped_market_has_no_completed_marker(self):
+        from cloudtrend_lite_resume_v1.runner import _record_stage
+        with tempfile.TemporaryDirectory() as root:
+            state = RunState(root, 'run', {}, started_at='2026-10-14T01:00:00+00:00')
+            _record_stage(state, 'us_collection', {'RUN_US_MARKET': False})
+            self.assertIsNone(state.load('completed-us_collection', {}))
+
     def test_auto_and_explicit_market_modes_keep_frozen_slot(self):
         source=(ROOT/'runtime/overrides/plan_init.py').read_text()
         cases=[('AUTO','01:00:00',True,True,'MORNING'),

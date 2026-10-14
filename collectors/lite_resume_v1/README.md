@@ -34,6 +34,35 @@ not been verified. Do not infer a distributed lock guarantee from local tests.
 
 ## Verification and remaining gates
 
+### Browser-deferred follow-up (2026-10-14)
+
+- Re-running only the execution cell now keeps user settings separate from
+  legacy stages' derived globals. The same saved run ID/time is reused after a
+  setup interruption; changes to selected tickers, KRX options or write mode
+  fail identity validation.
+- ETF_ONLY reads only the ETF predecessor; STOCK_ONLY excludes the ETF book.
+  Saved predecessor evidence is reused without a new server query. A selected
+  missing predecessor still blocks instead of inventing an empty portfolio.
+- A partial KRX daily response can no longer label another symbol's estimated
+  market cap as official. Only exact symbol/date values receive KRX provenance.
+- The pinned external KR adapter uses preview-owned daily response caches. Dates
+  after the frozen predecessor get a fresh cache per resume attempt, while
+  requests within that attempt share the existing day cache. Prior responses and
+  VF caches are preserved. The provider's original shared usage counter remains
+  in place, so this does not reset API request budgets.
+- Dispatch journal entries preserve REQUEST_ACCEPTED / REQUEST_UNCERTAIN /
+  WAITING_INPUT rather than treating a caught preflight error as COMPLETE. A
+  skipped market has no completed-stage marker.
+- `test_external_kr.py` loads the exact hash-verified private KR ZIP and tests
+  reference-only evening responses, next-attempt refresh, CSV field preservation,
+  original-cache preservation, shared budgets and HTTP 401 failures using mocked
+  HTTP. This is external-runtime integration, **not live provider/Colab E2E**.
+
+Use `CLOUDTREND_KR_RUNTIME_ZIP=/path/to/preserved.zip` with the test command below
+to run the private-dependency tests; without it those three tests are skipped.
+The old preview's runtime-bound journal must not be relabelled with the new ZIP
+hash. Keep it intact and inspect pending requests before starting a new plan.
+
 - Unit tests cover state corruption, interrupted atomic writes, configuration and
   runtime identity, lost-response readback, calendar/holiday/DST planning, exact
   daily stock/ETF joins, frozen metadata, and same-filesystem process locking.
