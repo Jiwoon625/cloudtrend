@@ -1,3 +1,4 @@
+import { exitRiskPolicy, etfAdditionalAt, confirmIndexExit, scaleBudget } from '../research/exitRiskPolicy';
 import { ETF_POLICY, etfEntryWeight, type EtfStrategySnapshot } from "../engine/etfStrategy";
 import {
   isCurrentRulesResearch,
@@ -42,6 +43,7 @@ export interface EtfShadowMark {
   price: string;
 }
 export interface EtfShadowPosition {
+  researchPartialDone?: boolean;
   symbol: string;
   quantity: string;
   entryDate: string;
@@ -67,6 +69,8 @@ export interface EtfShadowPendingEntry {
   researchBudgetYear?: number;
 }
 export interface EtfShadowPendingExit {
+  researchReason?:string;
+  researchFraction?:number;
   symbol: string;
   signalDate: string;
   availableAt: string;
@@ -120,6 +124,7 @@ export interface EtfAdoptedShadowState {
   researchYearAssetBases?: EtfResearchYearAssetBase[];
 }
 export interface EtfShadowFill {
+  researchReason?:string;
   symbol: string;
   side: "BUY" | "SELL";
   executionDate: string;
@@ -234,14 +239,11 @@ function time(value: string) {
     throw new Error("Explicit ETF timestamp with timezone required");
   return Date.parse(value);
 }
+const researchMarketDateFormatter=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'});
 function marketDate(value: string) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(time(value)));
+  return researchMarketDateFormatter.format(new Date(time(value)));
 }
+
 function symbol(value: string) {
   if (!/^[A-Z0-9]{6}$/.test(value))
     throw new Error("ETF symbol must preserve its six-character listing code");
@@ -452,7 +454,7 @@ function assertState(
         entry.researchBudgetYear !== base.year ||
         entry.researchBudgetNavDate !== base.valuationDate ||
         entry.researchTargetBudget !==
-          format(multiply(decimal(base.nav), decimal(entry.entryWeight)))
+          format(scaleBudget(multiply(decimal(base.nav), decimal(entry.entryWeight))))
       )
         throw new Error("Research ETF pending budget changed after confirmation");
     }
@@ -644,11 +646,15 @@ async function stepEtfShadowSession(
       pendingExits.push({ ...exit });
       continue;
     }
-    const gross = decimal(price.price) * BigInt(position.quantity);
+    const oldQuantity=BigInt(position.quantity);
+    const isPartial=(exit.researchFraction??1)<1 && !position.researchPartialDone && oldQuantity>1n;
+    const sellQuantity=isPartial?oldQuantity/2n:oldQuantity;
+    const soldBasis=isPartial?decimal(position.costBasis)*sellQuantity/oldQuantity:decimal(position.costBasis);
+    const gross = decimal(price.price) * sellQuantity;
     const scale = decimal("1"),
       fee = (gross * decimal(series.oneWayCost) + scale - 1n) / scale;
     const credit = gross - fee,
-      pnl = credit - decimal(position.costBasis);
+      pnl = credit - soldBasis;
     cash += credit;
     fees += fee;
     realizedPnl += pnl;
@@ -663,7 +669,8 @@ async function stepEtfShadowSession(
       signalSourceHash: exit.sourceHash,
       originDate: null,
       reason: "MA60",
-      quantity: position.quantity,
+      ...(exit.researchReason?{researchReason:exit.researchReason}:{}),
+      quantity: String(sellQuantity),
       price: price.price,
       gross: format(gross),
       fee: format(fee),
@@ -672,7 +679,8 @@ async function stepEtfShadowSession(
       budgetNavDate: null,
       realizedPnl: format(pnl),
     });
-    positions = positions.filter((held) => held.symbol !== exit.symbol);
+    if(isPartial){position.quantity=String(oldQuantity-sellQuantity);position.costBasis=format(decimal(position.costBasis)-soldBasis);position.researchPartialDone=true;}
+    else positions = positions.filter((held) => held.symbol !== exit.symbol);
     sold.add(exit.symbol);
   }
 
@@ -734,7 +742,7 @@ async function stepEtfShadowSession(
     const targetBudget = annualAllocation
       ? entry.researchTargetBudget!
       : format(multiply(decimal(previous.valuation.nav), decimal(entry.entryWeight)));
-    const quote = quoteModelBudget(targetBudget, format(cash), price.price);
+    const quote = quoteModelBudget(targetBudget, format(cash), price.price, series.oneWayCost);
     if (quote.quantity === "0") {
       issue(entry.symbol, "ENTRY_EXPIRED_INSUFFICIENT_BUDGET", "OPEN");
       if (unified && !positions.some((p) => p.symbol === entry.symbol) && !sold.has(entry.symbol)) {
@@ -784,7 +792,17 @@ async function stepEtfShadowSession(
     pendingConfirmations: EtfAdoptedShadowState["pendingConfirmations"] = [];
   const currentSignals = new Map<string, EtfShadowSignal>();
   for (const signal of input.closeSignals) {
-    const s = signal.strategy;
+    let s = signal.strategy;
+    const p=exitRiskPolicy();
+    const held=positions.find(v=>v.symbol===signal.symbol);
+    let extraReason:string|null=null;
+    if(p.id!=='OFF'){
+      s={...s,exit:confirmIndexExit(signal.symbol,input.sessionDate,s.exit)};
+      if(p.replaceIndex)s={...s,exit:null};
+      if(held&&!held.researchPartialDone)extraReason=etfAdditionalAt(held.symbol,held.entryDate,Number(held.entryPrice),input.sessionDate);
+      if(s.exit==='MA60')extraReason=null;
+      if(extraReason)s={...s,exit:'MA60'};
+    }
     if (
       s.date !== input.sessionDate ||
       (s.previousDate !== null && (!validDate(s.previousDate) || s.previousDate >= s.date)) ||
@@ -816,6 +834,7 @@ async function stepEtfShadowSession(
         availableAt: signal.availableAt,
         sourceHash: signal.sourceHash,
         reason: "MA60",
+        ...(extraReason?{researchReason:extraReason,researchFraction:p.fraction??1}:{}),
       });
     if (unified && s.exit === "MA60") {
       // Only the close can cancel an unfilled intent; today's open has already executed.
@@ -902,7 +921,7 @@ async function stepEtfShadowSession(
       ...(annualAllocation
         ? {
             researchTargetBudget: format(
-              multiply(decimal(yearAssetBases.at(-1)!.nav), decimal(entryWeight)),
+              scaleBudget(multiply(decimal(yearAssetBases.at(-1)!.nav), decimal(entryWeight))),
             ),
             researchBudgetNavDate: yearAssetBases.at(-1)!.valuationDate,
             researchBudgetYear: yearAssetBases.at(-1)!.year,
@@ -1027,7 +1046,7 @@ async function assertResearchContract(
     contract.book !== "MODEL" ||
     !/^RESEARCH:ETF_V02:[a-zA-Z0-9._-]+$/.test(contract.bookId) ||
     contract.initialKrw !== "100000000" ||
-    contract.oneWayCost !== "0.0015" ||
+    !["0.0015","0.003"].includes(contract.oneWayCost) ||
     !["ANNUAL_NAV_VOLATILITY_SIGNAL_YEAR_V1", "ADOPTED_VOLATILITY"].includes(
       contract.researchEntryBudgetPolicy,
     )

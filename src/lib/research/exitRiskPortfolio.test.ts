@@ -1,0 +1,10 @@
+import{describe,it,expect}from'vitest';import{runAdoptedEtfBacktest}from'./adoptedEtfBacktest';import{configureExitRisk}from'./exitRiskPolicy';import{ETF_POLICY}from'../engine/etfStrategy';
+describe('Research partial-exit cash lifecycle',()=>{it('sells half once and preserves residual cost and original MA60 liquidation',async()=>{
+ const ds=['2019-01-02','2019-01-03','2019-01-04','2019-01-07','2019-01-08','2019-01-09','2019-01-10'];
+ const bars:any={'360750':ds.map((tradeDate,i)=>({tradeDate,open:i===4?9000:i>=5?8000:10000,close:i===3?9000:i===4?8500:i>=5?8000:10000,volume:1000}))};
+ const snapshots=ds.map((date,i)=>({date,strategies:[{symbol:'360750',strategy:{version:ETF_POLICY.version,date,previousDate:ds[i-1]??'2019-01-01',eligible:true,score:85,previousScore:i===0?79:81,technical:85,priority:7,health:14,environment:14,environmentSource:'stock_sector',region:'KR',sector:'TECH',annualVolatility:.3,entryWeight:.05,underlyingClose:i>=4?90:100,underlyingMa60:95,onset:i===1,rawOnset:i===0,entryState:i===0?'pending':i===1?'confirmed':'none',originDate:i===0?date:i===1?ds[0]:null,confirmationDate:i===1?date:null,confirmationIssues:[],averageTradingValue20:1e9,dataStatus:'ready',krxReferenceDate:null,exit:i>=4?'MA60':null,issues:[]}}]}));
+ configureExitRisk({id:'partial-fixture',trail:.08,fraction:.5},bars,{},ds);
+ try{const r=await runAdoptedEtfBacktest({runId:'partial-fixture',allocationPolicy:'ADOPTED_VOLATILITY',startDate:ds[0]!,endDate:ds.at(-1)!,codeHash:('sha256:'+'a'.repeat(64))as any,sourceHash:('sha256:'+'b'.repeat(64))as any,calendar:{market:'KR',sourceHash:('sha256:'+'c'.repeat(64))as any,coverageStart:ds[0]!,coverageEnd:ds.at(-1)!,regularSessions:ds},etfSymbols:['360750'],observedBars:bars,snapshots:snapshots as any});
+ const sells=r.fills.filter(f=>f.side==='SELL');expect(sells.map(f=>f.quantity)).toEqual(['249','250']);expect(sells.map(f=>f.executionDate)).toEqual([ds[4],ds[5]]);expect(r.finalState.cash).toBe('99237153.5');expect(r.finalState.positions).toHaveLength(0);
+ }finally{configureExitRisk({id:'OFF'},{},{},[]);}
+});});

@@ -1,3 +1,4 @@
+import {exitRiskPolicy} from './exitRiskPolicy';
 import type { MarketDataset } from "../engine/dataset";
 import {
   calculateEtfStrategies,
@@ -190,7 +191,7 @@ export async function runAdoptedEtfBacktest(
     bookId: `RESEARCH:ETF_V02:${input.runId}` as const,
     accountingStartDate: input.startDate,
     initialKrw: "100000000" as const,
-    oneWayCost: "0.0015" as const,
+    oneWayCost: String(exitRiskPolicy().fee??0.0015) as "0.0015",
     researchEntryBudgetPolicy: input.allocationPolicy ?? "ANNUAL_NAV_VOLATILITY_SIGNAL_YEAR_V1",
     codeHash: input.codeHash,
     configHash,
@@ -303,6 +304,7 @@ export async function runAdoptedEtfBacktest(
     state = result.state;
     previousStateHash = await hashSeriesValue(result);
     quality.sessions += 1;
+    if(process.env['EXIT_RESEARCH_PROFILE']==='1' && quality.sessions%250===0)console.log('ETF sessions',quality.sessions,'rss MiB',Math.round(process.memoryUsage().rss/1048576));
     if (state.valuation.status === "MISSING") quality.missingNavSessions += 1;
     if (state.valuation.status === "STALE") quality.staleNavSessions += 1;
     for (const issue of result.record.issues)

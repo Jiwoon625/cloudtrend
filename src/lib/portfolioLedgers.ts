@@ -1,3 +1,4 @@
+import { exitRiskPolicy, partialDone, partialFills } from './research/exitRiskPolicy';
 import { decimal, divide, format, fromLegacyNumber, integerBudgetQuantity } from "./ledger/decimal";
 import { validDate } from "./ledger/date";
 import type { KospiMarketGateEvidence } from "./engine/kospiMarketGate";
@@ -235,7 +236,7 @@ export function simulateStrategy(
       (!unified && settings.maxPositions !== 30) ||
       !Number.isInteger(settings.maxPositions) ||
       settings.maxPositions < 1 ||
-      settings.roundTripCostRate !== 0.003
+      ![0.003,0.006].includes(settings.roundTripCostRate)
     )
       throw new Error("Invalid frozen first-year KR series contract");
     const inScope = (symbol: string) =>
@@ -262,11 +263,11 @@ export function simulateStrategy(
     );
     marketDates = marketDates.filter((date) => date <= prospective.throughDate);
   }
-  const snapshots = normalizeSnapshots(input);
+  const snapshots = normalizeSnapshots(exitRiskPolicy().currentExecution? input.map(snapshot=>({...snapshot,entries:snapshot.entries.filter(entry=>{const observed=bars[entry.symbol]?.find(bar=>bar.tradeDate===snapshot.asOfDate);return !observed||(Number.isFinite(observed.close)&&observed.close>0);})})):input);
   const entryBars = bars;
   // Source loading historically excluded invalid opens/closes. Keep that exact replay/quote
   // boundary while the confirmation executor alone sees raw observed suspension and gap evidence.
-  bars = Object.fromEntries(
+  bars = exitRiskPolicy().currentExecution ? entryBars : Object.fromEntries(
     Object.entries(bars).map(([symbol, series]) => [
       symbol,
       series.filter(
@@ -414,7 +415,7 @@ export function simulateStrategy(
       )
     : 0n;
   const exactFee = (gross: bigint) =>
-    (gross * decimal("0.0015") + decimal("1") - 1n) / decimal("1");
+    (gross * decimal(fromLegacyNumber(settings.roundTripCostRate/2)) + decimal("1") - 1n) / decimal("1");
   const researchExitPlans = new Map<string, ExitPlan | null>();
   const researchHealthyDates = new Map<string, string[]>();
   const closeDue = (cutoff: string, beforeEntry: boolean) => {
@@ -452,11 +453,15 @@ export function simulateStrategy(
         (beforeEntry && plan.exitDate === cutoff && plan.timing === "CLOSE")
       )
         continue;
+      const fraction=exitRiskPolicy().fraction??1;
+      const partial=research && fraction<1 && plan.reason.startsWith('RESEARCH_') && !partialDone.has(t.id) && t.shares>1;
+      const sellShares=partial?Math.max(1,Math.floor(t.shares*fraction)):t.shares;
       const grossExact = prospective
-        ? decimal(fromLegacyNumber(plan.exitPrice)) * BigInt(t.shares)
+        ? decimal(fromLegacyNumber(plan.exitPrice)) * BigInt(sellShares)
         : 0n;
       const feeExact = prospective ? exactFee(grossExact) : 0n;
-      const pnlExact = prospective ? grossExact - feeExact - exactBasis.get(t.id)! : 0n;
+      const soldBasis = prospective ? (partial ? exactBasis.get(t.id)! * BigInt(sellShares) / BigInt(t.shares) : exactBasis.get(t.id)!) : 0n;
+      const pnlExact = prospective ? grossExact - feeExact - soldBasis : 0n;
       const fee = prospective ? Number(format(feeExact)) : money(t.shares * plan.exitPrice * half),
         pnl = prospective
           ? Number(format(pnlExact))
@@ -466,6 +471,14 @@ export function simulateStrategy(
         exactRealized += pnlExact;
         modelFees[t.id]!.exit = format(feeExact);
         if (research) exitTiming[t.id] = plan.timing;
+      }
+      if(partial){
+        partialFills.push({initialShares:t.shares,initialBasis:format(exactBasis.get(t.id)!),initialGross:t.buyAmount,initialFee:t.entryFee,id:t.id,symbol:t.symbol,entryDate:t.entryDate,signalDate:plan.signalDate,date:plan.exitDate,price:plan.exitPrice,shares:sellShares,gross:format(grossExact),fee:format(feeExact),basis:format(soldBasis),reason:plan.reason});
+        const ratio=(t.shares-sellShares)/t.shares;
+        exactBasis.set(t.id,exactBasis.get(t.id)!-soldBasis);
+        t.shares-=sellShares;t.buyAmount*=ratio;t.entryFee*=ratio;
+        partialDone.add(t.id);researchExitPlans.delete(t.id);
+        cash=Number(format(exactCash));continue;
       }
       Object.assign(t, {
         status: "CLOSED",
@@ -548,6 +561,8 @@ export function simulateStrategy(
     }
     if (!includeCutoff && researchDates[researchDateIndex] === cutoff) ensureYearBudget(cutoff);
   };
+  const exitDatesBySymbol=new Map<string,string[]>();
+  if(research)for(const sn of snapshots)for(const en of sn.entries){const m=markets[en.symbol];if(m&&operationalExit(en,m,true)){const list=exitDatesBySymbol.get(en.symbol)??[];list.push(sn.asOfDate);exitDatesBySymbol.set(en.symbol,list);}}
   const executionQueue = [...rawCandidates];
   while (executionQueue.length) {
     const candidate = executionQueue.shift()!;
@@ -580,6 +595,7 @@ export function simulateStrategy(
     // An origin-day KOSDAQ U9 retains its existing entry priority; unknown rows do not cancel.
     if (
       unified &&
+      (research?(exitDatesBySymbol.get(c.symbol)??[]).some(date=>date>(c.originDate??c.signalDate)&&date<(c.entryDate??'9999')&&date<=(latest??'')):
       snapshots.some(
         (snapshot) =>
           snapshot.asOfDate > (c.originDate ?? c.signalDate) &&
@@ -588,7 +604,7 @@ export function simulateStrategy(
           snapshot.entries.some(
             (entry) => entry.symbol === c.symbol && operationalExit(entry, c.market, true),
           ),
-      )
+      ))
     ) {
       const cancelled = {
         ...c,
@@ -612,6 +628,7 @@ export function simulateStrategy(
         c.entryDate,
         observedDates,
         true,
+        research,
       ).bar;
       if (!next || !latest || next.tradeDate > latest) return;
       executionQueue.push({ ...candidate, entryDate: next.tradeDate, price: next.open });
@@ -672,7 +689,7 @@ export function simulateStrategy(
       ? yearlyBudgets.find((year) => year.year === Number(c.signalDate.slice(0, 4)))
       : undefined;
     if (research && !signalYearBudget) throw new Error("Missing KR signal-year entry budget");
-    const candidateBudget = research ? decimal(signalYearBudget!.budget) : entryBudget;
+    const candidateBudget = research ? decimal(signalYearBudget!.budget) * BigInt(Math.round((exitRiskPolicy().exposureScale??1)*1000000)) / 1000000n : entryBudget;
     const target = research
       ? Number(format(candidateBudget))
       : settings.initialCapital / settings.maxPositions;
@@ -694,7 +711,7 @@ export function simulateStrategy(
                 ),
             format(exactCash),
             fromLegacyNumber(c.price),
-            "0.0015",
+            fromLegacyNumber(settings.roundTripCostRate/2),
           ),
         )
       : Math.min(Math.max(1, Math.round(target / c.price)), affordable);

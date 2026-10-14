@@ -715,11 +715,11 @@ export interface ModelBudgetQuote {
   remainingCash: string;
 }
 /** Eight-decimal fee ledger with ceiling at the final fee digit prevents fractional-fee overspend. */
-export function quoteModelBudget(budget: string, cash: string, price: string): ModelBudgetQuote {
-  const quantity = integerBudgetQuantity(budget, cash, price, MODEL_ONE_WAY_COST);
+export function quoteModelBudget(budget: string, cash: string, price: string, cost = MODEL_ONE_WAY_COST): ModelBudgetQuote {
+  const quantity = integerBudgetQuantity(budget, cash, price, cost);
   const gross = decimal(price) * BigInt(quantity);
   const scale = decimal("1");
-  const fee = (gross * decimal(MODEL_ONE_WAY_COST) + scale - 1n) / scale;
+  const fee = (gross * decimal(cost) + scale - 1n) / scale;
   const debit = gross + fee;
   return {
     budget,

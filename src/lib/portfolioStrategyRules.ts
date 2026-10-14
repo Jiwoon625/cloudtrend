@@ -1,3 +1,4 @@
+import { overlayKrExit } from './research/exitRiskPolicy';
 import {
   getHeldOperationalExitSignal,
   getStoredOperationalExit,
@@ -99,17 +100,20 @@ export interface EntryExecution {
   reason: string;
 }
 
+const researchBarIndexes=new WeakMap<DailyPrice[],{calendar:string[],byDate:Map<string,DailyPrice>,dates:string[]}>();
 /** A zero-volume observed bar is a suspension; an absent bar is an unknown gap, never a late fill. */
 export function nextConfirmedEntry(
   bars: DailyPrice[],
   confirmationDate: string,
   marketDates: string[],
   carry = confirmationDate >= "2026-10-12",
+  fast = false,
 ): EntryExecution {
-  const byDate = new Map(bars.map((bar) => [bar.tradeDate, bar]));
-  const dates = [...new Set([...marketDates, ...byDate.keys()])]
-    .filter((date) => date > confirmationDate)
-    .sort();
+  let index=fast?researchBarIndexes.get(bars):undefined;
+  if(!index||index.calendar!==marketDates){const byDate=new Map(bars.map(bar=>[bar.tradeDate,bar]));index={calendar:marketDates,byDate,dates:[...new Set([...marketDates,...byDate.keys()])].sort()};if(fast)researchBarIndexes.set(bars,index);}
+  const byDate=index.byDate;
+  let lo=0,hi=index.dates.length;while(lo<hi){const mid=(lo+hi)>>>1;if(index.dates[mid]!<=confirmationDate)lo=mid+1;else hi=mid;}
+  const dates=index.dates.slice(lo);
   for (const date of dates) {
     const bar = byDate.get(date);
     if (
@@ -161,6 +165,7 @@ export function nextKospiConfirmedEntry(
     entry.confirmationDate ?? entry.date,
     marketDates,
     isCurrentRulesResearch(context) ? true : undefined,
+    isCurrentRulesResearch(context),
   );
   if (currentExecution) {
     while (execution.bar) {
@@ -182,7 +187,7 @@ export function nextKospiConfirmedEntry(
         ["RISK_ON", "NEUTRAL"].includes(gate.status)
       )
         break;
-      execution = nextConfirmedEntry(bars, execution.bar.tradeDate, marketDates, true);
+      execution = nextConfirmedEntry(bars, execution.bar.tradeDate, marketDates, true, isCurrentRulesResearch(context));
     }
     if (!execution.bar)
       return { ...execution, reason: "미체결 이월 · 거래량·시가·체결 전 시장국면 재확인" };
@@ -396,13 +401,7 @@ export function deriveExitPlan(
         }
       : null;
 
-  if (exceptionPlan)
-    return [exceptionPlan, scorePlan, timePlan]
-      .filter((p): p is ExitPlan => !!p)
-      .sort((a, b) => a.exitDate.localeCompare(b.exitDate) || (a.timing === "OPEN" ? -1 : 1))[0]!;
-  if (!scorePlan) return timePlan;
-  if (!timePlan) return scorePlan;
-  if (scorePlan.exitDate < timePlan.exitDate) return scorePlan;
-  if (scorePlan.exitDate > timePlan.exitDate) return timePlan;
-  return scorePlan.timing === "OPEN" ? scorePlan : timePlan;
+  const chosen = [exceptionPlan, scorePlan, timePlan].filter((p): p is ExitPlan => !!p)
+    .sort((a,b)=>a.exitDate.localeCompare(b.exitDate)||(a.timing==='OPEN'?-1:1))[0]??null;
+  return overlayKrExit(trade,chosen,latestDate);
 }

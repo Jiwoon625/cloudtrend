@@ -1,3 +1,4 @@
+import {exitRiskPolicy} from './exitRiskPolicy';
 import { simulateStrategy } from "../portfolioLedgers";
 import type { DailyPrice, Market } from "../engine/types";
 import type { KospiMarketGateEvidence } from "../engine/kospiMarketGate";
@@ -62,7 +63,7 @@ export function runAdoptedKrBacktest(input: AdoptedKrBacktestInput) {
       initialCapital: input.initialCapital ?? 100_000_000,
       maxPositions: 30,
       sectorCap: 0.3,
-      roundTripCostRate: 0.003,
+      roundTripCostRate: (exitRiskPolicy().fee??0.0015)*2,
     },
     input.snapshots,
     input.bars,
