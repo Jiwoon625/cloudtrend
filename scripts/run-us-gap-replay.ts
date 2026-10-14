@@ -660,11 +660,20 @@ async function runRestartReviewedPublication(
         run.publication?.sourceHash !== sourceHash
       )
         throw new Error("Restart original model source identity mismatch");
+      // Exactly the payload hashed by stepAdoptedUsSeries; do not step a model here.
+      const canonicalInputHash = await hashSeriesValue({
+        upstreamSourceHash: sourceHash,
+        analysis: recomputedOriginal,
+        calendar: run.calendar,
+        availableAt: run.publication.availableAt,
+        priorStateHash: run.previousStateHash,
+      });
+      if (run.receipt.sourceHash !== canonicalInputHash)
+        throw new Error("Restart original model canonical receipt input mismatch");
       proofs.push({ bookId, contractHash: series.contractHash, stateHash: run.stateHash });
     }
     return proofs;
   }
-  const models = await completedModels();
   let rank: UsProspectivePreviousState | undefined;
   if (source.date !== RESTART_ACCOUNTING_START) {
     if (manifest.baseDate < RESTART_ACCOUNTING_START)
@@ -688,9 +697,15 @@ async function runRestartReviewedPublication(
     stableJson(originalResult.analysis?.summary) !== stableJson(recomputedOriginal.summary)
   )
     throw new Error("Restart original screening rank state does not match its predecessor");
+  const models = await completedModels();
+  const correctedAnalysis = runUsProspectiveAnalysis(reviewed!.rows, rank);
   const prefix = `${userId}/results/us-gap-replay/${input.manifestHash.slice(7)}`;
   const planPath = `${prefix}/reviewed-publication-plan.json`;
   const prior = await readText(client, planPath, true);
+  if (prior && JSON.parse(prior).version !== "us-restart-reviewed-publication-only-v2")
+    throw new Error(
+      "Legacy v1 publication plan preserved; re-application requires a newly reviewed v2 manifest and proof. Completed receipts remain readable by continuation.",
+    );
   const generatedAt = prior
     ? JSON.parse(prior).generatedAt
     : (input.calculatedAt ?? new Date().toISOString());
@@ -702,7 +717,10 @@ async function runRestartReviewedPublication(
   // This digest identifies read-only completion evidence, not an old operating ledger plan.
   const proofHash = bytesHash(
     stableJson({
-      version: "us-restart-publication-proof-v1",
+      version: "us-restart-publication-proof-v2",
+      manifestHash: input.manifestHash,
+      correctedSourceHash: source.dataHash,
+      correctedAnalysis,
       protectedHistory: protectedRows,
       sourceHash,
       models,
@@ -713,7 +731,7 @@ async function runRestartReviewedPublication(
   const publication: UsReplayScreeningInput = {
     client,
     userId,
-    analyses: [runUsProspectiveAnalysis(reviewed!.rows, rank)],
+    analyses: [correctedAnalysis],
     sources: [source],
     manifestHash: input.manifestHash,
     operatingPlanHash: proofHash,
@@ -722,7 +740,7 @@ async function runRestartReviewedPublication(
   };
   await preflightUsReplayScreening(publication);
   const plan = {
-    version: "us-restart-reviewed-publication-only-v1",
+    version: "us-restart-reviewed-publication-only-v2",
     manifestHash: input.manifestHash,
     operatingPlanHash: proofHash,
     generatedAt,
