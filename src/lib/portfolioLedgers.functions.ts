@@ -77,13 +77,31 @@ export const portfolioPositionContextServer = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<DomesticPositionContext> => {
     const { client, uid } = await authenticate(data.accessToken);
     const context = await loadWebsitePositionContextForOwner(client, uid);
-    if (context.actualPools?.KRW)
-      await attachActualHoldingPriceExits(
-        client,
-        uid,
-        context.actualPools.KRW,
-        new Date().toISOString(),
-      ).catch(() => undefined);
+    if (context.actualPools?.KRW) {
+      try {
+        await attachActualHoldingPriceExits(
+          client,
+          uid,
+          context.actualPools.KRW,
+          new Date().toISOString(),
+        );
+      } catch {
+        // Failing a private price-evidence fetch must not be reported as a
+        // negative stop. Do not mask pre-existing latched signals.
+        for (const p of context.actualPools.KRW.positions) {
+          if ((p.market === "KOSPI" || p.market === "ETF") && !p.priceExit?.reason)
+            p.priceExit = {
+              policyVersion: "holding-price-exit-k4-e4-v1",
+              status: "가격청산 근거 조회 실패 · 확인 대기",
+              reason: null,
+              threshold: null,
+              peak: null,
+              signalDate: null,
+              auditStatus: "PENDING",
+            };
+        }
+      }
+    }
     return {
       heldSymbols: context.heldSymbols,
       lastSellDateBySymbol: context.lastSellDateBySymbol,
