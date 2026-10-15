@@ -1,0 +1,51 @@
+name: Approved private Shadow activation
+on:
+  push:
+    branches: [fix/shadow-private-activation-20261015]
+    paths:
+      - .github/workflows/shadow-private-activation.yml
+      - scripts/activate-approved-shadow.ts
+      - tests/shadow-private-activation.test.ts
+permissions:
+  contents: read
+concurrency:
+  group: approved-private-shadow-activation-20261014
+  cancel-in-progress: false
+jobs:
+  activate:
+    if: github.repository == 'Jiwoon625/cloudtrend' && github.ref == 'refs/heads/fix/shadow-private-activation-20261015' && github.event_name == 'push' && github.event.forced == false && github.event.deleted == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify bounded activation and reviewed runtime
+        run: |
+          node --input-type=module <<'NODE'
+          import ts from 'typescript';
+          const root = process.cwd();
+          const loaded = ts.readConfigFile('tsconfig.json', ts.sys.readFile);
+          const parsed = ts.parseJsonConfigFileContent(loaded.config, ts.sys, root);
+          const files = ['scripts/activate-approved-shadow.ts', 'tests/shadow-private-activation.test.ts'];
+          const program = ts.createProgram(files, parsed.options);
+          const diagnostics = ts.getPreEmitDiagnostics(program);
+          if (diagnostics.length) {
+            console.error(ts.formatDiagnosticsWithColorAndContext(diagnostics, { getCurrentDirectory: () => root, getCanonicalFileName: p => p, getNewLine: () => '\n' }));
+            process.exit(1);
+          }
+          NODE
+          npx vitest run --config vitest.shadow.config.ts tests/shadow-private-activation.test.ts
+          npx vite-node --config scripts/kospi-shadow-runtime.config.ts scripts/verify-shadow-runtime-manifests.ts
+      - name: Apply exact private approval once and verify
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: npx vite-node --config scripts/kospi-shadow-runtime.config.ts scripts/activate-approved-shadow.ts
