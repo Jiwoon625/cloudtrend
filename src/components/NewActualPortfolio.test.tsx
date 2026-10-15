@@ -369,8 +369,12 @@ describe("new-only portfolio presentation", () => {
     const html = render(
       <NewActualPortfolioContent data={data} asset="ETF" onAssetChange={() => undefined} />,
     );
-    expect(html).toContain("최고 종가"); expect(html).toContain("120 KRW"); expect(html).toContain("2026-10-14");
-    expect(html).toContain("판정 종가"); expect(html).toContain("107 KRW"); expect(html).toContain("2026-10-15");
+    expect(html).toContain("최고 종가");
+    expect(html).toContain("120 KRW");
+    expect(html).toContain("2026-10-14");
+    expect(html).toContain("판정 종가");
+    expect(html).toContain("107 KRW");
+    expect(html).toContain("2026-10-15");
     expect(html).toContain("청산선 대비 -0.93%");
     expect(html).toContain("2건 매수 · 잔여원가 비례배분");
     expect(html).toContain("종가·원가 대사 완료");
