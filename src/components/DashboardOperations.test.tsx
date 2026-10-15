@@ -204,7 +204,7 @@ describe("held K4/E4 execution-pending alerts", () => {
     etf.exitCount = 1;
     const html = renderCounts(value);
     expect(html).toContain("K4/E4 청산신호 · 실제 매도 체결 확인 필요 (2종목)");
-    expect(html).toContain("실제 매도 체결 별도 입력 필요");
+    expect(html).toContain("실제 포트폴리오에 기록해 주세요");
     expect(html).toContain("미체결 신호는 가격이 회복해도 유지됩니다");
     expect(html).toContain('href="/portfolio"');
   });
