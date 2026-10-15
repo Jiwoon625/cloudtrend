@@ -257,10 +257,12 @@ export async function attachActualHoldingPriceExits(
     const available = results.filter((r) => r.result.threshold !== null);
     const triggered = results
       .filter((r) => r.result.reason !== null)
-      .sort((a, b) =>
-        (a.result.state.signalDate ?? "").localeCompare(b.result.state.signalDate ?? "") ||
-        a.lotId.localeCompare(b.lotId),
-      );
+      .sort((a, b) => {
+        const byDate = (a.result.state.signalDate ?? "").localeCompare(
+          b.result.state.signalDate ?? "",
+        );
+        return byDate || a.lotId.localeCompare(b.lotId);
+      });
     const descendingThreshold = (a: (typeof available)[number], b: (typeof available)[number]) => {
       const left = decimal(a.result.threshold!);
       const right = decimal(b.result.threshold!);
