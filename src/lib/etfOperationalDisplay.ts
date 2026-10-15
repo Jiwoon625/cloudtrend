@@ -21,8 +21,11 @@ export function etfOperationalDisplay(
   date: string,
   held: boolean | undefined,
   sold = false,
+  priceExit?: { reason: string | null; signalDate: string | null } | undefined,
 ): string {
   if (!isOperationalSignalDate(date)) return BEFORE_OPERATIONAL_START;
+  if (held && priceExit?.reason && priceExit.signalDate && priceExit.signalDate <= date)
+    return `${priceExit.reason} · ${priceExit.signalDate} 종가 신호 · 다음 거래 가능 시가 청산 대기`;
   const missing = etfDataJudgment(row, date);
   if (!etfPartialEvidence(row, date).current || etfPartialEvidence(row, date).krxPending)
     return missing!;

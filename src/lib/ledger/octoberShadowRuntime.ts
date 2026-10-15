@@ -91,7 +91,12 @@ export const MISSING_CLOSE_OHLC_PRESERVATION_RUNTIME_HASH =
 export const REVIEWED_SOURCE_VINTAGE_RUNTIME_HASH =
   "sha256:cee9c24263a8e1e0ad96975ea9a08c806fea45759a3d8a10072f7e55ec41fa08" as const;
 
+/** Prospective K4/E4 amendment from 2026-10-15; pre-cutover observations and experimental books retain their contract. */
+export const PRICE_EXIT_ADDITION_RUNTIME_HASH =
+  "sha256:080cb9b033c4c7b6c5d00d02b5e0ef9170f27378e9ccb4f72cf5b84c4a878083" as const;
+
 export const REVIEWED_SHADOW_RUNTIME_CODE_HASHES = Object.freeze([
+  PRICE_EXIT_ADDITION_RUNTIME_HASH,
   ADOPTED_SHADOW_FROZEN_CODE_HASH,
   REVIEWED_SOURCE_VINTAGE_RUNTIME_HASH,
   "sha256:ffd26d07d50564c6c734dc9c96ede00f7786e1122df3eb373ad56a4648929033",

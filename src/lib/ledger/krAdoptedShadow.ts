@@ -3,6 +3,7 @@ import type { DailyPrice, Market } from "../engine/types";
 import type { KospiMarketGateEvidence } from "../engine/kospiMarketGate";
 import { isKrOfficialShadowDecision } from "./krShadowDecision";
 import type { ScreeningSnapshot } from "../screeningSnapshot";
+import { HOLDING_PRICE_EXIT_POLICY } from "../engine/holdingPriceExit";
 import {
   assertModelSeriesIsolation,
   assertModelCalendarContinuation,
@@ -168,6 +169,10 @@ export async function stepAdoptedKrSeries(
     sessions.filter((s) => s <= input.date),
     frozenInputs.marketGates,
     {
+      ...(series.accountingStartDate === "2026-10-12" &&
+      input.date >= HOLDING_PRICE_EXIT_POLICY.effectiveDate
+        ? { priceExitPolicy: HOLDING_PRICE_EXIT_POLICY.version }
+        : {}),
       version:
         series.accountingStartDate === "2026-10-12"
           ? "kr-common-execution-20261012-v1"

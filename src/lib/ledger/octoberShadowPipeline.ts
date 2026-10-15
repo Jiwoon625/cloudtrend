@@ -41,6 +41,7 @@ import type { ModelJournalRun } from "./modelJournal";
 import { octoberModelCalendar, regularCloseAt, regularOpenAt } from "./octoberShadowCalendar";
 import { isKrOfficialShadowDecision } from "./krShadowDecision";
 import { fromLegacyNumber } from "./decimal";
+import { HOLDING_PRICE_EXIT_POLICY, replayHoldingPriceExit } from "../engine/holdingPriceExit";
 
 export interface PublicationProof {
   sourceHash: SeriesHash;
@@ -72,6 +73,11 @@ export interface UsModelPublication extends PublicationProof {
 export type OctoberPublication = KrModelPublication | UsModelPublication;
 export type OctoberRun = (AdoptedUsRun | AdoptedKrRun | AdoptedEtfRun | AdoptedKospiShadowRun) & {
   publication: {
+    priceExitAmendment?: {
+      version: typeof HOLDING_PRICE_EXIT_POLICY.version;
+      effectiveDate: string;
+      previousStateHash: string | null;
+    };
     version: "october-manual-publication-v1";
     inputHash: SeriesHash;
     sourceHash: SeriesHash;
@@ -485,6 +491,31 @@ export async function recordOctoberPublication(
           series,
           {
             sessionDate: date,
+            ...(series.accountingStartDate === "2026-10-12" &&
+            date >= HOLDING_PRICE_EXIT_POLICY.effectiveDate
+              ? {
+                  priceExitPolicy: HOLDING_PRICE_EXIT_POLICY.version,
+                  priceExitSeeds: Object.fromEntries(
+                    ((previous as AdoptedEtfRun | null)?.result.state.positions ?? [])
+                      .filter((p) => !p.priceExit || p.priceExit.historyComplete === false)
+                      .flatMap((p) => {
+                        const seed = replayHoldingPriceExit(
+                          {
+                            market: "ETF",
+                            entryDate: p.entryDate,
+                            entryPrice: p.entryPrice,
+                            quantity: p.quantity,
+                            costBasis: p.costBasis,
+                          },
+                          input.dataset.bars[p.symbol] ?? [],
+                          previous!.receipt.date,
+                          calendar.regularSessions,
+                        );
+                        return seed?.threshold ? [[p.symbol, seed.state]] : [];
+                      }),
+                  ),
+                }
+              : {}),
             previousSessionDate: previous?.receipt.date ?? null,
             openAt,
             closeAt: input.decisionAt,
@@ -644,6 +675,16 @@ export async function recordOctoberPublication(
     const runBody = {
       ...body,
       publication: {
+        ...(date >= HOLDING_PRICE_EXIT_POLICY.effectiveDate &&
+        ["KR_MIXED", "KR_KOSPI", "ETF_V02"].includes(kind)
+          ? {
+              priceExitAmendment: {
+                version: HOLDING_PRICE_EXIT_POLICY.version,
+                effectiveDate: HOLDING_PRICE_EXIT_POLICY.effectiveDate,
+                previousStateHash: previous?.stateHash ?? null,
+              },
+            }
+          : {}),
         version: "october-manual-publication-v1" as const,
         inputHash,
         sourceHash: input.sourceHash,

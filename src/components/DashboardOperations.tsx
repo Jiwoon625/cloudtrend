@@ -232,7 +232,10 @@ export function DashboardStrategyRules() {
       <DomesticStrategyRules />
       <div className="border-t border-border pt-2">
         <h3 className="font-semibold text-foreground">ETF · M0</h3>
-        <p>M0 80점 돌파 진입 · 기초지수 MA60 하회 시 청산 · 데이터 오류 시 청산 점검.</p>
+        <p>
+          M0 80점 돌파 진입 · 기초지수 MA60 하회 또는 보유 후 최고 기준가격 대비 −10% E4 종가 신호 →
+          다음 거래 가능 시가 청산.
+        </p>
         <p>
           최대 10종목 · 기본 비중 10% × min(1, 15% / 20일 연율 변동성). 매수에 적용하며 진입·청산은
           다음 거래일 시가 기준입니다.

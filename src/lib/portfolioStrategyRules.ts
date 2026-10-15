@@ -11,6 +11,7 @@ import type { ScreeningSnapshot, SnapshotEntry } from "./screeningSnapshot";
 import type { DailyPrice, Market } from "./engine/types";
 import type { MarketDataset } from "./engine/dataset";
 import type { PortfolioTrade } from "./portfolioStoreCore";
+import { replayHoldingPriceExit } from "./engine/holdingPriceExit";
 export interface ExitPlan {
   signalDate: string | null;
   exitDate: string;
@@ -287,6 +288,7 @@ export function deriveExitPlan(
   latestDate: string,
   healthyMarketDates?: string[],
   marketDates: string[] = healthyMarketDates ?? [],
+  priceExits = false,
 ): ExitPlan | null {
   const unified = healthyMarketDates !== undefined;
   const tradable = (bar: DailyPrice) =>
@@ -379,10 +381,46 @@ export function deriveExitPlan(
         }
       : null;
 
-  if (exceptionPlan)
-    return [exceptionPlan, scorePlan, timePlan]
+  const priceSignal =
+    priceExits && trade.market === "KOSPI"
+      ? replayHoldingPriceExit(
+          {
+            market: "KOSPI",
+            entryDate: trade.entryDate,
+            entryPrice: trade.entryPrice.toFixed(8),
+            quantity: trade.shares.toFixed(8),
+            costBasis: (trade.buyAmount + trade.entryFee).toFixed(8),
+          },
+          bars,
+          latestDate,
+          marketDates,
+        )
+      : null;
+  const priceExecution = priceSignal?.state.signalDate
+    ? bars.find(
+        (bar) =>
+          bar.tradeDate > priceSignal.state.signalDate! &&
+          bar.tradeDate <= latestDate &&
+          tradable(bar),
+      )
+    : null;
+  const pricePlan: ExitPlan | null = priceExecution
+    ? {
+        signalDate: priceSignal!.state.signalDate,
+        exitDate: priceExecution.tradeDate,
+        exitPrice: priceExecution.open,
+        reason: "K4 · 취득원가 대비 −8%",
+        timing: "OPEN",
+      }
+    : null;
+  if (exceptionPlan || pricePlan)
+    return [exceptionPlan, scorePlan, timePlan, pricePlan]
       .filter((p): p is ExitPlan => !!p)
-      .sort((a, b) => a.exitDate.localeCompare(b.exitDate) || (a.timing === "OPEN" ? -1 : 1))[0]!;
+      .sort(
+        (a, b) =>
+          a.exitDate.localeCompare(b.exitDate) ||
+          (a.timing === b.timing ? 0 : a.timing === "OPEN" ? -1 : 1),
+      )[0]!;
   if (!scorePlan) return timePlan;
   if (!timePlan) return scorePlan;
   if (scorePlan.exitDate < timePlan.exitDate) return scorePlan;

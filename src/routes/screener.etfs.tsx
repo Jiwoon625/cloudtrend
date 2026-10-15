@@ -19,7 +19,7 @@ export const Route = createFileRoute("/screener/etfs")({
       {
         name: "description",
         content:
-          "ETF: M0 80점 신규 돌파 후 하루 확인, 20일 평균 거래대금순 진입, 교체 없음, 기초지수 MA60 청산, 최대 10종목, 20일 변동성·15% 기준 신규 매수 비중 계산.",
+          "ETF: M0 80점 신규 돌파 후 하루 확인, 20일 평균 거래대금순 진입, 교체 없음, 기초지수 MA60 및 보유 후 최고 종가 대비 −10% E4 청산, 최대 10종목, 20일 변동성·15% 기준 신규 매수 비중 계산.",
       },
       { property: "og:title", content: "ETF 스크리너 | CloudTrend" },
       {

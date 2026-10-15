@@ -134,7 +134,7 @@ async function snapshotsFor(client: SupabaseClient, uid: string) {
 }
 
 /** Read only relevant daily OHLC rows, one source at a time; never send raw market history to the browser. */
-async function priceInputs(
+export async function priceInputs(
   client: SupabaseClient,
   sources: ActiveSourceRecord[],
   symbols: Set<string>,
@@ -321,6 +321,9 @@ async function refreshStrategy(
               startDate: "2026-10-12",
               throughDate: marketDates.at(-1)!,
               scope: "MIXED",
+              ...(marketDates.at(-1)! >= "2026-10-15"
+                ? { priceExitPolicy: "holding-price-exit-k4-e4-v1" as const }
+                : {}),
             }
           : undefined,
         liquidCounts,
