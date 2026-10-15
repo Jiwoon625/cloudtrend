@@ -205,7 +205,7 @@ export async function attachActualHoldingPriceExits(
               (cycle.lots.length === 1 ? checkpoint?.state : null) ??
               (lot.id === cycle.cycle.id ? checkpoint?.state : null);
         const holding = {
-          market: position.market,
+          market: position.market as "KOSPI" | "ETF",
           entryDate: lot.entryDate,
           entryPrice: lot.entryPrice,
           quantity: lot.quantity,
