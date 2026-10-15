@@ -1,0 +1,17 @@
+{
+  "version": "kospi-shadow-publication-runtime-admissions-v1",
+  "admissions": [
+    {
+      "runtimeCodeHash": "sha256:5e8626e8155fc5778df4aa51eeb0a720377e7be630cc335c1b9c5c038ca4d007",
+      "reviewId": "kospi-publication-guards-v1"
+    },
+    {
+      "runtimeCodeHash": "sha256:3372ca50b1f84c0bf6584366a86ec5e6966da5ab6c5321bc10e678ceceff805a",
+      "reviewId": "kospi-publication-guards-current-main-v1"
+    },
+    {
+      "runtimeCodeHash": "sha256:c79582d6364ab58d72daad700edee16b0dd880baa38f18e5a0394ad58d9cdc9c",
+      "reviewId": "kospi-native-physical-bootstrap-v2"
+    }
+  ]
+}

@@ -14,6 +14,7 @@ import { buildSnapshot } from "./screeningSnapshot";
 import { deriveExitPlan, operationalExit } from "./portfolioStrategyRules";
 import type { PortfolioTrade } from "./portfolioStoreCore";
 import { fromLegacyNumber } from "./ledger/decimal";
+import { HOLDING_PRICE_EXIT_POLICY, replayHoldingPriceExit } from "./engine/holdingPriceExit";
 import {
   INTEGRATED_ALLOCATION_START,
   type AllocationPosition,
@@ -471,6 +472,37 @@ function adaptPreparedKr(
     }
   return {
     ...clock,
+    ...(at >= HOLDING_PRICE_EXIT_POLICY.effectiveDate
+      ? {
+          priceExitPolicy: HOLDING_PRICE_EXIT_POLICY.version,
+          priceExitSeeds: Object.fromEntries(
+            sleeve.positions
+              .filter(
+                (p) => p.venue === "ETF" && (!p.priceExit || p.priceExit.historyComplete === false),
+              )
+              .flatMap((p) => {
+                const fill = previous.receipts
+                  .filter((r) => r.record.date === p.entryDate)
+                  .flatMap((r) => r.record.fills)
+                  .find((f) => f.market === "E" && f.symbol === p.symbol && f.side === "BUY");
+                if (!fill || !priorDate) return [];
+                const seed = replayHoldingPriceExit(
+                  {
+                    market: "ETF",
+                    entryDate: p.entryDate,
+                    entryPrice: fill.price,
+                    quantity: p.quantity,
+                    costBasis: p.costKrw,
+                  },
+                  bars[p.symbol] ?? [],
+                  priorDate,
+                  clock.calendar.sessions,
+                );
+                return seed?.threshold ? [[p.symbol, seed.state]] : [];
+              }),
+          ),
+        }
+      : {}),
     market,
     date: at,
     previousSessionDate: sleeve.lastSessionDate,

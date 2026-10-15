@@ -170,6 +170,98 @@ async function holding(close: string | null = "10000") {
 }
 
 describe("isolated ETF V0.2 adopted shadow daily executor", () => {
+  it("adds E4 independently of KRX readiness and carries the original intent until an executable open", async () => {
+    const { series, bought } = await holding("12000");
+    let state = bought.state;
+    for (const day of ["2026-10-12", "2026-10-13", "2026-10-14"]) {
+      state = (
+        await stepEtfAdoptedShadow(
+          series,
+          state,
+          input(
+            series,
+            day,
+            state.lastSessionDate,
+            [],
+            [{ symbol: "360750", open: price(day, "12000"), close: price(day, "12000", "close") }],
+          ),
+        )
+      ).state;
+    }
+    const trigger = {
+      ...input(
+        series,
+        "2026-10-15",
+        state.lastSessionDate,
+        [signal("360750", "2026-10-15", "2026-10-14", "none", { dataStatus: "krx_batch_pending" })],
+        [
+          {
+            symbol: "360750",
+            open: price("2026-10-15", "12000"),
+            close: price("2026-10-15", "10800", "close"),
+          },
+        ],
+      ),
+      priceExitPolicy: "holding-price-exit-k4-e4-v1" as const,
+      priceExitSeeds: {
+        "360750": {
+          policyVersion: "holding-price-exit-k4-e4-v1" as const,
+          peak: "12000",
+          peakDate: "2026-10-08",
+          throughDate: "2026-10-14",
+          signalDate: null,
+          signalClose: null,
+          signalThreshold: null,
+        },
+      },
+    };
+    const old = await stepEtfAdoptedShadow(series, state, {
+      ...trigger,
+      priceExitPolicy: undefined,
+    } as unknown as EtfShadowSessionInput);
+    expect(old.state.pendingExits).toHaveLength(0);
+    const hit = await stepEtfAdoptedShadow(series, state, trigger);
+    expect(hit.record.fills).toHaveLength(0);
+    expect(hit.state.pendingExits).toMatchObject([{ reason: "E4", signalDate: "2026-10-15" }]);
+    const recovered = await stepEtfAdoptedShadow(series, hit.state, {
+      ...input(
+        series,
+        "2026-10-16",
+        "2026-10-15",
+        [],
+        [
+          {
+            symbol: "360750",
+            open: price("2026-10-16", null),
+            close: price("2026-10-16", "13000", "close"),
+          },
+        ],
+      ),
+      priceExitPolicy: "holding-price-exit-k4-e4-v1",
+    });
+    expect(recovered.state.pendingExits).toHaveLength(1);
+    const sold = await stepEtfAdoptedShadow(series, recovered.state, {
+      ...input(
+        series,
+        "2026-10-19",
+        "2026-10-16",
+        [],
+        [
+          {
+            symbol: "360750",
+            open: price("2026-10-19", "9000"),
+            close: price("2026-10-19", "11000", "close"),
+          },
+        ],
+      ),
+      priceExitPolicy: "holding-price-exit-k4-e4-v1",
+    });
+    expect(sold.record.fills).toMatchObject([
+      { reason: "E4", price: "9000", signalDate: "2026-10-15" },
+    ]);
+    expect(sold.state.positions).toHaveLength(0);
+    expect(sold.state.pendingExits).toHaveLength(0);
+  });
   it("starts all cash at the scheduled boundary, then observes raw onset, confirm1 and next open", async () => {
     const { series, initial, first, second } = await confirmed();
     expect(initial).toMatchObject({

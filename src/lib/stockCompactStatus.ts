@@ -40,6 +40,18 @@ export function getCompactStockStatus(
   const pending = (row.pendingRules?.length ?? 0) > 0 || row.hardFilterStatus === "PENDING";
   const issues = [...(row.failedRules ?? []), ...(entry?.issues ?? [])];
   const prefix = a.rawOnset ? "8.0 신규 돌파 · " : "";
+  const priceExit = context?.priceExits?.[row.instrument.symbol];
+  if (
+    suppression === "held" &&
+    priceExit?.reason &&
+    priceExit.signalDate &&
+    priceExit.signalDate <= asOfDate
+  )
+    return {
+      primary: "보유 · 청산 조건 충족",
+      secondary: `${priceExit.reason} · ${priceExit.signalDate} 종가 신호 · 다음 거래 가능 시가`,
+      tone: "danger",
+    };
   if (!a.current)
     return {
       primary: suppression === "held" ? "보유 · 판단 미확인" : "판단 미확인",

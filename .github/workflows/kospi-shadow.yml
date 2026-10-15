@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       as_of:
-        description: "Optional date assertion; must match the active source snapshot exactly"
+        description: "Must be 2026-10-14 when initialize_correction is true; otherwise optional exact source date"
         type: string
         required: false
       initialize_correction:
@@ -31,6 +31,11 @@ on:
       - "tests/fixtures/kospiShadowRevision.ts"
       - "vitest.shadow.config.ts"
       - "scripts/verify-shadow-runtime-manifests.ts"
+      - "scripts/kospi-shadow-code-manifest.ts"
+      - "scripts/build-kospi-shadow-manifest.ts"
+      - "scripts/verify-kospi-shadow-runtime.ts"
+      - "scripts/october-shadow-code-manifest.ts"
+      - "package.json"
       - ".github/workflows/kospi-shadow.yml"
 permissions:
   contents: read
@@ -59,9 +64,6 @@ jobs:
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event != 'pull_request')
     runs-on: ubuntu-latest
     env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
       SHADOW_AS_OF: ${{ inputs.as_of }}
       INITIALIZE_CORRECTION: ${{ github.event_name == 'workflow_dispatch' && inputs.initialize_correction || false }}
     steps:
@@ -73,9 +75,19 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Verify publication sources without credentials or project imports
+        run: node --experimental-strip-types scripts/verify-kospi-shadow-runtime.ts
       - name: Advance isolated immutable KOSPI model journal
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
         run: |
+          if [[ "$INITIALIZE_CORRECTION" == "true" && "$SHADOW_AS_OF" != "2026-10-14" ]]; then
+            echo "::error::Retrospective correction requires an explicit as_of of 2026-10-14"
+            exit 1
+          fi
           args=(--user "$SUPABASE_USER_ID")
           if [[ -n "$SHADOW_AS_OF" ]]; then args+=(--as-of "$SHADOW_AS_OF"); fi
           if [[ "$INITIALIZE_CORRECTION" == "true" ]]; then args+=(--initialize-correction); fi
-          npx vite-node --config scripts/kospi-shadow-runtime.config.ts scripts/run-kospi-shadow.ts -- "${args[@]}"
+          node --experimental-strip-types scripts/verify-kospi-shadow-runtime.ts --launch -- "${args[@]}"

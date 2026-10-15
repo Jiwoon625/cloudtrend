@@ -6,6 +6,7 @@ import type { ScreeningSnapshot } from "./screeningSnapshot";
 import type { PortfolioSettings, PortfolioSummary, PortfolioTrade } from "./portfolioStoreCore";
 import { KOSPI_ENTRY_POLICY, kospiPolicyVersionAt } from "./engine/kospiEntryConfirmation";
 import { STRATEGY_CONFIG } from "./engine/operationalStrategy";
+import { replayHoldingPriceExit } from "./engine/holdingPriceExit";
 import {
   normalizeSnapshots,
   isEntryOnset,
@@ -152,6 +153,7 @@ function summary(
 
 /** Explicit new-series opt-in. Historical callers keep the original execution contract. */
 export interface ProspectiveKrReplayPolicy {
+  priceExitPolicy?: "holding-price-exit-k4-e4-v1";
   version: "kr-adopted-shadow-20261005-v1" | "kr-common-execution-20261012-v1";
   startDate: "2026-10-05" | "2026-10-12";
   throughDate: string;
@@ -407,6 +409,7 @@ export function simulateStrategy(
         latest,
         healthyDates,
         observedDates,
+        prospective?.priceExitPolicy === "holding-price-exit-k4-e4-v1",
       );
       if (
         !plan ||
@@ -667,6 +670,26 @@ export function simulateStrategy(
       continue;
     }
     const q = quotes[t.symbol];
+    const priceExit =
+      prospective?.priceExitPolicy && t.market === "KOSPI" && latest
+        ? replayHoldingPriceExit(
+            {
+              market: "KOSPI",
+              entryDate: t.entryDate,
+              entryPrice: t.entryPrice.toFixed(8),
+              quantity: t.shares.toFixed(8),
+              costBasis: (t.buyAmount + t.entryFee).toFixed(8),
+            },
+            entryBars[t.symbol] ?? [],
+            latest,
+            observedDates,
+          )
+        : null;
+    if (priceExit?.reason) {
+      t.exitSignalDate = priceExit.state.signalDate;
+      t.exitReason = "K4 · 취득원가 대비 −8%";
+      if (q && !q.exitSignal) q.exitSignal = "K4";
+    }
     const closeMissing = missingClose.has(t.symbol);
     t.currentPrice = closeMissing ? null : (q?.price ?? t.entryPrice);
     t.markDate = closeMissing ? null : (q?.date ?? t.entryDate);

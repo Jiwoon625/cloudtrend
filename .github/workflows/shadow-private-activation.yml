@@ -1,7 +1,12 @@
 name: Approved private Shadow activation
-# One-time push activation disabled after the first invocation was found not to execute.
 on:
-  workflow_dispatch:
+  push:
+    branches: [fix/shadow-private-activation-20261015]
+    paths:
+      - .github/workflows/shadow-private-activation.yml
+      - scripts/activate-approved-shadow.ts
+      - scripts/run-approved-shadow-activation.mjs
+      - tests/shadow-private-activation.test.ts
 permissions:
   contents: read
 concurrency:
@@ -22,7 +27,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Verify bounded activation and reviewed runtime
+      - name: Verify bounded activation and native KOSPI closure
         run: |
           node --input-type=module <<'NODE'
           import ts from 'typescript';
@@ -37,11 +42,11 @@ jobs:
             process.exit(1);
           }
           NODE
-          npx vitest run --config vitest.shadow.config.ts tests/shadow-private-activation.test.ts
-          npx vite-node --config scripts/kospi-shadow-runtime.config.ts scripts/verify-shadow-runtime-manifests.ts
+          npx vitest run --config vitest.shadow.config.ts tests/shadow-private-activation.test.ts tests/shadow-kospi-publication-guard.test.ts
+          node scripts/run-approved-shadow-activation.mjs --verify-runtime
       - name: Apply exact private approval once and verify
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
-        run: npx vite-node --config scripts/kospi-shadow-runtime.config.ts scripts/activate-approved-shadow.ts
+        run: node scripts/run-approved-shadow-activation.mjs

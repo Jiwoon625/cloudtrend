@@ -23,6 +23,18 @@ import {
   stagingStore,
   assertModelPins,
   type ActivationApproval,
+  type ExecutionAmendment,
+  EXECUTION_AMENDMENT_VERSION,
+  validateExecutionAmendment,
+  assertExecutionBinding,
+  assertRuntimeApproval,
+  assertPreCutoverPolicy,
+  assertNoPreCutoverKrTrades,
+  assertParityEvidence,
+  PARITY_EVIDENCE_PATH,
+  originalApprovalRowsHash,
+  verifyGitBoundary,
+  AMENDED_ACTIVATION_FILES,
 } from "../scripts/activate-approved-shadow";
 import { sha256, stableJson } from "../scripts/analysis-run-store";
 import { hashSeriesValue } from "../src/lib/ledger/modelSeries";
@@ -74,6 +86,24 @@ function approved(): ActivationApproval {
     })),
   };
 }
+function amended(): ExecutionAmendment {
+  return {
+    version: EXECUTION_AMENDMENT_VERSION,
+    status: "APPROVED",
+    activationRef: ACTIVATION_REF,
+    asOf: TARGET_DATE,
+    expectedMainSha: "e".repeat(40),
+    originalActivationSha: "b".repeat(40),
+    expectedCleanupSha: "c".repeat(40),
+    expectedExecutionSha: "d".repeat(40),
+    originalApprovalHash: H("1"),
+    originalApprovalRowsHash: H("2"),
+    expectedKospiRuntimeHash: H("3"),
+    expectedOctoberRuntimeHash: H("5"),
+    expectedIntegratedRuntimeHash: H("6"),
+    parityEvidenceHash: H("7"),
+  };
+}
 const environment = {
   GITHUB_ACTIONS: "true",
   GITHUB_EVENT_NAME: "push",
@@ -81,7 +111,7 @@ const environment = {
   GITHUB_REF: ACTIVATION_REF,
   GITHUB_REPOSITORY: "Jiwoon625/cloudtrend",
   GITHUB_RUN_ATTEMPT: "1",
-  GITHUB_SHA: "b".repeat(40),
+  GITHUB_SHA: "d".repeat(40),
 };
 function source(): SourceRecord {
   return {
@@ -98,13 +128,21 @@ describe("bounded private activation approval", () => {
     "never impersonates %s",
     (event) =>
       expect(() =>
-        assertActivationEnvironment({ ...environment, GITHUB_EVENT_NAME: event }, approved()),
+        assertActivationEnvironment(
+          { ...environment, GITHUB_EVENT_NAME: event },
+          approved(),
+          amended(),
+        ),
       ).toThrow(),
   );
   it("binds repository/ref/workflow/SHA and permits read-only retry inspection", () => {
-    expect(() => assertActivationEnvironment(environment, approved())).not.toThrow();
+    expect(() => assertActivationEnvironment(environment, approved(), amended())).not.toThrow();
     expect(() =>
-      assertActivationEnvironment({ ...environment, GITHUB_RUN_ATTEMPT: "2" }, approved()),
+      assertActivationEnvironment(
+        { ...environment, GITHUB_RUN_ATTEMPT: "2" },
+        approved(),
+        amended(),
+      ),
     ).not.toThrow();
     for (const [key, value] of Object.entries({
       GITHUB_ACTIONS: "false",
@@ -115,7 +153,7 @@ describe("bounded private activation approval", () => {
       GITHUB_RUN_ATTEMPT: "0",
     }))
       expect(() =>
-        assertActivationEnvironment({ ...environment, [key]: value }, approved()),
+        assertActivationEnvironment({ ...environment, [key]: value }, approved(), amended()),
       ).toThrow();
   });
   it("rejects expanded date, duplicate source, private approval extra key and mixed baseline", () => {
@@ -598,4 +636,540 @@ describe("staged read/write parity regressions", () => {
     ).rejects.toThrow();
     expect(from).not.toHaveBeenCalled();
   });
+});
+
+describe("explicit execution and guard amendment", () => {
+  it("admits exact reviewed current runtimes without rewriting historical approvals", () => {
+    const original = approved(),
+      amendment = amended();
+    const before = structuredClone(original);
+    const runtime = {
+      octoberRuntimeCodeHash: amendment.expectedOctoberRuntimeHash,
+      integratedRuntimeCodeHash: amendment.expectedIntegratedRuntimeHash,
+    };
+    expect(runtime.octoberRuntimeCodeHash).not.toBe(original.expectedOctoberRuntimeHash);
+    expect(() =>
+      assertRuntimeApproval(
+        runtime,
+        { kospiRuntimeCodeHash: amendment.expectedKospiRuntimeHash },
+        amendment,
+      ),
+    ).not.toThrow();
+    expect(original).toEqual(before);
+    expect(() =>
+      assertRuntimeApproval(runtime, { kospiRuntimeCodeHash: H("9") }, amendment),
+    ).toThrow();
+    expect(() =>
+      assertRuntimeApproval(
+        { ...runtime, octoberRuntimeCodeHash: original.expectedOctoberRuntimeHash },
+        { kospiRuntimeCodeHash: amendment.expectedKospiRuntimeHash },
+        amendment,
+      ),
+    ).toThrow();
+    expect(() =>
+      assertRuntimeApproval(
+        { ...runtime, integratedRuntimeCodeHash: original.expectedIntegratedRuntimeHash },
+        { kospiRuntimeCodeHash: amendment.expectedKospiRuntimeHash },
+        amendment,
+      ),
+    ).toThrow();
+    expect(() =>
+      validateExecutionAmendment({ ...amendment, expectedKospiRuntimeHash: "" }),
+    ).toThrow();
+  });
+  it("enforces the reviewed empty KR prefix without asserting ETF positions are empty", () => {
+    const sessions = KR_BOOKS.flatMap((series_id) =>
+      ["2026-10-12", PREDECESSOR_DATE].map((session_date) => ({
+        series_id,
+        session_date,
+        state_hash: H("1"),
+        payload: {
+          result: { trades: series_id.endsWith(":ETF_V02") ? [{ synthetic: true }] : [] },
+        },
+      })),
+    ) as unknown as Parameters<typeof assertNoPreCutoverKrTrades>[0]["sessions"];
+    const baseline = structuredClone(sessions);
+    expect(() => assertNoPreCutoverKrTrades({ sessions })).not.toThrow();
+    expect(sessions).toEqual(baseline);
+    const kr = sessions.find(
+      (row) => row.series_id.endsWith(":KR_KOSPI") && row.session_date === PREDECESSOR_DATE,
+    )!;
+    (kr.payload.result as unknown as { trades: unknown[] }).trades.push({ synthetic: true });
+    expect(() => assertNoPreCutoverKrTrades({ sessions })).toThrow(
+      "KR_PRE_CUTOVER_TRADES_REQUIRE_REVIEW",
+    );
+    expect(() =>
+      assertNoPreCutoverKrTrades({
+        sessions: baseline.filter(
+          (row) => !(row.series_id.endsWith(":KR_KOSPI") && row.session_date === PREDECESSOR_DATE),
+        ),
+      }),
+    ).toThrow();
+    expect(() =>
+      assertNoPreCutoverKrTrades({
+        sessions: [...baseline, baseline.find((row) => row.series_id.endsWith(":KR_KOSPI"))!],
+      }),
+    ).toThrow();
+    const malformed = structuredClone(baseline);
+    const invalid = malformed.find((row) => row.series_id.endsWith(":KR_KOSPI"))!;
+    (invalid.payload as unknown as { result: unknown }).result = { trades: null };
+    expect(() => assertNoPreCutoverKrTrades({ sessions: malformed })).toThrow(
+      "KR_PRE_CUTOVER_TRADES_REQUIRE_REVIEW",
+    );
+  });
+  it("requires the reviewed prospective policy cutover strictly after the approved target date", () => {
+    expect(() => assertPreCutoverPolicy()).not.toThrow();
+    expect(() =>
+      assertPreCutoverPolicy({
+        version: "holding-price-exit-k4-e4-v1",
+        effectiveDate: TARGET_DATE,
+      }),
+    ).toThrow();
+    expect(() =>
+      assertPreCutoverPolicy({ version: "other", effectiveDate: "2026-10-15" }),
+    ).toThrow();
+  });
+  it("binds exact reviewed committed parity-test bytes and runs that test in activation CI", async () => {
+    const fs = await import("node:fs/promises"),
+      os = await import("node:os"),
+      path = await import("node:path");
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "shadow-parity-evidence-"));
+    try {
+      await fs.mkdir(path.join(root, "tests"));
+      const bytes = "synthetic old-versus-current target14 parity evidence\n";
+      await fs.writeFile(path.join(root, PARITY_EVIDENCE_PATH), bytes);
+      const amendment = { ...amended(), parityEvidenceHash: `sha256:${sha256(bytes)}` };
+      await expect(assertParityEvidence(amendment, root)).resolves.toBeUndefined();
+      await fs.writeFile(path.join(root, PARITY_EVIDENCE_PATH), bytes + "changed");
+      await expect(assertParityEvidence(amendment, root)).rejects.toThrow();
+      const workflow = await fs.readFile(".github/workflows/shadow-private-activation.yml", "utf8");
+      expect(workflow).toContain(`tests/shadow-private-activation.test.ts ${PARITY_EVIDENCE_PATH}`);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+  it("requires an exact bounded amendment separate from immutable original approval", async () => {
+    const original = approved();
+    const amendment = { ...amended(), originalApprovalHash: await hashSeriesValue(original) };
+    expect(validateExecutionAmendment(amendment)).toEqual(amendment);
+    await expect(assertExecutionBinding(original, amendment)).resolves.toBeUndefined();
+    await expect(
+      assertExecutionBinding(original, { ...amendment, expectedMainSha: original.expectedMainSha }),
+    ).rejects.toThrow();
+    await expect(
+      assertExecutionBinding({ ...original, expectedCorrectedSourceHash: H("9") }, amendment),
+    ).rejects.toThrow();
+    expect(() => validateExecutionAmendment({ ...amendment, sourceOverride: [] })).toThrow();
+    expect(() =>
+      validateExecutionAmendment({
+        ...amendment,
+        expectedExecutionSha: amendment.originalActivationSha,
+      }),
+    ).toThrow();
+    expect(() => assertActivationEnvironment(environment, original)).toThrow();
+    expect(() =>
+      assertActivationEnvironment(
+        { ...environment, GITHUB_SHA: original.expectedActivationSha },
+        original,
+        amendment,
+      ),
+    ).toThrow();
+  });
+  it("pins both original approval row bodies independent of database order", async () => {
+    const registry = {
+      details: { krSourceVintageApproval: { value: 1 }, shadowActivation: approved() },
+      signal_date: TARGET_DATE,
+      status: "RECORDED",
+      replay_mode: "RETROSPECTIVE",
+    };
+    const receipt = {
+      ...registry,
+      details: { krSourceVintageReview: { value: 2 }, shadowActivation: approved() },
+    };
+    const before = await originalApprovalRowsHash([registry, receipt]);
+    expect(await originalApprovalRowsHash([receipt, registry])).toBe(before);
+    expect(
+      await originalApprovalRowsHash([
+        registry,
+        { ...receipt, details: { ...receipt.details, krSourceVintageReview: { value: 3 } } },
+      ]),
+    ).not.toBe(before);
+  });
+});
+
+describe("real production launcher subprocess", () => {
+  it("uses the tested exact Node entrypoint and labels the native KOSPI-only check truthfully", async () => {
+    const fs = await import("node:fs/promises");
+    const workflow = await fs.readFile(".github/workflows/shadow-private-activation.yml", "utf8");
+    expect(workflow).toMatch(/run: node scripts\/run-approved-shadow-activation\.mjs\s*$/);
+    expect(workflow).toContain("node scripts/run-approved-shadow-activation.mjs --verify-runtime");
+    expect(workflow).toContain("native KOSPI closure");
+    expect(workflow).not.toContain("npx vite-node");
+  });
+  it("keeps the production activation-script byte pin exact", async () => {
+    const fs = await import("node:fs/promises"),
+      { createHash } = await import("node:crypto");
+    const text = await fs.readFile("scripts/run-approved-shadow-activation.mjs", "utf8");
+    const match = text.match(/const PINNED_ACTIVATION_SCRIPT_SHA256 =\s*"([a-f0-9]{64})";/);
+    expect(match).not.toBeNull();
+    expect(
+      createHash("sha256")
+        .update(await fs.readFile("scripts/activate-approved-shadow.ts"))
+        .digest("hex"),
+    ).toBe(match?.[1]);
+  });
+  async function launcher(cwd: string, args: string[] = [], env: Record<string, string> = {}) {
+    const { spawnSync } = await import("node:child_process");
+    return spawnSync(process.execPath, ["scripts/run-approved-shadow-activation.mjs", ...args], {
+      cwd,
+      encoding: "utf8",
+      timeout: 30_000,
+      env: { PATH: process.env["PATH"], ...env },
+    });
+  }
+  async function copyPublicFixture(root: string) {
+    const fs = await import("node:fs/promises"),
+      path = await import("node:path");
+    for (const directory of ["src", "scripts"])
+      await fs.cp(directory, path.join(root, directory), { recursive: true });
+    for (const file of ["package.json", "tsconfig.json"])
+      await fs.copyFile(file, path.join(root, file));
+    await fs.symlink(await fs.realpath("node_modules"), path.join(root, "node_modules"));
+  }
+  it("stops at the native public boundary before verifier or project imports without authentic binding", async () => {
+    const result = await launcher(process.cwd());
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('"stage":"PUBLIC_BOUNDARY_START"');
+    expect(result.stdout).not.toContain('"stage":"KOSPI_NATIVE_VERIFIED"');
+    expect(result.stderr).toContain('"status":"STOPPED"');
+    expect(result.stderr).toContain('"stage":"LAUNCHER"');
+    expect(result.stdout).not.toContain('"stage":"PREFLIGHT_START"');
+    expect(result.stdout).not.toContain('"stage":"CLI_COMPLETE"');
+  }, 30_000);
+  it("checks the actual KOSPI publication closure natively without claiming all three runtime checks", async () => {
+    const result = await launcher(process.cwd(), ["--verify-runtime"]);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('"stage":"KOSPI_NATIVE_VERIFIED"');
+    expect(result.stdout).not.toContain('"stage":"RUNTIME_VERIFIED"');
+    expect(result.stdout).not.toContain('"stage":"PREFLIGHT_START"');
+  }, 30_000);
+  it("rejects actual runtime/config mutations before either sentinel evaluates in both modes", async () => {
+    const fs = await import("node:fs/promises"),
+      os = await import("node:os"),
+      path = await import("node:path");
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "shadow-native-sentinel-"));
+    try {
+      await copyPublicFixture(root);
+      const sentinel = path.join(root, "EVALUATED");
+      for (const file of [
+        "src/lib/kospiShadowSeries.ts",
+        "scripts/kospi-shadow-runtime.config.ts",
+      ]) {
+        const target = path.join(root, file),
+          original = await fs.readFile(target, "utf8");
+        await fs.writeFile(
+          target,
+          `import { writeFileSync as injectedWrite } from 'node:fs'; injectedWrite(${JSON.stringify(sentinel)}, 'must not execute');\n${original}`,
+        );
+        for (const args of [[], ["--verify-runtime"]]) {
+          const result = await launcher(root, args, {
+            SUPABASE_SERVICE_ROLE_KEY: "synthetic-not-a-secret",
+          });
+          expect(result.status).toBe(1);
+          expect(result.stderr).toContain('"status":"STOPPED"');
+          expect(result.stdout).not.toContain('"stage":"KOSPI_NATIVE_VERIFIED"');
+          expect(result.stdout).not.toContain('"stage":"PREFLIGHT_START"');
+          await expect(fs.stat(sentinel)).rejects.toThrow();
+        }
+        await fs.writeFile(target, original);
+      }
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 60_000);
+  it("pins all core files and the activation module before evaluation, then awaits only structured success", async () => {
+    const fs = await import("node:fs/promises"),
+      os = await import("node:os"),
+      path = await import("node:path"),
+      { execFileSync } = await import("node:child_process"),
+      { createHash } = await import("node:crypto");
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "shadow-native-git-"));
+    const git = (...args: string[]) =>
+      execFileSync("git", args, {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
+    try {
+      await copyPublicFixture(root);
+      const originalLauncher = await fs.readFile(
+        path.join(root, "scripts/run-approved-shadow-activation.mjs"),
+        "utf8",
+      );
+      await fs.rm(path.join(root, "scripts/activate-approved-shadow.ts"));
+      await fs.rm(path.join(root, "scripts/run-approved-shadow-activation.mjs"));
+      await fs.writeFile(path.join(root, ".gitignore"), "node_modules/\n");
+      git("init", "-b", "main");
+      git("config", "user.email", "test@example.invalid");
+      git("config", "user.name", "Synthetic Test");
+      git("add", ".");
+      git("commit", "-m", "reviewed synthetic main");
+      const main = git("rev-parse", "HEAD");
+      git("remote", "add", "origin", root);
+      git("checkout", "-b", "activation");
+      const synthetic = `export async function runApprovedShadowActivationCli() { await new Promise(resolve => setTimeout(resolve, 100)); console.log('SYNTHETIC_AWAIT_FINISHED'); return {status:'VERIFIED',date:'2026-10-14',krBooks:5,kospiRetrospective:true,originalsPreserved:true,capitalReset:false,sourceCollection:false}; }`;
+      const writeBoundLauncher = async (body: string) => {
+        await fs.writeFile(path.join(root, "scripts/activate-approved-shadow.ts"), body);
+        const hash = createHash("sha256").update(body).digest("hex");
+        // Explicit test-only public pins. The production placeholder stays fail-closed until real review.
+        await fs.writeFile(
+          path.join(root, "scripts/run-approved-shadow-activation.mjs"),
+          originalLauncher
+            .replace(
+              /const PINNED_REVIEWED_MAIN_SHA =\s*"[^"]+";/,
+              `const PINNED_REVIEWED_MAIN_SHA = "${main}";`,
+            )
+            .replace(
+              /const PINNED_ACTIVATION_SCRIPT_SHA256 =\s*"[^"]+";/,
+              `const PINNED_ACTIVATION_SCRIPT_SHA256 = "${hash}";`,
+            ),
+        );
+      };
+      await writeBoundLauncher(synthetic);
+      for (const file of [
+        ".github/workflows/shadow-private-activation.yml",
+        "tests/shadow-private-activation.test.ts",
+      ]) {
+        await fs.mkdir(path.dirname(path.join(root, file)), { recursive: true });
+        await fs.writeFile(path.join(root, file), "synthetic\n");
+      }
+      git("add", ".");
+      git("commit", "-m", "reviewed synthetic activation");
+      const execution = git("rev-parse", "HEAD");
+      const event = {
+        GITHUB_ACTIONS: "true",
+        GITHUB_EVENT_NAME: "push",
+        GITHUB_REPOSITORY: "Jiwoon625/cloudtrend",
+        GITHUB_REF: ACTIVATION_REF,
+        GITHUB_SHA: execution,
+      };
+      const success = await launcher(root, [], event);
+      expect(success.status, success.stderr).toBe(0);
+      expect(success.stdout).toContain('"stage":"PUBLIC_BOUNDARY_VERIFIED"');
+      expect(success.stdout.indexOf("SYNTHETIC_AWAIT_FINISHED")).toBeGreaterThanOrEqual(0);
+      expect(success.stdout.indexOf('"stage":"CLI_COMPLETE"')).toBeGreaterThan(
+        success.stdout.indexOf("SYNTHETIC_AWAIT_FINISHED"),
+      );
+      const sentinel = path.join(root, "EVALUATED");
+      // This extra activation import is deliberately outside the KOSPI closure. The public tree fence must reject it.
+      await fs.writeFile(
+        path.join(root, "src/lib/activation-extra.ts"),
+        `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(sentinel)}, 'must not execute');`,
+      );
+      await writeBoundLauncher(`import '../src/lib/activation-extra';\n${synthetic}`);
+      git("add", ".");
+      git("commit", "-m", "unreviewed extra app module");
+      const extra = await launcher(root, [], { ...event, GITHUB_SHA: git("rev-parse", "HEAD") });
+      expect(extra.status).toBe(1);
+      expect(extra.stdout).not.toContain('"stage":"PUBLIC_BOUNDARY_VERIFIED"');
+      await expect(fs.stat(sentinel)).rejects.toThrow();
+      git("reset", "--hard", execution);
+      // Even an allowlisted activation filename must match the separately pinned exact bytes.
+      await fs.writeFile(
+        path.join(root, "scripts/activate-approved-shadow.ts"),
+        `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(sentinel)}, 'must not execute');\n${synthetic}`,
+      );
+      git("add", ".");
+      git("commit", "-m", "wrong activation bytes");
+      const changedScript = await launcher(root, [], {
+        ...event,
+        GITHUB_SHA: git("rev-parse", "HEAD"),
+      });
+      expect(changedScript.status).toBe(1);
+      await expect(fs.stat(sentinel)).rejects.toThrow();
+      git("reset", "--hard", execution);
+      await fs.writeFile(path.join(root, ".git/activation-target.ts"), synthetic);
+      await fs.rm(path.join(root, "scripts/activate-approved-shadow.ts"));
+      await fs.symlink(
+        "../.git/activation-target.ts",
+        path.join(root, "scripts/activate-approved-shadow.ts"),
+      );
+      git("add", ".");
+      git("commit", "-m", "symlink with matching followed bytes");
+      const symlink = await launcher(root, [], { ...event, GITHUB_SHA: git("rev-parse", "HEAD") });
+      expect(symlink.status).toBe(1);
+      expect(symlink.stdout).not.toContain('"stage":"PUBLIC_BOUNDARY_VERIFIED"');
+      expect(symlink.stdout).not.toContain("SYNTHETIC_AWAIT_FINISHED");
+      git("reset", "--hard", execution);
+      await writeBoundLauncher(
+        `export async function runApprovedShadowActivationCli() { return undefined; }`,
+      );
+      git("add", ".");
+      git("commit", "-m", "reviewed synthetic no-op");
+      const noop = await launcher(root, [], { ...event, GITHUB_SHA: git("rev-parse", "HEAD") });
+      expect(noop.status).toBe(1);
+      expect(noop.stderr).toContain('"status":"STOPPED"');
+      expect(noop.stdout).not.toContain('"stage":"CLI_COMPLETE"');
+      git("reset", "--hard", execution);
+      git("branch", "-f", "main", execution);
+      const mainMoved = await launcher(root, [], event);
+      expect(mainMoved.status).toBe(1);
+      expect(mainMoved.stdout).not.toContain('"stage":"PUBLIC_BOUNDARY_VERIFIED"');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 90_000);
+  it("passes no inherited credentials or loader options to native verification and rejects a no-op verifier", async () => {
+    const fs = await import("node:fs/promises"),
+      os = await import("node:os"),
+      path = await import("node:path");
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "shadow-native-env-"));
+    try {
+      await fs.mkdir(path.join(root, "scripts"));
+      await fs.copyFile(
+        "scripts/run-approved-shadow-activation.mjs",
+        path.join(root, "scripts/run-approved-shadow-activation.mjs"),
+      );
+      await fs.writeFile(
+        path.join(root, "scripts/verify-kospi-shadow-runtime.ts"),
+        `if (Object.keys(process.env).some(key => key !== 'PATH')) throw new Error('unexpected environment'); console.log(JSON.stringify({stage:'KOSPI_RUNTIME_VERIFIED'}));`,
+      );
+      const clean = await launcher(root, ["--verify-runtime"], {
+        SUPABASE_SERVICE_ROLE_KEY: "synthetic-not-a-secret",
+        GITHUB_TOKEN: "synthetic-not-a-token",
+        NODE_OPTIONS: "--no-warnings",
+      });
+      expect(clean.status, clean.stderr).toBe(0);
+      expect(clean.stdout).toContain('"stage":"KOSPI_NATIVE_VERIFIED"');
+      await fs.writeFile(
+        path.join(root, "scripts/verify-kospi-shadow-runtime.ts"),
+        "// Deliberately no-op synthetic verifier\n",
+      );
+      const noop = await launcher(root, ["--verify-runtime"]);
+      expect(noop.status).toBe(1);
+      expect(noop.stdout).not.toContain('"stage":"KOSPI_NATIVE_VERIFIED"');
+      await fs.rm(path.join(root, "scripts/verify-kospi-shadow-runtime.ts"));
+      const missing = await launcher(root, ["--verify-runtime"]);
+      expect(missing.status).toBe(1);
+      expect(missing.stderr).toContain('"status":"STOPPED"');
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+
+describe("actual amendment Git lineage guard", () => {
+  it("accepts reviewed new-main guard overlay and rejects core differences, wrong main/SHA/cleanup, dirty tree, and advanced main", async () => {
+    const fs = await import("node:fs/promises"),
+      os = await import("node:os"),
+      path = await import("node:path"),
+      { execFileSync } = await import("node:child_process");
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "shadow-lineage-test-"));
+    const git = (...args: string[]) =>
+      execFileSync("git", args, {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
+    const originalEnv = process.env["GITHUB_SHA"];
+    try {
+      git("init", "-b", "main");
+      git("config", "user.email", "test@example.invalid");
+      git("config", "user.name", "Synthetic Test");
+      await fs.writeFile(path.join(root, "README"), "synthetic\n");
+      git("add", ".");
+      git("commit", "-m", "main");
+      const main = git("rev-parse", "HEAD");
+      git("remote", "add", "origin", root);
+      git("checkout", "-b", "activation");
+      for (const file of AMENDED_ACTIVATION_FILES.slice(0, 3)) {
+        await fs.mkdir(path.dirname(path.join(root, file)), { recursive: true });
+        await fs.writeFile(path.join(root, file), "synthetic original\n");
+      }
+      git("add", ".");
+      git("commit", "-m", "original");
+      const original = git("rev-parse", "HEAD");
+      const disabledWorkflow =
+        "name: Approved private Shadow activation\n# One-time push activation disabled after the first invocation was found not to execute.\non:\n  workflow_dispatch:\npermissions:\n  contents: read\nconcurrency:\n  group: approved-private-shadow-activation-20261014\n  cancel-in-progress: false\njobs:\n  activate:\n    if: github.repository == 'Jiwoon625/cloudtrend' && github.ref == 'refs/heads/fix/shadow-private-activation-20261015' && github.event_name == 'push' && github.event.forced == false && github.event.deleted == false\n    runs-on: ubuntu-latest\n    timeout-minutes: 45\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: ${{ github.sha }}\n          fetch-depth: 0\n      - uses: actions/setup-node@v4\n        with:\n          node-version: 22\n          cache: npm\n      - run: npm ci\n      - name: Verify bounded activation and reviewed runtime\n        run: |\n          node --input-type=module <<'NODE'\n          import ts from 'typescript';\n          const root = process.cwd();\n          const loaded = ts.readConfigFile('tsconfig.json', ts.sys.readFile);\n          const parsed = ts.parseJsonConfigFileContent(loaded.config, ts.sys, root);\n          const files = ['scripts/activate-approved-shadow.ts', 'tests/shadow-private-activation.test.ts'];\n          const program = ts.createProgram(files, parsed.options);\n          const diagnostics = ts.getPreEmitDiagnostics(program);\n          if (diagnostics.length) {\n            console.error(ts.formatDiagnosticsWithColorAndContext(diagnostics, { getCurrentDirectory: () => root, getCanonicalFileName: p => p, getNewLine: () => '\\n' }));\n            process.exit(1);\n          }\n          NODE\n          npx vitest run --config vitest.shadow.config.ts tests/shadow-private-activation.test.ts\n          npx vite-node --config scripts/kospi-shadow-runtime.config.ts scripts/verify-shadow-runtime-manifests.ts\n      - name: Apply exact private approval once and verify\n        env:\n          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}\n          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}\n          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}\n        run: npx vite-node --config scripts/kospi-shadow-runtime.config.ts scripts/activate-approved-shadow.ts\n";
+      await fs.writeFile(
+        path.join(root, ".github/workflows/shadow-private-activation.yml"),
+        disabledWorkflow,
+      );
+      git("add", ".");
+      git("commit", "-m", "cleanup");
+      const cleanup = git("rev-parse", "HEAD");
+      git("checkout", "main");
+      await fs.writeFile(path.join(root, "publication-guard.ts"), "reviewed guard upgrade\n");
+      git("add", ".");
+      git("commit", "-m", "reviewed generic guard");
+      const reviewedMain = git("rev-parse", "HEAD");
+      git("checkout", "activation");
+      git("checkout", reviewedMain, "--", "publication-guard.ts");
+      for (const file of AMENDED_ACTIVATION_FILES)
+        await fs.writeFile(path.join(root, file), "synthetic amended\n");
+      git("add", ".");
+      git("commit", "-m", "amended");
+      const execution = git("rev-parse", "HEAD");
+      const approval = { ...approved(), expectedMainSha: main, expectedActivationSha: original };
+      const amendment = {
+        ...amended(),
+        expectedMainSha: reviewedMain,
+        originalActivationSha: original,
+        expectedCleanupSha: cleanup,
+        expectedExecutionSha: execution,
+      };
+      process.env["GITHUB_SHA"] = execution;
+      expect(() => verifyGitBoundary(approval, amendment, root)).not.toThrow();
+      expect(() =>
+        verifyGitBoundary(approval, { ...amendment, expectedMainSha: main }, root),
+      ).toThrow();
+      git("checkout", "-b", "bad-core", cleanup);
+      git("checkout", reviewedMain, "--", "publication-guard.ts");
+      for (const file of AMENDED_ACTIVATION_FILES)
+        await fs.writeFile(path.join(root, file), "synthetic amended\n");
+      await fs.writeFile(path.join(root, "README"), "unapproved core change\n");
+      git("add", ".");
+      git("commit", "-m", "unapproved core");
+      const badCore = git("rev-parse", "HEAD");
+      process.env["GITHUB_SHA"] = badCore;
+      expect(() =>
+        verifyGitBoundary(approval, { ...amendment, expectedExecutionSha: badCore }, root),
+      ).toThrow("ACTIVATION_DIFF");
+      git("checkout", "activation");
+      process.env["GITHUB_SHA"] = original;
+      expect(() => verifyGitBoundary(approval, amendment, root)).toThrow();
+      process.env["GITHUB_SHA"] = execution;
+      await fs.writeFile(path.join(root, "README"), "dirty");
+      expect(() => verifyGitBoundary(approval, amendment, root)).toThrow();
+      git("checkout", "--", "README");
+      git("branch", "-f", "main", cleanup);
+      expect(() => verifyGitBoundary(approval, amendment, root)).toThrow();
+      git("branch", "-f", "main", reviewedMain);
+      git("checkout", "-b", "bad-cleanup", original);
+      await fs.writeFile(
+        path.join(root, ".github/workflows/shadow-private-activation.yml"),
+        disabledWorkflow + "# altered\n",
+      );
+      git("add", ".");
+      git("commit", "-m", "changed-cleanup");
+      const badCleanup = git("rev-parse", "HEAD");
+      for (const file of AMENDED_ACTIVATION_FILES)
+        await fs.writeFile(path.join(root, file), "synthetic amended\n");
+      git("add", ".");
+      git("commit", "-m", "bad-amended");
+      const badExecution = git("rev-parse", "HEAD");
+      process.env["GITHUB_SHA"] = badExecution;
+      expect(() =>
+        verifyGitBoundary(
+          approval,
+          { ...amendment, expectedCleanupSha: badCleanup, expectedExecutionSha: badExecution },
+          root,
+        ),
+      ).toThrow("CLEANUP_WORKFLOW_CHANGED");
+    } finally {
+      if (originalEnv === undefined) delete process.env["GITHUB_SHA"];
+      else process.env["GITHUB_SHA"] = originalEnv;
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

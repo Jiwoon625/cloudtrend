@@ -1,6 +1,7 @@
 import type { PortfolioLedgerViewState } from "./portfolioFreshness";
 import { validateExecutionSourceLinks } from "./ledger/executionMemo";
 import { loadWebsitePositionContextForOwner } from "./websitePositionContext.server";
+import { attachActualHoldingPriceExits } from "./actualHoldingPriceExit.server";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
@@ -76,5 +77,20 @@ export const portfolioPositionContextServer = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<DomesticPositionContext> => {
     const { client, uid } = await authenticate(data.accessToken);
     const context = await loadWebsitePositionContextForOwner(client, uid);
-    return { heldSymbols: context.heldSymbols, lastSellDateBySymbol: context.lastSellDateBySymbol };
+    if (context.actualPools?.KRW)
+      await attachActualHoldingPriceExits(
+        client,
+        uid,
+        context.actualPools.KRW,
+        new Date().toISOString(),
+      ).catch(() => undefined);
+    return {
+      heldSymbols: context.heldSymbols,
+      lastSellDateBySymbol: context.lastSellDateBySymbol,
+      priceExits: Object.fromEntries(
+        (context.actualPools?.KRW.positions ?? []).flatMap((p) =>
+          p.priceExit ? [[p.symbol, p.priceExit]] : [],
+        ),
+      ),
+    };
   });

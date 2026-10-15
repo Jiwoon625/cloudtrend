@@ -1,11 +1,16 @@
 /** One bounded, privately anchored activation. No source collection or economic reset.
  * The ordinary KOSPI runner's workflow_dispatch guard remains unchanged.
  * This separate push route needs its own reviewed commit and private approval metadata.
+ * A separate execution/guard amendment preserves the original approval while binding
+ * the current reviewed main tree, all three actual runtimes, pre-cutover parity evidence,
+ * and exactly four activation additions. Old runtime identities remain historical evidence only.
  * Writes are NOT atomic across PostgreSQL and Storage. Any failure stops the sequence;
  * a repeated attempt only inspects private state and requires review, never force-resumes or claims completion.
  */
 import { execFileSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { HOLDING_PRICE_EXIT_POLICY } from "../src/lib/engine/holdingPriceExit";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ANALYSIS_BUCKET, sha256, stableJson, trustedSupabaseClient } from "./analysis-run-store";
 import {
@@ -15,6 +20,7 @@ import {
   type LoadedSourceInput,
 } from "./source-registry-store";
 import { verifyShadowRuntimeManifests } from "./verify-shadow-runtime-manifests";
+import { verifyKospiShadowRuntimeManifest } from "./verify-kospi-shadow-runtime";
 import {
   canonicalSeriesJson,
   hashSeriesValue,
@@ -59,6 +65,12 @@ export const ACTIVATION_FILES = [
   "scripts/activate-approved-shadow.ts",
   "tests/shadow-private-activation.test.ts",
 ];
+export const EXECUTION_AMENDMENT_VERSION = "shadow-private-execution-guards-v2";
+export const AMENDED_ACTIVATION_FILES = [
+  ...ACTIVATION_FILES,
+  "scripts/run-approved-shadow-activation.mjs",
+];
+export const PARITY_EVIDENCE_PATH = "tests/shadow-kospi-publication-guard.test.ts";
 export const TARGET_DATE = "2026-10-14";
 export const PREDECESSOR_DATE = "2026-10-13";
 export const KR_BOOKS = [
@@ -268,7 +280,117 @@ export function validateActivationApproval(value: unknown): ActivationApproval {
     );
   return clone(value) as unknown as ActivationApproval;
 }
-export function assertActivationEnvironment(env: NodeJS.ProcessEnv, approval?: ActivationApproval) {
+export interface ExecutionAmendment {
+  version: typeof EXECUTION_AMENDMENT_VERSION;
+  status: "APPROVED";
+  activationRef: typeof ACTIVATION_REF;
+  asOf: typeof TARGET_DATE;
+  expectedMainSha: string;
+  originalActivationSha: string;
+  expectedCleanupSha: string;
+  expectedExecutionSha: string;
+  originalApprovalHash: string;
+  originalApprovalRowsHash: string;
+  expectedKospiRuntimeHash: string;
+  expectedOctoberRuntimeHash: string;
+  expectedIntegratedRuntimeHash: string;
+  parityEvidenceHash: string;
+}
+export function validateExecutionAmendment(value: unknown): ExecutionAmendment {
+  requireThat(
+    record(value) &&
+      exactKeys(value, [
+        "version",
+        "status",
+        "activationRef",
+        "asOf",
+        "expectedMainSha",
+        "originalActivationSha",
+        "expectedCleanupSha",
+        "expectedExecutionSha",
+        "originalApprovalHash",
+        "originalApprovalRowsHash",
+        "expectedKospiRuntimeHash",
+        "expectedOctoberRuntimeHash",
+        "expectedIntegratedRuntimeHash",
+        "parityEvidenceHash",
+      ]),
+    "EXECUTION_AMENDMENT_SCHEMA",
+  );
+  requireThat(
+    value["version"] === EXECUTION_AMENDMENT_VERSION &&
+      value["status"] === "APPROVED" &&
+      value["activationRef"] === ACTIVATION_REF &&
+      value["asOf"] === TARGET_DATE,
+    "EXECUTION_AMENDMENT_SCOPE",
+  );
+  const commits = [
+    "expectedMainSha",
+    "originalActivationSha",
+    "expectedCleanupSha",
+    "expectedExecutionSha",
+  ].map((key) => value[key]);
+  requireThat(
+    commits.every((v) => typeof v === "string" && gitSha.test(v)) && new Set(commits).size === 4,
+    "EXECUTION_AMENDMENT_COMMITS",
+  );
+  requireThat(
+    [
+      "originalApprovalHash",
+      "originalApprovalRowsHash",
+      "expectedKospiRuntimeHash",
+      "expectedOctoberRuntimeHash",
+      "expectedIntegratedRuntimeHash",
+      "parityEvidenceHash",
+    ].every((key) => typeof value[key] === "string" && digest.test(value[key])),
+    "EXECUTION_AMENDMENT_HASHES",
+  );
+  return clone(value) as unknown as ExecutionAmendment;
+}
+export async function assertExecutionBinding(
+  approval: ActivationApproval,
+  amendment: ExecutionAmendment,
+) {
+  requireThat(
+    amendment.expectedMainSha !== approval.expectedMainSha &&
+      amendment.originalActivationSha === approval.expectedActivationSha &&
+      amendment.originalApprovalHash === (await hashSeriesValue(approval)),
+    "EXECUTION_AMENDMENT_BINDING",
+  );
+}
+/** Admit only the exact separately reviewed current runtime, never map it to old code. */
+export function assertRuntimeApproval(
+  runtime: { octoberRuntimeCodeHash: string; integratedRuntimeCodeHash: string },
+  kospiRuntime: { kospiRuntimeCodeHash: string },
+  amendment: ExecutionAmendment,
+) {
+  requireThat(
+    runtime.octoberRuntimeCodeHash === amendment.expectedOctoberRuntimeHash &&
+      runtime.integratedRuntimeCodeHash === amendment.expectedIntegratedRuntimeHash &&
+      kospiRuntime.kospiRuntimeCodeHash === amendment.expectedKospiRuntimeHash,
+    "RUNTIME_APPROVAL_CHANGED",
+  );
+}
+export function assertPreCutoverPolicy(
+  policy: { version: string; effectiveDate: string } = HOLDING_PRICE_EXIT_POLICY,
+) {
+  requireThat(
+    TARGET_DATE === "2026-10-14" &&
+      policy.version === "holding-price-exit-k4-e4-v1" &&
+      policy.effectiveDate === "2026-10-15" &&
+      TARGET_DATE < policy.effectiveDate,
+    "PRE_CUTOVER_POLICY_CHANGED",
+  );
+}
+export async function assertParityEvidence(amendment: ExecutionAmendment, root = process.cwd()) {
+  const actual = `sha256:${sha256(await readFile(path.join(root, PARITY_EVIDENCE_PATH)))}`;
+  requireThat(actual === amendment.parityEvidenceHash, "PRE_CUTOVER_PARITY_EVIDENCE_CHANGED");
+}
+export function assertActivationEnvironment(
+  env: NodeJS.ProcessEnv,
+  approval?: ActivationApproval,
+  amendment?: ExecutionAmendment,
+) {
   requireThat(
     env["GITHUB_ACTIONS"] === "true" &&
       env["GITHUB_EVENT_NAME"] === "push" &&
@@ -279,8 +401,15 @@ export function assertActivationEnvironment(env: NodeJS.ProcessEnv, approval?: A
       gitSha.test(env["GITHUB_SHA"] ?? ""),
     "ACTIVATION_ENVIRONMENT",
   );
-  if (approval)
-    requireThat(env["GITHUB_SHA"] === approval.expectedActivationSha, "ACTIVATION_COMMIT");
+  if (approval) {
+    requireThat(amendment, "EXECUTION_AMENDMENT_REQUIRED");
+    requireThat(
+      env["GITHUB_SHA"] === amendment.expectedExecutionSha &&
+        amendment.originalActivationSha === approval.expectedActivationSha &&
+        amendment.expectedMainSha !== approval.expectedMainSha,
+      "ACTIVATION_COMMIT",
+    );
+  }
 }
 export function normalizedTimestamp(value: string | null) {
   if (value === null) return null;
@@ -361,7 +490,27 @@ export function assertPinnedSources(
     "SOURCE_SET_CHANGED",
   );
 }
-async function readActivationApproval(client: SupabaseClient, uid: string) {
+export async function originalApprovalRowsHash(
+  rows: {
+    details: Record<string, unknown>;
+    signal_date: string;
+    status: string;
+    replay_mode: string;
+  }[],
+) {
+  const registry = rows.filter((row) => row.details["krSourceVintageApproval"]);
+  const receipt = rows.filter((row) => row.details["krSourceVintageReview"]);
+  requireThat(
+    rows.length === 2 && registry.length === 1 && receipt.length === 1,
+    "APPROVAL_ROWS_REQUIRED",
+  );
+  return hashSeriesValue({ registry: registry[0], receipt: receipt[0] });
+}
+async function readActivationApproval(
+  client: SupabaseClient,
+  uid: string,
+  expectedRowsHash?: string,
+) {
   const { data, error } = await client
     .from("shadow_replay_audit")
     .select("details,signal_date,status,replay_mode")
@@ -383,31 +532,98 @@ async function readActivationApproval(client: SupabaseClient, uid: string) {
       data.filter((row) => row.details?.krSourceVintageReview).length === 1,
     "APPROVAL_ROW_KEYS",
   );
+  if (expectedRowsHash)
+    requireThat(
+      (await originalApprovalRowsHash(data)) === expectedRowsHash,
+      "ORIGINAL_APPROVAL_ROWS_CHANGED",
+    );
   const a = validateActivationApproval(data[0]!.details?.shadowActivation),
     b = validateActivationApproval(data[1]!.details?.shadowActivation);
   requireThat(same(a, b), "ACTIVATION_APPROVAL_CONFLICT");
   requireThat(await readKrSourceVintageApproval(client, uid), "VINTAGE_APPROVAL_REQUIRED");
   return a;
 }
-function verifyGitBoundary(approval: ActivationApproval) {
-  const git = (...args: string[]) =>
-    execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+async function readExecutionAmendment(client: SupabaseClient, uid: string) {
+  const { data, error } = await client
+    .from("shadow_replay_audit")
+    .select("details,signal_date,status,replay_mode,strategy_version")
+    .eq("user_id", uid)
+    .eq("market", "KR")
+    .in("strategy_version", [
+      "shadow-private-invocation-amendment-v1",
+      "shadow-private-execution-guards-v1",
+      EXECUTION_AMENDMENT_VERSION,
+    ]);
+  requireThat(!error && data?.length === 1, "EXECUTION_AMENDMENT_ROWS_REQUIRED");
+  const row = data[0]!;
   requireThat(
-    git("rev-parse", "HEAD") === approval.expectedActivationSha &&
-      git("rev-parse", "HEAD^") === approval.expectedMainSha &&
-      git("rev-list", "--parents", "-n", "1", "HEAD").split(/\s+/).length === 2,
+    row.strategy_version === EXECUTION_AMENDMENT_VERSION &&
+      row.signal_date === TARGET_DATE &&
+      row.status === "RECORDED" &&
+      row.replay_mode === "RETROSPECTIVE" &&
+      record(row.details) &&
+      exactKeys(row.details, ["shadowActivationExecutionAmendment"]),
+    "EXECUTION_AMENDMENT_ROW_SCOPE",
+  );
+  return validateExecutionAmendment(row.details["shadowActivationExecutionAmendment"]);
+}
+export function verifyGitBoundary(
+  approval: ActivationApproval,
+  amendment: ExecutionAmendment,
+  cwd = process.cwd(),
+) {
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const singleParent = (sha: string, parent: string) =>
+    git("rev-parse", `${sha}^`) === parent &&
+    git("rev-list", "--parents", "-n", "1", sha).split(/\s+/).length === 2;
+  requireThat(
+    git("rev-parse", "HEAD") === amendment.expectedExecutionSha &&
+      process.env["GITHUB_SHA"] === amendment.expectedExecutionSha &&
+      singleParent("HEAD", amendment.expectedCleanupSha) &&
+      singleParent(amendment.expectedCleanupSha, approval.expectedActivationSha) &&
+      singleParent(approval.expectedActivationSha, approval.expectedMainSha),
     "ACTIVATION_PARENT",
   );
-  const changed = git("diff", "--name-status", approval.expectedMainSha, "HEAD")
-    .split("\n")
-    .filter(Boolean);
+  const changed = (from: string, to: string) =>
+    git("diff", "--name-status", from, to).split("\n").filter(Boolean).sort();
   requireThat(
-    same(changed.sort(), ACTIVATION_FILES.map((file) => `A\t${file}`).sort()),
+    same(
+      changed(approval.expectedMainSha, approval.expectedActivationSha),
+      ACTIVATION_FILES.map((file) => `A\t${file}`).sort(),
+    ),
+    "ORIGINAL_ACTIVATION_DIFF",
+  );
+  requireThat(
+    same(changed(approval.expectedActivationSha, amendment.expectedCleanupSha), [
+      "M\t.github/workflows/shadow-private-activation.yml",
+    ]),
+    "CLEANUP_DIFF",
+  );
+  requireThat(
+    sha256(
+      git(
+        "show",
+        `${amendment.expectedCleanupSha}:.github/workflows/shadow-private-activation.yml`,
+      ) + "\n",
+    ) === "597eb49c059a7d2231401cdfa196d198ae3a09e1096959625274ddba5e6a440c",
+    "CLEANUP_WORKFLOW_CHANGED",
+  );
+  requireThat(
+    same(
+      changed(amendment.expectedMainSha, "HEAD"),
+      AMENDED_ACTIVATION_FILES.map((file) => `A\t${file}`).sort(),
+    ),
     "ACTIVATION_DIFF",
   );
   requireThat(git("status", "--porcelain", "--untracked-files=no") === "", "ACTIVATION_DIRTY");
+  requireThat(
+    git("merge-base", approval.expectedMainSha, amendment.expectedMainSha) ===
+      approval.expectedMainSha && amendment.expectedMainSha !== approval.expectedMainSha,
+    "REVIEWED_MAIN_LINEAGE",
+  );
   const remoteMain = git("ls-remote", "--exit-code", "origin", "refs/heads/main").split(/\s+/)[0];
-  requireThat(remoteMain === approval.expectedMainSha, "MAIN_ADVANCED");
+  requireThat(remoteMain === amendment.expectedMainSha, "MAIN_ADVANCED");
 }
 export function correctionApprovalPath(uid: string) {
   return `${uid}/${KOSPI_SHADOW_NAMESPACE}/correction-approvals/${KOSPI_SHADOW_CORRECTION_REVISION_ID}.json`;
@@ -878,6 +1094,29 @@ export async function assertModelPins(
       "MODEL_HEAD_CHANGED",
     );
 }
+/** Bounded eligibility for this target14 repair, not general runtime compatibility.
+ * The independently reviewed KR prefix has no trades on either frozen session.
+ * ETF positions are deliberately outside this condition.
+ */
+export function assertNoPreCutoverKrTrades(models: { sessions: ModelRow[] }) {
+  for (const book of KR_BOOKS.filter((book) => !book.endsWith(":ETF_V02"))) {
+    const prefix = models.sessions.filter(
+      (row) => row.series_id === book && row.session_date <= PREDECESSOR_DATE,
+    );
+    requireThat(
+      prefix.length === 2 &&
+        same(prefix.map((row) => row.session_date).sort(), ["2026-10-12", PREDECESSOR_DATE]),
+      "KR_PRE_CUTOVER_PREFIX_REQUIRED",
+    );
+    requireThat(
+      prefix.every((row) => {
+        const result: unknown = row.payload.result;
+        return record(result) && Array.isArray(result["trades"]) && result["trades"].length === 0;
+      }),
+      "KR_PRE_CUTOVER_TRADES_REQUIRE_REVIEW",
+    );
+  }
+}
 /** An additional client-side fence. Frozen RPCs remain the authoritative atomic validator. */
 export function boundedReplayClient(client: SupabaseClient, uid: string): SupabaseClient {
   return new Proxy(client, {
@@ -1023,7 +1262,12 @@ async function snapshotOriginals(store: ShadowObjectStore, uid: string) {
   }
   return result;
 }
-function sessionFromInputs(inputs: LoadedSourceInput[], expected: ActivationApproval, now: string) {
+function sessionFromInputs(
+  inputs: LoadedSourceInput[],
+  expected: ActivationApproval,
+  now: string,
+  executionSha: string,
+) {
   const { dataset } = parseManualMarketData(inputs.map((input) => input.text));
   requireThat(dataset.asOfDate === TARGET_DATE, "SOURCE_DATE_CHANGED");
   const sourceHash = `sha256:${sha256(
@@ -1057,7 +1301,7 @@ function sessionFromInputs(inputs: LoadedSourceInput[], expected: ActivationAppr
     {
       sourceHash,
       configHash: `sha256:${sha256(stableJson(config))}`,
-      codeVersion: expected.expectedActivationSha,
+      codeVersion: executionSha,
       sourceCollectedAt,
       now,
     },
@@ -1090,18 +1334,25 @@ function stage(value: string) {
 export async function activateApprovedShadow() {
   stage("PREFLIGHT_START");
   assertActivationEnvironment(process.env);
-  const runtime = await verifyShadowRuntimeManifests();
+  assertPreCutoverPolicy();
+  const [runtime, kospiRuntime] = await Promise.all([
+    verifyShadowRuntimeManifests(),
+    verifyKospiShadowRuntimeManifest(),
+  ]);
   const uid = process.env["SUPABASE_USER_ID"];
   requireThat(uid && uuid.test(uid), "OWNER_REQUIRED");
   const client = trustedSupabaseClient(),
     approval = await readActivationApproval(client, uid);
-  assertActivationEnvironment(process.env, approval);
-  verifyGitBoundary(approval);
+  const amendment = await readExecutionAmendment(client, uid);
+  await assertExecutionBinding(approval, amendment);
   requireThat(
-    runtime.octoberRuntimeCodeHash === approval.expectedOctoberRuntimeHash &&
-      runtime.integratedRuntimeCodeHash === approval.expectedIntegratedRuntimeHash,
-    "RUNTIME_APPROVAL_CHANGED",
+    same(await readActivationApproval(client, uid, amendment.originalApprovalRowsHash), approval),
+    "ORIGINAL_APPROVAL_ROWS_CHANGED",
   );
+  assertActivationEnvironment(process.env, approval, amendment);
+  verifyGitBoundary(approval, amendment);
+  assertRuntimeApproval(runtime, kospiRuntime, amendment);
+  await assertParityEvidence(amendment);
   const records = await listSourceRecords(client, uid, "screening");
   assertPinnedSources(records, approval, uid);
   const inputs = await loadAnalysisSourceInputs(client, uid, "screening", { compact: true });
@@ -1115,7 +1366,12 @@ export async function activateApprovedShadow() {
     uid,
   );
   const now = new Date().toISOString(),
-    { dataset, config, session } = sessionFromInputs(inputs, approval, now);
+    { dataset, config, session } = sessionFromInputs(
+      inputs,
+      approval,
+      now,
+      amendment.expectedExecutionSha,
+    );
   const store = privateShadowStore(client, uid),
     originals = await snapshotOriginals(store, uid);
   const prepared = await prepareCorrectionApproval(store, uid, approval, session, config, now);
@@ -1125,6 +1381,7 @@ export async function activateApprovedShadow() {
     before.sessions.some((row) => row.series_id === book && row.session_date === TARGET_DATE),
   );
   await assertModelPins(before, approval, completed);
+  assertNoPreCutoverKrTrades(before);
   for (const kind of ["O1", "S07"] as const)
     requireThat(
       (await readIntegratedAllocationBook(client, uid, kind)).head?.receipt.date === TARGET_DATE,
@@ -1145,8 +1402,17 @@ export async function activateApprovedShadow() {
     "ACTIVATION_NOT_PRISTINE",
   );
   // Last read-only gate. Changed main, inputs, approval, originals or model rows stops before writes.
-  verifyGitBoundary(approval);
-  requireThat(same(await readActivationApproval(client, uid), approval), "APPROVAL_CHANGED");
+  verifyGitBoundary(approval, amendment);
+  requireThat(
+    same(await readActivationApproval(client, uid, amendment.originalApprovalRowsHash), approval),
+    "APPROVAL_CHANGED",
+  );
+  requireThat(
+    same(await readExecutionAmendment(client, uid), amendment),
+    "EXECUTION_AMENDMENT_CHANGED",
+  );
+  assertPreCutoverPolicy();
+  await assertParityEvidence(amendment);
   assertPinnedSources(await listSourceRecords(client, uid, "screening"), approval, uid);
   await assertOriginalsUnchanged(store, uid, originals);
   requireThat(same(await readModels(client, uid), before), "MODEL_RACED");
@@ -1183,8 +1449,17 @@ export async function activateApprovedShadow() {
   const retained = await readIntegratedAllocationOutbox(client, uid, "KR", TARGET_DATE);
   requireThat(retained === null || same(retained, evidence.payload), "RETAINED_EVIDENCE_CONFLICT");
   // Repeat immediately after the expensive no-write calculation and before the first write.
-  verifyGitBoundary(approval);
-  requireThat(same(await readActivationApproval(client, uid), approval), "APPROVAL_CHANGED");
+  verifyGitBoundary(approval, amendment);
+  requireThat(
+    same(await readActivationApproval(client, uid, amendment.originalApprovalRowsHash), approval),
+    "APPROVAL_CHANGED",
+  );
+  requireThat(
+    same(await readExecutionAmendment(client, uid), amendment),
+    "EXECUTION_AMENDMENT_CHANGED",
+  );
+  assertPreCutoverPolicy();
+  await assertParityEvidence(amendment);
   assertPinnedSources(await listSourceRecords(client, uid, "screening"), approval, uid);
   await assertOriginalsUnchanged(store, uid, originals);
   requireThat(same(await readModels(client, uid), before), "MODEL_RACED");
@@ -1203,7 +1478,7 @@ export async function activateApprovedShadow() {
   requireThat(same(before.registries, afterKr.registries), "REGISTRIES_CHANGED");
   await assertOriginalsUnchanged(store, uid, originals);
   assertPinnedSources(await listSourceRecords(client, uid, "screening"), approval, uid);
-  verifyGitBoundary(approval);
+  verifyGitBoundary(approval, amendment);
   stage("KR_VERIFIED");
   await initializeKospiShadowRevision(store, uid, session, config, {
     ...prepared.approval,
@@ -1231,20 +1506,28 @@ export async function activateApprovedShadow() {
     "APP_READ_MODEL_MISMATCH",
   );
   stage("FINAL_VERIFIED");
-  console.log(
-    JSON.stringify({
-      status: "VERIFIED",
-      date: TARGET_DATE,
-      krBooks: KR_BOOKS.length,
-      kospiRetrospective: true,
-      originalsPreserved: true,
-      capitalReset: false,
-      sourceCollection: false,
-    }),
-  );
+  const result = {
+    status: "VERIFIED" as const,
+    date: TARGET_DATE,
+    krBooks: KR_BOOKS.length,
+    kospiRetrospective: true,
+    originalsPreserved: true,
+    capitalReset: false,
+    sourceCollection: false,
+  };
+  console.log(JSON.stringify(result));
+  return result;
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
-  activateApprovedShadow().catch(() => {
+/** Called only by the explicit Node launcher; importing this module never executes writes. */
+export async function runApprovedShadowActivationCli() {
+  try {
+    const result = await activateApprovedShadow();
+    requireThat(
+      activationStage === "FINAL_VERIFIED" && result.status === "VERIFIED",
+      "ACTIVATION_NOT_VERIFIED",
+    );
+    return result;
+  } catch {
     console.error(
       JSON.stringify({
         status: "STOPPED",
@@ -1256,4 +1539,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
       "Private Shadow activation stopped. No automatic retry or further write was attempted; inspect private state before continuing.",
     );
     process.exitCode = 1;
-  });
+    return null;
+  }
+}

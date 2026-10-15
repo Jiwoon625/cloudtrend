@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runKospiShadow } from "../scripts/run-kospi-shadow";
+import type { ShadowObjectStore } from "../src/lib/kospiShadowStore";
+
+vi.mock("../scripts/verify-kospi-shadow-runtime", () => ({
+  verifyKospiShadowRuntimeManifest: vi.fn(async () => ({})),
+}));
 
 vi.mock("../scripts/verify-shadow-runtime-manifests", () => ({
   verifyShadowRuntimeManifests: vi.fn(async () => ({})),
@@ -7,6 +12,7 @@ vi.mock("../scripts/verify-shadow-runtime-manifests", () => ({
 
 const mocks = vi.hoisted(() => ({
   load: vi.fn(),
+  client: vi.fn(),
   build: vi.fn(),
   persist: vi.fn(),
   openRevision: vi.fn(),
@@ -17,7 +23,7 @@ vi.mock("../scripts/analysis-run-store", () => ({
   codeVersion: () => "test-code",
   sha256: () => "test-hash",
   stableJson: JSON.stringify,
-  trustedSupabaseClient: () => ({}),
+  trustedSupabaseClient: mocks.client,
 }));
 vi.mock("../scripts/source-registry-store", () => ({ loadAnalysisSourceInputs: mocks.load }));
 vi.mock("../src/lib/engine/manualDataset", () => ({
@@ -41,6 +47,7 @@ const originalArgv = process.argv;
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.openRevision.mockResolvedValue({});
+  mocks.client.mockReturnValue({});
   vi.useFakeTimers();
   vi.stubEnv("GITHUB_ACTIONS", "true");
   vi.stubEnv("GITHUB_WORKFLOW", "KOSPI prospective Shadow");
@@ -206,13 +213,13 @@ describe("KOSPI correction namespace routing", () => {
   const session = {
     date: "2026-10-14",
   } as import("../src/lib/engine/kospiShadow").KospiShadowSession;
-  const store = (approved: unknown = approval, existing: unknown = null) => ({
+  const store = (approved: unknown = approval, existing: unknown = null): ShadowObjectStore => ({
     read: vi.fn(async (path: string) =>
       path.includes("correction-approvals") ? approved : existing,
-    ),
-    putImmutable: vi.fn(),
-    putLatest: vi.fn(),
-    latestSessionDate: vi.fn(),
+    ) as ShadowObjectStore["read"],
+    putImmutable: vi.fn(async () => {}),
+    putLatest: vi.fn(async () => {}),
+    latestSessionDate: vi.fn(async () => null),
   });
   it("holds future publication when the revision is absent instead of using the original namespace", async () => {
     const { publishKospiShadowTarget } = await import("../scripts/run-kospi-shadow");
@@ -304,8 +311,40 @@ describe("KOSPI correction namespace routing", () => {
   });
   it("rejects preview bootstrap before source or storage access", async () => {
     vi.stubEnv("GITHUB_EVENT_NAME", "workflow_dispatch");
-    process.argv.push("--dry-run", "--initialize-correction");
+    process.argv.push("--dry-run", "--initialize-correction", "--as-of", "2026-10-14");
     await expect(runKospiShadow()).rejects.toThrow("not a preview");
     expect(mocks.load).not.toHaveBeenCalled();
+  });
+});
+
+describe("explicit retrospective correction CLI date", () => {
+  it.each([
+    [],
+    ["--as-of"],
+    ["--as-of", ""],
+    ["--as-of", " "],
+    ["--as-of", "2026-10-13"],
+    ["--as-of", "2026-10-15"],
+    ["--as-of", "--user"],
+    ["--as-of=2026-10-14"],
+    ["--as-of", "2026-10-14", "--as-of", "2026-10-14"],
+  ])("rejects missing or ambiguous exact date %j before private access", async (...args) => {
+    vi.stubEnv("GITHUB_EVENT_NAME", "workflow_dispatch");
+    process.argv.push("--initialize-correction", ...args);
+    await expect(runKospiShadow()).rejects.toThrow("explicitly supplied --as-of 2026-10-14");
+    expect(mocks.client).not.toHaveBeenCalled();
+    expect(mocks.load).not.toHaveBeenCalled();
+    expect(mocks.build).not.toHaveBeenCalled();
+    expect(mocks.initializeRevision).not.toHaveBeenCalled();
+    expect(mocks.persist).not.toHaveBeenCalled();
+  });
+  it("allows the explicitly supplied exact date to reach the separately guarded private loader", async () => {
+    vi.stubEnv("GITHUB_EVENT_NAME", "workflow_dispatch");
+    process.argv.push("--initialize-correction", "--as-of", "2026-10-14");
+    mocks.load.mockRejectedValueOnce(new Error("private-loader-sentinel"));
+    await expect(runKospiShadow()).rejects.toThrow("private-loader-sentinel");
+    expect(mocks.client).toHaveBeenCalledTimes(1);
+    expect(mocks.load).toHaveBeenCalledTimes(1);
+    expect(mocks.initializeRevision).not.toHaveBeenCalled();
   });
 });
