@@ -90,7 +90,7 @@ export function DashboardSignalCounts({
     ...new Map(
       (query.data?.markets ?? [])
         .flatMap((item) => item.exits)
-        .filter((item) => item.held === true && /\\b(?:K4|E4)\\b/.test(item.reason))
+        .filter((item) => item.held === true && /\b(?:K4|E4)\b/.test(item.reason))
         .map((item) => [`${item.market}:${item.symbol}`, item] as const),
     ).values(),
   ];
