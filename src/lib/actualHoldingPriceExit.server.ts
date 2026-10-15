@@ -6,64 +6,93 @@ import {
   replayHoldingPriceExit,
   type HoldingPriceExitState,
 } from "./engine/holdingPriceExit";
+import { decimal, divide, format, multiply } from "./ledger/decimal";
+import { reconstructActualPriceCycle } from "./actualHoldingPriceLots";
 import { listActiveSources } from "./screeningSources.server";
 import { priceInputs } from "./portfolioLedgers.server";
-import type { NewActualPool } from "./newActualPortfolio";
-const cache = new Map<
-  string,
-  { expires: number; exits: Array<NewActualPool["positions"][number]["priceExit"]> }
->();
+import type { NewActualPool, NewActualPosition } from "./newActualPortfolio";
 
-/** Derived signals only. Never writes actual fills, cash, model sessions or broker orders. */
+type PriceExit = NonNullable<NewActualPosition["priceExit"]>;
+interface PriceCheckpoint {
+  cycleId: string;
+  close: number;
+  state: HoldingPriceExitState;
+  /** Open acquisition lots. Old single-fill checkpoints only have `state`. */
+  lotStates?: Record<string, HoldingPriceExitState>;
+}
+const cache = new Map<string, { expires: number; exits: PriceExit[] }>();
+const errorFlag = (pool: NewActualPool, code: string, symbol: string) => {
+  const issue = `${code}:${symbol}`;
+  if (pool.issues && !pool.issues.includes(issue)) pool.issues.push(issue);
+};
+const pending = (): PriceExit => ({
+  policyVersion: HOLDING_PRICE_EXIT_POLICY.version,
+  status: "손절 기준가격 확인 대기",
+  reason: null,
+  threshold: null,
+  peak: null,
+  signalDate: null,
+  observationDate: null,
+  observedClose: null,
+  peakDate: null,
+  distancePercent: null,
+  auditStatus: "PENDING",
+  priceSource: null,
+});
+const sha = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const cushion = (price: string, threshold: string) => {
+  const basis = decimal(threshold);
+  return basis > 0n
+    ? format(divide(multiply(decimal(price) - basis, decimal("100")), basis))
+    : null;
+};
+
+/**
+ * Reconstruct an actual holding from canonical allocated fills only.
+ * For one fill the researched K4/E4 behavior is unchanged. K4 multi-fill
+ * acquisition basis follows the already approved proportional pooled accounting.
+ * E4 multi-fill lots each own an entry-to-present CLOSE peak. Crossing ANY open
+ * lot's line flags the whole symbol for review / full remaining-position sale.
+ * The application records a pending signal; it never submits a brokerage order.
+ *
+ * A confirmed source close triggers automatic parity checks against the pool's
+ * remaining quantity/cost, source's decision-day mark, and available actual mark.
+ */
 export async function attachActualHoldingPriceExits(
   client: SupabaseClient,
   uid: string,
   pool: NewActualPool,
   now: string,
 ) {
-  if (
-    new Date(now).toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }) <
-    HOLDING_PRICE_EXIT_POLICY.effectiveDate
-  )
-    return;
+  const clock = new Date(now);
+  const today = clock.toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+  if (today < HOLDING_PRICE_EXIT_POLICY.effectiveDate) return;
   const positions = pool.positions.filter((p) => p.market === "KOSPI" || p.market === "ETF");
   if (!positions.length) return;
-  const pending = () => ({
-    policyVersion: HOLDING_PRICE_EXIT_POLICY.version,
-    status: "손절 기준가격 확인 대기",
-    reason: null,
-    threshold: null,
-    peak: null,
-    signalDate: null,
+  positions.forEach((p) => {
+    p.priceExit = pending();
   });
-  for (const p of positions) p.priceExit = pending();
-  const today = new Date(now).toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
   const beforeClose =
-    new Date(now).toLocaleTimeString("en-GB", { timeZone: "Asia/Seoul", hour12: false }) <
-    "15:30:00";
+    clock.toLocaleTimeString("en-GB", { timeZone: "Asia/Seoul", hour12: false }) < "15:30:00";
   const sources = await listActiveSources(client, uid).catch(() => []);
-  const cacheKey = createHash("sha256")
-    .update(
-      JSON.stringify({
-        uid,
-        today,
-        beforeClose,
-        sources: sources.map((s) => [s.id, s.file_hash]),
-        positions: positions.map((p) => [p.market, p.symbol, p.quantity, p.cost]),
-        trades: pool.trades.map((t) => [
-          t.execution.id,
-          t.execution.date,
-          t.execution.side,
-          t.allocation,
-        ]),
-      }),
-    )
-    .digest("hex");
-  const cached = cache.get(cacheKey);
+  const key = sha({
+    uid,
+    today,
+    beforeClose,
+    sources: sources.map((s) => [s.id, s.file_hash]),
+    positions: positions.map((p) => [p.market, p.symbol, p.quantity, p.cost]),
+    trades: pool.trades.map((t) => [
+      t.execution.id,
+      t.execution.date,
+      t.execution.side,
+      t.execution.order,
+      t.allocation,
+    ]),
+  });
+  const cached = cache.get(key);
   if (cached && cached.expires > Date.now()) {
     positions.forEach((p, i) => {
-      const exit = cached.exits[i];
-      if (exit) p.priceExit = { ...exit };
+      if (cached.exits[i]) p.priceExit = { ...cached.exits[i]! };
     });
     return;
   }
@@ -73,125 +102,231 @@ export async function attachActualHoldingPriceExits(
     new Set(positions.map((p) => p.symbol)),
     "2026-10-12",
   ).catch(() => null);
+  const bucket = client.storage.from("cloudtrend-data");
   for (const position of positions) {
-    const trades = pool.trades.filter(
-      (t) => t.execution.market === position.market && t.execution.symbol === position.symbol,
-    );
-    let cycle = [] as typeof trades,
-      balance = 0;
-    for (const trade of trades) {
-      if (balance === 0) cycle = [];
-      cycle.push(trade);
-      balance += trade.allocation.quantity * (trade.execution.side === "BUY" ? 1 : -1);
+    const exit = pending();
+    position.priceExit = exit;
+    let cycle: ReturnType<typeof reconstructActualPriceCycle>;
+    try {
+      cycle = reconstructActualPriceCycle(position, pool.trades);
+      exit.lotCount = cycle.lots.length;
+      exit.basisMethod = cycle.lots.length === 1 ? "SINGLE_FILL" : "WEIGHTED_COST_LOT_PEAKS";
+    } catch {
+      exit.auditStatus = "MISMATCH";
+      exit.status = "원가·수량 대사 확인 대기";
+      errorFlag(pool, "price_exit_lot_mismatch", position.symbol);
+      continue;
     }
-    const buys = cycle.filter((t) => t.execution.side === "BUY");
-    // An unapproved multi-lot convention must never silently replace the researched single-position rule.
-    if (buys.length !== 1) continue;
-    const buy = buys[0]!;
-    const entryDate = buy.execution.date;
-    const cycleId = createHash("sha256")
-      .update(
-        JSON.stringify({
-          id: buy.execution.id,
-          date: entryDate,
-          gross: buy.allocation.gross,
-          quantity: buy.allocation.quantity,
-          fee: buy.allocation.fee,
-        }),
-      )
-      .digest("hex");
+    const cycleId = sha(cycle.cycle);
     const directory = `${uid}/holding-price-exits/${HOLDING_PRICE_EXIT_POLICY.version}/${cycleId}`;
-    const bucket = client.storage.from("cloudtrend-data");
     const listed = await bucket.list(directory, {
       limit: 1,
       sortBy: { column: "name", order: "desc" },
     });
-    if (listed.error) continue;
-    let seed: HoldingPriceExitState | null = null;
-    let checkpointClose: number | null = null;
-    const file = listed.data?.[0];
-    if (file) {
-      const saved = await bucket.download(`${directory}/${file.name}`);
-      if (saved.error || !saved.data) continue;
-      const checkpoint = JSON.parse(await saved.data.text());
-      if (
-        checkpoint.cycleId !== cycleId ||
-        checkpoint.state?.policyVersion !== HOLDING_PRICE_EXIT_POLICY.version
-      )
-        continue;
-      seed = checkpoint.state;
-      checkpointClose = checkpoint.close;
+    if (listed.error) {
+      errorFlag(pool, "price_exit_checkpoint_unavailable", position.symbol);
+      continue;
     }
-    if (seed?.signalDate) {
+    let checkpoint: PriceCheckpoint | null = null;
+    if (listed.data?.[0]) {
+      const file = listed.data[0];
+      const saved = await bucket.download(`${directory}/${file.name}`);
+      if (saved.error || !saved.data) {
+        errorFlag(pool, "price_exit_checkpoint_unavailable", position.symbol);
+        continue;
+      }
+      try {
+        checkpoint = JSON.parse(await saved.data.text()) as PriceCheckpoint;
+        if (
+          checkpoint.cycleId !== cycleId ||
+          checkpoint.state?.policyVersion !== HOLDING_PRICE_EXIT_POLICY.version ||
+          (checkpoint.lotStates &&
+            Object.values(checkpoint.lotStates).some(
+              (state) => state.policyVersion !== HOLDING_PRICE_EXIT_POLICY.version,
+            ))
+        )
+          throw new Error("Invalid price-exit checkpoint");
+      } catch {
+        exit.auditStatus = "MISMATCH";
+        exit.status = "저장 근거 대사 확인 대기";
+        errorFlag(pool, "price_exit_checkpoint_mismatch", position.symbol);
+        continue;
+      }
+    }
+    if (checkpoint?.state.signalDate) {
       position.priceExit = {
-        policyVersion: seed.policyVersion,
+        ...exit,
         status: "청산 대기 · 다음 거래 가능 시가",
         reason: position.market === "KOSPI" ? "K4" : "E4",
-        threshold: seed.signalThreshold,
-        peak: seed.peak,
-        signalDate: seed.signalDate,
+        signalDate: checkpoint.state.signalDate,
+        threshold: checkpoint.state.signalThreshold,
+        peak: checkpoint.state.peak,
+        peakDate: checkpoint.state.peakDate,
+        observationDate: checkpoint.state.throughDate,
+        auditStatus: "LATCHED",
       };
       continue;
     }
     if (!inputs) continue;
-    const bars = (inputs.bars[position.symbol] ?? []).filter(
-      (b) => b.tradeDate < today || (b.tradeDate === today && !beforeClose),
-    );
+    const bars = (inputs.bars[position.symbol] ?? [])
+      .filter((bar) => bar.tradeDate < today || (bar.tradeDate === today && !beforeClose))
+      .sort((a, b) => a.tradeDate.localeCompare(b.tradeDate));
     const through = bars.at(-1)?.tradeDate;
-    if (!through) continue;
-    // A revised price basis or a missing overlap requires reconciliation, not a reset of the peak.
+    if (!through || through < HOLDING_PRICE_EXIT_POLICY.effectiveDate) continue;
+    const lastBar = bars.at(-1)!;
+    if (!Number.isFinite(lastBar.close) || lastBar.close <= 0) continue;
+    // A regenerated source that lost/revised the overlap must not rewrite the high watermark.
     if (
-      seed?.throughDate &&
-      bars.find((b) => b.tradeDate === seed!.throughDate)?.close !== checkpointClose
-    )
+      checkpoint?.state.throughDate &&
+      bars.find((bar) => bar.tradeDate === checkpoint!.state.throughDate)?.close !==
+        checkpoint.close
+    ) {
+      exit.status = "가격 원천 대사 확인 대기";
+      exit.auditStatus = "MISMATCH";
+      errorFlag(pool, "price_exit_source_mismatch", position.symbol);
       continue;
-    const holding = {
-      market: position.market as "KOSPI" | "ETF",
-      entryDate,
-      entryPrice: (buy.allocation.gross / buy.allocation.quantity).toFixed(8),
-      quantity: position.quantity,
-      costBasis: position.cost,
-      state: seed,
+    }
+    // The display's current quote, when it belongs to the same session, must
+    // agree exactly with the canonical OHLC decision price.
+    if (
+      position.priceDate === through &&
+      position.currentPrice !== null &&
+      decimal(position.currentPrice) !== decimal(lastBar.close.toFixed(8))
+    ) {
+      exit.status = "실제 평가가격·청산가격 대사 확인 대기";
+      exit.auditStatus = "MISMATCH";
+      errorFlag(pool, "price_exit_mark_mismatch", position.symbol);
+      continue;
+    }
+    const allStates: Record<string, HoldingPriceExitState> = {};
+    const results: Array<{
+      lotId: string;
+      result: NonNullable<ReturnType<typeof replayHoldingPriceExit>>;
+    }> = [];
+    try {
+      const evaluatedLots =
+        position.market === "KOSPI"
+          ? [
+              {
+                id: cycle.cycle.id,
+                entryDate: cycle.cycle.date,
+                entryPrice: cycle.lots[0]!.entryPrice,
+                quantity: position.quantity,
+                costBasis: position.cost,
+              },
+            ]
+          : cycle.lots;
+      for (const lot of evaluatedLots) {
+        const prev =
+          position.market === "KOSPI"
+            ? (checkpoint?.state ?? null)
+            : (checkpoint?.lotStates?.[lot.id] ??
+              (cycle.lots.length === 1 ? checkpoint?.state : null) ??
+              (lot.id === cycle.cycle.id ? checkpoint?.state : null));
+        const holding = {
+          market: position.market as "KOSPI" | "ETF",
+          entryDate: lot.entryDate,
+          entryPrice: lot.entryPrice,
+          quantity: lot.quantity,
+          costBasis: lot.costBasis,
+          state: prev,
+        } as const;
+        const result =
+          replayHoldingPriceExit(holding, bars, through, inputs.marketDates) ??
+          (prev
+            ? evaluateHoldingPriceExit({
+                ...holding,
+                date: through,
+                close: lastBar.close.toFixed(8),
+                confirmedClose: true,
+                historyComplete: prev.historyComplete !== false,
+              })
+            : null);
+        if (result) {
+          allStates[lot.id] = result.state;
+          results.push({ lotId: lot.id, result });
+        }
+      }
+    } catch {
+      exit.auditStatus = "MISMATCH";
+      exit.status = "손절 계산 근거 대사 확인 대기";
+      errorFlag(pool, "price_exit_calculation_mismatch", position.symbol);
+      continue;
+    }
+    if (!results.length) continue;
+    const available = results.filter((r) => r.result.threshold !== null);
+    const triggered = results
+      .filter((r) => r.result.reason !== null)
+      .sort((a, b) => {
+        const byDate = (a.result.state.signalDate ?? "").localeCompare(
+          b.result.state.signalDate ?? "",
+        );
+        return byDate || a.lotId.localeCompare(b.lotId);
+      });
+    const descendingThreshold = (a: (typeof available)[number], b: (typeof available)[number]) => {
+      const left = decimal(a.result.threshold!);
+      const right = decimal(b.result.threshold!);
+      return left === right ? 0 : left > right ? -1 : 1;
     };
-    const result =
-      replayHoldingPriceExit(holding, bars, through, inputs.marketDates) ??
-      (seed
-        ? evaluateHoldingPriceExit({
-            ...holding,
-            date: through,
-            close: bars.at(-1)!.close.toFixed(8),
-            confirmedClose: true,
-            historyComplete: true,
-          })
-        : null);
-    if (!result) continue;
+    const line = (triggered[0] ?? available.sort(descendingThreshold)[0])?.result;
+    if (!line) continue;
+    const fullEvidence =
+      results.length === (position.market === "KOSPI" ? 1 : cycle.lots.length) &&
+      results.every((r) => r.result.threshold !== null);
+    if (!fullEvidence && !triggered.length) continue;
+    // Do not call an incomplete source VERIFIED, even if one known lot crosses.
+    const state = line.state;
+    const status = triggered.length
+      ? "청산 대기 · 다음 거래 가능 시가"
+      : fullEvidence
+        ? "보유"
+        : "손절 기준가격 확인 대기";
     position.priceExit = {
-      policyVersion: result.state.policyVersion,
-      status: result.reason
-        ? "청산 대기 · 다음 거래 가능 시가"
-        : result.status === "BASIS_PENDING"
-          ? "손절 기준가격 확인 대기"
-          : "보유",
-      reason: result.reason,
-      threshold: result.threshold,
-      peak: result.state.peak,
-      signalDate: result.state.signalDate,
+      ...exit,
+      status,
+      reason: triggered.length ? (position.market === "KOSPI" ? "K4" : "E4") : null,
+      threshold: line.threshold,
+      peak: state.peak,
+      peakDate: state.peakDate,
+      signalDate: state.signalDate,
+      observationDate: through,
+      observedClose: lastBar.close.toFixed(8),
+      distancePercent: line.threshold ? cushion(lastBar.close.toFixed(8), line.threshold) : null,
+      auditStatus: fullEvidence ? "VERIFIED" : "PENDING",
+      priceSource: "운영 정규화 종가",
     };
-    if (result.threshold) {
-      const content = JSON.stringify({ cycleId, state: result.state, close: bars.at(-1)!.close });
-      const digest = createHash("sha256").update(content).digest("hex");
-      const saved = await bucket.upload(
-        `${directory}/${result.reason ? "signal.json" : `${through}-${digest}.json`}`,
-        content,
-        { upsert: false, contentType: "application/json" },
-      );
-      if (saved.error && !/already exists|duplicate/i.test(saved.error.message))
-        throw new Error("손절 기준가격·신호 체크포인트 저장 실패");
+    if (line.threshold) {
+      const content = JSON.stringify({
+        cycleId,
+        state,
+        lotStates: allStates,
+        close: lastBar.close,
+      } satisfies PriceCheckpoint);
+      const digest = sha(content);
+      const filename = triggered.length ? "signal.json" : `${through}-${digest}.json`;
+      const location = `${directory}/${filename}`;
+      const saved = await bucket.upload(location, content, {
+        upsert: false,
+        contentType: "application/json",
+      });
+      if (saved.error) {
+        if (!/already exists|duplicate/i.test(saved.error.message)) {
+          errorFlag(pool, "price_exit_checkpoint_unavailable", position.symbol);
+          position.priceExit.auditStatus = "PENDING";
+          continue;
+        }
+        const existing = await bucket.download(location);
+        if (existing.error || !existing.data || (await existing.data.text()) !== content) {
+          position.priceExit.auditStatus = "MISMATCH";
+          position.priceExit.status = "청산 저장 근거 대사 확인 대기";
+          errorFlag(pool, "price_exit_checkpoint_mismatch", position.symbol);
+        }
+      }
     }
   }
   if (cache.size >= 16) cache.delete(cache.keys().next().value!);
-  cache.set(cacheKey, {
+  cache.set(key, {
     expires: Date.now() + 300_000,
-    exits: positions.map((p) => (p.priceExit ? { ...p.priceExit } : undefined)),
+    exits: positions.map((p) => ({ ...(p.priceExit ?? pending()) })),
   });
 }

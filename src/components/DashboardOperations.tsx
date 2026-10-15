@@ -85,6 +85,15 @@ export function DashboardSignalCounts({
   const etfDataUnconfirmed = etfMarket?.dataUnconfirmedCount;
   const pendingCount = (value: number | null | undefined) =>
     value == null ? "—" : formatCount(value);
+  // Persisted actual-position K4/E4 intents, never model-only signals.
+  const heldPriceExits = [
+    ...new Map(
+      (query.data?.markets ?? [])
+        .flatMap((item) => item.exits)
+        .filter((item) => item.held === true && /\b(?:K4|E4)\b/.test(item.reason))
+        .map((item) => [`${item.market}:${item.symbol}`, item] as const),
+    ).values(),
+  ];
   return (
     <section
       className="rounded-lg border border-border bg-card p-4"
@@ -98,6 +107,23 @@ export function DashboardSignalCounts({
         시장별 최신 확정 거래일의 조건과 실제 원장 체결을 함께 봅니다. 조건 충족은 주문·체결 확정이
         아니며 현금·배분·수량 확인이 필요합니다. Shadow 보유는 실제 후보를 막지 않습니다.
       </p>
+      {heldPriceExits.length > 0 && (
+        <div role="alert" className="mb-3 rounded-md border border-warn p-3 text-xs">
+          <p className="font-semibold">
+            K4/E4 청산신호 · 실제 매도 체결 확인 필요 ({heldPriceExits.length}종목)
+          </p>
+          <p className="mt-1">
+            {heldPriceExits.map((item) => `${item.name}(${item.symbol}, ${item.date})`).join(" · ")}
+          </p>
+          <p className="mt-1 text-muted-foreground">
+            신호는 체결이 아닙니다. 다음 거래 가능한 시가 주문 여부와 증권사 체결 내역을 확인하고
+            실제 포트폴리오에 기록해 주세요. 미체결 신호는 가격이 회복해도 유지됩니다.
+          </p>
+          <Link to="/portfolio" className="mt-2 inline-block font-medium text-primary underline">
+            실제 포트폴리오 확인 →
+          </Link>
+        </div>
+      )}
       <table className="w-full text-[12px]">
         <thead>
           <tr className="border-b text-[10px] text-muted-foreground">

@@ -109,4 +109,71 @@ describe("actual holding exit evidence", () => {
     await attachActualHoldingPriceExits(client, "owner-d", pool, "2026-10-16T07:00:00Z");
     expect(pool.positions[0]!.priceExit?.reason).toBeNull();
   });
+  it("evaluates ETF peak stops by actual acquisition lot after multiple buys, retaining full-symbol liquidation", async () => {
+    const { client, pool } = fixture("ETF");
+    pool.positions[0]!.quantity = "20";
+    pool.positions[0]!.cost = "2103.15";
+    pool.trades.push({
+      execution: { id: "buy-2", symbol: "ABC", market: "ETF", side: "BUY", date: "2026-10-15" },
+      allocation: { quantity: 10, gross: 1100, fee: 1.65 },
+    } as NewActualPool["trades"][number]);
+    await attachActualHoldingPriceExits(client, "owner-multi-etf", pool, "2026-10-15T07:00:00Z");
+    expect(pool.positions[0]!.priceExit).toMatchObject({
+      reason: "E4",
+      threshold: "108",
+      peak: "120",
+      lotCount: 2,
+      basisMethod: "WEIGHTED_COST_LOT_PEAKS",
+      auditStatus: "VERIFIED",
+      observationDate: "2026-10-15",
+    });
+    expect(pool.trades).toHaveLength(2);
+  });
+  it("uses the actual pooled cost for K4 after a second buy, without using just the first fill", async () => {
+    const { client, pool } = fixture("KOSPI");
+    pool.positions[0]!.quantity = "20";
+    pool.positions[0]!.cost = "2103.15";
+    pool.trades.push({
+      execution: { id: "buy-2", symbol: "ABC", market: "KOSPI", side: "BUY", date: "2026-10-15" },
+      allocation: { quantity: 10, gross: 1100, fee: 1.65 },
+    } as NewActualPool["trades"][number]);
+    mock.bars[1]!.close = 96;
+    await attachActualHoldingPriceExits(client, "owner-multi-kospi", pool, "2026-10-15T07:00:00Z");
+    expect(pool.positions[0]!.priceExit).toMatchObject({
+      reason: "K4",
+      threshold: "96.7449",
+      lotCount: 2,
+      auditStatus: "VERIFIED",
+    });
+  });
+  it("reconciles partial sales to exact remaining quantity and fee-inclusive cost", async () => {
+    const { client, pool } = fixture("ETF");
+    pool.positions[0]!.quantity = "15";
+    pool.positions[0]!.cost = "1577.3625";
+    pool.trades.push({
+      execution: { id: "buy-2", symbol: "ABC", market: "ETF", side: "BUY", date: "2026-10-14" },
+      allocation: { quantity: 10, gross: 1100, fee: 1.65 },
+    } as NewActualPool["trades"][number]);
+    pool.trades.push({
+      execution: { id: "sell-1", symbol: "ABC", market: "ETF", side: "SELL", date: "2026-10-15" },
+      allocation: { quantity: 5, gross: 550, fee: 0.825 },
+    } as NewActualPool["trades"][number]);
+    await attachActualHoldingPriceExits(client, "owner-partial", pool, "2026-10-15T07:00:00Z");
+    expect(pool.positions[0]!.priceExit).toMatchObject({
+      reason: "E4",
+      threshold: "108",
+      lotCount: 2,
+      auditStatus: "VERIFIED",
+    });
+  });
+  it("fails the confirmed-close audit when the actual projection mark disagrees with the source", async () => {
+    const { client, pool } = fixture("ETF");
+    pool.issues = [];
+    pool.positions[0]!.priceDate = "2026-10-15";
+    pool.positions[0]!.currentPrice = "107";
+    await attachActualHoldingPriceExits(client, "owner-mismatch", pool, "2026-10-15T07:00:00Z");
+    expect(pool.positions[0]!.priceExit?.auditStatus).toBe("MISMATCH");
+    expect(pool.positions[0]!.priceExit?.reason).toBeNull();
+    expect(pool.issues).toContain("price_exit_mark_mismatch:ABC");
+  });
 });

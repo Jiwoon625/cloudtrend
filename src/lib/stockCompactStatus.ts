@@ -65,6 +65,12 @@ export function getCompactStockStatus(
         secondary: a.exit.split(" · ")[1]!,
         tone: "danger",
       };
+    if (priceExit?.status && /확인 대기|불일치|조회 실패/.test(priceExit.status))
+      return {
+        primary: "보유 · 가격청산 판단 미확인",
+        secondary: priceExit.status,
+        tone: "warn",
+      };
     if (a.exit === "기술청산 판단 미확인")
       return { primary: "보유 · 청산 판단 미확인", secondary: "기술점수 확인 필요", tone: "warn" };
     return {

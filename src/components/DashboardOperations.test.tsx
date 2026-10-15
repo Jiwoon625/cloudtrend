@@ -184,6 +184,47 @@ describe("combined dashboard confirmation counts", () => {
     expect(renderCounts(undefined, { isError: true })).toContain("신호 조회 실패");
   });
 });
+describe("held K4/E4 execution-pending alerts", () => {
+  it("shows one real holding alert per security, without inventing brokerage fills", () => {
+    const value = data(0, 0);
+    const k = value.markets.find((m) => m.market === "KOSPI")!;
+    const etf = value.markets.find((m) => m.market === "ETF")!;
+    const alert = {
+      ...signal("KOSPI", 1),
+      held: true,
+      date: "2026-10-15",
+      reason: "K4 · 2026-10-15 확정 종가 신호 · 다음 거래 가능 시가 청산 대기",
+    };
+    k.exits = [alert, structuredClone(alert)];
+    k.exitCount = 1;
+    etf.exits = [
+      {
+        ...signal("ETF", 2),
+        held: true,
+        date: "2026-10-15",
+        reason: "E4 · 2026-10-15 확정 종가 신호 · 다음 거래 가능 시가 청산 대기",
+      },
+    ];
+    etf.exitCount = 1;
+    const html = renderCounts(value);
+    expect(html).toContain("K4/E4 청산신호 · 실제 매도 체결 확인 필요 (2종목)");
+    expect(html).toContain("실제 포트폴리오에 기록해 주세요");
+    expect(html).toContain("미체결 신호는 가격이 회복해도 유지됩니다");
+    expect(html).toContain('href="/portfolio"');
+  });
+  it("never raises a real-account stop from a model-only or unheld exit", () => {
+    const value = data(0, 0);
+    value.markets[0]!.exits = [
+      {
+        ...signal("KOSPI", 1),
+        held: false,
+        reason: "K4 · model-only synthetic exit",
+      },
+    ];
+    expect(renderCounts(value)).not.toContain("K4/E4 청산신호 · 실제 매도 체결 확인 필요");
+  });
+});
+
 describe("combined dashboard confirmation list", () => {
   beforeEach(() => {
     state.tab = "pending";

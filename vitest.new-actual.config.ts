@@ -7,6 +7,7 @@ export default defineConfig({
     include: [
       "src/lib/newActual*.test.ts",
       "src/lib/actualHoldingPriceExit.server.test.ts",
+      "src/lib/actualHoldingPriceLots.test.ts",
       "src/lib/engine/holdingPriceExit.test.ts",
       "src/components/NewActualPortfolio.test.tsx",
     ],
