@@ -42,7 +42,7 @@
       "src/lib/engine/verifiedKrIndexMembership.ts": "sha256:db197a0db126e17d102c3c0faab69f5a5a2adef74b4a4821d5d15b7d012a3424",
       "src/lib/engine/vfConfig.ts": "sha256:d5b6fa115ff765785ead12764a29f10df2da80833de63f68af48f97d76e77573",
       "src/lib/integratedAllocationRuntimeAdmission.ts": "sha256:190f2483aa6829097fdccce8b71b242a302810f51d268a19c20b01164c6a8170",
-      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:298f1e0eceffa3535a97ed2ee22bdaed155088883fa47ef70886e38dddb741c7",
+      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:e6c3929c6a2b642b302813325e7c1f5aceab9bdd6fda0bed52637af09ad605bb",
       "src/lib/kospiShadowRuntimeAdmission.ts": "sha256:6ed5027b297a1b5661b36fe9fc8786e29971c5cf802de9b3e4343a14139d4e27",
       "src/lib/kospiShadowSeries.ts": "sha256:6b086d777d8ca77ac07c71d8e765ac31ff9f92c3769828637a4ca5946c0b000e",
       "src/lib/kospiShadowStore.ts": "sha256:2fa33dbdf9ddfc51cb4872ee74fedf1cd78d0e1983713c46d6342d41b26d5a7f",
@@ -52,7 +52,7 @@
       "src/lib/ledger/krShadowDecision.ts": "sha256:119a087fa3d90b05ac0fa183ab9b40e4acbb6495871dd511d11a220c7bd180fc",
       "src/lib/ledger/modelSeries.ts": "sha256:63a758daf1abfc74bfcba395d6b21693f0185a48c206e064fa8eb76d4d1693ce",
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:9c8b5e98035e53d81dedc58c43f7ddf8678ad835bbe449a21d63088dabd76a32",
-      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:a5c6554425b7ead60e1212e8d2a6e88a30bc9eba24d56965c82584513ceb82f1",
+      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:80c52a458b54428f04b73fd4bae262b089a1e283489adc45e21e0091602f385b",
       "src/lib/sourceData.ts": "sha256:2f2f313ed65a34e83a0705cf3a61ecd4166d34b68193c1f5998fbf9e61b44390",
       "src/lib/sourceTimingEvidence.ts": "sha256:ef72ba92c6778012e3e8f0844957bf91e5169687fc3d8d19628e03e761df0599",
       "src/lib/usCandidatePriority.ts": "sha256:b56ffa6bb73880e9f9ac737b70d42537d1e661c6970491a1a53381d1bbb4092b"
@@ -62,5 +62,5 @@
     },
     "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
   },
-  "codeHash": "sha256:5e8626e8155fc5778df4aa51eeb0a720377e7be630cc335c1b9c5c038ca4d007"
+  "codeHash": "sha256:3372ca50b1f84c0bf6584366a86ec5e6966da5ab6c5321bc10e678ceceff805a"
 }

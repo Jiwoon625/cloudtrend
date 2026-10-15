@@ -1,5 +1,10 @@
 import { etfEntryWeight } from "./engine/etfStrategy";
 import {
+  evaluateHoldingPriceExit,
+  HOLDING_PRICE_EXIT_POLICY,
+  type HoldingPriceExitState,
+} from "./engine/holdingPriceExit";
+import {
   decimal,
   divide,
   exactNotionalFee,
@@ -54,6 +59,8 @@ export interface IntegratedAllocationContract {
   cost: "KR_ETF_FEE_INCLUSIVE_US_GROSS_PLUS_FEE_0.0015";
 }
 export interface AllocationPosition {
+  priceExit?: HoldingPriceExitState;
+  entryPrice?: string;
   symbol: string;
   venue: "KOSPI" | "KOSDAQ" | "ETF" | "US";
   sector: string | null;
@@ -110,6 +117,7 @@ export interface DeliveredAllocationSignal {
   reason: string;
 }
 export interface AllocationRecord {
+  priceExitPolicy?: typeof HOLDING_PRICE_EXIT_POLICY.version;
   id: string;
   type: "SESSION" | "MONTH_REVIEW";
   date: string;
@@ -174,6 +182,8 @@ export interface AllocationSignal {
   priority?: number[];
 }
 export interface IntegratedAllocationSessionInput {
+  priceExitPolicy?: typeof HOLDING_PRICE_EXIT_POLICY.version;
+  priceExitSeeds?: Record<string, HoldingPriceExitState>;
   market: AllocationMarket;
   date: string;
   previousSessionDate: string | null;
@@ -470,6 +480,7 @@ export async function stepIntegratedAllocationSession(
   )
     throw new Error("Missing or changed allocation market sessions");
   const record = emptyRecord(id, "SESSION", input.date, input.sourceHash);
+  if (input.priceExitPolicy) record.priceExitPolicy = input.priceExitPolicy;
   record.issues.push(...(input.inputIssues ?? []));
   const prices = new Map(input.prices.map((p) => [p.symbol, p]));
   if (
@@ -675,6 +686,7 @@ export async function stepIntegratedAllocationSession(
         quantity: quantity.toString(),
         costKrw: format(spend),
         entryDate: input.date,
+        ...(input.priceExitPolicy ? { entryPrice: quote.open } : {}),
         lastMark: null,
       });
     }
@@ -697,6 +709,34 @@ export async function stepIntegratedAllocationSession(
     marketValue = 0n;
   for (const held of sleeve.positions) {
     const quote = prices.get(held.symbol);
+    if (input.priceExitPolicy && (held.venue === "KOSPI" || held.venue === "ETF")) {
+      const prior = input.priceExitSeeds?.[held.symbol] ?? held.priceExit;
+      const result = evaluateHoldingPriceExit({
+        market: held.venue,
+        date: input.date,
+        entryDate: held.entryDate,
+        entryPrice: held.entryPrice ?? null,
+        quantity: held.quantity,
+        costBasis: held.costKrw,
+        close: quote?.close ?? null,
+        confirmedClose: !!quote?.close,
+        historyComplete: !!prior || held.entryDate === input.date,
+        state: prior,
+      });
+      if (held.venue === "KOSPI" || prior || held.entryDate === input.date)
+        held.priceExit = result.state;
+      if (result.reason && !sleeve.pendingExits.some((p) => p.symbol === held.symbol))
+        sleeve.pendingExits.push({
+          symbol: held.symbol,
+          signalDate: result.state.signalDate!,
+          availableAt: input.availableAt,
+          reason:
+            input.signals.find((s) => s.symbol === held.symbol && s.side === "SELL")?.reason ??
+            result.reason,
+        });
+      if (result.status === "BASIS_PENDING")
+        record.issues.push(`PRICE_EXIT_BASIS_PENDING:${held.symbol}`);
+    }
     if (quote?.close) {
       held.lastMark = { date: input.date, price: quote.close };
       marketValue += BigInt(held.quantity) * nativeKrw(input.market, quote.close);

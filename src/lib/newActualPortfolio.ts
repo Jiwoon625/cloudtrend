@@ -55,6 +55,14 @@ export interface NewActualMetadata {
   audit: NewActualAudit[];
 }
 export interface NewActualPosition {
+  priceExit?: {
+    policyVersion: string;
+    status: string;
+    reason: string | null;
+    threshold: string | null;
+    peak: string | null;
+    signalDate: string | null;
+  };
   symbol: string;
   name: string;
   market: NewActualExecution["market"];

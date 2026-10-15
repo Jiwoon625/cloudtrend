@@ -16,6 +16,7 @@ import {
 } from "./modelSeries";
 import { validDate } from "./date";
 import { isKrOfficialShadowDecision } from "./krShadowDecision";
+import { evaluateHoldingPriceExit, type HoldingPriceExitState } from "../engine/holdingPriceExit";
 
 /** An opt-in MODEL executor. It has no persistence, scheduler, broker, or real-holdings access. */
 export interface EtfShadowPrice {
@@ -38,6 +39,7 @@ export interface EtfShadowMark {
   price: string;
 }
 export interface EtfShadowPosition {
+  priceExit?: HoldingPriceExitState;
   symbol: string;
   quantity: string;
   entryDate: string;
@@ -63,7 +65,7 @@ export interface EtfShadowPendingExit {
   signalDate: string;
   availableAt: string;
   sourceHash: SeriesHash;
-  reason: "MA60";
+  reason: "MA60" | "E4";
 }
 export interface EtfShadowValuation {
   asOfDate: string;
@@ -114,7 +116,7 @@ export interface EtfShadowFill {
   signalDate: string;
   signalSourceHash: SeriesHash;
   originDate: string | null;
-  reason: "CONFIRM1" | "MA60" | "MODEL_UNOBSERVED";
+  reason: "CONFIRM1" | "MA60" | "E4" | "MODEL_UNOBSERVED";
   quantity: string;
   price: string;
   gross: string;
@@ -167,6 +169,9 @@ export interface EtfShadowDailyRecord {
   realizedPnl: string;
 }
 export interface EtfShadowSessionInput {
+  priceExitPolicy?: "holding-price-exit-k4-e4-v1";
+  /** Verified historical close peak, reconstructed from immutable entry-to-cutover inputs. */
+  priceExitSeeds?: Record<string, HoldingPriceExitState>;
   sessionDate: string;
   /** Previous processed regular market session; null only for the first session. */
   previousSessionDate: string | null;
@@ -399,7 +404,7 @@ function assertState(series: FrozenModelSeries, state: EtfAdoptedShadowState) {
     time(exit.availableAt);
     hash(exit.sourceHash);
     if (
-      exit.reason !== "MA60" ||
+      !["MA60", "E4"].includes(exit.reason) ||
       exit.signalDate < series.accountingStartDate ||
       !state.lastSessionDate ||
       exit.signalDate > state.lastSessionDate ||
@@ -557,7 +562,7 @@ export async function stepEtfAdoptedShadow(
       signalDate: exit.signalDate,
       signalSourceHash: exit.sourceHash,
       originDate: null,
-      reason: "MA60",
+      reason: exit.reason,
       quantity: position.quantity,
       price: price.price,
       gross: format(gross),
@@ -850,6 +855,35 @@ export async function stepEtfAdoptedShadow(
     if (!currentSignals.has(position.symbol))
       issue(position.symbol, "HELD_SIGNAL_MISSING", "CLOSE");
     const mark = prices.get(position.symbol)?.close;
+    if (input.priceExitPolicy === "holding-price-exit-k4-e4-v1") {
+      const prior = input.priceExitSeeds?.[position.symbol] ?? position.priceExit;
+      const currentClose =
+        mark && mark.asOfDate === input.sessionDate && time(mark.availableAt) <= closeAt
+          ? mark
+          : null;
+      const result = evaluateHoldingPriceExit({
+        market: "ETF",
+        date: input.sessionDate,
+        entryDate: position.entryDate,
+        entryPrice: position.entryPrice,
+        quantity: position.quantity,
+        costBasis: position.costBasis,
+        close: currentClose?.price ?? null,
+        confirmedClose: !!currentClose,
+        historyComplete: !!prior || position.entryDate === input.sessionDate,
+        state: prior,
+      });
+      // Never bless an incomplete historical peak by persisting it as a complete seed.
+      if (prior || position.entryDate === input.sessionDate) position.priceExit = result.state;
+      if (result.reason && currentClose && !pendingExits.some((p) => p.symbol === position.symbol))
+        pendingExits.push({
+          symbol: position.symbol,
+          signalDate: result.state.signalDate!,
+          availableAt: currentClose.availableAt,
+          sourceHash: currentClose.sourceHash,
+          reason: "E4",
+        });
+    }
     if (
       mark &&
       mark.price !== null &&

@@ -220,3 +220,405 @@ it("workflow blocks a blank or wrong correction date before invoking the runner"
     await rm(root, { recursive: true, force: true });
   }
 });
+
+import { createHash } from "node:crypto";
+import { integratedCompatibilityScenario } from "./fixtures/integrated-runtime-compatibility-scenario";
+import { buildSnapshot } from "../src/lib/screeningSnapshot";
+import {
+  ADOPTED_SERIES_KINDS,
+  freezeRestartSeries,
+  hashSeriesValue,
+  canonicalSeriesJson,
+  type FrozenModelSeries,
+} from "../src/lib/ledger/modelSeries";
+import {
+  recordOctoberPublication,
+  type KrModelPublication,
+  type OctoberRun,
+  type PreparedOctoberPublication,
+} from "../src/lib/ledger/octoberShadowPipeline";
+import type { OctoberShadowStore } from "../src/lib/ledger/octoberShadowRepository.server";
+import type { KrDailyInputArchive } from "../src/lib/ledger/octoberShadowArchive";
+import { DEFAULT_SCORING_CONFIG } from "../src/lib/engine/scoring";
+import { ETF_POLICY, type EtfStrategySnapshot } from "../src/lib/engine/etfStrategy";
+import type { MarketDataset } from "../src/lib/engine/dataset";
+import type { AnalysisResult, ScreeningRow } from "../src/lib/engine/pipeline";
+import { nextKrRegularSession } from "../src/lib/ledger/krShadowDecision";
+import { getOperationalSignals } from "../src/lib/engine/operationalStrategy";
+
+// Evidence is bounded to the October12 restart books through October14. It is not
+// a claim about older books with delayed H60 exits or any post-cutover execution.
+// Both executables receive identical synthetic provenance, isolating economics.
+// Actual deployment/runtime hashes differ and must be recorded separately.
+const PRE_CUTOVER_CODE = `sha256:${"a".repeat(64)}` as const;
+const PRE_CUTOVER_SOURCE = `sha256:${"b".repeat(64)}` as const;
+function preCutoverGate(
+  date: string,
+): import("../src/lib/engine/kospiMarketGate").KospiMarketGateEvidence {
+  return {
+    date,
+    status: "NEUTRAL",
+    issues: [],
+    benchmarkDate: date,
+    benchmarkAboveMa60: true,
+    benchmarkAboveCloud: true,
+    vkospiBelow30: true,
+    foreignNet5dPositive: false,
+    metCount: 3,
+    evaluatedCount: 4,
+    incomplete: false,
+    vkospi: 15,
+    volatilitySource: "VKOSPI",
+    marketForeignNet5d: -10,
+    marketForeignDates: [date],
+  };
+}
+function preCutoverKrSource(date: string): KrModelPublication {
+  const bar = {
+    tradeDate: date,
+    open: 100,
+    high: 102,
+    low: 98,
+    close: 100,
+    volume: 1e6,
+    tradingValue: 1e8,
+    marketCap: null,
+    foreignNetBuyValue: null,
+    institutionNetBuyValue: null,
+  };
+  const instruments = [
+    {
+      symbol: "000001",
+      name: "Synthetic KOSPI",
+      market: "KOSPI",
+      instrumentType: "STOCK",
+      sectorCode: "TECH",
+      sectorName: "Tech",
+    },
+    {
+      symbol: "000002",
+      name: "Synthetic KOSDAQ",
+      market: "KOSDAQ",
+      instrumentType: "STOCK",
+      sectorCode: "TECH",
+      sectorName: "Tech",
+    },
+    {
+      symbol: "000003",
+      name: "Synthetic ETF",
+      market: "KOSPI",
+      instrumentType: "ETF",
+      sectorCode: "TECH",
+      sectorName: "Tech",
+    },
+  ] as MarketDataset["instruments"];
+  const strategy: EtfStrategySnapshot = {
+    version: ETF_POLICY.version,
+    date,
+    previousDate: date === "2026-10-06" ? "2026-10-02" : "2026-10-06",
+    eligible: false,
+    score: 50,
+    previousScore: 50,
+    technical: 50,
+    priority: 50,
+    health: 50,
+    environment: 50,
+    environmentSource: "stock_sector",
+    region: "KR",
+    sector: "TECH",
+    annualVolatility: 0.2,
+    entryWeight: 0.075,
+    underlyingClose: 100,
+    underlyingMa60: 95,
+    onset: false,
+    rawOnset: false,
+    entryState: "none",
+    originDate: null,
+    confirmationDate: null,
+    confirmationIssues: [],
+    averageTradingValue20: 1e8,
+    dataStatus: "ready",
+    krxReferenceDate: date,
+    exit: null,
+    issues: [],
+  };
+  const rows = instruments.map((instrument) => ({
+    instrument,
+    snapshot: { tradeDate: date },
+    operatingScore10: 5,
+    priority: { points: 5 },
+    ...(instrument.instrumentType === "ETF" ? { etfStrategy: strategy } : {}),
+  })) as ScreeningRow[];
+  const dataset = {
+    provider: "TEST_FIXTURE",
+    version: "1",
+    asOfDate: date,
+    isLive: true,
+    capabilities: {
+      marketCap: true,
+      fundamentals: true,
+      etfFacts: true,
+      sectors: true,
+      investorFlow: true,
+      volatilityIndex: true,
+      exactTradingValue: true,
+    },
+    notes: [],
+    sectors: [],
+    tradeDates: ["2026-10-02", "2026-10-06", ...(date > "2026-10-06" ? [date] : [])],
+    kospiGateDates: ["2026-10-02", "2026-10-06", ...(date > "2026-10-06" ? [date] : [])],
+    instruments,
+    bars: Object.fromEntries(instruments.map((i) => [i.symbol, [bar]])),
+    indexSeries: [{ indexCode: "KOSPI", bars: [bar] }],
+    financials: {},
+    etfFacts: {},
+    vkospiSeries: [],
+  } as unknown as MarketDataset;
+  const next = nextKrRegularSession(date);
+  const availableAt = next ? `${next}T08:00:00+09:00` : `${date}T23:50:00+09:00`;
+  const decisionAt = next ? `${next}T08:10:00+09:00` : `${date}T23:55:00+09:00`;
+  return {
+    market: "KR",
+    codeHash: PRE_CUTOVER_CODE,
+    sourceHash: PRE_CUTOVER_SOURCE,
+    availableAt,
+    decisionAt,
+    confirmedRegularClose: true,
+    failedSymbols: 0,
+    dataset,
+    config: DEFAULT_SCORING_CONFIG,
+    universeEvidence: {
+      asOfDate: date === "2026-10-06" ? "2026-10-02" : "2026-10-06",
+      sourceHash: PRE_CUTOVER_SOURCE,
+      symbols: instruments.map((i) => i.symbol),
+    },
+    sourceEvidence: [{ sourceHash: PRE_CUTOVER_SOURCE, asOfDate: date, registeredAt: availableAt }],
+    analysis: { asOfDate: date, calculatedAt: decisionAt, rows } as AnalysisResult,
+    snapshot: {
+      date,
+      asOfDate: date,
+      savedAt: availableAt,
+      entries: [],
+      marketGateStatus: "UNKNOWN",
+      totalCount: 0,
+      passedCount: 0,
+      gradeACount: 0,
+      gradeBCount: 0,
+    },
+  };
+}
+
+async function fiveBookPreCutoverScenario() {
+  const registry = new Map<string, FrozenModelSeries>();
+  const sessions = new Map<string, OctoberRun>();
+  const prepared = new Map<string, PreparedOctoberPublication>();
+  const archives = new Map<string, KrDailyInputArchive>();
+  const store: OctoberShadowStore = {
+    readKrInput: async (date, hash) => {
+      const found = archives.get(hash);
+      if (!found || found.date !== date) throw new Error("Missing synthetic archive");
+      return structuredClone(found);
+    },
+    putKrInput: async (value) => {
+      const hash = await hashSeriesValue(value);
+      archives.set(hash, structuredClone(value));
+      return { date: value.date, hash };
+    },
+    readPrepared: async (market, date) =>
+      structuredClone(prepared.get(`${market}:${date}`) ?? null),
+    prepare: async (value) => {
+      const key = `${value.market}:${value.date}`;
+      if (prepared.has(key)) throw new Error("Unexpected synthetic prepare collision");
+      prepared.set(key, structuredClone(value));
+      return value;
+    },
+    readSeries: async (id) => registry.get(id) ?? null,
+    insertSeries: async (series) => {
+      registry.set(series.bookId, structuredClone(series));
+    },
+    readLatest: async <T extends import("../src/lib/ledger/modelJournal").ModelJournalRun>(
+      id: string,
+    ) =>
+      structuredClone(
+        [...sessions.values()]
+          .filter((run) => run.bookId === id)
+          .sort((a, b) => b.receipt.date.localeCompare(a.receipt.date))[0] ?? null,
+      ) as T | null,
+    readSession: async <T extends import("../src/lib/ledger/modelJournal").ModelJournalRun>(
+      id: string,
+      date: string,
+    ) => structuredClone(sessions.get(`${id}:${date}`) ?? null) as T | null,
+    append: async (series, run, previous) => {
+      const { stateHash, ...body } = run;
+      expect(await hashSeriesValue(body)).toBe(stateHash);
+      expect(run.previousStateHash).toBe(previous?.stateHash ?? null);
+      sessions.set(
+        `${series.bookId}:${run.receipt.date}`,
+        structuredClone(run as unknown as OctoberRun),
+      );
+      return { reused: false, stateHash };
+    },
+  };
+  for (const kind of ADOPTED_SERIES_KINDS.filter((value) => !value.startsWith("US_")))
+    await store.insertSeries(
+      await freezeRestartSeries({
+        kind,
+        frozenAt: "2026-10-09T00:00:00Z",
+        codeHash: PRE_CUTOVER_CODE,
+        sourceHash: PRE_CUTOVER_SOURCE,
+      }),
+    );
+  const dates = ["2026-10-12", "2026-10-13", "2026-10-14"];
+  for (const [index, date] of dates.entries()) {
+    const input = preCutoverKrSource(date);
+    const prior = index ? dates[index - 1]! : "2026-10-08";
+    input.dataset.tradeDates = ["2026-10-08", ...dates.slice(0, index + 1)];
+    input.dataset.kospiGateDates = input.dataset.tradeDates;
+    // Entry13 for KOSDAQ and entry14 for confirmed KOSPI/ETF; a confirmed close drop makes accidental
+    // early K4/E4 application observable, while MA60/score exits stay inactive.
+    for (const instrument of input.dataset.instruments)
+      input.dataset.bars[instrument.symbol] = input.dataset.tradeDates.map((day) => ({
+        tradeDate: day,
+        open: 1000,
+        high: 1000,
+        low: day === "2026-10-14" ? 650 : 1000,
+        close: day === "2026-10-14" ? 650 : 1000,
+        volume: 1e6,
+        tradingValue: 1e9,
+        marketCap: 1e10,
+        foreignNetBuyValue: null,
+        institutionNetBuyValue: null,
+      }));
+    for (const row of input.analysis.rows) {
+      row.operatingScore10 = index === 0 ? 8 : 8.5;
+      row.previousOperatingScore10 = index === 0 ? 7.5 : 8;
+      row.previousOperatingScoreDate = prior;
+      row.hardFilterPassed = true;
+      row.hardFilterStatus = "PASS";
+      row.grade = "A";
+      row.totalScoreNormalized = 85;
+      row.scoreDelta1d = index === 0 ? 5 : 0;
+      Object.assign(
+        row,
+        getOperationalSignals(
+          row.instrument.market,
+          index === 0 ? 7.5 : 8,
+          row.operatingScore10,
+          true,
+        ),
+      );
+      if (row.instrument.market === "KOSPI")
+        row.kospiEntry = {
+          version: "kospi-e8-confirm1-bear-rs-cross-v4",
+          date,
+          originDate: index <= 1 ? "2026-10-12" : null,
+          confirmationDate: index === 1 ? date : null,
+          state: index === 0 ? "pending" : index === 1 ? "confirmed" : "none",
+          issues: [],
+          rsAccel: 1,
+          score: row.operatingScore10,
+          originScore: index <= 1 ? 8 : null,
+          eligible: index === 1,
+          marketGate: { origin: preCutoverGate("2026-10-12"), confirmation: preCutoverGate(date) },
+        };
+      if (row.etfStrategy)
+        Object.assign(row.etfStrategy, {
+          eligible: true,
+          date,
+          previousDate: prior,
+          score: 85,
+          previousScore: index === 0 ? 79 : 85,
+          rawOnset: index === 0,
+          onset: index === 1,
+          entryState: index === 0 ? "pending" : index === 1 ? "confirmed" : "none",
+          originDate: index <= 1 ? "2026-10-12" : null,
+          confirmationDate: index === 1 ? date : null,
+          annualVolatility: 0.3,
+          entryWeight: 0.05,
+          underlyingClose: 650,
+          underlyingMa60: 500,
+          exit: null,
+        });
+    }
+    input.snapshot = buildSnapshot({
+      ...input.analysis,
+      rows: input.analysis.rows.filter((row) => row.instrument.instrumentType === "STOCK"),
+      kospiMarketGate: preCutoverGate(date),
+      marketGate: { status: "NEUTRAL" },
+    });
+    input.universeEvidence = {
+      asOfDate: prior,
+      sourceHash: PRE_CUTOVER_SOURCE,
+      symbols: input.dataset.instruments.map((value) => value.symbol),
+    };
+    const recorded = await recordOctoberPublication(store, input);
+    expect(recorded.records).toHaveLength(5);
+    const before = canonicalSeriesJson([...sessions]);
+    expect(
+      (await recordOctoberPublication(store, input)).records.every((entry) => entry.reused),
+    ).toBe(true);
+    expect(canonicalSeriesJson([...sessions])).toBe(before);
+  }
+  return {
+    series: [...registry.values()],
+    sessions: [...sessions.values()],
+    archives: [...archives].map(([hash, value]) => ({ hash, value })),
+    prepared: [...prepared.values()],
+  };
+}
+
+it("preserves reviewed pre-cutover O1/S07 complete economic publications through October14", async () => {
+  const publications: unknown[] = [];
+  const summary = await integratedCompatibilityScenario((value) => publications.push(value));
+  expect(publications).toHaveLength(6);
+  // Captured by independently executing the identical fixture on the reviewed
+  // pre-PR280 source tree at main3e2c40741b597080215d98c628826fdb0481eab9.
+  expect(createHash("sha256").update(JSON.stringify({ summary, publications })).digest("hex")).toBe(
+    "b89d46f8a5c1cd5f365c0d268298fb313c0f8d4d9b5fbd398d45531c3cbb7ff5",
+  );
+});
+
+it("preserves all five restarted KR/ETF books through14 before K4/E4 applies", async () => {
+  const result = await fiveBookPreCutoverScenario();
+  expect(result.sessions).toHaveLength(15);
+  const day14 = result.sessions.filter((run) => run.receipt.date === "2026-10-14");
+  expect(day14).toHaveLength(5);
+  expect(day14.every((run) => run.bookId.startsWith("adopted-shadow-2026-10-12-v1:"))).toBe(true);
+  expect(canonicalSeriesJson(result)).not.toMatch(/"(?:K4|E4|H60|H60_CLOSE|H60_DEFERRED_OPEN)"/);
+  expect(day14.every((run) => !Object.hasOwn(run.publication, "priceExitAmendment"))).toBe(true);
+  const kospi = day14.find((run) =>
+    run.bookId.endsWith(":KR_KOSPI"),
+  )! as import("../src/lib/ledger/krAdoptedShadow").AdoptedKrRun;
+  expect(kospi.result.trades).toHaveLength(1);
+  expect(kospi.result.trades[0]).toMatchObject({
+    entryDate: "2026-10-14",
+    entryPrice: 1000,
+    currentPrice: 650,
+    status: "OPEN",
+    exitReason: null,
+  });
+  const etf = day14.find((run) =>
+    run.bookId.endsWith(":ETF_V02"),
+  )! as import("../src/lib/ledger/etfAdoptedShadow").AdoptedEtfRun;
+  expect(etf.result.state.positions).toHaveLength(1);
+  expect(etf.result.state.positions[0]).toMatchObject({
+    entryDate: "2026-10-14",
+    entryPrice: "1000",
+    mark: { price: "650" },
+  });
+  expect(etf.result.state.pendingExits).toEqual([]);
+  for (const run of day14.filter((value) =>
+    ["KR_MIXED", "KR_KOSPI", "KR_KOSDAQ"].some((kind) => value.bookId.endsWith(`:${kind}`)),
+  )) {
+    const common = run as import("../src/lib/ledger/krAdoptedShadow").AdoptedKrRun;
+    for (const trade of common.result.trades) {
+      expect(trade.entryDate >= "2026-10-12").toBe(true);
+      expect(trade.holdingDays).toBeLessThanOrEqual(3);
+      expect(trade.exitReason ?? "").not.toContain("60거래일");
+    }
+  }
+  // Captured from the identical fixture on reviewed pre-PR280 main3e2c4074;
+  // current main1cbb4a31 independently produces byte-identical canonical output.
+  const digest = createHash("sha256").update(canonicalSeriesJson(result)).digest("hex");
+  expect(digest).toBe("26557023b26c8827c7456962abd51a0590e5cf3d09698477a576f7f4ae8c4722");
+});

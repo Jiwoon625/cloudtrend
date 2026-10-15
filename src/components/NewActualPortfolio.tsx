@@ -320,6 +320,7 @@ export function NewActualPortfolioContent({
                 "평가가격 · 기준일",
                 "평가금액",
                 "미실현손익",
+                "가격 청산조건",
               ]}
               empty={!positions.length}
             >
@@ -342,6 +343,27 @@ export function NewActualPortfolioContent({
                   </td>
                   <td className={td}>{money(position.marketValue, currency)}</td>
                   <td className={td}>{money(position.unrealizedPnl, currency)}</td>
+                  <td className={td}>
+                    {position.market === "KOSPI" || position.market === "ETF" ? (
+                      <>
+                        <div>
+                          {position.market === "KOSPI" ? "K4 · 원가 −8%" : "E4 · 최고 종가 −10%"}
+                        </div>
+                        <div>{position.priceExit?.status ?? "손절 기준가격 확인 대기"}</div>
+                        {position.priceExit?.threshold && (
+                          <div>기준 {money(position.priceExit.threshold, currency)}</div>
+                        )}
+                        {position.market === "ETF" && position.priceExit?.peak && (
+                          <div>최고 기준가격 {money(position.priceExit.peak, currency)}</div>
+                        )}
+                        {position.priceExit?.signalDate && (
+                          <div>신호일 {position.priceExit.signalDate}</div>
+                        )}
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                 </tr>
               ))}
             </Table>

@@ -36,6 +36,33 @@ function snapshot(previous: number, current: number, day = 2): ScreeningSnapshot
   } as ScreeningSnapshot;
 }
 describe("portfolio consumes KOSPI operational signals", () => {
+  it("adds K4 prospectively, carries across zero-volume opens, and preserves legacy execution", () => {
+    const held = {
+      ...trade,
+      entryDate: "2026-10-14",
+      entryPrice: 100,
+      shares: 10,
+      buyAmount: 1000,
+      entryFee: 1.5,
+    };
+    const rows = [
+      { tradeDate: "2026-10-14", open: 100, close: 80, volume: 10 },
+      { tradeDate: "2026-10-15", open: 80, close: 90, volume: 10 },
+      { tradeDate: "2026-10-16", open: 70, close: 95, volume: 0 },
+      { tradeDate: "2026-10-19", open: 60, close: 99, volume: 10 },
+    ] as DailyPrice[];
+    expect(unifiedExitPlan(held, [], rows, "2026-10-19")).toBeNull();
+    expect(unifiedExitPlan(held, [], rows, "2026-10-16", undefined, [], true)).toBeNull();
+    expect(unifiedExitPlan(held, [], rows, "2026-10-19", undefined, [], true)).toMatchObject({
+      signalDate: "2026-10-15",
+      exitDate: "2026-10-19",
+      exitPrice: 60,
+      timing: "OPEN",
+    });
+    expect(
+      unifiedExitPlan({ ...held, market: "KOSDAQ" }, [], rows, "2026-10-19", undefined, [], true),
+    ).toBeNull();
+  });
   it("never upgrades pending universe rows through KOSDAQ boolean or legacy status fallback", () => {
     for (const signal of [{ kosdaq80Onset: true }, { status: "KOSDAQ 8 Onset" }]) {
       expect(

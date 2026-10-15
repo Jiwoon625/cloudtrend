@@ -23,6 +23,7 @@ import {
 import { loadActualPositionSnapshotForOwner } from "./websitePositionContext.server";
 import { OPERATIONAL_SIGNAL_START, isOperationalSignalDate } from "./operationalSignalStart";
 import type { NewActualPool } from "./newActualPortfolio";
+import { attachActualHoldingPriceExits } from "./actualHoldingPriceExit.server";
 
 const BUCKET = "cloudtrend-data";
 const VERSION = "dashboard-operations-partial-evidence-v6";
@@ -178,6 +179,32 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
     safe("신규 실제 보유", () => loadActualPositionSnapshotForOwner(client, uid)),
   ]);
   const context = actualSnapshot?.context ?? null;
+  if (context)
+    await safe("K4/E4 보유 청산", () =>
+      attachActualHoldingPriceExits(client, uid, context.actualPools.KRW, new Date().toISOString()),
+    );
+  const holdingExits = context?.actualPools.KRW.positions.filter((p) => p.priceExit?.reason) ?? [];
+  const krWithHoldingExits = kr
+    ? {
+        ...kr,
+        rows: kr.rows.map((row) => {
+          const exit = holdingExits.find(
+            (p) => p.market === row.market && p.symbol === row.symbol,
+          )?.priceExit;
+          return exit
+            ? {
+                ...row,
+                exitReason: [
+                  row.exitReason,
+                  `${exit.reason} · ${exit.signalDate} 종가 신호 · 다음 거래 가능 시가`,
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+              }
+            : row;
+        }),
+      }
+    : null;
   if (kr?.rows.some((r) => r.market === "ETF" && r.etfEntry?.dataStatus === "krx_batch_pending")) {
     warnings.push(
       `ETF ${kr.date}: KRX 기준일 자료 확인 대기. 다음 영업일 08:00 KST부터 조회 가능하며, 저녁 미공표는 정상입니다. 가용한 조건별 판단은 ETF 스크리너에서 확인하고 최종 진입은 자료 확인 후 판단합니다.`,
@@ -199,7 +226,7 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
   // Shadow, old journals and manually tracked ETF membership are never a fallback.
   const markets = DASHBOARD_MARKETS.map((market) =>
     marketSignals(
-      market === "US" ? us : kr,
+      market === "US" ? us : krWithHoldingExits,
       market,
       context ? context.positions.filter((position) => position.market === market) : null,
       context?.actualExecutions ?? [],
@@ -212,6 +239,26 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
       OPERATIONAL_SIGNAL_START,
     ),
   );
+  // Persisted holding intent survives a missing/stale screener row and is never relabeled as a new signal.
+  for (const position of holdingExits) {
+    const group = markets.find((market) => market.market === position.market);
+    const exit = position.priceExit!;
+    if (!group || group.exits.some((row) => row.symbol === position.symbol)) continue;
+    group.exits.push({
+      symbol: position.symbol,
+      name: position.name,
+      market: group.market,
+      sector: "-",
+      date: exit.signalDate!,
+      price: null,
+      score: null,
+      priority: 0,
+      reason: `${exit.reason} · ${exit.signalDate} 종가 신호 · 다음 거래 가능 시가 청산 대기`,
+      actualQuantity: Number(position.quantity),
+      held: true,
+    });
+    group.exitCount = group.exits.length;
+  }
   if (!context)
     warnings.push("신규 실제 보유정보를 확인하지 못해 보유 EXIT는 미확인으로 표시합니다.");
   for (const [label, index, market] of [
