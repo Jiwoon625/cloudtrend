@@ -7,7 +7,7 @@ import {
   type HoldingPriceExitState,
 } from "./engine/holdingPriceExit";
 import { decimal, divide, format, multiply } from "./ledger/decimal";
-import { reconstructActualPriceCycle } from "./actualHoldingPriceLots";
+import { actualPooledBasisByDate, reconstructActualPriceCycle } from "./actualHoldingPriceLots";
 import { listActiveSources } from "./screeningSources.server";
 import { priceInputs } from "./portfolioLedgers.server";
 import type { NewActualPool, NewActualPosition } from "./newActualPortfolio";
@@ -204,47 +204,86 @@ export async function attachActualHoldingPriceExits(
       result: NonNullable<ReturnType<typeof replayHoldingPriceExit>>;
     }> = [];
     try {
-      const evaluatedLots =
-        position.market === "KOSPI"
-          ? [
-              {
-                id: cycle.cycle.id,
-                entryDate: cycle.cycle.date,
-                entryPrice: cycle.lots[0]!.entryPrice,
-                quantity: position.quantity,
-                costBasis: position.cost,
-              },
-            ]
-          : cycle.lots;
-      for (const lot of evaluatedLots) {
-        const prev =
-          position.market === "KOSPI"
-            ? (checkpoint?.state ?? null)
-            : (checkpoint?.lotStates?.[lot.id] ??
-              (cycle.lots.length === 1 ? checkpoint?.state : null) ??
-              (lot.id === cycle.cycle.id ? checkpoint?.state : null));
-        const holding = {
-          market: position.market as "KOSPI" | "ETF",
-          entryDate: lot.entryDate,
-          entryPrice: lot.entryPrice,
-          quantity: lot.quantity,
-          costBasis: lot.costBasis,
-          state: prev,
-        } as const;
-        const result =
-          replayHoldingPriceExit(holding, bars, through, inputs.marketDates) ??
-          (prev
-            ? evaluateHoldingPriceExit({
-                ...holding,
-                date: through,
-                close: lastBar.close.toFixed(8),
-                confirmedClose: true,
-                historyComplete: prev.historyComplete !== false,
-              })
-            : null);
+      if (position.market === "KOSPI") {
+        // Each historical close must use ONLY acquisition/sale fills already
+        // recorded by that date. The current blended basis is future information
+        // for any pre-later-buy close.
+        const timeline = actualPooledBasisByDate(position, pool.trades);
+        let prior: HoldingPriceExitState | null = checkpoint?.state ?? null;
+        let result: ReturnType<typeof evaluateHoldingPriceExit> | null = null;
+        for (const bar of bars) {
+          if (
+            bar.tradeDate < cycle.cycle.date ||
+            (prior?.throughDate && bar.tradeDate <= prior.throughDate) ||
+            !Number.isFinite(bar.close) ||
+            bar.close <= 0
+          )
+            continue;
+          const basis = [...timeline].reverse().find((row) => row.date <= bar.tradeDate);
+          if (!basis) continue;
+          result = evaluateHoldingPriceExit({
+            market: "KOSPI",
+            date: bar.tradeDate,
+            entryDate: cycle.cycle.date,
+            entryPrice: cycle.lots[0]!.entryPrice,
+            quantity: basis.quantity,
+            costBasis: basis.costBasis,
+            close: bar.close.toFixed(8),
+            confirmedClose: true,
+            historyComplete: true,
+            state: prior,
+          });
+          prior = result.state;
+        }
+        if (!result && prior) {
+          const basis = timeline.filter((row) => row.date <= through).at(-1);
+          if (basis)
+            result = evaluateHoldingPriceExit({
+              market: "KOSPI",
+              date: through,
+              entryDate: cycle.cycle.date,
+              entryPrice: cycle.lots[0]!.entryPrice,
+              quantity: basis.quantity,
+              costBasis: basis.costBasis,
+              close: lastBar.close.toFixed(8),
+              confirmedClose: true,
+              historyComplete: true,
+              state: prior,
+            });
+        }
         if (result) {
-          allStates[lot.id] = result.state;
-          results.push({ lotId: lot.id, result });
+          allStates[cycle.cycle.id] = result.state;
+          results.push({ lotId: cycle.cycle.id, result });
+        }
+      } else {
+        for (const lot of cycle.lots) {
+          const prev =
+            checkpoint?.lotStates?.[lot.id] ??
+            (cycle.lots.length === 1 ? checkpoint?.state : null) ??
+            (lot.id === cycle.cycle.id ? checkpoint?.state : null);
+          const holding = {
+            market: "ETF" as const,
+            entryDate: lot.entryDate,
+            entryPrice: lot.entryPrice,
+            quantity: lot.quantity,
+            costBasis: lot.costBasis,
+            state: prev,
+          };
+          const result =
+            replayHoldingPriceExit(holding, bars, through, inputs.marketDates) ??
+            (prev
+              ? evaluateHoldingPriceExit({
+                  ...holding,
+                  date: through,
+                  close: lastBar.close.toFixed(8),
+                  confirmedClose: true,
+                  historyComplete: prev.historyComplete !== false,
+                })
+              : null);
+          if (result) {
+            allStates[lot.id] = result.state;
+            results.push({ lotId: lot.id, result });
+          }
         }
       }
     } catch {
@@ -276,6 +315,10 @@ export async function attachActualHoldingPriceExits(
     if (!fullEvidence && !triggered.length) continue;
     // Do not call an incomplete source VERIFIED, even if one known lot crosses.
     const state = line.state;
+    // A later BUY changes the current pooled basis but must never relabel the
+    // exact threshold originally responsible for a latched K4 close.
+    const displayedThreshold =
+      triggered.length && state.signalThreshold ? state.signalThreshold : line.threshold;
     const status = triggered.length
       ? "청산 대기 · 다음 거래 가능 시가"
       : fullEvidence
@@ -285,13 +328,15 @@ export async function attachActualHoldingPriceExits(
       ...exit,
       status,
       reason: triggered.length ? (position.market === "KOSPI" ? "K4" : "E4") : null,
-      threshold: line.threshold,
+      threshold: displayedThreshold,
       peak: state.peak,
       peakDate: state.peakDate,
       signalDate: state.signalDate,
       observationDate: through,
       observedClose: lastBar.close.toFixed(8),
-      distancePercent: line.threshold ? cushion(lastBar.close.toFixed(8), line.threshold) : null,
+      distancePercent: displayedThreshold
+        ? cushion(lastBar.close.toFixed(8), displayedThreshold)
+        : null,
       auditStatus: fullEvidence ? "VERIFIED" : "PENDING",
       priceSource: "운영 정규화 종가",
     };

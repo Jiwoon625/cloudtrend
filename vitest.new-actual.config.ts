@@ -4,6 +4,7 @@ export default defineConfig({
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   esbuild: { jsx: "automatic" },
   test: {
+    // K4 as-of pooled cost and actual E4 acquisition lots must run in ledger CI.
     include: [
       "src/lib/newActual*.test.ts",
       "src/lib/actualHoldingPriceExit.server.test.ts",

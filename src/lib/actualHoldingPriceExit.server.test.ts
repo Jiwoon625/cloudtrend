@@ -166,6 +166,60 @@ describe("actual holding exit evidence", () => {
       auditStatus: "VERIFIED",
     });
   });
+  it("does not backdate a K4 stop using a later, more expensive acquisition", async () => {
+    const { client, pool } = fixture("KOSPI");
+    pool.positions[0]!.quantity = "20";
+    pool.positions[0]!.cost = "3004.5";
+    pool.trades.push({
+      execution: {
+        id: "later-buy",
+        symbol: "ABC",
+        market: "KOSPI",
+        side: "BUY",
+        date: "2026-10-16",
+      },
+      allocation: { quantity: 10, gross: 2000, fee: 3 },
+    } as NewActualPool["trades"][number]);
+    mock.bars = [
+      { tradeDate: "2026-10-14", close: 100 },
+      { tradeDate: "2026-10-15", close: 95 },
+      { tradeDate: "2026-10-16", close: 150 },
+    ];
+    await attachActualHoldingPriceExits(client, "owner-asof-higher", pool, "2026-10-16T07:00:00Z");
+    expect(pool.positions[0]!.priceExit).toMatchObject({
+      reason: null,
+      threshold: "138.207",
+      auditStatus: "VERIFIED",
+      observationDate: "2026-10-16",
+    });
+  });
+  it("does not erase an earlier valid K4 crossing with a later cheaper acquisition", async () => {
+    const { client, pool } = fixture("KOSPI");
+    pool.positions[0]!.quantity = "20";
+    pool.positions[0]!.cost = "1802.7";
+    pool.trades.push({
+      execution: {
+        id: "later-cheap-buy",
+        symbol: "ABC",
+        market: "KOSPI",
+        side: "BUY",
+        date: "2026-10-16",
+      },
+      allocation: { quantity: 10, gross: 800, fee: 1.2 },
+    } as NewActualPool["trades"][number]);
+    mock.bars = [
+      { tradeDate: "2026-10-14", close: 100 },
+      { tradeDate: "2026-10-15", close: 90 },
+      { tradeDate: "2026-10-16", close: 100 },
+    ];
+    await attachActualHoldingPriceExits(client, "owner-asof-cheaper", pool, "2026-10-16T07:00:00Z");
+    expect(pool.positions[0]!.priceExit).toMatchObject({
+      reason: "K4",
+      signalDate: "2026-10-15",
+      threshold: "92.138",
+      auditStatus: "VERIFIED",
+    });
+  });
   it("fails the confirmed-close audit when the actual projection mark disagrees with the source", async () => {
     const { client, pool } = fixture("ETF");
     pool.issues = [];
