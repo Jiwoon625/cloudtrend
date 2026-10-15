@@ -37,10 +37,11 @@
       "src/lib/ledger/kospiAdoptedShadow.ts": "sha256:d4840901ce8e9ade581b24827badd8300065145872a1b9ab063be7cc3a5fe632",
       "src/lib/ledger/krAdoptedShadow.ts": "sha256:a9e3cc5aa3143c75c4dd2f06323639ff16078e8cf72a8d32ea106940542083e8",
       "src/lib/ledger/krShadowDecision.ts": "sha256:119a087fa3d90b05ac0fa183ab9b40e4acbb6495871dd511d11a220c7bd180fc",
+      "src/lib/ledger/krSourceVintage.ts": "sha256:4aeb8c86c96fa1d29e70c23d5a45f6cb4b32053b66214c1f1c0c286195467fcf",
       "src/lib/ledger/modelSeries.ts": "sha256:63a758daf1abfc74bfcba395d6b21693f0185a48c206e064fa8eb76d4d1693ce",
       "src/lib/ledger/octoberShadowArchive.ts": "sha256:5904e2aa0403a255bee09e88dcea9148e9a0beb54afe5fb21f60d0ae403df9b8",
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:9c8b5e98035e53d81dedc58c43f7ddf8678ad835bbe449a21d63088dabd76a32",
-      "src/lib/ledger/octoberShadowPipeline.ts": "sha256:22663d53695f52ac62ecd8178cf4769b828541680e4fb85d43ab67f06bd357b2",
+      "src/lib/ledger/octoberShadowPipeline.ts": "sha256:95d6163bc14bbdbe5ddefe220002f1c6d8eba1ac9d4dafdfc9e8463e2d1200f7",
       "src/lib/portfolioLedgers.ts": "sha256:081d76e43aaf8533d4fc6832385f7d988123e14c5494397ed34d8f66b6e98d0c",
       "src/lib/portfolioStrategyRules.ts": "sha256:9ccfc7b102f0b686e7a8da797eb78602360839034698000244d0fddd4aee4060",
       "src/lib/shadowReplayCalculation.ts": "sha256:929a91338736c4b1853f5113c2870648092d2b0f3d43150bb9838b25cc107d4f",
@@ -52,5 +53,5 @@
     },
     "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
   },
-  "codeHash": "sha256:6d17bcaf79a6d0f224fce32030a6daf7e2e6a8bbaf4041fe8f90b8f817bcc424"
+  "codeHash": "sha256:cee9c24263a8e1e0ad96975ea9a08c806fea45759a3d8a10072f7e55ec41fa08"
 }

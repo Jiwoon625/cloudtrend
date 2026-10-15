@@ -62,7 +62,14 @@ describe("historical optional research metadata compatibility", () => {
   it("reads the original immutable payload without deleting optional metadata", async () => {
     const { view } = historicalFixture();
     const original = JSON.stringify(view);
-    vi.mocked(readObject).mockResolvedValue(structuredClone(view));
+    vi.mocked(readObject).mockImplementation(async <T>(path: string): Promise<T | null> => {
+      if (path === shadowObjectPath(uid, "latest.json")) return structuredClone(view) as T;
+      if (path === shadowObjectPath(uid, "registry.json"))
+        return structuredClone(view.registry) as T;
+      if (path === shadowObjectPath(uid, `sessions/${session.date}.json`))
+        return structuredClone(view.latest) as T;
+      return null;
+    });
     expect(KOSPI_SHADOW_POLICY).not.toHaveProperty("researchReference");
     expect(await loadKospiShadow()).toEqual(view);
     expect(JSON.stringify(view)).toBe(original);

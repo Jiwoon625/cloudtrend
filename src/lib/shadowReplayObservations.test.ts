@@ -361,7 +361,29 @@ async function replayPersistence(
     },
     from(table: string) {
       expect(table).toBe("shadow_replay_audit");
+      const filters: Array<(row: Record<string, unknown>) => boolean> = [];
+      const contains = (actual: unknown, expected: unknown): boolean =>
+        expected !== null && typeof expected === "object"
+          ? actual !== null &&
+            typeof actual === "object" &&
+            Object.entries(expected).every(([key, value]) =>
+              contains((actual as Record<string, unknown>)[key], value),
+            )
+          : actual === expected;
+      const query = {
+        eq: (key: string, value: unknown) => {
+          filters.push((row) => row[key] === value);
+          return query;
+        },
+        contains: async (key: string, value: unknown) => ({
+          data: audits.filter(
+            (row) => filters.every((filter) => filter(row)) && contains(row[key], value),
+          ),
+          error: null,
+        }),
+      };
       return {
+        select: () => query,
         async insert(row: Record<string, unknown>) {
           audits.push(row);
           return { error: null };

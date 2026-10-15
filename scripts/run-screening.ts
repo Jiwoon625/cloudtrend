@@ -1,3 +1,4 @@
+import { verifyShadowRuntimeManifests } from "./verify-shadow-runtime-manifests";
 import { hydrateScreeningSnapshot } from "../src/lib/screeningSnapshotStorage";
 import { completeScreeningPublication } from "../src/lib/screeningPublication.server";
 import { refreshPortfolioAfterScreening } from "../src/lib/portfolioLedgers.server";
@@ -331,7 +332,9 @@ export async function runScreening(argv = process.argv.slice(2)) {
 }
 
 if (!process.env["VITEST"])
-  runScreening().catch((error: unknown) => {
-    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-    process.exitCode = 1;
-  });
+  verifyShadowRuntimeManifests()
+    .then(() => runScreening())
+    .catch((error: unknown) => {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    });

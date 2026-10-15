@@ -13,6 +13,9 @@ on:
       - src/components/IntegratedAllocationShadowPanel*
       - scripts/*integrated-allocation*
       - tests/*allocation*
+      - tests/shadow-runtime-preflight.test.ts
+      - tests/fixtures/integrated-runtime-*
+      - scripts/verify-shadow-runtime-manifests.ts
       - docs/integrated-allocation*
       - supabase/migrations/*integrated_allocation*
       - vitest.*allocation*.ts

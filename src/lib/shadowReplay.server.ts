@@ -1,3 +1,4 @@
+import { readKrSourceVintageApproval } from "./krSourceVintageApproval.server";
 import { sliceKrDatasetForReplay, analyzeKrReplayDataset } from "./shadowReplayCalculation";
 export { sliceKrDatasetForReplay } from "./shadowReplayCalculation";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -432,8 +433,12 @@ async function replayKrShadowMarket(input: {
           .at(-1) ??
         date;
       const codeHash = await reviewedReplayCodeHash(store, KR_KINDS, date);
+      const sourceVintageApproval = await readKrSourceVintageApproval(input.client, input.userId);
       const octoberShadow = await recordOctoberPublication(store, {
         market: "KR",
+        ...(sourceVintageApproval && date >= sourceVintageApproval.receipt.reviews[0]!.notBefore
+          ? { sourceVintageApproval }
+          : {}),
         dataset,
         analysis,
         snapshot,

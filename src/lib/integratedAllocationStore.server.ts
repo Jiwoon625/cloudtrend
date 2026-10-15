@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { canonicalSeriesJson, hashSeriesValue, type SeriesHash } from "./ledger/modelSeries";
+import { canonicalSeriesJson, hashSeriesValue } from "./ledger/modelSeries";
 import {
   createIntegratedAllocationShadow,
   verifyIntegratedAllocationLedger,
@@ -13,7 +13,16 @@ import {
   type IntegratedRegistry,
 } from "./integratedAllocationPublication";
 import runtime from "./integratedAllocationRuntime.generated.json";
-export const integratedAllocationCodeHash = runtime.codeHash as SeriesHash;
+import {
+  INTEGRATED_ALLOCATION_FROZEN_CODE_HASH,
+  reviewedIntegratedRuntime,
+} from "./integratedAllocationRuntimeAdmission";
+import { recordIntegratedRuntimeAttempt } from "./integratedAllocationRuntimeAudit.server";
+export const integratedAllocationRuntimeAdmission = reviewedIntegratedRuntime(
+  runtime.codeHash,
+  INTEGRATED_ALLOCATION_FROZEN_CODE_HASH,
+);
+export const integratedAllocationCodeHash = integratedAllocationRuntimeAdmission.frozenCodeHash;
 const bookId = (kind: AllocationShadowKind) => `${INTEGRATED_ALLOCATION_VERSION}:${kind}`;
 function owner(uid: string) {
   if (!/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(uid))
@@ -84,6 +93,15 @@ export async function initializeIntegratedAllocationBook(
   const existing = await readIntegratedAllocationBook(client, uid, kind);
   if (existing.registry) return existing;
   const envelope = await prepareIntegratedInitialization(kind, integratedAllocationCodeHash);
+  await recordIntegratedRuntimeAttempt(client, uid, {
+    admission: integratedAllocationRuntimeAdmission,
+    kind: "INITIALIZATION_ATTEMPT",
+    date: envelope.registry.accountingStartDate,
+    subjectHash: envelope.stateHash,
+    sourceHash: envelope.registry.sourceHash,
+    bookId: envelope.registry.bookId,
+    previousStateHash: null,
+  });
   const { data, error } = await client.rpc("ledger_append_own_october_model_session", {
     p_run: envelope,
     p_previous_date: null,
@@ -102,6 +120,16 @@ export async function appendIntegratedAllocationPublication(
   mode: "service" | "authenticated-owner" = "authenticated-owner",
 ) {
   owner(uid);
+  reviewedIntegratedRuntime(runtime.codeHash, publication.registry.codeHash);
+  await recordIntegratedRuntimeAttempt(client, uid, {
+    admission: integratedAllocationRuntimeAdmission,
+    kind: "PUBLICATION_ATTEMPT",
+    date: publication.receipt.date,
+    subjectHash: publication.stateHash,
+    sourceHash: publication.receipt.sourceHash,
+    bookId: publication.bookId,
+    previousStateHash: previous?.stateHash ?? null,
+  });
   const args = {
     p_run: publication,
     p_previous_date: previous?.receipt.date ?? null,

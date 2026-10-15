@@ -1,0 +1,15 @@
+{
+  "version": "integrated-allocation-runtime-admissions-v1",
+  "admissions": [
+    {
+      "runtimeCodeHash": "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4",
+      "frozenCodeHash": "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4",
+      "reviewId": "original-integrated-allocation-2026-10-12"
+    },
+    {
+      "runtimeCodeHash": "sha256:b56c1feced0a1c508d4a87ba659186bae91af63103d01e5da7d96e5c12974c8c",
+      "frozenCodeHash": "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4",
+      "reviewId": "reviewed-source-vintage-provenance-v1"
+    }
+  ]
+}

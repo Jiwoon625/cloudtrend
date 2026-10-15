@@ -84,8 +84,16 @@ export const VERIFIED_INPUT_PROVENANCE_RUNTIME_HASH =
 export const MISSING_CLOSE_OHLC_PRESERVATION_RUNTIME_HASH =
   "sha256:6d17bcaf79a6d0f224fce32030a6daf7e2e6a8bbaf4041fe8f90b8f817bcc424" as const;
 
+/** Reviewed exact source-vintage separation. Private approval binds whole-bar pairs;
+ * frozen execution observations stay immutable, prior economic exposure rejects,
+ * and cumulative receipts reject vendor reversion. No automatic normalization.
+ */
+export const REVIEWED_SOURCE_VINTAGE_RUNTIME_HASH =
+  "sha256:cee9c24263a8e1e0ad96975ea9a08c806fea45759a3d8a10072f7e55ec41fa08" as const;
+
 export const REVIEWED_SHADOW_RUNTIME_CODE_HASHES = Object.freeze([
   ADOPTED_SHADOW_FROZEN_CODE_HASH,
+  REVIEWED_SOURCE_VINTAGE_RUNTIME_HASH,
   "sha256:ffd26d07d50564c6c734dc9c96ede00f7786e1122df3eb373ad56a4648929033",
   PRE_FIRST_SESSION_KOSPI_CONFIRMATION_FIX_RUNTIME_HASH,
   PENDING_MARKET_CAP_FIX_RUNTIME_HASH,

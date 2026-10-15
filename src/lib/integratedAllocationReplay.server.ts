@@ -26,7 +26,9 @@ import {
   appendIntegratedAllocationPublication,
   readIntegratedAllocationBook,
   integratedAllocationCodeHash,
+  integratedAllocationRuntimeAdmission,
 } from "./integratedAllocationStore.server";
+import { recordIntegratedRuntimeAttempt } from "./integratedAllocationRuntimeAudit.server";
 const bucket = "cloudtrend-data";
 const prefix = (uid: string) => `${uid}/staging/integrated-allocation-inputs/v1`;
 interface UsEvidence {
@@ -85,6 +87,14 @@ async function stageOrRetainOutbox(
   payload: IntegratedAllocationOutboxPayload,
   calculatedAt?: string,
 ) {
+  await recordIntegratedRuntimeAttempt(client, uid, {
+    admission: integratedAllocationRuntimeAdmission,
+    kind: "EVIDENCE_PREPARED",
+    date,
+    market,
+    subjectHash: await hashSeriesValue(payload),
+    sourceHash: payload.clock.sourceHash,
+  });
   try {
     await put(client, `${prefix(uid)}/${market}/${date}.json`, payload);
   } catch (error) {
@@ -113,6 +123,14 @@ async function readOrRestore<T>(
   const { readIntegratedAllocationOutbox } = await import("./integratedAllocationRecovery.server");
   const retained = await readIntegratedAllocationOutbox(client, uid, market, date);
   if (!retained) return null;
+  await recordIntegratedRuntimeAttempt(client, uid, {
+    admission: integratedAllocationRuntimeAdmission,
+    kind: "EVIDENCE_RESTORED",
+    date,
+    market,
+    subjectHash: await hashSeriesValue(retained),
+    sourceHash: retained.clock.sourceHash,
+  });
   await put(client, path, retained);
   return read<T>(client, path);
 }

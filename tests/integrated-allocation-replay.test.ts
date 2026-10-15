@@ -60,7 +60,13 @@ vi.mock("../src/lib/freshStorage", () => ({
   }),
 }));
 vi.mock("../src/lib/integratedAllocationStore.server", () => ({
-  integratedAllocationCodeHash: `sha256:${"a".repeat(64)}`,
+  integratedAllocationCodeHash:
+    "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4",
+  integratedAllocationRuntimeAdmission: {
+    runtimeCodeHash: "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4",
+    frozenCodeHash: "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4",
+    reviewId: "original-integrated-allocation-2026-10-12",
+  },
   readIntegratedAllocationBook: vi.fn(
     async (_client: unknown, _uid: string, kind: string) =>
       memory.books.get(kind) ?? { registry: null, ledger: null, head: null },
@@ -86,24 +92,38 @@ vi.mock("../src/lib/integratedAllocationStore.server", () => ({
     },
   ),
 }));
-const H = `sha256:${"a".repeat(64)}` as SeriesHash;
+const H = "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4" as SeriesHash;
 const uid = "11111111-1111-4111-8111-111111111111";
 const client = {
   from: (table: string) => {
     if (table !== "shadow_replay_audit") throw new Error("Unexpected actual/remote table access");
     const filters: Array<[string, unknown]> = [];
+    const jsonFilters: Array<[string, unknown]> = [];
+    const contains = (actual: unknown, expected: unknown): boolean =>
+      expected !== null && typeof expected === "object"
+        ? actual !== null &&
+          typeof actual === "object" &&
+          Object.entries(expected).every(([k, v]) =>
+            contains((actual as Record<string, unknown>)[k], v),
+          )
+        : actual === expected;
     const query = {
       select: () => query,
       eq: (key: string, value: unknown) => {
         filters.push([key, value]);
         return query;
       },
-      contains: (_key: string, _value: unknown) => query,
+      contains: (key: string, value: unknown) => {
+        jsonFilters.push([key, value]);
+        return query;
+      },
       then: (resolve: (value: unknown) => unknown) =>
         Promise.resolve(
           resolve({
-            data: memory.audits.filter((row) =>
-              filters.every(([key, value]) => row[key] === value),
+            data: memory.audits.filter(
+              (row) =>
+                filters.every(([key, value]) => row[key] === value) &&
+                jsonFilters.every(([key, value]) => contains(row[key], value)),
             ),
             error: null,
           }),
@@ -439,8 +459,16 @@ it("retains prepared daily evidence only on storage failure and restores it with
   memory.failStorage = true;
   await stage("2026-10-12");
   expect(memory.files.size).toBe(0);
-  expect(memory.audits).toHaveLength(2);
-  expect(memory.audits[0]).toMatchObject({ status: "WAITING_INPUT", market: "KR" });
+  expect(
+    memory.audits.filter(
+      (row) => (row.details as Record<string, unknown>)?.integratedAllocationOutbox,
+    ),
+  ).toHaveLength(2);
+  expect(
+    memory.audits.find(
+      (row) => (row.details as Record<string, unknown>)?.integratedAllocationOutbox,
+    ),
+  ).toMatchObject({ status: "WAITING_INPUT", market: "KR" });
   expect(memory.writes).toHaveLength(0);
   const kr = await readIntegratedAllocationOutbox(client, uid, "KR", "2026-10-12");
   expect(kr?.version).toBe("integrated-kr-daily-evidence-v1");
@@ -452,13 +480,21 @@ it("retains prepared daily evidence only on storage failure and restores it with
       payload: kr!,
     }),
   ).toMatchObject({ reused: true });
-  expect(memory.audits).toHaveLength(2);
+  expect(
+    memory.audits.filter(
+      (row) => (row.details as Record<string, unknown>)?.integratedAllocationOutbox,
+    ),
+  ).toHaveLength(2);
   memory.failStorage = false;
   expect(
     await replayIntegratedAllocationAvailable(client, uid, "2026-10-12", "2026-10-13T01:00:00Z"),
   ).toEqual({ recorded: 2, waiting: null });
   expect((await payload("KR", "2026-10-12")).payload).toEqual(kr);
-  expect(memory.audits).toHaveLength(2);
+  expect(
+    memory.audits.filter(
+      (row) => (row.details as Record<string, unknown>)?.integratedAllocationOutbox,
+    ),
+  ).toHaveLength(2);
   expect(memory.writes).toHaveLength(2);
 });
 
@@ -473,8 +509,14 @@ it("stops at the first failed restore and reports when both durable channels fai
   expect(memory.uploadAttempts - attempts).toBe(1);
   expect(memory.writes).toHaveLength(0);
   memory.failAudit = true;
-  await expect(stage("2026-10-14", ["KR"])).rejects.toThrow("복구 입력 보관 확인 실패");
-  expect(memory.audits).toHaveLength(4);
+  await expect(stage("2026-10-14", ["KR"])).rejects.toThrow(
+    "provenance write could not be verified",
+  );
+  expect(
+    memory.audits.filter(
+      (row) => (row.details as Record<string, unknown>)?.integratedAllocationOutbox,
+    ),
+  ).toHaveLength(4);
 });
 
 it("rejects conflicting or stale outbox evidence and validates the direct replay date boundary", async () => {
@@ -498,7 +540,11 @@ it("rejects conflicting or stale outbox evidence and validates the direct replay
       payload: changed,
     }),
   ).rejects.toThrow("실행 버전 대조 실패");
-  expect(memory.audits).toHaveLength(1);
+  expect(
+    memory.audits.filter(
+      (row) => (row.details as Record<string, unknown>)?.integratedAllocationOutbox,
+    ),
+  ).toHaveLength(1);
   await expect(replayIntegratedAllocationAvailable(client, uid, "2026-02-30")).rejects.toThrow(
     "기준일이 올바르지 않습니다",
   );

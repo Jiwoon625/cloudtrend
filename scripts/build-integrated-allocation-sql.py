@@ -15,7 +15,14 @@ for kind,item in contracts.items():
  branch=branch.replace('__INITIAL_'+kind+'__',item['initial'].replace('sha256:'+'0'*64,'__CODE_HASH__').replace(item['contractHash'],'__CONTRACT_HASH__'))
 branch=branch.replace('__CALENDAR_HASH__',evidenceHash)
 runtime=json.loads((root/'src/lib/integratedAllocationRuntime.generated.json').read_text())['codeHash']
-branch=branch.replace('__REVIEWED_RUNTIME_HASH__',runtime)
+admissions=json.loads((root/'src/lib/integratedAllocationRuntimeAdmissions.json').read_text())
+assert admissions['version']=='integrated-allocation-runtime-admissions-v1'
+matching=[item for item in admissions['admissions'] if item['runtimeCodeHash']==runtime]
+assert len(matching)==1, 'Explicit integrated runtime review required before SQL generation'
+# Existing SQL validates frozen economic identity; never replace it with new executable identity.
+frozen=matching[0]['frozenCodeHash']
+assert frozen=='sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4'
+branch=branch.replace('__REVIEWED_RUNTIME_HASH__',frozen)
 anchor="  if pg_catalog.jsonb_typeof(p_run) is distinct from 'object'\n     or v_id is null"
 assert body.count(anchor)==1
 newbody=body.replace(anchor,branch+'\n'+anchor)

@@ -1,3 +1,4 @@
+import { verifyShadowRuntimeManifests } from "./verify-shadow-runtime-manifests";
 import { OPERATIONAL_SIGNAL_START } from "../src/lib/operationalSignalStart";
 import { usesLegacyUsOperatingLedger } from "../src/lib/legacyUsLedgerBoundary";
 import { loadUsDailyContinuation, runUsDailyContinuation } from "./us-daily-continuation";
@@ -597,6 +598,7 @@ export async function runUsScreening(
 }
 
 async function main() {
+  await verifyShadowRuntimeManifests();
   const userId = arg("--user") ?? process.env["SUPABASE_USER_ID"];
   if (!userId) throw new Error("--user 또는 SUPABASE_USER_ID가 필요합니다.");
   await runUsScreening(trustedSupabaseClient(), userId);
