@@ -8,6 +8,7 @@ import { rejectExecutionMemoUrls, savedExecutionMemo } from "./ledger/executionM
 import { readWebsiteDocument } from "./ledger/websiteRepository.server";
 import { loadNewActualDomesticQuotes } from "./portfolioLedgers.server";
 import { quotesFor } from "./usActualLedger.server";
+import { attachActualHoldingPriceExits } from "./actualHoldingPriceExit.server";
 import type { Quote } from "./portfolioLedgers";
 import {
   emptyNewActualMetadata,
@@ -120,10 +121,22 @@ export async function loadNewActualPortfolio(
     );
   if (!us)
     warnings.push("미국 원장이 아직 초기화되지 않았습니다. 기존 원장 준비 후 기록할 수 있습니다.");
+  const pools = {
+    KRW: project(domestic, "KRW", krQuotes, now),
+    USD: project(us, "USD", usQuotes, now),
+  };
+  try {
+    await attachActualHoldingPriceExits(client, uid, pools.KRW, now);
+  } catch {
+    if (!warnings.some((warning) => warning.startsWith("한국·ETF 평가가격")))
+      warnings.push(
+        "K4/E4 기준가격 또는 신호 저장을 확인하지 못했습니다. 기존 체결 기록은 유지됩니다.",
+      );
+  }
   return {
     domesticRevision: domestic?.revision ?? null,
     usRevision: us?.revision ?? null,
-    pools: { KRW: project(domestic, "KRW", krQuotes, now), USD: project(us, "USD", usQuotes, now) },
+    pools,
     warnings,
   };
 }

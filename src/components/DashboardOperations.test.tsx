@@ -87,7 +87,7 @@ describe("concise dashboard strategy rules", () => {
     expect(html).not.toContain("기존 운영 전략 유지");
     expect(html).not.toContain("되살리지 않으며");
     expect(html).toContain(
-      "M0 80점 돌파 진입 · 기초지수 MA60 하회 시 청산 · 데이터 오류 시 청산 점검.",
+      "M0 80점 돌파 진입 · 기초지수 MA60 하회 또는 보유 후 최고 기준가격 대비 −10% E4 종가 신호 → 다음 거래 가능 시가 청산.",
     );
     expect(html).toContain(
       "Core 상위 30% 밖 또는 산정 불가 시 청산. Beta 상위 40% 밖 3거래일 연속도 청산합니다.",

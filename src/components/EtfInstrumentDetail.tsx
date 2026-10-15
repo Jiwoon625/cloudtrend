@@ -24,11 +24,13 @@ export function EtfM0Summary({
   signalDate,
   held,
   bundle,
+  priceExit,
 }: {
   row: ScreeningRow;
   signalDate: string;
   held: boolean | undefined;
   bundle?: EtfInstrumentChartBundle | undefined;
+  priceExit?: { reason: string | null; signalDate: string | null } | undefined;
 }) {
   const evidence = etfPartialEvidence(row, signalDate);
   const previous = bundle?.previousM0;
@@ -54,7 +56,7 @@ export function EtfM0Summary({
         <p className="text-3xl font-bold">
           {value(evidence.score)} <span className="text-sm">/ 100</span>
         </p>
-        <p className="text-sm">{etfOperationalDisplay(row, signalDate, held)}</p>
+        <p className="text-sm">{etfOperationalDisplay(row, signalDate, held, false, priceExit)}</p>
         {previousReference ? (
           <p className="mt-2 text-xs text-muted-foreground" title="해당 날짜 자료로 재계산한 M0">
             전 거래일 M0 {value(previousReference.score)} / 100 · {previousReference.date} · 참고
@@ -98,6 +100,7 @@ export function EtfInstrumentDetail({
   held,
   holdingsNotice,
   payload,
+  priceExit,
 }: {
   row: ScreeningRow;
   asOfDate?: string;
@@ -105,13 +108,20 @@ export function EtfInstrumentDetail({
   held: boolean | undefined;
   holdingsNotice?: ReactNode;
   payload?: AnalysisPayload;
+  priceExit?: { reason: string | null; signalDate: string | null } | undefined;
 }) {
   const s = row.etfStrategy;
   const signalDate = asOfDate ?? s?.date ?? row.snapshot.tradeDate;
   const evidence = etfPartialEvidence(row, signalDate);
   const signalDates = etfSignalDateLabels(row, signalDate);
   const summary = (bundle?: EtfInstrumentChartBundle) => (
-    <EtfM0Summary row={row} signalDate={signalDate} held={held} bundle={bundle} />
+    <EtfM0Summary
+      row={row}
+      signalDate={signalDate}
+      held={held}
+      bundle={bundle}
+      priceExit={priceExit}
+    />
   );
   return (
     <AppShell>
@@ -175,9 +185,13 @@ export function EtfInstrumentDetail({
                   ? "보유 확인 중"
                   : !held
                     ? "미보유"
-                    : !evidence.current
-                      ? "보유 · 판단 미확인"
-                      : etfOperationalDisplay(row, signalDate, true)}
+                    : priceExit?.reason &&
+                        priceExit.signalDate &&
+                        priceExit.signalDate <= signalDate
+                      ? etfOperationalDisplay(row, signalDate, true, false, priceExit)
+                      : !evidence.current
+                        ? "보유 · 판단 미확인"
+                        : etfOperationalDisplay(row, signalDate, true)}
             </p>
             <Link to="/portfolio" className="text-xs text-primary hover:underline">
               포트폴리오에서 보유·체결 확인

@@ -116,6 +116,48 @@ const review = (ledger: IntegratedAllocationLedger, month: string) =>
   });
 
 describe("isolated annual-NAV allocation Shadow", () => {
+  it("adds E4 after entry without altering allocations and carries its pending sale across a missing open", async () => {
+    let ledger = await create("S07");
+    ledger = await step(ledger, "E", "2026-10-12", { rawOnsets: ["ETF"] });
+    ledger = await step(ledger, "E", "2026-10-13", { signals: [signal("ETF", "E", "2026-10-12")] });
+    ledger = await step(ledger, "E", "2026-10-14", { prices: [price("ETF", "100")] });
+    const original = structuredClone(ledger);
+    const policy = {
+      priceExitPolicy: "holding-price-exit-k4-e4-v1" as const,
+      priceExitSeeds: {
+        ETF: {
+          policyVersion: "holding-price-exit-k4-e4-v1" as const,
+          peak: "100",
+          peakDate: "2026-10-14",
+          throughDate: "2026-10-14",
+          signalDate: null,
+          signalClose: null,
+          signalThreshold: null,
+        },
+      },
+    };
+    const old = await step(ledger, "E", "2026-10-15", { prices: [price("ETF", "90")] });
+    ledger = await step(ledger, "E", "2026-10-15", { ...policy, prices: [price("ETF", "90")] });
+    expect(old.markets.E.pendingExits).toHaveLength(0);
+    expect(ledger.markets.E.pendingExits).toMatchObject([
+      { reason: "E4", signalDate: "2026-10-15" },
+    ]);
+    expect(ledger.target).toEqual(original.target);
+    expect(ledger.markets.E.cashKrw).toEqual(old.markets.E.cashKrw);
+    ledger = await step(ledger, "E", "2026-10-16", {
+      priceExitPolicy: policy.priceExitPolicy,
+      prices: [price("ETF", "120", { open: null })],
+    });
+    expect(ledger.markets.E.pendingExits).toHaveLength(1);
+    ledger = await step(ledger, "E", "2026-10-19", {
+      priceExitPolicy: policy.priceExitPolicy,
+      prices: [price("ETF", "80")],
+    });
+    expect(ledger.markets.E.positions).toHaveLength(0);
+    expect(ledger.receipts.at(-1)!.record.fills).toMatchObject([
+      { reason: "E4", price: "80", side: "SELL" },
+    ]);
+  });
   it("initializes only new 30m O1/S07 cash books with historical target provenance", async () => {
     const o1 = await create(),
       s07 = await create("S07");

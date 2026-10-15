@@ -1,3 +1,4 @@
+import { PRICE_EXIT_ADDITION_RUNTIME_HASH } from "./octoberShadowRuntime";
 import { describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
@@ -7,7 +8,6 @@ import { format } from "prettier";
 import {
   ADOPTED_SHADOW_FROZEN_CODE_HASH,
   adoptedShadowFrozenCodeHash,
-  REVIEWED_SOURCE_VINTAGE_RUNTIME_HASH,
   REVIEWED_SHADOW_RUNTIME_CODE_HASHES,
   shadowEngineManifest,
   shadowExecutableSyntax,
@@ -173,7 +173,7 @@ export const list = [
 
 it("keeps reviewed runtime provenance compatible with the eight frozen Shadow contracts", async () => {
   const runtime = await shadowEngineManifest();
-  expect(runtime.codeHash).toBe(REVIEWED_SOURCE_VINTAGE_RUNTIME_HASH);
+  expect(runtime.codeHash).toBe(PRICE_EXIT_ADDITION_RUNTIME_HASH);
   expect(REVIEWED_SHADOW_RUNTIME_CODE_HASHES).toContain(runtime.codeHash);
   expect(adoptedShadowFrozenCodeHash(runtime.codeHash)).toBe(ADOPTED_SHADOW_FROZEN_CODE_HASH);
   expect(ADOPTED_SHADOW_FROZEN_CODE_HASH).toBe(
@@ -186,7 +186,7 @@ it("keeps reviewed runtime provenance compatible with the eight frozen Shadow co
 
 it("freezes calculation sources independently of deployment/UI/docs while detecting engine changes", async () => {
   const original = await shadowEngineManifest();
-  expect(Object.keys(original.manifest.files)).toHaveLength(45);
+  expect(Object.keys(original.manifest.files)).toHaveLength(46);
   expect(original).toEqual(
     JSON.parse(await readFile("src/lib/ledger/octoberShadowEngineManifest.generated.json", "utf8")),
   );

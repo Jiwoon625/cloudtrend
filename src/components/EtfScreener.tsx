@@ -163,6 +163,7 @@ export function EtfScreener({
       analysis.asOfDate,
       !positionContext || ledgerError ? undefined : heldSet.has(r.instrument.symbol),
       blocked(r),
+      positionContext?.priceExits?.[r.instrument.symbol],
     );
   const getSortValue = (r: AnalysisResult["rows"][number], key: SortKey) => {
     const s = r.etfStrategy;

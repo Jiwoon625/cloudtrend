@@ -115,6 +115,7 @@ function InstrumentDetail() {
         calculatedAt={analysis.calculatedAt}
         holdingsNotice={holdingsNotice}
         held={positionContext?.heldSymbols.includes(symbol)}
+        priceExit={positionContext?.priceExits?.[symbol]}
       />
     );
 
