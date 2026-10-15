@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { NewActualPosition, NewActualTrade } from "./newActualPortfolio";
-import { reconstructActualPriceCycle } from "./actualHoldingPriceLots";
+import { actualPooledBasisByDate, reconstructActualPriceCycle } from "./actualHoldingPriceLots";
 
 function trade(
   id: string,
@@ -29,6 +29,16 @@ function position(quantity: string, cost: string): NewActualPosition {
   return { symbol: "ETF1", market: "ETF", quantity, cost } as NewActualPosition;
 }
 describe("actual price-exit acquisition lots", () => {
+  it("keeps a historical K4 basis fixed before a later higher-priced buy", () => {
+    const timeline = actualPooledBasisByDate(position("20", "3004.5"), [
+      trade("b1", "2026-10-12", "BUY", 10, 1000, 1.5, 0),
+      trade("b2", "2026-10-16", "BUY", 10, 2000, 3, 1),
+    ]);
+    expect(timeline).toEqual([
+      { date: "2026-10-12", quantity: "10", costBasis: "1001.5" },
+      { date: "2026-10-16", quantity: "20", costBasis: "3004.5" },
+    ]);
+  });
   it("preserves each entry price and exact fee-inclusive cost across two buys", () => {
     const result = reconstructActualPriceCycle(position("20", "2103.15"), [
       trade("b1", "2026-10-12", "BUY", 10, 1000, 1.5, 0),
