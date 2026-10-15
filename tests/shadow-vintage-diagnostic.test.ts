@@ -236,31 +236,12 @@ describe("read-only prospective KOSPI vintage diagnostic", () => {
     ).toBe(1);
   });
 
-  it("allows only manual or the exact one-time branch update, never production or uploads", async () => {
+  it("keeps the workflow manual, read-only, and free of artifact uploads", async () => {
     const workflow = await readFile(".github/workflows/kospi-shadow.yml", "utf8");
     const diagnose = workflow.split("\n  diagnose:")[1]!;
-    expect(workflow).not.toMatch(/^\s+(advance|verify|pull_request|workflow_run|schedule):/m);
-    expect(workflow.split("  workflow_dispatch:")[0]).toBe(
-      `name: KOSPI prospective Shadow
-run-name: Read-only Shadow vintage diagnostic
-on:
-  # One forward update from the reviewed head may start this read-only audit.
-  # Remove this trigger after the run reaches a terminal state.
-  push:
-    branches: [diagnose/shadow-vintage-readonly-20261015]
-    paths: [.github/workflows/kospi-shadow.yml]
-`,
-    );
-    expect(diagnose.split("    runs-on:")[0].trim()).toBe(
-      `if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.diagnostic_only) ||
-      (github.event_name == 'push' &&
-       github.ref == 'refs/heads/diagnose/shadow-vintage-readonly-20261015' &&
-       github.event.before == 'e4bcb6d04b36b54571240280681178c86f77486c' &&
-       github.event.deleted == false && github.event.forced == false)`,
-    );
+    expect(workflow).not.toMatch(/^\s+(advance|verify|push|pull_request|workflow_run|schedule):/m);
     expect(diagnose).toContain(
-      "DIAGNOSTIC_DATE: ${{ github.event_name == 'push' && '2026-10-14' || inputs.as_of }}",
+      "if: github.event_name == 'workflow_dispatch' && inputs.diagnostic_only",
     );
     expect(diagnose).not.toContain("run-kospi-shadow.ts");
     expect(workflow).toMatch(/diagnostic_only:[\s\S]*?default: true/);
