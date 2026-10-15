@@ -348,6 +348,34 @@ describe("new-only portfolio presentation", () => {
     expect(html).toContain("synthetic-capital-allocation");
     expect(html).not.toContain("신규 ETF 합성 종목");
   });
+  it("shows dated verified close, ETF peak, distance and multi-buy accounting evidence", () => {
+    const data = confirmed();
+    data.pools.KRW.positions[1]!.priceExit = {
+      policyVersion: "holding-price-exit-k4-e4-v1",
+      status: "청산 대기 · 다음 거래 가능 시가",
+      reason: "E4",
+      threshold: "108",
+      peak: "120",
+      peakDate: "2026-10-14",
+      signalDate: "2026-10-15",
+      observationDate: "2026-10-15",
+      observedClose: "107",
+      distancePercent: "-0.92592592",
+      auditStatus: "VERIFIED",
+      lotCount: 2,
+      basisMethod: "WEIGHTED_COST_LOT_PEAKS",
+      priceSource: "운영 정규화 종가",
+    };
+    const html = render(
+      <NewActualPortfolioContent data={data} asset="ETF" onAssetChange={() => undefined} />,
+    );
+    expect(html).toContain("최고 종가 120 KRW · 2026-10-14");
+    expect(html).toContain("판정 종가 107 KRW · 2026-10-15");
+    expect(html).toContain("청산선 대비 -0.93%");
+    expect(html).toContain("2건 매수 · 잔여원가 비례배분");
+    expect(html).toContain("종가·원가 대사 완료");
+    expect(html).toContain("실제 매도 체결 별도 입력 필요");
+  });
   it("switches the new asset view while sharing KRW cash once", () => {
     const data = confirmed();
     const kr = render(
