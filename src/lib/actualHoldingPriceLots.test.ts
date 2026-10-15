@@ -13,8 +13,13 @@ function trade(
 ): NewActualTrade {
   return {
     execution: {
-      id, date, side, symbol: "ETF1", market: "ETF",
-      name: "Synthetic ETF", order,
+      id,
+      date,
+      side,
+      symbol: "ETF1",
+      market: "ETF",
+      name: "Synthetic ETF",
+      order,
     },
     allocation: { executionId: id, quantity, gross, fee, brokerReference: id },
     realizedPnl: null,
@@ -57,6 +62,8 @@ describe("actual price-exit acquisition lots", () => {
   it("refuses duplicate fills or a cost mismatch instead of guessing the basis", () => {
     const buys = [trade("b1", "2026-10-12", "BUY", 10, 1000, 1.5, 0)];
     expect(() => reconstructActualPriceCycle(position("10", "1001.4"), buys)).toThrow(/differs/);
-    expect(() => reconstructActualPriceCycle(position("20", "2003"), [...buys, ...buys])).toThrow(/Duplicate/);
+    expect(() =>
+      reconstructActualPriceCycle(position("20", "2003"), [...buys, ...buys]),
+    ).toThrow(/Duplicate/);
   });
 });
