@@ -116,6 +116,9 @@ function view(): KospiShadowView {
 describe("unified Shadow UI", () => {
   it("mounts only the October 12 page, never hidden legacy research controls", () => {
     const html = renderToStaticMarkup(<ShadowPage />);
+    expect(html).toContain("별도 KOSPI 기록 열기");
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).not.toContain('id="separate-kospi-shadow"');
     expect(html).toContain(">Shadow</h1>");
     expect(html).not.toContain("Shadow · 10월 12일 신규 기록");
     expect(html).toContain("2026-10-12");

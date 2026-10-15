@@ -1,3 +1,4 @@
+import { verifyShadowRuntimeManifests } from "./verify-shadow-runtime-manifests";
 import process from "node:process";
 import {
   ANALYSIS_BUCKET,
@@ -12,14 +13,82 @@ import { DEFAULT_SCORING_CONFIG } from "../src/lib/engine/scoring";
 import { KOSPI_SHADOW_POLICY } from "../src/lib/engine/kospiShadow";
 import { buildKospiShadowSession } from "../src/lib/engine/kospiShadowDataset";
 import { persistKospiShadow, type ShadowObjectStore } from "../src/lib/kospiShadowStore";
-import { isKrOfficialShadowDecision } from "../src/lib/ledger/krShadowDecision";
+import { isKrLiveShadowDecision } from "../src/lib/krShadowAdmission";
+import {
+  KOSPI_SHADOW_CORRECTION_REVISION_ID,
+  initializeKospiShadowRevision,
+  openKospiShadowRevisionStore,
+  kospiShadowRevisionPath,
+  validateKospiShadowRevision,
+  type KospiShadowRevisionApproval,
+} from "../src/lib/kospiShadowSeries";
+import { shadowObjectPath } from "../src/lib/kospiShadowStore";
+import type { KospiShadowSession } from "../src/lib/engine/kospiShadow";
 import { sourceTimingEvidence } from "../src/lib/sourceTimingEvidence";
 function arg(name: string) {
   const i = process.argv.indexOf(name);
   return i < 0 ? undefined : process.argv[i + 1];
 }
+/** Fixed, owner-private correction approval only. No arbitrary path or in-place revision. */
+export async function publishKospiShadowTarget(
+  store: ShadowObjectStore,
+  uid: string,
+  session: KospiShadowSession,
+  config: unknown,
+  computedAt: string,
+  initializeCorrection: boolean,
+) {
+  if (session.date < "2026-10-14") {
+    if (initializeCorrection) throw new Error("Correction requires its exact reviewed date");
+    return persistKospiShadow(store, uid, session, config);
+  }
+  if (!initializeCorrection) {
+    const revisionStore = await openKospiShadowRevisionStore(store, uid);
+    return persistKospiShadow(revisionStore, uid, session, config);
+  }
+  if (process.env["GITHUB_EVENT_NAME"] !== "workflow_dispatch" || session.date !== "2026-10-14")
+    throw new Error("Retrospective correction requires an explicit manual exact-date dispatch");
+  const root = shadowObjectPath(uid, "registry.json").replace(/\/registry\.json$/, "");
+  const approved = await store.read<Omit<KospiShadowRevisionApproval, "computedAt">>(
+    `${root}/correction-approvals/${KOSPI_SHADOW_CORRECTION_REVISION_ID}.json`,
+  );
+  const keys = [
+    "revisionId",
+    "predecessorDate",
+    "correctionDate",
+    "expectedPredecessorHash",
+    "expectedOriginalTargetHash",
+    "expectedCorrectedSourceHash",
+  ];
+  if (
+    !approved ||
+    JSON.stringify(Object.keys(approved).sort()) !== JSON.stringify(keys.sort()) ||
+    approved.revisionId !== KOSPI_SHADOW_CORRECTION_REVISION_ID
+  )
+    throw new Error("Reviewed private KOSPI correction approval is required");
+  const existing = await store.read(kospiShadowRevisionPath(uid, "revision.json"));
+  if (existing) {
+    const revision = validateKospiShadowRevision(existing);
+    if (
+      revision.expectedPredecessorHash !== approved.expectedPredecessorHash ||
+      revision.expectedOriginalTargetHash !== approved.expectedOriginalTargetHash ||
+      revision.correctedSourceHash !== approved.expectedCorrectedSourceHash ||
+      revision.predecessorDate !== approved.predecessorDate ||
+      revision.correctionDate !== approved.correctionDate
+    )
+      throw new Error("Immutable KOSPI correction approval changed");
+    computedAt = revision.computedAt;
+  }
+  if (!Number.isFinite(Date.parse(computedAt)) || Date.parse(computedAt) > Date.now())
+    throw new Error("Actual KOSPI correction calculation time required");
+  return initializeKospiShadowRevision(store, uid, session, config, { ...approved, computedAt });
+}
+
 export async function runKospiShadow() {
   const dryRun = process.argv.includes("--dry-run");
+  const initializeCorrection = process.argv.includes("--initialize-correction");
+  if (initializeCorrection && (dryRun || process.env["GITHUB_EVENT_NAME"] !== "workflow_dispatch"))
+    throw new Error("Correction is a separate manual publication, not a preview or automatic run");
   if (
     !dryRun &&
     (process.env["GITHUB_ACTIONS"] !== "true" ||
@@ -29,6 +98,7 @@ export async function runKospiShadow() {
     throw new Error(
       "Shadow publication is restricted to its serialized main-branch workflow; use --dry-run locally",
     );
+  await verifyShadowRuntimeManifests();
   const uid = arg("--user") ?? process.env["SUPABASE_USER_ID"];
   if (!uid) throw new Error("SUPABASE_USER_ID is required");
   const client = trustedSupabaseClient();
@@ -104,8 +174,8 @@ export async function runKospiShadow() {
     .sort((a, b) => Date.parse(a) - Date.parse(b))
     .at(-1)!;
   const decisionAt = new Date().toISOString();
-  const official = isKrOfficialShadowDecision(date, sourceCollectedAt, decisionAt);
-  if (!dryRun && !official) {
+  const official = isKrLiveShadowDecision(date, sourceCollectedAt, decisionAt);
+  if (!dryRun && !initializeCorrection && !official) {
     console.log(
       JSON.stringify({
         strategy: KOSPI_SHADOW_POLICY.label,
@@ -148,7 +218,14 @@ export async function runKospiShadow() {
     );
     return;
   }
-  const result = await persistKospiShadow(store, uid, session, frozenConfig);
+  const result = await publishKospiShadowTarget(
+    store,
+    uid,
+    session,
+    frozenConfig,
+    decisionAt,
+    initializeCorrection,
+  );
   console.log(
     JSON.stringify({
       strategy: KOSPI_SHADOW_POLICY.label,

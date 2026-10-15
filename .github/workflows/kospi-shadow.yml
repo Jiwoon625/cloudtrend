@@ -6,6 +6,11 @@ on:
         description: "Optional date assertion; must match the active source snapshot exactly"
         type: string
         required: false
+      initialize_correction:
+        description: "Initialize the approved private retrospective revision; never rewrites the original"
+        type: boolean
+        required: false
+        default: false
   workflow_run:
     workflows: [CloudTrend screening]
     types: [completed]
@@ -14,6 +19,7 @@ on:
     paths:
       - "src/lib/engine/kospiShadow*"
       - "src/lib/kospiShadow*"
+      - "src/lib/krShadowAdmission*"
       - "src/components/*Shadow*"
       - "src/components/UsPortfolioView*"
       - "src/routes/shadow.tsx"
@@ -22,6 +28,9 @@ on:
       - "scripts/run-kospi-shadow.ts"
       - "scripts/kospi-shadow-runtime.config.ts"
       - "tests/shadow-*"
+      - "tests/fixtures/kospiShadowRevision.ts"
+      - "vitest.shadow.config.ts"
+      - "scripts/verify-shadow-runtime-manifests.ts"
       - ".github/workflows/kospi-shadow.yml"
 permissions:
   contents: read
@@ -54,6 +63,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
       SHADOW_AS_OF: ${{ inputs.as_of }}
+      INITIALIZE_CORRECTION: ${{ github.event_name == 'workflow_dispatch' && inputs.initialize_correction || false }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,4 +77,5 @@ jobs:
         run: |
           args=(--user "$SUPABASE_USER_ID")
           if [[ -n "$SHADOW_AS_OF" ]]; then args+=(--as-of "$SHADOW_AS_OF"); fi
+          if [[ "$INITIALIZE_CORRECTION" == "true" ]]; then args+=(--initialize-correction); fi
           npx vite-node --config scripts/kospi-shadow-runtime.config.ts scripts/run-kospi-shadow.ts -- "${args[@]}"

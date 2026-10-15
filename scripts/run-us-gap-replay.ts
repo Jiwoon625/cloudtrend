@@ -1,3 +1,4 @@
+import { verifyShadowRuntimeManifests } from "./verify-shadow-runtime-manifests";
 import { usesLegacyUsOperatingLedger } from "../src/lib/legacyUsLedgerBoundary";
 import {
   RESTART_ACCOUNTING_START,
@@ -1014,6 +1015,7 @@ async function runRestartUsGapReplay(
 }
 
 async function main() {
+  await verifyShadowRuntimeManifests();
   const userId = argument("--user") ?? process.env["SUPABASE_USER_ID"];
   const manifestPath = argument("--manifest");
   const manifestHash = argument("--manifest-hash");

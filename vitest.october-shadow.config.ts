@@ -11,6 +11,7 @@ export default defineConfig({
       "src/lib/websitePerformanceBoundary.test.ts",
       "src/lib/octoberShadowPublication.test.ts",
       "src/lib/shadowReplay.test.ts",
+      "src/lib/krSourceVintageApproval.test.ts",
       "src/lib/shadowReplayObservations.test.ts",
       "src/lib/shadowReplayVolatility.test.ts",
       "src/lib/ledger/octoberShadowTax.test.ts",

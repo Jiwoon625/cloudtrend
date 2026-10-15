@@ -1,4 +1,10 @@
-import { krExecutionBar } from "./octoberShadowArchive";
+import {
+  reconcileKrHistoricalSourceVintage,
+  assertKrSourceVintageReceipt,
+  verifyKrSourceVintagePrivateApproval,
+  type KrSourceVintagePrivateApproval,
+  type KrSourceVintageReceipt,
+} from "./krSourceVintage";
 import {
   krDailyInputArchive,
   resolveKrInputArchive,
@@ -49,6 +55,7 @@ export interface PublicationProof {
 }
 export interface KrModelPublication extends PublicationProof {
   market: "KR";
+  sourceVintageApproval?: KrSourceVintagePrivateApproval;
   dataset: MarketDataset;
   analysis: AnalysisResult;
   snapshot: ScreeningSnapshot;
@@ -71,6 +78,8 @@ export type OctoberRun = (AdoptedUsRun | AdoptedKrRun | AdoptedEtfRun | AdoptedK
     runtimeCodeHash?: SeriesHash;
     availableAt: string;
     decisionAt: string;
+    historicalSourceVintages?: KrSourceVintageReceipt[];
+    sourceVintageApprovalHash?: SeriesHash;
   };
 };
 export interface OctoberRecordResult {
@@ -174,6 +183,7 @@ function publicationValue(input: OctoberPublication) {
     confirmedRegularClose: input.confirmedRegularClose,
     failedSymbols: input.failedSymbols,
     config: input.config,
+    ...(input.sourceVintageApproval ? { sourceVintageApproval: input.sourceVintageApproval } : {}),
     universeEvidence: input.universeEvidence,
     sourceEvidence: input.sourceEvidence,
     dataset: {
@@ -285,6 +295,10 @@ export async function recordOctoberPublication(
 ): Promise<OctoberRecordResult> {
   const date = input.market === "US" ? input.analysis.date : input.analysis.asOfDate;
   if (date < MODEL_ACCOUNTING_START) return { status: "WAITING_START", date, records: [] };
+  const vintageApproval =
+    input.market === "KR" && input.sourceVintageApproval
+      ? await verifyKrSourceVintagePrivateApproval(input.sourceVintageApproval)
+      : null;
   const inputHash = await hashSeriesValue(publicationValue(input));
   const durable = await store.readPrepared(input.market, date);
   if (durable) {
@@ -366,6 +380,7 @@ export async function recordOctoberPublication(
       }
     }
     let stepped: ModelJournalRun;
+    const historicalSourceVintages: KrSourceVintageReceipt[] = [];
     if (input.market === "US") {
       stepped = (
         await stepAdoptedUsSeries(
@@ -548,24 +563,47 @@ export async function recordOctoberPublication(
     } else {
       const prior = previous as (AdoptedKrRun & OctoberRun) | null;
       const priorInputs = prior ? await resolveKrInputArchive(prior, readArchive) : null;
+      const vintageReceipts = new Map<string, KrSourceVintageReceipt>();
+      for (const receipt of prior?.publication.historicalSourceVintages ?? []) {
+        if (
+          !vintageApproval ||
+          prior?.publication.sourceVintageApprovalHash !== vintageApproval.registryHash
+        )
+          throw new Error("Private KR source vintage approval changed or missing");
+        assertKrSourceVintageReceipt(receipt, vintageApproval.reviews);
+        const key = `${receipt.symbol}:${receipt.date}`;
+        if (vintageReceipts.has(key))
+          throw new Error("Duplicate retained KR source vintage receipt");
+        vintageReceipts.set(key, receipt);
+      }
       const daily = currentArchive!.inputs;
       const bars = Object.fromEntries(
         Object.entries(daily.bars).map(([symbol, rows]) => [symbol, [...rows]]),
       );
       for (const [symbol, rows] of Object.entries(priorInputs?.bars ?? {})) {
         for (const old of rows) {
-          const overlap = input.dataset.bars[symbol]?.find(
+          const overlaps = (input.dataset.bars[symbol] ?? []).filter(
             (row) => row.tradeDate === old.tradeDate,
           );
-          if (
-            overlap &&
-            canonicalSeriesJson(krExecutionBar(overlap)) !==
-              canonicalSeriesJson(krExecutionBar(old))
-          )
-            throw new Error("KR source revises archived historical OHLC");
+          if (overlaps.length > 1) throw new Error("Duplicate historical KR observations");
+          const overlap = overlaps[0];
+          if (overlap && prior) {
+            const key = `${symbol}:${old.tradeDate}`;
+            const receipt = await reconcileKrHistoricalSourceVintage({
+              symbol,
+              archived: old,
+              incoming: overlap,
+              publicationDate: date,
+              previousResult: prior.result,
+              previousReceipt: vintageReceipts.get(key),
+              reviews: vintageApproval?.reviews ?? [],
+            });
+            if (receipt) vintageReceipts.set(key, receipt);
+          }
         }
         bars[symbol] = [...rows, ...(bars[symbol] ?? [])];
       }
+      historicalSourceVintages.push(...vintageReceipts.values());
       const result = (
         await stepAdoptedKrSeries(
           series,
@@ -612,6 +650,9 @@ export async function recordOctoberPublication(
         runtimeCodeHash: input.runtimeCodeHash ?? input.codeHash,
         availableAt: input.availableAt,
         decisionAt: input.decisionAt,
+        ...(historicalSourceVintages.length
+          ? { historicalSourceVintages, sourceVintageApprovalHash: vintageApproval!.registryHash }
+          : {}),
       },
     };
     const run = { ...runBody, stateHash: await hashSeriesValue(runBody) } as OctoberRun;

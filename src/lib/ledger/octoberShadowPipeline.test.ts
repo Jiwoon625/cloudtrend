@@ -1,3 +1,4 @@
+import { KR_SOURCE_VINTAGE_REVIEW_ID, KR_SOURCE_VINTAGE_POLICY } from "./krSourceVintage";
 import { buildSnapshot } from "../screeningSnapshot";
 import { resolveKrInputArchive } from "./octoberShadowArchive";
 import type { KrDailyInputArchive } from "./octoberShadowArchive";
@@ -241,6 +242,7 @@ import { ETF_POLICY, type EtfStrategySnapshot } from "../engine/etfStrategy";
 import type { MarketDataset } from "../engine/dataset";
 import type { AnalysisResult, ScreeningRow } from "../engine/pipeline";
 import type { KrModelPublication } from "./octoberShadowPipeline";
+import type { DailyPrice } from "../engine/types";
 function krSource(date: string): KrModelPublication {
   const bar = {
     tradeDate: date,
@@ -375,6 +377,158 @@ function krSource(date: string): KrModelPublication {
     },
   };
 }
+
+// Synthetic exact-pair reproduction; no private production observations.
+async function revisedVintageSource(
+  date: string,
+  incomingVintage: boolean,
+): Promise<KrModelPublication> {
+  const input = krSource(date);
+  input.dataset.instruments[1]!.symbol = "SYNTHV";
+  delete input.dataset.bars["000002"];
+  const sessions = ["2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15"].filter(
+    (day) => day <= date,
+  );
+  input.dataset.tradeDates = ["2026-10-08", ...sessions];
+  input.dataset.kospiGateDates = input.dataset.tradeDates;
+  input.dataset.bars["SYNTHV"] = sessions.map((day): DailyPrice => ({
+    tradeDate: day,
+    open: day < "2026-10-14" ? (incomingVintage ? 500 : 100) : 530,
+    high: day < "2026-10-14" ? (incomingVintage ? 500 : 100) : 530,
+    low: day < "2026-10-14" ? (incomingVintage ? 500 : 100) : 530,
+    close: day < "2026-10-14" ? (incomingVintage ? 500 : 100) : 530,
+    volume: 0,
+    tradingValue: 0,
+    marketCap: 1000,
+    foreignNetBuyValue: 0,
+    institutionNetBuyValue: 0,
+    lendingBalanceQuantity: 10,
+    shortSellingVolumeRate: null,
+    openObserved: true,
+    volumeObserved: true,
+  }));
+  if (date >= "2026-10-14") {
+    const reviews = await Promise.all(
+      ["2026-10-12", "2026-10-13"].map(async (day) => {
+        const base = {
+          ...input.dataset.bars["SYNTHV"]![0]!,
+          tradeDate: day,
+          open: 100,
+          high: 100,
+          low: 100,
+          close: 100,
+        };
+        return {
+          id: KR_SOURCE_VINTAGE_REVIEW_ID,
+          symbol: "SYNTHV",
+          date: day,
+          notBefore: "2026-10-14",
+          archivedHash: await hashSeriesValue(base),
+          incomingHash: await hashSeriesValue({
+            ...base,
+            open: 500,
+            high: 500,
+            low: 500,
+            close: 500,
+          }),
+          evidenceUrl: "https://dart.fss.or.kr/synthetic-fixture",
+        };
+      }),
+    );
+    const receipt = {
+      version: "kr-source-vintage-review-v1" as const,
+      reviewId: KR_SOURCE_VINTAGE_REVIEW_ID,
+      reviews,
+    };
+    input.sourceVintageApproval = {
+      receipt,
+      registry: {
+        version: "kr-source-vintage-approval-v1",
+        reviewId: KR_SOURCE_VINTAGE_REVIEW_ID,
+        status: "APPROVED",
+        policy: KR_SOURCE_VINTAGE_POLICY,
+        receiptHash: await hashSeriesValue(receipt),
+      },
+    };
+  }
+  return input;
+}
+
+it("keeps completed economic bytes and separate revised-source receipts across future continuations", async () => {
+  const f = await fixture();
+  for (const kind of ADOPTED_SERIES_KINDS)
+    await f.store.insertSeries(
+      await freezeRestartSeries({ kind, frozenAt: "2026-10-09T00:00:00Z", codeHash, sourceHash }),
+    );
+  await recordOctoberPublication(f.store, await revisedVintageSource("2026-10-12", false));
+  await recordOctoberPublication(f.store, await revisedVintageSource("2026-10-13", false));
+  const oldSessions = new Map([...f.sessions].map(([key, value]) => [key, JSON.stringify(value)]));
+  const oldArchives = new Map([...f.archives].map(([key, value]) => [key, JSON.stringify(value)]));
+  const incoming = await revisedVintageSource("2026-10-14", true);
+  const incomingBytes = JSON.stringify(incoming);
+  const recorded = await recordOctoberPublication(f.store, incoming);
+  expect(recorded.records).toHaveLength(5);
+  expect(JSON.stringify(incoming)).toBe(incomingBytes);
+  const mixed = await f.store.readSession<import("./octoberShadowPipeline").OctoberRun>(
+    "adopted-shadow-2026-10-12-v1:KR_MIXED",
+    "2026-10-14",
+  );
+  expect(mixed!.publication.historicalSourceVintages).toHaveLength(2);
+  expect(mixed!.publication.historicalSourceVintages?.map((value) => value.fields)).toEqual([
+    ["close", "high", "low", "open"],
+    ["close", "high", "low", "open"],
+  ]);
+  const prefix = await resolveKrInputArchive(
+    mixed as import("./krAdoptedShadow").AdoptedKrRun,
+    f.store.readKrInput,
+  );
+  expect(prefix.bars["SYNTHV"]!.map((bar) => bar.close)).toEqual([100, 100, 530]);
+  const retry = await recordOctoberPublication(f.store, incoming);
+  expect(retry.records.every((record) => record.reused)).toBe(true);
+  const reverted = await revisedVintageSource("2026-10-15", false);
+  await expect(recordOctoberPublication(f.store, reverted)).rejects.toThrow(
+    "reverted or changed again",
+  );
+  const duplicated = await revisedVintageSource("2026-10-15", true);
+  duplicated.dataset.bars["SYNTHV"]!.push({
+    ...duplicated.dataset.bars["SYNTHV"]![0]!,
+    close: 999,
+  });
+  await expect(recordOctoberPublication(f.store, duplicated)).rejects.toThrow(
+    "Duplicate historical KR observations",
+  );
+  const rolling = await revisedVintageSource("2026-10-15", true);
+  rolling.dataset.bars["SYNTHV"] = rolling.dataset.bars["SYNTHV"]!.filter(
+    (bar) => bar.tradeDate >= "2026-10-14",
+  );
+  await recordOctoberPublication(f.store, rolling);
+  const rolled = await f.store.readSession<import("./octoberShadowPipeline").OctoberRun>(
+    "adopted-shadow-2026-10-12-v1:KR_MIXED",
+    "2026-10-15",
+  );
+  expect(rolled!.publication.historicalSourceVintages).toEqual(
+    mixed!.publication.historicalSourceVintages,
+  );
+  for (const [key, bytes] of oldSessions) expect(JSON.stringify(f.sessions.get(key))).toBe(bytes);
+  for (const [key, bytes] of oldArchives) expect(JSON.stringify(f.archives.get(key))).toBe(bytes);
+});
+
+it("still blocks an unreviewed historical price before writing any new economic session", async () => {
+  const f = await fixture();
+  for (const kind of ADOPTED_SERIES_KINDS)
+    await f.store.insertSeries(
+      await freezeRestartSeries({ kind, frozenAt: "2026-10-09T00:00:00Z", codeHash, sourceHash }),
+    );
+  await recordOctoberPublication(f.store, await revisedVintageSource("2026-10-12", false));
+  await recordOctoberPublication(f.store, await revisedVintageSource("2026-10-13", false));
+  const oldSessions = JSON.stringify([...f.sessions]);
+  const revised = await revisedVintageSource("2026-10-14", true);
+  revised.dataset.bars["SYNTHV"]![0]!.close = 501;
+  await expect(recordOctoberPublication(f.store, revised)).rejects.toThrow(
+    "unreviewed or ambiguous",
+  );
+  expect(JSON.stringify([...f.sessions])).toBe(oldSessions);
+});
 describe("KR five-book complete publication", () => {
   it("records first Oct6 and next Oct7 from rolling uploads without importing prestart history", async () => {
     const f = await fixture();

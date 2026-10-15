@@ -1,4 +1,4 @@
-import runtime from "../src/lib/integratedAllocationRuntime.generated.json";
+import { INTEGRATED_ALLOCATION_FROZEN_CODE_HASH } from "../src/lib/integratedAllocationRuntimeAdmission";
 /** Disposable embedded PostgreSQL only: synthetic owners, no URL/key/network or live writes. */
 import { PGlite } from "@electric-sql/pglite";
 import { createHash } from "node:crypto";
@@ -30,7 +30,7 @@ import evidence from "../src/lib/ledger/octoberShadowCalendarEvidence.json";
 const db = new PGlite();
 const owner = "11111111-1111-4111-8111-111111111111",
   other = "22222222-2222-4222-8222-222222222222";
-const codeHash = runtime.codeHash as SeriesHash;
+const codeHash = INTEGRATED_ALLOCATION_FROZEN_CODE_HASH;
 const draft = readFileSync("docs/integrated-allocation-owner-append.sql", "utf8");
 const rollback = readFileSync("docs/integrated-allocation-owner-append.rollback.sql", "utf8");
 let beforeCatalog: unknown, beforeAcl: unknown, originalBody: string, patchedDefinition: string;

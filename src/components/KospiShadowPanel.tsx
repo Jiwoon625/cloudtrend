@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { kospiShadowRevision } from "@/lib/kospiShadowSeries";
 import { NavSeriesLegend } from "@/components/NavSeriesLegend";
 import { navSeriesStyle } from "@/lib/navSeries";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -48,15 +50,18 @@ export function KospiShadowPanel({
   fromDate?: string;
   toDate?: string;
 }) {
+  const [originalSelected, setOriginalSelected] = useState(false);
   const query = useQuery({
-      queryKey: ["kospi-prospective-shadow"],
-      queryFn: loadKospiShadow,
+      queryKey: ["kospi-prospective-shadow", originalSelected ? "original" : "preferred"],
+      queryFn: () => loadKospiShadow(originalSelected),
       staleTime: 60_000,
     }),
     qc = useQueryClient();
   return (
     <KospiShadowContent
-      view={query.data ?? null}
+      view={query.isError ? null : (query.data ?? null)}
+      originalSelected={originalSelected}
+      toggleOriginal={() => setOriginalSelected((value) => !value)}
       loading={query.isPending}
       error={query.error?.message ?? null}
       fromDate={fromDate}
@@ -72,6 +77,8 @@ export function KospiShadowContent({
   fromDate,
   toDate,
   refresh,
+  originalSelected = false,
+  toggleOriginal,
 }: {
   view: KospiShadowView | null;
   loading: boolean;
@@ -79,7 +86,10 @@ export function KospiShadowContent({
   fromDate: string;
   toDate: string;
   refresh: () => void;
+  originalSelected?: boolean;
+  toggleOriginal?: () => void;
 }) {
+  const revision = view ? kospiShadowRevision(view) : null;
   const snapshot = view?.latest,
     daily = snapshot?.daily,
     state = snapshot?.state;
@@ -95,11 +105,47 @@ export function KospiShadowContent({
         <div>
           <h2 className="text-xl font-semibold">{KOSPI_SHADOW_POLICY.label}</h2>
           <Badge variant="outline">SHADOW · KRW · 연구 관찰</Badge>
+          {revision ? (
+            <Badge variant="outline">사후 정정본</Badge>
+          ) : view ? (
+            <Badge variant="outline">원본 기록 · 보존본</Badge>
+          ) : null}
         </div>
-        <Button variant="outline" onClick={refresh}>
-          새로고침
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={refresh}>
+            새로고침
+          </Button>
+          {toggleOriginal && (
+            <Button variant="outline" onClick={toggleOriginal}>
+              {originalSelected ? "정정본 우선 보기" : "원본 기록 보기"}
+            </Button>
+          )}
+        </div>
       </header>
+      {revision && (
+        <section
+          aria-label="사후 정정본 안내"
+          className="rounded-lg border border-amber-500 bg-card p-3 text-sm leading-relaxed"
+        >
+          <p className="font-semibold">사후 정정본 · 원본 별도 보존</p>
+          <p>
+            {revision.inheritedThrough}까지의 자금·보유·성과를 그대로 이어받고{" "}
+            {revision.correctionDate}부터 다시 계산했습니다. 초기자금을 재설정하지 않았습니다.
+          </p>
+          <p>
+            정정 시작일의 결과는 당시 실시간으로 확정된 기록이 아닙니다. 이전 구간은 재계산하지
+            않았으며, 원본 기록은 변경하지 않았습니다.
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            정정 계산 시각: {revision.computedAt}
+          </p>
+        </section>
+      )}
+      {view && !revision && (
+        <p className="rounded border p-3 text-sm">
+          보존된 원본 기록입니다. 사후 정정본과 구분하여 표시합니다.
+        </p>
+      )}
       <p className="rounded-lg border bg-card p-3 text-sm leading-relaxed">
         원래 8점 돌파일의 국면을 고정하고 다음 거래일 종가 8점 이상을 확인합니다. 호황·중립은 RS
         조건 없이, 불황은 확인일 RSAccel &gt; 0일 때만 모델 진입합니다. 신규 미보유 종목의 확인일
