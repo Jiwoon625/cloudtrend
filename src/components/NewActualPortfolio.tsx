@@ -354,10 +354,51 @@ export function NewActualPortfolioContent({
                           <div>기준 {money(position.priceExit.threshold, currency)}</div>
                         )}
                         {position.market === "ETF" && position.priceExit?.peak && (
-                          <div>최고 기준가격 {money(position.priceExit.peak, currency)}</div>
+                          <div>
+                            최고 종가 {money(position.priceExit.peak, currency)}
+                            {position.priceExit.peakDate ? ` · ${position.priceExit.peakDate}` : ""}
+                          </div>
+                        )}
+                        {position.priceExit?.observedClose && (
+                          <div>
+                            판정 종가 {money(position.priceExit.observedClose, currency)}
+                            {position.priceExit.observationDate
+                              ? ` · ${position.priceExit.observationDate}`
+                              : ""}
+                          </div>
+                        )}
+                        {position.priceExit?.distancePercent && (
+                          <div>
+                            청산선 대비 {Number(position.priceExit.distancePercent).toFixed(2)}%
+                          </div>
+                        )}
+                        {position.priceExit?.basisMethod === "WEIGHTED_COST_LOT_PEAKS" && (
+                          <div className="text-xs text-muted-foreground">
+                            {position.priceExit.lotCount}건 매수 · 잔여원가 비례배분
+                            {position.market === "ETF" ? " · 로트별 최고 종가 중 선행 청산선" : ""}
+                          </div>
+                        )}
+                        {position.priceExit?.observationDate && (
+                          <div className="text-xs text-muted-foreground">
+                            근거 {position.priceExit.priceSource ?? "확인 대기"}
+                          </div>
+                        )}
+                        {position.priceExit?.auditStatus && (
+                          <div className="text-xs text-muted-foreground">
+                            종가·원가 대사{" "}
+                            {position.priceExit.auditStatus === "VERIFIED"
+                              ? "완료"
+                              : position.priceExit.auditStatus === "LATCHED"
+                                ? "기존 청산신호 보존 · 체결 확인 필요"
+                                : position.priceExit.auditStatus === "MISMATCH"
+                                  ? "불일치 · 근거 검토 필요"
+                                  : "확인 대기"}
+                          </div>
                         )}
                         {position.priceExit?.signalDate && (
-                          <div>신호일 {position.priceExit.signalDate}</div>
+                          <div>
+                            신호일 {position.priceExit.signalDate} · 실제 매도 체결 별도 입력 필요
+                          </div>
                         )}
                       </>
                     ) : (
