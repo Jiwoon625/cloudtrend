@@ -72,6 +72,12 @@ function issueLabel(issue: string) {
     invalid_price: "평가가격 검증 필요",
     valuation_date_missing: "평가 기준일 미확인",
     future_valuation_date: "미래 평가일 제외",
+    price_exit_lot_mismatch: "K4/E4 매수·부분매도 잔여원가 대사 불일치 · 확인 대기",
+    price_exit_checkpoint_unavailable: "K4/E4 청산 근거 저장소 확인 대기",
+    price_exit_checkpoint_mismatch: "K4/E4 기존 신호·고점 저장 근거 불일치 · 확인 대기",
+    price_exit_source_mismatch: "K4/E4 과거 확정 종가가 변경되었거나 누락됨 · 확인 대기",
+    price_exit_mark_mismatch: "K4/E4 실계좌 평가가격과 확정 종가 대사 불일치",
+    price_exit_calculation_mismatch: "K4/E4 청산 계산 근거 확인 필요",
   };
   const [code, ...context] = issue.split(":");
   return `${messages[code ?? ""] ?? issue}${messages[code ?? ""] && context.length ? ` (${context.join(":")})` : ""}`;
