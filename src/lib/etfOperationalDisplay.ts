@@ -21,7 +21,7 @@ export function etfOperationalDisplay(
   date: string,
   held: boolean | undefined,
   sold = false,
-  priceExit?: { reason: string | null; signalDate: string | null } | undefined,
+  priceExit?: { reason: string | null; signalDate: string | null; status?: string } | undefined,
 ): string {
   if (!isOperationalSignalDate(date)) return BEFORE_OPERATIONAL_START;
   if (held && priceExit?.reason && priceExit.signalDate && priceExit.signalDate <= date)
@@ -34,6 +34,8 @@ export function etfOperationalDisplay(
   if (held)
     return s.exit === "MA60"
       ? "다음 시가 청산"
+      : priceExit?.status && /확인 대기|불일치|조회 실패/.test(priceExit.status)
+        ? `보유 · 가격청산 자료 확인 대기 · ${priceExit.status}`
       : s.exit === "DATA_UNAVAILABLE"
         ? "데이터 오류 · 청산 점검"
         : "보유 · 추가 매수 없음";
