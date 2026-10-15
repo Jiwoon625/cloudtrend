@@ -69,25 +69,38 @@ export async function attachActualHoldingPriceExits(
   if (today < HOLDING_PRICE_EXIT_POLICY.effectiveDate) return;
   const positions = pool.positions.filter((p) => p.market === "KOSPI" || p.market === "ETF");
   if (!positions.length) return;
-  positions.forEach((p) => { p.priceExit = pending(); });
+  positions.forEach((p) => {
+    p.priceExit = pending();
+  });
   const beforeClose =
     clock.toLocaleTimeString("en-GB", { timeZone: "Asia/Seoul", hour12: false }) < "15:30:00";
   const sources = await listActiveSources(client, uid).catch(() => []);
   const key = sha({
-    uid, today, beforeClose,
+    uid,
+    today,
+    beforeClose,
     sources: sources.map((s) => [s.id, s.file_hash]),
     positions: positions.map((p) => [p.market, p.symbol, p.quantity, p.cost]),
     trades: pool.trades.map((t) => [
-      t.execution.id, t.execution.date, t.execution.side, t.execution.order, t.allocation,
+      t.execution.id,
+      t.execution.date,
+      t.execution.side,
+      t.execution.order,
+      t.allocation,
     ]),
   });
   const cached = cache.get(key);
   if (cached && cached.expires > Date.now()) {
-    positions.forEach((p, i) => { if (cached.exits[i]) p.priceExit = { ...cached.exits[i]! }; });
+    positions.forEach((p, i) => {
+      if (cached.exits[i]) p.priceExit = { ...cached.exits[i]! };
+    });
     return;
   }
   const inputs = await priceInputs(
-    client, sources, new Set(positions.map((p) => p.symbol)), "2026-10-12",
+    client,
+    sources,
+    new Set(positions.map((p) => p.symbol)),
+    "2026-10-12",
   ).catch(() => null);
   const bucket = client.storage.from("cloudtrend-data");
   for (const position of positions) {
@@ -97,8 +110,7 @@ export async function attachActualHoldingPriceExits(
     try {
       cycle = reconstructActualPriceCycle(position, pool.trades);
       exit.lotCount = cycle.lots.length;
-      exit.basisMethod =
-        cycle.lots.length === 1 ? "SINGLE_FILL" : "WEIGHTED_COST_LOT_PEAKS";
+      exit.basisMethod = cycle.lots.length === 1 ? "SINGLE_FILL" : "WEIGHTED_COST_LOT_PEAKS";
     } catch {
       exit.auditStatus = "MISMATCH";
       exit.status = "원가·수량 대사 확인 대기";
@@ -108,7 +120,8 @@ export async function attachActualHoldingPriceExits(
     const cycleId = sha(cycle.cycle);
     const directory = `${uid}/holding-price-exits/${HOLDING_PRICE_EXIT_POLICY.version}/${cycleId}`;
     const listed = await bucket.list(directory, {
-      limit: 1, sortBy: { column: "name", order: "desc" },
+      limit: 1,
+      sortBy: { column: "name", order: "desc" },
     });
     if (listed.error) {
       errorFlag(pool, "price_exit_checkpoint_unavailable", position.symbol);
@@ -131,7 +144,8 @@ export async function attachActualHoldingPriceExits(
             Object.values(checkpoint.lotStates).some(
               (state) => state.policyVersion !== HOLDING_PRICE_EXIT_POLICY.version,
             ))
-        ) throw new Error("Invalid price-exit checkpoint");
+        )
+          throw new Error("Invalid price-exit checkpoint");
       } catch {
         exit.auditStatus = "MISMATCH";
         exit.status = "저장 근거 대사 확인 대기";
@@ -175,7 +189,8 @@ export async function attachActualHoldingPriceExits(
     // The display's current quote, when it belongs to the same session, must
     // agree exactly with the canonical OHLC decision price.
     if (
-      position.priceDate === through && position.currentPrice !== null &&
+      position.priceDate === through &&
+      position.currentPrice !== null &&
       decimal(position.currentPrice) !== decimal(lastBar.close.toFixed(8))
     ) {
       exit.status = "실제 평가가격·청산가격 대사 확인 대기";
@@ -189,21 +204,25 @@ export async function attachActualHoldingPriceExits(
       result: NonNullable<ReturnType<typeof replayHoldingPriceExit>>;
     }> = [];
     try {
-      for (const lot of (position.market === "KOSPI"
-        ? [{
-            id: cycle.cycle.id,
-            entryDate: cycle.cycle.date,
-            entryPrice: cycle.lots[0]!.entryPrice,
-            quantity: position.quantity,
-            costBasis: position.cost,
-          }]
-        : cycle.lots)) {
+      const evaluatedLots =
+        position.market === "KOSPI"
+          ? [
+              {
+                id: cycle.cycle.id,
+                entryDate: cycle.cycle.date,
+                entryPrice: cycle.lots[0]!.entryPrice,
+                quantity: position.quantity,
+                costBasis: position.cost,
+              },
+            ]
+          : cycle.lots;
+      for (const lot of evaluatedLots) {
         const prev =
           position.market === "KOSPI"
-            ? checkpoint?.state ?? null
-            : checkpoint?.lotStates?.[lot.id] ??
+            ? (checkpoint?.state ?? null)
+            : (checkpoint?.lotStates?.[lot.id] ??
               (cycle.lots.length === 1 ? checkpoint?.state : null) ??
-              (lot.id === cycle.cycle.id ? checkpoint?.state : null);
+              (lot.id === cycle.cycle.id ? checkpoint?.state : null));
         const holding = {
           market: position.market as "KOSPI" | "ETF",
           entryDate: lot.entryDate,
@@ -242,21 +261,27 @@ export async function attachActualHoldingPriceExits(
         (a.result.state.signalDate ?? "").localeCompare(b.result.state.signalDate ?? "") ||
         a.lotId.localeCompare(b.lotId),
       );
-    const line = (triggered[0] ?? available.sort((a, b) =>
-      decimal(b.result.threshold!) > decimal(a.result.threshold!) ? 1 :
-      decimal(b.result.threshold!) < decimal(a.result.threshold!) ? -1 : 0
-    )[0])?.result;
+    const descendingThreshold = (a: (typeof available)[number], b: (typeof available)[number]) => {
+      const left = decimal(a.result.threshold!);
+      const right = decimal(b.result.threshold!);
+      return left === right ? 0 : left > right ? -1 : 1;
+    };
+    const line = (triggered[0] ?? available.sort(descendingThreshold)[0])?.result;
     if (!line) continue;
-    const fullEvidence = results.length === (position.market === "KOSPI" ? 1 : cycle.lots.length)
-      && results.every((r) => r.result.threshold !== null);
+    const fullEvidence =
+      results.length === (position.market === "KOSPI" ? 1 : cycle.lots.length) &&
+      results.every((r) => r.result.threshold !== null);
     if (!fullEvidence && !triggered.length) continue;
     // Do not call an incomplete source VERIFIED, even if one known lot crosses.
     const state = line.state;
+    const status = triggered.length
+      ? "청산 대기 · 다음 거래 가능 시가"
+      : fullEvidence
+        ? "보유"
+        : "손절 기준가격 확인 대기";
     position.priceExit = {
       ...exit,
-      status: triggered.length
-        ? "청산 대기 · 다음 거래 가능 시가"
-        : fullEvidence ? "보유" : "손절 기준가격 확인 대기",
+      status,
       reason: triggered.length ? (position.market === "KOSPI" ? "K4" : "E4") : null,
       threshold: line.threshold,
       peak: state.peak,
@@ -270,12 +295,17 @@ export async function attachActualHoldingPriceExits(
     };
     if (line.threshold) {
       const content = JSON.stringify({
-        cycleId, state, lotStates: allStates, close: lastBar.close,
+        cycleId,
+        state,
+        lotStates: allStates,
+        close: lastBar.close,
       } satisfies PriceCheckpoint);
       const digest = sha(content);
-      const location = `${directory}/${triggered.length ? "signal.json" : `${through}-${digest}.json`}`;
+      const filename = triggered.length ? "signal.json" : `${through}-${digest}.json`;
+      const location = `${directory}/${filename}`;
       const saved = await bucket.upload(location, content, {
-        upsert: false, contentType: "application/json",
+        upsert: false,
+        contentType: "application/json",
       });
       if (saved.error) {
         if (!/already exists|duplicate/i.test(saved.error.message)) {
