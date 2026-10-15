@@ -191,7 +191,9 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
           const exit = holdingExits.find(
             (p) => p.market === row.market && p.symbol === row.symbol,
           )?.priceExit;
-          return exit
+          // A held stop can be newer than a cached screening row. Never
+          // describe an old screen as if it observed a future actual stop.
+          return exit && exit.signalDate === row.date
             ? {
                 ...row,
                 exitReason: [
@@ -243,20 +245,36 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
   for (const position of holdingExits) {
     const group = markets.find((market) => market.market === position.market);
     const exit = position.priceExit!;
-    if (!group || group.exits.some((row) => row.symbol === position.symbol)) continue;
-    group.exits.push({
-      symbol: position.symbol,
-      name: position.name,
-      market: group.market,
-      sector: "-",
-      date: exit.signalDate!,
-      price: null,
-      score: null,
-      priority: 0,
-      reason: `${exit.reason} · ${exit.signalDate} 종가 신호 · 다음 거래 가능 시가 청산 대기`,
-      actualQuantity: Number(position.quantity),
-      held: true,
-    });
+    if (!group) continue;
+    const reason =
+      `${exit.reason} · ${exit.signalDate} 확정 종가 신호 · 다음 거래 가능 시가 청산 대기` +
+      (exit.threshold ? ` · 손절선 ${exit.threshold}원` : "") +
+      (exit.observedClose && exit.observationDate
+        ? ` · 판정 종가 ${exit.observedClose}원(${exit.observationDate})`
+        : "");
+    const existing = group.exits.find((row) => row.symbol === position.symbol);
+    if (existing) {
+      // One actionable symbol and one alert, even when score/MA60 and K4/E4
+      // coexist. Keep BOTH verified reasons without counting a second sale.
+      if (!existing.reason.includes(`${exit.reason} ·`))
+        existing.reason = [existing.reason, reason].filter(Boolean).join(" · ");
+      existing.held = true;
+      existing.actualQuantity = Number(position.quantity);
+    } else {
+      group.exits.push({
+        symbol: position.symbol,
+        name: position.name,
+        market: group.market,
+        sector: "-",
+        date: exit.signalDate!,
+        price: exit.observedClose ? Number(exit.observedClose) : null,
+        score: null,
+        priority: 0,
+        reason,
+        actualQuantity: Number(position.quantity),
+        held: true,
+      });
+    }
     group.exitCount = group.exits.length;
   }
   if (!context)
