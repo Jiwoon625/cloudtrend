@@ -1,3 +1,4 @@
+import { isActionableActualPriceExit } from "./newActualPriceExit";
 import type { PortfolioLedgerViewState } from "./portfolioFreshness";
 import { validateExecutionSourceLinks } from "./ledger/executionMemo";
 import { loadWebsitePositionContextForOwner } from "./websitePositionContext.server";
@@ -89,7 +90,10 @@ export const portfolioPositionContextServer = createServerFn({ method: "POST" })
         // Failing a private price-evidence fetch must not be reported as a
         // negative stop. Do not mask pre-existing latched signals.
         for (const p of context.actualPools.KRW.positions) {
-          if ((p.market === "KOSPI" || p.market === "ETF") && !p.priceExit?.reason)
+          if (
+            (p.market === "KOSPI" || p.market === "ETF") &&
+            !isActionableActualPriceExit(p.priceExit)
+          )
             p.priceExit = {
               policyVersion: "holding-price-exit-k4-e4-v1",
               status: "가격청산 근거 조회 실패 · 확인 대기",

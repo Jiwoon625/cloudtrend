@@ -1,3 +1,7 @@
+import {
+  isActionableActualPriceExit,
+  type ActualPriceExitEvidence,
+} from "@/lib/newActualPriceExit";
 import { KrxReviewReferenceDetails } from "./KrxReviewReferenceDetails";
 import { etfDataJudgment, etfOperationalDisplay } from "@/lib/etfOperationalDisplay";
 import { isOperationalSignalDate, BEFORE_OPERATIONAL_START } from "@/lib/operationalSignalStart";
@@ -30,7 +34,7 @@ export function EtfM0Summary({
   signalDate: string;
   held: boolean | undefined;
   bundle?: EtfInstrumentChartBundle | undefined;
-  priceExit?: { reason: string | null; signalDate: string | null } | undefined;
+  priceExit?: ActualPriceExitEvidence | undefined;
 }) {
   const evidence = etfPartialEvidence(row, signalDate);
   const previous = bundle?.previousM0;
@@ -108,7 +112,7 @@ export function EtfInstrumentDetail({
   held: boolean | undefined;
   holdingsNotice?: ReactNode;
   payload?: AnalysisPayload;
-  priceExit?: { reason: string | null; signalDate: string | null } | undefined;
+  priceExit?: ActualPriceExitEvidence | undefined;
 }) {
   const s = row.etfStrategy;
   const signalDate = asOfDate ?? s?.date ?? row.snapshot.tradeDate;
@@ -185,13 +189,11 @@ export function EtfInstrumentDetail({
                   ? "보유 확인 중"
                   : !held
                     ? "미보유"
-                    : priceExit?.reason &&
-                        priceExit.signalDate &&
-                        priceExit.signalDate <= signalDate
+                    : isActionableActualPriceExit(priceExit) && priceExit.signalDate <= signalDate
                       ? etfOperationalDisplay(row, signalDate, true, false, priceExit)
                       : !evidence.current
                         ? "보유 · 판단 미확인"
-                        : etfOperationalDisplay(row, signalDate, true)}
+                        : etfOperationalDisplay(row, signalDate, true, false, priceExit)}
             </p>
             <Link to="/portfolio" className="text-xs text-primary hover:underline">
               포트폴리오에서 보유·체결 확인
