@@ -1,12 +1,6 @@
 name: Approved private Shadow activation
 on:
-  push:
-    branches: [fix/shadow-private-activation-20261015]
-    paths:
-      - .github/workflows/shadow-private-activation.yml
-      - scripts/activate-approved-shadow.ts
-      - scripts/run-approved-shadow-activation.mjs
-      - tests/shadow-private-activation.test.ts
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
