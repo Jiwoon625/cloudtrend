@@ -78,10 +78,8 @@ export function reconstructActualPriceCycle(
         const last = index === all.length - 1;
         const soldQty = last ? qty - usedQuantity : (lot.quantity * qty) / totalQty;
         const soldCost = last ? allocatedCost - usedCost : (lot.cost * qty) / totalQty;
-        if (
-          soldQty < 0n || soldQty > lot.quantity ||
-          soldCost < 0n || soldCost > lot.cost
-        ) throw new Error("Actual lot proportional allocation mismatch");
+        if (soldQty < 0n || soldQty > lot.quantity || soldCost < 0n || soldCost > lot.cost)
+          throw new Error("Actual lot proportional allocation mismatch");
         usedQuantity += soldQty;
         usedCost += soldCost;
         return { ...lot, quantity: lot.quantity - soldQty, cost: lot.cost - soldCost };
