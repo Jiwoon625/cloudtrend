@@ -160,7 +160,10 @@ describe("actual holding exit evidence", () => {
     } as NewActualPool["trades"][number]);
     await attachActualHoldingPriceExits(client, "owner-partial", pool, "2026-10-15T07:00:00Z");
     expect(pool.positions[0]!.priceExit).toMatchObject({
-      reason: "E4", threshold: "108", lotCount: 2, auditStatus: "VERIFIED",
+      reason: "E4",
+      threshold: "108",
+      lotCount: 2,
+      auditStatus: "VERIFIED",
     });
   });
   it("fails the confirmed-close audit when the actual projection mark disagrees with the source", async () => {
@@ -173,5 +176,4 @@ describe("actual holding exit evidence", () => {
     expect(pool.positions[0]!.priceExit?.reason).toBeNull();
     expect(pool.issues).toContain("price_exit_mark_mismatch:ABC");
   });
-
 });
