@@ -1,3 +1,4 @@
+import { verifyKospiShadowRuntimeManifest } from "./verify-kospi-shadow-runtime";
 import { verifyShadowRuntimeManifests } from "./verify-shadow-runtime-manifests";
 import process from "node:process";
 import {
@@ -87,6 +88,12 @@ export async function publishKospiShadowTarget(
 export async function runKospiShadow() {
   const dryRun = process.argv.includes("--dry-run");
   const initializeCorrection = process.argv.includes("--initialize-correction");
+  if (
+    initializeCorrection &&
+    (process.argv.filter((value) => value === "--as-of").length !== 1 ||
+      arg("--as-of") !== "2026-10-14")
+  )
+    throw new Error("Correction requires an explicitly supplied --as-of 2026-10-14");
   if (initializeCorrection && (dryRun || process.env["GITHUB_EVENT_NAME"] !== "workflow_dispatch"))
     throw new Error("Correction is a separate manual publication, not a preview or automatic run");
   if (
@@ -99,6 +106,7 @@ export async function runKospiShadow() {
       "Shadow publication is restricted to its serialized main-branch workflow; use --dry-run locally",
     );
   await verifyShadowRuntimeManifests();
+  await verifyKospiShadowRuntimeManifest();
   const uid = arg("--user") ?? process.env["SUPABASE_USER_ID"];
   if (!uid) throw new Error("SUPABASE_USER_ID is required");
   const client = trustedSupabaseClient();
