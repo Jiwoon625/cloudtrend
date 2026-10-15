@@ -1,11 +1,7 @@
 name: Approved private Shadow activation
+# One-time push activation disabled after the first invocation was found not to execute.
 on:
-  push:
-    branches: [fix/shadow-private-activation-20261015]
-    paths:
-      - .github/workflows/shadow-private-activation.yml
-      - scripts/activate-approved-shadow.ts
-      - tests/shadow-private-activation.test.ts
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
