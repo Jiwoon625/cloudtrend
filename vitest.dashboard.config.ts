@@ -41,6 +41,7 @@ export default defineConfig({
       "tests/actual-allocation-preview.test.ts",
       "tests/dashboard-operations-sector-limits.test.ts",
       "tests/dashboard-operations-server.test.ts",
+      "tests/dashboard-actual-price-exit.test.ts",
       "src/lib/dashboardHoldingSignals.test.ts",
       "src/lib/statusDisplay.test.ts",
       "src/lib/engine/operationalStrategy.test.ts",

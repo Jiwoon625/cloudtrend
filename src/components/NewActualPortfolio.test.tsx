@@ -380,6 +380,54 @@ describe("new-only portfolio presentation", () => {
     expect(html).toContain("종가·원가 대사 완료");
     expect(html).toContain("실제 매도 체결 별도 입력 필요");
   });
+  it.each(["PENDING", "MISMATCH"] as const)(
+    "does not display a %s exit as actionable",
+    (auditStatus) => {
+      const data = confirmed();
+      data.pools.KRW.positions[1]!.priceExit = {
+        policyVersion: "holding-price-exit-k4-e4-v1",
+        status: "청산 대기 · 다음 거래 가능 시가",
+        reason: "E4",
+        threshold: "108",
+        peak: "120",
+        signalDate: "2026-10-15",
+        auditStatus,
+      };
+      const html = render(
+        <NewActualPortfolioContent data={data} asset="ETF" onAssetChange={() => undefined} />,
+      );
+      expect(html).not.toContain("다음 거래 가능 시가");
+      expect(html).not.toContain("실제 매도 체결 별도 입력 필요");
+      expect(html).toContain("확인 대기");
+    },
+  );
+  it("explains partial price evidence without exposing internal issue codes", () => {
+    const data = confirmed();
+    data.pools.KRW.issues.push("price_exit_partial_evidence:SYNTHETIC");
+    const html = render(
+      <NewActualPortfolioContent data={data} asset="ETF" onAssetChange={() => undefined} />,
+    );
+    expect(html).toContain("K4/E4 확정 청산신호 보존 · 일부 종가 이력 확인 대기");
+    expect(html).not.toContain("price_exit_partial_evidence");
+  });
+  it("renders single-fill count and accounting method", () => {
+    const data = confirmed();
+    data.pools.KRW.positions[1]!.priceExit = {
+      policyVersion: "holding-price-exit-k4-e4-v1",
+      status: "보유",
+      reason: null,
+      threshold: "108",
+      peak: "120",
+      signalDate: null,
+      auditStatus: "VERIFIED",
+      lotCount: 1,
+      basisMethod: "SINGLE_FILL",
+    };
+    const html = render(
+      <NewActualPortfolioContent data={data} asset="ETF" onAssetChange={() => undefined} />,
+    );
+    expect(html).toContain("1건 매수 · 단일 취득 원가");
+  });
   it("switches the new asset view while sharing KRW cash once", () => {
     const data = confirmed();
     const kr = render(

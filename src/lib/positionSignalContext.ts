@@ -1,8 +1,6 @@
+import type { ActualPriceExitEvidence } from "./newActualPriceExit";
 export interface DomesticPositionContext {
-  priceExits?: Record<
-    string,
-    { reason: string | null; signalDate: string | null; threshold: string | null; status: string }
-  >;
+  priceExits?: Record<string, ActualPriceExitEvidence>;
   heldSymbols: string[];
   lastSellDateBySymbol: Record<string, string>;
 }

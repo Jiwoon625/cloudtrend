@@ -1,3 +1,4 @@
+import { isActionableActualPriceExit } from "./newActualPriceExit";
 import { dashboardSectorLimit } from "./dashboardOperationsSectorLimits";
 import { gunzipSync } from "node:zlib";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -183,7 +184,9 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
     await safe("K4/E4 보유 청산", () =>
       attachActualHoldingPriceExits(client, uid, context.actualPools.KRW, new Date().toISOString()),
     );
-  const holdingExits = context?.actualPools.KRW.positions.filter((p) => p.priceExit?.reason) ?? [];
+  const holdingExits =
+    context?.actualPools.KRW.positions.filter((p) => isActionableActualPriceExit(p.priceExit)) ??
+    [];
   const krWithHoldingExits = kr
     ? {
         ...kr,
@@ -256,8 +259,15 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
     if (existing) {
       // One actionable symbol and one alert, even when score/MA60 and K4/E4
       // coexist. Keep BOTH verified reasons without counting a second sale.
-      if (!existing.reason.includes(`${exit.reason} ·`))
-        existing.reason = [existing.reason, reason].filter(Boolean).join(" · ");
+      if (!existing.reason.includes(`${exit.reason} ·`)) {
+        const screeningReason =
+          existing.date !== exit.signalDate
+            ? `${existing.reason} (${existing.date} 스크리닝)`
+            : existing.reason;
+        existing.reason = [screeningReason, reason].filter(Boolean).join(" · ");
+      }
+      existing.date = exit.signalDate!;
+      existing.price = exit.observedClose ? Number(exit.observedClose) : null;
       existing.held = true;
       existing.actualQuantity = Number(position.quantity);
     } else {

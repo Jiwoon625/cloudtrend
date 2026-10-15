@@ -1,3 +1,4 @@
+import { actualPriceExitStatus, isActionableActualPriceExit } from "@/lib/newActualPriceExit";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -78,6 +79,7 @@ function issueLabel(issue: string) {
     price_exit_source_mismatch: "K4/E4 과거 확정 종가가 변경되었거나 누락됨 · 확인 대기",
     price_exit_mark_mismatch: "K4/E4 실계좌 평가가격과 확정 종가 대사 불일치",
     price_exit_calculation_mismatch: "K4/E4 청산 계산 근거 확인 필요",
+    price_exit_partial_evidence: "K4/E4 확정 청산신호 보존 · 일부 종가 이력 확인 대기",
   };
   const [code, ...context] = issue.split(":");
   return `${messages[code ?? ""] ?? issue}${messages[code ?? ""] && context.length ? ` (${context.join(":")})` : ""}`;
@@ -355,7 +357,7 @@ export function NewActualPortfolioContent({
                         <div>
                           {position.market === "KOSPI" ? "K4 · 원가 −8%" : "E4 · 최고 종가 −10%"}
                         </div>
-                        <div>{position.priceExit?.status ?? "손절 기준가격 확인 대기"}</div>
+                        <div>{actualPriceExitStatus(position.priceExit)}</div>
                         {position.priceExit?.threshold && (
                           <div>기준 {money(position.priceExit.threshold, currency)}</div>
                         )}
@@ -376,6 +378,12 @@ export function NewActualPortfolioContent({
                         {position.priceExit?.distancePercent && (
                           <div>
                             청산선 대비 {Number(position.priceExit.distancePercent).toFixed(2)}%
+                          </div>
+                        )}
+                        {position.priceExit?.basisMethod === "SINGLE_FILL" && (
+                          <div className="text-xs text-muted-foreground">
+                            {position.priceExit.lotCount}건 매수 · 단일 취득 원가
+                            {position.market === "ETF" ? " · 취득 이후 최고 종가" : ""}
                           </div>
                         )}
                         {position.priceExit?.basisMethod === "WEIGHTED_COST_LOT_PEAKS" && (
@@ -401,7 +409,7 @@ export function NewActualPortfolioContent({
                                   : "확인 대기"}
                           </div>
                         )}
-                        {position.priceExit?.signalDate && (
+                        {isActionableActualPriceExit(position.priceExit) && (
                           <div>
                             신호일 {position.priceExit.signalDate} · 실제 매도 체결 별도 입력 필요
                           </div>

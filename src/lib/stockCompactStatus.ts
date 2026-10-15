@@ -1,3 +1,4 @@
+import { actualPriceExitStatus, isActionableActualPriceExit } from "./newActualPriceExit";
 import {
   isOperationalSignalDate,
   operationalEntryStartNotice,
@@ -43,8 +44,7 @@ export function getCompactStockStatus(
   const priceExit = context?.priceExits?.[row.instrument.symbol];
   if (
     suppression === "held" &&
-    priceExit?.reason &&
-    priceExit.signalDate &&
+    isActionableActualPriceExit(priceExit) &&
     priceExit.signalDate <= asOfDate
   )
     return {
@@ -65,10 +65,10 @@ export function getCompactStockStatus(
         secondary: a.exit.split(" · ")[1]!,
         tone: "danger",
       };
-    if (priceExit?.status && /확인 대기|불일치|조회 실패/.test(priceExit.status))
+    if (priceExit && /확인 대기|불일치|조회 실패/.test(actualPriceExitStatus(priceExit)))
       return {
         primary: "보유 · 가격청산 판단 미확인",
-        secondary: priceExit.status,
+        secondary: actualPriceExitStatus(priceExit),
         tone: "warn",
       };
     if (a.exit === "기술청산 판단 미확인")

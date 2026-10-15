@@ -1,3 +1,8 @@
+import {
+  actualPriceExitStatus,
+  isActionableActualPriceExit,
+  type ActualPriceExitEvidence,
+} from "./newActualPriceExit";
 import type { ScreeningRow } from "./engine/pipeline";
 import { etfPartialEvidence } from "./etfPartialEvidence";
 import {
@@ -21,10 +26,10 @@ export function etfOperationalDisplay(
   date: string,
   held: boolean | undefined,
   sold = false,
-  priceExit?: { reason: string | null; signalDate: string | null; status?: string } | undefined,
+  priceExit?: ActualPriceExitEvidence | undefined,
 ): string {
   if (!isOperationalSignalDate(date)) return BEFORE_OPERATIONAL_START;
-  if (held && priceExit?.reason && priceExit.signalDate && priceExit.signalDate <= date)
+  if (held && isActionableActualPriceExit(priceExit) && priceExit.signalDate <= date)
     return `${priceExit.reason} · ${priceExit.signalDate} 종가 신호 · 다음 거래 가능 시가 청산 대기`;
   const missing = etfDataJudgment(row, date);
   if (!etfPartialEvidence(row, date).current || etfPartialEvidence(row, date).krxPending)
@@ -34,8 +39,8 @@ export function etfOperationalDisplay(
   if (held)
     return s.exit === "MA60"
       ? "다음 시가 청산"
-      : priceExit?.status && /확인 대기|불일치|조회 실패/.test(priceExit.status)
-        ? `보유 · 가격청산 자료 확인 대기 · ${priceExit.status}`
+      : priceExit && /확인 대기|불일치|조회 실패/.test(actualPriceExitStatus(priceExit))
+        ? `보유 · 가격청산 자료 확인 대기 · ${actualPriceExitStatus(priceExit)}`
         : s.exit === "DATA_UNAVAILABLE"
           ? "데이터 오류 · 청산 점검"
           : "보유 · 추가 매수 없음";
