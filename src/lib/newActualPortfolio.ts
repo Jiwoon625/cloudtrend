@@ -62,6 +62,17 @@ export interface NewActualPosition {
     threshold: string | null;
     peak: string | null;
     signalDate: string | null;
+    /** Verified market close, never the current intraday quote. */
+    observationDate?: string | null;
+    observedClose?: string | null;
+    peakDate?: string | null;
+    /** Price cushion to the closest actionable lot-specific exit line. */
+    distancePercent?: string | null;
+    /** Independent accounting/price check for each loaded holding cycle. */
+    auditStatus?: "VERIFIED" | "PENDING" | "MISMATCH" | "LATCHED";
+    lotCount?: number;
+    basisMethod?: "SINGLE_FILL" | "WEIGHTED_COST_LOT_PEAKS";
+    priceSource?: string | null;
   };
   symbol: string;
   name: string;
