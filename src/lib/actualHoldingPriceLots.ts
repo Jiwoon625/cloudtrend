@@ -103,3 +103,50 @@ export function reconstructActualPriceCycle(
     })),
   };
 }
+
+/** Dated cost/quantity snapshots prevent a later BUY from changing a prior close's K4 line. */
+export function actualPooledBasisByDate(
+  position: Pick<NewActualPosition, "symbol" | "market" | "quantity" | "cost">,
+  trades: NewActualTrade[],
+): Array<{ date: string; quantity: string; costBasis: string }> {
+  const cycle = reconstructActualPriceCycle(position, trades);
+  const sorted = trades
+    .filter((t) => t.execution.symbol === position.symbol && t.execution.market === position.market)
+    .sort(
+      (a, b) =>
+        a.execution.date.localeCompare(b.execution.date) ||
+        a.execution.order - b.execution.order ||
+        a.execution.id.localeCompare(b.execution.id),
+    );
+  const start = sorted.findIndex((t) => t.execution.id === cycle.cycle.id);
+  if (start < 0) throw new Error("Actual cost timeline cycle start missing");
+  const snapshots: Array<{ date: string; quantity: string; costBasis: string }> = [];
+  let quantity = 0n;
+  let cost = 0n;
+  for (const t of sorted.slice(start)) {
+    const q = decimal(fromLegacyNumber(t.allocation.quantity));
+    const gross = decimal(fromLegacyNumber(t.allocation.gross));
+    const fee = decimal(fromLegacyNumber(t.allocation.fee));
+    if (q <= 0n || gross <= 0n || fee < 0n) throw new Error("Invalid cost timeline fill");
+    if (t.execution.side === "BUY") {
+      quantity += q;
+      cost += gross + fee;
+    } else if (t.execution.side === "SELL") {
+      if (q > quantity) throw new Error("Cost timeline sale exceeds holdings");
+      cost -= q === quantity ? cost : (cost * q) / quantity;
+      quantity -= q;
+    } else throw new Error("Unknown cost timeline side");
+    if (quantity <= 0n || cost <= 0n)
+      throw new Error("Unclosed actual holding cycle cannot be empty");
+    const row = {
+      date: t.execution.date,
+      quantity: format(quantity),
+      costBasis: format(cost),
+    };
+    if (snapshots.at(-1)?.date === row.date) snapshots[snapshots.length - 1] = row;
+    else snapshots.push(row);
+  }
+  if (quantity !== decimal(position.quantity) || cost !== decimal(position.cost))
+    throw new Error("Historical basis timeline disagrees with actual ledger");
+  return snapshots;
+}
