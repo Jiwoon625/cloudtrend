@@ -1,5 +1,14 @@
 import { expect, it } from "vitest";
-import { readFile, writeFile, mkdir, mkdtemp, rm, symlink, realpath } from "node:fs/promises";
+import {
+  readFile,
+  writeFile,
+  mkdir,
+  mkdtemp,
+  rm,
+  symlink,
+  realpath,
+  rename,
+} from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -7,7 +16,10 @@ import {
   kospiShadowPublicationManifest,
   KOSPI_SHADOW_PUBLICATION_ROOTS,
 } from "../scripts/kospi-shadow-code-manifest";
-import { verifyKospiShadowRuntimeManifest } from "../scripts/verify-kospi-shadow-runtime";
+import {
+  verifyKospiShadowRuntimeManifest,
+  canonicalKospiBootstrapJson,
+} from "../scripts/verify-kospi-shadow-runtime";
 import { verifyShadowRuntimeManifests } from "../scripts/verify-shadow-runtime-manifests";
 import { shadowEngineManifest } from "../scripts/october-shadow-code-manifest";
 import { integratedAllocationRuntimeManifest } from "../scripts/integrated-allocation-code-manifest";
@@ -16,6 +28,13 @@ import { reviewedKospiShadowRuntime } from "../src/lib/kospiShadowRuntimeAdmissi
 const GENERATED = "src/lib/kospiShadowPublicationRuntime.generated.json";
 const ADMISSIONS = "src/lib/kospiShadowRuntimeAdmissions.json";
 const REVIEW_VERSION = "kospi-shadow-publication-runtime-admissions-v1";
+
+it("native bootstrap canonicalization matches existing finite JSON provenance", () => {
+  for (const value of [null, true, 3.125, "한글\n", [], { z: [1, false, null], a: { b: "x" } }])
+    expect(canonicalKospiBootstrapJson(value)).toBe(canonicalSeriesJson(value));
+  for (const value of [undefined, NaN, Infinity, { a: undefined }])
+    expect(() => canonicalKospiBootstrapJson(value)).toThrow();
+});
 
 it("covers each publication root and transitive executable dependency without altering old economic identities", async () => {
   const manifest = await kospiShadowPublicationManifest();
@@ -27,7 +46,6 @@ it("covers each publication root and transitive executable dependency without al
     "scripts/verify-kospi-shadow-runtime.ts",
     "scripts/kospi-shadow-code-manifest.ts",
     "scripts/october-shadow-code-manifest.ts",
-    "src/lib/kospiShadowRuntimeAdmission.ts",
   ])
     expect(manifest.manifest.files).toHaveProperty(file);
   expect(manifest.manifest.files).not.toHaveProperty(GENERATED);
@@ -75,7 +93,7 @@ it("requires an explicit exact-hash review and rejects duplicate or malformed ad
   ).toThrow("Unreviewed");
 });
 
-it("rejects mutations to runner, revision, and store both before and after regeneration", async () => {
+it("rejects source and config mutations before evaluation, including regenerated unreviewed candidates", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "kospi-publication-guard-"));
   try {
     const baseline = await kospiShadowPublicationManifest();
@@ -89,6 +107,7 @@ it("rejects mutations to runner, revision, and store both before and after regen
       ...Object.keys(integrated.manifest.files),
       "src/lib/ledger/octoberShadowEngineManifest.generated.json",
       "src/lib/integratedAllocationRuntime.generated.json",
+      "src/lib/ledger/octoberShadowCalendarEvidence.json",
     ]);
     for (const file of fixtureFiles) {
       await mkdir(path.dirname(path.join(root, file)), { recursive: true });
@@ -106,43 +125,66 @@ it("rejects mutations to runner, revision, and store both before and after regen
       kospiRuntimeCodeHash: baseline.codeHash,
     });
     await symlink(await realpath("node_modules"), path.join(root, "node_modules"), "dir");
-    const verifyCli = () =>
+    const sentinel = path.join(root, "evaluation-sentinel");
+    const verifyCli = (args: string[] = []) =>
       spawnSync(
         process.execPath,
-        [
-          path.resolve("node_modules/vite-node/vite-node.mjs"),
-          "--script",
-          "scripts/verify-kospi-shadow-runtime.ts",
-        ],
-        { cwd: root, encoding: "utf8", timeout: 20000, env: { PATH: process.env["PATH"] ?? "" } },
+        ["--experimental-strip-types", "scripts/verify-kospi-shadow-runtime.ts", ...args],
+        {
+          cwd: root,
+          encoding: "utf8",
+          timeout: 20000,
+          env: {
+            PATH: process.env["PATH"] ?? "",
+            SUPABASE_SERVICE_ROLE_KEY: "synthetic-not-a-secret",
+            KOSPI_TEST_SENTINEL: sentinel,
+          },
+        },
       );
     const acceptedCli = verifyCli();
     expect(acceptedCli.error).toBeUndefined();
     expect(acceptedCli.status, acceptedCli.stderr).toBe(0);
+    expect(acceptedCli.stdout).toContain('{"stage":"KOSPI_RUNTIME_VERIFIED"}');
+    // Real native bootstrap -> fixed Vite config -> runner, with exact argument forwarding.
+    for (const date of ["", "2026-10-15", "2026-10-14"]) {
+      const launched = verifyCli(["--launch", "--", "--initialize-correction", "--as-of", date]);
+      expect(launched.status, launched.stderr).toBe(1);
+      expect(launched.stderr).toContain(
+        date === "2026-10-14"
+          ? "separate manual publication"
+          : "explicitly supplied --as-of 2026-10-14",
+      );
+      expect(launched.stderr).not.toContain("preflight failed");
+    }
     const economicBaseline = await verifyShadowRuntimeManifests(root);
-    for (const file of KOSPI_SHADOW_PUBLICATION_ROOTS) {
+    for (const file of [...KOSPI_SHADOW_PUBLICATION_ROOTS, "scripts/source-registry-store.ts"]) {
       const target = path.join(root, file),
         original = await readFile(target, "utf8");
-      await writeFile(target, `${original}\nexport const PUBLICATION_MUTATION_TEST = 1;\n`);
+      await writeFile(
+        target,
+        `${original}\nimport { writeFileSync as writeMutationSentinel } from "node:fs";\nwriteMutationSentinel(process.env["KOSPI_TEST_SENTINEL"]!, process.env["SUPABASE_SERVICE_ROLE_KEY"] ?? "absent");\n`,
+      );
       const changed = await kospiShadowPublicationManifest(root);
       expect(changed.codeHash).not.toBe(baseline.codeHash);
       await expect(verifyKospiShadowRuntimeManifest(root)).rejects.toThrow("Stale KOSPI Shadow");
-      if (file === KOSPI_SHADOW_PUBLICATION_ROOTS[0]) {
-        const staleCli = verifyCli();
+      {
+        const staleCli = verifyCli(["--launch", "--", "--as-of", "2026-10-14"]);
         expect(staleCli.error).toBeUndefined();
         expect(staleCli.status).toBe(1);
         expect(staleCli.stderr).toContain("KOSPI publication runtime preflight failed");
+        await expect(readFile(sentinel)).rejects.toMatchObject({ code: "ENOENT" });
       }
       expect(await verifyShadowRuntimeManifests(root)).toEqual(economicBaseline);
       await writeFile(path.join(root, GENERATED), JSON.stringify(changed));
       await expect(verifyKospiShadowRuntimeManifest(root)).rejects.toThrow(
         "Unreviewed KOSPI Shadow",
       );
-      if (file === KOSPI_SHADOW_PUBLICATION_ROOTS[0]) {
-        const unreviewedCli = verifyCli();
+      {
+        const unreviewedCli = verifyCli(["--launch", "--", "--as-of", "2026-10-14"]);
         expect(unreviewedCli.error).toBeUndefined();
         expect(unreviewedCli.status).toBe(1);
         expect(unreviewedCli.stderr).toContain("KOSPI publication runtime preflight failed");
+        await expect(readFile(sentinel)).rejects.toMatchObject({ code: "ENOENT" });
       }
       expect(JSON.parse(await readFile(path.join(root, ADMISSIONS), "utf8"))).toEqual(approved);
       await writeFile(target, original);
@@ -151,6 +193,103 @@ it("rejects mutations to runner, revision, and store both before and after regen
         kospiRuntimeCodeHash: baseline.codeHash,
       });
     }
+    const storeTarget = path.join(root, "src/lib/kospiShadowStore.ts");
+    const storeBytes = await readFile(storeTarget);
+    const alternate = path.join(root, "alternate");
+    await mkdir(path.join(alternate, "engine"), { recursive: true });
+    await writeFile(path.join(alternate, "kospiShadowStore.ts"), storeBytes);
+    await writeFile(
+      path.join(alternate, "engine/kospiShadow.ts"),
+      `export * from ${JSON.stringify(path.join(root, "src/lib/engine/kospiShadow.ts"))};\nimport { writeFileSync } from "node:fs";\nwriteFileSync(process.env["KOSPI_TEST_SENTINEL"]!, "redirected-import");\n`,
+    );
+    await rm(storeTarget);
+    await symlink(path.join(alternate, "kospiShadowStore.ts"), storeTarget);
+    // Raw content still matches; physical import resolution no longer does.
+    expect(await readFile(storeTarget)).toEqual(storeBytes);
+    await expect(verifyKospiShadowRuntimeManifest(root)).rejects.toThrow(
+      "Non-regular or redirected",
+    );
+    expect(verifyCli(["--launch", "--"]).status).toBe(1);
+    await expect(readFile(sentinel)).rejects.toMatchObject({ code: "ENOENT" });
+    await rm(storeTarget);
+    await writeFile(storeTarget, storeBytes);
+    const library = path.join(root, "src/lib"),
+      relocatedLibrary = path.join(root, "src/lib-physical");
+    await rename(library, relocatedLibrary);
+    await symlink(relocatedLibrary, library, "dir");
+    await expect(verifyKospiShadowRuntimeManifest(root)).rejects.toThrow(
+      "Non-regular or redirected",
+    );
+    expect(verifyCli(["--launch", "--"]).status).toBe(1);
+    await expect(readFile(sentinel)).rejects.toMatchObject({ code: "ENOENT" });
+    await rm(library);
+    await rename(relocatedLibrary, library);
+    expect(await verifyKospiShadowRuntimeManifest(root)).toEqual({
+      kospiRuntimeCodeHash: baseline.codeHash,
+    });
+    for (const control of [GENERATED, ADMISSIONS]) {
+      const original = path.join(root, control),
+        moved = `${original}.regular`;
+      await rename(original, moved);
+      await symlink(moved, original);
+      await expect(verifyKospiShadowRuntimeManifest(root)).rejects.toThrow(
+        "Non-regular or redirected",
+      );
+      expect(verifyCli(["--launch", "--"]).status).toBe(1);
+      await expect(readFile(sentinel)).rejects.toMatchObject({ code: "ENOENT" });
+      await rm(original);
+      await rename(moved, original);
+    }
+    const shortened = structuredClone(baseline);
+    delete shortened.manifest.files["scripts/source-registry-store.ts"];
+    delete shortened.manifest.rawFiles["scripts/source-registry-store.ts"];
+    await writeFile(path.join(root, GENERATED), JSON.stringify(shortened));
+    await expect(verifyKospiShadowRuntimeManifest(root)).rejects.toThrow("Invalid KOSPI Shadow");
+    shortened.codeHash = await hashSeriesValue(shortened.manifest);
+    await writeFile(path.join(root, GENERATED), JSON.stringify(shortened));
+    await expect(verifyKospiShadowRuntimeManifest(root)).rejects.toThrow("Unreviewed KOSPI Shadow");
+    expect(verifyCli(["--launch", "--"]).status).toBe(1);
+    const missingRaw = structuredClone(baseline);
+    Reflect.deleteProperty(missingRaw.manifest, "rawFiles");
+    missingRaw.codeHash = await hashSeriesValue(missingRaw.manifest);
+    await writeFile(path.join(root, GENERATED), JSON.stringify(missingRaw));
+    await expect(verifyKospiShadowRuntimeManifest(root)).rejects.toThrow("Incomplete KOSPI Shadow");
+    for (const problem of [
+      "missing-config",
+      "unequal-file-sets",
+      "traversal",
+      "generated-self-reference",
+    ] as const) {
+      const candidate = structuredClone(baseline);
+      if (problem === "missing-config") {
+        delete candidate.manifest.files["scripts/kospi-shadow-runtime.config.ts"];
+        delete candidate.manifest.rawFiles["scripts/kospi-shadow-runtime.config.ts"];
+      } else if (problem === "unequal-file-sets") {
+        delete candidate.manifest.rawFiles["scripts/run-kospi-shadow.ts"];
+      } else {
+        const badPath = problem === "traversal" ? "src/../outside.ts" : GENERATED;
+        candidate.manifest.files[badPath] = `sha256:${"a".repeat(64)}`;
+        candidate.manifest.rawFiles[badPath] = `sha256:${"a".repeat(64)}`;
+      }
+      candidate.codeHash = await hashSeriesValue(candidate.manifest);
+      await writeFile(path.join(root, GENERATED), JSON.stringify(candidate));
+      // Deliberately malformed fixture-only admission tests bootstrap structure, not review selection.
+      await writeFile(
+        path.join(root, ADMISSIONS),
+        JSON.stringify({
+          version: REVIEW_VERSION,
+          admissions: [
+            { runtimeCodeHash: candidate.codeHash, reviewId: "synthetic-invalid-structure" },
+          ],
+        }),
+      );
+      await expect(verifyKospiShadowRuntimeManifest(root)).rejects.toThrow(/Incomplete|Unsafe/);
+      const invalid = verifyCli(["--launch", "--"]);
+      expect(invalid.status).toBe(1);
+      expect(invalid.stdout).not.toContain("KOSPI_RUNTIME_VERIFIED");
+      await expect(readFile(sentinel)).rejects.toMatchObject({ code: "ENOENT" });
+    }
+    await writeFile(path.join(root, GENERATED), JSON.stringify(baseline));
     await writeFile(
       path.join(root, ADMISSIONS),
       JSON.stringify({ version: REVIEW_VERSION, admissions: [] }),
@@ -160,7 +299,7 @@ it("rejects mutations to runner, revision, and store both before and after regen
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-}, 90000);
+}, 120000);
 
 it("wires independent generation and verification into build, dev, runner and CI", async () => {
   const pkg = JSON.parse(await readFile("package.json", "utf8"));
@@ -181,12 +320,24 @@ it("wires independent generation and verification into build, dev, runner and CI
   const workflow = await readFile(".github/workflows/kospi-shadow.yml", "utf8");
   expect(workflow).toContain("npx vitest run --config vitest.shadow.config.ts");
   expect(workflow).toContain('"scripts/verify-kospi-shadow-runtime.ts"');
+  const beforePublication = workflow.split(
+    "      - name: Advance isolated immutable KOSPI model journal",
+  )[0]!;
+  expect(beforePublication).not.toContain("secrets.SUPABASE");
+  expect(beforePublication).toContain(
+    "run: node --experimental-strip-types scripts/verify-kospi-shadow-runtime.ts",
+  );
+  expect(workflow).toContain("scripts/verify-kospi-shadow-runtime.ts --launch --");
+  const bootstrap = await readFile("scripts/verify-kospi-shadow-runtime.ts", "utf8");
+  for (const imported of bootstrap.matchAll(/^import.*from "([^"]+)"/gm))
+    expect(imported[1]).toMatch(/^node:/);
 });
 
 it("workflow blocks a blank or wrong correction date before invoking the runner", async () => {
   const workflow = await readFile(".github/workflows/kospi-shadow.yml", "utf8");
   const script = workflow
-    .split("      - name: Advance isolated immutable KOSPI model journal\n        run: |\n")[1]
+    .split("      - name: Advance isolated immutable KOSPI model journal\n")[1]
+    ?.split("        run: |\n")[1]
     ?.split("\n")
     .map((line) => line.replace(/^ {10}/, ""))
     .join("\n");
@@ -194,7 +345,7 @@ it("workflow blocks a blank or wrong correction date before invoking the runner"
   const root = await mkdtemp(path.join(tmpdir(), "kospi-workflow-guard-"));
   try {
     await writeFile(
-      path.join(root, "npx"),
+      path.join(root, "node"),
       '#!/bin/sh\nprintf "RUNNER_SENTINEL:%s\\n" "$*"\nexit 42\n',
       { mode: 0o700 },
     );
