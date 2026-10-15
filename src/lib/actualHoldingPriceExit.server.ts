@@ -315,6 +315,10 @@ export async function attachActualHoldingPriceExits(
     if (!fullEvidence && !triggered.length) continue;
     // Do not call an incomplete source VERIFIED, even if one known lot crosses.
     const state = line.state;
+    // A later BUY changes the current pooled basis but must never relabel the
+    // exact threshold originally responsible for a latched K4 close.
+    const displayedThreshold =
+      triggered.length && state.signalThreshold ? state.signalThreshold : line.threshold;
     const status = triggered.length
       ? "청산 대기 · 다음 거래 가능 시가"
       : fullEvidence
@@ -324,13 +328,15 @@ export async function attachActualHoldingPriceExits(
       ...exit,
       status,
       reason: triggered.length ? (position.market === "KOSPI" ? "K4" : "E4") : null,
-      threshold: line.threshold,
+      threshold: displayedThreshold,
       peak: state.peak,
       peakDate: state.peakDate,
       signalDate: state.signalDate,
       observationDate: through,
       observedClose: lastBar.close.toFixed(8),
-      distancePercent: line.threshold ? cushion(lastBar.close.toFixed(8), line.threshold) : null,
+      distancePercent: displayedThreshold
+        ? cushion(lastBar.close.toFixed(8), displayedThreshold)
+        : null,
       auditStatus: fullEvidence ? "VERIFIED" : "PENDING",
       priceSource: "운영 정규화 종가",
     };
