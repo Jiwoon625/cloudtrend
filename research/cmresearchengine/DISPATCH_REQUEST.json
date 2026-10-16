@@ -1,9 +1,9 @@
 {
-  "request_id": "cm-resume-split25-035-20261017-001",
+  "request_id": "cm-first-split25-036-20261017-001",
   "mode": "run",
   "stage": "split25",
-  "offset": 35,
-  "count": 1,
+  "offset": 36,
+  "count": 4,
   "max_seconds": 3000,
   "workers": 1,
   "hybrid_shared_us_analysis": false
