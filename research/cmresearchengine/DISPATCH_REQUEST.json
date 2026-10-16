@@ -1,9 +1,9 @@
 {
-  "request_id": "cm-initial-split25-031-20261016-001",
+  "request_id": "cm-initial-split25-032-035-20261016-001",
   "mode": "run",
   "stage": "split25",
-  "offset": 31,
-  "count": 1,
+  "offset": 32,
+  "count": 4,
   "max_seconds": 3000,
   "workers": 1,
   "hybrid_shared_us_analysis": false
