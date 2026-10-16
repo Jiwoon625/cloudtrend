@@ -237,7 +237,7 @@ describe("read-only prospective KOSPI vintage diagnostic", () => {
   });
 
   it("keeps the workflow manual, read-only, and free of artifact uploads", async () => {
-    const workflow = await readFile(".github/workflows/kospi-shadow.yml", "utf8");
+    const workflow = await readFile(".github/workflows/shadow-vintage-diagnostic.yml", "utf8");
     const diagnose = workflow.split("\n  diagnose:")[1]!;
     expect(workflow).not.toMatch(/^\s+(advance|verify|push|pull_request|workflow_run|schedule):/m);
     expect(diagnose).toContain(
