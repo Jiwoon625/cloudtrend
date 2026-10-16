@@ -17,7 +17,7 @@ permissions:
   contents: read
 jobs:
   diagnose:
-    if: github.event_name == 'workflow_dispatch' && inputs.diagnostic_only
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.diagnostic_only
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
