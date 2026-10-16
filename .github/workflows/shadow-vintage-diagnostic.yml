@@ -1,0 +1,41 @@
+name: Read-only Shadow vintage diagnostic
+run-name: Read-only Shadow vintage diagnostic
+on:
+  workflow_dispatch:
+    inputs:
+      as_of:
+        description: "Read-only target date; must equal current registered data date"
+        type: string
+        required: true
+        default: "2026-10-14"
+      diagnostic_only:
+        description: "Read-only audit only; this branch contains no publication job"
+        type: boolean
+        required: true
+        default: true
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    if: github.event_name == 'workflow_dispatch' && inputs.diagnostic_only
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify read-only diagnostic boundary
+        run: npx vitest run --config vitest.shadow.config.ts tests/shadow-vintage-diagnostic.test.ts
+      - name: Compare saved KOSPI and integrated vintages without mutations or uploads
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          DIAGNOSTIC_DATE: ${{ inputs.as_of }}
+        run: npx vite-node --config scripts/kospi-shadow-runtime.config.ts scripts/diagnose-kospi-shadow-vintage.ts -- --date "$DIAGNOSTIC_DATE"
