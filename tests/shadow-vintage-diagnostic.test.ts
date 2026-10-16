@@ -241,7 +241,7 @@ describe("read-only prospective KOSPI vintage diagnostic", () => {
     const diagnose = workflow.split("\n  diagnose:")[1]!;
     expect(workflow).not.toMatch(/^\s+(advance|verify|push|pull_request|workflow_run|schedule):/m);
     expect(diagnose).toContain(
-      "if: github.event_name == 'workflow_dispatch' && inputs.diagnostic_only",
+      "if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.diagnostic_only",
     );
     expect(diagnose).not.toContain("run-kospi-shadow.ts");
     expect(workflow).toMatch(/diagnostic_only:[\s\S]*?default: true/);
