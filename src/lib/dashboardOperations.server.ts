@@ -137,7 +137,17 @@ export async function projection(client: SupabaseClient, uid: string, kind: "kr"
   // Always use freshly read generation metadata, even for the same result digest.
   // Keep it out of the reusable projection so a same-day re-screen cannot reuse an old timestamp.
   const observed = (index: DashboardIndex): DashboardIndex =>
-    kind === "kr" ? { ...index, screeningCreatedAt: (meta as DashboardSummary).createdAt } : index;
+    kind === "kr"
+      ? {
+          ...index,
+          screeningCreatedAt: (meta as DashboardSummary).createdAt,
+          sourceRegisteredAt: (meta as DashboardSummary).sourceRegisteredAt,
+        }
+      : {
+          ...index,
+          screeningCreatedAt: (meta as UsProspectiveCache).generatedAt,
+          sourceCollectedAt: (meta as UsProspectiveCache).source?.collectedAt,
+        };
   const cached = memory.get(key);
   if (cached && cached.expires > Date.now()) return observed(cached.index);
   const pending = inFlight.get(key);
@@ -390,6 +400,18 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
       }
   }
   return {
+    publications: {
+      KR: {
+        collectedAt: kr?.sourceCollectedAt ?? null,
+        registeredAt: kr?.sourceRegisteredAt ?? null,
+        calculatedAt: kr?.screeningCreatedAt ?? null,
+      },
+      US: {
+        collectedAt: us?.sourceCollectedAt ?? null,
+        registeredAt: us?.sourceRegisteredAt ?? null,
+        calculatedAt: us?.screeningCreatedAt ?? null,
+      },
+    },
     markets,
     actualAllocation,
     newActualPools: context

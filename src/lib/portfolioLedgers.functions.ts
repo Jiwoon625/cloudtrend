@@ -1,7 +1,7 @@
 import { isActionableActualPriceExit } from "./newActualPriceExit";
 import type { PortfolioLedgerViewState } from "./portfolioFreshness";
 import { validateExecutionSourceLinks } from "./ledger/executionMemo";
-import { loadWebsitePositionContextForOwner } from "./websitePositionContext.server";
+import { loadActualPositionContextForOwner } from "./websitePositionContext.server";
 import { attachActualHoldingPriceExits } from "./actualHoldingPriceExit.server";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
@@ -77,7 +77,7 @@ export const portfolioPositionContextServer = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }): Promise<DomesticPositionContext> => {
     const { client, uid } = await authenticate(data.accessToken);
-    const context = await loadWebsitePositionContextForOwner(client, uid);
+    const context = await loadActualPositionContextForOwner(client, uid);
     if (context.actualPools?.KRW) {
       try {
         await attachActualHoldingPriceExits(

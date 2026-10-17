@@ -312,7 +312,9 @@ describe("KOSPI confirmation UI", () => {
     expect(html).toContain("실제 미보유 후보 (1)");
     expect(html).toContain("확인대기 (2)");
     expect(html).toContain("확인 준비 종목");
-    expect(html).not.toContain("원시 대기 종목");
+    expect(html).toContain("원시 대기 종목");
+    expect(html).toContain("확인 대기");
+    expect((html.match(/>매수수량 기록</g) ?? []).length).toBe(1);
   });
 });
 

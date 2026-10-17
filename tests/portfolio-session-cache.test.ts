@@ -62,12 +62,12 @@ test("the portfolio hub reads only owner-scoped new-series data with bounded fre
   const component = readFileSync("src/components/NewActualPortfolio.tsx", "utf8");
   expect(component).toContain('const queryKey = ["new-actual-portfolio", owner] as const;');
   expect(component).toMatch(/useQuery\(\{\s*queryKey,\s*enabled:\s*!!owner,/);
-  expect(component).toMatch(/gcTime:\s*0,/);
+  expect(component).toMatch(/gcTime:\s*5 \* 60_000,/);
   expect(component).toMatch(/staleTime:\s*30_000,/);
   expect(component).not.toContain("placeholderData:");
 
   // Exercise the bounded, owner-keyed cache contract with synthetic responses.
-  // Keep observers mounted, as the component deliberately discards inactive data.
+  // Reuse inactive data across tab switches while retaining owner isolation.
   const client = new QueryClient();
   const queryFn = vi.fn(async ({ queryKey }: { queryKey: readonly string[] }) => ({
     owner: queryKey[1],
@@ -77,14 +77,15 @@ test("the portfolio hub reads only owner-scoped new-series data with bounded fre
     queryKey: ["new-actual-portfolio", owner] as const,
     queryFn,
     staleTime: 30_000,
-    gcTime: 0,
+    gcTime: 5 * 60_000,
   });
   const first = options("synthetic-owner-a");
   const second = options("synthetic-owner-b");
   const unsubscribes: (() => void)[] = [];
   try {
     const firstResponse = await client.fetchQuery(first);
-    unsubscribes.push(new QueryObserver(client, first).subscribe(() => {}));
+    const unmountFirst = new QueryObserver(client, first).subscribe(() => {});
+    unmountFirst();
     expect(await client.fetchQuery(first)).toEqual(firstResponse);
     expect(queryFn).toHaveBeenCalledTimes(1);
     expect(client.getQueryData(second.queryKey)).toBeUndefined();

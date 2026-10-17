@@ -201,19 +201,23 @@ export async function buildAndPersistScreeningCaches(): Promise<{
 export async function getOrBuildScreeningPayload(): Promise<AnalysisPayload> {
   const cached = await readScreeningCache();
   if (cached) return cached.payload;
-  return (await buildAndPersistScreeningCaches()).screening.payload;
+  throw new Error("저장된 스크리닝 결과가 없습니다. 데이터 관리에서 게시 상태를 확인해 주세요.");
 }
 
 export async function getOrBuildDashboardSummary(): Promise<DashboardSummary> {
   const cached = await readDashboardCache();
   if (cached) return cached;
-  return (await buildAndPersistScreeningCaches()).dashboard;
+  throw new Error("저장된 요약 결과가 없습니다. 데이터 관리에서 게시 상태를 확인해 주세요.");
 }
 
 export async function getCachedInstrumentDetail(symbol: string): Promise<InstrumentDetailPayload> {
   const normalized = symbol.trim().toUpperCase();
   const screening = await readScreeningCache();
-  const shared = screening ?? (await buildAndPersistScreeningCaches()).screening;
+  if (!screening)
+    throw new Error(
+      "저장된 스크리닝 결과를 확인할 수 없습니다. 데이터 관리에서 게시 상태를 확인해 주세요.",
+    );
+  const shared = screening;
   const row =
     shared.payload.analysis.rows.find((item) => item.instrument.symbol === normalized) ?? null;
   if (!row)

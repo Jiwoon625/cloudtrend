@@ -50,7 +50,7 @@ const ETF_TABLE_COLUMNS: Array<{ key: SortKey; label: string }> = [
   { key: "health", label: "Health / 15" },
   { key: "environment", label: "환경 / 15" },
   { key: "signal", label: "신호·확인 일정" },
-  { key: "tradingValue", label: "20일 평균 거래대금(원)" },
+  { key: "tradingValue", label: "20일 평균 거래대금" },
   { key: "volatility", label: "20일 변동성" },
   { key: "entryWeight", label: "신규 비중" },
   { key: "evidence", label: "데이터·환경 근거" },
@@ -83,6 +83,11 @@ export function EtfScreener({
   ledgerError?: string | undefined;
   positionContext?: DomesticPositionContext | undefined;
 }) {
+  const [detail, setDetail] = useSessionViewState(
+    "etf:detail",
+    "summary",
+    viewChoice(["summary", "detail"]),
+  );
   const [page, setPage] = useSessionViewState("etf:page", 0, viewPage);
   const [query, setQuery] = useSessionViewState("etf:query", "", viewText);
   const [filter, setFilter] = useSessionViewState(
@@ -495,8 +500,18 @@ export function EtfScreener({
               다음
             </Button>
           </div>
+          <Button
+            size="sm"
+            variant="outline"
+            aria-pressed={detail === "detail"}
+            onClick={() => setDetail(detail === "detail" ? "summary" : "detail")}
+          >
+            {detail === "detail" ? "요약 보기" : "상세 지표 보기"}
+          </Button>
           <div className="overflow-x-auto rounded-lg border">
-            <table className="w-full text-xs whitespace-nowrap">
+            <table
+              className={`w-full text-xs whitespace-nowrap ${detail === "summary" ? "[&_tr>*:nth-child(4)]:hidden [&_tr>*:nth-child(5)]:hidden [&_tr>*:nth-child(6)]:hidden [&_tr>*:nth-child(7)]:hidden [&_tr>*:nth-child(10)]:hidden [&_tr>*:nth-child(12)]:hidden" : ""}`}
+            >
               <thead className="bg-muted">
                 <tr>
                   {ETF_TABLE_COLUMNS.map((column) => {
@@ -567,29 +582,39 @@ export function EtfScreener({
                       <td className="p-3">{scoreText(e.environment)}</td>
                       <td className="p-3">
                         <strong>{label}</strong>
-                        {e.current && s?.originDate && (
+                        <details>
+                          <summary className="cursor-pointer text-xs text-muted-foreground">
+                            판정 근거
+                          </summary>
+                          {e.current && s?.originDate && (
+                            <div className="text-xs">
+                              원신호 {s.originDate} · 확인{" "}
+                              {s.confirmationDate ?? "다음 거래일 종가"}
+                            </div>
+                          )}
+                          {s?.confirmationIssues?.length ? (
+                            <div className="text-xs whitespace-normal max-w-64">
+                              {s.confirmationIssues.join(" · ")}
+                            </div>
+                          ) : null}
+                          <div className="text-xs text-muted-foreground">
+                            기초지수 {evidenceText(e.underlyingClose)} / MA60{" "}
+                            {evidenceText(e.underlyingMa60)}
+                          </div>
                           <div className="text-xs">
-                            원신호 {s.originDate} · 확인 {s.confirmationDate ?? "다음 거래일 종가"}
+                            {e.underlyingJudgment === "below_ma60"
+                              ? "관측 근거: 기초지수 MA60 하회"
+                              : e.underlyingJudgment === "above_ma60"
+                                ? "관측 근거: 기초지수 MA60 이상"
+                                : "기초지수 MA60 판단 미확인"}
                           </div>
-                        )}
-                        {s?.confirmationIssues?.length ? (
-                          <div className="text-xs whitespace-normal max-w-64">
-                            {s.confirmationIssues.join(" · ")}
-                          </div>
-                        ) : null}
-                        <div className="text-xs text-muted-foreground">
-                          기초지수 {evidenceText(e.underlyingClose)} / MA60{" "}
-                          {evidenceText(e.underlyingMa60)}
-                        </div>
-                        <div className="text-xs">
-                          {e.underlyingJudgment === "below_ma60"
-                            ? "관측 근거: 기초지수 MA60 하회"
-                            : e.underlyingJudgment === "above_ma60"
-                              ? "관측 근거: 기초지수 MA60 이상"
-                              : "기초지수 MA60 판단 미확인"}
-                        </div>
+                        </details>
                       </td>
-                      <td className="p-3">{evidenceText(e.averageTradingValue20, 0)}</td>
+                      <td className="p-3">
+                        {e.averageTradingValue20 == null
+                          ? "미확인"
+                          : `${num(e.averageTradingValue20 / 100_000_000, 1)}억`}
+                      </td>
                       <td className="p-3">{pct(e.annualVolatility)}</td>
                       <td className="p-3">{pct(e.entryWeight)}</td>
                       <td className="p-3 whitespace-normal min-w-48 text-xs">

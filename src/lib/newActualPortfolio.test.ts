@@ -356,6 +356,18 @@ describe("funding and cash events", () => {
     expect(result.issues).toContain("flow_adjusted_return_pending");
   });
 
+  it("treats split opening funding identically to one initial deposit", () => {
+    const buy = execution("split", { date: "2026-10-16" });
+    const single = project([buy], metadata([buy], [cashEvent("one", { amount: 1800 })]));
+    const split = project(
+      [buy],
+      metadata([buy], [cashEvent("kr", { amount: 1200 }), cashEvent("etf", { amount: 600 })]),
+    );
+    expect(split.returnPercent).toBe(single.returnPercent);
+    expect(split.nav).toBe(single.nav);
+    expect(split.issues).not.toContain("flow_adjusted_return_pending");
+  });
+
   it("does not publish a simple return after multiple deposits", () => {
     const result = project(
       [],

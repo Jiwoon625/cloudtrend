@@ -111,7 +111,7 @@ describe("ETF screener rendered state contract", () => {
   it("shows confirmed next-open entry, liquidity, and order price", () => {
     const html = page("confirmed", book);
     expect(html).toContain("진입 준비 · 다음 시가 진입");
-    expect(html).toContain("2,000,000,000");
+    expect(html).toContain("20억");
     expect(html).not.toContain('aria-label="360750 주문가격"');
     expect(html).toContain("포트폴리오");
   });

@@ -1,11 +1,12 @@
+import { dashboardInbox, type InboxKind } from "@/lib/dashboardInbox";
 import { dashboardCopy } from "@/lib/dashboardCopy";
 import {
   OperatingAllocationPanel,
   type OperatingAllocationCandidate,
 } from "./OperatingAllocationPanel";
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ShieldCheck, TrendingUp } from "lucide-react";
 import { Button } from "./ui/button";
 import { DomesticStrategyRules } from "./DomesticStrategyRules";
@@ -42,20 +43,6 @@ async function accessToken() {
   return data.session.access_token;
 }
 export function useDashboardOperations(started: boolean, digest: string | undefined) {
-  const qc = useQueryClient();
-  useEffect(
-    () =>
-      qc.getQueryCache().subscribe((event) => {
-        if (
-          event.type === "updated" &&
-          event.action.type === "success" &&
-          ["new-actual-portfolio"].includes(String(event.query.queryKey[0]))
-        ) {
-          void qc.invalidateQueries({ queryKey: DASHBOARD_OPERATIONS_QUERY });
-        }
-      }),
-    [qc],
-  );
   return useQuery<DashboardOperations>({
     queryKey: [...DASHBOARD_OPERATIONS_QUERY, digest],
     queryFn: async () => dashboardOperationsServer({ data: { accessToken: await accessToken() } }),
@@ -338,7 +325,7 @@ export function DashboardSectorLimitBadge({ row }: { row: DashboardSignal }) {
   );
 }
 export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
-  const [tab, setTab] = useState<"conditions" | "onsets" | "pending" | "exits">("onsets");
+  const [tab, setTab] = useState<"all" | "conditions" | "onsets" | "pending" | "exits">("all");
   const [market, setMarket] = useState<DashboardMarket | "ALL">("ALL");
   const [page, setPage] = useState(0);
   const [purchaseCandidate, setPurchaseCandidate] = useState<PurchaseRecordCandidate | null>(null);
@@ -348,21 +335,28 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
     kind === "pending" ? ["KOSPI", "ETF"] : ["KOSPI", "KOSDAQ", "ETF", "US"];
   const selectedMarkets = listMarkets(tab).filter((m) => market === "ALL" || m === market);
   const selected = (query.data?.markets ?? []).filter((m) => selectedMarkets.includes(m.market));
-  const rows = selected.flatMap((m) => m[tab] ?? []);
-  if (tab !== "exits") rows.sort(compareDashboardCandidates);
+  const inbox = dashboardInbox(selected);
+  const rows = tab === "all" ? inbox : selected.flatMap((m) => m[tab] ?? []);
+  const rowKind = (row: DashboardSignal): InboxKind | "conditions" =>
+    tab === "all"
+      ? (inbox.find((r) => r.market === row.market && r.symbol === row.symbol)?.inboxKind ?? "raw")
+      : tab;
+  if (tab !== "exits" && tab !== "all") rows.sort(compareDashboardCandidates);
   const pageCount = Math.max(1, Math.ceil(rows.length / 25));
   const currentPage = Math.min(page, pageCount - 1);
   const visible = rows.slice(currentPage * 25, currentPage * 25 + 25);
   const incomplete = selectedMarkets.some((selectedMarket) => {
     const item = selected.find((m) => m.market === selectedMarket);
     return (
-      (tab === "conditions"
-        ? item?.conditionCount
-        : tab === "onsets"
-          ? item?.onsetCount
-          : tab === "pending"
-            ? item?.pendingCount
-            : item?.exitCount) == null
+      (tab === "all"
+        ? item?.onsetCount
+        : tab === "conditions"
+          ? item?.conditionCount
+          : tab === "onsets"
+            ? item?.onsetCount
+            : tab === "pending"
+              ? item?.pendingCount
+              : item?.exitCount) == null
     );
   });
   const selectedPreview = allocationCandidate
@@ -392,19 +386,22 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
         cashRequired: selectedPreview?.cashRequired ?? null,
       }
     : null;
-  const totals = (kind: "conditions" | "onsets" | "pending" | "exits") =>
-    (query.data?.markets ?? [])
-      .filter((m) => listMarkets(kind).includes(m.market))
-      .reduce((sum, m) => sum + (m[kind]?.length ?? 0), 0);
+  const totals = (kind: "all" | "conditions" | "onsets" | "pending" | "exits") =>
+    kind === "all"
+      ? dashboardInbox(query.data?.markets ?? []).length
+      : (query.data?.markets ?? [])
+          .filter((m) => listMarkets(kind).includes(m.market))
+          .reduce((sum, m) => sum + (m[kind]?.length ?? 0), 0);
   return (
     <section
-      className="mt-6 rounded-lg border border-border bg-card"
+      className="mt-3 rounded-lg border border-border bg-card"
       aria-label="통합 조건달성종목"
     >
       <div className="border-b border-border p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold">
-            조건달성종목 · {tab === "pending" ? "KOSPI / ETF" : "KOSPI / KOSDAQ / ETF / 미국 A0"}
+            오늘 확인할 종목 ·{" "}
+            {tab === "pending" ? "KOSPI / ETF" : "KOSPI / KOSDAQ / ETF / 미국 A0"}
           </h2>
           <select
             aria-label="조건달성종목 시장"
@@ -423,23 +420,33 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
             ))}
           </select>
         </div>
-        <p className="mt-1 text-[10px] text-muted-foreground">
-          시장 간 점수를 서로 비교하지 않습니다. 확인대기는 KOSPI·ETF의 다음 거래일 확인 전
-          종목입니다. ETF 기존 원신호는 확인일 KRX 자료가 도착할 때까지 대기를 유지하며, 확인 탈락은
-          제외합니다. 조건 충족과 실제 미보유 후보를 구분하며, 실제 체결을 포트폴리오에 기록하면
-          보유·청산·재진입 판단에 반영합니다. 실제 매도로 소진된 원신호는 다시 사용하지 않습니다.
-          EXIT는 실제 원장 보유종목의 청산 신호만 집계하며, ETF 자료 미확인은 청산 신호가 아닙니다.
-          KOSPI는 체결 직전 완료 거래일 시장국면을 다시 확인합니다.
+        <p className="mt-1 text-xs text-muted-foreground">
+          실제 원장 기준 · 시장별 최신 기준일 · 전략 원장과 비교 성과는{" "}
+          <Link to="/shadow" className="underline">
+            Shadow
+          </Link>
+          에서 확인합니다.
         </p>
-        {tab !== "exits" && selectedMarkets.some((m) => m === "KOSPI" || m === "KOSDAQ") ? (
-          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-            실제 S06 배분은 한국/ETF/미국 40/20/40입니다. 실제 보유·예약 슬롯과 시장별 현금 귀속을
-            함께 확인합니다. 예산이나 현금이 미확정이어도 진입 조건 충족은 계속 표시합니다. 예상
-            수량은 현재 종가 기준이며 실제 주문 전에 체결가와 주문가능 현금을 다시 확인하세요.
+        <details className="mt-1 text-xs text-muted-foreground">
+          <summary className="cursor-pointer">신호·배분 안내</summary>{" "}
+          <p className="mt-1 text-[10px] text-muted-foreground">
+            시장 간 점수를 서로 비교하지 않습니다. 확인대기는 KOSPI·ETF의 다음 거래일 확인 전
+            종목입니다. ETF 기존 원신호는 확인일 KRX 자료가 도착할 때까지 대기를 유지하며, 확인
+            탈락은 제외합니다. 조건 충족과 실제 미보유 후보를 구분하며, 실제 체결을 포트폴리오에
+            기록하면 보유·청산·재진입 판단에 반영합니다. 실제 매도로 소진된 원신호는 다시 사용하지
+            않습니다. EXIT는 실제 원장 보유종목의 청산 신호만 집계하며, ETF 자료 미확인은 청산
+            신호가 아닙니다. KOSPI는 체결 직전 완료 거래일 시장국면을 다시 확인합니다.
           </p>
-        ) : null}
+          {tab !== "exits" && selectedMarkets.some((m) => m === "KOSPI" || m === "KOSDAQ") ? (
+            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+              실제 S06 배분은 한국/ETF/미국 40/20/40입니다. 실제 보유·예약 슬롯과 시장별 현금 귀속을
+              함께 확인합니다. 예산이나 현금이 미확정이어도 진입 조건 충족은 계속 표시합니다. 예상
+              수량은 현재 종가 기준이며 실제 주문 전에 체결가와 주문가능 현금을 다시 확인하세요.
+            </p>
+          ) : null}
+        </details>
         <div className="mt-3 flex flex-wrap gap-2" role="tablist" aria-label="신호 종류">
-          {(["conditions", "onsets", "pending", "exits"] as const).map((kind) => (
+          {(["all", "exits", "onsets", "pending", "conditions"] as const).map((kind) => (
             <Button
               key={kind}
               id={`dashboard-tab-${kind}`}
@@ -454,13 +461,15 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
                 setPage(0);
               }}
             >
-              {kind === "conditions"
-                ? "진입 조건 충족"
-                : kind === "onsets"
-                  ? "실제 미보유 후보"
-                  : kind === "pending"
-                    ? "확인대기"
-                    : "실제 EXIT"}{" "}
+              {kind === "all"
+                ? "전체 신호"
+                : kind === "conditions"
+                  ? "진입 조건 충족"
+                  : kind === "onsets"
+                    ? "실제 미보유 후보"
+                    : kind === "pending"
+                      ? "확인대기"
+                      : "실제 EXIT"}{" "}
               {query.data ? `(${totals(kind)})` : ""}
             </Button>
           ))}
@@ -516,7 +525,7 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
                   <th className="px-3 py-2 text-left">기준일</th>
                   <th className="px-3 py-2 text-right">점수 / Core</th>
                   <th className="px-3 py-2 text-right">가격</th>
-                  {tab === "onsets" ? (
+                  {tab === "onsets" || tab === "all" ? (
                     <th className="px-3 py-2 text-left">실제 예산 · 예상 수량</th>
                   ) : null}
                   <th className="px-3 py-2 text-left">신호 근거</th>
@@ -545,88 +554,118 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
                           ? usd(row.price)
                           : `${row.price.toLocaleString("ko-KR")}원`}
                     </td>
-                    {tab === "onsets" ? (
+                    {tab === "onsets" || tab === "all" ? (
                       <td className="px-3 py-3">
-                        <Button
-                          size="sm"
-                          className="mb-2"
-                          onClick={() =>
-                            setPurchaseCandidate({
-                              symbol: row.symbol,
-                              name: row.name,
-                              market: row.market,
-                            })
-                          }
-                        >
-                          매수수량 기록
-                        </Button>
-                        {(() => {
-                          const preview = query.data?.actualAllocation?.previews.find(
-                            (p) =>
-                              p.market === row.market &&
-                              p.symbol === row.symbol &&
-                              p.signalOriginDate === row.signalOriginDate,
-                          );
-                          return preview ? (
-                            <div>
-                              <div>
-                                {preview.budget ?? "미확정"} {row.market === "US" ? "USD" : "KRW"}
-                              </div>
-                              <div>
-                                {preview.quantity === null
-                                  ? "수량 미확정"
-                                  : `${preview.quantity}주`}
-                              </div>
-                              <div className="text-[10px] text-muted-foreground">
-                                {preview.reason}
-                              </div>
-                              {row.signalOriginDate ? (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() =>
-                                    setAllocationCandidate({
-                                      market: row.market,
-                                      symbol: row.symbol,
-                                      name: row.name,
-                                      signalOriginDate: row.signalOriginDate!,
-                                      sourceDate: row.date,
-                                      cashRequired: preview.cashRequired,
-                                      quantity: preview.quantity,
-                                      status: preview.status,
-                                    })
-                                  }
-                                >
-                                  예산·예약 상세 (선택)
-                                </Button>
-                              ) : null}
-                            </div>
-                          ) : (
-                            <span>배정 예산·실제 현금 확인 필요</span>
-                          );
-                        })()}
+                        {rowKind(row) === "onsets" ? (
+                          <>
+                            <Button
+                              size="sm"
+                              className="mb-1"
+                              onClick={() =>
+                                setPurchaseCandidate({
+                                  symbol: row.symbol,
+                                  name: row.name,
+                                  market: row.market,
+                                })
+                              }
+                            >
+                              매수수량 기록
+                            </Button>
+                            {(() => {
+                              const preview = query.data?.actualAllocation?.previews.find(
+                                (p) =>
+                                  p.market === row.market &&
+                                  p.symbol === row.symbol &&
+                                  p.signalOriginDate === row.signalOriginDate,
+                              );
+                              return preview ? (
+                                <details>
+                                  <summary className="cursor-pointer text-xs">
+                                    예산·수량 확인
+                                  </summary>
+                                  <div>
+                                    {preview.budget == null
+                                      ? "미확정"
+                                      : Number(preview.budget).toLocaleString("ko-KR", {
+                                          maximumFractionDigits: row.market === "US" ? 2 : 0,
+                                        })}{" "}
+                                    {row.market === "US" ? "USD" : "KRW"}
+                                  </div>
+                                  <div>
+                                    {preview.quantity === null
+                                      ? "수량 미확정"
+                                      : `${preview.quantity}주`}
+                                  </div>
+                                  <div className="text-[10px] text-muted-foreground">
+                                    {preview.reason}
+                                  </div>
+                                  {row.signalOriginDate ? (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={() =>
+                                        setAllocationCandidate({
+                                          market: row.market,
+                                          symbol: row.symbol,
+                                          name: row.name,
+                                          signalOriginDate: row.signalOriginDate!,
+                                          sourceDate: row.date,
+                                          cashRequired: preview.cashRequired,
+                                          quantity: preview.quantity,
+                                          status: preview.status,
+                                        })
+                                      }
+                                    >
+                                      예산·예약 상세 (선택)
+                                    </Button>
+                                  ) : null}
+                                </details>
+                              ) : (
+                                <span className="block text-xs">예산 확인 필요</span>
+                              );
+                            })()}
+                          </>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            {rowKind(row) === "exits" ? "매도 체결 확인" : "조건 확인"}
+                          </span>
+                        )}
                       </td>
                     ) : null}
                     <td className={`px-3 py-3 ${tab === "onsets" ? "text-up" : "text-warn"}`}>
-                      <div>{dashboardCopy(row.reason)}</div>
-                      {row.signalOriginDate ? (
-                        <div className="mt-1 text-[10px] text-muted-foreground">
-                          원신호 {row.signalOriginDate}
-                        </div>
-                      ) : null}
-                      {row.actualQuantity !== undefined ? (
-                        <div className="text-[10px] text-muted-foreground">
-                          실제 보유{" "}
-                          {row.actualQuantity.toLocaleString("ko-KR", {
-                            maximumFractionDigits: 20,
-                          })}
-                          주 · 진입 {row.actualEntryDate}
-                        </div>
-                      ) : null}
-                      {tab !== "exits" ? (
-                        <OnsetProfileDetails profile={row.onsetProfile} compact />
-                      ) : null}
-                      {tab !== "exits" ? <DashboardSectorLimitBadge row={row} /> : null}
+                      <div className="max-w-64 truncate" title={dashboardCopy(row.reason)}>
+                        {rowKind(row) === "exits"
+                          ? dashboardCopy(row.reason)
+                          : rowKind(row) === "onsets"
+                            ? "진입 준비"
+                            : rowKind(row) === "pending"
+                              ? "확인 대기"
+                              : rowKind(row) === "raw"
+                                ? "원신호 · 진입 미확정"
+                                : "조건 충족"}
+                      </div>
+                      <details className="text-xs text-muted-foreground">
+                        <summary className="cursor-pointer">상세 근거</summary>
+                        <p>{dashboardCopy(row.reason)}</p>
+                        {row.signalOriginDate ? (
+                          <div className="mt-1 text-[10px] text-muted-foreground">
+                            원신호 {row.signalOriginDate}
+                          </div>
+                        ) : null}
+                        {row.actualQuantity !== undefined ? (
+                          <div className="text-[10px] text-muted-foreground">
+                            실제 보유{" "}
+                            {row.actualQuantity.toLocaleString("ko-KR", {
+                              maximumFractionDigits: 20,
+                            })}
+                            주 · 진입 {row.actualEntryDate}
+                          </div>
+                        ) : null}
+                        {tab !== "exits" ? (
+                          <OnsetProfileDetails profile={row.onsetProfile} compact />
+                        ) : null}
+                        {tab !== "exits" ? <DashboardSectorLimitBadge row={row} /> : null}
+                      </details>
                     </td>
                   </tr>
                 ))}

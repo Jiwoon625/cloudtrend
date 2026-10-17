@@ -9,6 +9,8 @@ export const INSTRUMENT_CACHE_VERSION =
   "instrument-cache-v8-verified-kr-index-20261008-v1" as const;
 
 export interface DashboardSummary {
+  /** Source registration is not collection completion. */
+  sourceRegisteredAt?: string;
   version: typeof DASHBOARD_CACHE_VERSION;
   createdAt: string;
   inputFingerprint: string;

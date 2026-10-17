@@ -54,7 +54,7 @@ export function DomesticAssessmentPanel({
     (market === "ALL" || market === r.market) &&
     `${r.name} ${r.symbol}`.toLowerCase().includes(query.trim().toLowerCase());
   const filtered = visible.filter(matchesView);
-  const pageSize = review ? 5 : 20;
+  const pageSize = 25;
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pages - 1);
   const stocks = all.filter((r) => r.market !== "ETF");

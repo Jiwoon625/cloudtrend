@@ -53,12 +53,16 @@ export function OperatingAllocationContent({
   const unit = currency === "KRW" ? "원" : "USD";
   return (
     <div className="space-y-2 text-sm">
-      <p className="font-medium">실제 S06 · 한국 40% / ETF 20% / 미국 40%</p>
-      <p>계획금액 3,000만원 · 한국 1,200만원 · ETF 600만원 · 미국 1,200만원</p>
-      <p className="text-xs">
-        한국·미국은 연초 기준 예산, ETF는 신호 확정일 종가의 보유·귀속현금 NAV에 변동성 비중을
-        적용합니다.
-      </p>
+      <p className="font-medium">배분비율 확정 · S06 한국 40% / ETF 20% / 미국 40%</p>
+      <details className="text-xs">
+        <summary className="cursor-pointer">확정 배분계획 보기</summary>
+        <p>계획금액 3,000만원 · 한국 1,200만원 · ETF 600만원 · 미국 1,200만원</p>
+        <p className="text-xs">
+          한국·미국은 연초 기준 예산, ETF는 신호 확정일 종가의 보유·귀속현금 NAV에 변동성 비중을
+          적용합니다.
+        </p>
+      </details>
+      <h3 className="border-t pt-2 font-medium">실제 현금 · 시장별 귀속</h3>
       <p>
         실제 기록상 현금: {money(data?.cash)} {unit}
       </p>

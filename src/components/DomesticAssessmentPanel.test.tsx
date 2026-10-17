@@ -135,7 +135,7 @@ it("resets pagination for search and market changes, then supports repeated back
   const many = [
     {
       ...markets[0]!,
-      assessments: Array.from({ length: 41 }, (_, index) => ({
+      assessments: Array.from({ length: 61 }, (_, index) => ({
         ...markets[0]!.assessments![0]!,
         symbol: `S${index}`,
         name: `종목 ${index}`,
@@ -217,7 +217,7 @@ it("switches review scope without changing strategy evidence and resets paginati
     {
       ...markets[0]!,
       date: "2026-10-12",
-      assessments: Array.from({ length: 25 }, (_, index) => ({
+      assessments: Array.from({ length: 125 }, (_, index) => ({
         ...markets[0]!.assessments![1]!,
         date: "2026-10-12",
         symbol: `R${index}`,

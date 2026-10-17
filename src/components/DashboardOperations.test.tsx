@@ -22,9 +22,7 @@ vi.mock("react", async (importOriginal) => {
   return {
     ...actual,
     useState: (initial: unknown) =>
-      actual.useState(
-        initial === "onsets" ? state.tab : initial === "ALL" ? state.market : initial,
-      ),
+      actual.useState(initial === "all" ? state.tab : initial === "ALL" ? state.market : initial),
   };
 });
 vi.mock("@tanstack/react-router", () => ({
@@ -253,7 +251,7 @@ describe("combined dashboard confirmation list", () => {
   it("merges KOSPI and ETF once, labels each market and score scale, and links each symbol", () => {
     const html = renderList(data(3, 1));
     expect(html).toContain("확인대기 (4)");
-    expect(html).toContain("조건달성종목 · KOSPI / ETF");
+    expect(html).toContain("오늘 확인할 종목 · KOSPI / ETF");
     for (const market of ["KOSPI", "ETF"] as const) {
       expect(html).toContain(`>${market}</td>`);
       expect(html).toContain(`href="/instrument/${market}0"`);

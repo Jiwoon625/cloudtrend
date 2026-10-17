@@ -522,7 +522,7 @@ describe("owner-scoped KR and US screener restoration", () => {
       key: "close",
       direction: "asc",
     });
-    expect(storage.get("cloudtrend-view-v1:us-screener:filter")).toBe('"ALL"');
+    expect(storage.get("cloudtrend-view-v1:us-screener:actual-filter")).toBe('"ALL"');
     expect(hooks.usRows).toEqual(before);
     change(
       view.nodes.find((n) => n.props["aria-label"] === "티커 또는 종목명"),
@@ -546,7 +546,7 @@ describe("owner-scoped KR and US screener restoration", () => {
       { ...usStock(2), a0Exit: true, a0Entry: false },
     ];
     hooks.held = ["T000", "T001"];
-    storage.set("cloudtrend-view-v1:us-screener:filter", '"PRIMARY_EXIT"');
+    storage.set("cloudtrend-view-v1:us-screener:actual-filter", '"PRIMARY_EXIT"');
     const view = render(UsScreenerPage);
     expect(view.nodes.flatMap((n) => (n.props.row ? [n.props.row.symbol] : []))).toEqual(["T001"]);
     hooks.heldKnown = false;

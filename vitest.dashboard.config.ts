@@ -6,6 +6,10 @@ export default defineConfig({
   esbuild: { jsx: "automatic" },
   test: {
     include: [
+      "src/lib/dashboardInbox.test.ts",
+      "src/lib/screeningSession.test.ts",
+      "src/lib/webScreeningClient.test.ts",
+      "src/lib/portfolioPositionBoundary.test.ts",
       "src/components/IntegratedAllocationShadowPanel.test.tsx",
       "src/lib/etfSignalDatePresentation.test.ts",
       "src/lib/allocationWarningPresentation.test.ts",

@@ -1,3 +1,4 @@
+import { screeningSession } from "@/lib/screeningSession";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Activity,
@@ -57,7 +58,7 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "CloudTrend V8 Final 10점 기술점수의 KOSPI 하루 확인·RSAccel·하락장 진입 차단, KOSDAQ 8.0 원신호, KOSPI U9.5 / DX, KOSDAQ U9.0 / D3.0 Exit, 섹터 로테이션과 시장 상태를 한 화면에서 확인합니다.",
+          "CloudTrend V8 Final 10점 기술점수의 KOSPI 하루 확인·RSAccel·하락장 진입 차단, KOSDAQ 8.0 원신호, KOSPI U9.5 / H60 / K4, KOSDAQ U9.0 / D3.0 Exit, 섹터 로테이션과 시장 상태를 한 화면에서 확인합니다.",
       },
       { property: "og:title", content: "대시보드 | CloudTrend V8 Final" },
       {
@@ -278,21 +279,45 @@ function DashboardContent({
         </p>
       </div>
 
-      <DashboardSignalCounts query={operations} counts={summary.counts} />
-      <h2 className="mt-5 text-sm font-semibold">아침 종목 판단 · 저장된 진입 준비 / 보유 청산</h2>
-      <p className="mb-2 text-[11px] text-muted-foreground">
-        자료 수신과 기존 전략 조건에 따른 상태입니다. 저녁 검토 후보와 구분해 확인하세요.
+      <p className="mb-2 text-xs text-muted-foreground">
+        오전·저녁 하루 두 번, 자료수집 완료 후 게시된 최신 결과입니다. 시각만으로 진입 확정 여부를
+        판단하지 않습니다.
       </p>
+      <details className="rounded border p-2">
+        <summary className="cursor-pointer text-sm">시장별 집계·자료 확인사항</summary>
+        <DashboardSignalCounts query={operations} counts={summary.counts} />
+      </details>
+      <div className="my-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+        {(["KR", "US"] as const).map((market) => {
+          const publication = operations.data?.publications?.[market];
+          return (
+            <span key={market}>
+              {market === "KR" ? "한국·ETF" : "미국"} · {screeningSession(publication?.collectedAt)}
+              {publication?.collectedAt
+                ? ` ${formatKstDateTime(publication.collectedAt)}`
+                : publication?.registeredAt
+                  ? ` · 자료 등록 ${formatKstDateTime(publication.registeredAt)}`
+                  : ""}{" "}
+              · 계산{" "}
+              {publication?.calculatedAt ? formatKstDateTime(publication.calculatedAt) : "미확인"}{" "}
+              KST
+            </span>
+          );
+        })}
+      </div>
       <DashboardSignalLists query={operations} />
-      {operations.data ? (
-        <DomesticAssessmentPanel markets={operations.data.markets} review />
-      ) : (
-        <p className="my-4 text-xs text-muted-foreground" role="status">
-          {operations.isError
-            ? "후보 검토 자료 조회 실패 · 기존 판단 자료를 다시 확인해 주세요."
-            : "후보 검토 자료 불러오는 중…"}
-        </p>
-      )}
+      <details className="my-3 rounded border p-3">
+        <summary className="cursor-pointer text-sm">원신호·자료 확인 대기 후보</summary>
+        {operations.data ? (
+          <DomesticAssessmentPanel markets={operations.data.markets} review />
+        ) : (
+          <p className="my-4 text-xs text-muted-foreground" role="status">
+            {operations.isError
+              ? "후보 검토 자료 조회 실패 · 기존 판단 자료를 다시 확인해 주세요."
+              : "후보 검토 자료 불러오는 중…"}
+          </p>
+        )}
+      </details>
       <div className="space-y-4">
         <div className="space-y-4">
           <Card
