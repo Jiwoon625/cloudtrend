@@ -6,6 +6,10 @@ export default defineConfig({
   esbuild: { jsx: "automatic" },
   test: {
     include: [
+      "src/lib/actualEntryDecisions*.test.ts",
+      "src/lib/actualScreenerDecision.test.ts",
+      "src/components/ActualEntryDecisions.test.tsx",
+      "tests/actual-entry-decisions-postgres.test.ts",
       "src/lib/dashboardInbox.test.ts",
       "src/lib/screeningSession.test.ts",
       "src/lib/webScreeningClient.test.ts",

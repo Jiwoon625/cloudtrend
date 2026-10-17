@@ -29,12 +29,14 @@ export function EtfM0Summary({
   held,
   bundle,
   priceExit,
+  entryDecisionNotice,
 }: {
   row: ScreeningRow;
   signalDate: string;
   held: boolean | undefined;
   bundle?: EtfInstrumentChartBundle | undefined;
   priceExit?: ActualPriceExitEvidence | undefined;
+  entryDecisionNotice?: string | null | undefined;
 }) {
   const evidence = etfPartialEvidence(row, signalDate);
   const previous = bundle?.previousM0;
@@ -60,7 +62,11 @@ export function EtfM0Summary({
         <p className="text-3xl font-bold">
           {value(evidence.score)} <span className="text-sm">/ 100</span>
         </p>
-        <p className="text-sm">{etfOperationalDisplay(row, signalDate, held, false, priceExit)}</p>
+        <p className="text-sm">
+          {!held && isOperationalSignalDate(signalDate) && entryDecisionNotice
+            ? entryDecisionNotice
+            : etfOperationalDisplay(row, signalDate, held, false, priceExit)}
+        </p>
         {previousReference ? (
           <p className="mt-2 text-xs text-muted-foreground" title="해당 날짜 자료로 재계산한 M0">
             전 거래일 M0 {value(previousReference.score)} / 100 · {previousReference.date} · 참고
@@ -105,6 +111,7 @@ export function EtfInstrumentDetail({
   holdingsNotice,
   payload,
   priceExit,
+  entryDecisionNotice,
 }: {
   row: ScreeningRow;
   asOfDate?: string;
@@ -113,6 +120,7 @@ export function EtfInstrumentDetail({
   holdingsNotice?: ReactNode;
   payload?: AnalysisPayload;
   priceExit?: ActualPriceExitEvidence | undefined;
+  entryDecisionNotice?: string | null | undefined;
 }) {
   const s = row.etfStrategy;
   const signalDate = asOfDate ?? s?.date ?? row.snapshot.tradeDate;
@@ -125,6 +133,7 @@ export function EtfInstrumentDetail({
       held={held}
       bundle={bundle}
       priceExit={priceExit}
+      entryDecisionNotice={entryDecisionNotice}
     />
   );
   return (

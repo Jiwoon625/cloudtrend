@@ -1,3 +1,4 @@
+import { ActualEntryDecisionManager } from "./ActualEntryDecisions";
 import type { ReactNode } from "react";
 import { AppShell } from "./AppShell";
 import { OperatingAllocationPanel } from "./OperatingAllocationPanel";
@@ -20,6 +21,7 @@ export function PortfolioAssetHub({
       <NewActualPortfolio selectedAsset={selectedAsset} onAssetChange={onAssetChange}>
         <OperatingCapitalPlan editable />
         <OperatingAllocationPanel editable />
+        <ActualEntryDecisionManager />
       </NewActualPortfolio>
     </AppShell>
   );

@@ -20,7 +20,8 @@ import { stockAssessmentDisplay } from "@/lib/stockAssessmentDisplay";
 import { isOperationalEntry } from "@/lib/engine/operationalStrategy";
 import { loadDomesticPositionContext } from "@/lib/portfolioPositionContext";
 import { isOnsetSuppressed } from "@/lib/positionSignalContext";
-import { isPortfolioAwareOperationalEntry, isHeldExit } from "@/lib/statusDisplay";
+import { isHeldExit } from "@/lib/statusDisplay";
+import { isActualOperationalEntry as isPortfolioAwareOperationalEntry } from "@/lib/actualScreenerDecision";
 
 type PresetId =
   | "TECHNICAL_ONSET"

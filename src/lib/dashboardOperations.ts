@@ -25,6 +25,7 @@ import {
 
 export type DashboardMarket = "KOSPI" | "KOSDAQ" | "ETF" | "US";
 export interface DashboardSignal {
+  entryDecision?: import("./actualEntryDecisions").EntryDecision;
   krxReviewReference?: import("./krxReviewReference").KrxReviewReference | undefined;
   symbol: string;
   name: string;
@@ -85,6 +86,7 @@ export interface DashboardHolding {
   firstEntryDate: string;
 }
 export interface DashboardMarketSignals {
+  notPurchased?: DashboardSignal[];
   market: DashboardMarket;
   date: string | null;
   holdingsKnown: boolean;

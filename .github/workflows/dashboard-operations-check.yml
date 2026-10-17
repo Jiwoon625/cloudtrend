@@ -3,6 +3,11 @@ name: Dashboard operations check
 on:
   pull_request:
     paths:
+      - src/lib/actualEntryDecision*
+      - src/lib/actualScreenerDecision*
+      - src/components/ActualEntryDecisions*
+      - tests/actual-entry-decisions*
+      - supabase/migrations/*actual_entry_decisions.sql
       - src/routes/index.tsx
       - src/components/DomesticAssessmentPanel*
       - src/components/StockAssessmentDetails*

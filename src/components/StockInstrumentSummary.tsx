@@ -7,7 +7,7 @@ import { formatNumber, formatPrice, formatWon } from "@/lib/format";
 import { getKospiRsAccel } from "@/lib/kospiRelativeQuality";
 import type { DomesticPositionContext } from "@/lib/positionSignalContext";
 import { stockAssessmentDisplay } from "@/lib/stockAssessmentDisplay";
-import { getCompactStockStatus } from "@/lib/stockCompactStatus";
+import { actualCompactStockStatus as getCompactStockStatus } from "@/lib/actualScreenerDecision";
 
 function Metric({ label, children }: { label: string; children: ReactNode }) {
   return (

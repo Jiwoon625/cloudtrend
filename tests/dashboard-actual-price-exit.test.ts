@@ -1,3 +1,6 @@
+vi.mock("../src/lib/actualEntryDecisions.server", () => ({
+  loadActualEntryDecisions: async () => ({ revision: 0, events: [] }),
+}));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadDashboardOperations } from "../src/lib/dashboardOperations.server";
 import {

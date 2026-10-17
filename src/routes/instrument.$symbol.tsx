@@ -1,3 +1,4 @@
+import { findEntryDecision, entryDecisionLabel } from "@/lib/actualEntryDecisions";
 import { KrxReviewReferenceDetails } from "@/components/KrxReviewReferenceDetails";
 import { EtfInstrumentDetail } from "@/components/EtfInstrumentDetail";
 import { entrySuppressionReason } from "@/lib/positionSignalContext";
@@ -20,7 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { analysisQueryOptions, withThreeDecimalClv } from "@/lib/analysisQuery";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
-import { getPortfolioAwareDisplayStatus } from "@/lib/statusDisplay";
+import { actualStockDisplay as getPortfolioAwareDisplayStatus } from "@/lib/actualScreenerDecision";
 import { getDisplayWarnings } from "@/lib/warningDisplay";
 
 const loadInstrumentCharts = () => import("@/components/InstrumentCharts");
@@ -116,6 +117,19 @@ function InstrumentDetail() {
         holdingsNotice={holdingsNotice}
         held={positionContext?.heldSymbols.includes(symbol)}
         priceExit={positionContext?.priceExits?.[symbol]}
+        entryDecisionNotice={
+          positionContext?.actualEntryDecisions === null
+            ? "미매수 제한 조회 대기"
+            : (() => {
+                const d = findEntryDecision(
+                  positionContext?.actualEntryDecisions,
+                  "ETF",
+                  symbol,
+                  row.etfStrategy?.originDate ?? analysis.asOfDate,
+                );
+                return d ? entryDecisionLabel(d) : null;
+              })()
+        }
       />
     );
 
