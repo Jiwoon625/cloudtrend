@@ -83,6 +83,11 @@ export async function installUnderlyingIndexArtifact(
   if (artifact.cutoffDate !== UNDERLYING_INDEX_RELEASE.cutoffDate)
     throw new Error("자료 기준일이 승인된 빈티지와 다릅니다.");
   const beforeSources = sourceSetDigest(await listActiveSources(client, owner));
+  if (
+    artifact.approvedPreference &&
+    beforeSources !== artifact.approvedPreference.expectedSourceSetDigest
+  )
+    throw new Error("활성 원천 집합이 승인 범위와 달라 전용 자료 설치를 중단했습니다.");
   const existing = await readArtifactText(client, owner);
   if (existing !== null)
     return {
@@ -125,7 +130,11 @@ async function calculateForOwner(client: SupabaseClient, owner: string, now: str
   const inputDigest = sourceSetDigest(sources);
   const { dataset } = parseManualMarketData(texts);
   const before = datasetDigest(dataset);
-  const report = calculateIndexDiagnostics(dataset, artifact);
+  const report = calculateIndexDiagnostics(dataset, artifact, {
+    sourceSetDigest: inputDigest,
+    datasetSha256: before,
+    now,
+  });
   const comparisonEvidence = collectUnderlyingIndexEvidence(
     dataset,
     artifact,
@@ -151,6 +160,7 @@ async function calculateForOwner(client: SupabaseClient, owner: string, now: str
     writesPerformed: 0 as const,
     report,
     comparisonEvidence,
+    approvedPreferenceAudit: artifact.approvedPreference ?? null,
   };
 }
 

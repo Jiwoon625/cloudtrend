@@ -118,7 +118,9 @@ export function UnderlyingIndexDiagnosticsPanel() {
             비교 MA60 확보 {ready.report.summary.ma60Available.toLocaleString()} · 활성 원천 재계산
             대비 신규 확보 {ready.report.summary.newlyAvailable.toLocaleString()} · 격리{" "}
             {ready.report.summary.quarantined.toLocaleString()} · 이력 부족{" "}
-            {ready.report.summary.incomplete.toLocaleString()}
+            {ready.report.summary.incomplete.toLocaleString()} · 사용자 선택 빈티지{" "}
+            {ready.report.summary.approvedPreferenceSymbols.toLocaleString()}종/
+            {ready.report.summary.approvedPreferenceObservations.toLocaleString()}관측
           </p>
           <p className="text-xs text-muted-foreground">
             원천 {ready.activeSourcesRead}개 바이트 해시 재검증 · 가격 입력 전후 해시 동일 · 진단 중
@@ -153,12 +155,23 @@ export function UnderlyingIndexDiagnosticsPanel() {
                       {r.name}
                     </td>
                     <td className="p-2">{number(r.activeMa60)}</td>
-                    <td className="p-2">{number(r.diagnosticMa60)}</td>
+                    <td className="p-2">
+                      {number(r.diagnosticMa60)}
+                      {r.userSelectedVintage && (
+                        <>
+                          <br />
+                          사용자 선택 보강 빈티지
+                        </>
+                      )}
+                    </td>
                     <td className="p-2">
                       {r.activeValidCount} → {r.combinedValidCount}/60
                     </td>
                     <td className="p-2">
                       {r.issues.join(" / ") ||
+                        (r.userSelectedVintage
+                          ? `승인 충돌 ${r.approvedPreferenceDates.length}일 보강값 우선 · 원본 유지 · 신호 미적용`
+                          : "") ||
                         (r.status === "compared"
                           ? "지수명·중복값 대조 통과 (진단용)"
                           : "60개 관측 미충족")}

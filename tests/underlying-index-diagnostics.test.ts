@@ -76,6 +76,95 @@ function fixture() {
   const ds = parseManualMarketData([csv]).dataset;
   return { artifact, csv, ds };
 }
+function preferenceFixture() {
+  const f = fixture();
+  const observation = f.artifact.symbols[0]!.observations[60]!;
+  const expected = observation[1]!;
+  observation[1] = expected - 1;
+  f.artifact.approvedPreference = {
+    version: "user-selected-supplement-v1",
+    approvedAt: "2026-10-17T03:29:00.000Z",
+    basis: "user-selected-vintage-not-official-finality",
+    originalArtifactSha256: "b".repeat(64),
+    expectedSourceSetDigest: "c".repeat(64),
+    expectedDatasetSha256: datasetDigest(f.ds),
+    expectedAsOfDate: f.ds.asOfDate,
+    symbols: ["0046A0"],
+    entries: [
+      {
+        symbol: "0046A0",
+        date: observation[0],
+        expectedActiveValue: expected,
+        selectedValue: observation[1],
+        indexName: "INDEX",
+        activeProvider: "KRX_ETF",
+        supplementSourceId: "archive",
+        supplementSourceSha256: "a".repeat(64),
+      },
+    ],
+  };
+  f.artifact.availableFrom = "2026-10-17T03:30:00.000Z";
+  const context = { sourceSetDigest: "c".repeat(64), datasetSha256: datasetDigest(f.ds), now };
+  return { ...f, context };
+}
+
+describe("explicit user-selected diagnostic vintage", () => {
+  it("changes only diagnostic MA60 and retains active values/conflicts", () => {
+    const { ds, artifact, context } = preferenceFixture();
+    const before = structuredClone({ ds, artifact });
+    parseUnderlyingIndexArtifact(artifact, now);
+    const row = calculateIndexDiagnostics(ds, artifact, context).rows[0]!;
+    expect(row.status).toBe("compared");
+    expect(row.diagnosticMa60).toBeCloseTo(135.5 - 1 / 60, 10);
+    expect(row.conflicts).toEqual([artifact.calendar[60]]);
+    expect(row.approvedPreferenceDates).toEqual(row.conflicts);
+    expect(row.userSelectedVintage).toBe(true);
+    expect(row.strategyApplied).toBe(false);
+    expect({ ds, artifact }).toEqual(before);
+  });
+  it.each(["source", "dataset", "date", "future", "value", "provider", "name"])(
+    "fails closed on %s drift",
+    (kind) => {
+      const { ds, artifact, context } = preferenceFixture();
+      const bar = ds.observedBars!["0046A0"]!.find((b) => b.tradeDate === artifact.calendar[60])!;
+      if (kind === "source") context.sourceSetDigest = "d".repeat(64);
+      if (kind === "dataset") context.datasetSha256 = "d".repeat(64);
+      if (kind === "date") ds.asOfDate = "2026-10-18";
+      if (kind === "future") context.now = "2026-10-17T03:00:00.000Z";
+      if (kind === "value") bar.etfUnderlyingIndexClose = 1;
+      if (kind === "provider") bar.etfUnderlyingIndexSource = undefined;
+      if (kind === "name") bar.etfUnderlyingIndexName = "OTHER";
+      expect(() => calculateIndexDiagnostics(ds, artifact, context)).toThrow();
+    },
+  );
+  it("requires verified calculation context", () => {
+    const { ds, artifact } = preferenceFixture();
+    expect(() => calculateIndexDiagnostics(ds, artifact)).toThrow();
+  });
+  it.each(["duplicate", "selected", "sourceHash", "symbols"])(
+    "rejects invalid %s approval artifact",
+    (kind) => {
+      const { artifact } = preferenceFixture();
+      const p = artifact.approvedPreference!;
+      if (kind === "duplicate") p.entries.push({ ...p.entries[0]! });
+      if (kind === "selected") p.entries[0]!.selectedValue = 1;
+      if (kind === "sourceHash") p.entries[0]!.supplementSourceSha256 = "f".repeat(64);
+      if (kind === "symbols") p.symbols.push("438100");
+      expect(() => parseUnderlyingIndexArtifact(artifact, now)).toThrow();
+    },
+  );
+  it("does not fill missing observations or approve additional conflicts", () => {
+    const { ds, artifact, context } = preferenceFixture();
+    artifact.symbols[0]!.observations[10]![1] = null;
+    expect(calculateIndexDiagnostics(ds, artifact, context).rows[0]?.status).toBe("incomplete");
+    artifact.symbols[0]!.observations[61]![1] = 1;
+    const row = calculateIndexDiagnostics(ds, artifact, context).rows[0]!;
+    expect(row.status).toBe("quarantined");
+    expect(row.userSelectedVintage).toBe(false);
+    expect(row.diagnosticMa60).toBeNull();
+  });
+});
+
 function fakeClient(csv: string, artifact?: UnderlyingIndexArtifact) {
   const bytes = new Map<string, string>();
   const sourcePath = `${owner}/source/screening/frozen/source.csv`;
