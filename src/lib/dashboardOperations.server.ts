@@ -27,7 +27,7 @@ import type { NewActualPool } from "./newActualPortfolio";
 import { attachActualHoldingPriceExits } from "./actualHoldingPriceExit.server";
 
 const BUCKET = "cloudtrend-data";
-const VERSION = "dashboard-operations-partial-evidence-v6";
+const VERSION = "dashboard-operations-exit-diagnostics-v7";
 const memory = new Map<string, { expires: number; index: DashboardIndex }>();
 const inFlight = new Map<string, Promise<DashboardIndex>>();
 

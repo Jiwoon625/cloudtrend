@@ -421,8 +421,8 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
           종목입니다. ETF 기존 원신호는 확인일 KRX 자료가 도착할 때까지 대기를 유지하며, 확인 탈락은
           제외합니다. 조건 충족과 실제 미보유 후보를 구분하며, 실제 체결을 포트폴리오에 기록하면
           보유·청산·재진입 판단에 반영합니다. 실제 매도로 소진된 원신호는 다시 사용하지 않습니다.
-          EXIT는 실제 원장 보유종목 기준입니다. KOSPI는 체결 직전 완료 거래일 시장국면을 다시
-          확인합니다.
+          EXIT는 실제 원장 보유종목의 청산 신호만 집계하며, ETF 자료 미확인은 청산 신호가 아닙니다.
+          KOSPI는 체결 직전 완료 거래일 시장국면을 다시 확인합니다.
         </p>
         {tab !== "exits" && selectedMarkets.some((m) => m === "KOSPI" || m === "KOSDAQ") ? (
           <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">

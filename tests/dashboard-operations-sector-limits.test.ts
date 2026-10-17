@@ -275,7 +275,7 @@ describe("Korean dashboard strategy-sector annotation", () => {
       new URL("../src/lib/dashboardOperations.server.ts", import.meta.url),
       "utf8",
     );
-    expect(source).toContain("dashboard-operations-partial-evidence-v6");
+    expect(source).toContain("dashboard-operations-exit-diagnostics-v7");
     expect(source).not.toContain("projectDashboardSectorContext(krDoc");
     expect(source).toContain("loadActualPositionSnapshotForOwner(client, uid)");
     expect(source).toContain("maxPositions: 30");

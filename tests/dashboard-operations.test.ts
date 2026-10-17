@@ -301,6 +301,52 @@ describe("current KR and ETF rules", () => {
     expect(projected.rows[0]?.onset).toBe(false);
     expect(projected.rows[0]?.exitReason).toBeNull();
   });
+  it.each(["0046A0", "0048J0", "423160", "069500"])(
+    "keeps %s missing-underlying diagnostics out of actual EXIT without changing the source",
+    (symbol) => {
+      const etf = krRow(symbol, {
+        instrument: {
+          symbol,
+          name: "Synthetic missing-data ETF",
+          instrumentType: "ETF",
+          market: "KOSPI",
+        } as ScreeningRow["instrument"],
+        snapshot: { tradeDate: date, close: 100 } as ScreeningRow["snapshot"],
+        etfStrategy: {
+          version: ETF_POLICY.version,
+          date,
+          dataStatus: "incomplete",
+          eligible: false,
+          onset: false,
+          score: null,
+          underlyingClose: 100,
+          underlyingMa60: null,
+          exit: "DATA_UNAVAILABLE",
+          issues: ["기초지수 MA60·추세 이력 부족"],
+        } as ScreeningRow["etfStrategy"],
+      });
+      const source = analysis([etf]),
+        before = JSON.stringify(source);
+      for (let refresh = 0; refresh < 3; refresh++) {
+        const projected = projectKrDashboard(source);
+        expect(projected.rows[0]?.exitReason).toBeNull();
+        const result = marketSignals(projected, "ETF", [hold(symbol)]);
+        expect(result.exitCount).toBe(0);
+        expect(result.exits).toEqual([]);
+        expect(result.assessments?.[0]).toMatchObject({
+          held: true,
+          etfAssessment: { underlyingJudgment: "unconfirmed", underlyingMa60: null },
+        });
+      }
+      expect(JSON.stringify(source)).toBe(before);
+      // A real MA60 observation remains actionable even if unrelated M0 data is missing.
+      etf.etfStrategy!.exit = "MA60";
+      etf.etfStrategy!.underlyingMa60 = 110;
+      expect(marketSignals(projectKrDashboard(source), "ETF", [hold(symbol)]).exits).toMatchObject([
+        { symbol, reason: "기초지수 MA60 하회" },
+      ]);
+    },
+  );
   it("recognizes H60 only from confirmed trading days at the boundary", () => {
     const days = Array.from({ length: 60 }, (_, i) =>
       new Date(Date.UTC(2026, 6, 1 + i)).toISOString().slice(0, 10),
@@ -945,7 +991,7 @@ describe("actual lifecycle and independent entry-condition evidence", () => {
         market,
         date: signalDate,
         onset: true,
-        exitReason: "DATA_UNAVAILABLE",
+        exitReason: market === "ETF" ? "MA60" : "DATA_UNAVAILABLE",
         ...(market === "KOSPI"
           ? {
               kospiEntry: {

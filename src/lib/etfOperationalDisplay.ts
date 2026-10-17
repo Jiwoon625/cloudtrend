@@ -42,7 +42,7 @@ export function etfOperationalDisplay(
       : priceExit && /확인 대기|불일치|조회 실패/.test(actualPriceExitStatus(priceExit))
         ? `보유 · 가격청산 자료 확인 대기 · ${actualPriceExitStatus(priceExit)}`
         : s.exit === "DATA_UNAVAILABLE"
-          ? "데이터 오류 · 청산 점검"
+          ? "자료 확인 대기 · 청산 판단 보류"
           : "보유 · 추가 매수 없음";
   if (missing) return missing;
   const originNotice = operationalEntryStartNotice(

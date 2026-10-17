@@ -176,9 +176,12 @@ export function projectKrDashboard(analysis: AnalysisResult): DashboardIndex {
             strategy.dataStatus !== "krx_batch_pending",
           )
         : isOperationalEntry(r, analysis.asOfDate),
+      // Missing inputs are diagnostics, not an observed sell signal. This is
+      // consistent with the adopted ETF engine, which only exits on MA60.
+      // Actual verified E4 signals are attached independently by the server.
       exitReason: etf
-        ? currentEtf
-          ? (strategy?.exit ?? null)
+        ? currentEtf && strategy?.exit === "MA60"
+          ? "MA60"
           : null
         : getHeldOperationalExitSignal(market, r.operatingScore10, r.scoreDelta1d),
     });
@@ -227,7 +230,7 @@ export function exitLabel(reason: string): string {
         DOWN30: "3.0점 하향 이탈",
         H60: "최대 보유 60거래일",
         MA60: "기초지수 MA60 하회",
-        DATA_UNAVAILABLE: "데이터 오류 · 청산 점검",
+        DATA_UNAVAILABLE: "자료 확인 대기 · 청산 판단 보류",
       } as Record<string, string>
     )[reason] ?? reason
   );
