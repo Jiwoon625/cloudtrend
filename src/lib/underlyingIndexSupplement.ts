@@ -190,6 +190,12 @@ export function calculateIndexDiagnostics(
     )
       issues.push("활성 KRX 기초지수명·출처 검증 불가");
     if (
+      activeIdentity.some(
+        (b) => b.etfUnderlyingIndexSource !== "KRX_ETF" || b.etfUnderlyingIndexName !== indexName,
+      )
+    )
+      issues.push("보강 중복 관측의 활성 기초지수명·출처 누락 또는 변경");
+    if (
       bars.some(
         (b) =>
           window.includes(b.tradeDate) &&

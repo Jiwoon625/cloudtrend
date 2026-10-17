@@ -197,6 +197,31 @@ describe("underlying-only pure diagnostic", () => {
       expect(row.currentIndex).toBe(165);
     },
   );
+  it.each([undefined, "OTHER_PROVIDER"])(
+    "quarantines untrusted retained overlap outside latest 60: %s",
+    (provider) => {
+      const { ds, artifact } = fixture();
+      artifact.symbols[0]!.historicalIndexNames.push("OLD TR");
+      const day = artifact.calendar[0]!;
+      const bar = {
+        ...ds.bars["0046A0"]!.at(-1)!,
+        tradeDate: day,
+        etfUnderlyingIndexClose: artifact.symbols[0]!.observations[0]![1]!,
+        etfUnderlyingIndexName: "INDEX",
+        etfUnderlyingIndexSource: provider,
+      };
+      ds.bars["0046A0"]!.unshift(bar);
+      if (ds.observedBars?.["0046A0"] && ds.observedBars["0046A0"] !== ds.bars["0046A0"])
+        ds.observedBars["0046A0"]!.unshift(bar);
+      const before = datasetDigest(ds);
+      const row = calculateIndexDiagnostics(ds, artifact).rows[0]!;
+      expect(row.status).toBe("quarantined");
+      expect(row.issues).toContain("보강 중복 관측의 활성 기초지수명·출처 누락 또는 변경");
+      expect(row.diagnosticMa60).toBeNull();
+      expect(row.supplementedObservations).toBe(0);
+      expect(datasetDigest(ds)).toBe(before);
+    },
+  );
   it("quarantines a later active benchmark transition outside the archived date range", () => {
     const { ds, artifact } = fixture();
     ds.asOfDate = "2026-10-17";
