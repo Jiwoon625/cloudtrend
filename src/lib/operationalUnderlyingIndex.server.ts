@@ -33,7 +33,11 @@ export async function operationalArtifactForPublication(
   if (!OPERATIONAL_INDEX_ENABLED || asOfDate < OPERATIONAL_INDEX_START) return undefined;
   const installed = await hasOperationalIndexInstallation(client, owner);
   const text = await readArtifactText(client, owner, now);
-  if (!installed && text === null) return undefined;
+  if (!installed && text === null) {
+    if (await hasOperationalIndexInstallation(client, owner))
+      throw new Error("MA60 설치가 시작됐습니다. 검증자료 설치 완료 후 다시 확인하세요.");
+    return undefined;
+  }
   if (!installed) throw new Error("MA60 설치 이력이 없습니다. 전용 자료 설치 상태를 확인하세요.");
   if (text === null)
     throw new Error("설치된 운영 MA60 자료가 사라졌습니다. 기존 계산으로 강등하지 않습니다.");

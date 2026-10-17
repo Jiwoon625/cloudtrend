@@ -1,5 +1,7 @@
 import { loadOperationalIndex } from "../src/lib/operationalUnderlyingIndex.server";
+import { OPERATIONAL_INDEX_START } from "../src/lib/operationalUnderlyingIndex";
 import { screeningPublicationAnalysis } from "../src/lib/screeningPublicationAnalysis";
+import { screeningInputIdentity } from "../src/lib/screeningInputIdentity";
 import { verifyShadowRuntimeManifests } from "./verify-shadow-runtime-manifests";
 import { hydrateScreeningSnapshot } from "../src/lib/screeningSnapshotStorage";
 import { completeScreeningPublication } from "../src/lib/screeningPublication.server";
@@ -106,12 +108,18 @@ async function loadPreviousSnapshot(
   return data?.snapshot ? hydrateScreeningSnapshot(data.snapshot) : null;
 }
 
+function parseInputs(inputs: Awaited<ReturnType<typeof loadAnalysisSourceInputs>>) {
+  memory("parse-start");
+  const parsed = parseManualMarketData(inputs.map((input) => input.text));
+  memory("parse-end");
+  return parsed;
+}
+
 function analyzeInputs(
   inputs: Awaited<ReturnType<typeof loadAnalysisSourceInputs>>,
   config: ScoringConfig,
+  parsed = parseInputs(inputs),
 ) {
-  const parsed = parseManualMarketData(inputs.map((input) => input.text));
-  memory("parse-end");
   const result = runFullMarketAnalysis(parsed.dataset, config);
   memory("analysis-end");
   return { ...result, stats: parsed.stats };
@@ -142,21 +150,52 @@ export async function runScreening(argv = process.argv.slice(2)) {
       .sort()
       .join("\n"),
   )}`;
-  const runKey = analysisRunKey({
-    kind: "SCREENING",
+  const sourceDates = inputs.map((input) => input.validation.stats?.maxDate);
+  const inputDate = sourceDates
+    .filter((date): date is string => typeof date === "string")
+    .sort()
+    .at(-1);
+  // Installation is mutable even when code, data and scoring config are unchanged.
+  // Resolve the actual owner provider before any prospective reuse, without running the engine.
+  // Unknown dates also fail closed through parsing; verified pre-start reuse stays inexpensive.
+  const parsedForReuse =
+    !inputDate || sourceDates.some((date) => !date) || inputDate >= OPERATIONAL_INDEX_START
+      ? parseInputs(inputs)
+      : undefined;
+  const operationalIndexForReuse = parsedForReuse
+    ? await loadOperationalIndex(
+        client,
+        options.supabaseUserId,
+        parsedForReuse.dataset,
+        new Date().toISOString(),
+      )
+    : undefined;
+  const runIdentity = {
+    kind: "SCREENING" as const,
     codeVersion: currentCodeVersion,
     dataVersion,
     config,
-  });
+    ...(parsedForReuse
+      ? {
+          // Use the publication contract's ordered source precedence, not sorted dataVersion alone.
+          screeningInput: screeningInputIdentity(
+            inputs.flatMap((input) => (input.sourceRecord ? [input.sourceRecord] : [])),
+            config,
+            operationalIndexForReuse,
+            {
+              dataHash: inputs.at(-1)?.dataHash ?? null,
+              schemaHash: inputs.at(-1)?.schemaHash ?? null,
+              savedAt: inputs.at(-1)?.savedAt ?? null,
+              chars: inputs.at(-1)?.text.length ?? null,
+            },
+          ),
+        }
+      : {}),
+  };
+  const runKey = analysisRunKey(runIdentity);
   if (!options.force) {
     const reusable = await findReusableRun(client, options.supabaseUserId, "SCREENING", runKey);
-    const reusableDate =
-      reusable?.as_of_date ??
-      inputs
-        .map((input) => input.validation.stats?.maxDate)
-        .filter((date): date is string => typeof date === "string")
-        .sort()
-        .at(-1);
+    const reusableDate = parsedForReuse?.dataset.asOfDate ?? reusable?.as_of_date ?? inputDate;
     // A reusable post-start screen may still have missing Shadow dates, so upload
     // runs continue into replay. Pre-start data has no Shadow work and can return.
     if (reusable && (!options.upload || (reusableDate && reusableDate < MODEL_ACCOUNTING_START))) {
@@ -165,14 +204,14 @@ export async function runScreening(argv = process.argv.slice(2)) {
     }
   }
 
-  memory("parse-start");
-  const { analysis: engineAnalysis, dataset, stats } = analyzeInputs(inputs, config);
-  const operationalIndex = await loadOperationalIndex(
-    client,
-    options.supabaseUserId,
+  const {
+    analysis: engineAnalysis,
     dataset,
-    new Date().toISOString(),
-  );
+    stats,
+  } = analyzeInputs(inputs, config, parsedForReuse);
+  const operationalIndex = parsedForReuse
+    ? operationalIndexForReuse
+    : await loadOperationalIndex(client, options.supabaseUserId, dataset, new Date().toISOString());
   const analysis = screeningPublicationAnalysis(engineAnalysis, dataset, config, operationalIndex);
   const sourceRegisteredAt = latestSourceRegistration(
     inputs.flatMap((input) => (input.sourceRecord ? [input.sourceRecord] : [])),
