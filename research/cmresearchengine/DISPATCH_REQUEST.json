@@ -1,8 +1,8 @@
 {
-  "request_id": "cm-resume-split25-039-20261017-post40-001",
+  "request_id": "cm-resume-split25-036-20261017-before41-extra-001",
   "mode": "run",
   "stage": "split25",
-  "offset": 39,
+  "offset": 36,
   "count": 1,
   "max_seconds": 3000,
   "workers": 1,
