@@ -1,57 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { buildOperationalIndexProvider } from "../src/lib/operationalUnderlyingIndex";
 import { withOperationalEtfMa60 } from "../src/lib/operationalEtfMa60";
-import { parseManualMarketDataWithReferences } from "../src/lib/krxReviewReferenceParser";
 import { runFullMarketAnalysis } from "../src/lib/engine/fullMarketAnalysis";
-import type { UnderlyingIndexArtifact } from "../src/lib/underlyingIndexSupplement";
+import { operationalFixture as fixture } from "./operational-ma60-fixture";
 const now = "2026-10-19T10:00:00Z";
-function fixture(symbol = "360750") {
-  const calendar = Array.from({ length: 66 }, (_, i) =>
-    new Date(Date.UTC(2026, 7, 12 + i)).toISOString().slice(0, 10),
-  );
-  const artifact: UnderlyingIndexArtifact = {
-    version: "underlying-index-diagnostic-v1",
-    usage: "diagnostic-only",
-    availableFrom: "2026-10-17T07:21:29Z",
-    cutoffDate: "2026-10-16",
-    calendar,
-    calendarKind: "observed-not-exchange-certified",
-    independentIndexIdVerified: false,
-    currencyAndMethodologyVerified: false,
-    sources: [
-      {
-        id: "archive",
-        sha256: "a".repeat(64),
-        uri: "https://example.com/data",
-        capturedAt: null,
-        provider: "KRX",
-        field: "OBJ_STKPRC_IDX",
-        minDate: calendar[0]!,
-        maxDate: "2026-10-16",
-      },
-    ],
-    symbols: [
-      {
-        symbol,
-        name: "ETF",
-        historicalIndexNames: ["INDEX"],
-        observations: calendar.map((d) => [d, 100, "INDEX", "archive"]),
-      },
-    ],
-  };
-  const dates = [...calendar, "2026-10-19"];
-  const csv =
-    "symbol,name,type,market,date,open,high,low,close,volume,etfUnderlyingIndexClose,etfUnderlyingIndexName,priceSource,marketCapSource\n" +
-    dates
-      .map(
-        (d, i) =>
-          `${symbol},ETF,ETF,ETF,${d},101,102,100,101,1000,${i > 45 ? 100 : ""},INDEX,TOSS_ADJUSTED_CANDLE,KRX_ETF`,
-      )
-      .join("\n") +
-    "\n" +
-    dates.map((d) => `KOSPI,KOSPI,INDEX,INDEX,${d},2500,2500,2500,2500,0,,,KRX`).join("\n");
-  return { artifact, ds: parseManualMarketDataWithReferences([csv]).dataset };
-}
 describe("approved operational MA60 provider", () => {
   it("joins frozen history and new dated observations without modifying dataset", () => {
     const { ds, artifact } = fixture();
@@ -128,7 +80,13 @@ describe("approved operational MA60 provider", () => {
       original,
       buildOperationalIndexProvider(ds, artifact, now)!,
     );
-    expect(result.rows).toEqual(original.rows);
+    for (let i = 0; i < original.rows.length; i++) {
+      const { operationalEtfReference: reference, ...row } = result.rows[
+        i
+      ] as import("../src/lib/operationalEtfMa60").OperationalScreeningRow;
+      expect(row).toEqual(original.rows[i]);
+      if (row.instrument.instrumentType === "ETF") expect(reference?.ma60).toBe(100);
+    }
   });
   it("preserves KRX data-pending state even when MA60 exists", () => {
     const { ds, artifact } = fixture();

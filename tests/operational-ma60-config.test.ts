@@ -26,10 +26,13 @@ vi.mock("../src/lib/operationalUnderlyingIndex", () => ({
     rows: {},
   }),
 }));
+vi.mock("../src/lib/screeningPublicationAnalysis", () => ({
+  screeningPublicationAnalysis: (a: unknown) => a,
+}));
 vi.mock("../src/lib/engine/fullMarketAnalysis", () => ({
   runFullMarketAnalysis: (_ds: unknown, config: unknown) => {
     st.config = config;
-    return { analysis: { asOfDate: "2026-10-19", rows: [] } };
+    return { analysis: { asOfDate: "2026-10-19", rows: [] }, dataset: { asOfDate: "2026-10-19" } };
   },
 }));
 vi.mock("../src/lib/operationalEtfMa60", () => ({ withOperationalEtfMa60: (a: unknown) => a }));

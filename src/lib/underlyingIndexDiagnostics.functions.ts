@@ -62,3 +62,30 @@ export const compareOperationalIndexServer = createServerFn({ method: "POST" })
     const { compareOperationalIndex } = await import("./operationalUnderlyingIndex.server");
     return compareOperationalIndex(client, owner, new Date().toISOString(), data.config);
   });
+
+/** Read-only policy check for a local caller; never runs the engine or writes installation state. */
+export const operationalIndexContextServer = createServerFn({ method: "POST" })
+  .inputValidator((input: { accessToken: string; asOfDate: string }) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.asOfDate)) throw new Error("기준일을 확인하세요.");
+    return { accessToken: String(input.accessToken ?? ""), asOfDate: input.asOfDate };
+  })
+  .handler(async ({ data }) => operationalIndexContextForSession(data));
+
+export async function operationalIndexContextForSession(data: {
+  accessToken: string;
+  asOfDate: string;
+}) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data.asOfDate)) throw new Error("기준일을 확인하세요.");
+  const { client, owner } = await authenticate(data.accessToken);
+  const { operationalArtifactForPublication } = await import("./operationalUnderlyingIndex.server");
+  return {
+    operational: Boolean(
+      await operationalArtifactForPublication(
+        client,
+        owner,
+        data.asOfDate,
+        new Date().toISOString(),
+      ),
+    ),
+  };
+}

@@ -1,20 +1,23 @@
-import { sourceFingerprintRecords } from "../src/lib/sourceFingerprintRecords";
+import {
+  screeningInputIdentity,
+  savedOperationalIdentity,
+  type OperationalIndexIdentity,
+} from "../src/lib/screeningInputIdentity";
 import { memory } from "./screening-memory";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { buildDashboardSummary, SCREENING_CACHE_VERSION } from "../src/lib/screeningCacheContract";
+import {
+  buildDashboardSummary,
+  SCREENING_CACHE_VERSION,
+  stableCacheJson,
+  deterministicAnalysis,
+} from "../src/lib/screeningCacheContract";
 import type { AnalysisResult } from "../src/lib/engine/pipeline";
 import type { ScoringConfig } from "../src/lib/engine/scoring";
 import type { ScreeningSnapshot } from "../src/lib/screeningSnapshot";
 import { CANONICAL_SOURCE_COLUMNS, visitDelimitedRows } from "../src/lib/sourceData";
 import type { AnalysisPayload } from "../src/lib/marketPayload";
-import {
-  ANALYSIS_BUCKET,
-  downloadJson,
-  sha256,
-  stableJson,
-  uploadJson,
-} from "./analysis-run-store";
+import { ANALYSIS_BUCKET, downloadJson, sha256, uploadJson } from "./analysis-run-store";
 import type { LoadedSourceInput } from "./source-registry-store";
 
 const MAX_RAW_CACHE_BYTES = 45 * 1024 * 1024;
@@ -26,32 +29,32 @@ interface ExistingScreeningCache {
   payload?: AnalysisPayload;
 }
 
-function deterministicAnalysis(analysis: AnalysisResult) {
-  return { ...analysis, calculatedAt: "" };
-}
-
 function resultDigest(analysis: AnalysisResult) {
-  return sha256(stableJson(deterministicAnalysis(analysis)));
+  return sha256(stableCacheJson(deterministicAnalysis(analysis)));
 }
 
-function inputFingerprint(inputs: LoadedSourceInput[], config: ScoringConfig) {
-  const sources = sourceFingerprintRecords(
-    inputs.flatMap((input) => (input.sourceRecord ? [input.sourceRecord] : [])),
-  );
+export function inputFingerprint(
+  inputs: LoadedSourceInput[],
+  config: ScoringConfig,
+  operationalIndex?: OperationalIndexIdentity,
+) {
+  const sources = inputs.flatMap((input) => (input.sourceRecord ? [input.sourceRecord] : []));
   return sha256(
-    stableJson({
-      version: SCREENING_CACHE_VERSION,
-      strategyConfig: config,
-      sources,
-      legacyFallback: sources.length
-        ? null
-        : {
-            dataHash: inputs.at(-1)?.dataHash ?? null,
-            schemaHash: inputs.at(-1)?.schemaHash ?? null,
-            savedAt: inputs.at(-1)?.savedAt ?? null,
-            chars: inputs.at(-1)?.text.length ?? null,
-          },
-    }),
+    stableCacheJson(
+      screeningInputIdentity(
+        sources,
+        config,
+        operationalIndex,
+        sources.length
+          ? null
+          : {
+              dataHash: inputs.at(-1)?.dataHash ?? null,
+              schemaHash: inputs.at(-1)?.schemaHash ?? null,
+              savedAt: inputs.at(-1)?.savedAt ?? null,
+              chars: inputs.at(-1)?.text.length ?? null,
+            },
+      ),
+    ),
   );
 }
 
@@ -107,7 +110,11 @@ export async function persistWebScreeningCaches(input: {
   snapshot: ScreeningSnapshot;
   previous: ScreeningSnapshot | null;
 }) {
-  const fingerprint = inputFingerprint(input.inputs, input.config);
+  const fingerprint = inputFingerprint(
+    input.inputs,
+    input.config,
+    savedOperationalIdentity(input.analysis),
+  );
   const digest = resultDigest(input.analysis);
   const screeningPath = `${input.userId}/cache/screening/latest.json`;
   const existing = await maybeDownloadJson<ExistingScreeningCache>(input.client, screeningPath);

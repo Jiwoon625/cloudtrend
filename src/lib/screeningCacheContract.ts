@@ -1,3 +1,4 @@
+import type { OperationalIndexIdentity } from "./screeningInputIdentity";
 import { isOperationalEntry } from "@/lib/engine/operationalStrategy";
 import { compactDashboardRow } from "@/lib/dashboardRow";
 import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
@@ -9,6 +10,7 @@ export const INSTRUMENT_CACHE_VERSION =
   "instrument-cache-v8-verified-kr-index-20261008-v1" as const;
 
 export interface DashboardSummary {
+  operationalIndex?: OperationalIndexIdentity;
   /** Source registration is not collection completion. */
   sourceRegisteredAt?: string;
   version: typeof DASHBOARD_CACHE_VERSION;
@@ -155,6 +157,14 @@ export function buildDashboardSummary(
   }
 
   return {
+    ...((analysis as AnalysisResult & { operationalIndex?: OperationalIndexIdentity })
+      .operationalIndex
+      ? {
+          operationalIndex: (
+            analysis as AnalysisResult & { operationalIndex: OperationalIndexIdentity }
+          ).operationalIndex,
+        }
+      : {}),
     version: DASHBOARD_CACHE_VERSION,
     createdAt,
     inputFingerprint,

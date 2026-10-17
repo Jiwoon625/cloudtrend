@@ -1,7 +1,10 @@
+import type { OperationalEtfReference } from "./operationalEtfMa60";
 import { ETF_MAPPING, ETF_POLICY, isEtfStrategyAssetClass } from "./engine/etfStrategy";
 import type { ScreeningRow } from "./engine/pipeline";
 
-type EvidenceRow = Pick<ScreeningRow, "instrument" | "snapshot" | "etfStrategy">;
+type EvidenceRow = Pick<ScreeningRow, "instrument" | "snapshot" | "etfStrategy"> & {
+  operationalEtfReference?: OperationalEtfReference;
+};
 const finite = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 const positive = (value: unknown): value is number => finite(value) && value > 0;
@@ -47,8 +50,18 @@ export function etfPartialEvidence(row: EvidenceRow, asOfDate: string) {
         (s?.environmentSource === "peer_mix_lag1" || s?.environmentSource === "own_index_lag1")))
       ? score(s?.environment)
       : null;
-  const underlyingClose = current && positive(s?.underlyingClose) ? s.underlyingClose : null;
-  const underlyingMa60 = current && positive(s?.underlyingMa60) ? s.underlyingMa60 : null;
+  const reference =
+    row.operationalEtfReference?.date === asOfDate ? row.operationalEtfReference : undefined;
+  const underlyingClose = reference
+    ? reference.close
+    : current && positive(s?.underlyingClose)
+      ? s.underlyingClose
+      : null;
+  const underlyingMa60 = reference
+    ? reference.ma60
+    : current && positive(s?.underlyingMa60)
+      ? s.underlyingMa60
+      : null;
   const underlyingJudgment =
     underlyingClose === null || underlyingMa60 === null
       ? ("unconfirmed" as const)

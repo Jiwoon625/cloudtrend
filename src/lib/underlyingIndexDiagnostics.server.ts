@@ -1,3 +1,4 @@
+import { recordOperationalIndexInstallation } from "./operationalIndexInstallation.server";
 import { createHash } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -174,6 +175,9 @@ export async function installUnderlyingIndexArtifact(
   const existing = await readPinnedArtifactText(client, owner, digest);
   if (sourceSetDigest(await listActiveSources(client, owner)) !== beforeSources)
     throw new Error("원천 집합이 변경되어 저장을 중단했습니다.");
+  // Record the validated installation intent before the first object write. A partial/failed
+  // install must also fail closed on subsequent screening instead of looking never-installed.
+  await recordOperationalIndexInstallation(client, owner);
   if (original?.missing) {
     let uploadError: string | undefined;
     try {
@@ -199,7 +203,7 @@ export async function installUnderlyingIndexArtifact(
     if (sourceSetDigest(await listActiveSources(client, owner)) !== beforeSources)
       throw new Error("원천 집합이 변경되어 승인 자료 저장을 중단했습니다.");
   }
-  if (existing !== null)
+  if (existing !== null) {
     return {
       installed: true as const,
       reused: true,
@@ -207,6 +211,7 @@ export async function installUnderlyingIndexArtifact(
       bytes: Buffer.byteLength(text),
       sourceSetDigest: beforeSources,
     };
+  }
   const { error } = await client.storage
     .from(BUCKET)
     .upload(underlyingIndexPath(owner), new Blob([text], { type: "application/json" }), {

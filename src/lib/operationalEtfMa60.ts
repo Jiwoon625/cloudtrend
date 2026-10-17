@@ -6,6 +6,16 @@ import {
 } from "./engine/etfStrategy";
 import { operationalIndexPoint, type OperationalIndexProvider } from "./operationalUnderlyingIndex";
 
+export interface OperationalEtfReference {
+  date: string;
+  close: number | null;
+  ma60: number | null;
+  version: string;
+  artifactSha256: string;
+}
+export type OperationalScreeningRow = ScreeningRow & {
+  operationalEtfReference?: OperationalEtfReference;
+};
 export type OperationalEtfSnapshot = EtfStrategySnapshot & {
   underlyingIndexVersion?: string;
   underlyingIndexArtifactSha256?: string;
@@ -26,7 +36,19 @@ export function withOperationalEtfMa60(
   if (!provider) return base;
   if (provider.asOfDate !== base.asOfDate)
     throw new Error("MA60 공급 기준일과 스크리닝 기준일 불일치");
-  const rows = base.rows.map((row) => {
+  const rows = base.rows.map((baseRow) => {
+    if (baseRow.instrument.instrumentType !== "ETF") return baseRow;
+    const point = operationalIndexPoint(provider, baseRow.instrument.symbol, base.asOfDate);
+    const row: OperationalScreeningRow = {
+      ...baseRow,
+      operationalEtfReference: {
+        date: base.asOfDate,
+        close: point?.close ?? null,
+        ma60: point?.ma60 ?? null,
+        version: provider.version,
+        artifactSha256: provider.artifactSha256,
+      },
+    };
     const old = row.etfStrategy;
     if (
       !old ||
@@ -35,7 +57,6 @@ export function withOperationalEtfMa60(
       row.instrument.isInverse
     )
       return row;
-    const point = operationalIndexPoint(provider, row.instrument.symbol, base.asOfDate);
     const close = point?.close ?? null,
       ma60 = point?.ma60 ?? null;
     const s: OperationalEtfSnapshot = {
