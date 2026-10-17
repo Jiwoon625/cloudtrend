@@ -60,7 +60,23 @@ export const compareOperationalIndexServer = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { client, owner } = await authenticate(data.accessToken);
     const { compareOperationalIndex } = await import("./operationalUnderlyingIndex.server");
-    return compareOperationalIndex(client, owner, new Date().toISOString(), data.config);
+    try {
+      return {
+        ok: true as const,
+        comparison: await compareOperationalIndex(
+          client,
+          owner,
+          new Date().toISOString(),
+          data.config,
+        ),
+      };
+    } catch (error) {
+      // Return an authenticated diagnostic failure as data: production RPC errors may be sanitized.
+      return {
+        ok: false as const,
+        error: error instanceof Error ? error.message : "진단 계산 실패",
+      };
+    }
   });
 
 /** Read-only policy check for a local caller; never runs the engine or writes installation state. */

@@ -1,8 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { mergeScoringConfig, DEFAULT_SCORING_CONFIG } from "../src/lib/engine/scoring";
-const st = vi.hoisted(() => ({ config: undefined as unknown }));
+const st = vi.hoisted(() => ({ config: undefined as unknown, fail: false }));
 vi.mock("../src/lib/screeningSources.server", () => ({
-  loadActiveSources: async () => ({ sources: [], texts: [] }),
+  loadActiveSources: async () => {
+    if (st.fail) throw new Error("source unavailable");
+    return { sources: [], texts: [] };
+  },
   listActiveSources: async () => [],
 }));
 vi.mock("../src/lib/underlyingIndexDiagnostics.server", () => ({
@@ -39,6 +42,16 @@ vi.mock("../src/lib/operationalEtfMa60", () => ({ withOperationalEtfMa60: (a: un
 import { compareOperationalIndex } from "../src/lib/operationalUnderlyingIndex.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 describe("operational impact audit config", () => {
+  it("reports the failing no-save phase without starting later phases", async () => {
+    st.fail = true;
+    try {
+      await expect(
+        compareOperationalIndex({} as SupabaseClient, "owner", "2026-10-19T12:00:00Z"),
+      ).rejects.toThrow("[활성 원천 읽기] source unavailable");
+    } finally {
+      st.fail = false;
+    }
+  });
   it("passes the same merged active config to the full engine and reports its provenance", async () => {
     const config = mergeScoringConfig({
       ...DEFAULT_SCORING_CONFIG,
