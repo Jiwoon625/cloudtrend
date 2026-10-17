@@ -4,6 +4,7 @@ import {
   readArtifactText,
   datasetDigest,
   sourceSetDigest,
+  indexSha256,
 } from "./underlyingIndexDiagnostics.server";
 import { parseUnderlyingIndexArtifact } from "./underlyingIndexSupplement";
 import {
@@ -14,7 +15,7 @@ import { loadActiveSources, listActiveSources } from "./screeningSources.server"
 import { parseManualMarketDataWithReferences } from "./krxReviewReferenceParser";
 import { runFullMarketAnalysis } from "./engine/fullMarketAnalysis";
 import { withOperationalEtfMa60 } from "./operationalEtfMa60";
-import { DEFAULT_SCORING_CONFIG } from "./engine/scoring";
+import { DEFAULT_SCORING_CONFIG, type ScoringConfig } from "./engine/scoring";
 import { stableCacheJson } from "./screeningCacheContract";
 import { OPERATIONAL_INDEX_ENABLED } from "./operationalUnderlyingIndexRelease";
 export async function loadOperationalIndex(
@@ -36,14 +37,19 @@ export async function loadOperationalIndex(
   );
 }
 /** Owner-authenticated read-only impact check. Does not call publication, screening execution or portfolio services. */
-export async function compareOperationalIndex(client: SupabaseClient, owner: string, now: string) {
+export async function compareOperationalIndex(
+  client: SupabaseClient,
+  owner: string,
+  now: string,
+  config: ScoringConfig = DEFAULT_SCORING_CONFIG,
+) {
   const { sources, texts } = await loadActiveSources(client, owner);
   const sourceDigest = sourceSetDigest(sources);
   const { dataset } = parseManualMarketDataWithReferences(texts);
   const before = datasetDigest(dataset);
   const provider = await loadOperationalIndex(client, owner, dataset, now, true);
   if (!provider) throw new Error("비교 기준일이 보강 자료보다 과거입니다.");
-  const { analysis } = runFullMarketAnalysis(dataset, DEFAULT_SCORING_CONFIG);
+  const { analysis } = runFullMarketAnalysis(dataset, config);
   const after = withOperationalEtfMa60(analysis, provider);
   const changes = after.rows.flatMap((row, i) => {
     const old = analysis.rows[i]!;
@@ -82,6 +88,8 @@ export async function compareOperationalIndex(client: SupabaseClient, owner: str
     throw new Error("비교 도중 입력이 변경되었습니다.");
   return {
     asOfDate: dataset.asOfDate,
+    scoringConfigSha256: indexSha256(stableCacheJson(config)),
+    usesDefaultScoringConfig: stableCacheJson(config) === stableCacheJson(DEFAULT_SCORING_CONFIG),
     providerVersion: provider.version,
     artifactSha256: provider.artifactSha256,
     sourceSetDigest: sourceDigest,

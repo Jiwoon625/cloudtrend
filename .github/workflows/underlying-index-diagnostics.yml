@@ -15,7 +15,7 @@ on:
       - src/components/EtfInstrumentDetail.tsx
       - tests/etf-instrument-chart*
       - tests/instrument-chart-cache.test.ts
-      - tests/operational-ma60.test.ts
+      - tests/operational-ma60*.test.ts
       - src/lib/underlyingIndex*
       - src/lib/krxReviewReference*.ts
       - src/lib/screeningSources.server.ts
