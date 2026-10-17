@@ -335,6 +335,13 @@ describe("actual synthetic ingress paths, no external writes", () => {
       inputFingerprintMatched: true,
       firstNewSessionVerified: false,
     });
+    expect(report.phaseDiagnostics.web.sources).toEqual([]);
+    expect(report.phaseDiagnostics.actions.sources).toHaveLength(state.inputs.length);
+    expect(
+      report.phaseDiagnostics.actions.sources.every(
+        (source) => source.inputBytes > 0 && source.canonicalBytes > 0,
+      ),
+    ).toBe(true);
     expect(report.writesPerformed).toBe(0);
     expect([...state.objects]).toEqual(before);
     expect(state.webShadow).not.toHaveBeenCalled();
