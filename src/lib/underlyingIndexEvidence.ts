@@ -83,7 +83,7 @@ export function collectUnderlyingIndexEvidence(
   texts.forEach((text, sourceIndex) => {
     if (!selected.length) return;
     const sourceId = sources[sourceIndex]!.id;
-    if (/^[\s\uFEFF]*[\[{]/.test(text)) {
+    if (text.trimStart().startsWith("[") || text.trimStart().startsWith("{")) {
       limitations.add(
         `${sourceId}: JSON raw source evidence unsupported; normalized observations remain available`,
       );
