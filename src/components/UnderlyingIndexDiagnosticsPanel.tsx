@@ -28,9 +28,10 @@ async function compressedFile(file: File) {
 const number = (value: number | null) =>
   value === null ? "미확인" : value.toLocaleString("ko-KR", { maximumFractionDigits: 6 });
 export function UnderlyingIndexDiagnosticsPanel() {
-  const [comparison, setComparison] = useState<Awaited<
-    ReturnType<typeof compareOperationalIndexServer>
-  > | null>(null);
+  const [comparison, setComparison] = useState<
+    | Extract<Awaited<ReturnType<typeof compareOperationalIndexServer>>, { ok: true }>["comparison"]
+    | null
+  >(null);
   const [result, setResult] = useState<Result | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -43,13 +44,19 @@ export function UnderlyingIndexDiagnosticsPanel() {
     setError("");
     setComparison(null);
     try {
-      setComparison(
-        await compareOperationalIndexServer({
-          data: { accessToken: await accessToken(), config: getActiveScoringConfig() },
-        }),
-      );
+      const response = await compareOperationalIndexServer({
+        data: { accessToken: await accessToken(), config: getActiveScoringConfig() },
+      });
+      if (response.ok) setComparison(response.comparison);
+      else setError(response.error);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(
+        e instanceof Error
+          ? e.message
+          : typeof e === "object" && e !== null && "message" in e
+            ? String(e.message)
+            : "요청을 완료하지 못했습니다. 로그인 상태와 연결을 확인하세요.",
+      );
     } finally {
       setBusy(false);
     }
@@ -63,7 +70,13 @@ export function UnderlyingIndexDiagnosticsPanel() {
         await readUnderlyingIndexDiagnosticsServer({ data: { accessToken: await accessToken() } }),
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(
+        e instanceof Error
+          ? e.message
+          : typeof e === "object" && e !== null && "message" in e
+            ? String(e.message)
+            : "요청을 완료하지 못했습니다. 로그인 상태와 연결을 확인하세요.",
+      );
     } finally {
       setBusy(false);
     }
@@ -89,7 +102,13 @@ export function UnderlyingIndexDiagnosticsPanel() {
       );
       setResult(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(
+        e instanceof Error
+          ? e.message
+          : typeof e === "object" && e !== null && "message" in e
+            ? String(e.message)
+            : "요청을 완료하지 못했습니다. 로그인 상태와 연결을 확인하세요.",
+      );
     } finally {
       setBusy(false);
     }
