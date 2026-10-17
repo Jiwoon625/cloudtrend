@@ -2,7 +2,7 @@
 
 ## Scope
 
-The approved historical KRX underlying-index observations are a separate immutable provider. They never overwrite stock/ETF OHLC, source registry bytes, past screening snapshots, Shadow sessions, or actual fills. The operational connection starts no earlier than the new 2026-10-19 screening date. It is disabled until the authenticated, read-only full-universe comparison has been reviewed.
+The approved historical KRX underlying-index observations are a separate immutable provider. They never overwrite stock/ETF OHLC, source registry bytes, past screening snapshots, Shadow sessions, or actual fills. The operational connection starts no earlier than the new 2026-10-19 screening date. The authenticated, read-only full-universe comparison was reviewed before prospective activation.
 
 Only existing equity/option-overlay ETF targets receive MA60 confirmation/exit changes. Cash, bond, inverse, leveraged and other excluded instruments get chart/reference data only. M0 technical/priority/health/environment, peer environments, own-index lag, original crossings, eligibility and origin dates are unchanged. Price-based E4 and other adopted rules remain unchanged.
 
@@ -32,6 +32,12 @@ PR294 review follow-up: consumers now verify the pinned original artifact bytes 
 
 ## Post-review installation and audit safeguards
 
-The read-only impact check receives the same merged active scoring configuration as screening, and reports its SHA-256 and whether it matches the default. It does not publish a screening or alter ledgers. Production signal activation remains disabled pending this verified comparison.
+The read-only impact check receives the same merged active scoring configuration as screening, and reports its SHA-256 and whether it matches the default. It does not publish a screening or alter ledgers. Production activation follows the reviewed comparison and retains the 2026-10-19 date guard.
 
 For an owner missing the pinned pre-approval artifact, the installer optionally accepts that original JSON together with the approved JSON. Both immutable digests and the complete bounded approval delta are checked before any upload. Existing original bytes are reused, never overwritten; missing original bytes are uploaded with `upsert: false` and read back before the approved artifact. An uncertain original upload is resolved by reading once, not retrying the write. This provision does not change the original source-set guard or permit arbitrary future artifacts.
+
+## Prospective activation review (2026-10-17)
+
+The owner-authenticated full-input comparison was repeated with the actual active configuration after PR298. The active configuration matched the default. Full before/after field comparison found only MA60 values and provider provenance changed, with no entry, exit, score, eligibility or original-signal changes on the fixed 2026-10-16 input. Source/dataset digests and the selected database/Storage metadata audit remained unchanged; no screening or ledger was published by this check.
+
+The release flag is now enabled for the next new screening dated 2026-10-19 or later. Existing results remain unchanged. This does not guarantee unchanged signals on future inputs: new observations, per-symbol quarantine/missing-data status and resulting signals must be reviewed on the first new screening. No automatic screening or historical replay is triggered by deployment.
