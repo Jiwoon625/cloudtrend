@@ -63,6 +63,7 @@ export async function loadActiveSources(
   client: SupabaseClient,
   userId: string,
   downloadConcurrency = 1,
+  transformSource?: (bytes: Uint8Array, source: ActiveSourceRecord) => Promise<string>,
 ) {
   const sources = await listActiveSources(client, userId);
   const texts = new Array<string>(sources.length);
@@ -81,7 +82,9 @@ export async function loadActiveSources(
     const fileHash = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
     if (fileHash !== source.file_hash)
       throw new Error(`스크리닝 원천파일 해시가 등록정보와 다릅니다: ${source.original_filename}`);
-    texts[index] = decodeSource(bytes);
+    // Transform only verified original bytes, before allocating or retaining any decoded raw text.
+    // Await within this source's slot so sequential callers hold only one raw payload at a time.
+    texts[index] = transformSource ? await transformSource(bytes, source) : decodeSource(bytes);
   }
   for (let i = 0; i < sources.length; i += concurrency)
     await Promise.all(

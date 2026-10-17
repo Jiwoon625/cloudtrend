@@ -80,28 +80,57 @@ export async function compareOperationalIndexPhase(
   phase: "web" | "actions" = "web",
 ) {
   let stage = "활성 원천 읽기";
+  const startedAt = Date.now();
+  const sourceMetrics: Array<{
+    index: number;
+    inputBytes: number;
+    canonicalBytes: number;
+    elapsedMs: number;
+  }> = [];
   try {
-    const { sources, texts } = await loadActiveSources(client, owner);
+    // The Actions validator receives the original verified bytes, one source at a time.
+    // Do not retain all raw strings while also constructing normalized rows and sorted CSV.
+    const { sources, texts } = await loadActiveSources(
+      client,
+      owner,
+      1,
+      phase === "actions"
+        ? async (bytes, source) => {
+            const index = sourceMetrics.length + 1;
+            const sourceStartedAt = Date.now();
+            stage = `Actions 입력 정규화 ${index}`;
+            const validated = await validateSourceBytes({
+              bytes,
+              filename: source.original_filename,
+              streamingCsv: true,
+              onStage: (validationStage) => {
+                stage = `Actions 입력 정규화 ${index}: ${validationStage}`;
+              },
+            });
+            if (
+              !validated.valid ||
+              validated.dataHash !== source.data_hash ||
+              validated.schemaHash !== source.schema_hash
+            )
+              throw new Error("Actions 비교 입력 검증·논리 해시 불일치");
+            const metric = {
+              index,
+              inputBytes: bytes.byteLength,
+              canonicalBytes: validated.normalizedSizeBytes,
+              elapsedMs: Date.now() - sourceStartedAt,
+            };
+            sourceMetrics.push(metric);
+            // Numeric bounded diagnostics only: never log source paths, rows, owner IDs or credentials.
+            console.info("MA60 read-only source normalized", { phase, ...metric });
+            const canonicalCsv = validated.canonicalCsv;
+            validated.rows.length = 0;
+            validated.errors.length = 0;
+            validated.warnings.length = 0;
+            return canonicalCsv;
+          }
+        : undefined,
+    );
     const sourceDigest = sourceSetDigest(sources);
-    if (phase === "actions") {
-      // Reproduce the Actions canonical-CSV ingress without calling its runner/publisher/Shadow.
-      // Release raw strings as each canonical source is produced to bound comparison memory.
-      for (let i = 0; i < texts.length; i++) {
-        stage = `Actions 입력 정규화 ${i + 1}/${sources.length}`;
-        const validated = await validateSourceBytes({
-          bytes: new TextEncoder().encode(texts[i]!),
-          filename: sources[i]!.original_filename,
-          streamingCsv: true,
-        });
-        if (
-          !validated.valid ||
-          validated.dataHash !== sources[i]!.data_hash ||
-          validated.schemaHash !== sources[i]!.schema_hash
-        )
-          throw new Error("Actions 비교 입력 검증·논리 해시 불일치");
-        texts[i] = validated.canonicalCsv;
-      }
-    }
     stage = phase === "web" ? "웹 원본 입력 계산" : "Actions 정규화 입력 계산";
     const first = await (async () => {
       const { dataset } = parseManualMarketDataWithReferences(texts);
@@ -182,7 +211,11 @@ export async function compareOperationalIndexPhase(
     })();
     if (sourceSetDigest(await listActiveSources(client, owner)) !== sourceDigest)
       throw new Error("비교 도중 입력이 변경되었습니다.");
-    return { phase, ...first };
+    return {
+      phase,
+      ...first,
+      diagnostics: { elapsedMs: Date.now() - startedAt, sources: sourceMetrics },
+    };
   } catch (error) {
     const message =
       error instanceof Error
@@ -190,7 +223,7 @@ export async function compareOperationalIndexPhase(
         : typeof error === "object" && error !== null && "message" in error
           ? String(error.message)
           : "오류 상세 없음";
-    throw new Error(`[${stage}] ${message.slice(0, 2000)}`);
+    throw new Error(`[${stage}; ${Date.now() - startedAt}ms] ${message.slice(0, 2000)}`);
   }
 }
 

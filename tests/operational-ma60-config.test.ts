@@ -51,7 +51,7 @@ describe("operational impact audit config", () => {
     try {
       await expect(
         compareOperationalIndex({} as SupabaseClient, "owner", "2026-10-19T12:00:00Z"),
-      ).rejects.toThrow("[활성 원천 읽기] source unavailable");
+      ).rejects.toThrow(/\[활성 원천 읽기; \d+ms\] source unavailable/);
     } finally {
       st.fail = false;
     }

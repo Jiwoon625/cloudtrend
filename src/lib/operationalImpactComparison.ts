@@ -28,5 +28,9 @@ export function combineOperationalImpactPhases(
   };
   if (!ingressComparison.resultDigestMatched || !ingressComparison.inputFingerprintMatched)
     throw new Error(`웹·Actions 저장 없는 비교 불일치: ${JSON.stringify(ingressComparison)}`);
-  return { ...web.report, ingressComparison };
+  return {
+    ...web.report,
+    ingressComparison,
+    phaseDiagnostics: { web: web.diagnostics, actions: actions.diagnostics },
+  };
 }
