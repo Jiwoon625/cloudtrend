@@ -4,11 +4,24 @@ No network, upload, price-series rewrite, source activation or strategy applicat
 """
 import argparse, hashlib, json, math
 from pathlib import Path
-from datetime import datetime, timezone
-import pandas as pd
+from datetime import date, datetime
+
+
+def normalize_source_date(value):
+    """Keep the source's calendar date consistent across Arrow date/timestamp/string types."""
+    if isinstance(value, datetime):
+        return date.fromisoformat(value.date().isoformat()).isoformat()
+    if isinstance(value, date):
+        return date.fromisoformat(value.isoformat()).isoformat()
+    if isinstance(value, str):
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).date().isoformat()
+    raise ValueError(f"Invalid source date: {value!r}")
 
 
 def build(source_dir, roster_file, output_file, available_from, cutoff_date):
+    import pandas as pd
+
+    cutoff_date = date.fromisoformat(cutoff_date).isoformat()
     vintage = datetime.fromisoformat(available_from.replace("Z", "+00:00"))
     if vintage.tzinfo is None or datetime.fromisoformat(cutoff_date).date() > vintage.date():
         raise ValueError("Explicit cutoff and timezone-aware vintage are required")
@@ -36,7 +49,8 @@ def build(source_dir, roster_file, output_file, available_from, cutoff_date):
             frame = pd.DataFrame([{'symbol': r['ISU_CD'], 'date': f"{r['BAS_DD'][:4]}-{r['BAS_DD'][4:6]}-{r['BAS_DD'][6:8]}", 'etfUnderlyingIndexName': r['IDX_IND_NM'], 'etfUnderlyingIndexClose': r['OBJ_STKPRC_IDX']} for r in rows])
             # File capture timestamps are not provider publication timestamps.
             captured = None
-        if str(frame.date.max()) > cutoff_date:
+        frame['date'] = frame.date.map(normalize_source_date)
+        if frame.date.max() > cutoff_date:
             raise ValueError(f'Source exceeds explicit cutoff: {filename}')
         frame['sourceId'] = filename
         frames.append(frame)
@@ -45,7 +59,7 @@ def build(source_dir, roster_file, output_file, available_from, cutoff_date):
     all_rows['etfUnderlyingIndexClose'] = pd.to_numeric(all_rows.etfUnderlyingIndexClose.astype(str).str.replace(',', ''), errors='coerce')
     if all_rows.duplicated(['symbol', 'date']).any():
         raise ValueError('Duplicate symbol/date input; no silent source precedence is allowed')
-    calendar = sorted(d for d in (set(qa['calendar']['dates']) | set(all_rows.date)) if d <= cutoff_date)[-66:]
+    calendar = sorted(d for d in ({normalize_source_date(d) for d in qa['calendar']['dates']} | set(all_rows.date)) if d <= cutoff_date)[-66:]
     if calendar[-1] != cutoff_date:
         raise ValueError('Explicit cutoff is not represented in stored sources')
     roster = json.loads(Path(roster_file).read_text())

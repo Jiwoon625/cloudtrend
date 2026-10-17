@@ -2,10 +2,20 @@ name: Underlying index diagnostic safety
 on:
   pull_request:
     paths:
+      - package.json
+      - package-lock.json
       - src/lib/underlyingIndex*
+      - src/lib/krxReviewReference*.ts
+      - src/lib/screeningSources.server.ts
+      - src/lib/screeningCacheContract.ts
+      - src/lib/sourceData.ts
+      - src/lib/engine/manualDataset.ts
+      - src/lib/engine/dataset.ts
+      - src/lib/ledger/date.ts
       - src/components/UnderlyingIndexDiagnosticsPanel.tsx
       - src/components/MarketDataPage.tsx
       - tests/underlying-index*
+      - tests/test_underlying_index_builder.py
       - vitest.underlying-index.config.ts
       - scripts/build-underlying-index-supplement.py
       - .github/workflows/underlying-index-diagnostics.yml
@@ -21,6 +31,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - run: python -m unittest discover -s tests -p test_underlying_index_builder.py
       - run: npm ci
       - run: npx vitest run --config vitest.underlying-index.config.ts
       - run: npx tsc --noEmit

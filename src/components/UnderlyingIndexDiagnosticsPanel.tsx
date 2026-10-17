@@ -32,6 +32,7 @@ export function UnderlyingIndexDiagnosticsPanel() {
   const [search, setSearch] = useState("");
   const [file, setFile] = useState<File | null>(null);
   async function read() {
+    setResult(null);
     setBusy(true);
     setError("");
     try {
@@ -46,6 +47,7 @@ export function UnderlyingIndexDiagnosticsPanel() {
   }
   async function install() {
     if (!file) return;
+    setResult(null);
     setBusy(true);
     setError("");
     setNotice("");
@@ -113,8 +115,8 @@ export function UnderlyingIndexDiagnosticsPanel() {
         <>
           <p className="text-sm">
             기준일 {ready.report.asOfDate} · {ready.report.summary.symbols.toLocaleString()} ETF ·
-            비교 MA60 확보 {ready.report.summary.ma60Available.toLocaleString()} · 기존 입력 대비
-            신규 확보 {ready.report.summary.newlyAvailable.toLocaleString()} · 격리{" "}
+            비교 MA60 확보 {ready.report.summary.ma60Available.toLocaleString()} · 활성 원천 재계산
+            대비 신규 확보 {ready.report.summary.newlyAvailable.toLocaleString()} · 격리{" "}
             {ready.report.summary.quarantined.toLocaleString()} · 이력 부족{" "}
             {ready.report.summary.incomplete.toLocaleString()}
           </p>
