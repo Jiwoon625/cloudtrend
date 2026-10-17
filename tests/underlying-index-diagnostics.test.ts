@@ -386,3 +386,55 @@ describe("quarantine evidence export", () => {
     expect(() => collectUnderlyingIndexEvidence(ds, artifact, report, [], [csv])).toThrow();
   });
 });
+
+describe("bounded evidence and source format disclosure", () => {
+  it("discloses JSON source omission without blocking normalized evidence", () => {
+    const { ds, artifact } = fixture();
+    artifact.symbols[0]!.observations.at(-1)![1] = 999;
+    const report = calculateIndexDiagnostics(ds, artifact);
+    const source = { id: "json-source" } as never;
+    const evidence = collectUnderlyingIndexEvidence(
+      ds,
+      artifact,
+      report,
+      [source],
+      ['[{"symbol":"0046A0"}]'],
+    );
+    expect(evidence.observations[0]?.activeValue).toBe(165);
+    expect(evidence.sourceRows).toEqual([]);
+    expect(evidence.sourceEvidenceComplete).toBe(false);
+    expect(evidence.limitations[0]).toContain("JSON");
+  });
+  it("caps raw evidence and explicitly reports omission", () => {
+    const { ds, artifact } = fixture();
+    artifact.symbols[0]!.observations.at(-1)![1] = 999;
+    const report = calculateIndexDiagnostics(ds, artifact);
+    const header = "symbol,date,etfUnderlyingIndexClose";
+    const csv = [header, ...Array(5100).fill(`0046A0,${ds.asOfDate},165`)].join("\n");
+    const evidence = collectUnderlyingIndexEvidence(
+      ds,
+      artifact,
+      report,
+      [{ id: "bounded" } as never],
+      [csv],
+    );
+    expect(evidence.sourceRows.length).toBeLessThanOrEqual(5000);
+    expect(evidence.sourceEvidenceComplete).toBe(false);
+    expect(evidence.limitations.join(" ")).toContain("limit");
+  });
+  it("uses last alias column while explicitly marking ambiguity", () => {
+    const { ds, artifact } = fixture();
+    artifact.symbols[0]!.observations.at(-1)![1] = 999;
+    const report = calculateIndexDiagnostics(ds, artifact);
+    const csv = `symbol,code,date,etfUnderlyingIndexClose,etf_underlying_index_close\n000000,0046A0,${ds.asOfDate},1,165`;
+    const evidence = collectUnderlyingIndexEvidence(
+      ds,
+      artifact,
+      report,
+      [{ id: "alias" } as never],
+      [csv],
+    );
+    expect(evidence.sourceRows[0]?.indexValue).toBe("165");
+    expect(evidence.sourceEvidenceComplete).toBe(false);
+  });
+});
