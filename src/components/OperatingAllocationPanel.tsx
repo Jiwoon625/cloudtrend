@@ -69,7 +69,8 @@ export function OperatingAllocationContent({
       {!data?.plan ? <p role="status">승인 배분계획 등록 대기</p> : null}
       {data?.availability.status === "RECONCILIATION_REQUIRED" ? (
         <p role="status">
-          실제 체결·현금이 변경되어 시장별 귀속을 다시 대조해야 합니다. 기존 예약도 함께 확인하세요.
+          배분비율은 확정되어 있습니다. 매수·입출금 후 남은 현금의 시장별 귀속만 확인이 필요합니다.
+          매수수량 기록은 바로 입력할 수 있습니다.
         </p>
       ) : null}
       {data?.availability.status === "CLAIMS_PENDING" ? (
@@ -529,50 +530,58 @@ export function OperatingAllocationPanel({
             </Button>
           ) : null}
           {query.data.plan ? (
-            <fieldset disabled={disabled || query.data.cash === null} className="min-w-0 space-y-4">
-              <legend className="font-medium">실제 현금 귀속 대조</legend>
-              <p className="text-sm text-muted-foreground">
-                각 시장에 배정할 최종 귀속액을 직접 입력하세요. 추가 입금액이 아닌 총액이며, 빈칸은
-                0으로 검토합니다. 입력 후 검토 내용을 확인하고 저장하세요.
-              </p>
-              <p className="text-sm">
-                기록상 현금 {money(query.data.cash)} {currency === "KRW" ? "원" : "USD"}
-                {" · "}현재 미귀속 {money(query.data.authority?.claims.UNASSIGNED)}{" "}
-                {currency === "KRW" ? "원" : "USD"}
-              </p>
-              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-                {(currency === "KRW" ? (["KR", "ETF"] as const) : (["US"] as const)).map((m) => (
-                  <label key={m} className="block min-w-0 space-y-1.5">
-                    <span>
-                      {labels[m]} 귀속액 ({currency === "KRW" ? "원" : "USD"})
-                    </span>
-                    <Input
-                      aria-label={`${labels[m]} 귀속액`}
-                      inputMode="decimal"
-                      placeholder="0"
-                      className="h-11 border-slate-400 bg-background text-base text-foreground dark:border-slate-500"
-                      value={values[m] ?? query.data.authority?.claims[m] ?? ""}
-                      onChange={(event) => edit({ [m]: event.target.value })}
-                    />
-                    <span className="block text-xs text-muted-foreground">
-                      현재 귀속 {money(query.data.authority?.claims[m])}{" "}
-                      {currency === "KRW" ? "원" : "USD"}
-                    </span>
-                  </label>
-                ))}
-              </div>
-              <p className="text-xs">
-                남는 실제 현금은 미귀속으로 보존합니다. 체결된 예약은 해제한 뒤 귀속액을 다시
-                대조하세요. 귀속액 검토만으로는 저장되지 않습니다.
-              </p>
-              <Button
-                type="button"
+            <details className="rounded border p-3">
+              <summary className="cursor-pointer font-medium">
+                남은 현금 귀속 조정 (필요할 때만)
+              </summary>
+              <fieldset
                 disabled={disabled || query.data.cash === null}
-                onClick={reviewClaims}
+                className="min-w-0 space-y-4"
               >
-                귀속액 검토
-              </Button>
-            </fieldset>
+                <legend className="font-medium">실제 현금 귀속 대조</legend>
+                <p className="text-sm text-muted-foreground">
+                  각 시장에 배정할 최종 귀속액을 직접 입력하세요. 추가 입금액이 아닌 총액이며,
+                  빈칸은 0으로 검토합니다. 입력 후 검토 내용을 확인하고 저장하세요.
+                </p>
+                <p className="text-sm">
+                  기록상 현금 {money(query.data.cash)} {currency === "KRW" ? "원" : "USD"}
+                  {" · "}현재 미귀속 {money(query.data.authority?.claims.UNASSIGNED)}{" "}
+                  {currency === "KRW" ? "원" : "USD"}
+                </p>
+                <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                  {(currency === "KRW" ? (["KR", "ETF"] as const) : (["US"] as const)).map((m) => (
+                    <label key={m} className="block min-w-0 space-y-1.5">
+                      <span>
+                        {labels[m]} 귀속액 ({currency === "KRW" ? "원" : "USD"})
+                      </span>
+                      <Input
+                        aria-label={`${labels[m]} 귀속액`}
+                        inputMode="decimal"
+                        placeholder="0"
+                        className="h-11 border-slate-400 bg-background text-base text-foreground dark:border-slate-500"
+                        value={values[m] ?? query.data.authority?.claims[m] ?? ""}
+                        onChange={(event) => edit({ [m]: event.target.value })}
+                      />
+                      <span className="block text-xs text-muted-foreground">
+                        현재 귀속 {money(query.data.authority?.claims[m])}{" "}
+                        {currency === "KRW" ? "원" : "USD"}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs">
+                  남는 실제 현금은 미귀속으로 보존합니다. 체결된 예약은 해제한 뒤 귀속액을 다시
+                  대조하세요. 귀속액 검토만으로는 저장되지 않습니다.
+                </p>
+                <Button
+                  type="button"
+                  disabled={disabled || query.data.cash === null}
+                  onClick={reviewClaims}
+                >
+                  귀속액 검토
+                </Button>
+              </fieldset>
+            </details>
           ) : null}
           {currency === "USD" && query.data.plan && !query.data.usdSizingEvidence ? (
             <fieldset disabled={disabled || query.data.cash === null} className="space-y-2">
