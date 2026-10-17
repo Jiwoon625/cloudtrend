@@ -76,7 +76,7 @@ vi.mock("@tanstack/react-query", () => ({
       return {
         isSuccess: state.heldKnown,
         isError: !state.heldKnown,
-        data: state.heldKnown ? { heldSymbols: ["EXIT"] } : undefined,
+        data: state.heldKnown ? { heldSymbols: ["EXIT"], lastSellDateBySymbol: {} } : undefined,
         refetch: vi.fn(),
       };
     if (queryKey[0] === "history")
