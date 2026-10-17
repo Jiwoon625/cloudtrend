@@ -116,7 +116,9 @@ export function UnderlyingIndexDiagnosticsPanel() {
         잠시 걸릴 수 있습니다.
       </p>
       <p className="text-xs font-medium">
-        진단 전용: 이 MA60는 현재 매매신호·전략 적격·비주식형 ETF 매도규칙에 반영되지 않습니다.
+        이 비교는 저장 없는 진단입니다. 운영 연결은 2026-10-19 이후 신규 스크리닝부터 기존
+        주식형·커버드콜 ETF 전략 대상에만 적용됩니다. 현금·채권 등 비주식형은 참고값이며 새
+        매도규칙을 적용하지 않습니다.
       </p>
       <Button size="sm" variant="outline" disabled={busy} onClick={() => void compare()}>
         운영 MA60 신호 영향 비교 (저장 없음)
@@ -229,7 +231,7 @@ export function UnderlyingIndexDiagnosticsPanel() {
                     <td className="p-2">
                       {r.issues.join(" / ") ||
                         (r.userSelectedVintage
-                          ? `승인 충돌 ${r.approvedPreferenceDates.length}일 보강값 우선 · 원본 유지 · 신호 미적용`
+                          ? `승인 충돌 ${r.approvedPreferenceDates.length}일 보강값 우선 · 원본 유지 · 이 비교는 신호 저장 없음`
                           : "") ||
                         (r.status === "compared"
                           ? "지수명·중복값 대조 통과 (진단용)"
