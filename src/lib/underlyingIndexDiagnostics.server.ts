@@ -13,6 +13,7 @@ import {
   calculateIndexDiagnostics,
   parseUnderlyingIndexArtifact,
 } from "./underlyingIndexSupplement";
+import { collectUnderlyingIndexEvidence } from "./underlyingIndexEvidence";
 import { UNDERLYING_INDEX_RELEASE } from "./underlyingIndexSupplementRelease";
 
 const BUCKET = "cloudtrend-data";
@@ -125,6 +126,13 @@ async function calculateForOwner(client: SupabaseClient, owner: string, now: str
   const { dataset } = parseManualMarketData(texts);
   const before = datasetDigest(dataset);
   const report = calculateIndexDiagnostics(dataset, artifact);
+  const comparisonEvidence = collectUnderlyingIndexEvidence(
+    dataset,
+    artifact,
+    report,
+    sources,
+    texts,
+  );
   const after = datasetDigest(dataset);
   if (before !== after) throw new Error("진단 중 가격·원천 입력이 변경되어 결과를 폐기했습니다.");
   if (sourceSetDigest(await listActiveSources(client, owner)) !== inputDigest)
@@ -142,6 +150,7 @@ async function calculateForOwner(client: SupabaseClient, owner: string, now: str
     strategyApplied: false as const,
     writesPerformed: 0 as const,
     report,
+    comparisonEvidence,
   };
 }
 

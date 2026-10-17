@@ -1,3 +1,4 @@
+import { collectUnderlyingIndexEvidence } from "../src/lib/underlyingIndexEvidence";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { gzipSync } from "node:zlib";
 import { readFileSync } from "node:fs";
@@ -339,5 +340,49 @@ describe("dedicated authenticated server implementation", () => {
     const { ds, artifact } = fixture();
     expect(calculateIndexDiagnostics(ds, artifact).rows[0]?.diagnosticMa60).toBe(135.5);
     expect(ds.bars["0046A0"]?.at(-1)?.close).toBe(101);
+  });
+});
+
+describe("quarantine evidence export", () => {
+  it("exports both values and source candidates without changing diagnosis or inputs", () => {
+    const { ds, artifact, csv } = fixture();
+    const day = artifact.calendar.at(-1)!;
+    artifact.symbols[0]!.observations.at(-1)![1] = 999;
+    const before = datasetDigest(ds);
+    const report = calculateIndexDiagnostics(ds, artifact);
+    const source = {
+      id: "source1",
+      original_filename: "input.csv",
+      file_hash: "sha256:verified",
+      activated_at: null,
+      created_at: now,
+    } as never;
+    const evidence = collectUnderlyingIndexEvidence(ds, artifact, report, [source], [csv]);
+    const pair = evidence.observations.find((o) => o.date === day)!;
+    expect(pair).toMatchObject({
+      symbol: "0046A0",
+      activeValue: 165,
+      supplementValue: 999,
+      valueConflict: true,
+    });
+    expect(evidence.sourceRows.find((o) => o.date === day)).toMatchObject({
+      sourceId: "source1",
+      indexValue: "165",
+      indexName: "INDEX",
+    });
+    expect(evidence.sourceRows.every((o) => !("close" in o) && !("volume" in o))).toBe(true);
+    expect(evidence.activeSources[0]).toMatchObject({
+      filename: "input.csv",
+      sha256: "sha256:verified",
+    });
+    expect(evidence.sourceRowsAreCandidatesNotWinningProvenance).toBe(true);
+    expect(datasetDigest(ds)).toBe(before);
+    expect(calculateIndexDiagnostics(ds, artifact)).toEqual(report);
+  });
+  it("does not export clean instruments and rejects misaligned source metadata", () => {
+    const { ds, artifact, csv } = fixture();
+    const report = calculateIndexDiagnostics(ds, artifact);
+    expect(collectUnderlyingIndexEvidence(ds, artifact, report, [], []).observations).toEqual([]);
+    expect(() => collectUnderlyingIndexEvidence(ds, artifact, report, [], [csv])).toThrow();
   });
 });
