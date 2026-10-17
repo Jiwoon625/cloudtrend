@@ -144,6 +144,8 @@ export async function attachActualHoldingPriceExits(
       continue;
     }
     let checkpoint: PriceCheckpoint | null = null;
+    let checkpointPath: string | null = null;
+    let checkpointContent: string | null = null;
     if (listed.data?.[0]) {
       const file = listed.data[0];
       const saved = await bucket.download(`${directory}/${file.name}`);
@@ -152,7 +154,8 @@ export async function attachActualHoldingPriceExits(
         continue;
       }
       try {
-        checkpoint = JSON.parse(await saved.data.text()) as PriceCheckpoint;
+        const content = await saved.data.text();
+        checkpoint = JSON.parse(content) as PriceCheckpoint;
         if (
           checkpoint.cycleId !== cycleId ||
           checkpoint.state?.policyVersion !== HOLDING_PRICE_EXIT_POLICY.version ||
@@ -173,6 +176,8 @@ export async function attachActualHoldingPriceExits(
             ))
         )
           throw new Error("Invalid price-exit checkpoint");
+        checkpointPath = `${directory}/${file.name}`;
+        checkpointContent = content;
       } catch {
         exit.auditStatus = "MISMATCH";
         exit.status = "저장 근거 대사 확인 대기";
@@ -420,6 +425,13 @@ export async function attachActualHoldingPriceExits(
       const digest = sha(content);
       const filename = triggered.length ? "signal.json" : `${through}-${digest}.json`;
       const location = `${directory}/${filename}`;
+      // The current read has already verified these exact immutable bytes. All
+      // source/mark/accounting checks above still run before reuse. A changed
+      // path or content must use the normal create-and-verify race handling.
+      if (checkpointPath === location && checkpointContent === content) {
+        position.priceExit = evaluatedExit;
+        continue;
+      }
       try {
         const saved = await bucket.upload(location, content, {
           upsert: false,
