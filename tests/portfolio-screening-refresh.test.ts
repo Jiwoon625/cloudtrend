@@ -107,8 +107,9 @@ beforeEach(() => {
   } as unknown as SupabaseClient;
   mocks.list.mockResolvedValue(sources);
   mocks.load.mockResolvedValue({ sources, texts: ["verified source"] });
-  mocks.parse.mockReturnValue({ dataset: {} });
-  mocks.analyze.mockReturnValue({ analysis, dataset: {} });
+  // Preserve the real parser contract: this historical fixture predates MA60 rollout.
+  mocks.parse.mockReturnValue({ dataset: { asOfDate: analysis.asOfDate } });
+  mocks.analyze.mockReturnValue({ analysis, dataset: { asOfDate: analysis.asOfDate } });
   mocks.shadow.mockResolvedValue({ status: "UP_TO_DATE" });
   mocks.portfolio.mockResolvedValue({
     status: "UPDATED",
