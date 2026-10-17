@@ -1,6 +1,7 @@
 import { isActionableActualPriceExit } from "./newActualPriceExit";
 import { dashboardSectorLimit } from "./dashboardOperationsSectorLimits";
-import { gunzipSync } from "node:zlib";
+import { createHash } from "node:crypto";
+import { gzipSync, gunzipSync } from "node:zlib";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
 import type { AnalysisResult } from "./engine/pipeline";
@@ -70,6 +71,52 @@ async function writeJson(client: SupabaseClient, path: string, value: unknown) {
   if (error) throw new Error(`저장 실패: ${error.message}`);
 }
 
+
+/**
+ * Immutable per-generation compressed projection. Unlike the legacy 3-5MB
+ * `kr-v1.json`/`us-v1.json` pointers this path is safe for CDN/browser caching.
+ * The versioned key still rejects stale policy/strategy data.
+ */
+function compactIndexPath(uid: string, kind: "kr" | "us", key: string) {
+  const digest = createHash("sha256").update(key).digest("hex");
+  return `${uid}/cache/dashboard-operations/v2/${kind}-${digest}.json.gz`;
+}
+
+async function readCompactIndex(
+  client: SupabaseClient,
+  uid: string,
+  kind: "kr" | "us",
+  key: string,
+): Promise<DashboardIndex | null> {
+  try {
+    const { data, error } = await client.storage.from(BUCKET).download(compactIndexPath(uid, kind, key));
+    if (error || !data) return null;
+    const cached = JSON.parse(
+      gunzipSync(new Uint8Array(await data.arrayBuffer())).toString("utf8"),
+    ) as { key?: string; index?: DashboardIndex };
+    return cached.key === key && Array.isArray(cached.index?.rows) ? cached.index! : null;
+  } catch {
+    return null; // Never let damaged derivative data suppress signals.
+  }
+}
+
+async function writeCompactIndex(
+  client: SupabaseClient,
+  uid: string,
+  kind: "kr" | "us",
+  key: string,
+  index: DashboardIndex,
+) {
+  const body = gzipSync(Buffer.from(JSON.stringify({ key, index })));
+  const { error } = await client.storage.from(BUCKET).upload(
+    compactIndexPath(uid, kind, key),
+    body,
+    { upsert: false, contentType: "application/gzip", cacheControl: "31536000" },
+  );
+  if (error && !/already exists|duplicate/i.test(error.message))
+    throw new Error(`압축 대시보드 캐시 저장 실패: ${error.message}`);
+}
+
 /** Full completed result is projected at most once per digest; never reads raw prices or runs an engine. */
 export async function projection(client: SupabaseClient, uid: string, kind: "kr" | "us") {
   const meta =
@@ -93,9 +140,15 @@ export async function projection(client: SupabaseClient, uid: string, kind: "kr"
   const pending = inFlight.get(key);
   if (pending) return observed(await pending);
   const promise = (async () => {
-    const path = `${uid}/cache/dashboard-operations/${kind}-v1.json`;
-    const sidecar = await readJson<{ key: string; index: DashboardIndex }>(client, path);
-    if (sidecar?.key === key && Array.isArray(sidecar.index?.rows)) return sidecar.index;
+    const compressed = await readCompactIndex(client, uid, kind, key);
+    if (compressed) return compressed;
+    // Compatibility read for a previously written sidecar; migrate without loading 20MB screening.
+    const legacyPath = `${uid}/cache/dashboard-operations/${kind}-v1.json`;
+    const sidecar = await readJson<{ key: string; index: DashboardIndex }>(client, legacyPath);
+    if (sidecar?.key === key && Array.isArray(sidecar.index?.rows)) {
+      await writeCompactIndex(client, uid, kind, key, sidecar.index).catch(() => undefined);
+      return sidecar.index;
+    }
     let index: DashboardIndex;
     if (kind === "kr") {
       const full = await readJson<{
@@ -124,7 +177,7 @@ export async function projection(client: SupabaseClient, uid: string, kind: "kr"
       index = projectUsDashboard(full);
     }
     // A failed cache write must not turn a successfully read result into an empty signal set.
-    await writeJson(client, path, { key, index }).catch(() => undefined);
+    await writeCompactIndex(client, uid, kind, key, index).catch(() => undefined);
     return index;
   })();
   inFlight.set(key, promise);

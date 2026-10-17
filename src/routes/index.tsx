@@ -47,10 +47,7 @@ import { DomesticAssessmentPanel } from "@/components/DomesticAssessmentPanel";
 import { UniversePendingSummary } from "@/components/UniversePendingSummary";
 import { type DashboardSummary } from "@/lib/screeningCache";
 import { isScreeningStarted } from "@/lib/screeningRun";
-import {
-  getOrBuildDashboardSummaryServerFirst,
-  rebuildScreeningCachesServerFirst,
-} from "@/lib/webScreeningClient";
+import { rebuildScreeningCachesServerFirst } from "@/lib/webScreeningClient";
 
 export const Route = createFileRoute("/")({
   ssr: false,
@@ -151,11 +148,9 @@ function Dashboard() {
     dashboardQueryOptions.queryKey,
     sourceAvailability.isError,
   );
-  const summaryQuery = useQuery<DashboardSummary | null>({
-    ...readOnlyOptions,
-    queryFn: requested ? getOrBuildDashboardSummaryServerFirst : readOnlyOptions.queryFn,
-    refetchInterval: requested ? false : readOnlyOptions.refetchInterval,
-  });
+  // Revisiting a tab never authorizes a new full screening, even when the saved
+  // legacy started flag is set. Only the explicit rescreen button runs the engine.
+  const summaryQuery = useQuery<DashboardSummary | null>(readOnlyOptions);
   const cacheMissing = summaryQuery.isSuccess && summaryQuery.data === null;
   const emptyPresentation = dashboardCacheEmptyPresentation(sourceAvailability.data);
   const started = requested || Boolean(summaryQuery.data);

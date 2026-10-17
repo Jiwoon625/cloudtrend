@@ -36,7 +36,7 @@ it("wires successful actual saves and focus reads without Shadow invalidating ac
     new URL("../src/components/DashboardOperations.tsx", import.meta.url),
     "utf8",
   );
-  expect(view).toContain('refetchOnWindowFocus: "always"');
+  expect(view).toContain('refetchOnWindowFocus: true');
   expect(view).not.toContain('"october-shadow-summary"');
 });
 

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { gzipSync } from "node:zlib";
 import {
   SCREENING_CACHE_VERSION,
   DASHBOARD_CACHE_VERSION,
@@ -23,6 +24,36 @@ const client = {
   storage: { from: () => ({ upload: async () => ({ error: null }) }) },
 } as unknown as SupabaseClient;
 describe("dashboard projection policy cache identity", () => {
+  it("uses immutable compressed projection without loading the 20MB screening result", async () => {
+    const owner = "compressed-projection-unit";
+    const digest = "saved-digest";
+    const key = `${owner}:kr:dashboard-operations-exit-diagnostics-v7:${digest}`;
+    const index = { date: "2026-10-16", tradeDates: ["2026-10-16"], rows: [] };
+    const compressed = new Blob([
+      new Uint8Array(gzipSync(Buffer.from(JSON.stringify({ key, index })))) as BlobPart,
+    ]);
+    const localClient = {
+      storage: {
+        from: () => ({ download: async () => ({ data: compressed, error: null }) }),
+      },
+    } as unknown as SupabaseClient;
+    vi.mocked(downloadFreshObject).mockImplementation(async (_client, _bucket, path) => {
+      if (!path.endsWith("dashboard/latest.json"))
+        throw new Error("full screening and legacy pointer must not be downloaded");
+      return {
+        data: new Blob([
+          JSON.stringify({
+            version: DASHBOARD_CACHE_VERSION,
+            resultDigest: digest,
+            createdAt: "2026-10-17T00:10:00.000Z",
+          }),
+        ]),
+        error: null,
+      };
+    });
+    expect((await projection(localClient, owner, "kr"))?.date).toBe("2026-10-16");
+    expect(downloadFreshObject).toHaveBeenCalledTimes(1);
+  });
   it("reprojects a v6 missing-data EXIT without changing the saved screening diagnostic", async () => {
     const diagnostic = {
       instrument: {
