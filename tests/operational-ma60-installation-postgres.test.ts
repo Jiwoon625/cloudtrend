@@ -16,7 +16,7 @@ it("backfills immutable owner receipts, survives object loss, enforces RLS and d
       insert into storage.objects values ('cloudtrend-data','${owner}/results/ingestion/underlying-index/${release.sha256}.json');`);
     await db.exec(
       readFileSync(
-        "supabase/migrations/20261017190000_operational_index_installations.sql",
+        "supabase/migrations/20261017091854_operational_index_installations.sql",
         "utf8",
       ),
     );

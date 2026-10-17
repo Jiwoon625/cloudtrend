@@ -11,7 +11,7 @@ This change keeps `OPERATIONAL_INDEX_ENABLED=false` until the reviewed verificat
 
 ## Owner installation and recovery
 
-Apply `20261017190000_operational_index_installations.sql` before deploying this code. It creates an owner-scoped, insert/read-only receipt table and backfills owners of either pinned artifact. Readers still verify both actual artifact byte hashes and the bounded approval delta. No trading/history table is changed.
+Apply `20261017091854_operational_index_installations.sql` before deploying this code. It creates an owner-scoped, insert/read-only receipt table and backfills owners of either pinned artifact. Readers still verify both actual artifact byte hashes and the bounded approval delta. No trading/history table is changed.
 
 The installer records a validated installation intent before its first immutable Storage write. Thus a partial installation or subsequent deletion remains distinguishable from a never-installed owner. Never-installed owners retain the legacy path. Missing, corrupt or mismatched installed artifacts fail closed. Read-only comparisons do not write receipts.
 
