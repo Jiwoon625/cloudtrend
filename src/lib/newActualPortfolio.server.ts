@@ -1,4 +1,5 @@
 import { newActualCashDay } from "./newActualCashDate";
+import { newActualValuationDate } from "./newActualValuationDate";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ACTUAL_PERFORMANCE_START } from "./ledger/actualPerformance";
@@ -58,6 +59,7 @@ function project(
   currency: NewActualCurrency,
   quotes: Record<string, Quote>,
   now: string,
+  valuationDate: string | null = null,
 ) {
   const today = localDay(currency, now);
   return projectNewActualPool({
@@ -65,9 +67,7 @@ function project(
     executions: row?.payload.executions ?? [],
     metadata: row?.payload.newActualPortfolio ?? null,
     quotes,
-    // Without a verified exchange-session calendar we cannot promote old marks to current.
-    // Recording remains available on every day; only today's valuation waits for dated inputs.
-    valuationDate: today,
+    valuationDate,
     today,
     cashToday: newActualCashDay(now),
   });
@@ -84,9 +84,14 @@ export async function loadNewActualPortfolio(
     readWebsiteDocument<NewActualDocument>(client, uid, "us_actual_portfolio_ledgers"),
   ]);
   const warnings: string[] = [];
+  const [krValuationDate, usValuationDate] = await Promise.all([
+    newActualValuationDate("KRW", now),
+    newActualValuationDate("USD", now),
+  ]);
+  const valuationDates = { KRW: krValuationDate, USD: usValuationDate };
   async function marks(row: Row | null, currency: NewActualCurrency) {
     // Validate identities and new-only positions before requesting any price inputs.
-    const initial = project(row, currency, {}, now);
+    const initial = project(row, currency, {}, now, valuationDates[currency]);
     const symbols = new Set(initial.positions.map((p) => p.symbol));
     if (!symbols.size) return {};
     let raw: Record<string, Quote> = {};
@@ -99,7 +104,7 @@ export async function loadNewActualPortfolio(
               uid,
               symbols,
               ACTUAL_PERFORMANCE_START,
-              localDay(currency, now),
+              valuationDates[currency] ?? localDay(currency, now),
             );
     } catch {
       warnings.push(
@@ -122,8 +127,8 @@ export async function loadNewActualPortfolio(
   if (!us)
     warnings.push("미국 원장이 아직 초기화되지 않았습니다. 기존 원장 준비 후 기록할 수 있습니다.");
   const pools = {
-    KRW: project(domestic, "KRW", krQuotes, now),
-    USD: project(us, "USD", usQuotes, now),
+    KRW: project(domestic, "KRW", krQuotes, now, krValuationDate),
+    USD: project(us, "USD", usQuotes, now, usValuationDate),
   };
   try {
     await attachActualHoldingPriceExits(client, uid, pools.KRW, now);
