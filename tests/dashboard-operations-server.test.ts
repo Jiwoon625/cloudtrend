@@ -23,6 +23,62 @@ const client = {
   storage: { from: () => ({ upload: async () => ({ error: null }) }) },
 } as unknown as SupabaseClient;
 describe("dashboard projection policy cache identity", () => {
+  it("reprojects a v6 missing-data EXIT without changing the saved screening diagnostic", async () => {
+    const diagnostic = {
+      instrument: {
+        symbol: "0046A0",
+        name: "Synthetic cash ETF",
+        instrumentType: "ETF",
+        market: "KOSPI",
+      },
+      snapshot: { tradeDate: "2027-06-28", close: 100 },
+      priority: { points: 0 },
+      etfStrategy: {
+        version: ETF_POLICY.version,
+        date: "2027-06-28",
+        dataStatus: "incomplete",
+        exit: "DATA_UNAVAILABLE",
+        underlyingClose: 100,
+        underlyingMa60: null,
+        score: null,
+        issues: ["기초지수 MA60·추세 이력 부족"],
+      },
+    };
+    const before = JSON.stringify(diagnostic);
+    vi.mocked(downloadFreshObject).mockImplementation(async (_client, _bucket, path) => {
+      const value = path.endsWith("dashboard/latest.json")
+        ? { version: DASHBOARD_CACHE_VERSION, resultDigest: "diagnostic" }
+        : path.endsWith("dashboard-operations/kr-v1.json")
+          ? {
+              key: "diagnostic-cache:kr:dashboard-operations-partial-evidence-v6:diagnostic",
+              index: {
+                date: "2027-06-28",
+                rows: [{ symbol: "0046A0", exitReason: "DATA_UNAVAILABLE" }],
+              },
+            }
+          : path.endsWith("screening/latest.json")
+            ? {
+                version: SCREENING_CACHE_VERSION,
+                resultDigest: "diagnostic",
+                payload: {
+                  analysis: {
+                    asOfDate: "2027-06-28",
+                    tradeDates: ["2027-06-28"],
+                    rows: [diagnostic],
+                  },
+                },
+              }
+            : null;
+      return { data: value ? new Blob([JSON.stringify(value)]) : null, error: null };
+    });
+    const result = await projection(client, "diagnostic-cache", "kr");
+    expect(result?.rows[0]).toMatchObject({
+      symbol: "0046A0",
+      exitReason: null,
+      etfAssessment: { current: true, isStrategyTarget: false, underlyingJudgment: "unconfirmed" },
+    });
+    expect(JSON.stringify(diagnostic)).toBe(before);
+  });
   it("refuses stale policy summary before reading/reusing a sidecar", async () => {
     vi.mocked(downloadFreshObject).mockResolvedValueOnce({
       data: new Blob([JSON.stringify({ version: "old-policy", resultDigest: "old" })]),
@@ -96,7 +152,7 @@ describe("dashboard projection policy cache identity", () => {
             createdAt: "2026-10-02T00:40:00.000Z",
           }
         : {
-            key: "timestamp-sidecar:kr:dashboard-operations-partial-evidence-v6:same-sidecar",
+            key: "timestamp-sidecar:kr:dashboard-operations-exit-diagnostics-v7:same-sidecar",
             index: {
               date: "2026-10-01",
               rows: [],

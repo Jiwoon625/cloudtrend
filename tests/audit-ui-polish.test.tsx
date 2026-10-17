@@ -39,18 +39,15 @@ describe("audit display consistency", () => {
   });
   it.each([
     ["MA60", "다음 시가 청산"],
-    ["DATA_UNAVAILABLE", "데이터 오류 · 청산 점검"],
-  ] as const)(
-    "keeps held %s actionable when only unrelated M0 inputs are missing",
-    (exit, label) => {
-      const r = row();
-      r.etfStrategy!.dataStatus = "incomplete";
-      r.etfStrategy!.exit = exit;
-      expect(etfOperationalDisplay(r, date, true)).toBe(label);
-      expect(etfOperationalDisplay(r, date, false)).toBe("필수 자료 미확인 · 신호 판단 보류");
-      expect(r.etfStrategy!.score).toBeNull();
-    },
-  );
+    ["DATA_UNAVAILABLE", "자료 확인 대기 · 청산 판단 보류"],
+  ] as const)("distinguishes held %s evidence from missing-data diagnostics", (exit, label) => {
+    const r = row();
+    r.etfStrategy!.dataStatus = "incomplete";
+    r.etfStrategy!.exit = exit;
+    expect(etfOperationalDisplay(r, date, true)).toBe(label);
+    expect(etfOperationalDisplay(r, date, false)).toBe("필수 자료 미확인 · 신호 판단 보류");
+    expect(r.etfStrategy!.score).toBeNull();
+  });
   it("shows one explicitly labeled KST time, independent of the process timezone", () => {
     const value = {
       generatedAt: "2026-10-10T01:48:30Z",
