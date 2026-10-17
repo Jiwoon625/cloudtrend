@@ -106,6 +106,11 @@ function PoolCard({ currency, pool }: { currency: Currency; pool: Pool | undefin
             ? "배정·평가 자료 확인 필요"
             : "실제 배정 현금 확인"}
       </p>
+      {pool?.valuationDate && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          종가 평가 기준일 {pool.valuationDate} · 최근 장 마감 거래일
+        </p>
+      )}
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
         <Metric label="순배정액">{money(pending ? null : pool.netContributions, currency)}</Metric>
         <Metric label="기록상 현금">{money(pending ? null : pool.cash, currency)}</Metric>
