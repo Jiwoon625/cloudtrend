@@ -5,6 +5,7 @@ on:
       - package.json
       - package-lock.json
       - src/lib/operationalUnderlyingIndex*
+      - src/lib/operationalImpactComparison.ts
       - src/lib/operationalEtfMa60.ts
       - src/lib/operationalIndexInstallation.server.ts
       - src/lib/screeningInputIdentity.ts
@@ -12,6 +13,7 @@ on:
       - src/lib/screeningCache.ts
       - src/lib/etfPartialEvidence.ts
       - scripts/run-screening.ts
+      - scripts/repair-chart-cache.ts
       - scripts/web-screening-cache-store.ts
       - supabase/migrations/*operational_index_installations.sql
       - src/lib/webScreening.functions.ts

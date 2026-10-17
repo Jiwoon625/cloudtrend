@@ -27,8 +27,14 @@ The local browser writer asks the authenticated read-only policy endpoint whethe
 
 The synthetic ingress suite calls the actual web runner and Actions runner against fake storage, then reads their output with the real browser cache reader. It covers OFF/ON, 10/16 and 10/19, installed/uninstalled, missing/corrupt artifacts, equal publication digests/fingerprints, untouched Shadow inputs, rollback chart restoration and local-write boundaries. PGlite verifies receipt backfill, RLS, anonymous denial and immutability. Existing tests cover bounded approval conflicts, original/approved hash mismatch and missing observations.
 
-The authenticated no-save diagnostic runs raw web input and canonicalized Actions input through the same publication projection and compares digests/fingerprints. The two large dataset phases are sequential; only compact evidence leaves the first phase. It never calls the screening publisher, Shadow replay, snapshot persistence or portfolio services. This proves only the current fixed input, not the first future session.
+The authenticated no-save diagnostic runs raw web input and canonicalized Actions input through the same publication projection and compares digests/fingerprints. The two large dataset phases run as separate authenticated requests; only compact evidence is compared. Source, date, configuration and provider identity must agree across requests. It never calls the screening publisher, Shadow replay, snapshot persistence or portfolio services. This proves only the current fixed input, not the first future session.
 
 Commands: dedicated underlying-index Vitest config; screening-memory, CLI, dashboard-cache and portfolio-screening-refresh tests; TypeScript; changed-file ESLint; build with frozen Shadow manifest checks. Compare the default Vitest failure set with main rather than claiming a clean full suite.
 
 After successful activation, the user executes the first new real screening. Until its result is observed, report: **first new-session validation remains pending**.
+
+## Remaining ingress review fixes
+
+The chart repair utility validates the saved digest and provider identity, reconstructs the same pinned provider independently of rollout state, and accepts an explicit original scoring-config JSON for non-default results. It does not run screening or modify a ledger. Actions reuse validates the owner provider before accepting an operational-date cached run; provider and ordered source identity are part of prospective reuse eligibility. The missing-installation decision rechecks the receipt after absent artifact bytes, blocking a receipt-first installation race instead of publishing legacy results during that observed race.
+
+Operational activation remains OFF. Separate authenticated web and Actions diagnostic requests must finish and agree before reactivation. A platform-level termination of the previous combined request was observed; without runtime logs it is not certified as a timeout or memory failure. No production screening or repair utility was executed by these tests.

@@ -1,3 +1,4 @@
+import { combineOperationalImpactPhases } from "./operationalImpactComparison";
 import { validateSourceBytes } from "./sourceData";
 import { screeningPublicationAnalysis } from "./screeningPublicationAnalysis";
 import { screeningInputIdentity } from "./screeningInputIdentity";
@@ -32,7 +33,11 @@ export async function operationalArtifactForPublication(
   if (!OPERATIONAL_INDEX_ENABLED || asOfDate < OPERATIONAL_INDEX_START) return undefined;
   const installed = await hasOperationalIndexInstallation(client, owner);
   const text = await readArtifactText(client, owner, now);
-  if (!installed && text === null) return undefined;
+  if (!installed && text === null) {
+    if (await hasOperationalIndexInstallation(client, owner))
+      throw new Error("MA60 설치가 시작됐습니다. 검증자료 설치 완료 후 다시 확인하세요.");
+    return undefined;
+  }
   if (!installed) throw new Error("MA60 설치 이력이 없습니다. 전용 자료 설치 상태를 확인하세요.");
   if (text === null)
     throw new Error("설치된 운영 MA60 자료가 사라졌습니다. 기존 계산으로 강등하지 않습니다.");
@@ -67,20 +72,40 @@ export async function loadOperationalIndex(
   return provider;
 }
 /** Owner-authenticated read-only impact check. Does not call publication, screening execution or portfolio services. */
-export async function compareOperationalIndex(
+export async function compareOperationalIndexPhase(
   client: SupabaseClient,
   owner: string,
   now: string,
   config: ScoringConfig = DEFAULT_SCORING_CONFIG,
+  phase: "web" | "actions" = "web",
 ) {
   let stage = "활성 원천 읽기";
   try {
     const { sources, texts } = await loadActiveSources(client, owner);
     const sourceDigest = sourceSetDigest(sources);
-    // Each phase returns small evidence only: two full parsed universes never remain live together.
-    stage = "웹 원본 입력 계산";
+    if (phase === "actions") {
+      // Reproduce the Actions canonical-CSV ingress without calling its runner/publisher/Shadow.
+      // Release raw strings as each canonical source is produced to bound comparison memory.
+      for (let i = 0; i < texts.length; i++) {
+        stage = `Actions 입력 정규화 ${i + 1}/${sources.length}`;
+        const validated = await validateSourceBytes({
+          bytes: new TextEncoder().encode(texts[i]!),
+          filename: sources[i]!.original_filename,
+          streamingCsv: true,
+        });
+        if (
+          !validated.valid ||
+          validated.dataHash !== sources[i]!.data_hash ||
+          validated.schemaHash !== sources[i]!.schema_hash
+        )
+          throw new Error("Actions 비교 입력 검증·논리 해시 불일치");
+        texts[i] = validated.canonicalCsv;
+      }
+    }
+    stage = phase === "web" ? "웹 원본 입력 계산" : "Actions 정규화 입력 계산";
     const first = await (async () => {
       const { dataset } = parseManualMarketDataWithReferences(texts);
+      texts.length = 0;
       const before = datasetDigest(dataset);
       const provider = await loadOperationalIndex(client, owner, dataset, now, true);
       if (!provider) throw new Error("비교 기준일이 보강 자료보다 과거입니다.");
@@ -155,54 +180,9 @@ export async function compareOperationalIndex(
       })();
       return { webResultDigest, webInputFingerprint, report };
     })();
-    // Reproduce the Actions canonical-CSV ingress without calling its runner/publisher/Shadow.
-    // Release raw strings as each canonical source is produced to bound comparison memory.
-    for (let i = 0; i < texts.length; i++) {
-      stage = `Actions 입력 정규화 ${i + 1}/${sources.length}`;
-      const validated = await validateSourceBytes({
-        bytes: new TextEncoder().encode(texts[i]!),
-        filename: sources[i]!.original_filename,
-        streamingCsv: true,
-      });
-      if (
-        !validated.valid ||
-        validated.dataHash !== sources[i]!.data_hash ||
-        validated.schemaHash !== sources[i]!.schema_hash
-      )
-        throw new Error("Actions 비교 입력 검증·논리 해시 불일치");
-      texts[i] = validated.canonicalCsv;
-    }
-    stage = "Actions 정규화 입력 계산";
-    const canonical = parseManualMarketDataWithReferences(texts).dataset;
-    texts.length = 0;
-    const cliEngine = runFullMarketAnalysis(canonical, config);
-    const cliProvider = await loadOperationalIndex(client, owner, cliEngine.dataset, now, true);
-    const cliPublication = screeningPublicationAnalysis(
-      cliEngine.analysis,
-      cliEngine.dataset,
-      config,
-      cliProvider,
-    );
-    const actionsResultDigest = indexSha256(stableCacheJson(deterministicAnalysis(cliPublication)));
-    const actionsInputFingerprint = indexSha256(
-      stableCacheJson(screeningInputIdentity(sources, config, cliProvider)),
-    );
-    const ingressComparison = {
-      mode: "read-only-original-vs-canonical" as const,
-      webResultDigest: first.webResultDigest,
-      actionsResultDigest,
-      webInputFingerprint: first.webInputFingerprint,
-      actionsInputFingerprint,
-      resultDigestMatched: first.webResultDigest === actionsResultDigest,
-      inputFingerprintMatched: first.webInputFingerprint === actionsInputFingerprint,
-      firstNewSessionVerified: false as const,
-    };
-    stage = "웹·Actions 결과 대조";
-    if (!ingressComparison.resultDigestMatched || !ingressComparison.inputFingerprintMatched)
-      throw new Error(`웹·Actions 저장 없는 비교 불일치: ${JSON.stringify(ingressComparison)}`);
     if (sourceSetDigest(await listActiveSources(client, owner)) !== sourceDigest)
       throw new Error("비교 도중 입력이 변경되었습니다.");
-    return { ...first.report, ingressComparison };
+    return { phase, ...first };
   } catch (error) {
     const message =
       error instanceof Error
@@ -212,4 +192,15 @@ export async function compareOperationalIndex(
           : "오류 상세 없음";
     throw new Error(`[${stage}] ${message.slice(0, 2000)}`);
   }
+}
+
+export async function compareOperationalIndex(
+  client: SupabaseClient,
+  owner: string,
+  now: string,
+  config: ScoringConfig = DEFAULT_SCORING_CONFIG,
+) {
+  const web = await compareOperationalIndexPhase(client, owner, now, config, "web");
+  const actions = await compareOperationalIndexPhase(client, owner, now, config, "actions");
+  return combineOperationalImpactPhases(web, actions);
 }

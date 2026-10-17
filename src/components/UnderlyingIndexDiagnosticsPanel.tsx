@@ -1,3 +1,4 @@
+import { combineOperationalImpactPhases } from "../lib/operationalImpactComparison";
 import { OPERATIONAL_INDEX_ENABLED } from "../lib/operationalUnderlyingIndexRelease";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import { useState } from "react";
@@ -28,10 +29,10 @@ async function compressedFile(file: File) {
 const number = (value: number | null) =>
   value === null ? "미확인" : value.toLocaleString("ko-KR", { maximumFractionDigits: 6 });
 export function UnderlyingIndexDiagnosticsPanel() {
-  const [comparison, setComparison] = useState<
-    | Extract<Awaited<ReturnType<typeof compareOperationalIndexServer>>, { ok: true }>["comparison"]
-    | null
-  >(null);
+  const [comparison, setComparison] = useState<ReturnType<
+    typeof combineOperationalImpactPhases
+  > | null>(null);
+  const [phase, setPhase] = useState("");
   const [result, setResult] = useState<Result | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -44,11 +45,20 @@ export function UnderlyingIndexDiagnosticsPanel() {
     setError("");
     setComparison(null);
     try {
-      const response = await compareOperationalIndexServer({
-        data: { accessToken: await accessToken(), config: getActiveScoringConfig() },
+      const token = await accessToken();
+      const config = getActiveScoringConfig();
+      setPhase("1/2 웹 원본 입력 계산");
+      const web = await compareOperationalIndexServer({
+        data: { accessToken: token, config, phase: "web" },
       });
-      if (response.ok) setComparison(response.comparison);
-      else setError(response.error);
+      if (!web.ok) throw new Error(web.error);
+      setPhase("2/2 Actions 정규화 입력 계산");
+      const actions = await compareOperationalIndexServer({
+        data: { accessToken: await accessToken(), config, phase: "actions" },
+      });
+      if (!actions.ok) throw new Error(actions.error);
+      setComparison(combineOperationalImpactPhases(web.comparison, actions.comparison));
+      setPhase("");
     } catch (e) {
       setError(
         e instanceof Error
@@ -183,6 +193,7 @@ export function UnderlyingIndexDiagnosticsPanel() {
           {comparison.scoringConfigSha256.slice(0, 12)}
         </p>
       )}
+      {phase && <p className="text-xs text-muted-foreground">진단 단계: {phase}</p>}
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}

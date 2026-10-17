@@ -4,6 +4,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { beforeEach, afterEach, expect, test, vi } from "vitest";
 import { getMockDataset } from "../src/lib/engine/mockProvider";
+import * as fullMarketAnalysis from "../src/lib/engine/fullMarketAnalysis";
 import { largeScreeningSnapshot } from "./screening-snapshot-storage-fixture";
 import { serializeScreeningSnapshot } from "../src/lib/screeningSnapshotStorage";
 
@@ -18,6 +19,10 @@ const mocks = vi.hoisted(() => ({
   portfolioRefresh: vi.fn(),
   complete: vi.fn(),
   shadow: vi.fn(),
+  operationalIndex: vi.fn(),
+}));
+vi.mock("../src/lib/operationalUnderlyingIndex.server", () => ({
+  loadOperationalIndex: mocks.operationalIndex,
 }));
 vi.mock("../src/lib/shadowReplay.server", () => ({ replayKrShadow: mocks.shadow }));
 vi.mock("../src/lib/screeningPublication.server", () => ({
@@ -60,6 +65,8 @@ interface MockQuery {
 }
 beforeEach(async () => {
   vi.resetAllMocks();
+  vi.spyOn(fullMarketAnalysis, "runFullMarketAnalysis");
+  mocks.operationalIndex.mockResolvedValue(undefined);
   dir = await mkdtemp(path.join(tmpdir(), "screening-cli-"));
   uploaded = new Map();
   upserts = [];
@@ -222,6 +229,8 @@ test("completed identical run is reused without analysis, publishing or warming"
   mocks.reused.mockResolvedValue({ id: "existing" });
   await runScreening(args().filter((v) => v !== "--force"));
   expect(mocks.parse).not.toHaveBeenCalled();
+  expect(mocks.operationalIndex).not.toHaveBeenCalled();
+  expect(fullMarketAnalysis.runFullMarketAnalysis).not.toHaveBeenCalled();
   expect(mocks.cache).not.toHaveBeenCalled();
   expect(mocks.prices).not.toHaveBeenCalled();
   expect(upserts).toEqual([]);
@@ -246,4 +255,162 @@ test("an ACTUAL-book refresh failure does not block MODEL replay or expose priva
     .join("\n");
   expect(logs).toContain('"status":"FAILED"');
   expect(logs).not.toContain("private account");
+});
+
+function prospectiveInput() {
+  const dataset = structuredClone(getMockDataset());
+  dataset.asOfDate = "2026-10-19";
+  inputs[0]!.validation.stats.maxDate = dataset.asOfDate;
+  mocks.parse.mockReturnValue({ dataset, stats: { rows: 1 } });
+  return {
+    version: "etf-ma60-approved-base-20261019-v1",
+    artifactSha256: "a".repeat(64),
+    asOfDate: dataset.asOfDate,
+    availableFrom: "2026-10-17T07:21:29.000Z",
+    rows: {},
+  };
+}
+const noUploadReuseArgs = () =>
+  args().filter((value) => value !== "--upload" && value !== "--force");
+
+test("prospective identical provider reuse validates installation before lookup without running the engine", async () => {
+  const provider = prospectiveInput();
+  mocks.operationalIndex.mockResolvedValue(provider);
+  mocks.reused.mockResolvedValue({ id: "same-provider", as_of_date: provider.asOfDate });
+  await runScreening(noUploadReuseArgs());
+  expect(mocks.operationalIndex).toHaveBeenCalledTimes(1);
+  expect(mocks.operationalIndex.mock.invocationCallOrder[0]).toBeLessThan(
+    mocks.reused.mock.invocationCallOrder[0]!,
+  );
+  expect(mocks.parse).toHaveBeenCalledTimes(1);
+  expect(fullMarketAnalysis.runFullMarketAnalysis).not.toHaveBeenCalled();
+  expect(mocks.cache).not.toHaveBeenCalled();
+  expect(mocks.shadow).not.toHaveBeenCalled();
+  expect(mocks.prices).not.toHaveBeenCalled();
+  expect(upserts).toEqual([]);
+});
+
+test("installing a provider after a legacy completed run invalidates no-force reuse with unchanged code, data and config", async () => {
+  const provider = prospectiveInput();
+  mocks.reused.mockResolvedValue({ id: "legacy", as_of_date: provider.asOfDate });
+  await runScreening(noUploadReuseArgs());
+  const legacyKey = mocks.reused.mock.calls[0]![3];
+  expect(fullMarketAnalysis.runFullMarketAnalysis).not.toHaveBeenCalled();
+  mocks.reused.mockImplementation(async (_client, _owner, _kind, key) =>
+    key === legacyKey ? { id: "legacy", as_of_date: provider.asOfDate } : null,
+  );
+  mocks.operationalIndex.mockResolvedValue(provider);
+  await runScreening(noUploadReuseArgs());
+  expect(mocks.reused.mock.calls[1]![3]).not.toBe(legacyKey);
+  expect(mocks.parse).toHaveBeenCalledTimes(2);
+  expect(mocks.operationalIndex).toHaveBeenCalledTimes(2);
+  expect(fullMarketAnalysis.runFullMarketAnalysis).toHaveBeenCalledTimes(1);
+  expect(mocks.cache).not.toHaveBeenCalled();
+  expect(upserts).toEqual([]);
+  expect(uploaded.size).toBe(0);
+  expect(process.stdout.write).toHaveBeenLastCalledWith(expect.stringContaining('"reused": false'));
+});
+
+test("provider version and artifact digest each participate in the prospective run identity", async () => {
+  const provider = prospectiveInput();
+  mocks.reused.mockResolvedValue({ id: "matching", as_of_date: provider.asOfDate });
+  for (const current of [
+    provider,
+    { ...provider, version: "next-provider-version" },
+    { ...provider, artifactSha256: "b".repeat(64) },
+  ]) {
+    mocks.operationalIndex.mockResolvedValue(current);
+    await runScreening(noUploadReuseArgs());
+  }
+  expect(new Set(mocks.reused.mock.calls.map((call) => call[3])).size).toBe(3);
+  expect(fullMarketAnalysis.runFullMarketAnalysis).not.toHaveBeenCalled();
+});
+
+test.each([
+  "installed artifact missing",
+  "original hash corrupted",
+  "installation receipt mismatch",
+])("prospective reuse cannot hide %s", async (failure) => {
+  const provider = prospectiveInput();
+  mocks.reused.mockResolvedValue({ id: "previously-complete", as_of_date: provider.asOfDate });
+  mocks.operationalIndex.mockRejectedValue(new Error(failure));
+  await expect(runScreening(noUploadReuseArgs())).rejects.toThrow(failure);
+  expect(mocks.reused).not.toHaveBeenCalled();
+  expect(fullMarketAnalysis.runFullMarketAnalysis).not.toHaveBeenCalled();
+  expect(mocks.cache).not.toHaveBeenCalled();
+  expect(mocks.shadow).not.toHaveBeenCalled();
+  expect(mocks.portfolioRefresh).not.toHaveBeenCalled();
+  expect(upserts).toEqual([]);
+  expect(uploaded.size).toBe(0);
+});
+
+test("unknown source date cannot bypass provider validation on reuse", async () => {
+  const provider = prospectiveInput();
+  delete (inputs[0]!.validation.stats as { maxDate?: string }).maxDate;
+  mocks.operationalIndex.mockRejectedValue(new Error("provider unavailable"));
+  mocks.reused.mockResolvedValue({ id: "unverified-old-date", as_of_date: "2026-08-28" });
+  await expect(runScreening(noUploadReuseArgs())).rejects.toThrow("provider unavailable");
+  expect(mocks.operationalIndex).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.any(String),
+    expect.objectContaining({ asOfDate: provider.asOfDate }),
+    expect.any(String),
+  );
+  expect(mocks.reused).not.toHaveBeenCalled();
+});
+
+test("prospective upload reuse still replays Shadow but parses and computes the engine only once", async () => {
+  const provider = prospectiveInput();
+  mocks.operationalIndex.mockResolvedValue(provider);
+  mocks.reused.mockResolvedValue({ id: "same-provider", as_of_date: provider.asOfDate });
+  await runScreening(args().filter((value) => value !== "--force"));
+  expect(mocks.parse).toHaveBeenCalledTimes(1);
+  expect(mocks.operationalIndex).toHaveBeenCalledTimes(1);
+  expect(fullMarketAnalysis.runFullMarketAnalysis).toHaveBeenCalledTimes(1);
+  expect(mocks.shadow).toHaveBeenCalledTimes(1);
+  expect(mocks.shadow.mock.calls[0]![0]).not.toHaveProperty("operationalIndex");
+  expect(mocks.cache.mock.calls[0]![0].analysis.operationalIndex).toMatchObject({
+    version: provider.version,
+    artifactSha256: provider.artifactSha256,
+  });
+});
+
+test.each([false, true])(
+  "prospective reuse preserves source precedence when provider=%s",
+  async (installed) => {
+    const provider = prospectiveInput();
+    if (installed) mocks.operationalIndex.mockResolvedValue(provider);
+    const source = (id: string) => ({
+      ...structuredClone(inputs[0]!),
+      id,
+      dataHash: `data-${id}`,
+      sourceRecord: {
+        id,
+        data_hash: `data-${id}`,
+        schema_hash: "schema",
+        activated_at: "2026-10-19T00:00:00Z",
+        created_at: "2026-10-19T00:00:00Z",
+      },
+    });
+    inputs.splice(0, inputs.length, source("a"), source("b"));
+    mocks.reused.mockResolvedValue({ id: "complete", as_of_date: provider.asOfDate });
+    await runScreening(noUploadReuseArgs());
+    inputs.reverse();
+    await runScreening(noUploadReuseArgs());
+    expect(mocks.reused.mock.calls[0]![3]).not.toBe(mocks.reused.mock.calls[1]![3]);
+    expect(fullMarketAnalysis.runFullMarketAnalysis).not.toHaveBeenCalled();
+  },
+);
+
+test("a missing date on one source is not hidden by another pre-start source during reuse", async () => {
+  prospectiveInput();
+  const oldInput = structuredClone(inputs[0]!);
+  oldInput.validation.stats.maxDate = "2026-08-28";
+  delete (inputs[0]!.validation.stats as { maxDate?: string }).maxDate;
+  inputs.push(oldInput);
+  mocks.reused.mockResolvedValue({ id: "old", as_of_date: "2026-08-28" });
+  mocks.operationalIndex.mockRejectedValue(new Error("provider unavailable"));
+  await expect(runScreening(noUploadReuseArgs())).rejects.toThrow("provider unavailable");
+  expect(mocks.reused).not.toHaveBeenCalled();
+  expect(fullMarketAnalysis.runFullMarketAnalysis).not.toHaveBeenCalled();
 });
