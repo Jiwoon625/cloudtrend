@@ -1,3 +1,5 @@
+import { findEntryDecision, entryDecisionLabel } from "@/lib/actualEntryDecisions";
+import { entrySuppressionReason } from "@/lib/positionSignalContext";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { HoldingsAvailability } from "@/components/HoldingsAvailability";
@@ -31,6 +33,14 @@ function UsInstrumentPage() {
   });
   const data = query.data;
   const row = data?.analysis.rows.find((r) => r.symbol === symbol.toUpperCase());
+  const decision = row
+    ? findEntryDecision(
+        positions.data?.actualEntryDecisions ?? undefined,
+        "US",
+        row.symbol,
+        row.date,
+      )
+    : undefined;
   const operational = isOperationalSignalDate(row?.date);
   if (query.isError) return <DataError error={query.error} reset={query.refetch} />;
   return (
@@ -132,9 +142,20 @@ function UsInstrumentPage() {
                       "진입 준비",
                       !operational
                         ? "신규 운용 대상 아님"
-                        : row.a0Entry
-                          ? "진입 준비"
-                          : "해당 없음",
+                        : held === undefined
+                          ? "보유 미확인"
+                          : held
+                            ? "실제 보유 · 추가 진입 제외"
+                            : entrySuppressionReason(positions.data, row.symbol, row.date) ===
+                                "sold"
+                              ? "청산 완료 · 새 신호 대기"
+                              : positions.data?.actualEntryDecisions === null
+                                ? "미매수 제한 조회 대기"
+                                : decision
+                                  ? entryDecisionLabel(decision)
+                                  : row.a0Entry
+                                    ? "진입 준비"
+                                    : "해당 없음",
                       `${OPERATIONAL_SIGNAL_START} 이후 신호만 신규 운용 적용`,
                     ],
                     [

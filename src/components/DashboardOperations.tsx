@@ -1,3 +1,5 @@
+import { ActualEntryDecisionDialog } from "./ActualEntryDecisions";
+import { entryDecisionLabel, type EntryDecisionCandidate } from "@/lib/actualEntryDecisions";
 import { dashboardInbox, type InboxKind } from "@/lib/dashboardInbox";
 import { dashboardCopy } from "@/lib/dashboardCopy";
 import {
@@ -325,7 +327,10 @@ export function DashboardSectorLimitBadge({ row }: { row: DashboardSignal }) {
   );
 }
 export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
-  const [tab, setTab] = useState<"all" | "conditions" | "onsets" | "pending" | "exits">("all");
+  const [tab, setTab] = useState<
+    "all" | "conditions" | "onsets" | "pending" | "exits" | "notPurchased"
+  >("all");
+  const [decisionCandidate, setDecisionCandidate] = useState<EntryDecisionCandidate | null>(null);
   const [market, setMarket] = useState<DashboardMarket | "ALL">("ALL");
   const [page, setPage] = useState(0);
   const [purchaseCandidate, setPurchaseCandidate] = useState<PurchaseRecordCandidate | null>(null);
@@ -348,15 +353,17 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
   const incomplete = selectedMarkets.some((selectedMarket) => {
     const item = selected.find((m) => m.market === selectedMarket);
     return (
-      (tab === "all"
-        ? item?.onsetCount
-        : tab === "conditions"
-          ? item?.conditionCount
-          : tab === "onsets"
-            ? item?.onsetCount
-            : tab === "pending"
-              ? item?.pendingCount
-              : item?.exitCount) == null
+      (tab === "notPurchased"
+        ? 0
+        : tab === "all"
+          ? item?.onsetCount
+          : tab === "conditions"
+            ? item?.conditionCount
+            : tab === "onsets"
+              ? item?.onsetCount
+              : tab === "pending"
+                ? item?.pendingCount
+                : item?.exitCount) == null
     );
   });
   const selectedPreview = allocationCandidate
@@ -386,7 +393,7 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
         cashRequired: selectedPreview?.cashRequired ?? null,
       }
     : null;
-  const totals = (kind: "all" | "conditions" | "onsets" | "pending" | "exits") =>
+  const totals = (kind: "all" | "conditions" | "onsets" | "pending" | "exits" | "notPurchased") =>
     kind === "all"
       ? dashboardInbox(query.data?.markets ?? []).length
       : (query.data?.markets ?? [])
@@ -446,35 +453,45 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
           ) : null}
         </details>
         <div className="mt-3 flex flex-wrap gap-2" role="tablist" aria-label="신호 종류">
-          {(["all", "exits", "onsets", "pending", "conditions"] as const).map((kind) => (
-            <Button
-              key={kind}
-              id={`dashboard-tab-${kind}`}
-              role="tab"
-              aria-selected={tab === kind}
-              aria-controls="dashboard-signal-panel"
-              size="sm"
-              variant={tab === kind ? "default" : "outline"}
-              onClick={() => {
-                setTab(kind);
-                if (market !== "ALL" && !listMarkets(kind).includes(market)) setMarket("ALL");
-                setPage(0);
-              }}
-            >
-              {kind === "all"
-                ? "전체 신호"
-                : kind === "conditions"
-                  ? "진입 조건 충족"
-                  : kind === "onsets"
-                    ? "실제 미보유 후보"
-                    : kind === "pending"
-                      ? "확인대기"
-                      : "실제 EXIT"}{" "}
-              {query.data ? `(${totals(kind)})` : ""}
-            </Button>
-          ))}
+          {(["all", "exits", "onsets", "notPurchased", "pending", "conditions"] as const).map(
+            (kind) => (
+              <Button
+                key={kind}
+                id={`dashboard-tab-${kind}`}
+                role="tab"
+                aria-selected={tab === kind}
+                aria-controls="dashboard-signal-panel"
+                size="sm"
+                variant={tab === kind ? "default" : "outline"}
+                onClick={() => {
+                  setTab(kind);
+                  if (market !== "ALL" && !listMarkets(kind).includes(market)) setMarket("ALL");
+                  setPage(0);
+                }}
+              >
+                {kind === "notPurchased"
+                  ? "미매수"
+                  : kind === "all"
+                    ? "전체 신호"
+                    : kind === "conditions"
+                      ? "진입 조건 충족"
+                      : kind === "onsets"
+                        ? "실제 미보유 후보"
+                        : kind === "pending"
+                          ? "확인대기"
+                          : "실제 EXIT"}{" "}
+                {query.data ? `(${totals(kind)})` : ""}
+              </Button>
+            ),
+          )}
         </div>
       </div>
+      {decisionCandidate ? (
+        <ActualEntryDecisionDialog
+          candidate={decisionCandidate}
+          onClose={() => setDecisionCandidate(null)}
+        />
+      ) : null}
       {purchaseCandidate ? (
         <Suspense
           fallback={
@@ -571,6 +588,21 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
                             >
                               매수수량 기록
                             </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="mb-1 ml-1"
+                              onClick={() =>
+                                setDecisionCandidate({
+                                  market: row.market,
+                                  symbol: row.symbol,
+                                  name: row.name,
+                                  signalOriginDate: row.signalOriginDate ?? row.date,
+                                })
+                              }
+                            >
+                              미매수 처리
+                            </Button>
                             {(() => {
                               const preview = query.data?.actualAllocation?.previews.find(
                                 (p) =>
@@ -634,19 +666,29 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
                     ) : null}
                     <td className={`px-3 py-3 ${tab === "onsets" ? "text-up" : "text-warn"}`}>
                       <div className="max-w-64 truncate" title={dashboardCopy(row.reason)}>
-                        {rowKind(row) === "exits"
-                          ? dashboardCopy(row.reason)
-                          : rowKind(row) === "onsets"
-                            ? "진입 준비"
-                            : rowKind(row) === "pending"
-                              ? "확인 대기"
-                              : rowKind(row) === "raw"
-                                ? "원신호 · 진입 미확정"
-                                : "조건 충족"}
+                        {row.entryDecision && rowKind(row) !== "exits"
+                          ? entryDecisionLabel(row.entryDecision)
+                          : rowKind(row) === "exits"
+                            ? dashboardCopy(row.reason)
+                            : rowKind(row) === "onsets"
+                              ? "진입 준비"
+                              : rowKind(row) === "pending"
+                                ? "확인 대기"
+                                : rowKind(row) === "raw"
+                                  ? "원신호 · 진입 미확정"
+                                  : "조건 충족"}
                       </div>
                       <details className="text-xs text-muted-foreground">
                         <summary className="cursor-pointer">상세 근거</summary>
                         <p>{dashboardCopy(row.reason)}</p>
+                        {row.entryDecision ? (
+                          <>
+                            <p>{row.entryDecision.note}</p>
+                            <Link to="/portfolio" className="underline">
+                              미매수·제한 관리에서 해제
+                            </Link>
+                          </>
+                        ) : null}
                         {row.signalOriginDate ? (
                           <div className="mt-1 text-[10px] text-muted-foreground">
                             원신호 {row.signalOriginDate}

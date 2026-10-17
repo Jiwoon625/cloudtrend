@@ -1,3 +1,5 @@
+import { loadActualEntryDecisions } from "./actualEntryDecisions.server";
+import { activeEntryDecisions } from "./actualEntryDecisions";
 import { isActionableActualPriceExit } from "./newActualPriceExit";
 import type { PortfolioLedgerViewState } from "./portfolioFreshness";
 import { validateExecutionSourceLinks } from "./ledger/executionMemo";
@@ -107,6 +109,9 @@ export const portfolioPositionContextServer = createServerFn({ method: "POST" })
       }
     }
     return {
+      actualEntryDecisions: await loadActualEntryDecisions(client, uid)
+        .then(activeEntryDecisions)
+        .catch(() => null),
       heldSymbols: context.heldSymbols,
       lastSellDateBySymbol: context.lastSellDateBySymbol,
       priceExits: Object.fromEntries(

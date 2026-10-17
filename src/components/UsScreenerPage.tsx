@@ -1,3 +1,4 @@
+import { findEntryDecision, entryDecisionLabel } from "@/lib/actualEntryDecisions";
 import { entrySuppressionReason } from "@/lib/positionSignalContext";
 import { isOperationalSignalDate, OPERATIONAL_SIGNAL_START } from "@/lib/operationalSignalStart";
 import { compareUsCandidates } from "@/lib/usCandidatePriority";
@@ -202,7 +203,18 @@ export function UsScreenerPage() {
         );
       if (filter === "PRIMARY_WATCH") return !r.a0Exit && (r.coreRank ?? 0) >= 0.7;
       if (filter === "PRIMARY_ENTRY")
-        return heldKnown && r.a0Entry && !entrySuppressionReason(positions.data, r.symbol, r.date);
+        return (
+          heldKnown &&
+          positions.data?.actualEntryDecisions !== null &&
+          r.a0Entry &&
+          !findEntryDecision(
+            positions.data?.actualEntryDecisions ?? undefined,
+            "US",
+            r.symbol,
+            r.date,
+          ) &&
+          !entrySuppressionReason(positions.data, r.symbol, r.date)
+        );
       if (filter === "PRIMARY_EXIT")
         return heldKnown && r.a0Exit && positions.data?.heldSymbols.includes(r.symbol);
       if (filter === "A2_ENTRY") return r.a2Entry;
@@ -700,6 +712,23 @@ export function UsScreenerPage() {
                     <ScreenerRow
                       key={r.symbol}
                       row={r}
+                      decisionLabel={
+                        positions.data?.actualEntryDecisions === null
+                          ? "미매수 제한 조회 대기"
+                          : (() => {
+                              const d = findEntryDecision(
+                                positions.data?.actualEntryDecisions,
+                                "US",
+                                r.symbol,
+                                r.date,
+                              );
+                              return d
+                                ? r.a0Entry
+                                  ? entryDecisionLabel(d)
+                                  : `진입 제한 · ${d.reason}`
+                                : null;
+                            })()
+                      }
                       consumed={entrySuppressionReason(positions.data, r.symbol, r.date) === "sold"}
                       held={heldKnown ? positions.data!.heldSymbols.includes(r.symbol) : null}
                     />
@@ -764,10 +793,12 @@ function ScreenerRow({
   row: r,
   held,
   consumed,
+  decisionLabel,
 }: {
   row: UsProspectiveCacheRow;
   held: boolean | null;
   consumed: boolean;
+  decisionLabel: string | null;
 }) {
   const operational = isOperationalSignalDate(r.date);
   return (
@@ -822,6 +853,8 @@ function ScreenerRow({
           <span>실제 보유</span>
         ) : consumed ? (
           <span>청산 완료 · 새 신호 대기</span>
+        ) : decisionLabel ? (
+          <span className="text-warn">{decisionLabel}</span>
         ) : r.a0Entry ? (
           <Badge className="bg-up text-white">진입 준비</Badge>
         ) : held && r.a0Exit ? (

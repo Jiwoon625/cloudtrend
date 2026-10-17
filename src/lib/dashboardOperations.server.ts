@@ -1,3 +1,6 @@
+import { loadActualEntryDecisions } from "./actualEntryDecisions.server";
+import { activeEntryDecisions } from "./actualEntryDecisions";
+import { projectActualEntryDecisions } from "./actualEntryDecisionProjection";
 import { isActionableActualPriceExit } from "./newActualPriceExit";
 import { dashboardSectorLimit } from "./dashboardOperationsSectorLimits";
 import { createHash } from "node:crypto";
@@ -240,7 +243,10 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
       return null;
     }
   }
-  const [kr, us, actualSnapshot] = await Promise.all([
+  const [entryDecisions, kr, us, actualSnapshot] = await Promise.all([
+    safe("미매수 제한 미확인 · 실제 진입 후보 표시 중단", () =>
+      loadActualEntryDecisions(client, uid),
+    ),
     safe("국내 신호", () => projection(client, uid, "kr")),
     safe("미국 신호", () => projection(client, uid, "us")),
     safe("신규 실제 보유", () => loadActualPositionSnapshotForOwner(client, uid)),
@@ -295,7 +301,7 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
   }
   // Only allocated actual fills determine dashboard holdings and consumed signals.
   // Shadow, old journals and manually tracked ETF membership are never a fallback.
-  const markets = DASHBOARD_MARKETS.map((market) =>
+  let markets = DASHBOARD_MARKETS.map((market) =>
     marketSignals(
       market === "US" ? us : krWithHoldingExits,
       market,
@@ -379,6 +385,10 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
         `${label} 신규 보유 ${missing.length}종목은 최신 스크리닝에 없어 신호 확인이 필요합니다.`,
       );
   }
+  markets = projectActualEntryDecisions(
+    markets,
+    entryDecisions ? activeEntryDecisions(entryDecisions) : null,
+  );
   const actualAllocation = actualSnapshot
     ? await safe("실제 배분 예산", async () => {
         const { projectDashboardActualAllocation } =

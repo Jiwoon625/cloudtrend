@@ -1,3 +1,4 @@
+import { findEntryDecision, entryDecisionLabel } from "@/lib/actualEntryDecisions";
 import { matchesEtfReviewMinimum, isTechnicalReviewReference } from "@/lib/eveningReview";
 import { etfOperationalDisplay } from "@/lib/etfOperationalDisplay";
 import { useSessionViewState, viewText, viewPage, viewChoice } from "@/lib/useSessionViewState";
@@ -152,6 +153,13 @@ export function EtfScreener({
     const sold = positionContext?.lastSellDateBySymbol[r.instrument.symbol];
     return !!sold && sold >= (r.etfStrategy?.originDate ?? analysis.asOfDate);
   };
+  const decision = (r: AnalysisResult["rows"][number]) =>
+    findEntryDecision(
+      positionContext?.actualEntryDecisions ?? undefined,
+      "ETF",
+      r.instrument.symbol,
+      r.etfStrategy?.originDate ?? analysis.asOfDate,
+    );
   const actionable = (r: AnalysisResult["rows"][number]) =>
     !!positionContext &&
     !ledgerError &&
@@ -161,15 +169,23 @@ export function EtfScreener({
     isOperationalSignalOrigin(analysis.asOfDate, r.etfStrategy.originDate) &&
     r.etfStrategy.dataStatus !== "krx_batch_pending" &&
     !heldSet.has(r.instrument.symbol) &&
-    !blocked(r);
+    !blocked(r) &&
+    positionContext.actualEntryDecisions !== null &&
+    !decision(r);
   const getSignalLabel = (r: AnalysisResult["rows"][number]) =>
-    etfOperationalDisplay(
-      r,
-      analysis.asOfDate,
-      !positionContext || ledgerError ? undefined : heldSet.has(r.instrument.symbol),
-      blocked(r),
-      positionContext?.priceExits?.[r.instrument.symbol],
-    );
+    !heldSet.has(r.instrument.symbol) && positionContext?.actualEntryDecisions === null
+      ? "미매수 제한 조회 대기"
+      : !heldSet.has(r.instrument.symbol) && decision(r)
+        ? r.etfStrategy?.onset || r.etfStrategy?.entryState === "pending"
+          ? entryDecisionLabel(decision(r)!)
+          : `진입 제한 · ${decision(r)!.reason}`
+        : etfOperationalDisplay(
+            r,
+            analysis.asOfDate,
+            !positionContext || ledgerError ? undefined : heldSet.has(r.instrument.symbol),
+            blocked(r),
+            positionContext?.priceExits?.[r.instrument.symbol],
+          );
   const getSortValue = (r: AnalysisResult["rows"][number], key: SortKey) => {
     const s = r.etfStrategy;
     const e = evidenceFor(r);

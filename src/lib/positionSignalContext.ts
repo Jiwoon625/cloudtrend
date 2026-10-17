@@ -1,5 +1,6 @@
 import type { ActualPriceExitEvidence } from "./newActualPriceExit";
 export interface DomesticPositionContext {
+  actualEntryDecisions?: import("./actualEntryDecisions").EntryDecision[] | null;
   priceExits?: Record<string, ActualPriceExitEvidence>;
   heldSymbols: string[];
   lastSellDateBySymbol: Record<string, string>;

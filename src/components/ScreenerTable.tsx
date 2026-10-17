@@ -1,5 +1,10 @@
 import { CompactStockStatus } from "./CompactStockStatus";
-import { getCompactStockStatus, getCompactStockWarnings } from "@/lib/stockCompactStatus";
+import { getCompactStockWarnings } from "@/lib/stockCompactStatus";
+import {
+  actualCompactStockStatus as getCompactStockStatus,
+  actualStockDisplay as getPortfolioAwareDisplayStatus,
+  isActualOperationalEntry as isPortfolioAwareOperationalEntry,
+} from "@/lib/actualScreenerDecision";
 import { Link } from "@tanstack/react-router";
 import { ArrowDown, ArrowUp, Download, Minus } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -14,10 +19,6 @@ import { UniverseFilterDetails } from "@/components/UniverseFilterDetails";
 import type { ScreeningRow } from "@/lib/engine/pipeline";
 import { formatNumber, formatPercent, formatPrice, formatWon } from "@/lib/format";
 import { getKospiRsAccel } from "@/lib/kospiRelativeQuality";
-import {
-  getPortfolioAwareDisplayStatus,
-  isPortfolioAwareOperationalEntry,
-} from "@/lib/statusDisplay";
 import { entrySuppressionReason, type DomesticPositionContext } from "@/lib/positionSignalContext";
 import { getDisplayWarnings } from "@/lib/warningDisplay";
 import { useSessionViewState, viewChoice, viewPage } from "@/lib/useSessionViewState";

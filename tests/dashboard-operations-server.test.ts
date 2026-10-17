@@ -1,3 +1,6 @@
+vi.mock("../src/lib/actualEntryDecisions.server", () => ({
+  loadActualEntryDecisions: async () => ({ revision: 0, events: [] }),
+}));
 import { describe, it, expect, vi } from "vitest";
 import { gzipSync } from "node:zlib";
 import {
