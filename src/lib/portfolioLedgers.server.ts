@@ -308,11 +308,11 @@ export async function getCachedActualPriceInputs(
       ...result,
     };
     try {
-      const { error } = await bucket.upload(
-        path,
-        gzipSync(Buffer.from(JSON.stringify(document))),
-        { upsert: false, contentType: "application/gzip", cacheControl: "31536000" },
-      );
+      const { error } = await bucket.upload(path, gzipSync(Buffer.from(JSON.stringify(document))), {
+        upsert: false,
+        contentType: "application/gzip",
+        cacheControl: "31536000",
+      });
       // An identical concurrent request can publish the same immutable key first.
       if (error && !/already exists|duplicate/i.test(error.message))
         console.warn("실제 보유 가격 캐시 저장 실패: 검증한 현재 결과를 사용합니다.");

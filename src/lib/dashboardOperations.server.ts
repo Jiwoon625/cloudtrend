@@ -71,7 +71,6 @@ async function writeJson(client: SupabaseClient, path: string, value: unknown) {
   if (error) throw new Error(`저장 실패: ${error.message}`);
 }
 
-
 /**
  * Immutable per-generation compressed projection. Unlike the legacy 3-5MB
  * `kr-v1.json`/`us-v1.json` pointers this path is safe for CDN/browser caching.
@@ -89,7 +88,9 @@ async function readCompactIndex(
   key: string,
 ): Promise<DashboardIndex | null> {
   try {
-    const { data, error } = await client.storage.from(BUCKET).download(compactIndexPath(uid, kind, key));
+    const { data, error } = await client.storage
+      .from(BUCKET)
+      .download(compactIndexPath(uid, kind, key));
     if (error || !data) return null;
     const cached = JSON.parse(
       gunzipSync(new Uint8Array(await data.arrayBuffer())).toString("utf8"),
@@ -108,11 +109,13 @@ async function writeCompactIndex(
   index: DashboardIndex,
 ) {
   const body = gzipSync(Buffer.from(JSON.stringify({ key, index })));
-  const { error } = await client.storage.from(BUCKET).upload(
-    compactIndexPath(uid, kind, key),
-    body,
-    { upsert: false, contentType: "application/gzip", cacheControl: "31536000" },
-  );
+  const { error } = await client.storage
+    .from(BUCKET)
+    .upload(compactIndexPath(uid, kind, key), body, {
+      upsert: false,
+      contentType: "application/gzip",
+      cacheControl: "31536000",
+    });
   if (error && !/already exists|duplicate/i.test(error.message))
     throw new Error(`압축 대시보드 캐시 저장 실패: ${error.message}`);
 }
