@@ -174,6 +174,38 @@ export function parseUnderlyingIndexArtifact(value: unknown, now: string): Under
   return artifact;
 }
 
+/**
+ * Compare parsed, hash-verified vintages. Approval may select exact observation values,
+ * but cannot silently change provenance, identities, calendar, coverage or other values.
+ */
+export function validateUnderlyingIndexPreferenceDelta(
+  artifact: UnderlyingIndexArtifact,
+  original: UnderlyingIndexArtifact,
+): void {
+  const preference = artifact.approvedPreference;
+  if (!preference || original.approvedPreference)
+    throw new Error("승인 빈티지는 승인 전 원본 자료와 비교해야 합니다.");
+  if (new Date(artifact.availableFrom) < new Date(original.availableFrom))
+    throw new Error("승인 빈티지의 적용 시각을 원본보다 앞당길 수 없습니다.");
+  const expected = structuredClone(original);
+  expected.availableFrom = artifact.availableFrom;
+  expected.approvedPreference = preference;
+  const seriesBySymbol = new Map(expected.symbols.map((series) => [series.symbol, series]));
+  for (const entry of preference.entries) {
+    const observation = seriesBySymbol
+      .get(entry.symbol)
+      ?.observations.find((row) => row[0] === entry.date);
+    if (!observation) throw new Error("승인 대응값이 원본 지수 관측에 없습니다.");
+    observation[1] = entry.selectedValue;
+  }
+  // Schema parsing fixes object-key order while retaining array order and all strict fields.
+  if (
+    JSON.stringify(underlyingIndexArtifactSchema.parse(artifact)) !==
+    JSON.stringify(underlyingIndexArtifactSchema.parse(expected))
+  )
+    throw new Error("승인된 대응값·승인 정보 외에 원본 지수 자료가 변경되었습니다.");
+}
+
 export interface IndexDiagnosticRow {
   symbol: string;
   name: string;
@@ -320,19 +352,22 @@ export function calculateIndexDiagnostics(
       )
     )
       issues.push("활성 입력의 기초지수명 불일치");
-    const approvedPreferenceDates = conflicts.filter((d) => preferred.has(`${inst.symbol}:${d}`));
     if (conflicts.some((d) => !preferred.has(`${inst.symbol}:${d}`)))
       issues.push("기존 유효 기초지수값 충돌: 기존값 유지, 보강 격리");
     if (!overlapCompared) issues.push("활성 입력과 일치하는 중복 관측을 검증할 수 없음");
     const quarantine = issues.length > 0;
     let supplementedObservations = 0;
+    const approvedPreferenceDates: string[] = [];
     const current = window.map((d) => {
       const value = active.get(d)?.etfUnderlyingIndexClose;
       return positive(value) ? value : null;
     });
     const values = window.map((day, i) => {
       const selected = preferred.get(`${inst.symbol}:${day}`);
-      if (!quarantine && positive(selected)) return selected;
+      if (!quarantine && positive(selected)) {
+        approvedPreferenceDates.push(day);
+        return selected;
+      }
       if (positive(current[i])) return current[i]!;
       const value = indexByDate.get(day)?.[1];
       if (!quarantine && positive(value)) {

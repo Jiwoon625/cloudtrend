@@ -1,3 +1,6 @@
+import { OPERATIONAL_INDEX_ENABLED } from "./operationalUnderlyingIndexRelease";
+import { OPERATIONAL_INDEX_START, OPERATIONAL_INDEX_VERSION } from "./operationalUnderlyingIndex";
+import { UNDERLYING_INDEX_RELEASE } from "./underlyingIndexSupplementRelease";
 import { sourceFingerprintRecords } from "./sourceFingerprintRecords";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -29,6 +32,15 @@ export function inputFingerprint(sources: ActiveSourceRecord[], config: ScoringC
       strategyConfig: config,
       sources: sourceFingerprintRecords(sources),
       legacyFallback: null,
+      ...(OPERATIONAL_INDEX_ENABLED &&
+      sources.some((s) => (s.max_date ?? "") >= OPERATIONAL_INDEX_START)
+        ? {
+            operationalIndex: {
+              version: OPERATIONAL_INDEX_VERSION,
+              artifactSha256: UNDERLYING_INDEX_RELEASE.sha256,
+            },
+          }
+        : {}),
     }),
   );
 }

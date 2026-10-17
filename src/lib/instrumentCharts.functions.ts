@@ -1,3 +1,5 @@
+import { loadOperationalIndex } from "./operationalUnderlyingIndex.server";
+import type { OperationalAnalysis } from "./operationalEtfMa60";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
@@ -84,6 +86,23 @@ async function context(input: Input, ctx: Awaited<ReturnType<typeof session>>) {
       throw new Error("원천자료 또는 점수 설정이 변경됐습니다. 새로고침해 주세요.");
     const parsed = parseManualMarketData(texts);
     const result = restoreChartContext(parsed.dataset, ctx.analysis, config, input.resultDigest);
+    const metadata = (ctx.analysis as OperationalAnalysis).operationalIndex;
+    if (metadata) {
+      const provider = await loadOperationalIndex(
+        ctx.client,
+        ctx.uid,
+        parsed.dataset,
+        new Date().toISOString(),
+      );
+      if (
+        !provider ||
+        provider.version !== metadata.version ||
+        provider.artifactSha256 !== metadata.artifactSha256 ||
+        provider.asOfDate !== metadata.asOfDate
+      )
+        throw new Error("저장된 스크리닝과 MA60 자료 버전이 다릅니다.");
+      result.operationalIndex = provider;
+    }
     primeChartContext(ctx.uid, input.inputFingerprint, input.resultDigest, result);
     return result;
   })().finally(() => contexts.delete(key));

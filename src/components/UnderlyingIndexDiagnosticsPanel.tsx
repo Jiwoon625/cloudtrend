@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { supabase } from "@/lib/cloud";
 import {
+  compareOperationalIndexServer,
   installUnderlyingIndexArtifactServer,
   readUnderlyingIndexDiagnosticsServer,
 } from "@/lib/underlyingIndexDiagnostics.functions";
@@ -25,12 +26,29 @@ async function compressedFile(file: File) {
 const number = (value: number | null) =>
   value === null ? "미확인" : value.toLocaleString("ko-KR", { maximumFractionDigits: 6 });
 export function UnderlyingIndexDiagnosticsPanel() {
+  const [comparison, setComparison] = useState<Awaited<
+    ReturnType<typeof compareOperationalIndexServer>
+  > | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  async function compare() {
+    setBusy(true);
+    setError("");
+    setComparison(null);
+    try {
+      setComparison(
+        await compareOperationalIndexServer({ data: { accessToken: await accessToken() } }),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   async function read() {
     setResult(null);
     setBusy(true);
@@ -92,6 +110,32 @@ export function UnderlyingIndexDiagnosticsPanel() {
       <p className="text-xs font-medium">
         진단 전용: 이 MA60는 현재 매매신호·전략 적격·비주식형 ETF 매도규칙에 반영되지 않습니다.
       </p>
+      <Button size="sm" variant="outline" disabled={busy} onClick={() => void compare()}>
+        운영 MA60 신호 영향 비교 (저장 없음)
+      </Button>
+      {comparison && (
+        <div role="status" className="text-xs">
+          기준일 {comparison.asOfDate} · 원천 {comparison.activeSourcesRead}개 · MA60 변경{" "}
+          {comparison.ma60Changed}종 · 진입/청산 변경 {comparison.signalChanges.length}종 ·
+          점수/원신호 변경 {comparison.unexpectedScoreChanges.length}종 · 저장 0회
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              const a = document.createElement("a");
+              const url = URL.createObjectURL(
+                new Blob([JSON.stringify(comparison, null, 2)], { type: "application/json" }),
+              );
+              a.href = url;
+              a.download = "operational-ma60-impact.json";
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+          >
+            신호 비교 결과 내려받기
+          </Button>
+        </div>
+      )}
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}

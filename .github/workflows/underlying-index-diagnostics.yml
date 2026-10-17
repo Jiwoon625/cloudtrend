@@ -4,6 +4,18 @@ on:
     paths:
       - package.json
       - package-lock.json
+      - src/lib/operationalUnderlyingIndex*
+      - src/lib/operationalEtfMa60.ts
+      - src/lib/webScreening.functions.ts
+      - src/lib/instrumentCharts.functions.ts
+      - src/lib/instrumentChartStore.server.ts
+      - src/lib/instrumentChartContract.ts
+      - src/lib/engine/etfInstrumentChart.ts
+      - src/components/EtfInstrumentCharts.tsx
+      - src/components/EtfInstrumentDetail.tsx
+      - tests/etf-instrument-chart*
+      - tests/instrument-chart-cache.test.ts
+      - tests/operational-ma60.test.ts
       - src/lib/underlyingIndex*
       - src/lib/krxReviewReference*.ts
       - src/lib/screeningSources.server.ts

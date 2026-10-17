@@ -3,8 +3,10 @@ import type { AnalysisResult } from "./engine/pipeline";
 import type { EtfInstrumentChartBundle } from "./engine/etfInstrumentChart";
 import { etfPartialEvidence } from "./etfPartialEvidence";
 import { ETF_POLICY } from "./engine/etfStrategy";
+import { OPERATIONAL_INDEX_START } from "./operationalUnderlyingIndex";
+import type { OperationalAnalysis, OperationalEtfSnapshot } from "./operationalEtfMa60";
 export const FAST_CHART_VERSION = "chart-v3-full-universe";
-export const ETF_CHART_VERSION = "etf-chart-v2-m0-underlying";
+export const ETF_CHART_VERSION = "etf-chart-v3-operational-underlying";
 export type ChartKind = "prices" | "scored" | "etf" | "etf-prices";
 export interface ChartIdentity {
   inputFingerprint: string;
@@ -69,6 +71,37 @@ export function assertEtfChartMatchesCard(
       bundle.previousM0.score > 100)
   )
     throw new Error("ETF 직전 거래일 M0 근거가 다릅니다.");
+  if (
+    bundle.underlyingIndexVersion &&
+    (analysis.asOfDate < OPERATIONAL_INDEX_START ||
+      bundle.underlyingIndexAsOfDate !== analysis.asOfDate ||
+      !bundle.underlyingIndexArtifactSha256 ||
+      !bundle.underlyingIndexAvailableFrom)
+  )
+    throw new Error("ETF 운영 기초지수 기준일·출처가 다릅니다.");
+  const metadata = (analysis as OperationalAnalysis).operationalIndex;
+  if (
+    metadata &&
+    (bundle.underlyingIndexVersion !== metadata.version ||
+      bundle.underlyingIndexArtifactSha256 !== metadata.artifactSha256 ||
+      bundle.underlyingIndexAsOfDate !== metadata.asOfDate ||
+      bundle.underlyingIndexAvailableFrom !== metadata.availableFrom)
+  )
+    throw new Error("ETF 카드와 차트 운영 기초지수 출처 버전이 다릅니다.");
+  const strategy = row.etfStrategy as OperationalEtfSnapshot;
+  if (strategy.underlyingIndexVersion) {
+    const underlying = bundle.underlying.find((value) => value.tradeDate === analysis.asOfDate);
+    const matches = (a: number | null | undefined, b: number | null) =>
+      b === null ? a === null : typeof a === "number" && Math.abs(a - b) <= 1e-8;
+    if (
+      bundle.underlyingIndexVersion !== strategy.underlyingIndexVersion ||
+      bundle.underlyingIndexArtifactSha256 !== strategy.underlyingIndexArtifactSha256 ||
+      !underlying ||
+      !matches(underlying.close, strategy.underlyingClose) ||
+      !matches(underlying.ma60, strategy.underlyingMa60)
+    )
+      throw new Error(`${symbol}: 카드와 차트 운영 기초지수·MA60 근거가 다릅니다.`);
+  }
 }
 export function cardTechnicalScore(row: AnalysisResult["rows"][number]): number | null {
   return row.instrument.instrumentType === "STOCK"

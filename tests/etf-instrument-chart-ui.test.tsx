@@ -4,7 +4,7 @@ import { beforeEach, expect, test, vi } from "vitest";
 import type { AnalysisPayload } from "../src/lib/marketPayload";
 import type { ScreeningRow } from "../src/lib/engine/pipeline";
 import type { EtfInstrumentChartBundle } from "../src/lib/engine/etfInstrumentChart";
-import { ETF_POLICY } from "../src/lib/engine/etfStrategy";
+import { ETF_MAPPING, ETF_POLICY } from "../src/lib/engine/etfStrategy";
 
 const state = vi.hoisted(() => ({
   owner: "owner" as string | null,
@@ -273,13 +273,13 @@ test("M0 is the 100-point total, underlying provenance/lag are explicit, and eve
   expect(html).toContain("ETF 기준일 2026-10-13 · 기초지수 최종 관측 2026-10-12 (ETF보다 이전)");
   expect(state.charts).toEqual([
     bundle.chart,
-    bundle.underlying.map((point) => ({ ...point, plotClose: point.close })),
+    bundle.underlying.map((point) => ({ ...point, plotClose: point.close, plotMa60: point.ma60 })),
   ]);
   expect(state.lines.map((line) => line["dataKey"])).toEqual([
     "close",
     "m0Score",
     "plotClose",
-    "ma60",
+    "plotMa60",
   ]);
   expect(
     state.lines.every(
@@ -410,8 +410,8 @@ test("index identity changes break the price line without losing the dated raw c
   };
   render();
   expect(state.charts[1]).toEqual([
-    { ...bundle.underlying[0], plotClose: 100 },
-    { ...changed, plotClose: null },
+    { ...bundle.underlying[0], plotClose: 100, plotMa60: 98 },
+    { ...changed, plotClose: null, plotMa60: null },
   ]);
   const tooltip = renderToStaticMarkup(
     <EtfUnderlyingTooltip active payload={[{ payload: changed }]} />,
@@ -430,4 +430,52 @@ test("a missing exact previous-day M0 is labeled only with its known date", () =
   expect(summary({ ...bundle, previousM0: null, previousTradingDate: null })).not.toContain(
     "직전 거래일 M0 미관측",
   );
+});
+
+test("cash and bond provider evidence is a dated reference, never a new trading rule", () => {
+  const symbol = Object.entries(ETF_MAPPING).find(
+    ([, value]) => value.assetClass === "bond_cash",
+  )![0];
+  const signalDate = "2026-10-19";
+  const referenceBundle = {
+    ...bundle,
+    symbol,
+    asOfDate: signalDate,
+    underlyingIndexVersion: "approved-fixture-v1",
+    underlyingIndexArtifactSha256: "f".repeat(64),
+    underlyingIndexAsOfDate: signalDate,
+    underlyingIndexAvailableFrom: "2026-10-17T06:00:00Z",
+    underlyingSource: "KRX_ETF_APPROVED_BASE",
+    underlyingAsOfDate: signalDate,
+    underlying: [
+      {
+        tradeDate: signalDate,
+        close: 102.5,
+        ma60: 100.25,
+        name: "현금 지수",
+        identityBreak: false,
+      },
+    ],
+  };
+  state.bundle = { data: referenceBundle };
+  const input = {
+    ...payload,
+    analysis: {
+      ...payload.analysis,
+      asOfDate: signalDate,
+      rows: [{ ...row, instrument: { ...row.instrument, symbol } }],
+    },
+  };
+  const html = renderToStaticMarkup(<EtfInstrumentCharts symbol={symbol} payload={input} />);
+  expect(html).toContain("기초지수·MA60 참고값 · 매매 신호 아님");
+  expect(html).toContain("2026-10-19 · 기초지수 102.5 · MA60 100.25");
+  expect(html).toContain("새 진입·청산 규칙을 적용하지 않습니다");
+  expect(html).toContain("근거 버전 approved-fixture-v1");
+  expect(html).toContain("2026-10-17T06:00:00Z");
+  expect(html).toContain("승인 KRX 이력 + 일별 관측");
+  expect(html).not.toContain("현재 전략과 동일한 기초지수 근거");
+  state.bundle = { data: { ...referenceBundle, underlyingIndexAsOfDate: "2026-10-16" } };
+  expect(
+    renderToStaticMarkup(<EtfInstrumentCharts symbol={symbol} payload={input} />),
+  ).not.toContain("현재 기초지수 MA60 근거");
 });

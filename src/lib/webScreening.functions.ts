@@ -1,3 +1,5 @@
+import { loadOperationalIndex } from "./operationalUnderlyingIndex.server";
+import { withOperationalEtfMa60 } from "./operationalEtfMa60";
 import { createDataStatusCache } from "./dataStatusCache";
 import {
   completeScreeningPublication,
@@ -200,8 +202,14 @@ export async function runWebScreeningForUser(
       throw new Error("계산 중 원천데이터가 변경됐습니다. 최신 입력으로 다시 시도하세요.");
     const parsed = parseManualMarketData(texts);
     const { analysis: engineAnalysis, dataset } = runFullMarketAnalysis(parsed.dataset, config);
+    const operationalIndex = await loadOperationalIndex(
+      client,
+      userId,
+      dataset,
+      new Date().toISOString(),
+    );
     const analysis = withKrxReviewReferences(
-      withOnsetProfiles(engineAnalysis, dataset, config),
+      withOnsetProfiles(withOperationalEtfMa60(engineAnalysis, operationalIndex), dataset, config),
       dataset,
     );
 
@@ -273,6 +281,7 @@ export async function runWebScreeningForUser(
     primeChartContext(userId, fingerprint, digest, {
       dataset,
       analysis,
+      operationalIndex,
       config: config,
     });
     // Prices are cheap; the expensive score warm-up runs in a separate awaited request.

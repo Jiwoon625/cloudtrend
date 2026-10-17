@@ -40,3 +40,13 @@ export const installUnderlyingIndexArtifactServer = createServerFn({ method: "PO
       new Date().toISOString(),
     );
   });
+
+export const compareOperationalIndexServer = createServerFn({ method: "POST" })
+  .inputValidator((input: { accessToken: string }) => ({
+    accessToken: String(input.accessToken ?? ""),
+  }))
+  .handler(async ({ data }) => {
+    const { client, owner } = await authenticate(data.accessToken);
+    const { compareOperationalIndex } = await import("./operationalUnderlyingIndex.server");
+    return compareOperationalIndex(client, owner, new Date().toISOString());
+  });

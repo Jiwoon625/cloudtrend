@@ -11,6 +11,8 @@ import {
 import type { EtfInstrumentChartBundle } from "@/lib/engine/etfInstrumentChart";
 import type { InstrumentChartRange } from "@/lib/engine/instrumentChart";
 import type { AnalysisPayload } from "@/lib/marketPayload";
+import { etfPartialEvidence } from "@/lib/etfPartialEvidence";
+import { OPERATIONAL_INDEX_START } from "@/lib/operationalUnderlyingIndex";
 import {
   Bar,
   Brush,
@@ -149,7 +151,11 @@ export default function EtfInstrumentCharts({
         point.tradeDate <= bundle.underlyingAsOfDate &&
         (!bundle.underlyingFirstDate || point.tradeDate >= bundle.underlyingFirstDate),
     )
-    .map((point) => ({ ...point, plotClose: point.identityBreak ? null : point.close }));
+    .map((point) => ({
+      ...point,
+      plotClose: point.identityBreak ? null : point.close,
+      plotMa60: point.identityBreak ? null : point.ma60,
+    }));
   const loading = query.isFetching || priceQuery.isFetching || (!owner && !authError);
   const progressKey = `${owner}:${symbol}:${revision}:${range}`;
   const retry = () => {
@@ -162,6 +168,18 @@ export default function EtfInstrumentCharts({
   };
   const etfAsOfDate = bundle?.asOfDate ?? payload.analysis.asOfDate;
   const underlyingAsOfDate = bundle?.underlyingAsOfDate;
+  const currentRow = payload.analysis.rows.find((row) => row.instrument.symbol === symbol);
+  const isStrategyTarget = currentRow
+    ? etfPartialEvidence(currentRow, payload.analysis.asOfDate).isStrategyTarget
+    : false;
+  const operationalCurrent =
+    bundle?.symbol === symbol &&
+    bundle.asOfDate === payload.analysis.asOfDate &&
+    bundle.underlyingIndexAsOfDate === bundle.asOfDate &&
+    bundle.underlyingIndexVersion &&
+    bundle.underlyingIndexArtifactSha256
+      ? bundle.underlying.find((point) => point.tradeDate === bundle.asOfDate)
+      : undefined;
   return (
     <>
       {renderSummary?.(bundle)}
@@ -317,12 +335,50 @@ export default function EtfInstrumentCharts({
         {bundle ? (
           <div className="mt-4 border-t border-border pt-3" aria-label="실제 기초지수와 MA60">
             <h3 className="text-sm font-semibold">기초지수 · MA60</h3>
+            {operationalCurrent ? (
+              <div
+                className="my-2 rounded border border-border p-2 text-xs"
+                aria-label="현재 기초지수 MA60 근거"
+              >
+                <p className="font-medium">
+                  {isStrategyTarget
+                    ? "현재 전략과 동일한 기초지수 근거"
+                    : "기초지수·MA60 참고값 · 매매 신호 아님"}
+                </p>
+                <p className="mt-1">
+                  {operationalCurrent.tradeDate} · 기초지수{" "}
+                  {operationalCurrent.close === null
+                    ? "미관측"
+                    : numberLabel(operationalCurrent.close)}{" "}
+                  · MA60{" "}
+                  {operationalCurrent.ma60 === null
+                    ? "미관측"
+                    : numberLabel(operationalCurrent.ma60)}
+                </p>
+                {!isStrategyTarget ? (
+                  <p className="mt-1 text-muted-foreground">
+                    현금·채권 등 기존 전략 대상 밖 ETF에는 새 진입·청산 규칙을 적용하지 않습니다.
+                  </p>
+                ) : null}
+                <p
+                  className="mt-1 break-all text-muted-foreground"
+                  title={bundle.underlyingIndexArtifactSha256}
+                >
+                  근거 버전 {bundle.underlyingIndexVersion} · SHA256{" "}
+                  {bundle.underlyingIndexArtifactSha256?.slice(0, 12)}
+                </p>
+                <p className="mt-1 text-muted-foreground">
+                  적용 가능 시각 {bundle.underlyingIndexAvailableFrom} · {OPERATIONAL_INDEX_START}
+                  부터 신규 스크리닝에 적용
+                </p>
+              </div>
+            ) : null}
             {underlying.length > 0 && underlyingAsOfDate ? (
               <>
                 <p className="mt-1 break-words text-[11px] text-muted-foreground">
                   기초지수 (최근 관측: {bundle.underlyingName ?? "지수명 미확인"})
                   {bundle.underlyingSource
-                    ? ` · 출처 ${bundle.underlyingSource === "KRX_ETF" ? "KRX 관측" : bundle.underlyingSource}`
+                    ? ` · 출처 ${bundle.underlyingSource === "KRX_ETF" ? "KRX 관측" : bundle.underlyingSource === "KRX_ETF_APPROVED_BASE" ? "승인 KRX 이력 + 일별 관측" : bundle.underlyingSource}`
                     : ""}
                 </p>
                 <p className="mt-1 text-[11px] text-muted-foreground">
@@ -356,7 +412,7 @@ export default function EtfInstrumentCharts({
                         isAnimationActive={false}
                       />
                       <Line
-                        dataKey="ma60"
+                        dataKey="plotMa60"
                         name="MA60"
                         stroke="var(--color-chart-1)"
                         strokeWidth={1.6}
@@ -384,12 +440,21 @@ export default function EtfInstrumentCharts({
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   지수명 변경·미확인 또는 결측 구간에서는 MA60을 비워 둡니다.
                 </p>
+                {bundle.underlyingIndexVersion ? (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    운영 MA60은 승인된 60거래일 이력으로 계산합니다. {OPERATIONAL_INDEX_START} 이전
+                    차트와 M0 총점은 기존 원자료를 유지합니다.
+                  </p>
+                ) : null}
               </>
             ) : (
               <p className="mt-2 text-xs text-muted-foreground">
                 실제 기초지수 시계열이 없어 차트를 표시할 수 없습니다.
               </p>
             )}
+            {bundle.underlyingIndexVersion && bundle.issues.length > 0 ? (
+              <p className="mt-2 text-[11px] text-muted-foreground">{bundle.issues.join(" · ")}</p>
+            ) : null}
           </div>
         ) : null}
         <p className="mt-2 text-[11px] text-muted-foreground">

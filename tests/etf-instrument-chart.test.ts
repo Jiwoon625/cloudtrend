@@ -8,6 +8,12 @@ import {
 } from "../src/lib/engine/etfInstrumentChart";
 import { etfPartialEvidence } from "../src/lib/etfPartialEvidence";
 import { runAnalysis } from "../src/lib/engine/pipeline";
+import { assertEtfChartMatchesCard } from "../src/lib/instrumentChartContract";
+import { withOperationalEtfMa60 } from "../src/lib/operationalEtfMa60";
+import {
+  OPERATIONAL_INDEX_START,
+  type OperationalIndexProvider,
+} from "../src/lib/operationalUnderlyingIndex";
 import { parseManualMarketDataWithReferences as parseManualMarketData } from "../src/lib/krxReviewReferenceParser";
 
 import {
@@ -16,6 +22,140 @@ import {
   addEtfChartDomesticSector,
   ETF_CHART_TEST_SYMBOL as symbol,
 } from "./fixtures/etf-chart-fixture";
+
+function operationalProvider(
+  ds: ReturnType<typeof fixture>,
+  target = symbol,
+): OperationalIndexProvider {
+  return {
+    version: "approved-fixture-v1",
+    artifactSha256: "f".repeat(64),
+    asOfDate: ds.asOfDate,
+    availableFrom: "2026-10-17T06:00:00Z",
+    rows: {
+      [target]: {
+        indexName: ETF_MAPPING[target]!.underlyingIndexName,
+        issues: [],
+        status: "ready",
+        observations: ds.tradeDates.map((date, index) => ({
+          date,
+          close: 300 + index,
+          ma60: 280 + index,
+        })),
+      },
+    },
+  };
+}
+
+describe("operational underlying chart isolation", () => {
+  it("keeps all M0, prices and pre-activation underlying points unchanged without mutating inputs", async () => {
+    const ds = fixture(190);
+    const provider = operationalProvider(ds);
+    const before = JSON.stringify({ ds, provider });
+    const baseline = etfInstrumentChartSeries(ds, symbol, "all");
+    const chart = etfInstrumentChartSeries(ds, symbol, "all", provider);
+    expect(chart.chart).toEqual(baseline.chart);
+    expect(chart.previousM0).toEqual(baseline.previousM0);
+    expect(chart.underlying.filter((point) => point.tradeDate < OPERATIONAL_INDEX_START)).toEqual(
+      baseline.underlying.filter((point) => point.tradeDate < OPERATIONAL_INDEX_START),
+    );
+    for (const point of chart.underlying.filter(
+      (point) => point.tradeDate >= OPERATIONAL_INDEX_START,
+    )) {
+      const expected = provider.rows[symbol]!.observations.find(
+        (value) => value.date === point.tradeDate,
+      )!;
+      expect(point).toMatchObject({ close: expected.close, ma60: expected.ma60 });
+    }
+    expect(chart).toMatchObject({
+      underlyingSource: "KRX_ETF_APPROVED_BASE",
+      underlyingIndexVersion: provider.version,
+      underlyingIndexArtifactSha256: provider.artifactSha256,
+      underlyingIndexAvailableFrom: provider.availableFrom,
+      underlyingIndexAsOfDate: provider.asOfDate,
+    });
+    const recent = await buildEtfInstrumentChart(ds, symbol, "120", provider);
+    expect(recent.chart).toEqual(chart.chart.slice(-120));
+    expect(recent.underlying).toEqual(chart.underlying.slice(-120));
+    expect(JSON.stringify({ ds, provider })).toBe(before);
+  });
+  it("never restates pre-activation charts even when a provider was supplied", () => {
+    const ds = fixture();
+    ds.asOfDate = "2026-10-16";
+    expect(etfInstrumentChartSeries(ds, symbol, "all", operationalProvider(ds))).toEqual(
+      etfInstrumentChartSeries(ds, symbol, "all"),
+    );
+  });
+  it.each(["missing", "duplicate", "quarantined", "nonfinite"])(
+    "does not fall back to raw underlying when operational current evidence is %s",
+    (failure) => {
+      const ds = fixture(190);
+      const provider = operationalProvider(ds);
+      const row = provider.rows[symbol]!;
+      if (failure === "missing") row.observations.pop();
+      if (failure === "duplicate") row.observations.push({ ...row.observations.at(-1)! });
+      if (failure === "quarantined") row.status = "quarantined";
+      if (failure === "nonfinite")
+        Object.assign(row.observations.at(-1)!, { close: Infinity, ma60: NaN });
+      expect(etfInstrumentChartSeries(ds, symbol, "all", provider).underlying.at(-1)).toMatchObject(
+        { close: null, ma60: null },
+      );
+    },
+  );
+  it("rejects a different provider as-of date and ignores future provider observations", () => {
+    const ds = fixture(190);
+    const provider = operationalProvider(ds);
+    expect(() =>
+      etfInstrumentChartSeries(ds, symbol, "all", { ...provider, asOfDate: "2026-10-16" }),
+    ).toThrow("기준일");
+    const expected = etfInstrumentChartSeries(ds, symbol, "all", provider);
+    provider.rows[symbol]!.observations.push({ date: "2099-01-01", close: 1e20, ma60: 1e20 });
+    expect(etfInstrumentChartSeries(ds, symbol, "all", provider)).toEqual(expected);
+  });
+  it("exposes cash/bond reference values without changing their price/M0 or strategy inputs", () => {
+    const ds = fixture(190);
+    const target = Object.entries(ETF_MAPPING).find(
+      ([, value]) => value.assetClass === "bond_cash",
+    )![0];
+    ds.instruments[0] = { ...ds.instruments[0]!, symbol: target, id: target };
+    ds.bars = { [target]: ds.bars[symbol]! };
+    const before = JSON.stringify(ds);
+    const baseline = etfInstrumentChartSeries(ds, target, "all");
+    const provider = operationalProvider(ds, target);
+    const chart = etfInstrumentChartSeries(ds, target, "all", provider);
+    expect(chart.chart).toEqual(baseline.chart);
+    expect(chart.underlying.at(-1)).toMatchObject({ close: 489, ma60: 469 });
+    expect(chart.issues.join(" · ")).toContain("전략 대상 아님");
+    expect(JSON.stringify(ds)).toBe(before);
+    const analysis = withOperationalEtfMa60(runAnalysis(ds), provider);
+    expect(() => assertEtfChartMatchesCard(chart, analysis, target)).not.toThrow();
+    expect(() =>
+      assertEtfChartMatchesCard({ ...chart, underlyingIndexVersion: "wrong" }, analysis, target),
+    ).toThrow("출처 버전");
+  });
+  it("checks exact operational card/chart values and revision independently of unchanged M0", () => {
+    const ds = fixture(190);
+    const provider = operationalProvider(ds);
+    const chart = etfInstrumentChartSeries(ds, symbol, "all", provider);
+    const analysis = withOperationalEtfMa60(runAnalysis(ds), provider);
+    expect(() => assertEtfChartMatchesCard(chart, analysis, symbol)).not.toThrow();
+    for (const change of [
+      { underlyingIndexVersion: "other" },
+      { underlyingIndexArtifactSha256: "e".repeat(64) },
+      { underlyingIndexAsOfDate: "2026-10-16" },
+      { underlyingIndexAvailableFrom: "2026-10-18T06:00:00Z" },
+      { underlying: chart.underlying.slice(0, -1) },
+      { underlying: [...chart.underlying.slice(0, -1), { ...chart.underlying.at(-1)!, close: 1 }] },
+      { underlying: [...chart.underlying.slice(0, -1), { ...chart.underlying.at(-1)!, ma60: 1 }] },
+    ])
+      expect(() => assertEtfChartMatchesCard({ ...chart, ...change }, analysis, symbol)).toThrow(
+        "기초지수",
+      );
+    expect(() =>
+      assertEtfChartMatchesCard(etfInstrumentChartSeries(ds, symbol, "all"), analysis, symbol),
+    ).toThrow("기초지수");
+  });
+});
 
 describe("ETF historical M0 and real underlying evidence", () => {
   it("plots total M0 with the exact 62.5/7.5/15/15 policy and matches the current card", () => {

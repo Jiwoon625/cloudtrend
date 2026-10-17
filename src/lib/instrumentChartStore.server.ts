@@ -13,6 +13,7 @@ import {
 import type { MarketDataset } from "./engine/dataset";
 import type { AnalysisResult } from "./engine/pipeline";
 import type { ScoringConfig } from "./engine/scoring";
+import type { OperationalIndexProvider } from "./operationalUnderlyingIndex";
 import {
   buildEtfInstrumentChart,
   etfObservedPriceChart,
@@ -31,6 +32,7 @@ export interface ChartContext {
   dataset: MarketDataset;
   analysis: AnalysisResult;
   config: ScoringConfig;
+  operationalIndex?: OperationalIndexProvider | undefined;
 }
 /** Restore chart inputs without rerunning portfolio/onset/full-screening analysis. */
 export function restoreChartContext(
@@ -38,13 +40,19 @@ export function restoreChartContext(
   analysis: AnalysisResult,
   config: ScoringConfig,
   expectedDigest: string,
+  operationalIndex?: OperationalIndexProvider,
 ): ChartContext {
   const digest = createHash("sha256")
     .update(stableCacheJson(deterministicAnalysis(analysis)))
     .digest("hex");
   if (digest !== expectedDigest)
     throw new Error("저장된 스크리닝 결과 검증에 실패했습니다. 스크리닝을 다시 실행해 주세요.");
-  return { dataset: buildFullUniverseSectorDataset(rawDataset), analysis, config };
+  return {
+    dataset: buildFullUniverseSectorDataset(rawDataset),
+    analysis,
+    config,
+    ...(operationalIndex ? { operationalIndex } : {}),
+  };
 }
 // Bounded opportunistic server memory reuse, always scoped to user and immutable revision.
 let recent: { key: string; at: number; context: ChartContext } | undefined;
@@ -180,7 +188,7 @@ export async function prepareChartBucket(
 ) {
   const path = chartPath(identity, symbol, range, kind);
   // Keep strict warmup writes separate from best-effort on-demand writes.
-  const pendingKey = `${uid}:${path}:${stableCacheJson(ctx.config)}:${allowUncached}`;
+  const pendingKey = `${uid}:${path}:${stableCacheJson(ctx.config)}:${ctx.operationalIndex?.version ?? ""}:${ctx.operationalIndex?.artifactSha256 ?? ""}:${allowUncached}`;
   let pending = preparing.get(pendingKey);
   if (!pending) {
     pending = prepare().finally(() => preparing.delete(pendingKey));
@@ -208,7 +216,7 @@ export async function prepareChartBucket(
       if (kind === "prices") bundle[s] = priceChart(ctx, s, range);
       else if (kind === "etf-prices") bundle[s] = etfObservedPriceChart(ctx.dataset, s, range);
       else if (kind === "etf") {
-        const chart = await buildEtfInstrumentChart(ctx.dataset, s, range);
+        const chart = await buildEtfInstrumentChart(ctx.dataset, s, range, ctx.operationalIndex);
         assertEtfChartMatchesCard(chart, ctx.analysis, s);
         bundle[s] = chart;
       } else {
