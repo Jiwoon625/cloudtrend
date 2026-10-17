@@ -36,7 +36,10 @@ vi.mock("@/lib/localAnalysis", () => ({ computeLocalAnalysis: mocks.compute }));
 vi.mock("@/lib/scoringConfigStore", () => ({
   getActiveScoringConfig: () => DEFAULT_SCORING_CONFIG,
 }));
-vi.mock("@/lib/sourceRegistry", () => ({ listRegisteredSources: mocks.sources }));
+vi.mock("@/lib/sourceRegistry", () => ({
+  listRegisteredSources: mocks.sources,
+  listActiveScreeningSourceFingerprints: mocks.sources,
+}));
 vi.mock("@/lib/screeningHistory", () => ({
   buildSnapshot: vi.fn(),
   hydrateSnapshots: vi.fn(),
