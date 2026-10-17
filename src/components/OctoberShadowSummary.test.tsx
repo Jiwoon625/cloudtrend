@@ -135,12 +135,12 @@ it("shows the independent holdings table and fixed-budget rule without actual-ac
   expect(html).not.toContain("매수 기록 저장");
 });
 
-it("shows allocator as an uninitialized separate CM6 placeholder without a ninth registry", () => {
+it("keeps personal capital planning and obsolete allocation setup out of independent Shadow", () => {
   const html = render(null);
-  expect(html).toContain("자산배분 통합 Shadow");
-  expect(html).toContain("배분전략 확정 대기 · CM6");
-  expect(html).toContain("총 계획금액과 시장 배분을 확인한 뒤");
-  expect(html).toContain("8개 독립 장부의 자금을 합산하지 않습니다");
+  expect(html).not.toContain("운용계획");
+  expect(html).not.toContain("배분전략 확정 대기 · CM6");
+  expect(html).not.toContain("총 계획금액과 시장 배분을 확인한 뒤");
+  expect(html).toContain("독립 Shadow 원장");
 });
 
 it("renders only the selected book and excludes beta replay from a restart view", async () => {

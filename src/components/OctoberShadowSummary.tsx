@@ -1,9 +1,8 @@
 import { formatKstDateTime } from "@/lib/format";
 import { IntegratedAllocationShadowPanel } from "./IntegratedAllocationShadowPanel";
 import { ShadowTimeline } from "./ShadowTimeline";
-import { OperatingCapitalPlan } from "./OperatingCapitalPlan";
 import { RESTART_SERIES_VERSION, type AdoptedSeriesKind } from "@/lib/ledger/modelSeries";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/cloud";
 import { octoberShadowSummaryServer } from "@/lib/octoberShadowSummary.functions";
@@ -190,7 +189,6 @@ export function OctoberShadowSummary() {
         <IntegratedAllocationShadowPanel owner={owner} period={{ from, to }} />
       ) : (
         <OctoberShadowSummaryContent
-          capitalPlan={<OperatingCapitalPlan />}
           selectedKind={kind}
           period={{ from, to }}
           summary={owner ? (query.data ?? null) : null}
@@ -205,7 +203,6 @@ export function OctoberShadowSummary() {
 }
 
 export function OctoberShadowSummaryContent({
-  capitalPlan,
   summary: requestedSummary,
   loading,
   refreshing = false,
@@ -214,7 +211,6 @@ export function OctoberShadowSummaryContent({
   error,
   refresh,
 }: {
-  capitalPlan?: ReactNode;
   summary: Summary | null;
   loading: boolean;
   refreshing?: boolean;
@@ -443,22 +439,6 @@ export function OctoberShadowSummaryContent({
             ))}
         </div>
       ) : null}
-      {capitalPlan ?? (
-        <aside
-          className="space-y-2 rounded-lg border border-dashed p-4"
-          aria-label="자산배분 통합 Shadow 준비 상태"
-        >
-          <h3 className="font-semibold">자산배분 통합 Shadow</h3>
-          <p role="status" className="text-sm">
-            배분전략 확정 대기 · CM6
-          </p>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            총 계획금액과 시장 배분을 확인한 뒤 시작하는 별도 통합 장부입니다. 위 8개 독립 장부의
-            자금을 합산하지 않습니다. 배분비중과 전략을 확정한 뒤 기록을 시작하며, 현재는
-            거래·비중·성과 기록이 없습니다.
-          </p>
-        </aside>
-      )}
     </section>
   );
 }
