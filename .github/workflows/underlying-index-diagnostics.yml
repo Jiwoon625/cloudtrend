@@ -5,6 +5,7 @@ on:
       - package.json
       - package-lock.json
       - src/lib/operationalUnderlyingIndex*
+      - src/lib/operationalImpactComparison.ts
       - src/lib/operationalEtfMa60.ts
       - src/lib/operationalIndexInstallation.server.ts
       - src/lib/screeningInputIdentity.ts

@@ -53,21 +53,23 @@ export const installUnderlyingIndexArtifactServer = createServerFn({ method: "PO
   });
 
 export const compareOperationalIndexServer = createServerFn({ method: "POST" })
-  .inputValidator((input: { accessToken: string; config?: unknown }) => ({
+  .inputValidator((input: { accessToken: string; config?: unknown; phase: "web" | "actions" }) => ({
     accessToken: String(input.accessToken ?? ""),
     config: mergeScoringConfig(input.config),
+    phase: input.phase === "actions" ? ("actions" as const) : ("web" as const),
   }))
   .handler(async ({ data }) => {
     const { client, owner } = await authenticate(data.accessToken);
-    const { compareOperationalIndex } = await import("./operationalUnderlyingIndex.server");
+    const { compareOperationalIndexPhase } = await import("./operationalUnderlyingIndex.server");
     try {
       return {
         ok: true as const,
-        comparison: await compareOperationalIndex(
+        comparison: await compareOperationalIndexPhase(
           client,
           owner,
           new Date().toISOString(),
           data.config,
+          data.phase,
         ),
       };
     } catch (error) {

@@ -39,7 +39,11 @@ vi.mock("../src/lib/engine/fullMarketAnalysis", () => ({
   },
 }));
 vi.mock("../src/lib/operationalEtfMa60", () => ({ withOperationalEtfMa60: (a: unknown) => a }));
-import { compareOperationalIndex } from "../src/lib/operationalUnderlyingIndex.server";
+import { combineOperationalImpactPhases } from "../src/lib/operationalImpactComparison";
+import {
+  compareOperationalIndex,
+  compareOperationalIndexPhase,
+} from "../src/lib/operationalUnderlyingIndex.server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 describe("operational impact audit config", () => {
   it("reports the failing no-save phase without starting later phases", async () => {
@@ -51,6 +55,35 @@ describe("operational impact audit config", () => {
     } finally {
       st.fail = false;
     }
+  });
+  it("rejects drift between independent authenticated calculation phases", async () => {
+    const web = await compareOperationalIndexPhase(
+      {} as SupabaseClient,
+      "owner",
+      "2026-10-19T12:00:00Z",
+      DEFAULT_SCORING_CONFIG,
+      "web",
+    );
+    const actions = await compareOperationalIndexPhase(
+      {} as SupabaseClient,
+      "owner",
+      "2026-10-19T12:00:00Z",
+      DEFAULT_SCORING_CONFIG,
+      "actions",
+    );
+    expect(combineOperationalImpactPhases(web, actions).ingressComparison.resultDigestMatched).toBe(
+      true,
+    );
+    expect(() =>
+      combineOperationalImpactPhases(web, {
+        ...actions,
+        report: { ...actions.report, sourceSetDigest: "changed" },
+      }),
+    ).toThrow("입력·설정이 변경");
+    expect(() =>
+      combineOperationalImpactPhases(web, { ...actions, webResultDigest: "changed" }),
+    ).toThrow("비교 불일치");
+    expect(() => combineOperationalImpactPhases(actions, web)).toThrow("비교 단계");
   });
   it("passes the same merged active config to the full engine and reports its provenance", async () => {
     const config = mergeScoringConfig({
