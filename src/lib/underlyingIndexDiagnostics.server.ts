@@ -76,22 +76,31 @@ async function validateOriginalArtifact(
   owner: string,
   artifact: UnderlyingIndexArtifact,
   now: string,
-): Promise<void> {
+  suppliedOriginalText?: string,
+): Promise<{ text: string; missing: boolean } | null> {
   const preference = artifact.approvedPreference;
-  if (!preference) return;
+  if (!preference) {
+    if (suppliedOriginalText !== undefined)
+      throw new Error("승인된 빈티지에만 검증용 원본을 함께 설치할 수 있습니다.");
+    return null;
+  }
   if (preference.originalArtifactSha256 !== UNDERLYING_INDEX_RELEASE.originalArtifactSha256)
     throw new Error("승인 전 원본 지수 자료의 해시가 승인된 원본과 다릅니다.");
-  const originalText = await readPinnedArtifactText(
+  const storedOriginalText = await readPinnedArtifactText(
     client,
     owner,
     UNDERLYING_INDEX_RELEASE.originalArtifactSha256,
   );
-  if (originalText === null)
+  const originalText = storedOriginalText ?? suppliedOriginalText;
+  if (originalText === undefined)
     throw new Error("승인 전 원본 지수 자료가 없어 승인 범위를 검증할 수 없습니다.");
+  if (indexSha256(originalText) !== UNDERLYING_INDEX_RELEASE.originalArtifactSha256)
+    throw new Error("승인 전 원본 지수 자료의 해시가 승인된 원본과 다릅니다.");
   validateUnderlyingIndexPreferenceDelta(
     artifact,
     parseUnderlyingIndexArtifact(JSON.parse(originalText), now),
   );
+  return { text: originalText, missing: storedOriginalText === null };
 }
 
 /** Returns approved bytes only after validating the pinned original and bounded approval delta. */
@@ -109,35 +118,87 @@ export async function readArtifactText(
   return text;
 }
 
-/** Only a pinned, reviewed extraction may be installed. No overwrite, registry mutation or activation. */
-export async function installUnderlyingIndexArtifact(
-  client: SupabaseClient,
-  owner: string,
+function decodePinnedCompressedArtifact(
   compressedBase64: string,
+  expectedDigest: string,
   now: string,
 ) {
-  if (!UNDERLYING_INDEX_RELEASE.enabled)
-    throw new Error("기초지수 진단 연결이 비활성화되었습니다.");
   if (compressedBase64.length > 4_000_000)
     throw new Error("전용 자료의 압축 크기 제한을 초과했습니다.");
   const bytes = gunzipSync(Buffer.from(compressedBase64, "base64"), {
     maxOutputLength: 16 * 1024 * 1024,
   });
-  const digest = indexSha256(bytes);
-  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  if (digest !== UNDERLYING_INDEX_RELEASE.sha256)
+  if (indexSha256(bytes) !== expectedDigest)
     throw new Error("사전 검증된 기초지수 자료와 해시가 다릅니다.");
-  const artifact = parseUnderlyingIndexArtifact(JSON.parse(text), now);
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  return { text, artifact: parseUnderlyingIndexArtifact(JSON.parse(text), now) };
+}
+
+/** Only pinned, reviewed extractions may be installed. No overwrite, registry mutation or activation. */
+export async function installUnderlyingIndexArtifact(
+  client: SupabaseClient,
+  owner: string,
+  compressedBase64: string,
+  now: string,
+  originalCompressedBase64?: string,
+) {
+  if (!UNDERLYING_INDEX_RELEASE.enabled)
+    throw new Error("기초지수 진단 연결이 비활성화되었습니다.");
+  const digest = UNDERLYING_INDEX_RELEASE.sha256;
+  const { text, artifact } = decodePinnedCompressedArtifact(compressedBase64, digest, now);
   if (artifact.cutoffDate !== UNDERLYING_INDEX_RELEASE.cutoffDate)
     throw new Error("자료 기준일이 승인된 빈티지와 다릅니다.");
-  await validateOriginalArtifact(client, owner, artifact, now);
+  const suppliedOriginal =
+    originalCompressedBase64 === undefined
+      ? undefined
+      : decodePinnedCompressedArtifact(
+          originalCompressedBase64,
+          UNDERLYING_INDEX_RELEASE.originalArtifactSha256,
+          now,
+        );
+  // Validate both pinned bytes and the complete approval delta before either object can be written.
+  // A stored original is always read and reused; a corrupt object must never be replaced.
+  const original = await validateOriginalArtifact(
+    client,
+    owner,
+    artifact,
+    now,
+    suppliedOriginal?.text,
+  );
   const beforeSources = sourceSetDigest(await listActiveSources(client, owner));
   if (
     artifact.approvedPreference &&
     beforeSources !== artifact.approvedPreference.expectedSourceSetDigest
   )
     throw new Error("활성 원천 집합이 승인 범위와 달라 전용 자료 설치를 중단했습니다.");
-  const existing = await readArtifactText(client, owner, now);
+  const existing = await readPinnedArtifactText(client, owner, digest);
+  if (sourceSetDigest(await listActiveSources(client, owner)) !== beforeSources)
+    throw new Error("원천 집합이 변경되어 저장을 중단했습니다.");
+  if (original?.missing) {
+    let uploadError: string | undefined;
+    try {
+      const { error } = await client.storage
+        .from(BUCKET)
+        .upload(
+          underlyingIndexPath(owner, UNDERLYING_INDEX_RELEASE.originalArtifactSha256),
+          new Blob([original.text], { type: "application/json" }),
+          { upsert: false, contentType: "application/json", cacheControl: "31536000" },
+        );
+      uploadError = error?.message;
+    } catch (error) {
+      uploadError = error instanceof Error ? error.message : "원본 저장 결과를 확인할 수 없습니다.";
+    }
+    // Resolve an uncertain response or concurrent identical install with one read, never overwrite/retry.
+    const reread = await readPinnedArtifactText(
+      client,
+      owner,
+      UNDERLYING_INDEX_RELEASE.originalArtifactSha256,
+    );
+    if (reread === null || reread !== original.text)
+      throw new Error(uploadError ?? "원본 저장 후 동일성 검증에 실패했습니다.");
+    if (sourceSetDigest(await listActiveSources(client, owner)) !== beforeSources)
+      throw new Error("원천 집합이 변경되어 승인 자료 저장을 중단했습니다.");
+  }
   if (existing !== null)
     return {
       installed: true as const,
@@ -146,8 +207,6 @@ export async function installUnderlyingIndexArtifact(
       bytes: Buffer.byteLength(text),
       sourceSetDigest: beforeSources,
     };
-  if (sourceSetDigest(await listActiveSources(client, owner)) !== beforeSources)
-    throw new Error("원천 집합이 변경되어 저장을 중단했습니다.");
   const { error } = await client.storage
     .from(BUCKET)
     .upload(underlyingIndexPath(owner), new Blob([text], { type: "application/json" }), {

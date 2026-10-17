@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     include: [
       "tests/underlying-index*.test.ts",
-      "tests/operational-ma60.test.ts",
+      "tests/operational-ma60*.test.ts",
       "tests/etf-instrument-chart.test.ts",
       "tests/etf-instrument-chart-ui.test.tsx",
       "tests/instrument-chart-cache.test.ts",

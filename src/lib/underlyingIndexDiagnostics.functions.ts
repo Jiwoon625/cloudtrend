@@ -1,3 +1,4 @@
+import { mergeScoringConfig } from "./engine/scoring";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -27,10 +28,19 @@ export const readUnderlyingIndexDiagnosticsServer = createServerFn({ method: "PO
     return readUnderlyingIndexDiagnostics(client, owner, new Date().toISOString());
   });
 export const installUnderlyingIndexArtifactServer = createServerFn({ method: "POST" })
-  .inputValidator((input: { accessToken: string; compressedBase64: string }) => ({
-    accessToken: String(input.accessToken ?? ""),
-    compressedBase64: String(input.compressedBase64 ?? ""),
-  }))
+  .inputValidator(
+    (input: {
+      accessToken: string;
+      compressedBase64: string;
+      originalCompressedBase64?: string;
+    }) => ({
+      accessToken: String(input.accessToken ?? ""),
+      compressedBase64: String(input.compressedBase64 ?? ""),
+      originalCompressedBase64: input.originalCompressedBase64
+        ? String(input.originalCompressedBase64)
+        : undefined,
+    }),
+  )
   .handler(async ({ data }) => {
     const { client, owner } = await authenticate(data.accessToken);
     return installUnderlyingIndexArtifact(
@@ -38,15 +48,17 @@ export const installUnderlyingIndexArtifactServer = createServerFn({ method: "PO
       owner,
       data.compressedBase64,
       new Date().toISOString(),
+      data.originalCompressedBase64,
     );
   });
 
 export const compareOperationalIndexServer = createServerFn({ method: "POST" })
-  .inputValidator((input: { accessToken: string }) => ({
+  .inputValidator((input: { accessToken: string; config?: unknown }) => ({
     accessToken: String(input.accessToken ?? ""),
+    config: mergeScoringConfig(input.config),
   }))
   .handler(async ({ data }) => {
     const { client, owner } = await authenticate(data.accessToken);
     const { compareOperationalIndex } = await import("./operationalUnderlyingIndex.server");
-    return compareOperationalIndex(client, owner, new Date().toISOString());
+    return compareOperationalIndex(client, owner, new Date().toISOString(), data.config);
   });

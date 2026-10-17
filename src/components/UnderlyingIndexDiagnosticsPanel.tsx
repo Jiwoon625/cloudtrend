@@ -1,3 +1,4 @@
+import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import { useState } from "react";
 import { supabase } from "@/lib/cloud";
 import {
@@ -35,13 +36,16 @@ export function UnderlyingIndexDiagnosticsPanel() {
   const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [originalFile, setOriginalFile] = useState<File | null>(null);
   async function compare() {
     setBusy(true);
     setError("");
     setComparison(null);
     try {
       setComparison(
-        await compareOperationalIndexServer({ data: { accessToken: await accessToken() } }),
+        await compareOperationalIndexServer({
+          data: { accessToken: await accessToken(), config: getActiveScoringConfig() },
+        }),
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -71,7 +75,11 @@ export function UnderlyingIndexDiagnosticsPanel() {
     setNotice("");
     try {
       const installed = await installUnderlyingIndexArtifactServer({
-        data: { accessToken: await accessToken(), compressedBase64: await compressedFile(file) },
+        data: {
+          accessToken: await accessToken(),
+          compressedBase64: await compressedFile(file),
+          ...(originalFile ? { originalCompressedBase64: await compressedFile(originalFile) } : {}),
+        },
       });
       setNotice(
         installed.reused
@@ -135,6 +143,13 @@ export function UnderlyingIndexDiagnosticsPanel() {
             신호 비교 결과 내려받기
           </Button>
         </div>
+      )}
+      {comparison && (
+        <p className="text-xs text-muted-foreground">
+          화면의 활성 점수설정 기준 ·{" "}
+          {comparison.usesDefaultScoringConfig ? "기본 설정" : "사용자 설정"} · 설정 해시{" "}
+          {comparison.scoringConfigSha256.slice(0, 12)}
+        </p>
       )}
       {error && (
         <p role="alert" className="text-sm text-destructive">
@@ -277,6 +292,16 @@ export function UnderlyingIndexDiagnosticsPanel() {
           disabled={busy}
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
         />
+        <label className="block text-xs text-muted-foreground">
+          승인 전 원본 검증자료 (최초 설치 계정만, 이미 있으면 생략)
+          <input
+            type="file"
+            accept="application/json,.json"
+            disabled={busy}
+            onChange={(e) => setOriginalFile(e.target.files?.[0] ?? null)}
+            className="mt-1 block text-xs"
+          />
+        </label>
         <Button
           className="mt-2"
           size="sm"

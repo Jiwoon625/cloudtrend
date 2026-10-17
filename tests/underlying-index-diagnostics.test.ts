@@ -408,6 +408,146 @@ describe("approved artifact original-lineage validation", () => {
     expect([...f.bytes].slice(0, before.length)).toEqual(before);
     expect(await readArtifactText(f.client, owner, now)).toBe(JSON.stringify(f.artifact));
   });
+  it("provisions a missing pinned original and approved artifact immutably, then reuses both", async () => {
+    const f = approvedClient();
+    const approvedPath = underlyingIndexPath(owner);
+    const originalPath = underlyingIndexPath(owner, release.originalArtifactSha256);
+    f.bytes.delete(approvedPath);
+    f.bytes.delete(originalPath);
+    const before = [...f.bytes];
+    const approved = gzipSync(JSON.stringify(f.artifact)).toString("base64");
+    const original = gzipSync(JSON.stringify(f.original)).toString("base64");
+    const first = await installUnderlyingIndexArtifact(f.client, owner, approved, now, original);
+    expect(first.reused).toBe(false);
+    expect(f.upload.mock.calls.map(([path]) => path)).toEqual([originalPath, approvedPath]);
+    expect(f.upload.mock.calls.every(([, , options]) => options.upsert === false)).toBe(true);
+    expect([...f.bytes].slice(0, before.length)).toEqual(before);
+    expect(f.bytes.get(originalPath)).toBe(JSON.stringify(f.original));
+    expect(await readArtifactText(f.client, owner, now)).toBe(JSON.stringify(f.artifact));
+    const second = await installUnderlyingIndexArtifact(f.client, owner, approved, now, original);
+    expect(second.reused).toBe(true);
+    expect(f.upload).toHaveBeenCalledTimes(2);
+  });
+  it("reuses an existing verified original even when an optional copy is supplied", async () => {
+    const f = approvedClient();
+    f.bytes.delete(underlyingIndexPath(owner));
+    const originalPath = underlyingIndexPath(owner, release.originalArtifactSha256);
+    const originalText = f.bytes.get(originalPath);
+    await installUnderlyingIndexArtifact(
+      f.client,
+      owner,
+      gzipSync(JSON.stringify(f.artifact)).toString("base64"),
+      now,
+      gzipSync(JSON.stringify(f.original)).toString("base64"),
+    );
+    expect(f.upload.mock.calls.map(([path]) => path)).toEqual([underlyingIndexPath(owner)]);
+    expect(f.bytes.get(originalPath)).toBe(originalText);
+  });
+  it("can provision only the missing original when the approved artifact is already present", async () => {
+    const f = approvedClient();
+    const originalPath = underlyingIndexPath(owner, release.originalArtifactSha256);
+    const approvedText = f.bytes.get(underlyingIndexPath(owner));
+    f.bytes.delete(originalPath);
+    const result = await installUnderlyingIndexArtifact(
+      f.client,
+      owner,
+      gzipSync(JSON.stringify(f.artifact)).toString("base64"),
+      now,
+      gzipSync(JSON.stringify(f.original)).toString("base64"),
+    );
+    expect(result.reused).toBe(true);
+    expect(f.upload.mock.calls.map(([path]) => path)).toEqual([originalPath]);
+    expect(f.bytes.get(underlyingIndexPath(owner))).toBe(approvedText);
+  });
+  it.each(["wrong-hash", "invalid-schema", "oversized", "invalid-pair", "source-drift"])(
+    "rejects %s before writing either artifact for a new owner",
+    async (kind) => {
+      const f = approvedClient();
+      f.bytes.delete(underlyingIndexPath(owner));
+      f.bytes.delete(underlyingIndexPath(owner, release.originalArtifactSha256));
+      let originalText = JSON.stringify(f.original);
+      if (kind === "wrong-hash") originalText += " ";
+      if (kind === "invalid-schema") {
+        originalText = JSON.stringify({ ...f.original, close: 0 });
+        release.originalArtifactSha256 = indexSha256(originalText);
+        f.artifact.approvedPreference!.originalArtifactSha256 = release.originalArtifactSha256;
+      }
+      if (kind === "invalid-pair") f.artifact.symbols[0]!.observations[10]![1] = 999;
+      if (kind === "source-drift") f.sources[0]!.created_at = "2026-10-17T03:00:00.000Z";
+      release.sha256 = indexSha256(JSON.stringify(f.artifact));
+      const suppliedOriginal =
+        kind === "oversized" ? "a".repeat(4_000_001) : gzipSync(originalText).toString("base64");
+      const before = [...f.bytes];
+      await expect(
+        installUnderlyingIndexArtifact(
+          f.client,
+          owner,
+          gzipSync(JSON.stringify(f.artifact)).toString("base64"),
+          now,
+          suppliedOriginal,
+        ),
+      ).rejects.toThrow();
+      expect(f.upload).not.toHaveBeenCalled();
+      expect([...f.bytes]).toEqual(before);
+    },
+  );
+  it("never overwrites a corrupt stored original with the optional valid copy", async () => {
+    const f = approvedClient();
+    f.bytes.delete(underlyingIndexPath(owner));
+    const originalPath = underlyingIndexPath(owner, release.originalArtifactSha256);
+    f.bytes.set(originalPath, "tampered original");
+    await expect(
+      installUnderlyingIndexArtifact(
+        f.client,
+        owner,
+        gzipSync(JSON.stringify(f.artifact)).toString("base64"),
+        now,
+        gzipSync(JSON.stringify(f.original)).toString("base64"),
+      ),
+    ).rejects.toThrow("해시");
+    expect(f.upload).not.toHaveBeenCalled();
+    expect(f.bytes.get(originalPath)).toBe("tampered original");
+  });
+  it.each([
+    "failed",
+    "tampered",
+    "source-drift",
+    "concurrent-identical",
+    "uncertain-written",
+    "uncertain-unwritten",
+  ])("verifies the original upload outcome before approved storage: %s", async (kind) => {
+    const f = approvedClient();
+    const approvedPath = underlyingIndexPath(owner);
+    const originalPath = underlyingIndexPath(owner, release.originalArtifactSha256);
+    f.bytes.delete(approvedPath);
+    f.bytes.delete(originalPath);
+    f.upload.mockImplementationOnce(async (path, body, options) => {
+      expect(path).toBe(originalPath);
+      expect(options.upsert).toBe(false);
+      if (kind === "failed") return { error: { message: "Storage unavailable" } };
+      if (kind === "uncertain-unwritten") throw new Error("Connection interrupted");
+      f.bytes.set(path, kind === "tampered" ? "corrupt readback" : await body.text());
+      if (kind === "uncertain-written") throw new Error("Connection interrupted");
+      if (kind === "source-drift") f.sources[0]!.created_at = "2026-10-17T03:00:00.000Z";
+      return { error: kind === "concurrent-identical" ? { message: "Already exists" } : null };
+    });
+    const install = installUnderlyingIndexArtifact(
+      f.client,
+      owner,
+      gzipSync(JSON.stringify(f.artifact)).toString("base64"),
+      now,
+      gzipSync(JSON.stringify(f.original)).toString("base64"),
+    );
+    if (kind === "concurrent-identical" || kind === "uncertain-written") {
+      await expect(install).resolves.toMatchObject({ installed: true });
+      expect(f.upload.mock.calls.map(([path]) => path)).toEqual([originalPath, approvedPath]);
+      expect(await readArtifactText(f.client, owner, now)).toBe(JSON.stringify(f.artifact));
+    } else {
+      await expect(install).rejects.toThrow();
+      expect(f.upload.mock.calls.map(([path]) => path)).toEqual([originalPath]);
+      expect(f.bytes.has(approvedPath)).toBe(false);
+    }
+  });
   const originalPath = process.env["UNDERLYING_INDEX_ORIGINAL_FILE"] ?? "";
   const approvedPath = process.env["UNDERLYING_INDEX_APPROVED_FILE"] ?? "";
   it.runIf(existsSync(originalPath) && existsSync(approvedPath))(
