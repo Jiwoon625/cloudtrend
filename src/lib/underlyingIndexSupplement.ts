@@ -170,11 +170,13 @@ export function calculateIndexDiagnostics(
       bars.filter((b) => b.tradeDate <= ds.asOfDate).map((b) => [b.tradeDate, b]),
     );
     const indexByDate = new Map(candidate?.observations.map((o) => [o[0], o]) ?? []);
-    const names = new Set(candidate?.historicalIndexNames ?? []);
+    // Historical names describe the entire archive, not the retained observation interval.
+    // Validate every retained observation and overlapping active row instead of joining old TR/PR regimes.
+    const names = new Set(candidate?.observations.map((o) => o[2]).filter(Boolean) ?? []);
     const issues: string[] = [];
     if (!candidate) issues.push("기존 원천에 해당 종목 없음");
     if (candidate && candidate.name !== inst.name) issues.push("현재 종목명과 원천 종목명 불일치");
-    if (names.size !== 1) issues.push("기초지수명 누락 또는 과거 지수명 변경: 별도 검증 필요");
+    if (names.size !== 1) issues.push("현행 관측 구간 기초지수명 누락 또는 변경: 별도 검증 필요");
     const indexName = names.size === 1 ? [...names][0]! : null;
     if (candidate?.observations.some((o) => o[2] !== indexName))
       issues.push("관측별 기초지수명 불일치");
