@@ -3,7 +3,7 @@ import {
   OperatingAllocationPanel,
   type OperatingAllocationCandidate,
 } from "./OperatingAllocationPanel";
-import { useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ShieldCheck, TrendingUp } from "lucide-react";
@@ -21,6 +21,11 @@ import type {
   DashboardSignal,
 } from "@/lib/dashboardOperations";
 import type { DashboardSummary } from "@/lib/screeningCacheContract";
+
+import type { PurchaseRecordCandidate } from "./NewActualPortfolio";
+const PurchaseRecordEditor = lazy(() =>
+  import("./NewActualPortfolio").then((m) => ({ default: m.NewActualPortfolio })),
+);
 
 const LABEL: Record<DashboardMarket, string> = {
   KOSPI: "KOSPI",
@@ -336,6 +341,7 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
   const [tab, setTab] = useState<"conditions" | "onsets" | "pending" | "exits">("onsets");
   const [market, setMarket] = useState<DashboardMarket | "ALL">("ALL");
   const [page, setPage] = useState(0);
+  const [purchaseCandidate, setPurchaseCandidate] = useState<PurchaseRecordCandidate | null>(null);
   const [allocationCandidate, setAllocationCandidate] =
     useState<OperatingAllocationCandidate | null>(null);
   const listMarkets = (kind: typeof tab): DashboardMarket[] =>
@@ -460,6 +466,21 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
           ))}
         </div>
       </div>
+      {purchaseCandidate ? (
+        <Suspense
+          fallback={
+            <p role="status" className="p-4">
+              매수 기록 창을 여는 중입니다…
+            </p>
+          }
+        >
+          <PurchaseRecordEditor
+            key={`${purchaseCandidate.market}:${purchaseCandidate.symbol}`}
+            entryCandidate={purchaseCandidate}
+            onEntryClose={() => setPurchaseCandidate(null)}
+          />
+        </Suspense>
+      ) : null}
       {allocationCandidate ? (
         <div className="p-3">
           <Button variant="outline" onClick={() => setAllocationCandidate(null)}>
@@ -526,6 +547,19 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
                     </td>
                     {tab === "onsets" ? (
                       <td className="px-3 py-3">
+                        <Button
+                          size="sm"
+                          className="mb-2"
+                          onClick={() =>
+                            setPurchaseCandidate({
+                              symbol: row.symbol,
+                              name: row.name,
+                              market: row.market,
+                            })
+                          }
+                        >
+                          매수수량 기록
+                        </Button>
                         {(() => {
                           const preview = query.data?.actualAllocation?.previews.find(
                             (p) =>
@@ -563,7 +597,7 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
                                     })
                                   }
                                 >
-                                  예산·미체결 예약 검토
+                                  예산·예약 상세 (선택)
                                 </Button>
                               ) : null}
                             </div>

@@ -525,12 +525,30 @@ describe("new-only portfolio presentation", () => {
 });
 
 describe("new portfolio editor safety", () => {
+  it("separates candidate recording from allocation and never invents a fill", () => {
+    openExecution();
+    const candidate = { symbol: "053800", name: "안랩", market: "KOSDAQ" as const };
+    harness.states[3] = { ...draft(), ...candidate, candidate };
+    const html = render(<NewActualPortfolio entryCandidate={candidate} />);
+    expect(html).toContain("매수수량 기록");
+    expect(html).toContain("실제 매수수량 (주)");
+    expect(html).toContain("실제 매수가 (KRW)");
+    expect(html).not.toContain("실제 자산배분");
+    expect(html).not.toContain("종목코드</span>");
+    expect(html).not.toContain("<details open");
+    expect(draft()["price"]).toBe("");
+    expect(draft()["shares"]).toBe("");
+    expect(draft()["confirmed"]).toBe(false);
+    expect(button("확인한 내용 저장").disabled).toBe(true);
+    expect(server).not.toHaveBeenCalled();
+  });
+
   it("keeps execution inputs factual without archive or start commentary", () => {
     openExecution();
     const html = render(<NewActualPortfolio />);
     const form = html.slice(html.indexOf("<aside>"));
     for (const copy of [
-      "체결일·단가·수량·비용을 입력하세요",
+      "실제 매수·매도한 수량과 체결가격을 직접 입력하세요.",
       "실제 체결일",
       "원체결 단가",
       "원체결 전체 수량",
