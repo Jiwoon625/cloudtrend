@@ -287,7 +287,7 @@ test("warm ETF reads require no RPC, isolate technical caches, and load full his
   mocks.read.mockResolvedValue(await compressed({ "360750": etfBundle() }));
   expect(await getCachedEtfInstrumentChart("360750", "120", input)).toEqual(etfBundle());
   const recentPath = mocks.read.mock.calls[0]![0];
-  expect(recentPath).toContain("etf-chart-v2-m0-underlying");
+  expect(recentPath).toContain("etf-chart-v3-operational-underlying");
   expect(recentPath).not.toContain("-all-");
   expect(mocks.server).not.toHaveBeenCalled();
   await getCachedEtfInstrumentChart("360750", "all", input);

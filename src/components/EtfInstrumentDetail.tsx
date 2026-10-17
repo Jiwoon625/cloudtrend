@@ -187,6 +187,11 @@ export function EtfInstrumentDetail({
               <p className="mt-2 text-sm">
                 기초지수 {value(evidence.underlyingClose)} · MA60 {value(evidence.underlyingMa60)}
               </p>
+              {!evidence.isStrategyTarget ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  참고값 · 기존 전략 대상 아님 · 매매 신호 아님
+                </p>
+              ) : null}
             </section>
           ) : null}
           <section className="rounded-lg border p-3 sm:p-4">

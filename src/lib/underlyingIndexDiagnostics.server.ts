@@ -12,6 +12,8 @@ import {
 import {
   calculateIndexDiagnostics,
   parseUnderlyingIndexArtifact,
+  validateUnderlyingIndexPreferenceDelta,
+  type UnderlyingIndexArtifact,
 } from "./underlyingIndexSupplement";
 import { collectUnderlyingIndexEvidence } from "./underlyingIndexEvidence";
 import { UNDERLYING_INDEX_RELEASE } from "./underlyingIndexSupplementRelease";
@@ -19,7 +21,10 @@ import { UNDERLYING_INDEX_RELEASE } from "./underlyingIndexSupplementRelease";
 const BUCKET = "cloudtrend-data";
 export const indexSha256 = (text: string | Uint8Array) =>
   createHash("sha256").update(text).digest("hex");
-export function underlyingIndexPath(owner: string, digest = UNDERLYING_INDEX_RELEASE.sha256) {
+export function underlyingIndexPath(
+  owner: string,
+  digest: string = UNDERLYING_INDEX_RELEASE.sha256,
+) {
   if (!/^[0-9a-f-]{36}$/.test(owner) || !/^[0-9a-f]{64}$/.test(digest))
     throw new Error("검증되지 않은 소유자 또는 해시입니다.");
   return `${owner}/results/ingestion/underlying-index/${digest}.json`;
@@ -49,16 +54,59 @@ function missing(error: {
 }) {
   return String(error.statusCode ?? error.status) === "404" || error.message === "Object not found";
 }
-async function readArtifactText(client: SupabaseClient, owner: string): Promise<string | null> {
-  const { data, error } = await client.storage.from(BUCKET).download(underlyingIndexPath(owner));
+async function readPinnedArtifactText(
+  client: SupabaseClient,
+  owner: string,
+  digest: string,
+): Promise<string | null> {
+  const { data, error } = await client.storage
+    .from(BUCKET)
+    .download(underlyingIndexPath(owner, digest));
   if (error) {
     if (missing(error)) return null;
     throw new Error(`기초지수 전용 자료 읽기 실패: ${error.message}`);
   }
   const bytes = new Uint8Array(await data.arrayBuffer());
-  if (indexSha256(bytes) !== UNDERLYING_INDEX_RELEASE.sha256)
-    throw new Error("저장된 기초지수 자료의 해시가 다릅니다.");
+  if (indexSha256(bytes) !== digest) throw new Error("저장된 기초지수 자료의 해시가 다릅니다.");
   return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
+async function validateOriginalArtifact(
+  client: SupabaseClient,
+  owner: string,
+  artifact: UnderlyingIndexArtifact,
+  now: string,
+): Promise<void> {
+  const preference = artifact.approvedPreference;
+  if (!preference) return;
+  if (preference.originalArtifactSha256 !== UNDERLYING_INDEX_RELEASE.originalArtifactSha256)
+    throw new Error("승인 전 원본 지수 자료의 해시가 승인된 원본과 다릅니다.");
+  const originalText = await readPinnedArtifactText(
+    client,
+    owner,
+    UNDERLYING_INDEX_RELEASE.originalArtifactSha256,
+  );
+  if (originalText === null)
+    throw new Error("승인 전 원본 지수 자료가 없어 승인 범위를 검증할 수 없습니다.");
+  validateUnderlyingIndexPreferenceDelta(
+    artifact,
+    parseUnderlyingIndexArtifact(JSON.parse(originalText), now),
+  );
+}
+
+/** Returns approved bytes only after validating the pinned original and bounded approval delta. */
+export async function readArtifactText(
+  client: SupabaseClient,
+  owner: string,
+  now = new Date().toISOString(),
+): Promise<string | null> {
+  const text = await readPinnedArtifactText(client, owner, UNDERLYING_INDEX_RELEASE.sha256);
+  if (text === null) return null;
+  const artifact = parseUnderlyingIndexArtifact(JSON.parse(text), now);
+  if (artifact.cutoffDate !== UNDERLYING_INDEX_RELEASE.cutoffDate)
+    throw new Error("자료 기준일이 승인된 빈티지와 다릅니다.");
+  await validateOriginalArtifact(client, owner, artifact, now);
+  return text;
 }
 
 /** Only a pinned, reviewed extraction may be installed. No overwrite, registry mutation or activation. */
@@ -82,13 +130,14 @@ export async function installUnderlyingIndexArtifact(
   const artifact = parseUnderlyingIndexArtifact(JSON.parse(text), now);
   if (artifact.cutoffDate !== UNDERLYING_INDEX_RELEASE.cutoffDate)
     throw new Error("자료 기준일이 승인된 빈티지와 다릅니다.");
+  await validateOriginalArtifact(client, owner, artifact, now);
   const beforeSources = sourceSetDigest(await listActiveSources(client, owner));
   if (
     artifact.approvedPreference &&
     beforeSources !== artifact.approvedPreference.expectedSourceSetDigest
   )
     throw new Error("활성 원천 집합이 승인 범위와 달라 전용 자료 설치를 중단했습니다.");
-  const existing = await readArtifactText(client, owner);
+  const existing = await readArtifactText(client, owner, now);
   if (existing !== null)
     return {
       installed: true as const,
@@ -107,7 +156,7 @@ export async function installUnderlyingIndexArtifact(
       cacheControl: "31536000",
     });
   // An uncertain write or concurrent identical install is resolved by one exact read, never overwrite/retry.
-  const reread = await readArtifactText(client, owner);
+  const reread = await readArtifactText(client, owner, now);
   if (reread === null || indexSha256(reread) !== digest)
     throw new Error(error?.message ?? "저장 후 동일성 검증에 실패했습니다.");
   return {
@@ -122,7 +171,7 @@ export async function installUnderlyingIndexArtifact(
 /** Actual backend consumer. All persistent operations here are reads; no screening engine or publisher. */
 async function calculateForOwner(client: SupabaseClient, owner: string, now: string) {
   if (!UNDERLYING_INDEX_RELEASE.enabled) return { status: "disabled" as const };
-  const text = await readArtifactText(client, owner);
+  const text = await readArtifactText(client, owner, now);
   if (text === null)
     return { status: "not-installed" as const, sha256: UNDERLYING_INDEX_RELEASE.sha256 };
   const artifact = parseUnderlyingIndexArtifact(JSON.parse(text), now);

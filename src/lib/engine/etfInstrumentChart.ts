@@ -4,6 +4,11 @@ import type { DailyPrice } from "./types";
 import type { InstrumentChartRange } from "./instrumentChart";
 import { ETF_MAPPING, ETF_POLICY, isEtfStrategyAssetClass } from "./etfStrategy";
 import { validDate } from "../ledger/date";
+import {
+  OPERATIONAL_INDEX_START,
+  type OperationalIndexProvider,
+  type OperationalIndexPoint,
+} from "../operationalUnderlyingIndex";
 
 export interface EtfInstrumentChartBundle {
   symbol: string;
@@ -27,6 +32,11 @@ export interface EtfInstrumentChartBundle {
   underlyingSource: string | null;
   underlyingFirstDate: string | null;
   underlyingAsOfDate: string | null;
+  /** Pinned evidence shared with the current strategy; never applied to historical M0. */
+  underlyingIndexVersion?: string;
+  underlyingIndexArtifactSha256?: string;
+  underlyingIndexAvailableFrom?: string;
+  underlyingIndexAsOfDate?: string;
   previousM0: { date: string; score: number } | null;
   previousTradingDate: string | null;
   issues: string[];
@@ -114,10 +124,24 @@ export function etfObservedPriceChart(
   };
 }
 
-function chartBuilder(dataset: MarketDataset, symbol: string, range: InstrumentChartRange) {
+function chartBuilder(
+  dataset: MarketDataset,
+  symbol: string,
+  range: InstrumentChartRange,
+  operationalIndex?: OperationalIndexProvider,
+) {
   const instrument = dataset.instruments.find((item) => item.symbol === symbol);
   if (instrument?.instrumentType !== "ETF") throw new Error("ETF 차트 대상이 아닙니다.");
   if (!validDate(dataset.asOfDate)) throw new Error("ETF 차트 기준일이 올바르지 않습니다.");
+  const provider = dataset.asOfDate >= OPERATIONAL_INDEX_START ? operationalIndex : undefined;
+  if (provider && provider.asOfDate !== dataset.asOfDate)
+    throw new Error("ETF 차트와 운영 기초지수 기준일이 다릅니다.");
+  const operationalRow = provider?.rows[symbol];
+  const operationalPoints = new Map<string, OperationalIndexPoint | undefined>();
+  for (const point of operationalRow?.observations ?? []) {
+    if (!validDate(point.date) || point.date > dataset.asOfDate) continue;
+    operationalPoints.set(point.date, operationalPoints.has(point.date) ? undefined : point);
+  }
   const evaluator = evaluatorFor(dataset);
   const mapping = ETF_MAPPING[symbol];
   const calendar = evaluator.calendar.filter(validDate);
@@ -151,6 +175,14 @@ function chartBuilder(dataset: MarketDataset, symbol: string, range: InstrumentC
     underlyingSource: null,
     underlyingFirstDate: null,
     underlyingAsOfDate: null,
+    ...(provider
+      ? {
+          underlyingIndexVersion: provider.version,
+          underlyingIndexArtifactSha256: provider.artifactSha256,
+          underlyingIndexAvailableFrom: provider.availableFrom,
+          underlyingIndexAsOfDate: provider.asOfDate,
+        }
+      : {}),
     previousM0: null,
     previousTradingDate,
     issues: [],
@@ -160,6 +192,7 @@ function chartBuilder(dataset: MarketDataset, symbol: string, range: InstrumentC
   if (!mapping) result.issues.push("검증된 ETF 분류 없음 · M0 미관측");
   else if (!target)
     result.issues.push("주식형·커버드콜 ETF 전략 대상 아님 · 표시 점수는 진입 근거가 아님");
+  if (provider) result.issues.push(...(operationalRow?.issues ?? ["운영 기초지수 대응 없음"]));
   // These are dated reconstructed observations, not operational signals. The
   // operational 2026-10-12 start date deliberately does not trim chart history.
   const start = range === "all" ? 0 : Math.max(0, dates.length - 120);
@@ -207,17 +240,39 @@ function chartBuilder(dataset: MarketDataset, symbol: string, range: InstrumentC
   let unlabelled = false;
   const underlyingValues = new Map<
     string,
-    { close: number | null; identity: string | null; name: string | null; identityBreak: boolean }
+    {
+      close: number | null;
+      identity: string | null;
+      name: string | null;
+      identityBreak: boolean;
+      operational: boolean;
+      operationalMa60: number | null;
+    }
   >();
   // Compute all underlying inputs before range slicing. A 120-session display
   // retains the same 60-session warmup as the full-history view.
   for (const date of dates) {
-    const bar = observed.get(date),
-      close = krxUnderlying(bar);
-    const name = named(bar?.etfUnderlyingIndexName);
+    const bar = observed.get(date);
+    const operational = !!provider && date >= OPERATIONAL_INDEX_START;
+    const point = operationalPoints.get(date);
+    const usable = operationalRow?.status !== "quarantined";
+    const close = operational
+      ? usable && positive(point?.close)
+        ? point.close
+        : null
+      : krxUnderlying(bar);
+    const name = named(operational ? operationalRow?.indexName : bar?.etfUnderlyingIndexName);
     const identity = name ? normalizeName(name) : null;
     const identityBreak = close !== null && hadUnderlyingObservation && identity !== latestIdentity;
-    underlyingValues.set(date, { close, identity, name, identityBreak });
+    underlyingValues.set(date, {
+      close,
+      identity,
+      name,
+      identityBreak,
+      operational,
+      operationalMa60:
+        operational && usable && close !== null && positive(point?.ma60) ? point.ma60 : null,
+    });
     if (close === null) continue;
     if (latestIdentity !== null && identity !== null && identity !== latestIdentity)
       nameChanged = true;
@@ -229,7 +284,11 @@ function chartBuilder(dataset: MarketDataset, symbol: string, range: InstrumentC
     result.underlyingAsOfDate = date;
   }
   result.underlyingName = latestNamed;
-  result.underlyingSource = result.underlyingAsOfDate ? "KRX_ETF" : null;
+  result.underlyingSource = result.underlyingAsOfDate
+    ? provider && result.underlyingAsOfDate >= OPERATIONAL_INDEX_START
+      ? "KRX_ETF_APPROVED_BASE"
+      : "KRX_ETF"
+    : null;
   if (unlabelled)
     result.issues.push(
       "일부 기초지수 관측의 당시 지수명 미보존 · 현재 지수명으로 과거를 대체하지 않음",
@@ -271,7 +330,9 @@ function chartBuilder(dataset: MarketDataset, symbol: string, range: InstrumentC
     result.underlying.push({
       tradeDate: date,
       close: value.close,
-      ma60,
+      // Operational MA60 has its own approved 60-session warmup. Do not recompute
+      // it from the preserved pre-activation display or substitute into M0 inputs.
+      ma60: value.operational ? value.operationalMa60 : ma60,
       name: value.name,
       identityBreak: value.identityBreak,
     });
@@ -284,8 +345,9 @@ export function etfInstrumentChartSeries(
   dataset: MarketDataset,
   symbol: string,
   range: InstrumentChartRange = "120",
+  operationalIndex?: OperationalIndexProvider,
 ): EtfInstrumentChartBundle {
-  const builder = chartBuilder(dataset, symbol, range);
+  const builder = chartBuilder(dataset, symbol, range, operationalIndex);
   for (let index = builder.start; index < builder.length; index++) builder.append(index);
   return builder.result;
 }
@@ -295,8 +357,9 @@ export async function buildEtfInstrumentChart(
   dataset: MarketDataset,
   symbol: string,
   range: InstrumentChartRange = "120",
+  operationalIndex?: OperationalIndexProvider,
 ): Promise<EtfInstrumentChartBundle> {
-  const builder = chartBuilder(dataset, symbol, range);
+  const builder = chartBuilder(dataset, symbol, range, operationalIndex);
   for (let index = builder.start; index < builder.length;) {
     const end = Math.min(index + 20, builder.length);
     for (; index < end; index++) builder.append(index);

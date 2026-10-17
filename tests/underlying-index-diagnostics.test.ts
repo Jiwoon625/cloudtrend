@@ -1,15 +1,18 @@
 import { collectUnderlyingIndexEvidence } from "../src/lib/underlyingIndexEvidence";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { gzipSync } from "node:zlib";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { parseManualMarketDataWithReferences as parseManualMarketData } from "../src/lib/krxReviewReferenceParser";
 import {
   calculateIndexDiagnostics,
   parseUnderlyingIndexArtifact,
+  validateUnderlyingIndexPreferenceDelta,
   type UnderlyingIndexArtifact,
 } from "../src/lib/underlyingIndexSupplement";
 import {
   datasetDigest,
+  readArtifactText,
+  sourceSetDigest,
   indexSha256,
   underlyingIndexPath,
   readUnderlyingIndexDiagnostics,
@@ -19,11 +22,17 @@ import { UNDERLYING_INDEX_RELEASE } from "../src/lib/underlyingIndexSupplementRe
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { validateSourceText } from "../src/lib/sourceData";
 vi.mock("../src/lib/underlyingIndexSupplementRelease", () => ({
-  UNDERLYING_INDEX_RELEASE: { enabled: true, sha256: "", cutoffDate: "2026-10-16" },
+  UNDERLYING_INDEX_RELEASE: {
+    enabled: true,
+    sha256: "",
+    originalArtifactSha256: "",
+    cutoffDate: "2026-10-16",
+  },
 }));
 const release = UNDERLYING_INDEX_RELEASE as {
   enabled: boolean;
   sha256: string;
+  originalArtifactSha256: string;
   cutoffDate: string;
 };
 const owner = "bdfc8818-33a7-4030-9dbd-ecad39f223ac";
@@ -78,6 +87,7 @@ function fixture() {
 }
 function preferenceFixture() {
   const f = fixture();
+  const original = structuredClone(f.artifact);
   const observation = f.artifact.symbols[0]!.observations[60]!;
   const expected = observation[1]!;
   observation[1] = expected - 1;
@@ -85,7 +95,7 @@ function preferenceFixture() {
     version: "user-selected-supplement-v1",
     approvedAt: "2026-10-17T03:29:00.000Z",
     basis: "user-selected-vintage-not-official-finality",
-    originalArtifactSha256: "b".repeat(64),
+    originalArtifactSha256: indexSha256(JSON.stringify(original)),
     expectedSourceSetDigest: "c".repeat(64),
     expectedDatasetSha256: datasetDigest(f.ds),
     expectedAsOfDate: f.ds.asOfDate,
@@ -105,7 +115,7 @@ function preferenceFixture() {
   };
   f.artifact.availableFrom = "2026-10-17T03:30:00.000Z";
   const context = { sourceSetDigest: "c".repeat(64), datasetSha256: datasetDigest(f.ds), now };
-  return { ...f, context };
+  return { ...f, original, context };
 }
 
 describe("explicit user-selected diagnostic vintage", () => {
@@ -121,6 +131,54 @@ describe("explicit user-selected diagnostic vintage", () => {
     expect(row.userSelectedVintage).toBe(true);
     expect(row.strategyApplied).toBe(false);
     expect({ ds, artifact }).toEqual(before);
+  });
+  it("counts exact approved choices even when they are below the conflict tolerance", () => {
+    const { ds, artifact, context } = preferenceFixture();
+    const entry = artifact.approvedPreference!.entries[0]!;
+    entry.selectedValue = entry.expectedActiveValue - 1e-8;
+    artifact.symbols[0]!.observations[60]![1] = entry.selectedValue;
+    const before = structuredClone({ ds, artifact });
+    const report = calculateIndexDiagnostics(
+      ds,
+      parseUnderlyingIndexArtifact(artifact, now),
+      context,
+    );
+    const row = report.rows[0]!;
+    expect(row.conflicts).toEqual([]);
+    expect(row.diagnosticMa60).toBeLessThan(135.5);
+    expect(row.approvedPreferenceDates).toEqual([entry.date]);
+    expect(row.userSelectedVintage).toBe(true);
+    expect(report.summary.approvedPreferenceSymbols).toBe(1);
+    expect(report.summary.approvedPreferenceObservations).toBe(1);
+    expect({ ds, artifact }).toEqual(before);
+  });
+  it("does not count approved keys outside the calculation window or quarantined choices", () => {
+    const { ds, artifact, context } = preferenceFixture();
+    const entry = artifact.approvedPreference!.entries[0]!;
+    entry.date = artifact.calendar[0]!;
+    entry.expectedActiveValue = 100;
+    entry.selectedValue = 99;
+    artifact.symbols[0]!.observations[0]![1] = 99;
+    artifact.symbols[0]!.observations[60]![1] = 160;
+    const bar = ds.observedBars!["0046A0"]!.find((b) => b.tradeDate === entry.date)!;
+    bar.etfUnderlyingIndexClose = 100;
+    bar.etfUnderlyingIndexName = "INDEX";
+    bar.etfUnderlyingIndexSource = "KRX_ETF";
+    context.datasetSha256 = artifact.approvedPreference!.expectedDatasetSha256 = datasetDigest(ds);
+    const report = calculateIndexDiagnostics(
+      ds,
+      parseUnderlyingIndexArtifact(artifact, now),
+      context,
+    );
+    expect(report.rows[0]?.status).toBe("compared");
+    expect(report.rows[0]?.conflicts).toEqual([entry.date]);
+    expect(report.rows[0]?.approvedPreferenceDates).toEqual([]);
+    expect(report.summary.approvedPreferenceObservations).toBe(0);
+    artifact.symbols[0]!.name = "UNAPPROVED NAME";
+    const quarantined = calculateIndexDiagnostics(ds, artifact, context);
+    expect(quarantined.rows[0]?.status).toBe("quarantined");
+    expect(quarantined.rows[0]?.approvedPreferenceDates).toEqual([]);
+    expect(quarantined.summary.approvedPreferenceSymbols).toBe(0);
   });
   it.each(["source", "dataset", "date", "future", "value", "provider", "name"])(
     "fails closed on %s drift",
@@ -161,6 +219,7 @@ describe("explicit user-selected diagnostic vintage", () => {
     const row = calculateIndexDiagnostics(ds, artifact, context).rows[0]!;
     expect(row.status).toBe("quarantined");
     expect(row.userSelectedVintage).toBe(false);
+    expect(row.approvedPreferenceDates).toEqual([]);
     expect(row.diagnosticMa60).toBeNull();
   });
 });
@@ -217,8 +276,161 @@ function fakeClient(csv: string, artifact?: UnderlyingIndexArtifact) {
 beforeEach(() => {
   release.enabled = true;
   release.sha256 = "a".repeat(64);
+  release.originalArtifactSha256 = "b".repeat(64);
   release.cutoffDate = "2026-10-16";
 });
+describe("approved artifact original-lineage validation", () => {
+  it("allows only exact approved values, availability and approval metadata without mutating either input", () => {
+    const { artifact, original } = preferenceFixture();
+    const before = structuredClone({ artifact, original });
+    expect(() => validateUnderlyingIndexPreferenceDelta(artifact, original)).not.toThrow();
+    expect({ artifact, original }).toEqual(before);
+  });
+  it.each([
+    "unapproved-value",
+    "source-uri",
+    "source-hash",
+    "index-name",
+    "symbol-name",
+    "historical-name",
+    "observation-removal",
+    "calendar",
+  ])("rejects %s changes outside the exact approval delta", (kind) => {
+    const { artifact, original } = preferenceFixture();
+    if (kind === "unapproved-value") artifact.symbols[0]!.observations[10]![1] = 999;
+    if (kind === "source-uri") artifact.sources[0]!.uri = "https://example.com/other";
+    if (kind === "source-hash") {
+      artifact.sources[0]!.sha256 = "f".repeat(64);
+      artifact.approvedPreference!.entries[0]!.supplementSourceSha256 = "f".repeat(64);
+    }
+    if (kind === "index-name") {
+      artifact.symbols[0]!.observations[60]![2] = "OTHER INDEX";
+      artifact.approvedPreference!.entries[0]!.indexName = "OTHER INDEX";
+    }
+    if (kind === "symbol-name") artifact.symbols[0]!.name = "OTHER ETF";
+    if (kind === "historical-name") artifact.symbols[0]!.historicalIndexNames.push("OTHER");
+    if (kind === "observation-removal") artifact.symbols[0]!.observations.splice(10, 1);
+    if (kind === "calendar") {
+      artifact.calendar.shift();
+      artifact.symbols[0]!.observations.shift();
+    }
+    expect(() =>
+      validateUnderlyingIndexPreferenceDelta(parseUnderlyingIndexArtifact(artifact, now), original),
+    ).toThrow("원본 지수 자료가 변경");
+  });
+  it("rejects applying approval to another approved vintage or backdating availability", () => {
+    const { artifact, original } = preferenceFixture();
+    expect(() => validateUnderlyingIndexPreferenceDelta(artifact, artifact)).toThrow();
+    original.availableFrom = "2026-10-17T03:31:00.000Z";
+    expect(() => validateUnderlyingIndexPreferenceDelta(artifact, original)).toThrow("앞당길");
+  });
+
+  function approvedClient() {
+    const { csv, artifact, original } = preferenceFixture();
+    const f = fakeClient(csv);
+    artifact.approvedPreference!.expectedSourceSetDigest = sourceSetDigest(f.sources);
+    release.originalArtifactSha256 = indexSha256(JSON.stringify(original));
+    release.sha256 = indexSha256(JSON.stringify(artifact));
+    f.bytes.set(underlyingIndexPath(owner), JSON.stringify(artifact));
+    f.bytes.set(
+      underlyingIndexPath(owner, release.originalArtifactSha256),
+      JSON.stringify(original),
+    );
+    return { ...f, artifact, original };
+  }
+  it("reads and hashes the pinned original before returning the unchanged approved artifact", async () => {
+    const f = approvedClient();
+    const before = [...f.bytes];
+    expect(await readArtifactText(f.client, owner, now)).toBe(JSON.stringify(f.artifact));
+    expect(f.download.mock.calls.map(([path]) => path)).toEqual([
+      underlyingIndexPath(owner),
+      underlyingIndexPath(owner, release.originalArtifactSha256),
+    ]);
+    const result = await readUnderlyingIndexDiagnostics(f.client, owner, now);
+    expect(result.status).toBe("ready");
+    expect(f.upload).not.toHaveBeenCalled();
+    expect([...f.bytes]).toEqual(before);
+  });
+  it.each(["missing", "tampered", "unpinned"])(
+    "rejects %s original before consumption or installation",
+    async (kind) => {
+      const f = approvedClient();
+      const originalPath = underlyingIndexPath(owner, release.originalArtifactSha256);
+      if (kind === "missing") f.bytes.delete(originalPath);
+      if (kind === "tampered")
+        f.bytes.set(originalPath, JSON.stringify({ ...f.original, close: 0 }));
+      if (kind === "unpinned") {
+        f.artifact.approvedPreference!.originalArtifactSha256 = "f".repeat(64);
+        release.sha256 = indexSha256(JSON.stringify(f.artifact));
+        f.bytes.set(underlyingIndexPath(owner), JSON.stringify(f.artifact));
+      }
+      await expect(readArtifactText(f.client, owner, now)).rejects.toThrow();
+      await expect(
+        installUnderlyingIndexArtifact(
+          f.client,
+          owner,
+          gzipSync(JSON.stringify(f.artifact)).toString("base64"),
+          now,
+        ),
+      ).rejects.toThrow();
+      expect(f.upload).not.toHaveBeenCalled();
+    },
+  );
+  it("rejects extra content changes even if the approved artifact digest is repinned", async () => {
+    const f = approvedClient();
+    f.artifact.symbols[0]!.observations[10]![1] = 999;
+    release.sha256 = indexSha256(JSON.stringify(f.artifact));
+    f.bytes.set(underlyingIndexPath(owner), JSON.stringify(f.artifact));
+    await expect(readArtifactText(f.client, owner, now)).rejects.toThrow("원본 지수 자료가 변경");
+    f.bytes.delete(underlyingIndexPath(owner));
+    await expect(
+      installUnderlyingIndexArtifact(
+        f.client,
+        owner,
+        gzipSync(JSON.stringify(f.artifact)).toString("base64"),
+        now,
+      ),
+    ).rejects.toThrow("원본 지수 자료가 변경");
+    expect(f.upload).not.toHaveBeenCalled();
+  });
+  it("installs a validated approved vintage without touching the pinned original", async () => {
+    const f = approvedClient();
+    f.bytes.delete(underlyingIndexPath(owner));
+    const before = [...f.bytes];
+    const result = await installUnderlyingIndexArtifact(
+      f.client,
+      owner,
+      gzipSync(JSON.stringify(f.artifact)).toString("base64"),
+      now,
+    );
+    expect(result.reused).toBe(false);
+    expect(f.upload).toHaveBeenCalledTimes(1);
+    expect([...f.bytes].slice(0, before.length)).toEqual(before);
+    expect(await readArtifactText(f.client, owner, now)).toBe(JSON.stringify(f.artifact));
+  });
+  const originalPath = process.env["UNDERLYING_INDEX_ORIGINAL_FILE"] ?? "";
+  const approvedPath = process.env["UNDERLYING_INDEX_APPROVED_FILE"] ?? "";
+  it.runIf(existsSync(originalPath) && existsSync(approvedPath))(
+    "validates the actual 2026-10-17 pinned original and approved artifact pair when available locally",
+    async () => {
+      const originalText = readFileSync(originalPath, "utf8");
+      const approvedText = readFileSync(approvedPath, "utf8");
+      release.originalArtifactSha256 =
+        "20e037c1b172091e02d2670b53323978db193529ce370feb3850b1d1a9346b6b";
+      release.sha256 = "79e1321b5968b911f6344616a0aa1d63b0b26f2235e09e6dfb53a3d3a1a3f426";
+      expect(indexSha256(originalText)).toBe(release.originalArtifactSha256);
+      expect(indexSha256(approvedText)).toBe(release.sha256);
+      const f = fakeClient("");
+      f.bytes.set(underlyingIndexPath(owner), approvedText);
+      f.bytes.set(underlyingIndexPath(owner, release.originalArtifactSha256), originalText);
+      expect(await readArtifactText(f.client, owner, "2026-10-17T08:00:00.000Z")).toBe(
+        approvedText,
+      );
+      expect(f.upload).not.toHaveBeenCalled();
+    },
+  );
+});
+
 describe("underlying-only pure diagnostic", () => {
   it("adds independent index observations without any OHLCV/NAV/provenance/row/universe change", () => {
     const { ds, artifact } = fixture();
