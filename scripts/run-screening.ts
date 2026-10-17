@@ -1,3 +1,5 @@
+import { loadOperationalIndex } from "../src/lib/operationalUnderlyingIndex.server";
+import { screeningPublicationAnalysis } from "../src/lib/screeningPublicationAnalysis";
 import { verifyShadowRuntimeManifests } from "./verify-shadow-runtime-manifests";
 import { hydrateScreeningSnapshot } from "../src/lib/screeningSnapshotStorage";
 import { completeScreeningPublication } from "../src/lib/screeningPublication.server";
@@ -10,12 +12,8 @@ import path from "node:path";
 import process from "node:process";
 
 import { buildScreeningSummary } from "../src/lib/analysisRunBundle";
-import { withOnsetProfiles } from "../src/lib/onsetProfile";
 import { runFullMarketAnalysis } from "../src/lib/engine/fullMarketAnalysis";
-import {
-  parseManualMarketDataWithReferences as parseManualMarketData,
-  withKrxReviewReferences,
-} from "../src/lib/krxReviewReferenceParser";
+import { parseManualMarketDataWithReferences as parseManualMarketData } from "../src/lib/krxReviewReferenceParser";
 import {
   DEFAULT_SCORING_CONFIG,
   mergeScoringConfig,
@@ -169,10 +167,13 @@ export async function runScreening(argv = process.argv.slice(2)) {
 
   memory("parse-start");
   const { analysis: engineAnalysis, dataset, stats } = analyzeInputs(inputs, config);
-  const analysis = withKrxReviewReferences(
-    withOnsetProfiles(engineAnalysis, dataset, config),
+  const operationalIndex = await loadOperationalIndex(
+    client,
+    options.supabaseUserId,
     dataset,
+    new Date().toISOString(),
   );
+  const analysis = screeningPublicationAnalysis(engineAnalysis, dataset, config, operationalIndex);
   const sourceRegisteredAt = latestSourceRegistration(
     inputs.flatMap((input) => (input.sourceRecord ? [input.sourceRecord] : [])),
     analysis.asOfDate,
@@ -309,7 +310,7 @@ export async function runScreening(argv = process.argv.slice(2)) {
   memory("publish-end");
   if (options.upload && webCache) {
     try {
-      const ctx = { dataset, analysis, config };
+      const ctx = { dataset, analysis, config, operationalIndex };
       await publishRecentPrices(
         client,
         options.supabaseUserId,

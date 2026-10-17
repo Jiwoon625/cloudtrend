@@ -1,3 +1,4 @@
+import { OPERATIONAL_INDEX_ENABLED } from "../lib/operationalUnderlyingIndexRelease";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import { useState } from "react";
 import { supabase } from "@/lib/cloud";
@@ -123,11 +124,21 @@ export function UnderlyingIndexDiagnosticsPanel() {
       <Button size="sm" variant="outline" disabled={busy} onClick={() => void compare()}>
         운영 MA60 신호 영향 비교 (저장 없음)
       </Button>
+      <p className="text-xs text-muted-foreground">
+        운영 연결 {OPERATIONAL_INDEX_ENABLED ? "ON" : "OFF"} · 적용 시작 기준일 2026-10-19 · 저장된
+        과거 결과는 재계산하지 않습니다.
+      </p>
       {comparison && (
         <div role="status" className="text-xs">
           기준일 {comparison.asOfDate} · 원천 {comparison.activeSourcesRead}개 · MA60 변경{" "}
           {comparison.ma60Changed}종 · 진입/청산 변경 {comparison.signalChanges.length}종 ·
           점수/원신호 변경 {comparison.unexpectedScoreChanges.length}종 · 저장 0회
+          <p>
+            웹/Actions 정규화 비교: 결과 digest{" "}
+            {comparison.ingressComparison.resultDigestMatched ? "일치" : "불일치"} · 입력 지문{" "}
+            {comparison.ingressComparison.inputFingerprintMatched ? "일치" : "불일치"} · 첫 신규
+            자료 검증은 남음
+          </p>
           <Button
             size="sm"
             variant="outline"

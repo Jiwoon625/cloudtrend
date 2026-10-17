@@ -6,6 +6,14 @@ on:
       - package-lock.json
       - src/lib/operationalUnderlyingIndex*
       - src/lib/operationalEtfMa60.ts
+      - src/lib/operationalIndexInstallation.server.ts
+      - src/lib/screeningInputIdentity.ts
+      - src/lib/screeningPublicationAnalysis.ts
+      - src/lib/screeningCache.ts
+      - src/lib/etfPartialEvidence.ts
+      - scripts/run-screening.ts
+      - scripts/web-screening-cache-store.ts
+      - supabase/migrations/*operational_index_installations.sql
       - src/lib/webScreening.functions.ts
       - src/lib/instrumentCharts.functions.ts
       - src/lib/instrumentChartStore.server.ts
@@ -15,7 +23,7 @@ on:
       - src/components/EtfInstrumentDetail.tsx
       - tests/etf-instrument-chart*
       - tests/instrument-chart-cache.test.ts
-      - tests/operational-ma60*.test.ts
+      - tests/operational-ma60*
       - src/lib/underlyingIndex*
       - src/lib/krxReviewReference*.ts
       - src/lib/screeningSources.server.ts
@@ -46,4 +54,5 @@ jobs:
       - run: python -m unittest discover -s tests -p test_underlying_index_builder.py
       - run: npm ci
       - run: npx vitest run --config vitest.underlying-index.config.ts
+      - run: npx vitest run tests/screening-memory.test.ts tests/screening-memory-cli.test.ts tests/dashboard-cache.test.ts tests/portfolio-screening-refresh.test.ts
       - run: npx tsc --noEmit

@@ -1,11 +1,8 @@
-import { OPERATIONAL_INDEX_ENABLED } from "./operationalUnderlyingIndexRelease";
-import { OPERATIONAL_INDEX_START, OPERATIONAL_INDEX_VERSION } from "./operationalUnderlyingIndex";
-import { UNDERLYING_INDEX_RELEASE } from "./underlyingIndexSupplementRelease";
-import { sourceFingerprintRecords } from "./sourceFingerprintRecords";
+import { screeningInputIdentity, type OperationalIndexIdentity } from "./screeningInputIdentity";
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ScoringConfig } from "./engine/scoring";
-import { SCREENING_CACHE_VERSION, stableCacheJson } from "./screeningCacheContract";
+import { stableCacheJson } from "./screeningCacheContract";
 export interface ActiveSourceRecord {
   id: string;
   original_filename: string;
@@ -25,24 +22,12 @@ function sha256Text(text: string) {
   return createHash("sha256").update(text).digest("hex");
 }
 
-export function inputFingerprint(sources: ActiveSourceRecord[], config: ScoringConfig) {
-  return sha256Text(
-    stableCacheJson({
-      version: SCREENING_CACHE_VERSION,
-      strategyConfig: config,
-      sources: sourceFingerprintRecords(sources),
-      legacyFallback: null,
-      ...(OPERATIONAL_INDEX_ENABLED &&
-      sources.some((s) => (s.max_date ?? "") >= OPERATIONAL_INDEX_START)
-        ? {
-            operationalIndex: {
-              version: OPERATIONAL_INDEX_VERSION,
-              artifactSha256: UNDERLYING_INDEX_RELEASE.sha256,
-            },
-          }
-        : {}),
-    }),
-  );
+export function inputFingerprint(
+  sources: ActiveSourceRecord[],
+  config: ScoringConfig,
+  operationalIndex?: OperationalIndexIdentity,
+) {
+  return sha256Text(stableCacheJson(screeningInputIdentity(sources, config, operationalIndex)));
 }
 
 function decodeSource(bytes: Uint8Array) {

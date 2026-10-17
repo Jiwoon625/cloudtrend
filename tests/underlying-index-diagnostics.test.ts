@@ -253,7 +253,18 @@ function fakeClient(csv: string, artifact?: UnderlyingIndexArtifact) {
   const query: Record<string, unknown> = {};
   for (const method of ["select", "eq", "order"]) query[method] = vi.fn(() => query);
   query["then"] = (resolve: (v: unknown) => unknown) => resolve({ data: sources, error: null });
+  let installation: unknown = null;
+  const receipt = {
+    select: () => receipt,
+    eq: () => receipt,
+    upsert: async (value: unknown) => {
+      installation ??= value;
+      return { error: null };
+    },
+    maybeSingle: async () => ({ data: installation, error: null }),
+  };
   const from = vi.fn((table: string) => {
+    if (table === "operational_index_installations") return receipt;
     expect(table).toBe("analysis_source_files");
     return query;
   });

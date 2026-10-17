@@ -1,4 +1,11 @@
-import { sourceFingerprintRecords } from "./sourceFingerprintRecords";
+import { operationalIndexContextServer } from "./underlyingIndexDiagnostics.functions";
+import {
+  screeningInputIdentity,
+  savedOperationalIdentity,
+  type OperationalIndexIdentity,
+} from "./screeningInputIdentity";
+import { OPERATIONAL_INDEX_ENABLED } from "./operationalUnderlyingIndexRelease";
+import { OPERATIONAL_INDEX_START } from "./operationalUnderlyingIndex";
 // Load the small client RPC proxy with this module. Deferring its import until a
 // cache miss leaves open tabs requesting a deleted release's JS after deployment.
 // This does not call the server or load chart data until fastChart needs it.
@@ -58,7 +65,7 @@ async function analysisDigest(analysis: AnalysisResult) {
   return sha256Text(stableCacheJson(deterministicAnalysis(analysis)));
 }
 
-async function currentInputFingerprint() {
+export async function currentInputFingerprint(operationalIndex?: OperationalIndexIdentity) {
   const [sources, config] = await Promise.all([
     listActiveScreeningSourceFingerprints(),
     Promise.resolve(getActiveScoringConfig()),
@@ -66,19 +73,21 @@ async function currentInputFingerprint() {
   // Registered sources define the identity without loading the legacy CSV/parser bundle.
   const meta = sources.length ? null : (await import("./manualDataStore")).getManualDataMeta();
   return sha256Text(
-    stableCacheJson({
-      version: SCREENING_CACHE_VERSION,
-      strategyConfig: config,
-      sources: sourceFingerprintRecords(sources),
-      legacyFallback: sources.length
-        ? null
-        : {
-            dataHash: meta?.dataHash ?? null,
-            schemaHash: meta?.schemaHash ?? null,
-            savedAt: meta?.savedAt ?? null,
-            chars: meta?.chars ?? null,
-          },
-    }),
+    stableCacheJson(
+      screeningInputIdentity(
+        sources,
+        config,
+        operationalIndex,
+        sources.length
+          ? null
+          : {
+              dataHash: meta?.dataHash ?? null,
+              schemaHash: meta?.schemaHash ?? null,
+              savedAt: meta?.savedAt ?? null,
+              chars: meta?.chars ?? null,
+            },
+      ),
+    ),
   );
 }
 
@@ -113,7 +122,9 @@ async function gunzipJson<T>(bytes: Uint8Array): Promise<T> {
 export async function readScreeningCache(): Promise<ScreeningCachePayload | null> {
   const cached = await readObject<ScreeningCachePayload>(await screeningPath());
   if (!cached || cached.version !== SCREENING_CACHE_VERSION) return null;
-  const expectedInput = await currentInputFingerprint();
+  const expectedInput = await currentInputFingerprint(
+    savedOperationalIdentity(cached.payload.analysis),
+  );
   if (cached.inputFingerprint !== expectedInput) return null;
   const digest = await analysisDigest(cached.payload.analysis);
   return digest === cached.resultDigest ? cached : null;
@@ -123,7 +134,7 @@ export async function readDashboardCache(): Promise<DashboardSummary | null> {
   const path = await dashboardPath();
   const cached = await readObject<DashboardSummary>(path);
   if (cached?.version === DASHBOARD_CACHE_VERSION) {
-    const expectedInput = await currentInputFingerprint();
+    const expectedInput = await currentInputFingerprint(savedOperationalIdentity(cached));
     if (cached.inputFingerprint === expectedInput) return cached;
   }
 
@@ -158,9 +169,24 @@ export async function buildAndPersistScreeningCaches(): Promise<{
     import("./localAnalysis"),
     import("./screeningHistory"),
   ]);
-  await ensureManualDataset();
-  const inputFingerprint = await currentInputFingerprint();
+  const parsed = await ensureManualDataset();
   const previous = await readObject<ScreeningCachePayload>(await screeningPath());
+  // No local provider is available. Fail before engine/snapshot/cache writes, including after rollback.
+  if (previous?.payload?.analysis && savedOperationalIdentity(previous.payload.analysis))
+    throw new Error("운영 MA60 자료는 서버 스크리닝에서만 계산·저장할 수 있습니다.");
+  if (OPERATIONAL_INDEX_ENABLED && (parsed?.dataset.asOfDate ?? "") >= OPERATIONAL_INDEX_START) {
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session) throw new Error("로그인이 필요합니다.");
+    const context = await operationalIndexContextServer({
+      data: {
+        accessToken: data.session.access_token,
+        asOfDate: parsed!.dataset.asOfDate,
+      },
+    });
+    if (context.operational)
+      throw new Error("운영 MA60 자료는 서버 스크리닝에서만 계산·저장할 수 있습니다.");
+  }
+  const inputFingerprint = await currentInputFingerprint();
   const payload = computeLocalAnalysis();
   if (!("analysis" in payload) || payload.analysis === null)
     throw new Error("스크리닝 분석 결과를 만들지 못했습니다.");
@@ -325,7 +351,10 @@ async function chartIdentity(payload: AnalysisPayload, uid: string, configKey: s
       chartDigests.set(payload, digest);
       void digest.catch(() => chartDigests.delete(payload));
     }
-    pending = Promise.all([currentInputFingerprint(), digest])
+    pending = Promise.all([
+      currentInputFingerprint(savedOperationalIdentity(payload.analysis)),
+      digest,
+    ])
       .then(([inputFingerprint, resultDigest]) => ({ inputFingerprint, resultDigest }))
       .finally(() => values!.delete(key));
     values.set(key, pending);

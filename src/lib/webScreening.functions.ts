@@ -1,5 +1,11 @@
-import { loadOperationalIndex } from "./operationalUnderlyingIndex.server";
-import { withOperationalEtfMa60 } from "./operationalEtfMa60";
+import {
+  loadOperationalIndex,
+  operationalArtifactForPublication,
+} from "./operationalUnderlyingIndex.server";
+import { savedOperationalIdentity } from "./screeningInputIdentity";
+import { OPERATIONAL_INDEX_VERSION } from "./operationalUnderlyingIndex";
+import { UNDERLYING_INDEX_RELEASE } from "./underlyingIndexSupplementRelease";
+import { screeningPublicationAnalysis } from "./screeningPublicationAnalysis";
 import { createDataStatusCache } from "./dataStatusCache";
 import {
   completeScreeningPublication,
@@ -17,14 +23,10 @@ import { downloadFreshObject } from "./freshStorage";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
 
-import {
-  parseManualMarketDataWithReferences as parseManualMarketData,
-  withKrxReviewReferences,
-} from "./krxReviewReferenceParser";
+import { parseManualMarketDataWithReferences as parseManualMarketData } from "./krxReviewReferenceParser";
 import { runFullMarketAnalysis } from "@/lib/engine/fullMarketAnalysis";
 import { mergeScoringConfig, type ScoringConfig } from "@/lib/engine/scoring";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
-import { withOnsetProfiles } from "@/lib/onsetProfile";
 import {
   latestSourceRegistration,
   buildSnapshot,
@@ -115,7 +117,8 @@ export async function runWebScreeningForUser(
   config: ScoringConfig,
 ): Promise<WebScreeningRefreshResult> {
   const registered = await listActiveSources(client, userId);
-  const fingerprint = inputFingerprint(registered, config);
+  const sourceFingerprint = inputFingerprint(registered, config);
+  let fingerprint = sourceFingerprint;
   const key = `${userId}/${fingerprint}`;
   const inFlight = screeningBuilds.get(key);
   if (inFlight) return inFlight;
@@ -128,6 +131,34 @@ export async function runWebScreeningForUser(
       octoberShadow?: Awaited<ReturnType<typeof recordWebOctoberShadow>>;
       payload: { analysis: AnalysisResult };
     }>(client, `${userId}/cache/screening/latest.json`).catch(missingCache);
+    const savedIdentity = cached?.payload?.analysis
+      ? savedOperationalIdentity(cached.payload.analysis)
+      : undefined;
+    // Resolve the owner, not a global source max_date heuristic. A rollback still reads a
+    // valid saved provider; a new publication with changed inputs follows the current flag.
+    if (
+      cached?.payload?.analysis &&
+      inputFingerprint(registered, config, savedIdentity) === cached.inputFingerprint
+    ) {
+      const artifact = await operationalArtifactForPublication(
+        client,
+        userId,
+        cached.payload.analysis.asOfDate,
+        new Date().toISOString(),
+      );
+      fingerprint = inputFingerprint(
+        registered,
+        config,
+        artifact
+          ? {
+              version: OPERATIONAL_INDEX_VERSION,
+              artifactSha256: UNDERLYING_INDEX_RELEASE.sha256,
+              asOfDate: cached.payload.analysis.asOfDate,
+              availableFrom: artifact.availableFrom,
+            }
+          : savedIdentity,
+      );
+    }
     if (
       cached?.version === SCREENING_CACHE_VERSION &&
       typeof cached.publicationId === "string" &&
@@ -174,7 +205,7 @@ export async function runWebScreeningForUser(
           current.publicationId !== cached.publicationId ||
           current.inputFingerprint !== fingerprint ||
           current.resultDigest !== cached.resultDigest ||
-          inputFingerprint(currentSources, config) !== fingerprint
+          inputFingerprint(currentSources, config) !== sourceFingerprint
         )
           throw new Error(
             "재사용 확인 중 스크리닝 입력이나 결과가 변경됐습니다. 최신 결과를 다시 확인하세요.",
@@ -198,7 +229,7 @@ export async function runWebScreeningForUser(
       }
     }
     const { sources, texts } = await loadActiveSources(client, userId);
-    if (inputFingerprint(sources, config) !== fingerprint)
+    if (inputFingerprint(sources, config) !== sourceFingerprint)
       throw new Error("계산 중 원천데이터가 변경됐습니다. 최신 입력으로 다시 시도하세요.");
     const parsed = parseManualMarketData(texts);
     const { analysis: engineAnalysis, dataset } = runFullMarketAnalysis(parsed.dataset, config);
@@ -208,10 +239,13 @@ export async function runWebScreeningForUser(
       dataset,
       new Date().toISOString(),
     );
-    const analysis = withKrxReviewReferences(
-      withOnsetProfiles(withOperationalEtfMa60(engineAnalysis, operationalIndex), dataset, config),
+    const analysis = screeningPublicationAnalysis(
+      engineAnalysis,
       dataset,
+      config,
+      operationalIndex,
     );
+    fingerprint = inputFingerprint(sources, config, savedOperationalIdentity(analysis));
 
     const digest = resultDigest(analysis);
     const source = { live: true, credentialsConfigured: true, fallbackReason: null };

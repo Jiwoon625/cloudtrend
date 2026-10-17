@@ -1,11 +1,12 @@
+import { createHash } from "node:crypto";
 import { loadOperationalIndex } from "./operationalUnderlyingIndex.server";
-import type { OperationalAnalysis } from "./operationalEtfMa60";
+import { savedOperationalIdentity } from "./screeningInputIdentity";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
 import { mergeScoringConfig } from "./engine/scoring";
 import { parseManualMarketDataWithReferences as parseManualMarketData } from "./krxReviewReferenceParser";
-import { stableCacheJson } from "./screeningCacheContract";
+import { stableCacheJson, deterministicAnalysis } from "./screeningCacheContract";
 import { loadActiveSources, inputFingerprint } from "./screeningSources.server";
 import {
   restoreChartContext,
@@ -70,6 +71,13 @@ async function session(input: Input) {
     saved.resultDigest !== input.resultDigest
   )
     throw new Error("스크리닝 자료가 변경됐습니다. 페이지를 새로고침해 주세요.");
+  savedOperationalIdentity(saved.payload.analysis);
+  if (
+    createHash("sha256")
+      .update(stableCacheJson(deterministicAnalysis(saved.payload.analysis)))
+      .digest("hex") !== saved.resultDigest
+  )
+    throw new Error("저장된 스크리닝 결과 digest가 다릅니다.");
   return { client, uid, analysis: saved.payload.analysis };
 }
 const contexts = new Map<string, Promise<ChartContext>>();
@@ -82,17 +90,22 @@ async function context(input: Input, ctx: Awaited<ReturnType<typeof session>>) {
   if (existing) return existing;
   const pending = (async () => {
     const { sources, texts } = await loadActiveSources(ctx.client, ctx.uid, 3);
-    if (inputFingerprint(sources, config) !== input.inputFingerprint)
+    if (
+      inputFingerprint(sources, config, savedOperationalIdentity(ctx.analysis)) !==
+      input.inputFingerprint
+    )
       throw new Error("원천자료 또는 점수 설정이 변경됐습니다. 새로고침해 주세요.");
     const parsed = parseManualMarketData(texts);
     const result = restoreChartContext(parsed.dataset, ctx.analysis, config, input.resultDigest);
-    const metadata = (ctx.analysis as OperationalAnalysis).operationalIndex;
+    const metadata = savedOperationalIdentity(ctx.analysis);
     if (metadata) {
       const provider = await loadOperationalIndex(
         ctx.client,
         ctx.uid,
         parsed.dataset,
         new Date().toISOString(),
+        false,
+        metadata,
       );
       if (
         !provider ||
@@ -137,38 +150,41 @@ export const warmInstrumentChartsServer = createServerFn({ method: "POST" })
   });
 export const getInstrumentChartServer = createServerFn({ method: "POST" })
   .inputValidator(validate)
-  .handler(async ({ data }) => {
-    const symbol = String(data.symbol ?? "")
-      .trim()
-      .toUpperCase();
-    if (data.range !== "120" && data.range !== "all") throw new Error("Invalid range");
-    if (
-      data.kind !== "prices" &&
-      data.kind !== "scored" &&
-      data.kind !== "etf" &&
-      data.kind !== "etf-prices"
+  .handler(async ({ data }) => getInstrumentChartForSession(data));
+
+export async function getInstrumentChartForSession(data: Input) {
+  validate(data);
+  const symbol = String(data.symbol ?? "")
+    .trim()
+    .toUpperCase();
+  if (data.range !== "120" && data.range !== "all") throw new Error("Invalid range");
+  if (
+    data.kind !== "prices" &&
+    data.kind !== "scored" &&
+    data.kind !== "etf" &&
+    data.kind !== "etf-prices"
+  )
+    throw new Error("Invalid chart kind");
+  const path = chartPath(data, symbol, data.range, data.kind),
+    ctx = await session(data);
+  if (
+    data.kind.startsWith("etf") &&
+    !ctx.analysis.rows.some(
+      (row) => row.instrument.symbol === symbol && row.instrument.instrumentType === "ETF",
     )
-      throw new Error("Invalid chart kind");
-    const path = chartPath(data, symbol, data.range, data.kind),
-      ctx = await session(data);
-    if (
-      data.kind.startsWith("etf") &&
-      !ctx.analysis.rows.some(
-        (row) => row.instrument.symbol === symbol && row.instrument.instrumentType === "ETF",
-      )
-    )
-      throw new Error("분석 결과에 없는 ETF입니다.");
-    const cached = await readChartBundle<ChartBundle>(ctx.client, ctx.uid, path);
-    if (cached?.[symbol]) return cached[symbol]!;
-    return await prepareChartBucket(
-      ctx.client,
-      ctx.uid,
-      data,
-      await context(data, ctx),
-      symbol,
-      data.range,
-      data.kind,
-      true,
-      true,
-    );
-  });
+  )
+    throw new Error("분석 결과에 없는 ETF입니다.");
+  const cached = await readChartBundle<ChartBundle>(ctx.client, ctx.uid, path);
+  if (cached?.[symbol]) return cached[symbol]!;
+  return await prepareChartBucket(
+    ctx.client,
+    ctx.uid,
+    data,
+    await context(data, ctx),
+    symbol,
+    data.range,
+    data.kind,
+    true,
+    true,
+  );
+}

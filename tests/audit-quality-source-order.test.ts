@@ -137,12 +137,15 @@ it("requests deterministic source order including final id tie-break", async () 
   expect(order).toEqual(["activated_at", "created_at", "id"]);
   for (const path of ["src/lib/sourceRegistry.ts", "scripts/source-registry-store.ts"])
     expect(readFileSync(path, "utf8")).toContain('.order("id", { ascending: true })');
+  expect(readFileSync("src/lib/screeningInputIdentity.ts", "utf8")).toContain(
+    "sourceFingerprintRecords(",
+  );
   for (const path of [
     "src/lib/screeningCache.ts",
     "src/lib/screeningSources.server.ts",
     "scripts/web-screening-cache-store.ts",
   ])
-    expect(readFileSync(path, "utf8")).toContain("sourceFingerprintRecords(");
+    expect(readFileSync(path, "utf8")).toContain("screeningInputIdentity(");
 });
 
 it("counts future preserved missing-close observations even when no analytical bar exists", () => {
