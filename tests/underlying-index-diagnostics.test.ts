@@ -168,13 +168,27 @@ describe("underlying-only pure diagnostic", () => {
     artifact.symbols[0]!.observations[65]![1] = null;
     expect(calculateIndexDiagnostics(ds, artifact).rows[0]?.currentIndex).toBe(165);
   });
-  it.each(["name", "index", "historical", "value"])(
+  it("does not confuse an archived historical regime with the single current observation regime", () => {
+    const { ds, artifact } = fixture();
+    artifact.symbols[0]!.historicalIndexNames.push("OLD TR");
+    const before = structuredClone({ ds, artifact });
+    const row = calculateIndexDiagnostics(ds, artifact).rows[0]!;
+    expect(row.status).toBe("compared");
+    expect(row.indexName).toBe("INDEX");
+    expect(row.diagnosticMa60).toBe(135.5);
+    expect({ ds, artifact }).toEqual(before);
+  });
+  it("still quarantines an actual retained TR/PR transition even if metadata lists only one name", () => {
+    const { ds, artifact } = fixture();
+    artifact.symbols[0]!.observations[0]![2] = "OLD TR";
+    expect(calculateIndexDiagnostics(ds, artifact).rows[0]?.status).toBe("quarantined");
+  });
+  it.each(["name", "index", "value"])(
     "quarantines %s identity/value conflicts instead of replacing",
     (kind) => {
       const { ds, artifact } = fixture();
       if (kind === "name") artifact.symbols[0]!.name = "OTHER";
       if (kind === "index") artifact.symbols[0]!.observations[5]![2] = "OTHER";
-      if (kind === "historical") artifact.symbols[0]!.historicalIndexNames.push("OLD TR");
       if (kind === "value") artifact.symbols[0]!.observations[65]![1] = 1;
       const row = calculateIndexDiagnostics(ds, artifact).rows[0]!;
       expect(row.status).toBe("quarantined");
