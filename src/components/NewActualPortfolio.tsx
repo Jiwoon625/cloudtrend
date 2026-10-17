@@ -1,5 +1,5 @@
 import { actualPriceExitStatus, isActionableActualPriceExit } from "@/lib/newActualPriceExit";
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/cloud";
@@ -572,7 +572,9 @@ export function NewActualPortfolioContent({
 }
 
 type Session = { owner: string; expectedRevision: number; requestId: string; needsReview: boolean };
+export type PurchaseRecordCandidate = { symbol: string; name: string; market: Market };
 type ExecutionDraft = Session & {
+  candidate?: PurchaseRecordCandidate;
   kind: "execution";
   asset: PortfolioAsset;
   id: string;
@@ -639,54 +641,65 @@ function ExecutionFields({
   return (
     <>
       <p className="text-sm">
-        증권사에서 확인한 체결일·단가·수량·비용을 입력하세요. 혼합 체결은 이 포트폴리오에 배정할
-        부분을 따로 입력합니다.
+        실제 매수·매도한 수량과 체결가격을 직접 입력하세요. 확정된 자금배분을 다시 설정할 필요가
+        없습니다.
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="종목코드">
-          <Input
-            required
-            value={draft.symbol}
-            disabled={!!draft.id}
-            onChange={(e) => patch({ symbol: e.target.value.toUpperCase() })}
-          />
-        </Field>
-        <Field label="종목명">
-          <Input
-            required
-            value={draft.name}
-            disabled={draft.originalMixed}
-            onChange={(e) => patch({ name: e.target.value })}
-          />
-        </Field>
-        <Field label="시장">
-          <select
-            className={fieldClass}
-            value={draft.market}
-            disabled={!!draft.id || draft.asset !== "KR"}
-            onChange={(e) => patch({ market: e.target.value as Market })}
-          >
-            {(draft.asset === "KR"
-              ? ["KOSPI", "KOSDAQ"]
-              : draft.asset === "ETF"
-                ? ["ETF"]
-                : ["US"]
-            ).map((market) => (
-              <option key={market}>{market}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="체결 구분">
-          <select
-            className={fieldClass}
-            value={draft.side}
-            disabled={draft.originalMixed}
-            onChange={(e) => patch({ side: e.target.value as "BUY" | "SELL" })}
-          >
-            <option value="BUY">매수</option>
-            <option value="SELL">매도</option>
-          </select>
-        </Field>
+        {draft.candidate ? (
+          <div className="rounded bg-muted p-3 sm:col-span-2">
+            <p className="font-semibold">
+              {draft.name} · {draft.symbol}
+            </p>
+            <p className="text-xs text-muted-foreground">{draft.market} · 매수 기록</p>
+          </div>
+        ) : (
+          <>
+            <Field label="종목코드">
+              <Input
+                required
+                value={draft.symbol}
+                disabled={!!draft.id}
+                onChange={(e) => patch({ symbol: e.target.value.toUpperCase() })}
+              />
+            </Field>
+            <Field label="종목명">
+              <Input
+                required
+                value={draft.name}
+                disabled={draft.originalMixed}
+                onChange={(e) => patch({ name: e.target.value })}
+              />
+            </Field>
+            <Field label="시장">
+              <select
+                className={fieldClass}
+                value={draft.market}
+                disabled={!!draft.id || draft.asset !== "KR"}
+                onChange={(e) => patch({ market: e.target.value as Market })}
+              >
+                {(draft.asset === "KR"
+                  ? ["KOSPI", "KOSDAQ"]
+                  : draft.asset === "ETF"
+                    ? ["ETF"]
+                    : ["US"]
+                ).map((market) => (
+                  <option key={market}>{market}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="체결 구분">
+              <select
+                className={fieldClass}
+                value={draft.side}
+                disabled={draft.originalMixed}
+                onChange={(e) => patch({ side: e.target.value as "BUY" | "SELL" })}
+              >
+                <option value="BUY">매수</option>
+                <option value="SELL">매도</option>
+              </select>
+            </Field>
+          </>
+        )}
         <Field label="실제 체결일">
           <Input
             type="date"
@@ -698,7 +711,7 @@ function ExecutionFields({
             onChange={(e) => patch({ date: e.target.value })}
           />
         </Field>
-        <Field label={`원체결 단가 (${ccy})`}>
+        <Field label={`${draft.candidate ? "실제 매수가" : "원체결 단가"} (${ccy})`}>
           <Input
             type="number"
             required
@@ -709,7 +722,7 @@ function ExecutionFields({
             onChange={(e) => patch({ price: e.target.value })}
           />
         </Field>
-        <Field label="원체결 전체 수량 (정수)">
+        <Field label={draft.candidate ? "실제 매수수량 (주)" : "원체결 전체 수량 (정수)"}>
           <Input
             type="number"
             required
@@ -720,7 +733,7 @@ function ExecutionFields({
             onChange={(e) => patch({ shares: e.target.value })}
           />
         </Field>
-        <Field label={`원체결 전체 비용·세금 (${ccy})`}>
+        <Field label={`${draft.candidate ? "수수료·세금" : "원체결 전체 비용·세금"} (${ccy})`}>
           <Input
             type="number"
             required
@@ -732,58 +745,66 @@ function ExecutionFields({
           />
         </Field>
       </div>
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={draft.mixed}
-          disabled={draft.originalMixed}
-          onChange={(e) => patch({ mixed: e.target.checked })}
-        />
-        혼합 체결 (일부 수량만 배정)
-      </label>
-      {draft.originalMixed && (
-        <p className="rounded border p-3 text-xs text-muted-foreground">
-          혼합 체결은 배정 수량·금액·비용과 메모만 정정할 수 있습니다.
-        </p>
-      )}
-      {draft.mixed ? (
-        <div className="grid gap-3 rounded border p-3 sm:grid-cols-3">
-          <Field label="배정 수량">
-            <Input
-              type="number"
-              required
-              min="1"
-              step="1"
-              value={draft.quantity}
-              onChange={(e) => patch({ quantity: e.target.value })}
+      <details
+        open={draft.mixed || draft.originalMixed || undefined}
+        className="rounded border p-3"
+      >
+        <summary className="cursor-pointer text-sm">일부 수량만 배정하는 경우</summary>
+        <div className="mt-3 space-y-3">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={draft.mixed}
+              disabled={draft.originalMixed}
+              onChange={(e) => patch({ mixed: e.target.checked })}
             />
-          </Field>
-          <Field label={`배정 금액 (${ccy})`}>
-            <Input
-              type="number"
-              required
-              min="0.00000001"
-              step="0.00000001"
-              value={draft.gross}
-              onChange={(e) => patch({ gross: e.target.value })}
-            />
-          </Field>
-          <Field label={`배정 비용 (${ccy})`}>
-            <Input
-              type="number"
-              required
-              min="0"
-              step="0.00000001"
-              value={draft.allocatedFee}
-              onChange={(e) => patch({ allocatedFee: e.target.value })}
-            />
-          </Field>
+            혼합 체결 (일부 수량만 배정)
+          </label>
+          {draft.originalMixed && (
+            <p className="rounded border p-3 text-xs text-muted-foreground">
+              혼합 체결은 배정 수량·금액·비용과 메모만 정정할 수 있습니다.
+            </p>
+          )}
+          {draft.mixed ? (
+            <div className="grid gap-3 rounded border p-3 sm:grid-cols-3">
+              <Field label="배정 수량">
+                <Input
+                  type="number"
+                  required
+                  min="1"
+                  step="1"
+                  value={draft.quantity}
+                  onChange={(e) => patch({ quantity: e.target.value })}
+                />
+              </Field>
+              <Field label={`배정 금액 (${ccy})`}>
+                <Input
+                  type="number"
+                  required
+                  min="0.00000001"
+                  step="0.00000001"
+                  value={draft.gross}
+                  onChange={(e) => patch({ gross: e.target.value })}
+                />
+              </Field>
+              <Field label={`배정 비용 (${ccy})`}>
+                <Input
+                  type="number"
+                  required
+                  min="0"
+                  step="0.00000001"
+                  value={draft.allocatedFee}
+                  onChange={(e) => patch({ allocatedFee: e.target.value })}
+                />
+              </Field>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              체결 수량·금액·비용 전부를 이 포트폴리오에 반영합니다.
+            </p>
+          )}
         </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          체결 수량·금액·비용 전부를 이 포트폴리오에 반영합니다.
-        </p>
-      )}
+      </details>
       <Field label="증권사 체결 근거 (필수)">
         <Input
           required
@@ -797,15 +818,18 @@ function ExecutionFields({
         계좌 비밀번호·인증정보·비밀정보는 입력하지 마세요. 체결 비용에 세금을 포함했다면 현금 내역의
         별도 세금에 다시 넣지 않습니다.
       </p>
-      <Field label="메모">
-        <textarea
-          className={fieldClass}
-          rows={2}
-          maxLength={300}
-          value={draft.note}
-          onChange={(e) => patch({ note: e.target.value })}
-        />
-      </Field>
+      <details className="rounded border p-3">
+        <summary className="cursor-pointer text-sm">메모 (선택)</summary>
+        <Field label="메모">
+          <textarea
+            className={fieldClass}
+            rows={2}
+            maxLength={300}
+            value={draft.note}
+            onChange={(e) => patch({ note: e.target.value })}
+          />
+        </Field>
+      </details>
       <label className="flex items-start gap-2 rounded border p-3 text-sm">
         <input
           type="checkbox"
@@ -903,7 +927,11 @@ export function NewActualPortfolio({
   selectedAsset,
   onAssetChange,
   children,
+  entryCandidate,
+  onEntryClose,
 }: {
+  entryCandidate?: PurchaseRecordCandidate;
+  onEntryClose?: () => void;
   selectedAsset?: PortfolioAsset | undefined;
   onAssetChange?: ((asset: PortfolioAsset) => void) | undefined;
   children?: ReactNode;
@@ -972,57 +1000,74 @@ export function NewActualPortfolio({
     queryFn: async () =>
       newActualPortfolioServer({ data: { action: "load", accessToken: await token(owner!) } }),
   });
-  function session(currency: Currency): Session | null {
-    if (!owner || guard.current.pending || guard.current.needsReload || draft) return null;
-    const revision = currency === "USD" ? query.data?.usRevision : query.data?.domesticRevision;
-    if (revision == null) {
-      setWriteError("원장을 먼저 새로고침한 뒤 입력을 다시 열어 주세요.");
-      return null;
-    }
-    setWriteError(null);
-    return {
-      owner,
-      expectedRevision: revision,
-      requestId: crypto.randomUUID(),
-      needsReview: false,
-    };
-  }
-  function openExecution(nextAsset: PortfolioAsset, trade?: Trade) {
-    const opened = session(currencyOf(nextAsset));
-    if (!opened) return;
-    const execution = trade?.execution;
-    setDraft({
-      ...opened,
-      kind: "execution",
-      asset: nextAsset,
-      id: execution?.id ?? "",
-      symbol: execution?.symbol ?? "",
-      name: execution?.name ?? "",
-      market: (execution?.market ??
-        (nextAsset === "US" ? "US" : nextAsset === "ETF" ? "ETF" : "KOSPI")) as Market,
-      side: execution?.side ?? "BUY",
-      date: execution?.date ?? newActualMarketDay(currencyOf(nextAsset)),
-      price: execution ? String(execution.price) : "",
-      shares: execution ? String(execution.shares) : "",
-      fee: execution ? String(execution.fee) : "0",
-      note: execution?.note ?? "",
-      originalMixed:
-        !!trade &&
-        (trade.rawProtected === true || trade.allocation.quantity < trade.execution.shares),
-      mixed:
-        !!trade &&
-        (trade.rawProtected === true ||
-          trade.allocation.quantity !== execution?.shares ||
-          trade.allocation.gross !==
-            Number(((execution?.price ?? 0) * (execution?.shares ?? 0)).toFixed(8)) ||
-          trade.allocation.fee !== execution?.fee),
-      quantity: trade ? String(trade.allocation.quantity) : "",
-      gross: trade ? String(trade.allocation.gross) : "",
-      allocatedFee: trade ? String(trade.allocation.fee) : "",
-      brokerReference: trade?.allocation.brokerReference ?? "",
-      confirmed: false,
-    });
-  }
+  const session = useCallback(
+    (currency: Currency): Session | null => {
+      if (!owner || guard.current.pending || guard.current.needsReload || draft) return null;
+      const revision = currency === "USD" ? query.data?.usRevision : query.data?.domesticRevision;
+      if (revision == null) {
+        setWriteError("원장을 먼저 새로고침한 뒤 입력을 다시 열어 주세요.");
+        return null;
+      }
+      setWriteError(null);
+      return {
+        owner,
+        expectedRevision: revision,
+        requestId: crypto.randomUUID(),
+        needsReview: false,
+      };
+    },
+    [owner, draft, query.data?.usRevision, query.data?.domesticRevision],
+  );
+  const openExecution = useCallback(
+    (nextAsset: PortfolioAsset, trade?: Trade, candidate?: PurchaseRecordCandidate) => {
+      const opened = session(currencyOf(nextAsset));
+      if (!opened) return;
+      const execution = trade?.execution;
+      setDraft({
+        ...opened,
+        kind: "execution",
+        ...(candidate ? { candidate } : {}),
+        asset: nextAsset,
+        id: execution?.id ?? "",
+        symbol: execution?.symbol ?? candidate?.symbol ?? "",
+        name: execution?.name ?? candidate?.name ?? "",
+        market: (execution?.market ??
+          candidate?.market ??
+          (nextAsset === "US" ? "US" : nextAsset === "ETF" ? "ETF" : "KOSPI")) as Market,
+        side: execution?.side ?? "BUY",
+        date: execution?.date ?? newActualMarketDay(currencyOf(nextAsset)),
+        price: execution ? String(execution.price) : "",
+        shares: execution ? String(execution.shares) : "",
+        fee: execution ? String(execution.fee) : "0",
+        note: execution?.note ?? "",
+        originalMixed:
+          !!trade &&
+          (trade.rawProtected === true || trade.allocation.quantity < trade.execution.shares),
+        mixed:
+          !!trade &&
+          (trade.rawProtected === true ||
+            trade.allocation.quantity !== execution?.shares ||
+            trade.allocation.gross !==
+              Number(((execution?.price ?? 0) * (execution?.shares ?? 0)).toFixed(8)) ||
+            trade.allocation.fee !== execution?.fee),
+        quantity: trade ? String(trade.allocation.quantity) : "",
+        gross: trade ? String(trade.allocation.gross) : "",
+        allocatedFee: trade ? String(trade.allocation.fee) : "",
+        brokerReference: trade?.allocation.brokerReference ?? "",
+        confirmed: false,
+      });
+    },
+    [session],
+  );
+  const openedEntry = useRef(false);
+  useEffect(() => {
+    if (!entryCandidate || openedEntry.current || !owner || !query.data || draft) return;
+    const revision =
+      entryCandidate.market === "US" ? query.data.usRevision : query.data.domesticRevision;
+    if (revision == null || guard.current.pending || guard.current.needsReload) return;
+    openedEntry.current = true;
+    openExecution(assetOf(entryCandidate.market), undefined, entryCandidate);
+  }, [entryCandidate, owner, query.data, draft, openExecution]);
   function openCash(currency: Currency, event?: CashEvent) {
     const opened = session(currency);
     if (!opened) return;
@@ -1064,7 +1109,10 @@ export function NewActualPortfolio({
       });
   }
   function closeEditor() {
-    if (!guard.current.pending) setDraft(null);
+    if (!guard.current.pending) {
+      setDraft(null);
+      onEntryClose?.();
+    }
   }
   async function refresh() {
     if (guard.current.pending || !owner) return;
@@ -1237,6 +1285,7 @@ export function NewActualPortfolio({
       if (ownerRef.current !== current.owner) return;
       qc.setQueryData(queryKey, result);
       setDraft(null);
+      onEntryClose?.();
     } catch (error) {
       if (ownerRef.current !== current.owner) return;
       guard.current.needsReload = true;
@@ -1266,25 +1315,39 @@ export function NewActualPortfolio({
           : null;
   return (
     <>
-      <NewActualPortfolioContent
-        data={query.data}
-        loading={!authReady || (!!owner && query.isPending)}
-        error={loadError}
-        asset={asset}
-        onAssetChange={(next) => {
-          if (onAssetChange) onAssetChange(next);
-          else setLocalAsset(next);
-        }}
-        onExecution={openExecution}
-        onCancelExecution={cancelExecution}
-        onCash={openCash}
-        onCancelCash={cancelCash}
-        writesDisabled={busy || guard.current.needsReload || !!draft}
-        onReload={() => void refresh()}
-        refreshing={busy || query.isFetching}
-      >
-        {children}
-      </NewActualPortfolioContent>
+      {!entryCandidate ? (
+        <NewActualPortfolioContent
+          data={query.data}
+          loading={!authReady || (!!owner && query.isPending)}
+          error={loadError}
+          asset={asset}
+          onAssetChange={(next) => {
+            if (onAssetChange) onAssetChange(next);
+            else setLocalAsset(next);
+          }}
+          onExecution={openExecution}
+          onCancelExecution={cancelExecution}
+          onCash={openCash}
+          onCancelCash={cancelCash}
+          writesDisabled={busy || guard.current.needsReload || !!draft}
+          onReload={() => void refresh()}
+          refreshing={busy || query.isFetching}
+        >
+          {children}
+        </NewActualPortfolioContent>
+      ) : !draft ? (
+        <div className="rounded border p-4" role="status">
+          <p>
+            {loadError ??
+              (query.data
+                ? "원장 확인 후 수량을 입력할 수 있습니다."
+                : "매수 기록을 불러오는 중입니다…")}
+          </p>
+          <Button variant="outline" onClick={onEntryClose}>
+            닫기
+          </Button>
+        </div>
+      ) : null}
       {writeError && !draft && (
         <p role="alert" className="mt-4 rounded border border-destructive p-3 text-sm">
           {writeError}
@@ -1300,7 +1363,7 @@ export function NewActualPortfolio({
           <DialogHeader>
             <DialogTitle>
               {draft?.kind === "execution"
-                ? `${draft.id ? "체결 정정" : "실제 체결 입력"} · ${labels[draft.asset]}`
+                ? `${draft.candidate ? "매수수량 기록" : draft.id ? "체결 정정" : "실제 체결 입력"} · ${labels[draft.asset]}`
                 : draft?.kind === "cash"
                   ? `${draft.id ? "현금 정정" : "실제 현금 입력"} · ${draft.currency}`
                   : "기록 취소"}
