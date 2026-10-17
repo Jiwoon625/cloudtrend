@@ -9,7 +9,7 @@ import {
 import { decimal, divide, format, multiply } from "./ledger/decimal";
 import { actualPooledBasisByDate, reconstructActualPriceCycle } from "./actualHoldingPriceLots";
 import { listActiveSources } from "./screeningSources.server";
-import { priceInputs } from "./portfolioLedgers.server";
+import { getCachedActualPriceInputs } from "./portfolioLedgers.server";
 import type { NewActualPool, NewActualPosition } from "./newActualPortfolio";
 
 type PriceExit = NonNullable<NewActualPosition["priceExit"]>;
@@ -111,8 +111,9 @@ export async function attachActualHoldingPriceExits(
     for (const issue of cached.issues) if (!pool.issues.includes(issue)) pool.issues.push(issue);
     return;
   }
-  const inputs = await priceInputs(
+  const inputs = await getCachedActualPriceInputs(
     client,
+    uid,
     sources,
     new Set(positions.map((p) => p.symbol)),
     "2026-10-12",
