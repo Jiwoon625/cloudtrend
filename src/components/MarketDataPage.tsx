@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { RefreshCw } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { DataError } from "@/components/DataError";
+import { UnderlyingIndexDiagnosticsPanel } from "@/components/UnderlyingIndexDiagnosticsPanel";
 import { KrMarketDataPanel } from "@/components/KrMarketDataPanel";
 import { UsMarketDataPanel } from "@/components/UsMarketDataPanel";
 import { Button } from "@/components/ui/button";
@@ -163,6 +164,7 @@ export function MarketDataContent() {
             운영규칙·계산 산식
           </Link>
         </nav>
+        <UnderlyingIndexDiagnosticsPanel />
         <MarketDataOverview
           {...(kr.data ? { kr: kr.data } : {})}
           {...(us.data ? { us: us.data } : {})}

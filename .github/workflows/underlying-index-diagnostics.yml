@@ -1,0 +1,26 @@
+name: Underlying index diagnostic safety
+on:
+  pull_request:
+    paths:
+      - src/lib/underlyingIndex*
+      - src/components/UnderlyingIndexDiagnosticsPanel.tsx
+      - src/components/MarketDataPage.tsx
+      - tests/underlying-index*
+      - vitest.underlying-index.config.ts
+      - scripts/build-underlying-index-supplement.py
+      - .github/workflows/underlying-index-diagnostics.yml
+permissions:
+  contents: read
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --config vitest.underlying-index.config.ts
+      - run: npx tsc --noEmit
