@@ -1,6 +1,6 @@
 # Prospective ETF MA60 publication ingress
 
-This change keeps `OPERATIONAL_INDEX_ENABLED=false` until the reviewed verification deployment and authenticated no-save comparison succeed. Activation is a separate commit. Only new screening inputs dated 2026-10-19 or later can use the provider.
+The prospective release is enabled after independent review and fixed-input web/Actions parity verification. Only new screening inputs dated 2026-10-19 or later can use the provider. Deployment does not execute screening or replay history.
 
 ## Boundaries
 
@@ -37,10 +37,18 @@ After successful activation, the user executes the first new real screening. Unt
 
 The chart repair utility validates the saved digest and provider identity, reconstructs the same pinned provider independently of rollout state, and accepts an explicit original scoring-config JSON for non-default results. It does not run screening or modify a ledger. Actions reuse validates the owner provider before accepting an operational-date cached run; provider and ordered source identity are part of prospective reuse eligibility. The missing-installation decision rechecks the receipt after absent artifact bytes, blocking a receipt-first installation race instead of publishing legacy results during that observed race.
 
-Operational activation remains OFF. Separate authenticated web and Actions diagnostic requests must finish and agree before reactivation. A platform-level termination of the previous combined request was observed; without runtime logs it is not certified as a timeout or memory failure. No production screening or repair utility was executed by these tests.
+The initial verification releases kept operational activation OFF while separate authenticated web and Actions diagnostic requests were checked. A platform-level termination of the previous combined request was observed; without runtime logs it is not certified as a timeout or memory failure. No production screening or repair utility was executed by these tests.
 
 ## Bounded canonical normalization
 
 The first deployed two-request check completed the raw web phase but the Actions phase returned a generic platform server error. No timeout or out-of-memory cause is certified. Post-check hashes for 26 owner database scopes and 5,108 non-research Storage objects remained unchanged.
 
-The Actions diagnostic now downloads and validates each original source's bytes, immediately canonicalizes it, and retains only canonical text for the final parser. It does not hold all raw source text in parallel with each validator's normalized rows and sorted CSV. The original file hash, logical/schema hashes, source precedence and validator remain mandatory and unchanged. Diagnostic output/logging is bounded numeric byte counts and elapsed times, never source rows, paths or credentials. This remains a read-only diagnostic, not a new workflow or live screening execution. Operational activation remains OFF pending successful actual parity.
+The Actions diagnostic now downloads and validates each original source's bytes, immediately canonicalizes it, and retains only canonical text for the final parser. It does not hold all raw source text in parallel with each validator's normalized rows and sorted CSV. The original file hash, logical/schema hashes, source precedence and validator remain mandatory and unchanged. Diagnostic output/logging is bounded numeric byte counts and elapsed times, never source rows, paths or credentials. This remains a read-only diagnostic, not a new workflow or live screening execution. That validation deployment kept operational activation OFF pending successful actual parity.
+
+## Prospective activation verification, 2026-10-17
+
+The user supplied a completed diagnostic export after the bounded normalization deployment. Its SHA-256 is `393747553b78b798b781ab421d451b81b20fa0b5caa8aee8a0306fa41b910734`. The export contains web and Actions result digests and input fingerprints that match exactly, with 22 sources and 1,790 analysis rows. The original dataset digest is unchanged. Across all 768 changed ETF strategy snapshots, only provenance fields and 218 numeric MA60 values differ; entry/exit, score, raw onset and underlying close are unchanged. The full prior fixed-input comparison fields match the earlier independently verified report. Web phase elapsed 82,241 ms and Actions phase 152,545 ms. These are completed fixed-input comparison measurements, not a promise about future duration.
+
+The supplied export is not attributed to an earlier unobserved browser request: it has no execution timestamp or signed run identity. Its file metadata and user-provided success screenshot corroborate the result; independent record/Storage metadata observations are reported separately, not inferred from `writesPerformed=0`. A subsequent read-only audit found all 26 database scope hashes and 5,108 non-research Storage object metadata hashes unchanged from the verification baseline; this is not a re-download/hash of every stored object byte.
+
+The release flag can now enable the existing guarded publication provider for new input dates from 2026-10-19 only. No engine, chart, cache, owner-installation or financial-ledger logic changes in the activation commit. Cash/bond and other non-target ETFs remain reference-only. The first real new screening session remains unverified until the user runs it and its output is checked.
