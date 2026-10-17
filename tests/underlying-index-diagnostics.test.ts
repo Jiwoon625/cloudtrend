@@ -1,3 +1,4 @@
+import { collectUnderlyingIndexEvidence } from "../src/lib/underlyingIndexEvidence";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { gzipSync } from "node:zlib";
 import { readFileSync } from "node:fs";
@@ -339,5 +340,101 @@ describe("dedicated authenticated server implementation", () => {
     const { ds, artifact } = fixture();
     expect(calculateIndexDiagnostics(ds, artifact).rows[0]?.diagnosticMa60).toBe(135.5);
     expect(ds.bars["0046A0"]?.at(-1)?.close).toBe(101);
+  });
+});
+
+describe("quarantine evidence export", () => {
+  it("exports both values and source candidates without changing diagnosis or inputs", () => {
+    const { ds, artifact, csv } = fixture();
+    const day = artifact.calendar.at(-1)!;
+    artifact.symbols[0]!.observations.at(-1)![1] = 999;
+    const before = datasetDigest(ds);
+    const report = calculateIndexDiagnostics(ds, artifact);
+    const source = {
+      id: "source1",
+      original_filename: "input.csv",
+      file_hash: "sha256:verified",
+      activated_at: null,
+      created_at: now,
+    } as never;
+    const evidence = collectUnderlyingIndexEvidence(ds, artifact, report, [source], [csv]);
+    const pair = evidence.observations.find((o) => o.date === day)!;
+    expect(pair).toMatchObject({
+      symbol: "0046A0",
+      activeValue: 165,
+      supplementValue: 999,
+      valueConflict: true,
+    });
+    expect(evidence.sourceRows.find((o) => o.date === day)).toMatchObject({
+      sourceId: "source1",
+      indexValue: "165",
+      indexName: "INDEX",
+    });
+    expect(evidence.sourceRows.every((o) => !("close" in o) && !("volume" in o))).toBe(true);
+    expect(evidence.activeSources[0]).toMatchObject({
+      filename: "input.csv",
+      sha256: "sha256:verified",
+    });
+    expect(evidence.sourceRowsAreCandidatesNotWinningProvenance).toBe(true);
+    expect(datasetDigest(ds)).toBe(before);
+    expect(calculateIndexDiagnostics(ds, artifact)).toEqual(report);
+  });
+  it("does not export clean instruments and rejects misaligned source metadata", () => {
+    const { ds, artifact, csv } = fixture();
+    const report = calculateIndexDiagnostics(ds, artifact);
+    expect(collectUnderlyingIndexEvidence(ds, artifact, report, [], []).observations).toEqual([]);
+    expect(() => collectUnderlyingIndexEvidence(ds, artifact, report, [], [csv])).toThrow();
+  });
+});
+
+describe("bounded evidence and source format disclosure", () => {
+  it("discloses JSON source omission without blocking normalized evidence", () => {
+    const { ds, artifact } = fixture();
+    artifact.symbols[0]!.observations.at(-1)![1] = 999;
+    const report = calculateIndexDiagnostics(ds, artifact);
+    const source = { id: "json-source" } as never;
+    const evidence = collectUnderlyingIndexEvidence(
+      ds,
+      artifact,
+      report,
+      [source],
+      ['[{"symbol":"0046A0"}]'],
+    );
+    expect(evidence.observations[0]?.activeValue).toBe(165);
+    expect(evidence.sourceRows).toEqual([]);
+    expect(evidence.sourceEvidenceComplete).toBe(false);
+    expect(evidence.limitations[0]).toContain("JSON");
+  });
+  it("caps raw evidence and explicitly reports omission", () => {
+    const { ds, artifact } = fixture();
+    artifact.symbols[0]!.observations.at(-1)![1] = 999;
+    const report = calculateIndexDiagnostics(ds, artifact);
+    const header = "symbol,date,etfUnderlyingIndexClose";
+    const csv = [header, ...Array(5100).fill(`0046A0,${ds.asOfDate},165`)].join("\n");
+    const evidence = collectUnderlyingIndexEvidence(
+      ds,
+      artifact,
+      report,
+      [{ id: "bounded" } as never],
+      [csv],
+    );
+    expect(evidence.sourceRows.length).toBeLessThanOrEqual(5000);
+    expect(evidence.sourceEvidenceComplete).toBe(false);
+    expect(evidence.limitations.join(" ")).toContain("limit");
+  });
+  it("uses last alias column while explicitly marking ambiguity", () => {
+    const { ds, artifact } = fixture();
+    artifact.symbols[0]!.observations.at(-1)![1] = 999;
+    const report = calculateIndexDiagnostics(ds, artifact);
+    const csv = `symbol,code,date,etfUnderlyingIndexClose,etf_underlying_index_close\n000000,0046A0,${ds.asOfDate},1,165`;
+    const evidence = collectUnderlyingIndexEvidence(
+      ds,
+      artifact,
+      report,
+      [{ id: "alias" } as never],
+      [csv],
+    );
+    expect(evidence.sourceRows[0]?.indexValue).toBe("165");
+    expect(evidence.sourceEvidenceComplete).toBe(false);
   });
 });
