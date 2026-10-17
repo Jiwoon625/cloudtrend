@@ -134,6 +134,8 @@ export async function persistWebScreeningCaches(input: {
     payload,
   };
   const dashboard = buildDashboardSummary(input.analysis, fingerprint, digest);
+  if (input.snapshot.sourceRegisteredAt)
+    dashboard.sourceRegisteredAt = input.snapshot.sourceRegisteredAt;
   memory("dashboard-built", dashboard.counts);
   memory("raw-cache-merge-start");
   const canonicalCsv = canonicalMergedCsv(input.inputs);

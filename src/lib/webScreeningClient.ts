@@ -5,10 +5,6 @@ import { runWebScreeningServer } from "@/lib/webScreening.functions";
 
 let serverBuildInFlight: ReturnType<typeof runWebScreeningServer> | null = null;
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
 async function buildCachesOnServer() {
   if (serverBuildInFlight) return serverBuildInFlight;
   serverBuildInFlight = (async () => {
@@ -25,38 +21,21 @@ async function buildCachesOnServer() {
   return serverBuildInFlight;
 }
 
+/** Read-only page queries. Only the explicit rebuild action may run screening. */
 export async function getOrBuildDashboardSummaryServerFirst() {
   const cached = await readDashboardCache();
-  if (cached) {
-    return cached;
-  }
-  try {
-    await buildCachesOnServer();
-    const rebuilt = await readDashboardCache();
-    if (rebuilt) return rebuilt;
-    throw new Error("서버 계산은 완료됐지만 대시보드 캐시를 다시 읽지 못했습니다.");
-  } catch (serverError) {
-    throw new Error(
-      `서버 스크리닝 실패: ${errorMessage(serverError)}. 잠시 후 다시 시도해 주세요.`,
-    );
-  }
+  if (cached) return cached;
+  throw new Error(
+    "저장된 결과가 없거나 자료가 갱신되었습니다. 자료수집 후 게시된 스크리닝을 기다리거나 데이터 관리에서 명시적으로 실행해 주세요.",
+  );
 }
 
 export async function getOrBuildScreeningPayloadServerFirst() {
   const cached = await readScreeningCache();
-  if (cached) {
-    return cached.payload;
-  }
-  try {
-    await buildCachesOnServer();
-    const rebuilt = await readScreeningCache();
-    if (rebuilt) return rebuilt.payload;
-    throw new Error("서버 계산은 완료됐지만 스크리닝 캐시를 다시 읽지 못했습니다.");
-  } catch (serverError) {
-    throw new Error(
-      `서버 스크리닝 실패: ${errorMessage(serverError)}. 잠시 후 다시 시도해 주세요.`,
-    );
-  }
+  if (cached) return cached.payload;
+  throw new Error(
+    "저장된 결과가 없거나 자료가 갱신되었습니다. 자료수집 후 게시된 스크리닝을 기다리거나 데이터 관리에서 명시적으로 실행해 주세요.",
+  );
 }
 
 /** Explicit screening checks inputs; unchanged successful publications reuse verified results. */

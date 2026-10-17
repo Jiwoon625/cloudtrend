@@ -12,7 +12,7 @@ export function entrySuppressionReason(
 ): "held" | "sold" | null {
   if (!context) return null;
   if (context.heldSymbols.includes(symbol)) return "held";
-  const lastSellDate = context.lastSellDateBySymbol[symbol];
+  const lastSellDate = context.lastSellDateBySymbol?.[symbol];
   return lastSellDate && lastSellDate >= signalDate ? "sold" : null;
 }
 

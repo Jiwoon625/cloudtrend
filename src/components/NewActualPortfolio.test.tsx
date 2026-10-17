@@ -341,7 +341,7 @@ describe("new-only portfolio presentation", () => {
       <NewActualPortfolioContent data={confirmed()} asset="KR" onAssetChange={() => undefined} />,
     );
     expect(html).toContain("1,040 KRW");
-    expect(html).toContain("4%");
+    expect(html).toContain("4.00%");
     expect(html).toContain("가격 기준일 2026-10-12");
     expect(html).toContain("1 / 2");
     expect(html).toContain("synthetic-broker-fill");
@@ -503,7 +503,7 @@ describe("new-only portfolio presentation", () => {
     );
     expect(html).toContain("평가가격이 오래되어 평가 미확정 (000001)");
     expect(html).toContain("취소됨");
-    expect(html).not.toContain("4%");
+    expect(html).not.toContain("4.00%");
   });
   it("shows recorded realized profit while funding and aggregate returns remain unresolved", () => {
     const data = pending();
@@ -550,9 +550,9 @@ describe("new portfolio editor safety", () => {
     for (const copy of [
       "실제 매수·매도한 수량과 체결가격을 직접 입력하세요.",
       "실제 체결일",
-      "원체결 단가",
-      "원체결 전체 수량",
-      "원체결 전체 비용·세금",
+      "실제 체결가격",
+      "실제 체결수량",
+      "수수료·세금 합계",
       "증권사 체결 근거 (필수)",
       "실제 체결이며 위 배정 수량·금액·비용을 확인했습니다",
       "증권사 주문은 실행하지 않습니다.",
@@ -744,9 +744,9 @@ describe("new portfolio editor safety", () => {
     for (const label of [
       "체결 구분",
       "실제 체결일",
-      "원체결 단가",
-      "원체결 전체 수량",
-      "원체결 전체 비용",
+      "실제 체결가격",
+      "실제 체결수량",
+      "수수료·세금 합계",
     ]) {
       const start = html.indexOf(label);
       const field = html.slice(start, html.indexOf("</label>", start));
@@ -988,7 +988,7 @@ describe("new portfolio editor safety", () => {
       retry: false,
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
-      gcTime: 0,
+      gcTime: 5 * 60_000,
     });
   });
 });

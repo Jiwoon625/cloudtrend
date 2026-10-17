@@ -216,6 +216,8 @@ export async function runWebScreeningForUser(
       payload: { analysis, source },
     };
     const dashboard = buildDashboardSummary(analysis, fingerprint, digest);
+    const sourceRegisteredAt = latestSourceRegistration(sources, analysis.asOfDate);
+    if (sourceRegisteredAt) dashboard.sourceRegisteredAt = sourceRegisteredAt;
     const screeningPath = `${userId}/cache/screening/latest.json`;
     const dashboardPath = `${userId}/cache/dashboard/latest.json`;
 

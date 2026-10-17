@@ -1,3 +1,4 @@
+import { entrySuppressionReason } from "@/lib/positionSignalContext";
 import { isOperationalSignalDate, OPERATIONAL_SIGNAL_START } from "@/lib/operationalSignalStart";
 import { compareUsCandidates } from "@/lib/usCandidatePriority";
 import { Link } from "@tanstack/react-router";
@@ -102,7 +103,7 @@ export function UsScreenerPage() {
     staleTime: 60_000,
   });
   const [filter, setFilter] = useSessionViewState<Filter>(
-    "us-screener:filter",
+    "us-screener:actual-filter",
     "PRIMARY_ENTRY",
     viewChoice([
       "FUNNEL_1",
@@ -117,16 +118,25 @@ export function UsScreenerPage() {
     ]),
   );
   const [funnelStrategy, setFunnelStrategy] = useSessionViewState<"A0" | "B3">(
-    "us-screener:funnel-strategy",
+    "us-screener:actual-funnel-strategy",
     "A0",
-    viewChoice(["A0", "B3"]),
+    viewChoice(["A0"]),
+  );
+  const [detail, setDetail] = useSessionViewState(
+    "us-screener:detail",
+    "summary",
+    viewChoice(["summary", "detail"]),
   );
   const heldKnown = positions.isSuccess && !positions.isError;
   const exitUnavailable = filter === "PRIMARY_EXIT" && !heldKnown;
   const [sector, setSector] = useSessionViewState("us-screener:sector", "", viewText);
   const [page, setPage] = useSessionViewState("us-screener:page", 0, viewPage);
   const [search, setSearch] = useSessionViewState("us-screener:search", "", viewText);
-  const [sort, setSort] = useSessionViewState<ScreenerSort>("us-screener:sort", null, validSort);
+  const [sort, setSort] = useSessionViewState<ScreenerSort>(
+    "us-screener:actual-sort",
+    null,
+    validSort,
+  );
   const rows = query.data?.analysis.rows ?? EMPTY_ROWS;
   // Keep the saved rows intact; the operating view is bounded by each market signal date.
   const operationalRows = useMemo(
@@ -162,13 +172,13 @@ export function UsScreenerPage() {
       {
         step: "3",
         label: "확인 조건 통과",
-        description: "A0/A2 TK 상위 20% 이내 · B3 RelVol 상위 20% 이내",
+        description: "A0 TK 상위 20% 이내",
         a0: aggressiveConfirm.length,
         b3: balancedConfirm.length,
       },
       {
         step: "4",
-        label: "최종 진입 준비",
+        label: "공통 진입 조건 통과",
         description: "유동성·거래가능 등 공통 조건까지 통과",
         a0: candidates.filter((r) => r.a0Entry).length,
         b3: candidates.filter((r) => r.b3Entry).length,
@@ -191,7 +201,8 @@ export function UsScreenerPage() {
           ((funnelStrategy === "B3" ? r.relvolRank : r.tkRank) ?? -1) >= 0.8
         );
       if (filter === "PRIMARY_WATCH") return !r.a0Exit && (r.coreRank ?? 0) >= 0.7;
-      if (filter === "PRIMARY_ENTRY") return r.a0Entry;
+      if (filter === "PRIMARY_ENTRY")
+        return heldKnown && r.a0Entry && !entrySuppressionReason(positions.data, r.symbol, r.date);
       if (filter === "PRIMARY_EXIT")
         return heldKnown && r.a0Exit && positions.data?.heldSymbols.includes(r.symbol);
       if (filter === "A2_ENTRY") return r.a2Entry;
@@ -326,6 +337,9 @@ export function UsScreenerPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Link to="/shadow" className="text-xs underline">
+              전략 원장 · Shadow
+            </Link>
             <Link to="/us/portfolio">
               <Button size="sm" variant="outline">
                 US 포트폴리오
@@ -376,12 +390,11 @@ export function UsScreenerPage() {
                         setPage(0);
                       }}
                     >
-                      <option value="A0">A0/A2</option>
-                      <option value="B3">B3</option>
+                      <option value="A0">A0</option>
                     </select>
                   </label>
                   <p className="text-[10px] text-muted-foreground">
-                    각 단계는 직전 단계 통과 종목 기준 · A0/A2는 동일 진입 신호
+                    각 단계는 직전 단계 통과 종목 기준 · 실제 미보유 후보는 아래 진입 준비에서 확인
                   </p>
                 </div>
                 {operationalRows.length > 0 && entryFunnel[0]?.a0 === 0 ? (
@@ -412,7 +425,7 @@ export function UsScreenerPage() {
                         STEP {item.step}
                       </span>
                       <span className="text-[10px] text-muted-foreground">
-                        {funnelStrategy === "B3" ? "B3" : "A0/A2"}
+                        {funnelStrategy === "B3" ? "B3" : "A0"}
                       </span>
                     </div>
                     <p className="mt-1 text-xs font-semibold">{item.label}</p>
@@ -483,8 +496,6 @@ export function UsScreenerPage() {
                   ["PRIMARY_ENTRY", "A0 진입 준비"],
                   ["PRIMARY_WATCH", "A0 보유·관찰 후보"],
                   ["PRIMARY_EXIT", "A0 청산"],
-                  ["A2_ENTRY", "A2 Shadow 진입 준비"],
-                  ["B3_ENTRY", "B3 Shadow 진입 준비"],
                   ["ALL", "산정 가능 전체"],
                 ] as Array<[Filter, string]>
               ).map(([id, label]) => (
@@ -577,8 +588,18 @@ export function UsScreenerPage() {
                 다음
               </Button>
             </nav>
+            <Button
+              size="sm"
+              variant="outline"
+              aria-pressed={detail === "detail"}
+              onClick={() => setDetail(detail === "detail" ? "summary" : "detail")}
+            >
+              {detail === "detail" ? "요약 보기" : "상세 지표 보기"}
+            </Button>
             <div className="overflow-x-auto rounded-lg border border-border bg-card">
-              <table className="w-full min-w-[1280px] text-xs">
+              <table
+                className={`w-full text-xs ${detail === "detail" ? "min-w-[1280px]" : "[&_tr>*:nth-child(n+5):nth-child(-n+11)]:hidden [&_tr>*:nth-child(n+14):nth-child(-n+17)]:hidden"}`}
+              >
                 <thead>
                   <tr className="border-b bg-surface-strong text-muted-foreground [&>th]:px-2 [&>th]:py-2 [&>th]:text-right">
                     <SortableHeader
@@ -672,13 +693,6 @@ export function UsScreenerPage() {
                       onSort={toggleSort}
                       align="left"
                     />
-                    <SortableHeader
-                      label="Shadow"
-                      sortKey="shadowSignal"
-                      sort={sort}
-                      onSort={toggleSort}
-                      align="left"
-                    />
                   </tr>
                 </thead>
                 <tbody>
@@ -686,6 +700,7 @@ export function UsScreenerPage() {
                     <ScreenerRow
                       key={r.symbol}
                       row={r}
+                      consumed={entrySuppressionReason(positions.data, r.symbol, r.date) === "sold"}
                       held={heldKnown ? positions.data!.heldSymbols.includes(r.symbol) : null}
                     />
                   ))}
@@ -745,7 +760,15 @@ function SortableHeader({
   );
 }
 
-function ScreenerRow({ row: r, held }: { row: UsProspectiveCacheRow; held: boolean | null }) {
+function ScreenerRow({
+  row: r,
+  held,
+  consumed,
+}: {
+  row: UsProspectiveCacheRow;
+  held: boolean | null;
+  consumed: boolean;
+}) {
   const operational = isOperationalSignalDate(r.date);
   return (
     <tr className="border-b border-border/60 last:border-0 [&>td]:px-2 [&>td]:py-2 [&>td]:text-right">
@@ -793,29 +816,18 @@ function ScreenerRow({ row: r, held }: { row: UsProspectiveCacheRow; held: boole
           </span>
         ) : held === null ? (
           <span>보유 미확인</span>
+        ) : held && r.a0Exit ? (
+          <Badge variant="outline">청산 대기</Badge>
+        ) : held ? (
+          <span>실제 보유</span>
+        ) : consumed ? (
+          <span>청산 완료 · 새 신호 대기</span>
         ) : r.a0Entry ? (
           <Badge className="bg-up text-white">진입 준비</Badge>
         ) : held && r.a0Exit ? (
           <Badge variant="outline">{r.a0BetaExit ? "EXIT · β Anchor" : "EXIT"}</Badge>
         ) : (
           <span className="text-muted-foreground">-</span>
-        )}
-      </td>
-      <td className="!text-left text-[10px]">
-        {!operational ? (
-          <span className="text-muted-foreground">
-            {r.a2Entry ? "과거 A2 진입 조건 통과 " : ""}
-            {r.a2Exit ? "과거 A2 청산 조건 충족 " : ""}
-            {r.b3Entry ? "과거 B3 진입 조건 통과 " : ""}
-            {r.b3Exit ? "과거 B3 청산 조건 충족 " : ""}
-          </span>
-        ) : (
-          <>
-            {r.a2Entry ? "A2 진입 준비 " : ""}
-            {held && r.a2Exit ? "A2 X " : ""}
-            {r.b3Entry ? "B3 진입 준비 " : ""}
-            {held && r.b3Exit ? `B3 X${r.b3BetaExit ? "(β)" : ""}` : ""}
-          </>
         )}
       </td>
     </tr>

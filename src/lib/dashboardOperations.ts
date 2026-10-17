@@ -71,6 +71,8 @@ export interface DashboardIndexRow extends Omit<DashboardSignal, "reason"> {
 }
 /** Server-side projection only. No OHLC history, score breakdowns, or shadow fields. */
 export interface DashboardIndex {
+  sourceCollectedAt?: string | undefined;
+  sourceRegisteredAt?: string | undefined;
   screeningCreatedAt?: string | undefined;
   date: string;
   rows: DashboardIndexRow[];
@@ -107,6 +109,10 @@ export interface DashboardActualPoolSummary {
   assetPositions: Record<import("./newActualPortfolio").NewActualAsset, number>;
 }
 export interface DashboardOperations {
+  publications?: {
+    KR: { collectedAt: string | null; registeredAt: string | null; calculatedAt: string | null };
+    US: { collectedAt: string | null; registeredAt: string | null; calculatedAt: string | null };
+  };
   actualAllocation?: Awaited<
     ReturnType<typeof import("./dashboardActualAllocation.server").projectDashboardActualAllocation>
   > | null;

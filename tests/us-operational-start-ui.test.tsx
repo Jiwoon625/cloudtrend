@@ -245,13 +245,7 @@ describe("US operational signal start", () => {
     const body = tableBody(html);
     expect(html).toContain("전체 2종목");
     expect(body).toContain("2026-10-09 · 시작 전 과거 계산 근거");
-    for (const label of [
-      "과거 원신호",
-      "과거 진입 조건 통과",
-      "과거 청산 조건 충족",
-      "과거 A2 진입 조건 통과",
-      "과거 B3 청산 조건 충족",
-    ])
+    for (const label of ["과거 원신호", "과거 진입 조건 통과", "과거 청산 조건 충족"])
       expect(body).toContain(label);
     expect(body).not.toContain("진입 준비");
     expect(body).not.toContain("EXIT ·");

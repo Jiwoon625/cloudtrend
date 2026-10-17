@@ -40,7 +40,7 @@ describe("normal page loads", () => {
     expect(mocks.build).not.toHaveBeenCalled();
     expect(mocks.raw).not.toHaveBeenCalled();
   });
-  it("deduplicates a cache miss and never falls back to downloading raw data when the server fails", async () => {
+  it("rejects cache misses without any screening or raw-data fallback", async () => {
     mocks.read.mockResolvedValue(null);
     mocks.build.mockRejectedValue(new Error("timeout"));
     const results = await Promise.allSettled([
@@ -48,7 +48,7 @@ describe("normal page loads", () => {
       getOrBuildScreeningPayloadServerFirst(),
     ]);
     expect(results.every((r) => r.status === "rejected")).toBe(true);
-    expect(mocks.build).toHaveBeenCalledTimes(1);
+    expect(mocks.build).not.toHaveBeenCalled();
     expect(mocks.raw).not.toHaveBeenCalled();
   });
 });

@@ -488,13 +488,14 @@ export function projectNewActualPool(input: {
   const nav = knownCash && allMarked && !cashValuationTimingUnknown ? cash + marketValue : null;
   const totalPnl = nav === null ? null : nav - netContributions;
   const firstActivityDate = activityDates[0];
-  const initialDeposit =
-    externalFlows.length === 1 &&
-    externalFlows[0]!.kind === "DEPOSIT" &&
-    externalFlows[0]!.date === firstActivityDate
-      ? externalFlows[0]!
+  // Multiple deposits on the opening day are one initial capital base. Later
+  // flows and withdrawals still require a separately approved return method.
+  const initialCapital =
+    externalFlows.length > 0 &&
+    externalFlows.every((event) => event.kind === "DEPOSIT" && event.date === firstActivityDate)
+      ? externalFlows.reduce((sum, event) => sum + exactNumber(event.amount), 0n)
       : null;
-  if (funded && initialDeposit === null) issues.add("flow_adjusted_return_pending");
+  if (funded && initialCapital === null) issues.add("flow_adjusted_return_pending");
   return {
     currency,
     valuationDate,
@@ -507,8 +508,8 @@ export function projectNewActualPool(input: {
     unrealizedPnl: allMarked ? format(unrealized) : null,
     totalPnl: totalPnl === null ? null : format(totalPnl),
     returnPercent:
-      totalPnl !== null && initialDeposit !== null
-        ? format(divide(totalPnl * 100n, exactNumber(initialDeposit.amount)))
+      totalPnl !== null && initialCapital !== null && initialCapital > 0n
+        ? format(divide(totalPnl * 100n, initialCapital))
         : null,
     issues: [...issues].sort(),
     positions,
