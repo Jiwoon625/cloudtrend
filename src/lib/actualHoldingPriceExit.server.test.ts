@@ -31,6 +31,7 @@ function fixture(market: "ETF" | "KOSPI" = "ETF") {
       | "duplicate-match"
       | "duplicate-mismatch",
     downloads: 0,
+    uploads: 0,
   };
   const files = new Map<string, string>();
   const client = {
@@ -51,6 +52,7 @@ function fixture(market: "ETF" | "KOSPI" = "ETF") {
           return { data: files.has(path) ? new Blob([files.get(path)!]) : null, error: null };
         },
         upload: async (path: string, content: string) => {
+          storage.uploads++;
           if (storage.uploadFailure === "thrown") throw new Error("write unavailable");
           if (storage.uploadFailure === "returned")
             return { error: { message: "write unavailable" } };
@@ -86,6 +88,38 @@ beforeEach(() => {
   ];
 });
 describe("actual holding exit evidence", () => {
+  it.each(["KOSPI", "ETF"] as const)(
+    "reuses identical verified %s checkpoints without upload after a cache miss, but saves a new close",
+    async (market) => {
+      const { client, pool, storage, files } = fixture(market);
+      mock.bars[1]!.close = 119;
+      const owner = `reuse-${market}`;
+      await attachActualHoldingPriceExits(client, owner, pool, "2026-10-15T07:00:00Z");
+      expect(storage.uploads).toBe(1);
+      const original = [...files.entries()];
+      mock.hash++;
+      // Storage could reject uploads now; unchanged readback must need none.
+      storage.uploadFailure = "returned";
+      await attachActualHoldingPriceExits(client, owner, pool, "2026-10-16T07:00:00Z");
+      expect(storage.uploads).toBe(1);
+      expect(storage.downloads).toBe(1);
+      expect([...files.entries()]).toEqual(original);
+      expect(pool.positions[0]!.priceExit).toMatchObject({
+        status: "보유",
+        reason: null,
+        auditStatus: "VERIFIED",
+        observationDate: "2026-10-15",
+      });
+      mock.hash++;
+      storage.uploadFailure = "";
+      mock.bars.push({ tradeDate: "2026-10-16", close: 118 });
+      await attachActualHoldingPriceExits(client, owner, pool, "2026-10-16T07:00:00Z");
+      expect(storage.uploads).toBe(2);
+      expect(files.size).toBe(2);
+      expect(pool.positions[0]!.priceExit?.observationDate).toBe("2026-10-16");
+    },
+  );
+
   it("persists the first E4 signal independently of ledger trades and retains it during source outages", async () => {
     const { client, pool, files } = fixture();
     const originalTrades = JSON.stringify(pool.trades);

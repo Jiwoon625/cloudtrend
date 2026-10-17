@@ -475,6 +475,63 @@ describe("new-only portfolio persistence", () => {
     expect(view.pools.KRW.cash).toBe("999");
     expect(view.pools.KRW.positions[0]!.quantity).toBe("10");
   });
+  it.each(["KRW", "USD"] as const)(
+    "%s uses Friday marks on the weekend without modifying the ledger; missing newer closes stay pending",
+    async (currency) => {
+      const db = client();
+      const request = buy(currency === "USD" ? { asset: "US", expectedRevision: 7 } : {});
+      if (currency === "USD") {
+        request.execution.market = "US";
+        request.execution.symbol = "AAPL";
+      }
+      const saved = await saveNewActualPortfolio(db.value, uid, request, now);
+      await saveNewActualPortfolio(
+        db.value,
+        uid,
+        {
+          accessToken: "synthetic",
+          action: "cash",
+          expectedRevision: saved.revision,
+          requestId: "00000000-0000-4000-8000-000000000088",
+          currency,
+          event: {
+            id: "",
+            date: "2026-10-12",
+            kind: "DEPOSIT",
+            amount: 2000,
+            reference: "synthetic-weekend-funding",
+          },
+          confirmed: true,
+        },
+        now,
+      );
+      state.quotes = {
+        [request.execution.symbol]: { price: 110, date: "2026-10-16", exitSignal: null },
+      };
+      const ledgerBefore = JSON.stringify(state.rows);
+      const writesBefore = db.writes.length;
+      const weekend = (await loadNewActualPortfolio(db.value, uid, "2026-10-17T06:00:00Z")).pools[
+        currency
+      ];
+      expect(weekend).toMatchObject({
+        valuationDate: "2026-10-16",
+        cash: "999",
+        marketValue: "1100",
+        nav: "2099",
+        totalPnl: "99",
+      });
+      expect(weekend.positions[0]).toMatchObject({ currentPrice: "110", priceDate: "2026-10-16" });
+      expect(weekend.issues).not.toContain("stale_price");
+      const monday = (await loadNewActualPortfolio(db.value, uid, "2026-10-19T21:00:00Z")).pools[
+        currency
+      ];
+      expect(monday.valuationDate).toBe("2026-10-19");
+      expect(monday.nav).toBeNull();
+      expect(monday.issues).toContain("stale_price");
+      expect(JSON.stringify(state.rows)).toBe(ledgerBefore);
+      expect(db.writes).toHaveLength(writesBefore);
+    },
+  );
   it("sends US fills to USD owner table and keeps KR/ETF untouched", async () => {
     const before = structuredClone(state.rows[kr]),
       db = client();

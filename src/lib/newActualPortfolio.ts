@@ -95,6 +95,8 @@ export interface NewActualTrade {
 }
 export interface NewActualPool {
   currency: NewActualCurrency;
+  /** Latest completed exchange session; null when calendar evidence is unavailable. */
+  valuationDate?: string | null;
   fundingStatus: "PENDING" | "CONFIRMED" | "INCOMPLETE";
   netContributions: string | null;
   cash: string | null;
@@ -495,6 +497,7 @@ export function projectNewActualPool(input: {
   if (funded && initialDeposit === null) issues.add("flow_adjusted_return_pending");
   return {
     currency,
+    valuationDate,
     fundingStatus: !funded ? "PENDING" : shortfall ? "INCOMPLETE" : "CONFIRMED",
     netContributions: funded ? format(netContributions) : null,
     cash: knownCash ? format(cash) : null,
