@@ -11,7 +11,7 @@ vi.mock("./screeningSources.server", () => ({
   listActiveSources: async () => [{ id: "source", file_hash: String(mock.hash) }],
 }));
 vi.mock("./portfolioLedgers.server", () => ({
-  priceInputs: async () => {
+  getCachedActualPriceInputs: async () => {
     if (mock.unavailable) throw new Error("offline");
     return {
       bars: { ABC: mock.bars },

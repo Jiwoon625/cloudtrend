@@ -8,10 +8,11 @@ import { readWebsiteDocument } from "./ledger/websiteRepository.server";
 import { parseManualMarketData } from "./engine/manualDataset";
 import { evaluateKospiMarketGateAtDate } from "./engine/kospiMarketGate";
 import { createHash } from "node:crypto";
+import { gzipSync, gunzipSync } from "node:zlib";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { listActiveSources, type ActiveSourceRecord } from "./screeningSources.server";
 import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
-import type { Market } from "./engine/types";
+import type { DailyPrice, Market } from "./engine/types";
 import type { ScreeningSnapshot } from "./screeningSnapshot";
 import { portfolioEtfContext } from "./dashboardOperations.server";
 import {
@@ -204,6 +205,127 @@ export async function priceInputs(
   };
 }
 
+/**
+ * Content-addressed, owner-private price evidence for actual holdings.
+ * Reuse the *verified*, source-hash-bound observations across cold serverless instances.
+ * Only this small derived slice is cached; execution / model strategy source parsing
+ * and the immutable K4/E4 signal checkpoints are not altered.
+ */
+const ACTUAL_PRICE_CACHE_VERSION = "actual-holding-price-inputs-20261017-v1";
+type ActualPriceInputs = { bars: Record<string, DailyPrice[]>; marketDates: string[] };
+const actualPriceBuilds = new Map<string, Promise<ActualPriceInputs>>();
+
+function actualPriceDigest(value: ActualPriceInputs) {
+  return createHash("sha256").update(stableCacheJson(value)).digest("hex");
+}
+
+export async function getCachedActualPriceInputs(
+  client: SupabaseClient,
+  uid: string,
+  sources: ActiveSourceRecord[],
+  symbols: Set<string>,
+  from: string,
+): Promise<ActualPriceInputs> {
+  const orderedSymbols = [...symbols].sort();
+  const key = createHash("sha256")
+    .update(
+      stableCacheJson({
+        version: ACTUAL_PRICE_CACHE_VERSION,
+        from,
+        symbols: orderedSymbols,
+        // Source order is calculation precedence: a later active source can revise an overlap.
+        sources: sources.map((source) => [
+          source.id,
+          source.file_hash,
+          source.activated_at,
+          source.created_at,
+        ]),
+      }),
+    )
+    .digest("hex");
+  const inFlightKey = `${uid}:${key}`;
+  const existing = actualPriceBuilds.get(inFlightKey);
+  if (existing) return existing;
+
+  const task = (async () => {
+    const path = `${uid}/cache/holding-price-inputs/${key}.json.gz`;
+    const bucket = client.storage.from("cloudtrend-data");
+    try {
+      const { data, error } = await bucket.download(path);
+      if (data) {
+        const cached = JSON.parse(
+          gunzipSync(new Uint8Array(await data.arrayBuffer())).toString("utf8"),
+        ) as Partial<ActualPriceInputs> & {
+          version?: string;
+          key?: string;
+          from?: string;
+          symbols?: string[];
+          digest?: string;
+        };
+        if (
+          cached.version === ACTUAL_PRICE_CACHE_VERSION &&
+          cached.key === key &&
+          cached.from === from &&
+          Array.isArray(cached.symbols) &&
+          cached.symbols.length === orderedSymbols.length &&
+          cached.symbols.every((symbol, i) => symbol === orderedSymbols[i]) &&
+          Array.isArray(cached.marketDates) &&
+          cached.marketDates.every((date) => typeof date === "string") &&
+          cached.bars &&
+          typeof cached.bars === "object" &&
+          !Array.isArray(cached.bars) &&
+          Object.entries(cached.bars).every(
+            ([symbol, bars]) =>
+              symbols.has(symbol) &&
+              Array.isArray(bars) &&
+              bars.every(
+                (bar) =>
+                  typeof bar.tradeDate === "string" &&
+                  typeof bar.close === "number" &&
+                  Number.isFinite(bar.close),
+              ),
+          ) &&
+          cached.digest ===
+            actualPriceDigest({ bars: cached.bars, marketDates: cached.marketDates })
+        )
+          return { bars: cached.bars, marketDates: cached.marketDates };
+      } else if (error && String(error.statusCode) !== "404" && !/not found/i.test(error.message)) {
+        console.warn("실제 보유 가격 캐시 조회 실패: 원천자료 검증으로 복구합니다.");
+      }
+    } catch {
+      // Malformed or temporarily unreadable derivative is never an authoritative observation.
+      console.warn("실제 보유 가격 캐시 검증 실패: 원천자료 검증으로 복구합니다.");
+    }
+
+    const { bars, marketDates } = await priceInputs(client, sources, symbols, from);
+    const result = { bars, marketDates };
+    const document = {
+      version: ACTUAL_PRICE_CACHE_VERSION,
+      key,
+      from,
+      symbols: orderedSymbols,
+      digest: actualPriceDigest(result),
+      ...result,
+    };
+    try {
+      const { error } = await bucket.upload(path, gzipSync(Buffer.from(JSON.stringify(document))), {
+        upsert: false,
+        contentType: "application/gzip",
+        cacheControl: "31536000",
+      });
+      // An identical concurrent request can publish the same immutable key first.
+      if (error && !/already exists|duplicate/i.test(error.message))
+        console.warn("실제 보유 가격 캐시 저장 실패: 검증한 현재 결과를 사용합니다.");
+    } catch {
+      // Publication is optional. Never present missing prices or an unverified stop.
+      console.warn("실제 보유 가격 캐시 저장 실패: 검증한 현재 결과를 사용합니다.");
+    }
+    return result;
+  })().finally(() => actualPriceBuilds.delete(inFlightKey));
+  actualPriceBuilds.set(inFlightKey, task);
+  return task;
+}
+
 /** Read-only marks for the newly allocated actual slice, without replaying or saving MODEL. */
 export async function loadNewActualDomesticQuotes(
   client: SupabaseClient,
@@ -214,7 +336,7 @@ export async function loadNewActualDomesticQuotes(
 ) {
   if (!symbols.size) return {};
   const sources = await listActiveSources(client, uid);
-  const input = await priceInputs(client, sources, symbols, from);
+  const input = await getCachedActualPriceInputs(client, uid, sources, symbols, from);
   const quotes: Record<string, import("./portfolioLedgers").Quote> = {};
   for (const symbol of symbols) {
     const latest = (input.bars[symbol] ?? [])

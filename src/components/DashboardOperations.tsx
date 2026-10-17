@@ -57,7 +57,8 @@ export function useDashboardOperations(started: boolean, digest: string | undefi
     enabled: started && Boolean(digest),
     staleTime: 60_000,
     gcTime: 5 * 60_000,
-    refetchOnWindowFocus: "always",
+    // Real fills already invalidate this query immediately; focus only refreshes stale reads.
+    refetchOnWindowFocus: true,
     retry: false,
   });
 }

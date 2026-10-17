@@ -157,6 +157,26 @@ export async function listRegisteredSources(
   return (data ?? []) as AnalysisSourceFileRecord[];
 }
 
+/**
+ * Lightweight identity read shared by dashboard summary/price chart cache validation.
+ * Exclude 22 source rows' validation JSON and other large ingestion metadata.
+ * Keep the exact source ordering used by listRegisteredSources and the server engine.
+ */
+export async function listActiveScreeningSourceFingerprints() {
+  const owner = await userId();
+  const { data, error } = await supabase
+    .from("analysis_source_files")
+    .select("id,data_hash,schema_hash,activated_at,created_at")
+    .eq("user_id", owner)
+    .eq("source_type", "screening")
+    .eq("status", "active")
+    .order("activated_at", { ascending: true, nullsFirst: true })
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
+  if (error) throw new Error(`스크리닝 원천데이터 식별자 조회 실패: ${error.message}`);
+  return data ?? [];
+}
+
 async function activeRows(sourceType: SourceType) {
   if (sourceType === "backtest")
     throw new Error("장기 데이터 검증은 GitHub Actions에서 실행해 주세요.");

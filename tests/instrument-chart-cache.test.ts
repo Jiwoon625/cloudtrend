@@ -29,7 +29,10 @@ vi.mock("@/lib/manualDataStore", () => ({
   getManualDataMeta: () => null,
 }));
 vi.mock("@/lib/scoringConfigStore", () => ({ getActiveScoringConfig: () => mocks.config.value }));
-vi.mock("@/lib/sourceRegistry", () => ({ listRegisteredSources: mocks.sources }));
+vi.mock("@/lib/sourceRegistry", () => ({
+  listRegisteredSources: mocks.sources,
+  listActiveScreeningSourceFingerprints: mocks.sources,
+}));
 vi.mock("@/lib/localAnalysis", () => ({ computeLocalAnalysis: vi.fn() }));
 vi.mock("@/lib/screeningHistory", () => ({
   buildSnapshot: vi.fn(),

@@ -1,7 +1,7 @@
 import type { QueryKey } from "@tanstack/react-query";
 import { CLOUD_DATA_BUCKET, ownerPath, supabase } from "./cloud";
 import { readDashboardCache } from "./screeningCache";
-import { listRegisteredSources } from "./sourceRegistry";
+import { listActiveScreeningSourceFingerprints } from "./sourceRegistry";
 
 /** A cache miss is not evidence that screening has never run. */
 export function dashboardCacheReadInterval(state: {
@@ -31,7 +31,7 @@ export type DashboardSourceAvailability = "REGISTERED" | "LEGACY" | "NONE";
 
 /** Inspect registry/object metadata only; never download or parse source prices. */
 export async function readDashboardSourceAvailability(): Promise<DashboardSourceAvailability> {
-  if ((await listRegisteredSources("screening", ["active"])).length > 0) return "REGISTERED";
+  if ((await listActiveScreeningSourceFingerprints()).length > 0) return "REGISTERED";
   const { data, error } = await supabase.storage
     .from(CLOUD_DATA_BUCKET)
     .info(await ownerPath("kr.json"));

@@ -16,7 +16,7 @@ import {
 import type { AnalysisResult } from "@/lib/engine/pipeline";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import type { AnalysisPayload, InstrumentDetailPayload } from "@/lib/marketPayload";
-import { listRegisteredSources } from "@/lib/sourceRegistry";
+import { listActiveScreeningSourceFingerprints } from "@/lib/sourceRegistry";
 import {
   buildDashboardSummary,
   DASHBOARD_CACHE_VERSION,
@@ -60,7 +60,7 @@ async function analysisDigest(analysis: AnalysisResult) {
 
 async function currentInputFingerprint() {
   const [sources, config] = await Promise.all([
-    listRegisteredSources("screening", ["active"]),
+    listActiveScreeningSourceFingerprints(),
     Promise.resolve(getActiveScoringConfig()),
   ]);
   // Registered sources define the identity without loading the legacy CSV/parser bundle.

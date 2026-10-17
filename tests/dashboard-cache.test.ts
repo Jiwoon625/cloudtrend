@@ -36,7 +36,10 @@ vi.mock("@/lib/localAnalysis", () => ({ computeLocalAnalysis: mocks.compute }));
 vi.mock("@/lib/scoringConfigStore", () => ({
   getActiveScoringConfig: () => DEFAULT_SCORING_CONFIG,
 }));
-vi.mock("@/lib/sourceRegistry", () => ({ listRegisteredSources: mocks.sources }));
+vi.mock("@/lib/sourceRegistry", () => ({
+  listRegisteredSources: mocks.sources,
+  listActiveScreeningSourceFingerprints: mocks.sources,
+}));
 vi.mock("@/lib/screeningHistory", () => ({
   buildSnapshot: vi.fn(),
   hydrateSnapshots: vi.fn(),
@@ -271,10 +274,8 @@ test("route wires the read-only query and distinguishes source absence from a ca
   expect(route).toMatch(
     /dashboardCacheReadQueryOptions\(\s*dashboardQueryOptions.queryKey,\s*sourceAvailability.isError/,
   );
-  expect(route).toContain(
-    "requested ? getOrBuildDashboardSummaryServerFirst : readOnlyOptions.queryFn",
-  );
-  expect(route).toContain("refetchInterval: requested ? false : readOnlyOptions.refetchInterval");
+  expect(route).toContain("useQuery<DashboardSummary | null>(readOnlyOptions)");
+  expect(route).not.toContain("getOrBuildDashboardSummaryServerFirst");
   expect(route).toContain(
     'enabled: cachedSummary?.status === "success" && cachedSummary.data === null',
   );
