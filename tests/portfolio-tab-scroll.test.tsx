@@ -25,7 +25,9 @@ it.each(["KR", "US", "ETF"])("switches to %s without requesting a scroll reset",
   ).component;
   const view = component();
   const hub = [view, ...Children.toArray(view.props.children)].find(
-    (child) => isValidElement<{ onAssetChange?: (asset: string) => void }>(child) && typeof child.props.onAssetChange === "function",
+    (child) =>
+      isValidElement<{ onAssetChange?: (asset: string) => void }>(child) &&
+      typeof child.props.onAssetChange === "function",
   );
   expect(hub && isValidElement(hub)).toBe(true);
   if (!hub || !isValidElement(hub)) throw new Error("Missing PortfolioAssetHub");
