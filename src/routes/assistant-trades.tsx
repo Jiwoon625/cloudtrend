@@ -67,7 +67,9 @@ function AssistantTrades() {
       const data = (await res.json()) as { ok?: boolean; error?: string; status?: string };
       if (!res.ok || !data.ok) throw new Error(data.error ?? "처리 결과를 확인하지 못했습니다.");
       setApproved((v) => ({ ...v, [id]: false }));
-      await refresh();
+      // Offset pages shift when an active item leaves the list; always restart.
+      if (pendingPage === 0) await refresh();
+      else setPendingPage(0);
       setMessage(
         action === "CONFIRM"
           ? "기존 실제보유원장에 기록했습니다."
