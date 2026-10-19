@@ -14,6 +14,9 @@ function money(n: number) {
 }
 function AssistantTrades() {
   const [items, setItems] = useState<AssistantTradeProposal[]>([]);
+  const [pendingPage, setPendingPage] = useState(0);
+  const [pendingTotal, setPendingTotal] = useState(0);
+  const [hasMorePending, setHasMorePending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
@@ -26,7 +29,7 @@ function AssistantTrades() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/assistant-trades", {
+      const res = await fetch(`/api/assistant-trades?pendingPage=${pendingPage}`, {
         headers: await authHeader(),
         cache: "no-store",
       });
@@ -34,16 +37,20 @@ function AssistantTrades() {
         ok?: boolean;
         error?: string;
         proposals?: AssistantTradeProposal[];
+        pendingTotal?: number;
+        hasMorePending?: boolean;
       };
       if (!res.ok || !data.ok) throw new Error(data.error ?? "조회 실패");
       setItems(data.proposals ?? []);
+      setPendingTotal(data.pendingTotal ?? 0);
+      setHasMorePending(data.hasMorePending === true);
       setMessage("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "승인대기함을 불러오지 못했습니다.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [pendingPage]);
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -98,6 +105,29 @@ function AssistantTrades() {
           {message}
         </p>
       )}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <span>
+          승인대기·처리중 전체 {pendingTotal}건 · {pendingPage + 1}페이지
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="rounded border px-3 py-1"
+            disabled={pendingPage === 0 || loading || !!busy}
+            onClick={() => setPendingPage((page) => Math.max(0, page - 1))}
+          >
+            이전
+          </button>
+          <button
+            type="button"
+            className="rounded border px-3 py-1"
+            disabled={!hasMorePending || loading || !!busy}
+            onClick={() => setPendingPage((page) => page + 1)}
+          >
+            다음
+          </button>
+        </div>
+      </div>
       {items.length === 0 && !loading && (
         <p className="rounded border p-6 text-sm">현재 표시할 제안이 없습니다.</p>
       )}
@@ -113,9 +143,11 @@ function AssistantTrades() {
                 <span className="text-xs text-muted-foreground">
                   {p.status === "PENDING"
                     ? "승인대기"
-                    : p.status === "RECORDED"
-                      ? "원장 기록됨"
-                      : "반려됨"}
+                    : p.status === "PROCESSING"
+                      ? "승인 처리 중 · 원장 상태 확인 필요"
+                      : p.status === "RECORDED"
+                        ? "원장 기록됨"
+                        : "반려됨"}
                 </span>
               </div>
               <dl className="grid grid-cols-2 gap-x-5 gap-y-2 text-sm sm:grid-cols-3">
@@ -154,7 +186,13 @@ function AssistantTrades() {
               >
                 Notion 거래 증빙 확인
               </a>
-              {p.status === "PENDING" && (
+              {p.status === "PROCESSING" && (
+                <p role="status" className="rounded border p-3 text-sm">
+                  중복 저장 방지를 위해 처리 중입니다. 2분 이상 지속되면 목록을 새로고침하고 기존
+                  원장을 대조한 뒤 같은 요청으로 승인 처리를 재시도할 수 있습니다.
+                </p>
+              )}
+              {(p.status === "PENDING" || p.status === "PROCESSING") && (
                 <div className="space-y-2 border-t pt-3">
                   <label className="flex items-start gap-2 text-sm">
                     <input
@@ -162,7 +200,8 @@ function AssistantTrades() {
                       checked={!!approved[p.id]}
                       onChange={(e) => setApproved((v) => ({ ...v, [p.id]: e.target.checked }))}
                     />
-                    증빙과 기존 실제보유원장을 대조했으며 위 수량·가격·수수료가 실제 체결 내역과
+                    증빙과 기존 실제보유원장을 대조했습니다. 동일 종목·일자·가격으로 별도의 매수가
+                    있었더라도 서로 다른 실제 체결 증빙인지 확인했고, 위 수량·가격·수수료가
                     일치합니다.
                   </label>
                   <div className="flex gap-2">
@@ -177,7 +216,7 @@ function AssistantTrades() {
                     <button
                       type="button"
                       onClick={() => void act(p.id, "REJECT")}
-                      disabled={!!busy}
+                      disabled={!!busy || p.status !== "PENDING"}
                       className="rounded border px-4 py-2 text-sm disabled:opacity-40"
                     >
                       반려
