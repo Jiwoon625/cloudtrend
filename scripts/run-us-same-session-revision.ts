@@ -73,6 +73,8 @@ export async function runRevision(
       .limit(1)
       .maybeSingle();
     if (pe) throw pe;
+    if (history.date > OPERATIONAL_SIGNAL_START && !previous)
+      throw new Error("Original predecessor history missing after operational start");
     let previousState: UsProspectivePreviousState = {};
     if (previous && history.date !== OPERATIONAL_SIGNAL_START) {
       const replayRaw = await read(`${uid}/results/us-replay-state/${previous.date}.json`);

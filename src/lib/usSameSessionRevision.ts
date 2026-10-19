@@ -41,7 +41,7 @@ const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 const hash = (value: unknown): value is string => typeof value === "string" && SHA256.test(value);
-const timestamp = (value: unknown): value is string =>
+export const isUsRevisionTimestamp = (value: unknown): value is string =>
   typeof value === "string" && TIMESTAMP.test(value) && Number.isFinite(Date.parse(value));
 
 /** Compare JSON values without depending on object key insertion order. */
@@ -128,7 +128,7 @@ function validCache(
   const source = value["source"];
   const analysis = value["analysis"];
   return (
-    timestamp(value["generatedAt"]) &&
+    isUsRevisionTimestamp(value["generatedAt"]) &&
     value["dataHash"] === pointer.revisionDataHash &&
     source["collectedAt"] === pointer.collectedAt &&
     typeof source["provider"] === "string" &&
@@ -162,7 +162,7 @@ export function getUsSameSessionReference(
     !hash(value["originalDataHash"]) ||
     !hash(value["revisionDataHash"]) ||
     !hash(value["bundleHash"]) ||
-    !timestamp(value["collectedAt"]) ||
+    !isUsRevisionTimestamp(value["collectedAt"]) ||
     typeof value["bundlePath"] !== "string"
   )
     return null;
@@ -186,7 +186,7 @@ export async function resolveUsSameSessionReference(
     !hash(candidate["originalDataHash"]) ||
     !hash(candidate["revisionDataHash"]) ||
     !hash(candidate["bundleHash"]) ||
-    !timestamp(candidate["collectedAt"])
+    !isUsRevisionTimestamp(candidate["collectedAt"])
   )
     throw new Error("Invalid US same-session reference pointer");
   const pointer = candidate as unknown as UsSameSessionRevisionPointer;
@@ -204,7 +204,7 @@ export async function resolveUsSameSessionReference(
     pointer.date !== canonical.analysis.date ||
     pointer.originalDataHash !== canonical.dataHash ||
     pointer.revisionDataHash === pointer.originalDataHash ||
-    !timestamp(canonical.source.collectedAt) ||
+    !isUsRevisionTimestamp(canonical.source.collectedAt) ||
     Date.parse(pointer.collectedAt) <= Date.parse(canonical.source.collectedAt)
   )
     throw new Error("US same-session reference does not match the canonical session");
