@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { existingTradeMatches, notionTradeUrl, parseAssistantActualBuy } from "./assistantActualTrade";
+import {
+  existingTradeMatches,
+  notionTradeUrl,
+  parseAssistantActualBuy,
+} from "./assistantActualTrade";
 
 const now = new Date("2026-10-19T14:00:00Z");
 const valid = {
@@ -22,14 +26,40 @@ describe("Assistant actual trade proposals", () => {
     );
   });
   it.each([
-    {date:"2026-10-11"}, {date:"2026-10-20"}, {date:"2026-02-31"},
-    {symbol:"64290"}, {side:"SELL"}, {market:"US"}, {shares:0},
-    {price:0}, {fee:-1}, {accountLabel:"unexpected"}, {unknown:true},
+    { date: "2026-10-11" },
+    { date: "2026-10-20" },
+    { date: "2026-02-31" },
+    { symbol: "64290" },
+    { side: "SELL" },
+    { market: "US" },
+    { shares: 0 },
+    { price: 0 },
+    { fee: -1 },
+    { accountLabel: "unexpected" },
+    { unknown: true },
   ])("rejects invalid entry %s", (change) => {
-    expect(() => parseAssistantActualBuy({...valid, ...change}, now)).toThrow();
+    expect(() => parseAssistantActualBuy({ ...valid, ...change }, now)).toThrow();
   });
   it("detects an indistinguishable owner-side duplicate", () => {
-    expect(existingTradeMatches(valid as never, {symbol:"064290",date:"2026-10-19",side:"BUY",shares:7,price:60300,fee:15})).toBe(true);
-    expect(existingTradeMatches(valid as never, {symbol:"064290",date:"2026-10-19",side:"BUY",shares:8,price:60300,fee:15})).toBe(false);
+    expect(
+      existingTradeMatches(valid as never, {
+        symbol: "064290",
+        date: "2026-10-19",
+        side: "BUY",
+        shares: 7,
+        price: 60300,
+        fee: 15,
+      }),
+    ).toBe(true);
+    expect(
+      existingTradeMatches(valid as never, {
+        symbol: "064290",
+        date: "2026-10-19",
+        side: "BUY",
+        shares: 8,
+        price: 60300,
+        fee: 15,
+      }),
+    ).toBe(false);
   });
 });

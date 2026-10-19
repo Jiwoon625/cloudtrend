@@ -7,18 +7,20 @@ import { validDate } from "./ledger/date";
  * authenticated owner confirmation through the existing CAS/ledger bridge.
  * No service-role caller may directly confirm a fill.
  */
-export const assistantActualBuySchema = z.object({
-  sourcePageId: z.string().uuid(),
-  date: z.string(),
-  symbol: z.string().regex(/^[A-Z0-9]{6}$/),
-  name: z.string().trim().min(1).max(100),
-  market: z.enum(["KOSPI", "KOSDAQ"]),
-  side: z.literal("BUY"),
-  shares: z.number().int().positive().max(1_000_000),
-  price: z.number().finite().positive().max(10_000_000),
-  fee: z.number().finite().nonnegative().max(1_000_000),
-  accountLabel: z.enum(["ISA", "GENERAL", "UNKNOWN"]).default("UNKNOWN"),
-}).strict();
+export const assistantActualBuySchema = z
+  .object({
+    sourcePageId: z.string().uuid(),
+    date: z.string(),
+    symbol: z.string().regex(/^[A-Z0-9]{6}$/),
+    name: z.string().trim().min(1).max(100),
+    market: z.enum(["KOSPI", "KOSDAQ"]),
+    side: z.literal("BUY"),
+    shares: z.number().int().positive().max(1_000_000),
+    price: z.number().finite().positive().max(10_000_000),
+    fee: z.number().finite().nonnegative().max(1_000_000),
+    accountLabel: z.enum(["ISA", "GENERAL", "UNKNOWN"]).default("UNKNOWN"),
+  })
+  .strict();
 
 export type AssistantActualBuy = z.infer<typeof assistantActualBuySchema>;
 export type AssistantTradeProposal = {
@@ -33,9 +35,12 @@ export type AssistantTradeProposal = {
 
 const kstDate = (now: Date) => {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
   }).formatToParts(now);
-  const part = (type: string) => parts.find(p => p.type === type)?.value ?? "";
+  const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
   return `${part("year")}-${part("month")}-${part("day")}`;
 };
 
@@ -56,9 +61,21 @@ export function notionTradeUrl(sourcePageId: string) {
 
 export function existingTradeMatches(
   trade: AssistantActualBuy,
-  existing: { symbol: string; date: string; side: string; shares: number; price: number; fee: number },
+  existing: {
+    symbol: string;
+    date: string;
+    side: string;
+    shares: number;
+    price: number;
+    fee: number;
+  },
 ) {
-  return existing.symbol === trade.symbol && existing.date === trade.date &&
-    existing.side === "BUY" && existing.shares === trade.shares &&
-    existing.price === trade.price && existing.fee === trade.fee;
+  return (
+    existing.symbol === trade.symbol &&
+    existing.date === trade.date &&
+    existing.side === "BUY" &&
+    existing.shares === trade.shares &&
+    existing.price === trade.price &&
+    existing.fee === trade.fee
+  );
 }

@@ -86,7 +86,6 @@ const REGISTER_TOOL = {
   },
 } as const;
 
-
 const PROPOSE_BUY_TOOL = {
   name: "propose_cloudtrend_actual_buy",
   title: "Propose a CloudTrend actual buy",
@@ -95,24 +94,45 @@ const PROPOSE_BUY_TOOL = {
   inputSchema: {
     type: "object",
     properties: {
-      sourcePageId: {type:"string",description:"Exact UUID of the existing Notion trade evidence page"},
-      date: {type:"string",description:"YYYY-MM-DD verified actual trade date"},
-      symbol: {type:"string",description:"Six-character Korean listing code; preserve leading zero"},
-      name: {type:"string"},
-      market: {type:"string",enum:["KOSPI","KOSDAQ"]},
-      side: {type:"string",const:"BUY"},
-      shares: {type:"integer",minimum:1},
-      price: {type:"number",exclusiveMinimum:0},
-      fee: {type:"number",minimum:0,description:"Verified broker fee; never infer"},
-      accountLabel: {type:"string",enum:["ISA","GENERAL","UNKNOWN"]},
+      sourcePageId: {
+        type: "string",
+        description: "Exact UUID of the existing Notion trade evidence page",
+      },
+      date: { type: "string", description: "YYYY-MM-DD verified actual trade date" },
+      symbol: {
+        type: "string",
+        description: "Six-character Korean listing code; preserve leading zero",
+      },
+      name: { type: "string" },
+      market: { type: "string", enum: ["KOSPI", "KOSDAQ"] },
+      side: { type: "string", const: "BUY" },
+      shares: { type: "integer", minimum: 1 },
+      price: { type: "number", exclusiveMinimum: 0 },
+      fee: { type: "number", minimum: 0, description: "Verified broker fee; never infer" },
+      accountLabel: { type: "string", enum: ["ISA", "GENERAL", "UNKNOWN"] },
     },
-    required: ["sourcePageId","date","symbol","name","market","side","shares","price","fee"],
-    additionalProperties:false,
+    required: [
+      "sourcePageId",
+      "date",
+      "symbol",
+      "name",
+      "market",
+      "side",
+      "shares",
+      "price",
+      "fee",
+    ],
+    additionalProperties: false,
   },
-  annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false,idempotentHint:true},
-  _meta:{
-    "openai/toolInvocation/invoking":"CloudTrend 실제거래 승인 요청을 보관하는 중…",
-    "openai/toolInvocation/invoked":"CloudTrend 실제거래 승인 요청을 보관했습니다",
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    openWorldHint: false,
+    idempotentHint: true,
+  },
+  _meta: {
+    "openai/toolInvocation/invoking": "CloudTrend 실제거래 승인 요청을 보관하는 중…",
+    "openai/toolInvocation/invoked": "CloudTrend 실제거래 승인 요청을 보관했습니다",
   },
 } as const;
 
@@ -123,14 +143,19 @@ async function callProposeBuy(args: unknown) {
   const { data: existing, error: readError } = await client
     .from("assistant_trade_proposals")
     .select("id, trade, status")
-    .eq("user_id",userId).eq("source_page_id",trade.sourcePageId).maybeSingle();
+    .eq("user_id", userId)
+    .eq("source_page_id", trade.sourcePageId)
+    .maybeSingle();
   if (readError) throw new Error("거래 승인대기함을 읽지 못했습니다.");
   if (existing && JSON.stringify(existing.trade) !== JSON.stringify(trade)) {
     // Postgres jsonb reorders keys: compare semantic content, not serialized key order.
     const old = parseAssistantActualBuy(existing.trade);
-    if (Object.keys(trade).some(k =>
-      old[k as keyof typeof old] !== trade[k as keyof typeof trade]))
-      throw new Error("같은 Notion 증빙으로 다른 체결을 요청했습니다. 기존 요청을 먼저 확인하세요.");
+    if (
+      Object.keys(trade).some((k) => old[k as keyof typeof old] !== trade[k as keyof typeof trade])
+    )
+      throw new Error(
+        "같은 Notion 증빙으로 다른 체결을 요청했습니다. 기존 요청을 먼저 확인하세요.",
+      );
   }
   let proposalId: string;
   let status: string;
@@ -138,26 +163,38 @@ async function callProposeBuy(args: unknown) {
     proposalId = existing.id as string;
     status = existing.status as string;
   } else {
-    const result = await client.from("assistant_trade_proposals")
-      .insert({user_id:userId,source_page_id:trade.sourcePageId,trade,status:"PENDING"})
-      .select("id,status").single();
-    if (result.error || !result.data) throw new Error("거래 승인대기함 저장에 실패했습니다. 기존 등록 여부를 확인하세요.");
+    const result = await client
+      .from("assistant_trade_proposals")
+      .insert({ user_id: userId, source_page_id: trade.sourcePageId, trade, status: "PENDING" })
+      .select("id,status")
+      .single();
+    if (result.error || !result.data)
+      throw new Error("거래 승인대기함 저장에 실패했습니다. 기존 등록 여부를 확인하세요.");
     proposalId = result.data.id as string;
     status = result.data.status as string;
   }
   return {
-    structuredContent:{
-      proposalId, status, sourceUrl:notionTradeUrl(trade.sourcePageId),
-      reviewPath:"/assistant-trades",
-      recordedInActualLedger:status==="RECORDED",
-      next: status === "PENDING"
-        ? "CloudTrend에 로그인한 소유자가 /assistant-trades에서 체결과 증빙을 확인하고 승인해야 실제보유원장에 반영됩니다."
-        : "동일 증빙 요청이 기존에 존재합니다. 상태를 확인하세요.",
+    structuredContent: {
+      proposalId,
+      status,
+      sourceUrl: notionTradeUrl(trade.sourcePageId),
+      reviewPath: "/assistant-trades",
+      recordedInActualLedger: status === "RECORDED",
+      next:
+        status === "PENDING"
+          ? "CloudTrend에 로그인한 소유자가 /assistant-trades에서 체결과 증빙을 확인하고 승인해야 실제보유원장에 반영됩니다."
+          : "동일 증빙 요청이 기존에 존재합니다. 상태를 확인하세요.",
     },
-    content:[{type:"text",text:status==="PENDING"
-      ? `${trade.name} ${trade.shares}주 매수 승인 요청을 보관했습니다. 실거래 원장은 변경되지 않았습니다. CloudTrend /assistant-trades에서 소유자 승인이 필요합니다.`
-      : `동일 증빙의 기존 요청 상태는 ${status}입니다.`}],
-    isError:false,
+    content: [
+      {
+        type: "text",
+        text:
+          status === "PENDING"
+            ? `${trade.name} ${trade.shares}주 매수 승인 요청을 보관했습니다. 실거래 원장은 변경되지 않았습니다. CloudTrend /assistant-trades에서 소유자 승인이 필요합니다.`
+            : `동일 증빙의 기존 요청 상태는 ${status}입니다.`,
+      },
+    ],
+    isError: false,
   };
 }
 
@@ -362,9 +399,12 @@ async function handleRpc(body: JsonRpcRequest) {
     if (name !== REGISTER_TOOL.name && name !== PROPOSE_BUY_TOOL.name)
       return rpcError(id, -32601, `Unknown tool: ${String(name)}`);
     try {
-      return rpcResult(id,name === REGISTER_TOOL.name
-        ? await callRegisterTool(params?.["arguments"])
-        : await callProposeBuy(params?.["arguments"]));
+      return rpcResult(
+        id,
+        name === REGISTER_TOOL.name
+          ? await callRegisterTool(params?.["arguments"])
+          : await callProposeBuy(params?.["arguments"]),
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : "알 수 없는 오류";
       return rpcResult(id, {

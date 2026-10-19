@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AssistantTradesRouteImport } from './routes/assistant-trades'
 import { Route as BacktestRouteImport } from './routes/backtest'
 import { Route as DataStatusRouteImport } from './routes/data-status'
 import { Route as HistoryRouteImport } from './routes/history'
@@ -20,6 +21,7 @@ import { Route as PositionSizingRouteImport } from './routes/position-sizing'
 import { Route as ScoringRouteImport } from './routes/scoring'
 import { Route as SectorsRouteImport } from './routes/sectors'
 import { Route as ShadowRouteImport } from './routes/shadow'
+import { Route as ApiAssistantTradesRouteImport } from './routes/api.assistant-trades'
 import { Route as HistoryInstrumentSymbolRouteImport } from './routes/history-instrument.$symbol'
 import { Route as InstrumentSymbolRouteImport } from './routes/instrument.$symbol'
 import { Route as ScreenerEtfsRouteImport } from './routes/screener.etfs'
@@ -33,6 +35,11 @@ import { Route as UsInstrumentSymbolRouteImport } from './routes/us.instrument.$
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AssistantTradesRoute = AssistantTradesRouteImport.update({
+  id: '/assistant-trades',
+  path: '/assistant-trades',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BacktestRoute = BacktestRouteImport.update({
@@ -85,6 +92,11 @@ const ShadowRoute = ShadowRouteImport.update({
   path: '/shadow',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAssistantTradesRoute = ApiAssistantTradesRouteImport.update({
+  id: '/api/assistant-trades',
+  path: '/api/assistant-trades',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const HistoryInstrumentSymbolRoute = HistoryInstrumentSymbolRouteImport.update({
   id: '/history-instrument/$symbol',
   path: '/history-instrument/$symbol',
@@ -133,6 +145,7 @@ const UsInstrumentSymbolRoute = UsInstrumentSymbolRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/assistant-trades': typeof AssistantTradesRoute
   '/backtest': typeof BacktestRoute
   '/data-status': typeof DataStatusRoute
   '/history': typeof HistoryRoute
@@ -143,6 +156,7 @@ export interface FileRoutesByFullPath {
   '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
   '/shadow': typeof ShadowRoute
+  '/api/assistant-trades': typeof ApiAssistantTradesRoute
   '/history-instrument/$symbol': typeof HistoryInstrumentSymbolRoute
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
@@ -155,6 +169,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/assistant-trades': typeof AssistantTradesRoute
   '/backtest': typeof BacktestRoute
   '/data-status': typeof DataStatusRoute
   '/history': typeof HistoryRoute
@@ -165,6 +180,7 @@ export interface FileRoutesByTo {
   '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
   '/shadow': typeof ShadowRoute
+  '/api/assistant-trades': typeof ApiAssistantTradesRoute
   '/history-instrument/$symbol': typeof HistoryInstrumentSymbolRoute
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
@@ -178,6 +194,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/assistant-trades': typeof AssistantTradesRoute
   '/backtest': typeof BacktestRoute
   '/data-status': typeof DataStatusRoute
   '/history': typeof HistoryRoute
@@ -188,6 +205,7 @@ export interface FileRoutesById {
   '/scoring': typeof ScoringRoute
   '/sectors': typeof SectorsRoute
   '/shadow': typeof ShadowRoute
+  '/api/assistant-trades': typeof ApiAssistantTradesRoute
   '/history-instrument/$symbol': typeof HistoryInstrumentSymbolRoute
   '/instrument/$symbol': typeof InstrumentSymbolRoute
   '/screener/etfs': typeof ScreenerEtfsRoute
@@ -202,6 +220,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/assistant-trades'
     | '/backtest'
     | '/data-status'
     | '/history'
@@ -212,6 +231,7 @@ export interface FileRouteTypes {
     | '/scoring'
     | '/sectors'
     | '/shadow'
+    | '/api/assistant-trades'
     | '/history-instrument/$symbol'
     | '/instrument/$symbol'
     | '/screener/etfs'
@@ -224,6 +244,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/assistant-trades'
     | '/backtest'
     | '/data-status'
     | '/history'
@@ -234,6 +255,7 @@ export interface FileRouteTypes {
     | '/scoring'
     | '/sectors'
     | '/shadow'
+    | '/api/assistant-trades'
     | '/history-instrument/$symbol'
     | '/instrument/$symbol'
     | '/screener/etfs'
@@ -246,6 +268,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/assistant-trades'
     | '/backtest'
     | '/data-status'
     | '/history'
@@ -256,6 +279,7 @@ export interface FileRouteTypes {
     | '/scoring'
     | '/sectors'
     | '/shadow'
+    | '/api/assistant-trades'
     | '/history-instrument/$symbol'
     | '/instrument/$symbol'
     | '/screener/etfs'
@@ -269,6 +293,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AssistantTradesRoute: typeof AssistantTradesRoute
   BacktestRoute: typeof BacktestRoute
   DataStatusRoute: typeof DataStatusRoute
   HistoryRoute: typeof HistoryRoute
@@ -279,6 +304,7 @@ export interface RootRouteChildren {
   ScoringRoute: typeof ScoringRoute
   SectorsRoute: typeof SectorsRoute
   ShadowRoute: typeof ShadowRoute
+  ApiAssistantTradesRoute: typeof ApiAssistantTradesRoute
   HistoryInstrumentSymbolRoute: typeof HistoryInstrumentSymbolRoute
   InstrumentSymbolRoute: typeof InstrumentSymbolRoute
   ScreenerEtfsRoute: typeof ScreenerEtfsRoute
@@ -297,6 +323,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/assistant-trades': {
+      id: '/assistant-trades'
+      path: '/assistant-trades'
+      fullPath: '/assistant-trades'
+      preLoaderRoute: typeof AssistantTradesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/backtest': {
@@ -369,6 +402,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShadowRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/assistant-trades': {
+      id: '/api/assistant-trades'
+      path: '/api/assistant-trades'
+      fullPath: '/api/assistant-trades'
+      preLoaderRoute: typeof ApiAssistantTradesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/history-instrument/$symbol': {
       id: '/history-instrument/$symbol'
       path: '/history-instrument/$symbol'
@@ -437,6 +477,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AssistantTradesRoute: AssistantTradesRoute,
   BacktestRoute: BacktestRoute,
   DataStatusRoute: DataStatusRoute,
   HistoryRoute: HistoryRoute,
@@ -447,6 +488,7 @@ const rootRouteChildren: RootRouteChildren = {
   ScoringRoute: ScoringRoute,
   SectorsRoute: SectorsRoute,
   ShadowRoute: ShadowRoute,
+  ApiAssistantTradesRoute: ApiAssistantTradesRoute,
   HistoryInstrumentSymbolRoute: HistoryInstrumentSymbolRoute,
   InstrumentSymbolRoute: InstrumentSymbolRoute,
   ScreenerEtfsRoute: ScreenerEtfsRoute,
