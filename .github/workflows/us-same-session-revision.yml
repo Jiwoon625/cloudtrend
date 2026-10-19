@@ -18,6 +18,14 @@ on:
     paths:
       - "scripts/*same-session-revision*"
       - "src/lib/usSameSessionRevision.ts"
+      - "src/lib/usProspectiveCloud.ts"
+      - "src/lib/usBrowserViews.ts"
+      - "src/components/UsScreenerPage.tsx"
+      - "src/routes/us.instrument.$symbol.tsx"
+      - "tests/us-same-session-reference*.test.*"
+      - "tests/fixtures/us-same-session-reference.ts"
+      - "vitest.us-revision.config.ts"
+      - "tsconfig.us-revision.json"
       - "tests/us-revision-*.test.ts"
       - ".github/workflows/us-same-session-revision.yml"
 permissions:
@@ -36,6 +44,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx vitest run --config vitest.us-revision.config.ts
+      - run: npx tsc --noEmit -p tsconfig.us-revision.json
   publish:
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     needs: verify

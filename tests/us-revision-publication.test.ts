@@ -231,4 +231,32 @@ describe("reference-only revision publication", () => {
     f.saveSource();
     await expect(f.run()).rejects.toThrow("predates");
   });
+  it("rejects post-start source without any predecessor state", async () => {
+    const f = fixture();
+    f.original.previousState = {};
+    await expect(f.run()).rejects.toThrow("predecessor");
+    expect(f.writes).toEqual([]);
+  });
+  it("rejects date-only revision timestamps before any publication", async () => {
+    const f = fixture();
+    f.source.collectedAt = "2026-10-19";
+    f.saveSource();
+    await expect(f.run()).rejects.toThrow("source");
+    expect(f.writes).toEqual([]);
+  });
+  it("rejects conflicting revisions at the same instant with different offsets", async () => {
+    const f = fixture();
+    f.objects.set(
+      f.paths.pointer,
+      JSON.stringify({
+        version: "us-same-session-pointer-v1",
+        userId: uid,
+        date: f.source.date,
+        collectedAt: "2026-10-19T09:00:00+09:00",
+        revisionDataHash: revisionHash("different"),
+      }),
+    );
+    await expect(f.run()).rejects.toThrow("identical collection instant");
+    expect(f.writes).toEqual([]);
+  });
 });

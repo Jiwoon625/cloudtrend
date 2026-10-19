@@ -1,3 +1,5 @@
+import { isUsRevisionTimestamp } from "../src/lib/usSameSessionRevision";
+import { OPERATIONAL_SIGNAL_START } from "../src/lib/operationalSignalStart";
 /** Latest reference-only revisions. No original source/history, portfolio, or Shadow writes. */
 import { sha256, stableJson } from "./analysis-run-store";
 import {
@@ -72,7 +74,7 @@ export function validateRevisionSource(value: unknown, uid: string): RevisionSou
     !isHash(s.originalDataHash) ||
     !isHash(s.revisionDataHash) ||
     s.originalDataHash === s.revisionDataHash ||
-    !Number.isFinite(Date.parse(s.collectedAt)) ||
+    !isUsRevisionTimestamp(s.collectedAt) ||
     !Number.isInteger(s.rowCount) ||
     s.rowCount < 1 ||
     !Number.isInteger(s.symbolCount) ||
@@ -117,6 +119,8 @@ function assertOriginal(s: RevisionSource, o: RevisionOriginal) {
     throw new Error("Revision requires the current completed immutable original");
   if (Date.parse(s.collectedAt) <= Date.parse(o.result.source.collectedAt))
     throw new Error("Revision collection predates original");
+  if (s.date > OPERATIONAL_SIGNAL_START && !o.previousState.lastDate)
+    throw new Error("Original predecessor state missing after operational start");
   if (
     o.previousState.lastDate &&
     (o.previousState.lastDate >= s.date ||
@@ -366,7 +370,7 @@ export async function publishSameSessionRevision(
       prior.version !== pointer.version ||
       prior.userId !== uid ||
       !isHash(prior.revisionDataHash) ||
-      !Number.isFinite(Date.parse(prior.collectedAt))
+      !isUsRevisionTimestamp(prior.collectedAt)
     )
       throw new Error("Existing revision pointer invalid");
     if (
@@ -379,7 +383,10 @@ export async function publishSameSessionRevision(
         throw new Error("Existing revision identity conflict");
       return { status: "already_published", pointer };
     }
-    if (prior.date === source.date && prior.collectedAt === source.collectedAt)
+    if (
+      prior.date === source.date &&
+      Date.parse(prior.collectedAt) === Date.parse(source.collectedAt)
+    )
       throw new Error("Conflicting revision at identical collection instant");
   }
   await io.immutable(paths.bundle, bytes);
