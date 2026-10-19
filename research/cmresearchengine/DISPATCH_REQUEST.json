@@ -1,8 +1,8 @@
 {
-  "request_id": "cm-first61to80-split25-068-20261019-001",
+  "request_id": "cm-first61to80-split25-069-20261019-001",
   "mode": "run",
   "stage": "split25",
-  "offset": 68,
+  "offset": 69,
   "count": 1,
   "max_seconds": 3000,
   "workers": 1,
