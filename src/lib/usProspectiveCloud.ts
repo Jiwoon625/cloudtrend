@@ -1,3 +1,4 @@
+import { resolveUsSameSessionReference } from "./usSameSessionRevision";
 import { usBrowserViews, type UsProspectiveSummary } from "./usBrowserViews";
 import { usOrderPreviewsServer } from "./usOrderPreview.functions";
 import type { UsOrderPreviewBundle } from "./engine/usProspectiveOrderPreview";
@@ -106,6 +107,26 @@ export async function loadUsProspectiveCache() {
     return JSON.parse(await new Response(stream).text()) as UsProspectiveCache;
   }
   return readObject<UsProspectiveCache>(await ownerPath("cache/us-screening/latest.json"));
+}
+
+/** Reference screens only. Holdings, execution plans and Shadow keep the canonical loader. */
+export async function loadUsLatestReferenceCache(): Promise<UsProspectiveCache | null> {
+  const canonical = await loadUsProspectiveCache();
+  if (!canonical) return null;
+  try {
+    const uid = await userId();
+    const pointer = await readObject<unknown>(`${uid}/cache/us-screening-revisions/latest.json`);
+    return await resolveUsSameSessionReference(canonical, uid, pointer, readBinaryObject);
+  } catch {
+    // Optional reference publication must never replace a valid original with a partial result.
+    return {
+      ...canonical,
+      source: {
+        ...canonical.source,
+        metadata: { ...canonical.source.metadata, sameSessionRevisionStatus: "unavailable" },
+      },
+    };
+  }
 }
 
 export async function loadUsProspectiveSummary() {

@@ -1,0 +1,62 @@
+name: US Same-session Reference Revision
+on:
+  workflow_dispatch:
+    inputs:
+      supabase_user_id:
+        description: Owner id (must match configured owner)
+        required: false
+        type: string
+      source_manifest_path:
+        description: Immutable owner-private revision source manifest
+        required: true
+        type: string
+      source_manifest_hash:
+        description: Exact sha256 of source manifest bytes
+        required: true
+        type: string
+  pull_request:
+    paths:
+      - "scripts/*same-session-revision*"
+      - "src/lib/usSameSessionRevision.ts"
+      - "tests/us-revision-*.test.ts"
+      - ".github/workflows/us-same-session-revision.yml"
+permissions:
+  contents: read
+concurrency:
+  group: us-prospective
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --config vitest.us-revision.config.ts
+  publish:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Publish reference-only revision (no ledger or original writes)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          REQUESTED_OWNER: ${{ inputs.supabase_user_id }}
+          US_REVISION_MANIFEST_PATH: ${{ inputs.source_manifest_path }}
+          US_REVISION_MANIFEST_HASH: ${{ inputs.source_manifest_hash }}
+        run: |
+          if [ -n "$REQUESTED_OWNER" ] && [ "$REQUESTED_OWNER" != "$SUPABASE_USER_ID" ]; then
+            echo "Owner mismatch"; exit 1
+          fi
+          npx vite-node --script scripts/run-us-same-session-revision.ts

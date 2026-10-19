@@ -30,7 +30,10 @@ vi.mock("react", async (original) => {
   };
 });
 vi.mock("@/lib/portfolioPositionContext", () => ({ loadDomesticPositionContext: vi.fn() }));
-vi.mock("@/lib/usProspectiveCloud", () => ({ loadUsProspectiveCache: vi.fn() }));
+vi.mock("@/lib/usProspectiveCloud", () => ({
+  loadUsProspectiveCache: vi.fn(),
+  loadUsLatestReferenceCache: vi.fn(),
+}));
 vi.mock("@/lib/screeningArchiveQuery", () => ({
   screeningArchiveQueryOptions: (search: Record<string, string>) => ({
     queryKey: ["history", search],

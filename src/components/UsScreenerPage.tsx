@@ -14,7 +14,10 @@ import { loadDomesticPositionContext } from "@/lib/portfolioPositionContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { loadUsProspectiveCache, type UsProspectiveCacheRow } from "@/lib/usProspectiveCloud";
+import { loadUsLatestReferenceCache, type UsProspectiveCacheRow } from "@/lib/usProspectiveCloud";
+
+import { getUsSameSessionReference } from "@/lib/usSameSessionRevision";
+import { formatKstDateTime } from "@/lib/format";
 
 const EMPTY_ROWS: UsProspectiveCacheRow[] = [];
 
@@ -99,8 +102,8 @@ export function UsScreenerPage() {
     staleTime: 60000,
   });
   const query = useQuery({
-    queryKey: ["us-prospective-cache"],
-    queryFn: loadUsProspectiveCache,
+    queryKey: ["us-latest-reference-cache"],
+    queryFn: loadUsLatestReferenceCache,
     staleTime: 60_000,
   });
   const [filter, setFilter] = useSessionViewState<Filter>(
@@ -128,8 +131,10 @@ export function UsScreenerPage() {
     "summary",
     viewChoice(["summary", "detail"]),
   );
+  const revision = getUsSameSessionReference(query.data);
+  const referenceOnly = revision !== null;
   const heldKnown = positions.isSuccess && !positions.isError;
-  const exitUnavailable = filter === "PRIMARY_EXIT" && !heldKnown;
+  const exitUnavailable = !referenceOnly && filter === "PRIMARY_EXIT" && !heldKnown;
   const [sector, setSector] = useSessionViewState("us-screener:sector", "", viewText);
   const [page, setPage] = useSessionViewState("us-screener:page", 0, viewPage);
   const [search, setSearch] = useSessionViewState("us-screener:search", "", viewText);
@@ -202,6 +207,8 @@ export function UsScreenerPage() {
           ((funnelStrategy === "B3" ? r.relvolRank : r.tkRank) ?? -1) >= 0.8
         );
       if (filter === "PRIMARY_WATCH") return !r.a0Exit && (r.coreRank ?? 0) >= 0.7;
+      if (filter === "PRIMARY_ENTRY" && referenceOnly) return r.a0Entry;
+      if (filter === "PRIMARY_EXIT" && referenceOnly) return r.a0Exit;
       if (filter === "PRIMARY_ENTRY")
         return (
           heldKnown &&
@@ -221,7 +228,7 @@ export function UsScreenerPage() {
       if (filter === "B3_ENTRY") return r.b3Entry;
       return r.coreRank !== null;
     });
-  }, [rows, filter, search, sector, positions.data, funnelStrategy, heldKnown]);
+  }, [rows, filter, search, sector, positions.data, funnelStrategy, heldKnown, referenceOnly]);
 
   const sortValue = (r: UsProspectiveCacheRow, key: SortKey): number | string | null => {
     if (key === "symbol") return `${r.symbol} ${r.name}`;
@@ -286,6 +293,10 @@ export function UsScreenerPage() {
       "operationalStartDate",
       "operationalSignalEligible",
       "signalContext",
+      "referenceOnly",
+      "collectedAt",
+      "revisionDataHash",
+      "originalDataHash",
       "symbol",
       "name",
       "market",
@@ -316,10 +327,16 @@ export function UsScreenerPage() {
       const evidence = {
         ...r,
         operationalStartDate: OPERATIONAL_SIGNAL_START,
-        operationalSignalEligible: isOperationalSignalDate(r.date),
-        signalContext: isOperationalSignalDate(r.date)
-          ? "신규 운용 기간"
-          : "시작 전 과거 계산 근거",
+        operationalSignalEligible: !referenceOnly && isOperationalSignalDate(r.date),
+        signalContext: referenceOnly
+          ? "재수집 참고용 · 실제 계획 미반영"
+          : isOperationalSignalDate(r.date)
+            ? "신규 운용 기간"
+            : "시작 전 과거 계산 근거",
+        referenceOnly,
+        collectedAt: query.data?.source?.collectedAt,
+        revisionDataHash: revision?.revisionDataHash,
+        originalDataHash: revision?.originalDataHash,
       } as Record<string, unknown>;
       return header.map((k) => `"${String(evidence[k] ?? "").replaceAll('"', '""')}"`).join(",");
     });
@@ -329,7 +346,7 @@ export function UsScreenerPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `cloudtrend-us-${query.data?.analysis.date ?? "latest"}.csv`;
+    a.download = `cloudtrend-us-${query.data?.analysis.date ?? "latest"}${referenceOnly ? "-reference" : ""}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -341,7 +358,7 @@ export function UsScreenerPage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold">US 스크리너</h1>
-              <Badge>A0 PRIMARY</Badge>
+              <Badge>{referenceOnly ? "A0 참고용" : "A0 PRIMARY"}</Badge>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               기준일 {query.data?.analysis.date ?? "-"} · 전략{" "}
@@ -364,7 +381,27 @@ export function UsScreenerPage() {
           </div>
         </header>
         <UsRecoveryNotice metadata={query.data?.source?.metadata} />
-        {!heldKnown ? (
+        {revision ? (
+          <div
+            role="note"
+            className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm"
+          >
+            <p className="font-semibold">동일 거래일 최신 재수집 · 참고용</p>
+            <p>
+              수집 {formatKstDateTime(revision.collectedAt)} KST · 리비전{" "}
+              {revision.revisionDataHash.slice(7, 19)}
+            </p>
+            <p>
+              아래 신호는 참고 조건입니다. 원본과 실제 매매 계획·Shadow·체결은 변경되지 않습니다.
+            </p>
+          </div>
+        ) : query.data?.source?.metadata?.["sameSessionRevisionStatus"] === "unavailable" ? (
+          <p role="status" className="rounded border p-3 text-sm text-muted-foreground">
+            재수집 자료를 검증하지 못해 저장된 원본을 표시합니다. 최신 재수집 결과는 확인되지
+            않았습니다.
+          </p>
+        ) : null}
+        {!referenceOnly && !heldKnown ? (
           <div role={positions.isError ? "alert" : "status"} className="rounded border p-3 text-sm">
             {positions.isError
               ? "보유 자료 조회 실패 · 보유 및 청산 판정 미확인"
@@ -390,7 +427,9 @@ export function UsScreenerPage() {
             <section className="space-y-2 rounded-lg border border-border bg-card p-3">
               <div className="flex flex-wrap items-end justify-between gap-2">
                 <div>
-                  <h2 className="text-sm font-semibold">신규 진입 Funnel</h2>
+                  <h2 className="text-sm font-semibold">
+                    {referenceOnly ? "참고 진입 조건 Funnel" : "신규 진입 Funnel"}
+                  </h2>
                   <label className="text-xs">
                     전략{" "}
                     <select
@@ -406,7 +445,9 @@ export function UsScreenerPage() {
                     </select>
                   </label>
                   <p className="text-[10px] text-muted-foreground">
-                    각 단계는 직전 단계 통과 종목 기준 · 실제 미보유 후보는 아래 진입 준비에서 확인
+                    {referenceOnly
+                      ? "재수집 자료의 참고 조건 집계 · 실제 진입 계획과 별도"
+                      : "각 단계는 직전 단계 통과 종목 기준 · 실제 미보유 후보는 아래 진입 준비에서 확인"}
                   </p>
                 </div>
                 {operationalRows.length > 0 && entryFunnel[0]?.a0 === 0 ? (
@@ -452,7 +493,9 @@ export function UsScreenerPage() {
               </div>
             </section>
             <details className="rounded-lg border p-3 text-xs">
-              <summary>신규 운용 단계별 탈락 집계</summary>
+              <summary>
+                {referenceOnly ? "참고 조건 단계별 탈락 집계" : "신규 운용 단계별 탈락 집계"}
+              </summary>
               <p>
                 Core 원신호 없음{" "}
                 {operationalRows.filter((r) => r.symbol !== "SPY" && !r.onset80).length} · Beta
@@ -505,9 +548,9 @@ export function UsScreenerPage() {
             <div className="flex flex-wrap gap-1">
               {(
                 [
-                  ["PRIMARY_ENTRY", "A0 진입 준비"],
-                  ["PRIMARY_WATCH", "A0 보유·관찰 후보"],
-                  ["PRIMARY_EXIT", "A0 청산"],
+                  ["PRIMARY_ENTRY", referenceOnly ? "A0 참고 진입 조건" : "A0 진입 준비"],
+                  ["PRIMARY_WATCH", referenceOnly ? "A0 참고 관찰 조건" : "A0 보유·관찰 후보"],
+                  ["PRIMARY_EXIT", referenceOnly ? "A0 참고 청산 조건" : "A0 청산"],
                   ["ALL", "산정 가능 전체"],
                 ] as Array<[Filter, string]>
               ).map(([id, label]) => (
@@ -557,7 +600,9 @@ export function UsScreenerPage() {
               <span>
                 {sort
                   ? "사용자 지정 정렬"
-                  : "배정 우선순위: Core ↓ · Beta ↓ · " +
+                  : (referenceOnly
+                      ? "참고 정렬: Core ↓ · Beta ↓ · "
+                      : "배정 우선순위: Core ↓ · Beta ↓ · ") +
                     (filter === "B3_ENTRY" ||
                     (filter.startsWith("FUNNEL_") && funnelStrategy === "B3")
                       ? "RelVol"
@@ -573,7 +618,7 @@ export function UsScreenerPage() {
                     setPage(0);
                   }}
                 >
-                  배정 순서로 복원
+                  {referenceOnly ? "참고 순서로 복원" : "배정 순서로 복원"}
                 </Button>
               ) : null}
             </div>
@@ -699,7 +744,7 @@ export function UsScreenerPage() {
                       onSort={toggleSort}
                     />
                     <SortableHeader
-                      label="A0"
+                      label={referenceOnly ? "A0 참고 조건" : "A0"}
                       sortKey="a0Signal"
                       sort={sort}
                       onSort={toggleSort}
@@ -712,6 +757,7 @@ export function UsScreenerPage() {
                     <ScreenerRow
                       key={r.symbol}
                       row={r}
+                      referenceOnly={referenceOnly}
                       decisionLabel={
                         positions.data?.actualEntryDecisions === null
                           ? "미매수 제한 조회 대기"
@@ -794,7 +840,9 @@ function ScreenerRow({
   held,
   consumed,
   decisionLabel,
+  referenceOnly,
 }: {
+  referenceOnly: boolean;
   row: UsProspectiveCacheRow;
   held: boolean | null;
   consumed: boolean;
@@ -830,7 +878,9 @@ function ScreenerRow({
       <td>{pct(r.ret252)}</td>
       <td>{topPct(r.ret120Rank)}</td>
       <td>{topPct(r.ret252Rank)}</td>
-      <td>{r.onset80 ? (operational ? "원신호" : "과거 원신호") : "-"}</td>
+      <td>
+        {r.onset80 ? (referenceOnly ? "참고 원신호" : operational ? "원신호" : "과거 원신호") : "-"}
+      </td>
       <td>{r.betaWeakStreak}</td>
       <td>{topPct(r.betaRank)}</td>
       <td>{topPct(r.tkRank)}</td>
@@ -839,7 +889,13 @@ function ScreenerRow({
       <td>{topPct(r.amihudRank)}</td>
       <td>{money(r.adv20Usd)}</td>
       <td className="!text-left">
-        {!operational ? (
+        {referenceOnly ? (
+          <span className="text-muted-foreground">
+            {r.a0Entry ? "참고 진입 조건 통과 " : ""}
+            {r.a0Exit ? "참고 청산 조건 충족 " : ""}
+            {!r.a0Entry && !r.a0Exit ? "참고 조건 없음" : ""}
+          </span>
+        ) : !operational ? (
           <span className="text-muted-foreground">
             {r.a0Entry ? "과거 진입 조건 통과 " : ""}
             {r.a0Exit ? "과거 청산 조건 충족 " : ""}

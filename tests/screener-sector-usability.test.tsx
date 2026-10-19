@@ -50,7 +50,7 @@ vi.mock("@tanstack/react-query", () => ({
         data: hooks.heldKnown ? { heldSymbols: hooks.held, lastSellDateBySymbol: {} } : undefined,
         refetch: vi.fn(),
       };
-    if (queryKey[0] === "us-prospective-cache")
+    if (queryKey[0] === "us-latest-reference-cache")
       return {
         data: {
           analysis: { rows: hooks.usRows, date: "2026-10-13", summary: {} },
@@ -67,7 +67,10 @@ vi.mock("@/lib/analysisQuery", () => ({
   isAnalysisPayload: () => true,
 }));
 vi.mock("@/lib/portfolioPositionContext", () => ({ loadDomesticPositionContext: vi.fn() }));
-vi.mock("@/lib/usProspectiveCloud", () => ({ loadUsProspectiveCache: vi.fn() }));
+vi.mock("@/lib/usProspectiveCloud", () => ({
+  loadUsProspectiveCache: vi.fn(),
+  loadUsLatestReferenceCache: vi.fn(),
+}));
 vi.mock("@/components/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <main>{children}</main>,
 }));

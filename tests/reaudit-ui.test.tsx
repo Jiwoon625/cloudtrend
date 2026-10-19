@@ -4,7 +4,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { UsScreenerPage } from "../src/components/UsScreenerPage";
 const query = vi.hoisted(() => ({ failed: true }));
 vi.mock("@/lib/portfolioPositionContext", () => ({ loadDomesticPositionContext: vi.fn() }));
-vi.mock("@/lib/usProspectiveCloud", () => ({ loadUsProspectiveCache: vi.fn() }));
+vi.mock("@/lib/usProspectiveCloud", () => ({
+  loadUsProspectiveCache: vi.fn(),
+  loadUsLatestReferenceCache: vi.fn(),
+}));
 vi.mock("@/components/AppShell", () => ({
   AppShell: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));

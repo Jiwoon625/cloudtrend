@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "scripts/us-same-session-revision.ts",
+    "scripts/run-us-same-session-revision.ts",
+    "src/lib/usSameSessionRevision.ts",
+    "tests/us-revision-*.test.ts"
+  ]
+}
