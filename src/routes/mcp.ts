@@ -8,7 +8,11 @@ import {
   type SourceRegistrationMode,
 } from "../../scripts/source-registry-store";
 import { SOURCE_MAX_FILE_BYTES, type SourceType } from "../lib/sourceData";
-import { notionTradeUrl, parseAssistantActualBuy, sameTradeEvidence } from "../lib/assistantActualTrade";
+import {
+  notionTradeUrl,
+  parseAssistantActualBuy,
+  sameTradeEvidence,
+} from "../lib/assistantActualTrade";
 
 type JsonRpcId = string | number | null;
 type JsonRpcRequest = {
@@ -143,32 +147,46 @@ async function callProposeBuy(args: unknown) {
 
   // A unique (user_id, source_page_id) constraint owns idempotence.
   // Two racing callers may both see no row. Recover the winner after 23505.
-  const {error: insertError}=await client.from("assistant_trade_proposals")
-    .insert({user_id:userId,source_page_id:trade.sourcePageId,trade,status:"PENDING"});
-  if(insertError && insertError.code!=="23505")
+  const { error: insertError } = await client
+    .from("assistant_trade_proposals")
+    .insert({ user_id: userId, source_page_id: trade.sourcePageId, trade, status: "PENDING" });
+  if (insertError && insertError.code !== "23505")
     throw new Error("승인대기함에 거래 제안을 저장하지 못했습니다.");
-  const {data:existing,error:readError}=await client.from("assistant_trade_proposals")
+  const { data: existing, error: readError } = await client
+    .from("assistant_trade_proposals")
     .select("id,trade,status")
-    .eq("user_id",userId).eq("source_page_id",trade.sourcePageId).maybeSingle();
-  if(readError || !existing)
+    .eq("user_id", userId)
+    .eq("source_page_id", trade.sourcePageId)
+    .maybeSingle();
+  if (readError || !existing)
     throw new Error("승인대기함에 등록된 거래 제안을 확인하지 못했습니다.");
-  const old=parseAssistantActualBuy(existing.trade);
-  if(!sameTradeEvidence(old,trade))
+  const old = parseAssistantActualBuy(existing.trade);
+  if (!sameTradeEvidence(old, trade))
     throw new Error("같은 Notion 증빙으로 다른 체결을 요청했습니다. 기존 요청을 먼저 확인하세요.");
-  const proposalId=existing.id as string, status=existing.status as string;
+  const proposalId = existing.id as string,
+    status = existing.status as string;
   return {
-    structuredContent:{
-      proposalId,status,sourceUrl:notionTradeUrl(trade.sourcePageId),
-      reviewPath:"/assistant-trades",
-      recordedInActualLedger:status==="RECORDED",
-      next:status==="PENDING"
-        ? "CloudTrend 소유자가 /assistant-trades에서 증빙 대조 후 승인해야 원장에 반영됩니다."
-        : "이미 등록된 요청입니다. 상태를 확인하세요.",
+    structuredContent: {
+      proposalId,
+      status,
+      sourceUrl: notionTradeUrl(trade.sourcePageId),
+      reviewPath: "/assistant-trades",
+      recordedInActualLedger: status === "RECORDED",
+      next:
+        status === "PENDING"
+          ? "CloudTrend 소유자가 /assistant-trades에서 증빙 대조 후 승인해야 원장에 반영됩니다."
+          : "이미 등록된 요청입니다. 상태를 확인하세요.",
     },
-    content:[{type:"text",text:status==="PENDING"
-      ? `${trade.name} ${trade.shares}주 매수 승인 요청을 보관했습니다. 실제 원장은 변경되지 않았습니다.`
-      : `기존 요청 상태: ${status} (실거래 중복 기록 없음)`}],
-    isError:false,
+    content: [
+      {
+        type: "text",
+        text:
+          status === "PENDING"
+            ? `${trade.name} ${trade.shares}주 매수 승인 요청을 보관했습니다. 실제 원장은 변경되지 않았습니다.`
+            : `기존 요청 상태: ${status} (실거래 중복 기록 없음)`,
+      },
+    ],
+    isError: false,
   };
 }
 

@@ -106,14 +106,26 @@ function AssistantTrades() {
         </p>
       )}
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <span>승인대기·처리중 전체 {pendingTotal}건 · {pendingPage + 1}페이지</span>
+        <span>
+          승인대기·처리중 전체 {pendingTotal}건 · {pendingPage + 1}페이지
+        </span>
         <div className="flex items-center gap-2">
-          <button type="button" className="rounded border px-3 py-1"
+          <button
+            type="button"
+            className="rounded border px-3 py-1"
             disabled={pendingPage === 0 || loading || !!busy}
-            onClick={() => setPendingPage((page) => Math.max(0, page - 1))}>이전</button>
-          <button type="button" className="rounded border px-3 py-1"
+            onClick={() => setPendingPage((page) => Math.max(0, page - 1))}
+          >
+            이전
+          </button>
+          <button
+            type="button"
+            className="rounded border px-3 py-1"
             disabled={!hasMorePending || loading || !!busy}
-            onClick={() => setPendingPage((page) => page + 1)}>다음</button>
+            onClick={() => setPendingPage((page) => page + 1)}
+          >
+            다음
+          </button>
         </div>
       </div>
       {items.length === 0 && !loading && (
@@ -133,9 +145,9 @@ function AssistantTrades() {
                     ? "승인대기"
                     : p.status === "PROCESSING"
                       ? "승인 처리 중 · 원장 상태 확인 필요"
-                    : p.status === "RECORDED"
-                      ? "원장 기록됨"
-                      : "반려됨"}
+                      : p.status === "RECORDED"
+                        ? "원장 기록됨"
+                        : "반려됨"}
                 </span>
               </div>
               <dl className="grid grid-cols-2 gap-x-5 gap-y-2 text-sm sm:grid-cols-3">
@@ -176,8 +188,8 @@ function AssistantTrades() {
               </a>
               {p.status === "PROCESSING" && (
                 <p role="status" className="rounded border p-3 text-sm">
-                  중복 저장 방지를 위해 처리 중입니다. 2분 이상 지속되면 목록을 새로고침하고
-                  기존 원장을 대조한 뒤 같은 요청으로 승인 처리를 재시도할 수 있습니다.
+                  중복 저장 방지를 위해 처리 중입니다. 2분 이상 지속되면 목록을 새로고침하고 기존
+                  원장을 대조한 뒤 같은 요청으로 승인 처리를 재시도할 수 있습니다.
                 </p>
               )}
               {(p.status === "PENDING" || p.status === "PROCESSING") && (
@@ -188,8 +200,9 @@ function AssistantTrades() {
                       checked={!!approved[p.id]}
                       onChange={(e) => setApproved((v) => ({ ...v, [p.id]: e.target.checked }))}
                     />
-                    증빙과 기존 실제보유원장을 대조했습니다. 동일 종목·일자·가격으로 별도의
-                    매수가 있었더라도 서로 다른 실제 체결 증빙인지 확인했고, 위 수량·가격·수수료가 일치합니다.
+                    증빙과 기존 실제보유원장을 대조했습니다. 동일 종목·일자·가격으로 별도의 매수가
+                    있었더라도 서로 다른 실제 체결 증빙인지 확인했고, 위 수량·가격·수수료가
+                    일치합니다.
                   </label>
                   <div className="flex gap-2">
                     <button

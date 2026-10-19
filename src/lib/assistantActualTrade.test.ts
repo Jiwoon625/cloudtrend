@@ -69,28 +69,47 @@ describe("Assistant actual trade proposals", () => {
     ).toBe(false);
   });
   it("normalizes uppercase evidence UUID before storage and comparison", () => {
-    const parsed = parseAssistantActualBuy({
-      ...valid, sourcePageId: valid.sourcePageId.toUpperCase()
-    }, now);
+    const parsed = parseAssistantActualBuy(
+      {
+        ...valid,
+        sourcePageId: valid.sourcePageId.toUpperCase(),
+      },
+      now,
+    );
     expect(parsed.sourcePageId).toBe(valid.sourcePageId);
   });
   it("accepts separately evidenced identical executions without weakening duplicate-source detection", () => {
     const first = parseAssistantActualBuy(valid, now);
-    const second = parseAssistantActualBuy({
-      ...valid, sourcePageId:"3fed908c-ac2f-8158-b8e5-c02d17965774",
-      accountLabel:"GENERAL",
-    },now);
-    expect(existingTradeMatches(first,{
-      symbol:first.symbol,date:first.date,side:first.side,
-      shares:first.shares,price:first.price,fee:first.fee,
-    })).toBe(true);
-    expect(sameTradeEvidence(first,second)).toBe(false);
-    expect(sourceEvidenceMatches(first.sourcePageId, {
-      id:"first",sourceLinks:[{url:"https://app.notion.com/p/"+first.sourcePageId.replace(/-/g,"")}],
-    })).toBe(true);
-    expect(sourceEvidenceMatches(second.sourcePageId, {
-      id:"first",sourceLinks:[{url:"https://app.notion.com/p/"+first.sourcePageId.replace(/-/g,"")}],
-    })).toBe(false);
+    const second = parseAssistantActualBuy(
+      {
+        ...valid,
+        sourcePageId: "3fed908c-ac2f-8158-b8e5-c02d17965774",
+        accountLabel: "GENERAL",
+      },
+      now,
+    );
+    expect(
+      existingTradeMatches(first, {
+        symbol: first.symbol,
+        date: first.date,
+        side: first.side,
+        shares: first.shares,
+        price: first.price,
+        fee: first.fee,
+      }),
+    ).toBe(true);
+    expect(sameTradeEvidence(first, second)).toBe(false);
+    expect(
+      sourceEvidenceMatches(first.sourcePageId, {
+        id: "first",
+        sourceLinks: [{ url: "https://app.notion.com/p/" + first.sourcePageId.replace(/-/g, "") }],
+      }),
+    ).toBe(true);
+    expect(
+      sourceEvidenceMatches(second.sourcePageId, {
+        id: "first",
+        sourceLinks: [{ url: "https://app.notion.com/p/" + first.sourcePageId.replace(/-/g, "") }],
+      }),
+    ).toBe(false);
   });
-
 });

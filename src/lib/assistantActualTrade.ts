@@ -10,7 +10,10 @@ import { isReviewedKrSession } from "./assistantTradeSessions";
  */
 export const assistantActualBuySchema = z
   .object({
-    sourcePageId: z.string().uuid().transform((value) => value.toLowerCase()),
+    sourcePageId: z
+      .string()
+      .uuid()
+      .transform((value) => value.toLowerCase()),
     date: z.string(),
     symbol: z.string().regex(/^[A-Z0-9]{6}$/),
     name: z.string().trim().min(1).max(100),
@@ -64,12 +67,10 @@ export function notionTradeUrl(sourcePageId: string) {
   return `https://app.notion.com/p/${sourcePageId.replace(/-/g, "")}`;
 }
 
-export function sameTradeEvidence(
-  left: AssistantActualBuy,
-  right: AssistantActualBuy,
-) {
-  return Object.keys(left).every((key) =>
-    left[key as keyof AssistantActualBuy] === right[key as keyof AssistantActualBuy]);
+export function sameTradeEvidence(left: AssistantActualBuy, right: AssistantActualBuy) {
+  return Object.keys(left).every(
+    (key) => left[key as keyof AssistantActualBuy] === right[key as keyof AssistantActualBuy],
+  );
 }
 
 /** Distinct evidence IDs can represent separate fills, even at identical prices. */
@@ -79,10 +80,12 @@ export function sourceEvidenceMatches(
   assignment?: { brokerReference: string } | null,
 ) {
   const expected = "notion:" + pageId.toLowerCase();
-  return assignment?.brokerReference?.toLowerCase() === expected ||
+  return (
+    assignment?.brokerReference?.toLowerCase() === expected ||
     existing.sourceLinks?.some((link) =>
       link.url.replace(/-/g, "").toLowerCase().includes(pageId.replace(/-/g, "").toLowerCase()),
-    ) === true;
+    ) === true
+  );
 }
 
 export function existingTradeMatches(
