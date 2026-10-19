@@ -1,4 +1,4 @@
-import { Children, isValidElement, type ReactElement } from "react";
+import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import { expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 const state = vi.hoisted(() => ({ asset: "KR", navigate: vi.fn() }));
@@ -19,12 +19,13 @@ it.each(["KR", "US", "ETF"])("switches to %s without requesting a scroll reset",
       component: () => ReactElement<{
         onAssetChange: (asset: string) => void;
         selectedAsset: string;
+        children?: ReactNode;
       }>;
     }
   ).component;
   const view = component();
   const hub = [view, ...Children.toArray(view.props.children)].find(
-    (child) => isValidElement(child) && typeof child.props.onAssetChange === "function",
+    (child) => isValidElement<{ onAssetChange?: (asset: string) => void }>(child) && typeof child.props.onAssetChange === "function",
   );
   expect(hub && isValidElement(hub)).toBe(true);
   if (!hub || !isValidElement(hub)) throw new Error("Missing PortfolioAssetHub");
