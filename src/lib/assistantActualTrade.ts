@@ -76,7 +76,7 @@ export function sameTradeEvidence(left: AssistantActualBuy, right: AssistantActu
 /** Distinct evidence IDs can represent separate fills, even at identical prices. */
 export function sourceEvidenceMatches(
   pageId: string,
-  existing: { id: string; sourceLinks?: { url: string }[] },
+  existing: { id: string; sourceLinks?: { url: string }[] | undefined },
   assignment?: { brokerReference: string } | null,
 ) {
   const expected = "notion:" + pageId.toLowerCase();
