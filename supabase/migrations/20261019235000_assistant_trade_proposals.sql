@@ -20,6 +20,8 @@ create index if not exists assistant_trade_proposals_owner_status
 alter table public.assistant_trade_proposals enable row level security;
 revoke all on public.assistant_trade_proposals from public, anon, authenticated;
 grant select on public.assistant_trade_proposals to authenticated;
+-- Trusted server stage/status API needs explicit rights regardless of default grants.
+grant select, insert, update on public.assistant_trade_proposals to service_role;
 create policy assistant_trade_proposals_owner_read
   on public.assistant_trade_proposals for select to authenticated
   using (user_id = (select auth.uid()));
