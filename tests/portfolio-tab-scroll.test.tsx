@@ -1,4 +1,4 @@
-import type { ReactElement } from "react";
+import { Children, isValidElement, type ReactElement, type ReactNode } from "react";
 import { expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 const state = vi.hoisted(() => ({ asset: "KR", navigate: vi.fn() }));
@@ -19,11 +19,19 @@ it.each(["KR", "US", "ETF"])("switches to %s without requesting a scroll reset",
       component: () => ReactElement<{
         onAssetChange: (asset: string) => void;
         selectedAsset: string;
+        children?: ReactNode;
       }>;
     }
   ).component;
   const view = component();
-  view.props.onAssetChange(asset);
+  const hub = [view, ...Children.toArray(view.props.children)].find(
+    (child) =>
+      isValidElement<{ onAssetChange?: (asset: string) => void }>(child) &&
+      typeof child.props.onAssetChange === "function",
+  );
+  expect(hub && isValidElement(hub)).toBe(true);
+  if (!hub || !isValidElement(hub)) throw new Error("Missing PortfolioAssetHub");
+  (hub.props as { onAssetChange: (asset: string) => void }).onAssetChange(asset);
   expect(state.navigate).toHaveBeenCalledExactlyOnceWith({ search: { asset }, resetScroll: false });
 });
 it("keeps keyboard tab focus from scrolling the page", () => {
