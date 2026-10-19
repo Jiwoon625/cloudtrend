@@ -164,6 +164,33 @@ async function markRecorded(
     throw new Error("원장 체결 후 승인 상태 확인이 실패했습니다. 동일 요청을 재조회하세요.");
 }
 
+/** Deterministic pre-write conflicts must not leave the proposal locked forever. */
+async function releaseClaim(
+  service: ReturnType<typeof trustedSupabaseClient>,
+  proposal: ProposalRow,
+  userId: string,
+  token: string,
+) {
+  const { data, error } = await service
+    .from("assistant_trade_proposals")
+    .update({
+      status: "PENDING",
+      reviewed_at: null,
+      processing_token: null,
+      processing_started_at: null,
+    })
+    .eq("id", proposal.id)
+    .eq("user_id", userId)
+    .eq("status", "PROCESSING")
+    .eq("processing_token", token)
+    .select("id")
+    .maybeSingle();
+  if (error || !data)
+    throw new Error(
+      "원장 검토요청의 선점 해제를 확인하지 못했습니다. 기존 요청 상태를 재조회하세요.",
+    );
+}
+
 /** A write is only attempted after exclusive proposal reservation. */
 async function apply(request: Request, auth: AuthenticatedOwner) {
   const raw = await request.text();
@@ -221,15 +248,20 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
     auth.userId,
     "portfolio_ledgers",
   );
-  if (!snapshot) return reply({ error: "실제 원장 준비 상태를 확인할 수 없습니다." }, 409);
+  if (!snapshot) {
+    await releaseClaim(service, proposal, auth.userId, token);
+    return reply({ error: "실제 원장 준비 상태를 확인할 수 없습니다." }, 409);
+  }
   const expectedId = "new-actual:" + proposal.id;
   const existing = snapshot.payload.executions.find((e) => e.id === expectedId);
   if (existing) {
-    if (!sameSource(proposal, existing, snapshot.payload.newActualPortfolio?.assignments ?? {}))
+    if (!sameSource(proposal, existing, snapshot.payload.newActualPortfolio?.assignments ?? {})) {
+      await releaseClaim(service, proposal, auth.userId, token);
       return reply(
         { error: "같은 거래 ID에 다른 체결이 있습니다. 자동 정합성 복구를 중지했습니다." },
         409,
       );
+    }
     await markRecorded(service, proposal, auth.userId, token, expectedId);
     return reply({
       ok: true,
@@ -248,8 +280,13 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
       snapshot.payload.newActualPortfolio?.assignments?.[e.id],
     ),
   );
-  if (duplicateSource)
-    return reply({ error: "동일한 Notion 증빙으로 이미 매수가 반영되어 있습니다." }, 409);
+  if (duplicateSource) {
+    await releaseClaim(service, proposal, auth.userId, token);
+    return reply(
+      { error: "동일한 Notion 증빙으로 이미 매수가 반영되어 있습니다. 제안을 반려할 수 있습니다." },
+      409,
+    );
+  }
 
   const saved = await saveNewActualPortfolio(auth.client, auth.userId, {
     action: "execution",

@@ -33,6 +33,7 @@ describe("Assistant actual trade proposals", () => {
     { date: "2026-02-31" },
     { date: "2026-10-17" }, // Saturday
     { date: "2026-12-25" }, // XKRX holiday
+    { date: "2028-04-12" }, // statutory National Assembly election
     { date: "2026-12-31" }, // KRX year-end close
     { date: "2029-01-02" }, // outside reviewed calendar
     { symbol: "64290" },
