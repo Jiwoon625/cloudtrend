@@ -34,7 +34,7 @@ async function owner(request:Request) {
   );
   const {data,error}=await client.auth.getUser(token);
   if (error || !data.user || data.user.id !== configuredOwner()) return null;
-  return {client,userId:data.user.id};
+  return {client,userId:data.user.id,accessToken:token};
 }
 
 async function list(ownerId:string) {
@@ -84,7 +84,7 @@ async function apply(request:Request, auth:NonNullable<Awaited<ReturnType<typeof
   // Stable proposal UUID is the idempotency key across network retries.
   const saved=await saveNewActualPortfolio(auth.client,auth.userId,{
     action:"execution",asset:"KR",confirmed:true,
-    accessToken:"owner-confirmed-in-api",
+    accessToken:auth.accessToken,
     expectedRevision:snapshot.revision,requestId:proposal.id,
     execution:{
       id:"",date:trade.date,name:trade.name,side:"BUY",
