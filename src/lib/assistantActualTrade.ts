@@ -31,10 +31,13 @@ export type AssistantTradeProposal = {
   created_at: string;
 };
 
-const kstDate = (now: Date) =>
-  new Intl.DateTimeFormat("en-CA", {
+const kstDate = (now: Date) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(now);
+  }).formatToParts(now);
+  const part = (type: string) => parts.find(p => p.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+};
 
 export function parseAssistantActualBuy(value: unknown, now = new Date()): AssistantActualBuy {
   const data = assistantActualBuySchema.parse(value);
@@ -42,7 +45,7 @@ export function parseAssistantActualBuy(value: unknown, now = new Date()): Assis
     throw new Error("신규 실제 체결일은 2026-10-12부터 오늘까지의 한국 거래일이어야 합니다.");
   if (!Number.isSafeInteger(data.shares * data.price) || data.shares * data.price <= 0)
     throw new Error("매수금액은 안전한 정수 원 단위로 입력하세요.");
-  if (Math.round(data.fee * 100) !== data.fee * 100)
+  if (Math.abs(Math.round(data.fee * 100) - data.fee * 100) > 0.0000001)
     throw new Error("수수료는 소수 둘째 자리 이하로 입력하세요.");
   return data;
 }
