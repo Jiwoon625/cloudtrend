@@ -34,7 +34,10 @@ class AssistantTradesError extends Error {
 }
 
 function configuredOwner() {
-  const id = process.env["SUPABASE_USER_ID"]?.trim();
+  // This single-owner app's verified Supabase auth user. Vercel production did
+  // not set SUPABASE_USER_ID; a missing optional override must not disable the
+  // exact owner check. A configured but invalid override still fails closed.
+  const id = process.env["SUPABASE_USER_ID"]?.trim() || "bdfc8818-33a7-4030-9dbd-ecad39f223ac";
   if (!id || !z.string().uuid().safeParse(id).success)
     throw new AssistantTradesError(
       503,
