@@ -10,7 +10,10 @@ const state = vi.hoisted(() => ({ data: undefined as UsProspectiveCache | undefi
 vi.mock("@/components/AppShell", () => ({
   AppShell: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
 }));
-vi.mock("@/lib/usProspectiveCloud", () => ({ loadUsProspectiveCache: vi.fn() }));
+vi.mock("@/lib/usProspectiveCloud", () => ({
+  loadUsProspectiveCache: vi.fn(),
+  loadUsLatestReferenceCache: vi.fn(),
+}));
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: unknown) => ({ options }),
   Link: ({ to, children }: { to: string; children: React.ReactNode }) => (
