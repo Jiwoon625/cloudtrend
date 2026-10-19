@@ -137,13 +137,18 @@ function PortfolioPage() {
   const { asset } = Route.useSearch();
   const navigate = Route.useNavigate();
   return (
-    <PortfolioAssetHub
+    <>
+      <div className="mx-auto max-w-6xl px-4 pt-2 text-right">
+        <Link to="/assistant-trades" className="text-sm underline">ChatGPT 실제거래 승인대기함</Link>
+      </div>
+      <PortfolioAssetHub
       domestic={<KoreaPortfolioContent />}
       selectedAsset={asset}
       onAssetChange={(next) => {
         void navigate({ search: { asset: next }, resetScroll: false });
       }}
-    />
+      />
+    </>
   );
 }
 
