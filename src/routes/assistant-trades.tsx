@@ -18,35 +18,60 @@ function AssistantTrades() {
   const [pendingTotal, setPendingTotal] = useState(0);
   const [hasMorePending, setHasMorePending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<{ code: string; message: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [approved, setApproved] = useState<Record<string, boolean>>({});
   const authHeader = async () => {
     const { data, error } = await supabase.auth.getSession();
-    if (error || !data.session) throw new Error("CloudTrend 소유자 계정으로 로그인하세요.");
+    if (error || !data.session)
+      throw Object.assign(new Error("CloudTrend 소유자 계정으로 로그인하세요."), {
+        code: "LOGIN_REQUIRED",
+      });
     return { Authorization: `Bearer ${data.session.access_token}` };
   };
   const refresh = useCallback(async () => {
     setLoading(true);
+    setLoaded(false);
+    setLoadError(null);
     try {
-      const res = await fetch(`/api/assistant-trades?pendingPage=${pendingPage}`, {
-        headers: await authHeader(),
-        cache: "no-store",
-      });
+      const fetchPage = async () =>
+        fetch(`/api/assistant-trades?pendingPage=${pendingPage}`, {
+          headers: await authHeader(),
+          cache: "no-store",
+        });
+      let res = await fetchPage();
+      if (res.status === 401) {
+        const { error } = await supabase.auth.refreshSession();
+        if (!error) res = await fetchPage();
+      }
       const data = (await res.json()) as {
         ok?: boolean;
         error?: string;
+        code?: string;
         proposals?: AssistantTradeProposal[];
         pendingTotal?: number;
         hasMorePending?: boolean;
       };
-      if (!res.ok || !data.ok) throw new Error(data.error ?? "조회 실패");
+      if (!res.ok || !data.ok)
+        throw Object.assign(new Error(data.error ?? "조회 실패"), {
+          code: data.code ?? (res.status === 401 ? "LOGIN_REQUIRED" : "QUERY_FAILED"),
+        });
       setItems(data.proposals ?? []);
       setPendingTotal(data.pendingTotal ?? 0);
       setHasMorePending(data.hasMorePending === true);
       setMessage("");
+      setLoaded(true);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "승인대기함을 불러오지 못했습니다.");
+      setItems([]);
+      setLoadError({
+        code:
+          error && typeof error === "object" && "code" in error && typeof error.code === "string"
+            ? error.code
+            : "SERVER_ERROR",
+        message: error instanceof Error ? error.message : "승인대기함을 불러오지 못했습니다.",
+      });
     } finally {
       setLoading(false);
     }
@@ -107,31 +132,55 @@ function AssistantTrades() {
           {message}
         </p>
       )}
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <span>
-          승인대기·처리중 전체 {pendingTotal}건 · {pendingPage + 1}페이지
-        </span>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="rounded border px-3 py-1"
-            disabled={pendingPage === 0 || loading || !!busy}
-            onClick={() => setPendingPage((page) => Math.max(0, page - 1))}
-          >
-            이전
-          </button>
-          <button
-            type="button"
-            className="rounded border px-3 py-1"
-            disabled={!hasMorePending || loading || !!busy}
-            onClick={() => setPendingPage((page) => page + 1)}
-          >
-            다음
-          </button>
+      {loadError && (
+        <p role="alert" className="rounded border border-destructive p-3 text-sm">
+          {loadError.code === "LOGIN_REQUIRED"
+            ? "로그인 필요"
+            : loadError.code === "OWNER_MISMATCH"
+              ? "소유자 권한 불일치"
+              : loadError.code === "QUERY_FAILED"
+                ? "데이터 조회 실패"
+                : "Supabase 연결 또는 서버 설정 오류"}{" "}
+          · {loadError.message}
+          {loadError.code === "LOGIN_REQUIRED" && (
+            <>
+              {" "}
+              <Link to="/" className="underline">
+                로그인 화면으로 이동
+              </Link>
+            </>
+          )}
+        </p>
+      )}
+      {loaded && (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+          <span>
+            승인대기·처리중 전체 {pendingTotal}건 · {pendingPage + 1}페이지
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="rounded border px-3 py-1"
+              disabled={pendingPage === 0 || loading || !!busy}
+              onClick={() => setPendingPage((page) => Math.max(0, page - 1))}
+            >
+              이전
+            </button>
+            <button
+              type="button"
+              className="rounded border px-3 py-1"
+              disabled={!hasMorePending || loading || !!busy}
+              onClick={() => setPendingPage((page) => page + 1)}
+            >
+              다음
+            </button>
+          </div>
         </div>
-      </div>
-      {items.length === 0 && !loading && (
-        <p className="rounded border p-6 text-sm">현재 표시할 제안이 없습니다.</p>
+      )}
+      {loaded && items.length === 0 && (
+        <p className="rounded border p-6 text-sm">
+          정상 조회됐습니다. 현재 승인대기 거래가 없습니다.
+        </p>
       )}
       <div className="space-y-3">
         {items.map((p) => {

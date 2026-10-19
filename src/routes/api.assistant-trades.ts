@@ -23,19 +23,37 @@ const actionSchema = z
   })
   .strict();
 
+class AssistantTradesError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 function configuredOwner() {
   const id = process.env["SUPABASE_USER_ID"]?.trim();
   if (!id || !z.string().uuid().safeParse(id).success)
-    throw new Error("거래 승인 서비스의 소유자 설정이 누락되었습니다.");
-  return id;
+    throw new AssistantTradesError(
+      503,
+      "SERVER_CONFIG",
+      "거래 승인 서비스의 소유자 설정을 확인하세요.",
+    );
+  return id.toLowerCase();
 }
 
 async function owner(request: Request) {
   const header = request.headers.get("authorization") ?? "";
   const token = header.match(/^Bearer ([^\s]+)$/)?.[1];
-  if (!token) return null;
+  if (!token)
+    throw new AssistantTradesError(401, "LOGIN_REQUIRED", "CloudTrend 소유자 로그인이 필요합니다.");
+  const url = import.meta.env["VITE_SUPABASE_URL"] || "https://ahbvrtugugwnbrfnbxzp.supabase.co";
+  if (new URL(url).hostname !== "ahbvrtugugwnbrfnbxzp.supabase.co")
+    throw new AssistantTradesError(503, "SERVER_CONFIG", "Supabase 프로젝트 연결을 확인하세요.");
   const client = createClient(
-    import.meta.env["VITE_SUPABASE_URL"] || "https://ahbvrtugugwnbrfnbxzp.supabase.co",
+    url,
     import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
       "sb_publishable_j1o5NMjbXz7UA1CsbCj1dA_hiMBgBlE",
     {
@@ -44,7 +62,20 @@ async function owner(request: Request) {
     },
   );
   const { data, error } = await client.auth.getUser(token);
-  if (error || !data.user || data.user.id !== configuredOwner()) return null;
+  if (error?.status && error.status >= 500)
+    throw new AssistantTradesError(503, "SUPABASE_CONNECTION", "Supabase 인증 연결을 확인하세요.");
+  if (error || !data.user)
+    throw new AssistantTradesError(
+      401,
+      "LOGIN_REQUIRED",
+      "로그인 세션이 만료되었습니다. 다시 로그인하세요.",
+    );
+  if (data.user.id.toLowerCase() !== configuredOwner())
+    throw new AssistantTradesError(
+      403,
+      "OWNER_MISMATCH",
+      "현재 로그인 계정은 거래 승인 소유자가 아닙니다.",
+    );
   return { client, userId: data.user.id, accessToken: token };
 }
 
@@ -52,8 +83,7 @@ const PAGE_SIZE = 50;
 const RECOVERY_LEASE_MS = 120_000;
 
 /** Active proposals always come first; history is separate and cannot hide them. */
-async function list(ownerId: string, page: number) {
-  const db = trustedSupabaseClient();
+async function list(db: AuthenticatedOwner["client"], ownerId: string, page: number) {
   const {
     data: active,
     count,
@@ -69,7 +99,8 @@ async function list(ownerId: string, page: number) {
     .order("created_at", { ascending: true })
     .order("id", { ascending: true })
     .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-  if (error) throw new Error("승인 대기내역을 조회하지 못했습니다.");
+  if (error)
+    throw new AssistantTradesError(502, "QUERY_FAILED", "승인 대기내역 조회에 실패했습니다.");
   const { data: history, error: historyError } = await db
     .from("assistant_trade_proposals")
     .select("id,user_id,source_page_id,trade,status,ledger_execution_id,created_at")
@@ -77,7 +108,8 @@ async function list(ownerId: string, page: number) {
     .in("status", ["RECORDED", "REJECTED"])
     .order("created_at", { ascending: false })
     .limit(25);
-  if (historyError) throw new Error("승인 처리내역을 조회하지 못했습니다.");
+  if (historyError)
+    throw new AssistantTradesError(502, "QUERY_FAILED", "승인 처리내역 조회에 실패했습니다.");
   return {
     proposals: [
       ...(active ?? []),
@@ -331,23 +363,34 @@ export const Route = createFileRoute("/api/assistant-trades")({
       GET: async ({ request }) => {
         try {
           const authenticated = await owner(request);
-          if (!authenticated) return reply({ error: "소유자 로그인이 필요합니다." }, 401);
           const page = Number(new URL(request.url).searchParams.get("pendingPage") ?? "0");
           if (!Number.isSafeInteger(page) || page < 0 || page > 10000)
             return reply({ error: "페이지 번호가 올바르지 않습니다." }, 400);
-          return reply({ ok: true, ...(await list(authenticated.userId, page)) });
-        } catch {
-          return reply({ error: "승인 대기내역을 불러오지 못했습니다." }, 503);
+          // The owner's JWT is used for the SELECT RLS policy. No server secret is
+          // needed for a read, and an absent service key cannot hide real rows.
+          return reply({
+            ok: true,
+            ...(await list(authenticated.client, authenticated.userId, page)),
+          });
+        } catch (error) {
+          if (error instanceof AssistantTradesError)
+            return reply({ error: error.message, code: error.code }, error.status);
+          console.error("assistant-trades GET failed", error);
+          return reply(
+            { error: "Supabase 연결 또는 서버 설정을 확인하세요.", code: "SERVER_ERROR" },
+            503,
+          );
         }
       },
       POST: async ({ request }) => {
         try {
           const authenticated = await owner(request);
-          if (!authenticated) return reply({ error: "소유자 로그인이 필요합니다." }, 401);
           if (!(request.headers.get("content-type") ?? "").includes("application/json"))
             return reply({ error: "JSON 요청이 필요합니다." }, 415);
           return await apply(request, authenticated);
         } catch (error) {
+          if (error instanceof AssistantTradesError)
+            return reply({ error: error.message, code: error.code }, error.status);
           if (error instanceof z.ZodError || error instanceof SyntaxError)
             return reply({ error: "입력값의 형식을 확인하세요." }, 400);
           // May be a conflict or transient journal error. Do not expose private internals.

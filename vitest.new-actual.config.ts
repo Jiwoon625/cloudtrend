@@ -7,6 +7,7 @@ export default defineConfig({
     // K4 as-of pooled cost and actual E4 acquisition lots must run in ledger CI.
     include: [
       "src/lib/newActual*.test.ts",
+      "src/routes/-api.assistant-trades.test.ts",
       "src/lib/actualHoldingPriceExit.server.test.ts",
       "src/lib/actualHoldingPriceInputs.server.test.ts",
       "src/lib/actualHoldingPriceLots.test.ts",
