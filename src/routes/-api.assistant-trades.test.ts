@@ -119,6 +119,8 @@ describe("assistant trade inbox owner read", () => {
     expect((await get()).status).toBe(403);
     state.uid = "bdfc8818-33a7-4030-9dbd-ecad39f223ac";
     delete process.env["SUPABASE_USER_ID"];
+    expect((await get()).status).toBe(200); // verified single-owner fallback
+    process.env["SUPABASE_USER_ID"] = "invalid-owner";
     expect((await get()).status).toBe(503);
     process.env["SUPABASE_USER_ID"] = state.uid;
     state.queryError = true;
