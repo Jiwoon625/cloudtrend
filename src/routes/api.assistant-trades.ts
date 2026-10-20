@@ -2,7 +2,6 @@ import process from "node:process";
 import { createFileRoute } from "@tanstack/react-router";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { trustedSupabaseClient } from "../../scripts/analysis-run-store";
 import {
   existingTradeMatches,
   sourceEvidenceMatches,
@@ -83,7 +82,6 @@ async function owner(request: Request) {
 }
 
 const PAGE_SIZE = 50;
-const RECOVERY_LEASE_MS = 120_000;
 
 /** Active proposals always come first; history is separate and cannot hide them. */
 async function list(db: AuthenticatedOwner["client"], ownerId: string, page: number) {
@@ -143,84 +141,55 @@ function sameSource(
 }
 
 async function claimProposal(
-  service: ReturnType<typeof trustedSupabaseClient>,
+  client: AuthenticatedOwner["client"],
   proposal: ProposalRow,
-  userId: string,
 ): Promise<string | null> {
-  const token = crypto.randomUUID();
-  const now = new Date();
-  const change = {
-    status: "PROCESSING",
-    processing_token: token,
-    processing_started_at: now.toISOString(),
-    reviewed_at: now.toISOString(),
-  };
-  let query = service
-    .from("assistant_trade_proposals")
-    .update(change)
-    .eq("id", proposal.id)
-    .eq("user_id", userId);
-  if (proposal.status === "PENDING") {
-    query = query.eq("status", "PENDING");
-  } else if (proposal.status === "PROCESSING") {
-    // Recover only after the original in-flight request is no longer live.
-    // A retry still reconciles the immutable journal before any attempted write.
-    const cutoff = new Date(now.getTime() - RECOVERY_LEASE_MS).toISOString();
-    query = query.eq("status", "PROCESSING").lt("processing_started_at", cutoff);
-  } else return null;
-  const { data, error } = await query.select("id").maybeSingle();
-  if (error) throw new Error("원장 승인 요청의 원자적 선점에 실패했습니다.");
-  return data ? token : null;
+  if (proposal.status !== "PENDING" && proposal.status !== "PROCESSING") return null;
+  const { data, error } = await client.rpc("assistant_trade_claim", { p_id: proposal.id });
+  if (error) throw transitionError(error);
+  return data as string | null;
+}
+
+function transitionError(error: { code?: string }) {
+  if (error.code === "PGRST202" || error.code === "42883")
+    return new AssistantTradesError(
+      503,
+      "SERVER_CONFIG",
+      "승인 상태 전환 설정을 확인하세요. 원장 기록은 시작되지 않았습니다.",
+    );
+  return new AssistantTradesError(
+    502,
+    "QUERY_FAILED",
+    "승인 상태 변경에 실패했습니다. 다시 조회하세요.",
+  );
 }
 
 async function markRecorded(
-  service: ReturnType<typeof trustedSupabaseClient>,
+  client: AuthenticatedOwner["client"],
   proposal: ProposalRow,
-  userId: string,
   token: string,
-  executionId: string,
 ) {
-  const { data, error } = await service
-    .from("assistant_trade_proposals")
-    .update({
-      status: "RECORDED",
-      ledger_execution_id: executionId,
-      processing_token: null,
-      processing_started_at: null,
-      reviewed_at: new Date().toISOString(),
-    })
-    .eq("user_id", userId)
-    .eq("id", proposal.id)
-    .eq("status", "PROCESSING")
-    .eq("processing_token", token)
-    .select("id")
-    .maybeSingle();
-  if (error || !data)
+  const { data, error } = await client.rpc("assistant_trade_record", {
+    p_id: proposal.id,
+    p_token: token,
+  });
+  if (error) throw transitionError(error);
+  if (!data)
     throw new Error("원장 체결 후 승인 상태 확인이 실패했습니다. 동일 요청을 재조회하세요.");
 }
 
 /** Deterministic pre-write conflicts must not leave the proposal locked forever. */
 async function releaseClaim(
-  service: ReturnType<typeof trustedSupabaseClient>,
+  client: AuthenticatedOwner["client"],
   proposal: ProposalRow,
-  userId: string,
   token: string,
 ) {
-  const { data, error } = await service
-    .from("assistant_trade_proposals")
-    .update({
-      status: "PENDING",
-      reviewed_at: null,
-      processing_token: null,
-      processing_started_at: null,
-    })
-    .eq("id", proposal.id)
-    .eq("user_id", userId)
-    .eq("status", "PROCESSING")
-    .eq("processing_token", token)
-    .select("id")
-    .maybeSingle();
-  if (error || !data)
+  const { data, error } = await client.rpc("assistant_trade_release", {
+    p_id: proposal.id,
+    p_token: token,
+  });
+  if (error) throw transitionError(error);
+  if (!data)
     throw new Error(
       "원장 검토요청의 선점 해제를 확인하지 못했습니다. 기존 요청 상태를 재조회하세요.",
     );
@@ -231,8 +200,7 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
   const raw = await request.text();
   if (raw.length > 4096) return reply({ error: "요청 본문이 너무 큽니다." }, 413);
   const input = actionSchema.parse(JSON.parse(raw));
-  const service = trustedSupabaseClient();
-  const { data, error } = await service
+  const { data, error } = await auth.client
     .from("assistant_trade_proposals")
     .select(
       "id,user_id,source_page_id,trade,status,ledger_execution_id,created_at,processing_started_at",
@@ -240,21 +208,18 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
     .eq("user_id", auth.userId)
     .eq("id", input.proposalId)
     .maybeSingle();
-  if (error || !data) return reply({ error: "소유자의 승인 요청을 찾을 수 없습니다." }, 404);
+  if (error) throw new AssistantTradesError(502, "QUERY_FAILED", "승인 요청 조회에 실패했습니다.");
+  if (!data) return reply({ error: "소유자의 승인 요청을 찾을 수 없습니다." }, 404);
   const proposal = data as ProposalRow;
   if (input.action === "REJECT") {
     // REJECT cannot override PROCESSING: compare-and-set with the same PENDING row.
     if (proposal.status !== "PENDING")
       return reply({ error: "승인 처리 중이거나 이미 완료된 거래입니다." }, 409);
-    const { data: updated, error: updateError } = await service
-      .from("assistant_trade_proposals")
-      .update({ status: "REJECTED", reviewed_at: new Date().toISOString() })
-      .eq("id", proposal.id)
-      .eq("user_id", auth.userId)
-      .eq("status", "PENDING")
-      .select("id")
-      .maybeSingle();
-    if (updateError || !updated)
+    const { data: updated, error: updateError } = await auth.client.rpc("assistant_trade_reject", {
+      p_id: proposal.id,
+    });
+    if (updateError) throw transitionError(updateError);
+    if (!updated)
       return reply({ error: "승인과 반려가 동시에 처리됐습니다. 목록을 새로고침하세요." }, 409);
     return reply({ ok: true, status: "REJECTED", proposalId: proposal.id });
   }
@@ -271,7 +236,7 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
   const trade = parseAssistantActualBuy(proposal.trade);
   if (trade.sourcePageId !== proposal.source_page_id.toLowerCase())
     return reply({ error: "거래 증빙 식별자가 일치하지 않습니다." }, 409);
-  const token = await claimProposal(service, proposal, auth.userId);
+  const token = await claimProposal(auth.client, proposal);
   if (!token)
     return reply(
       { error: "승인 처리 중입니다. 잠시 후 새로고침하고 기존 원장을 확인하세요." },
@@ -284,20 +249,20 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
     "portfolio_ledgers",
   );
   if (!snapshot) {
-    await releaseClaim(service, proposal, auth.userId, token);
+    await releaseClaim(auth.client, proposal, token);
     return reply({ error: "실제 원장 준비 상태를 확인할 수 없습니다." }, 409);
   }
   const expectedId = "new-actual:" + proposal.id;
   const existing = snapshot.payload.executions.find((e) => e.id === expectedId);
   if (existing) {
     if (!sameSource(proposal, existing, snapshot.payload.newActualPortfolio?.assignments ?? {})) {
-      await releaseClaim(service, proposal, auth.userId, token);
+      await releaseClaim(auth.client, proposal, token);
       return reply(
         { error: "같은 거래 ID에 다른 체결이 있습니다. 자동 정합성 복구를 중지했습니다." },
         409,
       );
     }
-    await markRecorded(service, proposal, auth.userId, token, expectedId);
+    await markRecorded(auth.client, proposal, token);
     return reply({
       ok: true,
       status: "RECORDED",
@@ -316,7 +281,7 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
     ),
   );
   if (duplicateSource) {
-    await releaseClaim(service, proposal, auth.userId, token);
+    await releaseClaim(auth.client, proposal, token);
     return reply(
       { error: "동일한 Notion 증빙으로 이미 매수가 반영되어 있습니다. 제안을 반려할 수 있습니다." },
       409,
@@ -349,7 +314,7 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
       brokerReference: "notion:" + trade.sourcePageId,
     },
   });
-  await markRecorded(service, proposal, auth.userId, token, expectedId);
+  await markRecorded(auth.client, proposal, token);
   return reply({
     ok: true,
     status: "RECORDED",
@@ -397,6 +362,7 @@ export const Route = createFileRoute("/api/assistant-trades")({
           if (error instanceof z.ZodError || error instanceof SyntaxError)
             return reply({ error: "입력값의 형식을 확인하세요." }, 400);
           // May be a conflict or transient journal error. Do not expose private internals.
+          console.error("assistant-trades POST failed", error);
           return reply(
             {
               error:

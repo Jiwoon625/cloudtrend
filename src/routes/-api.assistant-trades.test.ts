@@ -7,6 +7,10 @@ const state = vi.hoisted(() => ({
   history: [] as Array<{ id: string; created_at: string; status: string }>,
   queryError: false,
   service: vi.fn(),
+  rpc: vi.fn(),
+  save: vi.fn(),
+  snapshot: vi.fn(),
+  proposal: null as null | Record<string, unknown>,
   getUser: vi.fn(),
   authorization: "",
 }));
@@ -14,7 +18,8 @@ const state = vi.hoisted(() => ({
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: unknown) => ({ options }),
 }));
-vi.mock("../../scripts/analysis-run-store", () => ({ trustedSupabaseClient: state.service }));
+vi.mock("../lib/ledger/websiteRepository.server", () => ({ readWebsiteDocument: state.snapshot }));
+vi.mock("../lib/newActualPortfolio.server", () => ({ saveNewActualPortfolio: state.save }));
 vi.mock("@supabase/supabase-js", () => ({
   createClient: (
     _url: string,
@@ -32,6 +37,7 @@ vi.mock("@supabase/supabase-js", () => ({
           };
         },
       },
+      rpc: state.rpc,
       from: () => {
         let status: string[] = [];
         let offset = 0;
@@ -50,6 +56,7 @@ vi.mock("@supabase/supabase-js", () => ({
             return query;
           },
           limit: () => query,
+          maybeSingle: async () => ({ data: state.proposal, error: null }),
           then: (resolve: (result: unknown) => unknown) => {
             const rows = status.includes("PENDING") ? state.active : state.history;
             return Promise.resolve(
@@ -82,6 +89,25 @@ const get = (page = 0, token = "test-jwt") => {
   });
 };
 
+const post = (action: "CONFIRM" | "REJECT" = "CONFIRM") => {
+  const handlers = (
+    Route as unknown as {
+      options: { server: { handlers: { POST: (x: { request: Request }) => Promise<Response> } } };
+    }
+  ).options.server.handlers;
+  return handlers.POST({
+    request: new Request("https://cloudtrend.vercel.app/api/assistant-trades", {
+      method: "POST",
+      headers: { Authorization: "Bearer test-jwt", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
+        proposalId: "faa46c4e-ea94-4ff8-85f3-22e458da8b26",
+        confirmed: true,
+      }),
+    }),
+  });
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   state.uid = "bdfc8818-33a7-4030-9dbd-ecad39f223ac";
@@ -90,6 +116,85 @@ beforeEach(() => {
   state.queryError = false;
   state.active = [];
   state.history = [];
+  state.proposal = null;
+  state.rpc.mockReset();
+  state.save.mockReset();
+  state.snapshot.mockReset();
+});
+
+describe("assistant trade owner approval", () => {
+  beforeEach(() => {
+    state.proposal = {
+      id: "faa46c4e-ea94-4ff8-85f3-22e458da8b26",
+      user_id: state.uid,
+      source_page_id: "3fed908c-ac2f-817e-bf54-c58ab0cde580",
+      status: "PENDING",
+      trade: {
+        date: "2026-10-19",
+        name: "인텍플러스",
+        symbol: "064290",
+        market: "KOSDAQ",
+        side: "BUY",
+        shares: 7,
+        price: 60300,
+        fee: 15,
+        accountLabel: "ISA",
+        sourcePageId: "3fed908c-ac2f-817e-bf54-c58ab0cde580",
+      },
+    };
+  });
+
+  it("reports a missing transition migration before writing the actual ledger", async () => {
+    state.rpc.mockResolvedValue({ data: null, error: { code: "PGRST202" } });
+    const response = await post();
+    expect(response.status).toBe(503);
+    expect((await response.json()).code).toBe("SERVER_CONFIG");
+    expect(state.save).not.toHaveBeenCalled();
+    expect(state.service).not.toHaveBeenCalled();
+  });
+
+  it("claims with the owner JWT, saves through the CAS API, then records the same proposal", async () => {
+    state.rpc.mockImplementation(async (name: string) => ({
+      data: name === "assistant_trade_claim" ? "claim-token" : true,
+      error: null,
+    }));
+    state.snapshot.mockResolvedValue({
+      revision: 84,
+      payload: { executions: [], newActualPortfolio: { assignments: {} } },
+    });
+    state.save.mockResolvedValue({ revision: 85, reused: false });
+    const response = await post();
+    expect(response.status).toBe(200);
+    expect((await response.json()).executionId).toBe(
+      "new-actual:faa46c4e-ea94-4ff8-85f3-22e458da8b26",
+    );
+    expect(state.save).toHaveBeenCalledWith(
+      expect.anything(),
+      state.uid,
+      expect.objectContaining({
+        requestId: state.proposal!["id"],
+        expectedRevision: 84,
+        execution: expect.objectContaining({
+          date: "2026-10-19",
+          shares: 7,
+          price: 60300,
+          fee: 15,
+        }),
+        allocation: expect.objectContaining({ gross: 422100, fee: 15 }),
+      }),
+    );
+    expect(state.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "assistant_trade_claim",
+      "assistant_trade_record",
+    ]);
+    expect(state.service).not.toHaveBeenCalled();
+  });
+
+  it("does not reject a proposal already claimed by approval", async () => {
+    state.rpc.mockResolvedValue({ data: false, error: null });
+    expect((await post("REJECT")).status).toBe(409);
+    expect(state.save).not.toHaveBeenCalled();
+  });
 });
 
 describe("assistant trade inbox owner read", () => {
