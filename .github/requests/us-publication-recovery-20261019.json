@@ -1,0 +1,7 @@
+{
+  "version": "us-publication-only-recovery-v1",
+  "date": "2026-10-19",
+  "dataHash": "sha256:e0eea4c6e2736a345e4735a727917a6eaef7f861649720b1e268df061d0af845",
+  "ruleVersion": "us-prospective-1.1.0-a0-anchor",
+  "expectedRows": 5347
+}
