@@ -1,6 +1,7 @@
 import { usHistorySnapshot } from "./usScreeningHistory";
 import { supabase, userId } from "./cloud";
 import { hydrateScreeningSnapshot } from "./screeningSnapshotStorage";
+import { hydrateScreeningRunArchive } from "./screeningRunArchiveStorage";
 import type { ScreeningSnapshot } from "./screeningSnapshot";
 import { queryOptions } from "@tanstack/react-query";
 
@@ -138,7 +139,9 @@ export async function readScreeningArchive(
   const { data, error } = await query.maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) throw new Error("요청한 과거 실행 기록이 없습니다.");
-  const snapshot = hydrateScreeningSnapshot(data.snapshot);
+  const snapshot = runId
+    ? await hydrateScreeningRunArchive(data.snapshot)
+    : hydrateScreeningSnapshot(data.snapshot);
   if (
     snapshot.asOfDate !== date ||
     Date.parse(snapshot.savedAt) !== Date.parse(savedAt) ||

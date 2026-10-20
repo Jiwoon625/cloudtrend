@@ -1,0 +1,31 @@
+name: US publication-only recovery
+on:
+  push:
+    branches: [main]
+    paths: [.github/requests/us-publication-recovery-20261019.json]
+permissions:
+  contents: read
+concurrency:
+  group: us-prospective
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Restore only the approved completed October 19 publication
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: >-
+          npx vite-node --script scripts/recover-us-screening-publication.ts
+          --request .github/requests/us-publication-recovery-20261019.json --apply
