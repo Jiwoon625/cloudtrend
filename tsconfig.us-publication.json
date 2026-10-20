@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node", "vite/client"] },
+  "include": [
+    "scripts/recover-us-screening-publication.ts",
+    "src/lib/screeningRunArchiveStorage.ts",
+    "src/lib/screeningArchiveQuery.ts"
+  ]
+}

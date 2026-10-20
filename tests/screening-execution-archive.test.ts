@@ -6,6 +6,8 @@ import {
   screeningArchiveQueryOptions,
 } from "../src/lib/screeningArchiveQuery";
 import { archiveScreeningRun } from "../src/lib/screeningRunArchive";
+import { serializeScreeningRunArchive } from "../src/lib/screeningRunArchiveStorage";
+import { largeUsArchiveSnapshot } from "./screening-run-archive-fixture";
 import type { ScreeningSnapshot } from "../src/lib/screeningSnapshot";
 import type { SupabaseClient } from "@supabase/supabase-js";
 const fixture = vi.hoisted(() => ({
@@ -85,6 +87,17 @@ describe("immutable execution history", () => {
         (value) => typeof value !== "string" || value === "screening_run_archive",
       ),
     ).toBe(true);
+  });
+  it("reads compressed execution evidence through the same historical detail boundary", async () => {
+    const original = largeUsArchiveSnapshot(200);
+    fixture.snapshot = await serializeScreeningRunArchive(original);
+    const saved = await readScreeningArchive(original.runId!, original.asOfDate, original.savedAt, {
+      market: "US",
+      strategyVersion: original.strategyVersion,
+    });
+    expect(saved).toEqual(original);
+    expect(fixture.filters).toContainEqual(["user_id", "owner"]);
+    expect(fixture.filters).toContainEqual(["run_id", original.runId]);
   });
   it("accepts JSONB key reordering but rejects an existing run ID with different evidence", async () => {
     const db = {

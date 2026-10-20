@@ -1,0 +1,44 @@
+name: Screening archive publication check
+on:
+  pull_request:
+    paths:
+      - src/lib/screeningRunArchive*.ts
+      - src/lib/usScreeningRunArchive.ts
+      - src/lib/screeningArchiveQuery.ts
+      - scripts/recover-us-screening-publication.ts
+      - tests/*archive*.test.ts
+      - tests/us-publication-only-recovery.test.ts
+      - tests/us-publication-recovery-integration.test.ts
+      - vitest.us-publication.config.ts
+      - tsconfig.us-publication.json
+      - .github/workflows/screening-archive-check.yml
+      - .github/workflows/us-publication-recovery.yml
+  push:
+    branches: [main]
+    paths:
+      - src/lib/screeningRunArchive*.ts
+      - src/lib/usScreeningRunArchive.ts
+      - src/lib/screeningArchiveQuery.ts
+      - scripts/recover-us-screening-publication.ts
+      - tests/*archive*.test.ts
+      - tests/us-publication-only-recovery.test.ts
+      - tests/us-publication-recovery-integration.test.ts
+      - vitest.us-publication.config.ts
+      - tsconfig.us-publication.json
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --config vitest.history.config.ts
+      - run: npx vitest run --config vitest.us-publication.config.ts
+      - run: npx tsc --noEmit -p tsconfig.us-publication.json
+      - run: npm run build

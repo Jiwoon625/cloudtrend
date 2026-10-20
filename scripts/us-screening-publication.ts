@@ -1,4 +1,4 @@
-import { archiveScreeningRun } from "../src/lib/screeningRunArchive";
+import { archiveUsScreeningRun } from "../src/lib/usScreeningRunArchive";
 import { gzipSync } from "node:zlib";
 import { ANALYSIS_BUCKET, trustedSupabaseClient, uploadJson } from "./analysis-run-store";
 import { usBrowserViews } from "../src/lib/usBrowserViews";
@@ -12,7 +12,7 @@ export async function publishBrowserViews(
 ) {
   const views = usBrowserViews(result as UsProspectiveCache);
   const recorded = result as UsProspectiveCache;
-  await archiveScreeningRun(client, uid, {
+  await archiveUsScreeningRun(client, uid, {
     runId: `us-${recorded.analysis.date}-${recorded.dataHash}`,
     market: "US",
     strategyVersion: recorded.analysis.ruleVersion,
