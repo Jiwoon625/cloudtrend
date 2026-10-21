@@ -1,7 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/cloud";
+import { invalidateActualPositionViews } from "@/lib/dashboardActualRefresh";
+import { cancelLedgerReads, invalidateLedgerReads } from "@/lib/ledgerUiMutation";
 import type { AssistantTradeProposal } from "@/lib/assistantActualTrade";
+import { assistantTradeGross, formatAssistantTradeMoney } from "@/lib/assistantActualTrade";
 
 export const Route = createFileRoute("/assistant-trades")({
   ssr: false,
@@ -9,10 +13,8 @@ export const Route = createFileRoute("/assistant-trades")({
   component: AssistantTrades,
 });
 
-function money(n: number) {
-  return n.toLocaleString("ko-KR") + "원";
-}
 function AssistantTrades() {
+  const qc = useQueryClient();
   const [items, setItems] = useState<AssistantTradeProposal[]>([]);
   const [pendingPage, setPendingPage] = useState(0);
   const [pendingTotal, setPendingTotal] = useState(0);
@@ -103,6 +105,19 @@ function AssistantTrades() {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "승인 결과 확인이 필요합니다.");
     } finally {
+      // A lost response can still mean the fill committed. Reload on return to
+      // either currency's portfolio, without triggering a hidden screening.
+      if (action === "CONFIRM") {
+        await Promise.all([
+          qc.cancelQueries({ queryKey: ["new-actual-portfolio"] }),
+          cancelLedgerReads(qc),
+        ]);
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: ["new-actual-portfolio"], refetchType: "none" }),
+          invalidateLedgerReads(qc, "none"),
+          invalidateActualPositionViews(qc),
+        ]);
+      }
       setBusy(null);
     }
   }
@@ -115,9 +130,11 @@ function AssistantTrades() {
         </Link>
       </div>
       <p className="text-sm text-muted-foreground">
-        ChatGPT가 작성한 거래는 승인 전에는 원장·현금·Shadow·과거 성과에 영향을 주지 않습니다. 실제
-        체결일, 수량, 단가, 수수료 및 Notion 증빙을 직접 대조한 뒤 종목별로 승인하세요. 계좌
-        입출금은 자동 생성하지 않습니다.
+        한국·미국주식 모두 현재 홈페이지 계정으로 확인·반영합니다. 별도 서비스 로그인이나 API 키는
+        필요하지 않습니다. 미국주식은 미국 현지 체결일과 USD 금액을 확인하세요. ChatGPT가 작성한
+        거래는 승인 전에는 원장·현금·Shadow·과거 성과에 영향을 주지 않습니다. 실제 체결일, 수량,
+        단가, 수수료 및 Notion 증빙을 직접 대조한 뒤 종목별로 승인하세요. 계좌 입출금은 자동
+        생성하지 않습니다.
       </p>
       <button
         type="button"
@@ -204,7 +221,10 @@ function AssistantTrades() {
               <dl className="grid grid-cols-2 gap-x-5 gap-y-2 text-sm sm:grid-cols-3">
                 <div>
                   <dt className="text-muted-foreground">실제 거래일</dt>
-                  <dd>{t.date}</dd>
+                  <dd>
+                    {t.date}
+                    {t.market === "US" ? " (미국 현지)" : " (한국)"}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">시장·계좌</dt>
@@ -218,15 +238,15 @@ function AssistantTrades() {
                 </div>
                 <div>
                   <dt className="text-muted-foreground">평균 매수단가</dt>
-                  <dd>{money(t.price)}</dd>
+                  <dd>{formatAssistantTradeMoney(t.price, t.market)}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">매수금액</dt>
-                  <dd>{money(t.price * t.shares)}</dd>
+                  <dd>{formatAssistantTradeMoney(assistantTradeGross(t), t.market)}</dd>
                 </div>
                 <div>
                   <dt className="text-muted-foreground">증빙 수수료</dt>
-                  <dd>{money(t.fee)}</dd>
+                  <dd>{formatAssistantTradeMoney(t.fee, t.market)}</dd>
                 </div>
               </dl>
               <a
@@ -237,6 +257,13 @@ function AssistantTrades() {
               >
                 Notion 거래 증빙 확인
               </a>
+              <Link
+                to="/portfolio"
+                search={{ asset: t.market === "US" ? "US" : "KR" }}
+                className="ml-4 text-sm underline"
+              >
+                {t.market === "US" ? "미국 실제보유원장 확인" : "한국 실제보유원장 확인"}
+              </Link>
               {p.status === "PROCESSING" && (
                 <p role="status" className="rounded border p-3 text-sm">
                   중복 저장 방지를 위해 처리 중입니다. 2분 이상 지속되면 목록을 새로고침하고 기존

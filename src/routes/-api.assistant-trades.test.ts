@@ -89,7 +89,7 @@ const get = (page = 0, token = "test-jwt") => {
   });
 };
 
-const post = (action: "CONFIRM" | "REJECT" = "CONFIRM") => {
+const post = (action: "CONFIRM" | "REJECT" = "CONFIRM", token = "test-jwt") => {
   const handlers = (
     Route as unknown as {
       options: { server: { handlers: { POST: (x: { request: Request }) => Promise<Response> } } };
@@ -98,7 +98,10 @@ const post = (action: "CONFIRM" | "REJECT" = "CONFIRM") => {
   return handlers.POST({
     request: new Request("https://cloudtrend.vercel.app/api/assistant-trades", {
       method: "POST",
-      headers: { Authorization: "Bearer test-jwt", "Content-Type": "application/json" },
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         action,
         proposalId: "faa46c4e-ea94-4ff8-85f3-22e458da8b26",
@@ -188,6 +191,127 @@ describe("assistant trade owner approval", () => {
       "assistant_trade_record",
     ]);
     expect(state.service).not.toHaveBeenCalled();
+  });
+
+  function usProposal() {
+    state.proposal!["trade"] = {
+      ...(state.proposal!["trade"] as object),
+      market: "US",
+      symbol: "AAPL",
+      name: "Apple",
+      accountLabel: "GENERAL",
+      price: 0.1,
+      shares: 3,
+      fee: 0.012345,
+    };
+    state.rpc.mockImplementation(async (name: string) => ({
+      data: name === "assistant_trade_claim" ? "claim-token" : true,
+      error: null,
+    }));
+  }
+  it("records US proposals through the same owner session and USD CAS ledger", async () => {
+    usProposal();
+    state.snapshot.mockResolvedValue({ revision: 12, payload: { executions: [] } });
+    state.save.mockResolvedValue({ revision: 13, reused: false });
+    const response = await post();
+    expect(response.status).toBe(200);
+    expect(state.authorization).toBe("Bearer test-jwt");
+    expect(state.snapshot).toHaveBeenCalledWith(
+      expect.anything(),
+      state.uid,
+      "us_actual_portfolio_ledgers",
+    );
+    expect(state.save).toHaveBeenCalledWith(
+      expect.anything(),
+      state.uid,
+      expect.objectContaining({
+        asset: "US",
+        accessToken: "test-jwt",
+        expectedRevision: 12,
+        execution: expect.objectContaining({
+          market: "US",
+          symbol: "AAPL",
+          shares: 3,
+          price: 0.1,
+          fee: 0.012345,
+        }),
+        allocation: expect.objectContaining({ gross: 0.3, fee: 0.012345 }),
+      }),
+    );
+    expect(state.service).not.toHaveBeenCalled();
+  });
+  it("keeps the common owner check for US approvals without a second login", async () => {
+    usProposal();
+    expect((await post("CONFIRM", "")).status).toBe(401);
+    state.uid = "11111111-1111-4111-8111-111111111111";
+    expect((await post()).status).toBe(403);
+    expect(state.snapshot).not.toHaveBeenCalled();
+    expect(state.save).not.toHaveBeenCalled();
+    expect(state.rpc).not.toHaveBeenCalled();
+  });
+  it("rejects a retry whose existing execution belongs to another market", async () => {
+    usProposal();
+    const id = "new-actual:" + state.proposal!["id"];
+    state.snapshot.mockResolvedValue({
+      revision: 13,
+      payload: {
+        executions: [{ ...(state.proposal!["trade"] as object), id, market: "KOSDAQ" }],
+        newActualPortfolio: {
+          assignments: {
+            [id]: {
+              quantity: 3,
+              gross: 0.3,
+              fee: 0.012345,
+              brokerReference: "notion:" + state.proposal!["source_page_id"],
+            },
+          },
+        },
+      },
+    });
+    expect((await post()).status).toBe(409);
+    expect(state.save).not.toHaveBeenCalled();
+    expect(state.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "assistant_trade_claim",
+      "assistant_trade_release",
+    ]);
+  });
+  it("reconciles a US retry without recording the fill twice", async () => {
+    usProposal();
+    const id = "new-actual:" + state.proposal!["id"];
+    state.snapshot.mockResolvedValue({
+      revision: 13,
+      payload: {
+        executions: [{ ...(state.proposal!["trade"] as object), id }],
+        newActualPortfolio: {
+          assignments: {
+            [id]: {
+              quantity: 3,
+              gross: 0.3,
+              fee: 0.012345,
+              brokerReference: "notion:" + state.proposal!["source_page_id"],
+            },
+          },
+        },
+      },
+    });
+    const response = await post();
+    expect(response.status).toBe(200);
+    expect((await response.json()).reused).toBe(true);
+    expect(state.save).not.toHaveBeenCalled();
+  });
+  it("does not write a US fill when its ledger is unavailable or revision changed", async () => {
+    usProposal();
+    state.snapshot.mockResolvedValue(null);
+    expect((await post()).status).toBe(409);
+    expect(state.save).not.toHaveBeenCalled();
+    expect(state.rpc.mock.calls.map(([name]) => name)).toContain("assistant_trade_release");
+    state.snapshot.mockResolvedValue({ revision: 12, payload: { executions: [] } });
+    state.save.mockRejectedValue(new Error("원장 버전이 변경됐습니다."));
+    const before = state.rpc.mock.calls.length;
+    expect((await post()).status).not.toBe(200);
+    expect(state.rpc.mock.calls.slice(before).map(([name]) => name)).toEqual([
+      "assistant_trade_claim",
+    ]);
   });
 
   it("does not reject a proposal already claimed by approval", async () => {

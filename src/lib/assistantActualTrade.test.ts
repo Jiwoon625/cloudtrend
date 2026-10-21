@@ -5,6 +5,8 @@ import {
   sourceEvidenceMatches,
   notionTradeUrl,
   parseAssistantActualBuy,
+  assistantTradeGross,
+  formatAssistantTradeMoney,
 } from "./assistantActualTrade";
 
 const now = new Date("2026-10-19T14:00:00Z");
@@ -53,6 +55,7 @@ describe("Assistant actual trade proposals", () => {
         symbol: "064290",
         date: "2026-10-19",
         side: "BUY",
+        market: "KOSDAQ",
         shares: 7,
         price: 60300,
         fee: 15,
@@ -63,11 +66,57 @@ describe("Assistant actual trade proposals", () => {
         symbol: "064290",
         date: "2026-10-19",
         side: "BUY",
+        market: "KOSDAQ",
         shares: 8,
         price: 60300,
         fee: 15,
       }),
     ).toBe(false);
+  });
+  const us = {
+    ...valid,
+    market: "US",
+    symbol: "AAPL",
+    accountLabel: "GENERAL",
+    price: 123.45,
+    fee: 0.012345,
+  };
+  it("accepts USD decimals, preserves fees and uses the journal gross representation", () => {
+    const trade = parseAssistantActualBuy(us, now);
+    expect(trade.fee).toBe(0.012345);
+    expect(assistantTradeGross(trade)).toBe(864.15);
+    expect(formatAssistantTradeMoney(trade.price, trade.market)).toBe("$123.45");
+    expect(formatAssistantTradeMoney(trade.fee, trade.market)).toBe("$0.012345");
+    expect(formatAssistantTradeMoney(valid.price, "KOSDAQ")).toBe("60,300원");
+    expect(assistantTradeGross({ price: 0.1, shares: 3 })).toBe(0.3);
+  });
+  it("uses the US date when Korea has already moved to the next day", () => {
+    const beforeNyMidnight = new Date("2026-10-20T02:00:00Z");
+    expect(() => parseAssistantActualBuy(us, beforeNyMidnight)).not.toThrow();
+    expect(() =>
+      parseAssistantActualBuy({ ...us, date: "2026-10-20" }, beforeNyMidnight),
+    ).toThrow();
+    expect(() =>
+      parseAssistantActualBuy({ ...valid, date: "2026-10-20" }, beforeNyMidnight),
+    ).not.toThrow();
+  });
+  it.each([
+    { date: "2026-10-17" },
+    { date: "2026-11-26" },
+    { date: "2026-12-25" },
+    { date: "2027-01-04" }, // reviewed US coverage ends in 2026
+    { symbol: "AAPL!" },
+    { accountLabel: "ISA" },
+    { price: 1.123456789 },
+    { fee: 0.123456789 },
+  ])("rejects invalid US evidence %s", (change) => {
+    expect(() =>
+      parseAssistantActualBuy({ ...us, ...change }, new Date("2027-01-05T20:00:00Z")),
+    ).toThrow();
+  });
+  it("does not confuse the same ticker and amounts across markets", () => {
+    const trade = parseAssistantActualBuy({ ...us, symbol: "064290", price: 60300, fee: 15 }, now);
+    expect(existingTradeMatches(trade, { ...valid, market: "KOSDAQ" })).toBe(false);
   });
   it("normalizes uppercase evidence UUID before storage and comparison", () => {
     const parsed = parseAssistantActualBuy(
@@ -94,6 +143,7 @@ describe("Assistant actual trade proposals", () => {
         symbol: first.symbol,
         date: first.date,
         side: first.side,
+        market: first.market,
         shares: first.shares,
         price: first.price,
         fee: first.fee,
