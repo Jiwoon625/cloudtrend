@@ -160,7 +160,7 @@ describe("KR portfolio pending-entry and sync presentation", () => {
 
   it("does not label an uncovered date as today's scheduled entry", () => {
     const state = fixture();
-    state.document.strategy!.candidates[0]!.signalDate = "2028-01-04";
+    state.document.strategy!.candidates[0]!.signalDate = "2027-01-04";
     harness.client.setQueryData(["portfolio-ledgers"], state);
     const html = render();
     expect(html).toContain("미확인 · 거래일 자료 없음");

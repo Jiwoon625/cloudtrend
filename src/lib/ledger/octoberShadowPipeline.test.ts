@@ -221,7 +221,7 @@ describe("completed manual/upload publication to October journal", () => {
   });
 });
 describe("reviewed regular-session boundaries", () => {
-  it("covers both markets through 2027 with reviewed closures and session hours", async () => {
+  it("starts US on Oct5 and KR on Oct6, blocks Oct9 KR and missing support", async () => {
     expect((await octoberModelCalendar("US", "2026-10-05")).regularSessions).toEqual([
       "2026-10-05",
     ]);
@@ -230,18 +230,10 @@ describe("reviewed regular-session boundaries", () => {
       "2026-10-07",
       "2026-10-08",
     ]);
-    const kr2027 = await octoberModelCalendar("KR", "2027-12-31");
-    const us2027 = await octoberModelCalendar("US", "2027-12-31");
-    for (const date of ["2027-05-03", "2027-07-19", "2027-09-15", "2027-12-27"])
-      expect(kr2027.regularSessions).not.toContain(date);
-    for (const date of ["2027-01-01", "2027-03-26", "2027-11-25", "2027-12-24"])
-      expect(us2027.regularSessions).not.toContain(date);
-    await expect(octoberModelCalendar("KR", "2028-01-03")).rejects.toThrow("calendar");
+    await expect(octoberModelCalendar("KR", "2027-01-04")).rejects.toThrow("calendar");
     expect(regularCloseAt("US", "2026-10-05")).toBe("2026-10-05T20:00:00Z");
     expect(regularCloseAt("US", "2026-11-27")).toBe("2026-11-27T18:00:00Z");
     expect(regularCloseAt("US", "2026-12-31")).toBe("2026-12-31T21:00:00Z");
-    expect(regularCloseAt("US", "2027-11-26")).toBe("2027-11-26T18:00:00Z");
-    expect(() => regularCloseAt("KR", "2027-11-18")).toThrow("await exchange confirmation");
   });
 });
 

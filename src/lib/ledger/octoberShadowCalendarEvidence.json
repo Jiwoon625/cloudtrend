@@ -1,60 +1,21 @@
 {
-  "version": "exchange-calendar-2027-v1",
-  "verifiedAt": "2026-10-21T00:00:00Z",
+  "version": "exchange-calendar-2026-q4-v1",
+  "verifiedAt": "2026-10-03T01:10:00Z",
   "coverageStart": "2026-10-05",
-  "coverageEnd": "2027-12-31",
+  "coverageEnd": "2026-12-31",
   "KR": {
-    "holidays": [
-      "2026-10-05",
-      "2026-10-09",
-      "2026-12-25",
-      "2026-12-31",
-      "2027-01-01",
-      "2027-02-08",
-      "2027-02-09",
-      "2027-03-01",
-      "2027-05-03",
-      "2027-05-05",
-      "2027-05-13",
-      "2027-07-19",
-      "2027-08-16",
-      "2027-09-14",
-      "2027-09-15",
-      "2027-09-16",
-      "2027-10-04",
-      "2027-10-11",
-      "2027-12-27",
-      "2027-12-31"
-    ],
+    "holidays": ["2026-10-05", "2026-10-09", "2026-12-25", "2026-12-31"],
     "sources": [
       "https://trn.krx.co.kr/index.jsp",
       "https://global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T1.jsp"
     ],
-    "holidaySources2027": [
-      "https://www.kasa.go.kr/prog/plcyBrf/brief/kor/sub01_01_04/view.do?plcyBrfNo=431"
-    ],
-    "pendingHoursDates": ["2026-11-19", "2027-11-18"],
+    "pendingHoursDates": ["2026-11-19"],
     "pendingHoursReason": "CSAT special-session hours require the exchange notice before recording",
-    "annualNoticePending": true,
-    "annualNoticeReason": "2027 statutory holidays are published; KRX annual market notices and ad hoc closures may still change the session calendar",
     "specialHours": {}
   },
   "US": {
-    "holidays": [
-      "2026-11-26",
-      "2026-12-25",
-      "2027-01-01",
-      "2027-01-18",
-      "2027-02-15",
-      "2027-03-26",
-      "2027-05-31",
-      "2027-06-18",
-      "2027-07-05",
-      "2027-09-06",
-      "2027-11-25",
-      "2027-12-24"
-    ],
-    "earlyCloses": ["2026-11-27", "2026-12-24", "2027-11-26"],
+    "holidays": ["2026-11-26", "2026-12-25"],
+    "earlyCloses": ["2026-11-27", "2026-12-24"],
     "sources": ["https://www.nyse.com/trade/hours-calendars"]
   }
 }

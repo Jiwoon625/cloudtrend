@@ -2,7 +2,7 @@ import { z } from "zod";
 import { ACTUAL_PERFORMANCE_START } from "./ledger/actualPerformance";
 import { validDate } from "./ledger/date";
 import { isReviewedKrSession } from "./assistantTradeSessions";
-import calendarEvidence from "./ledger/octoberShadowCalendarEvidence.json";
+import calendarEvidence from "./assistantActualTradeCalendarEvidence.json";
 import { fromLegacyNumber, representedLegacyNumber } from "./ledger/decimal";
 
 /**

@@ -18,11 +18,7 @@ describe("actual valuation exchange-session cutoff", () => {
     expect(await newActualValuationDate(currency, now)).toBe(expected);
   });
 
-  it("uses the final reviewed KR session across the 2026/2027 boundary", async () => {
-    expect(await newActualValuationDate("KRW", "2027-01-02T06:00:00Z")).toBe("2026-12-30");
-  });
-
-  it.each(["invalid", "2026-11-19T08:00:00Z"])(
+  it.each(["invalid", "2027-01-02T06:00:00Z", "2026-11-19T08:00:00Z"])(
     "does not invent a cutoff outside reviewed calendar/hours: %s",
     async (now) => expect(await newActualValuationDate("KRW", now)).toBeNull(),
   );

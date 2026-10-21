@@ -1,7 +1,7 @@
-import calendarEvidence from "./ledger/octoberShadowCalendarEvidence.json";
+import calendarEvidence from "./assistantActualTradeCalendarEvidence.json";
 
-/** KR direct-trade date gate preserves its independently reviewed 2028 horizon. */
-export const KR_SESSION_START = "2026-10-12";
+/** KR direct-trade date gate retains its independently reviewed 2028 horizon. */
+export const KR_SESSION_START = calendarEvidence.coverageStart;
 export const KR_SESSION_END = "2028-12-31";
 const CLOSED = new Set([
   ...calendarEvidence.KR.holidays,
@@ -23,6 +23,7 @@ const CLOSED = new Set([
   "2028-12-25",
   "2028-12-29",
 ]);
+
 export function isReviewedKrSession(date: string): boolean {
   if (date < KR_SESSION_START || date > KR_SESSION_END || !/^\d{4}-\d{2}-\d{2}$/.test(date))
     return false;
