@@ -18,7 +18,12 @@ export interface EtfReportScore {
   confirmedM0: number | null;
   /** Only the current session's dated, explicitly read-only KRX estimate. */
   preliminaryM0: number | null;
+  /** Preliminary nominal previous trading day, not a claim that all KRX facts have this date. */
   preliminaryKrxDate: string | null;
+  /** Independent actual KRX observation dates; mixed-vintage inputs remain explicit. */
+  preliminaryMarketCapDate: string | null;
+  preliminaryTradingValueThrough: string | null;
+  preliminaryUnderlyingDate: string | null;
   preliminaryStatus: "ESTIMATE" | "INCOMPLETE" | null;
   /** Raw previous-session M0; historical eligibility must be independently verified. */
   priorSessionScoreReference: number | null;
@@ -46,19 +51,17 @@ export function etfReportScore(row: ScreeningRow, sessionDate: string): EtfRepor
     !row.instrument.isInverse;
   const validSession =
     s !== undefined && s.date === sessionDate && s.version === ETF_POLICY.version;
-  const finalM0 = validSession && s.dataStatus === "ready" && validScore(s.score) ? s.score : null;
+  const finalM0 =
+    target && validSession && s.dataStatus === "ready" && validScore(s.score) ? s.score : null;
   const prelim = row.krxReviewReference?.preliminary;
-  const preview =
-    validSession &&
-    target &&
-    prelim?.kind === "ETF" &&
-    prelim.priceDate === sessionDate &&
-    prelim.status === "ESTIMATE" &&
-    validScore(prelim.m0)
+  const attempt =
+    validSession && target && prelim?.kind === "ETF" && prelim.priceDate === sessionDate
       ? prelim
       : null;
+  const preview =
+    attempt?.status === "ESTIMATE" && validScore(attempt.m0) ? attempt : null;
   const previousDate =
-    validSession && s?.previousDate && s.previousDate < sessionDate ? s.previousDate : null;
+    target && validSession && s?.previousDate && s.previousDate < sessionDate ? s.previousDate : null;
   const previousScore = previousDate && validScore(s.previousScore) ? s.previousScore : null;
   const scoreStatus: EtfReportScoreStatus = !target
     ? "NOT_STRATEGY_TARGET"
@@ -89,8 +92,11 @@ export function etfReportScore(row: ScreeningRow, sessionDate: string): EtfRepor
     scoreStatus,
     confirmedM0: finalM0,
     preliminaryM0: preview?.m0 ?? null,
-    preliminaryKrxDate: preview?.referenceDate ?? null,
-    preliminaryStatus: preview?.status ?? null,
+    preliminaryKrxDate: attempt?.referenceDate ?? null,
+    preliminaryMarketCapDate: attempt?.marketCapDate ?? null,
+    preliminaryTradingValueThrough: attempt?.tradingValueThrough ?? null,
+    preliminaryUnderlyingDate: attempt?.underlyingDate ?? null,
+    preliminaryStatus: attempt?.status ?? null,
     priorSessionScoreReference: previousScore,
     priorSessionDate: previousDate,
     priorReferenceVerified: false,
@@ -100,7 +106,7 @@ export function etfReportScore(row: ScreeningRow, sessionDate: string): EtfRepor
     officialDataStatus: validSession ? s.dataStatus : null,
     strategyTarget: !!target,
     issues: [
-      ...(preview?.issues ?? []),
+      ...(attempt?.issues ?? []),
       ...(validSession && s ? s.issues : ["당일 ETF 전략 계산 없음"]),
       ...(previousScore !== null ? ["전일 점수는 해당 일자 Final 이력에서 독립 검증 필요"] : []),
     ],
