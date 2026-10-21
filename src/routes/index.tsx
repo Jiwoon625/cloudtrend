@@ -11,7 +11,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { toast } from "sonner";
 
 import {
@@ -44,11 +44,16 @@ import {
   formatPercent,
   formatWon,
 } from "@/lib/format";
-import { DomesticAssessmentPanel } from "@/components/DomesticAssessmentPanel";
 import { UniversePendingSummary } from "@/components/UniversePendingSummary";
 import { type DashboardSummary } from "@/lib/screeningCache";
 import { isScreeningStarted } from "@/lib/screeningRun";
 import { rebuildScreeningCachesServerFirst } from "@/lib/webScreeningClient";
+
+const DomesticAssessmentPanel = lazy(() =>
+  import("@/components/DomesticAssessmentPanel").then((module) => ({
+    default: module.DomesticAssessmentPanel,
+  })),
+);
 
 export const Route = createFileRoute("/")({
   ssr: false,
@@ -255,6 +260,7 @@ function DashboardContent({
   summary: DashboardSummary;
   operations: ReturnType<typeof useDashboardOperations>;
 }) {
+  const [reviewOpen, setReviewOpen] = useState(false);
   const gate = kospiMarketGateDisplay(summary.kospiMarketGate, summary.asOfDate);
   const gateColor =
     gate.status === "RISK_ON" ? "text-up" : gate.status === "RISK_OFF" ? "text-down" : "text-warn";
@@ -306,10 +312,23 @@ function DashboardContent({
         })}
       </div>
       <DashboardSignalLists query={operations} />
-      <details className="my-3 rounded border p-3">
+      <details
+        className="my-3 rounded border p-3"
+        onToggle={(event) => setReviewOpen(event.currentTarget.open)}
+      >
         <summary className="cursor-pointer text-sm">원신호·자료 확인 대기 후보</summary>
         {operations.data ? (
-          <DomesticAssessmentPanel markets={operations.data.markets} review />
+          reviewOpen ? (
+            <Suspense
+              fallback={
+                <p className="my-4 text-xs text-muted-foreground" role="status">
+                  후보 검토 자료 불러오는 중…
+                </p>
+              }
+            >
+              <DomesticAssessmentPanel markets={operations.data.markets} review />
+            </Suspense>
+          ) : null
         ) : (
           <p className="my-4 text-xs text-muted-foreground" role="status">
             {operations.isError
