@@ -775,3 +775,66 @@ describe("fail-closed identity, corrections and cancellation", () => {
     );
   });
 });
+
+describe("US last available closing marks while screening is pending", () => {
+  const buy = execution("us-buy", { market: "US", symbol: "SYNTH" });
+  const options = {
+    currency: "USD" as const,
+    valuationDate: today,
+    quotes: { "US:SYNTH": { price: 15, date: "2026-10-19", exitSignal: null } },
+  };
+  it("retains dated value and unrealized PnL and labels the actual earlier cutoff", () => {
+    const result = project([buy], metadata([buy]), options);
+    expect(result).toMatchObject({
+      valuationDate: "2026-10-19",
+      expectedValuationDate: today,
+      marketValue: "30",
+      unrealizedPnl: "9.8",
+      nav: "1009.8",
+    });
+    expect(result.positions[0]).toMatchObject({ currentPrice: "15", priceDate: "2026-10-19" });
+    expect(result.issues).toContain("latest_close_pending");
+    expect(result.issues).not.toContain("stale_price");
+  });
+  it("switches automatically to the latest close once available", () => {
+    const result = project([buy], metadata([buy]), {
+      ...options,
+      quotes: { "US:SYNTH": { price: 16, date: today, exitSignal: null } },
+    });
+    expect(result.marketValue).toBe("32");
+    expect(result.valuationDate).toBe(today);
+    expect(result.issues).not.toContain("latest_close_pending");
+  });
+  it("does not value later fills using an earlier close", () => {
+    const later = { ...buy, date: today };
+    const result = project([later], metadata([later]), options);
+    expect(result.marketValue).toBeNull();
+    expect(result.positions[0]!.currentPrice).toBeNull();
+    expect(result.issues).toContain("price_before_last_fill");
+  });
+  it("does not certify mixed price dates as a common NAV", () => {
+    const other = execution("other", { market: "US", symbol: "OTHER" });
+    const result = project([buy, other], metadata([buy, other]), {
+      ...options,
+      quotes: { ...options.quotes, "US:OTHER": { price: 16, date: today, exitSignal: null } },
+    });
+    expect(result.nav).toBeNull();
+    expect(result.marketValue).toBeNull();
+  });
+  it.each([null, "2026-10-21"])(
+    "still rejects unknown or future session cutoffs %s",
+    (valuationDate) => {
+      const result = project([buy], metadata([buy]), { ...options, valuationDate });
+      expect(result.marketValue).toBeNull();
+    },
+  );
+  it("never uses missing or future cache prices", () => {
+    expect(project([buy], metadata([buy]), { ...options, quotes: {} }).marketValue).toBeNull();
+    expect(
+      project([buy], metadata([buy]), {
+        ...options,
+        quotes: { "US:SYNTH": { price: 15, date: "2026-10-21", exitSignal: null } },
+      }).marketValue,
+    ).toBeNull();
+  });
+});
