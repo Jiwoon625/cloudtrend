@@ -29,3 +29,6 @@ create policy cloudtrend_owner_update on storage.objects for update to authentic
  with check (bucket_id='cloudtrend-data' and name in ((select auth.uid())::text||'/kr.json',(select auth.uid())::text||'/us.json',(select auth.uid())::text||'/backtest.json'));
 create policy cloudtrend_owner_delete on storage.objects for delete to authenticated
  using (bucket_id='cloudtrend-data' and (storage.foldername(name))[1]=(select auth.uid())::text);
+
+-- Explicit Data API access; independent of platform default privileges.
+grant select, insert, update, delete on public.screening_history to service_role;
