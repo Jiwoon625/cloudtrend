@@ -42,8 +42,58 @@ export function KrxReviewReferenceDetails({
     ),
   ].sort();
   const prior = dates.some((date) => date < (reference?.reviewDate ?? ""));
+  const preview = reference.preliminary;
+  const number = (value: number | null | undefined, digits = 2) =>
+    value === null || value === undefined ? "미확인" :
+    value.toLocaleString("ko-KR", { maximumFractionDigits: digits });
   return (
-    <details className="mt-2 text-[11px]">
+    <div className="mt-2">
+      {preview ? (
+        <div className="mb-2 rounded border border-border bg-muted/40 p-2 text-[11px]" aria-label="전일 KRX 예비판단">
+          <p className="font-semibold">
+            저녁 예비판단 · 가격 {preview.priceDate} / KRX 직전 거래일 {preview.referenceDate}
+          </p>
+          {preview.kind === "STOCK" ? (
+            <p>
+              시총 {number(preview.marketCap, 0)}원 ({preview.marketCapDate ?? "미수신"}) ·{" "}
+              {preview.stockUniverse === "PASS"
+                ? "유니버스 잠정 충족"
+                : preview.stockUniverse === "FAIL"
+                  ? "유니버스 잠정 미충족"
+                  : "유니버스 잠정판정 불가"} · 최종 진입 미확정
+            </p>
+          ) : (
+            <>
+              <p>
+                예비 M0 {number(preview.m0)} / 100 ·
+                {preview.preliminaryOnset === true
+                  ? " 예비 신규 돌파"
+                  : preview.preliminaryOnset === false
+                    ? " 예비 신규 돌파 없음"
+                    : " 신규 돌파 판정 불가"}
+                {" "}· 최종 진입 미확정
+              </p>
+              <p>
+                KRX 시총 {number(preview.marketCap, 0)}원 ({preview.marketCapDate ?? "미수신"}) ·
+                20일 평균 거래대금 {number(preview.averageTradingValue20, 0)}원
+                (실제 관측 종료 {preview.tradingValueThrough ?? "미확인"})
+              </p>
+              <p>
+                마지막 확정 기초지수 {number(preview.underlyingClose)} / MA60{" "}
+                {number(preview.underlyingMa60)} · 기준일 {preview.underlyingDate ?? "미확인"}
+                {" "}· 당일 청산 판정 아님
+              </p>
+            </>
+          )}
+          {preview.issues.length > 0 ? (
+            <p className="text-muted-foreground">검증 필요: {preview.issues.join(" · ")}</p>
+          ) : null}
+          <p className="text-muted-foreground">
+            직전 확정 KRX 관측을 임시 적용한 참고 계산입니다. 최종 M0·원신호·진입·청산·주문·Shadow 원장에는 반영하지 않습니다.
+          </p>
+        </div>
+      ) : null}
+      <details className="text-[11px]">
       <summary className="cursor-pointer text-muted-foreground">
         {prior ? "직전 KRX 참고값" : "KRX 참고값"} ·{" "}
         {dates.length ? `기준일 ${dates.join(" · ")}` : "미수신 / 기준일 미확인"}
@@ -74,6 +124,7 @@ export function KrxReviewReferenceDetails({
           );
         })}
       </dl>
-    </details>
+      </details>
+    </div>
   );
 }
