@@ -9,6 +9,7 @@ import {
   projectKrDashboard,
   type DashboardIndexRow,
 } from "../src/lib/dashboardOperations";
+import { dashboardInbox } from "../src/lib/dashboardInbox";
 import type { LedgerDocument } from "../src/lib/portfolioLedgers";
 import type { PortfolioTrade } from "../src/lib/portfolioStoreCore";
 import type { AnalysisResult } from "../src/lib/engine/pipeline";
@@ -231,6 +232,36 @@ describe("Korean dashboard strategy-sector annotation", () => {
       sectorLimit: { count: 0, limit: 3 },
     });
     expect(signals.onsetCount).toBe(0);
+  });
+  it("preserves the same sector annotation on raw assessment and condition rows in the all-signal inbox", () => {
+    const date = "2026-10-16";
+    const candidate = row({
+      date,
+      market: "KOSDAQ",
+      assessment: {
+        current: true,
+        rawOnset: true,
+      } as DashboardIndexRow["assessment"],
+    });
+    const context = projectDashboardSectorContext(ledger([trade("HELD")], date), createdAt);
+    const signals = marketSignals(
+      { date, rows: [candidate], tradeDates: [date] },
+      "KOSDAQ",
+      [],
+      [],
+      context,
+    );
+    const condition = signals.conditions![0]!;
+    expect(condition.sectorLimit).toMatchObject({ status: "room", count: 1, limit: 6 });
+    expect(signals.assessments![0]!.sectorLimit).toEqual(condition.sectorLimit);
+    // Raw-only candidates remain visible after the operational entry path is absent.
+    const rawOnly = { ...signals, onsets: [], conditions: [] };
+    expect(dashboardInbox([rawOnly])[0]).toMatchObject({
+      inboxKind: "raw",
+      sector: condition.sector,
+      sectorCode: condition.sectorCode,
+      sectorLimit: condition.sectorLimit,
+    });
   });
   it("copies canonical sectorCode into projection without using name-based taxonomy", () => {
     const projected = projectKrDashboard({

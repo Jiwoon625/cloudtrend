@@ -538,6 +538,13 @@ describe("dashboard new-series holdings boundary", () => {
           status: "room",
           issue: null,
         });
+      if (market === "KOSDAQ") {
+        const condition = signals.conditions!.find((row) => row.symbol === "NEW")!;
+        expect(signals.exits.find((row) => row.symbol === "NEW")?.sectorLimit).toEqual(
+          condition.sectorLimit,
+        );
+        expect(condition.sectorLimit?.status).toBe("room");
+      }
       expect(result.newActualPools?.[market === "US" ? "USD" : "KRW"].cash).toBe("0");
       expect(result.warnings).toEqual([]);
       expect(loadWebsitePositionContextForOwner).not.toHaveBeenCalled();
