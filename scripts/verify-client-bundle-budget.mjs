@@ -10,7 +10,11 @@ const commit =
   "dev";
 const publicRoot = resolve(process.env.VERCEL ? ".vercel/output/static" : ".output/public");
 const assetRoot = resolve(publicRoot, "assets", commit);
-const serverRoot = resolve(".output/server");
+// Nitro's Vercel preset moves the server output into a function directory;
+// the .output/server directory may be absent or stale in Vercel builds.
+const serverRoot = resolve(
+  process.env.VERCEL ? ".vercel/output/functions/__server.func" : ".output/server",
+);
 const maxGzipBytes = Number(process.env.CLIENT_INITIAL_GZIP_BUDGET_BYTES ?? 320 * 1024);
 
 async function findManifest() {
