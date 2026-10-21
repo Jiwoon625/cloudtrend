@@ -140,19 +140,36 @@ that selection has a verified completion.
 
 This version resumes when dispatched again; it does not auto-dispatch future
 jobs. There is no promise that all grids run unattended after one click.
-No change of framework, persistent credential grant, runner account, public
-cache or raw-data artifact upload is needed for these bounded manual runs.
+No change of framework, persistent credential grant, runner account or raw-data
+artifact upload is needed for these bounded manual runs.
 
 ## 5. Transfer and runtime budget
 
 Within a job, the verified input preparation is reused for its selected
-candidates; each gets independent trading state. Between fresh hosted jobs,
-inputs are restored again because private licensed files are not placed in
-public GitHub caches/artifacts.
+candidates; each gets independent trading state. The main manual workflow now
+persists only AES-256-GCM ciphertext of successfully hash-verified input TARs and
+the pinned evidence ZIP in Actions cache. Private plaintext, keys, checkpoint
+state, results and filenames are never included. The encryption key is derived
+with HKDF-SHA256 from the existing backend secret and project/user scope; it is
+not stored in the cache or printed. No new secret is required. Key rotation or
+an input/cache-contract change selects a different namespace.
+
+On a fresh runner, restore ciphertext, authenticate/decrypt into a temporary file,
+then verify pinned size and SHA256 before publishing it to the ordinary ingestion
+path. TAR member/hash checks remain unchanged. Corruption, eviction or a miss
+falls back to Storage; a corrupted entry is repaired in a new immutable cache
+snapshot. Cache use never changes strategy identity or resume state. Logs emit
+`CM_INPUT_CACHE_HIT`, `CM_INPUT_CACHE_FILLED` and `CM_INPUT_CACHE_REJECTED` without
+private paths. The first run still downloads inputs; subsequent cache hits skip
+those large Storage GETs. Small metadata, manifest and checkpoint requests remain.
+Decryption, hashing, extraction and Actions cache transfer still take time; no
+zero-runtime or free/unlimited GitHub cache guarantee is made. Benchmark and
+diagnostic workflows retain their existing uncached behavior unless explicitly
+wired to the same encrypted cache. No study is started by this change.
 
 The exact sequence contains **93 minimum fresh jobs** if every selected batch
 finishes within one time cap. At approximately 2.877 GB input+overlay per job,
-that is roughly **268 GB of transfer**, before extra resumes/retries. This is a
+that was roughly **268 GB of transfer without cache reuse**, before extra resumes/retries. This is a
 transfer estimate, not a quoted charge. Verify remaining allowance and actual
 S05 throughput before deciding how to execute the whole plan. Do not assume
 16 nine-year paths fit inside 50 minutes.
