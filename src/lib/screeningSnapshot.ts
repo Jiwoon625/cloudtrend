@@ -4,6 +4,7 @@ import { KOSPI_ENTRY_POLICY } from "./engine/kospiEntryConfirmation";
 import type { ScreeningRow, V8ExitSignal } from "@/lib/engine/pipeline";
 import { getDisplayStatus } from "@/lib/statusDisplay";
 import { sourceTimingEvidence } from "./sourceTimingEvidence";
+import { etfReportScore } from "./etfReportScore";
 
 export interface SnapshotEntry {
   market?: string | undefined;
@@ -104,7 +105,10 @@ export function buildSnapshot(
           market: row.instrument.market,
           evidence:
             row.instrument.instrumentType === "ETF"
-              ? { etfStrategy: row.etfStrategy }
+              ? {
+                  etfStrategy: row.etfStrategy,
+                  etfReportScore: etfReportScore(row, analysis.asOfDate),
+                }
               : { technical: row.vf ?? row.technical, failedRules: row.failedRules },
         }
       : {}),
