@@ -83,10 +83,7 @@ export function CloudAccount({ children }: { children: ReactNode }) {
 
   if (!ready && !message)
     return (
-      <div
-        className="flex min-h-screen items-center justify-center bg-background bg-cover bg-[80%_80%]"
-        style={LOGIN_BG_STYLE}
-      >
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="absolute inset-0 bg-background/70" />
         <p className="relative z-10 p-8">클라우드 데이터 불러오는 중…</p>
       </div>
