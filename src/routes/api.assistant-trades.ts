@@ -272,6 +272,22 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
       reused: true,
     });
   }
+  // Fail before a ledger write and release the claim on a deterministic
+  // symbol/market conflict, rather than stranding the item in PROCESSING.
+  const marketConflict = snapshot.payload.executions.some(
+    (execution) => execution.symbol === trade.symbol && execution.market !== trade.market,
+  );
+  if (marketConflict) {
+    await releaseClaim(auth.client, proposal, token);
+    return reply(
+      {
+        error:
+          "기존 원장에 같은 종목이 다른 시장 분류로 등록되어 있습니다. ETF는 KOSPI가 아닌 ETF 분류로 정정한 후 재승인하세요.",
+        code: "MARKET_MISMATCH",
+      },
+      409,
+    );
+  }
   // Reject the same evidence ID, not identical economic terms from a different
   // Notion record: two separate ISA/GENERAL fills can have identical amounts.
   const duplicateSource = snapshot.payload.executions.some((e) =>

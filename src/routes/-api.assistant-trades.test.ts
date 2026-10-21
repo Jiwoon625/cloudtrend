@@ -156,6 +156,32 @@ describe("assistant trade owner approval", () => {
     expect(state.service).not.toHaveBeenCalled();
   });
 
+  it("releases a mismatched domestic ETF claim before attempting a ledger write", async () => {
+    state.rpc.mockImplementation(async (name: string) => ({
+      data: name === "assistant_trade_claim" ? "claim-token" : true,
+      error: null,
+    }));
+    state.proposal!["trade"] = {
+      ...(state.proposal!["trade"] as object),
+      market: "KOSPI",
+      symbol: "423160",
+    };
+    state.snapshot.mockResolvedValue({
+      revision: 92,
+      payload: {
+        executions: [{ id: "previous", symbol: "423160", market: "ETF" }],
+        newActualPortfolio: { assignments: {} },
+      },
+    });
+    const response = await post();
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("MARKET_MISMATCH");
+    expect(state.save).not.toHaveBeenCalled();
+    expect(state.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "assistant_trade_claim",
+      "assistant_trade_release",
+    ]);
+  });
   it("claims with the owner JWT, saves through the CAS API, then records the same proposal", async () => {
     state.rpc.mockImplementation(async (name: string) => ({
       data: name === "assistant_trade_claim" ? "claim-token" : true,

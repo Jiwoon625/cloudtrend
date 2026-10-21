@@ -19,7 +19,7 @@ export const assistantActualBuySchema = z
     date: z.string(),
     symbol: z.string().trim().min(1).max(64),
     name: z.string().trim().min(1).max(100),
-    market: z.enum(["KOSPI", "KOSDAQ", "US"]),
+    market: z.enum(["KOSPI", "KOSDAQ", "ETF", "US"]),
     side: z.literal("BUY"),
     shares: z.number().int().positive().max(1_000_000),
     price: z.number().finite().positive().max(10_000_000),
@@ -84,8 +84,24 @@ export function parseAssistantActualBuy(value: unknown, now = new Date()): Assis
     }
   } else if (!isReviewedKrSession(data.date))
     throw new Error("검증된 한국거래소 거래일이 아닙니다. KRX 일정 자료를 확인하세요.");
-  if (!us && (!Number.isSafeInteger(data.shares * data.price) || data.shares * data.price <= 0))
-    throw new Error("매수금액은 안전한 정수 원 단위로 입력하세요.");
+  if (!us) {
+    // Aggregated fills may yield a recurring average (KRW gross / shares).
+    // Keep an 8-place ledger unit price, and require its gross to round to
+    // the same whole won; do not invent an exact rational price.
+    let gross: number;
+    try {
+      fromLegacyNumber(data.price);
+      gross = assistantTradeGross(data);
+    } catch {
+      throw new Error("원화 매수단가는 안전한 소수점 8자리 이하로 입력하세요.");
+    }
+    if (
+      gross <= 0 ||
+      !Number.isSafeInteger(Math.round(gross)) ||
+      Math.abs(Math.round(gross) - gross) > 0.01
+    )
+      throw new Error("매수금액은 1원 단위로 확인할 수 있어야 합니다.");
+  }
   if (!us && Math.abs(Math.round(data.fee * 100) - data.fee * 100) > 0.0000001)
     throw new Error("수수료는 소수 둘째 자리 이하로 입력하세요.");
   return data;
@@ -100,6 +116,23 @@ export function formatAssistantTradeMoney(value: number, market: AssistantActual
   return market === "US"
     ? "$" + value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 })
     : value.toLocaleString("ko-KR") + "원";
+}
+
+// The security registry's asset type is authoritative. Notion's KOSPI listing
+// market is not the legacy portfolio execution market for domestic ETFs.
+export function normalizeAssistantTradeMarket(
+  trade: AssistantActualBuy,
+  security: { market: string; assetType: string } | null,
+): AssistantActualBuy {
+  if (!security) return trade;
+  if (security.assetType === "ETF") {
+    if (trade.market !== "ETF" && trade.market !== security.market)
+      throw new Error("ETF 종목의 상장시장 및 원장 시장 분류가 일치하지 않습니다.");
+    return { ...trade, market: "ETF" };
+  }
+  if (trade.market === "ETF" || trade.market !== security.market)
+    throw new Error("종목마스터의 시장 분류와 매수 제안이 일치하지 않습니다.");
+  return trade;
 }
 
 export function notionTradeUrl(sourcePageId: string) {

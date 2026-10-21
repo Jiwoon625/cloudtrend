@@ -5,6 +5,7 @@ import {
   sourceEvidenceMatches,
   notionTradeUrl,
   parseAssistantActualBuy,
+  normalizeAssistantTradeMarket,
   assistantTradeGross,
   formatAssistantTradeMoney,
 } from "./assistantActualTrade";
@@ -48,6 +49,45 @@ describe("Assistant actual trade proposals", () => {
     { unknown: true },
   ])("rejects invalid entry %s", (change) => {
     expect(() => parseAssistantActualBuy({ ...valid, ...change }, now)).toThrow();
+  });
+  it("keeps domestic ETF execution market distinct from its KOSPI listing", () => {
+    const evidence = parseAssistantActualBuy(
+      {
+        ...valid,
+        date: "2026-10-21",
+        symbol: "423160",
+        name: "KODEX KOFR",
+        market: "KOSPI",
+        shares: 17,
+        price: 110864.82352941,
+        fee: 68,
+      },
+      new Date("2026-10-21T07:00:00Z"),
+    );
+    const trade = normalizeAssistantTradeMarket(evidence, { market: "KOSPI", assetType: "ETF" });
+    expect(trade.market).toBe("ETF");
+    expect(assistantTradeGross(trade)).toBeCloseTo(1884702, 6);
+    expect(() =>
+      parseAssistantActualBuy(
+        { ...evidence, price: 1884702 / 17 },
+        new Date("2026-10-21T07:00:00Z"),
+      ),
+    ).toThrow();
+    expect(normalizeAssistantTradeMarket(trade, { market: "KOSPI", assetType: "ETF" })).toEqual(
+      trade,
+    );
+    expect(() =>
+      normalizeAssistantTradeMarket(
+        { ...evidence, market: "KOSDAQ" },
+        { market: "KOSPI", assetType: "ETF" },
+      ),
+    ).toThrow();
+    expect(() =>
+      normalizeAssistantTradeMarket(
+        { ...evidence, market: "ETF" },
+        { market: "KOSPI", assetType: "STOCK" },
+      ),
+    ).toThrow();
   });
   it("detects an indistinguishable owner-side duplicate", () => {
     expect(
