@@ -93,6 +93,18 @@ export function KospiShadowContent({
   const snapshot = view?.latest,
     daily = snapshot?.daily,
     state = snapshot?.state;
+  const lateEvidence = snapshot?.source as
+    | (KospiShadowView["latest"]["source"] & {
+        lateRecovery?: {
+          version?: string;
+          retrospective?: boolean;
+          computedAt?: string;
+          dataCutoffAt?: string;
+        };
+      })
+    | undefined;
+  const late = lateEvidence?.lateRecovery;
+  const showLate = late?.version === "kospi-preopen-late-v1" && late.retrospective === true;
   const within = (date: string) => (!fromDate || date >= fromDate) && (!toDate || date <= toDate);
   const history = (view?.history ?? []).filter((d) => within(d.date)),
     trades = (view?.recentTrades ?? [])
@@ -122,6 +134,23 @@ export function KospiShadowContent({
           )}
         </div>
       </header>
+      {showLate && (
+        <section
+          aria-label="개장 전 자료 사후 복구 안내"
+          className="rounded-lg border border-amber-500 bg-card p-3 text-sm leading-relaxed"
+        >
+          <p className="font-semibold">사후 복구 · 개장 전 확보 자료 기준</p>
+          <p>
+            {snapshot?.source.date} 기록은 당시 확보된 자료만 검증해 늦게 계산한 가상운용
+            결과입니다. 실시간 판단이나 실제 주문·체결 기록이 아닙니다.
+          </p>
+          <p className="mt-1 break-all text-xs text-muted-foreground">
+            자료 마감 시각: {late?.dataCutoffAt}
+            <br />
+            실제 복구 시각: {late?.computedAt}
+          </p>
+        </section>
+      )}
       {revision && (
         <section
           aria-label="사후 정정본 안내"

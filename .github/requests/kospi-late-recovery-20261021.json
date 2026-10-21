@@ -1,0 +1,6 @@
+{
+  "version": "kospi-preopen-late-v1",
+  "mode": "dry-run",
+  "dates": ["2026-10-19", "2026-10-20"],
+  "expectedPlan": null
+}
