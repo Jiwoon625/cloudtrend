@@ -28,7 +28,9 @@
     ],
     "sources": [
       "https://trn.krx.co.kr/index.jsp",
-      "https://global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T1.jsp",
+      "https://global.krx.co.kr/contents/GLB/06/0602/0602010201/GLB0602010201T1.jsp"
+    ],
+    "holidaySources2027": [
       "https://www.kasa.go.kr/prog/plcyBrf/brief/kor/sub01_01_04/view.do?plcyBrfNo=431"
     ],
     "pendingHoursDates": ["2026-11-19", "2027-11-18"],
