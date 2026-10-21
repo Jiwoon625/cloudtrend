@@ -84,8 +84,24 @@ export function parseAssistantActualBuy(value: unknown, now = new Date()): Assis
     }
   } else if (!isReviewedKrSession(data.date))
     throw new Error("검증된 한국거래소 거래일이 아닙니다. KRX 일정 자료를 확인하세요.");
-  if (!us && (!Number.isSafeInteger(data.shares * data.price) || data.shares * data.price <= 0))
-    throw new Error("매수금액은 안전한 정수 원 단위로 입력하세요.");
+  if (!us) {
+    // Aggregated fills may yield a recurring average (KRW gross / shares).
+    // Keep an 8-place ledger unit price, and require its gross to round to
+    // the same whole won; do not invent an exact rational price.
+    let gross: number;
+    try {
+      fromLegacyNumber(data.price);
+      gross = assistantTradeGross(data);
+    } catch {
+      throw new Error("원화 매수단가는 안전한 소수점 8자리 이하로 입력하세요.");
+    }
+    if (
+      gross <= 0 ||
+      !Number.isSafeInteger(Math.round(gross)) ||
+      Math.abs(Math.round(gross) - gross) > 0.01
+    )
+      throw new Error("매수금액은 1원 단위로 확인할 수 있어야 합니다.");
+  }
   if (!us && Math.abs(Math.round(data.fee * 100) - data.fee * 100) > 0.0000001)
     throw new Error("수수료는 소수 둘째 자리 이하로 입력하세요.");
   return data;
