@@ -68,7 +68,10 @@ describe("Assistant actual trade proposals", () => {
     expect(trade.market).toBe("ETF");
     expect(assistantTradeGross(trade)).toBeCloseTo(1884702, 6);
     expect(() =>
-      parseAssistantActualBuy({ ...evidence, price: 1884702 / 17 }, new Date("2026-10-21T07:00:00Z")),
+      parseAssistantActualBuy(
+        { ...evidence, price: 1884702 / 17 },
+        new Date("2026-10-21T07:00:00Z"),
+      ),
     ).toThrow();
     expect(normalizeAssistantTradeMarket(trade, { market: "KOSPI", assetType: "ETF" })).toEqual(
       trade,
