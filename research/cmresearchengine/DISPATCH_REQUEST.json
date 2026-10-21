@@ -1,10 +1,11 @@
 {
-  "request_id": "cm-first85to100-split10-200-20261021-001",
+  "request_id": "cm-resume76to89-encrypted-cache-20261021-001",
   "mode": "run",
   "stage": "split10",
-  "offset": 200,
-  "count": 1,
-  "max_seconds": 3000,
+  "offset": 0,
+  "count": 14,
+  "max_seconds": 6000,
   "workers": 1,
+  "ids": "K10_P000_Q010_E010_U080_C000,K10_P000_Q010_E030_U000_C060,K10_P000_Q010_E030_U040_C020,K10_P000_Q010_E030_U060_C000,K10_P000_Q010_E040_U040_C010,K10_P000_Q010_E060_U020_C010,K10_P000_Q010_E080_U010_C000,K10_P000_Q020_E020_U020_C040,K10_P000_Q020_E040_U000_C040,K10_P000_Q020_E040_U020_C020,K10_P000_Q030_E000_U010_C060,K10_P000_Q030_E000_U060_C010,K10_P000_Q030_E010_U060_C000,K10_P000_Q030_E060_U010_C000",
   "hybrid_shared_us_analysis": false
 }
