@@ -12,6 +12,10 @@
     {
       "runtimeCodeHash": "sha256:c79582d6364ab58d72daad700edee16b0dd880baa38f18e5a0394ad58d9cdc9c",
       "reviewId": "kospi-native-physical-bootstrap-v2"
+    },
+    {
+      "runtimeCodeHash": "sha256:5d8084f62b65757ae88363f9d9f9901488879bbf4e688f2bdf6d3e4f76e140b0",
+      "reviewId": "kospi-preopen-late-recovery-v1-20261021"
     }
   ]
 }

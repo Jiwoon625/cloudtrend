@@ -1,9 +1,25 @@
 name: KOSPI prospective Shadow
 on:
+  push:
+    branches: [main]
+    paths: [.github/requests/kospi-late-recovery-20261021.json]
   workflow_dispatch:
     inputs:
       as_of:
         description: "Must be 2026-10-14 when initialize_correction is true; otherwise optional exact source date"
+        type: string
+        required: false
+      recovery_mode:
+        description: "Late recovery: dry-run first, then apply with its exact reviewed plan hash"
+        type: choice
+        options: [none, dry-run, apply]
+        default: none
+      recovery_dates:
+        description: "Ascending exact session dates, comma separated; maximum five"
+        type: string
+        required: false
+      expected_plan:
+        description: "Exact sha256 plan returned by dry-run; required for apply"
         type: string
         required: false
       initialize_correction:
@@ -26,6 +42,7 @@ on:
       - "src/routes/us.portfolio.tsx"
       - "src/components/AppShell.tsx"
       - "scripts/run-kospi-shadow.ts"
+      - "scripts/kospi-shadow-late-recovery.ts"
       - "scripts/kospi-shadow-runtime.config.ts"
       - "tests/shadow-*"
       - "tests/fixtures/kospiShadowRevision.ts"
@@ -60,11 +77,16 @@ jobs:
   advance:
     needs: verify
     if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event != 'pull_request')
     runs-on: ubuntu-latest
     env:
+      KOSPI_LATE_RECOVERY_REQUEST: ${{ github.event_name == 'push' && '.github/requests/kospi-late-recovery-20261021.json' || '' }}
       SHADOW_AS_OF: ${{ inputs.as_of }}
+      RECOVERY_MODE: ${{ inputs.recovery_mode }}
+      RECOVERY_DATES: ${{ inputs.recovery_dates }}
+      EXPECTED_PLAN: ${{ inputs.expected_plan }}
       INITIALIZE_CORRECTION: ${{ github.event_name == 'workflow_dispatch' && inputs.initialize_correction || false }}
     steps:
       - uses: actions/checkout@v4
@@ -88,6 +110,10 @@ jobs:
             exit 1
           fi
           args=(--user "$SUPABASE_USER_ID")
+          if [[ -n "$RECOVERY_MODE" && "$RECOVERY_MODE" != "none" ]]; then
+            args+=(--recovery-mode "$RECOVERY_MODE" --recovery-dates "$RECOVERY_DATES")
+            if [[ -n "$EXPECTED_PLAN" ]]; then args+=(--expected-plan "$EXPECTED_PLAN"); fi
+          fi
           if [[ -n "$SHADOW_AS_OF" ]]; then args+=(--as-of "$SHADOW_AS_OF"); fi
           if [[ "$INITIALIZE_CORRECTION" == "true" ]]; then args+=(--initialize-correction); fi
           node --experimental-strip-types scripts/verify-kospi-shadow-runtime.ts --launch -- "${args[@]}"

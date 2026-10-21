@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { verifyKospiShadowRuntimeManifest } from "./verify-kospi-shadow-runtime";
 import { verifyShadowRuntimeManifests } from "./verify-shadow-runtime-manifests";
 import process from "node:process";
@@ -26,6 +27,7 @@ import {
 import { shadowObjectPath } from "../src/lib/kospiShadowStore";
 import type { KospiShadowSession } from "../src/lib/engine/kospiShadow";
 import { sourceTimingEvidence } from "../src/lib/sourceTimingEvidence";
+import { recoveryCutoff, runLateRecovery } from "./kospi-shadow-late-recovery";
 function arg(name: string) {
   const i = process.argv.indexOf(name);
   return i < 0 ? undefined : process.argv[i + 1];
@@ -86,8 +88,44 @@ export async function publishKospiShadowTarget(
 }
 
 export async function runKospiShadow() {
+  let recoveryMode = arg("--recovery-mode");
+  let recoveryDates = arg("--recovery-dates");
+  let expectedPlan = arg("--expected-plan");
+  const requestPath = process.env["KOSPI_LATE_RECOVERY_REQUEST"];
+  if (requestPath) {
+    if (
+      requestPath !== ".github/requests/kospi-late-recovery-20261021.json" ||
+      process.env["GITHUB_EVENT_NAME"] !== "push" ||
+      process.env["GITHUB_REF"] !== "refs/heads/main" ||
+      recoveryMode ||
+      recoveryDates ||
+      expectedPlan
+    )
+      throw new Error("Invalid fixed late recovery request context");
+    const request = JSON.parse(await readFile(requestPath, "utf8"));
+    const keys = Object.keys(request).sort().join(",");
+    if (
+      keys !== "dates,expectedPlan,mode,version" ||
+      request.version !== "kospi-preopen-late-v1" ||
+      !["dry-run", "apply"].includes(request.mode) ||
+      JSON.stringify(request.dates) !== '["2026-10-19","2026-10-20"]' ||
+      (request.mode === "apply"
+        ? !/^sha256:[a-f0-9]{64}$/.test(request.expectedPlan)
+        : request.expectedPlan !== null)
+    )
+      throw new Error("Invalid fixed late recovery request content");
+    recoveryMode = request.mode;
+    recoveryDates = request.dates.join(",");
+    expectedPlan = request.expectedPlan;
+  }
+  if (recoveryMode && !["dry-run", "apply"].includes(recoveryMode))
+    throw new Error("Invalid late recovery mode");
+  if ((recoveryMode && !recoveryDates) || (!recoveryMode && (recoveryDates || expectedPlan)))
+    throw new Error("Incomplete late recovery arguments");
   const dryRun = process.argv.includes("--dry-run");
   const initializeCorrection = process.argv.includes("--initialize-correction");
+  if (recoveryMode && (initializeCorrection || dryRun || arg("--as-of")))
+    throw new Error("Late recovery cannot initialize or override current source date");
   if (
     initializeCorrection &&
     (process.argv.filter((value) => value === "--as-of").length !== 1 ||
@@ -152,6 +190,19 @@ export async function runKospiShadow() {
       if (error) throw new Error(`Shadow latest write failed: ${error.message}`);
     },
   };
+  if (recoveryMode) {
+    if (process.env["GITHUB_EVENT_NAME"] !== "workflow_dispatch" && !requestPath)
+      throw new Error("Manual late recovery requires explicit dispatch");
+    await runLateRecovery(
+      client,
+      store,
+      uid,
+      recoveryDates!.split(","),
+      recoveryMode as "dry-run" | "apply",
+      expectedPlan,
+    );
+    return;
+  }
   const inputs = await loadAnalysisSourceInputs(client, uid, "screening", { compact: true });
   const { dataset } = parseManualMarketData(inputs.map((i) => i.text));
   const date = arg("--as-of") ?? dataset.asOfDate;
@@ -184,6 +235,11 @@ export async function runKospiShadow() {
   const decisionAt = new Date().toISOString();
   const official = isKrLiveShadowDecision(date, sourceCollectedAt, decisionAt);
   if (!dryRun && !initializeCorrection && !official) {
+    // Late execution uses a verified pre-open input manifest, never a synthetic decision clock.
+    if (Date.parse(decisionAt) >= Date.parse(recoveryCutoff(date).cutoff)) {
+      await runLateRecovery(client, store, uid, [date], "auto");
+      return;
+    }
     console.log(
       JSON.stringify({
         strategy: KOSPI_SHADOW_POLICY.label,

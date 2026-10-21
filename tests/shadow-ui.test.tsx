@@ -202,3 +202,31 @@ describe("unified Shadow UI", () => {
     }
   });
 });
+
+describe("late recovery disclosure", () => {
+  it("labels late evidence separately from actual decisions and trades", () => {
+    const saved = view();
+    Object.assign(saved.latest.source, {
+      lateRecovery: {
+        version: "kospi-preopen-late-v1",
+        retrospective: true,
+        computedAt: "2026-10-21T01:00:00Z",
+        dataCutoffAt: "2026-10-20T09:00:00+09:00",
+      },
+    });
+    const html = renderToStaticMarkup(
+      <KospiShadowContent
+        view={saved}
+        loading={false}
+        error={null}
+        fromDate=""
+        toDate=""
+        refresh={() => {}}
+      />,
+    );
+    expect(html).toContain("사후 복구 · 개장 전 확보 자료 기준");
+    expect(html).toContain("실시간 판단이나 실제 주문·체결 기록이 아닙니다");
+    expect(html).toContain("2026-10-21T01:00:00Z");
+    expect(html).toContain("2026-10-20T09:00:00+09:00");
+  });
+});
