@@ -275,6 +275,51 @@ describe("assistant trade owner approval", () => {
       "assistant_trade_release",
     ]);
   });
+  it("recovers a US fill left PROCESSING after the ledger save without writing it twice", async () => {
+    usProposal();
+    const id = "new-actual:" + state.proposal!["id"];
+    const trade = state.proposal!["trade"] as Record<string, unknown>;
+    let recordAttempts = 0;
+    state.rpc.mockImplementation(async (name: string) => {
+      if (name === "assistant_trade_claim") return { data: "claim-token", error: null };
+      if (name === "assistant_trade_record")
+        return { data: ++recordAttempts > 1, error: null };
+      return { data: null, error: null };
+    });
+    state.snapshot
+      .mockResolvedValueOnce({ revision: 12, payload: { executions: [] } })
+      .mockResolvedValueOnce({
+        revision: 13,
+        payload: {
+          executions: [{ ...trade, id }],
+          newActualPortfolio: {
+            assignments: {
+              [id]: {
+                quantity: 3,
+                gross: 0.3,
+                fee: 0.012345,
+                brokerReference: "notion:" + state.proposal!["source_page_id"],
+              },
+            },
+          },
+        },
+      });
+    state.save.mockResolvedValue({ revision: 13, reused: false });
+
+    // The first request has already committed the ledger fill when recording
+    // the proposal status fails. Model the stale PROCESSING row on retry.
+    expect((await post()).status).toBe(409);
+    expect(state.save).toHaveBeenCalledTimes(1);
+    state.proposal!["status"] = "PROCESSING";
+    state.proposal!["processing_started_at"] = "2026-10-21T00:00:00Z";
+
+    const retry = await post();
+    expect(retry.status).toBe(200);
+    expect((await retry.json()).reused).toBe(true);
+    expect(state.save).toHaveBeenCalledTimes(1);
+    expect(recordAttempts).toBe(2);
+  });
+
   it("reconciles a US retry without recording the fill twice", async () => {
     usProposal();
     const id = "new-actual:" + state.proposal!["id"];
