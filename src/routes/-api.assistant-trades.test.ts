@@ -113,6 +113,15 @@ const post = (action: "CONFIRM" | "REJECT" = "CONFIRM", token = "test-jwt") => {
   });
 };
 
+function targetSnapshot(value: unknown) {
+  return state.snapshot.mockImplementation(async (_c: unknown, _u: string, table: string) => {
+    const market = (state.proposal?.["trade"] as { market?: string } | undefined)?.market;
+    return table === (market === "US" ? "us_actual_portfolio_ledgers" : "portfolio_ledgers")
+      ? value
+      : { revision: 1, payload: { executions: [] } };
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   state.uid = "bdfc8818-33a7-4030-9dbd-ecad39f223ac";
@@ -168,7 +177,7 @@ describe("assistant trade owner approval", () => {
       market: "KOSPI",
       symbol: "423160",
     };
-    state.snapshot.mockResolvedValue({
+    targetSnapshot({
       revision: 92,
       payload: {
         executions: [{ id: "previous", symbol: "423160", market: "ETF" }],
@@ -189,7 +198,7 @@ describe("assistant trade owner approval", () => {
       data: name === "assistant_trade_claim" ? "claim-token" : true,
       error: null,
     }));
-    state.snapshot.mockResolvedValue({
+    targetSnapshot({
       revision: 84,
       payload: { executions: [], newActualPortfolio: { assignments: {} } },
     });
@@ -213,11 +222,10 @@ describe("assistant trade owner approval", () => {
         }),
         allocation: expect.objectContaining({ gross: 422100, fee: 15 }),
       }),
+      undefined,
+      { proposalId: state.proposal!["id"], token: "claim-token" },
     );
-    expect(state.rpc.mock.calls.map(([name]) => name)).toEqual([
-      "assistant_trade_claim",
-      "assistant_trade_record",
-    ]);
+    expect(state.rpc.mock.calls.map(([name]) => name)).toEqual(["assistant_trade_claim"]);
     expect(state.service).not.toHaveBeenCalled();
   });
 
@@ -279,7 +287,7 @@ describe("assistant trade owner approval", () => {
   );
   it("records US proposals through the same owner session and USD CAS ledger", async () => {
     usProposal();
-    state.snapshot.mockResolvedValue({ revision: 12, payload: { executions: [] } });
+    targetSnapshot({ revision: 12, payload: { executions: [] } });
     state.save.mockResolvedValue({ revision: 13, reused: false });
     const response = await post();
     expect(response.status).toBe(200);
@@ -305,6 +313,8 @@ describe("assistant trade owner approval", () => {
         }),
         allocation: expect.objectContaining({ gross: 0.3, fee: 0.012345 }),
       }),
+      undefined,
+      { proposalId: state.proposal!["id"], token: "claim-token" },
     );
     expect(state.service).not.toHaveBeenCalled();
   });
@@ -320,7 +330,7 @@ describe("assistant trade owner approval", () => {
   it("rejects a retry whose existing execution belongs to another market", async () => {
     usProposal();
     const id = "new-actual:" + state.proposal!["id"];
-    state.snapshot.mockResolvedValue({
+    targetSnapshot({
       revision: 13,
       payload: {
         executions: [{ ...(state.proposal!["trade"] as object), id, market: "KOSDAQ" }],
@@ -343,54 +353,11 @@ describe("assistant trade owner approval", () => {
       "assistant_trade_release",
     ]);
   });
-  it("recovers a US fill left PROCESSING after the ledger save without writing it twice", async () => {
-    usProposal();
-    const id = "new-actual:" + state.proposal!["id"];
-    const trade = state.proposal!["trade"] as Record<string, unknown>;
-    let recordAttempts = 0;
-    state.rpc.mockImplementation(async (name: string) => {
-      if (name === "assistant_trade_claim") return { data: "claim-token", error: null };
-      if (name === "assistant_trade_record") return { data: ++recordAttempts > 1, error: null };
-      return { data: null, error: null };
-    });
-    state.snapshot
-      .mockResolvedValueOnce({ revision: 12, payload: { executions: [] } })
-      .mockResolvedValueOnce({
-        revision: 13,
-        payload: {
-          executions: [{ ...trade, id }],
-          newActualPortfolio: {
-            assignments: {
-              [id]: {
-                quantity: 3,
-                gross: 0.3,
-                fee: 0.012345,
-                brokerReference: "notion:" + state.proposal!["source_page_id"],
-              },
-            },
-          },
-        },
-      });
-    state.save.mockResolvedValue({ revision: 13, reused: false });
-
-    // The first request has already committed the ledger fill when recording
-    // the proposal status fails. Model the stale PROCESSING row on retry.
-    expect((await post()).status).toBe(409);
-    expect(state.save).toHaveBeenCalledTimes(1);
-    state.proposal!["status"] = "PROCESSING";
-    state.proposal!["processing_started_at"] = "2026-10-21T00:00:00Z";
-
-    const retry = await post();
-    expect(retry.status).toBe(200);
-    expect((await retry.json()).reused).toBe(true);
-    expect(state.save).toHaveBeenCalledTimes(1);
-    expect(recordAttempts).toBe(2);
-  });
 
   it("reconciles a US retry without recording the fill twice", async () => {
     usProposal();
     const id = "new-actual:" + state.proposal!["id"];
-    state.snapshot.mockResolvedValue({
+    targetSnapshot({
       revision: 13,
       payload: {
         executions: [{ ...(state.proposal!["trade"] as object), id }],
@@ -413,16 +380,46 @@ describe("assistant trade owner approval", () => {
   });
   it("does not write a US fill when its ledger is unavailable or revision changed", async () => {
     usProposal();
-    state.snapshot.mockResolvedValue(null);
+    targetSnapshot(null);
     expect((await post()).status).toBe(409);
     expect(state.save).not.toHaveBeenCalled();
     expect(state.rpc.mock.calls.map(([name]) => name)).toContain("assistant_trade_release");
-    state.snapshot.mockResolvedValue({ revision: 12, payload: { executions: [] } });
+    targetSnapshot({ revision: 12, payload: { executions: [] } });
     state.save.mockRejectedValue(new Error("원장 버전이 변경됐습니다."));
     const before = state.rpc.mock.calls.length;
     expect((await post()).status).not.toBe(200);
     expect(state.rpc.mock.calls.slice(before).map(([name]) => name)).toEqual([
       "assistant_trade_claim",
+    ]);
+  });
+
+  it.each(["US", "KOSDAQ"])("blocks evidence already in the other book for %s", async (market) => {
+    if (market === "US") usProposal();
+    state.rpc.mockImplementation(async (name: string) => ({
+      data: name === "assistant_trade_claim" ? "claim-token" : true,
+      error: null,
+    }));
+    state.snapshot.mockImplementation(async (_c: unknown, _u: string, table: string) => ({
+      revision: 4,
+      payload:
+        table === (market === "US" ? "us_actual_portfolio_ledgers" : "portfolio_ledgers")
+          ? { executions: [] }
+          : {
+              executions: [
+                {
+                  id: "direct-fill",
+                  sourceLinks: [
+                    { url: "https://app.notion.com/p/" + state.proposal!["source_page_id"] },
+                  ],
+                },
+              ],
+            },
+    }));
+    expect((await post()).status).toBe(409);
+    expect(state.save).not.toHaveBeenCalled();
+    expect(state.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "assistant_trade_claim",
+      "assistant_trade_release",
     ]);
   });
 

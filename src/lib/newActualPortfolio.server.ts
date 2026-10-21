@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ACTUAL_PERFORMANCE_START } from "./ledger/actualPerformance";
 import { canonicalJson } from "./ledger/migration";
-import { decimal, representedLegacyNumber } from "./ledger/decimal";
+import { decimal } from "./ledger/decimal";
+import { representedActualNumber as representedLegacyNumber, actualGross } from "./actualMoney";
 import { rejectExecutionMemoUrls, savedExecutionMemo } from "./ledger/executionMemo";
 import { readWebsiteDocument } from "./ledger/websiteRepository.server";
 import { loadNewActualDomesticQuotes } from "./portfolioLedgers.server";
@@ -152,6 +153,7 @@ export async function saveNewActualPortfolio(
   uid: string,
   rawInput: NewActualPortfolioWrite,
   now = new Date().toISOString(),
+  approval?: { proposalId: string; token: string },
 ) {
   const input = parseNewActualPortfolioRequest(rawInput);
   if (input.action === "load") throw new Error("체결 또는 입출금 작업을 확인하세요.");
@@ -172,6 +174,13 @@ export async function saveNewActualPortfolio(
       throw new Error(
         "같은 저장 식별자에 다른 내용이 사용됐습니다. 새로고침 후 입력을 다시 여세요.",
       );
+    if (approval) {
+      const result = await client.rpc("assistant_trade_record", {
+        p_id: approval.proposalId,
+        p_token: approval.token,
+      });
+      if (result.error || !result.data) throw new Error("Approval reconciliation failed");
+    }
     // Exactly-once request acknowledgement, even after a lost response or later unrelated changes.
     return { revision: row.revision, reused: true };
   }
@@ -235,7 +244,7 @@ export async function saveNewActualPortfolio(
       hasMixedActualProvenance(metadata, existing) ||
       assignment.quantity !== existing.shares ||
       decimal(representedLegacyNumber(assignment.gross)) !==
-        decimal(representedLegacyNumber(existing.price * existing.shares)) ||
+        decimal(representedLegacyNumber(actualGross(existing.price, existing.shares))) ||
       assignment.fee !== existing.fee
     )
       throw new Error(
@@ -273,13 +282,25 @@ export async function saveNewActualPortfolio(
   // Reject over-sales, missing original fills, duplicate references and invalid allocations.
   // Funding/price gaps only produce pending/incomplete output; they never discard actual fills.
   project({ revision: row.revision, payload: doc }, currency, {}, now);
-  const result = await client
-    .from(table)
-    .update({ payload: doc, revision: row.revision + 1, updated_at: new Date(now).toISOString() })
-    .eq("user_id", uid)
-    .eq("revision", row.revision)
-    .select("revision")
-    .maybeSingle();
+  const result = approval
+    ? await client.rpc("assistant_trade_commit", {
+        p_id: approval.proposalId,
+        p_token: approval.token,
+        p_source: table,
+        p_revision: row.revision,
+        p_payload: doc,
+      })
+    : await client
+        .from(table)
+        .update({
+          payload: doc,
+          revision: row.revision + 1,
+          updated_at: new Date(now).toISOString(),
+        })
+        .eq("user_id", uid)
+        .eq("revision", row.revision)
+        .select("revision")
+        .maybeSingle();
   if (result.error)
     throw new Error("신규 기록 저장을 확인하지 못했습니다. 새로고침 후 체결·입출금을 대조하세요.");
   if (!result.data)

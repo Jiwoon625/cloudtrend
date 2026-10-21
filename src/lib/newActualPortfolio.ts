@@ -1,15 +1,13 @@
+import {
+  actualNumber as fromLegacyNumber,
+  actualGross,
+  representedActualNumber as representedLegacyNumber,
+} from "./actualMoney";
 import { actualDateWindow, couldCashTimingExplainShortfall } from "./newActualCashTiming";
 import type { ActualExecution, Quote } from "./portfolioLedgers";
 import { ACTUAL_PERFORMANCE_SERIES, ACTUAL_PERFORMANCE_START } from "./ledger/actualPerformance";
 import { validDate } from "./ledger/date";
-import {
-  decimal,
-  divide,
-  format,
-  fromLegacyNumber,
-  multiply,
-  representedLegacyNumber,
-} from "./ledger/decimal";
+import { decimal, divide, format, multiply } from "./ledger/decimal";
 
 export type NewActualAsset = "KR" | "US" | "ETF";
 export type NewActualCurrency = "KRW" | "USD";
@@ -305,7 +303,7 @@ export function projectNewActualPool(input: {
       const quantity = exactNumber(allocation.quantity),
         fullQuantity = exactNumber(execution.shares),
         gross = exactNumber(allocation.gross),
-        fullGross = legacyNumber(execution.price * execution.shares),
+        fullGross = exactNumber(actualGross(execution.price, execution.shares)),
         fee = exactNumber(allocation.fee),
         fullFee = legacyNumber(execution.fee);
       if (quantity > fullQuantity || gross > fullGross || fee > fullFee)
