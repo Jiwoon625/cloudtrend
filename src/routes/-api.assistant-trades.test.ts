@@ -273,16 +273,15 @@ describe("assistant trade owner approval", () => {
         expect.anything(),
         state.uid,
         expect.objectContaining({ asset: "ETF" }),
+        undefined,
+        { proposalId: state.proposal!["id"], token: "claim-token" },
       );
       expect(state.snapshot).toHaveBeenCalledWith(
         expect.anything(),
         state.uid,
         "portfolio_ledgers",
       );
-      expect(state.rpc.mock.calls.map(([name]) => name)).toEqual([
-        "assistant_trade_claim",
-        "assistant_trade_record",
-      ]);
+      expect(state.rpc.mock.calls.map(([name]) => name)).toEqual(["assistant_trade_claim"]);
     },
   );
   it("records US proposals through the same owner session and USD CAS ledger", async () => {
