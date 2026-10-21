@@ -63,7 +63,7 @@ A=`authenticated`, S=`service_role`; R=SELECT, I=INSERT, U=UPDATE, D=DELETE. ALL
 
 `node tests/data-api-grants.test.mjs`는 외부 접속 없는 PGlite PostgreSQL에서 전체 40개 SQL을 파일 순서대로 실행한다. Auth/Storage의 최소 플랫폼 객체는 테스트 fixture이며 실제 Supabase 플랫폼을 재구현한 것은 아니다. 테이블 자동 GRANT를 전혀 만들지 않아 새 기본 정책을 재현한다.
 
-검증 항목: 모든 public 테이블의 역할별 정확한 테이블 ACL과 RLS, 열 UPDATE 범위, anon RPC 차단, 소유자 INSERT/UPDATE/SELECT, 타 사용자 읽기·쓰기 차단, 서비스 저장·수정·삭제, append-only 쓰기 제한, 승인대기함 소유자 전이, 추가 GRANT의 재적용 멱등성. GitHub Actions에서 마이그레이션 변경마다 동일 검사를 수행한다.
+검증 항목: 모든 public 테이블의 역할별 정확한 테이블 ACL과 RLS, 열 UPDATE 범위, anon RPC 차단, 소유자 INSERT/UPDATE/SELECT, 타 사용자 읽기·쓰기 차단, 서비스 저장·수정·삭제, append-only 쓰기 제한, 승인대기함 소유자 전이, 추가 GRANT의 재적용 멱등성. GitHub Actions에서 마이그레이션 변경마다 동일 검사를 수행한다. 기존 이력 보존 검사의 `tests/migration-history-manifest.json`도 변경한 생성 파일 4개에 한해 새 SHA-256으로 갱신했다. 해시 검증 자체와 나머지 역사 파일 고정은 유지한다.
 
 운영 Supabase에는 **읽기 전용 카탈로그 점검만** 수행했다. 누락 대상으로 분류한 9개는 운영에서 이미 필요한 권한을 보유한다. 따라서 새 전진 마이그레이션이나 운영 GRANT 실행이 필요하지 않다. 수정한 생성 파일은 새 프로젝트/브랜치/reset에서 사용된다. 운영 migration history를 삭제하거나 과거 SQL 전체를 재실행하지 않는다. 현재의 데이터 변환·백필 마이그레이션들은 임의 재실행을 보장하지 않으며, 정상 migration runner의 한 번 적용을 전제로 한다.
 
