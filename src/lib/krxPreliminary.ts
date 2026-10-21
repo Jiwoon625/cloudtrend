@@ -3,6 +3,7 @@ import type { MarketDataset } from "./engine/dataset";
 import type { DailyPrice } from "./engine/types";
 import { ETF_MAPPING, ETF_POLICY, isEtfStrategyAssetClass } from "./engine/etfStrategy";
 import type { KrxReviewReference } from "./krxReviewReference";
+import { etfPartialEvidence } from "./etfPartialEvidence";
 
 /**
  * Read-only evening calculation using the latest *actually dated* KRX observations.
@@ -51,6 +52,39 @@ function exactUnderlying(bar: DailyPrice | undefined): number | null {
     ? bar.etfUnderlyingIndexClose
     : null;
 }
+/**
+ * A prior numeric M0 is not proof of a prior eligible strategy observation.
+ * Reconstruct the independent official data-quality gates for that session:
+ * 120 verified price bars, dated KRX capitalization and a complete 20-session
+ * turnover window, plus >=66 consecutive KRX index closes for both regime
+ * and the one-session-lag regime check. This is a conservative preview gate,
+ * not a re-evaluation of historical MODEL sessions.
+ */
+function verifiedPreviousEtfObservation(
+  bars: readonly DailyPrice[],
+  calendar: readonly string[],
+  priorDate: string,
+  previousM0: number | null,
+): boolean {
+  if (previousM0 === null) return false;
+  const through = calendar.filter((d) => d <= priorDate);
+  if (through.length < 120) return false;
+  const byDate = new Map(bars.filter((b) => b.tradeDate <= priorDate).map((b) => [b.tradeDate, b]));
+  const priced = through.slice(-120).map((d) => byDate.get(d));
+  if (
+    !priced.every(
+      (b) => b?.priceSource === "TOSS_ADJUSTED_CANDLE" && positive(b.close),
+    )
+  ) return false;
+  const priorBar = byDate.get(priorDate);
+  return (
+    priorBar?.marketCapSource === "KRX_ETF" &&
+    positive(priorBar.etfMarketCap) &&
+    recentValues(bars, through, 20, exactTradeValue) !== null &&
+    recentValues(bars, through, 66, exactUnderlying) !== null
+  );
+}
+
 function recentValues(
   bars: readonly DailyPrice[],
   dates: readonly string[],
@@ -169,24 +203,44 @@ export function calculateKrxPreliminary(
       : null;
   const numericScore = (value: number | null): number | null =>
     finite(value) && value >= 0 && value <= 100 ? value : null;
-  const technical = numericScore(strategy.technical);
-  const priority = numericScore(strategy.priority);
-  const environment = numericScore(strategy.environment);
+  // Consume the same component-validation gates used by the displayed
+  // official ETF partial evidence: a numeric score is not necessarily a
+  // verified score (e.g. one of the last 120 price bars is untrusted).
+  const partial = etfPartialEvidence(row, analysis.asOfDate);
+  const recentPriceBars = bars.slice(-120);
+  const priceSourceVerified =
+    recentPriceBars.length === 120 &&
+    recentPriceBars.at(-1)?.tradeDate === analysis.asOfDate &&
+    recentPriceBars.every((bar) => bar.priceSource === "TOSS_ADJUSTED_CANDLE");
+  const technical = priceSourceVerified ? partial.technical : null;
+  const priority = priceSourceVerified ? partial.priority : null;
+  const environment = priceSourceVerified ? partial.environment : null;
+  if (!priceSourceVerified)
+    issues.push("당일 수정주가 120거래일 출처 미검증 · 예비 M0 산정 보류");
   if (technical === null || priority === null || environment === null)
     issues.push("당일 기술·Priority·환경점수 중 미확정 항목 존재");
   const m0 =
     health !== null && technical !== null && priority !== null && environment !== null
-      ? technical * 0.625 + priority * 0.075 + health * 0.15 + environment * 0.15
+      ? technical + priority + health * 0.15 + environment
       : null;
-  // True onset requires the previous *complete* official M0. If unknown, do
-  // not convert the first observation or an earlier pending origin to onset.
+  // A numeric prior score can still belong to an ineligible observation.
+  // Never assert a preliminary onset unless prior eligibility is independently
+  // supported by dated price, cap, turnover and underlying-index history.
   const previousM0 =
     strategy.previousDate === previous ? numericScore(strategy.previousScore) : null;
+  const previousEligible = verifiedPreviousEtfObservation(
+    bars,
+    calendar,
+    previous,
+    previousM0,
+  );
   const preliminaryOnset =
-    m0 !== null && previousM0 !== null
+    m0 !== null && previousM0 !== null && previousEligible
       ? previousM0 < ETF_POLICY.entryScore && m0 >= ETF_POLICY.entryScore
       : null;
   if (previousM0 === null) issues.push("직전 확정 M0 미확인 · 신규 돌파 판정 불가");
+  else if (!previousEligible)
+    issues.push("직전 거래일 가격·KRX·기초지수 적격성 미검증 · 예비 신규 돌파 보류");
   if (carried && marketCap !== null && Math.abs(marketCap - 50e9) / 50e9 < 0.05)
     issues.push("시총 500억원 경계 ±5% · 다음 아침 재검증");
   if (carried && marketCap !== null && Math.abs(marketCap - 100e9) / 100e9 < 0.05)
@@ -211,4 +265,44 @@ export function calculateKrxPreliminary(
     underlyingDate,
     issues,
   };
+}
+
+/**
+ * Add dated PRELIMINARY columns; ordinary named columns must retain only
+ * official final values. The CSV must explain why the preview filter matched.
+ */
+export const KRX_PRELIMINARY_EXPORT_HEADERS = [
+  "예비판단 상태 (확정 아님)",
+  "예비 M0 (확정 아님)",
+  "예비 Health 기여점 (확정 아님)",
+  "예비 20일 평균 KRX 거래대금 (원)",
+  "예비 KRX 시가총액 (원)",
+  "예비 신규 돌파 (확정 아님)",
+  "예비 주가 기준일",
+  "예비 KRX 시총 기준일",
+  "예비 거래대금 종료 기준일",
+  "예비 기초지수 기준일",
+  "예비 판단 자료 오류",
+] as const;
+
+export function krxPreliminaryExportValues(
+  preliminary: KrxPreliminary | undefined,
+): (string | number | null)[] {
+  if (!preliminary || preliminary.kind !== "ETF")
+    return KRX_PRELIMINARY_EXPORT_HEADERS.map(() => null);
+  return [
+    preliminary.status,
+    preliminary.m0 ?? null,
+    preliminary.healthPoints ?? null,
+    preliminary.averageTradingValue20 ?? null,
+    preliminary.marketCap,
+    preliminary.preliminaryOnset === null || preliminary.preliminaryOnset === undefined
+      ? "판정 불가"
+      : preliminary.preliminaryOnset ? "예비 돌파" : "예비 비돌파",
+    preliminary.priceDate,
+    preliminary.marketCapDate,
+    preliminary.tradingValueThrough ?? null,
+    preliminary.underlyingDate ?? null,
+    preliminary.issues.join(" · "),
+  ];
 }
