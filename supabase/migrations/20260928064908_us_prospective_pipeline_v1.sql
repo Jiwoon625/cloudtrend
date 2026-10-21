@@ -138,3 +138,6 @@ comment on table public.us_screening_history is 'Compact immutable daily US pros
 comment on table public.us_strategy_registry is 'Frozen prospective strategy definitions for A0 primary and A2/B3 shadow portfolios.';
 comment on table public.us_portfolio_snapshots is 'Daily prospective NAV/state for US primary/shadow portfolios and benchmark.';
 comment on table public.us_portfolio_trades is 'US prospective model trade ledger; optional actual execution fields may be manually filled by the owner.';
+
+-- Explicit Data API access; independent of platform default privileges.
+grant select, insert, update, delete on public.us_screening_ingest, public.us_screening_history, public.us_strategy_registry, public.us_portfolio_snapshots, public.us_portfolio_trades to service_role;

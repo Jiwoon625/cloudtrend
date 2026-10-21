@@ -16,3 +16,6 @@ create policy portfolio_signal_log_owner on public.portfolio_signal_log
 
 create index if not exists portfolio_signal_log_user_date_idx
   on public.portfolio_signal_log (user_id, signal_date desc);
+
+-- Explicit Data API access; independent of platform default privileges.
+grant select, insert, update on public.portfolio_signal_log to authenticated;

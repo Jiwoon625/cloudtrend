@@ -61,3 +61,7 @@ create index if not exists portfolio_trades_user_status_idx
   on public.portfolio_trades (user_id, status, entry_date desc);
 create index if not exists portfolio_trades_user_signal_idx
   on public.portfolio_trades (user_id, signal_date desc);
+
+-- Explicit Data API access; independent of platform default privileges.
+grant select, insert, update on public.portfolio_settings, public.portfolio_trades to authenticated;
+-- No service writer is used for these legacy browser-owned tables.

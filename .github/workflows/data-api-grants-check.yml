@@ -1,0 +1,27 @@
+name: Data API explicit grants
+on:
+  pull_request:
+    paths:
+      - supabase/migrations/**
+      - tests/data-api-grants.test.mjs
+      - .github/workflows/data-api-grants-check.yml
+  push:
+    branches: [main]
+    paths:
+      - supabase/migrations/**
+      - tests/data-api-grants.test.mjs
+      - .github/workflows/data-api-grants-check.yml
+permissions:
+  contents: read
+jobs:
+  empty-default-grants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node tests/data-api-grants.test.mjs
