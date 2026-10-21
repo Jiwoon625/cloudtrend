@@ -2,6 +2,7 @@ import { parseManualMarketData, normalizeKrxSymbol } from "./engine/manualDatase
 import { visitDelimitedRows } from "./sourceData";
 import { validDate } from "./ledger/date";
 import { selectKrxReviewReference, type KrxReviewObservation } from "./krxReviewReference";
+import { calculateKrxPreliminary } from "./krxPreliminary";
 import type { MarketDataset } from "./engine/dataset";
 import type { AnalysisResult } from "./engine/pipeline";
 
@@ -268,12 +269,16 @@ export function withKrxReviewReferences(
 ): AnalysisResult {
   return {
     ...analysis,
-    rows: analysis.rows.map((row) => ({
-      ...row,
-      krxReviewReference: selectKrxReviewReference(
+    rows: analysis.rows.map((row) => {
+      const reference = selectKrxReviewReference(
         dataset.krxReviewObservations?.[row.instrument.symbol] ?? [],
         analysis.asOfDate,
-      ),
-    })),
+      );
+      const preliminary = calculateKrxPreliminary(row, analysis, dataset, reference);
+      return {
+        ...row,
+        krxReviewReference: preliminary ? { ...reference, preliminary } : reference,
+      };
+    }),
   };
 }
