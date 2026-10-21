@@ -109,7 +109,12 @@ const PROPOSE_BUY_TOOL = {
         description: "Six-character Korean listing code (preserve leading zero), or US ticker",
       },
       name: { type: "string" },
-      market: { type: "string", enum: ["KOSPI", "KOSDAQ", "ETF", "US"], description: "Use ETF for Korean-listed ETFs; KOSPI/KOSDAQ for ordinary shares, US for US-listed stocks." },
+      market: {
+        type: "string",
+        enum: ["KOSPI", "KOSDAQ", "ETF", "US"],
+        description:
+          "Use ETF for Korean-listed ETFs; KOSPI/KOSDAQ for ordinary shares, US for US-listed stocks.",
+      },
       side: { type: "string", const: "BUY" },
       shares: { type: "integer", minimum: 1 },
       price: {
