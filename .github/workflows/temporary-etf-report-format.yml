@@ -1,0 +1,40 @@
+name: Format ETF report score PR (temporary)
+on:
+  push:
+    branches:
+      - fix/etf-report-score-continuity-20261021
+permissions:
+  contents: write
+jobs:
+  prettier:
+    if: "!contains(github.event.head_commit.message, 'format: ETF report score evidence')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/etf-report-score-continuity-20261021
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Format reviewed sources
+        run: |
+          npx prettier --write \
+            src/lib/etfReportScore.ts \
+            src/lib/etfReportScore.test.ts \
+            src/lib/analysisRunBundle.ts \
+            src/lib/screeningSnapshot.ts \
+            vitest.dashboard.config.ts
+      - name: Commit reviewed format
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/etfReportScore.ts src/lib/etfReportScore.test.ts \
+            src/lib/analysisRunBundle.ts src/lib/screeningSnapshot.ts vitest.dashboard.config.ts
+          if ! git diff --cached --quiet; then
+            git commit -m "format: ETF report score evidence"
+            git push origin HEAD:fix/etf-report-score-continuity-20261021
+          fi
