@@ -9,6 +9,7 @@ import {
   assistantTradeGross,
   type AssistantTradeProposal,
 } from "../lib/assistantActualTrade";
+import { newActualAsset } from "../lib/newActualPortfolio";
 import { readWebsiteDocument } from "../lib/ledger/websiteRepository.server";
 import { saveNewActualPortfolio, type NewActualDocument } from "../lib/newActualPortfolio.server";
 
@@ -307,7 +308,7 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
 
   const saved = await saveNewActualPortfolio(auth.client, auth.userId, {
     action: "execution",
-    asset: trade.market === "US" ? "US" : "KR",
+    asset: newActualAsset(trade.market),
     confirmed: true,
     accessToken: auth.accessToken,
     expectedRevision: snapshot.revision,
