@@ -195,42 +195,70 @@ describe("KRX previous-session preliminary; official engine is untouched", () =>
     ).toBeNull();
   });
 
-
   it("rejects unverified ETF price bars and strategy-invalid components even when scores are numeric", () => {
     const clean = bars();
     const partial = etf();
-    expect(calculateKrxPreliminary(partial, analysis,
-      dataset("069500", clean), reference("069500", 125e9))?.m0).toBeCloseTo(83.25);
+    expect(
+      calculateKrxPreliminary(
+        partial,
+        analysis,
+        dataset("069500", clean),
+        reference("069500", 125e9),
+      )?.m0,
+    ).toBeCloseTo(83.25);
     const badBar = bars();
     badBar[badBar.length - 22]!.priceSource = "TOSS_UNVERIFIED";
     const rawNumericButInvalid = etf({
       issues: ["수정주가 출처·120일 이력 확인 필요"],
     });
-    const invalid = calculateKrxPreliminary(rawNumericButInvalid, analysis,
-      dataset("069500", badBar), reference("069500", 125e9));
+    const invalid = calculateKrxPreliminary(
+      rawNumericButInvalid,
+      analysis,
+      dataset("069500", badBar),
+      reference("069500", 125e9),
+    );
     expect(invalid?.status).toBe("INCOMPLETE");
     expect(invalid?.m0).toBeNull();
     expect(invalid?.preliminaryOnset).toBeNull();
-    expect(invalid?.issues).toContain(
-      "당일 수정주가 120거래일 출처 미검증 · 예비 M0 산정 보류",
-    );
-    expect(calculateKrxPreliminary(etf({ issues: ["벤치마크 수익률 없음"] }),
-      analysis, dataset("069500", clean), reference("069500", 125e9))?.m0).toBeNull();
-    expect(calculateKrxPreliminary(etf({ issues: ["환경점수 데이터 없음"] }),
-      analysis, dataset("069500", clean), reference("069500", 125e9))?.m0).toBeNull();
+    expect(invalid?.issues).toContain("당일 수정주가 120거래일 출처 미검증 · 예비 M0 산정 보류");
+    expect(
+      calculateKrxPreliminary(
+        etf({ issues: ["벤치마크 수익률 없음"] }),
+        analysis,
+        dataset("069500", clean),
+        reference("069500", 125e9),
+      )?.m0,
+    ).toBeNull();
+    expect(
+      calculateKrxPreliminary(
+        etf({ issues: ["환경점수 데이터 없음"] }),
+        analysis,
+        dataset("069500", clean),
+        reference("069500", 125e9),
+      )?.m0,
+    ).toBeNull();
   });
 
   it("does not assert a cross from a numeric-but-ineligible prior official M0", () => {
     const missingPriorCap = bars();
     const prior = missingPriorCap.find((b) => b.tradeDate === previous)!;
     prior.marketCapSource = "";
-    expect(calculateKrxPreliminary(etf(), analysis,
-      dataset("069500", missingPriorCap), reference("069500", 125e9)))
-      .toMatchObject({ m0: 83.25, previousM0: 79, preliminaryOnset: null });
+    expect(
+      calculateKrxPreliminary(
+        etf(),
+        analysis,
+        dataset("069500", missingPriorCap),
+        reference("069500", 125e9),
+      ),
+    ).toMatchObject({ m0: 83.25, previousM0: 79, preliminaryOnset: null });
     const unverifiedPriorIndex = bars();
     unverifiedPriorIndex[unverifiedPriorIndex.length - 20]!.etfUnderlyingIndexSource = null;
-    const preview = calculateKrxPreliminary(etf(), analysis,
-      dataset("069500", unverifiedPriorIndex), reference("069500", 125e9));
+    const preview = calculateKrxPreliminary(
+      etf(),
+      analysis,
+      dataset("069500", unverifiedPriorIndex),
+      reference("069500", 125e9),
+    );
     expect(preview?.m0).toBeCloseTo(83.25);
     expect(preview?.preliminaryOnset).toBeNull();
     expect(preview?.issues).toContain(
@@ -238,18 +266,30 @@ describe("KRX previous-session preliminary; official engine is untouched", () =>
     );
     const priorUnverifiedPrice = bars();
     priorUnverifiedPrice[priorUnverifiedPrice.length - 100]!.priceSource = "";
-    expect(calculateKrxPreliminary(etf(), analysis,
-      dataset("069500", priorUnverifiedPrice), reference("069500", 125e9))
-      ?.preliminaryOnset).toBeNull();
+    expect(
+      calculateKrxPreliminary(
+        etf(),
+        analysis,
+        dataset("069500", priorUnverifiedPrice),
+        reference("069500", 125e9),
+      )?.preliminaryOnset,
+    ).toBeNull();
   });
 
   it("exports the same explicitly labeled and dated metrics that admitted the preliminary view", () => {
-    const preview = calculateKrxPreliminary(etf(), analysis,
-      dataset("069500", bars()), reference("069500", 125e9));
+    const preview = calculateKrxPreliminary(
+      etf(),
+      analysis,
+      dataset("069500", bars()),
+      reference("069500", 125e9),
+    );
     const fields = krxPreliminaryExportValues(preview);
-    const col = (name: string) => fields[KRX_PRELIMINARY_EXPORT_HEADERS.indexOf(
-      name as typeof KRX_PRELIMINARY_EXPORT_HEADERS[number],
-    )];
+    const col = (name: string) =>
+      fields[
+        KRX_PRELIMINARY_EXPORT_HEADERS.indexOf(
+          name as (typeof KRX_PRELIMINARY_EXPORT_HEADERS)[number],
+        )
+      ];
     expect(KRX_PRELIMINARY_EXPORT_HEADERS).toHaveLength(fields.length);
     expect(col("예비 M0 (확정 아님)")).toBeCloseTo(83.25);
     expect(col("예비 20일 평균 KRX 거래대금 (원)")).toBe(1.5e9);

@@ -71,11 +71,8 @@ function verifiedPreviousEtfObservation(
   if (through.length < 120) return false;
   const byDate = new Map(bars.filter((b) => b.tradeDate <= priorDate).map((b) => [b.tradeDate, b]));
   const priced = through.slice(-120).map((d) => byDate.get(d));
-  if (
-    !priced.every(
-      (b) => b?.priceSource === "TOSS_ADJUSTED_CANDLE" && positive(b.close),
-    )
-  ) return false;
+  if (!priced.every((b) => b?.priceSource === "TOSS_ADJUSTED_CANDLE" && positive(b.close)))
+    return false;
   const priorBar = byDate.get(priorDate);
   return (
     priorBar?.marketCapSource === "KRX_ETF" &&
@@ -215,8 +212,7 @@ export function calculateKrxPreliminary(
   const technical = priceSourceVerified ? partial.technical : null;
   const priority = priceSourceVerified ? partial.priority : null;
   const environment = priceSourceVerified ? partial.environment : null;
-  if (!priceSourceVerified)
-    issues.push("당일 수정주가 120거래일 출처 미검증 · 예비 M0 산정 보류");
+  if (!priceSourceVerified) issues.push("당일 수정주가 120거래일 출처 미검증 · 예비 M0 산정 보류");
   if (technical === null || priority === null || environment === null)
     issues.push("당일 기술·Priority·환경점수 중 미확정 항목 존재");
   const m0 =
@@ -228,12 +224,7 @@ export function calculateKrxPreliminary(
   // supported by dated price, cap, turnover and underlying-index history.
   const previousM0 =
     strategy.previousDate === previous ? numericScore(strategy.previousScore) : null;
-  const previousEligible = verifiedPreviousEtfObservation(
-    bars,
-    calendar,
-    previous,
-    previousM0,
-  );
+  const previousEligible = verifiedPreviousEtfObservation(bars, calendar, previous, previousM0);
   const preliminaryOnset =
     m0 !== null && previousM0 !== null && previousEligible
       ? previousM0 < ETF_POLICY.entryScore && m0 >= ETF_POLICY.entryScore
@@ -298,7 +289,9 @@ export function krxPreliminaryExportValues(
     preliminary.marketCap,
     preliminary.preliminaryOnset === null || preliminary.preliminaryOnset === undefined
       ? "판정 불가"
-      : preliminary.preliminaryOnset ? "예비 돌파" : "예비 비돌파",
+      : preliminary.preliminaryOnset
+        ? "예비 돌파"
+        : "예비 비돌파",
     preliminary.priceDate,
     preliminary.marketCapDate,
     preliminary.tradingValueThrough ?? null,

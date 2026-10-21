@@ -333,7 +333,12 @@ export function EtfScreener({
   const downloadCsv = () => {
     const quote = (v: unknown) => `"${String(v ?? "").replaceAll('"', '""')}"`;
     const body = [
-      ["기준일", "전략 버전", ...ETF_TABLE_COLUMNS.map((c) => c.label), ...KRX_PRELIMINARY_EXPORT_HEADERS],
+      [
+        "기준일",
+        "전략 버전",
+        ...ETF_TABLE_COLUMNS.map((c) => c.label),
+        ...KRX_PRELIMINARY_EXPORT_HEADERS,
+      ],
       ...shown.map((r) => [
         analysis.asOfDate,
         ETF_POLICY.version,
