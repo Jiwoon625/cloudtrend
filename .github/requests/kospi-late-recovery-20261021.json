@@ -1,9 +1,9 @@
 {
   "version": "kospi-preopen-late-v1",
-  "mode": "dry-run",
+  "mode": "apply",
   "dates": [
     "2026-10-19",
     "2026-10-20"
   ],
-  "expectedPlan": null
+  "expectedPlan": "sha256:a4d85b76395e628a349ac44dd0e0ae353b5fe84339b001e4a0a0c90563186923"
 }
