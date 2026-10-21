@@ -104,7 +104,6 @@ describe("Assistant actual trade proposals", () => {
     { date: "2026-10-17" },
     { date: "2026-11-26" },
     { date: "2026-12-25" },
-    { date: "2027-01-04" }, // reviewed US coverage ends in 2026
     { symbol: "AAPL!" },
     { accountLabel: "ISA" },
     { price: 1.123456789 },
@@ -112,6 +111,21 @@ describe("Assistant actual trade proposals", () => {
   ])("rejects invalid US evidence %s", (change) => {
     expect(() =>
       parseAssistantActualBuy({ ...us, ...change }, new Date("2027-01-05T20:00:00Z")),
+    ).toThrow();
+  });
+  it("accepts reviewed 2027 sessions for both markets and rejects listed closures", () => {
+    const nextYear = new Date("2027-07-20T20:00:00Z");
+    expect(() => parseAssistantActualBuy({ ...us, date: "2027-01-04" }, nextYear)).not.toThrow();
+    expect(() => parseAssistantActualBuy({ ...valid, date: "2027-07-20" }, nextYear)).not.toThrow();
+    for (const date of ["2027-01-01", "2027-03-26", "2027-11-25", "2027-12-24"])
+      expect(() => parseAssistantActualBuy({ ...us, date }, nextYear)).toThrow();
+    for (const date of ["2027-05-03", "2027-07-19", "2027-09-15", "2027-12-27"])
+      expect(() => parseAssistantActualBuy({ ...valid, date }, nextYear)).toThrow();
+    expect(() =>
+      parseAssistantActualBuy({ ...valid, date: "2028-01-03" }, new Date("2028-01-04T20:00:00Z")),
+    ).toThrow();
+    expect(() =>
+      parseAssistantActualBuy({ ...us, date: "2028-01-03" }, new Date("2028-01-04T20:00:00Z")),
     ).toThrow();
   });
   it("does not confuse the same ticker and amounts across markets", () => {
