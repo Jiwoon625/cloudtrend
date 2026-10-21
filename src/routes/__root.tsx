@@ -104,12 +104,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css",
       },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
-      {
-        rel: "preload",
-        as: "image",
-        type: "image/webp",
-        href: "/__l5e/assets-v1/3e241d12-3df0-4242-9713-123a16a9259d/login-bg.webp",
-      },
     ],
   }),
   shellComponent: RootShell,
