@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { validDate } from "./ledger/date";
-import { fromLegacyNumber, representedLegacyNumber } from "./ledger/decimal";
+import { actualNumber as fromLegacyNumber, actualGross } from "./actualMoney";
 
 const safeMoney = z
   .number()
@@ -56,7 +56,7 @@ const execution = z
     if (!validSymbol)
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "시장에 맞는 종목코드를 확인하세요." });
     try {
-      representedLegacyNumber(value.price * value.shares);
+      actualGross(value.price, value.shares);
     } catch {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

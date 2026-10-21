@@ -245,11 +245,27 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
       409,
     );
   // Keep PROCESSING on ambiguous failures, so retries cannot race the original.
-  const snapshot = await readWebsiteDocument<NewActualDocument>(
-    auth.client,
-    auth.userId,
-    trade.market === "US" ? "us_actual_portfolio_ledgers" : "portfolio_ledgers",
-  );
+  const target = trade.market === "US" ? "us_actual_portfolio_ledgers" : "portfolio_ledgers";
+  const [snapshot, other] = await Promise.all([
+    readWebsiteDocument<NewActualDocument>(auth.client, auth.userId, target),
+    readWebsiteDocument<NewActualDocument>(
+      auth.client,
+      auth.userId,
+      target === "portfolio_ledgers" ? "us_actual_portfolio_ledgers" : "portfolio_ledgers",
+    ),
+  ]);
+  if (
+    other?.payload.executions.some((e) =>
+      sourceEvidenceMatches(
+        proposal.source_page_id,
+        e,
+        other.payload.newActualPortfolio?.assignments?.[e.id],
+      ),
+    )
+  ) {
+    await releaseClaim(auth.client, proposal, token);
+    return reply({ error: "다른 시장 원장에 동일한 Notion 증빙이 이미 있습니다." }, 409);
+  }
   if (!snapshot) {
     await releaseClaim(auth.client, proposal, token);
     return reply({ error: "실제 원장 준비 상태를 확인할 수 없습니다." }, 409);
@@ -306,33 +322,38 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
     );
   }
 
-  const saved = await saveNewActualPortfolio(auth.client, auth.userId, {
-    action: "execution",
-    asset: newActualAsset(trade.market),
-    confirmed: true,
-    accessToken: auth.accessToken,
-    expectedRevision: snapshot.revision,
-    requestId: proposal.id,
-    execution: {
-      id: "",
-      date: trade.date,
-      name: trade.name,
-      side: "BUY",
-      market: trade.market,
-      symbol: trade.symbol,
-      shares: trade.shares,
-      price: trade.price,
-      fee: trade.fee,
-      note: `${trade.accountLabel} 실제매수 · ChatGPT 제안 / Notion 증빙 소유자 확인`,
+  const saved = await saveNewActualPortfolio(
+    auth.client,
+    auth.userId,
+    {
+      action: "execution",
+      asset: newActualAsset(trade.market),
+      confirmed: true,
+      accessToken: auth.accessToken,
+      expectedRevision: snapshot.revision,
+      requestId: proposal.id,
+      execution: {
+        id: "",
+        date: trade.date,
+        name: trade.name,
+        side: "BUY",
+        market: trade.market,
+        symbol: trade.symbol,
+        shares: trade.shares,
+        price: trade.price,
+        fee: trade.fee,
+        note: `${trade.accountLabel} 실제매수 · ChatGPT 제안 / Notion 증빙 소유자 확인`,
+      },
+      allocation: {
+        quantity: trade.shares,
+        gross: assistantTradeGross(trade),
+        fee: trade.fee,
+        brokerReference: "notion:" + trade.sourcePageId,
+      },
     },
-    allocation: {
-      quantity: trade.shares,
-      gross: assistantTradeGross(trade),
-      fee: trade.fee,
-      brokerReference: "notion:" + trade.sourcePageId,
-    },
-  });
-  await markRecorded(auth.client, proposal, token);
+    undefined,
+    { proposalId: proposal.id, token },
+  );
   return reply({
     ok: true,
     status: "RECORDED",

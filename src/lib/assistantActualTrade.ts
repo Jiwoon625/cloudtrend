@@ -3,7 +3,7 @@ import { ACTUAL_PERFORMANCE_START } from "./ledger/actualPerformance";
 import { validDate } from "./ledger/date";
 import { isReviewedKrSession } from "./assistantTradeSessions";
 import calendarEvidence from "./assistantActualTradeCalendarEvidence.json";
-import { fromLegacyNumber, representedLegacyNumber } from "./ledger/decimal";
+import { actualNumber as fromLegacyNumber, actualGross } from "./actualMoney";
 
 /**
  * GPT only proposes an evidenced fill. Actual ledger writes require an
@@ -78,7 +78,7 @@ export function parseAssistantActualBuy(value: unknown, now = new Date()): Assis
     try {
       fromLegacyNumber(data.price);
       fromLegacyNumber(data.fee);
-      representedLegacyNumber(data.price * data.shares);
+      assistantTradeGross(data);
     } catch {
       throw new Error("달러 단가·수수료는 안전한 범위의 소수점 8자리 이하로 입력하세요.");
     }
@@ -109,7 +109,7 @@ export function parseAssistantActualBuy(value: unknown, now = new Date()): Assis
 
 /** Match the canonical journal's eight-decimal representation, including USD fills. */
 export function assistantTradeGross(trade: Pick<AssistantActualBuy, "price" | "shares">) {
-  return Number(representedLegacyNumber(trade.price * trade.shares));
+  return actualGross(trade.price, trade.shares);
 }
 
 export function formatAssistantTradeMoney(value: number, market: AssistantActualBuy["market"]) {

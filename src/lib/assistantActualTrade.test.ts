@@ -218,3 +218,10 @@ describe("Assistant actual trade proposals", () => {
     ).toBe(false);
   });
 });
+
+describe("exact approval notionals", () => {
+  it("multiplies the eight-place unit price before number conversion", () => {
+    expect(assistantTradeGross({ price: 123.45678912, shares: 1_000_000 })).toBe(123456789.12);
+    expect(assistantTradeGross({ price: 0.00000001, shares: 1_000_000 })).toBe(0.01);
+  });
+});

@@ -559,3 +559,47 @@ describe("new-only portfolio persistence", () => {
     expect(db.writes).toHaveLength(1);
   });
 });
+
+it("saves exact USD gross and approval through one atomic RPC", async () => {
+  const request = buy({ asset: "US", expectedRevision: 7 });
+  request.execution = {
+    ...request.execution,
+    market: "US",
+    symbol: "MSFT",
+    price: 123.45678912,
+    shares: 1_000_000,
+  };
+  request.allocation = {
+    quantity: 1_000_000,
+    gross: 123456789.12,
+    fee: 1,
+    brokerReference: "notion:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  };
+  const rpc = vi.fn(async (_name: string, args: Record<string, unknown>) => {
+    state.rows[us] = {
+      revision: 8,
+      payload: structuredClone(args["p_payload"]) as NewActualDocument,
+    };
+    return { data: { revision: 8 }, error: null };
+  });
+  const db = { rpc, from: vi.fn() } as unknown as SupabaseClient;
+  await saveNewActualPortfolio(db, uid, request, now, {
+    proposalId: request.requestId,
+    token: "claim",
+  });
+  expect(rpc).toHaveBeenCalledTimes(1);
+  expect(rpc).toHaveBeenCalledWith(
+    "assistant_trade_commit",
+    expect.objectContaining({
+      p_source: us,
+      p_revision: 7,
+      p_id: request.requestId,
+      p_token: "claim",
+    }),
+  );
+  expect(db.from).not.toHaveBeenCalled();
+  expect(
+    state.rows[us]!.payload.newActualPortfolio!.assignments["new-actual:" + request.requestId]!
+      .gross,
+  ).toBe(123456789.12);
+});
