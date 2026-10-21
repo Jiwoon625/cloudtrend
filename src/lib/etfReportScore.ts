@@ -1,4 +1,5 @@
-import type { ScreeningRow } from "./engine/pipeline";
+import type { AnalysisResult, ScreeningRow } from "./engine/pipeline";
+import type { ScreeningSnapshot, SnapshotEntry } from "./screeningSnapshot";
 import { ETF_POLICY, ETF_MAPPING, isEtfStrategyAssetClass } from "./engine/etfStrategy";
 
 export type EtfReportScoreStatus =
@@ -43,7 +44,7 @@ export function etfReportScore(row: ScreeningRow, sessionDate: string): EtfRepor
     isEtfStrategyAssetClass(ETF_MAPPING[row.instrument.symbol]) &&
     !row.instrument.isLeveraged &&
     !row.instrument.isInverse;
-  const validSession = s?.date === sessionDate && s?.version === ETF_POLICY.version;
+  const validSession = s !== undefined && s.date === sessionDate && s.version === ETF_POLICY.version;
   const finalM0 = validSession && s.dataStatus === "ready" && validScore(s.score) ? s.score : null;
   const prelim = row.krxReviewReference?.preliminary;
   const preview =
@@ -56,7 +57,7 @@ export function etfReportScore(row: ScreeningRow, sessionDate: string): EtfRepor
       ? prelim
       : null;
   const previousDate =
-    validSession && s.previousDate && s.previousDate < sessionDate ? s.previousDate : null;
+    validSession && s?.previousDate && s.previousDate < sessionDate ? s.previousDate : null;
   const previousScore = previousDate && validScore(s.previousScore) ? s.previousScore : null;
   const scoreStatus: EtfReportScoreStatus = !target
     ? "NOT_STRATEGY_TARGET"
@@ -135,5 +136,37 @@ export function etfReportScoreSummary(rows: readonly ScreeningRow[], date: strin
     instructions:
       "Use evidence.etfReportScore.confirmedM0 for official Final. Read-only preliminaryM0 is not a confirmed entry, exit or order. priorSessionScoreReference is historical and requires independent prior-Final verification; never display totalScore=0 as the current ETF M0 when official score is null.",
     topReferenceEtfs: ranked,
+  };
+}
+
+/**
+ * Attach report evidence only AFTER the frozen core snapshot has been built.
+ * This wrapper is never used by MODEL, economic replay, or actual executions.
+ */
+export function appendEtfReportEvidence(
+  snapshot: ScreeningSnapshot,
+  analysis: Pick<AnalysisResult,"asOfDate"|"rows">,
+): ScreeningSnapshot {
+  if (!snapshot.runId || snapshot.market !== "KR") return snapshot;
+  if (snapshot.asOfDate !== analysis.asOfDate)
+    throw new Error("ETF report evidence session mismatch");
+  const bySymbol = new Map(
+    analysis.rows.filter(row=>row.instrument.instrumentType==="ETF")
+      .map(row=>[row.instrument.symbol,row]),
+  );
+  const withEvidence=(entry: SnapshotEntry): SnapshotEntry => {
+    if(entry.instrumentType!=="ETF")return entry;
+    const row=bySymbol.get(entry.symbol);
+    if (!row) return entry;
+    const scored=etfReportScore(row,analysis.asOfDate);
+    return scored===null?entry:{
+      ...entry,
+      evidence:{...entry.evidence,etfReportScore:scored},
+    };
+  };
+  return {
+    ...snapshot,
+    entries:snapshot.entries.map(withEvidence),
+    ...(snapshot.topEtfs?{topEtfs:snapshot.topEtfs.map(withEvidence)}:{}),
   };
 }
