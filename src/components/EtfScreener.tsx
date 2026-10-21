@@ -240,7 +240,7 @@ export function EtfScreener({
         (filter === "partial" || filter === "technical" || filter === "preliminary") &&
         e.krxPending;
       const relevantScore =
-        filter === "preliminary" && preview?.kind === "ETF" ? preview.m0 : e.score;
+        filter === "preliminary" && preview?.kind === "ETF" ? (preview.m0 ?? null) : e.score;
       if (!matchesEtfReviewMinimum(relevantScore, minimums.score, partialReview)) return false;
       if (
         minimums.environment > 0 &&
@@ -283,7 +283,7 @@ export function EtfScreener({
       if (filter === "partial") return evidenceFor(r).krxPending;
       if (filter === "preliminary")
         return (
-          preview?.kind === "ETF" && preview.m0 !== null && preview.m0 >= ETF_POLICY.entryScore
+          preview?.kind === "ETF" && typeof preview.m0 === "number" && preview.m0 >= ETF_POLICY.entryScore
         );
       if (filter === "rejected") return s?.entryState === "rejected";
       if (filter === "exit")
@@ -598,7 +598,7 @@ export function EtfScreener({
                         r.krxReviewReference?.preliminary?.kind === "ETF" &&
                         r.krxReviewReference.preliminary.m0 !== null ? (
                           <div className="text-xs font-normal text-muted-foreground">
-                            예비 {scoreText(r.krxReviewReference.preliminary.m0)} · 전일 KRX
+                            예비 {scoreText(r.krxReviewReference.preliminary.m0 ?? null)} · 전일 KRX
                           </div>
                         ) : null}
                       </td>
@@ -619,7 +619,7 @@ export function EtfScreener({
                         r.krxReviewReference?.preliminary?.kind === "ETF" &&
                         r.krxReviewReference.preliminary.healthPoints !== null ? (
                           <div className="text-muted-foreground">
-                            예비 {scoreText(r.krxReviewReference.preliminary.healthPoints)}
+                            예비 {scoreText(r.krxReviewReference.preliminary.healthPoints ?? null)}
                           </div>
                         ) : null}
                       </td>
