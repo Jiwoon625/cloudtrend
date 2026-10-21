@@ -63,8 +63,7 @@ export function etfReportScore(row: ScreeningRow, sessionDate: string): EtfRepor
   const previousDate =
     target && validSession && priorDate && priorDate < sessionDate ? priorDate : null;
   const priorRawScore = s?.previousScore ?? null;
-  const previousScore =
-    previousDate && validScore(priorRawScore) ? priorRawScore : null;
+  const previousScore = previousDate && validScore(priorRawScore) ? priorRawScore : null;
   const scoreStatus: EtfReportScoreStatus = !target
     ? "NOT_STRATEGY_TARGET"
     : finalM0 !== null
