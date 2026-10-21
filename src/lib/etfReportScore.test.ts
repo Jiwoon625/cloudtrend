@@ -121,7 +121,12 @@ describe("ETF report-only score evidence", () => {
     });
     // This synthetic analysis may have a different asOfDate from the fixture.
     // The new report field must not alter any existing operational decisions.
-    expect(archive.entries.map(({ evidence, ...entry }) => entry)).toEqual(model.entries);
+    // Published run entries have an additional market identifier for evidence.
+    // Compare the actual strategy/technical fields after removing report-only
+    // evidence and the established run-specific market display field.
+    const withoutReportOnly = (entries: typeof archive.entries) =>
+      entries.map(({ evidence: _evidence, market: _market, ...entry }) => entry);
+    expect(withoutReportOnly(archive.entries)).toEqual(withoutReportOnly(model.entries));
     expect(buildScreeningSummary(analysis, archive, null).etfScoreContinuity).toMatchObject({
       noAvailableScoreIsNotZero: true,
     });
