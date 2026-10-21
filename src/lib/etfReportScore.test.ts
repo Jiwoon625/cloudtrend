@@ -3,8 +3,8 @@ import { getMockDataset } from "./engine/mockProvider";
 import { runAnalysis } from "./engine/pipeline";
 import { ETF_POLICY } from "./engine/etfStrategy";
 import { buildSnapshot } from "./screeningSnapshot";
-import { buildScreeningSummary } from "./analysisRunBundle";
-import { etfReportScore, etfReportScoreSummary } from "./etfReportScore";
+
+import { appendEtfReportEvidence, etfReportScore, etfReportScoreSummary } from "./etfReportScore";
 import type { ScreeningRow } from "./engine/pipeline";
 
 const date = "2026-10-21";
@@ -113,7 +113,10 @@ describe("ETF report-only score evidence", () => {
     row!.krxReviewReference = etf().krxReviewReference;
     const model = buildSnapshot(analysis);
     expect(model.entries.find((e) => e.symbol === "218420")?.evidence).toBeUndefined();
-    const archive = buildSnapshot(analysis, undefined, "synthetic-run");
+    const originalRun = buildSnapshot(analysis, undefined, "synthetic-run");
+    expect(originalRun.entries.find((e) => e.symbol === "218420")?.evidence?.etfReportScore)
+      .toBeUndefined();
+    const archive = appendEtfReportEvidence(originalRun, analysis);
     const saved = archive.entries.find((e) => e.symbol === "218420");
     expect(saved?.evidence?.etfReportScore).toMatchObject({
       type: "ETF_M0_REPORT_EVIDENCE_V1",
@@ -127,9 +130,10 @@ describe("ETF report-only score evidence", () => {
     const withoutReportOnly = (entries: typeof archive.entries) =>
       entries.map(({ evidence: _evidence, market: _market, ...entry }) => entry);
     expect(withoutReportOnly(archive.entries)).toEqual(withoutReportOnly(model.entries));
-    expect(buildScreeningSummary(analysis, archive, null).etfScoreContinuity).toMatchObject({
+    expect(etfReportScoreSummary(analysis.rows, analysis.asOfDate)).toMatchObject({
       noAvailableScoreIsNotZero: true,
     });
+    expect(appendEtfReportEvidence(model, analysis)).toBe(model);
   });
   it("bounds summary to 25 representative ETFs rather than writing huge arrays", () => {
     const candidates = Array.from({ length: 40 }, (_, n) => {
