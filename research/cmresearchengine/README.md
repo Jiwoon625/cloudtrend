@@ -123,8 +123,10 @@ A time cap pauses at a complete event boundary; it does not mark a partial path
 complete. Failed events cannot publish a poisoned state.
 
 Results and checkpoints remain in private Storage. Public Actions logs contain
-status/counts only. Private files are not uploaded to Actions artifacts or
-caches. Completed result ZIPs contain NAV, orders, ledger events, demands,
+status/counts only. Plaintext private files are not uploaded to Actions artifacts
+or caches. The main manual workflow reuses AES-256-GCM encrypted input/evidence
+objects between jobs; see the runbook for key scoping and integrity checks.
+Completed result ZIPs contain NAV, orders, ledger events, demands,
 reviews, metrics and the explicit proxy audit. Private `results/` summary and
 completion indexes point to the verified output blobs.
 

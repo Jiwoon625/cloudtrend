@@ -60,6 +60,21 @@ jobs:
           python-version: '3.12.14'
       - name: Install pinned dependencies
         run: python -m pip install --disable-pip-version-check -r research/cmresearchengine/requirements.txt
+      - name: Identify encrypted input cache
+        id: input-cache-key
+        env:
+          CACHE_CONTRACT: ${{ hashFiles('research/cmresearchengine/cmresearchengine/ingest.py', 'research/cmresearchengine/transport_cache/*.py', 'research/cmresearchengine/transport_cache/*.mjs') }}
+        run: |
+          echo "CM_ENCRYPTED_INPUT_CACHE=$RUNNER_TEMP/cm-input-ciphertext" >> "$GITHUB_ENV"
+          scope=$(node research/cmresearchengine/transport_cache/cache_cipher.mjs key)
+          echo "prefix=cm-input-aesgcm-v1-${CACHE_CONTRACT}-${scope}" >> "$GITHUB_OUTPUT"
+      - name: Restore ciphertext only
+        id: input-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/cm-input-ciphertext/*.enc
+          key: ${{ steps.input-cache-key.outputs.prefix }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ${{ steps.input-cache-key.outputs.prefix }}-
       - name: Resolve bounded research request
         id: request
         env:
@@ -100,7 +115,7 @@ jobs:
           CM_HYBRID_SHARED_US_ANALYSIS: ${{ steps.request.outputs.hybrid_shared_us_analysis }}
         run: |
           df -PB1 "$RUNNER_TEMP"
-          cmd=(python -m cmresearchengine.cli "$CM_MODE" \
+          cmd=(python -m transport_cache "$CM_MODE" \
             --stage "$CM_STAGE" --offset "$CM_OFFSET" --count "$CM_COUNT" \
             --max-seconds "$CM_MAX_SECONDS" --workers "$CM_WORKERS" \
             --work "$RUNNER_TEMP/cm-private/work")
@@ -110,5 +125,19 @@ jobs:
           fi
           /usr/bin/time -v "${cmd[@]}"
           df -PB1 "$RUNNER_TEMP"
-      # Private inputs, NAV, holdings, evidence, and checkpoints never enter
-      # public Actions artifacts or public caches. Storage alone persists them.
+      - name: Check whether encrypted cache needs saving
+        if: always() && steps.input-cache-key.outcome == 'success'
+        id: input-cache-save
+        run: |
+          if [ -f "$CM_ENCRYPTED_INPUT_CACHE/repair-needed" ]; then
+            rm "$CM_ENCRYPTED_INPUT_CACHE/repair-needed"
+            echo 'repaired=true' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Persist authenticated ciphertext only
+        if: always() && steps.input-cache-key.outcome == 'success' && (steps.input-cache.outputs.cache-matched-key == '' || steps.input-cache-save.outputs.repaired == 'true')
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/cm-input-ciphertext/*.enc
+          key: ${{ steps.input-cache-key.outputs.prefix }}-${{ github.run_id }}-${{ github.run_attempt }}
+      # Only encrypted, hash-pinned input/evidence objects are cached. Plaintext,
+      # credentials, NAV, holdings, results and checkpoints are never cached.
