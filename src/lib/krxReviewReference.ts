@@ -16,6 +16,8 @@ export interface KrxReviewObservation {
   values: Partial<Record<KrxReviewField, number | string | null>>;
 }
 export interface KrxReviewReference {
+  /** Preview sidecar only; never official scoring/order/shadow evidence. */
+  preliminary?: import("./krxPreliminary").KrxPreliminary;
   reviewDate: string;
   fields: Partial<
     Record<

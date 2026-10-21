@@ -30,6 +30,7 @@ export default defineConfig({
       "src/components/historyEntryPresentation.test.ts",
       "src/components/BreakdownTable.test.tsx",
       "src/lib/krxReviewReference.test.ts",
+      "src/lib/krxPreliminary.test.ts",
       "tests/web-screening-server-only.test.ts",
       "src/components/KrxReviewReferenceDetails.test.tsx",
       "src/components/DomesticAssessmentPanel.test.tsx",
