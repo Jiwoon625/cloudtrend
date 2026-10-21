@@ -59,14 +59,17 @@ describe("Assistant actual trade proposals", () => {
         name: "KODEX KOFR",
         market: "KOSPI",
         shares: 17,
-        price: 1884702 / 17,
+        price: 110864.82352941,
         fee: 68,
       },
       new Date("2026-10-21T07:00:00Z"),
     );
     const trade = normalizeAssistantTradeMarket(evidence, { market: "KOSPI", assetType: "ETF" });
     expect(trade.market).toBe("ETF");
-    expect(assistantTradeGross(trade)).toBe(1884702);
+    expect(assistantTradeGross(trade)).toBeCloseTo(1884702, 6);
+    expect(() =>
+      parseAssistantActualBuy({ ...evidence, price: 1884702 / 17 }, new Date("2026-10-21T07:00:00Z")),
+    ).toThrow();
     expect(normalizeAssistantTradeMarket(trade, { market: "KOSPI", assetType: "ETF" })).toEqual(
       trade,
     );
