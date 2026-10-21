@@ -250,7 +250,7 @@ export function EtfScreener({
       if (
         !matchesEtfReviewMinimum(
           filter === "preliminary" && preview?.kind === "ETF"
-            ? preview.averageTradingValue20 ?? null
+            ? (preview.averageTradingValue20 ?? null)
             : e.averageTradingValue20,
           minimums.tradingValue * 100_000_000,
           partialReview,
@@ -282,7 +282,9 @@ export function EtfScreener({
         );
       if (filter === "partial") return evidenceFor(r).krxPending;
       if (filter === "preliminary")
-        return preview?.kind === "ETF" && preview.m0 !== null && preview.m0 >= ETF_POLICY.entryScore;
+        return (
+          preview?.kind === "ETF" && preview.m0 !== null && preview.m0 >= ETF_POLICY.entryScore
+        );
       if (filter === "rejected") return s?.entryState === "rejected";
       if (filter === "exit")
         return (
@@ -491,10 +493,10 @@ export function EtfScreener({
       </div>
       {filter === "partial" || filter === "technical" || filter === "preliminary" ? (
         <p className="text-xs text-warn" role="status">
-          KRX 대기 중에는 실제 관측된 전일 시총·20일 거래대금으로 계산한 예비 M0를
-          최종 M0와 분리해 표시합니다. 예비 M0 80점 이상은 최종 진입 준비가 아니며,
-          다음 아침 새 KRX 자료로 확정해야 합니다. 미확인 값은 부분 보기에서 필터 제외되고
-          필터값은 유지되며, 다른 보기에서는 기존 최종 기준을 적용합니다.
+          KRX 대기 중에는 실제 관측된 전일 시총·20일 거래대금으로 계산한 예비 M0를 최종 M0와 분리해
+          표시합니다. 예비 M0 80점 이상은 최종 진입 준비가 아니며, 다음 아침 새 KRX 자료로 확정해야
+          합니다. 미확인 값은 부분 보기에서 필터 제외되고 필터값은 유지되며, 다른 보기에서는 기존
+          최종 기준을 적용합니다.
         </p>
       ) : null}
       {unknownExit ? (
@@ -592,7 +594,8 @@ export function EtfScreener({
                       <td className="p-3 font-semibold">
                         {scoreText(e.score)}
                         {e.krxPending && <div className="text-xs font-normal">KRX 자료 대기</div>}
-                        {e.score === null && r.krxReviewReference?.preliminary?.kind === "ETF" &&
+                        {e.score === null &&
+                        r.krxReviewReference?.preliminary?.kind === "ETF" &&
                         r.krxReviewReference.preliminary.m0 !== null ? (
                           <div className="text-xs font-normal text-muted-foreground">
                             예비 {scoreText(r.krxReviewReference.preliminary.m0)} · 전일 KRX
@@ -612,7 +615,8 @@ export function EtfScreener({
                       <td className="p-3">
                         {scoreText(e.health)}
                         {e.krxPending && <div className="text-xs">KRX 시총·거래대금 미확인</div>}
-                        {e.health === null && r.krxReviewReference?.preliminary?.kind === "ETF" &&
+                        {e.health === null &&
+                        r.krxReviewReference?.preliminary?.kind === "ETF" &&
                         r.krxReviewReference.preliminary.healthPoints !== null ? (
                           <div className="text-muted-foreground">
                             예비 {scoreText(r.krxReviewReference.preliminary.healthPoints)}
@@ -658,8 +662,12 @@ export function EtfScreener({
                         r.krxReviewReference?.preliminary?.kind === "ETF" &&
                         r.krxReviewReference.preliminary.averageTradingValue20 !== null ? (
                           <div className="text-muted-foreground">
-                            예비 {num(r.krxReviewReference.preliminary.averageTradingValue20! / 100_000_000, 1)}억
-                            · {r.krxReviewReference.preliminary.tradingValueThrough}
+                            예비{" "}
+                            {num(
+                              r.krxReviewReference.preliminary.averageTradingValue20! / 100_000_000,
+                              1,
+                            )}
+                            억 · {r.krxReviewReference.preliminary.tradingValueThrough}
                           </div>
                         ) : null}
                       </td>
