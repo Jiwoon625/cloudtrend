@@ -283,7 +283,9 @@ export function EtfScreener({
       if (filter === "partial") return evidenceFor(r).krxPending;
       if (filter === "preliminary")
         return (
-          preview?.kind === "ETF" && typeof preview.m0 === "number" && preview.m0 >= ETF_POLICY.entryScore
+          preview?.kind === "ETF" &&
+          typeof preview.m0 === "number" &&
+          preview.m0 >= ETF_POLICY.entryScore
         );
       if (filter === "rejected") return s?.entryState === "rejected";
       if (filter === "exit")
