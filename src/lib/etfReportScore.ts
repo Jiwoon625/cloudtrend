@@ -2,11 +2,7 @@ import type { ScreeningRow } from "./engine/pipeline";
 import { ETF_POLICY, ETF_MAPPING, isEtfStrategyAssetClass } from "./engine/etfStrategy";
 
 export type EtfReportScoreStatus =
-  | "FINAL"
-  | "PRELIMINARY"
-  | "PREVIOUS_REFERENCE"
-  | "UNAVAILABLE"
-  | "NOT_STRATEGY_TARGET";
+  "FINAL" | "PRELIMINARY" | "PREVIOUS_REFERENCE" | "UNAVAILABLE" | "NOT_STRATEGY_TARGET";
 
 /**
  * Snapshot/report-only evidence. Crucially, null means "not calculated", not
@@ -40,10 +36,7 @@ function validScore(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100;
 }
 
-export function etfReportScore(
-  row: ScreeningRow,
-  sessionDate: string,
-): EtfReportScore | null {
+export function etfReportScore(row: ScreeningRow, sessionDate: string): EtfReportScore | null {
   if (row.instrument.instrumentType !== "ETF") return null;
   const s = row.etfStrategy;
   const target =
@@ -51,28 +44,43 @@ export function etfReportScore(
     !row.instrument.isLeveraged &&
     !row.instrument.isInverse;
   const validSession = s?.date === sessionDate && s?.version === ETF_POLICY.version;
-  const finalM0 = validSession && s.dataStatus === "ready" && validScore(s.score)
-    ? s.score : null;
+  const finalM0 = validSession && s.dataStatus === "ready" && validScore(s.score) ? s.score : null;
   const prelim = row.krxReviewReference?.preliminary;
-  const preview = validSession && target && prelim?.kind === "ETF" &&
-    prelim.priceDate === sessionDate && prelim.status === "ESTIMATE" &&
-    validScore(prelim.m0) ? prelim : null;
-  const previousDate = validSession && s.previousDate && s.previousDate < sessionDate
-    ? s.previousDate : null;
-  const previousScore = previousDate && validScore(s.previousScore)
-    ? s.previousScore : null;
-  const scoreStatus: EtfReportScoreStatus =
-    !target ? "NOT_STRATEGY_TARGET" : finalM0 !== null ? "FINAL"
-      : preview !== null ? "PRELIMINARY"
-        : previousScore !== null ? "PREVIOUS_REFERENCE"
-          : "UNAVAILABLE";
-  const referenceScore = scoreStatus === "FINAL" ? finalM0
-    : scoreStatus === "PRELIMINARY" ? preview!.m0 ?? null
-      : scoreStatus === "PREVIOUS_REFERENCE" ? previousScore
-        : null;
-  const referenceDate = scoreStatus === "PREVIOUS_REFERENCE" ? previousDate
-    : scoreStatus === "FINAL" || scoreStatus === "PRELIMINARY" ? sessionDate
+  const preview =
+    validSession &&
+    target &&
+    prelim?.kind === "ETF" &&
+    prelim.priceDate === sessionDate &&
+    prelim.status === "ESTIMATE" &&
+    validScore(prelim.m0)
+      ? prelim
       : null;
+  const previousDate =
+    validSession && s.previousDate && s.previousDate < sessionDate ? s.previousDate : null;
+  const previousScore = previousDate && validScore(s.previousScore) ? s.previousScore : null;
+  const scoreStatus: EtfReportScoreStatus = !target
+    ? "NOT_STRATEGY_TARGET"
+    : finalM0 !== null
+      ? "FINAL"
+      : preview !== null
+        ? "PRELIMINARY"
+        : previousScore !== null
+          ? "PREVIOUS_REFERENCE"
+          : "UNAVAILABLE";
+  const referenceScore =
+    scoreStatus === "FINAL"
+      ? finalM0
+      : scoreStatus === "PRELIMINARY"
+        ? (preview!.m0 ?? null)
+        : scoreStatus === "PREVIOUS_REFERENCE"
+          ? previousScore
+          : null;
+  const referenceDate =
+    scoreStatus === "PREVIOUS_REFERENCE"
+      ? previousDate
+      : scoreStatus === "FINAL" || scoreStatus === "PRELIMINARY"
+        ? sessionDate
+        : null;
   return {
     type: "ETF_M0_REPORT_EVIDENCE_V1",
     sessionDate,
@@ -86,7 +94,7 @@ export function etfReportScore(
     priorReferenceVerified: false,
     referenceScore,
     referenceDate,
-    scoreIsToday: (scoreStatus === "FINAL" || scoreStatus === "PRELIMINARY"),
+    scoreIsToday: scoreStatus === "FINAL" || scoreStatus === "PRELIMINARY",
     officialDataStatus: validSession ? s.dataStatus : null,
     strategyTarget: !!target,
     issues: [
@@ -98,33 +106,34 @@ export function etfReportScore(
 }
 
 /** Compact summary for AI reports; never label missing ETF M0 as 0. */
-export function etfReportScoreSummary(
-  rows: readonly ScreeningRow[],
-  date: string,
-) {
+export function etfReportScoreSummary(rows: readonly ScreeningRow[], date: string) {
   const observations = rows.flatMap((row) => {
     const e = etfReportScore(row, date);
     return e ? [{ symbol: row.instrument.symbol, name: row.instrument.name, evidence: e }] : [];
   });
   const counts = Object.fromEntries(
-    (["FINAL", "PRELIMINARY", "PREVIOUS_REFERENCE", "UNAVAILABLE", "NOT_STRATEGY_TARGET"] as const)
-      .map((k) => [k, observations.filter((v) => v.evidence.scoreStatus === k).length]),
+    (
+      ["FINAL", "PRELIMINARY", "PREVIOUS_REFERENCE", "UNAVAILABLE", "NOT_STRATEGY_TARGET"] as const
+    ).map((k) => [k, observations.filter((v) => v.evidence.scoreStatus === k).length]),
   ) as Record<EtfReportScoreStatus, number>;
   // Avoid copying all ~1200 score rows into the run summary. The full, dated
   // evidence belongs to the immutable execution archive.
   const ranked = observations
     .filter((item) => item.evidence.strategyTarget && item.evidence.referenceScore !== null)
-    .sort((a,b) =>
-      (b.evidence.referenceScore ?? -1) - (a.evidence.referenceScore ?? -1) ||
-      a.symbol.localeCompare(b.symbol))
-    .slice(0,25);
+    .sort(
+      (a, b) =>
+        (b.evidence.referenceScore ?? -1) - (a.evidence.referenceScore ?? -1) ||
+        a.symbol.localeCompare(b.symbol),
+    )
+    .slice(0, 25);
   return {
-    version:"etf-m0-report-20261021-v1",
-    sessionDate:date,
-    totalEtfs:observations.length,
+    version: "etf-m0-report-20261021-v1",
+    sessionDate: date,
+    totalEtfs: observations.length,
     counts,
     noAvailableScoreIsNotZero: true,
-    instructions:"Use evidence.etfReportScore.confirmedM0 for official Final. Read-only preliminaryM0 is not a confirmed entry, exit or order. priorSessionScoreReference is historical and requires independent prior-Final verification; never display totalScore=0 as the current ETF M0 when official score is null.",
-    topReferenceEtfs:ranked,
+    instructions:
+      "Use evidence.etfReportScore.confirmedM0 for official Final. Read-only preliminaryM0 is not a confirmed entry, exit or order. priorSessionScoreReference is historical and requires independent prior-Final verification; never display totalScore=0 as the current ETF M0 when official score is null.",
+    topReferenceEtfs: ranked,
   };
 }
