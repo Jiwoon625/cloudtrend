@@ -1,28 +1,10 @@
-/**
- * KRX date gate, extracted from exchange_calendars 4.13.1 XKRX exchange
- * schedule (2026-10-12 through 2028-12-31). Calendar updates are mandatory
- * before this coverage ends; special ad hoc KRX closures require amendment.
- * Never infer an exchange session from weekdays alone.
- */
-export const KR_SESSION_START = "2026-10-12";
+import calendarEvidence from "./assistantActualTradeCalendarEvidence.json";
+
+/** KR direct-trade date gate retains its independently reviewed 2028 horizon. */
+export const KR_SESSION_START = calendarEvidence.coverageStart;
 export const KR_SESSION_END = "2028-12-31";
 const CLOSED = new Set([
-  "2026-12-25",
-  "2026-12-31",
-  "2027-01-01",
-  "2027-02-08",
-  "2027-02-09",
-  "2027-03-01",
-  "2027-05-05",
-  "2027-05-13",
-  "2027-08-16",
-  "2027-09-14",
-  "2027-09-15",
-  "2027-09-16",
-  "2027-10-04",
-  "2027-10-11",
-  "2027-12-27",
-  "2027-12-31",
+  ...calendarEvidence.KR.holidays,
   "2028-01-26",
   "2028-01-27",
   "2028-01-28",
@@ -41,6 +23,7 @@ const CLOSED = new Set([
   "2028-12-25",
   "2028-12-29",
 ]);
+
 export function isReviewedKrSession(date: string): boolean {
   if (date < KR_SESSION_START || date > KR_SESSION_END || !/^\d{4}-\d{2}-\d{2}$/.test(date))
     return false;
