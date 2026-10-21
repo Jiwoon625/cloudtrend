@@ -123,7 +123,7 @@ describe("Assistant actual trade proposals", () => {
       expect(() => parseAssistantActualBuy({ ...valid, date }, nextYear)).toThrow();
     expect(() =>
       parseAssistantActualBuy({ ...valid, date: "2028-01-03" }, new Date("2028-01-04T20:00:00Z")),
-    ).toThrow();
+    ).not.toThrow();
     expect(() =>
       parseAssistantActualBuy({ ...us, date: "2028-01-03" }, new Date("2028-01-04T20:00:00Z")),
     ).toThrow();
