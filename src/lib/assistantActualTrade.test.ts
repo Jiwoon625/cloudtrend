@@ -67,9 +67,9 @@ describe("Assistant actual trade proposals", () => {
     const trade = normalizeAssistantTradeMarket(evidence, { market: "KOSPI", assetType: "ETF" });
     expect(trade.market).toBe("ETF");
     expect(assistantTradeGross(trade)).toBe(1884702);
-    expect(
-      normalizeAssistantTradeMarket(trade, { market: "KOSPI", assetType: "ETF" }),
-    ).toEqual(trade);
+    expect(normalizeAssistantTradeMarket(trade, { market: "KOSPI", assetType: "ETF" })).toEqual(
+      trade,
+    );
     expect(() =>
       normalizeAssistantTradeMarket(
         { ...evidence, market: "KOSDAQ" },
