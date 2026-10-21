@@ -140,17 +140,17 @@ describe("ETF report-only score evidence", () => {
     const row = analysis.rows.find((r) => r.instrument.instrumentType === "ETF");
     expect(row).toBeDefined();
     row!.instrument.symbol = "218420";
-    row!.etfStrategy = etf().etfStrategy;
-    row!.krxReviewReference = etf().krxReviewReference;
+    row!.etfStrategy = etf().etfStrategy!;
+    row!.krxReviewReference = etf().krxReviewReference!;
     const model = buildSnapshot(analysis);
     expect(model.entries.find((e) => e.symbol === "218420")?.evidence).toBeUndefined();
     const originalRun = buildSnapshot(analysis, undefined, "synthetic-run");
     expect(
-      originalRun.entries.find((e) => e.symbol === "218420")?.evidence?.etfReportScore,
+      originalRun.entries.find((e) => e.symbol === "218420")?.evidence?.["etfReportScore"],
     ).toBeUndefined();
     const archive = appendEtfReportEvidence(originalRun, analysis);
     const saved = archive.entries.find((e) => e.symbol === "218420");
-    expect(saved?.evidence?.etfReportScore).toMatchObject({
+    expect(saved?.evidence?.["etfReportScore"]).toMatchObject({
       type: "ETF_M0_REPORT_EVIDENCE_V1",
       scoreStatus: "UNAVAILABLE",
     });
