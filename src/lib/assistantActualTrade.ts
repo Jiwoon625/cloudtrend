@@ -19,7 +19,7 @@ export const assistantActualBuySchema = z
     date: z.string(),
     symbol: z.string().trim().min(1).max(64),
     name: z.string().trim().min(1).max(100),
-    market: z.enum(["KOSPI", "KOSDAQ", "US"]),
+    market: z.enum(["KOSPI", "KOSDAQ", "ETF", "US"]),
     side: z.literal("BUY"),
     shares: z.number().int().positive().max(1_000_000),
     price: z.number().finite().positive().max(10_000_000),
@@ -100,6 +100,24 @@ export function formatAssistantTradeMoney(value: number, market: AssistantActual
   return market === "US"
     ? "$" + value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 })
     : value.toLocaleString("ko-KR") + "원";
+}
+
+
+// The security registry's asset type is authoritative. Notion's KOSPI listing
+// market is not the legacy portfolio execution market for domestic ETFs.
+export function normalizeAssistantTradeMarket(
+  trade: AssistantActualBuy,
+  security: { market: string; assetType: string } | null,
+): AssistantActualBuy {
+  if (!security) return trade;
+  if (security.assetType === "ETF") {
+    if (trade.market !== "ETF" && trade.market !== security.market)
+      throw new Error("ETF 종목의 상장시장 및 원장 시장 분류가 일치하지 않습니다.");
+    return { ...trade, market: "ETF" };
+  }
+  if (trade.market === "ETF" || trade.market !== security.market)
+    throw new Error("종목마스터의 시장 분류와 매수 제안이 일치하지 않습니다.");
+  return trade;
 }
 
 export function notionTradeUrl(sourcePageId: string) {
