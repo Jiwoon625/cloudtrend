@@ -110,26 +110,27 @@ describe("ETF report-only score evidence", () => {
     ).toBeNull();
   });
   it("retains mixed current/prior KRX observation dates and an incomplete preview attempt", () => {
-    const mixed=etf();
-    mixed.krxReviewReference!.preliminary!.marketCapDate=date;
-    mixed.krxReviewReference!.preliminary!.tradingValueThrough="2026-10-20";
-    mixed.krxReviewReference!.preliminary!.underlyingDate="2026-10-20";
-    expect(etfReportScore(mixed,date)).toMatchObject({
-      preliminaryKrxDate:"2026-10-20",
-      preliminaryMarketCapDate:date,
-      preliminaryTradingValueThrough:"2026-10-20",
-      preliminaryUnderlyingDate:"2026-10-20",
-      scoreStatus:"PRELIMINARY",
+    const mixed = etf();
+    mixed.krxReviewReference!.preliminary!.marketCapDate = date;
+    mixed.krxReviewReference!.preliminary!.tradingValueThrough = "2026-10-20";
+    mixed.krxReviewReference!.preliminary!.underlyingDate = "2026-10-20";
+    expect(etfReportScore(mixed, date)).toMatchObject({
+      preliminaryKrxDate: "2026-10-20",
+      preliminaryMarketCapDate: date,
+      preliminaryTradingValueThrough: "2026-10-20",
+      preliminaryUnderlyingDate: "2026-10-20",
+      scoreStatus: "PRELIMINARY",
     });
-    const incomplete=etf();
-    incomplete.krxReviewReference!.preliminary!.status="INCOMPLETE";
-    incomplete.krxReviewReference!.preliminary!.m0=null;
-    incomplete.krxReviewReference!.preliminary!.issues=["20일 거래대금 이력 부족"];
-    const evidence=etfReportScore(incomplete,date);
+    const incomplete = etf();
+    incomplete.krxReviewReference!.preliminary!.status = "INCOMPLETE";
+    incomplete.krxReviewReference!.preliminary!.m0 = null;
+    incomplete.krxReviewReference!.preliminary!.issues = ["20일 거래대금 이력 부족"];
+    const evidence = etfReportScore(incomplete, date);
     expect(evidence).toMatchObject({
-      preliminaryM0:null, preliminaryStatus:"INCOMPLETE",
-      scoreStatus:"PREVIOUS_REFERENCE",
-      referenceDate:"2026-10-20",
+      preliminaryM0: null,
+      preliminaryStatus: "INCOMPLETE",
+      scoreStatus: "PREVIOUS_REFERENCE",
+      referenceDate: "2026-10-20",
     });
     expect(evidence?.issues).toContain("20일 거래대금 이력 부족");
   });
