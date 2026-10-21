@@ -74,6 +74,8 @@ vi.mock("@supabase/supabase-js", () => ({
   },
 }));
 
+import { newActualAsset } from "../lib/newActualPortfolio";
+import { parseNewActualPortfolioRequest } from "../lib/newActualPortfolioInput";
 import { Route } from "./api.assistant-trades";
 
 const get = (page = 0, token = "test-jwt") => {
@@ -235,6 +237,46 @@ describe("assistant trade owner approval", () => {
       error: null,
     }));
   }
+  it.each([
+    ["0046A0", 9175, 77, 25],
+    ["423160", 110864.82352941, 17, 68],
+    ["0048J0", 13220, 8, 3],
+  ])(
+    "records ETF %s using the ETF asset accepted by the real writer",
+    async (symbol, price, shares, fee) => {
+      usProposal();
+      state.proposal!["trade"] = {
+        ...(state.proposal!["trade"] as object),
+        market: "ETF",
+        symbol,
+        price,
+        shares,
+        fee,
+      };
+      state.snapshot.mockResolvedValue({ revision: 12, payload: { executions: [] } });
+      state.save.mockImplementation(async (_client, _uid, raw) => {
+        const input = parseNewActualPortfolioRequest(raw);
+        if (input.action !== "execution" || newActualAsset(input.execution.market) !== input.asset)
+          throw new Error("종목 시장과 선택한 자산군이 다릅니다.");
+        return { revision: 13, reused: false };
+      });
+      expect((await post()).status).toBe(200);
+      expect(state.save).toHaveBeenCalledWith(
+        expect.anything(),
+        state.uid,
+        expect.objectContaining({ asset: "ETF" }),
+      );
+      expect(state.snapshot).toHaveBeenCalledWith(
+        expect.anything(),
+        state.uid,
+        "portfolio_ledgers",
+      );
+      expect(state.rpc.mock.calls.map(([name]) => name)).toEqual([
+        "assistant_trade_claim",
+        "assistant_trade_record",
+      ]);
+    },
+  );
   it("records US proposals through the same owner session and USD CAS ledger", async () => {
     usProposal();
     state.snapshot.mockResolvedValue({ revision: 12, payload: { executions: [] } });
