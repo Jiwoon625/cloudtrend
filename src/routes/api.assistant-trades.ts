@@ -6,6 +6,7 @@ import {
   existingTradeMatches,
   sourceEvidenceMatches,
   parseAssistantActualBuy,
+  assistantTradeGross,
   type AssistantTradeProposal,
 } from "../lib/assistantActualTrade";
 import { readWebsiteDocument } from "../lib/ledger/websiteRepository.server";
@@ -134,7 +135,7 @@ function sameSource(
   return (
     existingTradeMatches(trade, execution) &&
     allocation?.quantity === trade.shares &&
-    allocation.gross === trade.shares * trade.price &&
+    allocation.gross === assistantTradeGross(trade) &&
     allocation.fee === trade.fee &&
     allocation.brokerReference.toLowerCase() === "notion:" + proposal.source_page_id.toLowerCase()
   );
@@ -246,7 +247,7 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
   const snapshot = await readWebsiteDocument<NewActualDocument>(
     auth.client,
     auth.userId,
-    "portfolio_ledgers",
+    trade.market === "US" ? "us_actual_portfolio_ledgers" : "portfolio_ledgers",
   );
   if (!snapshot) {
     await releaseClaim(auth.client, proposal, token);
@@ -290,7 +291,7 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
 
   const saved = await saveNewActualPortfolio(auth.client, auth.userId, {
     action: "execution",
-    asset: "KR",
+    asset: trade.market === "US" ? "US" : "KR",
     confirmed: true,
     accessToken: auth.accessToken,
     expectedRevision: snapshot.revision,
@@ -309,7 +310,7 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
     },
     allocation: {
       quantity: trade.shares,
-      gross: trade.price * trade.shares,
+      gross: assistantTradeGross(trade),
       fee: trade.fee,
       brokerReference: "notion:" + trade.sourcePageId,
     },

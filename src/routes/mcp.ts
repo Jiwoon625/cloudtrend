@@ -94,7 +94,7 @@ const PROPOSE_BUY_TOOL = {
   name: "propose_cloudtrend_actual_buy",
   title: "Propose a CloudTrend actual buy",
   description:
-    "Stage an actual KOSPI/KOSDAQ BUY from an evidenced Notion trade page for owner review. This does NOT record, simulate, approve, or alter any portfolio holding. Requires the user to have asked to record a real executed buy. No guessed dates, prices, fees, quantities, or source page IDs.",
+    "Stage an actual KOSPI/KOSDAQ/US BUY from an evidenced Notion trade page for review in the same CloudTrend website inbox. US uses USD and America/New_York local trade date. This does NOT record, simulate, approve, or alter any portfolio holding. Requires the user to have asked to record a real executed buy. No guessed dates, prices, fees, quantities, or source page IDs.",
   inputSchema: {
     type: "object",
     properties: {
@@ -105,14 +105,22 @@ const PROPOSE_BUY_TOOL = {
       date: { type: "string", description: "YYYY-MM-DD verified actual trade date" },
       symbol: {
         type: "string",
-        description: "Six-character Korean listing code; preserve leading zero",
+        description: "Six-character Korean listing code (preserve leading zero), or US ticker",
       },
       name: { type: "string" },
-      market: { type: "string", enum: ["KOSPI", "KOSDAQ"] },
+      market: { type: "string", enum: ["KOSPI", "KOSDAQ", "US"] },
       side: { type: "string", const: "BUY" },
       shares: { type: "integer", minimum: 1 },
-      price: { type: "number", exclusiveMinimum: 0 },
-      fee: { type: "number", minimum: 0, description: "Verified broker fee; never infer" },
+      price: {
+        type: "number",
+        exclusiveMinimum: 0,
+        description: "Actual unit price: KRW for Korean stocks, USD for US",
+      },
+      fee: {
+        type: "number",
+        minimum: 0,
+        description: "Verified broker fee in KRW (Korea) or USD (US); never infer",
+      },
       accountLabel: { type: "string", enum: ["ISA", "GENERAL", "UNKNOWN"] },
     },
     required: [
