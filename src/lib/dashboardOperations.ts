@@ -321,10 +321,12 @@ export function marketSignals(
   const dates = [...new Set(index.tradeDates)].filter((d) => d <= index.date).sort();
   const previousSession = dates.at(-1) === index.date ? dates.at(-2) : undefined;
   for (const row of rows.values()) {
+    const sectorLimit = dashboardSectorLimit(row, sectorContext);
     if (row.assessment || row.etfAssessment) {
       const isHeld = held.has(row.symbol);
       result.assessments!.push({
         ...row,
+        sectorLimit,
         held: isHeld,
         operationalEntryNotice: signalStartDate
           ? operationalEntryStartNotice(
@@ -366,7 +368,6 @@ export function marketSignals(
             (row.kospiEntry?.originDate ?? row.etfEntry?.originDate)!,
           ).has(row.symbol)
         : sold.has(row.symbol);
-    const sectorLimit = dashboardSectorLimit(row, sectorContext);
     if (
       entryInSeries &&
       market === "KOSPI" &&
@@ -468,6 +469,7 @@ export function marketSignals(
     if (reason)
       result.exits.push({
         ...row,
+        sectorLimit,
         actualQuantity: holding.shares,
         actualEntryDate: holding.firstEntryDate,
         reason: exitLabel(reason),
