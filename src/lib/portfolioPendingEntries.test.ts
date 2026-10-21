@@ -95,7 +95,7 @@ describe("saved KR pending-entry display projection", () => {
     expect(preview.unknownDateCount).toBe(1);
   });
 
-  it.each(["2026-10-02", "2026-10-05", "2026-10-10", "2026-12-30", "2027-01-04", "invalid"])(
+  it.each(["2026-10-02", "2026-10-05", "2026-10-10", "2027-12-30", "2028-01-04", "invalid"])(
     "does not guess a date for an uncovered or non-session signal: %s",
     (signalDate) => {
       const preview = buildKrPendingEntryPreview(strategy([candidate({ signalDate })]), options);
