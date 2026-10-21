@@ -14,6 +14,7 @@ import path from "node:path";
 import process from "node:process";
 
 import { buildScreeningSummary } from "../src/lib/analysisRunBundle";
+import { appendEtfReportEvidence, etfReportScoreSummary } from "../src/lib/etfReportScore";
 import { runFullMarketAnalysis } from "../src/lib/engine/fullMarketAnalysis";
 import { parseManualMarketDataWithReferences as parseManualMarketData } from "../src/lib/krxReviewReferenceParser";
 import {
@@ -219,10 +220,13 @@ export async function runScreening(argv = process.argv.slice(2)) {
   );
   const createdAt = new Date().toISOString();
   const runId = `${createdAt.replace(/[-:.TZ]/g, "").slice(0, 14)}-${dataVersion.slice(7, 15)}`;
-  const snapshot = buildSnapshot(analysis, sourceRegisteredAt, runId);
+  const snapshot = appendEtfReportEvidence(buildSnapshot(analysis, sourceRegisteredAt, runId), analysis);
   // Shadow is replayed separately from the latest investment-screen view.
   const previous = await loadPreviousSnapshot(client, options.supabaseUserId, snapshot.date);
-  const summary = buildScreeningSummary(analysis, snapshot, previous);
+  const summary = {
+    ...buildScreeningSummary(analysis, snapshot, previous),
+    etfScoreContinuity: etfReportScoreSummary(analysis.rows, analysis.asOfDate),
+  };
   const resultPath = `${options.supabaseUserId}/results/screening/${runId}.json`;
   const run = {
     id: runId,
