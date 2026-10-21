@@ -11,6 +11,7 @@ import { SOURCE_MAX_FILE_BYTES, type SourceType } from "../lib/sourceData";
 import {
   notionTradeUrl,
   parseAssistantActualBuy,
+  normalizeAssistantTradeMarket,
   sameTradeEvidence,
 } from "../lib/assistantActualTrade";
 
@@ -94,7 +95,7 @@ const PROPOSE_BUY_TOOL = {
   name: "propose_cloudtrend_actual_buy",
   title: "Propose a CloudTrend actual buy",
   description:
-    "Stage an actual KOSPI/KOSDAQ/US BUY from an evidenced Notion trade page for review in the same CloudTrend website inbox. US uses USD and America/New_York local trade date. This does NOT record, simulate, approve, or alter any portfolio holding. Requires the user to have asked to record a real executed buy. No guessed dates, prices, fees, quantities, or source page IDs.",
+    "Stage an actual KOSPI/KOSDAQ/ETF/US BUY from an evidenced Notion trade page for review in the same CloudTrend website inbox. US uses USD and America/New_York local trade date. This does NOT record, simulate, approve, or alter any portfolio holding. Requires the user to have asked to record a real executed buy. No guessed dates, prices, fees, quantities, or source page IDs.",
   inputSchema: {
     type: "object",
     properties: {
@@ -108,7 +109,7 @@ const PROPOSE_BUY_TOOL = {
         description: "Six-character Korean listing code (preserve leading zero), or US ticker",
       },
       name: { type: "string" },
-      market: { type: "string", enum: ["KOSPI", "KOSDAQ", "US"] },
+      market: { type: "string", enum: ["KOSPI", "KOSDAQ", "ETF", "US"], description: "Use ETF for Korean-listed ETFs; KOSPI/KOSDAQ for ordinary shares, US for US-listed stocks." },
       side: { type: "string", const: "BUY" },
       shares: { type: "integer", minimum: 1 },
       price: {
@@ -149,9 +150,27 @@ const PROPOSE_BUY_TOOL = {
 } as const;
 
 async function callProposeBuy(args: unknown) {
-  const trade = parseAssistantActualBuy(args);
+  const parsed = parseAssistantActualBuy(args);
   const userId = configuredUserId();
   const client = trustedSupabaseClient();
+  // Reconcile the listed exchange vs. portfolio asset class only when an
+  // owner-scoped, versioned security already proves the symbol is an ETF.
+  const { data: securities, error: securityError } = await client
+    .from("ledger_security_versions")
+    .select("market,payload,revision")
+    .eq("user_id", userId)
+    .eq("symbol", parsed.symbol)
+    .order("revision", { ascending: false })
+    .limit(1);
+  if (securityError) throw new Error("기존 종목의 자산 분류를 확인하지 못했습니다.");
+  const registered = securities?.[0];
+  const assetType = registered?.payload?.assetType;
+  const trade = normalizeAssistantTradeMarket(
+    parsed,
+    registered && typeof registered.market === "string" && typeof assetType === "string"
+      ? { market: registered.market, assetType }
+      : null,
+  );
 
   // A unique (user_id, source_page_id) constraint owns idempotence.
   // Two racing callers may both see no row. Recover the winner after 23505.
