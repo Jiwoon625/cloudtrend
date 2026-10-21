@@ -102,7 +102,6 @@ export function formatAssistantTradeMoney(value: number, market: AssistantActual
     : value.toLocaleString("ko-KR") + "원";
 }
 
-
 // The security registry's asset type is authoritative. Notion's KOSPI listing
 // market is not the legacy portfolio execution market for domestic ETFs.
 export function normalizeAssistantTradeMarket(
