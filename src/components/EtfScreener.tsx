@@ -11,6 +11,7 @@ import type { DualPortfolioState } from "@/lib/portfolioLedgers";
 import { isOperationalSignalDate, isOperationalSignalOrigin } from "@/lib/operationalSignalStart";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
 import { etfPartialEvidence } from "@/lib/etfPartialEvidence";
+import { KRX_PRELIMINARY_EXPORT_HEADERS, krxPreliminaryExportValues } from "@/lib/krxPreliminary";
 
 const num = (n: number | null | undefined, digits = 2) =>
   n == null || !Number.isFinite(n)
@@ -220,6 +221,15 @@ export function EtfScreener({
           : "새 전략 재계산 필요";
     }
   };
+  const getVisibleSortValue = (r: AnalysisResult["rows"][number], key: SortKey) => {
+    if (filter === "preliminary" && r.krxReviewReference?.preliminary?.kind === "ETF") {
+      const preview = r.krxReviewReference.preliminary;
+      if (key === "score") return preview.m0 ?? null;
+      if (key === "health") return preview.healthPoints ?? null;
+      if (key === "tradingValue") return preview.averageTradingValue20 ?? null;
+    }
+    return getSortValue(r, key);
+  };
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
@@ -305,8 +315,8 @@ export function EtfScreener({
     .sort((a, b) => {
       if (sortKey) {
         const compared = compareNullable(
-          getSortValue(a, sortKey),
-          getSortValue(b, sortKey),
+          getVisibleSortValue(a, sortKey),
+          getVisibleSortValue(b, sortKey),
           sortDirection,
         );
         if (compared !== 0) return compared;
@@ -323,11 +333,12 @@ export function EtfScreener({
   const downloadCsv = () => {
     const quote = (v: unknown) => `"${String(v ?? "").replaceAll('"', '""')}"`;
     const body = [
-      ["기준일", "전략 버전", ...ETF_TABLE_COLUMNS.map((c) => c.label)],
+      ["기준일", "전략 버전", ...ETF_TABLE_COLUMNS.map((c) => c.label), ...KRX_PRELIMINARY_EXPORT_HEADERS],
       ...shown.map((r) => [
         analysis.asOfDate,
         ETF_POLICY.version,
         ...ETF_TABLE_COLUMNS.map((c) => getSortValue(r, c.key)),
+        ...krxPreliminaryExportValues(r.krxReviewReference?.preliminary),
       ]),
     ]
       .map((row) => row.map(quote).join(","))
@@ -510,7 +521,7 @@ export function EtfScreener({
         <>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={downloadCsv}>
-              CSV 다운로드
+              {filter === "preliminary" ? "예비 근거 CSV 다운로드" : "CSV 다운로드"}
             </Button>
             <span className="ml-auto text-xs text-muted-foreground">
               {currentPage + 1}/{pageCount}페이지
