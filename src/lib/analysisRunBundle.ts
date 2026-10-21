@@ -1,5 +1,6 @@
 import { isOperationalEntry } from "./engine/operationalStrategy";
 import { ETF_POLICY } from "./engine/etfStrategy";
+import { etfReportScoreSummary } from "./etfReportScore";
 import type { BacktestRunBundle } from "./backtestRunBundle";
 import type { AnalysisResult, ScreeningRow } from "./engine/pipeline";
 import type { ScreeningSnapshot } from "./screeningSnapshot";
@@ -222,6 +223,8 @@ export function buildScreeningSummary(
       ),
     },
     previousSnapshotDate: previous?.date ?? null,
+    // Report-only status and dated marks; executable entry counts above stay unchanged.
+    etfScoreContinuity: etfReportScoreSummary(etfRows, analysis.asOfDate),
     newGradeA,
     droppedAtoB,
     topCandidates: sortedPassed.slice(0, 50).map(candidate),
