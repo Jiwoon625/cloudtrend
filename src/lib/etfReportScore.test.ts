@@ -114,8 +114,9 @@ describe("ETF report-only score evidence", () => {
     const model = buildSnapshot(analysis);
     expect(model.entries.find((e) => e.symbol === "218420")?.evidence).toBeUndefined();
     const originalRun = buildSnapshot(analysis, undefined, "synthetic-run");
-    expect(originalRun.entries.find((e) => e.symbol === "218420")?.evidence?.etfReportScore)
-      .toBeUndefined();
+    expect(
+      originalRun.entries.find((e) => e.symbol === "218420")?.evidence?.etfReportScore,
+    ).toBeUndefined();
     const archive = appendEtfReportEvidence(originalRun, analysis);
     const saved = archive.entries.find((e) => e.symbol === "218420");
     expect(saved?.evidence?.etfReportScore).toMatchObject({

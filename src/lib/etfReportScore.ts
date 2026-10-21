@@ -44,7 +44,8 @@ export function etfReportScore(row: ScreeningRow, sessionDate: string): EtfRepor
     isEtfStrategyAssetClass(ETF_MAPPING[row.instrument.symbol]) &&
     !row.instrument.isLeveraged &&
     !row.instrument.isInverse;
-  const validSession = s !== undefined && s.date === sessionDate && s.version === ETF_POLICY.version;
+  const validSession =
+    s !== undefined && s.date === sessionDate && s.version === ETF_POLICY.version;
   const finalM0 = validSession && s.dataStatus === "ready" && validScore(s.score) ? s.score : null;
   const prelim = row.krxReviewReference?.preliminary;
   const preview =
@@ -145,28 +146,31 @@ export function etfReportScoreSummary(rows: readonly ScreeningRow[], date: strin
  */
 export function appendEtfReportEvidence(
   snapshot: ScreeningSnapshot,
-  analysis: Pick<AnalysisResult,"asOfDate"|"rows">,
+  analysis: Pick<AnalysisResult, "asOfDate" | "rows">,
 ): ScreeningSnapshot {
   if (!snapshot.runId || snapshot.market !== "KR") return snapshot;
   if (snapshot.asOfDate !== analysis.asOfDate)
     throw new Error("ETF report evidence session mismatch");
   const bySymbol = new Map(
-    analysis.rows.filter(row=>row.instrument.instrumentType==="ETF")
-      .map(row=>[row.instrument.symbol,row]),
+    analysis.rows
+      .filter((row) => row.instrument.instrumentType === "ETF")
+      .map((row) => [row.instrument.symbol, row]),
   );
-  const withEvidence=(entry: SnapshotEntry): SnapshotEntry => {
-    if(entry.instrumentType!=="ETF")return entry;
-    const row=bySymbol.get(entry.symbol);
+  const withEvidence = (entry: SnapshotEntry): SnapshotEntry => {
+    if (entry.instrumentType !== "ETF") return entry;
+    const row = bySymbol.get(entry.symbol);
     if (!row) return entry;
-    const scored=etfReportScore(row,analysis.asOfDate);
-    return scored===null?entry:{
-      ...entry,
-      evidence:{...entry.evidence,etfReportScore:scored},
-    };
+    const scored = etfReportScore(row, analysis.asOfDate);
+    return scored === null
+      ? entry
+      : {
+          ...entry,
+          evidence: { ...entry.evidence, etfReportScore: scored },
+        };
   };
   return {
     ...snapshot,
-    entries:snapshot.entries.map(withEvidence),
-    ...(snapshot.topEtfs?{topEtfs:snapshot.topEtfs.map(withEvidence)}:{}),
+    entries: snapshot.entries.map(withEvidence),
+    ...(snapshot.topEtfs ? { topEtfs: snapshot.topEtfs.map(withEvidence) } : {}),
   };
 }
