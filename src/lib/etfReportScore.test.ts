@@ -55,6 +55,8 @@ describe("ETF report-only score evidence", () => {
       confirmedM0: null,
       preliminaryM0: 61.296,
       preliminaryKrxDate: "2026-10-20",
+      preliminaryMarketCapDate: "2026-10-20",
+      preliminaryTradingValueThrough: "2026-10-20",
       priorSessionScoreReference: 61.03586459007409,
       priorSessionDate: "2026-10-20",
       priorReferenceVerified: false,
@@ -86,13 +88,16 @@ describe("ETF report-only score evidence", () => {
     });
   });
   it("does not create strategy M0 for bond or cash ETFs, nor accept stale previews", () => {
-    const safeCash = etf({ previousScore: null });
+    // Excluded bond/cash funds must not inherit a numeric raw strategy M0.
+    const safeCash = etf({ previousScore: 76.5 });
     safeCash.instrument.symbol = "423160";
     expect(etfReportScore(safeCash, date)).toMatchObject({
       scoreStatus: "NOT_STRATEGY_TARGET",
       confirmedM0: null,
       referenceScore: null,
       strategyTarget: false,
+      priorSessionScoreReference: null,
+      priorSessionDate: null,
     });
     const stale = etf();
     stale.krxReviewReference!.preliminary!.priceDate = "2026-10-20";
@@ -104,6 +109,31 @@ describe("ETF report-only score evidence", () => {
       ),
     ).toBeNull();
   });
+  it("retains mixed current/prior KRX observation dates and an incomplete preview attempt", () => {
+    const mixed=etf();
+    mixed.krxReviewReference!.preliminary!.marketCapDate=date;
+    mixed.krxReviewReference!.preliminary!.tradingValueThrough="2026-10-20";
+    mixed.krxReviewReference!.preliminary!.underlyingDate="2026-10-20";
+    expect(etfReportScore(mixed,date)).toMatchObject({
+      preliminaryKrxDate:"2026-10-20",
+      preliminaryMarketCapDate:date,
+      preliminaryTradingValueThrough:"2026-10-20",
+      preliminaryUnderlyingDate:"2026-10-20",
+      scoreStatus:"PRELIMINARY",
+    });
+    const incomplete=etf();
+    incomplete.krxReviewReference!.preliminary!.status="INCOMPLETE";
+    incomplete.krxReviewReference!.preliminary!.m0=null;
+    incomplete.krxReviewReference!.preliminary!.issues=["20일 거래대금 이력 부족"];
+    const evidence=etfReportScore(incomplete,date);
+    expect(evidence).toMatchObject({
+      preliminaryM0:null, preliminaryStatus:"INCOMPLETE",
+      scoreStatus:"PREVIOUS_REFERENCE",
+      referenceDate:"2026-10-20",
+    });
+    expect(evidence?.issues).toContain("20일 거래대금 이력 부족");
+  });
+
   it("transports report score to run archives only; frozen model/daily calculation remains unchanged", () => {
     const analysis = runAnalysis(getMockDataset());
     const row = analysis.rows.find((r) => r.instrument.instrumentType === "ETF");
