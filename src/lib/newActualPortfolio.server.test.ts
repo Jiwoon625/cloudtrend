@@ -525,9 +525,17 @@ describe("new-only portfolio persistence", () => {
       const monday = (await loadNewActualPortfolio(db.value, uid, "2026-10-19T21:00:00Z")).pools[
         currency
       ];
-      expect(monday.valuationDate).toBe("2026-10-19");
-      expect(monday.nav).toBeNull();
-      expect(monday.issues).toContain("stale_price");
+      expect(monday.expectedValuationDate).toBe("2026-10-19");
+      if (currency === "USD") {
+        expect(monday.valuationDate).toBe("2026-10-16");
+        expect(monday.marketValue).toBe("1100");
+        expect(monday.unrealizedPnl).toBe("99");
+        expect(monday.issues).toContain("latest_close_pending");
+      } else {
+        expect(monday.valuationDate).toBe("2026-10-19");
+        expect(monday.nav).toBeNull();
+        expect(monday.issues).toContain("stale_price");
+      }
       expect(JSON.stringify(state.rows)).toBe(ledgerBefore);
       expect(db.writes).toHaveLength(writesBefore);
     },

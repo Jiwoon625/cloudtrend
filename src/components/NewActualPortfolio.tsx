@@ -75,6 +75,7 @@ function issueLabel(issue: string) {
     funding_shortfall: "기록된 배정 현금 부족 · 입출금 내역 대조 필요",
     flow_adjusted_return_pending: "추가 입출금 반영 수익률 미확정",
     missing_price: "평가가격 미확인",
+    latest_close_pending: "최신 종가 갱신 대기 · 표시된 기준일의 최근 확보 종가로 평가",
     stale_price: "평가가격이 오래되어 평가 미확정",
     future_price: "미래 평가가격 제외",
     price_before_last_fill: "최근 체결 이전 가격 · 평가 미확정",
@@ -116,7 +117,10 @@ function PoolCard({ currency, pool }: { currency: Currency; pool: Pool | undefin
       </p>
       {pool?.valuationDate && (
         <p className="mt-1 text-xs text-muted-foreground">
-          종가 평가 기준일 {pool.valuationDate} · 최근 장 마감 거래일
+          종가 평가 기준일 {pool.valuationDate}
+          {pool.expectedValuationDate && pool.expectedValuationDate !== pool.valuationDate
+            ? ` · 최근 확보 종가 · 최신 장 마감일 ${pool.expectedValuationDate} 갱신 대기`
+            : " · 최근 장 마감 거래일"}
         </p>
       )}
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">

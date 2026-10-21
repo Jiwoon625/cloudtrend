@@ -93,8 +93,10 @@ export interface NewActualTrade {
 }
 export interface NewActualPool {
   currency: NewActualCurrency;
-  /** Latest completed exchange session; null when calendar evidence is unavailable. */
+  /** Actual common closing-price date used for valuation. */
   valuationDate?: string | null;
+  /** Latest completed session expected from the reviewed exchange calendar. */
+  expectedValuationDate?: string | null;
   fundingStatus: "PENDING" | "CONFIRMED" | "INCOMPLETE";
   netContributions: string | null;
   cash: string | null;
@@ -265,7 +267,9 @@ export function projectNewActualPool(input: {
   /** Operating-day cutoff for cash; defaults to the observation date for historical projections. */
   cashToday?: string;
 }): NewActualPool {
-  const { currency, executions, quotes, valuationDate, today, cashToday = today } = input;
+  const { currency, executions, quotes, today, cashToday = today } = input;
+  const expectedValuationDate = input.valuationDate;
+  let valuationDate = expectedValuationDate;
   if (!validDate(cashToday)) throw new Error("Invalid cash observation date");
   if (!["KRW", "USD"].includes(currency) || !validDate(today) || !Array.isArray(executions))
     throw new Error("Invalid new actual pool currency or observation date");
@@ -408,6 +412,21 @@ export function projectNewActualPool(input: {
     );
   }
 
+  // US screening can lag the exchange close. Use a common dated cache mark
+  // without presenting it as the latest session or mixing different cutoffs.
+  if (currency === "USD" && valuationDate !== null && valuationDate <= today && holdings.size > 0) {
+    const dates = [...holdings.keys()].map((key) => quotes[key]?.date);
+    const commonDate = dates[0];
+    if (
+      commonDate &&
+      validDate(commonDate) &&
+      commonDate < valuationDate &&
+      dates.every((date) => date === commonDate)
+    ) {
+      valuationDate = commonDate;
+      issues.add("latest_close_pending");
+    }
+  }
   let marketValue = 0n,
     unrealized = 0n,
     allMarked = true;
@@ -497,6 +516,7 @@ export function projectNewActualPool(input: {
   return {
     currency,
     valuationDate,
+    expectedValuationDate,
     fundingStatus: !funded ? "PENDING" : shortfall ? "INCOMPLETE" : "CONFIRMED",
     netContributions: funded ? format(netContributions) : null,
     cash: knownCash ? format(cash) : null,
