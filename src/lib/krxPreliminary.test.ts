@@ -27,7 +27,7 @@ const stock = (marketCap: number | null, failedRules: string[] = []) =>
   ({
     instrument: { symbol: "005930", instrumentType: "STOCK" },
     snapshot: { tradeDate: date },
-    marketCap: null,
+    marketCap,
     failedRules,
     pendingRules: ["기준일 시가총액 미확인 · 판단 보류"],
   }) as unknown as ScreeningRow;
