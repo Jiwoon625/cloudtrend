@@ -108,6 +108,50 @@ try {
     "PROCESSING",
   );
   await commit(kr, "portfolio_ledgers", 1, document(kr));
+  // Keep previous fills and assignments while exercising the three production ETF shapes.
+  for (const [index, symbol, price, shares, gross] of [
+    [1, "0046A0", 9175, 77, 706475],
+    [2, "423160", 110864.82352941, 17, 1884701.99999997],
+    [3, "0048J0", 13220, 8, 105760],
+  ]) {
+    const source = `dddddddd-dddd-4ddd-8ddd-${String(index).padStart(12, "0")}`;
+    const etf = await proposal("ETF", source, price, shares);
+    etf.trade.symbol = symbol;
+    await db.exec("reset role");
+    await db.query("update public.assistant_trade_proposals set trade=$1 where id=$2", [
+      JSON.stringify(etf.trade),
+      etf.id,
+    ]);
+    await db.exec("set role authenticated");
+    const before = (await db.query("select revision,payload from public.portfolio_ledgers"))
+      .rows[0];
+    const added = document(etf, gross);
+    const doc = structuredClone(before.payload);
+    doc.executions.push(...added.executions);
+    Object.assign(doc.newActualPortfolio.assignments, added.newActualPortfolio.assignments);
+    const wrong = structuredClone(doc);
+    wrong.newActualPortfolio.assignments["new-actual:" + etf.id].gross = gross + 1;
+    await assert.rejects(commit(etf, "portfolio_ledgers", before.revision, wrong));
+    assert.deepEqual(
+      (await db.query("select revision,payload from public.portfolio_ledgers")).rows[0],
+      before,
+    );
+    await assert.rejects(commit(etf, "us_actual_portfolio_ledgers", 2, doc));
+    await commit(etf, "portfolio_ledgers", before.revision, doc);
+    assert.equal(
+      (await db.query("select status from public.assistant_trade_proposals where id=$1", [etf.id]))
+        .rows[0].status,
+      "RECORDED",
+    );
+    const saved = (await db.query("select revision,payload from public.portfolio_ledgers")).rows[0];
+    assert.equal(saved.payload.executions.length, before.payload.executions.length + 1);
+    assert.equal(saved.payload.newActualPortfolio.assignments["new-actual:" + etf.id].gross, gross);
+    await assert.rejects(commit(etf, "portfolio_ledgers", before.revision, doc));
+    assert.deepEqual(
+      (await db.query("select revision,payload from public.portfolio_ledgers")).rows[0],
+      saved,
+    );
+  }
   const copy = structuredClone(document(kr));
   copy.executions[0].id = "direct-copy";
   copy.executions[0].market = "US";
@@ -133,7 +177,7 @@ try {
   );
   await assert.rejects(commit(extra, "us_actual_portfolio_ledgers", 2, document(extra)));
   console.log(
-    "PASS: KR/US atomic record, exact USD, transition rollback, idempotency, CAS, cross-book direct-write duplicate, wrong-owner denial",
+    "PASS: KR/ETF/US atomic record, three ETF fills and decimal price, wrong-book rejection, ETF rollback and retry preservation, exact USD, transition rollback, idempotency, CAS, cross-book direct-write duplicate, wrong-owner denial",
   );
 } finally {
   await db.close();

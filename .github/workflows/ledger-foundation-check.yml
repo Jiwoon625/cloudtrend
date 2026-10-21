@@ -11,6 +11,10 @@ on:
       - src/routes/mcp.ts
       - src/components/NewActualPortfolio*
       - vitest.new-actual.config.ts
+      - tests/assistant-trade-atomic.test.mjs
+      - vitest.trade-approval.config.ts
+      - package.json
+      - package-lock.json
       - tests/new-actual-bridge.test.mjs
       - docs/new-actual-portfolio.md
       - src/lib/operatingCapitalPlan*
@@ -55,7 +59,8 @@ jobs:
       - run: npx vitest run --config vitest.ledger.config.ts
       - run: npx vitest run --config vitest.actual-performance.config.ts
       - run: npx vitest run --config vitest.new-actual.config.ts
-      - run: npx vitest run src/lib/assistantActualTrade.test.ts
+      - name: Verify approval writer and database contracts
+        run: npm run test:trade-approval
       - run: npx tsc --noEmit
       - run: node tests/new-actual-bridge.test.mjs
       - run: npx eslint src/lib/operatingCapitalPlan*.ts src/components/OperatingCapitalPlan*.tsx
