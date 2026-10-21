@@ -282,8 +282,7 @@ describe("assistant trade owner approval", () => {
     let recordAttempts = 0;
     state.rpc.mockImplementation(async (name: string) => {
       if (name === "assistant_trade_claim") return { data: "claim-token", error: null };
-      if (name === "assistant_trade_record")
-        return { data: ++recordAttempts > 1, error: null };
+      if (name === "assistant_trade_record") return { data: ++recordAttempts > 1, error: null };
       return { data: null, error: null };
     });
     state.snapshot
