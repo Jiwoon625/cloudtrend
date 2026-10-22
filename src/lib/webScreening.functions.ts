@@ -6,6 +6,7 @@ import { savedOperationalIdentity } from "./screeningInputIdentity";
 import { OPERATIONAL_INDEX_VERSION } from "./operationalUnderlyingIndex";
 import { UNDERLYING_INDEX_RELEASE } from "./underlyingIndexSupplementRelease";
 import { screeningPublicationAnalysis } from "./screeningPublicationAnalysis";
+import { appendEtfReportEvidence } from "./etfReportScore";
 import { createDataStatusCache } from "./dataStatusCache";
 import {
   completeScreeningPublication,
@@ -284,10 +285,13 @@ export async function runWebScreeningForUser(
       decisionAt: screening.createdAt,
     });
 
-    const snapshot = buildSnapshot(
+    const snapshot = appendEtfReportEvidence(
+      buildSnapshot(
+        analysis,
+        latestSourceRegistration(sources, analysis.asOfDate),
+        screening.publicationId,
+      ),
       analysis,
-      latestSourceRegistration(sources, analysis.asOfDate),
-      screening.publicationId,
     );
     await persistScreeningSnapshot(client, userId, snapshot);
     const portfolioRefresh = await refreshPortfolioAfterScreening(client, userId, {
