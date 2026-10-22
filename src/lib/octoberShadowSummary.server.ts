@@ -1,3 +1,4 @@
+import { shadowHoldingMetrics } from "./shadowHoldingMetrics";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   ADOPTED_SERIES_KINDS,
@@ -30,6 +31,8 @@ export interface OctoberShadowBookSummary {
     quantity: string;
     price: string;
     reason: string;
+    gross?: string | undefined;
+    fee?: string | undefined;
   }>;
   mddPercent?: number | null;
   bookId: string;
@@ -55,6 +58,9 @@ export interface OctoberShadowBookSummary {
     price: string | null;
     value: string | null;
     entryDate: string;
+    entryPrice?: string | null;
+    unrealizedPnl?: string | null;
+    realizedPnl?: string | null;
   }>;
   returnPercent: number | null;
   valuationStatus: string | null;
@@ -317,6 +323,8 @@ export async function summarizeOctoberShadowBook(
                 side: t.side,
                 quantity: String(t.modelShares),
                 price: String(t.modelPrice),
+                gross: money(t.modelNotional) ?? undefined,
+                fee: money(t.feeUsd) ?? undefined,
                 reason: t.reason,
               });
         } else if (kind === "ETF_V02") {
@@ -329,6 +337,8 @@ export async function summarizeOctoberShadowBook(
               side: t.side,
               quantity: t.quantity,
               price: t.price,
+              gross: t.gross,
+              fee: t.fee,
               reason: t.reason,
             });
         } else if (kind === "KR_KOSPI_CONFIRM1_BEAR") {
@@ -342,6 +352,8 @@ export async function summarizeOctoberShadowBook(
               side: t.side,
               quantity: String(t.shares),
               price: String(t.price),
+              gross: money(t.notionalKrw) ?? undefined,
+              fee: money(t.feeKrw) ?? undefined,
               reason: t.reason,
             });
         } else {
@@ -355,6 +367,8 @@ export async function summarizeOctoberShadowBook(
                 side: "BUY",
                 quantity: String(t.shares),
                 price: String(t.entryPrice),
+                gross: money(t.buyAmount) ?? undefined,
+                fee: money(t.entryFee) ?? undefined,
                 reason: t.entryStatus,
               });
               seen.add(t.id + ":BUY");
@@ -366,6 +380,7 @@ export async function summarizeOctoberShadowBook(
                 side: "SELL",
                 quantity: String(t.shares),
                 price: String(t.exitPrice),
+                fee: money(t.exitFee) ?? undefined,
                 reason: t.exitReason ?? "",
               });
               seen.add(t.id + ":SELL");
@@ -383,6 +398,12 @@ export async function summarizeOctoberShadowBook(
         }
       output.mddPercent = output.history.some((day) => day.nav === null) ? null : mdd * 100;
     }
+    output.holdings = output.holdings.map((holding) => ({
+      ...holding,
+      ...(historyComplete
+        ? shadowHoldingMetrics(output.trades ?? [], holding)
+        : { entryPrice: null, unrealizedPnl: null, realizedPnl: null }),
+    }));
     output.returnPercent =
       output.nav !== null && output.initialCapital !== null && Number(output.initialCapital) > 0
         ? (Number(output.nav) / Number(output.initialCapital) - 1) * 100

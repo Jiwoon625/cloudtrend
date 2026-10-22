@@ -364,6 +364,11 @@ export function OctoberShadowSummaryContent({
                 <ShadowTimeline book={book} period={period} />
                 <div className="space-y-2 border-t pt-3">
                   <h4 className="text-sm font-medium">모델 보유종목</h4>
+                  <p className="text-xs text-muted-foreground">
+                    매수가격은 잔여 수량의 평균 체결가입니다. 손익은 매매 수수료 반영 평균원가
+                    기준이며, 실현손익은 해당 Shadow 시리즈 내 종목별 누적입니다. 미실현손익은 향후
+                    매도비용 차감 전입니다.
+                  </p>
                   {book.holdings.length ? (
                     <div className="overflow-x-auto">
                       <table className="w-full text-left text-xs">
@@ -371,8 +376,11 @@ export function OctoberShadowSummaryContent({
                           <tr>
                             <th>종목</th>
                             <th className="text-right">수량</th>
+                            <th className="text-right">매수가격</th>
                             <th className="text-right">평가가격</th>
                             <th className="text-right">평가금액</th>
+                            <th className="text-right">미실현손익</th>
+                            <th className="text-right">실현손익</th>
                             <th>편입일</th>
                           </tr>
                         </thead>
@@ -388,8 +396,17 @@ export function OctoberShadowSummaryContent({
                               <td className="text-right">
                                 {Number(holding.quantity).toLocaleString()}
                               </td>
+                              <td className="text-right">
+                                {money(holding.entryPrice ?? null, book.currency)}
+                              </td>
                               <td className="text-right">{money(holding.price, book.currency)}</td>
                               <td className="text-right">{money(holding.value, book.currency)}</td>
+                              <td className="text-right">
+                                {money(holding.unrealizedPnl ?? null, book.currency)}
+                              </td>
+                              <td className="text-right">
+                                {money(holding.realizedPnl ?? null, book.currency)}
+                              </td>
                               <td className="whitespace-nowrap pl-2">{holding.entryDate}</td>
                             </tr>
                           ))}
