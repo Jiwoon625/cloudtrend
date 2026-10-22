@@ -185,7 +185,7 @@ describe("ETF report-only score evidence", () => {
       instrument: { ...template.instrument, symbol: "218420" },
       grade: change === "new" ? "A" : "B",
       etfStrategy: { ...etf().etfStrategy!, date: analysis.asOfDate },
-      krxReviewReference: undefined,
+      krxReviewReference: { reviewDate: analysis.asOfDate, fields: {} },
     }));
     const core = buildSnapshot(analysis, undefined, "summary-regression");
     const previous =
