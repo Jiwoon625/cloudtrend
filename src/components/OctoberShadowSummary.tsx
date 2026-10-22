@@ -370,11 +370,26 @@ export function OctoberShadowSummaryContent({
                     매도비용 차감 전입니다.
                   </p>
                   {book.holdings.length ? (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead>
+                    <p className="text-xs text-muted-foreground">
+                      표를 좌우로 밀면 모든 열을 볼 수 있습니다. 종목명은 왼쪽에 고정됩니다.
+                    </p>
+                  ) : null}
+                  {book.holdings.length ? (
+                    <div
+                      className="overflow-x-auto rounded-lg border"
+                      role="region"
+                      aria-label="모델 보유종목 가로 스크롤"
+                      tabIndex={0}
+                    >
+                      <table className="w-full min-w-[1120px] border-collapse text-left text-sm [&_th]:whitespace-nowrap [&_th]:border-r [&_th]:border-border [&_th]:px-4 [&_th]:py-3 [&_td]:whitespace-nowrap [&_td]:border-r [&_td]:border-border [&_td]:px-4 [&_td]:py-3 [&_td]:tabular-nums">
+                        <caption className="sr-only">
+                          모델 보유종목의 수량, 매수가격, 평가가격, 평가금액 및 손익
+                        </caption>
+                        <thead className="bg-muted/70">
                           <tr>
-                            <th>종목</th>
+                            <th className="sticky left-0 z-10 min-w-[160px] bg-card shadow-sm">
+                              종목
+                            </th>
                             <th className="text-right">수량</th>
                             <th className="text-right">매수가격</th>
                             <th className="text-right">평가가격</th>
@@ -386,9 +401,14 @@ export function OctoberShadowSummaryContent({
                         </thead>
                         <tbody>
                           {book.holdings.map((holding) => (
-                            <tr key={holding.symbol} className="border-t">
-                              <td className="py-2">
-                                {holding.name}
+                            <tr
+                              key={holding.symbol}
+                              className="border-t even:bg-muted/20 hover:bg-muted/40"
+                            >
+                              <td className="sticky left-0 z-10 bg-card font-medium shadow-sm">
+                                <span className="block w-36 whitespace-normal break-words">
+                                  {holding.name}
+                                </span>
                                 <span className="block text-muted-foreground">
                                   {holding.symbol}
                                 </span>
