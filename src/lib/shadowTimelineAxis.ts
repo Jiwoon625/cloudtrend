@@ -19,12 +19,12 @@ export function shadowTimelineAxis(from: string, to: string) {
     const weekday = new Date(start).getUTCDay();
     const firstMonday = start + ((8 - weekday) % 7) * DAY;
     for (let time = firstMonday; time <= end; time += 7 * DAY) ticks.push(dateOf(time));
-  } else if (span <= 730) {
+  } else if (span <= 3653) {
     const months =
       (new Date(end).getUTCFullYear() - new Date(start).getUTCFullYear()) * 12 +
       new Date(end).getUTCMonth() -
       new Date(start).getUTCMonth();
-    const step = [1, 2, 3, 6].find((value) => months / value <= 12) ?? 6;
+    const step = [1, 2, 3, 6, 12].find((value) => months / value <= 12) ?? 12;
     interval = `${step}개월 간격 · 월초`;
     let month = new Date(start).getUTCFullYear() * 12 + new Date(start).getUTCMonth();
     month = Math.ceil(month / step) * step;
@@ -47,7 +47,7 @@ export function shadowTimelineAxis(from: string, to: string) {
     ticks,
     interval,
     label: (date: string) =>
-      span <= 90 ? date.slice(5) : span <= 730 ? date.slice(0, 7) : date.slice(0, 4),
+      span <= 90 ? date.slice(5) : span <= 3653 ? date.slice(0, 7) : date.slice(0, 4),
     fraction: (date: string) => (end === start ? 0.5 : (stamp(date) - start) / (end - start)),
   };
 }

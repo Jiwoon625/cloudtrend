@@ -20,6 +20,9 @@ describe("Shadow calendar axis", () => {
     const months = shadowTimelineAxis("2026-10-12", "2028-10-10");
     expect(months.ticks.length).toBeLessThanOrEqual(13);
     expect(months.ticks.every((date) => date.endsWith("-01"))).toBe(true);
+    const medium = shadowTimelineAxis("2026-10-12", "2029-10-12");
+    expect(medium.ticks.length).toBeGreaterThanOrEqual(6);
+    expect(medium.label(medium.ticks[0]!)).toHaveLength(7);
     const years = shadowTimelineAxis("2026-10-12", "2046-10-12");
     expect(years.ticks.length).toBeLessThanOrEqual(11);
     expect(years.label(years.ticks[0]!)).toHaveLength(4);
