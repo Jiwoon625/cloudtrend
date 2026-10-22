@@ -229,7 +229,7 @@ it("shows dated chart axes and per-holding entry and PnL without implying return
     checkedAt,
     books: [book],
     replayStatus: [],
-    consolidationReady: false,
+    readyForPortfolioConsolidation: false,
     viewVersion: "october-shadow-holdings-tax-v2",
   });
   expect(html).toContain("X축: 거래일");
