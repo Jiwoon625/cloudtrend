@@ -470,10 +470,8 @@ describe("new-only portfolio presentation", () => {
     expect(html).not.toContain("기존 원장 누적손익");
     const shadowSource = readFileSync(new URL("./ShadowPage.tsx", import.meta.url), "utf8");
     expect(shadowSource).toContain("한국·미국·ETF의 독립 모델");
-    // The separately approved retrospective view stays opt-in; it must not
-    // reintroduce hidden legacy controls into the initial Shadow render.
-    expect(shadowSource).toContain("useState(false)");
-    expect(shadowSource).toMatch(/showKospiCorrection && \([\s\S]*?<KospiShadowPanel \/>/);
+    expect(shadowSource).toContain("<OctoberShadowSummary />");
+    expect(shadowSource).not.toMatch(/KospiShadowPanel|별도 KOSPI|showKospiCorrection/);
     expect(shadowSource).not.toContain("UsPortfolioView");
   });
   it("keeps readable holdings when the write revision is unavailable", () => {
