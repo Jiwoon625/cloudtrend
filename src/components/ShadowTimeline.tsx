@@ -18,10 +18,25 @@ export function ShadowTimeline({
   const trades = (book.trades ?? []).filter(
     (d) => (!from || d.date >= from) && (!to || d.date <= to),
   );
-  const values = days.flatMap((d) => [d.nav, d.benchmark].filter((n): n is number => n !== null));
-  const lo = Math.min(...values),
-    hi = Math.max(...values),
-    range = hi - lo || 1;
+  const values = days.flatMap((d) =>
+    [d.nav, d.benchmark].filter((n): n is number => n !== null && Number.isFinite(n)),
+  );
+  const min = values.length ? Math.min(...values) : 0;
+  const max = values.length ? Math.max(...values) : 0;
+  const padding = min === max ? Math.max(Math.abs(min) * 0.01, 1) : (max - min) * 0.05;
+  const lo = min - padding,
+    hi = max + padding,
+    range = hi - lo;
+  const x = (index: number) => 105 + (index * 660) / Math.max(1, days.length - 1);
+  const y = (value: number) => 205 - ((value - lo) * 165) / range;
+  const yTicks = Array.from({ length: 5 }, (_, i) => lo + (range * i) / 4);
+  const xTicks = [
+    ...new Set(
+      Array.from({ length: Math.min(5, days.length) }, (_, i) =>
+        Math.round((i * (days.length - 1)) / Math.max(1, Math.min(5, days.length) - 1)),
+      ),
+    ),
+  ];
   const path = (field: "nav" | "benchmark") => {
     let connected = false;
     return days
@@ -33,7 +48,7 @@ export function ShadowTimeline({
         }
         const command = connected ? "L" : "M";
         connected = true;
-        return `${command}${30 + (index * 730) / Math.max(1, days.length - 1)},${180 - ((value - lo) * 150) / range}`;
+        return `${command}${x(index)},${y(value)}`;
       })
       .join(" ");
   };
@@ -64,12 +79,50 @@ export function ShadowTimeline({
               <svg
                 role="img"
                 aria-label="선택 기간 NAV와 벤치마크"
-                viewBox="0 0 800 220"
+                viewBox="0 0 800 275"
                 className="w-full rounded border"
               >
                 <title>선택 기간 NAV, 동일 통화 기준</title>
-                <text x="30" y="18" fontSize="11" fill="currentColor">
-                  {hi.toLocaleString()} {book.currency}
+                <text x="105" y="22" fontSize="12" fill="currentColor">
+                  Y축: 평가자산 (NAV · {book.currency})
+                </text>
+                <line x1="105" y1="40" x2="105" y2="205" stroke="currentColor" />
+                <line x1="105" y1="205" x2="765" y2="205" stroke="currentColor" />
+                {yTicks.map((tick, i) => (
+                  <g key={i}>
+                    <line
+                      x1="105"
+                      y1={y(tick)}
+                      x2="765"
+                      y2={y(tick)}
+                      stroke="currentColor"
+                      opacity="0.12"
+                    />
+                    <text x="97" y={y(tick) + 4} textAnchor="end" fontSize="11" fill="currentColor">
+                      {tick.toLocaleString(book.currency === "USD" ? "en-US" : "ko-KR", {
+                        maximumFractionDigits: book.currency === "USD" ? 2 : 0,
+                      })}
+                    </text>
+                  </g>
+                ))}
+                {xTicks.map((index) => (
+                  <g key={index}>
+                    <line x1={x(index)} y1="205" x2={x(index)} y2="210" stroke="currentColor" />
+                    <text
+                      x={x(index)}
+                      y="228"
+                      textAnchor={
+                        index === 0 ? "start" : index === days.length - 1 ? "end" : "middle"
+                      }
+                      fontSize="11"
+                      fill="currentColor"
+                    >
+                      {days[index]?.date}
+                    </text>
+                  </g>
+                ))}
+                <text x="435" y="258" textAnchor="middle" fontSize="12" fill="currentColor">
+                  X축: 거래일
                 </text>
                 <path d={path("nav")} fill="none" stroke="currentColor" strokeWidth="2" />
                 {days.some((d) => d.benchmark !== null) ? (
@@ -81,12 +134,9 @@ export function ShadowTimeline({
                     strokeDasharray="5 4"
                   />
                 ) : null}
-                <text x="30" y="209" fontSize="11" fill="currentColor">
-                  {days[0]?.date}
-                </text>
-                <text x="680" y="209" fontSize="11" fill="currentColor">
-                  {days.at(-1)?.date}
-                </text>
+                {days.length === 1 && days[0]?.nav !== null && Number.isFinite(days[0]?.nav) ? (
+                  <circle cx={x(0)} cy={y(days[0]!.nav!)} r="3" fill="currentColor" />
+                ) : null}
               </svg>
               <p className="text-xs text-muted-foreground">
                 실선 NAV · 점선 벤치마크{days.every((d) => d.benchmark === null) ? " 미연결" : ""} ·
