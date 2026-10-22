@@ -404,7 +404,14 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
       issue: sector.counts ? null : "실제 보유·미체결 예약 섹터 미확인",
     };
     for (const group of markets)
-      for (const row of [...(group.conditions ?? []), ...group.onsets, ...(group.pending ?? [])]) {
+      for (const row of [
+        ...(group.conditions ?? []),
+        ...group.onsets,
+        ...(group.pending ?? []),
+        ...group.exits,
+        ...(group.notPurchased ?? []),
+        ...(group.assessments ?? []),
+      ]) {
         const limit = dashboardSectorLimit(row, sectorContext);
         if (limit) row.sectorLimit = limit;
       }

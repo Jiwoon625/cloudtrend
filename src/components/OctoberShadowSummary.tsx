@@ -51,6 +51,16 @@ const money = (value: string | null, currency: "KRW" | "USD", residual = false) 
         },
       )}${currency === "KRW" ? "원" : ""}`;
 
+const holdingReturn = (holding: OctoberShadowBookSummary["holdings"][number]) => {
+  if (holding.value === null || holding.unrealizedPnl == null) return "미확인";
+  const value = Number(holding.value);
+  const pnl = Number(holding.unrealizedPnl);
+  const cost = value - pnl;
+  if (!Number.isFinite(value) || !Number.isFinite(pnl) || cost <= 0) return "미확인";
+  const percent = (pnl / cost) * 100;
+  return `${percent > 0 ? "+" : ""}${percent.toFixed(2)}%`;
+};
+
 export function OctoberShadowSummary() {
   const version = RESTART_SERIES_VERSION;
   const [kind, setKind] = useState<AdoptedSeriesKind>("KR_MIXED");
@@ -364,23 +374,56 @@ export function OctoberShadowSummaryContent({
                 <ShadowTimeline book={book} period={period} />
                 <div className="space-y-2 border-t pt-3">
                   <h4 className="text-sm font-medium">모델 보유종목</h4>
+                  <p className="text-xs text-muted-foreground">
+                    매수가격은 잔여 수량의 평균 체결가입니다. 손익은 매매 수수료 반영 평균원가
+                    기준이며, 실현손익은 해당 Shadow 시리즈 내 종목별 누적입니다. 미실현손익은 향후
+                    매도비용 차감 전입니다. 수익률은 수수료 반영 잔여 매입원가 대비 미실현손익
+                    비율입니다.
+                  </p>
                   {book.holdings.length ? (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead>
+                    <p className="text-xs text-muted-foreground">
+                      표를 좌우로 밀면 모든 열을 볼 수 있습니다.
+                    </p>
+                  ) : null}
+                  {book.holdings.length ? (
+                    <div
+                      className="overflow-x-auto rounded-lg border"
+                      role="region"
+                      aria-label="모델 보유종목 가로 스크롤"
+                      tabIndex={0}
+                    >
+                      <table className="w-full min-w-[1152px] table-fixed border-collapse text-left text-sm [&_th]:whitespace-nowrap [&_th]:border-r [&_th]:border-border [&_th]:px-4 [&_th]:py-3 [&_td]:whitespace-nowrap [&_td]:border-r [&_td]:border-border [&_td]:px-4 [&_td]:py-3 [&_td]:tabular-nums [&_th:first-child]:px-2 [&_td:first-child]:px-2">
+                        <caption className="sr-only">
+                          모델 보유종목의 수량, 매수가격, 평가가격, 평가금액, 손익 및 수익률
+                        </caption>
+                        <colgroup>
+                          {[100, 72, 120, 120, 144, 144, 96, 144, 112].map((width, index) => (
+                            <col key={index} style={{ width }} />
+                          ))}
+                        </colgroup>
+                        <thead className="bg-muted/70">
                           <tr>
                             <th>종목</th>
                             <th className="text-right">수량</th>
+                            <th className="text-right">매수가격</th>
                             <th className="text-right">평가가격</th>
                             <th className="text-right">평가금액</th>
+                            <th className="text-right">미실현손익</th>
+                            <th className="text-right">수익률</th>
+                            <th className="text-right">실현손익</th>
                             <th>편입일</th>
                           </tr>
                         </thead>
                         <tbody>
                           {book.holdings.map((holding) => (
-                            <tr key={holding.symbol} className="border-t">
-                              <td className="py-2">
-                                {holding.name}
+                            <tr
+                              key={holding.symbol}
+                              className="border-t even:bg-muted/20 hover:bg-muted/40"
+                            >
+                              <td className="font-medium">
+                                <span className="block whitespace-normal break-words">
+                                  {holding.name}
+                                </span>
                                 <span className="block text-muted-foreground">
                                   {holding.symbol}
                                 </span>
@@ -388,8 +431,18 @@ export function OctoberShadowSummaryContent({
                               <td className="text-right">
                                 {Number(holding.quantity).toLocaleString()}
                               </td>
+                              <td className="text-right">
+                                {money(holding.entryPrice ?? null, book.currency)}
+                              </td>
                               <td className="text-right">{money(holding.price, book.currency)}</td>
                               <td className="text-right">{money(holding.value, book.currency)}</td>
+                              <td className="text-right">
+                                {money(holding.unrealizedPnl ?? null, book.currency)}
+                              </td>
+                              <td className="text-right">{holdingReturn(holding)}</td>
+                              <td className="text-right">
+                                {money(holding.realizedPnl ?? null, book.currency)}
+                              </td>
                               <td className="whitespace-nowrap pl-2">{holding.entryDate}</td>
                             </tr>
                           ))}

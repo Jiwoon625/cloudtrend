@@ -198,3 +198,52 @@ it("does not render a beta payload even if a stale cache provides one", async ()
   expect(html).not.toContain("2026-10-05");
   expect(html).not.toContain("초기화 완료");
 });
+
+it("shows dated chart axes and per-holding entry and PnL without implying return-percent units", async () => {
+  const book = await summarizeOctoberShadowBook(
+    "KR_MIXED",
+    registry(await fixtureSeries("KR_MIXED")),
+    [],
+    true,
+    checkedAt,
+  );
+  book.holdings = [
+    {
+      symbol: "S",
+      name: "Synthetic",
+      quantity: "10",
+      price: "110",
+      value: "1100",
+      entryDate: "2026-10-12",
+      entryPrice: "100",
+      unrealizedPnl: "99",
+      realizedPnl: "20",
+    },
+  ];
+  book.history = [
+    { date: "2026-10-12", nav: 1000, benchmark: null },
+    { date: "2026-10-13", nav: 1100, benchmark: null },
+  ];
+  const html = render({
+    version: RESTART_SERIES_VERSION,
+    checkedAt,
+    books: [book],
+    replayStatus: [],
+    readyForPortfolioConsolidation: false,
+    viewVersion: "october-shadow-holdings-tax-v2",
+  });
+  expect(html).toContain("X축: 날짜");
+  expect(html).toContain("1일 간격");
+  expect(html).toContain("모델 보유종목 가로 스크롤");
+  expect(html).toContain("min-w-[1152px]");
+  expect(html).not.toContain("sticky left-0");
+  expect(html).toContain("[&amp;_td]:px-4");
+  expect(html).toContain("Y축: 평가자산 (NAV · KRW)");
+  expect(html).toContain("2026-10-12");
+  for (const label of ["매수가격", "미실현손익", "실현손익", "수익률"])
+    expect(html).toContain(label);
+  expect(html).toContain("99원");
+  expect(html).toContain("+9.89%");
+  expect(html).toContain("20원");
+  expect(html).not.toMatch(/NaN|Infinity/);
+});

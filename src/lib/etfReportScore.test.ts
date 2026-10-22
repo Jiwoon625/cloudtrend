@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { buildScreeningSummary } from "./analysisRunBundle";
 import { getMockDataset } from "./engine/mockProvider";
 import { runAnalysis } from "./engine/pipeline";
 import { ETF_POLICY } from "./engine/etfStrategy";
@@ -167,16 +169,51 @@ describe("ETF report-only score evidence", () => {
     });
     expect(appendEtfReportEvidence(model, analysis)).toBe(model);
   });
-  it("bounds summary to 25 representative ETFs rather than writing huge arrays", () => {
-    const candidates = Array.from({ length: 40 }, (_, n) => {
-      const row = etf();
-      row.instrument = { ...row.instrument, symbol: `T${String(n).padStart(5, "0")}` };
-      // Unknown mapping -> non strategy target, with no fabricated M0.
-      return row;
-    });
-    const s = etfReportScoreSummary([etf(), ...candidates], date);
-    expect(s.totalEtfs).toBe(41);
-    expect(s.noAvailableScoreIsNotZero).toBe(true);
-    expect(s.topReferenceEtfs.length).toBeLessThanOrEqual(25);
+  it("caps references at exactly 25 even when every ETF has an available score", () => {
+    const candidates = Array.from({ length: 80 }, () => etf());
+    const summary = etfReportScoreSummary(candidates, date);
+    expect(summary.totalEtfs).toBe(80);
+    expect(summary.counts.PRELIMINARY).toBe(80);
+    expect(summary.topReferenceEtfs).toHaveLength(25);
+  });
+
+  it.each(["new", "dropped"] as const)("keeps full evidence out of %s grade changes", (change) => {
+    const analysis = runAnalysis(getMockDataset());
+    const template = analysis.rows.find((row) => row.instrument.instrumentType === "ETF")!;
+    analysis.rows = Array.from({ length: 80 }, () => ({
+      ...template,
+      instrument: { ...template.instrument, symbol: "218420" },
+      grade: change === "new" ? "A" : "B",
+      etfStrategy: { ...etf().etfStrategy!, date: analysis.asOfDate },
+      krxReviewReference: undefined,
+    }));
+    const core = buildSnapshot(analysis, undefined, "summary-regression");
+    const previous =
+      change === "new"
+        ? null
+        : {
+            ...core,
+            entries: core.entries.map((entry) => ({ ...entry, grade: "A" as const })),
+          };
+    const summary = {
+      ...buildScreeningSummary(analysis, core, previous),
+      etfScoreContinuity: etfReportScoreSummary(analysis.rows, analysis.asOfDate),
+    };
+    const before = JSON.stringify(summary);
+    const archive = appendEtfReportEvidence(core, analysis);
+    const changes = change === "new" ? summary.newGradeA : summary.droppedAtoB;
+    expect(changes).toHaveLength(80);
+    expect(changes.every((entry) => !entry.evidence?.["etfReportScore"])).toBe(true);
+    expect(archive.entries.every((entry) => !!entry.evidence?.["etfReportScore"])).toBe(true);
+    expect(JSON.stringify(summary)).toBe(before);
+    expect(JSON.stringify({ ...summary, etfScoreContinuity: undefined })).not.toContain(
+      "etfReportScore",
+    );
+    // Protect the production CLI wiring as well as the non-mutating archive wrapper.
+    const cli = readFileSync(new URL("../../scripts/run-screening.ts", import.meta.url), "utf8");
+    expect(cli).toContain("buildScreeningSummary(analysis, coreSnapshot, previous)");
+    expect(cli.indexOf("const summary =")).toBeLessThan(
+      cli.indexOf("const snapshot = appendEtfReportEvidence"),
+    );
   });
 });

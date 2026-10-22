@@ -6,6 +6,9 @@ on:
       - src/lib/websitePerformanceBoundary*
       - tests/website-restart-fixtures.ts
       - src/lib/octoberShadow*
+      - src/lib/shadowTimelineAxis*
+      - src/lib/shadowHoldingMetrics*
+      - src/components/ShadowTimeline*
       - src/lib/shadowReplay*
       - src/lib/krSourceVintageApproval*
       - src/lib/screeningSnapshot*

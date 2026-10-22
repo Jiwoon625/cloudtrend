@@ -1,3 +1,4 @@
+import { shadowTimelineAxis } from "@/lib/shadowTimelineAxis";
 import { useState } from "react";
 import type { OctoberShadowBookSummary } from "@/lib/octoberShadowSummary.server";
 export function ShadowTimeline({
@@ -18,10 +19,20 @@ export function ShadowTimeline({
   const trades = (book.trades ?? []).filter(
     (d) => (!from || d.date >= from) && (!to || d.date <= to),
   );
-  const values = days.flatMap((d) => [d.nav, d.benchmark].filter((n): n is number => n !== null));
-  const lo = Math.min(...values),
-    hi = Math.max(...values),
-    range = hi - lo || 1;
+  const values = days.flatMap((d) =>
+    [d.nav, d.benchmark].filter((n): n is number => n !== null && Number.isFinite(n)),
+  );
+  const min = values.length ? Math.min(...values) : 0;
+  const max = values.length ? Math.max(...values) : 0;
+  const padding = min === max ? Math.max(Math.abs(min) * 0.01, 1) : (max - min) * 0.05;
+  const lo = min - padding,
+    hi = max + padding,
+    range = hi - lo;
+  const axis = shadowTimelineAxis(days[0]?.date ?? "2026-10-12", days.at(-1)?.date ?? "2026-10-12");
+  const xDate = (date: string) => 105 + axis.fraction(date) * 660;
+  const x = (index: number) => xDate(days[index]!.date);
+  const y = (value: number) => 205 - ((value - lo) * 165) / range;
+  const yTicks = Array.from({ length: 5 }, (_, i) => lo + (range * i) / 4);
   const path = (field: "nav" | "benchmark") => {
     let connected = false;
     return days
@@ -33,7 +44,7 @@ export function ShadowTimeline({
         }
         const command = connected ? "L" : "M";
         connected = true;
-        return `${command}${30 + (index * 730) / Math.max(1, days.length - 1)},${180 - ((value - lo) * 150) / range}`;
+        return `${command}${x(index)},${y(value)}`;
       })
       .join(" ");
   };
@@ -61,36 +72,92 @@ export function ShadowTimeline({
         <>
           {days.length && values.length ? (
             <>
-              <svg
-                role="img"
-                aria-label="선택 기간 NAV와 벤치마크"
-                viewBox="0 0 800 220"
-                className="w-full rounded border"
+              <div
+                className="overflow-x-auto rounded border"
+                role="region"
+                aria-label="Shadow 성과 그래프 가로 스크롤"
+                tabIndex={0}
               >
-                <title>선택 기간 NAV, 동일 통화 기준</title>
-                <text x="30" y="18" fontSize="11" fill="currentColor">
-                  {hi.toLocaleString()} {book.currency}
-                </text>
-                <path d={path("nav")} fill="none" stroke="currentColor" strokeWidth="2" />
-                {days.some((d) => d.benchmark !== null) ? (
-                  <path
-                    d={path("benchmark")}
-                    fill="none"
-                    stroke="#94a3b8"
-                    strokeWidth="2"
-                    strokeDasharray="5 4"
-                  />
-                ) : null}
-                <text x="30" y="209" fontSize="11" fill="currentColor">
-                  {days[0]?.date}
-                </text>
-                <text x="680" y="209" fontSize="11" fill="currentColor">
-                  {days.at(-1)?.date}
-                </text>
-              </svg>
+                <svg
+                  role="img"
+                  aria-label="선택 기간 NAV와 벤치마크"
+                  viewBox="0 0 800 275"
+                  className="w-full min-w-[720px]"
+                >
+                  <title>선택 기간 NAV, 동일 통화 기준</title>
+                  <text x="105" y="22" fontSize="12" fill="currentColor">
+                    Y축: 평가자산 (NAV · {book.currency})
+                  </text>
+                  <line x1="105" y1="40" x2="105" y2="205" stroke="currentColor" />
+                  <line x1="105" y1="205" x2="765" y2="205" stroke="currentColor" />
+                  {yTicks.map((tick, i) => (
+                    <g key={i}>
+                      <line
+                        x1="105"
+                        y1={y(tick)}
+                        x2="765"
+                        y2={y(tick)}
+                        stroke="currentColor"
+                        opacity="0.12"
+                      />
+                      <text
+                        x="97"
+                        y={y(tick) + 4}
+                        textAnchor="end"
+                        fontSize="11"
+                        fill="currentColor"
+                      >
+                        {tick.toLocaleString(book.currency === "USD" ? "en-US" : "ko-KR", {
+                          maximumFractionDigits: book.currency === "USD" ? 2 : 0,
+                        })}
+                      </text>
+                    </g>
+                  ))}
+                  {axis.ticks.map((date) => (
+                    <g key={date}>
+                      <line
+                        x1={xDate(date)}
+                        y1="205"
+                        x2={xDate(date)}
+                        y2="210"
+                        stroke="currentColor"
+                      />
+                      <text
+                        x={xDate(date)}
+                        y="228"
+                        textAnchor="middle"
+                        fontSize="11"
+                        fill="currentColor"
+                      >
+                        {axis.label(date)}
+                      </text>
+                    </g>
+                  ))}
+                  <text x="435" y="258" textAnchor="middle" fontSize="12" fill="currentColor">
+                    X축: 날짜
+                  </text>
+                  <path d={path("nav")} fill="none" stroke="currentColor" strokeWidth="2" />
+                  {days.some((d) => d.benchmark !== null) ? (
+                    <path
+                      d={path("benchmark")}
+                      fill="none"
+                      stroke="#94a3b8"
+                      strokeWidth="2"
+                      strokeDasharray="5 4"
+                    />
+                  ) : null}
+                  {days.length === 1 && days[0]?.nav !== null && Number.isFinite(days[0]?.nav) ? (
+                    <circle cx={x(0)} cy={y(days[0]!.nav!)} r="3" fill="currentColor" />
+                  ) : null}
+                </svg>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {days[0]?.date} ~ {days.at(-1)?.date} · {axis.interval} · 좁은 화면에서는 좌우로
+                스크롤할 수 있습니다.
+              </p>
               <p className="text-xs text-muted-foreground">
                 실선 NAV · 점선 벤치마크{days.every((d) => d.benchmark === null) ? " 미연결" : ""} ·
-                단기 성과는 누적수익률로 표시
+                동일 통화 평가자산 기준
               </p>
             </>
           ) : (

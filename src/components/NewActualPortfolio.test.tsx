@@ -470,10 +470,8 @@ describe("new-only portfolio presentation", () => {
     expect(html).not.toContain("기존 원장 누적손익");
     const shadowSource = readFileSync(new URL("./ShadowPage.tsx", import.meta.url), "utf8");
     expect(shadowSource).toContain("한국·미국·ETF의 독립 모델");
-    // The separately approved retrospective view stays opt-in; it must not
-    // reintroduce hidden legacy controls into the initial Shadow render.
-    expect(shadowSource).toContain("useState(false)");
-    expect(shadowSource).toMatch(/showKospiCorrection && \([\s\S]*?<KospiShadowPanel \/>/);
+    expect(shadowSource).toContain("<OctoberShadowSummary />");
+    expect(shadowSource).not.toMatch(/KospiShadowPanel|별도 KOSPI|showKospiCorrection/);
     expect(shadowSource).not.toContain("UsPortfolioView");
   });
   it("keeps readable holdings when the write revision is unavailable", () => {
@@ -489,6 +487,19 @@ describe("new-only portfolio presentation", () => {
     );
     expect(html).toContain("신규 한국 합성 종목");
     expect(button("실제 체결 입력").disabled).toBe(true);
+  });
+  it("shows the actual US cached closing date and pending update without hiding values", () => {
+    const data = confirmed();
+    data.pools.USD.valuationDate = "2026-10-20";
+    data.pools.USD.expectedValuationDate = "2026-10-21";
+    data.pools.USD.issues = ["latest_close_pending"];
+    const html = render(
+      <NewActualPortfolioContent data={data} asset="US" onAssetChange={() => undefined} />,
+    );
+    expect(html).toContain("종가 평가 기준일 2026-10-20");
+    expect(html).toContain("최신 장 마감일 2026-10-21 갱신 대기");
+    expect(html).toContain("최근 확보 종가로 평가");
+    expect(html).not.toContain("평가가격이 오래되어 평가 미확정");
   });
   it("renders missing/stale evaluations and cash cancellations without invented totals", () => {
     const data = confirmed();
