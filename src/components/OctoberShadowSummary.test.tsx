@@ -232,7 +232,12 @@ it("shows dated chart axes and per-holding entry and PnL without implying return
     readyForPortfolioConsolidation: false,
     viewVersion: "october-shadow-holdings-tax-v2",
   });
-  expect(html).toContain("X축: 거래일");
+  expect(html).toContain("X축: 날짜");
+  expect(html).toContain("1일 간격");
+  expect(html).toContain("모델 보유종목 가로 스크롤");
+  expect(html).toContain("min-w-[1120px]");
+  expect(html).toContain("sticky left-0");
+  expect(html).toContain("[&amp;_td]:px-4");
   expect(html).toContain("Y축: 평가자산 (NAV · KRW)");
   expect(html).toContain("2026-10-12");
   for (const label of ["매수가격", "미실현손익", "실현손익"]) expect(html).toContain(label);

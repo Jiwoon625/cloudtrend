@@ -7,6 +7,7 @@ export default defineConfig({
     include: [
       "src/lib/octoberShadowSummary.test.ts",
       "src/lib/shadowHoldingMetrics.test.ts",
+      "src/lib/shadowTimelineAxis.test.ts",
       "src/lib/integratedAllocationShadow.functions.test.ts",
       "src/lib/octoberShadowSummary.functions.test.ts",
       "src/lib/websitePerformanceBoundary.test.ts",
