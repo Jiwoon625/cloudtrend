@@ -1,0 +1,35 @@
+name: Exit research offline public source bundle
+on:
+  push:
+    branches: [research/exit-stop-offline-bundle-20261023]
+    paths: [.github/workflows/exit-stop-offline-bundle-20261023.yml]
+permissions:
+  contents: read
+jobs:
+  bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 5b99ce7128287aa4a993fa192122ef07ea6831c5
+          persist-credentials: false
+      - name: Package public source and pinned binary dependency only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p offline-public/wheels
+          git archive --format=tar.gz --output=offline-public/adopted-us-source-5b99ce7.tar.gz HEAD
+          python -m pip download --disable-pip-version-check --no-deps --only-binary=:all: --platform manylinux_2_28_x86_64 --python-version 313 --implementation cp --abi cp313 pyarrow==19.0.1 --dest offline-public/wheels
+          python - <<'PY'
+          import hashlib,json,pathlib
+          root=pathlib.Path('offline-public')
+          files=[{'path':str(p.relative_to(root)),'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in sorted(root.rglob('*')) if p.is_file()]
+          (root/'manifest.json').write_text(json.dumps({'version':'exit-stop-offline-public-bundle-v1','sourceCommit':'5b99ce7128287aa4a993fa192122ef07ea6831c5','privateInputsRead':False,'credentialsUsed':False,'liveDataWritten':False,'files':files},indent=2))
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: exit-stop-offline-public-source
+          path: offline-public/
+          if-no-files-found: error
+          retention-days: 3
