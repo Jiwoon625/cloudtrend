@@ -1,0 +1,63 @@
+name: Exit research encrypted reference calendar
+on:
+  push:
+    branches: [research/exit-stop-offline-bundle-20261023]
+    paths: [.github/workflows/exit-stop-reference-cache-20261023.yml]
+permissions:
+  contents: read
+jobs:
+  transport:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: 7667ac540f871761e680b01c8129683d2044cf6e
+          persist-credentials: false
+      - name: Verify historical reference archive and encrypt only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir private-reference encrypted-only
+          python - <<'PY'
+          import os,urllib.request,urllib.parse,uuid,hashlib,pathlib,sys,json,tarfile
+          try:
+            workflow=pathlib.Path('.github/workflows/exit-stop-canonical-cache-20261023.yml').read_text()
+            start=workflow.index('-----BEGIN CERTIFICATE-----');end=workflow.index('-----END CERTIFICATE-----')+len('-----END CERTIFICATE-----')
+            pathlib.Path('recipient.pem').write_text('\n'.join(x.strip() for x in workflow[start:end].splitlines())+'\n')
+            base=os.environ['SUPABASE_URL'].rstrip('/')
+            if base!='https://ahbvrtugugwnbrfnbxzp.supabase.co':raise ValueError('project')
+            owner=str(uuid.UUID(os.environ['SUPABASE_USER_ID']));secret=os.environ['SUPABASE_SERVICE_ROLE_KEY']
+            def get(relative,expected,size,name):
+              key=owner+'/research/cm/inputs/'+relative
+              req=urllib.request.Request(base+'/storage/v1/object/authenticated/cloudtrend-data/'+urllib.parse.quote(key,safe='/'),headers={'apikey':secret,'Authorization':'Bearer '+secret})
+              with urllib.request.urlopen(req,timeout=120) as response:data=response.read(size+1)
+              if len(data)!=size or hashlib.sha256(data).hexdigest()!=expected:raise ValueError('hash')
+              pathlib.Path('private-reference',name).write_bytes(data)
+              return data
+            raw=get('cm06.batched.stage.Stage2_reference_time.json','5ffb9c2c8c7ff280d68d4abaea26917287f813f7c191373c90211b99e1f53f73',4904,'stage.json')
+            doc=json.loads(raw)
+            if doc['stage']!='Stage2_reference_time' or len(doc['archives'])!=1:raise ValueError('stage')
+            a=doc['archives'][0]
+            if a['size']>100_000_000:raise ValueError('size')
+            get('cm06.batched.Stage2_reference_time.'+a['sha256']+'.tar',a['sha256'],a['size'],'source.tar')
+            with tarfile.open('private-reference.tar','w') as out:
+              for p in sorted(pathlib.Path('private-reference').iterdir()):out.add(p,arcname=p.name)
+          except Exception:
+            print('Verified reference transport failed; no source content or credentials disclosed.',file=sys.stderr);sys.exit(2)
+          PY
+          openssl cms -encrypt -binary -aes-256-cbc -in private-reference.tar -out encrypted-only/reference.cms -outform DER recipient.pem
+          test -s encrypted-only/reference.cms
+          rm -rf private-reference private-reference.tar
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: exit-stop-reference-encrypted
+          path: encrypted-only/reference.cms
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
