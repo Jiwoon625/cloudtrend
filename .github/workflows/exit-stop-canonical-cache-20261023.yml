@@ -1,0 +1,84 @@
+name: Exit research encrypted canonical cache transport
+on:
+  push:
+    branches: [research/exit-stop-offline-bundle-20261023]
+    paths: [.github/workflows/exit-stop-canonical-cache-20261023.yml]
+permissions:
+  contents: read
+jobs:
+  transport:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Read exact historical cache and encrypt to offline researcher
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p private-source encrypted-only
+          cat > recipient.pem <<'CERT'
+          -----BEGIN CERTIFICATE-----
+          MIIEQzCCAqugAwIBAgIUFk671d2y8aG3BK9aZlysAVc1ltwwDQYJKoZIhvcNAQEL
+          BQAwMTEvMC0GA1UEAwwmQ2xvdWRUcmVuZCByZXNlYXJjaCB0cmFuc3BvcnQgMjAy
+          NjEwMjMwHhcNMjYxMDIzMDE1NTQ2WhcNMjYxMDI2MDE1NTQ2WjAxMS8wLQYDVQQD
+          DCZDbG91ZFRyZW5kIHJlc2VhcmNoIHRyYW5zcG9ydCAyMDI2MTAyMzCCAaIwDQYJ
+          KoZIhvcNAQEBBQADggGPADCCAYoCggGBAP3siAWCevzFWCHIWOisZOVxJ+tMrlyN
+          8BmRcRNUNVxk98YGS2l611B0zBuA/6AIcVrgsUbT9m6V00uO0dujKQSnBTIm60Fu
+          0VvSoA/3zKAUv82a7ewO2/de1WSgWF/LceEYmops8NUWoy3Uv66gFsg+dB03caa5
+          37Hd0G8N8VZXIUx3unHHeH099aRJ8c2Kk/4znDlO480XgkOPmO4IIzDXfG1AJrY9
+          u00tR+HpxNWjd+XCGWB8WtUXSrxIfmZfcKEB1n7iDQ3+vcaKK1eiyW1NMnkm3zkL
+          /5cgyPtQeSIdyIOohV4OambqgiZBF/8UmFqBm4A1fkdXzOPtbBsfB+rGsUyt8fUs
+          fqcvmzr4TglHPXYWqf3boVUNeDBfCR0n6gXb8V5uI62kcrpi8H9yLf5QLtC1XSR+
+          0kRS+DXCukv8FccjGEHk7ComlRHJBGKMIjQtbTa8VaotPAk1eCol697X91ma4Ou5
+          UXq8MPt9xFmmdEH4u0KC3S4/99ogCux42QIDAQABo1MwUTAdBgNVHQ4EFgQUWkTK
+          LfsLCOmv5RAEPonySq6oZAEwHwYDVR0jBBgwFoAUWkTKLfsLCOmv5RAEPonySq6o
+          ZAEwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAYEAk1X20k7NCKy9
+          zpPFr4ZNf3nax6AKKQYNpmH8AvzDAYLCpmSVl2Rg75gmoMp3cKbZrnj/kUqHUxBM
+          KeEN1Qko1/CyYrpQWuYoK5T8Oa53t0cE2Mejyt3oQw5H5yBd7y2jIZNbucF3jZ4M
+          YtIO3mK4waaeo3QZ7KMQtrDUXhUqB7mL9ejfF0degz/Zu9Icl1Yf6OE1mkHs/scm
+          L2cvXJGveFw8X0IwfeZA7S0cVD/t8MDZLXksCwpJrUoM3Y+dju/pl99ZKb2TQ1/x
+          dZ+uUDHvJ3HHnceCXebu/+CgffQubw7GRRWyvnoHu0pkeVVY06nnnbXMXtsbbn5X
+          qBTBTogUWK6PtmjoxxGZAC3XpwEWGQQf8fuvG6Xvow4zjfj+dskN4499Qc6mp+MM
+          HrXp9p3ad6Paw8t8teGe/H2FIFMT6QKSgD6tH0oVOy2V6Ye0igVf6kBlj2m49BYT
+          I842MIMrpPbFF58wa6I7NZS5nI/aXGnYDWwZCQAMK2hLp3xoHe08
+          -----END CERTIFICATE-----
+          CERT
+          python - <<'PY'
+          import os,urllib.request,urllib.parse,uuid,hashlib,pathlib,sys,tarfile
+          hashes=['c32e9dbb1a10be61ec6331d6a9d47d3f977c7fa11138f56a4d83f8528a3321a5','915ea4a804e84b517c1e7bf2e5a1bf18fcaeee8e8fd048f256b7bbe20615626d','ff8b0990eaff35a72b53db0f9cf5a943bbb5707010e951116d424cc21a6966b3','54341f51226f908d9a0ec8e3a6f8095b999ddf7a63f98fc5d907909d15723859','0ad7cb548cefe3e96abb3cf954cd95f353a8bb47beec8d24ec50e24e9d2567b5','a5b0a6601d17c9a27d61b74ea05f2556c1dbd879bb4c91e9a7bab797a665c59e','864b83e6c0e24c4e63620145fadb0b6011185122324b8aa0064674d1fd2d43b1','0573d7a7b3b4b99d4c03cf107499d61f8c680fdaea187876d1eb3f7108d127f3','7aa73f3e0a50a43e52e813a1480e55809c6b84f388c0e6262a955484e330c8d6','6ba0803f4f4136d7989676463d045f73ec125693c5e826907a3292785732865a','c997379c38d5e52df235a00a0f9a3d6989494515e8c883e1a88db8e39ea05fe5','55620c7e4d2e79493de475e73cfcd9a791b475d812c222adc20f7f5fe97389af','532f8d0354f44e37deebcb8569b980c6cd150c25a72a6966f699e15943d1dab6','691a26135ac98b2352dd6da000c38f3bc70666983c78a5fceb9a3b32cba6f752','08bba4247daec1abf4390787d67c5fa6e83ce6cd2df81a00864a16bf54edc319','bf04639f21fc436cb1f698e5d2d71b44e29785b1e93037a88f91d00c78bc357f','44d6f50eb3d48afad19f3478aa365423180c2d9678f5242acc5aaca110bcc344','f1a458592f555383651342ec1d647f597d8c41a05c735b42975b6cdd31a320a8','f010d8cfdb83c3f1433217603361b464cad6235109b38aa2e6302ab5f93ba0bd','d5a254e079fe5c9779a98680d2204f22f1e2693aedf66a833af5c48e150624c1']
+          try:
+            base=os.environ['SUPABASE_URL'].rstrip('/')
+            if base!='https://ahbvrtugugwnbrfnbxzp.supabase.co':raise ValueError('project')
+            owner=str(uuid.UUID(os.environ['SUPABASE_USER_ID']))
+            secret=os.environ['SUPABASE_SERVICE_ROLE_KEY']
+            for i,expected in enumerate(hashes):
+              key=f'{owner}/research/adopted-full-period/resumable/38016639367/score-{i:03d}/attempt-1/signal-cache.jsonl.gz'
+              request=urllib.request.Request(base+'/storage/v1/object/authenticated/cloudtrend-data/'+urllib.parse.quote(key,safe='/'),headers={'apikey':secret,'Authorization':'Bearer '+secret})
+              target=pathlib.Path('private-source')/f'score-{i:03d}.jsonl.gz'
+              digest=hashlib.sha256();size=0
+              with urllib.request.urlopen(request,timeout=120) as response,target.open('xb') as out:
+                while chunk:=response.read(1024*1024):
+                  size+=len(chunk)
+                  if size>50_000_000:raise ValueError('size')
+                  digest.update(chunk);out.write(chunk)
+              if digest.hexdigest()!=expected:raise ValueError('hash')
+            with tarfile.open('private-source.tar','w') as archive:
+              for f in sorted(pathlib.Path('private-source').glob('*.gz')):archive.add(f,arcname=f.name)
+          except Exception:
+            print('Verified historical transport failed; no source content or credentials disclosed.',file=sys.stderr)
+            sys.exit(2)
+          PY
+          openssl cms -encrypt -binary -aes-256-cbc -in private-source.tar -out encrypted-only/canonical-cache.cms -outform DER recipient.pem
+          test -s encrypted-only/canonical-cache.cms
+          rm -rf private-source private-source.tar
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: exit-stop-canonical-encrypted
+          path: encrypted-only/canonical-cache.cms
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
