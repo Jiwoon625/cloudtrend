@@ -1,11 +1,11 @@
 {
-  "request_id": "cm-split10-shortlist13-first-20261024-06",
+  "request_id": "cm-split10-shortlist13-first-20261024-07",
   "mode": "run",
   "stage": "split10",
   "offset": 0,
   "count": 1,
   "max_seconds": 6000,
   "workers": 1,
-  "ids": "K10_P000_Q050_E030_U010_C010",
+  "ids": "K10_P050_Q000_E030_U010_C010",
   "hybrid_shared_us_analysis": false
 }
