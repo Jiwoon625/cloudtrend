@@ -4,6 +4,9 @@ on:
     paths:
       - 'research/cmresearchengine/**'
       - '.github/workflows/cmresearchengine-*.yml'
+      - 'scripts/export-cm06-shortlist14-summaries.py'
+      - 'scripts/test_cm06_shortlist14_summary_export.py'
+      - 'scripts/data/cm06-shortlist14-summary-allowlist.json'
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,6 +29,10 @@ jobs:
         env:
           PYTHONPATH: research/cmresearchengine
         run: python -m unittest discover -s research/cmresearchengine/tests -v
+      - name: Test restricted summary export without credentials
+        env:
+          PYTHONPATH: research/cmresearchengine
+        run: python scripts/test_cm06_shortlist14_summary_export.py -v
       - name: Verify registered counts without private data
         env:
           PYTHONPATH: research/cmresearchengine
