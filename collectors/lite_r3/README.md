@@ -173,3 +173,17 @@ reviewed, then tested together. The US validation workflow runs both new
 TypeScript suites and the Python predecessor tests. This release does not
 authorize production data deletion, execute a replay, or erase historical
 research/actual records. The retirement planner is read-only.
+
+## Daily v7: explicit price-versus-score quality
+
+New archives and ingest metadata carry `us-source-quality-v1`. A verified
+history-length score hold is no longer mistaken for a missing-price quarantine.
+The overall coverage flag remains false; all held score inputs remain blank,
+`active20=false`, and the frozen engine still cannot create an entry from them.
+Unknown quality states and hard identity/hash/session guards remain blocking.
+See [the contract and rollout boundary](../../docs/us-source-quality-contract.md).
+
+The paired TypeScript replay/publication adapters must be installed first.
+Run `python collectors/lite_r3/test_us_source_quality.py` as well as the existing
+runtime suite. The CI replay target includes the Python-to-TypeScript golden
+contract test. No recovery or full collection is started by these tests.

@@ -1,3 +1,4 @@
+import { assertUsSourceQuality, type UsSourceQuality } from "./us-source-quality";
 import { nextScheduledUsSession } from "../src/lib/engine/usProspectiveOrderPreview";
 import { createHash } from "node:crypto";
 import { parseUsProspectiveCsv, type UsProspectiveInputRow } from "../src/lib/engine/usProspective";
@@ -21,6 +22,7 @@ export interface UsReplaySessionSource {
   failedSymbols: number;
   sourceCoverageComplete: boolean;
   quarantinedSymbols: string[];
+  sourceQuality?: UsSourceQuality;
   originalSource?: { storagePath: string; dataHash: string; sourceCapturedAt: string };
   lifecycleQuarantines?: Array<{ symbol: string; effectiveDate: string; evidenceUrls: string[] }>;
   pit: {
@@ -180,6 +182,13 @@ export async function validateUsReplayManifest(
           "Reviewed US quarantine requires original atomic identity and dated lifecycle evidence",
         );
     }
+    if (Object.hasOwn(s, "sourceQuality"))
+      assertUsSourceQuality(
+        s.sourceQuality,
+        s.sourceCoverageComplete,
+        s.quarantinedSymbols,
+        s.date,
+      );
     if (s.sourceCoverageComplete && s.quarantinedSymbols.length)
       throw new Error("US source cannot claim complete coverage with quarantined securities");
     if (
@@ -283,7 +292,15 @@ export async function loadVerifiedUsReplaySessions(
     }
     const identities = new Map(roster.rows.map((r) => [r.symbol, r]));
     const quarantine = new Set(source.quarantinedSymbols);
-    if (!source.sourceCoverageComplete && !quarantine.size)
+    if (Object.hasOwn(source, "sourceQuality"))
+      assertUsSourceQuality(
+        source.sourceQuality,
+        source.sourceCoverageComplete,
+        source.quarantinedSymbols,
+        source.date,
+        rows,
+      );
+    if (!source.sourceCoverageComplete && !quarantine.size && !source.sourceQuality)
       throw new Error("Incomplete US coverage requires explicit quarantined symbols");
     for (const row of rows) {
       const identity = identities.get(row.symbol);
@@ -332,6 +349,95 @@ export function assertUsScreeningCoverage(
 ) {
   if (metadata["confirmedRegularClose"] !== true || metadata["failedSymbols"] !== 0)
     throw new Error("US source is not a confirmed session with zero unhandled failures");
+  if (Object.hasOwn(metadata, "sourceQuality")) {
+    const symbols = new Set(rows.map((row) => row.symbol));
+    const provider = metadata["providerGapSymbols"] ?? [];
+    const lifecycle = metadata["lifecycleExcludedSymbols"] ?? [];
+    if (
+      ![provider, lifecycle].every(
+        (v) =>
+          Array.isArray(v) &&
+          new Set(v).size === v.length &&
+          v.every((s) => typeof s === "string" && /^[A-Z0-9.^-]+$/.test(s) && s !== "SPY"),
+      ) ||
+      (provider as string[]).some((s) => !symbols.has(s))
+    )
+      throw new Error("Invalid US price quarantine evidence");
+    for (const symbol of (lifecycle as string[]).filter((s) => !symbols.has(s))) {
+      const events = metadata["verifiedLifecycleEvents"];
+      if (!Array.isArray(events)) throw new Error("Missing verified lifecycle omission evidence");
+      const matches = events.filter((e) => e && typeof e === "object" && e.symbol === symbol);
+      const event = matches[0];
+      let valid = false;
+      try {
+        const evidence = new URL(event?.source_url);
+        valid =
+          matches.length === 1 &&
+          event.status === "SUSPENDED" &&
+          date(event.effective_date) &&
+          event.effective_date <= rows[0]!.date &&
+          evidence.protocol === "https:" &&
+          !!evidence.hostname;
+      } catch {
+        /* malformed evidence fails closed */
+      }
+      if (!valid) throw new Error(`Invalid verified lifecycle omission: ${symbol}`);
+    }
+    const candidate = metadata["guardedCandidateQuarantine"] ?? {};
+    if (
+      !candidate ||
+      typeof candidate !== "object" ||
+      Array.isArray(candidate) ||
+      Object.keys(candidate).length
+    )
+      throw new Error("Candidate identity quarantine needs separately reviewed roster evidence");
+    // Verified lifecycle exclusions may have no as-of row; only present rows are
+    // price quarantines. Provider gaps must always retain their explicit row.
+    const quarantined = [
+      ...new Set([
+        ...(provider as string[]),
+        ...(lifecycle as string[]).filter((s) => symbols.has(s)),
+      ]),
+    ];
+    for (const symbol of quarantined) {
+      const row = rows.find((r) => r.symbol === symbol);
+      if (
+        !row ||
+        row.open !== null ||
+        row.close !== null ||
+        row.ret120 !== null ||
+        row.ret252 !== null
+      )
+        throw new Error(`Unsafe US coverage quarantine: ${symbol}`);
+    }
+    const dates = new Set(rows.map((row) => row.date));
+    if (dates.size !== 1) throw new Error("US source quality requires one exact session");
+    assertUsSourceQuality(
+      metadata["sourceQuality"],
+      metadata["sourceCoverageComplete"],
+      quarantined,
+      rows[0]!.date,
+      rows,
+    );
+    const holds = metadata["guardedCandidateScoringHolds"] ?? {};
+    const qualityHolds = metadata["sourceQuality"].scoringHolds;
+    if (
+      !holds ||
+      typeof holds !== "object" ||
+      Array.isArray(holds) ||
+      JSON.stringify(Object.keys(holds).sort()) !==
+        JSON.stringify(Object.keys(qualityHolds).sort()) ||
+      Object.entries(qualityHolds).some(
+        ([symbol, hold]) =>
+          Object.entries(hold).some(
+            ([key, value]) =>
+              (holds as Record<string, Record<string, unknown>>)[symbol]?.[key] !== value,
+          ) || Object.keys((holds as Record<string, object>)[symbol] ?? {}).length !== 4,
+      )
+    )
+      throw new Error("US scoring hold metadata differs from source quality");
+    return; // The full versioned contract is validated; do not reapply legacy shape rules.
+  }
   if (metadata["sourceCoverageComplete"] !== false) return;
   const list = (key: string) => {
     const value = metadata[key];

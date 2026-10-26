@@ -535,7 +535,7 @@ if RUN_US_MARKET:
                 'postEventBars': int(len(valid)), 'minimumBars': 253, 'historyStartDate': start,
             }
     if candidate_scoring_holds:
-        print('Score held; other symbols continue through upload:', candidate_scoring_holds)
+        print('Score held; current prices collected, upload/archive validation still pending:', candidate_scoring_holds)
     combined.to_parquet(CACHE_PATH,index=False,compression='zstd')
     _US_CACHE_ROW_COUNT = len(combined)
 

@@ -1,3 +1,8 @@
+import {
+  assertUsPublishedScoringHolds,
+  assertUsSourceQuality,
+  usSourceQualityMetadata,
+} from "./us-source-quality";
 /** Finish a dated ATOMIC catch-up using its already calculated analyses. No model stepping. */
 import {
   ANALYSIS_BUCKET,
@@ -109,6 +114,16 @@ export async function preflightUsReplayScreening(input: UsReplayScreeningInput) 
   const entries = [];
   for (const [i, analysis] of analyses.entries()) {
     const source = sources[i]!;
+    if (Object.hasOwn(source, "sourceQuality")) {
+      assertUsSourceQuality(
+        source.sourceQuality,
+        source.sourceCoverageComplete,
+        source.quarantinedSymbols,
+        source.date,
+        analysis.rows,
+      );
+      assertUsPublishedScoringHolds(source.sourceQuality, analysis.rows);
+    }
     const original = input.protectedHistory.find((row) => row.date === source.date);
     // The recovery driver's immutable protection checks cover these original objects.
     if (original) {
@@ -136,6 +151,7 @@ export async function preflightUsReplayScreening(input: UsReplayScreeningInput) 
           failedSymbols: 0,
           sourceCoverageComplete: source.sourceCoverageComplete,
           quarantinedSymbols: [...source.quarantinedSymbols],
+          ...usSourceQualityMetadata(source),
         },
       },
       analysis: {

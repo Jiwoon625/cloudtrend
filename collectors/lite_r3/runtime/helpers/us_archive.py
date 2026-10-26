@@ -4,6 +4,7 @@ No collector, scheduler, credential creation, or current-ingest replacement.
 import csv, hashlib, io, json, math, os, re
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 US_OPERATING_IDS = ('A0_QUARTER_PRIMARY','A2_QUARTER_SHADOW','B3_BETA_SHADOW','SPY_BENCHMARK')
 US_RESTART_START = '2026-10-12'
@@ -34,8 +35,87 @@ def _ua_write_once(path, raw):
     _ua_require(path.read_bytes()==raw,'Dated artifact readback failed')
     return path
 
-def freeze_us_atomic_archive(*, raw, ingest, root, user_id):
-    """Only collector-QA or registered immutable atomic CSV; preserve original capture time."""
+US_SOURCE_QUALITY_VERSION = 'us-source-quality-v1'
+US_SCORING_HOLD_REASON = 'unverified_pre_event_history_and_insufficient_post_event_lookback'
+US_HELD_SCORE_FIELDS = ('ret120','ret252','beta60_spy','ichimoku_tk_gap','relvol1_20','adv20_usd','amihud20')
+
+def _ua_source_quality(rows, metadata, quarantine, date):
+    """Price coverage and explicit score eligibility are independent evidence.
+
+    This does not admit unknown identity holds or lower any lookback/price rule.
+    The legacy overall coverage flag remains false for either kind of hold.
+    """
+    holds = metadata.get('guardedCandidateScoringHolds', {})
+    _ua_require(isinstance(holds, dict), 'Invalid US scoring hold evidence')
+    candidate=metadata.get('guardedCandidateQuarantine',{})
+    _ua_require(isinstance(candidate,dict) and not candidate,
+                'Candidate identity quarantine needs separately reviewed roster evidence')
+    by_symbol = {r['symbol']:r for r in rows}
+    for row in rows:
+        symbol=row['symbol']
+        if symbol in quarantine:
+            _ua_require(all(row.get(k) in ('',None) for k in ('open','close','ret120','ret252')),
+                        'Unsafe US price quarantine: '+symbol)
+        elif _ua_bool(row.get('toss_tradable')):
+            _ua_require((_ua_num(row.get('open')) or 0)>0 and (_ua_num(row.get('close')) or 0)>0,
+                        'Tradable US security lacks current prices: '+symbol)
+    for symbol, hold in holds.items():
+        _ua_require(isinstance(symbol,str) and re.fullmatch(r'[A-Z0-9.^-]+',symbol)
+                    and symbol != 'SPY' and symbol not in quarantine and symbol in by_symbol,
+                    'Unknown or conflicting US scoring hold')
+        _ua_require(isinstance(hold,dict) and set(hold)=={'reason','postEventBars','minimumBars','historyStartDate'}
+                    and hold.get('reason')==US_SCORING_HOLD_REASON
+                    and type(hold.get('postEventBars')) is int and 0 < hold['postEventBars'] < 253
+                    and type(hold.get('minimumBars')) is int and hold['minimumBars']==253,
+                    'Invalid US history-length hold evidence: '+symbol)
+        start=hold.get('historyStartDate')
+        try: valid_date=isinstance(start,str) and datetime.strptime(start,'%Y-%m-%d').strftime('%Y-%m-%d')==start and start<=date
+        except (ValueError,TypeError): valid_date=False
+        _ua_require(valid_date, 'Invalid US scoring hold history date: '+symbol)
+        row=by_symbol[symbol]
+        prices=[_ua_num(row.get(k)) for k in ('open','high','low','close')]
+        volume=_ua_num(row.get('volume'))
+        _ua_require(all(v is not None and v>0 for v in prices)
+                    and prices[2]<=min(prices[0],prices[3])<=max(prices[0],prices[3])<=prices[1]
+                    and volume is not None and volume>=0,'Unsafe US scoring hold prices: '+symbol)
+        _ua_require(all(row.get(k) in ('',None) for k in US_HELD_SCORE_FIELDS)
+                    and str(row.get('active20')).lower() in ('false','0')
+                    and (_ua_num(row.get('open')) or 0)>0 and (_ua_num(row.get('close')) or 0)>0,
+                    'Unsafe US history-length hold: '+symbol)
+    _ua_require(type(metadata.get('sourceCoverageComplete')) is bool,
+                'Source coverage evidence missing')
+    _ua_require(metadata['sourceCoverageComplete']==(not quarantine and not holds),
+                'US source coverage contradicts explicit price/score holds')
+    quality={'version':US_SOURCE_QUALITY_VERSION,'priceCoverageComplete':not bool(quarantine),
+             'scoringHolds':holds}
+    if 'sourceQuality' in metadata:
+        _ua_require(_ua_json(metadata['sourceQuality'])==_ua_json(quality),'US source quality evidence differs')
+    return quality
+
+def _ua_price_quarantine(rows,metadata):
+    symbols={r['symbol'] for r in rows}
+    for key in ('providerGapSymbols','lifecycleExcludedSymbols'):
+        value=metadata.get(key,[])
+        _ua_require(isinstance(value,list) and all(isinstance(s,str) and re.fullmatch(r'[A-Z0-9.^-]+',s)
+                    and s!='SPY' and (key!='providerGapSymbols' or s in symbols) for s in value)
+                    and len(set(value))==len(value),'Invalid US price quarantine evidence: '+key)
+    absent=set(metadata.get('lifecycleExcludedSymbols',[]))-symbols
+    events=metadata.get('verifiedLifecycleEvents',[])
+    _ua_require(not absent or isinstance(events,list),'Missing verified lifecycle omission evidence')
+    for symbol in absent:
+        matches=[e for e in events if isinstance(e,dict) and e.get('symbol')==symbol]
+        _ua_require(len(matches)==1,'Missing or ambiguous verified lifecycle omission: '+symbol)
+        event=matches[0];effective=event.get('effective_date');evidence=urlparse(str(event.get('source_url','')))
+        try: valid_date=isinstance(effective,str) and datetime.strptime(effective,'%Y-%m-%d').strftime('%Y-%m-%d')==effective and effective<=rows[0]['date']
+        except (ValueError,TypeError): valid_date=False
+        _ua_require(event.get('status')=='SUSPENDED' and valid_date and evidence.scheme=='https' and evidence.netloc,
+                    'Invalid verified lifecycle omission: '+symbol)
+    # Verified lifecycle events can exempt a seed security with no as-of row.
+    # Retain that producer metadata, but never invent a missing CSV quarantine.
+    return sorted(set(metadata.get('providerGapSymbols',[])) |
+                  (set(metadata.get('lifecycleExcludedSymbols',[])) & symbols))
+
+def _ua_validate_atomic_input(raw, ingest, user_id):
     _ua_require(ingest.get('user_id')==user_id,'Wrong atomic owner')
     date=ingest.get('as_of_date'); metadata=ingest.get('metadata') or {}
     _ua_require(re.fullmatch(r'\d{4}-\d{2}-\d{2}',str(date)),'Invalid atomic date')
@@ -48,6 +128,11 @@ def freeze_us_atomic_archive(*, raw, ingest, root, user_id):
     _ua_require(metadata.get('confirmedRegularClose') is True and metadata.get('failedSymbols')==0,'Unverified original close/collection')
     previous=metadata.get('previousSessionDate')
     _ua_require(isinstance(previous,str) and previous<date,'Missing original previous session')
+    return rows,date,metadata,captured,previous
+
+def freeze_us_atomic_archive(*, raw, ingest, root, user_id):
+    """Only collector-QA or registered immutable atomic CSV; preserve original capture time."""
+    rows,date,metadata,captured,previous=_ua_validate_atomic_input(raw,ingest,user_id)
     identity=[]
     for row in rows:
         identity.append({'symbol':row['symbol'].strip().upper(),'name':(row.get('name') or '').strip() or row['symbol'].strip().upper(),
@@ -56,14 +141,14 @@ def freeze_us_atomic_archive(*, raw, ingest, root, user_id):
                          'tossTradable':_ua_bool(row.get('toss_tradable')),'isCommonShare':_ua_bool(row.get('is_common_share'))})
     roster={'version':'us-dated-roster-v1','asOfDate':date,'capturedAt':captured,'rows':identity}
     roster_raw=_ua_json(roster); dh=_ua_hash(raw); rh=_ua_hash(roster_raw)
-    symbols={r['symbol'] for r in rows}
-    quarantine=sorted((set(metadata.get('providerGapSymbols',[])) | set(metadata.get('lifecycleExcludedSymbols',[]))) & symbols)
-    _ua_require(metadata.get('sourceCoverageComplete') in (True,False),'Source coverage evidence missing')
-    _ua_require(metadata['sourceCoverageComplete'] or quarantine,'Incomplete source has no recorded quarantine')
+    quarantine=_ua_price_quarantine(rows,metadata)
+    quality=_ua_source_quality(rows,metadata,quarantine,date)
+    # The same object travels in ingest metadata and the immutable replay source.
+    metadata['sourceQuality']=quality
     source={'date':date,'previousSessionDate':previous,'storagePath':f'{user_id}/us-replay/inputs/{date}/{dh[7:]}.csv',
             'dataHash':dh,'rowCount':len(rows),'symbolCount':len(rows),'sourceCapturedAt':captured,
             'confirmedRegularClose':True,'failedSymbols':0,'sourceCoverageComplete':metadata['sourceCoverageComplete'],
-            'quarantinedSymbols':quarantine,'pit':{'kind':'ATOMIC_DATED_SNAPSHOT','asOfDate':date,'rosterCapturedAt':captured,
+            'quarantinedSymbols':quarantine,'sourceQuality':quality,'pit':{'kind':'ATOMIC_DATED_SNAPSHOT','asOfDate':date,'rosterCapturedAt':captured,
             'rosterStoragePath':f'{user_id}/us-replay/rosters/{date}/{rh[7:]}.json','rosterHash':rh}}
     folder=Path(root)/date/dh[7:]
     _ua_write_once(folder/'input.csv',raw); _ua_write_once(folder/'roster.json',roster_raw)
@@ -175,6 +260,21 @@ def preserve_us_daily_before_upload(*, raw, payload, root, user_id):
         _ua_require(source['date'] == payload['as_of_date'] and source['dataHash'] == payload['data_hash'],
                     'Existing dated atomic source differs; original preserved')
         _ua_require(source['pit']['kind'] == 'ATOMIC_DATED_SNAPSHOT', 'Saved source must be atomic')
+        rows,date,metadata,_,previous=_ua_validate_atomic_input(raw,payload,user_id)
+        saved, saved_raw, _ = read_us_atomic_archive(root,payload['as_of_date'])
+        _ua_require(saved_raw==raw,'Existing dated atomic bytes differ; original preserved')
+        _ua_require(saved['storagePath']==f"{user_id}/us-replay/inputs/{date}/{payload['data_hash'][7:]}.csv"
+                    and saved['pit']['rosterStoragePath']==f"{user_id}/us-replay/rosters/{date}/{saved['pit']['rosterHash'][7:]}.json"
+                    and saved['previousSessionDate']==previous and saved['rowCount']==len(rows)==saved['symbolCount']
+                    and saved['confirmedRegularClose'] is True and saved['failedSymbols']==0,
+                    'Existing dated atomic owner/session evidence differs')
+        quarantine=_ua_price_quarantine(rows,metadata)
+        _ua_require(quarantine==saved['quarantinedSymbols'] and metadata.get('sourceCoverageComplete') is saved['sourceCoverageComplete'],
+                    'Existing dated atomic coverage evidence differs')
+        if 'sourceQuality' in saved:
+            quality=_ua_source_quality(rows,metadata,quarantine,date)
+            _ua_require(_ua_json(quality)==_ua_json(saved['sourceQuality']),'Existing dated source quality differs; original preserved')
+            payload['metadata']['sourceQuality']=saved['sourceQuality']
         payload['collected_at'] = source['sourceCapturedAt']
         return source
     return freeze_us_atomic_archive(raw=raw, ingest=payload, root=root, user_id=user_id)
@@ -262,6 +362,9 @@ def prepare_us_lifecycle_derivative(*, root, date, original_raw, events, registr
                                   'sourceCapturedAt':source['sourceCapturedAt']},
                 'lifecycleQuarantines':evidence,
                 'pit':{**source['pit'],'kind':'REVIEWED_ATOMIC_QUARANTINE'}}
+    if 'sourceQuality' in source:
+        reviewed['sourceQuality']={**source['sourceQuality'],'priceCoverageComplete':False,
+            'scoringHolds':{k:v for k,v in source['sourceQuality']['scoringHolds'].items() if k not in changed}}
     manifest = {'version':'us-dated-replay-v1','baseDate':source['previousSessionDate'],
                 'throughDate':date,'sessions':[reviewed]}
     manifest_raw = _ua_json(manifest); mh = _ua_hash(manifest_raw)

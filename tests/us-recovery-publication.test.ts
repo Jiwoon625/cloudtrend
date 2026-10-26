@@ -427,3 +427,62 @@ describe("publish-only recovered US screening", () => {
     }
   });
 });
+
+describe("versioned scoring holds survive recovery readback", () => {
+  it("retains truthful price-vs-score metadata without changing compact historical schema", async () => {
+    const f = setup();
+    const rows = f.input.analysis.rows.map((r) => ({ ...r }));
+    Object.assign(
+      rows.find((r) => r.symbol === "TEST")!,
+      {
+        ret120: null,
+        ret252: null,
+        beta60Spy: null,
+        ichimokuTkGap: null,
+        relvol1_20: null,
+        adv20Usd: null,
+        amihud20: null,
+        active20: false,
+      },
+    );
+    f.input.analysis = runUsProspectiveAnalysis(rows, {
+      lastDate: "2026-10-06",
+      coreRanks: { TEST: 0.1 },
+    });
+    f.input.source.sourceCoverageComplete = false;
+    f.input.source.sourceQuality = {
+      version: "us-source-quality-v1",
+      priceCoverageComplete: true,
+      scoringHolds: {
+        TEST: {
+          reason: "unverified_pre_event_history_and_insufficient_post_event_lookback",
+          postEventBars: 2,
+          minimumBars: 253,
+          historyStartDate: "2026-10-05",
+        },
+      },
+    };
+    const before = f.files.get(`${uid}/results/us-screening/${day}.json`);
+    const result = await publishUsRecoveryViews(f.input);
+    expect(await loadPublishedUsRecoveryView(f.input.client, uid, identity)).toEqual(result);
+    expect(result.source.metadata.sourceQuality).toEqual(f.input.source.sourceQuality);
+    expect(result.source.metadata.sourceCoverageComplete).toBe(false);
+    expect(result.source.metadata.quarantinedSymbols).toEqual([]);
+    expect(result.analysis.rows.find((r) => r.symbol === "TEST")).toMatchObject({
+      coreRank: null,
+      betaRank: null,
+      eligibleBase: false,
+      a0Entry: false,
+      a2Entry: false,
+      b3Entry: false,
+    });
+    expect(f.files.get(`${uid}/results/us-screening/${day}.json`)).toBe(before);
+    await publishUsRecoveryViews(f.input);
+    const corrupt = f.json(artifactPath);
+    corrupt.analysis.rows.find((r: { symbol: string }) => r.symbol === "TEST").coreRank = 0;
+    f.files.set(artifactPath, JSON.stringify(corrupt));
+    await expect(loadPublishedUsRecoveryView(f.input.client, uid, identity)).rejects.toThrow(
+      /scoring hold/,
+    );
+  });
+});
