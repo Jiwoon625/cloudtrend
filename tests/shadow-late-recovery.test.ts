@@ -184,7 +184,7 @@ describe("unchanged authoritative journal gates in dry-run", () => {
     expect(second.planHash).toBe(first.planHash);
     const revision = await openKospiShadowRevisionStore(f.store, SHADOW_TEST_UID);
     await persistKospiShadow(revision, SHADOW_TEST_UID, session, config);
-    const repeated = await planLateSessions(f.store, SHADOW_TEST_UID, [{ session, config }]);
+    const repeated = await planLateSessions(f.store, SHADOW_TEST_UID, [{ session: later, config }]);
     expect(repeated.summaries[0]!.reused).toBe(true);
     expect(repeated.planHash).not.toBe(first.planHash);
     expect(repeated.summaries[0]!.sessionCount).toBe(first.summaries[0]!.sessionCount);

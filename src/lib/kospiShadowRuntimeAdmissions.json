@@ -16,6 +16,10 @@
     {
       "runtimeCodeHash": "sha256:5d8084f62b65757ae88363f9d9f9901488879bbf4e688f2bdf6d3e4f76e140b0",
       "reviewId": "kospi-preopen-late-recovery-v1-20261021"
+    },
+    {
+      "runtimeCodeHash": "sha256:183f55fb74e87e80084681b87d5b5a6b3302b239a499b1585d1cf455d97bdea6",
+      "reviewId": "kospi-completed-input-equivalence-readonly-v1-20261026"
     }
   ]
 }

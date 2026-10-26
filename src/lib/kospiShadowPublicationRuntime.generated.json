@@ -9,7 +9,7 @@
       "scripts/kospi-shadow-late-recovery.ts": "sha256:dff7435a13d7798359928c3bf10a84080672a7feac19e6761d97bb14bd40205a",
       "scripts/kospi-shadow-runtime.config.ts": "sha256:65ee95d5d4ed4f7466641f2ddeed39cc494af0b78bec9f2be8250663324fc7e7",
       "scripts/october-shadow-code-manifest.ts": "sha256:f88d21593b157a056733d34ef6bfa5393fa6e411159f307a61017568d958e3d7",
-      "scripts/run-kospi-shadow.ts": "sha256:6aacb0d38ffa4296e2e3a3270245d8503d27700b374ff39e998eb8602bd7bab2",
+      "scripts/run-kospi-shadow.ts": "sha256:6add2b7528804df79850737f01462f68242e841fe769f8c282cc8dc6423bca2f",
       "scripts/screening-memory.ts": "sha256:c9269d752d45a7407726519feb16ec1e0df9c286243e83a03984931e10b27e22",
       "scripts/source-registry-store.ts": "sha256:9bfc55d3b13207e3a883b780b283dc2e3487dffe33df6e2461512272cb70e2a7",
       "scripts/source-validation-cache.ts": "sha256:742f9caf7590273863ad6aa8fc39b5819a2d48b769346cd7ec15cb2ffbc2b1eb",
@@ -46,8 +46,9 @@
       "src/lib/engine/vfConfig.ts": "sha256:d5b6fa115ff765785ead12764a29f10df2da80833de63f68af48f97d76e77573",
       "src/lib/integratedAllocationRuntimeAdmission.ts": "sha256:190f2483aa6829097fdccce8b71b242a302810f51d268a19c20b01164c6a8170",
       "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:e6c3929c6a2b642b302813325e7c1f5aceab9bdd6fda0bed52637af09ad605bb",
+      "src/lib/kospiShadowEquivalence.ts": "sha256:2789f238279fbbb1cbf39296201dc1d24b1233c2dc784961d56d3ba945f62a42",
       "src/lib/kospiShadowSeries.ts": "sha256:6b086d777d8ca77ac07c71d8e765ac31ff9f92c3769828637a4ca5946c0b000e",
-      "src/lib/kospiShadowStore.ts": "sha256:2fa33dbdf9ddfc51cb4872ee74fedf1cd78d0e1983713c46d6342d41b26d5a7f",
+      "src/lib/kospiShadowStore.ts": "sha256:48a47b264e9d420573f71d09a094742d3b130f67bb04c987ec2b9188cc7b18f1",
       "src/lib/krShadowAdmission.ts": "sha256:ceea0b4a835f78a0be48a36fb37383335984116684ef2a060deb3c305cad0326",
       "src/lib/ledger/date.ts": "sha256:81b0ae4d40041a75f9fe940914a4aa7bd3db71ce8b152e73b152a5642014a9e0",
       "src/lib/ledger/decimal.ts": "sha256:be029e6565b8bd9a340954a6a68c5cb639453f61cb636894664bcb3d9722d7f0",
@@ -71,7 +72,7 @@
       "scripts/kospi-shadow-late-recovery.ts": "sha256:565b1d8f269934f9581292bff22e0d4285026907a565f6e356f9fe8b5d8f9d3c",
       "scripts/kospi-shadow-runtime.config.ts": "sha256:6ed0f493399a5a18f2bb5e54a6ee9b9b9c14f4d1fcb2ccb4aad4814a59e8152c",
       "scripts/october-shadow-code-manifest.ts": "sha256:530da1e244f08e55ae5ba23443d19554cb85ecc931e41eab061426291e2ba946",
-      "scripts/run-kospi-shadow.ts": "sha256:090ad1c24d0390a8013899ad42ea0b6fb337ec906d4a5b06753aaa15bbeed691",
+      "scripts/run-kospi-shadow.ts": "sha256:94df701dce4381d2c60aabd868641eb677ea99d030c5c7a7ec5d5beb109b9f26",
       "scripts/screening-memory.ts": "sha256:1861c415581f4c815e1d8799d64c55ec41a17cb22fb480e75a8e36c30943f505",
       "scripts/source-registry-store.ts": "sha256:ebfe2e686f92dfd31a421bc7b65f54060851fe19e2d6bbacdb99fd11424b9f4e",
       "scripts/source-validation-cache.ts": "sha256:7f6a4dc4344b8201650b097a86a162544d97803da0b8d9d26ef62a6101685dd3",
@@ -108,8 +109,9 @@
       "src/lib/engine/vfConfig.ts": "sha256:223a3c3f8ce733c8dade8496b1aff5af2b4894f110232ea05c03a9376c8c48b1",
       "src/lib/integratedAllocationRuntimeAdmission.ts": "sha256:0d1c3c9696a969a06f31fb277de8c280afc2fb473d1c4ba4d9d2521cfe2f213d",
       "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:b1098dd0fa8b2c41ec67967c2b77904cede7b216eef062ffc369348573b74fdc",
+      "src/lib/kospiShadowEquivalence.ts": "sha256:a9e5ee98fa2897663638920cda44733800957f7acffe275ce665501a8407b3c0",
       "src/lib/kospiShadowSeries.ts": "sha256:c401249c9c16ea688ac21651a88fe0f5b9ae72e5b03858d93ec63401e810bf67",
-      "src/lib/kospiShadowStore.ts": "sha256:cde83e1bedfb13c2cd6a2e0eb0104c5bca7cb25046716f53e3ff5b96d891584a",
+      "src/lib/kospiShadowStore.ts": "sha256:45bc1d1df7ce78393c7fe29449ffdd9c77ab0e9214d864677eb8b4738c0c4550",
       "src/lib/krShadowAdmission.ts": "sha256:5185d7de56982e867149b6e78fcc9db965950d05647cc586fdcd2864287db217",
       "src/lib/ledger/date.ts": "sha256:3c5a224211c92c1b364f965c7b012671f5d6868458774fdf109468d3d84b115d",
       "src/lib/ledger/decimal.ts": "sha256:39798a987173f85c9b62ab5dee8cfd83d6876bf23d8e4fca0bd9b8179e122c26",
@@ -122,5 +124,5 @@
       "src/lib/usCandidatePriority.ts": "sha256:9a58e7d7999f00a2051d72321cad62d06af671ce069d5d110a5899abe3bbc3eb"
     }
   },
-  "codeHash": "sha256:5d8084f62b65757ae88363f9d9f9901488879bbf4e688f2bdf6d3e4f76e140b0"
+  "codeHash": "sha256:183f55fb74e87e80084681b87d5b5a6b3302b239a499b1585d1cf455d97bdea6"
 }

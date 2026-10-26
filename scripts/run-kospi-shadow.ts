@@ -14,7 +14,11 @@ import { parseManualMarketData } from "../src/lib/engine/manualDataset";
 import { DEFAULT_SCORING_CONFIG } from "../src/lib/engine/scoring";
 import { KOSPI_SHADOW_POLICY } from "../src/lib/engine/kospiShadow";
 import { buildKospiShadowSession } from "../src/lib/engine/kospiShadowDataset";
-import { persistKospiShadow, type ShadowObjectStore } from "../src/lib/kospiShadowStore";
+import {
+  persistKospiShadow,
+  reuseCompletedKospiShadow,
+  type ShadowObjectStore,
+} from "../src/lib/kospiShadowStore";
 import { isKrLiveShadowDecision } from "../src/lib/krShadowAdmission";
 import {
   KOSPI_SHADOW_CORRECTION_REVISION_ID,
@@ -123,6 +127,19 @@ export async function runKospiShadow() {
   if ((recoveryMode && !recoveryDates) || (!recoveryMode && (recoveryDates || expectedPlan)))
     throw new Error("Incomplete late recovery arguments");
   const dryRun = process.argv.includes("--dry-run");
+  const verifyCompleted = process.argv.includes("--verify-completed");
+  if (
+    verifyCompleted &&
+    (dryRun ||
+      recoveryMode ||
+      requestPath ||
+      process.argv.includes("--initialize-correction") ||
+      process.argv.filter((value) => value === "--as-of").length !== 1 ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(arg("--as-of") ?? ""))
+  )
+    throw new Error(
+      "Completed verification requires one exact --as-of and no publication/recovery mode",
+    );
   const initializeCorrection = process.argv.includes("--initialize-correction");
   if (recoveryMode && (initializeCorrection || dryRun || arg("--as-of")))
     throw new Error("Late recovery cannot initialize or override current source date");
@@ -136,6 +153,7 @@ export async function runKospiShadow() {
     throw new Error("Correction is a separate manual publication, not a preview or automatic run");
   if (
     !dryRun &&
+    !verifyCompleted &&
     (process.env["GITHUB_ACTIONS"] !== "true" ||
       process.env["GITHUB_WORKFLOW"] !== "KOSPI prospective Shadow" ||
       process.env["GITHUB_REF"] !== "refs/heads/main")
@@ -170,6 +188,7 @@ export async function runKospiShadow() {
       return name?.replace(".json", "") ?? null;
     },
     putImmutable: async (path, value) => {
+      if (verifyCompleted) throw new Error("Completed verification cannot write Shadow objects");
       const { error } = await client.storage
         .from(ANALYSIS_BUCKET)
         .upload(path, JSON.stringify(value), { upsert: false, contentType: "application/json" });
@@ -180,6 +199,7 @@ export async function runKospiShadow() {
       }
     },
     putLatest: async (path, value) => {
+      if (verifyCompleted) throw new Error("Completed verification cannot write Shadow objects");
       const { error } = await client.storage
         .from(ANALYSIS_BUCKET)
         .upload(path, JSON.stringify(value), {
@@ -234,12 +254,14 @@ export async function runKospiShadow() {
     .at(-1)!;
   const decisionAt = new Date().toISOString();
   const official = isKrLiveShadowDecision(date, sourceCollectedAt, decisionAt);
-  if (!dryRun && !initializeCorrection && !official) {
-    // Late execution uses a verified pre-open input manifest, never a synthetic decision clock.
-    if (Date.parse(decisionAt) >= Date.parse(recoveryCutoff(date).cutoff)) {
-      await runLateRecovery(client, store, uid, [date], "auto");
-      return;
-    }
+  if (
+    !dryRun &&
+    !verifyCompleted &&
+    !initializeCorrection &&
+    !official &&
+    Date.parse(decisionAt) < Date.parse(recoveryCutoff(date).cutoff)
+  ) {
+    // Keep evening/unrefreshed inputs preview-only without calculating a session.
     console.log(
       JSON.stringify({
         strategy: KOSPI_SHADOW_POLICY.label,
@@ -269,6 +291,71 @@ export async function runKospiShadow() {
     },
     date,
   );
+  if (verifyCompleted) {
+    const target = date < "2026-10-14" ? store : await openKospiShadowRevisionStore(store, uid);
+    const completed = await reuseCompletedKospiShadow(target, uid, session, frozenConfig);
+    if (!completed)
+      throw new Error("No ordinary completed Shadow date available for read-only proof");
+    console.log(
+      JSON.stringify({
+        strategy: KOSPI_SHADOW_POLICY.label,
+        role: "SHADOW",
+        date,
+        status: "COMPLETED_INPUT_VERIFIED",
+        readOnly: true,
+        reuseReason:
+          completed.view.latest.source.sourceHash === session.sourceHash
+            ? "EXACT_SOURCE"
+            : "VERIFIED_EQUIVALENT_INPUT",
+        recordedSourceHash: completed.view.latest.source.sourceHash,
+        observedSourceHash: session.sourceHash,
+        recordedCodeVersion: completed.view.latest.source.codeVersion,
+        observedCodeVersion: session.codeVersion,
+      }),
+    );
+    return;
+  }
+  if (!dryRun && !initializeCorrection && !official) {
+    // Late execution uses a verified pre-open input manifest, never a synthetic decision clock.
+    if (Date.parse(decisionAt) >= Date.parse(recoveryCutoff(date).cutoff)) {
+      // A completed date needs no new admission or write. Prove equivalence from
+      // its authoritative journal before falling back to late-session recovery.
+      const target = date < "2026-10-14" ? store : await openKospiShadowRevisionStore(store, uid);
+      const completed = await reuseCompletedKospiShadow(target, uid, session, frozenConfig);
+      if (completed) {
+        console.log(
+          JSON.stringify({
+            strategy: KOSPI_SHADOW_POLICY.label,
+            role: "SHADOW",
+            date,
+            reused: true,
+            readOnly: true,
+            reuseReason:
+              completed.view.latest.source.sourceHash === session.sourceHash
+                ? "EXACT_SOURCE"
+                : "VERIFIED_EQUIVALENT_INPUT",
+            recordedSourceHash: completed.view.latest.source.sourceHash,
+            observedSourceHash: session.sourceHash,
+            recordedCodeVersion: completed.view.latest.source.codeVersion,
+            observedCodeVersion: session.codeVersion,
+          }),
+        );
+        return;
+      }
+      await runLateRecovery(client, store, uid, [date], "auto");
+      return;
+    }
+    console.log(
+      JSON.stringify({
+        strategy: KOSPI_SHADOW_POLICY.label,
+        role: "SHADOW",
+        date,
+        status: "PREVIEW_ONLY",
+        reason: "KR Shadow waits for the next regular-session morning KRX refresh",
+      }),
+    );
+    return;
+  }
   if (dryRun) {
     console.log(
       JSON.stringify({
@@ -297,6 +384,15 @@ export async function runKospiShadow() {
       date,
       initializedDate: result.view.registry.initializedDate,
       reused: result.reused,
+      reuseReason: result.reused
+        ? result.view.latest.source.sourceHash === session.sourceHash
+          ? "EXACT_SOURCE"
+          : "VERIFIED_EQUIVALENT_INPUT"
+        : null,
+      recordedSourceHash: result.view.latest.source.sourceHash,
+      observedSourceHash: session.sourceHash,
+      recordedCodeVersion: result.view.latest.source.codeVersion,
+      observedCodeVersion: session.codeVersion,
       navKrw: result.view.latest.daily.navKrw,
       modelEntries: result.view.latest.state.totalEntries,
       ruleVersion: KOSPI_SHADOW_POLICY.version,
