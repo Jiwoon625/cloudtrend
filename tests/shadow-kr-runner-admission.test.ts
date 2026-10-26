@@ -1,3 +1,4 @@
+import { preliminarySource } from "./kr-preliminary-fixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runKospiShadow } from "../scripts/run-kospi-shadow";
 import type { ShadowObjectStore } from "../src/lib/kospiShadowStore";
@@ -102,6 +103,37 @@ function compactedSource(originals: unknown[]) {
 }
 
 describe("prospective KOSPI runner live-source admission", () => {
+  it("holds persisted PRELIMINARY inputs even when the actual retry clock is after open", async () => {
+    const { source, text } = preliminarySource("2026-10-14");
+    mocks.load.mockResolvedValue([{ text, sourceRecord: source, dataHash: source.data_hash }]);
+    vi.setSystemTime("2026-10-15T04:00:00Z");
+    await runKospiShadow();
+    expect(mocks.build).not.toHaveBeenCalled();
+    expect(mocks.persist).not.toHaveBeenCalled();
+    expect(mocks.openRevision).not.toHaveBeenCalled();
+    expect(mocks.initializeRevision).not.toHaveBeenCalled();
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('"status":"PRELIMINARY"'));
+  });
+
+  it("cannot bypass the financial hold via the manual historical recovery apply branch", async () => {
+    const { source, text } = preliminarySource("2026-10-14");
+    mocks.load.mockResolvedValue([{ text, sourceRecord: source, dataHash: source.data_hash }]);
+    vi.stubEnv("GITHUB_EVENT_NAME", "workflow_dispatch");
+    process.argv.push(
+      "--recovery-mode",
+      "apply",
+      "--recovery-dates",
+      "2026-10-12",
+      "--expected-plan",
+      `sha256:${"a".repeat(64)}`,
+    );
+    await runKospiShadow();
+    expect(mocks.build).not.toHaveBeenCalled();
+    expect(mocks.persist).not.toHaveBeenCalled();
+    expect(mocks.openRevision).not.toHaveBeenCalled();
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('"status":"PRELIMINARY"'));
+  });
+
   it("keeps a midnight evening source preview-only without calculating or writing a session", async () => {
     source("2026-10-14T15:03:09.077298Z");
     vi.setSystemTime("2026-10-14T15:12:47.652Z");

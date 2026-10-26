@@ -1,3 +1,4 @@
+import { preliminarySource } from "../../tests/kr-preliminary-fixture";
 vi.mock("./ledger/websiteRepository.server", () => ({
   readWebsiteDocument: async (client: SupabaseClient, uid: string, source: string) => {
     const result = await client
@@ -30,6 +31,7 @@ vi.mock("./portfolioLedgers", async (original) => {
 });
 beforeEach(() => {
   vi.mocked(simulateStrategy).mockClear();
+  pendingSources = null;
 });
 vi.mock("./dashboardOperations.server", () => ({
   portfolioEtfContext: async () => ({
@@ -49,17 +51,19 @@ vi.mock("./dashboardOperations.server", () => ({
   }),
 }));
 
+let pendingSources: ReturnType<typeof preliminarySource>["source"][] | null = null;
 let csv = "symbol,date,market,open,high,low,close,volume\nA,2026-01-02,KOSDAQ,100,110,90,105,1000";
 vi.mock("./screeningSources.server", () => ({
-  listActiveSources: async () => [
-    {
-      id: "source",
-      storage_bucket: "test",
-      storage_path: "test",
-      max_date: "9999-12-31",
-      file_hash: `sha256:${createHash("sha256").update(csv).digest("hex")}`,
-    },
-  ],
+  listActiveSources: async () =>
+    pendingSources ?? [
+      {
+        id: "source",
+        storage_bucket: "test",
+        storage_path: "test",
+        max_date: "9999-12-31",
+        file_hash: `sha256:${createHash("sha256").update(csv).digest("hex")}`,
+      },
+    ],
 }));
 
 function database() {
@@ -187,6 +191,41 @@ function database() {
 }
 
 describe("ledger persistence", () => {
+  it("keeps confirmed strategy and ETF marks unchanged on preliminary page load without any writes", async () => {
+    const db = database();
+    const final = await operateLedgers(db.client, "owner", { action: "sync" });
+    const before = JSON.stringify(db.tables["portfolio_ledgers"]);
+    const { source } = preliminarySource();
+    pendingSources = [source];
+    vi.mocked(simulateStrategy).mockClear();
+    db.download.mockClear();
+    const preview = await operateLedgers(db.client, "owner", { action: "load" });
+    expect(preview.revision).toBe(final.revision);
+    expect(preview.document.strategy).toEqual(final.document.strategy);
+    expect(preview.etfRows).toEqual([]);
+    expect(preview.etfWarning).toContain("PRELIMINARY");
+    expect(JSON.stringify(db.tables["portfolio_ledgers"])).toBe(before);
+    expect(simulateStrategy).not.toHaveBeenCalled();
+    expect(db.download).not.toHaveBeenCalled();
+  });
+
+  it("preserves authoritative actual edits during a pending-source hold without recalculating strategy", async () => {
+    const db = database();
+    const final = await operateLedgers(db.client, "owner", { action: "load" });
+    pendingSources = [preliminarySource().source];
+    vi.mocked(simulateStrategy).mockClear();
+    db.download.mockClear();
+    const edited = await operateLedgers(db.client, "owner", {
+      action: "execution",
+      revision: final.revision,
+      execution: { ...final.document.executions[0]!, shares: 19 },
+    });
+    expect(edited.document.strategy).toEqual(final.document.strategy);
+    expect(edited.actual.positions[0]!.shares).toBe(19);
+    expect(edited.revision).toBe(final.revision + 1);
+    expect(simulateStrategy).not.toHaveBeenCalled();
+    expect(db.download).not.toHaveBeenCalled();
+  });
   it("reuses the strategy cache after JSONB changes object key order", async () => {
     const db = database();
     const first = await operateLedgers(db.client, "owner", { action: "sync" });
@@ -493,6 +532,7 @@ describe("screening portfolio freshness", () => {
     expect(replayInput[0]?.entries[614]?.pendingRules).toEqual(snapshot.entries[614]!.pendingRules);
     db.download.mockClear();
     vi.mocked(simulateStrategy).mockClear();
+    pendingSources = null;
     const again = await operateLedgers(db.client, "owner", { action: "load" });
     expect(again.document.strategy?.fingerprint).toBe(first.document.strategy?.fingerprint);
     expect(again.strategyRefresh.status).toBe("REUSED");
@@ -523,6 +563,7 @@ describe("screening portfolio freshness", () => {
       });
       db.download.mockClear();
       vi.mocked(simulateStrategy).mockClear();
+      pendingSources = null;
       const completed = await operateLedgers(db.client, "owner", { action: "load" });
       expect(completed.document.strategy?.fingerprint).not.toBe(
         first.document.strategy?.fingerprint,
@@ -545,6 +586,7 @@ describe("screening portfolio freshness", () => {
     const first = await operateLedgers(db.client, "owner", { action: "load" });
     db.download.mockClear();
     vi.mocked(simulateStrategy).mockClear();
+    pendingSources = null;
     for (const action of ["load", "load", "sync", "load"] as const) {
       const next = await operateLedgers(db.client, "owner", { action });
       expect(next.revision).toBe(first.revision);
@@ -566,6 +608,7 @@ describe("screening portfolio freshness", () => {
     );
     db.download.mockClear();
     vi.mocked(simulateStrategy).mockClear();
+    pendingSources = null;
     expect((await refreshPortfolioAfterScreening(db.client, "owner")).status).toBe("REUSED");
     expect(db.download).not.toHaveBeenCalled();
     expect(simulateStrategy).not.toHaveBeenCalled();
@@ -582,6 +625,7 @@ describe("screening portfolio freshness", () => {
     const first = await operateLedgers(db.client, "owner", { action: "load" });
     db.download.mockClear();
     vi.mocked(simulateStrategy).mockClear();
+    pendingSources = null;
     const execution = first.document.executions[0]!;
     const next = await operateLedgers(db.client, "owner", {
       action: "execution",
@@ -613,6 +657,7 @@ describe("screening portfolio freshness", () => {
     (db.tables["portfolio_ledgers"]![0]!["payload"] as LedgerDocument).strategy = null;
     db.download.mockClear();
     vi.mocked(simulateStrategy).mockClear();
+    pendingSources = null;
     const results = await Promise.all([
       operateLedgers(db.client, "owner", { action: "sync" }),
       operateLedgers(db.client, "owner", { action: "load" }),
@@ -672,6 +717,7 @@ it("rejects a changed active source set instead of relabelling preloaded old tex
   const before = structuredClone(db.tables["portfolio_ledgers"]);
   db.download.mockClear();
   vi.mocked(simulateStrategy).mockClear();
+  pendingSources = null;
   const { listActiveSources } = await import("./screeningSources.server");
   const sources = await listActiveSources(db.client, "owner");
   await expect(
@@ -741,6 +787,7 @@ it("a corrected earlier actual buy date refreshes required price coverage", asyn
     expect(first.document.strategy?.quotes["A"]).toBeUndefined();
     db.download.mockClear();
     vi.mocked(simulateStrategy).mockClear();
+    pendingSources = null;
     const next = await operateLedgers(db.client, "owner", {
       action: "execution",
       revision: first.revision,
@@ -807,6 +854,7 @@ it("changed calculation runtime invalidates a cached portfolio even when policy 
   const original = runtime.default.codeHash;
   db.download.mockClear();
   vi.mocked(simulateStrategy).mockClear();
+  pendingSources = null;
   try {
     runtime.default.codeHash = `sha256:${"0".repeat(64)}`;
     const next = await operateLedgers(db.client, "owner", { action: "load" });

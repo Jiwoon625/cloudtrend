@@ -1,3 +1,4 @@
+import { KrPreliminaryNotice } from "@/components/KrPreliminaryNotice";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
@@ -52,6 +53,7 @@ function EtfScreenerPage() {
   }
   return (
     <AppShell>
+      <KrPreliminaryNotice publication={cached.analysis.krPublication} />
       <HoldingsAvailability
         ready={positions.isSuccess}
         failed={positions.isError}

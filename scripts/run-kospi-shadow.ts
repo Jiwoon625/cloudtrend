@@ -1,3 +1,4 @@
+import { verifyKrScreeningPublication } from "../src/lib/krScreeningPublication.server";
 import { readFile } from "node:fs/promises";
 import { verifyKospiShadowRuntimeManifest } from "./verify-kospi-shadow-runtime";
 import { verifyShadowRuntimeManifests } from "./verify-shadow-runtime-manifests";
@@ -213,6 +214,23 @@ export async function runKospiShadow() {
   if (recoveryMode) {
     if (process.env["GITHUB_EVENT_NAME"] !== "workflow_dispatch" && !requestPath)
       throw new Error("Manual late recovery requires explicit dispatch");
+    if (recoveryMode === "apply") {
+      // Historical recovery is still a financial write. A pending current source cannot
+      // bypass the same owner-wide hold by entering through the recovery branch.
+      const current = await loadAnalysisSourceInputs(client, uid, "screening", { compact: true });
+      const publication = await verifyKrScreeningPublication(
+        client,
+        uid,
+        current.flatMap((input) => (input.sourceRecord ? [input.sourceRecord] : [])),
+        current.map((input) => input.text),
+      );
+      if (publication.phase === "PRELIMINARY") {
+        console.log(
+          JSON.stringify({ status: "PRELIMINARY", financialSideEffects: "SKIPPED", publication }),
+        );
+        return;
+      }
+    }
     await runLateRecovery(
       client,
       store,
@@ -224,6 +242,18 @@ export async function runKospiShadow() {
     return;
   }
   const inputs = await loadAnalysisSourceInputs(client, uid, "screening", { compact: true });
+  const publication = await verifyKrScreeningPublication(
+    client,
+    uid,
+    inputs.flatMap((input) => (input.sourceRecord ? [input.sourceRecord] : [])),
+    inputs.map((input) => input.text),
+  );
+  if (publication.phase === "PRELIMINARY") {
+    console.log(
+      JSON.stringify({ status: "PRELIMINARY", financialSideEffects: "SKIPPED", publication }),
+    );
+    return;
+  }
   const { dataset } = parseManualMarketData(inputs.map((i) => i.text));
   const date = arg("--as-of") ?? dataset.asOfDate;
   if (!dryRun && date !== dataset.asOfDate)

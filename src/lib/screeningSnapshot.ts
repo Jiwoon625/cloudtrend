@@ -34,6 +34,7 @@ export interface SnapshotEntry {
 }
 
 export interface ScreeningSnapshot {
+  krPublication?: import("./krScreeningPublication").KrScreeningPublication;
   dataHash?: string;
   historySource?: "US_DAILY";
   /** DB insertion time; never substituted for analysis or publication time. */
@@ -88,6 +89,7 @@ export function topTechnicalEntries(
 /** 분석 결과를 웹·자동화가 공유하는 저장용 스냅샷으로 변환한다. */
 export function buildSnapshot(
   analysis: {
+    krPublication?: import("./krScreeningPublication").KrScreeningPublication;
     asOfDate: string;
     calculatedAt: string;
     strategyVersion?: string;
@@ -137,6 +139,7 @@ export function buildSnapshot(
   }));
   const passed = entries.filter((entry) => entry.hardFilterPassed);
   return {
+    ...(analysis.krPublication ? { krPublication: analysis.krPublication } : {}),
     ...(runId
       ? { runId, market: "KR" as const, strategyVersion: analysis.strategyVersion ?? "UNRECORDED" }
       : {}),
@@ -193,6 +196,10 @@ export async function persistScreeningSnapshot(
   userId: string,
   incoming: ScreeningSnapshot,
 ) {
+  if (incoming.krPublication?.phase === "PRELIMINARY")
+    throw new Error(
+      "PRELIMINARY screening cannot be written to confirmed history or immutable run archives",
+    );
   await archiveScreeningRun(client, userId, incoming);
   const { data, error } = await client
     .from("screening_history")

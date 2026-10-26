@@ -1,3 +1,4 @@
+import { krSourcePublication } from "../src/lib/krScreeningPublication";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -389,6 +390,16 @@ export async function runCompaction(
   const listSources = dependencies?.listSources ?? listSourceRecords;
   const verify = dependencies?.verify ?? verifyInIsolatedProcess;
   const sources = await listSources(client, options.userId, "screening");
+  if (sources.some((source) => krSourcePublication(source))) {
+    const result = {
+      state: "DEFERRED_PUBLICATION_CONTRACT",
+      originalsRetained: true,
+      reason:
+        "Phase-preserving compaction required; upload and screening can continue with existing sources",
+    };
+    console.log(JSON.stringify(result));
+    return result;
+  }
   const approvedSourceHash = registrySourceSetHash(sources);
   if (options.apply || options.expectedSourceHash)
     requireThat(
@@ -719,6 +730,9 @@ export async function retryCompactionCutover(
       registrySourceSetHash(args.p_expected_sources) === options.expectedSourceHash,
     "Saved cutover owner/arguments are invalid",
   );
+  const currentSources = await listSourceRecords(client, options.userId, "screening");
+  if (currentSources.some((source) => krSourcePublication(source)))
+    throw new Error("Publication-bound sources cannot use an unversioned compaction cutover");
   // The SQL function independently compares exact rows, object generations and
   // the original operation receipt. Never regenerate IDs after an uncertain commit.
   const { data, error } = await client.rpc("compact_screening_source_set", args);

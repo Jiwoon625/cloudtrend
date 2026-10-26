@@ -1,3 +1,4 @@
+import { verifyKrScreeningPublication } from "./krScreeningPublication.server";
 import { hydrateScreeningSnapshot } from "./screeningSnapshotStorage";
 import runtimeManifest from "./ledger/octoberShadowEngineManifest.generated.json";
 import type { LedgerRefreshSummary } from "./portfolioFreshness";
@@ -142,6 +143,8 @@ export async function priceInputs(
   from: string,
   verifiedInputs?: VerifiedPortfolioSources,
 ) {
+  if ((await verifyKrScreeningPublication(client, "", sources)).phase === "PRELIMINARY")
+    throw new Error("PRELIMINARY sources cannot refresh portfolio valuations");
   const texts: string[] = [];
   for (const source of sources) {
     // Earlier index rows are still needed for MA60/cloud/volatility warmup; stock rows stay bounded.
@@ -175,6 +178,7 @@ export async function priceInputs(
     }
     texts.push(text);
   }
+  await verifyKrScreeningPublication(client, "", sources, texts);
   // One normalizer selects the same final symbol/date values for screening, MODEL and ledger.
   // Filtering only limits retained stock rows; all index warmup and calendar evidence remain.
   const gateDataset = parseManualMarketData(texts, {
@@ -226,6 +230,8 @@ export async function getCachedActualPriceInputs(
   symbols: Set<string>,
   from: string,
 ): Promise<ActualPriceInputs> {
+  if ((await verifyKrScreeningPublication(client, uid, sources)).phase === "PRELIMINARY")
+    throw new Error("PRELIMINARY sources cannot refresh portfolio valuations");
   const orderedSymbols = [...symbols].sort();
   const key = createHash("sha256")
     .update(
@@ -336,6 +342,7 @@ export async function loadNewActualDomesticQuotes(
 ) {
   if (!symbols.size) return {};
   const sources = await listActiveSources(client, uid);
+  if ((await verifyKrScreeningPublication(client, uid, sources)).phase === "PRELIMINARY") return {};
   const input = await getCachedActualPriceInputs(client, uid, sources, symbols, from);
   const quotes: Record<string, import("./portfolioLedgers").Quote> = {};
   for (const symbol of symbols) {
@@ -364,6 +371,8 @@ async function refreshStrategy(
     snapshotsFor(client, uid),
     listActiveSources(client, uid),
   ]);
+  if ((await verifyKrScreeningPublication(client, uid, sources)).phase === "PRELIMINARY")
+    return false;
   if (verifiedInputs) {
     const identity = (items: ActiveSourceRecord[]) =>
       stableCacheJson(items.map((s) => [s.id, s.file_hash, s.activated_at, s.created_at]));
@@ -464,13 +473,33 @@ async function operateLedgersOnce(
   verifiedInputs?: VerifiedPortfolioSources,
   allowInitialize = true,
 ): Promise<LedgerOperationResult> {
-  const row = await readDocument(client, uid, allowInitialize);
+  let preliminary = false;
+  let publicationError: unknown;
+  try {
+    const activeSources = await listActiveSources(client, uid);
+    preliminary =
+      (await verifyKrScreeningPublication(client, uid, activeSources)).phase === "PRELIMINARY";
+  } catch (error) {
+    // A derived-source outage must not prevent an authoritative execution correction.
+    // Hold all derived prices; the existing actual-only write boundary below still applies.
+    if (["load", "sync"].includes(input.action)) throw error;
+    publicationError = error;
+    preliminary = true;
+  }
+  const row = await readDocument(
+    client,
+    uid,
+    preliminary && ["load", "sync"].includes(input.action) ? false : allowInitialize,
+  );
   const doc = structuredClone(row.payload);
   let etfWarning: string | null = null;
-  const etfContext = await portfolioEtfContext(client, uid).catch((error) => {
-    etfWarning = error instanceof Error ? error.message : "ETF 결과 조회 실패";
-    return { rows: [], trackedSymbols: [], date: null };
-  });
+  const etfContext = preliminary
+    ? { rows: [], trackedSymbols: [], date: doc.strategy?.summary.latestDate ?? null }
+    : await portfolioEtfContext(client, uid).catch((error) => {
+        etfWarning = error instanceof Error ? error.message : "ETF 결과 조회 실패";
+        return { rows: [], trackedSymbols: [], date: null };
+      });
+  if (preliminary) etfWarning = "PRELIMINARY · KRX 공표 대기: 기존 확정 가격과 원장을 유지합니다.";
   let changed = false;
   if (input.action !== "load" && input.action !== "sync" && input.revision !== row.revision)
     throw new Error("다른 화면에서 원장이 변경됐습니다. 새로고침 후 다시 저장하세요.");
@@ -559,7 +588,8 @@ async function operateLedgersOnce(
   let strategyChanged = false,
     strategyFailed = false;
   try {
-    strategyChanged = await refreshStrategy(client, uid, doc, verifiedInputs);
+    if (publicationError) throw publicationError;
+    if (!preliminary) strategyChanged = await refreshStrategy(client, uid, doc, verifiedInputs);
   } catch (error) {
     // The actual journal is authoritative. A derived-price outage must not discard an
     // otherwise valid actual correction; canonical integrity and CAS still fail closed.

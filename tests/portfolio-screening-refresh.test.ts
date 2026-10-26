@@ -1,4 +1,6 @@
+import { preliminarySource } from "./kr-preliminary-fixture";
 import {
+  completeScreeningPublication,
   screeningPublicationPath,
   screeningPublicationReceipt,
 } from "../src/lib/screeningPublication.server";
@@ -149,6 +151,47 @@ function cache(complete = true) {
     );
 }
 describe("screening publication and portfolio refresh", () => {
+  it("publishes PRELIMINARY views on fresh and repeated late requests without any financial publication", async () => {
+    const { source, text } = preliminarySource(analysis.asOfDate);
+    mocks.list.mockResolvedValue([source]);
+    mocks.load.mockResolvedValue({ sources: [source], texts: [text] });
+    mocks.analyze.mockReturnValue({
+      analysis: { ...analysis, notes: [] },
+      dataset: { asOfDate: analysis.asOfDate },
+    });
+    for (let request = 0; request < 2; request++) {
+      const result = await runWebScreeningForUser(client, "owner", DEFAULT_SCORING_CONFIG);
+      expect(result.portfolioRefresh.status).toBe("PRELIMINARY");
+      expect(result.octoberShadow).toBeNull();
+      expect(objects.get("owner/cache/screening/latest.json")).toMatchObject({
+        payload: {
+          analysis: { krPublication: { phase: "PRELIMINARY", financialSideEffects: false } },
+        },
+      });
+      expect(objects.has(screeningPublicationPath("owner", result))).toBe(false);
+      await expect(completeScreeningPublication(client, "owner", result)).rejects.toThrow(
+        /PRELIMINARY/,
+      );
+      expect(objects.has(screeningPublicationPath("owner", result))).toBe(false);
+    }
+    expect(mocks.shadow).not.toHaveBeenCalled();
+    expect(mocks.portfolio).not.toHaveBeenCalled();
+    expect(mocks.persist).not.toHaveBeenCalled();
+  });
+  it("rejects undeclared pending raw inputs before any engine or financial call", async () => {
+    mocks.load.mockResolvedValue({
+      sources,
+      texts: ["date,marketCapSource\n2026-10-06,KRX_PENDING_PUBLICATION"],
+    });
+    await expect(runWebScreeningForUser(client, "owner", DEFAULT_SCORING_CONFIG)).rejects.toThrow(
+      /PRELIMINARY/,
+    );
+    expect(mocks.analyze).not.toHaveBeenCalled();
+    expect(mocks.shadow).not.toHaveBeenCalled();
+    expect(mocks.portfolio).not.toHaveBeenCalled();
+    expect(mocks.persist).not.toHaveBeenCalled();
+  });
+
   it("same-date market-cap replacement invalidates the analysis once, then keeps cheap reads", async () => {
     const header = "symbol,name,market,type,date,open,high,low,close,volume,marketCap";
     const missing = `${header}\n005930,삼성전자,KOSPI,STOCK,2026-10-06,100,110,90,105,1000,`;

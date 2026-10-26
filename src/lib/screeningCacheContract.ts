@@ -10,6 +10,7 @@ export const INSTRUMENT_CACHE_VERSION =
   "instrument-cache-v8-verified-kr-index-20261008-v1" as const;
 
 export interface DashboardSummary {
+  krPublication?: AnalysisResult["krPublication"];
   operationalIndex?: OperationalIndexIdentity;
   /** Source registration is not collection completion. */
   sourceRegisteredAt?: string;
@@ -165,6 +166,7 @@ export function buildDashboardSummary(
           ).operationalIndex,
         }
       : {}),
+    ...(analysis.krPublication ? { krPublication: analysis.krPublication } : {}),
     version: DASHBOARD_CACHE_VERSION,
     createdAt,
     inputFingerprint,

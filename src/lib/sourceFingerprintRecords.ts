@@ -6,9 +6,13 @@ export function sourceFingerprintRecords(
     schema_hash: string;
     activated_at: string | null;
     created_at?: string;
+    validation_result?: unknown;
   }>,
 ) {
   return sources.map((source) => ({
+    ...((source.validation_result as { krPublication?: unknown } | undefined)?.krPublication
+      ? { krPublication: (source.validation_result as { krPublication: unknown }).krPublication }
+      : {}),
     id: source.id,
     dataHash: source.data_hash,
     schemaHash: source.schema_hash,

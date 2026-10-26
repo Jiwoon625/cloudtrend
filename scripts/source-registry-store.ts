@@ -1,3 +1,9 @@
+import {
+  buildKrSourcePublication,
+  buildKrPendingSupersessions,
+  assertNoUndeclaredKrPending,
+} from "../src/lib/krScreeningPublication.server";
+import { type KrPublicationRequest } from "../src/lib/krScreeningPublication";
 import { memory } from "./screening-memory";
 import path from "node:path";
 import { readFile } from "node:fs/promises";
@@ -591,6 +597,7 @@ export async function registerSourceBytes(input: {
   filename: string;
   contentType?: string | undefined;
   syncLegacy?: boolean;
+  krPublication?: KrPublicationRequest;
   /** Optional request-scoped or private persistent cache of verified source generations. */
   validationCache?: SourceValidationCache;
 }) {
@@ -610,6 +617,19 @@ export async function registerSourceBytes(input: {
         .join(" / ")}`,
     );
 
+  const krPublication = input.krPublication
+    ? buildKrSourcePublication(input.krPublication, {
+        max_date: validation.stats.maxDate,
+        file_hash: validation.fileHash,
+        data_hash: validation.dataHash,
+        schema_hash: validation.schemaHash,
+      })
+    : undefined;
+  if (krPublication && input.sourceType !== "screening")
+    throw new Error("KR publication is screening-only");
+  if (input.sourceType === "screening")
+    assertNoUndeclaredKrPending([validation.canonicalCsv], krPublication?.phase === "PRELIMINARY");
+
   // Reuse the same verified generations in the registration and legacy-sync passes.
   const validationCache = input.validationCache ?? createSourceValidationCache();
   const existing = await loadAnalysisSourceInputs(input.client, input.userId, input.sourceType, {
@@ -619,8 +639,37 @@ export async function registerSourceBytes(input: {
     throw error;
   });
   const activeRegistered = existing.filter((value) => value.sourceRecord);
+  if (krPublication?.phase === "FINAL") {
+    const targets = validation.rows.filter(
+      (row) => row.date === krPublication.asOfDate && ["STOCK", "ETF"].includes(row.type),
+    );
+    if (
+      !targets.length ||
+      targets.some(
+        (row) =>
+          !(Number(row.marketCap) > 0) ||
+          row["marketCapSource"] !== (row.type === "ETF" ? "KRX_ETF" : "KRX_STOCK"),
+      )
+    )
+      throw new Error("FINAL requires exact official capitalization on actual latest source rows");
+    const supersedesPending = buildKrPendingSupersessions(
+      activeRegistered.map((previous) => ({
+        source: previous.sourceRecord!,
+        rows: previous.validation.rows,
+      })),
+      validation.rows,
+      krPublication.asOfDate,
+    );
+    if (supersedesPending.length) krPublication.supersedesPending = supersedesPending;
+  }
+
   const exact = activeRegistered.find((value) => value.dataHash === validation.dataHash);
   if (exact && (input.mode === "append" || input.mode === "add")) {
+    const saved = exact.sourceRecord?.validation_result?.["krPublication"];
+    if (JSON.stringify(saved ?? null) !== JSON.stringify(krPublication ?? null))
+      throw new Error(
+        "Identical source has a different publication request; explicit replacement required",
+      );
     return {
       reused: true,
       source: exact.sourceRecord!,
@@ -673,6 +722,7 @@ export async function registerSourceBytes(input: {
     validation,
     overlap,
   });
+  if (krPublication) Object.assign(record.validation_result, { krPublication });
   const storedRecord = compressBacktest
     ? {
         ...record,

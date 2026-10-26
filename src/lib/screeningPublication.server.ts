@@ -69,6 +69,8 @@ export async function completeScreeningPublication(
       .digest("hex") !== expected.resultDigest
   )
     throw new Error("완료 확인 중 스크리닝 결과가 변경됐습니다. 최신 결과를 다시 확인하세요.");
+  if (cached.payload.analysis.krPublication?.phase === "PRELIMINARY")
+    throw new Error("PRELIMINARY screening cannot issue a final financial publication receipt");
   const dashboard = await downloadFreshObject(
     client,
     "cloudtrend-data",

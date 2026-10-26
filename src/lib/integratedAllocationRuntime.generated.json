@@ -39,6 +39,8 @@
       "src/lib/integratedAllocationRuntimeAudit.server.ts": "sha256:ce8bb182e4b31a06282949cb25fb6245d36b5b1014d9341a157b85e1eaaafad5",
       "src/lib/integratedAllocationShadow.ts": "sha256:a4f2a397bdd0ae520dc345c1063392cbedc710555f7690da889b8a573089caf0",
       "src/lib/integratedAllocationStore.server.ts": "sha256:1b18bfd79b5c4b292bc1054c7ac18a23edf3fc6250a10e02ab100f4027167f1c",
+      "src/lib/krScreeningPublication.server.ts": "sha256:b828d84575336e286c682fda46ffdcac2af3f9bdb577b9a6a3b9ba57602e6e70",
+      "src/lib/krScreeningPublication.ts": "sha256:d5391847c55ea38b09395d7099bfd91b7d9c9dc6fb46f9b180e4262a95f8ee15",
       "src/lib/krSourceVintageApproval.server.ts": "sha256:88af61c19b8dd0280ec67e6cf8023657db019bb62a525dcbdf30efd0ceac4382",
       "src/lib/ledger/date.ts": "sha256:81b0ae4d40041a75f9fe940914a4aa7bd3db71ce8b152e73b152a5642014a9e0",
       "src/lib/ledger/decimal.ts": "sha256:be029e6565b8bd9a340954a6a68c5cb639453f61cb636894664bcb3d9722d7f0",
@@ -60,10 +62,11 @@
       "src/lib/portfolioStrategyRules.ts": "sha256:b2bb33dd598dc63fa2d9a6ff129ee94609d161a666a98571568c8077d5a34b72",
       "src/lib/positionSignalContext.ts": "sha256:037f198190e237134a6a547543a61650c986d2436208f22d4010894f4483fa3f",
       "src/lib/screeningRunArchive.ts": "sha256:e9d79fd3a86dffd51176e61f2e734e05f6a154860cee4e161dc55a7a7c00dbc6",
-      "src/lib/screeningSnapshot.ts": "sha256:c0270de4aef30e6d16ce2585e0a353e62337cba491bd99479d57b6d8fa1998de",
+      "src/lib/screeningSnapshot.ts": "sha256:16a9a1fd32cb85c21e8b6d331f31cff13a41f66d7a74c93ea6ff2f8f6b104bb1",
       "src/lib/screeningSnapshotStorage.ts": "sha256:e78f9c6210a8d6af85567244cbbb1c64a3d41d0e0429c53545584127222d8ef9",
-      "src/lib/shadowReplay.server.ts": "sha256:1b00d599d4ee7be62621ab7171f5ccfa1c499437b98a996421ab0b124cbf5a43",
+      "src/lib/shadowReplay.server.ts": "sha256:6b6ce513fb1be40292b2289a23345ad55ba7c5c45cf2c13303c47dcb1559e2ac",
       "src/lib/shadowReplayCalculation.ts": "sha256:929a91338736c4b1853f5113c2870648092d2b0f3d43150bb9838b25cc107d4f",
+      "src/lib/sourceData.ts": "sha256:2f2f313ed65a34e83a0705cf3a61ecd4166d34b68193c1f5998fbf9e61b44390",
       "src/lib/sourceTimingEvidence.ts": "sha256:ef72ba92c6778012e3e8f0844957bf91e5169687fc3d8d19628e03e761df0599",
       "src/lib/statusDisplay.ts": "sha256:dd3fc532b98c305d1d4ed22e44d4432bc8b3b2a62760a2b33ff7245293f9e45b",
       "src/lib/stockAssessmentDisplay.ts": "sha256:063589dd4b1c91f872090da0a05de8344e02ab25289f8a4ec375fa868a7a3861",
@@ -74,5 +77,5 @@
     },
     "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
   },
-  "codeHash": "sha256:14fd10ef1b5d5f47c0474d8c9de98899ad2380fb17ab430cb285e8dbe882ccdf"
+  "codeHash": "sha256:5017a4aacbaf7b01a17ce7748f29b6650a086fbda0c340775b24aac46e1ff50b"
 }

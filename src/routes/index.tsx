@@ -1,3 +1,4 @@
+import { KrPreliminaryNotice } from "@/components/KrPreliminaryNotice";
 import { screeningSession } from "@/lib/screeningSession";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
@@ -274,6 +275,7 @@ function DashboardContent({
 
   return (
     <>
+      <KrPreliminaryNotice publication={summary.krPublication} />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] text-muted-foreground">
           기준일 {summary.asOfDate} · 모델{" "}

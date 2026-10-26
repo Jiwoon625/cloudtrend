@@ -163,6 +163,7 @@ export interface ScreeningRow {
 }
 
 export interface AnalysisResult {
+  krPublication?: import("../krScreeningPublication").KrScreeningPublication;
   observationDates?: Record<string, string[]>;
   asOfDate: string;
   strategyVersion: string;
