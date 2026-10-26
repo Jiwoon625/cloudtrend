@@ -1,3 +1,5 @@
+import { parseKrPublicationRequest } from "../src/lib/krScreeningPublication";
+import { buildKrSourcePublication } from "../src/lib/krScreeningPublication.server";
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -24,6 +26,7 @@ type RunMode = "none" | "screening" | "backtest" | "all";
 interface Options {
   action: Action;
   inputPath: string | null;
+  krPublicationPath: string | null;
   sourceType: SourceType | null;
   registrationMode: SourceRegistrationMode | null;
   userId: string;
@@ -51,15 +54,17 @@ function usage(message?: string): never {
       "",
       "screening modes: replace | append | merge | validate_only",
       "backtest modes: add | replace_all | validate_only",
+      "Optional: --kr-publication <request.json> binds screening to the saved collector manifest",
       "Options: --upload-source gpt|web|github_action|migration, --no-sync-legacy, --run screening|backtest|all, --force",
     ].join("\n"),
   );
 }
 
-function parseArgs(argv: string[]): Options {
+export function parseArgs(argv: string[]): Options {
   const options: Options = {
     action: "register",
     inputPath: null,
+    krPublicationPath: null,
     sourceType: null,
     registrationMode: null,
     userId: process.env["SUPABASE_USER_ID"] ?? "",
@@ -75,6 +80,9 @@ function parseArgs(argv: string[]): Options {
   for (let i = 0; i < argv.length; i++) {
     const argument = argv[i];
     if (argument === "--input") options.inputPath = argv[++i] ?? usage("--input 값이 없습니다.");
+    else if (argument === "--kr-publication")
+      options.krPublicationPath =
+        argv[++i] ?? usage("--kr-publication request JSON path is required");
     else if (argument === "--source-type") {
       const value = argv[++i];
       if (value !== "screening" && value !== "backtest")
@@ -113,6 +121,11 @@ function parseArgs(argv: string[]): Options {
     else usage(`지원하지 않는 인자입니다: ${argument}`);
   }
 
+  if (
+    options.krPublicationPath &&
+    (options.sourceType !== "screening" || !["register", "validate_only"].includes(options.action))
+  )
+    usage("--kr-publication requires screening registration or validation");
   if (options.action === "register" || options.action === "validate_only") {
     if (!options.inputPath) usage("입력 파일이 필요합니다.");
     if (!options.sourceType) usage("--source-type이 필요합니다.");
@@ -188,8 +201,8 @@ function runAnalysis(options: Options) {
   return results;
 }
 
-async function main() {
-  const options = parseArgs(process.argv.slice(2));
+export async function ingestSource(argv = process.argv.slice(2)) {
+  const options = parseArgs(argv);
   if (options.action === "list") {
     const client = trustedSupabaseClient();
     const sources = await listSourceRecords(client, options.userId, options.sourceType!, [
@@ -210,11 +223,23 @@ async function main() {
     return;
   }
 
+  const krPublication = options.krPublicationPath
+    ? parseKrPublicationRequest(
+        JSON.parse(await readFile(path.resolve(options.krPublicationPath), "utf8")),
+      )
+    : undefined;
   const absolutePath = path.resolve(options.inputPath!);
   const bytes = new Uint8Array(await readFile(absolutePath));
   if (bytes.byteLength > SOURCE_MAX_FILE_BYTES)
     throw new Error("파일 1개 크기는 45MB 이하여야 합니다. CSV를 기간별로 나눠 주세요.");
   const validation = await validateSourceBytes({ bytes, filename: path.basename(absolutePath) });
+  if (krPublication && validation.valid)
+    buildKrSourcePublication(krPublication, {
+      max_date: validation.stats.maxDate,
+      file_hash: validation.fileHash,
+      data_hash: validation.dataHash,
+      schema_hash: validation.schemaHash,
+    });
   if (options.action === "validate_only") {
     let engineCompatibility: Record<string, unknown>;
     try {
@@ -243,6 +268,7 @@ async function main() {
     sourceType: options.sourceType!,
     mode: options.registrationMode!,
     origin: options.origin,
+    ...(krPublication ? { krPublication } : {}),
     bytes,
     filename: path.basename(absolutePath),
     // screening은 현재 웹 호환 kr.json을 유지하지만, backtest는 registry 원본만 저장한다.
@@ -274,9 +300,10 @@ async function main() {
   );
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(
-    `${JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) }, null, 2)}\n`,
-  );
-  process.exitCode = 1;
-});
+if (!process.env["VITEST"])
+  ingestSource().catch((error: unknown) => {
+    process.stderr.write(
+      `${JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) }, null, 2)}\n`,
+    );
+    process.exitCode = 1;
+  });

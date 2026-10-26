@@ -1,3 +1,4 @@
+import { preliminarySource } from "./kr-preliminary-fixture";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -174,6 +175,31 @@ test("registration and legacy sync reuse unchanged generations; warm next upload
     expect(download).toHaveBeenCalledTimes(1);
     expect(download.mock.calls[0]![0]).toBe(second.source.storage_path);
     expect(warm.metrics.hits).toBe(7);
+    // JSONB can reorder stored object keys; identical request retries must still reuse.
+    const pending = preliminarySource();
+    const pendingCsv = `${header},marketCapSource\nKOSPI,Index,INDEX,INDEX,2026-10-06,2500,0,,,,MARKET_IDX,\nTEST,Synthetic,KOSPI,STOCK,2026-10-06,100,1000,,,,SEMI,KRX_PENDING_PUBLICATION\n`;
+    const request = {
+      client,
+      userId: "user",
+      sourceType: "screening" as const,
+      mode: "append" as const,
+      origin: "gpt" as const,
+      bytes: new TextEncoder().encode(pendingCsv),
+      filename: "pending.csv",
+      syncLegacy: false,
+      validationCache: warm,
+      krPublication: pending.source.validation_result.krPublication,
+    };
+    const firstPending = await registerSourceBytes(request);
+    const savedPending = records.find((row) => row.id === firstPending.source.id)!;
+    savedPending.validation_result["krPublication"] = Object.fromEntries(
+      Object.entries(
+        savedPending.validation_result["krPublication"] as Record<string, unknown>,
+      ).reverse(),
+    );
+    const repeat = await registerSourceBytes(request);
+    expect(repeat.reused).toBe(true);
+    expect(repeat.source.id).toBe(firstPending.source.id);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

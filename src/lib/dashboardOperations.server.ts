@@ -1,3 +1,4 @@
+import { loadConfirmedEtfContext } from "./confirmedEtfContext.server";
 import { loadActualEntryDecisions } from "./actualEntryDecisions.server";
 import { activeEntryDecisions } from "./actualEntryDecisions";
 import { projectActualEntryDecisions } from "./actualEntryDecisionProjection";
@@ -206,9 +207,13 @@ export async function projection(client: SupabaseClient, uid: string, kind: "kr"
     inFlight.delete(key);
   }
 }
-export async function portfolioEtfContext(client: SupabaseClient, uid: string) {
+export async function portfolioEtfContext(
+  client: SupabaseClient,
+  uid: string,
+  confirmedOnly = false,
+) {
   const [index, tracked] = await Promise.all([
-    projection(client, uid, "kr"),
+    confirmedOnly ? loadConfirmedEtfContext(client, uid) : projection(client, uid, "kr"),
     readJson<{ symbols: string[] }>(client, `${uid}/${ETF_HOLDINGS_PATH}`),
   ]);
   return {

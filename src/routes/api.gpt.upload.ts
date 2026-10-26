@@ -1,3 +1,7 @@
+import {
+  parseKrPublicationRequest,
+  type KrPublicationRequest,
+} from "../lib/krScreeningPublication";
 import path from "node:path";
 import process from "node:process";
 
@@ -20,6 +24,7 @@ type InitRequest = {
 };
 
 type FinalizeRequest = {
+  krPublication?: KrPublicationRequest;
   action: "finalize";
   tempPath: string;
   filename: string;
@@ -129,7 +134,9 @@ async function initUpload(body: InitRequest) {
   };
 }
 
-async function finalizeUpload(body: FinalizeRequest) {
+export async function finalizeUpload(body: FinalizeRequest) {
+  const krPublication =
+    body.krPublication === undefined ? undefined : parseKrPublicationRequest(body.krPublication);
   const { sourceType, filename } = validateCommon(body.sourceType, body.filename);
   const mode = resolveMode(sourceType, body.mode);
   const userId = configuredUserId();
@@ -152,6 +159,7 @@ async function finalizeUpload(body: FinalizeRequest) {
       sourceType,
       mode,
       origin: "gpt",
+      ...(krPublication ? { krPublication } : {}),
       bytes,
       filename,
       contentType: body.contentType,

@@ -1,3 +1,4 @@
+import { preserveConfirmedEtfContext } from "./confirmedEtfContext.server";
 import { applyKrScreeningPublication } from "./krScreeningPublication";
 import { verifyKrScreeningPublication } from "./krScreeningPublication.server";
 import {
@@ -269,6 +270,8 @@ export async function runWebScreeningForUser(
     if (sourceRegisteredAt) dashboard.sourceRegisteredAt = sourceRegisteredAt;
     const screeningPath = `${userId}/cache/screening/latest.json`;
     const dashboardPath = `${userId}/cache/dashboard/latest.json`;
+
+    if (preliminary) await preserveConfirmedEtfContext(client, userId, cached);
 
     await Promise.all([
       uploadJson(client, screeningPath, screening),

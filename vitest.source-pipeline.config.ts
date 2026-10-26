@@ -3,6 +3,7 @@ export default defineConfig({
   resolve: { alias: { "@": new URL("./src", import.meta.url).pathname } },
   test: {
     include: [
+      "tests/kr-publication-ingestion.test.ts",
       "src/lib/krScreeningPublication.test.ts",
       "tests/audit-quality-source-order.test.ts",
       "tests/source-validation-cache.test.ts",

@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { visitDelimitedRows, sourceRowKey, type CanonicalSourceRow } from "./sourceData";
+import {
+  visitDelimitedRows,
+  validateSourceText,
+  sourceRowKey,
+  type CanonicalSourceRow,
+} from "./sourceData";
 import {
   classifyKrScreeningPublication,
   unresolvedKrPendingSources,
@@ -73,19 +78,37 @@ export async function verifyKrScreeningPublication(
   if (publication.phase === "PRELIMINARY" && texts.length) {
     let latest = "";
     for (const text of texts) {
+      // Preserve bounded streaming for canonical CSV, which is the large collector path.
+      // Other formats use exactly the registrar's supported grammar, not a second parser.
+      let sourceLatest = "";
+      let canonicalDates = !["[", "{"].includes(text.trimStart()[0] ?? "");
       let dateIndex = -1;
-      visitDelimitedRows(text, (row, index) => {
-        if (index === 0)
-          dateIndex = row.findIndex(
-            (value) =>
-              value
-                .replace(/^\uFEFF/, "")
-                .trim()
-                .toLowerCase() === "date",
-          );
-        else if (dateIndex >= 0 && /^\d{4}-\d{2}-\d{2}$/.test(row[dateIndex] ?? ""))
-          latest = [latest, row[dateIndex]!].sort().at(-1)!;
-      });
+      if (canonicalDates)
+        visitDelimitedRows(text, (row, index) => {
+          if (index === 0) {
+            dateIndex = row.findIndex(
+              (value) =>
+                value
+                  .replace(/^\uFEFF/, "")
+                  .trim()
+                  .toLowerCase() === "date",
+            );
+            if (dateIndex < 0) canonicalDates = false;
+          } else if (dateIndex >= 0) {
+            const date = row[dateIndex] ?? "";
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) canonicalDates = false;
+            else if (date > sourceLatest) sourceLatest = date;
+          }
+        });
+      if (!canonicalDates) {
+        const normalized = await validateSourceText(
+          text,
+          ["[", "{"].includes(text.trimStart()[0] ?? "") ? "source.json" : "source.csv",
+        );
+        if (!normalized.valid) throw new Error("KR publication raw source normalization failed");
+        sourceLatest = normalized.stats.maxDate ?? "";
+      }
+      if (sourceLatest > latest) latest = sourceLatest;
     }
     if (latest !== publication.asOfDate)
       throw new Error("KR publication actual source latest-date mismatch");

@@ -24,6 +24,10 @@
     {
       "runtimeCodeHash": "sha256:7241639864f1b95f39deb0bc302669792e998492a20ba558b25b4b796ea4a699",
       "reviewId": "kr-preliminary-financial-hold-v1-20261027"
+    },
+    {
+      "runtimeCodeHash": "sha256:2dbe5dbfe199512603a7d4073a6f3de628f89bb6a9f1096109028c76499c64e1",
+      "reviewId": "kr-preliminary-ingestion-confirmed-marks-v1-20261027"
     }
   ]
 }
