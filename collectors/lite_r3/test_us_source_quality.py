@@ -1,5 +1,7 @@
 """Offline real-redacted metadata -> Python archive -> TypeScript golden fixture."""
 import copy,csv,hashlib,importlib.util,io,json,sys,tempfile,unittest
+from datetime import datetime,timezone
+from types import SimpleNamespace
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
 spec=importlib.util.spec_from_file_location('quality_archive',Path(__file__).parent/'runtime/helpers/us_archive.py')
@@ -24,6 +26,50 @@ def payload(rows,metadata):
     stream=io.StringIO();w=csv.DictWriter(stream,fieldnames=FIELDS,lineterminator='\n');w.writeheader();w.writerows(rows);raw=stream.getvalue().encode()
     return raw,dict(user_id='11111111-1111-4111-8111-111111111111',as_of_date=fixture['asOfDate'],data_hash='sha256:'+hashlib.sha256(raw).hexdigest(),row_count=len(rows),symbol_count=len(rows),collected_at='2026-10-24T01:00:00Z',metadata=metadata)
 
+def producer_golden(root,mode='present',stage=None):
+    """Execute the real upload producer through archive admission, stopping before HTTP."""
+    rows,meta=inputs(mode!='absent')
+    if mode!='mixed':
+        rows=[r for r in rows if r['symbol'] not in ('VJET','WQEY')]
+        meta['guardedCandidateScoringHolds']={}
+    if mode!='absent':
+        row=next(r for r in rows if r['symbol']=='GAP');row.update(status='SUSPENDED',toss_tradable='false')
+    lifecycle=['OMITTED'] if mode=='absent' else ['GAP']
+    if mode=='mixed':lifecycle.append('OMITTED')
+    events=[dict(symbol=s,status='SUSPENDED',effective_date=fixture['asOfDate'],source_url='https://example.invalid/verified',identity_name_contains=s) for s in lifecycle]
+    raw,p=payload(rows,meta)
+    class Symbols(list):
+        def nunique(self):return len(set(self))
+    class Output:
+        symbol=Symbols(r['symbol'] for r in rows)
+        def __len__(self):return len(self.symbol)
+    class FrozenDatetime:
+        @staticmethod
+        def now(tz):return datetime(2026,10,24,1,tzinfo=tz)
+    class StopBeforeHttp(Exception):pass
+    captured={}
+    def preserve(**kwargs):
+        captured['ingest']=kwargs['payload']
+        captured['source']=archive.preserve_us_daily_before_upload(**kwargs)
+        raise StopBeforeHttp()
+    class NoHttp:
+        def __getattr__(self,name):raise AssertionError('Unexpected network access: '+name)
+    ns=dict(RUN_US_MARKET=True,_US_SNAPSHOT_READY=True,_us_begin_stage=lambda s:None,_us_require_stage=lambda s:None,
+        SUPABASE_URL='https://example.invalid',SUPABASE_SERVICE_ROLE_KEY='synthetic',SUPABASE_USER_ID=p['user_id'],
+        latest_date=fixture['asOfDate'],data_hash=p['data_hash'],out=Output(),datetime=FrozenDatetime,timezone=timezone,
+        CACHE_PATH='synthetic',MASTER_PATH='synthetic',COLLECTION_UNIVERSE='synthetic',collection_universe_hash='synthetic',
+        unhandled_failures=[],provider_gap_symbols=set(),candidate_scoring_holds=meta['guardedCandidateScoringHolds'],candidate_quarantine={},
+        PREVIOUS_SESSION=fixture['previousSessionDate'],COLLECTOR_VERSION='synthetic',PROVIDER_GAP_POLICY_VERSION='synthetic',
+        lifecycle_events=events,lifecycle_exempt_symbols=set(lifecycle),seed=SimpleNamespace(ticker=list(Output.symbol)+lifecycle),
+        provider_gap_latest_dates={},market_calendar={'ok':True},exchange_rate={'ok':True},ranking_amount={'ok':True},raw=raw,
+        DATED_ARCHIVE_DIR=root,_CT_US_ARCHIVE={'preserve_us_daily_before_upload':preserve},requests=NoHttp())
+    code=Path(stage or Path(__file__).parent/'runtime/stages/us_upload.py').read_text()
+    try:exec(compile(code,'actual-us-upload-stage','exec'),ns)
+    except StopBeforeHttp:pass
+    else:raise AssertionError('Producer did not reach archive boundary')
+    manifest,blobs=archive.prepare_us_atomic_chain(root,[fixture['asOfDate']],fixture['previousSessionDate'])
+    return dict(ingest=captured['ingest'],manifest=manifest,files={p:b.decode() for p,b,m in blobs})
+
 def golden(root,mixed=False):
     raw,ingest=payload(*inputs(mixed))
     source=archive.preserve_us_daily_before_upload(raw=raw,payload=ingest,root=root,user_id=ingest['user_id'])
@@ -31,6 +77,31 @@ def golden(root,mixed=False):
     return dict(ingest=ingest,manifest=manifest,files={p:b.decode() for p,b,m in blobs})
 
 class QualityTests(unittest.TestCase):
+    def test_actual_upload_producer_lifecycle_boundaries(self):
+        for mode in ['present','absent','mixed']:
+            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as root:
+                g=producer_golden(root,mode);source=g['manifest']['sessions'][0];metadata=g['ingest']['metadata']
+                self.assertEqual(source['sourceCoverageComplete'],mode=='absent')
+                self.assertEqual(source['sourceQuality']['priceCoverageComplete'],mode=='absent')
+                self.assertEqual(source['quarantinedSymbols'],[] if mode=='absent' else ['GAP'])
+                self.assertEqual(metadata['lifecycleExcludedSymbols'],['OMITTED'] if mode=='absent' else (['GAP','OMITTED'] if mode=='mixed' else ['GAP']))
+                self.assertEqual(len(metadata['verifiedLifecycleEvents']),len(metadata['lifecycleExcludedSymbols']))
+    def test_missing_provider_or_unverified_lifecycle_stays_blocked(self):
+        for mode in ['provider','no-event','future','bad-status','bad-url','duplicate']:
+            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as root:
+                rows,meta=inputs();meta['lifecycleExcludedSymbols']=['OMITTED']
+                event=dict(symbol='OMITTED',status='SUSPENDED',effective_date=fixture['asOfDate'],source_url='https://example.invalid/verified')
+                meta['verifiedLifecycleEvents']=[event]
+                if mode=='provider':meta['providerGapSymbols']=['OMITTED']
+                if mode=='no-event':meta['verifiedLifecycleEvents']=[]
+                if mode=='future':event['effective_date']='2026-10-24'
+                if mode=='bad-status':event['status']='ACTIVE'
+                if mode=='bad-url':event['source_url']='http://example.invalid/'
+                if mode=='duplicate':meta['lifecycleExcludedSymbols'].append('OMITTED')
+                raw,p=payload(rows,meta)
+                with self.assertRaises(RuntimeError):archive.freeze_us_atomic_archive(raw=raw,ingest=p,root=root,user_id=p['user_id'])
+                self.assertEqual(list(Path(root).iterdir()),[])
+
     def test_golden_and_mixed(self):
         for mixed in [False,True]:
             with tempfile.TemporaryDirectory() as root:
@@ -77,5 +148,7 @@ class QualityTests(unittest.TestCase):
 
 if __name__=='__main__':
     if '--emit' in sys.argv:
-        with tempfile.TemporaryDirectory() as root:print(json.dumps(golden(root,'--mixed' in sys.argv)))
+        with tempfile.TemporaryDirectory() as root:
+            out=producer_golden(root,sys.argv[sys.argv.index('--producer')+1]) if '--producer' in sys.argv else golden(root,'--mixed' in sys.argv)
+            print(json.dumps(out))
     else:unittest.main()

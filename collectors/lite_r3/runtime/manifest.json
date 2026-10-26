@@ -41,9 +41,9 @@
     },
     {
       "path": "helpers/us_archive.py",
-      "bytes": 26123,
-      "characters": 26051,
-      "sha256": "5f20bb55d36e075c6334e8adedf2364802fd3a897b7e27b350ac2030f2901568"
+      "bytes": 27352,
+      "characters": 27280,
+      "sha256": "692e2248aa55d9d84e20477a3d834454bb0f65e76940aae4dd37be4348bc3feb"
     },
     {
       "path": "stages/common_init.py",
@@ -221,9 +221,9 @@
     },
     {
       "path": "stages/us_upload.py",
-      "bytes": 6793,
-      "characters": 6712,
-      "sha256": "8155ae830e2b65ccdb2312f58c77fe2491aef391bf6a8aedd2984cf088f33f60"
+      "bytes": 6860,
+      "characters": 6779,
+      "sha256": "92e1e8b2bdc2a27d85364976a0c132c562193446b9fe885adc8411fca540de25"
     }
   ]
 }

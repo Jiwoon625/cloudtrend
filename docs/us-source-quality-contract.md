@@ -108,3 +108,17 @@ publication. Adversarial tests cover versions, reasons, bar thresholds, dates,
 symbols, price corruption, score availability, false completeness, mixed holds,
 immutable retries and publication readback. Existing replay/continuation and
 same-session revision suites remain required.
+
+### Lifecycle producer compatibility
+
+Coverage refers to the archived CSV roster, not a claim that every original seed
+security has current prices. The ordinary upload producer includes lifecycle
+quarantines **present in the CSV** when computing `sourceCoverageComplete`.
+A previously verified lifecycle event may intentionally leave no current-session
+row; its full `lifecycleExcludedSymbols` and `verifiedLifecycleEvents` metadata
+remain intact, but it does not invent a CSV quarantine or a price. Such absent
+entries require a unique canonical non-SPY symbol and one effective SUSPENDED
+event with valid date and HTTPS evidence. Missing provider-gap rows and unknown
+candidate identity omissions still fail closed. Actual upload-stage fixtures
+exercise present, absent, and mixed lifecycle/hold cases through archive, replay,
+and direct ingest, stopping before any HTTP call.

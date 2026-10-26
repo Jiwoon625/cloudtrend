@@ -25,10 +25,15 @@ type MutableQuality = {
   >;
 };
 
-function golden(mixed = false) {
+function golden(mixed = false, producer?: string) {
   const p = spawnSync(
     "python3",
-    ["collectors/lite_r3/test_us_source_quality.py", "--emit", ...(mixed ? ["--mixed"] : [])],
+    [
+      "collectors/lite_r3/test_us_source_quality.py",
+      "--emit",
+      ...(mixed ? ["--mixed"] : []),
+      ...(producer ? ["--producer", producer] : []),
+    ],
     { encoding: "utf8" },
   );
   if (p.status !== 0) throw new Error(p.stderr);
@@ -46,6 +51,73 @@ async function loaded(mixed = false) {
 }
 
 describe("real-redacted collector metadata crosses the complete quality boundary", () => {
+  it.each(["present", "absent", "mixed"])(
+    "actual upload-stage lifecycle %s → archive → replay → ingest",
+    async (mode) => {
+      const g = golden(false, mode);
+      const manifest = await validateUsReplayManifest(g.manifest, g.ingest.user_id);
+      const [f] = await loadVerifiedUsReplaySessions(manifest, async (p) => g.files[p]!);
+      expect(f!.source.sourceCoverageComplete).toBe(mode === "absent");
+      expect(f!.source.sourceQuality!.priceCoverageComplete).toBe(mode === "absent");
+      expect(f!.source.quarantinedSymbols).toEqual(mode === "absent" ? [] : ["GAP"]);
+      expect(() => assertUsScreeningCoverage(g.ingest.metadata, f!.rows)).not.toThrow();
+      if (mode !== "absent") {
+        for (const key of ["open", "close", "ret120", "ret252"]) {
+          const unsafe = structuredClone(f!.rows);
+          Object.assign(
+            unsafe.find((r) => r.symbol === "GAP")!,
+            { [key]: 1 },
+          );
+          expect(() => assertUsScreeningCoverage(g.ingest.metadata, unsafe)).toThrow(
+            "Unsafe US coverage quarantine",
+          );
+        }
+      }
+      if (mode !== "present") {
+        expect(f!.rows.some((r) => r.symbol === "OMITTED")).toBe(false);
+        expect(g.ingest.metadata["lifecycleExcludedSymbols"]).toContain("OMITTED");
+        for (const bad of [
+          { verifiedLifecycleEvents: [] },
+          { providerGapSymbols: ["OMITTED"] },
+          { lifecycleExcludedSymbols: ["OMITTED", "OMITTED"] },
+          { lifecycleExcludedSymbols: ["SPY"] },
+          {
+            verifiedLifecycleEvents: [
+              {
+                symbol: "OMITTED",
+                status: "ACTIVE",
+                effective_date: "2026-10-23",
+                source_url: "https://example.invalid/",
+              },
+            ],
+          },
+          {
+            verifiedLifecycleEvents: [
+              {
+                symbol: "OMITTED",
+                status: "SUSPENDED",
+                effective_date: "2026-10-24",
+                source_url: "https://example.invalid/",
+              },
+            ],
+          },
+          {
+            verifiedLifecycleEvents: [
+              {
+                symbol: "OMITTED",
+                status: "SUSPENDED",
+                effective_date: "2026-10-23",
+                source_url: "http://example.invalid/",
+              },
+            ],
+          },
+        ])
+          expect(() =>
+            assertUsScreeningCoverage({ ...g.ingest.metadata, ...bad }, f!.rows),
+          ).toThrow();
+      }
+    },
+  );
   it.each([false, true])(
     "Python freeze -> replay -> direct scorer -> compact publication, provider gap=%s",
     async (mixed) => {

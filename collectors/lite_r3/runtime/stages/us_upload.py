@@ -44,7 +44,7 @@ if RUN_US_MARKET:
                 'collectionUniversePath':str(COLLECTION_UNIVERSE),
                 'collectionUniverseHash':collection_universe_hash,
                 'failedSymbols':len(unhandled_failures),
-                'sourceCoverageComplete':not bool(provider_gap_symbols or unhandled_failures or globals().get('candidate_scoring_holds') or globals().get('candidate_quarantine')),
+                'sourceCoverageComplete':not bool(provider_gap_symbols or (lifecycle_exempt_symbols & set(seed.ticker) & set(out.symbol)) or unhandled_failures or globals().get('candidate_scoring_holds') or globals().get('candidate_quarantine')),
                 'sourceCoveragePolicy':'verified-lifecycle-and-explicit-quarantine-v1',
                 'unresolvedProviderGapCount':len(provider_gap_symbols),
                 'previousSessionDate':PREVIOUS_SESSION,

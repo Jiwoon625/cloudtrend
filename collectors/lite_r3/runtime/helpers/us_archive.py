@@ -4,6 +4,7 @@ No collector, scheduler, credential creation, or current-ingest replacement.
 import csv, hashlib, io, json, math, os, re
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 US_OPERATING_IDS = ('A0_QUARTER_PRIMARY','A2_QUARTER_SHADOW','B3_BETA_SHADOW','SPY_BENCHMARK')
 US_RESTART_START = '2026-10-12'
@@ -95,10 +96,24 @@ def _ua_price_quarantine(rows,metadata):
     symbols={r['symbol'] for r in rows}
     for key in ('providerGapSymbols','lifecycleExcludedSymbols'):
         value=metadata.get(key,[])
-        _ua_require(isinstance(value,list) and all(isinstance(s,str) and s in symbols and s!='SPY' for s in value)
+        _ua_require(isinstance(value,list) and all(isinstance(s,str) and re.fullmatch(r'[A-Z0-9.^-]+',s)
+                    and s!='SPY' and (key!='providerGapSymbols' or s in symbols) for s in value)
                     and len(set(value))==len(value),'Invalid US price quarantine evidence: '+key)
-    quarantine=sorted(set(metadata.get('providerGapSymbols',[])) | set(metadata.get('lifecycleExcludedSymbols',[])))
-    return quarantine
+    absent=set(metadata.get('lifecycleExcludedSymbols',[]))-symbols
+    events=metadata.get('verifiedLifecycleEvents',[])
+    _ua_require(not absent or isinstance(events,list),'Missing verified lifecycle omission evidence')
+    for symbol in absent:
+        matches=[e for e in events if isinstance(e,dict) and e.get('symbol')==symbol]
+        _ua_require(len(matches)==1,'Missing or ambiguous verified lifecycle omission: '+symbol)
+        event=matches[0];effective=event.get('effective_date');evidence=urlparse(str(event.get('source_url','')))
+        try: valid_date=isinstance(effective,str) and datetime.strptime(effective,'%Y-%m-%d').strftime('%Y-%m-%d')==effective and effective<=rows[0]['date']
+        except (ValueError,TypeError): valid_date=False
+        _ua_require(event.get('status')=='SUSPENDED' and valid_date and evidence.scheme=='https' and evidence.netloc,
+                    'Invalid verified lifecycle omission: '+symbol)
+    # Verified lifecycle events can exempt a seed security with no as-of row.
+    # Retain that producer metadata, but never invent a missing CSV quarantine.
+    return sorted(set(metadata.get('providerGapSymbols',[])) |
+                  (set(metadata.get('lifecycleExcludedSymbols',[])) & symbols))
 
 def _ua_validate_atomic_input(raw, ingest, user_id):
     _ua_require(ingest.get('user_id')==user_id,'Wrong atomic owner')
