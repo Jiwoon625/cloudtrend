@@ -408,3 +408,70 @@ describe("preserved ATOMIC replay to daily screening", () => {
     expect(replayBranch).not.toContain("npm run us:screening");
   });
 });
+
+describe("versioned scoring holds survive daily publication", () => {
+  function heldSetup() {
+    const f = setup();
+    const rows = f.input.analyses[1]!.rows.map((r) => ({ ...r }));
+    Object.assign(
+      rows.find((r) => r.symbol === "TEST")!,
+      {
+        ret120: null,
+        ret252: null,
+        beta60Spy: null,
+        ichimokuTkGap: null,
+        relvol1_20: null,
+        adv20Usd: null,
+        amihud20: null,
+        active20: false,
+      },
+    );
+    f.input.analyses[1] = runUsProspectiveAnalysis(rows, {
+      lastDate: "2026-10-06",
+      coreRanks: { TEST: 0.1 },
+    });
+    f.input.sources[1]!.sourceCoverageComplete = false;
+    f.input.sources[1]!.sourceQuality = {
+      version: "us-source-quality-v1",
+      priceCoverageComplete: true,
+      scoringHolds: {
+        TEST: {
+          reason: "unverified_pre_event_history_and_insufficient_post_event_lookback",
+          postEventBars: 2,
+          minimumBars: 253,
+          historyStartDate: "2026-10-05",
+        },
+      },
+    };
+    return f;
+  }
+  it("keeps null scores, exact hold evidence and immutable retry bytes", async () => {
+    const f = heldSetup();
+    const result = await publishUsReplayScreening(f.input);
+    expect(result.source.metadata.sourceCoverageComplete).toBe(false);
+    expect(result.source.metadata.quarantinedSymbols).toEqual([]);
+    expect(result.source.metadata.sourceQuality).toEqual(f.input.sources[1]!.sourceQuality);
+    expect(result.analysis.rows.find((r) => r.symbol === "TEST")).toMatchObject({
+      coreRank: null,
+      betaRank: null,
+      eligibleBase: false,
+      a0Entry: false,
+      a2Entry: false,
+      b3Entry: false,
+    });
+    const original = f.files.get(`${uid}/results/us-screening/${day}.json`);
+    await publishUsReplayScreening(f.input);
+    expect(f.files.get(`${uid}/results/us-screening/${day}.json`)).toBe(original);
+  });
+  it("blocks invented held scores or eligibility before any publication writes", async () => {
+    for (const values of [{ coreRank: 0 }, { a0Entry: true }, { active20: true }]) {
+      const f = heldSetup();
+      Object.assign(
+        f.input.analyses[1]!.rows.find((r) => r.symbol === "TEST")!,
+        values,
+      );
+      await expect(publishUsReplayScreening(f.input)).rejects.toThrow(/hold/);
+      expect(f.writes).toEqual([]);
+    }
+  });
+});

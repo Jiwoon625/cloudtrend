@@ -1,3 +1,8 @@
+import {
+  assertUsPublishedScoringHolds,
+  assertUsSourceQuality,
+  usSourceQualityMetadata,
+} from "./us-source-quality";
 /** Publish already verified recovery signals only. Never run engines or mutate any ledger. */
 import {
   ANALYSIS_BUCKET,
@@ -115,6 +120,7 @@ function assertPublishedView(value: unknown, identity: UsRecoveryPublicationIden
           "failedSymbols",
           "sourceCoverageComplete",
           "quarantinedSymbols",
+          "sourceQuality",
           "recoveryPublication",
         ].includes(k),
     ) ||
@@ -144,7 +150,8 @@ function assertPublishedView(value: unknown, identity: UsRecoveryPublicationIden
     !Array.isArray(quarantines) ||
     quarantines.some((s) => typeof s !== "string" || !s) ||
     new Set(quarantines).size !== quarantines.length ||
-    coverage !== (quarantines.length === 0) ||
+    (!Object.hasOwn(view.source.metadata, "sourceQuality") &&
+      coverage !== (quarantines.length === 0)) ||
     !record(view.analysis) ||
     Object.keys(view.analysis).some(
       (k) => !["date", "ruleVersion", "summary", "rows"].includes(k),
@@ -160,6 +167,15 @@ function assertPublishedView(value: unknown, identity: UsRecoveryPublicationIden
     view.analysis.summary["inputRows"] !== view.analysis.rows.length
   )
     throw new Error("Malformed or mismatched US recovery publication");
+  if (Object.hasOwn(view.source.metadata, "sourceQuality")) {
+    assertUsSourceQuality(
+      view.source.metadata["sourceQuality"],
+      coverage,
+      quarantines as string[],
+      identity.date,
+    );
+    assertUsPublishedScoringHolds(view.source.metadata["sourceQuality"], view.analysis.rows);
+  }
   const symbols = new Set<string>();
   for (const row of view.analysis.rows) {
     if (
@@ -399,6 +415,7 @@ export async function preflightUsRecoveryPublication(
         failedSymbols: source.failedSymbols,
         sourceCoverageComplete: source.sourceCoverageComplete,
         quarantinedSymbols: [...source.quarantinedSymbols],
+        ...usSourceQualityMetadata(source),
         recoveryPublication: {
           version: US_RECOVERY_PUBLICATION_VERSION,
           manifestHash: input.manifestHash,

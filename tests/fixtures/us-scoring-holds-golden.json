@@ -1,0 +1,18 @@
+{
+  "fixtureVersion": "redacted-us-collector-scoring-holds-v1",
+  "provenance": "Observed 2026-10-23 collector QA metadata; synthetic owner, capture clock and prices; no private raw data",
+  "observedInputRows": 5328,
+  "observedRet252AvailableRows": 5009,
+  "asOfDate": "2026-10-23",
+  "previousSessionDate": "2026-10-22",
+  "confirmedRegularClose": true,
+  "failedSymbols": 0,
+  "sourceCoverageComplete": false,
+  "providerGapSymbols": [],
+  "lifecycleExcludedSymbols": [],
+  "guardedCandidateQuarantine": {},
+  "guardedCandidateScoringHolds": {
+    "VJET": {"reason": "unverified_pre_event_history_and_insufficient_post_event_lookback", "postEventBars": 15, "minimumBars": 253, "historyStartDate": "2026-10-05"},
+    "WQEY": {"reason": "unverified_pre_event_history_and_insufficient_post_event_lookback", "postEventBars": 15, "minimumBars": 253, "historyStartDate": "2026-10-05"}
+  }
+}

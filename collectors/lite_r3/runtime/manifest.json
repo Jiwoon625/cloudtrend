@@ -1,13 +1,13 @@
 {
-  "version": "cloudtrend-lite-r4-daily-v6",
+  "version": "cloudtrend-lite-r4-daily-v7-source-quality",
   "sourceNotebookHash": "8adb08efd219087a9bf887a873d2d22e8d4b79282b6ad853f2140c333941c434",
   "stageCount": 30,
   "files": [
     {
       "path": "__init__.py",
-      "bytes": 1582,
-      "characters": 1582,
-      "sha256": "3f197a7e7adf0b7a74c097acf659b478f4fbd3450ff51aa92d0b643c0be99dc8"
+      "bytes": 1597,
+      "characters": 1597,
+      "sha256": "aa4438b66fba723199cdb24b1ed78b74ad20c221f50460a32da82ccc1707af5f"
     },
     {
       "path": "helpers/kr_callback.py",
@@ -41,9 +41,9 @@
     },
     {
       "path": "helpers/us_archive.py",
-      "bytes": 20158,
-      "characters": 20086,
-      "sha256": "7b128e41921845dc111a3196399a36edc63c744a70567b5dbb0550b1d7b1cbfa"
+      "bytes": 26123,
+      "characters": 26051,
+      "sha256": "5f20bb55d36e075c6334e8adedf2364802fd3a897b7e27b350ac2030f2901568"
     },
     {
       "path": "stages/common_init.py",
@@ -167,9 +167,9 @@
     },
     {
       "path": "stages/us_collection.py",
-      "bytes": 35680,
-      "characters": 35027,
-      "sha256": "9ff31b5c8e5008990519ba322da68aea726ffa1d7e98e985fb3872373cadac5b"
+      "bytes": 35708,
+      "characters": 35055,
+      "sha256": "a47aad46ec718c2a44300034d3f2a971afd46a3145fd8679f46a026e4014884e"
     },
     {
       "path": "stages/us_diagnostics.py",
