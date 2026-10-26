@@ -40,7 +40,7 @@ export interface KrPendingSupersession {
   asOfDate: string;
 }
 export interface KrSourcePublication extends KrPublicationRequest {
-  /** Server-derived proof: complete incoming canonical keys and exact same-date repair. */
+  /** Server-derived proof: complete incoming canonical keys and exact repair at the pending date. */
   supersedesPending?: KrPendingSupersession[];
   asOfDate: string;
   sourceFileHash: string;
@@ -104,7 +104,8 @@ export function krSourcePublication(source: KrPublicationSource): KrSourcePublic
           !hash.test(v.fileHash) ||
           !hash.test(v.dataHash) ||
           !hash.test(v.schemaHash) ||
-          v.asOfDate !== p.asOfDate,
+          !date.test(v.asOfDate) ||
+          v.asOfDate > p.asOfDate,
       ))
   )
     throw new Error("Invalid KR pending supersession proof");
@@ -188,7 +189,7 @@ export function validateKrPublicationManifest(request: KrPublicationRequest, asO
     throw new Error("KR publication phase contradicts pending evidence");
 }
 
-/** A later FINAL may repair only exact earlier source generations on the SAME date. */
+/** A later FINAL may repair exact older generations only with server-derived dated proof. */
 export function unresolvedKrPendingSources(sources: readonly KrPublicationSource[]) {
   return sources.filter((source, index) => {
     const pending = krSourcePublication(source);
@@ -197,7 +198,7 @@ export function unresolvedKrPendingSources(sources: readonly KrPublicationSource
       const final = krSourcePublication(later);
       return (
         final?.phase === "FINAL" &&
-        final.asOfDate === pending.asOfDate &&
+        final.asOfDate >= pending.asOfDate &&
         final.supersedesPending?.some(
           (proof) =>
             proof.sourceId === source.id &&

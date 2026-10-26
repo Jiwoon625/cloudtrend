@@ -122,13 +122,22 @@ export function buildKrPendingSupersessions(
   incoming: readonly CanonicalSourceRow[],
   asOfDate: string,
 ) {
+  // The caller binds this date to the validated incoming source. Keep this helper
+  // independently fail-closed: later date alone is not evidence of a repair.
+  if (
+    incoming
+      .map((row) => row.date)
+      .sort()
+      .at(-1) !== asOfDate
+  )
+    return [];
   const incomingRows = new Map(incoming.map((row) => [sourceRowKey(row), row]));
   return previous.flatMap(({ source, rows }) => {
     const prior = krSourcePublication(source);
-    if (prior?.phase !== "PRELIMINARY" || prior.asOfDate !== asOfDate || !source.id) return [];
+    if (prior?.phase !== "PRELIMINARY" || prior.asOfDate > asOfDate || !source.id) return [];
     const covered = rows.every((row) => incomingRows.has(sourceRowKey(row)));
     const targets = rows.filter(
-      (row) => row.date === asOfDate && ["STOCK", "ETF"].includes(row.type),
+      (row) => row.date === prior.asOfDate && ["STOCK", "ETF"].includes(row.type),
     );
     const repaired =
       targets.length > 0 &&
@@ -147,7 +156,7 @@ export function buildKrPendingSupersessions(
         fileHash: prior.sourceFileHash,
         dataHash: prior.sourceDataHash,
         schemaHash: prior.sourceSchemaHash,
-        asOfDate,
+        asOfDate: prior.asOfDate,
       },
     ];
   });

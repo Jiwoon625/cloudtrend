@@ -28,6 +28,10 @@
     {
       "runtimeCodeHash": "sha256:2dbe5dbfe199512603a7d4073a6f3de628f89bb6a9f1096109028c76499c64e1",
       "reviewId": "kr-preliminary-ingestion-confirmed-marks-v1-20261027"
+    },
+    {
+      "runtimeCodeHash": "sha256:189d1e72a7c3f632bdc4df3481de5aade2141954db524c6614b9275dad7b5dbb",
+      "reviewId": "kr-multiday-exact-prior-date-repair-v1-20261027"
     }
   ]
 }
