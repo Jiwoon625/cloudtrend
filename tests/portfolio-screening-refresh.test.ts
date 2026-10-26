@@ -178,6 +178,27 @@ describe("screening publication and portfolio refresh", () => {
     expect(mocks.portfolio).not.toHaveBeenCalled();
     expect(mocks.persist).not.toHaveBeenCalled();
   });
+  it("captures the verified prior FINAL ETF view before replacing latest with PRELIMINARY", async () => {
+    cache();
+    const prior = objects.get("owner/cache/screening/latest.json") as { resultDigest: string };
+    const { source, text } = preliminarySource(analysis.asOfDate);
+    mocks.list.mockResolvedValue([source]);
+    mocks.load.mockResolvedValue({ sources: [source], texts: [text] });
+    mocks.analyze.mockReturnValue({
+      analysis: { ...analysis, notes: [] },
+      dataset: { asOfDate: analysis.asOfDate },
+    });
+    await runWebScreeningForUser(client, "owner", DEFAULT_SCORING_CONFIG);
+    expect(objects.get("owner/cache/screening/confirmed-etf-context.json")).toMatchObject({
+      sourceDigest: prior.resultDigest,
+    });
+    expect(objects.get("owner/cache/screening/latest.json")).toMatchObject({
+      payload: { analysis: { krPublication: { phase: "PRELIMINARY" } } },
+    });
+    expect(mocks.portfolio).not.toHaveBeenCalled();
+    expect(mocks.persist).not.toHaveBeenCalled();
+  });
+
   it("rejects undeclared pending raw inputs before any engine or financial call", async () => {
     mocks.load.mockResolvedValue({
       sources,

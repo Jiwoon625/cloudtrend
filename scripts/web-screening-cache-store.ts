@@ -1,3 +1,4 @@
+import { preserveConfirmedEtfContext } from "../src/lib/confirmedEtfContext.server";
 import {
   screeningInputIdentity,
   savedOperationalIdentity,
@@ -128,6 +129,9 @@ export async function persistWebScreeningCaches(input: {
       `스크리닝 regression guard 실패: 동일 원천·동일 산식인데 결과 digest가 변경되었습니다. expected=${existing.resultDigest}, actual=${digest}`,
     );
   }
+
+  if (input.analysis.krPublication?.phase === "PRELIMINARY")
+    await preserveConfirmedEtfContext(input.client, input.userId, existing);
 
   const source = { live: true, credentialsConfigured: true, fallbackReason: null };
   const payload: AnalysisPayload = { analysis: input.analysis, source };

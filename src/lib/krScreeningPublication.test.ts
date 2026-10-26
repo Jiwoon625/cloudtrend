@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { preliminarySource } from "../../tests/kr-preliminary-fixture";
 import {
   applyKrScreeningPublication,
+  parseKrPublicationRequest,
   classifyKrScreeningPublication,
 } from "./krScreeningPublication";
 import {
@@ -68,6 +69,37 @@ describe("source-bound KR preliminary publication", () => {
     request.manifestText = JSON.stringify(manifest);
     request.manifestSha256 = hash(request.manifestText);
     expect(() => buildKrSourcePublication(request, source)).toThrow("collector run");
+  });
+  it.each([
+    '[{"symbol":"TEST","name":"Synthetic","market":"KOSPI","type":"STOCK","date":"2026-10-06","close":100,"volume":1000,"marketCapSource":"KRX_PENDING_PUBLICATION"}]',
+    "종목코드,name,market,type,일자,close,volume,marketCapSource\nTEST,Synthetic,KOSPI,STOCK,20261006,100,1000,KRX_PENDING_PUBLICATION\n",
+    "symbol,name,market,type,date,close,volume,marketCapSource\nTEST,Synthetic,KOSPI,STOCK,2026/10/06,100,1000,KRX_PENDING_PUBLICATION\n",
+  ])("normalizes a supported raw source format before date verification", async (text) => {
+    const { source } = preliminarySource();
+    source.file_hash = hash(text);
+    source.validation_result.krPublication = buildKrSourcePublication(
+      source.validation_result.krPublication,
+      source,
+    );
+    expect((await verifyKrScreeningPublication(client, "owner", [source], [text])).phase).toBe(
+      "PRELIMINARY",
+    );
+  });
+  it("allowlists ingestion fields and never forwards supplied repair proofs or URLs", () => {
+    const p = preliminarySource().source.validation_result.krPublication;
+    const parsed = parseKrPublicationRequest({
+      ...p,
+      supersedesPending: [{ sourceId: "forged" }],
+      callbackUrl: "https://invalid.example",
+    });
+    expect(Object.keys(parsed).sort()).toEqual([
+      "manifestSha256",
+      "manifestText",
+      "phase",
+      "requestId",
+      "version",
+    ]);
+    expect(() => parseKrPublicationRequest({ ...p, phase: "UNKNOWN" })).toThrow("Invalid");
   });
   it("keeps legacy FINAL output and identity unchanged", () => {
     const analysis = { asOfDate: "2026-10-06", notes: [] } as unknown as AnalysisResult;

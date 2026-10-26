@@ -25,7 +25,7 @@ import {
   type SourceValidationResult,
   validateSourceBytes,
 } from "../src/lib/sourceData";
-import { ANALYSIS_BUCKET, downloadJson, uploadJson } from "./analysis-run-store";
+import { ANALYSIS_BUCKET, downloadJson, uploadJson, stableJson } from "./analysis-run-store";
 import { createSourceValidationCache, type SourceValidationCache } from "./source-validation-cache";
 
 export type SourceRegistrationMode = "replace" | "append" | "merge" | "add" | "replace_all";
@@ -666,7 +666,7 @@ export async function registerSourceBytes(input: {
   const exact = activeRegistered.find((value) => value.dataHash === validation.dataHash);
   if (exact && (input.mode === "append" || input.mode === "add")) {
     const saved = exact.sourceRecord?.validation_result?.["krPublication"];
-    if (JSON.stringify(saved ?? null) !== JSON.stringify(krPublication ?? null))
+    if (stableJson(saved ?? null) !== stableJson(krPublication ?? null))
       throw new Error(
         "Identical source has a different publication request; explicit replacement required",
       );

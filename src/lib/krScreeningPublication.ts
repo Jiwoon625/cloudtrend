@@ -8,6 +8,30 @@ export interface KrPublicationRequest {
   manifestText: string;
   manifestSha256: string;
 }
+/** Ingestion boundary allowlist; source hashes and repair proofs are server-derived. */
+export function parseKrPublicationRequest(value: unknown): KrPublicationRequest {
+  const v = publicationObject(value);
+  if (
+    v["version"] !== KR_PUBLICATION_VERSION ||
+    typeof v["phase"] !== "string" ||
+    !["PRELIMINARY", "FINAL"].includes(v["phase"]) ||
+    typeof v["requestId"] !== "string" ||
+    !/^[A-Za-z0-9_-]{8,128}$/.test(v["requestId"]) ||
+    typeof v["manifestText"] !== "string" ||
+    v["manifestText"].length > 1024 * 1024 ||
+    typeof v["manifestSha256"] !== "string" ||
+    !/^sha256:[a-f0-9]{64}$/.test(v["manifestSha256"])
+  )
+    throw new Error("Invalid KR publication request");
+  return {
+    version: KR_PUBLICATION_VERSION,
+    phase: v["phase"] as "PRELIMINARY" | "FINAL",
+    requestId: v["requestId"],
+    manifestText: v["manifestText"],
+    manifestSha256: v["manifestSha256"],
+  };
+}
+
 export interface KrPendingSupersession {
   sourceId: string;
   fileHash: string;

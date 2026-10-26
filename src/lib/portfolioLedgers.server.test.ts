@@ -202,7 +202,7 @@ describe("ledger persistence", () => {
     const preview = await operateLedgers(db.client, "owner", { action: "load" });
     expect(preview.revision).toBe(final.revision);
     expect(preview.document.strategy).toEqual(final.document.strategy);
-    expect(preview.etfRows).toEqual([]);
+    expect(preview.etfRows).toEqual(final.etfRows);
     expect(preview.etfWarning).toContain("PRELIMINARY");
     expect(JSON.stringify(db.tables["portfolio_ledgers"])).toBe(before);
     expect(simulateStrategy).not.toHaveBeenCalled();
@@ -359,6 +359,19 @@ describe("ledger persistence", () => {
       unrealizedPnl: 98,
       exitSignal: "MA60",
     });
+    const beforePending = JSON.stringify(db.tables["portfolio_ledgers"]);
+    pendingSources = [preliminarySource().source];
+    const pendingView = await operateLedgers(db.client, "owner", { action: "load" });
+    expect(pendingView.etfActual!.positions[0]).toMatchObject({
+      currentPrice: 110,
+      markDate: "2026-01-02",
+      marketValue: 1100,
+      unrealizedPnl: 98,
+    });
+    expect(pendingView.etfActual).toEqual(bought.etfActual);
+    expect(pendingView.revision).toBe(bought.revision);
+    expect(JSON.stringify(db.tables["portfolio_ledgers"])).toBe(beforePending);
+    pendingSources = null;
     const funded = await operateLedgers(db.client, "owner", {
       action: "capital",
       revision: bought.revision,

@@ -14,3 +14,9 @@ The collector can request screening before current-session KRX publication witho
 A FINAL source requires exact official current-date capitalization in the actual input, plus explicit exact official publication evidence. Ordinary merge registration can derive `supersedesPending` only when the incoming canonical rows cover every prior source key and repair every affected same-date stock/ETF row. Each proof binds the earlier source ID, file/data/schema hashes and date. Another date, an unmarked newer source, incomplete coverage or caller-supplied proof cannot clear pending historical data. The prior source and preliminary archive remain auditable; no preliminary journal is promoted or rewritten.
 
 Legacy FINAL sources without this new contract retain their prior behavior. Optional standalone source compaction defers phase-bound generations and retains their originals; this does not block upload or screening. Phase-preserving compaction is a separate follow-up, not silently lossy migration.
+
+## Ingestion compatibility
+
+Public CLI registration accepts `--kr-publication <request.json>`; authenticated GPT upload finalization accepts the same optional `krPublication` object. Both forward only request fields to the existing hash/evidence-validated registrar. Source hashes, supersession proofs and callback URLs cannot be supplied through this object. The publication verifier shares the existing source header/date normalization, including JSON, compact dates and supported Korean aliases; unknown or mismatched dates still fail closed.
+
+Before a PRELIMINARY cache replaces the latest view, a digest-verified prior FINAL ETF projection is retained in `cache/screening/confirmed-etf-context.json`. Portfolio reads use those confirmed marks without updating ledgers. Repeated previews cannot overwrite that projection; missing verified prior marks are explicitly labeled unavailable rather than presented as a new valuation.

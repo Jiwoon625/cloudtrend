@@ -493,13 +493,14 @@ async function operateLedgersOnce(
   );
   const doc = structuredClone(row.payload);
   let etfWarning: string | null = null;
-  const etfContext = preliminary
-    ? { rows: [], trackedSymbols: [], date: doc.strategy?.summary.latestDate ?? null }
-    : await portfolioEtfContext(client, uid).catch((error) => {
-        etfWarning = error instanceof Error ? error.message : "ETF 결과 조회 실패";
-        return { rows: [], trackedSymbols: [], date: null };
-      });
-  if (preliminary) etfWarning = "PRELIMINARY · KRX 공표 대기: 기존 확정 가격과 원장을 유지합니다.";
+  const etfContext = await portfolioEtfContext(client, uid, preliminary).catch((error) => {
+    etfWarning = error instanceof Error ? error.message : "ETF 결과 조회 실패";
+    return { rows: [], trackedSymbols: [], date: null };
+  });
+  if (preliminary)
+    etfWarning = etfContext.rows.length
+      ? "PRELIMINARY · KRX 공표 대기: 이전 확정 ETF 가격·기준일과 원장을 유지합니다."
+      : "PRELIMINARY · 이전 확정 ETF 평가자료 없음: 표시된 체결원가는 평가가격이 아니며 평가기준일은 미확인입니다.";
   let changed = false;
   if (input.action !== "load" && input.action !== "sync" && input.revision !== row.revision)
     throw new Error("다른 화면에서 원장이 변경됐습니다. 새로고침 후 다시 저장하세요.");
