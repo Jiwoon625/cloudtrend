@@ -1,3 +1,7 @@
+import {
+  assertNoUndeclaredKrPending,
+  verifyKrScreeningPublication,
+} from "./krScreeningPublication.server";
 import { readKrSourceVintageApproval } from "./krSourceVintageApproval.server";
 import { sliceKrDatasetForReplay, analyzeKrReplayDataset } from "./shadowReplayCalculation";
 export { sliceKrDatasetForReplay } from "./shadowReplayCalculation";
@@ -870,6 +874,31 @@ async function finishIntegratedReplay<T extends ShadowReplayBatchResult>(
   }
 }
 export async function replayKrShadow(input: Parameters<typeof replayKrShadowMarket>[0]) {
+  const publication = await verifyKrScreeningPublication(input.client, input.userId, input.sources);
+  if (publication.phase === "PRELIMINARY") {
+    return {
+      market: "KR" as const,
+      calculatedAt: input.calculatedAt ?? new Date().toISOString(),
+      processed: [],
+      deferred: {
+        date: input.dataset.asOfDate,
+        reason: "PRELIMINARY: KRX publication pending; all financial effects held",
+      },
+      latestRecordedDate: null,
+      throughDate: input.dataset.asOfDate,
+    };
+  }
+  assertNoUndeclaredKrPending(
+    [
+      ...Object.values(input.dataset.bars ?? {}),
+      ...Object.values(input.dataset.observedBars ?? {}),
+    ].flatMap((bars) =>
+      bars
+        .filter((bar) => bar.tradeDate === input.dataset.asOfDate)
+        .map((bar) => bar.marketCapSource ?? ""),
+    ),
+    false,
+  );
   return finishIntegratedReplay(input, await replayKrShadowMarket(input));
 }
 export async function replayUsShadow(input: Parameters<typeof replayUsShadowMarket>[0]) {

@@ -1,3 +1,5 @@
+import { applyKrScreeningPublication } from "./krScreeningPublication";
+import { verifyKrScreeningPublication } from "./krScreeningPublication.server";
 import {
   loadOperationalIndex,
   operationalArtifactForPublication,
@@ -101,7 +103,7 @@ type WebScreeningRefreshResult = {
   reused: boolean;
   portfolioRefresh:
     | Awaited<ReturnType<typeof refreshPortfolioAfterScreening>>
-    | { status: "FAILED"; asOfDate: null; calculatedAt: null };
+    | { status: "FAILED" | "PRELIMINARY"; asOfDate: null; calculatedAt: null };
   octoberShadow: Awaited<ReturnType<typeof recordWebOctoberShadow>> | null;
   asOfDate: string;
   rows: number;
@@ -118,6 +120,8 @@ export async function runWebScreeningForUser(
   config: ScoringConfig,
 ): Promise<WebScreeningRefreshResult> {
   const registered = await listActiveSources(client, userId);
+  const registeredPublication = await verifyKrScreeningPublication(client, userId, registered);
+  const preliminary = registeredPublication.phase === "PRELIMINARY";
   const sourceFingerprint = inputFingerprint(registered, config);
   let fingerprint = sourceFingerprint;
   const key = `${userId}/${fingerprint}`;
@@ -161,6 +165,7 @@ export async function runWebScreeningForUser(
       );
     }
     if (
+      !preliminary &&
       cached?.version === SCREENING_CACHE_VERSION &&
       typeof cached.publicationId === "string" &&
       cached.inputFingerprint === fingerprint &&
@@ -232,6 +237,9 @@ export async function runWebScreeningForUser(
     const { sources, texts } = await loadActiveSources(client, userId);
     if (inputFingerprint(sources, config) !== sourceFingerprint)
       throw new Error("계산 중 원천데이터가 변경됐습니다. 최신 입력으로 다시 시도하세요.");
+    const krPublication = await verifyKrScreeningPublication(client, userId, sources, texts);
+    if (krPublication.phase !== registeredPublication.phase)
+      throw new Error("계산 중 KRX 공표 상태가 변경됐습니다. 최신 입력으로 다시 시도하세요.");
     const parsed = parseManualMarketData(texts);
     const { analysis: engineAnalysis, dataset } = runFullMarketAnalysis(parsed.dataset, config);
     const operationalIndex = await loadOperationalIndex(
@@ -240,11 +248,9 @@ export async function runWebScreeningForUser(
       dataset,
       new Date().toISOString(),
     );
-    const analysis = screeningPublicationAnalysis(
-      engineAnalysis,
-      dataset,
-      config,
-      operationalIndex,
+    const analysis = applyKrScreeningPublication(
+      screeningPublicationAnalysis(engineAnalysis, dataset, config, operationalIndex),
+      krPublication,
     );
     fingerprint = inputFingerprint(sources, config, savedOperationalIdentity(analysis));
 
@@ -274,16 +280,18 @@ export async function runWebScreeningForUser(
       engineAnalysis,
       latestSourceRegistration(sources, engineAnalysis.asOfDate),
     );
-    const octoberShadow = await recordWebOctoberShadow({
-      client,
-      userId: userId,
-      dataset,
-      analysis: engineAnalysis,
-      config: config,
-      snapshot: shadowSnapshot,
-      sources,
-      decisionAt: screening.createdAt,
-    });
+    const octoberShadow = preliminary
+      ? null
+      : await recordWebOctoberShadow({
+          client,
+          userId: userId,
+          dataset,
+          analysis: engineAnalysis,
+          config: config,
+          snapshot: shadowSnapshot,
+          sources,
+          decisionAt: screening.createdAt,
+        });
 
     const snapshot = appendEtfReportEvidence(
       buildSnapshot(
@@ -293,11 +301,13 @@ export async function runWebScreeningForUser(
       ),
       analysis,
     );
-    await persistScreeningSnapshot(client, userId, snapshot);
-    const portfolioRefresh = await refreshPortfolioAfterScreening(client, userId, {
-      sources,
-      texts,
-    }).catch(() => ({ status: "FAILED" as const, asOfDate: null, calculatedAt: null }));
+    if (!preliminary) await persistScreeningSnapshot(client, userId, snapshot);
+    const portfolioRefresh = preliminary
+      ? { status: "PRELIMINARY" as const, asOfDate: null, calculatedAt: null }
+      : await refreshPortfolioAfterScreening(client, userId, {
+          sources,
+          texts,
+        }).catch(() => ({ status: "FAILED" as const, asOfDate: null, calculatedAt: null }));
 
     const roundTrip = await readJson<{
       version?: string;
@@ -334,7 +344,11 @@ export async function runWebScreeningForUser(
     }
     // Only fully successful publications are reusable. An earlier failed Shadow or
     // history/portfolio write cannot be hidden behind an already-uploaded cache.
-    if (octoberShadow.status !== "DEFERRED" && portfolioRefresh.status !== "FAILED")
+    if (
+      !preliminary &&
+      octoberShadow?.status !== "DEFERRED" &&
+      portfolioRefresh.status !== "FAILED"
+    )
       await completeScreeningPublication(client, userId, {
         inputFingerprint: fingerprint,
         resultDigest: digest,

@@ -1,3 +1,4 @@
+import { preliminarySource } from "../../tests/kr-preliminary-fixture";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { MarketDataset } from "./engine/dataset";
@@ -33,6 +34,55 @@ vi.mock("./ledger/octoberShadowRepository.server", () => ({
   octoberShadowStore: persistence.store,
 }));
 afterEach(() => vi.restoreAllMocks());
+
+describe("preliminary replay isolation", () => {
+  it("rejects an undeclared latest pending marker before opening any financial journal", async () => {
+    persistence.store.mockClear();
+    const from = vi.fn(() => {
+      throw new Error("financial access prohibited");
+    });
+    await expect(
+      replayKrShadow({
+        client: { from } as unknown as SupabaseClient,
+        userId: "synthetic-owner",
+        sources: [],
+        dataset: {
+          asOfDate: "2026-10-26",
+          bars: { TEST: [{ tradeDate: "2026-10-26", marketCapSource: "KRX_PENDING_PUBLICATION" }] },
+        } as unknown as MarketDataset,
+        config: DEFAULT_SCORING_CONFIG,
+      }),
+    ).rejects.toThrow(/PRELIMINARY/);
+    expect(persistence.store).not.toHaveBeenCalled();
+    expect(from).not.toHaveBeenCalled();
+  });
+  it("does not open a journal, write audit, or enter integrated allocation even after midnight", async () => {
+    const { source } = preliminarySource("2026-10-26");
+    const from = vi.fn(() => {
+      throw new Error("financial DB access prohibited");
+    });
+    const storage = {
+      from: vi.fn(() => {
+        throw new Error("financial storage access prohibited");
+      }),
+    };
+    persistence.store.mockClear();
+    const result = await replayKrShadow({
+      client: { from, storage } as unknown as SupabaseClient,
+      userId: "synthetic-owner",
+      sources: [source],
+      dataset: { asOfDate: "2026-10-26" } as MarketDataset,
+      config: DEFAULT_SCORING_CONFIG,
+      calculatedAt: "2026-10-27T02:00:00Z",
+    });
+    expect(result.deferred?.reason).toMatch(/PRELIMINARY/);
+    expect(result.processed).toEqual([]);
+    expect(result).not.toHaveProperty("integratedAllocation");
+    expect(persistence.store).not.toHaveBeenCalled();
+    expect(from).not.toHaveBeenCalled();
+    expect(storage.from).not.toHaveBeenCalled();
+  });
+});
 
 describe("Shadow replay clock", () => {
   it("separates actual calculation time from the frozen KR signal/decision clock", () => {

@@ -1,3 +1,5 @@
+import { applyKrScreeningPublication } from "../src/lib/krScreeningPublication";
+import { verifyKrScreeningPublication } from "../src/lib/krScreeningPublication.server";
 import { loadOperationalIndex } from "../src/lib/operationalUnderlyingIndex.server";
 import { OPERATIONAL_INDEX_START } from "../src/lib/operationalUnderlyingIndex";
 import { screeningPublicationAnalysis } from "../src/lib/screeningPublicationAnalysis";
@@ -143,6 +145,13 @@ export async function runScreening(argv = process.argv.slice(2)) {
     loadConfig(options.configPath),
   ]);
 
+  const krPublication = await verifyKrScreeningPublication(
+    client,
+    options.supabaseUserId,
+    inputs.flatMap((input) => (input.sourceRecord ? [input.sourceRecord] : [])),
+    inputs.map((input) => input.text),
+  );
+  const preliminary = krPublication.phase === "PRELIMINARY";
   memory("inputs-loaded");
   const currentCodeVersion = codeVersion();
   const dataVersion = `sha256:${sha256(
@@ -176,6 +185,7 @@ export async function runScreening(argv = process.argv.slice(2)) {
     codeVersion: currentCodeVersion,
     dataVersion,
     config,
+    ...(preliminary ? { krPublication } : {}),
     ...(parsedForReuse
       ? {
           // Use the publication contract's ordered source precedence, not sorted dataVersion alone.
@@ -199,7 +209,10 @@ export async function runScreening(argv = process.argv.slice(2)) {
     const reusableDate = parsedForReuse?.dataset.asOfDate ?? reusable?.as_of_date ?? inputDate;
     // A reusable post-start screen may still have missing Shadow dates, so upload
     // runs continue into replay. Pre-start data has no Shadow work and can return.
-    if (reusable && (!options.upload || (reusableDate && reusableDate < MODEL_ACCOUNTING_START))) {
+    if (
+      reusable &&
+      (preliminary || !options.upload || (reusableDate && reusableDate < MODEL_ACCOUNTING_START))
+    ) {
       process.stdout.write(`${JSON.stringify({ reused: true, run: reusable }, null, 2)}\n`);
       return;
     }
@@ -213,7 +226,10 @@ export async function runScreening(argv = process.argv.slice(2)) {
   const operationalIndex = parsedForReuse
     ? operationalIndexForReuse
     : await loadOperationalIndex(client, options.supabaseUserId, dataset, new Date().toISOString());
-  const analysis = screeningPublicationAnalysis(engineAnalysis, dataset, config, operationalIndex);
+  const analysis = applyKrScreeningPublication(
+    screeningPublicationAnalysis(engineAnalysis, dataset, config, operationalIndex),
+    krPublication,
+  );
   const sourceRegisteredAt = latestSourceRegistration(
     inputs.flatMap((input) => (input.sourceRecord ? [input.sourceRecord] : [])),
     analysis.asOfDate,
@@ -225,6 +241,7 @@ export async function runScreening(argv = process.argv.slice(2)) {
   const previous = await loadPreviousSnapshot(client, options.supabaseUserId, coreSnapshot.date);
   const summary = {
     ...buildScreeningSummary(analysis, coreSnapshot, previous),
+    ...(preliminary ? { krPublication } : {}),
     etfScoreContinuity: etfReportScoreSummary(analysis.rows, analysis.asOfDate),
   };
   // Grade-change arrays retain core entries; report sidecars belong only to the archive.
@@ -282,7 +299,7 @@ export async function runScreening(argv = process.argv.slice(2)) {
   memory("bundle-write-end");
   let webCache: Awaited<ReturnType<typeof persistWebScreeningCaches>> | null = null;
   if (options.upload) {
-    await persistScreeningSnapshot(client, options.supabaseUserId, snapshot);
+    if (!preliminary) await persistScreeningSnapshot(client, options.supabaseUserId, snapshot);
 
     memory("cache-publish-start");
     webCache = await persistWebScreeningCaches({
@@ -296,33 +313,40 @@ export async function runScreening(argv = process.argv.slice(2)) {
     });
 
     memory("cache-publish-end");
-    const octoberShadow = await replayKrShadow({
-      client,
-      userId: options.supabaseUserId,
-      dataset,
-      config,
-      calculatedAt: createdAt,
-      mode: "service",
-      sources: inputs.map((source) => ({
-        id: source.id,
-        min_date: source.validation.stats.minDate,
-        max_date: source.validation.stats.maxDate,
-        activated_at: source.sourceRecord?.activated_at ?? null,
-        created_at: source.sourceRecord?.created_at ?? source.savedAt,
-        savedAt: source.savedAt,
-        validation_result: source.sourceRecord?.validation_result,
-      })),
-    });
-    // ACTUAL-book integrity failures must not block independent MODEL Shadow publication.
-    // CLI inputs are canonicalized; portfolio price loading must keep the original raw semantics.
-    const portfolioRefresh = await refreshPortfolioAfterScreening(
-      client,
-      options.supabaseUserId,
-    ).catch(() => ({ status: "FAILED" as const, asOfDate: null, calculatedAt: null }));
-    process.stdout.write(`${JSON.stringify({ portfolioRefresh })}\n`);
-    if (!octoberShadow.deferred && portfolioRefresh.status !== "FAILED")
-      await completeScreeningPublication(client, options.supabaseUserId, webCache);
-    process.stdout.write(`${JSON.stringify({ octoberShadow })}\n`);
+    if (!preliminary) {
+      const octoberShadow = await replayKrShadow({
+        client,
+        userId: options.supabaseUserId,
+        dataset,
+        config,
+        calculatedAt: createdAt,
+        mode: "service",
+        sources: inputs.map((source) => ({
+          ...(source.sourceRecord ?? {}),
+          id: source.id,
+          min_date: source.validation.stats.minDate,
+          max_date: source.validation.stats.maxDate,
+          activated_at: source.sourceRecord?.activated_at ?? null,
+          created_at: source.sourceRecord?.created_at ?? source.savedAt,
+          savedAt: source.savedAt,
+          validation_result: source.sourceRecord?.validation_result,
+        })),
+      });
+      // ACTUAL-book integrity failures must not block independent MODEL Shadow publication.
+      // CLI inputs are canonicalized; portfolio price loading must keep the original raw semantics.
+      const portfolioRefresh = await refreshPortfolioAfterScreening(
+        client,
+        options.supabaseUserId,
+      ).catch(() => ({ status: "FAILED" as const, asOfDate: null, calculatedAt: null }));
+      process.stdout.write(`${JSON.stringify({ portfolioRefresh })}\n`);
+      if (!octoberShadow.deferred && portfolioRefresh.status !== "FAILED")
+        await completeScreeningPublication(client, options.supabaseUserId, webCache);
+      process.stdout.write(`${JSON.stringify({ octoberShadow })}\n`);
+    } else {
+      process.stdout.write(
+        `${JSON.stringify({ krPublication, financialSideEffects: "SKIPPED" })}\n`,
+      );
+    }
     releaseSourcePayloads(inputs);
     await Promise.all([
       uploadScreeningJsonFile(client, resultPath, bundleFile),
@@ -353,7 +377,7 @@ export async function runScreening(argv = process.argv.slice(2)) {
 
   releaseSourcePayloads(inputs);
   memory("publish-end");
-  if (options.upload && webCache) {
+  if (options.upload && webCache && !preliminary) {
     try {
       const ctx = { dataset, analysis, config, operationalIndex };
       await publishRecentPrices(

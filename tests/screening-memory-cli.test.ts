@@ -1,3 +1,4 @@
+import { preliminarySource } from "./kr-preliminary-fixture";
 import { createImmutableArchiveFixture } from "./immutable-archive-fixture";
 import { mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
@@ -32,7 +33,10 @@ vi.mock("../src/lib/portfolioLedgers.server", () => ({
   refreshPortfolioAfterScreening: mocks.portfolioRefresh,
 }));
 vi.mock("../scripts/source-registry-store", () => ({ loadAnalysisSourceInputs: mocks.load }));
-vi.mock("../src/lib/engine/manualDataset", () => ({ parseManualMarketData: mocks.parse }));
+vi.mock("../src/lib/engine/manualDataset", async (original) => ({
+  ...(await original<typeof import("../src/lib/engine/manualDataset")>()),
+  parseManualMarketData: mocks.parse,
+}));
 vi.mock("../scripts/web-screening-cache-store", () => ({ persistWebScreeningCaches: mocks.cache }));
 vi.mock("../src/lib/instrumentChartStore.server", () => ({
   publishRecentPrices: mocks.prices,
@@ -413,4 +417,28 @@ test("a missing date on one source is not hidden by another pre-start source dur
   await expect(runScreening(noUploadReuseArgs())).rejects.toThrow("provider unavailable");
   expect(mocks.reused).not.toHaveBeenCalled();
   expect(fullMarketAnalysis.runFullMarketAnalysis).not.toHaveBeenCalled();
+});
+
+test("PRELIMINARY CLI publishes view and completed analysis record without history or any finance calls", async () => {
+  const dataset = getMockDataset();
+  const { source, text } = preliminarySource(dataset.asOfDate);
+  inputs[0]!.text = text;
+  inputs[0]!.sourceRecord = source;
+  inputs[0]!.fileHash = source.file_hash;
+  inputs[0]!.dataHash = source.data_hash;
+  inputs[0]!.schemaHash = source.schema_hash;
+  inputs[0]!.validation.canonicalCsv = text;
+  await runScreening(args());
+  expect(mocks.cache).toHaveBeenCalledOnce();
+  expect(mocks.cache.mock.calls[0]![0].analysis.krPublication).toMatchObject({
+    phase: "PRELIMINARY",
+    financialSideEffects: false,
+  });
+  expect(upserts.some((write) => write.table === "analysis_runs")).toBe(true);
+  expect(upserts.some((write) => write.table === "screening_history")).toBe(false);
+  expect(mocks.shadow).not.toHaveBeenCalled();
+  expect(mocks.portfolioRefresh).not.toHaveBeenCalled();
+  expect(mocks.complete).not.toHaveBeenCalled();
+  expect(mocks.prices).not.toHaveBeenCalled();
+  expect(mocks.warm).not.toHaveBeenCalled();
 });

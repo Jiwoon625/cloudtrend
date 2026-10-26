@@ -1,3 +1,4 @@
+import { preliminarySource } from "./kr-preliminary-fixture";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -190,6 +191,19 @@ async function harness() {
   };
 }
 describe("compaction orchestration safety", () => {
+  it("defers optional compaction without losing publication metadata or blocking existing source use", async () => {
+    const h = await harness();
+    Object.assign(h.sources[0]!, preliminarySource().source);
+    const result = await runCompaction({ userId: owner, output: h.output, apply: false }, h);
+    expect(result).toMatchObject({
+      state: "DEFERRED_PUBLICATION_CONTRACT",
+      originalsRetained: true,
+    });
+    expect(h.download).not.toHaveBeenCalled();
+    expect(h.upload).not.toHaveBeenCalled();
+    expect(h.insert).not.toHaveBeenCalled();
+    expect(h.rpc).not.toHaveBeenCalled();
+  });
   it("requires exact approved snapshot before apply or retry", async () => {
     const h = await harness();
     await expect(

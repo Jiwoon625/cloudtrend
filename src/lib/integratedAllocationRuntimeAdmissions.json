@@ -15,6 +15,11 @@
       "runtimeCodeHash": "sha256:14fd10ef1b5d5f47c0474d8c9de98899ad2380fb17ab430cb285e8dbe882ccdf",
       "frozenCodeHash": "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4",
       "reviewId": "prospective-k4-e4-amendment-20261015-v1"
+    },
+    {
+      "runtimeCodeHash": "sha256:5017a4aacbaf7b01a17ce7748f29b6650a086fbda0c340775b24aac46e1ff50b",
+      "reviewId": "kr-preliminary-financial-hold-v1-20261027",
+      "frozenCodeHash": "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4"
     }
   ]
 }

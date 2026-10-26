@@ -1,8 +1,14 @@
+import { preliminarySource } from "../../tests/kr-preliminary-fixture";
+import { classifyKrScreeningPublication } from "./krScreeningPublication";
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { largeScreeningSnapshot } from "../../tests/screening-snapshot-storage-fixture";
 import { hashSeriesValue } from "./ledger/modelSeries";
-import { persistScreeningSnapshot, type ScreeningSnapshot } from "./screeningSnapshot";
+import {
+  buildSnapshot,
+  persistScreeningSnapshot,
+  type ScreeningSnapshot,
+} from "./screeningSnapshot";
 import {
   hydrateScreeningSnapshot,
   serializeScreeningSnapshot,
@@ -174,4 +180,25 @@ describe("lossless screening-history storage", () => {
       "스크리닝 이력 저장 실패: synthetic storage failure",
     );
   });
+});
+
+it("preserves preliminary phase through snapshot compression but refuses official persistence before any I/O", async () => {
+  const phase = classifyKrScreeningPublication([preliminarySource().source]);
+  const snapshot = buildSnapshot({
+    asOfDate: phase.asOfDate,
+    calculatedAt: "2026-10-07T02:00:00Z",
+    marketGate: { status: "test" },
+    rows: [],
+    krPublication: phase,
+  });
+  expect(snapshot.krPublication).toEqual(phase);
+  const large = { ...largeScreeningSnapshot(), krPublication: phase };
+  expect(hydrateScreeningSnapshot(serializeScreeningSnapshot(large)).krPublication).toEqual(phase);
+  const from = vi.fn();
+  const storage = { from: vi.fn() };
+  await expect(
+    persistScreeningSnapshot({ from, storage } as unknown as SupabaseClient, "owner", snapshot),
+  ).rejects.toThrow(/PRELIMINARY/);
+  expect(from).not.toHaveBeenCalled();
+  expect(storage.from).not.toHaveBeenCalled();
 });
