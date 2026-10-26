@@ -9,6 +9,11 @@ on:
         description: "Must be 2026-10-14 when initialize_correction is true; otherwise optional exact source date"
         type: string
         required: false
+      verify_completed:
+        description: "Read-only proof of an already completed exact as_of date; never publishes or recovers"
+        type: boolean
+        required: false
+        default: false
       recovery_mode:
         description: "Late recovery: dry-run first, then apply with its exact reviewed plan hash"
         type: choice
@@ -84,6 +89,7 @@ jobs:
     env:
       KOSPI_LATE_RECOVERY_REQUEST: ${{ github.event_name == 'push' && '.github/requests/kospi-late-recovery-20261021.json' || '' }}
       SHADOW_AS_OF: ${{ inputs.as_of }}
+      VERIFY_COMPLETED: ${{ inputs.verify_completed || false }}
       RECOVERY_MODE: ${{ inputs.recovery_mode }}
       RECOVERY_DATES: ${{ inputs.recovery_dates }}
       EXPECTED_PLAN: ${{ inputs.expected_plan }}
@@ -109,7 +115,14 @@ jobs:
             echo "::error::Retrospective correction requires an explicit as_of of 2026-10-14"
             exit 1
           fi
+          if [[ "$VERIFY_COMPLETED" == "true" ]]; then
+            if [[ ! "$SHADOW_AS_OF" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ || "$INITIALIZE_CORRECTION" == "true" || ( -n "$RECOVERY_MODE" && "$RECOVERY_MODE" != "none" ) ]]; then
+              echo "::error::Read-only verification requires an exact date and no correction/recovery"
+              exit 1
+            fi
+          fi
           args=(--user "$SUPABASE_USER_ID")
+          if [[ "$VERIFY_COMPLETED" == "true" ]]; then args+=(--verify-completed); fi
           if [[ -n "$RECOVERY_MODE" && "$RECOVERY_MODE" != "none" ]]; then
             args+=(--recovery-mode "$RECOVERY_MODE" --recovery-dates "$RECOVERY_DATES")
             if [[ -n "$EXPECTED_PLAN" ]]; then args+=(--expected-plan "$EXPECTED_PLAN"); fi

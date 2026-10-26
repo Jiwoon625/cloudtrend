@@ -69,7 +69,12 @@ describe("private prospective Shadow journal", () => {
     expect(b.view).toEqual(a.view);
     expect(s.data.size).toBe(3);
     await expect(
-      persistKospiShadow(s.io, uid, { ...session(), sourceHash: "changed" }, {}),
+      persistKospiShadow(
+        s.io,
+        uid,
+        { ...session(), sourceHash: "changed", benchmarkClose: 2501 },
+        {},
+      ),
     ).rejects.toThrow(/immutable/);
   });
   it("retries a projection failure from the original immutable daily state", async () => {
