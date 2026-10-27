@@ -5,6 +5,12 @@ on:
     paths:
       - src/lib/instrumentChart*
       - src/lib/engine/instrumentChart.ts
+      - src/lib/sourceRegistry*.ts
+      - src/lib/sourceFingerprintRecords.ts
+      - src/lib/screeningInputIdentity.ts
+      - src/lib/krScreeningPublication*.ts
+      - src/lib/engine/scoring.ts
+      - package.json
       - src/lib/screeningSources.server.ts
       - src/lib/webScreeningClient.ts
       - src/lib/cloud.ts
@@ -57,6 +63,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Test browser and server source identity
+        run: npm run test:screening-identity
       - name: Test dashboard cache recovery and confirmed strategies
         run: npx vitest run src/lib/cloud.test.ts tests/us-browser-views.test.ts tests/web-screening-server-only.test.ts src/lib/portfolioStrategy.test.ts tests/fast-chart.test.ts tests/instrument-chart-cache.test.ts tests/dashboard-cache.test.ts tests/onset-profile.test.tsx src/lib/engine/operationalStrategy.test.ts src/lib/engine/etfStrategy.test.ts
       - name: Test progressive charts and cache isolation
