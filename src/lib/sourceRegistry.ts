@@ -159,14 +159,17 @@ export async function listRegisteredSources(
 
 /**
  * Lightweight identity read shared by dashboard summary/price chart cache validation.
- * Exclude 22 source rows' validation JSON and other large ingestion metadata.
+ * Include the publication contract used by the server fingerprint, without
+ * downloading the rest of each source's validation metadata.
  * Keep the exact source ordering used by listRegisteredSources and the server engine.
  */
 export async function listActiveScreeningSourceFingerprints() {
   const owner = await userId();
   const { data, error } = await supabase
     .from("analysis_source_files")
-    .select("id,data_hash,schema_hash,activated_at,created_at")
+    .select(
+      "id,data_hash,schema_hash,activated_at,created_at,kr_publication:validation_result->krPublication",
+    )
     .eq("user_id", owner)
     .eq("source_type", "screening")
     .eq("status", "active")
@@ -174,7 +177,10 @@ export async function listActiveScreeningSourceFingerprints() {
     .order("created_at", { ascending: true })
     .order("id", { ascending: true });
   if (error) throw new Error(`스크리닝 원천데이터 식별자 조회 실패: ${error.message}`);
-  return data ?? [];
+  return (data ?? []).map(({ kr_publication, ...source }) => ({
+    ...source,
+    validation_result: { krPublication: kr_publication },
+  }));
 }
 
 async function activeRows(sourceType: SourceType) {
