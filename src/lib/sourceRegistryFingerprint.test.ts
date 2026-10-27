@@ -21,13 +21,13 @@ const client = vi.hoisted(() => ({
             data: state.rows.map((row) =>
               columns.includes("kr_publication:")
                 ? {
-                    id: row.id,
-                    data_hash: row.data_hash,
-                    schema_hash: row.schema_hash,
-                    activated_at: row.activated_at,
-                    created_at: row.created_at,
+                    id: row["id"],
+                    data_hash: row["data_hash"],
+                    schema_hash: row["schema_hash"],
+                    activated_at: row["activated_at"],
+                    created_at: row["created_at"],
                     kr_publication: columns.includes("validation_result->krPublication")
-                      ? ((row.validation_result as { krPublication?: unknown })?.krPublication ??
+                      ? ((row["validation_result"] as { krPublication?: unknown })?.krPublication ??
                         null)
                       : null,
                   }
@@ -84,7 +84,7 @@ describe("browser/server source identity contract", () => {
   it("invalidates publication proof changes, source additions and precedence changes", async () => {
     state.rows = [row("old"), row("new", { phase: "PRELIMINARY", manifestText: "proof-a" })];
     const before = await fingerprints();
-    state.rows[1]!.validation_result = {
+    state.rows[1]!["validation_result"] = {
       krPublication: { phase: "PRELIMINARY", manifestText: "proof-b" },
     };
     const changed = await fingerprints();
