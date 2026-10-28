@@ -10,6 +10,7 @@ on:
         options:
           - prepare
           - diagnose
+          - diagnose-bytes
       expected_capsule_hash:
         description: Independently reviewed opaque capture capsule digest
         required: true
@@ -36,7 +37,7 @@ jobs:
       - name: Validate explicit preparation mode
         run: |
           case "$RECOVERY_MODE" in
-            prepare|diagnose) ;;
+            prepare|diagnose|diagnose-bytes) ;;
             *) echo 'PREPARATION_MODE_REJECTED'; exit 1 ;;
           esac
       - uses: actions/checkout@v4
@@ -63,6 +64,13 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
         run: node "$RUNNER_TEMP/kr-adjusted-recovery-code/transport.mjs" diagnose
+      - name: Diagnose exact reviewed legacy body headers with GET
+        if: inputs.mode == 'diagnose-bytes'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: node "$RUNNER_TEMP/kr-adjusted-recovery-code/transport.mjs" diagnose-bytes
       - name: Materialize exact reviewed private inputs with GET only
         if: inputs.mode == 'prepare'
         env:

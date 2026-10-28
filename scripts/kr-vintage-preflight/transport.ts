@@ -67,7 +67,9 @@ export function createReadOnlyTransport(
   allowedPaths: Set<string>,
   fetcher: typeof fetch = fetch,
   observeResponse?: (path: string, response: Response) => void,
+  acceptEncoding?: "identity",
 ) {
+  requireCheck(acceptEncoding === undefined || acceptEncoding === "identity");
   const base = new URL(origin);
   requireCheck(
     base.protocol === "https:" &&
@@ -92,7 +94,12 @@ export function createReadOnlyTransport(
     );
     const response = await fetcher(url, {
       method,
-      headers: { apikey: key, Authorization: "Bearer " + key, "Cache-Control": "no-cache" },
+      headers: {
+        apikey: key,
+        Authorization: "Bearer " + key,
+        "Cache-Control": "no-cache",
+        ...(acceptEncoding === "identity" ? { "Accept-Encoding": "identity" } : {}),
+      },
       redirect: "error",
       cache: "no-store",
     });

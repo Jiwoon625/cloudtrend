@@ -10,6 +10,7 @@ vi.mock("../../src/lib/ledger/krSourceVintage", () => ({
   verifyKrSourceVintagePrivateApproval: async () => ({}),
 }));
 import { diagnosePreparationMetadata, PLAN } from "./transport";
+import { createReadOnlyTransport } from "../kr-vintage-preflight/transport";
 import { hashSeriesValue } from "../../src/lib/ledger/modelSeries";
 const owner = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
   h = "sha256:" + "a".repeat(64);
@@ -196,9 +197,143 @@ describe("bounded read-only metadata diagnosis", () => {
     ).rejects.toThrow();
     expect(urls).toHaveLength(2);
   });
+  it.each(["exact", "weak", "missing", "length", "encoding", "generation", "unpinned"])(
+    "diagnoses body/header %s with GETs only and no acceptance change",
+    async (kind) => {
+      const f = await fixture(),
+        calls: string[] = [],
+        infoReads = new Map<number, number>();
+      const fetcher = async (url: any, init: any) => {
+        const u = new URL(url);
+        calls.push(u.pathname);
+        expect(init.method).toBe("GET");
+        if (u.pathname.startsWith("/rest/v1/"))
+          return new Response(
+            JSON.stringify([
+              u.searchParams.get("source_id")!.startsWith("like.") ? f.capsule : f.plan,
+            ]),
+          );
+        const i = Number(u.pathname.match(/2026-10-(\d+)\.json$/)![1]) - 1,
+          pin = f.p.kospi.objects[i].metadata;
+        if (u.pathname.includes("/object/info/")) {
+          const seen = (infoReads.get(i) ?? 0) + 1;
+          infoReads.set(i, seen);
+          return new Response(
+            JSON.stringify({
+              id: pin.id,
+              version:
+                kind === "unpinned" || (kind === "generation" && seen === 2)
+                  ? "changed"
+                  : pin.version,
+              etag: pin.eTag,
+              size: pin.size,
+              last_modified: pin.updatedAt,
+            }),
+          );
+        }
+        const headers: Record<string, string> = {};
+        if (kind !== "missing")
+          headers.etag =
+            (kind === "weak" && init.headers["Accept-Encoding"] !== "identity" ? "W/" : "") +
+            pin.eTag;
+        if (kind === "encoding") {
+          headers["content-encoding"] = "gzip";
+          headers["content-length"] = "5";
+        }
+        return new Response(kind === "length" ? "short" : "0123456789", { headers });
+      };
+      const result = await diagnosePreparationMetadata({
+        origin: "https://synthetic.supabase.co",
+        key: "synthetic",
+        owner,
+        capsuleHash: h,
+        planHash: f.planHash,
+        includeBytes: true,
+        fetcher: fetcher as any,
+      });
+      expect(calls).toHaveLength(kind === "unpinned" ? 21 : 78);
+      expect(calls.filter((p) => p.includes("/object/authenticated/")).length).toBe(
+        kind === "unpinned" ? 0 : 38,
+      );
+      expect(result.status).toBe("PREPARATION_LEGACY_BYTES_DIAGNOSED");
+      expect(result.allOriginalByteChecksPass).toBe(["exact", "encoding"].includes(kind));
+      const proof = result.objects[0].bytes;
+      if (kind === "weak")
+        expect(proof).toMatchObject({
+          etagWeak: true,
+          exactEtagMatches: false,
+          weakPrefixRemovedEtagMatches: true,
+          originalByteValidationPass: false,
+        });
+      if (kind === "weak")
+        expect(proof.identity).toMatchObject({
+          exactEtagMatches: true,
+          originalByteValidationPass: true,
+        });
+      if (kind === "missing")
+        expect(proof).toMatchObject({ etagPresent: false, exactEtagMatches: false });
+      if (kind === "length")
+        expect(proof).toMatchObject({ bodyLengthMatches: false, bodyLengthDelta: -5 });
+      if (kind === "encoding")
+        expect(proof).toMatchObject({
+          contentEncoding: "GZIP",
+          contentLengthMatchesDelivered: false,
+          bodyLengthMatches: true,
+        });
+      if (kind === "generation") expect(proof.generationStable).toBe(false);
+      if (kind === "unpinned")
+        expect(proof).toMatchObject({ readSucceeded: false, skippedUnpinnedGeneration: true });
+      const output = JSON.stringify(result);
+      for (const raw of [
+        owner,
+        "synthetic-generation",
+        "opaque-3",
+        "0123456789",
+        "2026-10-28",
+        "/shadow/",
+      ])
+        expect(output).not.toContain(raw);
+    },
+  );
+  it("allows only fixed identity encoding while the normal transport sends no override", async () => {
+    const p = "/rest/v1/synthetic",
+      seen: any[] = [];
+    const fetcher = async (_url: any, init: any) => {
+      seen.push(init.headers);
+      return new Response("{}");
+    };
+    await createReadOnlyTransport(
+      "https://synthetic.supabase.co",
+      "synthetic",
+      new Set([p]),
+      fetcher as any,
+    )(p);
+    await createReadOnlyTransport(
+      "https://synthetic.supabase.co",
+      "synthetic",
+      new Set([p]),
+      fetcher as any,
+      undefined,
+      "identity",
+    )(p);
+    expect(seen[0]["Accept-Encoding"]).toBeUndefined();
+    expect(seen[1]["Accept-Encoding"]).toBe("identity");
+    expect(() =>
+      createReadOnlyTransport(
+        "https://synthetic.supabase.co",
+        "synthetic",
+        new Set([p]),
+        fetcher as any,
+        undefined,
+        "arbitrary" as any,
+      ),
+    ).toThrow();
+    expect(seen).toHaveLength(2);
+  });
   it("workflow diagnosis skips materialize, compute and append", () => {
     const w = fs.readFileSync(".github/workflows/kr-adjusted-recovery-preparation.yml", "utf8");
     expect(w).toContain("if: inputs.mode == 'diagnose'");
+    expect(w).toContain("if: inputs.mode == 'diagnose-bytes'");
     expect(w.match(/if: inputs.mode == 'prepare'/g)).toHaveLength(3);
     expect(w).toContain("PREPARATION_MODE_REJECTED");
     expect(w).not.toContain("upload-artifact");
