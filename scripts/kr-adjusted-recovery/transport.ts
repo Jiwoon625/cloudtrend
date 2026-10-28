@@ -133,17 +133,19 @@ export function verifyObjectGeneration(info: any, pin: any) {
       Date.parse(info.last_modified ?? info.updated_at) === Date.parse(pin.updatedAt),
   );
 }
-/** Bounded metadata-only diagnosis. No source bytes, filesystem, compute or INSERT. */
+/** Bounded legacy-object diagnosis. No source dataset, filesystem, compute or INSERT. */
 export async function diagnosePreparationMetadata(options: {
   origin: string;
   key: string;
   owner: string;
   capsuleHash: string;
   planHash: string;
+  includeBytes?: boolean;
   fetcher?: typeof fetch;
 }) {
   const allowed = new Set<string>(),
-    headers = new Map<string, Headers>();
+    headers = new Map<string, Headers>(),
+    identityHeaders = new Map<string, Headers>();
   const read = createReadOnlyTransport(
     options.origin,
     options.key,
@@ -151,10 +153,19 @@ export async function diagnosePreparationMetadata(options: {
     options.fetcher,
     (p, response) => headers.set(p, response.headers),
   );
-  const get = async (p: string) => {
+  const readIdentity = createReadOnlyTransport(
+    options.origin,
+    options.key,
+    allowed,
+    options.fetcher,
+    (p, response) => identityHeaders.set(p, response.headers),
+    "identity",
+  );
+  const bytes = async (p: string) => {
     allowed.add(p);
-    return JSON.parse((await read(p, 4 * 1024 * 1024)).toString());
+    return read(p, 4 * 1024 * 1024);
   };
+  const get = async (p: string) => JSON.parse((await bytes(p)).toString());
   const one = async (filters: Record<string, string>) => {
     const rows = await get(
       restPath(
@@ -190,7 +201,30 @@ export async function diagnosePreparationMetadata(options: {
         capsule.readPlan.scope.baselineAsOfDate,
       ]),
   );
-  const objects = [];
+  const describeBytes = (raw: Buffer, responseHeaders: Headers, pin: any) => {
+    const etag = responseHeaders.get("etag"),
+      length = responseHeaders.get("content-length");
+    const encoding = responseHeaders.get("content-encoding")?.toLowerCase();
+    return {
+      bodyLengthMatches: raw.length === pin.size,
+      bodyLengthDelta: raw.length - pin.size,
+      etagPresent: etag !== null,
+      etagWeak: etag !== null && /^W\//.test(etag),
+      exactEtagMatches: token(etag) === token(pin.eTag),
+      weakPrefixRemovedEtagMatches:
+        etag !== null && token(etag.replace(/^W\//, "")) === token(pin.eTag),
+      originalByteValidationPass: raw.length === pin.size && token(etag) === token(pin.eTag),
+      contentLengthPresent: length !== null,
+      contentLengthMatchesDelivered: length !== null && Number(length) === raw.length,
+      contentEncoding:
+        encoding === undefined
+          ? "NONE"
+          : ["gzip", "br", "deflate", "identity"].includes(encoding)
+            ? encoding.toUpperCase()
+            : "OTHER",
+    };
+  };
+  const objects: any[] = [];
   for (const [ordinal, pin] of plan.kospi.objects.entries()) {
     const p = objectPath("cloudtrend-data", pin.path, options.owner).replace(
       "/object/authenticated/",
@@ -207,6 +241,32 @@ export async function diagnosePreparationMetadata(options: {
       } catch {
         pinnedCheckPass = false;
       }
+      let byteProof: Record<string, unknown> | undefined;
+      if (options.includeBytes && pinnedCheckPass) {
+        try {
+          const rawPath = objectPath("cloudtrend-data", pin.path, options.owner);
+          const raw = await bytes(rawPath),
+            responseHeaders = headers.get(rawPath)!;
+          const identity = await readIdentity(rawPath, 4 * 1024 * 1024);
+          const after = await get(p);
+          let generationStable = true;
+          try {
+            verifyObjectGeneration(after, pin.metadata);
+          } catch {
+            generationStable = false;
+          }
+          byteProof = {
+            readSucceeded: true,
+            generationStable,
+            ...describeBytes(raw, responseHeaders, pin.metadata),
+            identity: describeBytes(identity, identityHeaders.get(rawPath)!, pin.metadata),
+            defaultAndIdentityBytesEqual: raw.equals(identity),
+          };
+        } catch {
+          byteProof = { readSucceeded: false };
+        }
+      } else if (options.includeBytes)
+        byteProof = { readSucceeded: false, skippedUnpinnedGeneration: true };
       objects.push({
         ordinal,
         readSucceeded: true,
@@ -222,13 +282,16 @@ export async function diagnosePreparationMetadata(options: {
         rawLastModifiedMinusDbMs: gap(info.last_modified),
         deprecatedUpdatedAtMinusDbMs: gap(info.updated_at),
         httpLastModifiedMinusDbMs: gap(headers.get(p)?.get("last-modified")),
+        ...(byteProof ? { bytes: byteProof } : {}),
       });
     } catch {
       objects.push({ ordinal, readSucceeded: false, pinnedCheckPass: false });
     }
   }
   return {
-    status: "PREPARATION_METADATA_DIAGNOSED",
+    status: options.includeBytes
+      ? "PREPARATION_LEGACY_BYTES_DIAGNOSED"
+      : "PREPARATION_METADATA_DIAGNOSED",
     readOnly: true,
     operationalApproval: false,
     capsuleValidated: true,
@@ -236,6 +299,15 @@ export async function diagnosePreparationMetadata(options: {
     objectCount: objects.length,
     allReadsSucceeded: objects.every((o) => o.readSucceeded),
     allPinnedChecksPass: objects.every((o) => o.pinnedCheckPass),
+    ...(options.includeBytes
+      ? {
+          allByteReadsSucceeded: objects.every((o) => o.bytes?.readSucceeded === true),
+          allOriginalByteChecksPass: objects.every(
+            (o) =>
+              o.bytes?.originalByteValidationPass === true && o.bytes?.generationStable === true,
+          ),
+        }
+      : {}),
     objects,
   };
 }

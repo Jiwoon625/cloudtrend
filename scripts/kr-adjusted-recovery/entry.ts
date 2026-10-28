@@ -22,9 +22,14 @@ async function main() {
     key: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
     owner: process.env.SUPABASE_USER_ID ?? "",
   };
-  if (mode === "diagnose") {
+  if (mode === "diagnose" || mode === "diagnose-bytes") {
     failurePhase = "METADATA_DIAGNOSTIC";
-    return diagnosePreparationMetadata({ ...authority, capsuleHash, planHash });
+    return diagnosePreparationMetadata({
+      ...authority,
+      capsuleHash,
+      planHash,
+      includeBytes: mode === "diagnose-bytes",
+    });
   }
   if (mode === "materialize") {
     await materializePreparation({
