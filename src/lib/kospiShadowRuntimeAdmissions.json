@@ -36,6 +36,10 @@
     {
       "runtimeCodeHash": "sha256:40750f3f4985853bd47ebf326dd3bcfe34d46bf90d6707005e648ce975078771",
       "reviewId": "kr-private-vintage-successor-v2-20261028"
+    },
+    {
+      "runtimeCodeHash": "sha256:5a6dc0d6e5fa2b494d7579766b3d581d0b5aad88fc63119d6c53a7cb17c599fa",
+      "reviewId": "kr-exact-retrospective-model-continuation-v1-20261028"
     }
   ]
 }

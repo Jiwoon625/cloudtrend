@@ -1,4 +1,9 @@
 import {
+  reviewedRetrospectiveProvenance,
+  type KrRetrospectiveAuthority,
+  type KrRetrospectiveProvenance,
+} from "./krRetrospectivePublication";
+import {
   reconcileKrHistoricalSourceVintage,
   assertKrSourceVintageReceipt,
   verifyKrSourceVintagePrivateApproval,
@@ -57,6 +62,7 @@ export interface PublicationProof {
 export interface KrModelPublication extends PublicationProof {
   market: "KR";
   sourceVintageApproval?: KrSourceVintagePrivateApproval;
+  reviewedRetrospective?: KrRetrospectiveAuthority;
   dataset: MarketDataset;
   analysis: AnalysisResult;
   snapshot: ScreeningSnapshot;
@@ -86,6 +92,7 @@ export type OctoberRun = (AdoptedUsRun | AdoptedKrRun | AdoptedEtfRun | AdoptedK
     decisionAt: string;
     historicalSourceVintages?: KrSourceVintageReceipt[];
     sourceVintageApprovalHash?: SeriesHash;
+    reviewedRetrospective?: KrRetrospectiveProvenance;
   };
 };
 export interface OctoberRecordResult {
@@ -102,7 +109,11 @@ const marketDate = (market: "KR" | "US", at: string) =>
     day: "2-digit",
   }).format(new Date(at));
 
-function verifyPublication(input: OctoberPublication, calendar: ModelCalendar) {
+function verifyPublication(
+  input: OctoberPublication,
+  calendar: ModelCalendar,
+  retrospective: KrRetrospectiveProvenance | null = null,
+) {
   const date = input.market === "US" ? input.analysis.date : input.analysis.asOfDate;
   if (
     !input.confirmedRegularClose ||
@@ -137,7 +148,7 @@ function verifyPublication(input: OctoberPublication, calendar: ModelCalendar) {
       !/^sha256:[a-f0-9]{64}$/.test(expected.sourceHash) ||
       new Set(expected.symbols).size !== expected.symbols.length ||
       (date < "2026-10-12" && expected.symbols.some((symbol) => !currentSymbols.has(symbol))) ||
-      !currentSources.length ||
+      (!retrospective && !currentSources.length) ||
       currentSources.some(
         (source) =>
           !/^sha256:[a-f0-9]{64}$/.test(source.sourceHash) ||
@@ -147,13 +158,14 @@ function verifyPublication(input: OctoberPublication, calendar: ModelCalendar) {
         (source) =>
           !Number.isFinite(Date.parse(source.registeredAt)) ||
           source.asOfDate > date ||
-          Date.parse(source.registeredAt) > Date.parse(input.availableAt),
+          (!retrospective && Date.parse(source.registeredAt) > Date.parse(input.availableAt)),
       ) ||
-      input.availableAt !==
-        [...input.sourceEvidence]
-          .map((source) => source.registeredAt)
-          .sort((a, b) => Date.parse(a) - Date.parse(b))
-          .at(-1)
+      (!retrospective &&
+        input.availableAt !==
+          [...input.sourceEvidence]
+            .map((source) => source.registeredAt)
+            .sort((a, b) => Date.parse(a) - Date.parse(b))
+            .at(-1))
     )
       throw new Error(
         "KR complete-session evidence does not cover the previous screened universe and every source availability",
@@ -190,6 +202,7 @@ function publicationValue(input: OctoberPublication) {
     failedSymbols: input.failedSymbols,
     config: input.config,
     ...(input.sourceVintageApproval ? { sourceVintageApproval: input.sourceVintageApproval } : {}),
+    ...(input.reviewedRetrospective ? { reviewedRetrospective: input.reviewedRetrospective } : {}),
     universeEvidence: input.universeEvidence,
     sourceEvidence: input.sourceEvidence,
     dataset: {
@@ -273,6 +286,8 @@ async function persistPreparedOctober(
       item.run.publication.sourceHash !== prepared.sourceHash ||
       item.run.publication.runtimeCodeHash !== prepared.runtimeCodeHash ||
       !/^sha256:[a-f0-9]{64}$/.test(prepared.runtimeCodeHash) ||
+      canonicalSeriesJson(item.run.publication.reviewedRetrospective ?? null) !==
+        canonicalSeriesJson(prepared.entries[0]?.run.publication.reviewedRetrospective ?? null) ||
       item.run.receipt.codeHash !== prepared.codeHash
     )
       throw new Error("Prepared October input identity mismatch");
@@ -307,6 +322,33 @@ export async function recordOctoberPublication(
       : null;
   if (vintageApproval && date < vintageApproval.activationDate)
     throw new Error("Private KR source vintage approval is not active for this date");
+  const retrospective =
+    input.market === "KR" && input.reviewedRetrospective
+      ? await reviewedRetrospectiveProvenance(input.reviewedRetrospective, {
+          date,
+          sourceHash: input.sourceHash,
+          dataset: input.dataset,
+          config: input.config,
+          runtimeCodeHash: input.runtimeCodeHash ?? input.codeHash,
+          availableAt: input.availableAt,
+          decisionAt: input.decisionAt,
+          sourceEvidence: input.sourceEvidence,
+        })
+      : null;
+  if (retrospective && input.market === "KR" && input.reviewedRetrospective) {
+    // Check every original immutable economic anchor before even a daily archive can be staged.
+    for (const pin of input.reviewedRetrospective.receipt.predecessorHeads) {
+      const original = await store.readSession<OctoberRun>(
+        pin.bookId,
+        input.reviewedRetrospective.receipt.predecessorDate,
+      );
+      if (!original || original.stateHash !== pin.stateHash)
+        throw new Error("Reviewed retrospective predecessor changed");
+      const originalSeries = await store.readSeries(pin.bookId);
+      if (!originalSeries) throw new Error("Reviewed retrospective predecessor registry missing");
+      await assertStoredOctoberRun(originalSeries, original);
+    }
+  }
   const inputHash = await hashSeriesValue(publicationValue(input));
   const durable = await store.readPrepared(input.market, date);
   if (durable) {
@@ -320,7 +362,7 @@ export async function recordOctoberPublication(
     return persistPreparedOctober(store, durable);
   }
   const calendar = await octoberModelCalendar(input.market, date);
-  verifyPublication(input, calendar);
+  verifyPublication(input, calendar, retrospective);
   const kinds: AdoptedSeriesKind[] =
     input.market === "US"
       ? ["US_A0", "US_A2", "US_B3"]
@@ -689,6 +731,7 @@ export async function recordOctoberPublication(
               },
             }
           : {}),
+        ...(retrospective ? { reviewedRetrospective: retrospective } : {}),
         version: "october-manual-publication-v1" as const,
         inputHash,
         sourceHash: input.sourceHash,

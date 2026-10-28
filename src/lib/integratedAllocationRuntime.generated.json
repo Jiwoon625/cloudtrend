@@ -47,16 +47,17 @@
       "src/lib/ledger/etfAdoptedShadow.ts": "sha256:dfbfce28ae2b0f824104428fd945669df522e132efbbf6b3971fcfe2147a486a",
       "src/lib/ledger/kospiAdoptedShadow.ts": "sha256:d4840901ce8e9ade581b24827badd8300065145872a1b9ab063be7cc3a5fe632",
       "src/lib/ledger/krAdoptedShadow.ts": "sha256:9309fcdab87ffb35e953178ff71f62f48b982d5d51aa66e27c0dc09388e7df4c",
+      "src/lib/ledger/krRetrospectivePublication.ts": "sha256:7b9bb7e63813665809c9ed260b5063e70dbf5a1eb69175e455b826f8b0a46b87",
       "src/lib/ledger/krShadowDecision.ts": "sha256:119a087fa3d90b05ac0fa183ab9b40e4acbb6495871dd511d11a220c7bd180fc",
       "src/lib/ledger/krSourceVintage.ts": "sha256:776eb50e9ec185835a7243937b4688d9c08fc253b83485f914ef45abc368c5d8",
       "src/lib/ledger/modelRepository.server.ts": "sha256:9965e1ea9da9bf3eb5c4961541222091efbf5c634f01b5ee5f26a3bc664a08ad",
       "src/lib/ledger/modelSeries.ts": "sha256:63a758daf1abfc74bfcba395d6b21693f0185a48c206e064fa8eb76d4d1693ce",
       "src/lib/ledger/octoberShadowArchive.ts": "sha256:5904e2aa0403a255bee09e88dcea9148e9a0beb54afe5fb21f60d0ae403df9b8",
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:9c8b5e98035e53d81dedc58c43f7ddf8678ad835bbe449a21d63088dabd76a32",
-      "src/lib/ledger/octoberShadowEngineManifest.generated.json": "sha256:28e35b81f37545390b53c1f79d84d459ff271b1ba12a6aeebda9d33ff0a088ee",
-      "src/lib/ledger/octoberShadowPipeline.ts": "sha256:1d2e00e78185f079696c05c37725121cc4d5a2cdbfe491a332e816db82e53797",
+      "src/lib/ledger/octoberShadowEngineManifest.generated.json": "sha256:a9075ad5e44b3313acb6e5ad7dc99c360072d79554c438772be416b5a17c068b",
+      "src/lib/ledger/octoberShadowPipeline.ts": "sha256:d7f348f82df7b9d96396289edab6754f31b16e2828fe37310e0ec3884a0f4dd1",
       "src/lib/ledger/octoberShadowRepository.server.ts": "sha256:73aa02474b5fc3f734ef68cab7cd5f5e2bf3d8a85fc611668858c129fc69d26c",
-      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:6e16ef04f120c318f8cfffeb340ed000286d0a373b4c3d35cb4d04b9892253bf",
+      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:b2014f535bac48e76e2d94ec0f02a652ecca4879ce2d548dc5a3af1480fd90eb",
       "src/lib/operationalSignalStart.ts": "sha256:ee5c5daef23502939726ec6fe354ad05adbb776071093a0645f7f57e0c3cac97",
       "src/lib/portfolioLedgers.ts": "sha256:d8a535e3fb96963db0c366b0aedf03b00ace933df59c7234369f40fe20b96129",
       "src/lib/portfolioStrategyRules.ts": "sha256:b2bb33dd598dc63fa2d9a6ff129ee94609d161a666a98571568c8077d5a34b72",
@@ -77,5 +78,5 @@
     },
     "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
   },
-  "codeHash": "sha256:5bcd697dd857e8cd4f3a78b92c539f7299067834689f1e63e7110f0d5e89c06b"
+  "codeHash": "sha256:e31e0b815416781da7bcb38ccca518be57e6a9d9373cedca5c34921bc28a45c7"
 }
