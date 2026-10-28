@@ -517,15 +517,8 @@ async function buildEvidence(dataset: any, config: any, frozen: any, TARGET: str
   });
   return { evidence: rebuilt, dated, snapshot, datasetHash: hash(analyzed.dataset) };
 }
-export type PreflightPhase =
-  | "INPUT_VALIDATION"
-  | "SOURCE_VALIDATION"
-  | "BASELINE_REPRODUCTION"
-  | "CAPTURE_VALIDATION"
-  | "OVERLAY_DERIVATION"
-  | "CANDIDATE_COMPARISON"
-  | "INTEGRATED_COMPARISON"
-  | "OUTPUT_VALIDATION";
+export type { ComputationPhase as PreflightPhase } from "./kr-vintage-preflight/phases";
+import type { ComputationPhase as PreflightPhase } from "./kr-vintage-preflight/phases";
 export async function runKrVintagePreflight(
   inputPath: string,
   outputDir: string,
@@ -724,21 +717,27 @@ export async function runKrVintagePreflight(
     if (!input.integrated) report.status = "EVIDENCE_COMPARED_INTEGRATED_REPLAY_INPUTS_PENDING";
     else {
       phase("INTEGRATED_COMPARISON");
+      phase("INTEGRATED_INPUT_READ");
       const history = input.integrated.krHistory
         .map(evidence)
         .sort((a: any, b: any) => a.date.localeCompare(b.date));
       const priorUs = evidence(input.integrated.usPrevious),
         us = evidence(input.integrated.usCurrent);
+      phase("INTEGRATED_SESSION_DATES");
       const previousDate = cal.regularSessions.filter((d) => d < TARGET).at(-1);
       if (!previousDate) throw new Error("Prior completed session required");
       if (priorUs.analysis.date !== previousDate || us.analysis.date !== TARGET)
         throw new Error("Wrong immutable US dates");
       report.books = {};
       for (const kind of ["O1", "S07"]) {
+        phase("INTEGRATED_BOOK_READ");
         const prior = read(input.integrated.books[kind].previous),
           completed = read(input.integrated.books[kind].completed);
+        phase("INTEGRATED_PREDECESSOR_INTEGRITY");
         await validatePublication(prior, previousDate);
+        phase("INTEGRATED_COMPLETED_INTEGRITY");
         await validatePublication(completed, TARGET);
+        phase("INTEGRATED_BOOK_CHAIN");
         if (
           prior.registry.policy.kind !== kind ||
           completed.previousStateHash !== prior.stateHash ||
@@ -764,8 +763,11 @@ export async function runKrVintagePreflight(
           });
           return { sessions, publication };
         };
+        phase("INTEGRATED_BASELINE_REPLAY");
         const old = await make(frozen);
+        phase("INTEGRATED_CANDIDATE_REPLAY");
         const next = await make(candidate.evidence);
+        phase("INTEGRATED_BOOK_COMPARISON");
         const reproduced = comparison(completed, old.publication);
         const sessionsComparison = comparison(old.sessions, next.sessions);
         const withoutSourceHash = (s: any) => {
@@ -787,12 +789,14 @@ export async function runKrVintagePreflight(
         save(kind + "-candidate.json", next.publication);
         save(kind + "-session-inputs.json", { baseline: old.sessions, candidate: next.sessions });
       }
+      phase("INTEGRATED_BASELINE_EXACTNESS");
       report.status = Object.values(report.books).every((b: any) => b.baselineReproduced.equal)
         ? "PREFLIGHT_COMPARED_NO_OPERATIONAL_APPROVAL"
         : "BLOCKED_INTEGRATED_BASELINE_NOT_REPRODUCED";
       if (onPrepared) {
         if (report.status !== "PREFLIGHT_COMPARED_NO_OPERATIONAL_APPROVAL")
           throw new Error("Preparation requires exact baseline");
+        phase("PREPARATION_CALLBACK");
         await onPrepared({
           input,
           dataset,

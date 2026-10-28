@@ -1,4 +1,5 @@
 /** Pure, private preparation only. No network, filesystem, credentials or operational writes. */
+import type { ComputationPhase } from "./kr-vintage-preflight/phases";
 import type { MarketDataset } from "../src/lib/engine/dataset";
 import type { ScoringConfig } from "../src/lib/engine/scoring";
 import { buildKospiShadowSession } from "../src/lib/engine/kospiShadowDataset";
@@ -130,7 +131,11 @@ function chainPaths(
   return paths.reverse();
 }
 
-export async function prepareKospiFinalRetrospective(input: KospiFinalPreparationInput) {
+export async function prepareKospiFinalRetrospective(
+  input: KospiFinalPreparationInput,
+  phase: (value: ComputationPhase) => void = () => {},
+) {
+  phase("KOSPI_AUTHORITY_SCOPE");
   const a = input.authority;
   if (
     !a ||
@@ -141,12 +146,14 @@ export async function prepareKospiFinalRetrospective(input: KospiFinalPreparatio
     a.targetDates.length > 2
   )
     throw new Error("Invalid bounded preparation authority");
+  phase("KOSPI_CONSECUTIVE_DATES");
   let previous = a.predecessorDate;
   for (const date of a.targetDates) {
     if (!validDate(date) || nextKrRegularSession(previous) !== date)
       throw new Error("Exact next-session preparation dates required");
     previous = date;
   }
+  phase("KOSPI_PROVENANCE_HASHES");
   if (
     ![
       a.baselineSourceHash,
@@ -158,6 +165,7 @@ export async function prepareKospiFinalRetrospective(input: KospiFinalPreparatio
     !/^[a-f0-9]{40}$/.test(a.codeVersion)
   )
     throw new Error("Preparation provenance hashes required");
+  phase("KOSPI_ACTUAL_CLOCKS");
   const baseTime = timestamp(a.baselineCollectedAt),
     captureTime = timestamp(a.adjustedCapturedAt),
     computed = timestamp(a.computedAt);
@@ -167,6 +175,7 @@ export async function prepareKospiFinalRetrospective(input: KospiFinalPreparatio
     baseTime < Date.parse(a.targetDates.at(-1)! + "T06:30:00Z")
   )
     throw new Error("Actual final-source and capture clocks required");
+  phase("KOSPI_DATASET_HORIZON");
   if (
     input.baselineDataset.asOfDate !== a.targetDates.at(-1) ||
     input.adjustedDataset.asOfDate !== input.baselineDataset.asOfDate ||
@@ -174,6 +183,7 @@ export async function prepareKospiFinalRetrospective(input: KospiFinalPreparatio
     !input.adjustedDataset.isLive
   )
     throw new Error("Exact approved final analytical horizon required");
+  phase("KOSPI_OBJECT_IDENTITIES");
   const originalRoot = `${a.owner}/${KOSPI_SHADOW_NAMESPACE}`;
   const revisionRoot = `${originalRoot}/revisions/${KOSPI_SHADOW_CORRECTION_REVISION_ID}`;
   const allowed = new RegExp(
@@ -191,6 +201,7 @@ export async function prepareKospiFinalRetrospective(input: KospiFinalPreparatio
     originals[path] = clone(item.payload);
     inputObjectHashes[path] = item.hash;
   }
+  phase("KOSPI_PREDECESSOR_VIEW");
   const originalView = originals[originalRoot + "/latest.json"] as KospiShadowView;
   const view = originals[revisionRoot + "/latest.json"] as KospiShadowView;
   if (
@@ -200,18 +211,21 @@ export async function prepareKospiFinalRetrospective(input: KospiFinalPreparatio
     view.latest.state.lastDate !== a.predecessorDate
   )
     throw new Error("Preparation requires exact unadvanced authoritative predecessor");
+  phase("KOSPI_ORIGINAL_CHAIN");
   const originalChain = chainPaths(
     originals,
     originalRoot,
     originalView.latest.source.date,
     originalView.registry.initializedDate,
   );
+  phase("KOSPI_REVISION_CHAIN");
   const revisionChain = chainPaths(
     originals,
     revisionRoot,
     a.predecessorDate,
     view.registry.initializedDate,
   );
+  phase("KOSPI_EXACT_OBJECT_INVENTORY");
   const expectedPaths = [
     originalRoot + "/registry.json",
     originalRoot + "/latest.json",
@@ -224,7 +238,9 @@ export async function prepareKospiFinalRetrospective(input: KospiFinalPreparatio
   if (!equal(Object.keys(originals).sort(), expectedPaths))
     throw new Error("Preparation object inventory contains missing or orphan snapshots");
   const memory = memoryStore(originals);
+  phase("KOSPI_REVISION_ANCHOR_VALIDATION");
   const revision = await openKospiShadowRevisionStore(memory.store, a.owner);
+  phase("KOSPI_FROZEN_CONFIG");
   const config = { policy: KOSPI_SHADOW_POLICY, scoring: input.scoringConfig };
   const configHash = await hashSeriesValue(config);
   if (configHash !== view.registry.configHash || !equal(config, view.registry.config))
@@ -245,14 +261,18 @@ export async function prepareKospiFinalRetrospective(input: KospiFinalPreparatio
   const comparisons = [];
   const prepared = new Map<string, KospiShadowSession>();
   for (const date of [a.predecessorDate, ...a.targetDates]) {
-    const baseline = build(input.baselineDataset, date, false),
-      adjusted = build(input.adjustedDataset, date, true);
+    phase("KOSPI_BASELINE_SESSION_BUILD");
+    const baseline = build(input.baselineDataset, date, false);
+    phase("KOSPI_ADJUSTED_SESSION_BUILD");
+    const adjusted = build(input.adjustedDataset, date, true);
+    phase("KOSPI_SESSION_COMPARISON");
     comparisons.push({
       date,
       ...(await compareKospiSessions(baseline, adjusted)),
     });
     prepared.set(date, adjusted);
   }
+  phase("KOSPI_COMPLETED_BASELINE_BOUNDARY");
   const priorDate = view.latest.source.previousSessionDate;
   const predecessor = priorDate
     ? (originals[`${revisionRoot}/sessions/${priorDate}.json`] as KospiShadowSnapshot)
@@ -263,12 +283,14 @@ export async function prepareKospiFinalRetrospective(input: KospiFinalPreparatio
     predecessor,
     view.registry.initializedDate,
   );
+  phase("KOSPI_COMPLETED_ADJUSTED_BOUNDARY");
   const adjustedBoundary = equivalentCompletedKospiShadow(
     prepared.get(a.predecessorDate)!,
     view.latest,
     predecessor,
     view.registry.initializedDate,
   );
+  phase("KOSPI_PREDECESSOR_EQUIVALENCE");
   const common = {
     version: "kospi-final-retrospective-preparation-v1",
     operationalApproval: false as const,
@@ -311,17 +333,21 @@ export async function prepareKospiFinalRetrospective(input: KospiFinalPreparatio
       },
     });
     sessions.push(clone(session));
+    phase("KOSPI_MEMORY_SESSION_APPEND");
     const result = await persistKospiShadow(revision, a.owner, session, config);
     snapshots.push(clone(result.view.latest));
   }
+  phase("KOSPI_FINAL_REVISION_VALIDATION");
   const verified = await openKospiShadowRevisionStore(memory.store, a.owner);
   const final = await verified.read<KospiShadowView>(shadowObjectPath(a.owner, "latest.json"));
   if (!final || final.latest.source.date !== a.targetDates.at(-1))
     throw new Error("Preparation final projection mismatch");
+  phase("KOSPI_IMMUTABLE_PREFIX");
   for (const [path, value] of Object.entries(originals)) {
     if (path !== revisionRoot + "/latest.json" && !equal(memory.values.get(path), value))
       throw new Error("Preparation mutated immutable original prefix");
   }
+  phase("KOSPI_EXACT_MEMORY_WRITE_SET");
   const permittedAppends = new Set(a.targetDates.map((d) => `${revisionRoot}/sessions/${d}.json`));
   if (
     memory.writes.some((w) =>
@@ -332,6 +358,7 @@ export async function prepareKospiFinalRetrospective(input: KospiFinalPreparatio
     memory.writes.filter((w) => w.kind === "IMMUTABLE").length !== a.targetDates.length
   )
     throw new Error("Preparation write-set escape");
+  phase("KOSPI_PLAN_HASHES");
   const plan = {
     version: "kospi-final-retrospective-plan-v1",
     authority: clone(a),
