@@ -2,6 +2,14 @@ name: KR adjusted recovery private evidence preparation
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: Preparation or GET-only bounded metadata diagnosis
+        required: true
+        default: prepare
+        type: choice
+        options:
+          - prepare
+          - diagnose
       expected_capsule_hash:
         description: Independently reviewed opaque capture capsule digest
         required: true
@@ -21,9 +29,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
+      RECOVERY_MODE: ${{ inputs.mode }}
       EXPECTED_CAPSULE_HASH: ${{ inputs.expected_capsule_hash }}
       EXPECTED_PLAN_HASH: ${{ inputs.expected_plan_hash }}
     steps:
+      - name: Validate explicit preparation mode
+        run: |
+          case "$RECOVERY_MODE" in
+            prepare|diagnose) ;;
+            *) echo 'PREPARATION_MODE_REJECTED'; exit 1 ;;
+          esac
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
@@ -41,15 +56,25 @@ jobs:
           npx vitest run scripts/kr-vintage-preflight scripts/kr-adjusted-recovery src/lib/integratedAllocationEquivalence.test.ts
           npx vite-node --script scripts/kospi-final-retrospective-preparation.selftest.ts
           node scripts/build-kr-adjusted-recovery.mjs
+      - name: Diagnose only exact reviewed metadata with GET
+        if: inputs.mode == 'diagnose'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: node "$RUNNER_TEMP/kr-adjusted-recovery-code/transport.mjs" diagnose
       - name: Materialize exact reviewed private inputs with GET only
+        if: inputs.mode == 'prepare'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
         run: node "$RUNNER_TEMP/kr-adjusted-recovery-code/transport.mjs" materialize
       - name: Prepare counterfactual evidence without credentials
+        if: inputs.mode == 'prepare'
         run: node "$RUNNER_TEMP/kr-adjusted-recovery-code/transport.mjs" compute
       - name: Append one owner-private evidence-only receipt after fresh pin checks
+        if: inputs.mode == 'prepare'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

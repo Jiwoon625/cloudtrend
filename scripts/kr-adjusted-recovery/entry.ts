@@ -1,10 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { materializePreparation, appendPreparation } from "./transport";
+import {
+  materializePreparation,
+  appendPreparation,
+  diagnosePreparationMetadata,
+} from "./transport";
 import { verifyPreparationPayload } from "./verify";
 import { pureEnvironment } from "../kr-vintage-preflight/runner";
 import { requireCheck } from "../kr-vintage-preflight/transport";
+let failurePhase = "ENTRY_VALIDATION";
 async function main() {
   const root = process.env.RUNNER_TEMP ?? "",
     planHash = process.env.EXPECTED_PLAN_HASH ?? "",
@@ -17,6 +22,10 @@ async function main() {
     key: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
     owner: process.env.SUPABASE_USER_ID ?? "",
   };
+  if (mode === "diagnose") {
+    failurePhase = "METADATA_DIAGNOSTIC";
+    return diagnosePreparationMetadata({ ...authority, capsuleHash, planHash });
+  }
   if (mode === "materialize") {
     await materializePreparation({
       ...authority,
@@ -24,10 +33,14 @@ async function main() {
       planHash,
       directory,
       codeVersion: process.env.GITHUB_SHA ?? "",
+      onPhase: (phase) => {
+        failurePhase = phase;
+      },
     });
     return { status: "PREPARATION_MATERIALIZED", operationalApproval: false };
   }
   if (mode === "compute") {
+    failurePhase = "COMPUTE_VALIDATION";
     const output = path.join(directory, "result");
     const child = spawnSync(
       process.execPath,
@@ -85,6 +98,7 @@ async function main() {
     };
   }
   requireCheck(mode === "append");
+  failurePhase = "APPEND_VALIDATION";
   const saved = JSON.parse(
     fs.readFileSync(path.join(directory, "verified-preparation.json"), "utf8"),
   );
@@ -105,6 +119,12 @@ main()
     if (summary.status === "PREPARATION_REJECTED") process.exitCode = 1;
   })
   .catch(() => {
-    console.log(JSON.stringify({ status: "PREPARATION_REJECTED", operationalApproval: false }));
+    console.log(
+      JSON.stringify({
+        status: "PREPARATION_REJECTED",
+        phase: failurePhase,
+        operationalApproval: false,
+      }),
+    );
     process.exitCode = 1;
   });
