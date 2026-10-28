@@ -1,0 +1,33 @@
+name: KR vintage preflight safety checks
+on:
+  pull_request:
+    paths:
+      - "scripts/kr-vintage-preflight/**"
+      - "scripts/kr-vintage-preflight-*.ts"
+      - "scripts/build-kr-vintage-preflight.mjs"
+      - ".github/workflows/kr-vintage*"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/kr-vintage-preflight/**"
+      - "scripts/kr-vintage-preflight-*.ts"
+      - "scripts/build-kr-vintage-preflight.mjs"
+      - ".github/workflows/kr-vintage*"
+permissions:
+  contents: read
+jobs:
+  safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run scripts/kr-vintage-preflight
+      - run: node scripts/build-kr-vintage-preflight.mjs
+      - run: npx vite-node --script scripts/verify-shadow-runtime-manifests.ts

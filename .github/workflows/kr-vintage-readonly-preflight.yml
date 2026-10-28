@@ -1,0 +1,55 @@
+name: KR vintage read-only counterfactual preflight
+on:
+  workflow_dispatch:
+    inputs:
+      evidence_revision:
+        description: Reviewed private evidence revision (no source IDs or data)
+        required: true
+        default: "1"
+        type: string
+      expected_capsule_hash:
+        description: Independently reviewed opaque canonical capsule digest (sha256 prefix)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: kr-vintage-readonly-preflight
+  cancel-in-progress: false
+jobs:
+  preflight:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify reviewed runtime ancestry and identities before private reads
+        run: |
+          git merge-base --is-ancestor be178503cf8df02680e1f793098ab9d4f7ed6413 HEAD
+          npx vite-node --script scripts/verify-shadow-runtime-manifests.ts
+          node --experimental-strip-types scripts/verify-kospi-shadow-runtime.ts
+          npx vitest run scripts/kr-vintage-preflight
+          node scripts/build-kr-vintage-preflight.mjs
+      - name: Materialize exact owner-scoped immutable evidence with GET only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          EXPECTED_CAPSULE_HASH: ${{ inputs.expected_capsule_hash }}
+          EVIDENCE_REVISION: ${{ inputs.evidence_revision }}
+        run: node "$RUNNER_TEMP/kr-vintage-preflight-code/transport.mjs" materialize "$EVIDENCE_REVISION"
+      - name: Compare counterfactual baseline without credentials or operational writes
+        env:
+          EVIDENCE_REVISION: ${{ inputs.evidence_revision }}
+        run: node "$RUNNER_TEMP/kr-vintage-preflight-code/transport.mjs" compute "$EVIDENCE_REVISION"
+      - name: Remove ephemeral private evidence (never upload artifacts)
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/kr-vintage-preflight-private" "$RUNNER_TEMP/kr-vintage-preflight-code"
