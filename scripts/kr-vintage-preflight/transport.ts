@@ -50,6 +50,7 @@ export function restPath(
     analysis_runs: ["id"],
     analysis_source_files: ["id"],
     ledger_model_sessions: ["series_id", "session_date"],
+    shadow_replay_audit: ["id"],
   };
   requireCheck(allowed[table] && Object.keys(filters).every((k) => allowed[table].includes(k)));
   const query = new URLSearchParams({ select, user_id: "eq." + owner, ...filters, limit: "2" });
@@ -65,6 +66,7 @@ export function createReadOnlyTransport(
   key: string,
   allowedPaths: Set<string>,
   fetcher: typeof fetch = fetch,
+  observeResponse?: (path: string, response: Response) => void,
 ) {
   const base = new URL(origin);
   requireCheck(
@@ -85,7 +87,8 @@ export function createReadOnlyTransport(
     requireCheck(
       url.origin === base.origin &&
         (url.pathname.startsWith("/rest/v1/") ||
-          url.pathname.startsWith("/storage/v1/object/authenticated/cloudtrend-data/")),
+          url.pathname.startsWith("/storage/v1/object/authenticated/cloudtrend-data/") ||
+          url.pathname.startsWith("/storage/v1/object/info/cloudtrend-data/")),
     );
     const response = await fetcher(url, {
       method,
@@ -98,6 +101,7 @@ export function createReadOnlyTransport(
         !response.redirected &&
         (!response.url || new URL(response.url).origin === base.origin),
     );
+    observeResponse?.(relative, response);
     const length = Number(response.headers.get("content-length") ?? 0);
     requireCheck(length <= limit);
     const chunks: Uint8Array[] = [];

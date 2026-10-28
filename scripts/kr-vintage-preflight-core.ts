@@ -530,6 +530,7 @@ export async function runKrVintagePreflight(
   inputPath: string,
   outputDir: string,
   phase: (value: PreflightPhase) => void = () => {},
+  onPrepared?: (context: any) => Promise<void>,
 ) {
   phase("INPUT_VALIDATION");
   // This entrypoint runs only inside the isolated reader-free pure child process.
@@ -789,6 +790,29 @@ export async function runKrVintagePreflight(
       report.status = Object.values(report.books).every((b: any) => b.baselineReproduced.equal)
         ? "PREFLIGHT_COMPARED_NO_OPERATIONAL_APPROVAL"
         : "BLOCKED_INTEGRATED_BASELINE_NOT_REPRODUCED";
+      if (onPrepared) {
+        if (report.status !== "PREFLIGHT_COMPARED_NO_OPERATIONAL_APPROVAL")
+          throw new Error("Preparation requires exact baseline");
+        await onPrepared({
+          input,
+          dataset,
+          candidateDataset,
+          config,
+          scope,
+          plan,
+          rawOperands,
+          frozen,
+          candidateEvidence: candidate.evidence,
+          captureManifest,
+          values,
+          history,
+          priorUs,
+          us,
+          report,
+          read,
+          evidence,
+        });
+      }
     }
   }
   phase("OUTPUT_VALIDATION");
