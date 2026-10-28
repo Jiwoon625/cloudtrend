@@ -30,6 +30,11 @@
       "runtimeCodeHash": "sha256:625e872a3885e7ef51957f136fd0bb9de14262a1496e3b261fa19b48882b48b9",
       "reviewId": "kr-multiday-exact-prior-date-repair-v1-20261027",
       "frozenCodeHash": "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4"
+    },
+    {
+      "runtimeCodeHash": "sha256:5bcd697dd857e8cd4f3a78b92c539f7299067834689f1e63e7110f0d5e89c06b",
+      "frozenCodeHash": "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4",
+      "reviewId": "kr-private-vintage-successor-v2-20261028"
     }
   ]
 }

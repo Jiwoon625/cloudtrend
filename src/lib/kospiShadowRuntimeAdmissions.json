@@ -32,6 +32,10 @@
     {
       "runtimeCodeHash": "sha256:189d1e72a7c3f632bdc4df3481de5aade2141954db524c6614b9275dad7b5dbb",
       "reviewId": "kr-multiday-exact-prior-date-repair-v1-20261027"
+    },
+    {
+      "runtimeCodeHash": "sha256:40750f3f4985853bd47ebf326dd3bcfe34d46bf90d6707005e648ce975078771",
+      "reviewId": "kr-private-vintage-successor-v2-20261028"
     }
   ]
 }

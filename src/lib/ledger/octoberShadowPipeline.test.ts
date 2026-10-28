@@ -1,4 +1,9 @@
-import { KR_SOURCE_VINTAGE_REVIEW_ID, KR_SOURCE_VINTAGE_POLICY } from "./krSourceVintage";
+import {
+  KR_SOURCE_VINTAGE_REVIEW_ID,
+  KR_SOURCE_VINTAGE_POLICY,
+  KR_SOURCE_VINTAGE_SUCCESSOR_REVIEW_ID,
+  type KrSourceVintagePrivateApprovalV1,
+} from "./krSourceVintage";
 import { buildSnapshot } from "../screeningSnapshot";
 import { resolveKrInputArchive } from "./octoberShadowArchive";
 import type { KrDailyInputArchive } from "./octoberShadowArchive";
@@ -386,7 +391,7 @@ async function revisedVintageSource(
   const input = krSource(date);
   input.dataset.instruments[1]!.symbol = "SYNTHV";
   delete input.dataset.bars["000002"];
-  const sessions = ["2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15"].filter(
+  const sessions = ["2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16"].filter(
     (day) => day <= date,
   );
   input.dataset.tradeDates = ["2026-10-08", ...sessions];
@@ -507,6 +512,126 @@ it("keeps completed economic bytes and separate revised-source receipts across f
     "2026-10-15",
   );
   expect(rolled!.publication.historicalSourceVintages).toEqual(
+    mixed!.publication.historicalSourceVintages,
+  );
+  for (const [key, bytes] of oldSessions) expect(JSON.stringify(f.sessions.get(key))).toBe(bytes);
+  for (const [key, bytes] of oldArchives) expect(JSON.stringify(f.archives.get(key))).toBe(bytes);
+});
+
+async function successorVintageSource(date: string) {
+  const input = await revisedVintageSource(date, true);
+  const predecessor = input.sourceVintageApproval as KrSourceVintagePrivateApprovalV1;
+  const archived = ["2026-10-12", "2026-10-13", "2026-10-14"].map((tradeDate) => ({
+    ...krSource(tradeDate).dataset.bars["000001"]![0]!,
+    tradeDate,
+  }));
+  const incoming = archived.map((bar) => ({
+    ...bar,
+    open: 50,
+    high: 51,
+    low: 49,
+    close: 50,
+    volume: 2e6,
+  }));
+  const reviews = await Promise.all(
+    archived.map(async (bar, index) => ({
+      id: KR_SOURCE_VINTAGE_SUCCESSOR_REVIEW_ID,
+      symbol: "000001",
+      date: bar.tradeDate,
+      notBefore: "2026-10-15",
+      archivedHash: await hashSeriesValue(bar),
+      incomingHash: await hashSeriesValue(incoming[index]),
+      evidenceUrl: "https://dart.fss.or.kr/synthetic-second-cohort",
+    })),
+  );
+  const receipt = {
+    version: "kr-source-vintage-review-v2" as const,
+    reviewId: KR_SOURCE_VINTAGE_SUCCESSOR_REVIEW_ID,
+    parentReceiptHash: predecessor.registry.receiptHash,
+    reviews: [...predecessor.receipt.reviews, ...reviews],
+  };
+  input.sourceVintageApproval = {
+    predecessor,
+    receipt,
+    registry: {
+      version: "kr-source-vintage-approval-v2",
+      reviewId: KR_SOURCE_VINTAGE_SUCCESSOR_REVIEW_ID,
+      status: "APPROVED",
+      policy: KR_SOURCE_VINTAGE_POLICY,
+      parentRegistryHash: await hashSeriesValue(predecessor.registry),
+      receiptHash: await hashSeriesValue(receipt),
+    },
+  };
+  input.dataset.bars["000001"] = [
+    ...incoming,
+    ...["2026-10-15", "2026-10-16"]
+      .filter((day) => day <= date)
+      .map((tradeDate) => ({
+        ...incoming[0]!,
+        tradeDate,
+        open: 55,
+        high: 56,
+        low: 54,
+        close: 55,
+      })),
+  ];
+  return input;
+}
+it("extends only a proven approval ancestor while retaining every prior economic byte", async () => {
+  const f = await fixture();
+  for (const kind of ADOPTED_SERIES_KINDS)
+    await f.store.insertSeries(
+      await freezeRestartSeries({ kind, frozenAt: "2026-10-09T00:00:00Z", codeHash, sourceHash }),
+    );
+  for (const day of ["2026-10-12", "2026-10-13", "2026-10-14"])
+    await recordOctoberPublication(f.store, await revisedVintageSource(day, day >= "2026-10-14"));
+  const oldSessions = new Map([...f.sessions].map(([key, value]) => [key, JSON.stringify(value)]));
+  const oldArchives = new Map([...f.archives].map(([key, value]) => [key, JSON.stringify(value)]));
+  const input = await successorVintageSource("2026-10-15");
+  const early = await successorVintageSource("2026-10-14");
+  await expect(recordOctoberPublication(f.store, early)).rejects.toThrow("not active");
+  const forged = structuredClone(input);
+  forged.sourceVintageApproval!.registry = {
+    ...forged.sourceVintageApproval!.registry,
+    parentRegistryHash: `sha256:${"c".repeat(64)}`,
+  } as never;
+  await expect(recordOctoberPublication(f.store, forged)).rejects.toThrow("predecessor");
+  expect([...f.sessions].map(([key, value]) => [key, JSON.stringify(value)])).toEqual([
+    ...oldSessions,
+  ]);
+  const result = await recordOctoberPublication(f.store, input);
+  expect(result.records).toHaveLength(5);
+  expect((await recordOctoberPublication(f.store, input)).records.every((row) => row.reused)).toBe(
+    true,
+  );
+  const mixed = await f.store.readSession<import("./octoberShadowPipeline").OctoberRun>(
+    "adopted-shadow-2026-10-12-v1:KR_MIXED",
+    "2026-10-15",
+  );
+  expect(mixed!.publication.historicalSourceVintages).toHaveLength(5);
+  expect(mixed!.publication.sourceVintageApprovalHash).toBe(
+    await hashSeriesValue(input.sourceVintageApproval!.registry),
+  );
+  const prefix = await resolveKrInputArchive(
+    mixed as import("./krAdoptedShadow").AdoptedKrRun,
+    f.store.readKrInput,
+  );
+  expect(prefix.bars["000001"]!.map((bar) => bar.close)).toEqual([100, 100, 100, 55]);
+  const badNext = await successorVintageSource("2026-10-16");
+  badNext.dataset.bars["000001"]![0]!.close = 51;
+  await expect(recordOctoberPublication(f.store, badNext)).rejects.toThrow(
+    "reverted or changed again",
+  );
+  const rolling = await successorVintageSource("2026-10-16");
+  rolling.dataset.bars["000001"] = rolling.dataset.bars["000001"]!.filter(
+    (bar) => bar.tradeDate >= "2026-10-15",
+  );
+  await recordOctoberPublication(f.store, rolling);
+  const next = await f.store.readSession<import("./octoberShadowPipeline").OctoberRun>(
+    "adopted-shadow-2026-10-12-v1:KR_MIXED",
+    "2026-10-16",
+  );
+  expect(next!.publication.historicalSourceVintages).toEqual(
     mixed!.publication.historicalSourceVintages,
   );
   for (const [key, bytes] of oldSessions) expect(JSON.stringify(f.sessions.get(key))).toBe(bytes);
