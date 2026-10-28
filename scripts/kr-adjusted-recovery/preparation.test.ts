@@ -40,6 +40,28 @@ describe("preparation-only boundaries", () => {
     "rejects changed object %s generation",
     (key) => expect(() => verifyObjectGeneration({ ...info, [key]: "changed" }, pin)).toThrow(),
   );
+  it("keeps the DB-alias timestamp guard and rejects a backend-header substitution", () => {
+    const databasePin = { ...pin, updatedAt: "2026-10-28T10:00:00.481345Z" };
+    expect(() =>
+      verifyObjectGeneration({ ...info, last_modified: databasePin.updatedAt }, databasePin),
+    ).not.toThrow();
+    expect(() =>
+      verifyObjectGeneration({ ...info, last_modified: "2026-10-28T10:00:01.000Z" }, databasePin),
+    ).toThrow();
+  });
+  it("logs only code-selected read phases, not caught errors or private values", () => {
+    const entry = fs.readFileSync("scripts/kr-adjusted-recovery/entry.ts", "utf8");
+    const transport = fs.readFileSync("scripts/kr-adjusted-recovery/transport.ts", "utf8");
+    expect(entry).toContain("phase: failurePhase");
+    expect(entry).not.toContain("error.message");
+    expect(entry).not.toContain("console.error");
+    const calls = [...transport.matchAll(/options\.onPhase\?\.\(([^)]*)\)/g)].map((m) => m[1]);
+    expect(calls.length).toBe(18);
+    expect(calls.every((value) => /^"[A-Z_]+"$/.test(value!))).toBe(true);
+    expect(calls).toContain('"CAPSULE_READ"');
+    expect(calls).toContain('"LEGACY_INFO_VALIDATION"');
+    expect(calls).toContain('"ARCHIVE_PREFIX_VALIDATION"');
+  });
   it("rejects unreviewed/self-hashed or conflicting plan owner/hash before any fetch", async () => {
     await expect(
       validatePreparationPlan(

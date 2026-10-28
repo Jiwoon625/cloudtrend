@@ -9,6 +9,8 @@ import { krSourcePublication } from "../../src/lib/krScreeningPublication";
 import {
   createReadOnlyTransport,
   materializeCapsule,
+  validateCapsule,
+  CAPSULE_PREFIX,
   rawHash,
   requireCheck,
   restPath,
@@ -18,6 +20,25 @@ export const PLAN = "kr-adjusted-recovery-read-plan:";
 export const PREPARATION = "kr-adjusted-recovery-preparation:";
 const H = /^sha256:[a-f0-9]{64}$/;
 const equal = (a: unknown, b: unknown) => canonicalSeriesJson(a) === canonicalSeriesJson(b);
+export type PreparationReadPhase =
+  | "CAPSULE_READ"
+  | "PLAN_READ"
+  | "PLAN_VALIDATION"
+  | "FINAL_SOURCE_READ"
+  | "FINAL_SOURCE_VALIDATION"
+  | "MODEL_PREFIX_READ"
+  | "MODEL_PREFIX_VALIDATION"
+  | "ARCHIVE_PREFIX_READ"
+  | "ARCHIVE_PREFIX_VALIDATION"
+  | "VINTAGE_AUTHORITY_READ"
+  | "VINTAGE_AUTHORITY_VALIDATION"
+  | "LEGACY_INFO_READ"
+  | "LEGACY_INFO_VALIDATION"
+  | "LEGACY_BYTES_READ"
+  | "LEGACY_BYTES_VALIDATION"
+  | "LEGACY_GENERATION_RECHECK"
+  | "LEGACY_GENERATION_VALIDATION"
+  | "MATERIALIZATION_OUTPUT";
 const token = (value: unknown) => String(value ?? "").replace(/^"|"$/g, "");
 export async function validatePreparationPlan(
   row: any,
@@ -112,6 +133,112 @@ export function verifyObjectGeneration(info: any, pin: any) {
       Date.parse(info.last_modified ?? info.updated_at) === Date.parse(pin.updatedAt),
   );
 }
+/** Bounded metadata-only diagnosis. No source bytes, filesystem, compute or INSERT. */
+export async function diagnosePreparationMetadata(options: {
+  origin: string;
+  key: string;
+  owner: string;
+  capsuleHash: string;
+  planHash: string;
+  fetcher?: typeof fetch;
+}) {
+  const allowed = new Set<string>(),
+    headers = new Map<string, Headers>();
+  const read = createReadOnlyTransport(
+    options.origin,
+    options.key,
+    allowed,
+    options.fetcher,
+    (p, response) => headers.set(p, response.headers),
+  );
+  const get = async (p: string) => {
+    allowed.add(p);
+    return JSON.parse((await read(p, 4 * 1024 * 1024)).toString());
+  };
+  const one = async (filters: Record<string, string>) => {
+    const rows = await get(
+      restPath(
+        "ledger_provenance_archive",
+        options.owner,
+        "user_id,source_id,source_revision,source_hash,payload",
+        filters,
+      ),
+    );
+    requireCheck(Array.isArray(rows) && rows.length === 1);
+    return rows[0];
+  };
+  const capsuleRow = await one({
+    source_id: "like." + CAPSULE_PREFIX + "*",
+    source_revision: "eq.1",
+  });
+  requireCheck(capsuleRow.source_hash === options.capsuleHash);
+  const capsule = await validateCapsule(capsuleRow, options.owner, "1");
+  const planRow = await one({
+    source_id: "eq." + PLAN + options.capsuleHash.slice(7),
+    source_revision: "eq.1",
+  });
+  const plan = await validatePreparationPlan(
+    planRow,
+    options.owner,
+    options.planHash,
+    options.capsuleHash,
+  );
+  requireCheck(
+    plan.scope.symbol === capsule.readPlan.scope.symbol &&
+      equal(plan.scope.dates, [
+        capsule.readPlan.scope.targetDate,
+        capsule.readPlan.scope.baselineAsOfDate,
+      ]),
+  );
+  const objects = [];
+  for (const [ordinal, pin] of plan.kospi.objects.entries()) {
+    const p = objectPath("cloudtrend-data", pin.path, options.owner).replace(
+      "/object/authenticated/",
+      "/object/info/",
+    );
+    try {
+      const info = await get(p);
+      const validTime = (v: unknown) => typeof v === "string" && Number.isFinite(Date.parse(v));
+      const gap = (v: unknown) =>
+        validTime(v) ? Date.parse(v as string) - Date.parse(pin.metadata.updatedAt) : null;
+      let pinnedCheckPass = true;
+      try {
+        verifyObjectGeneration(info, pin.metadata);
+      } catch {
+        pinnedCheckPass = false;
+      }
+      objects.push({
+        ordinal,
+        readSucceeded: true,
+        pinnedCheckPass,
+        idMatches: info.id === pin.metadata.id,
+        versionMatches: info.version === pin.metadata.version,
+        etagMatches: token(info.etag ?? info.eTag) === token(pin.metadata.eTag),
+        sizeMatches: Number(info.size) === pin.metadata.size,
+        hasRawLastModified: typeof info.last_modified === "string",
+        hasDeprecatedUpdatedAt: typeof info.updated_at === "string",
+        hasSdkLastModified: typeof info.lastModified === "string",
+        rawLastModifiedValid: validTime(info.last_modified),
+        rawLastModifiedMinusDbMs: gap(info.last_modified),
+        deprecatedUpdatedAtMinusDbMs: gap(info.updated_at),
+        httpLastModifiedMinusDbMs: gap(headers.get(p)?.get("last-modified")),
+      });
+    } catch {
+      objects.push({ ordinal, readSucceeded: false, pinnedCheckPass: false });
+    }
+  }
+  return {
+    status: "PREPARATION_METADATA_DIAGNOSED",
+    readOnly: true,
+    operationalApproval: false,
+    capsuleValidated: true,
+    planValidated: true,
+    objectCount: objects.length,
+    allReadsSucceeded: objects.every((o) => o.readSucceeded),
+    allPinnedChecksPass: objects.every((o) => o.pinnedCheckPass),
+    objects,
+  };
+}
 export async function materializePreparation(options: {
   origin: string;
   key: string;
@@ -120,10 +247,12 @@ export async function materializePreparation(options: {
   planHash: string;
   directory: string;
   codeVersion: string;
+  onPhase?: (phase: PreparationReadPhase) => void;
   fetcher?: typeof fetch;
 }) {
   const { owner, directory } = options;
   requireCheck(/^[a-f0-9]{40}$/.test(options.codeVersion));
+  options.onPhase?.("CAPSULE_READ");
   const inputPath = await materializeCapsule({
     origin: options.origin,
     key: options.key,
@@ -159,22 +288,26 @@ export async function materializePreparation(options: {
     requireCheck(Array.isArray(rows) && rows.length === 1);
     return rows[0];
   };
+  options.onPhase?.("PLAN_READ");
   const planRow = await row(
     "ledger_provenance_archive",
     "user_id,source_id,source_revision,source_hash,payload",
     { source_id: "eq." + PLAN + options.capsuleHash.slice(7), source_revision: "eq.1" },
   );
+  options.onPhase?.("PLAN_VALIDATION");
   const plan = await validatePreparationPlan(planRow, owner, options.planHash, options.capsuleHash);
   requireCheck(
     plan.scope.symbol === input.scope.symbol &&
       equal(plan.scope.dates, [input.scope.targetDate, input.scope.baselineAsOfDate]),
   );
+  options.onPhase?.("FINAL_SOURCE_READ");
   const f = plan.finalPublication;
   const source = await row(
     "analysis_source_files",
     "id,max_date,file_hash,data_hash,schema_hash,validation_result,activated_at",
     { id: "eq." + f.sourceId },
   );
+  options.onPhase?.("FINAL_SOURCE_VALIDATION");
   requireCheck(
     source.file_hash === f.fileHash &&
       source.data_hash === f.dataHash &&
@@ -189,10 +322,12 @@ export async function materializePreparation(options: {
   );
   const models = [];
   for (const r of plan.models) {
+    options.onPhase?.("MODEL_PREFIX_READ");
     const v = await row("ledger_model_sessions", "series_id,session_date,state_hash,payload", {
       series_id: "eq." + r.seriesId,
       session_date: "eq." + r.sessionDate,
     });
+    options.onPhase?.("MODEL_PREFIX_VALIDATION");
     requireCheck(
       v.state_hash === r.stateHash &&
         v.payload.stateHash === r.stateHash &&
@@ -202,10 +337,12 @@ export async function materializePreparation(options: {
   }
   const archives = [];
   for (const r of plan.archives) {
+    options.onPhase?.("ARCHIVE_PREFIX_READ");
     const v = await row("ledger_provenance_archive", "source_hash,payload", {
       source_id: "eq." + r.sourceId,
       source_revision: "eq.1",
     });
+    options.onPhase?.("ARCHIVE_PREFIX_VALIDATION");
     requireCheck(
       v.source_hash === r.sourceHash &&
         (await hashSeriesValue(v.payload)) === r.payloadHash &&
@@ -217,7 +354,9 @@ export async function materializePreparation(options: {
     ["registry", plan.vintageV1.registryAuditId],
     ["receipt", plan.vintageV1.receiptAuditId],
   ] as const) {
+    options.onPhase?.("VINTAGE_AUTHORITY_READ");
     const v = await row("shadow_replay_audit", "details", { id: "eq." + id });
+    options.onPhase?.("VINTAGE_AUTHORITY_VALIDATION");
     requireCheck(
       equal(
         v.details[key === "registry" ? "krSourceVintageApproval" : "krSourceVintageReview"],
@@ -229,13 +368,21 @@ export async function materializePreparation(options: {
   for (const pin of plan.kospi.objects) {
     const p = objectPath("cloudtrend-data", pin.path, owner),
       infoPath = p.replace("/object/authenticated/", "/object/info/");
-    verifyObjectGeneration(JSON.parse((await get(infoPath)).toString()), pin.metadata);
+    options.onPhase?.("LEGACY_INFO_READ");
+    const before = JSON.parse((await get(infoPath)).toString());
+    options.onPhase?.("LEGACY_INFO_VALIDATION");
+    verifyObjectGeneration(before, pin.metadata);
+    options.onPhase?.("LEGACY_BYTES_READ");
     const raw = await get(p);
+    options.onPhase?.("LEGACY_BYTES_VALIDATION");
     requireCheck(
       raw.length === pin.metadata.size &&
         token(headers.get(p)?.get("etag")) === token(pin.metadata.eTag),
     );
-    verifyObjectGeneration(JSON.parse((await get(infoPath)).toString()), pin.metadata);
+    options.onPhase?.("LEGACY_GENERATION_RECHECK");
+    const after = JSON.parse((await get(infoPath)).toString());
+    options.onPhase?.("LEGACY_GENERATION_VALIDATION");
+    verifyObjectGeneration(after, pin.metadata);
     const payload = JSON.parse(raw.toString());
     objects.push({
       path: pin.path,
@@ -246,6 +393,7 @@ export async function materializePreparation(options: {
       stateHashPreapproved: false,
     });
   }
+  options.onPhase?.("MATERIALIZATION_OUTPUT");
   input.calculatedAt = plan.preparedAt;
   input.recoveryPreparation = {
     owner,
