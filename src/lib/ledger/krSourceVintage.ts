@@ -23,7 +23,8 @@ export interface KrSourceVintageReceipt extends KrSourceVintageReview {
 export const KR_SOURCE_VINTAGE_REVIEW_ID = "reviewed-kr-vintage-v1" as const;
 export const KR_SOURCE_VINTAGE_POLICY =
   "KEEP_FROZEN_EXECUTION_PREFIX_NO_ECONOMIC_EXPOSURE_V1" as const;
-export interface KrSourceVintagePrivateApproval {
+export const KR_SOURCE_VINTAGE_SUCCESSOR_REVIEW_ID = "reviewed-kr-vintage-v2" as const;
+export interface KrSourceVintagePrivateApprovalV1 {
   registry: {
     version: "kr-source-vintage-approval-v1";
     reviewId: typeof KR_SOURCE_VINTAGE_REVIEW_ID;
@@ -37,15 +38,70 @@ export interface KrSourceVintagePrivateApproval {
     reviews: KrSourceVintageReview[];
   };
 }
-export async function verifyKrSourceVintagePrivateApproval(value: KrSourceVintagePrivateApproval) {
-  const { registry, receipt } = value;
-  const keys = (object: object, expected: string[]) =>
-    canonicalSeriesJson(Object.keys(object).sort()) === canonicalSeriesJson(expected.sort());
+/** One independently approved cohort extends, but never replaces, the immutable v1 authority. */
+export interface KrSourceVintagePrivateApprovalV2 {
+  registry: {
+    version: "kr-source-vintage-approval-v2";
+    reviewId: typeof KR_SOURCE_VINTAGE_SUCCESSOR_REVIEW_ID;
+    status: "APPROVED";
+    receiptHash: SeriesHash;
+    parentRegistryHash: SeriesHash;
+    policy: typeof KR_SOURCE_VINTAGE_POLICY;
+  };
+  receipt: {
+    version: "kr-source-vintage-review-v2";
+    reviewId: typeof KR_SOURCE_VINTAGE_SUCCESSOR_REVIEW_ID;
+    parentReceiptHash: SeriesHash;
+    reviews: KrSourceVintageReview[];
+  };
+  predecessor: KrSourceVintagePrivateApprovalV1;
+}
+export type KrSourceVintagePrivateApproval =
+  KrSourceVintagePrivateApprovalV1 | KrSourceVintagePrivateApprovalV2;
+
+const exactKeys = (object: unknown, expected: string[]) =>
+  object !== null &&
+  typeof object === "object" &&
+  !Array.isArray(object) &&
+  canonicalSeriesJson(Object.keys(object).sort()) === canonicalSeriesJson([...expected].sort());
+
+function verifyReview(review: KrSourceVintageReview, id: string, seen: Set<string>) {
   if (
-    !registry ||
-    !receipt ||
-    !keys(registry, ["version", "reviewId", "status", "receiptHash", "policy"]) ||
-    !keys(receipt, ["version", "reviewId", "reviews"]) ||
+    !exactKeys(review, [
+      "id",
+      "symbol",
+      "date",
+      "notBefore",
+      "archivedHash",
+      "incomingHash",
+      "evidenceUrl",
+    ]) ||
+    review.id !== id ||
+    !/^[A-Z0-9._-]{1,20}$/.test(review.symbol) ||
+    !validDate(review.date) ||
+    !validDate(review.notBefore) ||
+    review.date >= review.notBefore ||
+    ![review.archivedHash, review.incomingHash].every((h) => /^sha256:[a-f0-9]{64}$/.test(h)) ||
+    review.archivedHash === review.incomingHash ||
+    !/^https:\/\/dart\.fss\.or\.kr\//.test(review.evidenceUrl) ||
+    seen.has(`${review.symbol}:${review.date}`)
+  )
+    throw new Error("Invalid private KR source vintage review");
+  seen.add(`${review.symbol}:${review.date}`);
+}
+function verifyCohort(reviews: readonly KrSourceVintageReview[]) {
+  if (
+    new Set(reviews.map((r) => r.symbol)).size !== 1 ||
+    new Set(reviews.map((r) => r.notBefore)).size !== 1
+  )
+    throw new Error("Private KR source vintage scope changed");
+}
+async function verifyV1(value: KrSourceVintagePrivateApprovalV1) {
+  const { registry, receipt } = value;
+  if (
+    !exactKeys(value, ["registry", "receipt"]) ||
+    !exactKeys(registry, ["version", "reviewId", "status", "receiptHash", "policy"]) ||
+    !exactKeys(receipt, ["version", "reviewId", "reviews"]) ||
     registry.version !== "kr-source-vintage-approval-v1" ||
     registry.reviewId !== KR_SOURCE_VINTAGE_REVIEW_ID ||
     registry.status !== "APPROVED" ||
@@ -58,39 +114,71 @@ export async function verifyKrSourceVintagePrivateApproval(value: KrSourceVintag
   )
     throw new Error("Unapproved private KR source vintage receipt");
   const seen = new Set<string>();
-  for (const review of receipt.reviews) {
-    if (
-      !keys(review, [
-        "id",
-        "symbol",
-        "date",
-        "notBefore",
-        "archivedHash",
-        "incomingHash",
-        "evidenceUrl",
-      ]) ||
-      review.id !== registry.reviewId ||
-      !/^[A-Z0-9._-]{1,20}$/.test(review.symbol) ||
-      !validDate(review.date) ||
-      !validDate(review.notBefore) ||
-      review.date >= review.notBefore ||
-      ![review.archivedHash, review.incomingHash].every((h) => /^sha256:[a-f0-9]{64}$/.test(h)) ||
-      review.archivedHash === review.incomingHash ||
-      !/^https:\/\/dart\.fss\.or\.kr\//.test(review.evidenceUrl) ||
-      seen.has(`${review.symbol}:${review.date}`)
-    )
-      throw new Error("Invalid private KR source vintage review");
-    seen.add(`${review.symbol}:${review.date}`);
-  }
-  if (
-    new Set(receipt.reviews.map((r) => r.symbol)).size !== 1 ||
-    new Set(receipt.reviews.map((r) => r.notBefore)).size !== 1
-  )
-    throw new Error("Private KR source vintage scope changed");
+  for (const review of receipt.reviews) verifyReview(review, registry.reviewId, seen);
+  verifyCohort(receipt.reviews);
   return {
     registryHash: await hashSeriesValue(registry),
     receiptHash: registry.receiptHash,
     reviews: receipt.reviews,
+    activationDate: receipt.reviews[0]!.notBefore,
+  };
+}
+export async function verifyKrSourceVintagePrivateApproval(value: KrSourceVintagePrivateApproval) {
+  if (value?.registry?.version === "kr-source-vintage-approval-v1") {
+    const verified = await verifyV1(value as KrSourceVintagePrivateApprovalV1);
+    return { ...verified, authorizedRegistryHashes: [verified.registryHash] };
+  }
+  const successor = value as KrSourceVintagePrivateApprovalV2;
+  const { registry, receipt, predecessor } = successor ?? {};
+  if (
+    !exactKeys(successor, ["registry", "receipt", "predecessor"]) ||
+    !exactKeys(registry, [
+      "version",
+      "reviewId",
+      "status",
+      "receiptHash",
+      "parentRegistryHash",
+      "policy",
+    ]) ||
+    !exactKeys(receipt, ["version", "reviewId", "parentReceiptHash", "reviews"]) ||
+    registry.version !== "kr-source-vintage-approval-v2" ||
+    registry.reviewId !== KR_SOURCE_VINTAGE_SUCCESSOR_REVIEW_ID ||
+    registry.status !== "APPROVED" ||
+    registry.policy !== KR_SOURCE_VINTAGE_POLICY ||
+    receipt.version !== "kr-source-vintage-review-v2" ||
+    receipt.reviewId !== registry.reviewId ||
+    registry.receiptHash !== (await hashSeriesValue(receipt)) ||
+    !Array.isArray(receipt.reviews) ||
+    receipt.reviews.length < 3 ||
+    receipt.reviews.length > 258 ||
+    !predecessor
+  )
+    throw new Error("Unapproved private KR source vintage successor");
+  const parent = await verifyV1(predecessor);
+  const retained = receipt.reviews.slice(0, parent.reviews.length);
+  const additional = receipt.reviews.slice(parent.reviews.length);
+  if (
+    registry.parentRegistryHash !== parent.registryHash ||
+    receipt.parentReceiptHash !== parent.receiptHash ||
+    canonicalSeriesJson(retained) !== canonicalSeriesJson(parent.reviews)
+  )
+    throw new Error("Private KR source vintage predecessor changed or missing");
+  const seen = new Set<string>();
+  for (const review of retained) verifyReview(review, KR_SOURCE_VINTAGE_REVIEW_ID, seen);
+  for (const review of additional) verifyReview(review, registry.reviewId, seen);
+  verifyCohort(additional);
+  if (
+    additional[0]!.symbol === parent.reviews[0]!.symbol ||
+    additional[0]!.notBefore <= parent.activationDate
+  )
+    throw new Error("Private KR source vintage successor scope changed");
+  const registryHash = await hashSeriesValue(registry);
+  return {
+    registryHash,
+    receiptHash: registry.receiptHash,
+    reviews: receipt.reviews,
+    activationDate: additional[0]!.notBefore,
+    authorizedRegistryHashes: [parent.registryHash, registryHash],
   };
 }
 

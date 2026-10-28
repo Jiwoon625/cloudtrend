@@ -4,7 +4,10 @@ import { readKrSourceVintageApproval } from "./krSourceVintageApproval.server";
 import {
   KR_SOURCE_VINTAGE_REVIEW_ID as ID,
   KR_SOURCE_VINTAGE_POLICY as POLICY,
-  type KrSourceVintagePrivateApproval,
+  KR_SOURCE_VINTAGE_SUCCESSOR_REVIEW_ID as NEXT_ID,
+  verifyKrSourceVintagePrivateApproval,
+  type KrSourceVintagePrivateApprovalV1,
+  type KrSourceVintagePrivateApprovalV2,
 } from "./ledger/krSourceVintage";
 import { hashSeriesValue } from "./ledger/modelSeries";
 const uid = "11111111-1111-4111-8111-111111111111";
@@ -44,7 +47,7 @@ const client = {
     return q;
   },
 } as unknown as SupabaseClient;
-async function fixture(): Promise<KrSourceVintagePrivateApproval> {
+async function fixture(): Promise<KrSourceVintagePrivateApprovalV1> {
   const receipt = {
     version: "kr-source-vintage-review-v1" as const,
     reviewId: ID,
@@ -73,7 +76,7 @@ function insert(key: string, value: unknown, userId = uid) {
   rows.push({
     user_id: userId,
     market: "KR",
-    strategy_version: ID,
+    strategy_version: (value as { reviewId: string }).reviewId,
     details: { [key]: structuredClone(value) },
   });
 }
@@ -134,3 +137,112 @@ it("rejects broadening, duplicate observations and untrusted lookup failures", a
     "Verified private review owner",
   );
 });
+
+async function successorFixture(): Promise<KrSourceVintagePrivateApprovalV2> {
+  const predecessor = await fixture();
+  const receipt = {
+    version: "kr-source-vintage-review-v2" as const,
+    reviewId: NEXT_ID,
+    parentReceiptHash: predecessor.registry.receiptHash,
+    reviews: [
+      ...structuredClone(predecessor.receipt.reviews),
+      ...["2026-10-14", "2026-10-15"].map((date) => ({
+        ...predecessor.receipt.reviews[0]!,
+        id: NEXT_ID,
+        symbol: "SECOND_SYNTHETIC",
+        date,
+        notBefore: "2026-10-16",
+      })),
+    ],
+  };
+  return {
+    predecessor,
+    receipt,
+    registry: {
+      version: "kr-source-vintage-approval-v2",
+      reviewId: NEXT_ID,
+      status: "APPROVED",
+      policy: POLICY,
+      parentRegistryHash: await hashSeriesValue(predecessor.registry),
+      receiptHash: await hashSeriesValue(receipt),
+    },
+  };
+}
+function insertApproval(f: KrSourceVintagePrivateApprovalV1 | KrSourceVintagePrivateApprovalV2) {
+  insert("krSourceVintageApproval", f.registry);
+  insert("krSourceVintageReview", f.receipt);
+}
+it("verifies an append-only successor and selects authority by its explicit activation date", async () => {
+  const f = await successorFixture();
+  insertApproval(f.predecessor);
+  insertApproval(f);
+  const before = JSON.stringify(rows);
+  expect(await readKrSourceVintageApproval(client, uid, "2026-10-15")).toEqual(f.predecessor);
+  expect(await readKrSourceVintageApproval(client, uid, "2026-10-16")).toEqual(f);
+  expect(await readKrSourceVintageApproval(client, uid)).toEqual(f);
+  expect((await verifyKrSourceVintagePrivateApproval(f)).authorizedRegistryHashes).toEqual([
+    await hashSeriesValue(f.predecessor.registry),
+    await hashSeriesValue(f.registry),
+  ]);
+  expect(JSON.stringify(rows)).toBe(before);
+  await expect(readKrSourceVintageApproval(client, uid, "invalid")).rejects.toThrow(
+    "publication date",
+  );
+});
+it("does not accept a successor without a separately stored predecessor authority", async () => {
+  const f = await successorFixture();
+  insertApproval(f);
+  await expect(readKrSourceVintageApproval(client, uid)).rejects.toThrow("Incomplete");
+  rows.length = 0;
+  insertApproval(f.predecessor);
+  insert("krSourceVintageReview", f.receipt);
+  await expect(readKrSourceVintageApproval(client, uid)).rejects.toThrow("Incomplete");
+});
+it.each(["registry", "receipt"] as const)(
+  "rejects conflicting successor %s records rather than selecting latest",
+  async (key) => {
+    const f = await successorFixture();
+    insertApproval(f.predecessor);
+    insertApproval(f);
+    insert(key === "registry" ? "krSourceVintageApproval" : "krSourceVintageReview", {
+      ...f[key],
+      unknownField: true,
+    });
+    await expect(readKrSourceVintageApproval(client, uid)).rejects.toThrow("Conflicting");
+  },
+);
+it.each([
+  "parentRegistryHash",
+  "parentReceiptHash",
+  "removed",
+  "altered",
+  "renamed",
+  "reordered",
+] as const)("rejects an unproven predecessor transition: %s", async (kind) => {
+  const f = await successorFixture();
+  if (kind === "parentRegistryHash") f.registry.parentRegistryHash = `sha256:${"c".repeat(64)}`;
+  if (kind === "parentReceiptHash") f.receipt.parentReceiptHash = `sha256:${"c".repeat(64)}`;
+  if (kind === "removed") f.receipt.reviews.splice(0, 1);
+  if (kind === "altered") f.receipt.reviews[0]!.incomingHash = `sha256:${"c".repeat(64)}`;
+  if (kind === "renamed") f.receipt.reviews[0]!.id = NEXT_ID;
+  if (kind === "reordered")
+    [f.receipt.reviews[0], f.receipt.reviews[1]] = [f.receipt.reviews[1]!, f.receipt.reviews[0]!];
+  f.registry.receiptHash = await hashSeriesValue(f.receipt);
+  insertApproval(f.predecessor);
+  insertApproval(f);
+  await expect(readKrSourceVintageApproval(client, uid)).rejects.toThrow("predecessor");
+});
+it.each(["duplicate", "symbol", "date", "oldSymbol", "unknownKey"] as const)(
+  "limits the successor to one finite exact-pair cohort: %s",
+  async (kind) => {
+    const f = await successorFixture();
+    if (kind === "duplicate") f.receipt.reviews.push(f.receipt.reviews[2]!);
+    if (kind === "symbol") f.receipt.reviews[3]!.symbol = "UNREVIEWED_COHORT";
+    if (kind === "date") f.receipt.reviews[3]!.notBefore = "2026-10-19";
+    if (kind === "oldSymbol")
+      for (const review of f.receipt.reviews.slice(2)) review.symbol = "SYNTHETIC";
+    if (kind === "unknownKey") Object.assign(f.receipt.reviews[2]!, { wildcard: true });
+    f.registry.receiptHash = await hashSeriesValue(f.receipt);
+    await expect(verifyKrSourceVintagePrivateApproval(f)).rejects.toThrow();
+  },
+);

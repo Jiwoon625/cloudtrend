@@ -8,7 +8,7 @@
       "scripts/kospi-shadow-code-manifest.ts": "sha256:3d189fd60f73fba23335671aee0119a5a6d7ecf2ca91ead82c16ce6da84591dc",
       "scripts/kospi-shadow-late-recovery.ts": "sha256:dff7435a13d7798359928c3bf10a84080672a7feac19e6761d97bb14bd40205a",
       "scripts/kospi-shadow-runtime.config.ts": "sha256:65ee95d5d4ed4f7466641f2ddeed39cc494af0b78bec9f2be8250663324fc7e7",
-      "scripts/october-shadow-code-manifest.ts": "sha256:f88d21593b157a056733d34ef6bfa5393fa6e411159f307a61017568d958e3d7",
+      "scripts/october-shadow-code-manifest.ts": "sha256:85cdd4a1fd1fba8cd6c6068244e66a6c83ce404f0c2484bc5b7ae873721ebac4",
       "scripts/run-kospi-shadow.ts": "sha256:7d632cca68c7eb64a3249ce713273c9ecb34d18761f1b23a939a1ccd1bf66b78",
       "scripts/screening-memory.ts": "sha256:c9269d752d45a7407726519feb16ec1e0df9c286243e83a03984931e10b27e22",
       "scripts/source-registry-store.ts": "sha256:a126a794a208e30c2ef4faa6f7da43ffc5e53969437d276d6b85f22dda619a68",
@@ -45,7 +45,7 @@
       "src/lib/engine/verifiedKrIndexMembership.ts": "sha256:db197a0db126e17d102c3c0faab69f5a5a2adef74b4a4821d5d15b7d012a3424",
       "src/lib/engine/vfConfig.ts": "sha256:d5b6fa115ff765785ead12764a29f10df2da80833de63f68af48f97d76e77573",
       "src/lib/integratedAllocationRuntimeAdmission.ts": "sha256:190f2483aa6829097fdccce8b71b242a302810f51d268a19c20b01164c6a8170",
-      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:eb07772f0cb0b962a82ac601a32b9a454c039a641404ea99b65a51e471f7bc8f",
+      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:c50f3c645068f88bcdf113662acf5fd6adf2b6491319b7d9e4e5b00d7e2e7442",
       "src/lib/kospiShadowEquivalence.ts": "sha256:2789f238279fbbb1cbf39296201dc1d24b1233c2dc784961d56d3ba945f62a42",
       "src/lib/kospiShadowSeries.ts": "sha256:6b086d777d8ca77ac07c71d8e765ac31ff9f92c3769828637a4ca5946c0b000e",
       "src/lib/kospiShadowStore.ts": "sha256:48a47b264e9d420573f71d09a094742d3b130f67bb04c987ec2b9188cc7b18f1",
@@ -57,7 +57,7 @@
       "src/lib/ledger/krShadowDecision.ts": "sha256:119a087fa3d90b05ac0fa183ab9b40e4acbb6495871dd511d11a220c7bd180fc",
       "src/lib/ledger/modelSeries.ts": "sha256:63a758daf1abfc74bfcba395d6b21693f0185a48c206e064fa8eb76d4d1693ce",
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:9c8b5e98035e53d81dedc58c43f7ddf8678ad835bbe449a21d63088dabd76a32",
-      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:80c52a458b54428f04b73fd4bae262b089a1e283489adc45e21e0091602f385b",
+      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:6e16ef04f120c318f8cfffeb340ed000286d0a373b4c3d35cb4d04b9892253bf",
       "src/lib/sourceData.ts": "sha256:2f2f313ed65a34e83a0705cf3a61ecd4166d34b68193c1f5998fbf9e61b44390",
       "src/lib/sourceTimingEvidence.ts": "sha256:ef72ba92c6778012e3e8f0844957bf91e5169687fc3d8d19628e03e761df0599",
       "src/lib/usCandidatePriority.ts": "sha256:b56ffa6bb73880e9f9ac737b70d42537d1e661c6970491a1a53381d1bbb4092b"
@@ -73,7 +73,7 @@
       "scripts/kospi-shadow-code-manifest.ts": "sha256:b819e2b3d1ebf8e4edde46c33220771c4a8f6a61364fb1605597897ea31fdfb0",
       "scripts/kospi-shadow-late-recovery.ts": "sha256:565b1d8f269934f9581292bff22e0d4285026907a565f6e356f9fe8b5d8f9d3c",
       "scripts/kospi-shadow-runtime.config.ts": "sha256:6ed0f493399a5a18f2bb5e54a6ee9b9b9c14f4d1fcb2ccb4aad4814a59e8152c",
-      "scripts/october-shadow-code-manifest.ts": "sha256:530da1e244f08e55ae5ba23443d19554cb85ecc931e41eab061426291e2ba946",
+      "scripts/october-shadow-code-manifest.ts": "sha256:fd84a0ad91d95886ac9075f7a0b25c885580c837d4a75c1ffd6d1b7f48e799d8",
       "scripts/run-kospi-shadow.ts": "sha256:e5ee10bbf3e7c1631b875b779207d625f99ea9b1acdf630294bafbd9e43b6c9f",
       "scripts/screening-memory.ts": "sha256:1861c415581f4c815e1d8799d64c55ec41a17cb22fb480e75a8e36c30943f505",
       "scripts/source-registry-store.ts": "sha256:655cb7204bd1ae539e861029159017e7e07e11c19e5034eef6ba3d8ca6932446",
@@ -110,7 +110,7 @@
       "src/lib/engine/verifiedKrIndexMembership.ts": "sha256:64494a205a21b81321eae809aa27908fcf046e10c418ea45fa711d76eb204556",
       "src/lib/engine/vfConfig.ts": "sha256:223a3c3f8ce733c8dade8496b1aff5af2b4894f110232ea05c03a9376c8c48b1",
       "src/lib/integratedAllocationRuntimeAdmission.ts": "sha256:0d1c3c9696a969a06f31fb277de8c280afc2fb473d1c4ba4d9d2521cfe2f213d",
-      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:f22a1d7b44fa1a3776e0cda303d96b1e64caadb58fe1b460a8d1c003e53e4e36",
+      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:34901afd5eef4e27cf9ce307d5e0c5208556cb5341c1615a883455173312ccff",
       "src/lib/kospiShadowEquivalence.ts": "sha256:a9e5ee98fa2897663638920cda44733800957f7acffe275ce665501a8407b3c0",
       "src/lib/kospiShadowSeries.ts": "sha256:c401249c9c16ea688ac21651a88fe0f5b9ae72e5b03858d93ec63401e810bf67",
       "src/lib/kospiShadowStore.ts": "sha256:45bc1d1df7ce78393c7fe29449ffdd9c77ab0e9214d864677eb8b4738c0c4550",
@@ -122,11 +122,11 @@
       "src/lib/ledger/krShadowDecision.ts": "sha256:10f576d585622fcba52e78f3cd2bc6b182d484a747f054af7a2aca507aca6b9b",
       "src/lib/ledger/modelSeries.ts": "sha256:976a23c3ca6c4ef7fa9bd35ef3494689c9dbd89d247a2decc7b1f05507d00e6f",
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:7bed0267e32a379849e76a154f082706767585cd4bc42961c1b2b40693d0a741",
-      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:400f5e6b3a38899cbb1bffa266679c210c5570e7fac613064611498a72cd646f",
+      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:17f1f1c60dc50e1042f3ac5e39df6ca69dae66b2ebf111c499082b22b6d97186",
       "src/lib/sourceData.ts": "sha256:3553fe89ad60adb413fd9ef79e00a55e3873c6038a1e090bc3e982166d7d9a5b",
       "src/lib/sourceTimingEvidence.ts": "sha256:6a83fcaf64adead3ac7765d06e08a09a7eee076688c08841dda1a2380bf097b5",
       "src/lib/usCandidatePriority.ts": "sha256:9a58e7d7999f00a2051d72321cad62d06af671ce069d5d110a5899abe3bbc3eb"
     }
   },
-  "codeHash": "sha256:189d1e72a7c3f632bdc4df3481de5aade2141954db524c6614b9275dad7b5dbb"
+  "codeHash": "sha256:40750f3f4985853bd47ebf326dd3bcfe34d46bf90d6707005e648ce975078771"
 }

@@ -305,6 +305,8 @@ export async function recordOctoberPublication(
     input.market === "KR" && input.sourceVintageApproval
       ? await verifyKrSourceVintagePrivateApproval(input.sourceVintageApproval)
       : null;
+  if (vintageApproval && date < vintageApproval.activationDate)
+    throw new Error("Private KR source vintage approval is not active for this date");
   const inputHash = await hashSeriesValue(publicationValue(input));
   const durable = await store.readPrepared(input.market, date);
   if (durable) {
@@ -598,7 +600,9 @@ export async function recordOctoberPublication(
       for (const receipt of prior?.publication.historicalSourceVintages ?? []) {
         if (
           !vintageApproval ||
-          prior?.publication.sourceVintageApprovalHash !== vintageApproval.registryHash
+          !vintageApproval.authorizedRegistryHashes.some(
+            (hash) => hash === prior?.publication.sourceVintageApprovalHash,
+          )
         )
           throw new Error("Private KR source vintage approval changed or missing");
         assertKrSourceVintageReceipt(receipt, vintageApproval.reviews);

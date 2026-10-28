@@ -437,10 +437,15 @@ async function replayKrShadowMarket(input: {
           .at(-1) ??
         date;
       const codeHash = await reviewedReplayCodeHash(store, KR_KINDS, date);
-      const sourceVintageApproval = await readKrSourceVintageApproval(input.client, input.userId);
+      const sourceVintageApproval = await readKrSourceVintageApproval(
+        input.client,
+        input.userId,
+        date,
+      );
       const octoberShadow = await recordOctoberPublication(store, {
         market: "KR",
-        ...(sourceVintageApproval && date >= sourceVintageApproval.receipt.reviews[0]!.notBefore
+        ...(sourceVintageApproval &&
+        sourceVintageApproval.receipt.reviews.some((review) => date >= review.notBefore)
           ? { sourceVintageApproval }
           : {}),
         dataset,
