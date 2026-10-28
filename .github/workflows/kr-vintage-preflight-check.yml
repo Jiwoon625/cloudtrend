@@ -3,6 +3,12 @@ on:
   pull_request:
     paths:
       - "scripts/kr-vintage-preflight/**"
+      - "scripts/kr-adjusted-recovery/**"
+      - "scripts/kospi-final-retrospective-preparation*"
+      - "scripts/build-kr-adjusted-recovery.mjs"
+      - "src/lib/integratedAllocationEquivalence*"
+      - "tsconfig.kr-adjusted-preparation.json"
+      - ".github/workflows/kr-adjusted-recovery-preparation.yml"
       - "scripts/kr-vintage-preflight-*.ts"
       - "scripts/build-kr-vintage-preflight.mjs"
       - ".github/workflows/kr-vintage*"
@@ -10,6 +16,12 @@ on:
     branches: [main]
     paths:
       - "scripts/kr-vintage-preflight/**"
+      - "scripts/kr-adjusted-recovery/**"
+      - "scripts/kospi-final-retrospective-preparation*"
+      - "scripts/build-kr-adjusted-recovery.mjs"
+      - "src/lib/integratedAllocationEquivalence*"
+      - "tsconfig.kr-adjusted-preparation.json"
+      - ".github/workflows/kr-adjusted-recovery-preparation.yml"
       - "scripts/kr-vintage-preflight-*.ts"
       - "scripts/build-kr-vintage-preflight.mjs"
       - ".github/workflows/kr-vintage*"
@@ -30,4 +42,8 @@ jobs:
       - run: npm ci
       - run: npx vitest run scripts/kr-vintage-preflight
       - run: node scripts/build-kr-vintage-preflight.mjs
+      - run: npx tsc -p tsconfig.kr-adjusted-preparation.json
+      - run: npx vitest run scripts/kr-adjusted-recovery src/lib/integratedAllocationEquivalence.test.ts
+      - run: npx vite-node --script scripts/kospi-final-retrospective-preparation.selftest.ts
+      - run: node scripts/build-kr-adjusted-recovery.mjs
       - run: npx vite-node --script scripts/verify-shadow-runtime-manifests.ts

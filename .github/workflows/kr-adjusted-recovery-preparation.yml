@@ -1,0 +1,60 @@
+name: KR adjusted recovery private evidence preparation
+on:
+  workflow_dispatch:
+    inputs:
+      expected_capsule_hash:
+        description: Independently reviewed opaque capture capsule digest
+        required: true
+        type: string
+      expected_plan_hash:
+        description: Independently reviewed opaque preparation read-plan digest
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: kr-adjusted-recovery-preparation
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      EXPECTED_CAPSULE_HASH: ${{ inputs.expected_capsule_hash }}
+      EXPECTED_PLAN_HASH: ${{ inputs.expected_plan_hash }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify immutable runtime and preparation-only boundaries
+        run: |
+          git merge-base --is-ancestor a75bc2fb51440c439e430fdb31f4670984d9fcee HEAD
+          npx vite-node --script scripts/verify-shadow-runtime-manifests.ts
+          node --experimental-strip-types scripts/verify-kospi-shadow-runtime.ts
+          npx vitest run scripts/kr-vintage-preflight scripts/kr-adjusted-recovery src/lib/integratedAllocationEquivalence.test.ts
+          npx vite-node --script scripts/kospi-final-retrospective-preparation.selftest.ts
+          node scripts/build-kr-adjusted-recovery.mjs
+      - name: Materialize exact reviewed private inputs with GET only
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: node "$RUNNER_TEMP/kr-adjusted-recovery-code/transport.mjs" materialize
+      - name: Prepare counterfactual evidence without credentials
+        run: node "$RUNNER_TEMP/kr-adjusted-recovery-code/transport.mjs" compute
+      - name: Append one owner-private evidence-only receipt after fresh pin checks
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: node "$RUNNER_TEMP/kr-adjusted-recovery-code/transport.mjs" append
+      - name: Remove ephemeral private evidence (never upload artifacts)
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/kr-adjusted-recovery-private" "$RUNNER_TEMP/kr-adjusted-recovery-code"

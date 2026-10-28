@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "scripts/kr-adjusted-recovery/**/*.ts",
+    "scripts/kospi-final-retrospective-preparation.ts",
+    "scripts/kospi-final-retrospective-preparation.selftest.ts"
+  ],
+  "compilerOptions": {
+    "types": ["vite/client", "node"],
+    "strict": true,
+    "noPropertyAccessFromIndexSignature": false,
+    "noUncheckedIndexedAccess": false,
+    "exactOptionalPropertyTypes": false
+  }
+}
