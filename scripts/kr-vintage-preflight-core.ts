@@ -140,7 +140,7 @@ function numeric(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 type RawDatedEvidence = { fields: Record<string, string>; sourceByField: Record<string, string> };
-function collectRawEvidence(
+export function collectRawEvidence(
   text: string,
   symbol: string,
   sourceId: string,

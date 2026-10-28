@@ -129,7 +129,7 @@ function compactValidation(validation: SourceValidationResult) {
   };
 }
 
-function recordFor(input: {
+export function recordFor(input: {
   id: string;
   userId: string;
   sourceType: SourceType;

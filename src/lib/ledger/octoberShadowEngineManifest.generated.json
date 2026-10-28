@@ -37,12 +37,13 @@
       "src/lib/ledger/etfAdoptedShadow.ts": "sha256:dfbfce28ae2b0f824104428fd945669df522e132efbbf6b3971fcfe2147a486a",
       "src/lib/ledger/kospiAdoptedShadow.ts": "sha256:d4840901ce8e9ade581b24827badd8300065145872a1b9ab063be7cc3a5fe632",
       "src/lib/ledger/krAdoptedShadow.ts": "sha256:9309fcdab87ffb35e953178ff71f62f48b982d5d51aa66e27c0dc09388e7df4c",
+      "src/lib/ledger/krRetrospectivePublication.ts": "sha256:7b9bb7e63813665809c9ed260b5063e70dbf5a1eb69175e455b826f8b0a46b87",
       "src/lib/ledger/krShadowDecision.ts": "sha256:119a087fa3d90b05ac0fa183ab9b40e4acbb6495871dd511d11a220c7bd180fc",
       "src/lib/ledger/krSourceVintage.ts": "sha256:776eb50e9ec185835a7243937b4688d9c08fc253b83485f914ef45abc368c5d8",
       "src/lib/ledger/modelSeries.ts": "sha256:63a758daf1abfc74bfcba395d6b21693f0185a48c206e064fa8eb76d4d1693ce",
       "src/lib/ledger/octoberShadowArchive.ts": "sha256:5904e2aa0403a255bee09e88dcea9148e9a0beb54afe5fb21f60d0ae403df9b8",
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:9c8b5e98035e53d81dedc58c43f7ddf8678ad835bbe449a21d63088dabd76a32",
-      "src/lib/ledger/octoberShadowPipeline.ts": "sha256:1d2e00e78185f079696c05c37725121cc4d5a2cdbfe491a332e816db82e53797",
+      "src/lib/ledger/octoberShadowPipeline.ts": "sha256:d7f348f82df7b9d96396289edab6754f31b16e2828fe37310e0ec3884a0f4dd1",
       "src/lib/portfolioLedgers.ts": "sha256:d8a535e3fb96963db0c366b0aedf03b00ace933df59c7234369f40fe20b96129",
       "src/lib/portfolioStrategyRules.ts": "sha256:b2bb33dd598dc63fa2d9a6ff129ee94609d161a666a98571568c8077d5a34b72",
       "src/lib/shadowReplayCalculation.ts": "sha256:929a91338736c4b1853f5113c2870648092d2b0f3d43150bb9838b25cc107d4f",
@@ -54,5 +55,5 @@
     },
     "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
   },
-  "codeHash": "sha256:29815e7486243724746c6433aa3ccfdceb4f8667b42dd462f923583a126f7511"
+  "codeHash": "sha256:9738f045962175e20e34f1ffae330fd36abe1491356fd63957dababd5e15de97"
 }

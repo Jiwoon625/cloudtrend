@@ -848,3 +848,105 @@ it("continues all five restart KR books through retries and days two and three w
     beta,
   );
 });
+
+import {
+  KR_RETROSPECTIVE_POLICY,
+  type KrRetrospectiveAuthority,
+} from "./krRetrospectivePublication";
+it("admits only exact reviewed late-source reconstruction and records honest clocks on runs and prepared decisions", async () => {
+  const f = await fixture();
+  for (const kind of ADOPTED_SERIES_KINDS)
+    await f.store.insertSeries(
+      await freezeRestartSeries({ kind, frozenAt: "2026-10-09T00:00:00Z", codeHash, sourceHash }),
+    );
+  await recordOctoberPublication(f.store, await revisedVintageSource("2026-10-12", false));
+  const original = [...f.sessions.entries()].map(([k, v]) => [k, JSON.stringify(v)] as const);
+  const inputs = await Promise.all(
+    ["2026-10-13", "2026-10-14"].map((d) => revisedVintageSource(d, false)),
+  );
+  const receipt: KrRetrospectiveAuthority["receipt"] = {
+    version: "kr-reviewed-retrospective-source-v1",
+    owner: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    preparationHash: sourceHash,
+    capsuleHash: sourceHash,
+    captureManifestHash: sourceHash,
+    sourceManifestHash: sourceHash,
+    captureFinishedAt: "2026-10-28T12:00:00Z",
+    originFinalPublicationHash: sourceHash,
+    originFinalActivatedAt: "2026-10-28T00:00:00Z",
+    derivedBasisSourceStatus: "NOT_REGISTERED_AT_PREPARATION",
+    preparationRuntimeCodeHash: codeHash,
+    runtimeCodeHash: codeHash,
+    predecessorDate: "2026-10-12",
+    predecessorHeads: [...f.sessions.values()].map((r) => ({
+      bookId: r.bookId,
+      stateHash: r.stateHash as `sha256:${string}`,
+    })),
+    dates: [],
+    historicalAvailabilityClaim: false,
+  };
+  for (const x of inputs)
+    receipt.dates.push({
+      date: x.analysis.asOfDate,
+      sourceHash: x.sourceHash,
+      datasetHash: await hashSeriesValue(x.dataset),
+      configHash: await hashSeriesValue(x.config),
+      evidenceStoredAt: "2026-10-28T13:00:00Z",
+      modelAvailableAt: x.availableAt,
+      modelDecisionAt: x.decisionAt,
+    });
+  const registry: KrRetrospectiveAuthority["registry"] = {
+    version: "kr-reviewed-retrospective-registry-v1",
+    status: "APPROVED",
+    policy: KR_RETROSPECTIVE_POLICY,
+    receiptHash: await hashSeriesValue(receipt),
+  };
+  const authority = {
+    registry,
+    receipt,
+    authoritativeRegistryHash: await hashSeriesValue(registry),
+  };
+  const next = inputs[0]!;
+  next.sourceEvidence = [
+    {
+      sourceHash: next.sourceHash,
+      asOfDate: next.analysis.asOfDate,
+      registeredAt: receipt.dates[0]!.evidenceStoredAt,
+    },
+  ];
+  const before = {
+    sessions: f.sessions.size,
+    archives: f.archives.size,
+    prepared: f.prepared.size,
+    appends: f.appends(),
+  };
+  await expect(recordOctoberPublication(f.store, next)).rejects.toThrow("availability");
+  expect({
+    sessions: f.sessions.size,
+    archives: f.archives.size,
+    prepared: f.prepared.size,
+    appends: f.appends(),
+  }).toEqual(before);
+  next.reviewedRetrospective = { ...authority, authoritativeRegistryHash: sourceHash };
+  await expect(recordOctoberPublication(f.store, next)).rejects.toThrow("authority");
+  expect(f.archives.size).toBe(before.archives);
+  next.reviewedRetrospective = authority;
+  next.sourceEvidence = [];
+  await recordOctoberPublication(f.store, next);
+  const prepared = f.prepared.get("KR:2026-10-13")!;
+  expect(prepared.entries[0]!.run.publication.reviewedRetrospective).toMatchObject({
+    historicalAvailabilityClaim: false,
+    captureFinishedAt: receipt.captureFinishedAt,
+    evidenceStoredAt: receipt.dates[0]!.evidenceStoredAt,
+    modelAvailableAt: next.availableAt,
+  });
+  for (const item of prepared.entries)
+    expect(item.run.publication.reviewedRetrospective).toEqual(
+      prepared.entries[0]!.run.publication.reviewedRetrospective,
+    );
+  for (const [key, serialized] of original)
+    expect(JSON.stringify(f.sessions.get(key))).toBe(serialized);
+  const after = f.appends();
+  expect((await recordOctoberPublication(f.store, next)).records.every((r) => r.reused)).toBe(true);
+  expect(f.appends()).toBe(after);
+});
