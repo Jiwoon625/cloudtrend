@@ -2,7 +2,12 @@
 import { describe, it, expect, vi } from "vitest";
 import fs from "node:fs";
 import { containsTargetSymbol } from "./prepare";
-import { verifyObjectGeneration, appendPreparation, validatePreparationPlan } from "./transport";
+import {
+  verifyObjectGeneration,
+  verifyIdentityLegacyBytes,
+  appendPreparation,
+  validatePreparationPlan,
+} from "./transport";
 import { verifyPreparationPayload } from "./verify";
 import { hashSeriesValue } from "../../src/lib/ledger/modelSeries";
 import { createReadOnlyTransport } from "../kr-vintage-preflight/transport";
@@ -62,6 +67,70 @@ describe("preparation-only boundaries", () => {
     expect(calls).toContain('"LEGACY_INFO_VALIDATION"');
     expect(calls).toContain('"ARCHIVE_PREFIX_VALIDATION"');
   });
+  it("requests identity bytes while preserving exact strong ETag acceptance", async () => {
+    const p = "/storage/v1/object/authenticated/cloudtrend-data/" + owner + "/synthetic.json";
+    const received: any[] = [],
+      bodies: Uint8Array[] = [];
+    const fetcher = async (_url: any, init: any) => {
+      received.push(init);
+      const identity = init.headers["Accept-Encoding"] === "identity";
+      return new Response("0123456789", {
+        headers: identity
+          ? { etag: '"opaque-3"' }
+          : { etag: 'W/"opaque-3"', "content-encoding": "br" },
+      });
+    };
+    for (const encoding of [undefined, "identity"] as const) {
+      let responseHeaders: Headers | undefined;
+      const read = createReadOnlyTransport(
+        "https://synthetic.supabase.co",
+        "synthetic",
+        new Set([p]),
+        fetcher as any,
+        (_p, r) => {
+          responseHeaders = r.headers;
+        },
+        encoding,
+      );
+      const body = await read(p, 16 * 1024 * 1024);
+      bodies.push(body);
+      const check = () =>
+        verifyIdentityLegacyBytes(body, responseHeaders!, { size: 10, eTag: '"opaque-3"' });
+      if (encoding) expect(check).not.toThrow();
+      else expect(check).toThrow();
+    }
+    expect(bodies[0]).toEqual(bodies[1]);
+    expect(received[0].headers["Accept-Encoding"]).toBeUndefined();
+    expect(received[1].headers["Accept-Encoding"]).toBe("identity");
+    const source = fs.readFileSync("scripts/kr-adjusted-recovery/transport.ts", "utf8");
+    expect(source).toContain("const raw = await getLegacyBytes(p)");
+    expect(source).toContain("readLegacyIdentity(p, 16 * 1024 * 1024)");
+  });
+  it.each([
+    { etag: 'W/"opaque-3"' },
+    { etag: '"wrong"' },
+    {},
+    { etag: '"opaque-3"', "content-encoding": "br" },
+    { etag: '"opaque-3"', "content-encoding": "gzip" },
+  ])(
+    "identity request still rejects a weak, missing, changed or compressed response",
+    (headers) => {
+      expect(() =>
+        verifyIdentityLegacyBytes(
+          new Uint8Array(10),
+          new Headers(headers as Record<string, string>),
+          { size: 10, eTag: '"opaque-3"' },
+        ),
+      ).toThrow();
+    },
+  );
+  it("identity response still rejects a body-length mismatch", () =>
+    expect(() =>
+      verifyIdentityLegacyBytes(new Uint8Array(9), new Headers({ etag: '"opaque-3"' }), {
+        size: 10,
+        eTag: '"opaque-3"',
+      }),
+    ).toThrow());
   it("rejects unreviewed/self-hashed or conflicting plan owner/hash before any fetch", async () => {
     await expect(
       validatePreparationPlan(

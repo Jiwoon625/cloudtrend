@@ -311,6 +311,22 @@ export async function diagnosePreparationMetadata(options: {
     objects,
   };
 }
+/** Preserve exact stored-representation checks; never normalize a weak response validator. */
+export function verifyIdentityLegacyBytes(
+  raw: Uint8Array,
+  responseHeaders: Headers,
+  pin: { size: number; eTag: string },
+) {
+  const etag = responseHeaders.get("etag"),
+    encoding = responseHeaders.get("content-encoding");
+  requireCheck(
+    (encoding === null || encoding.toLowerCase() === "identity") &&
+      etag !== null &&
+      !/^W\//.test(etag) &&
+      raw.length === pin.size &&
+      token(etag) === token(pin.eTag),
+  );
+}
 export async function materializePreparation(options: {
   origin: string;
   key: string;
@@ -351,6 +367,20 @@ export async function materializePreparation(options: {
     options.fetcher,
     (p, r) => headers.set(p, r.headers),
   );
+  // CDN compression can weaken the HTTP validator while fetch transparently decodes bytes.
+  // Ask only legacy body downloads for the stored representation; Info and other reads stay unchanged.
+  const readLegacyIdentity = createReadOnlyTransport(
+    options.origin,
+    options.key,
+    allowed,
+    options.fetcher,
+    (p, r) => headers.set(p, r.headers),
+    "identity",
+  );
+  const getLegacyBytes = async (p: string) => {
+    allowed.add(p);
+    return readLegacyIdentity(p, 16 * 1024 * 1024);
+  };
   const get = async (p: string, limit = 16 * 1024 * 1024) => {
     allowed.add(p);
     return read(p, limit);
@@ -445,12 +475,9 @@ export async function materializePreparation(options: {
     options.onPhase?.("LEGACY_INFO_VALIDATION");
     verifyObjectGeneration(before, pin.metadata);
     options.onPhase?.("LEGACY_BYTES_READ");
-    const raw = await get(p);
+    const raw = await getLegacyBytes(p);
     options.onPhase?.("LEGACY_BYTES_VALIDATION");
-    requireCheck(
-      raw.length === pin.metadata.size &&
-        token(headers.get(p)?.get("etag")) === token(pin.metadata.eTag),
-    );
+    verifyIdentityLegacyBytes(raw, headers.get(p)!, pin.metadata);
     options.onPhase?.("LEGACY_GENERATION_RECHECK");
     const after = JSON.parse((await get(infoPath)).toString());
     options.onPhase?.("LEGACY_GENERATION_VALIDATION");
