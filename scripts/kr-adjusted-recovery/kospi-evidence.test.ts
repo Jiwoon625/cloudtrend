@@ -144,10 +144,20 @@ describe("private completed KOSPI diagnostic receipt binding", () => {
     "targetDates",
     "actualClock",
     "generationInventory",
+    "unboundPriorityProof",
+    "unboundPriorityMode",
+    "missingTargetBodies",
   ])("rejects %s tampering before append", async (mode) => {
     const p: any = await fixture(),
       r = p.kospi.result,
       d = r.boundaryDiagnostic;
+    if (mode === "unboundPriorityProof")
+      r.priorityContinuation = { status: "PROVEN_PRIORITY_ONLY_CONTINUATION" };
+    if (mode === "unboundPriorityMode")
+      r.plan = {
+        boundaryAdmission: { mode: "PRIORITY_ONLY_PREDECESSOR_CONTINUATION", proofHash: H },
+      };
+    if (mode === "missingTargetBodies") r.targetSessions = [];
     if (mode === "doubleShadow") {
       for (const item of p.kospi.capturedObjects)
         item.path = item.path.replace("/shadow/", "/shadow/shadow/");

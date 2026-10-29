@@ -13,6 +13,7 @@ import { validateSourceBytes } from "../../src/lib/sourceData";
 import { parseManualMarketDataWithReferences } from "../../src/lib/krxReviewReferenceParser";
 import { classifyKrScreeningPublication } from "../../src/lib/krScreeningPublication";
 import { planCurrentHistoryCorrection } from "../kr-current-history-correction";
+import { kospiRetrospectiveApprovalCandidate } from "../kospi-final-retrospective-apply";
 import { rawHash, requireCheck } from "../kr-vintage-preflight/transport";
 import { prepareRecovery } from "./prepare";
 import { planOrderedKrRecovery } from "./ordered-plan";
@@ -252,19 +253,7 @@ export async function prepareFullRecoveryPlan(c: any) {
       p.kospi.result.status === "PREPARED_FOR_INDEPENDENT_REVIEW",
   );
   const kp = p.kospi.result;
-  const kospiApproval = {
-    version: "kospi-final-retrospective-approval-v1",
-    status: "APPROVED",
-    owner: m.owner,
-    preparationHash: m.preparationHash,
-    planHash: kp.planHash,
-    runtimeCodeHash: m.runtimeHashes.kospi,
-    predecessorDate: p.scope.predecessorDate,
-    targetDates: p.scope.dates,
-    predecessorHash: kp.plan.predecessorHash,
-    snapshotHashes: kp.plan.snapshotHashes,
-    finalProjectionHash: kp.plan.finalProjectionHash,
-  };
+  const kospiApproval = kospiRetrospectiveApprovalCandidate(m.preparationHash, kp);
   const plan: any = {
     version: "kr-adjusted-recovery-full-plan-v1",
     operationalApproval: false,

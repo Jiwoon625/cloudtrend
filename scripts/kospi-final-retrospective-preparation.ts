@@ -9,6 +9,7 @@ import {
   type KospiShadowSnapshot,
 } from "../src/lib/engine/kospiShadow";
 import { diagnoseKospiCompletedBoundary } from "./kospi-boundary-diagnostic";
+import { proveKospiPriorityContinuation } from "./kospi-priority-continuation";
 import { equivalentCompletedKospiShadow } from "../src/lib/kospiShadowEquivalence";
 import {
   KOSPI_SHADOW_NAMESPACE,
@@ -319,7 +320,69 @@ export async function prepareKospiFinalRetrospective(
       : null,
     guardResults: { baseline: baselineBoundary, adjusted: adjustedBoundary },
   });
+  // Retain exact already-built target inputs even when a predecessor proof is blocked.
+  // These are not reconstructed from reduced allocation evidence or comparison hashes.
+  const predecessorHash = await hashSeriesValue(view.latest);
+  const targetSessions = a.targetDates.map((date) => ({
+    ...clone(prepared.get(date)!),
+    lateRecovery: {
+      version: "kospi-final-retrospective-v1" as const,
+      historicalAvailabilityClaim: false as const,
+      retrospective: true as const,
+      sourceDataAsOf: input.adjustedDataset.asOfDate,
+      sourceCollectedAt: a.baselineCollectedAt,
+      captureObservedAt: a.adjustedCapturedAt,
+      computedAt: a.computedAt,
+      sourceManifestHash: a.sourceManifestHash,
+      captureManifestHash: a.captureManifestHash,
+      adjustedBasisHash: a.adjustedBasisHash,
+      runtimeCodeHash: a.runtimeCodeHash,
+      predecessorDate: a.predecessorDate,
+      predecessorHash,
+    },
+  }));
   phase("KOSPI_PREDECESSOR_EQUIVALENCE");
+  const priorityContinuation = !adjustedBoundary
+    ? await proveKospiPriorityContinuation({
+        authority: a,
+        registry: {
+          path: revisionRoot + "/registry.json",
+          ...input.objects[revisionRoot + "/registry.json"]!,
+          payload: view.registry,
+        },
+        completed: {
+          path: completedPath,
+          ...input.objects[completedPath]!,
+          payload: view.latest,
+        },
+        predecessor: priorDate
+          ? {
+              path: `${revisionRoot}/sessions/${priorDate}.json`,
+              ...input.objects[`${revisionRoot}/sessions/${priorDate}.json`]!,
+              payload: predecessor!,
+            }
+          : null,
+        originalView: {
+          path: revisionRoot + "/latest.json",
+          ...input.objects[revisionRoot + "/latest.json"]!,
+          payload: view,
+        },
+        baselineSession: baselines.get(a.predecessorDate)!,
+        adjustedSession: prepared.get(a.predecessorDate)!,
+        targetSessions,
+      })
+    : null;
+  const priorityContinuationHash = priorityContinuation
+    ? await hashSeriesValue(priorityContinuation)
+    : null;
+  const boundaryAdmission = adjustedBoundary
+    ? { mode: "STRICT_COMPLETED_EQUIVALENCE" as const }
+    : priorityContinuation?.status === "PROVEN_PRIORITY_ONLY_CONTINUATION"
+      ? {
+          mode: "PRIORITY_ONLY_PREDECESSOR_CONTINUATION" as const,
+          proofHash: priorityContinuationHash!,
+        }
+      : null;
   const common = {
     version: "kospi-final-retrospective-preparation-v1",
     operationalApproval: false as const,
@@ -332,41 +395,36 @@ export async function prepareKospiFinalRetrospective(
     adjustedBoundaryEquivalent: adjustedBoundary,
     comparisons,
     boundaryDiagnostic,
+    targetSessions,
+    priorityContinuation,
+    priorityContinuationHash,
   };
-  // Never silently bridge revised predecessor signals into the immutable model accounting state.
-  if (!adjustedBoundary)
+  // A separately typed, exact-target proof never relabels the original strict result.
+  if (!boundaryAdmission)
     return {
       ...common,
       status: "BLOCKED_ADJUSTED_PREDECESSOR_MISMATCH" as const,
       plan: null,
     };
-  const predecessorHash = await hashSeriesValue(view.latest);
   const sessions = [];
   const snapshots = [];
-  for (const date of a.targetDates) {
-    const source = prepared.get(date)!;
-    const session = Object.assign(source, {
-      lateRecovery: {
-        version: "kospi-final-retrospective-v1",
-        historicalAvailabilityClaim: false as const,
-        retrospective: true,
-        sourceDataAsOf: input.adjustedDataset.asOfDate,
-        sourceCollectedAt: a.baselineCollectedAt,
-        captureObservedAt: a.adjustedCapturedAt,
-        computedAt: a.computedAt,
-        sourceManifestHash: a.sourceManifestHash,
-        captureManifestHash: a.captureManifestHash,
-        adjustedBasisHash: a.adjustedBasisHash,
-        runtimeCodeHash: a.runtimeCodeHash,
-        predecessorDate: a.predecessorDate,
-        predecessorHash,
-      },
-    });
+  const projections = [];
+  const targetSessionsHash = await hashSeriesValue(targetSessions);
+  for (const session of targetSessions) {
     sessions.push(clone(session));
     phase("KOSPI_MEMORY_SESSION_APPEND");
     const result = await persistKospiShadow(revision, a.owner, session, config);
     snapshots.push(clone(result.view.latest));
+    projections.push(clone(result.view));
   }
+  if ((await hashSeriesValue(targetSessions)) !== targetSessionsHash)
+    throw new Error("Preparation mutated proved target inputs");
+  if (
+    priorityContinuation?.status === "PROVEN_PRIORITY_ONLY_CONTINUATION" &&
+    (!equal(snapshots, priorityContinuation.continuations.original.snapshots) ||
+      !equal(projections, priorityContinuation.continuations.original.projections))
+  )
+    throw new Error("Preparation outputs differ from original-start continuation proof");
   phase("KOSPI_FINAL_REVISION_VALIDATION");
   const verified = await openKospiShadowRevisionStore(memory.store, a.owner);
   const final = await verified.read<KospiShadowView>(shadowObjectPath(a.owner, "latest.json"));
@@ -392,6 +450,7 @@ export async function prepareKospiFinalRetrospective(
   const plan = {
     version: "kospi-final-retrospective-plan-v1",
     authority: clone(a),
+    boundaryAdmission,
     predecessorHash,
     prefixHashes: inputObjectHashes,
     configHash,

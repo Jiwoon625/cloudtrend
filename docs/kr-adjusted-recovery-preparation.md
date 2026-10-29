@@ -46,3 +46,31 @@ completed/prior snapshot references stay private. Receipt verification rehashes
 and recomputes this evidence. A blocked KOSPI plan remains `null`, review-required
 and operationally unapproved; storing it never bypasses the original equivalence
 guard or authorizes recovery execution.
+
+## Exact-target predecessor priority continuation evidence
+
+A failed `equivalentCompletedKospiShadow` result is never changed to true. A separate pure,
+versioned `PRIORITY_ONLY_PREDECESSOR_CONTINUATION` certificate may make a bounded plan
+reviewable when the only predecessor cache differences are `state.previousRows[*].priority`.
+This is not a global exemption for priority, a retrospective replacement session, or approval.
+
+The certificate binds the captured registry, immutable predecessor/completed snapshots and
+projection, actual source/capture clocks, configuration/runtime and exact target dates. It
+validates the original strict prerequisites using a copy whose predecessor row priorities alone
+are restored, then replays the original, baseline and adjusted predecessor sessions. Every
+other complete snapshot field must match under the pre-existing transport-provenance
+normalization. Pending/candidate priorities, candidate order, financial state, source intent,
+daily output, trades and fees are never excluded.
+
+The exact already-built target sessions are decorated **once** with final retrospective
+provenance and the original immutable anchor. Their full bodies are retained even when the
+certificate blocks. The same ordered bytes are used for all three continuation chains, the
+original-store simulation and APPLY. Every target's full snapshot and projection must be
+canonically equal across the three starts, with **no field exclusions**. Only the chain starting
+from the actual immutable completed snapshot may become the proposed write plan.
+
+Semantic inequality remains explicit blocked, private review evidence; malformed identities
+still reject preparation. The receipt verifier rehashes and recomputes the certificate and
+binds the proposed outputs to its original-start outputs. A later independent approval must
+bind the exact proof and receipt hashes. The ordinary engine, store and strict equivalence
+function remain unchanged. This does not authorize unreviewed later targets or a new runtime.

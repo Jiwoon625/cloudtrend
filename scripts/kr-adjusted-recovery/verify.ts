@@ -4,6 +4,7 @@ import { economicSessionInputs } from "../../src/lib/integratedAllocationEquival
 import { validateSourceText } from "../../src/lib/sourceData";
 import { requireCheck, rawHash } from "../kr-vintage-preflight/transport";
 import { diagnoseKospiCompletedBoundary } from "../kospi-boundary-diagnostic";
+import { verifyKospiPriorityAdmission } from "../kospi-priority-admission";
 import { shadowObjectPath } from "../../src/lib/kospiShadowStore";
 import { kospiShadowRevisionPath } from "../../src/lib/kospiShadowSeries";
 import { verifyArchiveObservationInventory } from "./archive-domain";
@@ -214,4 +215,14 @@ export async function verifyPreparationKospiBoundary(p: any) {
     },
   });
   requireCheck(equal(d, recomputed));
+  if (Object.hasOwn(result, "targetSessions")) {
+    await verifyKospiPriorityAdmission(result, p.kospi.capturedObjects);
+  } else {
+    // Old immutable diagnostic receipts remain readable, never alternate admission.
+    requireCheck(
+      !Object.hasOwn(result, "priorityContinuation") &&
+        !Object.hasOwn(result, "priorityContinuationHash") &&
+        result.plan?.boundaryAdmission?.mode !== "PRIORITY_ONLY_PREDECESSOR_CONTINUATION",
+    );
+  }
 }
