@@ -136,7 +136,7 @@ export async function verifyPreparationPayload(
   for (const o of p.kospi.capturedObjects)
     requireCheck(o.hash === (await hashSeriesValue(o.payload)) && o.stateHashPreapproved === false);
   phase("RECEIPT_KOSPI_BOUNDARY_DIAGNOSTIC");
-  await verifyPreparationKospiBoundary(p);
+  await verifyPreparationKospiBoundary(p, phase);
   phase("RECEIPT_KOSPI_PLAN_HASH");
   if (p.kospi.result.plan)
     requireCheck(
@@ -151,7 +151,11 @@ export async function verifyPreparationPayload(
 }
 
 /** Resolve the private diagnostic only from the exact captured revision inventory. */
-export async function verifyPreparationKospiBoundary(p: any) {
+export async function verifyPreparationKospiBoundary(
+  p: any,
+  phase: (value: ComputationPhase) => void = () => {},
+) {
+  phase("RECEIPT_KOSPI_BOUNDARY_AUTHORITY");
   const result = p.kospi.result,
     a = result.authority,
     d = result.boundaryDiagnostic;
@@ -167,6 +171,7 @@ export async function verifyPreparationKospiBoundary(p: any) {
       a.computedAt === p.preparedAt &&
       a.runtimeCodeHash === p.runtimeHashes.kospi,
   );
+  phase("RECEIPT_KOSPI_BOUNDARY_OBJECT_INVENTORY");
   const paths = p.kospi.capturedObjects.map((o: any) => o.path).sort();
   const ownerRoot = shadowObjectPath(a.owner, "registry.json").slice(0, -"registry.json".length);
   requireCheck(
@@ -174,6 +179,20 @@ export async function verifyPreparationKospiBoundary(p: any) {
       equal(paths, p.kospi.generationPins.map((o: any) => o.path).sort()) &&
       paths.every((path: string) => path.startsWith(ownerRoot)),
   );
+  phase("RECEIPT_KOSPI_BOUNDARY_TRANSPORT_ENVELOPE");
+  for (const object of p.kospi.capturedObjects) {
+    const pin = p.kospi.generationPins.find((value: any) => value.path === object.path);
+    requireCheck(
+      object.stateHashPreapproved === false &&
+        typeof object.byteHash === "string" &&
+        /^sha256:[a-f0-9]{64}$/.test(object.byteHash) &&
+        object.metadata &&
+        typeof object.metadata === "object" &&
+        !Array.isArray(object.metadata) &&
+        equal(object.metadata, pin.metadata),
+    );
+  }
+  phase("RECEIPT_KOSPI_BOUNDARY_REFERENCE_PATHS");
   const revisionPath = (suffix: string) => kospiShadowRevisionPath(a.owner, suffix);
   const get = (path: string) => {
     const matches = p.kospi.capturedObjects.filter((o: any) => o.path === path);
@@ -183,16 +202,19 @@ export async function verifyPreparationKospiBoundary(p: any) {
   const registry = get(revisionPath("registry.json")),
     completed = get(revisionPath(`sessions/${a.predecessorDate}.json`)),
     latest = get(revisionPath("latest.json"));
+  phase("RECEIPT_KOSPI_BOUNDARY_CAPTURED_VIEW");
   requireCheck(
     equal(latest.payload.latest, completed.payload) &&
       equal(latest.payload.registry, registry.payload),
   );
+  phase("RECEIPT_KOSPI_BOUNDARY_PREDECESSOR_PATH");
   const priorDate = completed.payload.source.previousSessionDate;
   const predecessor = priorDate ? get(revisionPath(`sessions/${priorDate}.json`)) : null;
   for (const [name, adjusted] of [
     ["baseline", false],
     ["adjusted", true],
   ] as const) {
+    phase("RECEIPT_KOSPI_BOUNDARY_SESSION_IDENTITY");
     const s = d.sessions[name];
     requireCheck(
       s.hash === (await hashSeriesValue(s.payload)) &&
@@ -203,6 +225,7 @@ export async function verifyPreparationKospiBoundary(p: any) {
         s.payload.sourceCollectedAt === (adjusted ? a.adjustedCapturedAt : a.baselineCollectedAt),
     );
   }
+  phase("RECEIPT_KOSPI_BOUNDARY_DIAGNOSTIC_RECOMPUTE");
   const recomputed = await diagnoseKospiCompletedBoundary({
     baselineSession: d.sessions.baseline.payload,
     adjustedSession: d.sessions.adjusted.payload,
@@ -214,10 +237,12 @@ export async function verifyPreparationKospiBoundary(p: any) {
       adjusted: result.adjustedBoundaryEquivalent,
     },
   });
+  phase("RECEIPT_KOSPI_BOUNDARY_DIAGNOSTIC_EQUALITY");
   requireCheck(equal(d, recomputed));
   if (Object.hasOwn(result, "targetSessions")) {
-    await verifyKospiPriorityAdmission(result, p.kospi.capturedObjects);
+    await verifyKospiPriorityAdmission(result, p.kospi.capturedObjects, phase);
   } else {
+    phase("RECEIPT_KOSPI_BOUNDARY_OLD_RECEIPT_DISPOSITION");
     // Old immutable diagnostic receipts remain readable, never alternate admission.
     requireCheck(
       !Object.hasOwn(result, "priorityContinuation") &&

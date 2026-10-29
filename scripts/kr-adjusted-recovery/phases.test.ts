@@ -70,6 +70,7 @@ describe("private preparation static phase boundary", () => {
       "scripts/kr-adjusted-recovery/prepare.ts",
       "scripts/kospi-final-retrospective-preparation.ts",
       "scripts/kr-adjusted-recovery/verify.ts",
+      "scripts/kospi-priority-admission.ts",
     ]) {
       const text = fs.readFileSync(file, "utf8");
       const calls = [...text.matchAll(/\bphase\(([^)]*)\)/g)].map((m) => m[1]);

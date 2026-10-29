@@ -50,6 +50,15 @@ async function fixture(blocked = false) {
       path: root + "/" + path,
       payload,
       hash: await hashSeriesValue(payload),
+      byteHash: H,
+      stateHashPreapproved: false,
+      metadata: {
+        id: "synthetic-object",
+        version: "synthetic-version",
+        eTag: "synthetic-tag",
+        size: 100,
+        updatedAt: "2026-10-28T00:00:00Z",
+      },
     })),
   );
   const baselineBoundaryEquivalent = equivalentCompletedKospiShadow(
@@ -84,7 +93,10 @@ async function fixture(blocked = false) {
     clockSemantics: { sourceRegisteredAt: "2026-10-28T00:00:00.000Z" },
     kospi: {
       capturedObjects: captured,
-      generationPins: captured.map(({ path }) => ({ path })),
+      generationPins: captured.map(({ path, metadata }) => ({
+        path,
+        metadata: structuredClone(metadata),
+      })),
       result: {
         authority: {
           owner,
@@ -109,6 +121,23 @@ async function fixture(blocked = false) {
   };
 }
 describe("private completed KOSPI diagnostic receipt binding", () => {
+  it.each(["metadata", "byteHash", "preapproved", "missingMetadata"])(
+    "rejects transport envelope %s before semantic projection",
+    async (kind) => {
+      const p = await fixture();
+      const object: any = p.kospi.capturedObjects[0];
+      if (kind === "metadata") object.metadata.version = "different-generation";
+      if (kind === "byteHash") object.byteHash = "not-a-byte-digest";
+      if (kind === "preapproved") object.stateHashPreapproved = true;
+      if (kind === "missingMetadata") delete object.metadata;
+      const phases: string[] = [];
+      await expect(
+        verifyPreparationKospiBoundary(p, (phase) => phases.push(phase)),
+      ).rejects.toThrow();
+      expect(phases.at(-1)).toBe("RECEIPT_KOSPI_BOUNDARY_TRANSPORT_ENVELOPE");
+    },
+  );
+
   it.each([false, true])(
     "recomputes exact diagnostic; blocked=%s remains evidence not approval",
     async (blocked) => {
