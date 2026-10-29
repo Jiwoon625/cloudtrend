@@ -362,6 +362,117 @@ await assert.rejects(
   /PUBLICATION_MANIFEST_BYTE_HASH/,
 );
 count++;
+// Already-authoritative FINAL is preserved, never synthesized by a historical correction.
+function attachFinal(source: KrPublicationSource) {
+  const date = source.max_date!;
+  const m = JSON.parse(phaseManifest);
+  m.runId = "synthetic-final-request";
+  m.actualLatestPriceDate = date;
+  m.cutoffDateInclusive = date;
+  m.latestKrxPublicationPending = false;
+  delete m.latestKrxPendingDate;
+  m.krxPublicationEvidence.phase = "FINAL";
+  m.krxPublicationEvidence.calendar.latestSession = date;
+  m.krxPublicationEvidence.calendar.sessions = [date];
+  for (const market of Object.values(m.krxPublicationEvidence.markets) as Record<
+    string,
+    unknown
+  >[]) {
+    market.targetDate = date;
+    market.status = "PUBLISHED";
+    market.lastPublishedDate = date;
+    market.usableRows = 1;
+    market.rawRows = 1;
+    market.responseStatus = "ok";
+  }
+  const manifestText = JSON.stringify(m);
+  source.validation_result = {
+    krPublication: {
+      version: "kr-screening-publication-v1",
+      phase: "FINAL",
+      requestId: m.runId,
+      manifestText,
+      manifestSha256: "sha256:" + rawHash(manifestText),
+      asOfDate: date,
+      sourceFileHash: source.file_hash,
+      sourceDataHash: source.data_hash,
+      sourceSchemaHash: source.schema_hash,
+    },
+  };
+}
+async function rebindPublication(x: CurrentHistoryCorrectionInput) {
+  x.expectedOrderedSourcesHash = await orderedHash(x.sources);
+  x.publication = classifyKrScreeningPublication(
+    x.sources.map((s) => s.publicationSource),
+    asOf,
+  );
+  x.expectedPublicationHash = await hashSeriesValue(x.publication);
+}
+const finalInput = structuredClone(official);
+attachFinal(finalInput.sources[1]!.publicationSource);
+await rebindPublication(finalInput);
+const finalBefore = JSON.stringify(finalInput);
+const finalResult = await planCurrentHistoryCorrection(finalInput);
+if (!("correction" in finalResult)) throw new Error(JSON.stringify(finalResult));
+assert.equal(finalResult.currentPublicationAfter.phase, "FINAL");
+assert.deepEqual(finalResult.currentPublicationAfter, finalInput.publication);
+assert.deepEqual(finalResult.currentPublicationBefore, finalResult.currentPublicationAfter);
+assert.equal(finalResult.currentPublicationAfter.financialSideEffects, true); // Existing metadata, not an execution authorization.
+assert.equal(finalResult.operationalApproval, false);
+assert.equal(finalResult.collectorFinalDeclaration, false);
+assert.equal(finalResult.sourceRegistration, false);
+assert.equal(finalResult.newerObservationsUnchanged, true);
+assert.equal(JSON.stringify(finalInput), finalBefore);
+const finalAfter = parseManualMarketDataWithReferences([
+  ...finalInput.sources.map((x) => x.canonicalCsv),
+  finalResult.correction.csv,
+]).dataset;
+assert.equal(finalAfter.observedBars![symbol]!.find((b) => b.tradeDate === asOf)!.close, 6);
+assert.equal(
+  finalAfter.observedBars![symbol]!.find((b) => b.tradeDate === "2026-10-20")!.foreignNetBuyValue,
+  123456,
+);
+count++;
+const fallbackFinal = structuredClone(finalInput);
+delete fallbackFinal.sources[1]!.publicationSource.validation_result;
+await rebindPublication(fallbackFinal);
+assert.equal(fallbackFinal.publication.phase, "FINAL");
+await assert.rejects(
+  () => planCurrentHistoryCorrection(fallbackFinal),
+  /EXPLICIT_CURRENT_FINAL_REQUIRED/,
+);
+count++;
+const oldFinalOnly = structuredClone(fallbackFinal);
+attachFinal(oldFinalOnly.sources[0]!.publicationSource);
+await rebindPublication(oldFinalOnly);
+await assert.rejects(
+  () => planCurrentHistoryCorrection(oldFinalOnly),
+  /EXPLICIT_CURRENT_FINAL_REQUIRED/,
+);
+count++;
+const forgedFinal = structuredClone(finalInput);
+(
+  forgedFinal.sources[1]!.publicationSource.validation_result as {
+    krPublication: { sourceDataHash: string };
+  }
+).krPublication.sourceDataHash = "sha256:" + "0".repeat(64);
+forgedFinal.expectedOrderedSourcesHash = await orderedHash(forgedFinal.sources);
+await assert.rejects(
+  () => planCurrentHistoryCorrection(forgedFinal),
+  /source\/date\/hash binding mismatch/,
+);
+count++;
+const unresolvedPending = structuredClone(finalInput);
+const extraPending = structuredClone(input.sources[1]!);
+extraPending.id = "synthetic-unresolved-pending";
+extraPending.publicationSource.id = extraPending.id;
+unresolvedPending.sources.unshift(extraPending);
+unresolvedPending.expectedOrderedSourcesHash = await orderedHash(unresolvedPending.sources);
+await assert.rejects(
+  () => planCurrentHistoryCorrection(unresolvedPending),
+  /DERIVED_CURRENT_PHASE_MISMATCH/,
+);
+count++;
 console.log(
   JSON.stringify({
     syntheticTests: count,

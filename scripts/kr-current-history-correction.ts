@@ -19,6 +19,7 @@ import { canonicalSeriesJson, hashSeriesValue } from "../src/lib/ledger/modelSer
 import { validDate } from "../src/lib/ledger/date";
 import {
   classifyKrScreeningPublication,
+  krSourcePublication,
   type KrPublicationSource,
   type KrScreeningPublication,
 } from "../src/lib/krScreeningPublication";
@@ -138,7 +139,7 @@ export async function planCurrentHistoryCorrection(input: CurrentHistoryCorrecti
     "ORDERED_SOURCE_BINDING",
   );
   need(
-    input.publication.phase === "PRELIMINARY" &&
+    ["PRELIMINARY", "FINAL"].includes(input.publication.phase) &&
       input.publication.asOfDate === scope.currentAsOfDate &&
       (await hashSeriesValue(input.publication)) === input.expectedPublicationHash,
     "CURRENT_PHASE_BINDING",
@@ -193,11 +194,20 @@ export async function planCurrentHistoryCorrection(input: CurrentHistoryCorrecti
     base.asOfDate,
   );
   need(
-    currentPublication.phase === "PRELIMINARY" &&
-      same(currentPublication, input.publication) &&
+    same(currentPublication, input.publication) &&
       (await hashSeriesValue(currentPublication)) === input.expectedPublicationHash,
     "DERIVED_CURRENT_PHASE_MISMATCH",
   );
+  // FINAL must already have exact current collector authority; classifier fallback is insufficient.
+  // The history-only candidate never creates, upgrades, or changes this authority.
+  if (currentPublication.phase === "FINAL")
+    need(
+      sources.some((source) => {
+        const declaration = krSourcePublication(source.publicationSource);
+        return declaration?.phase === "FINAL" && declaration.asOfDate === scope.currentAsOfDate;
+      }),
+      "EXPLICIT_CURRENT_FINAL_REQUIRED",
+    );
   const instrument = base.instruments.find((i) => i.symbol === scope.symbol);
   need(instrument?.instrumentType === "STOCK", "TARGET_NOT_CURRENT_STOCK");
   need(sha(input.capture.manifestRaw) === scope.captureManifestHash, "CAPTURE_MANIFEST_HASH");

@@ -12,6 +12,20 @@ import {
 import { hashSeriesValue } from "../../src/lib/ledger/modelSeries";
 import { publicSummary, pureEnvironment } from "./runner";
 const owner = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+describe("exact owner-bound registry read", () => {
+  it("admits only one exact series identity and fixed projection", () => {
+    const path = restPath("ledger_model_series", owner, "series_id,payload", {
+      series_id: "eq.adopted-shadow-2026-10-12-v1:KR_MIXED",
+    });
+    const url = new URL(path, "https://synthetic.invalid");
+    expect(url.pathname).toBe("/rest/v1/ledger_model_series");
+    expect(url.searchParams.get("user_id")).toBe("eq." + owner);
+    expect(url.searchParams.get("limit")).toBe("2");
+    for (const filters of [{}, { series_id: "like.*" }, { series_id: "eq.a", user_id: "eq.b" }])
+      expect(() => restPath("ledger_model_series", owner, "series_id,payload", filters)).toThrow();
+    expect(() => restPath("ledger_model_series", owner, "*", { series_id: "eq.a" })).toThrow();
+  });
+});
 const digest = "a".repeat(64),
   h = "sha256:" + digest;
 const file = (raw: string) => ({

@@ -3,6 +3,7 @@ import { canonicalSeriesJson, hashSeriesValue } from "../../src/lib/ledger/model
 import { economicSessionInputs } from "../../src/lib/integratedAllocationEquivalence";
 import { validateSourceText } from "../../src/lib/sourceData";
 import { requireCheck, rawHash } from "../kr-vintage-preflight/transport";
+import { verifyArchiveObservationInventory } from "./archive-domain";
 import type { ComputationPhase } from "../kr-vintage-preflight/phases";
 const equal = (a: unknown, b: unknown) => canonicalSeriesJson(a) === canonicalSeriesJson(b);
 /** Rehash the generated private receipt after pure-child exit, before any credentialed append. */
@@ -137,6 +138,8 @@ export async function verifyPreparationPayload(
         p.kospi.result.plan.immutablePrefixPreserved === true &&
         p.kospi.result.plan.resetCapital === false,
     );
+  phase("RECEIPT_ARCHIVE_DOMAIN_PROOF");
+  await verifyArchiveObservationInventory(p);
   phase("RECEIPT_CANONICAL_HASH");
   return await hashSeriesValue(p);
 }

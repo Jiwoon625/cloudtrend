@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { canonicalSeriesJson, hashSeriesValue } from "../../src/lib/ledger/modelSeries";
+import { verifyArchivePrefixBodies } from "./archive-domain";
 import { krSourcePublication } from "../../src/lib/krScreeningPublication";
 import {
   createReadOnlyTransport,
@@ -69,6 +70,7 @@ export async function recheckPreparationPins(options: {
     payload.sourceRosterHash === (await hashSeriesValue(capsule.frozenBaseline.orderedSources)),
   );
   requireCheck(payload.captureManifestHash === "sha256:" + capsule.capture.manifestSha256);
+  const domainModels = payload.archiveObservationInventory.models;
   for (const pin of plan.models) {
     const row = await one("ledger_model_sessions", "state_hash,payload", {
       series_id: "eq." + pin.seriesId,
@@ -77,6 +79,12 @@ export async function recheckPreparationPins(options: {
     requireCheck(
       row.state_hash === pin.stateHash && (await hashSeriesValue(row.payload)) === pin.payloadHash,
     );
+    const bound = domainModels.find((m: any) => m.pin.seriesId === pin.seriesId);
+    requireCheck(bound && equal(bound.pin, pin) && equal(bound.run, row.payload));
+    const registry = await one("ledger_model_series", "series_id,payload", {
+      series_id: "eq." + pin.seriesId,
+    });
+    requireCheck(registry.series_id === pin.seriesId && equal(registry.payload, bound.series));
     requireCheck(
       (
         await rows("ledger_model_sessions", "session_date", {
@@ -86,16 +94,24 @@ export async function recheckPreparationPins(options: {
       ).length === 0,
     );
   }
+  const archiveBodies = [];
   for (const pin of plan.archives) {
     const row = await one("ledger_provenance_archive", "source_hash,payload", {
       source_id: "eq." + pin.sourceId,
       source_revision: "eq.1",
     });
+    archiveBodies.push({ reference: pin, payload: row.payload });
     requireCheck(
       row.source_hash === pin.sourceHash &&
         (await hashSeriesValue(row.payload)) === pin.payloadHash,
     );
   }
+  requireCheck(
+    equal(
+      await verifyArchivePrefixBodies(domainModels, archiveBodies),
+      payload.archiveObservationInventory.executionPrefixReferences,
+    ),
+  );
   for (const [key, id] of [
     ["registry", plan.vintageV1.registryAuditId],
     ["receipt", plan.vintageV1.receiptAuditId],

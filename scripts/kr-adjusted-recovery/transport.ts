@@ -5,6 +5,7 @@ import { recheckPreparationPins } from "./freshness";
 import path from "node:path";
 import { canonicalSeriesJson, hashSeriesValue } from "../../src/lib/ledger/modelSeries";
 import { verifyKrSourceVintagePrivateApproval } from "../../src/lib/ledger/krSourceVintage";
+import { assertStoredOctoberRun } from "../../src/lib/ledger/octoberShadowPipeline";
 import { krSourcePublication } from "../../src/lib/krScreeningPublication";
 import {
   createReadOnlyTransport,
@@ -28,6 +29,8 @@ export type PreparationReadPhase =
   | "FINAL_SOURCE_VALIDATION"
   | "MODEL_PREFIX_READ"
   | "MODEL_PREFIX_VALIDATION"
+  | "MODEL_REGISTRY_READ"
+  | "MODEL_REGISTRY_VALIDATION"
   | "ARCHIVE_PREFIX_READ"
   | "ARCHIVE_PREFIX_VALIDATION"
   | "VINTAGE_AUTHORITY_READ"
@@ -435,7 +438,14 @@ export async function materializePreparation(options: {
         v.payload.stateHash === r.stateHash &&
         (await hashSeriesValue(v.payload)) === r.payloadHash,
     );
-    models.push({ ...r, ref: save(v.payload) });
+    options.onPhase?.("MODEL_REGISTRY_READ");
+    const registry = await row("ledger_model_series", "series_id,payload", {
+      series_id: "eq." + r.seriesId,
+    });
+    options.onPhase?.("MODEL_REGISTRY_VALIDATION");
+    requireCheck(registry.series_id === r.seriesId && registry.payload.bookId === r.seriesId);
+    await assertStoredOctoberRun(registry.payload, v.payload);
+    models.push({ ...r, ref: save(v.payload), seriesRef: save(registry.payload) });
   }
   const archives = [];
   for (const r of plan.archives) {
