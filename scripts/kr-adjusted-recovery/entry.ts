@@ -1,4 +1,6 @@
+import { publicKospiBoundarySummary } from "../kospi-boundary-diagnostic";
 import { publicComputationPhase } from "../kr-vintage-preflight/phases";
+import { publicAppendObservation, type AppendObservation } from "./append-phases";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -11,6 +13,7 @@ import { verifyPreparationPayload } from "./verify";
 import { pureEnvironment } from "../kr-vintage-preflight/runner";
 import { requireCheck } from "../kr-vintage-preflight/transport";
 let failurePhase = "ENTRY_VALIDATION";
+let appendObservation: AppendObservation = {};
 async function main() {
   const root = process.env.RUNNER_TEMP ?? "",
     planHash = process.env.EXPECTED_PLAN_HASH ?? "",
@@ -93,22 +96,43 @@ async function main() {
       changedArchivePairs: payload.archivePairs.length,
       historyCorrectionRows: payload.candidate.historyCorrection.rowCount,
       kospiPrepared: payload.kospi.result.plan !== null,
+      kospiBoundary: publicKospiBoundarySummary(payload.kospi.result.boundaryDiagnostic),
       operationalApproval: false,
     };
   }
   requireCheck(mode === "append");
-  failurePhase = "APPEND_VALIDATION";
+  failurePhase = "APPEND_PAYLOAD_READ";
   const saved = JSON.parse(
     fs.readFileSync(path.join(directory, "verified-preparation.json"), "utf8"),
   );
+  failurePhase = "APPEND_PAYLOAD_VERIFICATION";
   requireCheck(
-    saved.hash === (await verifyPreparationPayload(saved.payload, planHash, capsuleHash)),
+    saved.hash ===
+      (await verifyPreparationPayload(saved.payload, planHash, capsuleHash, (phase) => {
+        failurePhase = phase;
+      })),
   );
   const result = await appendPreparation({
     ...authority,
     payload: saved.payload,
     expectedPlanHash: planHash,
     expectedCapsuleHash: capsuleHash,
+    onPhase: (phase) => {
+      failurePhase = phase;
+    },
+    onObservation: (value) => {
+      appendObservation = publicAppendObservation(value);
+      if (appendObservation.postResponse === "NOT_SENT")
+        console.log(
+          JSON.stringify({
+            status:
+              appendObservation.storedPayloadBytes === undefined
+                ? "PREPARATION_LOGICAL_BYTES_MEASURED"
+                : "PREPARATION_WIRE_BYTES_MEASURED",
+            ...appendObservation,
+          }),
+        );
+    },
   });
   return { status: "PREPARATION_EVIDENCE_APPENDED", ...result, operationalApproval: false };
 }
@@ -122,6 +146,7 @@ main()
       JSON.stringify({
         status: "PREPARATION_REJECTED",
         phase: failurePhase,
+        ...appendObservation,
         operationalApproval: false,
       }),
     );

@@ -3,6 +3,9 @@ import { canonicalSeriesJson, hashSeriesValue } from "../../src/lib/ledger/model
 import { economicSessionInputs } from "../../src/lib/integratedAllocationEquivalence";
 import { validateSourceText } from "../../src/lib/sourceData";
 import { requireCheck, rawHash } from "../kr-vintage-preflight/transport";
+import { diagnoseKospiCompletedBoundary } from "../kospi-boundary-diagnostic";
+import { KOSPI_SHADOW_NAMESPACE } from "../../src/lib/kospiShadowStore";
+import { KOSPI_SHADOW_CORRECTION_REVISION_ID } from "../../src/lib/kospiShadowSeries";
 import { verifyArchiveObservationInventory } from "./archive-domain";
 import type { ComputationPhase } from "../kr-vintage-preflight/phases";
 const equal = (a: unknown, b: unknown) => canonicalSeriesJson(a) === canonicalSeriesJson(b);
@@ -131,6 +134,8 @@ export async function verifyPreparationPayload(
   phase("RECEIPT_KOSPI_OBJECT_HASHES");
   for (const o of p.kospi.capturedObjects)
     requireCheck(o.hash === (await hashSeriesValue(o.payload)) && o.stateHashPreapproved === false);
+  phase("RECEIPT_KOSPI_BOUNDARY_DIAGNOSTIC");
+  await verifyPreparationKospiBoundary(p);
   phase("RECEIPT_KOSPI_PLAN_HASH");
   if (p.kospi.result.plan)
     requireCheck(
@@ -142,4 +147,72 @@ export async function verifyPreparationPayload(
   await verifyArchiveObservationInventory(p);
   phase("RECEIPT_CANONICAL_HASH");
   return await hashSeriesValue(p);
+}
+
+/** Resolve the private diagnostic only from the exact captured revision inventory. */
+export async function verifyPreparationKospiBoundary(p: any) {
+  const result = p.kospi.result,
+    a = result.authority,
+    d = result.boundaryDiagnostic;
+  requireCheck(
+    a.predecessorDate === p.scope.predecessorDate &&
+      equal(a.targetDates, p.scope.dates) &&
+      Date.parse(a.baselineCollectedAt) === Date.parse(p.clockSemantics.sourceRegisteredAt) &&
+      a.codeVersion === p.codeCommit &&
+      a.sourceManifestHash === p.sourceRosterHash &&
+      a.captureManifestHash === p.captureManifestHash &&
+      a.adjustedBasisHash === p.candidate.datasetHash &&
+      a.adjustedCapturedAt === p.captureObservedAt &&
+      a.computedAt === p.preparedAt &&
+      a.runtimeCodeHash === p.runtimeHashes.kospi,
+  );
+  const paths = p.kospi.capturedObjects.map((o: any) => o.path).sort();
+  requireCheck(
+    new Set(paths).size === paths.length &&
+      equal(paths, p.kospi.generationPins.map((o: any) => o.path).sort()) &&
+      paths.every((path: string) =>
+        path.startsWith(`${a.owner}/shadow/${KOSPI_SHADOW_NAMESPACE}/`),
+      ),
+  );
+  const root = `${a.owner}/shadow/${KOSPI_SHADOW_NAMESPACE}/revisions/${KOSPI_SHADOW_CORRECTION_REVISION_ID}`;
+  const get = (path: string) => {
+    const matches = p.kospi.capturedObjects.filter((o: any) => o.path === path);
+    requireCheck(matches.length === 1);
+    return matches[0];
+  };
+  const registry = get(root + "/registry.json"),
+    completed = get(`${root}/sessions/${a.predecessorDate}.json`),
+    latest = get(root + "/latest.json");
+  requireCheck(
+    equal(latest.payload.latest, completed.payload) &&
+      equal(latest.payload.registry, registry.payload),
+  );
+  const priorDate = completed.payload.source.previousSessionDate;
+  const predecessor = priorDate ? get(`${root}/sessions/${priorDate}.json`) : null;
+  for (const [name, adjusted] of [
+    ["baseline", false],
+    ["adjusted", true],
+  ] as const) {
+    const s = d.sessions[name];
+    requireCheck(
+      s.hash === (await hashSeriesValue(s.payload)) &&
+        s.payload.date === a.predecessorDate &&
+        s.payload.configHash === registry.payload.configHash &&
+        s.payload.codeVersion === a.codeVersion &&
+        s.payload.sourceHash === (adjusted ? a.adjustedBasisHash : a.baselineSourceHash) &&
+        s.payload.sourceCollectedAt === (adjusted ? a.adjustedCapturedAt : a.baselineCollectedAt),
+    );
+  }
+  const recomputed = await diagnoseKospiCompletedBoundary({
+    baselineSession: d.sessions.baseline.payload,
+    adjustedSession: d.sessions.adjusted.payload,
+    registry,
+    completed,
+    predecessor,
+    guardResults: {
+      baseline: result.baselineBoundaryEquivalent,
+      adjusted: result.adjustedBoundaryEquivalent,
+    },
+  });
+  requireCheck(equal(d, recomputed));
 }

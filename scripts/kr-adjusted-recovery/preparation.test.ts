@@ -216,7 +216,19 @@ describe("preparation-only boundaries", () => {
     };
     const hash = await hashSeriesValue(payload),
       fetcher = vi.fn(
-        async () => new Response(JSON.stringify([{ source_hash: hash, payload }]), { status: 200 }),
+        async () =>
+          new Response(
+            JSON.stringify([
+              {
+                user_id: owner,
+                source_id: "kr-adjusted-recovery-preparation:" + H.slice(7) + ":" + hash.slice(7),
+                source_revision: "1",
+                source_hash: hash,
+                payload,
+              },
+            ]),
+            { status: 200 },
+          ),
       );
     expect(
       await appendPreparation({
@@ -228,7 +240,7 @@ describe("preparation-only boundaries", () => {
         expectedCapsuleHash: H,
         fetcher: fetcher as any,
       }),
-    ).toEqual({ reused: true, hash });
+    ).toEqual({ reused: true, hash, storageHash: hash });
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it("GET transport cannot be converted into a writer or redirect escape", async () => {

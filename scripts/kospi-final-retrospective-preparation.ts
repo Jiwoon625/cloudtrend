@@ -8,6 +8,7 @@ import {
   type KospiShadowSession,
   type KospiShadowSnapshot,
 } from "../src/lib/engine/kospiShadow";
+import { diagnoseKospiCompletedBoundary } from "./kospi-boundary-diagnostic";
 import { equivalentCompletedKospiShadow } from "../src/lib/kospiShadowEquivalence";
 import {
   KOSPI_SHADOW_NAMESPACE,
@@ -260,6 +261,7 @@ export async function prepareKospiFinalRetrospective(
     );
   const comparisons = [];
   const prepared = new Map<string, KospiShadowSession>();
+  const baselines = new Map<string, KospiShadowSession>();
   for (const date of [a.predecessorDate, ...a.targetDates]) {
     phase("KOSPI_BASELINE_SESSION_BUILD");
     const baseline = build(input.baselineDataset, date, false);
@@ -271,6 +273,7 @@ export async function prepareKospiFinalRetrospective(
       ...(await compareKospiSessions(baseline, adjusted)),
     });
     prepared.set(date, adjusted);
+    baselines.set(date, baseline);
   }
   phase("KOSPI_COMPLETED_BASELINE_BOUNDARY");
   const priorDate = view.latest.source.previousSessionDate;
@@ -278,7 +281,7 @@ export async function prepareKospiFinalRetrospective(
     ? (originals[`${revisionRoot}/sessions/${priorDate}.json`] as KospiShadowSnapshot)
     : null;
   const baselineBoundary = equivalentCompletedKospiShadow(
-    build(input.baselineDataset, a.predecessorDate, false),
+    baselines.get(a.predecessorDate)!,
     view.latest,
     predecessor,
     view.registry.initializedDate,
@@ -290,6 +293,32 @@ export async function prepareKospiFinalRetrospective(
     predecessor,
     view.registry.initializedDate,
   );
+  phase("KOSPI_BOUNDARY_DIAGNOSTIC");
+  const completedPath = `${revisionRoot}/sessions/${a.predecessorDate}.json`;
+  if (!equal(originals[completedPath], view.latest))
+    throw new Error("Preparation completed boundary differs from captured session");
+  const boundaryDiagnostic = await diagnoseKospiCompletedBoundary({
+    baselineSession: baselines.get(a.predecessorDate)!,
+    adjustedSession: prepared.get(a.predecessorDate)!,
+    registry: {
+      path: revisionRoot + "/registry.json",
+      hash: input.objects[revisionRoot + "/registry.json"]!.hash,
+      payload: view.registry,
+    },
+    completed: {
+      path: completedPath,
+      hash: input.objects[completedPath]!.hash,
+      payload: view.latest,
+    },
+    predecessor: priorDate
+      ? {
+          path: `${revisionRoot}/sessions/${priorDate}.json`,
+          hash: input.objects[`${revisionRoot}/sessions/${priorDate}.json`]!.hash,
+          payload: predecessor!,
+        }
+      : null,
+    guardResults: { baseline: baselineBoundary, adjusted: adjustedBoundary },
+  });
   phase("KOSPI_PREDECESSOR_EQUIVALENCE");
   const common = {
     version: "kospi-final-retrospective-preparation-v1",
@@ -302,6 +331,7 @@ export async function prepareKospiFinalRetrospective(
     baselineBoundaryEquivalent: baselineBoundary,
     adjustedBoundaryEquivalent: adjustedBoundary,
     comparisons,
+    boundaryDiagnostic,
   };
   // Never silently bridge revised predecessor signals into the immutable model accounting state.
   if (!adjustedBoundary)

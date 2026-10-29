@@ -2,6 +2,13 @@
 /** Preparation reads and one evidence-only append. Never a model/source/approval operator. */
 import fs from "node:fs";
 import { recheckPreparationPins } from "./freshness";
+import type { AppendPhase, AppendObservation, PostResponseCategory } from "./append-phases";
+import {
+  encodeRecoveryEvidence,
+  decodeRecoveryEvidence,
+  preparationSourceId,
+  PREPARATION_NAMESPACE,
+} from "./evidence-storage";
 import path from "node:path";
 import { canonicalSeriesJson, hashSeriesValue } from "../../src/lib/ledger/modelSeries";
 import { verifyKrSourceVintagePrivateApproval } from "../../src/lib/ledger/krSourceVintage";
@@ -18,7 +25,7 @@ import {
   objectPath,
 } from "../kr-vintage-preflight/transport";
 export const PLAN = "kr-adjusted-recovery-read-plan:";
-export const PREPARATION = "kr-adjusted-recovery-preparation:";
+export const PREPARATION = PREPARATION_NAMESPACE;
 const H = /^sha256:[a-f0-9]{64}$/;
 const equal = (a: unknown, b: unknown) => canonicalSeriesJson(a) === canonicalSeriesJson(b);
 export type PreparationReadPhase =
@@ -528,8 +535,12 @@ export async function appendPreparation(options: {
   expectedPlanHash: string;
   expectedCapsuleHash: string;
   fetcher?: typeof fetch;
+  onPhase?: (phase: AppendPhase) => void;
+  onObservation?: (value: AppendObservation) => void;
 }) {
   const { payload, owner } = options;
+  const phase = options.onPhase ?? (() => {});
+  phase("APPEND_IDENTITY");
   requireCheck(
     payload.planHash === options.expectedPlanHash &&
       payload.capsuleHash === options.expectedCapsuleHash,
@@ -542,8 +553,28 @@ export async function appendPreparation(options: {
       H.test(payload.planHash) &&
       H.test(payload.capsuleHash),
   );
-  const sourceId = PREPARATION + payload.planHash.slice(7),
-    hash = await hashSeriesValue(payload);
+  phase("APPEND_CANONICAL_HASH");
+  const hash = await hashSeriesValue(payload),
+    sourceId = preparationSourceId(payload.planHash, hash);
+  const body = {
+    user_id: owner,
+    source_id: sourceId,
+    source_revision: "1",
+    source_hash: hash,
+    payload,
+  };
+  const payloadBytes = Buffer.byteLength(canonicalSeriesJson(body));
+  let postResponse: PostResponseCategory = "NOT_SENT";
+  let httpStatus: number | undefined;
+  options.onObservation?.({ payloadBytes, postResponse });
+  phase("APPEND_BODY_SIZE");
+  requireCheck(payloadBytes <= 24 * 1024 * 1024);
+  phase("APPEND_STORAGE_ENCODING");
+  const encoded = await encodeRecoveryEvidence(payload, "PREPARATION");
+  requireCheck(encoded.receiptHash === hash);
+  const storedBody = { ...body, source_hash: encoded.storageHash, payload: encoded.payload };
+  const storedPayloadBytes = Buffer.byteLength(canonicalSeriesJson(storedBody));
+  options.onObservation?.({ payloadBytes, storedPayloadBytes, postResponse });
   const selector = restPath(
     "ledger_provenance_archive",
     owner,
@@ -556,25 +587,40 @@ export async function appendPreparation(options: {
     new Set([selector]),
     options.fetcher,
   );
-  const find = async () => {
+  const find = async (readback = false) => {
+    phase(readback ? "APPEND_READBACK_READ" : "APPEND_NAMESPACE_READ");
     const rows = JSON.parse((await read(selector, 32 * 1024 * 1024)).toString());
+    phase(readback ? "APPEND_READBACK_SHAPE" : "APPEND_NAMESPACE_SHAPE");
     requireCheck(Array.isArray(rows) && rows.length <= 1);
-    if (rows[0]) requireCheck(rows[0].source_hash === hash && equal(rows[0].payload, payload));
+    if (rows[0]) {
+      phase(readback ? "APPEND_READBACK_IDENTITY" : "APPEND_EXISTING_IDENTITY");
+      requireCheck(
+        rows[0].user_id === owner &&
+          rows[0].source_id === sourceId &&
+          String(rows[0].source_revision) === "1",
+      );
+      const restored = await decodeRecoveryEvidence(
+        rows[0].payload,
+        rows[0].source_hash,
+        hash,
+        "PREPARATION",
+      );
+      requireCheck(equal(restored, payload));
+      if (Object.hasOwn(rows[0].payload, "storageFormat"))
+        requireCheck(rows[0].source_hash === encoded.storageHash);
+    }
     return rows[0];
   };
-  if (await find()) return { reused: true, hash };
+  const existing = await find();
+  if (existing) return { reused: true, hash, storageHash: existing.source_hash };
   await recheckPreparationPins(options);
-  const body = {
-    user_id: owner,
-    source_id: sourceId,
-    source_revision: "1",
-    source_hash: hash,
-    payload,
-  };
-  requireCheck(Buffer.byteLength(canonicalSeriesJson(body)) <= 24 * 1024 * 1024);
+  phase("APPEND_BODY_SIZE");
+  requireCheck(payloadBytes <= 24 * 1024 * 1024);
+  requireCheck(storedPayloadBytes <= 24 * 1024 * 1024);
   // No caller-supplied method/table/path. Origin was validated by the read-only constructor.
   try {
-    await (options.fetcher ?? fetch)(
+    phase("APPEND_POST");
+    const response = await (options.fetcher ?? fetch)(
       new URL("/rest/v1/ledger_provenance_archive", options.origin),
       {
         method: "POST",
@@ -584,13 +630,28 @@ export async function appendPreparation(options: {
           "Content-Type": "application/json",
           Prefer: "return=minimal",
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(storedBody),
         redirect: "error",
       },
     );
+    httpStatus = response.status;
+    postResponse =
+      response.status >= 200 && response.status < 300
+        ? "HTTP_2XX"
+        : response.status >= 300 && response.status < 400
+          ? "HTTP_3XX"
+          : response.status >= 400 && response.status < 500
+            ? "HTTP_4XX"
+            : response.status >= 500 && response.status < 600
+              ? "HTTP_5XX"
+              : "OTHER_STATUS";
   } catch {
     /* Commit uncertainty requires exact readback, not another insert. */
+    postResponse = "NETWORK_UNCERTAIN";
   }
-  requireCheck(await find());
-  return { reused: false, hash };
+  options.onObservation?.({ payloadBytes, storedPayloadBytes, postResponse, httpStatus });
+  const saved = await find(true);
+  phase("APPEND_READBACK_PRESENT");
+  requireCheck(saved);
+  return { reused: false, hash, storageHash: saved.source_hash };
 }

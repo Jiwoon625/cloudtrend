@@ -12,6 +12,11 @@ import { materializePreparation, PREPARATION } from "./transport";
 import { recheckPreparationPins } from "./freshness";
 import { verifyPreparationPayload } from "./verify";
 import {
+  encodeRecoveryEvidence,
+  decodeRecoveryEvidence,
+  preparationSourceId,
+} from "./evidence-storage";
+import {
   OPERATION_MANIFEST,
   FULL_PLAN,
   APPLY_APPROVAL,
@@ -80,15 +85,37 @@ export function operationReader(o: OperationConnection) {
         HASH.test(identityHash) &&
         HASH.test(expectedHash),
     );
+    const sourceId =
+      prefix === PREPARATION
+        ? preparationSourceId(identityHash, expectedHash)
+        : prefix + identityHash.slice(7);
     const r = await one(
       "ledger_provenance_archive",
       "user_id,source_id,source_revision,source_hash,payload,recorded_at",
-      { source_id: "eq." + prefix + identityHash.slice(7), source_revision: "eq.1" },
+      { source_id: "eq." + sourceId, source_revision: "eq.1" },
     );
+    const payload =
+      prefix === PREPARATION || prefix === FULL_PLAN
+        ? await decodeRecoveryEvidence(
+            r.payload,
+            r.source_hash,
+            expectedHash,
+            prefix === PREPARATION ? "PREPARATION" : "FULL_PLAN",
+          )
+        : r.payload;
+    if (prefix === PREPARATION) requireCheck(payload.planHash === identityHash);
+    if (prefix !== PREPARATION && prefix !== FULL_PLAN) {
+      requireCheck(
+        r.source_hash === expectedHash && (await hashSeriesValue(payload)) === expectedHash,
+      );
+      return r;
+    }
     requireCheck(
-      r.source_hash === expectedHash && (await hashSeriesValue(r.payload)) === expectedHash,
+      r.user_id === o.owner && r.source_id === sourceId && String(r.source_revision) === "1",
     );
-    return r;
+    // Explicit hydrated view: do not relabel the stored-envelope digest as the logical receipt digest.
+    const { source_hash: storageHash, payload: _storedPayload, ...identity } = r;
+    return { ...identity, storageHash, receiptHash: expectedHash, payload };
   };
   return {
     rows,
@@ -255,16 +282,36 @@ export async function appendOperationPlan(
   await verifyFullRecoveryPlan(o.payload, hash, o.manifest, o.manifestHash);
   const r = operationReader(o),
     sourceId = FULL_PLAN + o.manifestHash.slice(7);
+  const body = {
+    user_id: o.owner,
+    source_id: sourceId,
+    source_revision: "1",
+    source_hash: hash,
+    payload: o.payload,
+  };
+  requireCheck(Buffer.byteLength(canonicalSeriesJson(body)) <= 32 * 1024 * 1024);
+  const encoded = await encodeRecoveryEvidence(o.payload, "FULL_PLAN");
+  requireCheck(encoded.receiptHash === hash);
   const find = async () => {
     const rows = await r.rows("ledger_provenance_archive", "source_hash,payload", {
       source_id: "eq." + sourceId,
       source_revision: "eq.1",
     });
     requireCheck(rows.length <= 1);
-    if (rows[0]) requireCheck(rows[0].source_hash === hash && same(rows[0].payload, o.payload));
+    if (rows[0]) {
+      requireCheck(
+        same(
+          await decodeRecoveryEvidence(rows[0].payload, rows[0].source_hash, hash, "FULL_PLAN"),
+          o.payload,
+        ),
+      );
+      if (Object.hasOwn(rows[0].payload, "storageFormat"))
+        requireCheck(rows[0].source_hash === encoded.storageHash);
+    }
     return rows[0];
   };
-  if (await find()) return { hash, reused: true };
+  const existing = await find();
+  if (existing) return { hash, storageHash: existing.source_hash, reused: true };
   await r.archive(OPERATION_MANIFEST, o.manifestHash, o.manifestHash);
   await r.archive(PREPARATION, o.manifest.preparationReadPlanHash, o.manifest.preparationHash);
   await recheckPreparationPins({
@@ -276,14 +323,8 @@ export async function appendOperationPlan(
   await assertActualState(o, o.manifest);
   await assertModelInventory(o, o.manifest);
   await assertCurrentSources(o, o.manifest);
-  const body = {
-    user_id: o.owner,
-    source_id: sourceId,
-    source_revision: "1",
-    source_hash: hash,
-    payload: o.payload,
-  };
-  requireCheck(Buffer.byteLength(canonicalSeriesJson(body)) <= 32 * 1024 * 1024);
+  const storedBody = { ...body, source_hash: encoded.storageHash, payload: encoded.payload };
+  requireCheck(Buffer.byteLength(canonicalSeriesJson(storedBody)) <= 32 * 1024 * 1024);
   try {
     await (o.fetcher ?? fetch)(new URL("/rest/v1/ledger_provenance_archive", o.origin), {
       method: "POST",
@@ -293,12 +334,13 @@ export async function appendOperationPlan(
         "Content-Type": "application/json",
         Prefer: "return=minimal",
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(storedBody),
       redirect: "error",
     });
   } catch {
     /* exact readback only */
   }
-  requireCheck(await find());
-  return { hash, reused: false };
+  const saved = await find();
+  requireCheck(saved);
+  return { hash, storageHash: saved.source_hash, reused: false };
 }
