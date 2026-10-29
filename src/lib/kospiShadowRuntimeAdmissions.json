@@ -44,6 +44,10 @@
     {
       "runtimeCodeHash": "sha256:bfce1cb5e9c3497fe77314d07052e8fa3dcb16540387963cd250b63cb13ae237",
       "reviewId": "kr-exact-dated-etf-lifecycle-v1-20261029"
+    },
+    {
+      "runtimeCodeHash": "sha256:e8b795fdf35ac0111c7ee148f939774e4528beebe6533f0aaca79e0b91a4c949",
+      "reviewId": "kr-dated-etf-lifecycle-lookback-v1-20261030"
     }
   ]
 }
