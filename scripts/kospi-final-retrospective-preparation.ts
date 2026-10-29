@@ -9,7 +9,10 @@ import {
   type KospiShadowSnapshot,
 } from "../src/lib/engine/kospiShadow";
 import { diagnoseKospiCompletedBoundary } from "./kospi-boundary-diagnostic";
-import { proveKospiPriorityContinuation } from "./kospi-priority-continuation";
+import {
+  proveKospiPriorityContinuation,
+  projectKospiPriorityReference,
+} from "./kospi-priority-continuation";
 import { equivalentCompletedKospiShadow } from "../src/lib/kospiShadowEquivalence";
 import {
   KOSPI_SHADOW_NAMESPACE,
@@ -345,28 +348,28 @@ export async function prepareKospiFinalRetrospective(
   const priorityContinuation = !adjustedBoundary
     ? await proveKospiPriorityContinuation({
         authority: a,
-        registry: {
+        registry: projectKospiPriorityReference({
           path: revisionRoot + "/registry.json",
           ...input.objects[revisionRoot + "/registry.json"]!,
           payload: view.registry,
-        },
-        completed: {
+        }),
+        completed: projectKospiPriorityReference({
           path: completedPath,
           ...input.objects[completedPath]!,
           payload: view.latest,
-        },
+        }),
         predecessor: priorDate
-          ? {
+          ? projectKospiPriorityReference({
               path: `${revisionRoot}/sessions/${priorDate}.json`,
               ...input.objects[`${revisionRoot}/sessions/${priorDate}.json`]!,
               payload: predecessor!,
-            }
+            })
           : null,
-        originalView: {
+        originalView: projectKospiPriorityReference({
           path: revisionRoot + "/latest.json",
           ...input.objects[revisionRoot + "/latest.json"]!,
           payload: view,
-        },
+        }),
         baselineSession: baselines.get(a.predecessorDate)!,
         adjustedSession: prepared.get(a.predecessorDate)!,
         targetSessions,

@@ -5,7 +5,11 @@ import { kospiShadowRevisionPath } from "../src/lib/kospiShadowSeries";
 import { validateShadowSession } from "../src/lib/engine/kospiShadow";
 import { equivalentCompletedKospiShadow } from "../src/lib/kospiShadowEquivalence";
 import { diagnoseKospiCompletedBoundary } from "./kospi-boundary-diagnostic";
-import { proveKospiPriorityContinuation } from "./kospi-priority-continuation";
+import {
+  proveKospiPriorityContinuation,
+  projectKospiPriorityReference,
+} from "./kospi-priority-continuation";
+import type { ComputationPhase } from "./kr-vintage-preflight/phases";
 const same = (a: unknown, b: unknown) => canonicalSeriesJson(a) === canonicalSeriesJson(b);
 function check(value: unknown): asserts value {
   if (!value) throw new Error("KOSPI_PRIORITY_ADMISSION_MISMATCH");
@@ -15,7 +19,9 @@ function check(value: unknown): asserts value {
 export async function verifyKospiPriorityAdmission(
   result: any,
   captured: Array<{ path: string; hash: string; payload: any }>,
+  phase: (value: ComputationPhase) => void = () => {},
 ) {
+  phase("RECEIPT_KOSPI_PRIORITY_REFERENCE_PATHS");
   const a = result.authority;
   const get = (suffix: string) => {
     const path = kospiShadowRevisionPath(a.owner, suffix);
@@ -28,10 +34,12 @@ export async function verifyKospiPriorityAdmission(
     originalView = get("latest.json"),
     priorDate = completed.payload.source.previousSessionDate,
     predecessor = priorDate ? get(`sessions/${priorDate}.json`) : null;
+  phase("RECEIPT_KOSPI_PRIORITY_REFERENCE_HASHES");
   for (const c of [registry, completed, originalView, ...(predecessor ? [predecessor] : [])])
     check(
       (await hashSeriesValue(c.payload)) === c.hash && result.inputObjectHashes[c.path] === c.hash,
     );
+  phase("RECEIPT_KOSPI_PRIORITY_CAPTURED_VIEW");
   check(
     same(originalView.payload.registry, registry.payload) &&
       same(originalView.payload.latest, completed.payload),
@@ -39,14 +47,15 @@ export async function verifyKospiPriorityAdmission(
   const d = result.boundaryDiagnostic;
   const input = {
     authority: a,
-    registry,
-    completed,
-    predecessor,
-    originalView,
+    registry: projectKospiPriorityReference(registry),
+    completed: projectKospiPriorityReference(completed),
+    predecessor: predecessor ? projectKospiPriorityReference(predecessor) : null,
+    originalView: projectKospiPriorityReference(originalView),
     baselineSession: d.sessions.baseline.payload,
     adjustedSession: d.sessions.adjusted.payload,
     targetSessions: result.targetSessions,
   };
+  phase("RECEIPT_KOSPI_PRIORITY_STRICT_RESULTS");
   const strict = {
     baseline: equivalentCompletedKospiShadow(
       input.baselineSession,
@@ -65,7 +74,9 @@ export async function verifyKospiPriorityAdmission(
     strict.baseline === result.baselineBoundaryEquivalent &&
       strict.adjusted === result.adjustedBoundaryEquivalent,
   );
+  phase("RECEIPT_KOSPI_PRIORITY_DIAGNOSTIC_RECOMPUTE");
   check(same(d, await diagnoseKospiCompletedBoundary({ ...input, guardResults: strict })));
+  phase("RECEIPT_KOSPI_PRIORITY_TARGET_ORDER");
   check(
     Array.isArray(input.targetSessions) &&
       same(
@@ -75,7 +86,9 @@ export async function verifyKospiPriorityAdmission(
   );
   const completedHash = await hashSeriesValue(completed.payload);
   for (const [i, s] of input.targetSessions.entries()) {
+    phase("RECEIPT_KOSPI_PRIORITY_TARGET_VALIDATION");
     validateShadowSession(s);
+    phase("RECEIPT_KOSPI_PRIORITY_TARGET_PROVENANCE");
     check(
       s.previousSessionDate === (i === 0 ? a.predecessorDate : a.targetDates[i - 1]) &&
         s.configHash === registry.payload.configHash &&
@@ -108,22 +121,28 @@ export async function verifyKospiPriorityAdmission(
       ...economic
     } = s;
     const comparisons = result.comparisons.filter((c: any) => c.date === s.date);
+    phase("RECEIPT_KOSPI_PRIORITY_TARGET_ECONOMIC_HASH");
     check(
       comparisons.length === 1 &&
         comparisons[0].adjustedEconomicHash === (await hashSeriesValue(economic)),
     );
   }
   if (strict.adjusted) {
+    phase("RECEIPT_KOSPI_PRIORITY_STRICT_ADMISSION");
     check(result.priorityContinuation === null && result.priorityContinuationHash === null);
     check(
       result.plan && same(result.plan.boundaryAdmission, { mode: "STRICT_COMPLETED_EQUIVALENCE" }),
     );
   } else {
+    phase("RECEIPT_KOSPI_PRIORITY_PROOF_RECOMPUTE");
     const recomputed = await proveKospiPriorityContinuation(input);
+    phase("RECEIPT_KOSPI_PRIORITY_PROOF_EQUALITY");
     check(same(result.priorityContinuation, recomputed));
     const hash = await hashSeriesValue(recomputed);
+    phase("RECEIPT_KOSPI_PRIORITY_PROOF_HASH");
     check(result.priorityContinuationHash === hash);
     if (recomputed.status === "PROVEN_PRIORITY_ONLY_CONTINUATION") {
+      phase("RECEIPT_KOSPI_PRIORITY_PLAN_ADMISSION");
       const original = recomputed.continuations.original;
       check(
         result.plan &&
@@ -132,6 +151,7 @@ export async function verifyKospiPriorityAdmission(
             proofHash: hash,
           }),
       );
+      phase("RECEIPT_KOSPI_PRIORITY_PLAN_OUTPUTS");
       check(
         same(result.snapshots, original.snapshots) &&
           same(result.finalProjection, original.projections.at(-1)) &&
@@ -141,7 +161,11 @@ export async function verifyKospiPriorityAdmission(
           ) &&
           result.plan.finalProjectionHash === (await hashSeriesValue(original.projections.at(-1))),
       );
-    } else check(result.plan === null && result.status === "BLOCKED_ADJUSTED_PREDECESSOR_MISMATCH");
+    } else {
+      phase("RECEIPT_KOSPI_PRIORITY_BLOCKED_STATUS");
+      check(result.plan === null && result.status === "BLOCKED_ADJUSTED_PREDECESSOR_MISMATCH");
+    }
   }
+  phase("RECEIPT_KOSPI_PRIORITY_PLAN_TARGETS");
   if (result.plan) check(same(result.plan.sessions, input.targetSessions));
 }

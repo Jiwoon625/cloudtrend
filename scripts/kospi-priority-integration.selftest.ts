@@ -5,7 +5,11 @@ import {
   prepareKospiFinalRetrospective,
   compareKospiSessions,
 } from "./kospi-final-retrospective-preparation";
-import { proveKospiPriorityContinuation } from "./kospi-priority-continuation";
+import {
+  proveKospiPriorityContinuation,
+  projectKospiPriorityReference,
+} from "./kospi-priority-continuation";
+import { publicComputationPhase } from "./kr-vintage-preflight/phases";
 import { verifyKospiPriorityAdmission } from "./kospi-priority-admission";
 import { diagnoseKospiCompletedBoundary } from "./kospi-boundary-diagnostic";
 import { verifyPreparationKospiBoundary } from "./kr-adjusted-recovery/verify";
@@ -97,6 +101,19 @@ const oldApproval = Object.fromEntries(
   ].map((k) => [k, descriptor[k]]),
 );
 oldApproval.expectedCorrectedSourceHash = descriptor.correctedSourceHash;
+// Production capture envelopes retain transport evidence; they are not semantic proof refs.
+// Field names were independently checked against a saved real receipt; values here are synthetic.
+const transportEvidence = {
+  byteHash: "sha256:" + "e".repeat(64),
+  metadata: {
+    id: "synthetic-object",
+    version: "synthetic-version",
+    eTag: "synthetic-etag",
+    size: 100,
+    updatedAt: "2026-10-28T00:00:00Z",
+  },
+  stateHashPreapproved: false,
+};
 const capturedObjects = [
   ...Object.entries(fixture.objects).map(([p, v]) => ({ path: p, ...clone(v) })),
   {
@@ -106,8 +123,10 @@ const capturedObjects = [
     hash: await hashSeriesValue(oldApproval),
     payload: oldApproval,
   },
-];
+].map((reference) => ({ ...reference, ...clone(transportEvidence) }));
+const capturedBefore = clone(capturedObjects);
 await verifyKospiPriorityAdmission(prepared, capturedObjects);
+assert.ok(same(capturedObjects, capturedBefore));
 const receipt = {
   version: "kr-adjusted-recovery-preparation-v1" as const,
   kind: "RECOVERY_PREPARATION_ONLY" as const,
@@ -296,22 +315,29 @@ for (const r of genuineRows) {
 }
 assert.ok(changedRows > 0);
 const a = genuine.authority;
-await verifyPreparationKospiBoundary({
-  scope: { predecessorDate: a.predecessorDate, dates: a.targetDates },
-  codeCommit: a.codeVersion,
-  sourceRosterHash: a.sourceManifestHash,
-  captureManifestHash: a.captureManifestHash,
-  candidate: { datasetHash: a.adjustedBasisHash },
-  captureObservedAt: a.adjustedCapturedAt,
-  preparedAt: a.computedAt,
-  runtimeHashes: { kospi: a.runtimeCodeHash },
-  clockSemantics: { sourceRegisteredAt: a.baselineCollectedAt },
-  kospi: {
-    result: genuine,
-    capturedObjects,
-    generationPins: capturedObjects.map((x) => ({ path: x.path })),
-  },
-});
+const genuineReceipt = JSON.parse(
+  JSON.stringify({
+    scope: { predecessorDate: a.predecessorDate, dates: a.targetDates },
+    codeCommit: a.codeVersion,
+    sourceRosterHash: a.sourceManifestHash,
+    captureManifestHash: a.captureManifestHash,
+    candidate: { datasetHash: a.adjustedBasisHash },
+    captureObservedAt: a.adjustedCapturedAt,
+    preparedAt: a.computedAt,
+    runtimeHashes: { kospi: a.runtimeCodeHash },
+    clockSemantics: { sourceRegisteredAt: a.baselineCollectedAt },
+    kospi: {
+      result: genuine,
+      capturedObjects,
+      generationPins: capturedObjects.map((x) => ({ path: x.path, metadata: x.metadata })),
+    },
+  }),
+);
+const genuinePhases: string[] = [];
+await verifyPreparationKospiBoundary(genuineReceipt, (phase) => genuinePhases.push(phase));
+assert.equal(genuinePhases.at(-1), "RECEIPT_KOSPI_PRIORITY_PLAN_TARGETS");
+assert.ok(genuinePhases.every((phase) => publicComputationPhase(phase) === phase));
+assert.ok(same(genuineReceipt.kospi.capturedObjects, capturedBefore));
 const real = make();
 real.args.preparationReceipt.kospi.result = genuine;
 real.args.authoritativePreparationHash = await hashSeriesValue(real.args.preparationReceipt);
@@ -325,6 +351,64 @@ assert.equal(real.writes.length, 4);
 assert.ok(same(real.values.get(completed.path), completed.payload));
 assert.ok(same(real.values.get(path("latest.json")), genuine.finalProjection));
 tests++;
+// Both producer and verifier share exactly the semantic reference projection.
+assert.deepEqual(Object.keys(projectKospiPriorityReference(capturedObjects[0]!)).sort(), [
+  "hash",
+  "path",
+  "payload",
+]);
+const enrichedProducerInput = clone(realInput);
+for (const [objectPath, value] of Object.entries(enrichedProducerInput.objects))
+  enrichedProducerInput.objects[objectPath] = { ...value, ...clone(transportEvidence) };
+const enrichedProducer = JSON.parse(
+  JSON.stringify(await prepareKospiFinalRetrospective(enrichedProducerInput)),
+);
+assert.ok(same(enrichedProducer, genuine));
+await verifyKospiPriorityAdmission(enrichedProducer, capturedObjects);
+tests++;
+for (const kind of ["path", "hash", "payload"] as const) {
+  const bad = clone(genuineReceipt);
+  const reference = bad.kospi.capturedObjects.find(
+    (x: { path: string }) => x.path === path("registry.json"),
+  )!;
+  if (kind === "path") reference.path += ".foreign";
+  if (kind === "hash") reference.hash = "sha256:" + "0".repeat(64);
+  if (kind === "payload") reference.payload.configHash = "sha256:" + "0".repeat(64);
+  const phases: string[] = [];
+  await assert.rejects(() =>
+    verifyKospiPriorityAdmission(bad.kospi.result, bad.kospi.capturedObjects, (p) =>
+      phases.push(p),
+    ),
+  );
+  assert.equal(
+    phases.at(-1),
+    kind === "path"
+      ? "RECEIPT_KOSPI_PRIORITY_REFERENCE_PATHS"
+      : "RECEIPT_KOSPI_PRIORITY_REFERENCE_HASHES",
+  );
+  const attempt = make();
+  attempt.args.preparationReceipt.kospi = bad.kospi;
+  await repin(attempt.args);
+  await assert.rejects(() => applyPreparedKospiRetrospective(attempt.args));
+  assert.equal(attempt.writes.length, 0);
+  tests++;
+}
+for (const kind of ["proofInputHash", "planSnapshotHash"] as const) {
+  const bad = clone(genuine);
+  if (kind === "proofInputHash") bad.priorityContinuation.inputHash = "sha256:" + "0".repeat(64);
+  else bad.plan.snapshotHashes[0] = "sha256:" + "0".repeat(64);
+  const phases: string[] = [];
+  await assert.rejects(() =>
+    verifyKospiPriorityAdmission(bad, capturedObjects, (p) => phases.push(p)),
+  );
+  assert.equal(
+    phases.at(-1),
+    kind === "proofInputHash"
+      ? "RECEIPT_KOSPI_PRIORITY_PROOF_EQUALITY"
+      : "RECEIPT_KOSPI_PRIORITY_PLAN_OUTPUTS",
+  );
+  tests++;
+}
 console.log(
   JSON.stringify({
     syntheticPriorityIntegrationTests: tests,

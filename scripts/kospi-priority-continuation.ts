@@ -19,10 +19,14 @@ import { nextKrRegularSession } from "../src/lib/ledger/krShadowDecision";
 import runtime from "../src/lib/kospiShadowPublicationRuntime.generated.json";
 import type { KospiFinalPreparationAuthority } from "./kospi-final-retrospective-preparation";
 
-interface Captured<T> {
+export interface Captured<T> {
   path: string;
   hash: string;
   payload: T;
+}
+/** Semantic proof reference only. Transport byte/generation evidence stays in its outer envelope. */
+export function projectKospiPriorityReference<T>(value: Captured<T>): Captured<T> {
+  return { path: value.path, hash: value.hash, payload: value.payload };
 }
 export interface KospiPriorityContinuationInput {
   authority: KospiFinalPreparationAuthority;
