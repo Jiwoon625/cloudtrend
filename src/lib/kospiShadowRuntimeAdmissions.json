@@ -40,6 +40,10 @@
     {
       "runtimeCodeHash": "sha256:5a6dc0d6e5fa2b494d7579766b3d581d0b5aad88fc63119d6c53a7cb17c599fa",
       "reviewId": "kr-exact-retrospective-model-continuation-v1-20261028"
+    },
+    {
+      "runtimeCodeHash": "sha256:bfce1cb5e9c3497fe77314d07052e8fa3dcb16540387963cd250b63cb13ae237",
+      "reviewId": "kr-exact-dated-etf-lifecycle-v1-20261029"
     }
   ]
 }

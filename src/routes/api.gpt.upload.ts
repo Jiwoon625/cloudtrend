@@ -1,3 +1,4 @@
+import { parseKrEtfLifecyclePlan, type KrEtfLifecyclePlan } from "../lib/krEtfLifecycle";
 import {
   parseKrPublicationRequest,
   type KrPublicationRequest,
@@ -25,6 +26,7 @@ type InitRequest = {
 
 type FinalizeRequest = {
   krPublication?: KrPublicationRequest;
+  krLifecycle?: KrEtfLifecyclePlan;
   action: "finalize";
   tempPath: string;
   filename: string;
@@ -135,6 +137,8 @@ async function initUpload(body: InitRequest) {
 }
 
 export async function finalizeUpload(body: FinalizeRequest) {
+  const krLifecycle =
+    body.krLifecycle === undefined ? undefined : parseKrEtfLifecyclePlan(body.krLifecycle);
   const krPublication =
     body.krPublication === undefined ? undefined : parseKrPublicationRequest(body.krPublication);
   const { sourceType, filename } = validateCommon(body.sourceType, body.filename);
@@ -160,6 +164,7 @@ export async function finalizeUpload(body: FinalizeRequest) {
       mode,
       origin: "gpt",
       ...(krPublication ? { krPublication } : {}),
+      ...(krLifecycle ? { krLifecycle } : {}),
       bytes,
       filename,
       contentType: body.contentType,

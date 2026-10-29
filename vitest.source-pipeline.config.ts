@@ -4,6 +4,8 @@ export default defineConfig({
   test: {
     include: [
       "tests/kr-publication-ingestion.test.ts",
+      "tests/kr-etf-lifecycle.test.ts",
+      "src/lib/sourceRegistryFingerprint.test.ts",
       "src/lib/krScreeningPublication.test.ts",
       "tests/audit-quality-source-order.test.ts",
       "tests/source-validation-cache.test.ts",

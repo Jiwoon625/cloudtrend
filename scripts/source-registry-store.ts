@@ -1,3 +1,4 @@
+import { buildKrLifecycle, type KrEtfLifecyclePlan } from "../src/lib/krEtfLifecycle";
 import {
   buildKrSourcePublication,
   buildKrPendingSupersessions,
@@ -598,6 +599,7 @@ export async function registerSourceBytes(input: {
   contentType?: string | undefined;
   syncLegacy?: boolean;
   krPublication?: KrPublicationRequest;
+  krLifecycle?: KrEtfLifecyclePlan;
   /** Optional request-scoped or private persistent cache of verified source generations. */
   validationCache?: SourceValidationCache;
 }) {
@@ -617,6 +619,16 @@ export async function registerSourceBytes(input: {
         .join(" / ")}`,
     );
 
+  if (input.krLifecycle && input.sourceType !== "screening")
+    throw new Error("KR lifecycle is screening-only");
+  const krLifecycle = input.krLifecycle
+    ? buildKrLifecycle(input.krLifecycle, validation.rows, {
+        max_date: validation.stats.maxDate,
+        file_hash: validation.fileHash,
+        data_hash: validation.dataHash,
+        schema_hash: validation.schemaHash,
+      })
+    : undefined;
   const krPublication = input.krPublication
     ? buildKrSourcePublication(input.krPublication, {
         max_date: validation.stats.maxDate,
@@ -665,6 +677,11 @@ export async function registerSourceBytes(input: {
 
   const exact = activeRegistered.find((value) => value.dataHash === validation.dataHash);
   if (exact && (input.mode === "append" || input.mode === "add")) {
+    const savedLifecycle = exact.sourceRecord?.validation_result?.["krLifecycle"];
+    if (stableJson(savedLifecycle ?? null) !== stableJson(krLifecycle ?? null))
+      throw new Error(
+        "Identical source has a different lifecycle contract; explicit replacement required",
+      );
     const saved = exact.sourceRecord?.validation_result?.["krPublication"];
     if (stableJson(saved ?? null) !== stableJson(krPublication ?? null))
       throw new Error(
@@ -723,6 +740,7 @@ export async function registerSourceBytes(input: {
     overlap,
   });
   if (krPublication) Object.assign(record.validation_result, { krPublication });
+  if (krLifecycle) Object.assign(record.validation_result, { krLifecycle });
   const storedRecord = compressBacktest
     ? {
         ...record,

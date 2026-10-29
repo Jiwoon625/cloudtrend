@@ -1,3 +1,4 @@
+import { parseKrEtfLifecyclePlan, validateKrEtfLifecycleRows } from "../src/lib/krEtfLifecycle";
 import { parseKrPublicationRequest } from "../src/lib/krScreeningPublication";
 import { buildKrSourcePublication } from "../src/lib/krScreeningPublication.server";
 import { execFileSync } from "node:child_process";
@@ -27,6 +28,7 @@ interface Options {
   action: Action;
   inputPath: string | null;
   krPublicationPath: string | null;
+  krLifecyclePath: string | null;
   sourceType: SourceType | null;
   registrationMode: SourceRegistrationMode | null;
   userId: string;
@@ -65,6 +67,7 @@ export function parseArgs(argv: string[]): Options {
     action: "register",
     inputPath: null,
     krPublicationPath: null,
+    krLifecyclePath: null,
     sourceType: null,
     registrationMode: null,
     userId: process.env["SUPABASE_USER_ID"] ?? "",
@@ -80,6 +83,8 @@ export function parseArgs(argv: string[]): Options {
   for (let i = 0; i < argv.length; i++) {
     const argument = argv[i];
     if (argument === "--input") options.inputPath = argv[++i] ?? usage("--input 값이 없습니다.");
+    else if (argument === "--kr-lifecycle")
+      options.krLifecyclePath = argv[++i] ?? usage("--kr-lifecycle plan JSON path is required");
     else if (argument === "--kr-publication")
       options.krPublicationPath =
         argv[++i] ?? usage("--kr-publication request JSON path is required");
@@ -126,6 +131,11 @@ export function parseArgs(argv: string[]): Options {
     (options.sourceType !== "screening" || !["register", "validate_only"].includes(options.action))
   )
     usage("--kr-publication requires screening registration or validation");
+  if (
+    options.krLifecyclePath &&
+    (options.sourceType !== "screening" || !["register", "validate_only"].includes(options.action))
+  )
+    usage("--kr-lifecycle requires screening registration or validation");
   if (options.action === "register" || options.action === "validate_only") {
     if (!options.inputPath) usage("입력 파일이 필요합니다.");
     if (!options.sourceType) usage("--source-type이 필요합니다.");
@@ -223,6 +233,11 @@ export async function ingestSource(argv = process.argv.slice(2)) {
     return;
   }
 
+  const krLifecycle = options.krLifecyclePath
+    ? parseKrEtfLifecyclePlan(
+        JSON.parse(await readFile(path.resolve(options.krLifecyclePath), "utf8")),
+      )
+    : undefined;
   const krPublication = options.krPublicationPath
     ? parseKrPublicationRequest(
         JSON.parse(await readFile(path.resolve(options.krPublicationPath), "utf8")),
@@ -233,6 +248,7 @@ export async function ingestSource(argv = process.argv.slice(2)) {
   if (bytes.byteLength > SOURCE_MAX_FILE_BYTES)
     throw new Error("파일 1개 크기는 45MB 이하여야 합니다. CSV를 기간별로 나눠 주세요.");
   const validation = await validateSourceBytes({ bytes, filename: path.basename(absolutePath) });
+  if (krLifecycle && validation.valid) validateKrEtfLifecycleRows(krLifecycle, validation.rows);
   if (krPublication && validation.valid)
     buildKrSourcePublication(krPublication, {
       max_date: validation.stats.maxDate,
@@ -269,6 +285,7 @@ export async function ingestSource(argv = process.argv.slice(2)) {
     mode: options.registrationMode!,
     origin: options.origin,
     ...(krPublication ? { krPublication } : {}),
+    ...(krLifecycle ? { krLifecycle } : {}),
     bytes,
     filename: path.basename(absolutePath),
     // screening은 현재 웹 호환 kr.json을 유지하지만, backtest는 registry 원본만 저장한다.

@@ -26,6 +26,10 @@ const client = vi.hoisted(() => ({
                     schema_hash: row["schema_hash"],
                     activated_at: row["activated_at"],
                     created_at: row["created_at"],
+                    kr_lifecycle: columns.includes("validation_result->krLifecycle")
+                      ? ((row["validation_result"] as { krLifecycle?: unknown })?.krLifecycle ??
+                        null)
+                      : null,
                     kr_publication: columns.includes("validation_result->krPublication")
                       ? ((row["validation_result"] as { krPublication?: unknown })?.krPublication ??
                         null)
@@ -95,4 +99,16 @@ describe("browser/server source identity contract", () => {
     state.rows.reverse();
     expect(await fingerprints()).not.toBe(added);
   });
+});
+
+it("lifecycle-only metadata changes invalidate both browser and server identities", async () => {
+  state.rows = [{ ...row("life"), validation_result: { krLifecycle: { version: "v1" } } }];
+  const { listActiveScreeningSourceFingerprints } = await import("./sourceRegistry");
+  const before = await listActiveScreeningSourceFingerprints();
+  expect(before[0]!.validation_result.krLifecycle).toEqual({ version: "v1" });
+  const { sourceFingerprintRecords } = await import("./sourceFingerprintRecords");
+  const a = sourceFingerprintRecords(before);
+  state.rows[0]!["validation_result"] = { krLifecycle: { version: "v2" } };
+  const after = await listActiveScreeningSourceFingerprints();
+  expect(sourceFingerprintRecords(after)).not.toEqual(a);
 });

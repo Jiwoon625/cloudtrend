@@ -519,3 +519,28 @@ describe("KRX batch-arrival state", () => {
     expect(snapshot(ds)).toMatchObject({ dataStatus: "ready", exit: "MA60" });
   });
 });
+
+it("preserved pre-halt history cannot become a current ETF entry after the market advances", () => {
+  const original = fixture();
+  const before = structuredClone(original);
+  const latest = original.asOfDate;
+  const day = new Date(`${latest}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + 1);
+  const next = day.toISOString().slice(0, 10);
+  const ds = { ...original, asOfDate: next, tradeDates: [...original.tradeDates, next] };
+  const s = calculateEtfStrategies(ds).get("360750")!;
+  expect(s.eligible).toBe(false);
+  expect(s.onset).toBe(false);
+  expect(s.issues).toContain("기준일 ETF 가격 없음");
+  expect(
+    etfOrderPlan({
+      equity: 1e8,
+      cash: 1e8,
+      heldSymbols: [],
+      asOfDate: next,
+      candidates: [{ symbol: "360750", price: 100, strategy: s }],
+    }),
+  ).toEqual([]);
+  expect(original).toEqual(before);
+  expect(calculateEtfStrategies(original)).toEqual(calculateEtfStrategies(before));
+});

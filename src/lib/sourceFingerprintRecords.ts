@@ -13,6 +13,9 @@ export function sourceFingerprintRecords(
     ...((source.validation_result as { krPublication?: unknown } | undefined)?.krPublication
       ? { krPublication: (source.validation_result as { krPublication: unknown }).krPublication }
       : {}),
+    ...((source.validation_result as { krLifecycle?: unknown } | undefined)?.krLifecycle
+      ? { krLifecycle: (source.validation_result as { krLifecycle: unknown }).krLifecycle }
+      : {}),
     id: source.id,
     dataHash: source.data_hash,
     schemaHash: source.schema_hash,
