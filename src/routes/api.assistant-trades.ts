@@ -351,14 +351,20 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
     } catch {
       await releaseClaim(auth.client, proposal, token);
       return reply(
-        { error: "매도 전 실제 보유수량을 확인하지 못했습니다. 원장을 점검하세요.", code: "HOLDINGS_CHECK_FAILED" },
+        {
+          error: "매도 전 실제 보유수량을 확인하지 못했습니다. 원장을 점검하세요.",
+          code: "HOLDINGS_CHECK_FAILED",
+        },
         409,
       );
     }
     if (trade.shares > available) {
       await releaseClaim(auth.client, proposal, token);
       return reply(
-        { error: `실제 보유수량 ${available}주보다 매도수량 ${trade.shares}주가 많습니다.`, code: "INSUFFICIENT_HOLDINGS" },
+        {
+          error: `실제 보유수량 ${available}주보다 매도수량 ${trade.shares}주가 많습니다.`,
+          code: "INSUFFICIENT_HOLDINGS",
+        },
         409,
       );
     }

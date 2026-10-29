@@ -244,19 +244,34 @@ describe("assistant trade owner approval", () => {
     }));
     const buyId = "new-actual:prior-buy";
     const holding = {
-      id: buyId, date: "2026-10-20", symbol: "064290", name: "인텍플러스",
-      market: "KOSDAQ", side: "BUY", shares: 21, price: 57766,
-      fee: 28, signalKey: null, order: 0, note: "synthetic holding",
+      id: buyId,
+      date: "2026-10-20",
+      symbol: "064290",
+      name: "인텍플러스",
+      market: "KOSDAQ",
+      side: "BUY",
+      shares: 21,
+      price: 57766,
+      fee: 28,
+      signalKey: null,
+      order: 0,
+      note: "synthetic holding",
     };
     const metadata = emptyNewActualMetadata();
     metadata.assignments[buyId] = {
-      executionId: buyId, quantity: 21, gross: 1213086, fee: 28,
+      executionId: buyId,
+      quantity: 21,
+      gross: 1213086,
+      fee: 28,
       brokerReference: "notion:prior-buy",
     };
-    targetSnapshot({ revision: 100, payload: {
-      executions: [holding],
-      newActualPortfolio: metadata,
-    } });
+    targetSnapshot({
+      revision: 100,
+      payload: {
+        executions: [holding],
+        newActualPortfolio: metadata,
+      },
+    });
   }
   it("uses the same owner approval to record a partial SELL, preserving canonical side and total costs", async () => {
     sellProposal();
@@ -264,15 +279,21 @@ describe("assistant trade owner approval", () => {
     const response = await post();
     expect(response.status).toBe(200);
     expect(state.save).toHaveBeenCalledWith(
-      expect.anything(), state.uid,
+      expect.anything(),
+      state.uid,
       expect.objectContaining({
         requestId: state.proposal!["id"],
         execution: expect.objectContaining({
-          side: "SELL", shares: 20, price: 63500, fee: 2627,
+          side: "SELL",
+          shares: 20,
+          price: 63500,
+          fee: 2627,
           note: expect.stringContaining("실제매도"),
         }),
         allocation: expect.objectContaining({
-          quantity: 20, gross: 1270000, fee: 2627,
+          quantity: 20,
+          gross: 1270000,
+          fee: 2627,
         }),
       }),
       undefined,
@@ -287,7 +308,8 @@ describe("assistant trade owner approval", () => {
     expect((await response.json()).code).toBe("INSUFFICIENT_HOLDINGS");
     expect(state.save).not.toHaveBeenCalled();
     expect(state.rpc.mock.calls.map(([name]) => name)).toEqual([
-      "assistant_trade_claim", "assistant_trade_release",
+      "assistant_trade_claim",
+      "assistant_trade_release",
     ]);
   });
   it("refuses invalid sides before claim or any ledger write", async () => {

@@ -112,11 +112,15 @@ try {
   // A partial SELL uses the same owner proposal, source evidence, CAS, and
   // canonical journal contract. A forged BUY or wrong fee must roll back.
   const sell = await proposal("KOSPI", "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", 12, 2, "SELL");
-  const priorSell = (await db.query("select revision,payload from public.portfolio_ledgers")).rows[0];
+  const priorSell = (await db.query("select revision,payload from public.portfolio_ledgers"))
+    .rows[0];
   const approvedSellDoc = structuredClone(priorSell.payload);
   const sale = document(sell);
   approvedSellDoc.executions.push(...sale.executions);
-  Object.assign(approvedSellDoc.newActualPortfolio.assignments, sale.newActualPortfolio.assignments);
+  Object.assign(
+    approvedSellDoc.newActualPortfolio.assignments,
+    sale.newActualPortfolio.assignments,
+  );
   const wrongSide = structuredClone(approvedSellDoc);
   wrongSide.executions.at(-1).side = "BUY";
   await assert.rejects(commit(sell, "portfolio_ledgers", priorSell.revision, wrongSide));
@@ -124,15 +128,18 @@ try {
   wrongFee.executions.at(-1).fee = 1;
   await assert.rejects(commit(sell, "portfolio_ledgers", priorSell.revision, wrongFee));
   assert.deepEqual(
-    (await db.query("select revision,payload from public.portfolio_ledgers")).rows[0], priorSell,
+    (await db.query("select revision,payload from public.portfolio_ledgers")).rows[0],
+    priorSell,
   );
   await commit(sell, "portfolio_ledgers", priorSell.revision, approvedSellDoc);
-  const afterSell = (await db.query("select revision,payload from public.portfolio_ledgers")).rows[0];
+  const afterSell = (await db.query("select revision,payload from public.portfolio_ledgers"))
+    .rows[0];
   assert.equal(afterSell.revision, priorSell.revision + 1);
   assert.equal(afterSell.payload.executions.at(-1).side, "SELL");
   assert.equal(
     (await db.query("select status from public.assistant_trade_proposals where id=$1", [sell.id]))
-      .rows[0].status, "RECORDED",
+      .rows[0].status,
+    "RECORDED",
   );
   await assert.rejects(commit(sell, "portfolio_ledgers", priorSell.revision, approvedSellDoc));
   // Keep previous fills and assignments while exercising the three production ETF shapes.

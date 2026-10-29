@@ -239,7 +239,8 @@ const PROPOSE_SELL_TOOL = {
       fee: {
         type: "number",
         minimum: 0,
-        description: "Verified total sell costs including commission, tax and any broker charges, in the listing currency",
+        description:
+          "Verified total sell costs including commission, tax and any broker charges, in the listing currency",
       },
     },
   },
@@ -443,7 +444,11 @@ async function handleRpc(body: JsonRpcRequest) {
 
   if (method === "tools/call") {
     const name = params?.["name"];
-    if (name !== REGISTER_TOOL.name && name !== PROPOSE_BUY_TOOL.name && name !== PROPOSE_SELL_TOOL.name)
+    if (
+      name !== REGISTER_TOOL.name &&
+      name !== PROPOSE_BUY_TOOL.name &&
+      name !== PROPOSE_SELL_TOOL.name
+    )
       return rpcError(id, -32601, `Unknown tool: ${String(name)}`);
     try {
       return rpcResult(

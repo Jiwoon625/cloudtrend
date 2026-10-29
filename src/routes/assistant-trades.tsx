@@ -130,10 +130,10 @@ function AssistantTrades() {
         </Link>
       </div>
       <p className="text-sm text-muted-foreground">
-        한국·미국주식 매수·매도 모두 현재 홈페이지 계정으로 확인·반영합니다. 별도 서비스 로그인이나 API 키는
-        필요하지 않습니다. 미국주식은 미국 현지 체결일과 USD 금액을 확인하세요. ChatGPT가 작성한
-        거래는 승인 전에는 원장·현금·Shadow·과거 성과에 영향을 주지 않습니다. 실제 체결일, 수량,
-        단가, 수수료 및 Notion 증빙을 직접 대조한 뒤 종목별로 승인하세요. 계좌 입출금은 자동
+        한국·미국주식 매수·매도 모두 현재 홈페이지 계정으로 확인·반영합니다. 별도 서비스 로그인이나
+        API 키는 필요하지 않습니다. 미국주식은 미국 현지 체결일과 USD 금액을 확인하세요. ChatGPT가
+        작성한 거래는 승인 전에는 원장·현금·Shadow·과거 성과에 영향을 주지 않습니다. 실제 체결일,
+        수량, 단가, 수수료 및 Notion 증빙을 직접 대조한 뒤 종목별로 승인하세요. 계좌 입출금은 자동
         생성하지 않습니다.
       </p>
       <button
@@ -237,11 +237,15 @@ function AssistantTrades() {
                   <dd>{t.shares.toLocaleString("ko-KR")}주</dd>
                 </div>
                 <div>
-                  <dt className="text-muted-foreground">평균 {t.side === "SELL" ? "매도" : "매수"}단가</dt>
+                  <dt className="text-muted-foreground">
+                    평균 {t.side === "SELL" ? "매도" : "매수"}단가
+                  </dt>
                   <dd>{formatAssistantTradeMoney(t.price, t.market)}</dd>
                 </div>
                 <div>
-                  <dt className="text-muted-foreground">{t.side === "SELL" ? "매도금액" : "매수금액"}</dt>
+                  <dt className="text-muted-foreground">
+                    {t.side === "SELL" ? "매도금액" : "매수금액"}
+                  </dt>
                   <dd>{formatAssistantTradeMoney(assistantTradeGross(t), t.market)}</dd>
                 </div>
                 <div>
@@ -278,9 +282,9 @@ function AssistantTrades() {
                       checked={!!approved[p.id]}
                       onChange={(e) => setApproved((v) => ({ ...v, [p.id]: e.target.checked }))}
                     />
-                    증빙과 기존 실제보유원장을 대조했습니다. {t.side === "SELL"
-                      ? "매도 가능 보유수량 및 총 매매비용(수수료·세금 포함)을 확인했고, 매도 후 잔여수량이 맞습니다."
-                      : "동일 종목·일자·가격의 별도 매수가 있더라도 실제 증빙이 구분되고 수량·가격·매매비용이 일치합니다."}
+                    {t.side === "SELL"
+                      ? "증빙과 기존 실제보유원장을 대조했습니다. 매도 가능 보유수량 및 총 매매비용(수수료·세금 포함)을 확인했고, 매도 후 잔여수량이 맞습니다."
+                      : "증빙과 기존 실제보유원장을 대조했습니다. 동일 종목·일자·가격의 별도 매수가 있더라도 실제 증빙이 구분되고 수량·가격·매매비용이 일치합니다."}
                   </label>
                   <div className="flex gap-2">
                     <button
