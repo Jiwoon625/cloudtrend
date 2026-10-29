@@ -116,9 +116,14 @@ export function validateKrEtfLifecycleRows(value: unknown, rows: readonly Canoni
     fail("requested calendar does not match observed market sessions");
   if (days.at(-1) !== target || plan.requestedCollectionDates.some((d) => !days.includes(d)))
     fail("requested sessions missing from source");
+  // Lookback may retain ceased instruments that are not requested after their halt.
+  // Keep all observations within the original universe, but require exact coverage
+  // only for the requested window. The event checks below still reject halt-day rows.
+  const sourceSymbols = new Set([...plan.sourceUniverseSymbols, ...indices]);
+  if (rows.some((r) => !sourceSymbols.has(r.symbol))) fail("collected universe mismatch");
   if (
     !equalSet(
-      rows.map((r) => r.symbol),
+      rows.filter((r) => r.date >= plan.requestedCollectionDates[0]!).map((r) => r.symbol),
       [...plan.requestedSymbols, ...indices],
     )
   )

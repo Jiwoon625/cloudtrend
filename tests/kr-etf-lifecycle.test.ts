@@ -127,3 +127,27 @@ test("source identity is bound without changing original rows", async () => {
     }),
   ).toThrow();
 });
+
+test("post-halt requests preserve pre-halt lookback without admitting unknown or halted rows", async () => {
+  const p = plan(["2026-10-29"]);
+  const base = await rows(["2026-10-27", "2026-10-29"]);
+  expect(validateKrEtfLifecycleRows(p, base)).toEqual(p);
+  expect(() =>
+    validateKrEtfLifecycleRows(p, [
+      ...base,
+      { ...base.find((r) => r.symbol === "261920")!, symbol: "999999" },
+    ]),
+  ).toThrow();
+  expect(() =>
+    validateKrEtfLifecycleRows(p, [
+      ...base,
+      { ...base.find((r) => r.symbol === "261920")!, date: "2026-10-29" },
+    ]),
+  ).toThrow();
+  expect(() =>
+    validateKrEtfLifecycleRows(
+      p,
+      base.filter((r) => !(r.symbol === "005930" && r.date === "2026-10-29")),
+    ),
+  ).toThrow();
+});
