@@ -1,3 +1,4 @@
+import runtime from "../src/lib/kospiShadowPublicationRuntime.generated.json";
 import assert from "node:assert/strict";
 import { getMockDataset } from "../src/lib/engine/mockProvider";
 import { DEFAULT_SCORING_CONFIG } from "../src/lib/engine/scoring";
@@ -130,7 +131,7 @@ const authority = {
   adjustedCapturedAt: "2026-10-28T01:00:00Z",
   computedAt: "2026-10-28T02:00:00Z",
   codeVersion: "a".repeat(40),
-  runtimeCodeHash: await h("runtime"),
+  runtimeCodeHash: runtime.codeHash,
 };
 const input: KospiFinalPreparationInput = {
   baselineDataset: raw,
@@ -152,6 +153,16 @@ assert.equal(
 );
 assert.equal(result.plan?.snapshotHashes.length, 2);
 assert.equal(result.plan?.writeSet.length, 4);
+assert.equal(result.plan.boundaryAdmission.mode, "STRICT_COMPLETED_EQUIVALENCE");
+assert.equal(result.priorityContinuation, null);
+assert.equal(result.priorityContinuationHash, null);
+assert.deepEqual(result.plan.sessions, result.targetSessions);
+assert.equal(
+  result.targetSessions.every(
+    (s) => s.lateRecovery?.predecessorHash === result.plan.predecessorHash,
+  ),
+  true,
+);
 assert.equal(result.finalProjection?.latest.source.date, "2026-10-27");
 assert.equal(JSON.stringify(input), before);
 assert.equal(externalWrites, writesBefore);
@@ -209,6 +220,19 @@ changed.adjustedDataset.bars[inst.symbol]!.find((b) => b.tradeDate === "2026-10-
 const blocked = await prepareKospiFinalRetrospective(changed);
 assert.equal(blocked.status, "BLOCKED_ADJUSTED_PREDECESSOR_MISMATCH");
 assert.equal(blocked.plan, null);
+assert.equal(blocked.adjustedBoundaryEquivalent, false);
+assert.equal(blocked.targetSessions.length, 2);
+assert.deepEqual(
+  blocked.targetSessions.map((s) => s.date),
+  changed.authority.targetDates,
+);
+assert.equal(
+  blocked.targetSessions.every((s) => s.lateRecovery?.historicalAvailabilityClaim === false),
+  true,
+);
+assert.equal(blocked.priorityContinuation?.status, "BLOCKED_PRIORITY_ONLY_CONTINUATION");
+assert.equal(await hashSeriesValue(blocked.priorityContinuation), blocked.priorityContinuationHash);
+assert.deepEqual(JSON.parse(JSON.stringify(blocked)).targetSessions, blocked.targetSessions);
 tests++;
 const one = make("2026-10-26"),
   two = structuredClone(one);

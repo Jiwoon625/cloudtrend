@@ -43,3 +43,20 @@ The history CSV copies current effective raw rows and changes only the approved 
 - Separate transactional source activation and final actual/model/source readback.
 
 A clean public-code build alone is not operational recovery approval or proof that the private comparison succeeded.
+
+### Dedicated cache-priority continuation approval
+
+The ordinary `kospi-final-retrospective-approval-v1` continues to require a true strict
+completed-boundary equivalence result. The alternative
+`kospi-priority-continuation-approval-v1` adds the exact
+`boundaryMode: PRIORITY_ONLY_PREDECESSOR_CONTINUATION` and `boundaryProofHash`.
+It is admitted only for a false strict result with a successful independently reviewed,
+versioned three-start exact-target certificate. The full preparation, plan, runtime, immutable
+anchor and all output pins remain required. PLAN creates only a candidate approval shape.
+
+APPLY resolves the certificate from the exact captured objects, recomputes the full proof and
+matches its output bodies before any live mutation. It then uses the existing original-anchor
+simulation, immutable-prefix/partial-retry checks, shared legacy writer exclusion and exact
+append/readback protocol. It never rewrites the completed predecessor or substitutes a
+counterfactual state into the live store. Missing, contradictory, unknown or rehashed-but-invalid
+proofs fail closed before writes. No partial recovery scope or catch-and-continue path is added.

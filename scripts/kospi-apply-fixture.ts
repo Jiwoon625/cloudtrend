@@ -1,3 +1,4 @@
+import runtime from "../src/lib/kospiShadowPublicationRuntime.generated.json";
 import assert from "node:assert/strict";
 import { getMockDataset } from "../src/lib/engine/mockProvider";
 import { DEFAULT_SCORING_CONFIG } from "../src/lib/engine/scoring";
@@ -130,7 +131,7 @@ const authority = {
   adjustedCapturedAt: "2026-10-28T01:00:00Z",
   computedAt: "2026-10-28T02:00:00Z",
   codeVersion: "a".repeat(40),
-  runtimeCodeHash: await h("runtime"),
+  runtimeCodeHash: runtime.codeHash,
 };
 export const input: KospiFinalPreparationInput = {
   baselineDataset: raw,

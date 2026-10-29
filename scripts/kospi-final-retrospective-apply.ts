@@ -13,13 +13,13 @@ import {
 import { canonicalSeriesJson, hashSeriesValue } from "../src/lib/ledger/modelSeries";
 import { nextKrRegularSession } from "../src/lib/ledger/krShadowDecision";
 import type { prepareKospiFinalRetrospective } from "./kospi-final-retrospective-preparation";
+import { verifyKospiPriorityAdmission } from "./kospi-priority-admission";
 
 type Prepared = Extract<
   Awaited<ReturnType<typeof prepareKospiFinalRetrospective>>,
   { status: "PREPARED_FOR_INDEPENDENT_REVIEW" }
 >;
-export interface KospiRetrospectiveApproval {
-  version: "kospi-final-retrospective-approval-v1";
+interface KospiRetrospectiveApprovalBase {
   status: "APPROVED";
   owner: string;
   preparationHash: string;
@@ -30,6 +30,56 @@ export interface KospiRetrospectiveApproval {
   predecessorHash: string;
   snapshotHashes: string[];
   finalProjectionHash: string;
+}
+export type KospiRetrospectiveApproval = KospiRetrospectiveApprovalBase &
+  (
+    | { version: "kospi-final-retrospective-approval-v1" }
+    | {
+        version: "kospi-priority-continuation-approval-v1";
+        boundaryMode: "PRIORITY_ONLY_PREDECESSOR_CONTINUATION";
+        boundaryProofHash: string;
+      }
+  );
+/** Candidate shape only. Independent private review/provisioning remains mandatory. */
+export function kospiRetrospectiveApprovalCandidate(
+  preparationHash: string,
+  prepared: Prepared,
+): KospiRetrospectiveApproval {
+  const p = prepared.plan,
+    a = prepared.authority;
+  const common = {
+    status: "APPROVED" as const,
+    owner: a.owner,
+    preparationHash,
+    planHash: prepared.planHash,
+    runtimeCodeHash: a.runtimeCodeHash,
+    predecessorDate: a.predecessorDate,
+    targetDates: a.targetDates,
+    predecessorHash: p.predecessorHash,
+    snapshotHashes: p.snapshotHashes,
+    finalProjectionHash: p.finalProjectionHash,
+  };
+  if (p.boundaryAdmission.mode === "PRIORITY_ONLY_PREDECESSOR_CONTINUATION") {
+    requireValue(
+      prepared.adjustedBoundaryEquivalent === false &&
+        isHash(p.boundaryAdmission.proofHash) &&
+        prepared.priorityContinuation?.status === "PROVEN_PRIORITY_ONLY_CONTINUATION" &&
+        prepared.priorityContinuationHash === p.boundaryAdmission.proofHash,
+      "PRIORITY_CANDIDATE_PROOF",
+    );
+    return {
+      ...common,
+      version: "kospi-priority-continuation-approval-v1",
+      boundaryMode: "PRIORITY_ONLY_PREDECESSOR_CONTINUATION",
+      boundaryProofHash: p.boundaryAdmission.proofHash,
+    };
+  }
+  requireValue(
+    p.boundaryAdmission.mode === "STRICT_COMPLETED_EQUIVALENCE" &&
+      prepared.adjustedBoundaryEquivalent === true,
+    "STRICT_CANDIDATE_BOUNDARY",
+  );
+  return { ...common, version: "kospi-final-retrospective-approval-v1" };
 }
 export interface KospiRecoveryPreparationReceipt {
   version: "kr-adjusted-recovery-preparation-v1";
@@ -123,6 +173,9 @@ export async function applyPreparedKospiRetrospective(input: ApplyKospiRetrospec
         "predecessorHash",
         "snapshotHashes",
         "finalProjectionHash",
+        ...(approval.version === "kospi-priority-continuation-approval-v1"
+          ? ["boundaryMode", "boundaryProofHash"]
+          : []),
       ].sort(),
     ),
     "APPROVAL_SCHEMA",
@@ -142,7 +195,6 @@ export async function applyPreparedKospiRetrospective(input: ApplyKospiRetrospec
       prepared.operationalApproval === false &&
       prepared.historicalAvailabilityClaim === false &&
       prepared.resetCapital === false &&
-      prepared.adjustedBoundaryEquivalent === true &&
       plan &&
       plan.immutablePrefixPreserved === true &&
       plan.resetCapital === false &&
@@ -150,7 +202,8 @@ export async function applyPreparedKospiRetrospective(input: ApplyKospiRetrospec
     "UNPREPARED_OR_UNSAFE_PLAN",
   );
   requireValue(
-    approval.version === "kospi-final-retrospective-approval-v1" &&
+    (approval.version === "kospi-final-retrospective-approval-v1" ||
+      approval.version === "kospi-priority-continuation-approval-v1") &&
       approval.status === "APPROVED" &&
       approval.preparationHash === input.authoritativePreparationHash &&
       approval.planHash === prepared.planHash &&
@@ -160,6 +213,24 @@ export async function applyPreparedKospiRetrospective(input: ApplyKospiRetrospec
       same(plan.authority, authority),
     "PLAN_AUTHORITY_MISMATCH",
   );
+  if (approval.version === "kospi-priority-continuation-approval-v1") {
+    requireValue(
+      approval.boundaryMode === "PRIORITY_ONLY_PREDECESSOR_CONTINUATION" &&
+        isHash(approval.boundaryProofHash) &&
+        approval.boundaryProofHash === prepared.priorityContinuationHash &&
+        prepared.adjustedBoundaryEquivalent === false &&
+        plan.boundaryAdmission.mode === "PRIORITY_ONLY_PREDECESSOR_CONTINUATION" &&
+        plan.boundaryAdmission.proofHash === approval.boundaryProofHash &&
+        prepared.priorityContinuation?.status === "PROVEN_PRIORITY_ONLY_CONTINUATION",
+      "PRIORITY_PROOF_AUTHORITY",
+    );
+  } else {
+    requireValue(
+      prepared.adjustedBoundaryEquivalent === true &&
+        (!plan.boundaryAdmission || plan.boundaryAdmission.mode === "STRICT_COMPLETED_EQUIVALENCE"),
+      "STRICT_BOUNDARY_REQUIRED",
+    );
+  }
   requireValue(
     /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(approval.owner) &&
       authority.owner === approval.owner &&
@@ -248,6 +319,10 @@ export async function applyPreparedKospiRetrospective(input: ApplyKospiRetrospec
       (await hashSeriesValue(baseline.latest)) === approval.predecessorHash,
     "BASELINE_ANCHOR",
   );
+  if (approval.version === "kospi-priority-continuation-approval-v1") {
+    // Recompute all three exact target chains before ANY live read/write orchestration.
+    await verifyKospiPriorityAdmission(prepared, receipt.kospi.capturedObjects);
+  }
   const memory = memoryStore(captured),
     simulated = await openKospiShadowRevisionStore(memory.store, approval.owner);
   const projections = new Map<string, KospiShadowView>([
