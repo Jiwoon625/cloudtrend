@@ -3,9 +3,16 @@ import { canonicalSeriesJson, hashSeriesValue } from "../../src/lib/ledger/model
 import { economicSessionInputs } from "../../src/lib/integratedAllocationEquivalence";
 import { validateSourceText } from "../../src/lib/sourceData";
 import { requireCheck, rawHash } from "../kr-vintage-preflight/transport";
+import type { ComputationPhase } from "../kr-vintage-preflight/phases";
 const equal = (a: unknown, b: unknown) => canonicalSeriesJson(a) === canonicalSeriesJson(b);
 /** Rehash the generated private receipt after pure-child exit, before any credentialed append. */
-export async function verifyPreparationPayload(p: any, planHash: string, capsuleHash: string) {
+export async function verifyPreparationPayload(
+  p: any,
+  planHash: string,
+  capsuleHash: string,
+  phase: (value: ComputationPhase) => void = () => {},
+) {
+  phase("RECEIPT_TYPE_AND_AUTHORITY");
   requireCheck(
     p.version === "kr-adjusted-recovery-preparation-v1" &&
       p.kind === "RECOVERY_PREPARATION_ONLY" &&
@@ -15,6 +22,7 @@ export async function verifyPreparationPayload(p: any, planHash: string, capsule
       p.planHash === planHash &&
       p.capsuleHash === capsuleHash,
   );
+  phase("RECEIPT_CLOCK_EXPOSURE_COVERAGE");
   requireCheck(
     p.clockSemantics?.mode === "RETROSPECTIVE_MODEL_CLOCK" &&
       p.clockSemantics.historicalAvailabilityClaim === false &&
@@ -41,6 +49,7 @@ export async function verifyPreparationPayload(p: any, planHash: string, capsule
       p.historicalCoverage.allOtherArchivedRowsCovered ===
         (p.historicalCoverage.missingOtherRows.length === 0),
   );
+  phase("RECEIPT_ARCHIVE_PAIR_SET");
   requireCheck(
     p.scope.dates.length === 2 &&
       p.modelPins.length === 5 &&
@@ -51,17 +60,20 @@ export async function verifyPreparationPayload(p: any, planHash: string, capsule
         p.archiveReferences.map((r: any) => r.date).sort(),
       ),
   );
+  phase("RECEIPT_ARCHIVE_PAIR_HASHES");
   for (const pair of [...p.archivePairs, ...p.retainedPairs])
     requireCheck(
       (await hashSeriesValue(pair.archived)) === pair.archivedHash &&
         (await hashSeriesValue(pair.incoming)) === pair.incomingHash &&
         pair.archivedHash !== pair.incomingHash,
     );
+  phase("RECEIPT_RETAINED_APPROVAL_OVERLAY");
   requireCheck(
     (await hashSeriesValue(p.candidate.overlay)) === p.candidate.overlayHash &&
       p.vintageReviewProposal.parentReceiptHash === p.vintageV1.receiptHash &&
       equal(p.vintageReviewProposal.reviews.slice(0, 2), p.vintageV1.receipt.reviews),
   );
+  phase("RECEIPT_CORRECTION_DISPOSITION");
   const correction = p.candidate.historyCorrection;
   requireCheck(
     correction.role === "HISTORY_ONLY" &&
@@ -72,6 +84,7 @@ export async function verifyPreparationPayload(p: any, planHash: string, capsule
       correction.maxDate <= p.scope.predecessorDate &&
       rawHash(correction.csv) === correction.fileHash,
   );
+  phase("RECEIPT_CORRECTION_CSV_IDENTITY");
   const v = await validateSourceText(correction.csv, "reviewed-history-correction.csv");
   requireCheck(
     v.valid &&
@@ -85,7 +98,9 @@ export async function verifyPreparationPayload(p: any, planHash: string, capsule
           r.symbol === p.scope.symbol && r.type === "STOCK" && r.date <= p.scope.predecessorDate,
       ),
   );
+  phase("RECEIPT_DATED_EVIDENCE_HASHES");
   for (const e of p.candidate.evidence) requireCheck(e.hash === (await hashSeriesValue(e.payload)));
+  phase("RECEIPT_EQUIVALENCE_LINKAGE");
   const proof = p.integrated26;
   requireCheck(
     proof.candidateEvidenceHash === p.candidate.evidence[0].hash &&
@@ -95,6 +110,7 @@ export async function verifyPreparationPayload(p: any, planHash: string, capsule
         ["O1", "S07"],
       ),
   );
+  phase("RECEIPT_EXACT_ECONOMIC_PROOF");
   for (const b of proof.books) {
     requireCheck(
       (await hashSeriesValue(b.baselineSessions)) === b.baselineSessionsHash &&
@@ -107,16 +123,20 @@ export async function verifyPreparationPayload(p: any, planHash: string, capsule
           b.economicSessionInputsHash,
     );
   }
+  phase("RECEIPT_KOSPI_OBJECT_COUNT");
   requireCheck(
     p.kospi.capturedObjects.length === 19 && p.kospi.stateHashesIndependentlyApproved === false,
   );
+  phase("RECEIPT_KOSPI_OBJECT_HASHES");
   for (const o of p.kospi.capturedObjects)
     requireCheck(o.hash === (await hashSeriesValue(o.payload)) && o.stateHashPreapproved === false);
+  phase("RECEIPT_KOSPI_PLAN_HASH");
   if (p.kospi.result.plan)
     requireCheck(
       (await hashSeriesValue(p.kospi.result.plan)) === p.kospi.result.planHash &&
         p.kospi.result.plan.immutablePrefixPreserved === true &&
         p.kospi.result.plan.resetCapital === false,
     );
+  phase("RECEIPT_CANONICAL_HASH");
   return await hashSeriesValue(p);
 }

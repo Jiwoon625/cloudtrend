@@ -1,3 +1,4 @@
+import { publicComputationPhase } from "../kr-vintage-preflight/phases";
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
@@ -68,26 +69,19 @@ async function main() {
         const v = JSON.parse(
           fs.readFileSync(path.join(directory, "failure-summary.json"), "utf8"),
         ).phase;
-        if (
-          [
-            "INPUT_VALIDATION",
-            "SOURCE_VALIDATION",
-            "BASELINE_REPRODUCTION",
-            "CAPTURE_VALIDATION",
-            "OVERLAY_DERIVATION",
-            "CANDIDATE_COMPARISON",
-            "INTEGRATED_COMPARISON",
-            "OUTPUT_VALIDATION",
-          ].includes(v)
-        )
-          phase = v;
+        phase = publicComputationPhase(v);
       } catch {
         /* Never expose private child diagnostics. */
       }
       return { status: "PREPARATION_REJECTED", phase, operationalApproval: false };
     }
+    failurePhase = "PREPARATION_PAYLOAD_READ";
     const payload = JSON.parse(fs.readFileSync(path.join(output, "preparation.json"), "utf8"));
-    const hash = await verifyPreparationPayload(payload, planHash, capsuleHash);
+    failurePhase = "PREPARATION_PAYLOAD_VERIFICATION";
+    const hash = await verifyPreparationPayload(payload, planHash, capsuleHash, (phase) => {
+      failurePhase = phase;
+    });
+    failurePhase = "PREPARATION_VERIFIED_WRITE";
     fs.writeFileSync(
       path.join(directory, "verified-preparation.json"),
       JSON.stringify({ hash, payload }),

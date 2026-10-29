@@ -1,3 +1,4 @@
+import { publicComputationPhase } from "./phases";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import fs from "node:fs";
 import path from "node:path";
@@ -69,19 +70,7 @@ export function compute(directory: string, pureEntry: string) {
       const value = JSON.parse(
         fs.readFileSync(path.join(directory, "failure-summary.json"), "utf8"),
       ).phase;
-      if (
-        [
-          "INPUT_VALIDATION",
-          "SOURCE_VALIDATION",
-          "BASELINE_REPRODUCTION",
-          "CAPTURE_VALIDATION",
-          "OVERLAY_DERIVATION",
-          "CANDIDATE_COMPARISON",
-          "INTEGRATED_COMPARISON",
-          "OUTPUT_VALIDATION",
-        ].includes(value)
-      )
-        phase = value;
+      phase = publicComputationPhase(value);
     } catch {
       /* No raw child error crosses the boundary. */
     }

@@ -27,6 +27,7 @@ import octoberRuntime from "../../src/lib/ledger/octoberShadowEngineManifest.gen
 import integratedRuntime from "../../src/lib/integratedAllocationRuntime.generated.json";
 import kospiRuntime from "../../src/lib/kospiShadowPublicationRuntime.generated.json";
 import { requireCheck, rawHash } from "../kr-vintage-preflight/transport";
+import type { ComputationPhase } from "../kr-vintage-preflight/phases";
 const equal = (a: unknown, b: unknown) => canonicalSeriesJson(a) === canonicalSeriesJson(b);
 export function containsTargetSymbol(value: unknown, symbol: string): boolean {
   if (!value || typeof value !== "object") return false;
@@ -41,7 +42,11 @@ export function containsTargetSymbol(value: unknown, symbol: string): boolean {
       containsTargetSymbol(v, symbol),
   );
 }
-export async function prepareRecovery(context: any) {
+export async function prepareRecovery(
+  context: any,
+  phase: (value: ComputationPhase) => void = () => {},
+) {
+  phase("PREPARATION_CONTEXT");
   const {
     input,
     dataset,
@@ -63,6 +68,7 @@ export async function prepareRecovery(context: any) {
   const preparation = input.recoveryPreparation,
     plan = read(preparation.plan),
     symbol = scope.symbol;
+  phase("PREPARATION_PLAN_IDENTITY");
   requireCheck(
     preparation.planHash === (await hashSeriesValue(plan)) &&
       plan.capsuleHash === preparation.capsuleHash &&
@@ -70,18 +76,22 @@ export async function prepareRecovery(context: any) {
       plan.scope.symbol === symbol,
   );
   const originalV1 = { registry: plan.vintageV1.registry, receipt: plan.vintageV1.receipt };
+  phase("RETAINED_VINTAGE_APPROVAL");
   await verifyKrSourceVintagePrivateApproval(originalV1);
+  phase("ADOPTED_MODEL_READ");
   const archivePairs: any[] = [],
     retainedPairs: any[] = [],
     missingHistoricalRows: any[] = [],
     models = preparation.models.map((m: any) => ({ ...m, payload: read(m.ref) }));
   for (const reference of preparation.archives) {
+    phase("ARCHIVE_PAYLOAD_IDENTITY");
     const archive = read(reference.ref);
     requireCheck(
       (await hashSeriesValue(archive)) === reference.payloadHash && archive.date === reference.date,
     );
     for (const [s, bars] of Object.entries(archive.inputs.bars) as [string, any[]][])
       for (const archived of bars) {
+        phase("ARCHIVE_TARGET_COVERAGE");
         const incoming = (
           (reference.date >= "2026-10-12" ? candidateDataset.observedBars?.[s] : undefined) ??
           candidateDataset.bars[s] ??
@@ -96,6 +106,7 @@ export async function prepareRecovery(context: any) {
           });
           continue;
         }
+        phase("ARCHIVE_BAR_COMPARISON");
         const old = krExecutionBar(archived),
           next = krExecutionBar(incoming);
         if (equal(old, next)) continue;
@@ -114,6 +125,7 @@ export async function prepareRecovery(context: any) {
         };
         if (s === symbol) archivePairs.push(pair);
         else {
+          phase("ARCHIVE_RETAINED_PAIR_APPROVAL");
           requireCheck(
             plan.vintageV1.receipt.reviews.some(
               (r: any) =>
@@ -127,6 +139,7 @@ export async function prepareRecovery(context: any) {
         }
       }
   }
+  phase("ARCHIVE_CHANGED_PAIR_SET");
   requireCheck(
     archivePairs.length === plan.archives.length &&
       equal(archivePairs.map((p) => p.date).sort(), plan.archives.map((a: any) => a.date).sort()),
@@ -141,14 +154,17 @@ export async function prepareRecovery(context: any) {
     evidenceUrl: plan.corporateActionEvidenceUrl,
   }));
   for (const model of models) {
+    phase("ADOPTED_MODEL_PIN");
     requireCheck(
       (await hashSeriesValue(model.payload)) === model.payloadHash &&
         model.payload.stateHash === model.stateHash &&
         model.payload.receipt.date === plan.scope.predecessorDate,
     );
+    phase("ADOPTED_TARGET_EXPOSURE");
     const result = model.payload.result;
     requireCheck(result && typeof result === "object" && Object.keys(result).length > 0);
     requireCheck(!containsTargetSymbol(result, symbol));
+    phase("ADOPTED_VINTAGE_RECONCILIATION");
     if (["KR_MIXED", "KR_KOSPI", "KR_KOSDAQ"].some((k) => model.seriesId.endsWith(":" + k)))
       for (const p of archivePairs)
         await reconcileKrHistoricalSourceVintage({
@@ -161,6 +177,7 @@ export async function prepareRecovery(context: any) {
         });
   }
   // HISTORY_ONLY is an explicit transformed source, not a collector FINAL declaration.
+  phase("HISTORY_CORRECTION_ROWS");
   const correctionRows: CanonicalSourceRow[] = [];
   for (const item of overlay.rows) {
     const old = dataset.observedBars[symbol].find((b: any) => b.tradeDate === item.date);
@@ -182,26 +199,33 @@ export async function prepareRecovery(context: any) {
       row[field] = item.bar[field] === null ? "" : String(item.bar[field]);
     correctionRows.push(row as CanonicalSourceRow);
   }
+  phase("HISTORY_CORRECTION_SCOPE");
   requireCheck(
     correctionRows.length > 0 &&
       correctionRows.every(
         (r) => r.type === "STOCK" && r.symbol === symbol && r.date <= plan.scope.predecessorDate,
       ),
   );
+  phase("HISTORY_CORRECTION_CSV_VALIDATION");
   const csv = toCanonicalCsv(correctionRows),
     validation = await validateSourceText(csv, "reviewed-history-correction.csv");
   requireCheck(validation.valid);
+  phase("HISTORY_CORRECTION_REPARSE_EQUALITY");
   const merged = parseManualMarketDataWithReferences([...values, validation.canonicalCsv]).dataset;
   requireCheck(equal(merged, candidateDataset));
+  phase("INTEGRATED_EXPOSURE_READ");
   const books = ["O1", "S07"].map((kind) => ({
     kind,
     previous: read(input.integrated.books[kind].previous),
     completed: read(input.integrated.books[kind].completed),
   }));
+  phase("INTEGRATED_TARGET_EXPOSURE");
   for (const book of books) {
     requireCheck(!containsTargetSymbol(book.previous.result, symbol));
     requireCheck(!containsTargetSymbol(book.completed.result, symbol));
   }
+  traceIntegratedEquivalenceInputs(context, plan, books, phase);
+  phase("INTEGRATED_EXACT_EQUIVALENCE_PROOF");
   const equivalence = await prepareIntegratedEquivalenceProof({
     date: scope.targetDate,
     calculatedAt: plan.preparedAt,
@@ -212,6 +236,7 @@ export async function prepareRecovery(context: any) {
     usCurrent: us,
     books,
   } as any);
+  phase("NEXT_EVIDENCE_SESSION_CLOCK");
   const nextDate = plan.scope.dates[1],
     following = nextKrRegularSession(nextDate);
   requireCheck(following);
@@ -221,10 +246,13 @@ export async function prepareRecovery(context: any) {
     openAt: regularOpenAt("KR", nextDate),
     closeAt: regularCloseAt("KR", nextDate),
   };
+  phase("NEXT_EVIDENCE_ANALYSIS");
   const next = analyzeKrReplayDataset(sliceKrDatasetForReplay(candidateDataset, nextDate), config);
   const nextSnapshot = { ...buildSnapshot(next.analysis), savedAt: clock.modelAvailableAt };
+  phase("NEXT_EVIDENCE_DATED_HASH");
   const nextDated = currentDateEvidence(next.dataset, nextSnapshot),
     nextSourceHash = await hashSeriesValue(nextDated);
+  phase("NEXT_EVIDENCE_ADAPTATION");
   const nextEvidence = prepareIntegratedKrEvidence(next.dataset, next.analysis, {
     ...candidateEvidence.clock,
     openAt: clock.openAt,
@@ -239,6 +267,7 @@ export async function prepareRecovery(context: any) {
     preparation.owner +
     "/shadow/kospi-confirm1-bear-rsaccel-v1/correction-approvals/october14-retrospective-v1.json";
   let legacyApproval: any;
+  phase("LEGACY_OBJECT_HASHES");
   for (const item of preparation.objects) {
     const payload = read(item.ref);
     requireCheck((await hashSeriesValue(payload)) === item.hash);
@@ -251,6 +280,7 @@ export async function prepareRecovery(context: any) {
       preparation.owner +
         "/shadow/kospi-confirm1-bear-rsaccel-v1/revisions/october14-retrospective-v1/revision.json"
     ]?.payload;
+  phase("LEGACY_CORRECTION_APPROVAL");
   requireCheck(
     legacyApproval &&
       revision &&
@@ -261,29 +291,35 @@ export async function prepareRecovery(context: any) {
       legacyApproval.expectedOriginalTargetHash === revision.expectedOriginalTargetHash &&
       legacyApproval.expectedCorrectedSourceHash === revision.correctedSourceHash,
   );
+  phase("LEGACY_FINAL_SOURCE_READ");
   const finalSource = read(preparation.finalSource);
-  const kospi = await prepareKospiFinalRetrospective({
-    baselineDataset: dataset,
-    adjustedDataset: candidateDataset,
-    scoringConfig: config,
-    objects,
-    authority: {
-      owner: preparation.owner,
-      predecessorDate: plan.scope.predecessorDate,
-      targetDates: plan.scope.dates,
-      baselineSourceHash: scope.expectedRun.dataVersion,
-      adjustedBasisHash: await hashSeriesValue(candidateDataset),
-      sourceManifestHash: await hashSeriesValue(read(input.frozenSourceRoster)),
-      captureManifestHash: scope.captureManifestHash,
-      baselineCollectedAt: new Date(
-        finalSource.activated_at ?? read(input.frozenRun).completed_at,
-      ).toISOString(),
-      adjustedCapturedAt: captureManifest.finishedAt,
-      computedAt: plan.preparedAt,
-      codeVersion: preparation.codeVersion,
-      runtimeCodeHash: kospiRuntime.codeHash,
+  phase("LEGACY_PREPARATION_INPUT");
+  const kospi = await prepareKospiFinalRetrospective(
+    {
+      baselineDataset: dataset,
+      adjustedDataset: candidateDataset,
+      scoringConfig: config,
+      objects,
+      authority: {
+        owner: preparation.owner,
+        predecessorDate: plan.scope.predecessorDate,
+        targetDates: plan.scope.dates,
+        baselineSourceHash: scope.expectedRun.dataVersion,
+        adjustedBasisHash: await hashSeriesValue(candidateDataset),
+        sourceManifestHash: await hashSeriesValue(read(input.frozenSourceRoster)),
+        captureManifestHash: scope.captureManifestHash,
+        baselineCollectedAt: new Date(
+          finalSource.activated_at ?? read(input.frozenRun).completed_at,
+        ).toISOString(),
+        adjustedCapturedAt: captureManifest.finishedAt,
+        computedAt: plan.preparedAt,
+        codeVersion: preparation.codeVersion,
+        runtimeCodeHash: kospiRuntime.codeHash,
+      },
     },
-  });
+    phase,
+  );
+  phase("PREPARATION_RECEIPT_ASSEMBLY");
   const receipt = {
     version: "kr-adjusted-recovery-preparation-v1",
     kind: "RECOVERY_PREPARATION_ONLY",
@@ -382,5 +418,63 @@ export async function prepareRecovery(context: any) {
       changedSnapshotLeaves: report.snapshotEntries.changedLeafCount,
     },
   };
+  phase("PREPARATION_RECEIPT_SERIALIZATION");
   return JSON.parse(JSON.stringify(receipt));
+}
+
+/** Diagnostic prechecks only: mirror required proof predicates without altering that runtime. */
+export function traceIntegratedEquivalenceInputs(
+  context: any,
+  plan: any,
+  books: any[],
+  phase: (value: ComputationPhase) => void,
+) {
+  const { scope, frozen, candidateEvidence, history, priorUs, us, report } = context;
+  phase("EQUIVALENCE_INPUT_DATES");
+  requireCheck(
+    frozen.date === scope.targetDate &&
+      candidateEvidence.date === scope.targetDate &&
+      Number.isFinite(Date.parse(plan.preparedAt)) &&
+      us.analysis.date === scope.targetDate,
+  );
+  phase("EQUIVALENCE_BOOK_ORDER");
+  requireCheck(
+    equal(
+      books.map((b) => b.kind),
+      ["O1", "S07"],
+    ),
+  );
+  phase("EQUIVALENCE_HISTORY_ORDER");
+  requireCheck(
+    history.length > 0 &&
+      history.every(
+        (e: any, i: number) =>
+          e.date < scope.targetDate && (i === 0 || e.date > history[i - 1].date),
+      ),
+  );
+  for (const { kind, previous, completed } of books) {
+    phase("EQUIVALENCE_BOOK_CHAIN");
+    requireCheck(
+      previous.registry.policy.kind === kind &&
+        completed.registry.policy.kind === kind &&
+        completed.receipt.date === scope.targetDate &&
+        completed.previousStateHash === previous.stateHash &&
+        equal(previous.registry, completed.registry),
+    );
+    phase("EQUIVALENCE_PREVIOUS_US_DATE");
+    requireCheck(priorUs.analysis.date === previous.result.markets.U.lastSessionDate);
+    phase("EQUIVALENCE_EXACT_KR_HISTORY");
+    requireCheck(
+      equal(
+        history.map((e: any) => e.date),
+        previous.result.markets.K.sessions,
+      ),
+    );
+    phase("EQUIVALENCE_ECONOMIC_INPUTS");
+    requireCheck(report.books[kind].sessionInputsEqualExceptSourceHash === true);
+    phase("EQUIVALENCE_COMPLETED_BASELINE");
+    requireCheck(report.books[kind].baselineReproduced.equal === true);
+  }
+  phase("EQUIVALENCE_DISTINCT_EVIDENCE");
+  requireCheck(!equal(frozen, candidateEvidence));
 }

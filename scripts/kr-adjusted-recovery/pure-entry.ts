@@ -14,7 +14,10 @@ runKrVintagePreflight(
     phase = v;
   },
   async (context) => {
-    const receipt = await prepareRecovery(context);
+    const receipt = await prepareRecovery(context, (value) => {
+      phase = value;
+    });
+    phase = "PREPARATION_RECEIPT_WRITE";
     fs.writeFileSync(path.join(output, "preparation.json"), JSON.stringify(receipt), {
       flag: "wx",
       mode: 0o600,
