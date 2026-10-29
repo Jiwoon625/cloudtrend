@@ -649,7 +649,7 @@ export function KoreaPortfolioContent() {
                     <td className={td}>
                       {p.exitSignal ?? "없음"}
                       <br />
-                      <span className="text-muted-foreground">실제 매도는 직접 기록</span>
+                      <span className="text-muted-foreground">매도는 직접 기록 또는 ChatGPT 승인</span>
                     </td>
                     <td className={td}>
                       <Button
