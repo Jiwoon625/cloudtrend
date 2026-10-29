@@ -63,6 +63,13 @@ describe("Assistant actual trade proposals", () => {
     };
     const approved = parseAssistantActualTrade(sell, new Date("2026-10-29T08:00:00Z"));
     expect(approved.side).toBe("SELL");
+    // The proposal read-back must accept the same SELL payload for exactly-once reconciliation.
+    expect(
+      sameTradeEvidence(
+        parseAssistantActualTrade(approved, new Date("2026-10-29T08:00:00Z")),
+        approved,
+      ),
+    ).toBe(true);
     expect(approved.shares).toBe(20);
     expect(approved.fee).toBe(2627);
     expect(assistantTradeGross(approved)).toBe(1270000);

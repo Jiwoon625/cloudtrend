@@ -194,7 +194,7 @@ async function callProposeTrade(args: unknown, side: "BUY" | "SELL") {
     .maybeSingle();
   if (readError || !existing)
     throw new Error("승인대기함에 등록된 거래 제안을 확인하지 못했습니다.");
-  const old = parseAssistantActualBuy(existing.trade);
+  const old = parseAssistantActualTrade(existing.trade);
   if (!sameTradeEvidence(old, trade))
     throw new Error("같은 Notion 증빙으로 다른 체결을 요청했습니다. 기존 요청을 먼저 확인하세요.");
   const proposalId = existing.id as string,
