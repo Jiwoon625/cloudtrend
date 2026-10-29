@@ -1,3 +1,4 @@
+import { KR_ETF_LIFECYCLE_EVENTS, parseKrEtfLifecyclePlan } from "../src/lib/krEtfLifecycle";
 import { preliminarySource } from "./kr-preliminary-fixture";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -200,6 +201,37 @@ test("registration and legacy sync reuse unchanged generations; warm next upload
     const repeat = await registerSourceBytes(request);
     expect(repeat.reused).toBe(true);
     expect(repeat.source.id).toBe(firstPending.source.id);
+    const lifePlan = parseKrEtfLifecyclePlan({
+      version: "kr-etf-lifecycle-v1",
+      sourceUniverseSymbols: ["005930", "261920", "280320", "465620"],
+      requestedCollectionDates: ["2026-10-29"],
+      events: KR_ETF_LIFECYCLE_EVENTS,
+      requestedSymbols: ["005930"],
+      latestExpectedSymbols: ["005930"],
+    });
+    const lifeCsv = `${header}\nKOSPI,Index,INDEX,INDEX,2026-10-29,2500,0,,,,MARKET_IDX\nKOSDAQ,Index,INDEX,INDEX,2026-10-29,800,0,,,,MARKET_IDX\n005930,삼성전자,KOSPI,STOCK,2026-10-29,75000,1000,10000000000000,100000,100000,SEMI\n`;
+    const lifeRequest = {
+      ...request,
+      bytes: new TextEncoder().encode(lifeCsv),
+      filename: "lifecycle.csv",
+      krPublication: undefined,
+      krLifecycle: lifePlan,
+    };
+    const { krPublication: _unused, ...lifeInput } = lifeRequest;
+    const registeredLife = await registerSourceBytes(lifeInput);
+    expect(registeredLife.source.validation_result["krLifecycle"]).toMatchObject({
+      ...lifePlan,
+      sourceFileHash: registeredLife.validation.fileHash,
+      asOfDate: "2026-10-29",
+    });
+    const repeatedLife = await registerSourceBytes(lifeInput);
+    expect(repeatedLife.reused).toBe(true);
+    const { krLifecycle: _omitted, ...withoutLife } = lifeInput;
+    await expect(registerSourceBytes(withoutLife)).rejects.toThrow("different lifecycle contract");
+    const storedLife = records.find((r) => r.id === registeredLife.source.id)!;
+    (storedLife.validation_result["krLifecycle"] as Record<string, unknown>)["sourceFileHash"] =
+      `sha256:${"f".repeat(64)}`;
+    await expect(registerSourceBytes(lifeInput)).rejects.toThrow("different lifecycle contract");
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

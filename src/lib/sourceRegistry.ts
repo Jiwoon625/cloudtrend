@@ -168,7 +168,7 @@ export async function listActiveScreeningSourceFingerprints() {
   const { data, error } = await supabase
     .from("analysis_source_files")
     .select(
-      "id,data_hash,schema_hash,activated_at,created_at,kr_publication:validation_result->krPublication",
+      "id,data_hash,schema_hash,activated_at,created_at,kr_publication:validation_result->krPublication,kr_lifecycle:validation_result->krLifecycle",
     )
     .eq("user_id", owner)
     .eq("source_type", "screening")
@@ -177,9 +177,9 @@ export async function listActiveScreeningSourceFingerprints() {
     .order("created_at", { ascending: true })
     .order("id", { ascending: true });
   if (error) throw new Error(`스크리닝 원천데이터 식별자 조회 실패: ${error.message}`);
-  return (data ?? []).map(({ kr_publication, ...source }) => ({
+  return (data ?? []).map(({ kr_publication, kr_lifecycle, ...source }) => ({
     ...source,
-    validation_result: { krPublication: kr_publication },
+    validation_result: { krPublication: kr_publication, krLifecycle: kr_lifecycle },
   }));
 }
 

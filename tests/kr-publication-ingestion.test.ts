@@ -1,3 +1,4 @@
+import { KR_ETF_LIFECYCLE_EVENTS, parseKrEtfLifecyclePlan } from "../src/lib/krEtfLifecycle";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -103,5 +104,51 @@ it("rejects publication contracts on a backtest CLI request", () => {
       "--kr-publication",
       "request.json",
     ]),
+  ).toThrow("requires screening");
+});
+
+it("forwards independently validated lifecycle through CLI and API without requiring pending KRX", async () => {
+  const life = parseKrEtfLifecyclePlan({
+    version: "kr-etf-lifecycle-v1",
+    sourceUniverseSymbols: ["005930", "261920", "280320", "465620"],
+    requestedCollectionDates: ["2026-10-29"],
+    events: KR_ETF_LIFECYCLE_EVENTS,
+    requestedSymbols: ["005930"],
+    latestExpectedSymbols: ["005930"],
+  });
+  const input = path.join(dir, "life.csv"),
+    request = path.join(dir, "life.json");
+  await writeFile(
+    input,
+    "symbol,name,market,type,date,close,volume\nKOSPI,KOSPI,INDEX,INDEX,2026-10-29,2500,0\nKOSDAQ,KOSDAQ,INDEX,INDEX,2026-10-29,800,0\n005930,Test,KOSPI,STOCK,2026-10-29,100,1000\n",
+  );
+  await writeFile(request, JSON.stringify(life));
+  await expect(
+    ingestSource([
+      "--input",
+      input,
+      "--source-type",
+      "screening",
+      "--mode",
+      "merge",
+      "--supabase-user-id",
+      uid,
+      "--kr-lifecycle",
+      request,
+    ]),
+  ).rejects.toThrow("REGISTRATION_BOUNDARY");
+  expect(mocks.register.mock.calls[0]![0].krLifecycle).toEqual(life);
+  await expect(
+    finalizeUpload({
+      action: "finalize",
+      tempPath: `${uid}/incoming/gpt/life.csv`,
+      filename: "life.csv",
+      sourceType: "screening",
+      krLifecycle: life,
+    }),
+  ).rejects.toThrow("REGISTRATION_BOUNDARY");
+  expect(mocks.register.mock.calls[1]![0].krLifecycle).toEqual(life);
+  expect(() =>
+    parseArgs(["--input", input, "--source-type", "backtest", "--kr-lifecycle", request]),
   ).toThrow("requires screening");
 });

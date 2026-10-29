@@ -11,7 +11,7 @@
       "scripts/october-shadow-code-manifest.ts": "sha256:85cdd4a1fd1fba8cd6c6068244e66a6c83ce404f0c2484bc5b7ae873721ebac4",
       "scripts/run-kospi-shadow.ts": "sha256:7d632cca68c7eb64a3249ce713273c9ecb34d18761f1b23a939a1ccd1bf66b78",
       "scripts/screening-memory.ts": "sha256:c9269d752d45a7407726519feb16ec1e0df9c286243e83a03984931e10b27e22",
-      "scripts/source-registry-store.ts": "sha256:a6a173623d68cea9768124b013c44ee74eee07deb5dd6abd6569a0afad9802c7",
+      "scripts/source-registry-store.ts": "sha256:5eedb42754a6c18543928729f69d2ff853b14f2cbf0af462bbfb4a369fc52d2f",
       "scripts/source-validation-cache.ts": "sha256:742f9caf7590273863ad6aa8fc39b5819a2d48b769346cd7ec15cb2ffbc2b1eb",
       "scripts/storage-upload-retry.ts": "sha256:89089aa37dd1da947fba9f40969de8bc15f8a90f265972b3094d482206e7c424",
       "scripts/verify-kospi-shadow-runtime.ts": "sha256:0780ca4d3f39eaa3e1bd6bb67d29eecce86f76ec27d5b6d74f9997ca8feb7d8d",
@@ -49,6 +49,7 @@
       "src/lib/kospiShadowEquivalence.ts": "sha256:2789f238279fbbb1cbf39296201dc1d24b1233c2dc784961d56d3ba945f62a42",
       "src/lib/kospiShadowSeries.ts": "sha256:6b086d777d8ca77ac07c71d8e765ac31ff9f92c3769828637a4ca5946c0b000e",
       "src/lib/kospiShadowStore.ts": "sha256:48a47b264e9d420573f71d09a094742d3b130f67bb04c987ec2b9188cc7b18f1",
+      "src/lib/krEtfLifecycle.ts": "sha256:ea3c123680a6781cf96e6bd0c8974282a611e435c0fac6ca91130d015c99b37a",
       "src/lib/krScreeningPublication.server.ts": "sha256:84796d42fe146409f29e310e62ca05104974f8dd060f7f9566d717082ec9c940",
       "src/lib/krScreeningPublication.ts": "sha256:30cb544a583bc1a0307b0269bc40069e754ce18e86a838e88309be1a2622017a",
       "src/lib/krShadowAdmission.ts": "sha256:ceea0b4a835f78a0be48a36fb37383335984116684ef2a060deb3c305cad0326",
@@ -76,7 +77,7 @@
       "scripts/october-shadow-code-manifest.ts": "sha256:fd84a0ad91d95886ac9075f7a0b25c885580c837d4a75c1ffd6d1b7f48e799d8",
       "scripts/run-kospi-shadow.ts": "sha256:e5ee10bbf3e7c1631b875b779207d625f99ea9b1acdf630294bafbd9e43b6c9f",
       "scripts/screening-memory.ts": "sha256:1861c415581f4c815e1d8799d64c55ec41a17cb22fb480e75a8e36c30943f505",
-      "scripts/source-registry-store.ts": "sha256:4d2e095615fa593d6b4cbaffc7fb6f06de6fe29a023be56bc39249786ac10ad9",
+      "scripts/source-registry-store.ts": "sha256:0c612930442335432010b2becd898f795c8758448bf8cd50e9e23ab9b116473d",
       "scripts/source-validation-cache.ts": "sha256:7f6a4dc4344b8201650b097a86a162544d97803da0b8d9d26ef62a6101685dd3",
       "scripts/storage-upload-retry.ts": "sha256:37088ff8c8c32bafa8750631736a6d13857ccec7812fda5130b4c0cb14c81501",
       "scripts/verify-kospi-shadow-runtime.ts": "sha256:3e83262560f95f2ff24fb980cc04fa70acd71b15582a958071f672d2f6b27f11",
@@ -114,6 +115,7 @@
       "src/lib/kospiShadowEquivalence.ts": "sha256:a9e5ee98fa2897663638920cda44733800957f7acffe275ce665501a8407b3c0",
       "src/lib/kospiShadowSeries.ts": "sha256:c401249c9c16ea688ac21651a88fe0f5b9ae72e5b03858d93ec63401e810bf67",
       "src/lib/kospiShadowStore.ts": "sha256:45bc1d1df7ce78393c7fe29449ffdd9c77ab0e9214d864677eb8b4738c0c4550",
+      "src/lib/krEtfLifecycle.ts": "sha256:9c12e3901fc43a878a832183c782bb00ce434709a4cc81ed9323aed476485c2f",
       "src/lib/krScreeningPublication.server.ts": "sha256:966d91cd16d078e8db1768adf268355933db58e399216b73a7b89dc4366da0ec",
       "src/lib/krScreeningPublication.ts": "sha256:231e42dad08ce6e2de23832a855a3d0a90326363cd885ff32a54084490390370",
       "src/lib/krShadowAdmission.ts": "sha256:5185d7de56982e867149b6e78fcc9db965950d05647cc586fdcd2864287db217",
@@ -128,5 +130,5 @@
       "src/lib/usCandidatePriority.ts": "sha256:9a58e7d7999f00a2051d72321cad62d06af671ce069d5d110a5899abe3bbc3eb"
     }
   },
-  "codeHash": "sha256:5a6dc0d6e5fa2b494d7579766b3d581d0b5aad88fc63119d6c53a7cb17c599fa"
+  "codeHash": "sha256:bfce1cb5e9c3497fe77314d07052e8fa3dcb16540387963cd250b63cb13ae237"
 }
