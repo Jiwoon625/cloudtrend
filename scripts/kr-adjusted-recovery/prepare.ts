@@ -27,6 +27,11 @@ import octoberRuntime from "../../src/lib/ledger/octoberShadowEngineManifest.gen
 import integratedRuntime from "../../src/lib/integratedAllocationRuntime.generated.json";
 import kospiRuntime from "../../src/lib/kospiShadowPublicationRuntime.generated.json";
 import { requireCheck, rawHash } from "../kr-vintage-preflight/transport";
+import {
+  verifyArchivePrefixBodies,
+  nonTargetDatasetIdentity,
+  classifyPreExistingObservation,
+} from "./archive-domain";
 import type { ComputationPhase } from "../kr-vintage-preflight/phases";
 const equal = (a: unknown, b: unknown) => canonicalSeriesJson(a) === canonicalSeriesJson(b);
 export function containsTargetSymbol(value: unknown, symbol: string): boolean {
@@ -83,14 +88,40 @@ export async function prepareRecovery(
     retainedPairs: any[] = [],
     missingHistoricalRows: any[] = [],
     models = preparation.models.map((m: any) => ({ ...m, payload: read(m.ref) }));
+  phase("ARCHIVE_EXECUTION_DOMAIN");
+  const domainModels = preparation.models.map((m: any) => ({
+    pin: plan.models.find((p: any) => p.seriesId === m.seriesId),
+    series: read(m.seriesRef),
+    run: read(m.ref),
+  }));
+  const archiveBodies = preparation.archives.map((reference: any) => ({
+    reference,
+    payload: read(reference.ref),
+  }));
+  const executionPrefixReferences = await verifyArchivePrefixBodies(domainModels, archiveBodies);
+  phase("NON_TARGET_DATASET_IDENTITY");
+  const datasetIdentity = await nonTargetDatasetIdentity(dataset, candidateDataset, symbol);
+  const preExistingUnreferenced: any[] = [],
+    scannedArchives: any[] = [];
   for (const reference of preparation.archives) {
     phase("ARCHIVE_PAYLOAD_IDENTITY");
     const archive = read(reference.ref);
+    const scan = {
+      sourceId: reference.sourceId,
+      total: 0,
+      unchanged: 0,
+      targetChanged: 0,
+      v1Retained: 0,
+      preExistingUnreferenced: 0,
+      missing: 0,
+    };
+    scannedArchives.push(scan);
     requireCheck(
       (await hashSeriesValue(archive)) === reference.payloadHash && archive.date === reference.date,
     );
     for (const [s, bars] of Object.entries(archive.inputs.bars) as [string, any[]][])
       for (const archived of bars) {
+        scan.total++;
         phase("ARCHIVE_TARGET_COVERAGE");
         const incoming = (
           (reference.date >= "2026-10-12" ? candidateDataset.observedBars?.[s] : undefined) ??
@@ -98,18 +129,30 @@ export async function prepareRecovery(
           []
         ).find((b: any) => b.tradeDate === archived.tradeDate);
         if (!incoming) {
-          requireCheck(s !== symbol);
+          const baselineMissing = !(
+            (reference.date >= "2026-10-12" ? dataset.observedBars?.[s] : undefined) ??
+            dataset.bars[s] ??
+            []
+          ).some((b: any) => b.tradeDate === archived.tradeDate);
+          requireCheck(s !== symbol && baselineMissing);
+          scan.missing++;
           missingHistoricalRows.push({
             symbol: s,
             date: archived.tradeDate,
             archiveSourceId: reference.sourceId,
+            classification: "PRE_EXISTING_ABSENCE_NOT_APPROVED",
+            baselineAndCandidateAbsent: true,
+            operationalApproval: false,
           });
           continue;
         }
         phase("ARCHIVE_BAR_COMPARISON");
         const old = krExecutionBar(archived),
           next = krExecutionBar(incoming);
-        if (equal(old, next)) continue;
+        if (equal(old, next)) {
+          scan.unchanged++;
+          continue;
+        }
         const pair = {
           symbol: s,
           date: archived.tradeDate,
@@ -123,19 +166,39 @@ export async function prepareRecovery(
             .filter((k) => !equal((old as any)[k] ?? null, (next as any)[k] ?? null))
             .sort(),
         };
-        if (s === symbol) archivePairs.push(pair);
-        else {
+        if (s === symbol) {
+          archivePairs.push(pair);
+          scan.targetChanged++;
+        } else {
           phase("ARCHIVE_RETAINED_PAIR_APPROVAL");
-          requireCheck(
-            plan.vintageV1.receipt.reviews.some(
-              (r: any) =>
-                r.symbol === s &&
-                r.date === pair.date &&
-                r.archivedHash === pair.archivedHash &&
-                r.incomingHash === pair.incomingHash,
-            ),
+          const matches = plan.vintageV1.receipt.reviews.filter(
+            (r: any) =>
+              r.symbol === s &&
+              r.date === pair.date &&
+              r.archivedHash === pair.archivedHash &&
+              r.incomingHash === pair.incomingHash,
           );
-          retainedPairs.push(pair);
+          if (matches.length === 1) {
+            retainedPairs.push(pair);
+            scan.v1Retained++;
+          } else {
+            requireCheck(matches.length === 0);
+            phase("ARCHIVE_PREEXISTING_UNREFERENCED_PROOF");
+            const baseline = (
+              (reference.date >= "2026-10-12" ? dataset.observedBars?.[s] : undefined) ??
+              dataset.bars[s] ??
+              []
+            ).find((b: any) => b.tradeDate === archived.tradeDate);
+            preExistingUnreferenced.push(
+              await classifyPreExistingObservation(
+                pair,
+                baseline,
+                domainModels,
+                executionPrefixReferences,
+              ),
+            );
+            scan.preExistingUnreferenced++;
+          }
         }
       }
   }
@@ -345,6 +408,18 @@ export async function prepareRecovery(
     archiveReferences: plan.archives,
     archivePairs,
     retainedPairs,
+    archiveObservationInventory: {
+      version: "kr-preexisting-archive-observation-inventory-v1",
+      classificationPolicy: "PRE_EXISTING_UNREFERENCED_NOT_APPROVED",
+      operationalApproval: false,
+      targetSymbol: symbol,
+      models: domainModels,
+      executionPrefixReferences,
+      datasetIdentity,
+      preExistingUnreferenced,
+      scannedArchives,
+      coverageComplete: missingHistoricalRows.length === 0,
+    },
     historicalCoverage: {
       targetComplete: true,
       missingOtherRows: missingHistoricalRows,

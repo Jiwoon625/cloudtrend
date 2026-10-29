@@ -61,7 +61,7 @@ describe("preparation-only boundaries", () => {
     expect(entry).not.toContain("error.message");
     expect(entry).not.toContain("console.error");
     const calls = [...transport.matchAll(/options\.onPhase\?\.\(([^)]*)\)/g)].map((m) => m[1]);
-    expect(calls.length).toBe(18);
+    expect(calls.length).toBe(20);
     expect(calls.every((value) => /^"[A-Z_]+"$/.test(value!))).toBe(true);
     expect(calls).toContain('"CAPSULE_READ"');
     expect(calls).toContain('"LEGACY_INFO_VALIDATION"');

@@ -50,9 +50,16 @@ export function restPath(
     analysis_runs: ["id"],
     analysis_source_files: ["id"],
     ledger_model_sessions: ["series_id", "session_date"],
+    ledger_model_series: ["series_id"],
     shadow_replay_audit: ["id"],
   };
   requireCheck(allowed[table] && Object.keys(filters).every((k) => allowed[table].includes(k)));
+  if (table === "ledger_model_series")
+    requireCheck(
+      select === "series_id,payload" &&
+        Object.keys(filters).length === 1 &&
+        /^eq\.[A-Za-z0-9:_-]+$/.test(filters.series_id ?? ""),
+    );
   const query = new URLSearchParams({ select, user_id: "eq." + owner, ...filters, limit: "2" });
   return "/rest/v1/" + table + "?" + query.toString();
 }
