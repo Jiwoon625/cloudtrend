@@ -338,6 +338,7 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
         executions: snapshot.payload.executions,
         metadata: snapshot.payload.newActualPortfolio ?? null,
         quotes: {},
+        valuationDate: null,
         today: day,
         cashToday: now.toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }),
       });
