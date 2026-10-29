@@ -11,6 +11,7 @@ import { SOURCE_MAX_FILE_BYTES, type SourceType } from "../lib/sourceData";
 import {
   notionTradeUrl,
   parseAssistantActualBuy,
+  parseAssistantActualTrade,
   normalizeAssistantTradeMarket,
   sameTradeEvidence,
 } from "../lib/assistantActualTrade";
@@ -154,8 +155,9 @@ const PROPOSE_BUY_TOOL = {
   },
 } as const;
 
-async function callProposeBuy(args: unknown) {
-  const parsed = parseAssistantActualBuy(args);
+async function callProposeTrade(args: unknown, side: "BUY" | "SELL") {
+  const parsed = side === "BUY" ? parseAssistantActualBuy(args) : parseAssistantActualTrade(args);
+  if (parsed.side !== side) throw new Error("거래 구분이 요청한 매수/매도 도구와 다릅니다.");
   const userId = configuredUserId();
   const client = trustedSupabaseClient();
   // Reconcile the listed exchange vs. portfolio asset class only when an
@@ -192,7 +194,7 @@ async function callProposeBuy(args: unknown) {
     .maybeSingle();
   if (readError || !existing)
     throw new Error("승인대기함에 등록된 거래 제안을 확인하지 못했습니다.");
-  const old = parseAssistantActualBuy(existing.trade);
+  const old = parseAssistantActualTrade(existing.trade);
   if (!sameTradeEvidence(old, trade))
     throw new Error("같은 Notion 증빙으로 다른 체결을 요청했습니다. 기존 요청을 먼저 확인하세요.");
   const proposalId = existing.id as string,
@@ -214,13 +216,35 @@ async function callProposeBuy(args: unknown) {
         type: "text",
         text:
           status === "PENDING"
-            ? `${trade.name} ${trade.shares}주 매수 승인 요청을 보관했습니다. 실제 원장은 변경되지 않았습니다.`
+            ? `${trade.name} ${trade.shares}주 ${side === "BUY" ? "매수" : "매도"} 승인 요청을 보관했습니다. 실제 원장은 변경되지 않았습니다.`
             : `기존 요청 상태: ${status} (실거래 중복 기록 없음)`,
       },
     ],
     isError: false,
   };
 }
+
+/** Keep the legacy BUY tool unchanged, and explicitly opt in to SELL evidence. */
+const PROPOSE_SELL_TOOL = {
+  ...PROPOSE_BUY_TOOL,
+  name: "propose_cloudtrend_actual_sell",
+  title: "Propose a CloudTrend actual sell",
+  description:
+    "Stage an evidenced actual SELL for owner confirmation in the same CloudTrend inbox. The fee must include all verified selling costs, including tax; never stage a sale without an existing real holding. Never approve or change holdings automatically.",
+  inputSchema: {
+    ...PROPOSE_BUY_TOOL.inputSchema,
+    properties: {
+      ...PROPOSE_BUY_TOOL.inputSchema.properties,
+      side: { type: "string", const: "SELL" },
+      fee: {
+        type: "number",
+        minimum: 0,
+        description:
+          "Verified total sell costs including commission, tax and any broker charges, in the listing currency",
+      },
+    },
+  },
+} as const;
 
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: JSON_HEADERS });
@@ -404,7 +428,7 @@ async function handleRpc(body: JsonRpcRequest) {
       capabilities: { tools: { listChanged: false } },
       serverInfo: { name: "cloudtrend", version: "1.0.0" },
       instructions:
-        "Source files: register_cloudtrend_source_file. Real buy evidence: propose_cloudtrend_actual_buy saves a PENDING proposal only. The owner must sign in and explicitly approve at /assistant-trades before the unchanged owner-authorized actual ledger records anything. Never claim a pending proposal is a recorded fill.",
+        "Source files: register_cloudtrend_source_file. Real BUY or SELL evidence: propose_cloudtrend_actual_buy / propose_cloudtrend_actual_sell save PENDING proposals only. The owner must sign in and explicitly approve at /assistant-trades before the unchanged owner-authorized actual ledger records anything. Never claim a pending proposal is a recorded fill.",
     });
   }
 
@@ -415,19 +439,26 @@ async function handleRpc(body: JsonRpcRequest) {
   if (method === "ping") return rpcResult(id, {});
 
   if (method === "tools/list") {
-    return rpcResult(id, { tools: [REGISTER_TOOL, PROPOSE_BUY_TOOL] });
+    return rpcResult(id, { tools: [REGISTER_TOOL, PROPOSE_BUY_TOOL, PROPOSE_SELL_TOOL] });
   }
 
   if (method === "tools/call") {
     const name = params?.["name"];
-    if (name !== REGISTER_TOOL.name && name !== PROPOSE_BUY_TOOL.name)
+    if (
+      name !== REGISTER_TOOL.name &&
+      name !== PROPOSE_BUY_TOOL.name &&
+      name !== PROPOSE_SELL_TOOL.name
+    )
       return rpcError(id, -32601, `Unknown tool: ${String(name)}`);
     try {
       return rpcResult(
         id,
         name === REGISTER_TOOL.name
           ? await callRegisterTool(params?.["arguments"])
-          : await callProposeBuy(params?.["arguments"]),
+          : await callProposeTrade(
+              params?.["arguments"],
+              name === PROPOSE_SELL_TOOL.name ? "SELL" : "BUY",
+            ),
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "알 수 없는 오류";
@@ -449,7 +480,7 @@ export const Route = createFileRoute("/mcp")({
         return json({
           name: "cloudtrend",
           transport: "streamable-http",
-          tools: [REGISTER_TOOL.name, PROPOSE_BUY_TOOL.name],
+          tools: [REGISTER_TOOL.name, PROPOSE_BUY_TOOL.name, PROPOSE_SELL_TOOL.name],
           fileParams: ["file"],
         });
       },

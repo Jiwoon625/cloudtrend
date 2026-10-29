@@ -5,11 +5,11 @@ import { z } from "zod";
 import {
   existingTradeMatches,
   sourceEvidenceMatches,
-  parseAssistantActualBuy,
+  parseAssistantActualTrade,
   assistantTradeGross,
   type AssistantTradeProposal,
 } from "../lib/assistantActualTrade";
-import { newActualAsset } from "../lib/newActualPortfolio";
+import { newActualAsset, projectNewActualPool } from "../lib/newActualPortfolio";
 import { readWebsiteDocument } from "../lib/ledger/websiteRepository.server";
 import { saveNewActualPortfolio, type NewActualDocument } from "../lib/newActualPortfolio.server";
 
@@ -132,7 +132,7 @@ function sameSource(
   assignments: NonNullable<NewActualDocument["newActualPortfolio"]>["assignments"],
 ) {
   const allocation = assignments[execution.id];
-  const trade = parseAssistantActualBuy(proposal.trade);
+  const trade = parseAssistantActualTrade(proposal.trade);
   return (
     existingTradeMatches(trade, execution) &&
     allocation?.quantity === trade.shares &&
@@ -235,7 +235,7 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
     });
   if (proposal.status === "REJECTED") return reply({ error: "이미 반려된 요청입니다." }, 409);
 
-  const trade = parseAssistantActualBuy(proposal.trade);
+  const trade = parseAssistantActualTrade(proposal.trade);
   if (trade.sourcePageId !== proposal.source_page_id.toLowerCase())
     return reply({ error: "거래 증빙 식별자가 일치하지 않습니다." }, 409);
   const token = await claimProposal(auth.client, proposal);
@@ -317,9 +317,57 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
   if (duplicateSource) {
     await releaseClaim(auth.client, proposal, token);
     return reply(
-      { error: "동일한 Notion 증빙으로 이미 매수가 반영되어 있습니다. 제안을 반려할 수 있습니다." },
+      { error: "동일한 Notion 증빙으로 이미 거래가 반영되어 있습니다. 제안을 반려할 수 있습니다." },
       409,
     );
+  }
+
+  // An approved sell must consume only documented post-start holdings in its
+  // own currency pool. Reject over-sales BEFORE touching the canonical ledger.
+  // Legacy inventory and Shadow positions are never an implicit source of shares.
+  if (trade.side === "SELL") {
+    let available = 0;
+    try {
+      const currency = trade.market === "US" ? "USD" : "KRW";
+      const now = new Date();
+      const day = now.toLocaleDateString("en-CA", {
+        timeZone: currency === "USD" ? "America/New_York" : "Asia/Seoul",
+      });
+      const pool = projectNewActualPool({
+        currency,
+        executions: snapshot.payload.executions,
+        metadata: snapshot.payload.newActualPortfolio ?? null,
+        quotes: {},
+        valuationDate: null,
+        today: day,
+        cashToday: now.toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }),
+      });
+      const holding = pool.positions.find(
+        (position) => position.symbol === trade.symbol && position.market === trade.market,
+      );
+      available = holding ? Number(holding.quantity) : 0;
+      if (!Number.isSafeInteger(available) || available < 0)
+        throw new Error("Invalid actual position quantity");
+    } catch {
+      await releaseClaim(auth.client, proposal, token);
+      return reply(
+        {
+          error: "매도 전 실제 보유수량을 확인하지 못했습니다. 원장을 점검하세요.",
+          code: "HOLDINGS_CHECK_FAILED",
+        },
+        409,
+      );
+    }
+    if (trade.shares > available) {
+      await releaseClaim(auth.client, proposal, token);
+      return reply(
+        {
+          error: `실제 보유수량 ${available}주보다 매도수량 ${trade.shares}주가 많습니다.`,
+          code: "INSUFFICIENT_HOLDINGS",
+        },
+        409,
+      );
+    }
   }
 
   const saved = await saveNewActualPortfolio(
@@ -336,13 +384,13 @@ async function apply(request: Request, auth: AuthenticatedOwner) {
         id: "",
         date: trade.date,
         name: trade.name,
-        side: "BUY",
+        side: trade.side,
         market: trade.market,
         symbol: trade.symbol,
         shares: trade.shares,
         price: trade.price,
         fee: trade.fee,
-        note: `${trade.accountLabel} 실제매수 · ChatGPT 제안 / Notion 증빙 소유자 확인`,
+        note: `${trade.accountLabel} 실제${trade.side === "BUY" ? "매수" : "매도"} · ChatGPT 제안 / Notion 증빙 소유자 확인`,
       },
       allocation: {
         quantity: trade.shares,

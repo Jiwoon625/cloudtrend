@@ -74,7 +74,7 @@ vi.mock("@supabase/supabase-js", () => ({
   },
 }));
 
-import { newActualAsset } from "../lib/newActualPortfolio";
+import { emptyNewActualMetadata, newActualAsset } from "../lib/newActualPortfolio";
 import { parseNewActualPortfolioRequest } from "../lib/newActualPortfolioInput";
 import { Route } from "./api.assistant-trades";
 
@@ -229,6 +229,96 @@ describe("assistant trade owner approval", () => {
     expect(state.service).not.toHaveBeenCalled();
   });
 
+  function sellProposal(shares = 20) {
+    state.proposal!["trade"] = {
+      ...(state.proposal!["trade"] as object),
+      date: "2026-10-29",
+      side: "SELL",
+      shares,
+      price: 63500,
+      fee: 2627,
+    };
+    state.rpc.mockImplementation(async (name: string) => ({
+      data: name === "assistant_trade_claim" ? "claim-token" : true,
+      error: null,
+    }));
+    const buyId = "new-actual:prior-buy";
+    const holding = {
+      id: buyId,
+      date: "2026-10-20",
+      symbol: "064290",
+      name: "인텍플러스",
+      market: "KOSDAQ",
+      side: "BUY",
+      shares: 21,
+      price: 57766,
+      fee: 28,
+      signalKey: null,
+      order: 0,
+      note: "synthetic holding",
+    };
+    const metadata = emptyNewActualMetadata();
+    metadata.assignments[buyId] = {
+      executionId: buyId,
+      quantity: 21,
+      gross: 1213086,
+      fee: 28,
+      brokerReference: "notion:prior-buy",
+    };
+    targetSnapshot({
+      revision: 100,
+      payload: {
+        executions: [holding],
+        newActualPortfolio: metadata,
+      },
+    });
+  }
+  it("uses the same owner approval to record a partial SELL, preserving canonical side and total costs", async () => {
+    sellProposal();
+    state.save.mockResolvedValue({ revision: 101, reused: false });
+    const response = await post();
+    expect(response.status).toBe(200);
+    expect(state.save).toHaveBeenCalledWith(
+      expect.anything(),
+      state.uid,
+      expect.objectContaining({
+        requestId: state.proposal!["id"],
+        execution: expect.objectContaining({
+          side: "SELL",
+          shares: 20,
+          price: 63500,
+          fee: 2627,
+          note: expect.stringContaining("실제매도"),
+        }),
+        allocation: expect.objectContaining({
+          quantity: 20,
+          gross: 1270000,
+          fee: 2627,
+        }),
+      }),
+      undefined,
+      { proposalId: state.proposal!["id"], token: "claim-token" },
+    );
+    expect(state.rpc.mock.calls.map(([name]) => name)).toEqual(["assistant_trade_claim"]);
+  });
+  it("rejects an oversell before writing and releases the claim for owner review", async () => {
+    sellProposal(22);
+    const response = await post();
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("INSUFFICIENT_HOLDINGS");
+    expect(state.save).not.toHaveBeenCalled();
+    expect(state.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "assistant_trade_claim",
+      "assistant_trade_release",
+    ]);
+  });
+  it("refuses invalid sides before claim or any ledger write", async () => {
+    sellProposal();
+    state.proposal!["trade"] = { ...(state.proposal!["trade"] as object), side: "TRANSFER" };
+    expect((await post()).status).toBe(400);
+    expect(state.save).not.toHaveBeenCalled();
+    expect(state.rpc).not.toHaveBeenCalled();
+  });
   function usProposal() {
     state.proposal!["trade"] = {
       ...(state.proposal!["trade"] as object),

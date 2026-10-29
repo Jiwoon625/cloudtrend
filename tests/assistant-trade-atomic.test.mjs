@@ -20,6 +20,7 @@ try {
     "supabase/migrations/20261020015017_assistant_trade_owner_transitions.sql",
     "supabase/migrations/20261021070811_assistant_trade_record_etf_decimal.sql",
     "supabase/migrations/20261021074827_assistant_trade_atomic_evidence.sql",
+    "supabase/migrations/20261029161000_assistant_trade_record_sell.sql",
   ])
     await db.exec(readFileSync(new URL(path, root), "utf8"));
   const uid = "bdfc8818-33a7-4030-9dbd-ecad39f223ac";
@@ -33,7 +34,7 @@ try {
       JSON.stringify({ executions: [] }),
     ]);
   let n = 0;
-  async function proposal(market, source, price = 10, shares = 3) {
+  async function proposal(market, source, price = 10, shares = 3, side = "BUY") {
     const id = `11111111-1111-4111-8111-${String(++n).padStart(12, "0")}`;
     const trade = {
       market,
@@ -41,10 +42,10 @@ try {
       price,
       shares,
       fee: 0,
-      date: "2026-10-19",
+      date: side === "SELL" ? "2026-10-20" : "2026-10-19",
       name: "Synthetic",
       symbol: market === "US" ? "AAPL" : "005930",
-      side: "BUY",
+      side,
       accountLabel: "GENERAL",
     };
     await db.exec("reset role");
@@ -108,6 +109,39 @@ try {
     "PROCESSING",
   );
   await commit(kr, "portfolio_ledgers", 1, document(kr));
+  // A partial SELL uses the same owner proposal, source evidence, CAS, and
+  // canonical journal contract. A forged BUY or wrong fee must roll back.
+  const sell = await proposal("KOSPI", "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", 12, 2, "SELL");
+  const priorSell = (await db.query("select revision,payload from public.portfolio_ledgers"))
+    .rows[0];
+  const approvedSellDoc = structuredClone(priorSell.payload);
+  const sale = document(sell);
+  approvedSellDoc.executions.push(...sale.executions);
+  Object.assign(
+    approvedSellDoc.newActualPortfolio.assignments,
+    sale.newActualPortfolio.assignments,
+  );
+  const wrongSide = structuredClone(approvedSellDoc);
+  wrongSide.executions.at(-1).side = "BUY";
+  await assert.rejects(commit(sell, "portfolio_ledgers", priorSell.revision, wrongSide));
+  const wrongFee = structuredClone(approvedSellDoc);
+  wrongFee.executions.at(-1).fee = 1;
+  await assert.rejects(commit(sell, "portfolio_ledgers", priorSell.revision, wrongFee));
+  assert.deepEqual(
+    (await db.query("select revision,payload from public.portfolio_ledgers")).rows[0],
+    priorSell,
+  );
+  await commit(sell, "portfolio_ledgers", priorSell.revision, approvedSellDoc);
+  const afterSell = (await db.query("select revision,payload from public.portfolio_ledgers"))
+    .rows[0];
+  assert.equal(afterSell.revision, priorSell.revision + 1);
+  assert.equal(afterSell.payload.executions.at(-1).side, "SELL");
+  assert.equal(
+    (await db.query("select status from public.assistant_trade_proposals where id=$1", [sell.id]))
+      .rows[0].status,
+    "RECORDED",
+  );
+  await assert.rejects(commit(sell, "portfolio_ledgers", priorSell.revision, approvedSellDoc));
   // Keep previous fills and assignments while exercising the three production ETF shapes.
   for (const [index, symbol, price, shares, gross] of [
     [1, "0046A0", 9175, 77, 706475],
@@ -177,7 +211,7 @@ try {
   );
   await assert.rejects(commit(extra, "us_actual_portfolio_ledgers", 2, document(extra)));
   console.log(
-    "PASS: KR/ETF/US atomic record, three ETF fills and decimal price, wrong-book rejection, ETF rollback and retry preservation, exact USD, transition rollback, idempotency, CAS, cross-book direct-write duplicate, wrong-owner denial",
+    "PASS: KR/ETF/US BUY + partial SELL atomic record, three ETF fills and decimal price, wrong-book rejection, ETF rollback and retry preservation, exact USD, transition rollback, idempotency, CAS, cross-book direct-write duplicate, wrong-owner denial",
   );
 } finally {
   await db.close();

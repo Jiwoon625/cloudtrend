@@ -5,6 +5,7 @@ import {
   sourceEvidenceMatches,
   notionTradeUrl,
   parseAssistantActualBuy,
+  parseAssistantActualTrade,
   normalizeAssistantTradeMarket,
   assistantTradeGross,
   formatAssistantTradeMoney,
@@ -50,6 +51,62 @@ describe("Assistant actual trade proposals", () => {
   ])("rejects invalid entry %s", (change) => {
     expect(() => parseAssistantActualBuy({ ...valid, ...change }, now)).toThrow();
   });
+  it("accepts evidenced SELL with all commission and tax costs but keeps BUY-only legacy input strict", () => {
+    const sell = {
+      ...valid,
+      sourcePageId: "408d908c-ac2f-8133-8dbb-e4086df779d4",
+      date: "2026-10-29",
+      side: "SELL",
+      shares: 20,
+      price: 63500,
+      fee: 2627,
+    };
+    const approved = parseAssistantActualTrade(sell, new Date("2026-10-29T08:00:00Z"));
+    expect(approved.side).toBe("SELL");
+    // The proposal read-back must accept the same SELL payload for exactly-once reconciliation.
+    expect(
+      sameTradeEvidence(
+        parseAssistantActualTrade(approved, new Date("2026-10-29T08:00:00Z")),
+        approved,
+      ),
+    ).toBe(true);
+    expect(approved.shares).toBe(20);
+    expect(approved.fee).toBe(2627);
+    expect(assistantTradeGross(approved)).toBe(1270000);
+    expect(() => parseAssistantActualBuy(sell, new Date("2026-10-29T08:00:00Z"))).toThrow();
+    expect(
+      existingTradeMatches(approved, {
+        symbol: approved.symbol,
+        market: approved.market,
+        date: approved.date,
+        side: "SELL",
+        shares: 20,
+        price: 63500,
+        fee: 2627,
+      }),
+    ).toBe(true);
+    expect(
+      existingTradeMatches(approved, {
+        symbol: approved.symbol,
+        market: approved.market,
+        date: approved.date,
+        side: "BUY",
+        shares: 20,
+        price: 63500,
+        fee: 2627,
+      }),
+    ).toBe(false);
+    expect(() =>
+      parseAssistantActualTrade({ ...sell, side: "SHORT" }, new Date("2026-10-29T08:00:00Z")),
+    ).toThrow();
+    expect(() =>
+      parseAssistantActualTrade({ ...sell, shares: 0 }, new Date("2026-10-29T08:00:00Z")),
+    ).toThrow();
+    expect(() =>
+      parseAssistantActualTrade({ ...sell, fee: -1 }, new Date("2026-10-29T08:00:00Z")),
+    ).toThrow();
+  });
+
   it("keeps domestic ETF execution market distinct from its KOSPI listing", () => {
     const evidence = parseAssistantActualBuy(
       {

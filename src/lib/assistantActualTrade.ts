@@ -28,12 +28,18 @@ export const assistantActualBuySchema = z
   })
   .strict();
 
+/** BUY and SELL share evidence, owner, calendar and precision validation. */
+export const assistantActualTradeSchema = assistantActualBuySchema.extend({
+  side: z.enum(["BUY", "SELL"]),
+});
+
 export type AssistantActualBuy = z.infer<typeof assistantActualBuySchema>;
+export type AssistantActualTrade = z.infer<typeof assistantActualTradeSchema>;
 export type AssistantTradeProposal = {
   id: string;
   user_id: string;
   source_page_id: string;
-  trade: AssistantActualBuy;
+  trade: AssistantActualTrade;
   status: "PENDING" | "PROCESSING" | "RECORDED" | "REJECTED";
   processing_token?: string | null;
   processing_started_at?: string | null;
@@ -52,8 +58,8 @@ const localDate = (now: Date, timeZone: string) => {
   return `${part("year")}-${part("month")}-${part("day")}`;
 };
 
-export function parseAssistantActualBuy(value: unknown, now = new Date()): AssistantActualBuy {
-  const data = assistantActualBuySchema.parse(value);
+export function parseAssistantActualTrade(value: unknown, now = new Date()): AssistantActualTrade {
+  const data = assistantActualTradeSchema.parse(value);
   const us = data.market === "US";
   if (!(us ? /^[A-Z0-9][A-Z0-9.^/-]{0,63}$/ : /^[A-Z0-9]{6}$/).test(data.symbol))
     throw new Error("시장에 맞는 종목코드를 확인하세요.");
@@ -107,12 +113,19 @@ export function parseAssistantActualBuy(value: unknown, now = new Date()): Assis
   return data;
 }
 
+/** Preserve the existing BUY-only MCP tool contract for old clients. */
+export function parseAssistantActualBuy(value: unknown, now = new Date()): AssistantActualBuy {
+  const trade = parseAssistantActualTrade(value, now);
+  if (trade.side !== "BUY") throw new Error("매수 전용 제안에는 BUY가 필요합니다.");
+  return trade as AssistantActualBuy;
+}
+
 /** Match the canonical journal's eight-decimal representation, including USD fills. */
-export function assistantTradeGross(trade: Pick<AssistantActualBuy, "price" | "shares">) {
+export function assistantTradeGross(trade: Pick<AssistantActualTrade, "price" | "shares">) {
   return actualGross(trade.price, trade.shares);
 }
 
-export function formatAssistantTradeMoney(value: number, market: AssistantActualBuy["market"]) {
+export function formatAssistantTradeMoney(value: number, market: AssistantActualTrade["market"]) {
   return market === "US"
     ? "$" + value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 8 })
     : value.toLocaleString("ko-KR") + "원";
@@ -121,9 +134,9 @@ export function formatAssistantTradeMoney(value: number, market: AssistantActual
 // The security registry's asset type is authoritative. Notion's KOSPI listing
 // market is not the legacy portfolio execution market for domestic ETFs.
 export function normalizeAssistantTradeMarket(
-  trade: AssistantActualBuy,
+  trade: AssistantActualTrade,
   security: { market: string; assetType: string } | null,
-): AssistantActualBuy {
+): AssistantActualTrade {
   if (!security) return trade;
   if (security.assetType === "ETF") {
     if (trade.market !== "ETF" && trade.market !== security.market)
@@ -139,7 +152,7 @@ export function notionTradeUrl(sourcePageId: string) {
   return `https://app.notion.com/p/${sourcePageId.replace(/-/g, "")}`;
 }
 
-export function sameTradeEvidence(left: AssistantActualBuy, right: AssistantActualBuy) {
+export function sameTradeEvidence(left: AssistantActualTrade, right: AssistantActualTrade) {
   return Object.keys(left).every(
     (key) => left[key as keyof AssistantActualBuy] === right[key as keyof AssistantActualBuy],
   );
@@ -161,7 +174,7 @@ export function sourceEvidenceMatches(
 }
 
 export function existingTradeMatches(
-  trade: AssistantActualBuy,
+  trade: AssistantActualTrade,
   existing: {
     symbol: string;
     date: string;
@@ -176,7 +189,7 @@ export function existingTradeMatches(
     existing.symbol === trade.symbol &&
     existing.market === trade.market &&
     existing.date === trade.date &&
-    existing.side === "BUY" &&
+    existing.side === trade.side &&
     existing.shares === trade.shares &&
     existing.price === trade.price &&
     existing.fee === trade.fee
