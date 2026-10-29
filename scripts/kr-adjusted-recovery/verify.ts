@@ -4,8 +4,8 @@ import { economicSessionInputs } from "../../src/lib/integratedAllocationEquival
 import { validateSourceText } from "../../src/lib/sourceData";
 import { requireCheck, rawHash } from "../kr-vintage-preflight/transport";
 import { diagnoseKospiCompletedBoundary } from "../kospi-boundary-diagnostic";
-import { KOSPI_SHADOW_NAMESPACE } from "../../src/lib/kospiShadowStore";
-import { KOSPI_SHADOW_CORRECTION_REVISION_ID } from "../../src/lib/kospiShadowSeries";
+import { shadowObjectPath } from "../../src/lib/kospiShadowStore";
+import { kospiShadowRevisionPath } from "../../src/lib/kospiShadowSeries";
 import { verifyArchiveObservationInventory } from "./archive-domain";
 import type { ComputationPhase } from "../kr-vintage-preflight/phases";
 const equal = (a: unknown, b: unknown) => canonicalSeriesJson(a) === canonicalSeriesJson(b);
@@ -167,28 +167,27 @@ export async function verifyPreparationKospiBoundary(p: any) {
       a.runtimeCodeHash === p.runtimeHashes.kospi,
   );
   const paths = p.kospi.capturedObjects.map((o: any) => o.path).sort();
+  const ownerRoot = shadowObjectPath(a.owner, "registry.json").slice(0, -"registry.json".length);
   requireCheck(
     new Set(paths).size === paths.length &&
       equal(paths, p.kospi.generationPins.map((o: any) => o.path).sort()) &&
-      paths.every((path: string) =>
-        path.startsWith(`${a.owner}/shadow/${KOSPI_SHADOW_NAMESPACE}/`),
-      ),
+      paths.every((path: string) => path.startsWith(ownerRoot)),
   );
-  const root = `${a.owner}/shadow/${KOSPI_SHADOW_NAMESPACE}/revisions/${KOSPI_SHADOW_CORRECTION_REVISION_ID}`;
+  const revisionPath = (suffix: string) => kospiShadowRevisionPath(a.owner, suffix);
   const get = (path: string) => {
     const matches = p.kospi.capturedObjects.filter((o: any) => o.path === path);
     requireCheck(matches.length === 1);
     return matches[0];
   };
-  const registry = get(root + "/registry.json"),
-    completed = get(`${root}/sessions/${a.predecessorDate}.json`),
-    latest = get(root + "/latest.json");
+  const registry = get(revisionPath("registry.json")),
+    completed = get(revisionPath(`sessions/${a.predecessorDate}.json`)),
+    latest = get(revisionPath("latest.json"));
   requireCheck(
     equal(latest.payload.latest, completed.payload) &&
       equal(latest.payload.registry, registry.payload),
   );
   const priorDate = completed.payload.source.previousSessionDate;
-  const predecessor = priorDate ? get(`${root}/sessions/${priorDate}.json`) : null;
+  const predecessor = priorDate ? get(revisionPath(`sessions/${priorDate}.json`)) : null;
   for (const [name, adjusted] of [
     ["baseline", false],
     ["adjusted", true],

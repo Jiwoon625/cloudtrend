@@ -3,8 +3,11 @@ import { describe, it, expect } from "vitest";
 import { stepKospiShadow, KOSPI_SHADOW_POLICY } from "../../src/lib/engine/kospiShadow";
 import { hashSeriesValue } from "../../src/lib/ledger/modelSeries";
 import { equivalentCompletedKospiShadow } from "../../src/lib/kospiShadowEquivalence";
-import { KOSPI_SHADOW_NAMESPACE } from "../../src/lib/kospiShadowStore";
-import { KOSPI_SHADOW_CORRECTION_REVISION_ID } from "../../src/lib/kospiShadowSeries";
+import { shadowObjectPath } from "../../src/lib/kospiShadowStore";
+import {
+  KOSPI_SHADOW_CORRECTION_REVISION_ID,
+  kospiShadowRevisionPath,
+} from "../../src/lib/kospiShadowSeries";
 import { diagnoseKospiCompletedBoundary } from "../kospi-boundary-diagnostic";
 import { verifyPreparationKospiBoundary } from "./verify";
 const H = "sha256:" + "a".repeat(64),
@@ -36,7 +39,7 @@ async function fixture(blocked = false) {
     initialSourceHash: H,
     initialCodeVersion: "a".repeat(40),
   };
-  const root = `${owner}/shadow/${KOSPI_SHADOW_NAMESPACE}/revisions/${KOSPI_SHADOW_CORRECTION_REVISION_ID}`;
+  const root = kospiShadowRevisionPath(owner, "registry.json").slice(0, -"/registry.json".length);
   const captured = await Promise.all(
     [
       ["registry.json", registry],
@@ -110,7 +113,13 @@ describe("private completed KOSPI diagnostic receipt binding", () => {
     "recomputes exact diagnostic; blocked=%s remains evidence not approval",
     async (blocked) => {
       const p = await fixture(blocked);
+      expect(
+        p.kospi.capturedObjects.every((o) =>
+          o.path.startsWith(owner + "/shadow/kospi-confirm1-bear-rsaccel-v1/"),
+        ),
+      ).toBe(true);
       await verifyPreparationKospiBoundary(p);
+      await verifyPreparationKospiBoundary(JSON.parse(JSON.stringify(p)));
       expect(p.kospi.result.adjustedBoundaryEquivalent).toBe(!blocked);
       expect(p.kospi.result.plan).toBeNull();
     },
@@ -130,6 +139,8 @@ describe("private completed KOSPI diagnostic receipt binding", () => {
     "diagnosticFlag",
     "reference",
     "duplicate",
+    "doubleShadow",
+    "originalRegistryAlias",
     "targetDates",
     "actualClock",
     "generationInventory",
@@ -137,6 +148,14 @@ describe("private completed KOSPI diagnostic receipt binding", () => {
     const p: any = await fixture(),
       r = p.kospi.result,
       d = r.boundaryDiagnostic;
+    if (mode === "doubleShadow") {
+      for (const item of p.kospi.capturedObjects)
+        item.path = item.path.replace("/shadow/", "/shadow/shadow/");
+      for (const item of p.kospi.generationPins)
+        item.path = item.path.replace("/shadow/", "/shadow/shadow/");
+    }
+    if (mode === "originalRegistryAlias")
+      p.kospi.capturedObjects[0].path = shadowObjectPath(owner, "registry.json");
     if (mode === "targetDates") r.authority.targetDates.pop();
     if (mode === "actualClock") p.clockSemantics.sourceRegisteredAt = "2026-10-28T01:00:00Z";
     if (mode === "generationInventory") p.kospi.generationPins.pop();
