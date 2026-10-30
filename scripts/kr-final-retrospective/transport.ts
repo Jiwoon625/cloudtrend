@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /** Owner-private, bounded transport. No collector, source registration or historical backdating. */
-import { gzipSync, gunzipSync } from "node:zlib";
+import { createGzip, gunzipSync } from "node:zlib";
+import { Readable, Writable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { createHash } from "node:crypto";
 import {
   canonicalSeriesJson,
   hashSeriesValue,
@@ -20,7 +23,13 @@ import {
   rawHash,
   requireCheck,
 } from "../kr-vintage-preflight/transport";
-import type { FinalCapture } from "./contracts";
+import type { FinalCapture, FinalCaptureV1 } from "./contracts";
+import {
+  encodeFinalCapture,
+  captureCanonicalChunks,
+  captureCanonicalProof,
+  type CaptureCodecDiagnostic,
+} from "./capture-codec";
 import octoberRuntime from "../../src/lib/ledger/octoberShadowEngineManifest.generated.json";
 import kospiRuntime from "../../src/lib/kospiShadowPublicationRuntime.generated.json";
 
@@ -287,26 +296,53 @@ export async function readEvidence(
   return decodeEvidence(rows[0].payload, rows[0].source_hash, hash);
 }
 export async function encodeEvidence(payload: any) {
-  const bytes = Buffer.from(canonicalSeriesJson(payload));
-  requireCheck(bytes.length > 0 && bytes.length <= 256 * 1024 * 1024);
-  const compressed = gzipSync(bytes, { level: 9 });
-  requireCheck(compressed.toString("base64").length <= 64 * 1024 * 1024);
+  const proof = captureCanonicalProof(payload);
+  requireCheck(proof.bytes > 0 && proof.bytes <= 256 * 1024 * 1024);
+  const digest = createHash("sha256");
+  let actualBytes = 0,
+    compressedBytes = 0;
+  const pieces: Buffer[] = [];
+  function* measured() {
+    for (const chunk of captureCanonicalChunks(payload)) {
+      actualBytes += chunk.length;
+      requireCheck(actualBytes <= 256 * 1024 * 1024);
+      digest.update(chunk);
+      yield chunk;
+    }
+  }
+  await pipeline(
+    Readable.from(measured(), { objectMode: false }),
+    createGzip({ level: 9 }),
+    new Writable({
+      write(chunk: Buffer, _encoding, callback) {
+        compressedBytes += chunk.length;
+        if (compressedBytes > 48 * 1024 * 1024) {
+          callback(new Error("EVIDENCE_COMPRESSED_LIMIT"));
+          return;
+        }
+        pieces.push(Buffer.from(chunk));
+        callback();
+      },
+    }),
+  );
+  requireCheck(actualBytes === proof.bytes && "sha256:" + digest.digest("hex") === proof.hash);
+  const compressed = Buffer.concat(pieces, compressedBytes),
+    encoded = compressed.toString("base64");
+  requireCheck(encoded.length <= 64 * 1024 * 1024);
   const envelope = {
     version: "kr-final-retrospective-evidence-gzip-v1",
-    hash: rawHash(bytes),
-    bytes: bytes.length,
+    hash: proof.hash,
+    bytes: proof.bytes,
     compressedHash: rawHash(compressed),
-    payload: compressed.toString("base64"),
+    payload: encoded,
   };
-  return {
-    envelope,
-    storageHash: await hashSeriesValue(envelope),
-    hash: rawHash(bytes) as SeriesHash,
-  };
+  return { envelope, storageHash: captureCanonicalProof(envelope).hash, hash: proof.hash };
 }
 export async function decodeEvidence(stored: any, storageHash: string, expectedHash: string) {
   requireCheck(
-    H.test(storageHash) && H.test(expectedHash) && (await hashSeriesValue(stored)) === storageHash,
+    H.test(storageHash) &&
+      H.test(expectedHash) &&
+      captureCanonicalProof(stored).hash === storageHash,
   );
   if (stored.version !== "kr-final-retrospective-evidence-gzip-v1") {
     requireCheck(storageHash === expectedHash);
@@ -332,7 +368,8 @@ export async function decodeEvidence(stored: any, storageHash: string, expectedH
   const bytes = gunzipSync(compressed, { maxOutputLength: stored.bytes });
   requireCheck(bytes.length === stored.bytes && rawHash(bytes) === expectedHash);
   const payload = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-  requireCheck(canonicalSeriesJson(payload) === bytes.toString());
+  const canonical = captureCanonicalProof(payload);
+  requireCheck(canonical.hash === expectedHash && canonical.bytes === bytes.length);
   return payload;
 }
 /** One INSERT, exact readback after uncertain response; no retry, update or upsert. */
@@ -353,7 +390,8 @@ export async function appendEvidence(
     );
     if (rows[0])
       requireCheck(
-        same(await decodeEvidence(rows[0].payload, rows[0].source_hash, encoded.hash), payload),
+        rows[0].source_hash === encoded.storageHash &&
+          captureCanonicalProof(rows[0].payload).hash === encoded.storageHash,
       );
     return rows.length === 1;
   };
@@ -388,6 +426,7 @@ export async function capture(
   request: Request,
   requestHash: string,
   codeCommit: string,
+  emitCodec?: (event: CaptureCodecDiagnostic) => void,
 ): Promise<FinalCapture> {
   await validateRequest(request, requestHash, o.owner, codeCommit);
   const r = reader(o),
@@ -527,7 +566,7 @@ export async function capture(
     requireCheck(same(normalizeGeneration(await r.info(pin.path)), pin.generation));
   const capturedAt = new Date().toISOString(),
     computedAt = new Date().toISOString();
-  return {
+  const original: FinalCaptureV1 = {
     version: "kr-final-retrospective-capture-v1",
     owner: o.owner,
     codeCommit,
@@ -559,6 +598,7 @@ export async function capture(
     archives,
     legacyObjects,
   };
+  return encodeFinalCapture(original, emitCodec);
 }
 /** Original entire rows are immutable; only exact plan additions and projection values are allowed. */
 export async function assertCaptureFresh(
