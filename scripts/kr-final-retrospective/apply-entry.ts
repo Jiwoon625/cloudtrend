@@ -22,6 +22,7 @@ import {
   type Connection,
 } from "./transport";
 import type { FinalCapture } from "./contracts";
+import { captureCanonicalProof } from "./capture-codec";
 import octoberRuntime from "../../src/lib/ledger/octoberShadowEngineManifest.generated.json";
 import kospiRuntime from "../../src/lib/kospiShadowPublicationRuntime.generated.json";
 
@@ -84,11 +85,16 @@ async function main() {
     o.owner,
     process.env.GITHUB_SHA!,
   );
-  check(
-    (await hashSeriesValue(capture)) === p.captureHash &&
-      same(await prepareFinalRetrospective(capture), p),
-    "DETERMINISTIC_PLAN_REPRODUCTION",
-  );
+  {
+    const reproduced = captureCanonicalProof(await prepareFinalRetrospective(capture));
+    const expected = captureCanonicalProof(p);
+    check(
+      captureCanonicalProof(capture).hash === p.captureHash &&
+        reproduced.hash === expected.hash &&
+        reproduced.bytes === expected.bytes,
+      "DETERMINISTIC_PLAN_REPRODUCTION",
+    );
+  }
   const client = trustedSupabaseClient();
   const model = octoberShadowStore(client, o.owner, "service");
   const root = `${o.owner}/${KOSPI_SHADOW_NAMESPACE}`;

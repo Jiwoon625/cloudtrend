@@ -24,7 +24,8 @@ import { KOSPI_SHADOW_CORRECTION_REVISION_ID } from "../../src/lib/kospiShadowSe
 import { prepareFinalRetrospective, KINDS, DATES, type FinalPlan } from "./core";
 import { applyFinalRetrospective, finalApprovalCandidate, type FinalApplyInput } from "./apply";
 import type { ModelJournalRun } from "../../src/lib/ledger/modelJournal";
-import type { FinalCapture } from "./contracts";
+import type { FinalCaptureV1 } from "./contracts";
+import { encodeFinalCapture, hydrateFinalCapture } from "./capture-codec";
 import {
   recoveryFixture,
   publication,
@@ -43,7 +44,7 @@ const syntheticCorrectionApproval = {
   syntheticLegacyOnly: true,
   role: "ORIGINAL_CORRECTION_APPROVAL",
 };
-let capture: FinalCapture, plan: FinalPlan, baseline: MemoryData;
+let capture: FinalCaptureV1, plan: FinalPlan, baseline: MemoryData;
 beforeAll(async () => {
   const f = await recoveryFixture();
   baseline = f.complete;
@@ -453,4 +454,25 @@ it("missing exact predecessor archive reference cannot be replaced with valid sa
   variant.inputs.snapshots[0]!.savedAt = "2026-10-30T00:48:00Z";
   c.archives.push({ payload: variant, hash: await hashSeriesValue(variant) });
   await expect(prepareFinalRetrospective(c)).rejects.toThrow("PREDECESSOR_ARCHIVE_REFERENCE");
+});
+
+it("compact capture restores exact full inputs while keeping stored and decoded identities distinct", async () => {
+  const original = clone(capture);
+  const compact = await encodeFinalCapture(original);
+  expect(await hydrateFinalCapture(compact)).toEqual(original);
+  const compactPlan = await prepareFinalRetrospective(compact);
+  expect(compactPlan.captureHash).toBe(await hashSeriesValue(compact));
+  expect(compactPlan.captureHash).not.toBe(await hashSeriesValue(original));
+  expect(compactPlan.preparation.decodedCaptureHash).toBe(await hashSeriesValue(original));
+  expect(compactPlan.preparation.basis.datasetHash).toBe(plan.preparation.basis.datasetHash);
+  expect(compactPlan.preparation.preservationBaseline).toEqual(
+    plan.preparation.preservationBaseline,
+  );
+  expect(compactPlan.newArchives).toEqual(plan.newArchives);
+  expect(compactPlan.newAdoptedSessions).toHaveLength(10);
+  expect(original).toEqual(capture);
+  const h = await harness(compactPlan);
+  h.input.phase = "VALIDATE";
+  expect((await applyFinalRetrospective(h.input)).status).toBe("VALIDATED");
+  expect(h.writes).toEqual([]);
 });

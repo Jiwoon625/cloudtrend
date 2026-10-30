@@ -18,6 +18,7 @@ import { createRecoveryMemoryStore } from "../kr-adjusted-recovery/ordered-plan"
 import { prepareKospiFinalRetrospective } from "../kospi-final-retrospective-preparation";
 import { kospiRetrospectiveApprovalCandidate } from "../kospi-final-retrospective-apply";
 import type { FinalCapture } from "./contracts";
+import { captureCanonicalProof, hydrateFinalCapture } from "./capture-codec";
 import { KOSPI_SHADOW_NAMESPACE } from "../../src/lib/kospiShadowStore";
 import { KOSPI_SHADOW_CORRECTION_REVISION_ID } from "../../src/lib/kospiShadowSeries";
 
@@ -35,7 +36,8 @@ function modeledClock(date: string) {
   check(next, "SESSION_DATE");
   return { availableAt: `${next}T08:00:00+09:00`, decisionAt: `${next}T08:10:00+09:00` };
 }
-export async function prepareFinalRetrospective(c: FinalCapture) {
+export async function prepareFinalRetrospective(storedCapture: FinalCapture) {
+  const c = await hydrateFinalCapture(storedCapture);
   check(
     c.version === "kr-final-retrospective-capture-v1" &&
       /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(c.owner),
@@ -69,10 +71,12 @@ export async function prepareFinalRetrospective(c: FinalCapture) {
     "EXACT_FIVE_PREDECESSORS",
   );
   await verifyKrSourceVintagePrivateApproval(c.sourceVintageApproval);
-  const captureHash = await hashSeriesValue(c);
+  // The stored compact identity and fully restored original identity are distinct.
+  const captureHash = captureCanonicalProof(storedCapture).hash;
+  const decodedCaptureHash = captureCanonicalProof(c).hash;
   const sourceManifestHash = await hashSeriesValue(c.sourceManifest);
   const captureManifestHash = await hashSeriesValue(c.captureManifest);
-  const datasetHash = await hashSeriesValue(c.dataset);
+  const datasetHash = captureCanonicalProof(c.dataset).hash;
   const configHash = await hashSeriesValue(c.config);
   // This derived analytical basis is NOT a registered source. Registered originals remain untouched.
   const basis = {
@@ -88,6 +92,7 @@ export async function prepareFinalRetrospective(c: FinalCapture) {
   const preparation = {
     version: "kr-final-retrospective-preparation-v1",
     captureHash,
+    decodedCaptureHash,
     owner: c.owner,
     codeCommit: c.codeCommit,
     runtimeHashes: c.runtimeHashes,
@@ -112,7 +117,7 @@ export async function prepareFinalRetrospective(c: FinalCapture) {
     analyses.map(async (x, i) => ({
       date: DATES[i]!,
       sourceHash: await hashSeriesValue(currentDateEvidence(x.dataset, snapshots[i]!)),
-      datasetHash: await hashSeriesValue(x.dataset),
+      datasetHash: captureCanonicalProof(x.dataset).hash,
       configHash,
       evidenceStoredAt: c.computedAt,
       modelAvailableAt: modeledClock(DATES[i]!).availableAt,

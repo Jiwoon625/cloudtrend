@@ -368,3 +368,108 @@ it("reports safe component categories and sizes when whole capture cannot canoni
   ]);
   expect(JSON.stringify(events)).not.toContain("PRIVATE_SENTINEL");
 });
+
+it("streamgzip roundtrips multi-chunk Unicode and rejects noncanonical whitespace despite valid transport hashes", async () => {
+  const { gzipSync } = await import("node:zlib");
+  const { rawHash } = await import("../kr-vintage-preflight/transport");
+  const value = {
+    proof: "한글😀".repeat(20000),
+    rows: Array.from({ length: 500 }, (_, n) => ({ n, text: "synthetic" })),
+  };
+  const encoded = await encodeEvidence(value);
+  expect(await decodeEvidence(encoded.envelope, encoded.storageHash, encoded.hash)).toEqual(value);
+  const raw = Buffer.from('{ "noncanonical": true }'),
+    compressed = gzipSync(raw);
+  const envelope = {
+    version: "kr-final-retrospective-evidence-gzip-v1",
+    hash: rawHash(raw),
+    bytes: raw.length,
+    compressedHash: rawHash(compressed),
+    payload: compressed.toString("base64"),
+  };
+  await expect(
+    decodeEvidence(envelope, await hashSeriesValue(envelope), envelope.hash),
+  ).rejects.toThrow();
+});
+
+describe("exact immutable envelope readback without redundant decompression", () => {
+  it("rejects a different valid envelope for the same logical payload", async () => {
+    const { gzipSync } = await import("node:zlib");
+    const { canonicalSeriesJson } = await import("../../src/lib/ledger/modelSeries");
+    const { rawHash } = await import("../kr-vintage-preflight/transport");
+    const value = { synthetic: "same-logical-payload".repeat(1000) },
+      expected = await encodeEvidence(value);
+    const different = gzipSync(Buffer.from(canonicalSeriesJson(value)), { level: 1 });
+    const alternate = {
+      ...expected.envelope,
+      payload: different.toString("base64"),
+      compressedHash: rawHash(different),
+    };
+    const alternateHash = await hashSeriesValue(alternate);
+    expect(alternateHash).not.toBe(expected.storageHash);
+    expect(await decodeEvidence(alternate, alternateHash, expected.hash)).toEqual(value);
+    let posts = 0;
+    await expect(
+      appendEvidence(
+        {
+          origin,
+          key: "test",
+          owner,
+          fetcher: async (_url, init) => {
+            if (init?.method === "POST") posts++;
+            return new Response(
+              JSON.stringify([{ user_id: owner, source_hash: alternateHash, payload: alternate }]),
+            );
+          },
+        },
+        "plan",
+        value,
+      ),
+    ).rejects.toThrow();
+    expect(posts).toBe(0);
+  });
+  it("rejects tampered row hashes or envelopes and reuses only exact envelopes", async () => {
+    const value = { synthetic: "immutable" },
+      encoded = await encodeEvidence(value);
+    for (const row of [
+      { source_hash: hash, payload: encoded.envelope },
+      {
+        source_hash: encoded.storageHash,
+        payload: { ...encoded.envelope, bytes: encoded.envelope.bytes + 1 },
+      },
+    ])
+      await expect(
+        appendEvidence(
+          {
+            origin,
+            key: "test",
+            owner,
+            fetcher: async () => new Response(JSON.stringify([{ user_id: owner, ...row }])),
+          },
+          "plan",
+          value,
+        ),
+      ).rejects.toThrow();
+    let posts = 0;
+    expect(
+      await appendEvidence(
+        {
+          origin,
+          key: "test",
+          owner,
+          fetcher: async (_url, init) => {
+            if (init?.method === "POST") posts++;
+            return new Response(
+              JSON.stringify([
+                { user_id: owner, source_hash: encoded.storageHash, payload: encoded.envelope },
+              ]),
+            );
+          },
+        },
+        "plan",
+        value,
+      ),
+    ).toEqual({ hash: encoded.hash, storageHash: encoded.storageHash });
+    expect(posts).toBe(0);
+  });
+});
