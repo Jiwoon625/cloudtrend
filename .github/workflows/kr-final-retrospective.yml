@@ -1,0 +1,80 @@
+name: KR final retrospective reviewed PLAN APPLY
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [PLAN, VALIDATE, APPLY]
+        required: true
+      expected_request_hash:
+        description: Independently reviewed private retrospective request digest
+        type: string
+        required: true
+      expected_plan_hash:
+        description: Exact separately reviewed full plan digest (VALIDATE/APPLY only)
+        type: string
+      expected_approval_hash:
+        description: Exact independently approved private authority digest (VALIDATE/APPLY only)
+        type: string
+permissions:
+  contents: read
+# ALL admitted legacy journal writers use this same entire-job group. Not a database CAS.
+concurrency:
+  group: kospi-prospective-shadow
+  cancel-in-progress: false
+jobs:
+  recovery:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      RECOVERY_CONCURRENCY_GROUP: kospi-prospective-shadow
+      EXPECTED_REQUEST_HASH: ${{ inputs.expected_request_hash }}
+      EXPECTED_PLAN_HASH: ${{ inputs.expected_plan_hash }}
+      EXPECTED_APPROVAL_HASH: ${{ inputs.expected_approval_hash }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify reviewed runtime and generic safety tests before private reads
+        run: |
+          git merge-base --is-ancestor 508991e064df1107d6f7ea806c5a41be0b7845a8 HEAD
+          npx vite-node --script scripts/verify-shadow-runtime-manifests.ts
+          node --experimental-strip-types scripts/verify-kospi-shadow-runtime.ts
+          npx vitest run scripts/kr-final-retrospective src/lib/ledger/krRetrospectivePublication.test.ts
+          npx tsc --noEmit -p scripts/kr-final-retrospective/tsconfig.json
+          node scripts/build-kr-final-retrospective.mjs
+      - name: Capture owner-private inputs with bounded read-only requests
+        if: inputs.mode == 'PLAN'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: node "$RUNNER_TEMP/kr-final-retrospective-code/transport.mjs" materialize
+      - name: Calculate full ordered plan without credentials
+        if: inputs.mode == 'PLAN'
+        run: node "$RUNNER_TEMP/kr-final-retrospective-code/transport.mjs" compute
+      - name: Append private plan evidence only after fresh identity checks
+        if: inputs.mode == 'PLAN'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: node "$RUNNER_TEMP/kr-final-retrospective-code/transport.mjs" append
+      - name: Apply only separately approved exact plan and preserve all original history
+        if: inputs.mode == 'APPLY' || inputs.mode == 'VALIDATE'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          RECOVERY_PHASE: ${{ inputs.mode }}
+        run: node "$RUNNER_TEMP/kr-final-retrospective-code/apply.mjs"
+      - name: Delete ephemeral private files (never publish artifacts)
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/kr-final-retrospective-private" "$RUNNER_TEMP/kr-final-retrospective-code"
