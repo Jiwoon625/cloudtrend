@@ -113,7 +113,10 @@ async function main() {
     const p = JSON.parse(fs.readFileSync(path.join(dir, "plan.json"), "utf8"));
     requireCheck(p.captureHash === captureCanonicalProof(captured).hash);
     return {
-      status: "PLAN_COMPUTED_REVIEW_REQUIRED",
+      status:
+        p.version === "kr-final-retrospective-blocked-v1"
+          ? "BLOCKED_DIAGNOSIS_COMPUTED"
+          : "PLAN_COMPUTED_REVIEW_REQUIRED",
       planHash: captureCanonicalProof(p).hash,
       historicalAvailabilityClaim: false,
     };
@@ -123,7 +126,7 @@ async function main() {
   const captured = readCapture();
   const p = JSON.parse(fs.readFileSync(path.join(dir, "plan.json"), "utf8"));
   requireCheck(
-    p.version === "kr-final-retrospective-plan-v1" &&
+    ["kr-final-retrospective-plan-v1", "kr-final-retrospective-blocked-v1"].includes(p.version) &&
       p.captureHash === captureCanonicalProof(captured).hash &&
       p.preparation.codeCommit === code &&
       p.operationalApproval === false &&
@@ -134,8 +137,15 @@ async function main() {
   requireCheck(captureEvidence.hash === p.captureHash);
   await assertCaptureFresh(o, captured);
   return {
-    status: "PLAN_PRIVATE_EVIDENCE_STORED_REVIEW_REQUIRED",
-    ...(await appendEvidence(o, "plan", p)),
+    status:
+      p.version === "kr-final-retrospective-blocked-v1"
+        ? "BLOCKED_DIAGNOSIS_PRIVATE_EVIDENCE_STORED"
+        : "PLAN_PRIVATE_EVIDENCE_STORED_REVIEW_REQUIRED",
+    ...(await appendEvidence(
+      o,
+      p.version === "kr-final-retrospective-blocked-v1" ? "diagnosis" : "plan",
+      p,
+    )),
     captureHash: captureEvidence.hash,
     historicalAvailabilityClaim: false,
   };

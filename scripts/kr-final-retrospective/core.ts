@@ -20,6 +20,8 @@ import { prepareKospiFinalRetrospective } from "../kospi-final-retrospective-pre
 import { kospiRetrospectiveApprovalCandidate } from "../kospi-final-retrospective-apply";
 import { FINAL_COMPUTE_STAGES, type FinalCapture, type FinalComputeStage } from "./contracts";
 import { captureCanonicalProof, hydrateFinalCapture } from "./capture-codec";
+import { prepareRepeatedRetrospective } from "./repeated-preparation";
+import { repeatedLegacyApprovalCandidate } from "./repeated-legacy-apply";
 import { KOSPI_SHADOW_NAMESPACE } from "../../src/lib/kospiShadowStore";
 import { KOSPI_SHADOW_CORRECTION_REVISION_ID } from "../../src/lib/kospiShadowSeries";
 
@@ -37,7 +39,7 @@ function modeledClock(date: string) {
   check(next, "SESSION_DATE");
   return { availableAt: `${next}T08:00:00+09:00`, decisionAt: `${next}T08:10:00+09:00` };
 }
-export async function prepareFinalRetrospective(
+export async function prepareFinalRetrospectiveOutcome(
   storedCapture: FinalCapture,
   phase: (stage: FinalComputeStage) => void = () => {},
 ) {
@@ -295,22 +297,67 @@ export async function prepareFinalRetrospective(
     },
   );
   phase("LEGACY_BOUNDARY");
-  check(legacy.status === "PREPARED_FOR_INDEPENDENT_REVIEW", "LEGACY_BOUNDARY_BLOCKED");
+  if ((c.captureManifest as { priorRecovery?: unknown }).priorRecovery)
+    phase("REPEATED_PREDECESSOR");
+  const repeated = (c.captureManifest as { priorRecovery?: unknown }).priorRecovery
+    ? await prepareRepeatedRetrospective(c, legacy.authority, legacy.targetSessions)
+    : null;
+  if (
+    (repeated && repeated.result.status !== "PROVEN_REPEATED_RETROSPECTIVE_CONTINUATION") ||
+    (!repeated && legacy.status !== "PREPARED_FOR_INDEPENDENT_REVIEW")
+  ) {
+    return {
+      version: "kr-final-retrospective-blocked-v1" as const,
+      status: "BLOCKED" as const,
+      plan: null,
+      operationalApproval: false as const,
+      historicalAvailabilityClaim: false as const,
+      captureHash,
+      preparation,
+      preparationHash,
+      newAdoptedSessions: memory.appended,
+      newArchives: memory.newArchives,
+      preparedPublications: [...memory.prepared.values()],
+      legacy,
+      repeated,
+      actualMutation: false as const,
+      sourceRegistryMutation: false as const,
+    };
+  }
+  check(
+    legacy.status === "PREPARED_FOR_INDEPENDENT_REVIEW" ||
+      repeated?.result.status === "PROVEN_REPEATED_RETROSPECTIVE_CONTINUATION",
+    "LEGACY_BOUNDARY_BLOCKED",
+  );
   // Compatibility envelope for the existing narrow helper; no old adjusted operation or authority is reused.
   phase("PLAN_ASSEMBLE");
-  const legacyReceipt = {
-    version: "kr-adjusted-recovery-preparation-v1" as const,
-    kind: "RECOVERY_PREPARATION_ONLY" as const,
-    operationalApproval: false as const,
-    historicalAvailabilityClaim: false as const,
-    independentFinalPreparation: preparation,
-    kospi: {
-      capturedObjects: Object.entries(c.legacyObjects).map(([path, x]) => ({ path, ...x })),
-      result: legacy,
-    },
-  };
+  const capturedObjects = Object.entries(c.legacyObjects).map(([path, x]) => ({ path, ...x }));
+  const legacyReceipt =
+    repeated?.result.status === "PROVEN_REPEATED_RETROSPECTIVE_CONTINUATION"
+      ? {
+          version: "kr-repeated-retrospective-preparation-v1" as const,
+          kind: "RECOVERY_PREPARATION_ONLY" as const,
+          operationalApproval: false as const,
+          historicalAvailabilityClaim: false as const,
+          independentFinalPreparation: preparation,
+          kospi: { capturedObjects, repeatedProofInput: repeated.input, result: repeated.result },
+        }
+      : (() => {
+          check(legacy.status === "PREPARED_FOR_INDEPENDENT_REVIEW", "LEGACY_BOUNDARY_BLOCKED");
+          return {
+            version: "kr-adjusted-recovery-preparation-v1" as const,
+            kind: "RECOVERY_PREPARATION_ONLY" as const,
+            operationalApproval: false as const,
+            historicalAvailabilityClaim: false as const,
+            independentFinalPreparation: preparation,
+            kospi: { capturedObjects, result: legacy },
+          };
+        })();
   const legacyReceiptHash = await hashSeriesValue(legacyReceipt);
-  const legacyApprovalCandidate = kospiRetrospectiveApprovalCandidate(legacyReceiptHash, legacy);
+  const legacyApprovalCandidate =
+    legacyReceipt.version === "kr-repeated-retrospective-preparation-v1"
+      ? await repeatedLegacyApprovalCandidate(legacyReceiptHash, legacyReceipt.kospi.result)
+      : kospiRetrospectiveApprovalCandidate(legacyReceiptHash, legacyReceipt.kospi.result);
   return {
     version: "kr-final-retrospective-plan-v1" as const,
     operationalApproval: false as const,
@@ -336,5 +383,14 @@ export async function prepareFinalRetrospective(
     integratedMutation: false,
     actualMutation: false,
   };
+}
+/** Operational paths only accept a complete plan; diagnostic outcome has no approval route. */
+export async function prepareFinalRetrospective(
+  storedCapture: FinalCapture,
+  phase: (stage: FinalComputeStage) => void = () => {},
+) {
+  const result = await prepareFinalRetrospectiveOutcome(storedCapture, phase);
+  check(result.version === "kr-final-retrospective-plan-v1", "LEGACY_BOUNDARY_BLOCKED");
+  return result;
 }
 export type FinalPlan = Awaited<ReturnType<typeof prepareFinalRetrospective>>;

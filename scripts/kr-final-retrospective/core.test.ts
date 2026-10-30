@@ -21,7 +21,13 @@ vi.mock("../kospi-final-retrospective-apply", () => ({
 import { prepareKospiFinalRetrospective } from "../kospi-final-retrospective-preparation";
 import { KOSPI_SHADOW_NAMESPACE } from "../../src/lib/kospiShadowStore";
 import { KOSPI_SHADOW_CORRECTION_REVISION_ID } from "../../src/lib/kospiShadowSeries";
-import { prepareFinalRetrospective, KINDS, DATES, type FinalPlan } from "./core";
+import {
+  prepareFinalRetrospective,
+  prepareFinalRetrospectiveOutcome,
+  KINDS,
+  DATES,
+  type FinalPlan,
+} from "./core";
 import { applyFinalRetrospective, finalApprovalCandidate, type FinalApplyInput } from "./apply";
 import type { ModelJournalRun } from "../../src/lib/ledger/modelJournal";
 import type { FinalCaptureV1 } from "./contracts";
@@ -501,4 +507,43 @@ it("diagnostic hydration failure cannot reach later computation", async () => {
   const stages: string[] = [];
   await expect(prepareFinalRetrospective(broken, (stage) => stages.push(stage))).rejects.toThrow();
   expect(stages).toEqual(["HYDRATE"]);
+});
+
+it("blocked outcome retains complete adopted calculations but cannot become an approval", async () => {
+  vi.mocked(prepareKospiFinalRetrospective).mockResolvedValueOnce({
+    status: "BLOCKED_ADJUSTED_PREDECESSOR_MISMATCH",
+    plan: null,
+    operationalApproval: false,
+    historicalAvailabilityClaim: false,
+  } as any);
+  const blocked = await prepareFinalRetrospectiveOutcome(clone(capture));
+  expect(blocked.version).toBe("kr-final-retrospective-blocked-v1");
+  expect(blocked.newAdoptedSessions).toHaveLength(10);
+  expect(blocked.newArchives).toHaveLength(2);
+  expect(blocked.preparedPublications).toHaveLength(2);
+  expect((blocked as any).plan).toBe(null);
+  await expect(finalApprovalCandidate(blocked as any)).rejects.toThrow("BLOCKED_CANNOT_APPROVE");
+});
+
+it("live legacy writer receives full freshness check on every exclusive write gate", async () => {
+  const h = await harness();
+  let liveCalls = 0;
+  vi.mocked(applyPreparedKospiRetrospective).mockImplementationOnce(
+    async () => ({ status: "SYNTHETIC_SIMULATION" }) as any,
+  );
+  vi.mocked(applyPreparedKospiRetrospective).mockImplementationOnce(async (input) => {
+    for (let n = 0; n < 4; n++) {
+      const before = h.checks();
+      await input.assertExclusiveWriter({
+        owner: OWNER,
+        namespace: "synthetic",
+        requiredConcurrencyGroup: "kospi-prospective-shadow",
+      });
+      expect(h.checks()).toBe(before + 1);
+      liveCalls++;
+    }
+    return { status: "SYNTHETIC_LIVE" } as any;
+  });
+  await applyFinalRetrospective(h.input);
+  expect(liveCalls).toBe(4);
 });

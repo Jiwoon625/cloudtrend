@@ -1,7 +1,7 @@
 /** No credentials, network imports, or write-capable repository adapters. */
 import fs from "node:fs";
 import { createHash } from "node:crypto";
-import { prepareFinalRetrospective } from "./core";
+import { prepareFinalRetrospectiveOutcome } from "./core";
 import { captureCanonicalChunks, captureCanonicalProof } from "./capture-codec";
 import { classifyFinalComputeFailure, type FinalComputeStage } from "./contracts";
 let stage: FinalComputeStage = "CAPTURE_READ";
@@ -22,7 +22,7 @@ async function main() {
     capture.captureManifest.requestHash !== requestHash
   )
     throw Error("PURE_CAPTURE_IDENTITY_REJECTED");
-  const plan = await prepareFinalRetrospective(capture, emitStage);
+  const plan = await prepareFinalRetrospectiveOutcome(capture, emitStage);
   emitStage("PLAN_WRITE");
   const proof = captureCanonicalProof(plan),
     limit = 256 * 1024 * 1024;

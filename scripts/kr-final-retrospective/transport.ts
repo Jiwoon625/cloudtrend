@@ -23,13 +23,19 @@ import {
   rawHash,
   requireCheck,
 } from "../kr-vintage-preflight/transport";
-import type { FinalCapture, FinalCaptureV1 } from "./contracts";
+import type {
+  FinalCapture,
+  FinalCaptureV1,
+  FinalPriorRecoveryPins,
+  FinalPriorRecoveryLineage,
+} from "./contracts";
 import {
   encodeFinalCapture,
   captureCanonicalChunks,
   captureCanonicalProof,
   type CaptureCodecDiagnostic,
 } from "./capture-codec";
+import { decodeRecoveryEvidence } from "../kr-adjusted-recovery/evidence-storage";
 import octoberRuntime from "../../src/lib/ledger/octoberShadowEngineManifest.generated.json";
 import kospiRuntime from "../../src/lib/kospiShadowPublicationRuntime.generated.json";
 
@@ -45,7 +51,8 @@ export interface Connection {
   fetcher?: typeof fetch;
 }
 export interface Request {
-  version: "kr-final-retrospective-request-v1";
+  version: "kr-final-retrospective-request-v1" | "kr-final-retrospective-request-v2";
+  priorRecovery?: FinalPriorRecoveryPins;
   owner: string;
   codeCommit: string;
   operationalApproval: false;
@@ -237,7 +244,9 @@ export async function validateRequest(
   requireCheck(
     H.test(expectedHash) &&
       (await hashSeriesValue(value)) === expectedHash &&
-      value.version === "kr-final-retrospective-request-v1" &&
+      ["kr-final-retrospective-request-v1", "kr-final-retrospective-request-v2"].includes(
+        value.version,
+      ) &&
       value.owner === owner &&
       value.codeCommit === codeCommit &&
       /^[a-f0-9]{40}$/.test(codeCommit),
@@ -255,6 +264,26 @@ export async function validateRequest(
       Object.values(value.expected).every((h) => H.test(h)),
   );
   requireCheck(value.modelInventoryProjection === "series-date-state-recorded-v1");
+  if (value.version === "kr-final-retrospective-request-v2") {
+    requireCheck(
+      exactKeys(value, [
+        "version",
+        "priorRecovery",
+        "owner",
+        "codeCommit",
+        "operationalApproval",
+        "historicalAvailabilityClaim",
+        "predecessorDate",
+        "targetDates",
+        "preparedAt",
+        "config",
+        "modelInventoryProjection",
+        "expected",
+        "legacy",
+      ]),
+    );
+    validatePriorRecoveryPins(value.priorRecovery);
+  } else requireCheck(value.priorRecovery === undefined);
   const root = owner + "/shadow/kospi-confirm1-bear-rsaccel-v1/";
   requireCheck(
     value.legacy.length > 0 &&
@@ -283,17 +312,28 @@ export async function validateRequest(
 }
 export async function readEvidence(
   o: Connection,
-  kind: "request" | "plan" | "approval" | "completion" | "capture" | "execution",
+  kind: "request" | "plan" | "approval" | "completion" | "capture" | "execution" | "diagnosis",
   hash: string,
 ) {
-  requireCheck(H.test(hash));
+  requireCheck(
+    H.test(hash) &&
+      ["request", "plan", "approval", "completion", "capture", "execution", "diagnosis"].includes(
+        kind,
+      ),
+  );
   const rows = await reader(o).rows(
     "ledger_provenance_archive",
     { source_id: "eq." + PREFIX + kind + ":" + hash.slice(7), source_revision: "eq.1" },
     2,
   );
   requireCheck(rows.length === 1);
-  return decodeEvidence(rows[0].payload, rows[0].source_hash, hash);
+  const decoded = await decodeEvidence(rows[0].payload, rows[0].source_hash, hash);
+  if (kind === "diagnosis") validateBlockedEvidence(decoded);
+  if (kind === "plan")
+    requireCheck(
+      decoded?.version !== "kr-final-retrospective-blocked-v1" && decoded?.status !== "BLOCKED",
+    );
+  return decoded;
 }
 export async function encodeEvidence(payload: any) {
   const proof = captureCanonicalProof(payload);
@@ -375,10 +415,15 @@ export async function decodeEvidence(stored: any, storageHash: string, expectedH
 /** One INSERT, exact readback after uncertain response; no retry, update or upsert. */
 export async function appendEvidence(
   o: Connection,
-  kind: "plan" | "completion" | "capture" | "execution",
+  kind: "plan" | "completion" | "capture" | "execution" | "diagnosis",
   payload: any,
 ) {
-  requireCheck(["plan", "completion", "capture", "execution"].includes(kind));
+  requireCheck(["plan", "completion", "capture", "execution", "diagnosis"].includes(kind));
+  if (kind === "diagnosis") validateBlockedEvidence(payload);
+  if (kind === "plan")
+    requireCheck(
+      payload?.version !== "kr-final-retrospective-blocked-v1" && payload?.status !== "BLOCKED",
+    );
   const encoded = await encodeEvidence(payload),
     r = reader(o),
     sourceId = PREFIX + kind + ":" + encoded.hash.slice(7);
@@ -429,8 +474,12 @@ export async function capture(
   emitCodec?: (event: CaptureCodecDiagnostic) => void,
 ): Promise<FinalCapture> {
   await validateRequest(request, requestHash, o.owner, codeCommit);
+  const captureStartedAt = new Date().toISOString();
   const r = reader(o),
     base = await snapshot(o);
+  const priorRecovery = request.priorRecovery
+    ? await capturePriorRecovery(o, request.priorRecovery)
+    : undefined;
   requireCheck(same(await legacyInventory(o), request.legacy.map((x) => x.path).sort()));
   for (const key of ["sources", "models", "registries", "actual"] as const)
     requireCheck(
@@ -445,7 +494,6 @@ export async function capture(
           : base[key],
       )) === request.expected[key],
     );
-  const captureStartedAt = new Date().toISOString();
   const texts: string[] = [],
     sourceObjects: any[] = [];
   for (const row of base.sources) {
@@ -564,6 +612,7 @@ export async function capture(
     requireCheck(same(normalizeGeneration(await r.info(pin.path)), pin.generation));
   for (const pin of request.legacy)
     requireCheck(same(normalizeGeneration(await r.info(pin.path)), pin.generation));
+  if (priorRecovery) await assertPriorRecoveryFresh(o, priorRecovery);
   const capturedAt = new Date().toISOString(),
     computedAt = new Date().toISOString();
   const original: FinalCaptureV1 = {
@@ -577,7 +626,13 @@ export async function capture(
     capturedAt,
     computedAt,
     sourceManifest: base.sources,
-    captureManifest: { requestHash, captureStartedAt, sourceObjects, legacy: legacyPins },
+    captureManifest: {
+      requestHash,
+      captureStartedAt,
+      sourceObjects,
+      legacy: legacyPins,
+      ...(priorRecovery ? { priorRecovery } : {}),
+    },
     preservationBaseline: { ...base, archiveRows, preparedRows, vintageRows },
     finalPublication: {
       hash: await hashSeriesValue(publication),
@@ -611,6 +666,8 @@ export async function assertCaptureFresh(
   const b = c.preservationBaseline as any,
     now = await snapshot(o),
     r = reader(o);
+  if ((c.captureManifest as any).priorRecovery)
+    await assertPriorRecoveryFresh(o, (c.captureManifest as any).priorRecovery);
   for (const key of ["sources", "registries", "actual"] as const)
     requireCheck(same(now[key], b[key]));
   const baselineKeys = new Set(b.models.map((x: any) => x.series_id + ":" + x.session_date));
@@ -761,4 +818,136 @@ export function serializeCaptureWithDiagnostics(
     throw new Error("CAPTURE_JSON_LIMIT_REJECTED");
   }
   return result;
+}
+
+const priorRoles = ["preparation", "fullPlan", "approval", "terminal"] as const;
+const exactKeys = (value: any, keys: string[]) =>
+  value !== null &&
+  typeof value === "object" &&
+  !Array.isArray(value) &&
+  same(Object.keys(value).sort(), [...keys].sort());
+/** Exact role-specific archive identities; old authority is lineage only. */
+export function validatePriorRecoveryPins(value: any): asserts value is FinalPriorRecoveryPins {
+  requireCheck(
+    exactKeys(value, ["version", ...priorRoles]) &&
+      value.version === "kr-final-prior-recovery-lineage-v1",
+  );
+  for (const role of priorRoles) {
+    const pin = value[role];
+    requireCheck(
+      exactKeys(pin, ["sourceId", "sourceRevision", "storageHash", "logicalHash"]) &&
+        pin.sourceRevision === "1" &&
+        H.test(pin.storageHash) &&
+        H.test(pin.logicalHash),
+    );
+  }
+  const hex = "[a-f0-9]{64}";
+  requireCheck(
+    new RegExp(
+      "^kr-adjusted-recovery-preparation:" +
+        hex +
+        ":" +
+        value.preparation.logicalHash.slice(7) +
+        "$",
+    ).test(value.preparation.sourceId),
+  );
+  requireCheck(
+    new RegExp("^kr-adjusted-recovery-full-plan:" + hex + "$").test(value.fullPlan.sourceId),
+  );
+  requireCheck(
+    value.approval.sourceId ===
+      "kr-adjusted-recovery-apply-approval:" + value.fullPlan.logicalHash.slice(7),
+  );
+  requireCheck(
+    value.terminal.sourceId ===
+      "kr-adjusted-recovery-model-stage:" + value.terminal.logicalHash.slice(7),
+  );
+  requireCheck(
+    value.approval.logicalHash === value.approval.storageHash &&
+      value.terminal.logicalHash === value.terminal.storageHash,
+  );
+  requireCheck(new Set(priorRoles.map((role) => value[role].sourceId)).size === 4);
+}
+function pinsFromLineage(value: FinalPriorRecoveryLineage): FinalPriorRecoveryPins {
+  requireCheck(exactKeys(value, ["version", ...priorRoles]));
+  const pins: any = { version: value.version };
+  for (const role of priorRoles) {
+    const evidence = value[role];
+    requireCheck(
+      exactKeys(evidence, [
+        "sourceId",
+        "sourceRevision",
+        "storageHash",
+        "logicalHash",
+        "userId",
+        "rowHash",
+        "payload",
+      ]) && H.test(evidence.rowHash),
+    );
+    const { sourceId, sourceRevision, storageHash, logicalHash } = evidence;
+    pins[role] = { sourceId, sourceRevision, storageHash, logicalHash };
+  }
+  validatePriorRecoveryPins(pins);
+  return pins;
+}
+/** Full original envelopes retained, never a projection substituted for old evidence. */
+export async function capturePriorRecovery(
+  o: Connection,
+  pins: FinalPriorRecoveryPins,
+): Promise<FinalPriorRecoveryLineage> {
+  validatePriorRecoveryPins(pins);
+  const result: any = { version: pins.version };
+  for (const role of priorRoles) {
+    const pin = pins[role];
+    const rows = await reader(o).rows(
+      "ledger_provenance_archive",
+      { source_id: "eq." + pin.sourceId, source_revision: "eq.1" },
+      2,
+    );
+    requireCheck(rows.length === 1);
+    const row = rows[0];
+    requireCheck(
+      row.user_id === o.owner &&
+        row.source_id === pin.sourceId &&
+        row.source_revision === "1" &&
+        row.source_hash === pin.storageHash &&
+        captureCanonicalProof(row.payload).hash === pin.storageHash,
+    );
+    if (role === "preparation" || role === "fullPlan")
+      await decodeRecoveryEvidence(
+        row.payload,
+        pin.storageHash,
+        pin.logicalHash,
+        role === "preparation" ? "PREPARATION" : "FULL_PLAN",
+      );
+    else requireCheck(captureCanonicalProof(row.payload).hash === pin.logicalHash);
+    result[role] = {
+      ...pin,
+      userId: o.owner,
+      rowHash: captureCanonicalProof(row).hash,
+      payload: row.payload,
+    };
+  }
+  return result;
+}
+/** Every field of every original row remains pinned, including its server timestamps. */
+export async function assertPriorRecoveryFresh(o: Connection, value: FinalPriorRecoveryLineage) {
+  const pins = pinsFromLineage(value);
+  for (const role of priorRoles)
+    requireCheck(
+      value[role].userId === o.owner &&
+        captureCanonicalProof(value[role].payload).hash === value[role].storageHash,
+    );
+  const current = await capturePriorRecovery(o, pins);
+  for (const role of priorRoles) requireCheck(current[role].rowHash === value[role].rowHash);
+}
+
+function validateBlockedEvidence(value: any) {
+  requireCheck(
+    value?.version === "kr-final-retrospective-blocked-v1" &&
+      value.status === "BLOCKED" &&
+      value.plan === null &&
+      value.operationalApproval === false &&
+      value.historicalAvailabilityClaim === false,
+  );
 }

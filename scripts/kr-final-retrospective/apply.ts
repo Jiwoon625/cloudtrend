@@ -12,6 +12,7 @@ import {
   applyPreparedKospiRetrospective,
   type ApplyKospiRetrospectiveInput,
 } from "../kospi-final-retrospective-apply";
+import { applyRepeatedLegacy } from "./repeated-legacy-apply";
 import { check, DATES, KINDS, PREDECESSOR, same, type FinalPlan } from "./core";
 
 export interface FinalApproval {
@@ -27,6 +28,10 @@ export interface FinalApproval {
   historicalAvailabilityClaim: false;
 }
 export async function finalApprovalCandidate(plan: FinalPlan): Promise<FinalApproval> {
+  check(
+    plan.version === "kr-final-retrospective-plan-v1" && plan.operationalApproval === false,
+    "BLOCKED_CANNOT_APPROVE",
+  );
   return {
     version: "kr-final-retrospective-approval-v1",
     status: "APPROVED",
@@ -193,15 +198,39 @@ export async function applyFinalRetrospective(i: FinalApplyInput) {
       legacyValues.set(path, structuredClone(value));
     },
   };
-  await applyPreparedKospiRetrospective({
-    store: simulation,
-    preparationReceipt: p.legacyReceipt,
-    approval: p.legacyApprovalCandidate,
-    authoritativePreparationHash: p.legacyReceiptHash,
-    authoritativeApprovalHash: p.legacyApprovalHash,
-    approvedRuntimeCodeHash: i.admittedRuntimeHashes.kospi,
-    assertExclusiveWriter: i.assertExclusiveWriter,
-  });
+  async function applyLegacy(store: ShadowObjectStore, live = false) {
+    const common = {
+      store,
+      authoritativePreparationHash: p.legacyReceiptHash,
+      authoritativeApprovalHash: p.legacyApprovalHash,
+      approvedRuntimeCodeHash: i.admittedRuntimeHashes.kospi,
+      assertExclusiveWriter: async (scope: Parameters<typeof i.assertExclusiveWriter>[0]) => {
+        await i.assertExclusiveWriter(scope);
+        if (live) await i.assertFresh(p);
+      },
+    };
+    if (p.legacyReceipt.version === "kr-repeated-retrospective-preparation-v1") {
+      check(
+        p.legacyApprovalCandidate.version === "kr-repeated-legacy-approval-v1",
+        "LEGACY_APPROVAL_KIND",
+      );
+      return applyRepeatedLegacy({
+        ...common,
+        preparationReceipt: p.legacyReceipt,
+        approval: p.legacyApprovalCandidate,
+      });
+    }
+    check(
+      p.legacyApprovalCandidate.version !== "kr-repeated-legacy-approval-v1",
+      "LEGACY_APPROVAL_KIND",
+    );
+    return applyPreparedKospiRetrospective({
+      ...common,
+      preparationReceipt: p.legacyReceipt,
+      approval: p.legacyApprovalCandidate,
+    });
+  }
+  await applyLegacy(simulation);
   // Validate full existing or exact partial target prefix, not merely latest hash.
   for (const x of p.predecessors) {
     check(
@@ -296,18 +325,7 @@ export async function applyFinalRetrospective(i: FinalApplyInput) {
     }
   }
   await gate();
-  const legacy = await applyPreparedKospiRetrospective({
-    store: i.legacyStore,
-    preparationReceipt: p.legacyReceipt,
-    approval: p.legacyApprovalCandidate,
-    authoritativePreparationHash: p.legacyReceiptHash,
-    authoritativeApprovalHash: p.legacyApprovalHash,
-    approvedRuntimeCodeHash: i.admittedRuntimeHashes.kospi,
-    assertExclusiveWriter: async (scope) => {
-      await i.assertExclusiveWriter(scope);
-      await i.assertFresh(p);
-    },
-  });
+  const legacy = await applyLegacy(i.legacyStore, true);
   await gate();
   for (const pub of p.preparedPublications)
     for (const e of pub.entries)
