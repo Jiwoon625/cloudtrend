@@ -646,3 +646,79 @@ export async function assertCaptureFresh(
     } else requireCheck(same(normalizeGeneration(await r.info(pin.path)), pin.generation));
   }
 }
+
+/** Numeric-only diagnostic boundary: never emits payload paths, values, or exception messages. */
+export type CaptureSerializationDiagnostic = {
+  status:
+    | "CAPTURE_JSON_START"
+    | "CAPTURE_JSON_CANONICAL_REJECTED"
+    | "CAPTURE_JSON_BYTES"
+    | "CAPTURE_JSON_LIMIT_REJECTED"
+    | "CAPTURE_COMPONENT_CANONICAL_REJECTED"
+    | "CAPTURE_COMPONENT_DATASET_BYTES"
+    | "CAPTURE_COMPONENT_BASELINE_BYTES"
+    | "CAPTURE_COMPONENT_ARCHIVES_BYTES"
+    | "CAPTURE_COMPONENT_PREDECESSORS_BYTES"
+    | "CAPTURE_COMPONENT_LEGACY_BYTES";
+  bytes?: number;
+  componentIndex?: number;
+  errorCategory?: "RANGE_ERROR" | "CANONICAL_VALUE_ERROR";
+};
+export const CAPTURE_JSON_MAX_BYTES = 256 * 1024 * 1024;
+export function assertCaptureByteLength(bytes: number): void {
+  if (!Number.isSafeInteger(bytes) || bytes <= 0 || bytes > CAPTURE_JSON_MAX_BYTES)
+    throw new Error("CAPTURE_JSON_LIMIT_REJECTED");
+}
+function diagnoseCaptureComponents(
+  payload: unknown,
+  emitSafe: (event: CaptureSerializationDiagnostic) => void,
+) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
+  const record = payload as Record<string, unknown>;
+  const components = [
+    ["dataset", "CAPTURE_COMPONENT_DATASET_BYTES"],
+    ["preservationBaseline", "CAPTURE_COMPONENT_BASELINE_BYTES"],
+    ["archives", "CAPTURE_COMPONENT_ARCHIVES_BYTES"],
+    ["predecessors", "CAPTURE_COMPONENT_PREDECESSORS_BYTES"],
+    ["legacyObjects", "CAPTURE_COMPONENT_LEGACY_BYTES"],
+  ] as const;
+  for (const [componentIndex, [key, status]] of components.entries()) {
+    if (!Object.hasOwn(record, key)) continue;
+    try {
+      emitSafe({ status, bytes: Buffer.byteLength(canonicalSeriesJson(record[key])) });
+    } catch (error) {
+      emitSafe({
+        status: "CAPTURE_COMPONENT_CANONICAL_REJECTED",
+        componentIndex,
+        errorCategory: error instanceof RangeError ? "RANGE_ERROR" : "CANONICAL_VALUE_ERROR",
+      });
+    }
+  }
+}
+export function serializeCaptureWithDiagnostics(
+  payload: unknown,
+  emitSafe: (event: CaptureSerializationDiagnostic) => void,
+): string {
+  emitSafe({ status: "CAPTURE_JSON_START" });
+  let result: string;
+  try {
+    result = canonicalSeriesJson(payload);
+  } catch (error) {
+    emitSafe({
+      status: "CAPTURE_JSON_CANONICAL_REJECTED",
+      errorCategory: error instanceof RangeError ? "RANGE_ERROR" : "CANONICAL_VALUE_ERROR",
+    });
+    diagnoseCaptureComponents(payload, emitSafe);
+    throw new Error("CAPTURE_JSON_CANONICAL_REJECTED");
+  }
+  const bytes = Buffer.byteLength(result);
+  emitSafe({ status: "CAPTURE_JSON_BYTES", bytes });
+  try {
+    assertCaptureByteLength(bytes);
+  } catch {
+    emitSafe({ status: "CAPTURE_JSON_LIMIT_REJECTED", bytes });
+    diagnoseCaptureComponents(payload, emitSafe);
+    throw new Error("CAPTURE_JSON_LIMIT_REJECTED");
+  }
+  return result;
+}

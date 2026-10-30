@@ -4,8 +4,16 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pureEnvironment } from "../kr-vintage-preflight/runner";
 import { requireCheck } from "../kr-vintage-preflight/transport";
-import { hashSeriesValue, canonicalSeriesJson } from "../../src/lib/ledger/modelSeries";
-import { capture, readEvidence, appendEvidence, assertCaptureFresh } from "./transport";
+import { hashSeriesValue } from "../../src/lib/ledger/modelSeries";
+import {
+  capture,
+  readEvidence,
+  appendEvidence,
+  assertCaptureFresh,
+  serializeCaptureWithDiagnostics,
+} from "./transport";
+// Public diagnostics contain fixed phase labels only, never exception text or private values.
+let diagnosticPhase = "WORKFLOW_ADMISSION";
 export function assertWorkflow(env = process.env) {
   requireCheck(
     env.GITHUB_ACTIONS === "true" &&
@@ -32,10 +40,15 @@ async function main() {
     owner: process.env.SUPABASE_USER_ID ?? "",
   };
   if (mode === "materialize") {
+    diagnosticPhase = "REQUEST_READ";
     const request = await readEvidence(o, "request", requestHash);
+    diagnosticPhase = "PRIVATE_CAPTURE";
     const value = await capture(o, request, requestHash, code);
-    const capturedJson = canonicalSeriesJson(value);
-    requireCheck(Buffer.byteLength(capturedJson) <= 256 * 1024 * 1024);
+    diagnosticPhase = "CAPTURE_SERIALIZATION";
+    const capturedJson = serializeCaptureWithDiagnostics(value, (diagnostic) =>
+      console.log(JSON.stringify(diagnostic)),
+    );
+    diagnosticPhase = "CAPTURE_FILE_WRITE";
     fs.writeFileSync(path.join(dir, "capture.json"), capturedJson, {
       mode: 0o600,
       flag: "wx",
@@ -51,6 +64,7 @@ async function main() {
     captured.codeCommit === code && captured.captureManifest.requestHash === requestHash,
   );
   if (mode === "compute") {
+    diagnosticPhase = "CREDENTIAL_FREE_COMPUTE";
     const child = spawnSync(
       process.execPath,
       [
@@ -76,6 +90,7 @@ async function main() {
     };
   }
   requireCheck(mode === "append");
+  diagnosticPhase = "PLAN_EVIDENCE_FRESHNESS_AND_APPEND";
   const p = JSON.parse(fs.readFileSync(path.join(dir, "plan.json"), "utf8"));
   requireCheck(
     p.version === "kr-final-retrospective-plan-v1" &&
@@ -98,6 +113,8 @@ async function main() {
 main()
   .then((x) => console.log(JSON.stringify(x)))
   .catch(() => {
-    console.log(JSON.stringify({ status: "FINAL_RETROSPECTIVE_PLAN_REJECTED" }));
+    console.log(
+      JSON.stringify({ status: "FINAL_RETROSPECTIVE_PLAN_REJECTED", phase: diagnosticPhase }),
+    );
     process.exitCode = 1;
   });

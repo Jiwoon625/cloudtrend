@@ -391,3 +391,66 @@ it.each(["missing", "hash mismatch"])(
     );
   },
 );
+it.each(["VALIDATE", "APPLY"] as const)(
+  "%s rejects second target prepared conflict before all writes",
+  async (phase) => {
+    const h = await harness();
+    const conflict = clone(plan.preparedPublications[1]!);
+    conflict.sourceHash = H("f");
+    h.data.prepared.set("KR:2026-10-29", conflict);
+    h.input.phase = phase;
+    await expect(applyFinalRetrospective(h.input)).rejects.toThrow("EXISTING_PREPARED_CONFLICT");
+    expect(h.writes).toEqual([]);
+    expect(h.appends()).toBe(0);
+    expect(h.data.sessions.size).toBe(60);
+  },
+);
+it("exact preexisting prepared pair is admitted and remains identical", async () => {
+  const h = await harness();
+  for (const pub of plan.preparedPublications) h.data.prepared.set(`KR:${pub.date}`, clone(pub));
+  h.input.phase = "VALIDATE";
+  expect((await applyFinalRetrospective(h.input)).status).toBe("VALIDATED");
+  expect(h.writes).toEqual([]);
+  h.input.phase = "APPLY";
+  await applyFinalRetrospective(h.input);
+  for (const pub of plan.preparedPublications)
+    expect(h.data.prepared.get(`KR:${pub.date}`)).toEqual(pub);
+});
+it("unreferenced valid predecessor-date archive variant is ignored analytically and preserved", async () => {
+  const c = clone(capture);
+  const other = clone(c.archives[0]!.payload);
+  other.inputs.snapshots[0]!.savedAt = "2026-10-30T00:48:00Z";
+  const hash = await hashSeriesValue(other);
+  c.archives.push({ payload: other, hash });
+  const before = clone(c.archives);
+  const next = await prepareFinalRetrospective(c);
+  expect(c.archives).toEqual(before);
+  expect(next.newArchives).toEqual(plan.newArchives);
+  // Capture/provenance hashes legitimately differ because the full preserved
+  // inventory includes another variant; generated analytical archives do not.
+  expect(next.newAdoptedSessions).toHaveLength(10);
+  const h = await harness(next);
+  const key = `${other.date}:${hash}`;
+  h.data.archives.set(key, clone(other));
+  await applyFinalRetrospective(h.input);
+  expect(h.data.archives.get(key)).toEqual(other);
+  expect(h.data.sessions.size).toBe(70);
+});
+it("missing exact predecessor archive reference cannot be replaced with valid same-date variant", async () => {
+  const c = clone(capture);
+  const index = c.archives.findIndex((a) =>
+    c.predecessors.some(
+      ({ run }) =>
+        "frozenInputArchive" in run &&
+        run.frozenInputArchive?.days.some(
+          (ref) => ref.date === a.payload.date && ref.hash === a.hash,
+        ),
+    ),
+  );
+  expect(index).toBeGreaterThanOrEqual(0);
+  const original = c.archives.splice(index, 1)[0]!;
+  const variant = clone(original.payload);
+  variant.inputs.snapshots[0]!.savedAt = "2026-10-30T00:48:00Z";
+  c.archives.push({ payload: variant, hash: await hashSeriesValue(variant) });
+  await expect(prepareFinalRetrospective(c)).rejects.toThrow("PREDECESSOR_ARCHIVE_REFERENCE");
+});
