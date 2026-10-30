@@ -3,8 +3,16 @@ import fs from "node:fs";
 import { createHash } from "node:crypto";
 import { prepareFinalRetrospective } from "./core";
 import { captureCanonicalChunks, captureCanonicalProof } from "./capture-codec";
+import { classifyFinalComputeFailure, type FinalComputeStage } from "./contracts";
+let stage: FinalComputeStage = "CAPTURE_READ";
+function emitStage(next: FinalComputeStage) {
+  stage = next;
+  console.error(JSON.stringify({ kind: "STAGE", stage }));
+}
 async function main() {
+  emitStage("CAPTURE_READ");
   const capture = JSON.parse(fs.readFileSync(process.argv[2]!, "utf8"));
+  emitStage("IDENTITY");
   const code = process.argv[4] ?? "",
     requestHash = process.argv[5] ?? "";
   if (
@@ -14,7 +22,8 @@ async function main() {
     capture.captureManifest.requestHash !== requestHash
   )
     throw Error("PURE_CAPTURE_IDENTITY_REJECTED");
-  const plan = await prepareFinalRetrospective(capture);
+  const plan = await prepareFinalRetrospective(capture, emitStage);
+  emitStage("PLAN_WRITE");
   const proof = captureCanonicalProof(plan),
     limit = 256 * 1024 * 1024;
   if (proof.bytes <= 0 || proof.bytes > limit) throw Error("PLAN_SIZE_REJECTED");
@@ -37,7 +46,9 @@ async function main() {
   } finally {
     fs.closeSync(fd);
   }
+  emitStage("DONE");
 }
-main().catch(() => {
+main().catch((error: unknown) => {
+  console.error(JSON.stringify({ kind: "FAILURE", stage, ...classifyFinalComputeFailure(error) }));
   process.exitCode = 1;
 });
