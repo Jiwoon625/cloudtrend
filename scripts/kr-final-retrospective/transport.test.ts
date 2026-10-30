@@ -473,3 +473,151 @@ describe("exact immutable envelope readback without redundant decompression", ()
     expect(posts).toBe(0);
   });
 });
+
+describe("bounded public-safe compute diagnostics", () => {
+  it("classifies only exact static messages and never echoes private exception values", async () => {
+    const { classifyFinalComputeFailure } = await import("./contracts");
+    expect(classifyFinalComputeFailure(new Error("Frozen KOSPI policy/config differs"))).toEqual({
+      category: "FROZEN_LEGACY",
+      code: "FROZEN_KOSPI_POLICY_CONFIG_DIFFERS",
+    });
+    for (const error of [
+      new Error("PRIVATE_OWNER_TOKEN_SENTINEL"),
+      new Error("Frozen KOSPI policy/config differs PRIVATE_SENTINEL"),
+      { message: "Frozen KOSPI policy/config differs" },
+    ])
+      expect(classifyFinalComputeFailure(error)).toEqual({ category: "UNKNOWN" });
+    expect(classifyFinalComputeFailure(new RangeError("PRIVATE_RANGE_SENTINEL"))).toEqual({
+      category: "RANGE_ERROR",
+    });
+    expect(
+      classifyFinalComputeFailure(
+        Object.assign(new Error("PRIVATE_FILE_PATH"), { code: "ENOSPC" }),
+      ),
+    ).toEqual({ category: "FILE_IO", code: "IO_ENOSPC" });
+  });
+  it("accepts exact stage/failure records and ignores raw malformed unknown or extra-field lines", async () => {
+    const { parseFinalComputeDiagnostics } = await import("./contracts");
+    const records = [
+      { kind: "STAGE", stage: "LEGACY_PREPARE" },
+      {
+        kind: "FAILURE",
+        stage: "KOSPI_FROZEN_CONFIG",
+        category: "FROZEN_LEGACY",
+        code: "FROZEN_KOSPI_POLICY_CONFIG_DIFFERS",
+      },
+    ];
+    const bad = [
+      "PRIVATE_RAW_STACK",
+      JSON.stringify({ kind: "STAGE", stage: "PRIVATE_STAGE" }),
+      JSON.stringify({ kind: "STAGE", stage: "HYDRATE", private: "PRIVATE_SECRET" }),
+      JSON.stringify({
+        kind: "FAILURE",
+        stage: "HYDRATE",
+        category: "GUARD",
+        code: "PRIVATE_CODE",
+      }),
+      JSON.stringify({
+        kind: "FAILURE",
+        stage: "HYDRATE",
+        category: "GUARD",
+        code: "FROZEN_KOSPI_POLICY_CONFIG_DIFFERS",
+      }),
+      "null",
+      "[]",
+      "{bad",
+    ];
+    const result = parseFinalComputeDiagnostics(
+      [...bad, ...records.map((x) => JSON.stringify(x))].join("\n"),
+    );
+    expect(result).toEqual(records);
+    expect(JSON.stringify(result)).not.toContain("PRIVATE");
+  });
+  it("bounds stderr line size and record count without forwarding arbitrary text", async () => {
+    const { parseFinalComputeDiagnostics } = await import("./contracts");
+    const line = JSON.stringify({ kind: "STAGE", stage: "HYDRATE" });
+    expect(parseFinalComputeDiagnostics(Array(300).fill(line).join("\n"))).toHaveLength(256);
+    expect(parseFinalComputeDiagnostics("x".repeat(65537))).toEqual([]);
+    expect(parseFinalComputeDiagnostics("x".repeat(513) + "\n" + line)).toEqual([
+      { kind: "STAGE", stage: "HYDRATE" },
+    ]);
+  });
+  it("sanitizes child exit numeric bounds signals and timeout independently from stderr", async () => {
+    const { summarizeFinalComputeExit } = await import("./contracts");
+    expect(summarizeFinalComputeExit({ status: 137, signal: "SIGKILL" })).toMatchObject({
+      exitCode: 137,
+      signal: "SIGKILL",
+      timeout: false,
+      spawnFailure: false,
+    });
+    expect(
+      summarizeFinalComputeExit({
+        status: null,
+        signal: "SIGTERM",
+        error: { code: "ETIMEDOUT", message: "PRIVATE_SECRET" },
+      }),
+    ).toMatchObject({ exitCode: null, signal: "SIGTERM", timeout: true, errorCategory: "TIMEOUT" });
+    for (const status of [-1, 256, Infinity, NaN, "1"]) {
+      const value = summarizeFinalComputeExit({
+        status,
+        signal: "PRIVATE_SIGNAL",
+        error: { code: "PRIVATE_CODE", message: "PRIVATE_MESSAGE" },
+      });
+      expect(value.exitCode).toBeNull();
+      expect(value.signal).toBe("OTHER");
+      expect(JSON.stringify(value)).not.toContain("PRIVATE");
+    }
+  });
+  it("actual pure CLI rejects wrong capture pins before creating a plan and exposes no private input", async () => {
+    const fs = await import("node:fs"),
+      os = await import("node:os"),
+      path = await import("node:path");
+    const { spawnSync } = await import("node:child_process");
+    const { build } = await import("esbuild");
+    const { parseFinalComputeDiagnostics } = await import("./contracts");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "final-compute-diagnostic-test-"));
+    fs.chmodSync(dir, 0o700);
+    try {
+      const executable = path.join(dir, "pure.mjs"),
+        input = path.join(dir, "capture.json"),
+        output = path.join(dir, "plan.json");
+      await build({
+        entryPoints: ["scripts/kr-final-retrospective/pure-entry.ts"],
+        outfile: executable,
+        bundle: true,
+        platform: "node",
+        target: "node22",
+        format: "esm",
+        logLevel: "silent",
+      });
+      fs.writeFileSync(
+        input,
+        JSON.stringify({
+          codeCommit: "a".repeat(40),
+          captureManifest: { requestHash: hash },
+          privateValue: "PRIVATE_OWNER_TOKEN_SENTINEL",
+        }),
+        { mode: 0o600 },
+      );
+      const child = spawnSync(process.execPath, [executable, input, output, "b".repeat(40), hash], {
+        encoding: "utf8",
+        env: { PATH: process.env.PATH },
+        maxBuffer: 65536,
+        timeout: 20000,
+      });
+      expect(child.status).toBe(1);
+      expect(fs.existsSync(output)).toBe(false);
+      expect(child.stdout).toBe("");
+      expect(child.stderr).not.toContain("PRIVATE_OWNER_TOKEN_SENTINEL");
+      expect(child.stderr).not.toContain(dir);
+      expect(parseFinalComputeDiagnostics(child.stderr)).toContainEqual({
+        kind: "FAILURE",
+        stage: "IDENTITY",
+        category: "GUARD",
+        code: "PURE_CAPTURE_IDENTITY_REJECTED",
+      });
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30000);
+});

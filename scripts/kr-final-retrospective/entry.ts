@@ -13,6 +13,7 @@ import {
   assertCaptureByteLength,
 } from "./transport";
 import { captureCanonicalChunks, captureCanonicalProof } from "./capture-codec";
+import { parseFinalComputeDiagnostics, summarizeFinalComputeExit } from "./contracts";
 // Public diagnostics contain fixed phase labels only, never exception text or private values.
 let diagnosticPhase = "WORKFLOW_ADMISSION";
 export function assertWorkflow(env = process.env) {
@@ -102,6 +103,9 @@ async function main() {
         timeout: 60 * 60 * 1000,
       },
     );
+    for (const record of parseFinalComputeDiagnostics(child.stderr))
+      console.log(JSON.stringify(record));
+    console.log(JSON.stringify(summarizeFinalComputeExit(child)));
     requireCheck(child.status === 0 && !child.error);
     // The child checks the same pins before calculation. Load the parent's copy
     // only after the child exits, avoiding two simultaneous full capture copies.

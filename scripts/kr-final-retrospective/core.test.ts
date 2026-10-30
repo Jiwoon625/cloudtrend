@@ -476,3 +476,29 @@ it("compact capture restores exact full inputs while keeping stored and decoded 
   expect((await applyFinalRetrospective(h.input)).status).toBe("VALIDATED");
   expect(h.writes).toEqual([]);
 });
+
+it("fixed diagnostic stages preserve exact complete plan and never emit private values", async () => {
+  const stages: string[] = [];
+  const observed = await prepareFinalRetrospective(clone(capture), (stage) => stages.push(stage));
+  expect(await hashSeriesValue(observed)).toBe(await hashSeriesValue(plan));
+  expect(stages.slice(0, 3)).toEqual(["HYDRATE", "IDENTITY", "SOURCE_AUTHORITY"]);
+  expect(stages).toContain("ANALYZE_28");
+  expect(stages).toContain("ANALYZE_29");
+  expect(stages).toContain("ADOPTED_28");
+  expect(stages).toContain("ADOPTED_29");
+  for (let i = 0; i < 5; i++) {
+    expect(stages).toContain(`MODEL_READ_${i}`);
+    expect(stages.filter((stage) => stage === `MODEL_APPEND_${i}`)).toHaveLength(2);
+  }
+  expect(stages.at(-1)).toBe("PLAN_ASSEMBLE");
+  expect(stages.every((stage) => /^[A-Z][A-Z0-9_]+$/.test(stage))).toBe(true);
+  expect(stages.join(" ")).not.toContain(capture.owner);
+});
+
+it("diagnostic hydration failure cannot reach later computation", async () => {
+  const broken = await encodeFinalCapture(clone(capture));
+  broken.decodedCaptureHash = H();
+  const stages: string[] = [];
+  await expect(prepareFinalRetrospective(broken, (stage) => stages.push(stage))).rejects.toThrow();
+  expect(stages).toEqual(["HYDRATE"]);
+});
