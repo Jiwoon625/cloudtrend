@@ -301,3 +301,70 @@ describe("preservation guards", () => {
     await expect(assertCaptureFresh(o, c, [], {}, [expected])).rejects.toThrow();
   });
 });
+
+describe("capture serialization safe diagnostics", () => {
+  it("emits only fixed statuses and measured UTF8 byte counts", async () => {
+    const { serializeCaptureWithDiagnostics } = await import("./transport");
+    const events: unknown[] = [];
+    const text = serializeCaptureWithDiagnostics(
+      { owner: "PRIVATE_OWNER_SENTINEL", dataset: { text: "비공개" } },
+      (e) => events.push(e),
+    );
+    expect(events).toEqual([
+      { status: "CAPTURE_JSON_START" },
+      { status: "CAPTURE_JSON_BYTES", bytes: Buffer.byteLength(text) },
+    ]);
+    expect(JSON.stringify(events)).not.toContain("PRIVATE_OWNER_SENTINEL");
+    expect(JSON.stringify(events)).not.toContain("비공개");
+  });
+  it("rejects undefined/nonfinite/cyclic data without exposing values or exception text", async () => {
+    const { serializeCaptureWithDiagnostics } = await import("./transport");
+    const cycle: Record<string, unknown> = { PRIVATE_FIELD_SENTINEL: "PRIVATE_VALUE_SENTINEL" };
+    cycle.self = cycle;
+    for (const value of [{ PRIVATE_FIELD_SENTINEL: undefined }, { value: Infinity }, cycle]) {
+      const events: unknown[] = [];
+      expect(() => serializeCaptureWithDiagnostics(value, (e) => events.push(e))).toThrow(
+        "CAPTURE_JSON_CANONICAL_REJECTED",
+      );
+      expect(events).toEqual([
+        { status: "CAPTURE_JSON_START" },
+        {
+          status: "CAPTURE_JSON_CANONICAL_REJECTED",
+          errorCategory: value === cycle ? "RANGE_ERROR" : "CANONICAL_VALUE_ERROR",
+        },
+      ]);
+      expect(JSON.stringify(events)).not.toContain("PRIVATE");
+    }
+  });
+  it("keeps the exact256MiB bound and rejects invalid measured sizes without allocation", async () => {
+    const { assertCaptureByteLength, CAPTURE_JSON_MAX_BYTES } = await import("./transport");
+    expect(CAPTURE_JSON_MAX_BYTES).toBe(256 * 1024 * 1024);
+    expect(() => assertCaptureByteLength(CAPTURE_JSON_MAX_BYTES)).not.toThrow();
+    for (const n of [0, -1, NaN, Infinity, 1.5, CAPTURE_JSON_MAX_BYTES + 1])
+      expect(() => assertCaptureByteLength(n)).toThrow("CAPTURE_JSON_LIMIT_REJECTED");
+  });
+});
+it("reports safe component categories and sizes when whole capture cannot canonicalize", async () => {
+  const { serializeCaptureWithDiagnostics } = await import("./transport");
+  const events: unknown[] = [];
+  expect(() =>
+    serializeCaptureWithDiagnostics(
+      { dataset: { private: undefined }, preservationBaseline: { private: "PRIVATE_SENTINEL" } },
+      (e) => events.push(e),
+    ),
+  ).toThrow("CAPTURE_JSON_CANONICAL_REJECTED");
+  expect(events).toEqual([
+    { status: "CAPTURE_JSON_START" },
+    { status: "CAPTURE_JSON_CANONICAL_REJECTED", errorCategory: "CANONICAL_VALUE_ERROR" },
+    {
+      status: "CAPTURE_COMPONENT_CANONICAL_REJECTED",
+      componentIndex: 0,
+      errorCategory: "CANONICAL_VALUE_ERROR",
+    },
+    {
+      status: "CAPTURE_COMPONENT_BASELINE_BYTES",
+      bytes: Buffer.byteLength('{"private":"PRIVATE_SENTINEL"}'),
+    },
+  ]);
+  expect(JSON.stringify(events)).not.toContain("PRIVATE_SENTINEL");
+});

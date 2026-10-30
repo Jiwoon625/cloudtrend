@@ -157,6 +157,12 @@ export async function applyFinalRetrospective(i: FinalApplyInput) {
     await i.assertFresh(p);
   };
   await gate();
+  // Admit BOTH dates before any live write or VALIDATE success. Otherwise a
+  // conflict on the second date could be discovered only after appending day one.
+  for (const pub of p.preparedPublications) {
+    const saved = await i.store.readPrepared(pub.market, pub.date);
+    check(saved === null || same(saved, pub), "EXISTING_PREPARED_CONFLICT");
+  }
   // Rehearse the legacy helper against fresh live reads in isolated memory BEFORE
   // any adopted-model mutation. The memory writer has no external capability.
   const legacyPaths = new Set(p.legacyReceipt.kospi.capturedObjects.map((x) => x.path));

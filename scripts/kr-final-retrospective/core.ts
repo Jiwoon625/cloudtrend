@@ -157,9 +157,24 @@ export async function prepareFinalRetrospective(c: FinalCapture) {
   // they are not predecessor inputs and must never be overwritten or relabeled.
   for (const archive of c.archives)
     check((await hashSeriesValue(archive.payload)) === archive.hash, "CAPTURED_ARCHIVE_HASH");
+  // Only exact immutable predecessor references are analytical inputs. Other
+  // valid variants remain captured/preserved, but date equality grants no use.
+  const referencedArchives = new Map<string, FinalCapture["archives"][number]>();
+  for (const { run } of c.predecessors) {
+    if (!("frozenInputArchive" in run) || !run.frozenInputArchive) continue;
+    for (const ref of run.frozenInputArchive.days) {
+      const matches = c.archives.filter(
+        (archive) => archive.payload.date === ref.date && archive.hash === ref.hash,
+      );
+      check(matches.length === 1, "PREDECESSOR_ARCHIVE_REFERENCE");
+      referencedArchives.set(`${ref.date}:${ref.hash}`, matches[0]!);
+    }
+  }
   const memory = await createRecoveryMemoryStore({
     predecessors: c.predecessors,
-    archives: c.archives.filter((x) => x.payload.date <= PREDECESSOR),
+    archives: [...referencedArchives.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, archive]) => archive),
   });
   const codeHash = c.predecessors[0]!.series.codeHash;
   check(
