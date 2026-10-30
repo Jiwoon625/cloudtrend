@@ -151,3 +151,47 @@ test("post-halt requests preserve pre-halt lookback without admitting unknown or
     ),
   ).toThrow();
 });
+
+test("accepts canonical six-character uppercase alphanumeric KR codes without altering identity", async () => {
+  const p = plan();
+  const alphanumeric = ["0000D0", "0046A0", "0091C0"];
+  p.sourceUniverseSymbols = [...symbols, ...alphanumeric].sort();
+  p.requestedSymbols = p.sourceUniverseSymbols;
+  p.latestExpectedSymbols = ["005930", ...alphanumeric].sort();
+  expect(parseKrEtfLifecyclePlan(p)).toEqual(p);
+  const base = await rows();
+  const extra = base
+    .filter((r) => r.symbol === "005930")
+    .flatMap((r) => alphanumeric.map((symbol) => ({ ...r, symbol, type: "ETF" as const })));
+  expect(validateKrEtfLifecycleRows(p, [...base, ...extra])).toEqual(p);
+  expect(() =>
+    validateKrEtfLifecycleRows(
+      p,
+      [...base, ...extra].filter((r) => !(r.symbol === "0046A0" && r.date === "2026-10-29")),
+    ),
+  ).toThrow();
+});
+
+test.each([
+  "0046a0",
+  "A0046A0",
+  "046A0",
+  "0046A0 ",
+  "0046A0\n",
+  "００４６Ａ０",
+  "٠٠٤٦٠٠",
+  "KOSPI",
+  "0046-A",
+  46,
+  null,
+])("rejects noncanonical source symbol %s without normalization", (symbol) => {
+  expect(() => parseKrEtfLifecyclePlan({ ...plan(), sourceUniverseSymbols: [symbol] })).toThrow();
+});
+
+test("rejects duplicate and unsorted alphanumeric source identity lists", () => {
+  for (const sourceUniverseSymbols of [
+    ["0046A0", "0046A0"],
+    ["005930", "0046A0"],
+  ])
+    expect(() => parseKrEtfLifecyclePlan({ ...plan(), sourceUniverseSymbols })).toThrow();
+});

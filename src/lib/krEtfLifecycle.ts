@@ -68,7 +68,8 @@ function exact(a: unknown, b: unknown): boolean {
 export function parseKrEtfLifecyclePlan(value: unknown): KrEtfLifecyclePlan {
   if (!value || typeof value !== "object" || Array.isArray(value)) fail("missing plan");
   const v = value as Record<string, unknown>;
-  const symbols = sortedStrings(v["sourceUniverseSymbols"], /^\d{6}$/);
+  const symbols = sortedStrings(v["sourceUniverseSymbols"], /^[0-9A-Z]{6}$/);
+  if (symbols.some((s) => s.length !== 6)) fail("invalid source symbol length");
   const dates = sortedStrings(v["requestedCollectionDates"], /^\d{4}-\d{2}-\d{2}$/);
   if (
     dates.some(
