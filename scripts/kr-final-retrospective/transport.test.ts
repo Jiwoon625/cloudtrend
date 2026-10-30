@@ -8,7 +8,11 @@ import {
   appendEvidence,
   validateRequest,
   snapshot,
+  validatePriorRecoveryPins,
+  capturePriorRecovery,
+  assertPriorRecoveryFresh,
 } from "./transport";
+import { encodeRecoveryEvidence } from "../kr-adjusted-recovery/evidence-storage";
 import { hashSeriesValue } from "../../src/lib/ledger/modelSeries";
 const owner = "11111111-1111-4111-8111-111111111111";
 const origin = "https://example.supabase.co";
@@ -172,6 +176,25 @@ describe("new retrospective transport boundary", () => {
     expect(
       await validateRequest(request, await hashSeriesValue(request), owner, request.codeCommit),
     ).toBe(request);
+    const lineage = await lineageFixture();
+    const v2: any = {
+      ...request,
+      version: "kr-final-retrospective-request-v2",
+      priorRecovery: lineage.pins,
+    };
+    expect(await validateRequest(v2, await hashSeriesValue(v2), owner, request.codeCommit)).toBe(
+      v2,
+    );
+    for (const changed of [
+      { ...v2, priorRecovery: undefined },
+      { ...v2, extra: true },
+      { ...request, priorRecovery: lineage.pins },
+    ]) {
+      const clean = JSON.parse(JSON.stringify(changed));
+      await expect(
+        validateRequest(clean, await hashSeriesValue(clean), owner, request.codeCommit),
+      ).rejects.toThrow();
+    }
     for (const patch of [
       { historicalAvailabilityClaim: true },
       { owner: "other" },
@@ -620,4 +643,167 @@ describe("bounded public-safe compute diagnostics", () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   }, 30000);
+});
+
+async function lineageFixture() {
+  const prep = await encodeRecoveryEvidence(
+    { version: "kr-adjusted-recovery-preparation-v1", operationalApproval: false, synthetic: true },
+    "PREPARATION",
+  );
+  const plan = await encodeRecoveryEvidence(
+    {
+      version: "kr-adjusted-recovery-full-plan-v1",
+      operationalApproval: false,
+      preparationHash: prep.receiptHash,
+    },
+    "FULL_PLAN",
+  );
+  const approval = { version: "synthetic-approval", fullPlanHash: plan.receiptHash };
+  const terminal = { version: "synthetic-terminal", fullPlanHash: plan.receiptHash };
+  const ah = await hashSeriesValue(approval),
+    th = await hashSeriesValue(terminal);
+  const pins: any = {
+    version: "kr-final-prior-recovery-lineage-v1",
+    preparation: {
+      sourceId: `kr-adjusted-recovery-preparation:${"a".repeat(64)}:${prep.receiptHash.slice(7)}`,
+      sourceRevision: "1",
+      storageHash: prep.storageHash,
+      logicalHash: prep.receiptHash,
+    },
+    fullPlan: {
+      sourceId: `kr-adjusted-recovery-full-plan:${"b".repeat(64)}`,
+      sourceRevision: "1",
+      storageHash: plan.storageHash,
+      logicalHash: plan.receiptHash,
+    },
+    approval: {
+      sourceId: `kr-adjusted-recovery-apply-approval:${plan.receiptHash.slice(7)}`,
+      sourceRevision: "1",
+      storageHash: ah,
+      logicalHash: ah,
+    },
+    terminal: {
+      sourceId: `kr-adjusted-recovery-model-stage:${th.slice(7)}`,
+      sourceRevision: "1",
+      storageHash: th,
+      logicalHash: th,
+    },
+  };
+  const payloads: any = { preparation: prep.payload, fullPlan: plan.payload, approval, terminal };
+  const rows = Object.fromEntries(
+    Object.entries(pins)
+      .filter(([k]) => k !== "version")
+      .map(([role, p]: any) => [
+        p.sourceId,
+        {
+          user_id: owner,
+          source_id: p.sourceId,
+          source_revision: "1",
+          source_hash: p.storageHash,
+          payload: payloads[role],
+          recorded_at: "2026-10-29T21:32:45.58604+00:00",
+          extra_metadata: { kept: true },
+        },
+      ]),
+  );
+  const connection = {
+    origin,
+    key: "test",
+    owner,
+    fetcher: async (url: any, init: any) => {
+      expect(init.method).toBe("GET");
+      const q = new URL(String(url)).searchParams;
+      expect(q.get("user_id")).toBe("eq." + owner);
+      expect(q.get("source_revision")).toBe("eq.1");
+      const row = rows[q.get("source_id")!.slice(3)];
+      return new Response(JSON.stringify(row ? [row] : []), { status: 200 });
+    },
+  };
+  return { pins, rows, connection };
+}
+describe("complete prior recovery lineage transport", () => {
+  it("retains all four complete original payloads and exact full-row freshness", async () => {
+    const f = await lineageFixture();
+    const result = await capturePriorRecovery(f.connection, f.pins);
+    for (const role of ["preparation", "fullPlan", "approval", "terminal"] as const) {
+      expect(result[role].payload).toEqual(f.rows[f.pins[role].sourceId].payload);
+      expect(result[role].rowHash).toBe(await hashSeriesValue(f.rows[f.pins[role].sourceId]));
+    }
+    await assertPriorRecoveryFresh(f.connection, result);
+    f.rows[f.pins.preparation.sourceId].extra_metadata.kept = false;
+    await expect(assertPriorRecoveryFresh(f.connection, result)).rejects.toThrow();
+  });
+  it("rejects unknown keys, wrong role identities, revisions and hash domains", async () => {
+    const { pins } = await lineageFixture();
+    for (const mutate of [
+      (p: any) => (p.extra = true),
+      (p: any) => (p.preparation.extra = true),
+      (p: any) => (p.preparation.sourceRevision = "2"),
+      (p: any) => (p.preparation.sourceId = p.fullPlan.sourceId),
+      (p: any) => (p.approval.sourceId = "kr-adjusted-recovery-apply-approval:" + "f".repeat(64)),
+      (p: any) => (p.terminal.storageHash = hash),
+      (p: any) => delete p.terminal,
+    ]) {
+      const p = structuredClone(pins);
+      mutate(p);
+      expect(() => validatePriorRecoveryPins(p)).toThrow();
+    }
+  });
+  it("rejects absent, foreign-owner, wrong-identity and tampered archived rows", async () => {
+    for (const mutate of [
+      (f: any) => delete f.rows[f.pins.preparation.sourceId],
+      (f: any) => (f.rows[f.pins.preparation.sourceId].user_id = "other"),
+      (f: any) => (f.rows[f.pins.preparation.sourceId].source_revision = "2"),
+      (f: any) => (f.rows[f.pins.preparation.sourceId].source_id = "other"),
+      (f: any) => (f.rows[f.pins.preparation.sourceId].payload.payload = "AAAA"),
+    ]) {
+      const f = await lineageFixture();
+      mutate(f);
+      await expect(capturePriorRecovery(f.connection, f.pins)).rejects.toThrow();
+    }
+  });
+  it("rejects captured evidence schema, owner or payload tampering before freshness", async () => {
+    const f = await lineageFixture(),
+      result = await capturePriorRecovery(f.connection, f.pins);
+    for (const mutate of [
+      (p: any) => (p.preparation.userId = "other"),
+      (p: any) => (p.preparation.extra = true),
+      (p: any) => (p.preparation.payload.payload = "AAAA"),
+      (p: any) => (p.preparation.rowHash = hash),
+    ]) {
+      const p = structuredClone(result);
+      mutate(p);
+      await expect(assertPriorRecoveryFresh(f.connection, p)).rejects.toThrow();
+    }
+  });
+});
+
+it("diagnosis rejects ordinary plan or incomplete blocked payload before any I/O", async () => {
+  let calls = 0;
+  const connection = {
+    origin,
+    key: "test",
+    owner,
+    fetcher: async () => {
+      calls++;
+      return new Response("[]");
+    },
+  };
+  for (const payload of [
+    { version: "kr-final-retrospective-plan-v1" },
+    {
+      version: "kr-final-retrospective-blocked-v1",
+      status: "BLOCKED",
+      plan: {},
+      operationalApproval: false,
+    },
+    {
+      version: "kr-final-retrospective-blocked-v1",
+      status: "BLOCKED",
+      plan: null,
+      operationalApproval: true,
+    },
+  ])
+    await expect(appendEvidence(connection, "diagnosis", payload)).rejects.toThrow();
+  expect(calls).toBe(0);
 });

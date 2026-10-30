@@ -5,6 +5,32 @@ import type { OctoberRun } from "../../src/lib/ledger/octoberShadowPipeline";
 import type { KrDailyInputArchive } from "../../src/lib/ledger/octoberShadowArchive";
 import type { KrSourceVintagePrivateApproval } from "../../src/lib/ledger/krSourceVintage";
 
+export interface FinalPriorRecoveryPin {
+  sourceId: string;
+  sourceRevision: "1";
+  storageHash: SeriesHash;
+  logicalHash: SeriesHash;
+}
+export interface FinalPriorRecoveryEvidence extends FinalPriorRecoveryPin {
+  userId: string;
+  rowHash: SeriesHash;
+  payload: unknown;
+}
+export interface FinalPriorRecoveryLineage {
+  version: "kr-final-prior-recovery-lineage-v1";
+  preparation: FinalPriorRecoveryEvidence;
+  fullPlan: FinalPriorRecoveryEvidence;
+  approval: FinalPriorRecoveryEvidence;
+  terminal: FinalPriorRecoveryEvidence;
+}
+export interface FinalPriorRecoveryPins {
+  version: "kr-final-prior-recovery-lineage-v1";
+  preparation: FinalPriorRecoveryPin;
+  fullPlan: FinalPriorRecoveryPin;
+  approval: FinalPriorRecoveryPin;
+  terminal: FinalPriorRecoveryPin;
+}
+
 /** Private capture. Transport must bind every raw byte to its current registered hash and generation. */
 export interface FinalCaptureV1 {
   version: "kr-final-retrospective-capture-v1";
@@ -58,6 +84,7 @@ export const FINAL_COMPUTE_STAGES = [
   "ADOPTED_29",
   "PREFIX_CHECK",
   "LEGACY_CAPTURE",
+  "REPEATED_PREDECESSOR",
   "LEGACY_PREPARE",
   "LEGACY_BOUNDARY",
   "PLAN_ASSEMBLE",
