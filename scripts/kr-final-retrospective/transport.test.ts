@@ -116,7 +116,7 @@ describe("new retrospective transport boundary", () => {
     const invalid = { ...e.envelope, bytes: 1024 * 1024 * 1024 };
     await expect(decodeEvidence(invalid, await hashSeriesValue(invalid), e.hash)).rejects.toThrow();
   });
-  it("unknown POST outcome is resolved by exact readback without retry", async () => {
+  it("unknown POST outcome stops after exact readback; explicit resume reuses committed row", async () => {
     let saved: any = null,
       posts = 0;
     const value = { version: "test", historicalAvailabilityClaim: false };
@@ -129,7 +129,9 @@ describe("new retrospective transport boundary", () => {
       return new Response(JSON.stringify(saved ? [saved] : []));
     };
     const o = { origin, key: "test", owner, fetcher };
-    await appendEvidence(o, "plan", value);
+    await expect(appendEvidence(o, "plan", value)).rejects.toThrow(
+      "EVIDENCE_APPEND_SERVER_UNHEALTHY:NETWORK",
+    );
     expect(posts).toBe(1);
     await appendEvidence(o, "plan", value);
     expect(posts).toBe(1);
@@ -484,7 +486,13 @@ describe("exact immutable envelope readback without redundant decompression", ()
             if (init?.method === "POST") posts++;
             return new Response(
               JSON.stringify([
-                { user_id: owner, source_hash: encoded.storageHash, payload: encoded.envelope },
+                {
+                  user_id: owner,
+                  source_id: "kr-final-retrospective-plan:" + encoded.hash.slice(7),
+                  source_revision: "1",
+                  source_hash: encoded.storageHash,
+                  payload: encoded.envelope,
+                },
               ]),
             );
           },

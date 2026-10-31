@@ -37,3 +37,25 @@ A `kr-final-retrospective-request-v2` additionally pins four existing owner-priv
 The separate repeated-predecessor proof verifies the exact stored October 26/27 snapshots and projection against that old lineage, and replays the original tagged October 27 session with the current frozen runtime. Old runtime pins must agree with each other and their original authority; a changed current runtime requires the explicit full-output replay bridge. It compares current predecessor economics (with only the already-defined audit/display fields and previous-row priority cache distinguished), then requires full October 28/29 snapshots AND projections to match across original, baseline-rebuilt and adjusted-rebuilt predecessor branches. The historical `lateRecovery` tag is removed only from disposable local comparison clones after lineage verification; stored metadata and the ordinary strict equivalence guard are never changed. The actual append branch always starts from the original tagged predecessor.
 
 Failure produces a distinct `kr-final-retrospective-blocked-v1` private diagnostic artifact with `status: BLOCKED`, `plan: null`, and `operationalApproval: false`. This retains the full computed adopted outputs and full boundary evidence for review, not a reduced public diagnostic. It is stored in the separate `kr-final-retrospective-diagnosis:<digest>` namespace, never the plan namespace, and has no approval/APPLY path. Private capture and diagnostic storage require authorization covering those contents. Public logs contain fixed statuses/hashes only. Successful repeated proof still requires a new exact approval and independent VALIDATE; prior approval cannot authorize new writes.
+
+### Bounded private evidence persistence
+
+Evidence remains in the existing owner-private provenance archive. Every complete
+INSERT request (including JSON metadata) is capped at 300 KiB. Small gzip envelopes
+retain their original format. Larger envelopes use serial, immutable 256 KiB
+base64 chunks, at most 256 chunks, each bound to the logical evidence hash and
+its exact position. A small hash-bound manifest is appended only after every
+chunk has been read back exactly. No schema, permissions, database settings or
+collector changes are required.
+
+Each row uses one INSERT at most per invocation; an uncertain response receives
+one exact readback, not a blind retry. Any network error, HTTP 429 or HTTP 5xx stops the
+invocation even when readback proves the row committed; no further chunk writes
+are attempted against a potentially unhealthy server. Repeating an append with identical input
+reuses verified chunks. This is artifact-level idempotence, not a promise that a
+fresh workflow capture (with new timestamps) resumes a previous artifact. Partial
+chunks without a manifest are not admitted evidence. Existing historical large
+gzip roots remain readable, but are not rewritten or re-appended through this
+bounded writer. Reads reconstruct the original envelope and verify all chunk,
+compressed, canonical and logical hashes before admission. Error diagnostics
+include only a status code or NETWORK, never private response bodies.

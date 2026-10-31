@@ -94,9 +94,13 @@ export function reader(o: Connection) {
     filters: Record<string, string> = {},
     limit = 513,
     order?: string,
+    maxBytes = 80 * 1024 * 1024,
   ) => {
     requireCheck(
-      tables[table] &&
+      Number.isSafeInteger(maxBytes) &&
+        maxBytes > 0 &&
+        maxBytes <= 80 * 1024 * 1024 &&
+        tables[table] &&
         Object.keys(filters).every((k) => tables[table].includes(k)) &&
         limit > 0 &&
         limit <= 513,
@@ -108,7 +112,7 @@ export function reader(o: Connection) {
       limit: String(limit),
       ...(order ? { order } : {}),
     });
-    const value = JSON.parse((await get("/rest/v1/" + table + "?" + q)).toString());
+    const value = JSON.parse((await get("/rest/v1/" + table + "?" + q, maxBytes)).toString());
     requireCheck(
       Array.isArray(value) && value.length < limit && value.every((x) => x.user_id === o.owner),
     );
@@ -326,8 +330,12 @@ export async function readEvidence(
     { source_id: "eq." + PREFIX + kind + ":" + hash.slice(7), source_revision: "eq.1" },
     2,
   );
-  requireCheck(rows.length === 1);
-  const decoded = await decodeEvidence(rows[0].payload, rows[0].source_hash, hash);
+  requireCheck(
+    rows.length === 1 &&
+      rows[0].source_revision === "1" &&
+      rows[0].source_id === PREFIX + kind + ":" + hash.slice(7),
+  );
+  const decoded = await decodeStoredEvidence(o, rows[0].payload, rows[0].source_hash, hash);
   if (kind === "diagnosis") validateBlockedEvidence(decoded);
   if (kind === "plan")
     requireCheck(
@@ -412,7 +420,151 @@ export async function decodeEvidence(stored: any, storageHash: string, expectedH
   requireCheck(canonical.hash === expectedHash && canonical.bytes === bytes.length);
   return payload;
 }
-/** One INSERT, exact readback after uncertain response; no retry, update or upsert. */
+/** Bounds include the entire serialized INSERT body, not just compressed data. */
+export const EVIDENCE_POST_LIMIT = 300 * 1024;
+export const EVIDENCE_CHUNK_SIZE = 256 * 1024;
+const CHUNK_VERSION = "kr-final-retrospective-evidence-chunk-v1";
+const MANIFEST_VERSION = "kr-final-retrospective-evidence-manifest-v1";
+const MAX_CHUNKS = 256;
+function evidenceBody(o: Connection, sourceId: string, storageHash: string, payload: any) {
+  return JSON.stringify({
+    user_id: o.owner,
+    source_id: sourceId,
+    source_revision: "1",
+    source_hash: storageHash,
+    payload,
+  });
+}
+/** Serial one-shot immutable INSERT. An uncertain response is read back, never retried here. */
+async function appendEvidenceRow(o: Connection, sourceId: string, payload: any) {
+  const storageHash = captureCanonicalProof(payload).hash;
+  const body = evidenceBody(o, sourceId, storageHash, payload);
+  requireCheck(Buffer.byteLength(body, "utf8") <= EVIDENCE_POST_LIMIT);
+  const r = reader(o);
+  const find = async () => {
+    const rows = await r.rows(
+      "ledger_provenance_archive",
+      { source_id: "eq." + sourceId, source_revision: "eq.1" },
+      2,
+      undefined,
+      EVIDENCE_POST_LIMIT + 4096,
+    );
+    requireCheck(rows.length <= 1);
+    if (rows.length === 1)
+      requireCheck(
+        rows[0].source_id === sourceId &&
+          rows[0].source_revision === "1" &&
+          rows[0].source_hash === storageHash &&
+          captureCanonicalProof(rows[0].payload).hash === storageHash,
+      );
+    return rows.length === 1;
+  };
+  if (await find()) return storageHash;
+  let status: number | "NETWORK" = "NETWORK";
+  try {
+    const response = await (o.fetcher ?? fetch)(
+      new URL("/rest/v1/ledger_provenance_archive", o.origin),
+      {
+        method: "POST",
+        headers: {
+          apikey: o.key,
+          Authorization: "Bearer " + o.key,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body,
+        redirect: "error",
+      },
+    );
+    status = response.status;
+    // Do not log or retain server response bodies: they may contain private data.
+    await response.body?.cancel();
+  } catch {
+    /* One exact readback determines whether the uncertain write committed. */
+  }
+  if (!(await find())) throw new Error("EVIDENCE_APPEND_UNCONFIRMED:" + status);
+  // A committed row is not proof that the server is healthy enough for more writes.
+  if (status === "NETWORK" || status === 429 || status >= 500)
+    throw new Error("EVIDENCE_APPEND_SERVER_UNHEALTHY:" + status);
+  return storageHash;
+}
+async function decodeStoredEvidence(o: Connection, stored: any, storageHash: string, hash: string) {
+  if (stored?.version !== MANIFEST_VERSION) return decodeEvidence(stored, storageHash, hash);
+  requireCheck(
+    H.test(storageHash) &&
+      captureCanonicalProof(stored).hash === storageHash &&
+      same(
+        Object.keys(stored).sort(),
+        [
+          "version",
+          "hash",
+          "bytes",
+          "compressedHash",
+          "envelopeHash",
+          "encodedLength",
+          "chunkSize",
+          "chunks",
+        ].sort(),
+      ) &&
+      stored.hash === hash &&
+      H.test(stored.compressedHash) &&
+      H.test(stored.envelopeHash) &&
+      Number.isSafeInteger(stored.bytes) &&
+      stored.bytes > 0 &&
+      stored.bytes <= 256 * 1024 * 1024 &&
+      stored.chunkSize === EVIDENCE_CHUNK_SIZE &&
+      Number.isSafeInteger(stored.encodedLength) &&
+      stored.encodedLength > 0 &&
+      stored.encodedLength <= 64 * 1024 * 1024 &&
+      Array.isArray(stored.chunks) &&
+      stored.chunks.length > 0 &&
+      stored.chunks.length <= MAX_CHUNKS &&
+      stored.chunks.length === Math.ceil(stored.encodedLength / EVIDENCE_CHUNK_SIZE) &&
+      stored.chunks.every((x: unknown) => typeof x === "string" && H.test(x)) &&
+      new Set(stored.chunks).size === stored.chunks.length,
+  );
+  const r = reader(o),
+    parts: string[] = [];
+  for (let index = 0; index < stored.chunks.length; index++) {
+    const chunkHash = stored.chunks[index],
+      sourceId = PREFIX + "chunk:" + chunkHash.slice(7);
+    const rows = await r.rows(
+      "ledger_provenance_archive",
+      { source_id: "eq." + sourceId, source_revision: "eq.1" },
+      2,
+      undefined,
+      EVIDENCE_POST_LIMIT + 4096,
+    );
+    requireCheck(rows.length === 1);
+    const row = rows[0],
+      chunk = row.payload;
+    requireCheck(
+      row.source_id === sourceId &&
+        row.source_revision === "1" &&
+        row.source_hash === chunkHash &&
+        captureCanonicalProof(chunk).hash === chunkHash &&
+        same(Object.keys(chunk).sort(), ["version", "hash", "index", "data"].sort()) &&
+        chunk.version === CHUNK_VERSION &&
+        chunk.hash === hash &&
+        chunk.index === index &&
+        typeof chunk.data === "string" &&
+        /^[A-Za-z0-9+/]*={0,2}$/.test(chunk.data) &&
+        chunk.data.length ===
+          Math.min(EVIDENCE_CHUNK_SIZE, stored.encodedLength - index * EVIDENCE_CHUNK_SIZE),
+    );
+    parts.push(chunk.data);
+  }
+  const envelope = {
+    version: "kr-final-retrospective-evidence-gzip-v1",
+    hash,
+    bytes: stored.bytes,
+    compressedHash: stored.compressedHash,
+    payload: parts.join(""),
+  };
+  requireCheck(envelope.payload.length === stored.encodedLength);
+  return decodeEvidence(envelope, stored.envelopeHash, hash);
+}
+/** All chunks verified before publishing the small root manifest. Never update/upsert. */
 export async function appendEvidence(
   o: Connection,
   kind: "plan" | "completion" | "capture" | "execution" | "diagnosis",
@@ -424,47 +576,39 @@ export async function appendEvidence(
     requireCheck(
       payload?.version !== "kr-final-retrospective-blocked-v1" && payload?.status !== "BLOCKED",
     );
-  const encoded = await encodeEvidence(payload),
-    r = reader(o),
-    sourceId = PREFIX + kind + ":" + encoded.hash.slice(7);
-  const find = async () => {
-    const rows = await r.rows(
-      "ledger_provenance_archive",
-      { source_id: "eq." + sourceId, source_revision: "eq.1" },
-      2,
-    );
-    if (rows[0])
-      requireCheck(
-        rows[0].source_hash === encoded.storageHash &&
-          captureCanonicalProof(rows[0].payload).hash === encoded.storageHash,
-      );
-    return rows.length === 1;
-  };
-  if (!(await find())) {
-    try {
-      await (o.fetcher ?? fetch)(new URL("/rest/v1/ledger_provenance_archive", o.origin), {
-        method: "POST",
-        headers: {
-          apikey: o.key,
-          Authorization: "Bearer " + o.key,
-          "Content-Type": "application/json",
-          Prefer: "return=minimal",
-        },
-        body: JSON.stringify({
-          user_id: o.owner,
-          source_id: sourceId,
-          source_revision: "1",
-          source_hash: encoded.storageHash,
-          payload: encoded.envelope,
-        }),
-        redirect: "error",
-      });
-    } catch {
-      /* readback, never retry */
+  const encoded = await encodeEvidence(payload);
+  const sourceId = PREFIX + kind + ":" + encoded.hash.slice(7);
+  let stored: any = encoded.envelope;
+  if (
+    Buffer.byteLength(evidenceBody(o, sourceId, encoded.storageHash, stored), "utf8") >
+    EVIDENCE_POST_LIMIT
+  ) {
+    const chunks: string[] = [];
+    for (let offset = 0; offset < encoded.envelope.payload.length; offset += EVIDENCE_CHUNK_SIZE) {
+      requireCheck(chunks.length < MAX_CHUNKS);
+      const chunk = {
+        version: CHUNK_VERSION,
+        hash: encoded.hash,
+        index: chunks.length,
+        data: encoded.envelope.payload.slice(offset, offset + EVIDENCE_CHUNK_SIZE),
+      };
+      const chunkHash = captureCanonicalProof(chunk).hash;
+      await appendEvidenceRow(o, PREFIX + "chunk:" + chunkHash.slice(7), chunk);
+      chunks.push(chunkHash);
     }
-    requireCheck(await find());
+    stored = {
+      version: MANIFEST_VERSION,
+      hash: encoded.hash,
+      bytes: encoded.envelope.bytes,
+      compressedHash: encoded.envelope.compressedHash,
+      envelopeHash: encoded.storageHash,
+      encodedLength: encoded.envelope.payload.length,
+      chunkSize: EVIDENCE_CHUNK_SIZE,
+      chunks,
+    };
   }
-  return { hash: encoded.hash, storageHash: encoded.storageHash };
+  const storageHash = await appendEvidenceRow(o, sourceId, stored);
+  return { hash: encoded.hash, storageHash };
 }
 export async function capture(
   o: Connection,
