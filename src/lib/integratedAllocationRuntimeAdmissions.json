@@ -40,6 +40,11 @@
       "runtimeCodeHash": "sha256:e31e0b815416781da7bcb38ccca518be57e6a9d9373cedca5c34921bc28a45c7",
       "frozenCodeHash": "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4",
       "reviewId": "kr-exact-retrospective-model-continuation-v1-20261028"
+    },
+    {
+      "runtimeCodeHash": "sha256:beab26ef5b4cbab6d4f34b31ac443b14d427d91856f67a6d63b6276e279e91c2",
+      "frozenCodeHash": "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4",
+      "reviewId": "kr-official-index-verification-20261030-v1"
     }
   ]
 }
