@@ -1,0 +1,59 @@
+name: Integrated reconciliation bounded read probe
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/integrated-reconcile/probe*.ts
+      - scripts/integrated-reconcile/generation-cache*.ts
+      - scripts/integrated-reconcile/fresh-info-transport*.ts
+      - scripts/integrated-reconcile/budget-transport*.ts
+      - scripts/integrated-reconcile/tsconfig.json
+      - scripts/build-integrated-reconcile-probe.mjs
+      - .github/workflows/integrated-reconciliation-read-probe.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run scripts/integrated-reconcile/probe.test.ts scripts/integrated-reconcile/generation-cache.test.ts scripts/integrated-reconcile/fresh-info-transport.test.ts scripts/integrated-reconcile/budget-transport.test.ts
+      - run: npx tsc --noEmit -p scripts/integrated-reconcile/tsconfig.json
+      - run: npx eslint scripts/integrated-reconcile scripts/build-integrated-reconcile-probe.mjs
+      - run: node scripts/build-integrated-reconcile-probe.mjs
+  probe:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'Jiwoon625/cloudtrend'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: integrated-reconciliation-read-probe
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/build-integrated-reconcile-probe.mjs
+      - name: One fixed historical input, read-only transport, bounded usage
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: node "$RUNNER_TEMP/integrated-reconcile-probe-code/probe.mjs"
+      - name: Remove ephemeral executable
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/integrated-reconcile-probe-code"
