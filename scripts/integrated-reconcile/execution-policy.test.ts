@@ -16,9 +16,9 @@ function allowed(overrides: Record<string, unknown> = {}, root: Record<string, u
       ref: "refs/heads/main",
       event: {
         workflow_run: {
-          name: "US ordinary screening",
+          name: "US screening completion eligible",
           path: ".github/workflows/us-prospective-screening.yml",
-          display_title: "US ordinary screening",
+          display_title: "US screening completion eligible",
           conclusion: "success",
           head_branch: "main",
           event: "workflow_dispatch",
@@ -39,17 +39,20 @@ it.each([false, true])(
       github: { event_name: "workflow_dispatch" },
       inputs: { replay_manifest_path: "", replay_apply: apply },
     });
-    expect(display_title).toBe("US ordinary screening");
+    expect(display_title).toBe("US screening completion eligible");
     expect(allowed({ display_title })).toBe(true);
   },
 );
-it.each([false, true])("all manifest recovery modes excluded even successful apply=%s", (apply) => {
-  const display_title = runInNewContext(title, {
-    github: { event_name: "workflow_dispatch" },
-    inputs: { replay_manifest_path: "private/manifest.json", replay_apply: apply },
-  });
-  expect(allowed({ display_title })).toBe(false);
-});
+it.each([false, true])(
+  "manifest recovery without screening excluded even successful apply=%s",
+  (apply) => {
+    const display_title = runInNewContext(title, {
+      github: { event_name: "workflow_dispatch" },
+      inputs: { replay_manifest_path: "private/manifest.json", replay_apply: apply },
+    });
+    expect(allowed({ display_title })).toBe(false);
+  },
+);
 it.each(["push", "pull_request", "issue_comment"])("non-dispatch %s cannot auto-write", (event) => {
   expect(allowed({ event })).toBe(false);
   const display_title = runInNewContext(title, { github: { event_name: event }, inputs: {} });
@@ -89,4 +92,30 @@ it("readonly acceptance defaults 8MiB; full inspection explicit; apply stays 256
   expect(() => reconciliationBudget("yes")).toThrow();
   expect(() => reconciliationBudget("false", "9000")).toThrow();
   expect(workflow).toContain("RECONCILE_INSPECTION_BUDGET_MIB:");
+});
+
+it.each([false, true].flatMap((apply) => [false, true].map((screen) => ({ apply, screen }))))(
+  "atomic upload apply=$apply screen=$screen: only successful apply-and-screen eligible",
+  ({ apply, screen }) => {
+    const display_title = runInNewContext(title, {
+      github: { event_name: "workflow_dispatch" },
+      inputs: {
+        replay_manifest_path: "preserved/manifest.json",
+        replay_apply: apply,
+        replay_then_screen: screen,
+      },
+    });
+    expect(allowed({ display_title })).toBe(apply && screen);
+  },
+);
+it("unchanged collector multi-day atomic chain carries explicit apply-and-screen signal", () => {
+  const source = readFileSync("collectors/lite_r3/runtime/helpers/us_archive.py", "utf8");
+  const atomic = source.split("def publish_us_atomic_chain(")[1].split("\ndef ")[0];
+  expect(atomic).toContain("'replay_apply':'true'");
+  expect(atomic).toContain("'replay_then_screen':'true'");
+  expect(atomic).toContain("'replay_manifest_path':path");
+  const stage = readFileSync("collectors/lite_r3/runtime/stages/us_dispatch.py", "utf8");
+  expect(stage).toContain("if len(_dates_to_run) > 1:");
+  expect(stage).toContain("['publish_us_atomic_chain']");
+  expect(stage).toContain("['dispatch_us_once']");
 });

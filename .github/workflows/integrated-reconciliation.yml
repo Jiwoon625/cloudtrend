@@ -59,7 +59,7 @@ jobs:
       github.event.workflow_run.head_sha == github.sha &&
       (github.event.workflow_run.path == '.github/workflows/cloudtrend-analysis.yml' ||
        (github.event.workflow_run.path == '.github/workflows/us-prospective-screening.yml' &&
-        github.event.workflow_run.display_title == 'US ordinary screening')) &&
+        github.event.workflow_run.display_title == 'US screening completion eligible')) &&
       github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-latest
     timeout-minutes: 30
