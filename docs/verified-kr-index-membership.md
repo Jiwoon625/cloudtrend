@@ -70,6 +70,37 @@ No remote repository changes, Supabase writes, production screening, research re
 ### Changelog
 
 - 2026-10-11: Initial official snapshot for 2026-10-08; replaces blanket stock membership in new manual-data calculations. Independently reviewed and admitted locally; deployment is recorded separately.
+- 2026-11-01: Appended the complete official **2026-10-30** snapshot after explicitly querying `20261030` in the KRX constituents UI before each CSV download. All three series pages showed October 30 as their latest data date. KOSPI200 / KOSDAQ150 / KRX300 contain **201 / 150 / 301** unique constituents; the union remains **384**. Compared with October 8, additions, removals and name changes are all **zero**. The CSVs do not contain a date column; the JSON retains query-date evidence, actual UTC download intervals, official URLs and each complete CSV's SHA-256. Only symbol/name and provenance are copied into the repository; raw market-value fields remain outside it.
+
+### October 30 reference maintenance boundary
+
+The October 8 snapshot is preserved exactly. Analysis through October 29 continues
+to select it; October 30 and later select the new snapshot (with explicit forward
+carry after October 30). Both snapshots were observed after their query dates;
+neither claims contemporaneous pre-open availability. No historical archive,
+price, source, ledger or research result is rewritten or recomputed by this update.
+
+The three live cache revision strings advance to
+`*-cache-v8-verified-kr-index-20261030-v1`. This refreshes the displayed provenance,
+not the scoring rule: every membership and index-priority score is unchanged.
+The existing +2 OR rule, US A0 rules, allocation/cost rules, collection universe
+and original collectors/notebooks remain unchanged. Frozen strategy identities
+and previous runtime admissions are retained. New exact runtime manifests require
+separate independent review before admission and deployment.
+
+Tests pin the original snapshot hash and check all 384 members plus a nonmember
+across the October 29/30 boundary, unchanged scores, reverse-sliced tagged
+instruments, forward carry and original untagged historical inputs.
+
+Independent staged review on November 1 approved these exact executable hashes:
+
+- October Shadow: `sha256:6b5ebf3f2cfe28f48586900276a7117fd52ac40c1e66835ccf7d4ca58c686a9d`.
+- Integrated allocation: `sha256:beab26ef5b4cbab6d4f34b31ac443b14d427d91856f67a6d63b6276e279e91c2`.
+- KOSPI publication: `sha256:55dcf41767160a6b507422447ee6a4818b34a41a55205128086bbce6d058c990`.
+
+The official reference remains inside each transitive calculation digest. The
+existing admission guards, frozen identities and previous admissions are unchanged;
+only these separately verified hashes are appended. Deployment is tracked separately.
 
 ## Local verification
 

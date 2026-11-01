@@ -4,10 +4,10 @@ import { compactDashboardRow } from "@/lib/dashboardRow";
 import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
 import { isKospiRelativeMomentumConfirmed } from "@/lib/kospiRelativeQuality";
 
-export const SCREENING_CACHE_VERSION = "screening-cache-v8-verified-kr-index-20261008-v1" as const;
-export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-verified-kr-index-20261008-v1" as const;
+export const SCREENING_CACHE_VERSION = "screening-cache-v8-verified-kr-index-20261030-v1" as const;
+export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v8-verified-kr-index-20261030-v1" as const;
 export const INSTRUMENT_CACHE_VERSION =
-  "instrument-cache-v8-verified-kr-index-20261008-v1" as const;
+  "instrument-cache-v8-verified-kr-index-20261030-v1" as const;
 
 export interface DashboardSummary {
   krPublication?: AnalysisResult["krPublication"];

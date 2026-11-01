@@ -27,7 +27,7 @@
       "src/lib/engine/usProspectivePortfolio.ts": "sha256:a593e9fb5e23dc353b0f1951176da4fd60e6b3858e2aa4d6e241d66e40a8324a",
       "src/lib/engine/v8SectorPriceLeadership.ts": "sha256:1161aca2b8219712ce27df35a051f13a2177c3c965db34f163b204eaa1643078",
       "src/lib/engine/v8SectorPriceLeadershipPolicy.ts": "sha256:a20de64beb856963b466aaacbf5613a58d4d179ad076df7002171fb859b99fb6",
-      "src/lib/engine/verifiedKrIndexMembership.generated.json": "sha256:2a1e28298dd08141576568c58fcca95a29b44bdddd8fdcfc5fd0e9f79bbac9ad",
+      "src/lib/engine/verifiedKrIndexMembership.generated.json": "sha256:fd2ae20e23ef64a495beecd2c9792783dd2d2740a3ec1329855ccc1c300c5a95",
       "src/lib/engine/verifiedKrIndexMembership.ts": "sha256:db197a0db126e17d102c3c0faab69f5a5a2adef74b4a4821d5d15b7d012a3424",
       "src/lib/engine/vfConfig.ts": "sha256:d5b6fa115ff765785ead12764a29f10df2da80833de63f68af48f97d76e77573",
       "src/lib/freshStorage.ts": "sha256:6a3e48821c2a76b00532a7237d5d81f3f91386b11aae352fa6578679af307e31",
@@ -54,10 +54,10 @@
       "src/lib/ledger/modelSeries.ts": "sha256:63a758daf1abfc74bfcba395d6b21693f0185a48c206e064fa8eb76d4d1693ce",
       "src/lib/ledger/octoberShadowArchive.ts": "sha256:5904e2aa0403a255bee09e88dcea9148e9a0beb54afe5fb21f60d0ae403df9b8",
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:9c8b5e98035e53d81dedc58c43f7ddf8678ad835bbe449a21d63088dabd76a32",
-      "src/lib/ledger/octoberShadowEngineManifest.generated.json": "sha256:a9075ad5e44b3313acb6e5ad7dc99c360072d79554c438772be416b5a17c068b",
+      "src/lib/ledger/octoberShadowEngineManifest.generated.json": "sha256:ee1bd270dbf05641aa7e03694d9377991e7b533604e6af358b2e891f37db46db",
       "src/lib/ledger/octoberShadowPipeline.ts": "sha256:d7f348f82df7b9d96396289edab6754f31b16e2828fe37310e0ec3884a0f4dd1",
       "src/lib/ledger/octoberShadowRepository.server.ts": "sha256:73aa02474b5fc3f734ef68cab7cd5f5e2bf3d8a85fc611668858c129fc69d26c",
-      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:b2014f535bac48e76e2d94ec0f02a652ecca4879ce2d548dc5a3af1480fd90eb",
+      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:eac62ab927b02aac6f5e41b7f86562c000fbc178d1072862bd1238661460b115",
       "src/lib/operationalSignalStart.ts": "sha256:ee5c5daef23502939726ec6fe354ad05adbb776071093a0645f7f57e0c3cac97",
       "src/lib/portfolioLedgers.ts": "sha256:d8a535e3fb96963db0c366b0aedf03b00ace933df59c7234369f40fe20b96129",
       "src/lib/portfolioStrategyRules.ts": "sha256:b2bb33dd598dc63fa2d9a6ff129ee94609d161a666a98571568c8077d5a34b72",
@@ -78,5 +78,5 @@
     },
     "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
   },
-  "codeHash": "sha256:e31e0b815416781da7bcb38ccca518be57e6a9d9373cedca5c34921bc28a45c7"
+  "codeHash": "sha256:beab26ef5b4cbab6d4f34b31ac443b14d427d91856f67a6d63b6276e279e91c2"
 }

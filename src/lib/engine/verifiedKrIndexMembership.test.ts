@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import reference from "./verifiedKrIndexMembership.generated.json";
 import {
   resolveInstrumentMembershipAtDate,
@@ -33,6 +34,56 @@ const score = (symbol: string, date: string) =>
     null,
     null,
   );
+
+it("appends the October 30 verified snapshot without changing the original October 8 evidence", () => {
+  expect(createHash("sha256").update(JSON.stringify(snapshot)).digest("hex")).toBe(
+    "c8dbe33c980debbdf428ca6635fc16cfb56b70dfe193da0dfff042612298739d",
+  );
+  expect(reference.snapshots.map((item) => item.asOfDate)).toEqual(["2026-10-08", "2026-10-30"]);
+  const latest = reference.snapshots[1]!;
+  expect(latest.dateEvidence).toContain("20261030");
+  expect(latest.dateEvidence).toContain("no date column");
+  expect(latest.indexes.map((index) => index.indexCode)).toEqual([
+    "KOSPI200",
+    "KOSDAQ150",
+    "KRX300",
+  ]);
+  expect(latest.indexes.map((index) => index.count)).toEqual([201, 150, 301]);
+  latest.indexes.forEach((index, i) => {
+    expect(index.constituents).toEqual(indexes[i]!.constituents);
+    expect(new Set(index.constituents.map((member) => member.symbol)).size).toBe(index.count);
+    expect(index.sourceCsvSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(index.sourceUrl).toMatch(/^https:\/\/index\.krx\.co\.kr\//);
+    expect(index.downloadObservedUtcInterval).toMatch(/^2026-11-01T/);
+    for (const member of index.constituents)
+      expect(Object.keys(member)).toEqual(["symbol", "name"]);
+  });
+});
+
+it("uses the latest eligible verification date without leaking it into an earlier analysis", () => {
+  for (const symbol of [...new Set(sets.flatMap((set) => [...set])), "033340"]) {
+    const before = resolveVerifiedKrIndexMembership(symbol, "2026-10-29");
+    const after = resolveVerifiedKrIndexMembership(symbol, "2026-10-30");
+    expect(before.indexMembershipsProvenance?.snapshotAsOfDate).toBe("2026-10-08");
+    expect(after.indexMembershipsProvenance?.snapshotAsOfDate).toBe("2026-10-30");
+    expect(after.indexMemberships).toEqual(before.indexMemberships);
+    expect(score(symbol, "2026-10-30").points).toBe(score(symbol, "2026-10-29").points);
+    const tagged = { ...base, symbol, ...after };
+    expect(resolveInstrumentMembershipAtDate(tagged, "2026-10-29")).toEqual({
+      ...base,
+      symbol,
+      ...before,
+    });
+    expect(tagged.indexMembershipsProvenance?.snapshotAsOfDate).toBe("2026-10-30");
+  }
+  expect(score("005930", "2026-10-30").rows[0]!.actual).not.toContain("이월");
+  expect(score("005930", "2026-11-02").rows[0]!.actual).toContain(
+    "KRX 공식 2026-10-30 확인 (최신 확인본 이월)",
+  );
+  expect(resolveVerifiedKrIndexMembership("005930", "2026-10-07").indexMembershipsKnown).toBe(
+    false,
+  );
+});
 
 it("retains the complete official 201/150/301 lists, provenance, uniqueness and exact overlaps", () => {
   expect(snapshot.asOfDate).toBe("2026-10-08");
