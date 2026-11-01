@@ -16,7 +16,8 @@ function allowed(overrides: Record<string, unknown> = {}, root: Record<string, u
       ref: "refs/heads/main",
       event: {
         workflow_run: {
-          name: "US Prospective Screening",
+          name: "US ordinary screening",
+          path: ".github/workflows/us-prospective-screening.yml",
           display_title: "US ordinary screening",
           conclusion: "success",
           head_branch: "main",
@@ -60,16 +61,21 @@ it.each([
   { head_branch: "feature" },
   { head_sha: "old-or-unreviewed-commit" },
   { head_repository: { full_name: "fork/cloudtrend" } },
-  { name: "Other workflow" },
+  { path: ".github/workflows/other.yml" },
   { display_title: "US Prospective Screening" },
 ])("untrusted, stale or ineligible completion is fail-closed: %j", (override) =>
   expect(allowed(override)).toBe(false),
 );
 it("normal KR upload dispatch eligible; comments and push validation excluded", () => {
-  expect(allowed({ name: "CloudTrend screening", display_title: "arbitrary dispatch title" })).toBe(
-    true,
-  );
-  expect(allowed({ name: "CloudTrend screening", event: "issue_comment" })).toBe(false);
+  expect(
+    allowed({
+      path: ".github/workflows/cloudtrend-analysis.yml",
+      display_title: "arbitrary dispatch title",
+    }),
+  ).toBe(true);
+  expect(
+    allowed({ path: ".github/workflows/cloudtrend-analysis.yml", event: "issue_comment" }),
+  ).toBe(false);
   expect(allowed({}, { repository: "fork/cloudtrend" })).toBe(false);
 });
 it("manual execution only on own main", () => {
