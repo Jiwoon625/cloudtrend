@@ -517,9 +517,15 @@ async function main() {
     phase = "PURE_COMPUTE";
     const child = spawnSync(
       process.execPath,
-      [path.join(root, "integrated-gap-code/pure.mjs"), directory, code, requestHash],
+      [
+        "--expose-gc",
+        path.join(root, "integrated-gap-code/pure.mjs"),
+        directory,
+        code,
+        requestHash,
+      ],
       {
-        env: pureEnvironment(directory),
+        env: { ...pureEnvironment(directory), NODE_OPTIONS: "--max-old-space-size=4096" },
         stdio: ["ignore", "pipe", "pipe"],
         encoding: "utf8",
         maxBuffer: 1024 * 1024,

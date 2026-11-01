@@ -179,26 +179,38 @@ export async function prepareGapPlan(
       "Captured object mismatch",
     );
   }
-  const datasetCapture = await hydrateFinalCapture(priorCapture);
+  let datasetCapture = await hydrateFinalCapture(priorCapture);
   check(datasetCapture.owner === c.owner, "Prior capture owner mismatch");
-  check(canonicalHash(datasetCapture) === priorPlan.preparation.decodedCaptureHash);
+  const decodedCaptureHash = priorPlan.preparation.decodedCaptureHash;
+  check(canonicalHash(datasetCapture) === decodedCaptureHash);
   check(
     canonicalHash(datasetCapture.dataset) === priorPlan.preparation.basis.datasetHash &&
       (await H(datasetCapture.config)) === priorPlan.preparation.basis.configHash,
   );
-  const { dataset, analysis } = analyzeKrReplayDataset(
-    sliceKrDatasetForReplay(datasetCapture.dataset, DATE),
-    datasetCapture.config,
+  const proof = priorPlan.retrospectiveAuthorityCandidate.receipt.dates.find(
+    (d: any) => d.date === DATE,
   );
+  check(proof, "Missing historical date proof");
+  let historicalDataset: typeof datasetCapture.dataset | null = datasetCapture.dataset;
+  const config = datasetCapture.config;
+  // All full-evidence hashes have passed. Release only local references, never mutate
+  // the caller's evidence or economic inputs, before the existing slicer's copies.
+  priorCapture = null;
+  priorPlan = null;
+  datasetCapture = null as unknown as typeof datasetCapture;
+  const collect = () => (globalThis as typeof globalThis & { gc?: () => void }).gc?.();
+  collect();
+  const sliced = sliceKrDatasetForReplay(historicalDataset, DATE);
+  historicalDataset = null;
+  collect();
+  const { dataset, analysis } = analyzeKrReplayDataset(sliced, config);
   const modeled = {
     availableAt: "2026-10-30T08:00:00+09:00",
     decisionAt: "2026-10-30T08:10:00+09:00",
   };
   const snapshot = { ...buildSnapshot(analysis), savedAt: modeled.availableAt };
   const sourceHash = await H(currentDateEvidence(dataset, snapshot));
-  const proof = priorPlan.retrospectiveAuthorityCandidate.receipt.dates.find(
-    (d: any) => d.date === DATE,
-  );
+
   check(
     proof && proof.sourceHash === sourceHash && proof.datasetHash === canonicalHash(dataset),
     "Historical recomputation drift",
@@ -291,7 +303,7 @@ export async function prepareGapPlan(
     sourceProof: {
       sourceHash,
       datasetHash: proof.datasetHash,
-      decodedCaptureHash: priorPlan.preparation.decodedCaptureHash,
+      decodedCaptureHash,
       clockInterpretation: "MODELED_DECISION_ONLY_NOT_HISTORICAL_AVAILABILITY",
     },
   };
