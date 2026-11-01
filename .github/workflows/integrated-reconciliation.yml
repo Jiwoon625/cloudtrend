@@ -1,0 +1,88 @@
+name: Integrated multi-day reconciliation
+on:
+  workflow_run:
+    workflows: [CloudTrend screening, US Prospective Screening]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      inspection_budget_mib:
+        description: Read-only response budget; 8 for bounded acceptance, 256 for explicit full inspection
+        required: false
+        default: "8"
+        type: choice
+        options: ["8", "256"]
+      through_date:
+        description: Optional bounded date; empty uses latest completed market model date
+        required: false
+        type: string
+      apply:
+        description: Restore exact retained inputs and append only missing integrated sessions
+        required: false
+        default: false
+        type: boolean
+  pull_request:
+    paths:
+      - scripts/integrated-reconcile/**
+      - scripts/build-integrated-reconcile.mjs
+      - .github/workflows/integrated-reconciliation.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run scripts/integrated-reconcile tests/integrated-allocation-replay.test.ts
+      - run: npx tsc --noEmit -p scripts/integrated-reconcile/tsconfig.json
+      - run: npx eslint scripts/integrated-reconcile scripts/build-integrated-reconcile.mjs
+      - run: npx vite-node --script scripts/verify-shadow-runtime-manifests.ts
+      - run: node scripts/build-integrated-reconcile.mjs
+  reconcile:
+    concurrency:
+      group: ${{ (github.event_name == 'workflow_run' || inputs.apply == true) && 'integrated-multiday-reconciliation' || format('integrated-inspect-{0}', github.run_id) }}
+      cancel-in-progress: false
+    needs: verify
+    if: >-
+      github.repository == 'Jiwoon625/cloudtrend' &&
+      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event == 'workflow_dispatch' &&
+      github.event.workflow_run.head_sha == github.sha &&
+      (github.event.workflow_run.name == 'CloudTrend screening' ||
+       (github.event.workflow_run.name == 'US Prospective Screening' &&
+        github.event.workflow_run.display_title == 'US ordinary screening')) &&
+      github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify unchanged admitted engine and build separate reconciler
+        run: |
+          npx vite-node --script scripts/verify-shadow-runtime-manifests.ts
+          node scripts/build-integrated-reconcile.mjs
+      - name: Reconcile only retained dated evidence
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          RECONCILE_INSPECTION_BUDGET_MIB: ${{ inputs.inspection_budget_mib || '8' }}
+          RECONCILE_THROUGH_DATE: ${{ inputs.through_date || '' }}
+          RECONCILE_APPLY: ${{ github.event_name == 'workflow_run' && 'true' || inputs.apply && 'true' || 'false' }}
+        run: node --max-old-space-size=2048 "$RUNNER_TEMP/integrated-reconcile-code/run.mjs"
