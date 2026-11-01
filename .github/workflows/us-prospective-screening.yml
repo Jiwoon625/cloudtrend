@@ -1,4 +1,5 @@
 name: US Prospective Screening
+run-name: ${{ github.event_name == 'workflow_dispatch' && (inputs.replay_manifest_path == '' || (inputs.replay_apply == true && inputs.replay_then_screen == true)) && 'US screening completion eligible' || 'US recovery or validation — no automatic reconciliation' }}
 
 on:
   # Run only after collection/upload or an explicit user request; no timed fallback.
