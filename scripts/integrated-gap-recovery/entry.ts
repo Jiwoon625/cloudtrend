@@ -28,6 +28,7 @@ import { integratedAllocationRuntimeAdmission } from "../../src/lib/integratedAl
 import { INTEGRATED_RUNTIME_ATTEMPT_VERSION } from "../../src/lib/integratedAllocationRuntimeAudit.server";
 import { INTEGRATED_ALLOCATION_VERSION } from "../../src/lib/integratedAllocationShadow";
 import { validateGapRequest } from "./core";
+import { diagnosticFetch, runDiagnosticRead } from "./read-diagnostics";
 import {
   octoberModelCalendar,
   OCTOBER_CALENDAR_EVIDENCE,
@@ -48,7 +49,7 @@ export function assertWorkflow(env = process.env) {
       env.GITHUB_WORKFLOW === workflow &&
       env.RECOVERY_CONCURRENCY_GROUP === "kospi-prospective-shadow" &&
       /^[a-f0-9]{40}$/.test(env.GITHUB_SHA ?? "") &&
-      ["INSPECT", "PLAN", "VALIDATE", "APPLY"].includes(env.RECOVERY_MODE ?? ""),
+      ["DIAGNOSE", "INSPECT", "PLAN", "VALIDATE", "APPLY"].includes(env.RECOVERY_MODE ?? ""),
   );
 }
 function writePrivate(file: string, value: unknown) {
@@ -393,8 +394,15 @@ async function main() {
     origin: process.env.SUPABASE_URL ?? "",
     key: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
     owner: process.env.SUPABASE_USER_ID ?? "",
+    fetcher: diagnosticFetch(fetch),
   };
   const action = process.argv[2];
+  if (mode === "DIAGNOSE") {
+    check(action === "materialize");
+    phase = "DIAGNOSTIC_READ";
+    await runDiagnosticRead(o);
+    return { status: "DIAGNOSTIC_READ_COMPLETE", noOperationalWrites: true };
+  }
   if (mode === "INSPECT") {
     check(action === "materialize");
     phase = "INSPECT";

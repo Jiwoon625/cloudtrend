@@ -4,7 +4,7 @@ on:
     inputs:
       mode:
         type: choice
-        options: [INSPECT, PLAN, VALIDATE, APPLY]
+        options: [DIAGNOSE, INSPECT, PLAN, VALIDATE, APPLY]
         required: true
       expected_request_hash:
         description: Exact reviewed private request hash (except INSPECT)
@@ -55,10 +55,10 @@ jobs:
           SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
         run: node "$RUNNER_TEMP/integrated-gap-code/transport.mjs" materialize
       - name: Reproduce exact plan without credentials or network adapters
-        if: inputs.mode != 'INSPECT'
+        if: inputs.mode != 'INSPECT' && inputs.mode != 'DIAGNOSE'
         run: node "$RUNNER_TEMP/integrated-gap-code/transport.mjs" compute
       - name: Append plan or validate/apply only exact reviewed outputs
-        if: inputs.mode != 'INSPECT'
+        if: inputs.mode != 'INSPECT' && inputs.mode != 'DIAGNOSE'
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
