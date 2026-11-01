@@ -1,0 +1,69 @@
+name: Integrated allocation exact gap PLAN APPLY
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [INSPECT, PLAN, VALIDATE, APPLY]
+        required: true
+      expected_request_hash:
+        description: Exact reviewed private request hash (except INSPECT)
+        type: string
+      expected_plan_hash:
+        description: Exact reviewed private plan hash (VALIDATE/APPLY)
+        type: string
+      expected_approval_hash:
+        description: Exact private approval hash (VALIDATE/APPLY)
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: kospi-prospective-shadow
+  cancel-in-progress: false
+jobs:
+  recovery:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      RECOVERY_CONCURRENCY_GROUP: kospi-prospective-shadow
+      RECOVERY_MODE: ${{ inputs.mode }}
+      EXPECTED_REQUEST_HASH: ${{ inputs.expected_request_hash }}
+      EXPECTED_PLAN_HASH: ${{ inputs.expected_plan_hash }}
+      EXPECTED_APPROVAL_HASH: ${{ inputs.expected_approval_hash }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify immutable runtimes and separate recovery tests
+        run: |
+          git merge-base --is-ancestor 2e8f21c12ed3163406800b48a3c71ac04dc3d8ec HEAD
+          npx vite-node --script scripts/verify-shadow-runtime-manifests.ts
+          npx tsc --noEmit -p scripts/integrated-gap-recovery/tsconfig.json
+          npx vitest run scripts/integrated-gap-recovery
+          node scripts/build-integrated-gap-recovery.mjs
+      - name: Materialize bounded owner-private evidence or inspect metadata
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: node "$RUNNER_TEMP/integrated-gap-code/transport.mjs" materialize
+      - name: Reproduce exact plan without credentials or network adapters
+        if: inputs.mode != 'INSPECT'
+        run: node "$RUNNER_TEMP/integrated-gap-code/transport.mjs" compute
+      - name: Append plan or validate/apply only exact reviewed outputs
+        if: inputs.mode != 'INSPECT'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: node "$RUNNER_TEMP/integrated-gap-code/transport.mjs" finish
+      - name: Delete ephemeral private files (never publish artifacts)
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/integrated-gap-private" "$RUNNER_TEMP/integrated-gap-code"
