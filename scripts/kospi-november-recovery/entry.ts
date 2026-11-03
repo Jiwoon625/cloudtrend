@@ -257,7 +257,56 @@ export function validateJournalWrite(
     need(i >= 0 && same(v, c.result.snapshots[i]));
   } else need(p === root + "/latest.json" && c.result.projections.some((x: any) => same(v, x)));
 }
-function shadowStore(o: Connection, c: any, allowWrites: boolean): ShadowObjectStore {
+/** Fixed codes only: never log response bodies, object paths, owners, or credentials. */
+class ShadowReadError extends Error {
+  constructor(readonly safeCode: string) {
+    super(safeCode);
+  }
+}
+export function shadowReadDiagnostic(error: unknown): string {
+  return error instanceof ShadowReadError ? error.safeCode : "UNCLASSIFIED";
+}
+async function isMissingShadowObject(response: Response): Promise<boolean> {
+  if (response.status !== 400 && response.status !== 404) return false;
+  if (!response.body) throw new ShadowReadError("SHADOW_READ_ERROR_ENVELOPE_INVALID");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) break;
+      length += next.value.byteLength;
+      if (length > 4096) {
+        await reader.cancel().catch(() => {});
+        throw new ShadowReadError("SHADOW_READ_ERROR_BODY_TOO_LARGE");
+      }
+      chunks.push(next.value);
+    }
+  } catch (error) {
+    if (error instanceof ShadowReadError) throw error;
+    throw new ShadowReadError("SHADOW_READ_BODY_FAILED");
+  } finally {
+    reader.releaseLock();
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new ShadowReadError("SHADOW_READ_ERROR_ENVELOPE_INVALID");
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value))
+    throw new ShadowReadError("SHADOW_READ_MISSING_ENVELOPE_UNRECOGNIZED");
+  const envelope = value as Record<string, unknown>;
+  const recognized =
+    (envelope.statusCode === "404" || envelope.statusCode === 404) &&
+    envelope.error === "not_found" &&
+    envelope.message === "Object not found" &&
+    (!Object.hasOwn(envelope, "code") || envelope.code === "NoSuchKey");
+  if (!recognized) throw new ShadowReadError("SHADOW_READ_MISSING_ENVELOPE_UNRECOGNIZED");
+  return true;
+}
+export function shadowStore(o: Connection, c: any, allowWrites: boolean): ShadowObjectStore {
   const root = `${o.owner}/${KOSPI_SHADOW_NAMESPACE}/revisions/${KOSPI_SHADOW_CORRECTION_REVISION_ID}`;
   const paths = new Set<string>([
     ...c.input.capturedObjects.map((x: any) => x.path),
@@ -288,12 +337,29 @@ function shadowStore(o: Connection, c: any, allowWrites: boolean): ShadowObjectS
   };
   return {
     read: async <T>(p: string) => {
-      const r = await request(p, "GET");
-      if (r.status === 404) return null;
-      need(r.ok);
-      const t = await r.text();
-      need(Buffer.byteLength(t) <= 4 * 1024 * 1024);
-      return JSON.parse(t) as T;
+      let r: Response;
+      try {
+        r = await request(p, "GET");
+      } catch {
+        throw new ShadowReadError("SHADOW_READ_REQUEST_FAILED");
+      }
+      if (!r.ok) {
+        if (await isMissingShadowObject(r)) return null;
+        throw new ShadowReadError("SHADOW_READ_HTTP_REJECTED");
+      }
+      let t: string;
+      try {
+        t = await r.text();
+      } catch {
+        throw new ShadowReadError("SHADOW_READ_BODY_FAILED");
+      }
+      if (Buffer.byteLength(t) > 4 * 1024 * 1024)
+        throw new ShadowReadError("SHADOW_READ_BODY_TOO_LARGE");
+      try {
+        return JSON.parse(t) as T;
+      } catch {
+        throw new ShadowReadError("SHADOW_READ_JSON_INVALID");
+      }
     },
     latestSessionDate: async (p: string) => {
       need(p === root + "/sessions" || p === `${o.owner}/${KOSPI_SHADOW_NAMESPACE}/sessions`);
@@ -498,11 +564,12 @@ export async function main() {
 if (/(?:^|\/)(?:entry\.ts|transport\.mjs)$/.test(process.argv[1] ?? ""))
   main()
     .then((x) => console.log(JSON.stringify(x)))
-    .catch(() => {
+    .catch((error: unknown) => {
       console.error(
         JSON.stringify({
           status: "KOSPI_NOVEMBER_REJECTED_OR_PARTIAL_RECHECK",
           phase,
+          errorCode: shadowReadDiagnostic(error),
           completionClaim: false,
         }),
       );

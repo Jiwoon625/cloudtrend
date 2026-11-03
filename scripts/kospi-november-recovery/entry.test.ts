@@ -342,3 +342,93 @@ it.each([true, false])(
     ).rejects.toThrow();
   },
 );
+
+// Storage reports missing objects with HTTP400 and an internal404 envelope.
+import { shadowStore, shadowReadDiagnostic } from "./entry";
+const missing = { statusCode: "404", error: "not_found", message: "Object not found" };
+function transportStore(response: Response | Error) {
+  const fetcher = vi.fn(async () => {
+    if (response instanceof Error) throw response;
+    return response;
+  });
+  return {
+    store: shadowStore(
+      { origin: "https://example.supabase.co", key: "synthetic", owner, fetcher },
+      capsule(),
+      false,
+    ),
+    fetcher,
+  };
+}
+it.each([400, 404])(
+  "actual transport recognizes only proven missing envelope with HTTP%s",
+  async (status) => {
+    const { store, fetcher } = transportStore(new Response(JSON.stringify(missing), { status }));
+    await expect(store.read(root + "/sessions/2026-10-30.json")).resolves.toBeNull();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledWith(
+      expect.any(URL),
+      expect.objectContaining({ method: "GET" }),
+    );
+  },
+);
+it("actual transport parses existing object without changing its payload", async () => {
+  const { store } = transportStore(new Response(JSON.stringify({ intact: true })));
+  await expect(store.read(root + "/latest.json")).resolves.toEqual({ intact: true });
+});
+it.each([
+  [401, missing],
+  [403, missing],
+  [500, missing],
+  [400, { ...missing, statusCode: "403" }],
+  [400, { ...missing, error: "AccessDenied" }],
+  [404, { ...missing, message: "Permission denied" }],
+  [400, { message: "Object not found" }],
+  [404, {}],
+  [400, { ...missing, code: "NoSuchBucket" }],
+])("actual transport rejects non-missing error status%s payload%s", async (status, payload) => {
+  const { store } = transportStore(
+    new Response(JSON.stringify(payload), { status: status as number }),
+  );
+  await expect(store.read(root + "/sessions/2026-10-30.json")).rejects.toThrow(
+    status === 400 || status === 404
+      ? "SHADOW_READ_MISSING_ENVELOPE_UNRECOGNIZED"
+      : "SHADOW_READ_HTTP_REJECTED",
+  );
+});
+it("actual transport rejects invalid or oversized error bodies, even misleading Content-Length", async () => {
+  for (const [body, code] of [
+    ["<html>Not Found</html>", "SHADOW_READ_ERROR_ENVELOPE_INVALID"],
+    [JSON.stringify({ ...missing, padding: "x".repeat(4096) }), "SHADOW_READ_ERROR_BODY_TOO_LARGE"],
+  ]) {
+    const { store } = transportStore(
+      new Response(body, { status: 404, headers: { "Content-Length": "1" } }),
+    );
+    await expect(store.read(root + "/sessions/2026-10-30.json")).rejects.toThrow(code);
+  }
+});
+it("actual transport does not swallow network failures or emit their sensitive text", async () => {
+  const { store } = transportStore(new Error("secret/path/owner"));
+  try {
+    await store.read(root + "/latest.json");
+    throw Error("EXPECTED_REJECTION");
+  } catch (error) {
+    expect(shadowReadDiagnostic(error)).toBe("SHADOW_READ_REQUEST_FAILED");
+  }
+  expect(shadowReadDiagnostic(new Error("secret/path/owner"))).toBe("UNCLASSIFIED");
+});
+it("actual transport keeps VALIDATE writes forbidden after a missing read", async () => {
+  const { store, fetcher } = transportStore(new Response(JSON.stringify(missing), { status: 400 }));
+  await expect(store.read(root + "/sessions/2026-10-30.json")).resolves.toBeNull();
+  await expect(
+    store.putImmutable(root + "/sessions/2026-10-30.json", capsule().result.snapshots[0]),
+  ).rejects.toThrow();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+});
+
+it("recognizes optional NoSuchKey code only with complete legacy missing envelope", async () => {
+  const { store } = transportStore(
+    new Response(JSON.stringify({ ...missing, code: "NoSuchKey" }), { status: 400 }),
+  );
+  await expect(store.read(root + "/sessions/2026-10-30.json")).resolves.toBeNull();
+});
