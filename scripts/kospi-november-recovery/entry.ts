@@ -23,6 +23,7 @@ import { applyNovemberRecovery, novemberApprovalCandidate } from "./apply";
 import { canonicalSeriesJson } from "../../src/lib/ledger/modelSeries";
 import { KOSPI_SHADOW_NAMESPACE, type ShadowObjectStore } from "../../src/lib/kospiShadowStore";
 import { KOSPI_SHADOW_CORRECTION_REVISION_ID } from "../../src/lib/kospiShadowSeries";
+import { sameSourceRows } from "./source-row-comparison";
 const H = /^sha256:[a-f0-9]{64}$/;
 const same = (a: unknown, b: unknown) => canonicalSeriesJson(a) === canonicalSeriesJson(b);
 const digest = (v: unknown) => captureCanonicalProof(v).hash;
@@ -224,7 +225,7 @@ export async function assertFresh(
           "activated_at.asc.nullsfirst,created_at.asc,id.asc",
         ),
       };
-  need((!fullSnapshot || same(now, baseline)) && same(now.sources, c.sourceRows));
+  need((!fullSnapshot || same(now, baseline)) && sameSourceRows(now.sources, c.sourceRows));
   for (const pin of c.sourceObjectPins)
     need(same(normalizeGeneration(await reader(o).info(pin.path)), pin.generation));
   const root = `${o.owner}/${KOSPI_SHADOW_NAMESPACE}/revisions/${KOSPI_SHADOW_CORRECTION_REVISION_ID}`;
@@ -393,7 +394,7 @@ export async function main() {
     }
     privateWrite(file("archive-pins"), archivePins);
     const baseline = await snapshot(o);
-    need(same(baseline.sources, c.sourceRows));
+    need(sameSourceRows(baseline.sources, c.sourceRows));
     await assertFresh(o, c, baseline, archivePins, false);
     privateWrite(file("capsule"), c);
     privateWrite(file("receipt"), receipt);
