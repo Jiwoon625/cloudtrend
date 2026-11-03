@@ -1,0 +1,65 @@
+name: KOSPI November reviewed recovery
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [VALIDATE, APPLY]
+        required: true
+      expected_capsule_hash:
+        description: Exact reviewed owner-private compact capsule hash
+        type: string
+        required: true
+      expected_approval_hash:
+        description: Exact separately approved November writer/output authority
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: kospi-prospective-shadow
+  cancel-in-progress: false
+jobs:
+  recovery:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      RECOVERY_CONCURRENCY_GROUP: kospi-prospective-shadow
+      RECOVERY_MODE: ${{ inputs.mode }}
+      EXPECTED_CAPSULE_HASH: ${{ inputs.expected_capsule_hash }}
+      EXPECTED_APPROVAL_HASH: ${{ inputs.expected_approval_hash }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify source identity and separate recovery code
+        run: |
+          git merge-base --is-ancestor 67802773929033b17b76e1ffee5db76ba4078fd4 HEAD
+          node --experimental-strip-types scripts/verify-kospi-shadow-runtime.ts
+          npx tsc --noEmit -p scripts/kospi-november-recovery/tsconfig.json
+          npx vitest run scripts/kospi-november-recovery
+          node scripts/build-kospi-november-recovery.mjs
+      - name: Read exact reviewed private evidence
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: node "$RUNNER_TEMP/kospi-november-code/transport.mjs" materialize
+      - name: Reproduce complete plan without credentials
+        run: node "$RUNNER_TEMP/kospi-november-code/transport.mjs" compute
+      - name: Validate or append only exact reviewed Shadow outputs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: node "$RUNNER_TEMP/kospi-november-code/transport.mjs" finish
+      - name: Delete ephemeral private evidence
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/kospi-november-private" "$RUNNER_TEMP/kospi-november-code"
