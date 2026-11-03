@@ -313,3 +313,32 @@ it("low budget stops a mutation before POST and preserves uncertain-readback cap
     ).text(),
   ).toBe("ok");
 });
+
+it.each([true, false])(
+  "freshness accepts only source timestamp serialization equivalence (full=%s)",
+  async (full) => {
+    const c = capsule();
+    Object.assign(c.sourceRows[0], { created_at: "2026-11-03 01:05:34.360251+00" });
+    Object.assign(fake.baseline.sources[0], { created_at: "2026-11-03T01:05:34.360251+00:00" });
+    const baseline = structuredClone(fake.baseline);
+    await expect(
+      assertFresh(
+        { origin: "https://example.supabase.co", key: "synthetic", owner },
+        c,
+        baseline,
+        structuredClone(fake.archive),
+        full,
+      ),
+    ).resolves.toBeDefined();
+    Object.assign(fake.baseline.sources[0], { created_at: "2026-11-03T01:05:34.360252+00:00" });
+    await expect(
+      assertFresh(
+        { origin: "https://example.supabase.co", key: "synthetic", owner },
+        c,
+        baseline,
+        structuredClone(fake.archive),
+        full,
+      ),
+    ).rejects.toThrow();
+  },
+);
