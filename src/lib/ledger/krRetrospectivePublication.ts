@@ -14,7 +14,7 @@ export interface KrRetrospectiveDateProof {
   modelDecisionAt: string;
 }
 export interface KrRetrospectiveReceipt {
-  version: "kr-reviewed-retrospective-source-v1";
+  version: "kr-reviewed-retrospective-source-v1" | "kr-reviewed-retrospective-source-v2";
   owner: string;
   preparationHash: SeriesHash;
   capsuleHash: SeriesHash;
@@ -33,7 +33,7 @@ export interface KrRetrospectiveReceipt {
 }
 export interface KrRetrospectiveAuthority {
   registry: {
-    version: "kr-reviewed-retrospective-registry-v1";
+    version: "kr-reviewed-retrospective-registry-v1" | "kr-reviewed-retrospective-registry-v2";
     status: "APPROVED";
     policy: typeof KR_RETROSPECTIVE_POLICY;
     receiptHash: SeriesHash;
@@ -60,6 +60,9 @@ export interface KrRetrospectiveProvenance {
   runtimeCodeHash: SeriesHash;
 }
 const H = /^sha256:[a-f0-9]{64}$/;
+const isHash = (value: unknown): value is SeriesHash => typeof value === "string" && H.test(value);
+const isTimestamp = (value: unknown): value is string =>
+  typeof value === "string" && Number.isFinite(Date.parse(value));
 const equal = (a: unknown, b: unknown) => canonicalSeriesJson(a) === canonicalSeriesJson(b);
 const requireValue = (v: unknown): void => {
   if (!v) throw new Error("Invalid reviewed retrospective source authority");
@@ -75,12 +78,14 @@ export async function verifyKrRetrospectiveAuthority(a: KrRetrospectiveAuthority
       exact(a.registry, ["version", "status", "policy", "receiptHash"]),
   );
   requireValue(
-    a.registry.version === "kr-reviewed-retrospective-registry-v1" &&
+    (a.registry.version === "kr-reviewed-retrospective-registry-v1" ||
+      a.registry.version === "kr-reviewed-retrospective-registry-v2") &&
       a.registry.status === "APPROVED" &&
       a.registry.policy === KR_RETROSPECTIVE_POLICY,
   );
   requireValue(
-    H.test(a.authoritativeRegistryHash) &&
+    isHash(a.authoritativeRegistryHash) &&
+      isHash(a.registry.receiptHash) &&
       (await hashSeriesValue(a.registry)) === a.authoritativeRegistryHash &&
       (await hashSeriesValue(a.receipt)) === a.registry.receiptHash,
   );
@@ -106,8 +111,12 @@ export async function verifyKrRetrospectiveAuthority(a: KrRetrospectiveAuthority
     ]),
   );
   requireValue(
-    r.version === "kr-reviewed-retrospective-source-v1" &&
+    ((a.registry.version === "kr-reviewed-retrospective-registry-v1" &&
+      r.version === "kr-reviewed-retrospective-source-v1") ||
+      (a.registry.version === "kr-reviewed-retrospective-registry-v2" &&
+        r.version === "kr-reviewed-retrospective-source-v2")) &&
       r.historicalAvailabilityClaim === false &&
+      typeof r.owner === "string" &&
       /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(r.owner),
   );
   requireValue(
@@ -119,27 +128,36 @@ export async function verifyKrRetrospectiveAuthority(a: KrRetrospectiveAuthority
       r.sourceManifestHash,
       r.preparationRuntimeCodeHash,
       r.runtimeCodeHash,
-    ].every((h) => H.test(h)) &&
-      Number.isFinite(Date.parse(r.captureFinishedAt)) &&
-      Number.isFinite(Date.parse(r.originFinalActivatedAt)) &&
+    ].every(isHash) &&
+      isTimestamp(r.captureFinishedAt) &&
+      isTimestamp(r.originFinalActivatedAt) &&
       Date.parse(r.originFinalActivatedAt) <= Date.parse(r.captureFinishedAt) &&
       r.derivedBasisSourceStatus === "NOT_REGISTERED_AT_PREPARATION" &&
+      typeof r.predecessorDate === "string" &&
       validDate(r.predecessorDate),
   );
   requireValue(
-    r.predecessorHeads.length === 5 &&
-      new Set(r.predecessorHeads.map((x) => x.bookId)).size === 5 &&
+    Array.isArray(r.predecessorHeads) &&
+      r.predecessorHeads.length === 5 &&
+      new Set(r.predecessorHeads.map((x) => x?.bookId)).size === 5 &&
       r.predecessorHeads.every(
         (x) =>
           exact(x, ["bookId", "stateHash"]) &&
-          H.test(x.stateHash) &&
+          isHash(x.stateHash) &&
+          typeof x.bookId === "string" &&
           /^adopted-shadow-2026-10-12-v1:(KR_MIXED|KR_KOSPI|KR_KOSDAQ|ETF_V02|KR_KOSPI_CONFIRM1_BEAR)$/.test(
             x.bookId,
           ),
       ),
   );
   requireValue(
-    r.dates.length === 2 &&
+    Array.isArray(r.dates) &&
+      // V1 retains its original two-session contract. V2 is a separate, exact Nov 3 repair.
+      ((r.version === "kr-reviewed-retrospective-source-v1" && r.dates.length === 2) ||
+        (r.version === "kr-reviewed-retrospective-source-v2" &&
+          r.predecessorDate === "2026-11-02" &&
+          r.dates.length === 1 &&
+          r.dates[0]?.date === "2026-11-03")) &&
       r.dates.every(
         (d, i) =>
           exact(d, [
@@ -151,12 +169,11 @@ export async function verifyKrRetrospectiveAuthority(a: KrRetrospectiveAuthority
             "modelAvailableAt",
             "modelDecisionAt",
           ]) &&
+          typeof d.date === "string" &&
           validDate(d.date) &&
           d.date === nextKrRegularSession(i ? r.dates[i - 1]!.date : r.predecessorDate) &&
-          [d.sourceHash, d.datasetHash, d.configHash].every((h) => H.test(h)) &&
-          [d.evidenceStoredAt, d.modelAvailableAt, d.modelDecisionAt].every((t) =>
-            Number.isFinite(Date.parse(t)),
-          ) &&
+          [d.sourceHash, d.datasetHash, d.configHash].every(isHash) &&
+          [d.evidenceStoredAt, d.modelAvailableAt, d.modelDecisionAt].every(isTimestamp) &&
           Date.parse(d.evidenceStoredAt) >= Date.parse(r.captureFinishedAt) &&
           Date.parse(d.evidenceStoredAt) > Date.parse(d.modelDecisionAt) &&
           Date.parse(d.modelAvailableAt) <= Date.parse(d.modelDecisionAt),

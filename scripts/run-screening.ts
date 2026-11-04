@@ -240,7 +240,14 @@ export async function runScreening(argv = process.argv.slice(2)) {
   const coreSnapshot = buildSnapshot(analysis, sourceRegisteredAt, runId);
   // Shadow is replayed separately from the latest investment-screen view.
   const previous = await loadPreviousSnapshot(client, options.supabaseUserId, coreSnapshot.date);
+  const pipelineStatus = {
+    screening: "COMPLETED",
+    actualPortfolio: preliminary ? "SKIPPED_PRELIMINARY" : "NOT_RUN",
+    models: preliminary ? "SKIPPED_PRELIMINARY" : "NOT_RUN",
+    publication: "NOT_RUN",
+  };
   const summary = {
+    pipelineStatus,
     ...buildScreeningSummary(analysis, coreSnapshot, previous),
     ...(preliminary ? { krPublication } : {}),
     etfScoreContinuity: etfReportScoreSummary(analysis.rows, analysis.asOfDate),
@@ -338,14 +345,28 @@ export async function runScreening(argv = process.argv.slice(2)) {
           }),
       });
       process.stdout.write(`${JSON.stringify({ portfolioRefresh })}\n`);
-      if (!octoberShadow.deferred && portfolioRefresh.status !== "FAILED")
+      pipelineStatus.actualPortfolio = portfolioRefresh.status;
+      pipelineStatus.models =
+        "status" in octoberShadow && octoberShadow.status === "FAILED"
+          ? "FAILED"
+          : octoberShadow.deferred
+            ? "WAITING_INPUT"
+            : "COMPLETED";
+      if (!octoberShadow.deferred && portfolioRefresh.status !== "FAILED") {
         await completeScreeningPublication(client, options.supabaseUserId, webCache);
+        pipelineStatus.publication = "COMPLETED";
+      } else pipelineStatus.publication = "WAITING_FOLLOWUP";
       process.stdout.write(`${JSON.stringify({ octoberShadow })}\n`);
     } else {
       process.stdout.write(
         `${JSON.stringify({ krPublication, financialSideEffects: "SKIPPED" })}\n`,
       );
     }
+    await writeScreeningJson(bundleFile, bundle);
+    await writeFile(
+      path.join(outputDir, "screening-summary.json"),
+      JSON.stringify(summary, null, 2),
+    );
     releaseSourcePayloads(inputs);
     await Promise.all([
       uploadScreeningJsonFile(client, resultPath, bundleFile),

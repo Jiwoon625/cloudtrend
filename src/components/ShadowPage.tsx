@@ -13,6 +13,10 @@ export function ShadowPage() {
             유지되며, 자산배분 비교는 명시된 모델 환율을 사용합니다.
           </p>
         </header>
+        <p className="text-sm text-muted-foreground">
+          모델별 마지막 기록일이 다르면 수익률을 직접 비교하지 마세요. 주식병합·분할로 가격 기준이
+          변경된 구간은 증빙 대사 후 반영하며, 확인되지 않은 수량이나 수익률은 추정하지 않습니다.
+        </p>
         <OctoberShadowSummary />
       </div>
     </AppShell>

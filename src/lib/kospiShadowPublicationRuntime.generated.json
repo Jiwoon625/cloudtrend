@@ -45,7 +45,7 @@
       "src/lib/engine/verifiedKrIndexMembership.ts": "sha256:db197a0db126e17d102c3c0faab69f5a5a2adef74b4a4821d5d15b7d012a3424",
       "src/lib/engine/vfConfig.ts": "sha256:d5b6fa115ff765785ead12764a29f10df2da80833de63f68af48f97d76e77573",
       "src/lib/integratedAllocationRuntimeAdmission.ts": "sha256:190f2483aa6829097fdccce8b71b242a302810f51d268a19c20b01164c6a8170",
-      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:581ba1b2e828ec5c5d66abc7931bf01f2e5f6cbbb523647e99cb779384c2287f",
+      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:8ee2290ab2c0395afab76b777dba90fa64d7186d995ec9a20e35f37f7b1c97c9",
       "src/lib/kospiShadowEquivalence.ts": "sha256:2789f238279fbbb1cbf39296201dc1d24b1233c2dc784961d56d3ba945f62a42",
       "src/lib/kospiShadowSeries.ts": "sha256:6b086d777d8ca77ac07c71d8e765ac31ff9f92c3769828637a4ca5946c0b000e",
       "src/lib/kospiShadowStore.ts": "sha256:48a47b264e9d420573f71d09a094742d3b130f67bb04c987ec2b9188cc7b18f1",
@@ -58,7 +58,7 @@
       "src/lib/ledger/krShadowDecision.ts": "sha256:119a087fa3d90b05ac0fa183ab9b40e4acbb6495871dd511d11a220c7bd180fc",
       "src/lib/ledger/modelSeries.ts": "sha256:63a758daf1abfc74bfcba395d6b21693f0185a48c206e064fa8eb76d4d1693ce",
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:9c8b5e98035e53d81dedc58c43f7ddf8678ad835bbe449a21d63088dabd76a32",
-      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:eac62ab927b02aac6f5e41b7f86562c000fbc178d1072862bd1238661460b115",
+      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:8df9e173f34ef232b8ec04b1611ba796a4fb8dd011338b90cbd20a9b02f3714a",
       "src/lib/sourceData.ts": "sha256:2f2f313ed65a34e83a0705cf3a61ecd4166d34b68193c1f5998fbf9e61b44390",
       "src/lib/sourceTimingEvidence.ts": "sha256:ef72ba92c6778012e3e8f0844957bf91e5169687fc3d8d19628e03e761df0599",
       "src/lib/usCandidatePriority.ts": "sha256:b56ffa6bb73880e9f9ac737b70d42537d1e661c6970491a1a53381d1bbb4092b"
@@ -111,7 +111,7 @@
       "src/lib/engine/verifiedKrIndexMembership.ts": "sha256:64494a205a21b81321eae809aa27908fcf046e10c418ea45fa711d76eb204556",
       "src/lib/engine/vfConfig.ts": "sha256:223a3c3f8ce733c8dade8496b1aff5af2b4894f110232ea05c03a9376c8c48b1",
       "src/lib/integratedAllocationRuntimeAdmission.ts": "sha256:0d1c3c9696a969a06f31fb277de8c280afc2fb473d1c4ba4d9d2521cfe2f213d",
-      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:d2a0cb4840c070069be9f4ebb2169d77497e94e17228d05e1f8fe9480deeeac7",
+      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:9c721a2486eaa969b0acbb19bb97a1360a0637671eae12df5c8f3dbaa20bfa01",
       "src/lib/kospiShadowEquivalence.ts": "sha256:a9e5ee98fa2897663638920cda44733800957f7acffe275ce665501a8407b3c0",
       "src/lib/kospiShadowSeries.ts": "sha256:c401249c9c16ea688ac21651a88fe0f5b9ae72e5b03858d93ec63401e810bf67",
       "src/lib/kospiShadowStore.ts": "sha256:45bc1d1df7ce78393c7fe29449ffdd9c77ab0e9214d864677eb8b4738c0c4550",
@@ -124,11 +124,11 @@
       "src/lib/ledger/krShadowDecision.ts": "sha256:10f576d585622fcba52e78f3cd2bc6b182d484a747f054af7a2aca507aca6b9b",
       "src/lib/ledger/modelSeries.ts": "sha256:976a23c3ca6c4ef7fa9bd35ef3494689c9dbd89d247a2decc7b1f05507d00e6f",
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:7bed0267e32a379849e76a154f082706767585cd4bc42961c1b2b40693d0a741",
-      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:60d3f495ffa8f955574c00418dd8afa54f4f45cf269d88ca42acb0a6f21f0922",
+      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:8b0ad3cc849dfce274ba81482c1091606ab99f493800bcae967cf70f0a532b27",
       "src/lib/sourceData.ts": "sha256:3553fe89ad60adb413fd9ef79e00a55e3873c6038a1e090bc3e982166d7d9a5b",
       "src/lib/sourceTimingEvidence.ts": "sha256:6a83fcaf64adead3ac7765d06e08a09a7eee076688c08841dda1a2380bf097b5",
       "src/lib/usCandidatePriority.ts": "sha256:9a58e7d7999f00a2051d72321cad62d06af671ce069d5d110a5899abe3bbc3eb"
     }
   },
-  "codeHash": "sha256:55dcf41767160a6b507422447ee6a4818b34a41a55205128086bbce6d058c990"
+  "codeHash": "sha256:44302163927c05ea07d2ade57b747f03e29d7ab601ccb9f173bd80b175c868e5"
 }

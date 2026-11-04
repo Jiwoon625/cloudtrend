@@ -91,3 +91,14 @@ it("does not render beta archive metadata or summaries in reviewed-input details
     expect(display).not.toContain(text);
   expect(input).toEqual(before);
 });
+
+it("rejects duplicate or reversed model valuation dates", async () => {
+  const input = await restartSummary(true);
+  input.books[0]!.history = [
+    { date: "2026-10-12", nav: 100, benchmark: null },
+    { date: "2026-10-12", nav: 110, benchmark: null },
+  ];
+  expect(websiteShadowSummary(input)?.books).toEqual([]);
+  input.books[0]!.history.reverse();
+  expect(websiteShadowSummary(input)?.books).toEqual([]);
+});

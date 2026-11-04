@@ -57,6 +57,10 @@ export function ActualPerformancePanel({
                 ? "일별 자료 대조 필요 · 미확정 항목 있음"
                 : "대조된 일별 성과"}
           </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            성과 기준일: {view.points.at(-1)?.date ?? "일별 평가 대기"}. 전략과 비교할 때는 같은
+            시작일·종료일·통화를 사용하고 외부 입출금을 조정해야 합니다.
+          </p>
           <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-4">
             {[
               ["시작 배정 현금", amount(view.baselineNav, view.baseCurrency)],

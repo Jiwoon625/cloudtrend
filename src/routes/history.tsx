@@ -1,3 +1,4 @@
+import { supabase } from "@/lib/cloud";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -58,6 +59,23 @@ function HistoryPage() {
     [q.data, date, version, market, strategy],
   );
   const selected = runs.find((s) => historyRecordKey(s) === run) ?? runs[0];
+  const stageQuery = useQuery({
+    queryKey: ["screening-stage-status", selected?.runId],
+    enabled: !!selected?.runId && selected.market !== "US",
+    retry: false,
+    queryFn: async () => {
+      const { data: auth, error: authError } = await supabase.auth.getUser();
+      if (authError || !auth.user) throw new Error("로그인 확인 필요");
+      const { data, error } = await supabase
+        .from("analysis_runs")
+        .select("summary")
+        .eq("user_id", auth.user.id)
+        .eq("id", `screening-${selected!.runId}`)
+        .maybeSingle();
+      if (error) throw error;
+      return (data?.summary?.pipelineStatus as Record<string, string> | undefined) ?? null;
+    },
+  });
   const detail = useQuery({
     ...screeningArchiveQueryOptions(selected ?? { asOfDate: "", savedAt: "" }),
     enabled: !!selected,
@@ -178,6 +196,20 @@ function HistoryPage() {
               </option>
             ))}
           </select>
+          <p role="status" className="text-xs text-muted-foreground">
+            {stageQuery.isError
+              ? "단계별 상태 조회 실패"
+              : stageQuery.isFetching
+                ? "단계별 상태 확인 중…"
+                : stageQuery.data
+                  ? Object.entries(stageQuery.data)
+                      .map(
+                        ([key, value]) =>
+                          `${({ screening: "스크리닝", actualPortfolio: "실제 평가", models: "모델 기록", publication: "완료 증빙" } as Record<string, string>)[key] ?? key}: ${({ COMPLETED: "완료", FAILED: "실패", WAITING_INPUT: "자료 대기", WAITING_FOLLOWUP: "후속 처리 대기", NOT_RUN: "미실행", SKIPPED_PRELIMINARY: "예비자료 · 보류" } as Record<string, string>)[value] ?? value}`,
+                      )
+                      .join(" · ")
+                  : "단계별 상태 미기록"}
+          </p>
           {!selected.runId && selected.market !== "US" ? (
             <p className="text-xs text-muted-foreground">
               과거 기록에서 시장이 저장되지 않은 종목은 한국 전체에서 조회할 수 있습니다.
