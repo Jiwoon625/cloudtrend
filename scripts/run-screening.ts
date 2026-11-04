@@ -331,6 +331,10 @@ export async function runScreening(argv = process.argv.slice(2)) {
               pipelineStatus.actualPortfolio = "FAILED";
               return refreshed;
             }
+            if (analysis.asOfDate < "2026-10-12") {
+              pipelineStatus.actualPortfolio = refreshed.status;
+              return refreshed;
+            }
             const history = await publishAllocatedPerformanceHistory(
               client,
               options.supabaseUserId,

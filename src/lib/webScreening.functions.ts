@@ -234,7 +234,10 @@ export async function runWebScreeningForUser(
           calculatedAt: null,
         }));
         pipelineStatus.actualPortfolio = portfolioRefresh.status;
-        if (portfolioRefresh.status !== "FAILED") {
+        if (
+          portfolioRefresh.status !== "FAILED" &&
+          cached.payload.analysis.asOfDate >= "2026-10-12"
+        ) {
           const history = await publishCachedDomesticActualHistory(client, userId, {
             sourceHash: fingerprint,
             throughDate: cached.payload.analysis.asOfDate,
@@ -332,7 +335,7 @@ export async function runWebScreeningForUser(
 
     pipelineStatus.actualPortfolio =
       portfolioRefresh.status === "PRELIMINARY" ? "SKIPPED_PRELIMINARY" : portfolioRefresh.status;
-    if (!preliminary && portfolioRefresh.status !== "FAILED") {
+    if (!preliminary && portfolioRefresh.status !== "FAILED" && analysis.asOfDate >= "2026-10-12") {
       const actualHistory = await publishAllocatedPerformanceHistory(client, userId, {
         currency: "KRW",
         sourceHash: fingerprint,

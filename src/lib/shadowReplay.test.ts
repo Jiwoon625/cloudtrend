@@ -47,7 +47,7 @@ const allocation = vi.hoisted(() => ({
 vi.mock("./integratedAllocationReplay.server", () => ({
   stageIntegratedKrEvidence: allocation.stageKr,
   stageIntegratedUsEvidence: allocation.stageUs,
-  replayIntegratedAllocation: allocation.replay,
+  replayIntegratedAllocationAvailable: allocation.replay,
 }));
 afterEach(() => {
   expect(allocation.stageKr).not.toHaveBeenCalled();

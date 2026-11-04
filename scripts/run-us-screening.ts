@@ -90,8 +90,10 @@ export async function runUsScreening(
 
   const runId = `us-${ingest.as_of_date}-${ingest.data_hash}`;
   const stages = initialScreeningStages();
-  const saveStages = () => saveScreeningStages(client, userId, runId, stages);
+  const saveStages = () =>
+    legacyOperating ? Promise.resolve() : saveScreeningStages(client, userId, runId, stages);
   const refreshActualHistory = async () => {
+    if (legacyOperating) return;
     stages.actualPortfolio = "RUNNING";
     await saveStages();
     try {
