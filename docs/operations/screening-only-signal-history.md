@@ -2,7 +2,7 @@
 
 Daily KR/ETF CLI, authenticated web screening, and US screening no longer call strategy/Shadow replay, actual valuation refresh, allocated performance publishing, or benchmark accounting. Integrated allocation was already disconnected. Existing ledgers and evidence are preserved under the archive navigation; quarterly research remains an explicit backtest-collector operation, not a scheduled model writer.
 
-The scheduled signal-only workflow checks available owner-private source data daily at 22:25 UTC (07:25 KST). It does **not** run or modify the Colab collectors. Without source data, it reports pending dates; it cannot produce contemporaneous market observations. Upload-triggered and browser executions also update the journal. KR reconstruction processes at most five missing dates per invocation and checkpoints each completed date. Retries reuse completed markers instead of recalculating prior days.
+The automatic daily check was removed at the owner’s request. The signal-only workflow runs only on explicit workflow dispatch; pull requests run validation without recording signals. It does **not** run or modify the Colab collectors. Without source data, it reports pending dates; it cannot produce contemporaneous market observations. Upload-triggered and browser executions also update the journal. KR reconstruction processes at most five missing dates per invocation and checkpoints each completed date. Retries reuse completed markers instead of recalculating prior days.
 
 ## Preserved evidence
 
