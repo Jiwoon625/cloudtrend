@@ -41,7 +41,7 @@ describe("Shadow persistence and source integration boundaries", () => {
     const w = read(".github/workflows/kospi-shadow.yml");
     expect(w).toContain("cancel-in-progress: false");
     expect(w).toContain("github.event_name == 'workflow_dispatch'");
-    expect(w).not.toMatch(/\n  (workflow_run|schedule|push):/);
+    expect(w).not.toMatch(/\n {2}(workflow_run|schedule|push):/);
     expect(w).not.toContain("pull_request_target");
   });
 });

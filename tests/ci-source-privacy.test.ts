@@ -68,8 +68,8 @@ describe("public PR validation source privacy", () => {
     const [kospiVerify, kospiAdvance] = readWorkflow("kospi-shadow.yml").split("  advance:\n");
     expect(kospiVerify).not.toContain("secrets.SUPABASE");
     expect(kospiAdvance).toContain("github.event_name == 'workflow_dispatch'");
-    expect(kospiAdvance).toContain("github.event_name == 'workflow_run'");
-    expect(kospiAdvance).toContain("github.event.workflow_run.event != 'pull_request'");
+    expect(kospiAdvance).not.toContain("github.event_name == 'workflow_run'");
+    expect(kospiAdvance).toContain("github.ref == 'refs/heads/main'");
   });
 
   it("keeps ETF research downloads and production persistence push-only", () => {

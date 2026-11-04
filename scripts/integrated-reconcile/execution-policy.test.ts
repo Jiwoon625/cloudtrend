@@ -121,5 +121,5 @@ it("unchanged collector multi-day atomic chain carries explicit apply-and-screen
 });
 
 it("has no automatic reconciliation subscription", () => {
-  expect(workflow).not.toMatch(/\n  (workflow_run|schedule|push):/);
+  expect(workflow).not.toMatch(/\n {2}(workflow_run|schedule|push):/);
 });
