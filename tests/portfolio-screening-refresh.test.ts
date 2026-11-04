@@ -452,3 +452,17 @@ it("a newer generation during receipt lookup fails visibly without overwriting h
     publicationId: "newer-generation",
   });
 });
+
+it("rejects a source change between cache admission and daily journal loading", async () => {
+  cache();
+  mocks.load.mockResolvedValue({
+    sources: [{ ...sources[0], data_hash: "changed" }],
+    texts: ["new source"],
+  });
+  await expect(runWebScreeningForUser(client, "owner", DEFAULT_SCORING_CONFIG)).rejects.toThrow(
+    "신호 이력 점검 중",
+  );
+  expect(mocks.journal).not.toHaveBeenCalled();
+  expect(mocks.portfolio).not.toHaveBeenCalled();
+  expect(mocks.shadow).not.toHaveBeenCalled();
+});

@@ -217,7 +217,11 @@ export async function runWebScreeningForUser(
           throw new Error(
             "재사용 확인 중 스크리닝 입력이나 결과가 변경됐습니다. 최신 결과를 다시 확인하세요.",
           );
-        const { texts } = await loadActiveSources(client, userId);
+        const { sources: journalSources, texts } = await loadActiveSources(client, userId);
+        if (inputFingerprint(journalSources, config) !== sourceFingerprint)
+          throw new Error(
+            "신호 이력 점검 중 원천데이터가 변경됐습니다. 최신 입력으로 다시 시도하세요.",
+          );
         const journalDataset = parseManualMarketData(texts).dataset;
         const pipelineStatus = initialScreeningStages();
         await runSignalJournalStage(

@@ -25,6 +25,8 @@ export async function publishUsSignalJournal(
     throughDate: string;
     sourceHash: string;
     collectedAt: string;
+    /** Each historical day needs its own validated collector metadata. */
+    validatedDates?: readonly string[];
   },
 ) {
   const { rules, currentCodeHash } = await signalRules(
@@ -69,7 +71,7 @@ export async function publishUsSignalJournal(
       continue;
     }
     const rows = input.rows.filter((r) => r.date === date);
-    if (!rows.length) {
+    if (!rows.length || !(input.validatedDates ?? [input.throughDate]).includes(date)) {
       pending.push({ date, reason: "해당 거래일 전체 종목 자료 없음" });
       continue;
     }
