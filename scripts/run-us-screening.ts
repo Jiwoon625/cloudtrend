@@ -95,7 +95,8 @@ export async function runUsScreening(
   if (lastHistory && lastHistory.date > ingest.as_of_date)
     throw new Error("Past US history cannot be replaced");
   if (
-    lastHistory?.date === ingest.as_of_date &&
+    lastHistory &&
+    lastHistory.date === ingest.as_of_date &&
     (lastHistory.data_hash !== ingest.data_hash ||
       lastHistory.rule_version !== US_PROSPECTIVE_RULE_VERSION)
   )
