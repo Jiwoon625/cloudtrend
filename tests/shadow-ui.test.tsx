@@ -118,7 +118,8 @@ describe("unified Shadow UI", () => {
     const html = renderToStaticMarkup(<ShadowPage />);
     expect(html).not.toContain("별도 KOSPI");
     expect(html).not.toContain('id="separate-kospi-shadow"');
-    expect(html).toContain(">Shadow</h1>");
+    expect(html).toContain(">Shadow · 보관 기록</h1>");
+    expect(html).toContain("새로고침은 저장된 기록만 다시 불러옵니다");
     expect(html).not.toContain("Shadow · 10월 12일 신규 기록");
     expect(html).toContain("2026-10-12");
     for (const text of [
