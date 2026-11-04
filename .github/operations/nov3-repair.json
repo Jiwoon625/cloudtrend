@@ -1,1 +1,1 @@
-{"version":1,"workflow":"cloudtrend-analysis.yml","inputs":{"force":false},"after_recovery_run":41800128994,"expected_main_sha":"0d9e9c2112490dc7bd66f40b95118c2e40eef687","request":"verify-normal-kr-after-five-book-recovery"}
+{"version":1,"workflow":"us-prospective-screening.yml","inputs":{"expected_server_code_sha":"0d9e9c2112490dc7bd66f40b95118c2e40eef687"},"after_recovery_run":41800128994,"expected_main_sha":"0d9e9c2112490dc7bd66f40b95118c2e40eef687","request":"verify-normal-us-after-operating-isolation"}
