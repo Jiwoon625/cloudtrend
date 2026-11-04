@@ -1,0 +1,107 @@
+name: KOSPI Nov3 reviewed recovery
+on:
+  pull_request:
+    paths:
+      - scripts/kospi-nov3-recovery/**
+      - scripts/kr-nov3-recovery/**
+      - scripts/build-kospi-nov3-recovery.mjs
+      - .github/workflows/kospi-nov3-recovery.yml
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [PLAN, AUTHORIZE, VALIDATE, APPLY]
+        required: true
+      expected_capsule_hash:
+        description: Exact reviewed owner-private compact capsule hash (blank only for PLAN)
+        type: string
+        required: false
+      expected_approval_hash:
+        description: Exact separately approved Nov3 writer/output authority
+        type: string
+        required: false
+permissions:
+  contents: read
+concurrency:
+  group: kospi-prospective-shadow
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit -p scripts/kospi-nov3-recovery/tsconfig.json
+      - run: npx vitest run scripts/kospi-nov3-recovery
+      - run: node scripts/build-kospi-nov3-recovery.mjs
+  recovery:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      RECOVERY_CONCURRENCY_GROUP: kospi-prospective-shadow
+      RECOVERY_MODE: ${{ inputs.mode }}
+      EXPECTED_CAPSULE_HASH: ${{ inputs.expected_capsule_hash }}
+      EXPECTED_APPROVAL_HASH: ${{ inputs.expected_approval_hash }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify source identity and separate recovery code
+        run: |
+          git merge-base --is-ancestor 67802773929033b17b76e1ffee5db76ba4078fd4 HEAD
+          node --experimental-strip-types scripts/verify-kospi-shadow-runtime.ts
+          npx tsc --noEmit -p scripts/kospi-nov3-recovery/tsconfig.json
+          npx vitest run scripts/kospi-nov3-recovery
+          node scripts/build-kospi-nov3-recovery.mjs
+      - name: Read exact reviewed private evidence
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: |
+          if [[ "$RECOVERY_MODE" == "PLAN" ]]; then
+            node "$RUNNER_TEMP/kospi-nov3-code/transport.mjs" capture
+          else
+            node "$RUNNER_TEMP/kospi-nov3-code/transport.mjs" materialize
+          fi
+      - name: Reproduce complete plan without credentials
+        run: |
+          if [[ "$RECOVERY_MODE" == "PLAN" ]]; then
+            node "$RUNNER_TEMP/kospi-nov3-code/transport.mjs" compute-capture
+          else
+            node "$RUNNER_TEMP/kospi-nov3-code/transport.mjs" compute
+          fi
+      - name: Archive separately reviewed KR companion plan
+        if: inputs.mode == 'PLAN'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          KR_NOV3_AUTH_ENTRY: "true"
+        run: node "$RUNNER_TEMP/kospi-nov3-code/kr-transport.mjs" archive-plan
+      - name: Validate or append only exact reviewed Shadow outputs
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: |
+          if [[ "$RECOVERY_MODE" == "PLAN" ]]; then
+            node "$RUNNER_TEMP/kospi-nov3-code/transport.mjs" archive-plan
+          else
+            node "$RUNNER_TEMP/kospi-nov3-code/transport.mjs" finish
+          fi
+      - name: Delete ephemeral private evidence
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/kospi-nov3-private" "$RUNNER_TEMP/kospi-nov3-code" "$RUNNER_TEMP/kr-nov3-private"

@@ -4,10 +4,12 @@ import { canonicalSeriesJson } from "./ledger/modelSeries";
 import {
   KR_SOURCE_VINTAGE_REVIEW_ID,
   KR_SOURCE_VINTAGE_SUCCESSOR_REVIEW_ID,
+  KR_SOURCE_VINTAGE_THIRD_REVIEW_ID,
   verifyKrSourceVintagePrivateApproval,
   type KrSourceVintagePrivateApproval,
   type KrSourceVintagePrivateApprovalV1,
   type KrSourceVintagePrivateApprovalV2,
+  type KrSourceVintagePrivateApprovalV3,
 } from "./ledger/krSourceVintage";
 
 /** Existing owner-only append-only audit is the approval registry. Receipt bodies
@@ -44,17 +46,21 @@ export async function readKrSourceVintageApproval(
     }
     return selected;
   };
-  const [registry, receipt, nextRegistry, nextReceipt] = await Promise.all([
-    read("krSourceVintageApproval", KR_SOURCE_VINTAGE_REVIEW_ID),
-    read("krSourceVintageReview", KR_SOURCE_VINTAGE_REVIEW_ID),
-    read("krSourceVintageApproval", KR_SOURCE_VINTAGE_SUCCESSOR_REVIEW_ID),
-    read("krSourceVintageReview", KR_SOURCE_VINTAGE_SUCCESSOR_REVIEW_ID),
-  ]);
-  if (!registry && !receipt && !nextRegistry && !nextReceipt) return null;
+  const [registry, receipt, nextRegistry, nextReceipt, thirdRegistry, thirdReceipt] =
+    await Promise.all([
+      read("krSourceVintageApproval", KR_SOURCE_VINTAGE_REVIEW_ID),
+      read("krSourceVintageReview", KR_SOURCE_VINTAGE_REVIEW_ID),
+      read("krSourceVintageApproval", KR_SOURCE_VINTAGE_SUCCESSOR_REVIEW_ID),
+      read("krSourceVintageReview", KR_SOURCE_VINTAGE_SUCCESSOR_REVIEW_ID),
+      read("krSourceVintageApproval", KR_SOURCE_VINTAGE_THIRD_REVIEW_ID),
+      read("krSourceVintageReview", KR_SOURCE_VINTAGE_THIRD_REVIEW_ID),
+    ]);
+  if (!registry && !receipt && !nextRegistry && !nextReceipt && !thirdRegistry && !thirdReceipt)
+    return null;
   if (!registry || !receipt) throw new Error("Incomplete private KR source vintage approval");
   const predecessor = { registry, receipt } as KrSourceVintagePrivateApprovalV1;
   await verifyKrSourceVintagePrivateApproval(predecessor);
-  if (!nextRegistry && !nextReceipt) return predecessor;
+  if (!nextRegistry && !nextReceipt && !thirdRegistry && !thirdReceipt) return predecessor;
   if (!nextRegistry || !nextReceipt)
     throw new Error("Incomplete private KR source vintage successor");
   const result = {
@@ -63,6 +69,18 @@ export async function readKrSourceVintageApproval(
     predecessor,
   } as KrSourceVintagePrivateApprovalV2;
   const verified = await verifyKrSourceVintagePrivateApproval(result);
+  let latest: KrSourceVintagePrivateApproval = result;
+  if (thirdRegistry || thirdReceipt) {
+    if (!thirdRegistry || !thirdReceipt)
+      throw new Error("Incomplete private KR source vintage third cohort");
+    const third = {
+      registry: thirdRegistry,
+      receipt: thirdReceipt,
+      predecessor: result,
+    } as KrSourceVintagePrivateApprovalV3;
+    const thirdVerified = await verifyKrSourceVintagePrivateApproval(third);
+    if (!publicationDate || publicationDate >= thirdVerified.activationDate) latest = third;
+  }
   // Authority activation is explicit, never the position of a review in an aggregate list.
-  return publicationDate && publicationDate < verified.activationDate ? predecessor : result;
+  return publicationDate && publicationDate < verified.activationDate ? predecessor : latest;
 }

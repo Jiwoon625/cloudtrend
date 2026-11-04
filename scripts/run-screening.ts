@@ -1,3 +1,4 @@
+import { runScreeningFollowups } from "./screening-followups";
 import { applyKrScreeningPublication } from "../src/lib/krScreeningPublication";
 import { verifyKrScreeningPublication } from "../src/lib/krScreeningPublication.server";
 import { loadOperationalIndex } from "../src/lib/operationalUnderlyingIndex.server";
@@ -239,7 +240,14 @@ export async function runScreening(argv = process.argv.slice(2)) {
   const coreSnapshot = buildSnapshot(analysis, sourceRegisteredAt, runId);
   // Shadow is replayed separately from the latest investment-screen view.
   const previous = await loadPreviousSnapshot(client, options.supabaseUserId, coreSnapshot.date);
+  const pipelineStatus = {
+    screening: "COMPLETED",
+    actualPortfolio: preliminary ? "SKIPPED_PRELIMINARY" : "NOT_RUN",
+    models: preliminary ? "SKIPPED_PRELIMINARY" : "NOT_RUN",
+    publication: "NOT_RUN",
+  };
   const summary = {
+    pipelineStatus,
     ...buildScreeningSummary(analysis, coreSnapshot, previous),
     ...(preliminary ? { krPublication } : {}),
     etfScoreContinuity: etfReportScoreSummary(analysis.rows, analysis.asOfDate),
@@ -314,39 +322,51 @@ export async function runScreening(argv = process.argv.slice(2)) {
 
     memory("cache-publish-end");
     if (!preliminary) {
-      const octoberShadow = await replayKrShadow({
-        client,
-        userId: options.supabaseUserId,
-        dataset,
-        config,
-        calculatedAt: createdAt,
-        mode: "service",
-        sources: inputs.map((source) => ({
-          ...(source.sourceRecord ?? {}),
-          id: source.id,
-          min_date: source.validation.stats.minDate,
-          max_date: source.validation.stats.maxDate,
-          activated_at: source.sourceRecord?.activated_at ?? null,
-          created_at: source.sourceRecord?.created_at ?? source.savedAt,
-          savedAt: source.savedAt,
-          validation_result: source.sourceRecord?.validation_result,
-        })),
+      const { portfolioRefresh, octoberShadow } = await runScreeningFollowups({
+        refreshPortfolio: () => refreshPortfolioAfterScreening(client, options.supabaseUserId),
+        replayModels: () =>
+          replayKrShadow({
+            client,
+            userId: options.supabaseUserId,
+            dataset,
+            config,
+            calculatedAt: createdAt,
+            mode: "service",
+            sources: inputs.map((source) => ({
+              ...(source.sourceRecord ?? {}),
+              id: source.id,
+              min_date: source.validation.stats.minDate,
+              max_date: source.validation.stats.maxDate,
+              activated_at: source.sourceRecord?.activated_at ?? null,
+              created_at: source.sourceRecord?.created_at ?? source.savedAt,
+              savedAt: source.savedAt,
+              validation_result: source.sourceRecord?.validation_result,
+            })),
+          }),
       });
-      // ACTUAL-book integrity failures must not block independent MODEL Shadow publication.
-      // CLI inputs are canonicalized; portfolio price loading must keep the original raw semantics.
-      const portfolioRefresh = await refreshPortfolioAfterScreening(
-        client,
-        options.supabaseUserId,
-      ).catch(() => ({ status: "FAILED" as const, asOfDate: null, calculatedAt: null }));
       process.stdout.write(`${JSON.stringify({ portfolioRefresh })}\n`);
-      if (!octoberShadow.deferred && portfolioRefresh.status !== "FAILED")
+      pipelineStatus.actualPortfolio = portfolioRefresh.status;
+      pipelineStatus.models =
+        "status" in octoberShadow && octoberShadow.status === "FAILED"
+          ? "FAILED"
+          : octoberShadow.deferred
+            ? "WAITING_INPUT"
+            : "COMPLETED";
+      if (!octoberShadow.deferred && portfolioRefresh.status !== "FAILED") {
         await completeScreeningPublication(client, options.supabaseUserId, webCache);
+        pipelineStatus.publication = "COMPLETED";
+      } else pipelineStatus.publication = "WAITING_FOLLOWUP";
       process.stdout.write(`${JSON.stringify({ octoberShadow })}\n`);
     } else {
       process.stdout.write(
         `${JSON.stringify({ krPublication, financialSideEffects: "SKIPPED" })}\n`,
       );
     }
+    await writeScreeningJson(bundleFile, bundle);
+    await writeFile(
+      path.join(outputDir, "screening-summary.json"),
+      JSON.stringify(summary, null, 2),
+    );
     releaseSourcePayloads(inputs);
     await Promise.all([
       uploadScreeningJsonFile(client, resultPath, bundleFile),

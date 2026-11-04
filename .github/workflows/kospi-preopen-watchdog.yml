@@ -1,0 +1,39 @@
+name: KOSPI pre-open evidence watchdog
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/check-kospi-preopen.ts
+      - tests/shadow-preopen-watchdog.test.ts
+      - .github/workflows/kospi-preopen-watchdog.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run --config vitest.shadow.config.ts tests/shadow-preopen-watchdog.test.ts
+  observe:
+    needs: verify
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify exact pre-open manifest without publishing
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: npx vite-node --config scripts/kospi-shadow-runtime.config.ts scripts/check-kospi-preopen.ts --run

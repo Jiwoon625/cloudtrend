@@ -1,3 +1,4 @@
+import { validDate } from "./ledger/date";
 import { RESTART_ACCOUNTING_START, RESTART_SERIES_VERSION } from "./ledger/modelSeries";
 import type { OctoberShadowSummary } from "./octoberShadowSummary.server";
 
@@ -17,7 +18,13 @@ export function websiteShadowSummary(
         [book.firstSessionDate, book.latestSessionDate].every(
           (date) => date === null || date >= WEBSITE_PERFORMANCE_START,
         ) &&
-        (book.history ?? []).every((point) => point.date >= WEBSITE_PERFORMANCE_START) &&
+        (book.history ?? []).every(
+          (point, index, history) =>
+            validDate(point.date) &&
+            point.date >= WEBSITE_PERFORMANCE_START &&
+            (index === 0 || point.date > history[index - 1]!.date) &&
+            (point.nav === null || (Number.isFinite(point.nav) && point.nav >= 0)),
+        ) &&
         (book.trades ?? []).every((trade) => trade.date >= WEBSITE_PERFORMANCE_START) &&
         book.holdings.every((holding) => holding.entryDate >= WEBSITE_PERFORMANCE_START),
     ),
