@@ -1,11 +1,6 @@
-name: Daily screening signal history
+name: Manual screening signal history
 on:
-  schedule:
-    - cron: "25 22 * * *"
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: [.github/workflows/daily-signal-history.yml]
   pull_request:
     paths:
       - .github/workflows/daily-signal-history.yml
@@ -33,7 +28,7 @@ jobs:
       - run: npx vite-node --script scripts/build-signal-manifest.ts
       - run: npx vitest run src/lib/signalJournal.server.test.ts src/lib/signalJournalReplay.test.ts tests/screening-only-boundary.test.ts tests/portfolio-screening-refresh.test.ts tests/us-current-ledger-boundary.test.ts src/lib/screeningStages.test.ts
   record:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch'
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 45
