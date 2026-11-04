@@ -14,8 +14,10 @@ const plan = (dates = ["2026-10-27", "2026-10-28", "2026-10-29"]) => {
     sourceUniverseSymbols: symbols,
     requestedCollectionDates: dates,
     events: activeEvents,
-    requestedSymbols: symbols.filter(s => !activeEvents.some(e => e.symbol === s && dates[0]! >= e.tradingHaltDate)),
-    latestExpectedSymbols: symbols.filter(s => !activeEvents.some(e => e.symbol === s)),
+    requestedSymbols: symbols.filter(
+      (s) => !activeEvents.some((e) => e.symbol === s && dates[0]! >= e.tradingHaltDate),
+    ),
+    latestExpectedSymbols: symbols.filter((s) => !activeEvents.some((e) => e.symbol === s)),
   };
 };
 const csv = (dates = ["2026-10-27", "2026-10-28", "2026-10-29"]) =>
@@ -34,13 +36,17 @@ const rows = async (dates?: string[]) => (await validateSourceText(csv(dates), "
 test("mixed range preserves pre-halt keys and requires all healthy latest observations", async () => {
   expect(validateKrEtfLifecycleRows(plan(), await rows())).toEqual(plan());
 });
-test.each([["2026-10-27"], ["2026-10-28"], ["2026-10-29"], ["2026-11-02"], ["2026-11-03"], ["2026-11-04"]])(
-  "exact cessation boundary %s",
-  async (d) => {
-    const dates = [d];
-    expect(validateKrEtfLifecycleRows(plan(dates), await rows(dates))).toEqual(plan(dates));
-  },
-);
+test.each([
+  ["2026-10-27"],
+  ["2026-10-28"],
+  ["2026-10-29"],
+  ["2026-11-02"],
+  ["2026-11-03"],
+  ["2026-11-04"],
+])("exact cessation boundary %s", async (d) => {
+  const dates = [d];
+  expect(validateKrEtfLifecycleRows(plan(dates), await rows(dates))).toEqual(plan(dates));
+});
 test.each(["sourceUrl", "tradingHaltDate", "delistingDate", "name", "symbol"])(
   "rejects changed official event %s",
   (key) => {
