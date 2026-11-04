@@ -19,7 +19,7 @@ import process from "node:process";
 
 import { buildScreeningSummary } from "../src/lib/analysisRunBundle";
 import { appendEtfReportEvidence, etfReportScoreSummary } from "../src/lib/etfReportScore";
-import { runFullMarketAnalysis } from "../src/lib/engine/fullMarketAnalysis";
+import { runCurrentScreening } from "../src/lib/currentScreening";
 import { parseManualMarketDataWithReferences as parseManualMarketData } from "../src/lib/krxReviewReferenceParser";
 import {
   DEFAULT_SCORING_CONFIG,
@@ -130,9 +130,9 @@ function analyzeInputs(
   config: ScoringConfig,
   parsed = parseInputs(inputs),
 ) {
-  const result = runFullMarketAnalysis(parsed.dataset, config);
+  const result = runCurrentScreening(parsed.dataset, config);
   memory("analysis-end");
-  return { ...result, stats: parsed.stats };
+  return { ...result, stats: parsed.stats, journalDataset: parsed.dataset };
 }
 
 function releaseSourcePayloads(inputs: Awaited<ReturnType<typeof loadAnalysisSourceInputs>>) {
@@ -227,6 +227,7 @@ export async function runScreening(argv = process.argv.slice(2)) {
   const {
     analysis: engineAnalysis,
     dataset,
+    journalDataset,
     stats,
   } = analyzeInputs(inputs, config, parsedForReuse);
   const operationalIndex = parsedForReuse
@@ -328,7 +329,7 @@ export async function runScreening(argv = process.argv.slice(2)) {
         () => saveScreeningStages(client, options.supabaseUserId, runId, pipelineStatus),
         () =>
           publishKrSignalJournal(client, options.supabaseUserId, {
-            dataset,
+            dataset: journalDataset,
             config,
             snapshot,
             sourceHash: dataVersion,

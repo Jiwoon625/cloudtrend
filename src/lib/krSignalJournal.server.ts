@@ -3,7 +3,7 @@ import type { MarketDataset } from "./engine/dataset";
 import type { ScoringConfig } from "./engine/scoring";
 import type { ScreeningSnapshot } from "./screeningSnapshot";
 import { buildSnapshot } from "./screeningSnapshot";
-import { runFullMarketAnalysis } from "./engine/fullMarketAnalysis";
+import { runCurrentScreening } from "./currentScreening";
 import { sliceKrDatasetForReplay } from "./shadowReplayCalculation";
 import { screeningPublicationAnalysis } from "./screeningPublicationAnalysis";
 import { appendEtfReportEvidence } from "./etfReportScore";
@@ -84,7 +84,7 @@ export async function publishKrSignalJournal(
       const sliced = sliceKrDatasetForReplay(dataset, date);
       if (sliced.krxReviewObservations) sliced.krxReviewObservations = {};
       const oldConfig = rule.config as ScoringConfig;
-      const { analysis, dataset: prepared } = runFullMarketAnalysis(sliced, oldConfig);
+      const { analysis, dataset: prepared } = runCurrentScreening(sliced, oldConfig);
       const provider = await loadOperationalIndex(
         client,
         owner,

@@ -7,6 +7,7 @@ on:
       - scripts/run-screening.ts
       - scripts/run-us-screening.ts
       - scripts/build-signal-manifest.ts
+      - src/lib/currentScreening*
       - src/lib/*SignalJournal*
       - src/lib/signalJournal*
       - tests/screening-only-boundary.test.ts
@@ -26,7 +27,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx vite-node --script scripts/build-signal-manifest.ts
-      - run: npx vitest run src/lib/signalJournal.server.test.ts src/lib/signalJournalReplay.test.ts tests/screening-only-boundary.test.ts tests/portfolio-screening-refresh.test.ts tests/us-current-ledger-boundary.test.ts src/lib/screeningStages.test.ts
+      - run: npx vitest run src/lib/currentScreening.test.ts src/lib/signalJournal.server.test.ts src/lib/signalJournalReplay.test.ts tests/screening-only-boundary.test.ts tests/portfolio-screening-refresh.test.ts tests/us-current-ledger-boundary.test.ts src/lib/screeningStages.test.ts
   record:
     if: github.event_name == 'workflow_dispatch'
     needs: verify

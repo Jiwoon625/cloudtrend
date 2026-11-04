@@ -21,7 +21,7 @@ vi.mock("./signalJournal.server", () => ({
   saveSignalCoverage: mock.coverage,
   signalSessionCalendar: mock.dates,
 }));
-vi.mock("./engine/fullMarketAnalysis", () => ({ runFullMarketAnalysis: mock.analyze }));
+vi.mock("./currentScreening", () => ({ runCurrentScreening: mock.analyze }));
 vi.mock("./shadowReplayCalculation", () => ({ sliceKrDatasetForReplay: mock.slice }));
 vi.mock("./screeningPublicationAnalysis", () => ({
   screeningPublicationAnalysis: (v: unknown) => v,

@@ -1,10 +1,11 @@
 {
   "version": 1,
-  "codeHash": "fc52ddb2b129c84879a1c734f5bd60b5f716efa6b167da5539a3df037efee286",
+  "codeHash": "4289777db26e0b189e46f4303df73748ed992d81ad41ad5cf2fffea36540f059",
   "usCodeHash": "7d5295a657f752c81088468a2bf7fab6f36f6f9acca5f5673fce52a590b0337c",
   "KR": {
     "version": "screening-signal-engine-v1",
     "files": {
+      "src/lib/currentScreening.ts": "sha256:d7e82849640a55f2eba3574c6a0d4d1efa97ab945f12310a62d1a3996ba9aaba",
       "src/lib/engine/additionalStockSectorMaster.ts": "sha256:654fbd023fe4c5b32b946c199d3db4c06259c32f77a90befb0fd35c7894ea378",
       "src/lib/engine/dataset.ts": "sha256:784821737f364dd422d085b88ecef922cce15e7fe4c3b89b0ae87851e4f97c87",
       "src/lib/engine/etfResearchMapping.json": "sha256:64f1c2583e55a5acef61e8a0ef79e3dcf3c34e2483770053a064f00bdbd1ba06",

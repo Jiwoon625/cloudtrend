@@ -25,9 +25,9 @@ import { readScreeningArchive } from "./screeningArchiveQuery";
 
 it("invalidates all three live calculation caches with the reviewed constituent revision", () => {
   expect([SCREENING_CACHE_VERSION, DASHBOARD_CACHE_VERSION, INSTRUMENT_CACHE_VERSION]).toEqual([
-    "screening-cache-v8-verified-kr-index-20261030-v1",
-    "dashboard-cache-v8-verified-kr-index-20261030-v1",
-    "instrument-cache-v8-verified-kr-index-20261030-v1",
+    "screening-cache-v9-current-price-20261104-v1",
+    "dashboard-cache-v9-current-price-20261104-v1",
+    "instrument-cache-v9-current-price-20261104-v1",
   ]);
 });
 

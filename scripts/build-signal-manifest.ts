@@ -3,7 +3,7 @@ import { shadowEngineManifest } from "./october-shadow-code-manifest";
 const kr = await shadowEngineManifest(
   process.cwd(),
   [
-    "src/lib/engine/fullMarketAnalysis.ts",
+    "src/lib/currentScreening.ts",
     "src/lib/engine/manualDataset.ts",
     "src/lib/shadowReplayCalculation.ts",
     "src/lib/screeningPublicationAnalysis.ts",

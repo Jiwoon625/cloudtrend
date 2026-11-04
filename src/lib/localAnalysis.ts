@@ -5,7 +5,7 @@ import { runBacktest, type BacktestParams, type BacktestResult } from "@/lib/eng
 import { buildAlignedRankingAnalysis } from "@/lib/engine/backtestRankingV5";
 import type { MarketDataset } from "@/lib/engine/dataset";
 import { chartSeries, runAnalysis, scoreHistory } from "@/lib/engine/pipeline";
-import { runFullMarketAnalysis } from "@/lib/engine/fullMarketAnalysis";
+import { runCurrentScreening } from "@/lib/currentScreening";
 import {
   runSectorRotationBacktest,
   type SectorRotationBacktestResult,
@@ -34,7 +34,7 @@ function runLocalMarketAnalysis(
   rawDataset: MarketDataset,
   config: ReturnType<typeof getActiveScoringConfig>,
 ) {
-  const result = runFullMarketAnalysis(rawDataset, config);
+  const result = runCurrentScreening(rawDataset, config);
   return {
     ...result,
     analysis: withKrxReviewReferences(
