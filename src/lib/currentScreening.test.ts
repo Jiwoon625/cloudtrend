@@ -8,6 +8,10 @@ const bar = (tradeDate: string, close = 100) => ({
   high: close,
   low: close,
   volume: 10,
+  tradingValue: close * 10,
+  marketCap: null,
+  foreignNetBuyValue: null,
+  institutionNetBuyValue: null,
 });
 function fixture() {
   return {
@@ -29,7 +33,7 @@ describe("daily price eligibility", () => {
     expect(result.notes.join()).toContain("OLD 과거");
     expect(result.notes.join()).toContain("2026-11-03");
     expect(raw.instruments).toHaveLength(2);
-    expect(raw.bars.OLD).toHaveLength(1);
+    expect(raw.bars["OLD"]).toHaveLength(1);
     expect(raw.notes).toEqual([]);
   });
   it("retains a previously tradable symbol for its historical session", () => {
@@ -44,12 +48,12 @@ describe("daily price eligibility", () => {
   });
   it("includes a symbol again once a valid target price arrives", () => {
     const raw = fixture();
-    raw.bars.OLD.push(bar("2026-11-04"));
+    raw.bars["OLD"]!.push(bar("2026-11-04"));
     expect(currentScreeningDataset(raw).instruments).toHaveLength(2);
   });
   it("does not accept future-only prices or empty universes", () => {
     const raw = fixture();
-    raw.bars.GOOD = [bar("2026-11-05")];
+    raw.bars["GOOD"] = [bar("2026-11-05")];
     expect(() => currentScreeningDataset(raw)).toThrow();
   });
 });
