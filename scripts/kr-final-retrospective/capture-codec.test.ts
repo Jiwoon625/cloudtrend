@@ -118,6 +118,8 @@ describe("lossless bounded capture codec", () => {
     expect(p.dataset.datasetHash).toBe(await hashSeriesValue(c.dataset));
     expect(await hashSeriesValue(p)).not.toBe(await hashSeriesValue(c));
     expect(p.dataset.dataset).not.toHaveProperty("bars");
+    if (p.version !== "kr-final-retrospective-capture-v2")
+      throw Error("small fixture must remain v2");
     expect(p.dataset.dataset.observedBars?.["123ABC"]?.[1]?.close).toBe(0);
   });
   it("preserves backward-compatible V1 including omitted observedBars", async () => {
@@ -166,7 +168,11 @@ describe("lossless bounded capture codec", () => {
       if (target === "datasetHash") p.dataset.datasetHash = `sha256:${"f".repeat(64)}`;
       if (target === "decodedHash") p.decodedCaptureHash = `sha256:${"f".repeat(64)}`;
       if (target === "baseline") p.preservationBaseline = { changed: true };
-      if (target === "observation") p.dataset.dataset.observedBars!["123ABC"]![2]!.close = 99;
+      if (target === "observation") {
+        if (p.version !== "kr-final-retrospective-capture-v2")
+          throw Error("small fixture must remain v2");
+        p.dataset.dataset.observedBars!["123ABC"]![2]!.close = 99;
+      }
       await expect(hydrateFinalCapture(p)).rejects.toThrow();
     }
   });
@@ -255,5 +261,40 @@ describe("bounded canonical UTF8 stream equivalence", () => {
       cycle,
     ])
       expect(() => captureCanonicalProof(value)).toThrow();
+  });
+});
+
+describe("bounded table capture representation", () => {
+  async function tableCapture() {
+    const original = fixture();
+    const stored = await encodeFinalCapture(original, undefined, { format: "table" });
+    if (stored.version !== "kr-final-retrospective-capture-v3")
+      throw Error("table representation required");
+    return { original, stored };
+  }
+  it("restores every original value and missing property, including zero observations", async () => {
+    const { original, stored } = await tableCapture();
+    expect(await hydrateFinalCapture(stored)).toEqual(original);
+    expect(captureCanonicalProof(await hydrateFinalCapture(stored))).toEqual(
+      captureCanonicalProof(original),
+    );
+  });
+  it.each(["value", "shape", "index", "hash"])(
+    "rejects a changed %s before recovery calculation",
+    async (kind) => {
+      const { stored } = await tableCapture();
+      const row = Object.values(stored.dataset.observedTable.rows)[0]![0]!;
+      if (kind === "value") row[1] = "tampered";
+      if (kind === "shape") row[0] = 999999;
+      if (kind === "index") Object.values(stored.dataset.barIndices)[0]![0] = -1;
+      if (kind === "hash") stored.decodedCaptureHash = `sha256:${"f".repeat(64)}`;
+      await expect(hydrateFinalCapture(stored)).rejects.toThrow();
+    },
+  );
+  it("rejects excessive expansion before constructing row objects", async () => {
+    const { unpackObservedTable } = await import("./capture-table-codec");
+    expect(() =>
+      unpackObservedTable({ columns: [["field"]], rows: { SYN: [[0, 1]] } }, 512 * 1024 * 1024),
+    ).toThrow();
   });
 });

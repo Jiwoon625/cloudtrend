@@ -19,13 +19,28 @@ export async function publishAllocatedPerformanceHistory(
     prices: DatedActualPrice[];
   },
 ) {
-  const sourceHash = input.sourceHash.startsWith("sha256:")
+  let sourceHash = input.sourceHash.startsWith("sha256:")
     ? input.sourceHash
     : `sha256:${input.sourceHash}`;
   if (!/^sha256:[a-f0-9]{64}$/.test(sourceHash)) throw new Error("성과 가격 자료 식별 오류");
   const system = input.currency === "KRW" ? "portfolio_ledgers" : "us_actual_portfolio_ledgers";
   const row = await readWebsiteDocument<NewActualDocument>(client, userId, system);
   if (!row?.payload.newActualPortfolio) return { status: "NOT_INITIALIZED" as const };
+  if (input.currency === "USD") {
+    const { extendUsActualPriceHistory } = await import("./usActualPriceHistory.server");
+    const ids = new Set(Object.keys(row.payload.newActualPortfolio.assignments));
+    const symbols = new Set(
+      row.payload.executions.filter((e) => ids.has(e.id)).map((e) => e.symbol),
+    );
+    const extended = await extendUsActualPriceHistory(
+      client,
+      userId,
+      { ...input, sourceHash },
+      symbols,
+    );
+    input = { ...input, ...extended };
+    sourceHash = extended.sourceHash;
+  }
   const history = buildAllocatedPerformanceHistory({
     ...input,
     sourceHash,

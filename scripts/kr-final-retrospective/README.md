@@ -59,3 +59,10 @@ gzip roots remain readable, but are not rewritten or re-appended through this
 bounded writer. Reads reconstruct the original envelope and verify all chunk,
 compressed, canonical and logical hashes before admission. Error diagnostics
 include only a status code or NETWORK, never private response bodies.
+
+
+### Bounded v3 table capture
+
+If the exact v2 capture exceeds the unchanged 256 MiB stored JSON limit, v3 stores repeated observed-bar field names once in a shape dictionary. Each row retains its exact property set, values and order; analytical bars retain strictly increasing references into the complete observations. Zero prices, null values, omitted fields and preservation evidence are never filtered or rounded. Small v2 captures and v1/v2 hydration bounds remain unchanged.
+
+The v3 reader checks shape widths and a conservative reconstructed-byte bound before creating row objects, with a separate 1 GiB maximum for the original in-memory capture. It verifies the original dataset hash and complete v1 capture hash before any calculation. The compressed evidence envelope limits, owner/code/source pins, immutable historical records, independent approval hashes and APPLY readback rules are unchanged. Size overflow or any reconstruction mismatch remains a rejection. Synthetic size coverage is not a claim that a particular production capture fits.
