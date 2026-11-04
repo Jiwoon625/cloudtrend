@@ -1,3 +1,7 @@
+import {
+  safeKrCompanionDiagnostic,
+  type KrCompanionDiagnostic,
+} from "../kr-nov3-recovery/diagnostics";
 /** Public diagnostics contain fixed enums and bounded counters only. Never error text. */
 export const CAPTURE_STAGES = [
   "CAPTURE_READ",
@@ -29,9 +33,17 @@ export function safeCaptureProgress(value: unknown) {
     rssBytes: counter(v.rssBytes, 1024 ** 4),
     heapUsedBytes: counter(v.heapUsedBytes, 1024 ** 4),
     externalBytes: counter(v.externalBytes, 1024 ** 4),
+    ...(Object.hasOwn(v, "krCompanion")
+      ? { krCompanion: safeKrCompanionDiagnostic(v.krCompanion) }
+      : {}),
   };
 }
-export function captureProgress(stage: CaptureStage, sourceIndex: number | null, started: number) {
+export function captureProgress(
+  stage: CaptureStage,
+  sourceIndex: number | null,
+  started: number,
+  krCompanion?: KrCompanionDiagnostic,
+) {
   const m = process.memoryUsage();
   return safeCaptureProgress({
     stage,
@@ -40,6 +52,7 @@ export function captureProgress(stage: CaptureStage, sourceIndex: number | null,
     rssBytes: m.rss,
     heapUsedBytes: m.heapUsed,
     externalBytes: m.external,
+    ...(krCompanion === undefined ? {} : { krCompanion }),
   });
 }
 export function safeChildTermination(value: unknown) {

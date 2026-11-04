@@ -11,7 +11,13 @@ import {
   assertExactThirdRows,
   readKrNov3Evidence,
 } from "./transport";
-import { extractUnisonRawEvidence, buildKrCompanionCapture, saveKrPrivate } from "./entry";
+import {
+  extractUnisonRawEvidence,
+  buildKrCompanionCapture,
+  saveKrPrivate,
+  parseRawShortSellingVolume,
+  computeKrCompanion,
+} from "./entry";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -179,4 +185,72 @@ it("blocked diagnosis is not an admissible approval or plan evidence type", asyn
     ),
   ).rejects.toThrow();
   expect(fetcher).not.toHaveBeenCalled();
+});
+
+it.each(["70814", "70814.0", "70814.000", "00070814.000"])(
+  "preserves the exact bound integer for decimal-zero spelling %s",
+  (raw) => {
+    expect(parseRawShortSellingVolume(raw)).toBe(70814);
+    const { c, csv } = rawFixture();
+    const canonical = csv.replaceAll("70814", raw);
+    c.sourceObjects[0]!.canonicalHash = hash(canonical);
+    const before = structuredClone(c);
+    const result = extractUnisonRawEvidence(c, canonical);
+    expect(result.rows.map((r) => r.shortSellingVolume)).toEqual([70814, 70814, 70814]);
+    expect(c).toEqual(before);
+    expect(result.sourceHash).toBe(c.selectedFinalSourceRow.file_hash);
+  },
+);
+it.each(["0", "0.0", "9007199254740991", "9007199254740991.000"])(
+  "accepts exact nonnegative safe boundary %s",
+  (raw) => {
+    expect(parseRawShortSellingVolume(raw)).toBe(Number(raw));
+  },
+);
+it.each([
+  "70814.1",
+  "70814.000000000000001",
+  "70814.",
+  ".0",
+  "7e4",
+  "0x10",
+  "-1",
+  "-0",
+  "+1",
+  " 1",
+  "1 ",
+  "1\n",
+  "1\r\n",
+  "1\t",
+  "\u00a01",
+  "",
+  "NaN",
+  "Infinity",
+  "9007199254740992",
+  "9007199254740992.0",
+  "9007199254740993",
+  70814,
+  null,
+  undefined,
+])("rejects nonexact or unsupported integer representation %s", (raw) => {
+  expect(() => parseRawShortSellingVolume(raw)).toThrow("KR_NOV3_RECOVERY_RAW_SHORT_VOLUME");
+});
+it("still rejects changed canonical bytes even when integer interpretation is equivalent", () => {
+  const { c, csv } = rawFixture();
+  expect(() => extractUnisonRawEvidence(c, csv.replaceAll("70814", "70814.0"))).toThrow(
+    "KR_NOV3_RECOVERY_RAW_CANONICAL_HASH",
+  );
+});
+it("reports an exact bounded pre-planner failure without creating capture or plan", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kr-companion-diagnostic-"));
+  const reports: unknown[] = [];
+  try {
+    await expect(
+      computeKrCompanion({}, {} as any, {} as any, dir, undefined, (v) => reports.push(v)),
+    ).rejects.toThrow("KR_NOV3_RECOVERY_RAW_EVIDENCE_REQUIRED");
+    expect(reports.at(-1)).toEqual({ phase: "RAW_EVIDENCE", check: "RAW_EVIDENCE_REQUIRED" });
+    expect(fs.readdirSync(dir)).toEqual([]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
