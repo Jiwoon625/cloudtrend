@@ -22,6 +22,10 @@ const mocks = vi.hoisted(() => ({
   shadow: vi.fn(),
   operationalIndex: vi.fn(),
 }));
+vi.mock("../src/lib/signalJournal.server", () => ({ latestSignalConfig: async () => null }));
+vi.mock("../src/lib/krSignalJournal.server", () => ({
+  publishKrSignalJournal: async () => ({ pending: [] }),
+}));
 vi.mock("../src/lib/operationalUnderlyingIndex.server", () => ({
   loadOperationalIndex: mocks.operationalIndex,
 }));
@@ -187,23 +191,15 @@ for (const phase of ["prices", "warm"] as const) {
       .record as import("../src/lib/analysisRunBundle").AnalysisRunSummaryRecord;
     expect(run.status).toBe("COMPLETED");
     expect(mocks.cache).toHaveBeenCalledTimes(1);
-    expect(mocks.portfolioRefresh).toHaveBeenCalledExactlyOnceWith(
-      expect.anything(),
-      "11111111-1111-1111-1111-111111111111",
-    );
-    expect(mocks.portfolioRefresh.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.shadow.mock.invocationCallOrder[0]!,
-    );
+    expect(mocks.portfolioRefresh).not.toHaveBeenCalled();
+    expect(mocks.shadow).not.toHaveBeenCalled();
     expect(mocks.complete).toHaveBeenCalledTimes(1);
-    expect(mocks.complete.mock.invocationCallOrder[0]).toBeGreaterThan(
-      mocks.portfolioRefresh.mock.invocationCallOrder[0]!,
-    );
     const bundle = JSON.parse(uploaded.get(run.result_path)!);
     expect(bundle.schemaVersion).toBe(1);
     expect(bundle.summary).toEqual(run.summary);
     expect(run.summary.pipelineStatus).toMatchObject({
       screening: "COMPLETED",
-      models: "COMPLETED",
+      models: "DISABLED",
       publication: "COMPLETED",
     });
     expect(bundle.result.rows.length).toBe(run.summary.counts.total);
@@ -253,17 +249,17 @@ test("a legacy completed run with no as_of_date reuses a verified pre-start sour
   expect(upserts).toEqual([]);
 });
 
-test("an ACTUAL-book refresh failure does not block MODEL replay or expose private error details", async () => {
+test("retired financial writer failures cannot affect screening or expose private details", async () => {
   mocks.portfolioRefresh.mockRejectedValue(new Error("private account journal integrity"));
   await expect(runScreening(args())).resolves.toBeUndefined();
-  expect(mocks.shadow).toHaveBeenCalledTimes(1);
-  expect(mocks.complete).not.toHaveBeenCalled();
+  expect(mocks.shadow).not.toHaveBeenCalled();
+  expect(mocks.complete).toHaveBeenCalledOnce();
   expect(upserts.some((value) => value.table === "analysis_runs")).toBe(true);
   const logs = vi
     .mocked(process.stdout.write)
     .mock.calls.map((call) => String(call[0]))
     .join("\n");
-  expect(logs).toContain('"status":"FAILED"');
+  expect(logs).not.toContain('"status":"FAILED"');
   expect(logs).not.toContain("private account");
 });
 
@@ -369,7 +365,7 @@ test("unknown source date cannot bypass provider validation on reuse", async () 
   expect(mocks.reused).not.toHaveBeenCalled();
 });
 
-test("prospective upload reuse still replays Shadow but parses and computes the engine only once", async () => {
+test("prospective upload checks signal history and computes screening only once without Shadow", async () => {
   const provider = prospectiveInput();
   mocks.operationalIndex.mockResolvedValue(provider);
   mocks.reused.mockResolvedValue({ id: "same-provider", as_of_date: provider.asOfDate });
@@ -377,8 +373,8 @@ test("prospective upload reuse still replays Shadow but parses and computes the 
   expect(mocks.parse).toHaveBeenCalledTimes(1);
   expect(mocks.operationalIndex).toHaveBeenCalledTimes(1);
   expect(fullMarketAnalysis.runFullMarketAnalysis).toHaveBeenCalledTimes(1);
-  expect(mocks.shadow).toHaveBeenCalledTimes(1);
-  expect(mocks.shadow.mock.calls[0]![0]).not.toHaveProperty("operationalIndex");
+  expect(mocks.shadow).not.toHaveBeenCalled();
+
   expect(mocks.cache.mock.calls[0]![0].analysis.operationalIndex).toMatchObject({
     version: provider.version,
     artifactSha256: provider.artifactSha256,

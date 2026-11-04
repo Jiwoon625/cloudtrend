@@ -1,19 +1,17 @@
-import { publishAllocatedPerformanceHistory } from "../src/lib/allocatedPerformanceHistory.server";
+import { latestSignalConfig } from "../src/lib/signalJournal.server";
+import { runSignalJournalStage } from "../src/lib/signalJournalStage";
+import { publishKrSignalJournal } from "../src/lib/krSignalJournal.server";
 import { initialScreeningStages } from "../src/lib/screeningStages";
 import { saveScreeningStages } from "../src/lib/screeningStages.server";
-import { runScreeningFollowups } from "./screening-followups";
 import { applyKrScreeningPublication } from "../src/lib/krScreeningPublication";
 import { verifyKrScreeningPublication } from "../src/lib/krScreeningPublication.server";
 import { loadOperationalIndex } from "../src/lib/operationalUnderlyingIndex.server";
 import { OPERATIONAL_INDEX_START } from "../src/lib/operationalUnderlyingIndex";
 import { screeningPublicationAnalysis } from "../src/lib/screeningPublicationAnalysis";
 import { screeningInputIdentity } from "../src/lib/screeningInputIdentity";
-import { verifyShadowRuntimeManifests } from "./verify-shadow-runtime-manifests";
 import { hydrateScreeningSnapshot } from "../src/lib/screeningSnapshotStorage";
 import { completeScreeningPublication } from "../src/lib/screeningPublication.server";
-import { refreshPortfolioAfterScreening } from "../src/lib/portfolioLedgers.server";
 import { MODEL_ACCOUNTING_START } from "../src/lib/ledger/modelSeries";
-import { replayKrShadow } from "../src/lib/shadowReplay.server";
 import { memory } from "./screening-memory";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -93,8 +91,13 @@ function parseArgs(argv: string[]): Options {
   return options;
 }
 
-async function loadConfig(configPath: string | null): Promise<ScoringConfig> {
-  if (!configPath) return mergeScoringConfig(DEFAULT_SCORING_CONFIG);
+async function loadConfig(
+  configPath: string | null,
+  client: ReturnType<typeof trustedSupabaseClient>,
+  owner: string,
+): Promise<ScoringConfig> {
+  if (!configPath)
+    return mergeScoringConfig((await latestSignalConfig(client, owner)) ?? DEFAULT_SCORING_CONFIG);
   return mergeScoringConfig(JSON.parse(await readFile(configPath, "utf8")));
 }
 
@@ -146,7 +149,7 @@ export async function runScreening(argv = process.argv.slice(2)) {
   const client = trustedSupabaseClient();
   const [inputs, config] = await Promise.all([
     loadAnalysisSourceInputs(client, options.supabaseUserId, "screening", { compact: true }),
-    loadConfig(options.configPath),
+    loadConfig(options.configPath, client, options.supabaseUserId),
   ]);
 
   const krPublication = await verifyKrScreeningPublication(
@@ -211,8 +214,7 @@ export async function runScreening(argv = process.argv.slice(2)) {
   if (!options.force) {
     const reusable = await findReusableRun(client, options.supabaseUserId, "SCREENING", runKey);
     const reusableDate = parsedForReuse?.dataset.asOfDate ?? reusable?.as_of_date ?? inputDate;
-    // A reusable post-start screen may still have missing Shadow dates, so upload
-    // runs continue into replay. Pre-start data has no Shadow work and can return.
+    // Uploaded runs also check the independent daily signal journal for missing sessions.
     if (
       reusable &&
       (preliminary || !options.upload || (reusableDate && reusableDate < MODEL_ACCOUNTING_START))
@@ -241,7 +243,7 @@ export async function runScreening(argv = process.argv.slice(2)) {
   const createdAt = new Date().toISOString();
   const runId = `${createdAt.replace(/[-:.TZ]/g, "").slice(0, 14)}-${dataVersion.slice(7, 15)}`;
   const coreSnapshot = buildSnapshot(analysis, sourceRegisteredAt, runId);
-  // Shadow is replayed separately from the latest investment-screen view.
+  // Keep the representative screen and immutable execution archive.
   const previous = await loadPreviousSnapshot(client, options.supabaseUserId, coreSnapshot.date);
   const pipelineStatus = initialScreeningStages(preliminary);
   const summary = {
@@ -321,87 +323,19 @@ export async function runScreening(argv = process.argv.slice(2)) {
     memory("cache-publish-end");
     await saveScreeningStages(client, options.supabaseUserId, runId, pipelineStatus);
     if (!preliminary) {
-      const { portfolioRefresh, octoberShadow } = await runScreeningFollowups({
-        refreshPortfolio: async () => {
-          pipelineStatus.actualPortfolio = "RUNNING";
-          await saveScreeningStages(client, options.supabaseUserId, runId, pipelineStatus);
-          try {
-            const refreshed = await refreshPortfolioAfterScreening(client, options.supabaseUserId);
-            if (refreshed.status === "FAILED") {
-              pipelineStatus.actualPortfolio = "FAILED";
-              return refreshed;
-            }
-            if (analysis.asOfDate < "2026-10-12") {
-              pipelineStatus.actualPortfolio = refreshed.status;
-              return refreshed;
-            }
-            const history = await publishAllocatedPerformanceHistory(
-              client,
-              options.supabaseUserId,
-              {
-                currency: "KRW",
-                sourceHash: dataVersion,
-                throughDate: analysis.asOfDate,
-                dates: dataset.tradeDates,
-                prices: Object.entries(dataset.bars).flatMap(([symbol, bars]) =>
-                  bars
-                    .filter((b) => b.tradeDate >= "2026-10-12")
-                    .map((b) => ({ symbol, date: b.tradeDate, close: b.close })),
-                ),
-              },
-            );
-            pipelineStatus.actualPortfolio = history.status;
-            return { ...refreshed, status: history.status };
-          } catch (error) {
-            pipelineStatus.actualPortfolio = "FAILED";
-            throw error;
-          } finally {
-            await saveScreeningStages(client, options.supabaseUserId, runId, pipelineStatus);
-          }
-        },
-        replayModels: async () => {
-          pipelineStatus.models = "RUNNING";
-          await saveScreeningStages(client, options.supabaseUserId, runId, pipelineStatus);
-          return replayKrShadow({
-            client,
-            userId: options.supabaseUserId,
+      await runSignalJournalStage(
+        pipelineStatus,
+        () => saveScreeningStages(client, options.supabaseUserId, runId, pipelineStatus),
+        () =>
+          publishKrSignalJournal(client, options.supabaseUserId, {
             dataset,
             config,
-            calculatedAt: createdAt,
-            mode: "service",
-            sources: inputs.map((source) => ({
-              ...(source.sourceRecord ?? {}),
-              id: source.id,
-              min_date: source.validation.stats.minDate,
-              max_date: source.validation.stats.maxDate,
-              activated_at: source.sourceRecord?.activated_at ?? null,
-              created_at: source.sourceRecord?.created_at ?? source.savedAt,
-              savedAt: source.savedAt,
-              validation_result: source.sourceRecord?.validation_result,
-            })),
-          });
-        },
-      });
-      process.stdout.write(`${JSON.stringify({ portfolioRefresh })}\n`);
-      pipelineStatus.actualPortfolio = portfolioRefresh.status;
-      pipelineStatus.models =
-        "status" in octoberShadow && octoberShadow.status === "FAILED"
-          ? "FAILED"
-          : octoberShadow.deferred
-            ? "WAITING_INPUT"
-            : "COMPLETED";
-      if (
-        pipelineStatus.models === "COMPLETED" &&
-        ["UPDATED", "REUSED"].includes(portfolioRefresh.status)
-      ) {
-        try {
-          await completeScreeningPublication(client, options.supabaseUserId, webCache);
-          pipelineStatus.publication = "COMPLETED";
-        } catch {
-          pipelineStatus.publication = "FAILED";
-        }
-      } else pipelineStatus.publication = "WAITING_FOLLOWUP";
-      process.stdout.write(`${JSON.stringify({ octoberShadow })}\n`);
+            snapshot,
+            sourceHash: dataVersion,
+          }),
+      );
+      await completeScreeningPublication(client, options.supabaseUserId, webCache);
+      pipelineStatus.publication = "COMPLETED";
     } else {
       process.stdout.write(
         `${JSON.stringify({ krPublication, financialSideEffects: "SKIPPED" })}\n`,
@@ -468,9 +402,7 @@ export async function runScreening(argv = process.argv.slice(2)) {
 }
 
 if (!process.env["VITEST"])
-  verifyShadowRuntimeManifests()
-    .then(() => runScreening())
-    .catch((error: unknown) => {
-      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-      process.exitCode = 1;
-    });
+  runScreening().catch((error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  });

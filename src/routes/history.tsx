@@ -1,3 +1,5 @@
+import { SignalJournalCoverage } from "@/components/SignalJournalCoverage";
+import type { SignalSnapshot } from "@/lib/signalJournal";
 import {
   validScreeningStages,
   screeningStagesPath,
@@ -121,9 +123,11 @@ function HistoryPage() {
       <header className="mb-4">
         <h1 className="text-xl font-bold">스크리닝 이력</h1>
         <p className="text-xs text-muted-foreground">
-          실행별 보존 기록과 과거 일별 대표 기록 · 최근 90개 실행/날짜 조회
+          매일의 전략 버전과 진입·청산 조건을 보존합니다. 신호는 실제 체결 내역이 아니며 수익률은
+          계산하지 않습니다.
         </p>
       </header>
+      <SignalJournalCoverage />
       <div className="mb-4 flex flex-wrap gap-2 text-sm">
         <select
           aria-label="시장"
@@ -216,6 +220,24 @@ function HistoryPage() {
               </option>
             ))}
           </select>
+          {(detail.data as SignalSnapshot | undefined)?.signalJournal ? (
+            <div className="rounded border p-3 text-xs">
+              {(detail.data as SignalSnapshot).signalJournal.kind === "RECONSTRUCTED"
+                ? "후일 자료로 복원한 신호"
+                : "자료 수집 후 기록한 신호"}
+              {" · 전략 "}
+              {(detail.data as SignalSnapshot).signalJournal.rule.id.slice(0, 12)}
+              {" · 적용 시작 "}
+              {(detail.data as SignalSnapshot).signalJournal.rule.effectiveFrom}
+              <p>
+                매수·매도 조건 기록입니다. 수량·체결·손익 및 보유기간에 의존하는 청산은 분기
+                연구에서 계산합니다.
+              </p>
+              {(detail.data as SignalSnapshot).signalJournal.issues.map((issue) => (
+                <p key={issue}>{issue}</p>
+              ))}
+            </div>
+          ) : null}
           <p role="status" className="text-xs text-muted-foreground">
             {stageQuery.isError
               ? "단계별 상태 조회 실패"
@@ -225,7 +247,7 @@ function HistoryPage() {
                   ? Object.entries(stageQuery.data)
                       .map(
                         ([key, value]) =>
-                          `${({ screening: "스크리닝", actualPortfolio: "실제 평가", models: "모델 기록", publication: "완료 증빙" } as Record<string, string>)[key] ?? key}: ${screeningStageLabels[value as ScreeningStage] ?? value}`,
+                          `${({ screening: "스크리닝", signalHistory: "일별 신호 이력", actualPortfolio: "실제 평가", models: "모델 기록", publication: "완료 증빙" } as Record<string, string>)[key] ?? key}: ${screeningStageLabels[value as ScreeningStage] ?? value}`,
                       )
                       .join(" · ")
                   : "단계별 상태 미기록"}

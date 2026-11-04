@@ -63,12 +63,7 @@ it("checks actual executable sources rather than trusting stale generated hashes
 }, 30000);
 
 it("guards each production CLI and build before source/publication work", async () => {
-  for (const name of [
-    "run-screening.ts",
-    "run-us-screening.ts",
-    "run-us-gap-replay.ts",
-    "run-kospi-shadow.ts",
-  ]) {
+  for (const name of ["run-us-gap-replay.ts", "run-kospi-shadow.ts"]) {
     const text = await readFile(`scripts/${name}`, "utf8");
     expect(text).toContain('from "./verify-shadow-runtime-manifests"');
     expect(text).toMatch(
@@ -76,6 +71,8 @@ it("guards each production CLI and build before source/publication work", async 
     );
   }
   const pkg = JSON.parse(await readFile("package.json", "utf8"));
+  expect(pkg.scripts["prescreening:run"]).toContain("build-signal-manifest.ts");
+  expect(pkg.scripts["preus:screening"]).toContain("build-signal-manifest.ts");
   expect(pkg.scripts.prebuild).toContain("verify-shadow-runtime-manifests.ts");
   expect(pkg.scripts.predev).toContain("verify-shadow-runtime-manifests.ts");
 });

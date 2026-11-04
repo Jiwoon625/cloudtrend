@@ -1,17 +1,12 @@
+import { runSignalJournalStage } from "../src/lib/signalJournalStage";
+import { publishUsSignalJournal } from "../src/lib/usSignalJournal.server";
 import { initialScreeningStages } from "../src/lib/screeningStages";
 import { saveScreeningStages } from "../src/lib/screeningStages.server";
-import { publishAllocatedPerformanceHistory } from "../src/lib/allocatedPerformanceHistory.server";
-import { verifyShadowRuntimeManifests } from "./verify-shadow-runtime-manifests";
 import { OPERATIONAL_SIGNAL_START } from "../src/lib/operationalSignalStart";
 import { usesLegacyUsOperatingLedger } from "../src/lib/legacyUsLedgerBoundary";
-import { loadUsDailyContinuation, runUsDailyContinuation } from "./us-daily-continuation";
-import { loadUsReconstructionContinuation } from "./us-replay-continuation";
 import { loadPublishedUsRecoveryView } from "./us-recovery-publication";
 import { compactRow, publishBrowserViews } from "./us-screening-publication";
-import { hydrateUsOperatingState } from "./us-operating-replay";
 import { assertUsScreeningCoverage } from "./us-replay-source";
-import { replayUsShadow } from "../src/lib/shadowReplay.server";
-import { buildUsOrderPreview } from "../src/lib/engine/usProspectiveOrderPreview";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
@@ -28,11 +23,6 @@ import {
   usProspectiveCompactSignals,
   US_PROSPECTIVE_RULE_VERSION,
 } from "../src/lib/engine/usProspective";
-import {
-  stepUsProspectiveOperatingPortfolio,
-  US_PROSPECTIVE_STRATEGIES,
-  type UsPortfolioState,
-} from "../src/lib/engine/usProspectivePortfolio";
 
 function arg(name: string) {
   const i = process.argv.indexOf(name);
@@ -88,32 +78,11 @@ export async function runUsScreening(
   )
     throw new Error("US source row count, symbol count or latest date mismatch");
 
+  assertUsScreeningCoverage(ingest.metadata as Record<string, unknown>, allParsed);
   const runId = `us-${ingest.as_of_date}-${ingest.data_hash}`;
   const stages = initialScreeningStages();
   const saveStages = () =>
     legacyOperating ? Promise.resolve() : saveScreeningStages(client, userId, runId, stages);
-  const refreshActualHistory = async () => {
-    if (legacyOperating) return;
-    stages.actualPortfolio = "RUNNING";
-    await saveStages();
-    try {
-      const result = await publishAllocatedPerformanceHistory(client, userId, {
-        currency: "USD",
-        sourceHash: String(ingest.data_hash),
-        throughDate: String(ingest.as_of_date),
-        dates: sourceDates,
-        prices: allParsed
-          .filter((r) => r.date >= "2026-10-12")
-          .flatMap((r) =>
-            r.close === null ? [] : [{ symbol: r.symbol, date: r.date, close: r.close }],
-          ),
-      });
-      stages.actualPortfolio = result.status;
-    } catch {
-      stages.actualPortfolio = "FAILED";
-    }
-    await saveStages();
-  };
 
   const { data: lastHistory, error: lastError } = await client
     .from("us_screening_history")
@@ -125,6 +94,27 @@ export async function runUsScreening(
   if (lastError) throw lastError;
   if (lastHistory && lastHistory.date > ingest.as_of_date)
     throw new Error("Past US history cannot be replaced");
+  if (
+    lastHistory?.date === ingest.as_of_date &&
+    (lastHistory.data_hash !== ingest.data_hash ||
+      lastHistory.rule_version !== US_PROSPECTIVE_RULE_VERSION)
+  )
+    throw new Error("Completed US date is immutable (hash/rule mismatch)");
+  if (
+    lastHistory?.date !== ingest.as_of_date &&
+    (await maybeDownloadJson(client, `${userId}/results/us-replay-state/${ingest.as_of_date}.json`))
+  )
+    throw new Error(
+      "US replay publication is incomplete; resume the same immutable replay manifest",
+    );
+  const journal = await runSignalJournalStage(stages, saveStages, () =>
+    publishUsSignalJournal(client, userId, {
+      rows: allParsed,
+      throughDate: String(ingest.as_of_date),
+      sourceHash: String(ingest.data_hash),
+      collectedAt: String(ingest.collected_at),
+    }),
+  );
   if (lastHistory && lastHistory.date === ingest.as_of_date) {
     if (
       lastHistory.data_hash !== ingest.data_hash ||
@@ -147,114 +137,21 @@ export async function runUsScreening(
       recoveredView ?? completed,
     );
     await publishBrowserViews(client, userId, recoveredView ?? completed);
-    stages.models = "REUSED";
-    await refreshActualHistory();
-    stages.publication = ["UPDATED", "REUSED"].includes(stages.actualPortfolio)
-      ? "COMPLETED"
-      : "WAITING_FOLLOWUP";
+    stages.publication = "COMPLETED";
     await saveStages();
     console.log("US date already completed; portfolio and streak unchanged.");
     return;
   }
-  // Replay persists this state before committing either ledger. If publication
-  // was interrupted, only that exact replay may finish the missing history.
-  // An ordinary retry must never overwrite a same-day model from bootstrap.
-  const pendingReplay = await maybeDownloadJson<unknown>(
-    client,
-    `${userId}/results/us-replay-state/${ingest.as_of_date}.json`,
-  );
-  if (pendingReplay)
-    throw new Error(
-      "US replay publication is incomplete; resume the same immutable replay manifest",
-    );
-  const savedContinuation = legacyOperating
-    ? await loadUsDailyContinuation(client, userId, ingest)
-    : null;
   const sourceMetadata = ingest.metadata as {
     previousSessionDate?: string;
     confirmedRegularClose?: boolean;
     failedSymbols?: number;
   };
-  // The old continuation is tied to October 5 Shadow and September operating IDs.
-  // Never use it to bridge a missing restart-series predecessor.
-  if (!legacyOperating && (!lastHistory || sourceMetadata.previousSessionDate !== lastHistory.date))
-    throw new Error(
-      "Restart US screening requires its completed predecessor; use a reviewed restart-series recovery plan",
-    );
-  let reconstruction: Awaited<ReturnType<typeof loadUsReconstructionContinuation>> | null = null;
-  if (
-    legacyOperating &&
-    sourceMetadata.previousSessionDate &&
-    lastHistory?.date !== sourceMetadata.previousSessionDate
-  ) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(sourceMetadata.previousSessionDate))
-      throw new Error("Invalid previous US session date");
-    const pendingPreviousReplay = await maybeDownloadJson<unknown>(
-      client,
-      `${userId}/results/us-replay-state/${sourceMetadata.previousSessionDate}.json`,
-    );
-    if (pendingPreviousReplay)
-      reconstruction = await loadUsReconstructionContinuation({
-        client,
-        userId,
-        currentDate: String(ingest.as_of_date),
-        previousSessionDate: sourceMetadata.previousSessionDate,
-        lastHistory,
-        rankArtifact: pendingPreviousReplay,
-        currentRows: allParsed.filter((r) => r.date === String(ingest.as_of_date)),
-        successor: savedContinuation,
-      });
-  }
   assertUsScreeningCoverage(ingest.metadata as Record<string, unknown>, allParsed);
   if ((ingest.metadata as Record<string, unknown>)["sourceCoverageComplete"] === false)
     console.warn(
       "US source has explicit quarantines/holds; workflow success does not mean complete universe coverage.",
     );
-  if (savedContinuation && !reconstruction)
-    throw new Error("US continuation requires its exact reconstructed predecessor");
-  if (reconstruction) {
-    await runUsDailyContinuation({
-      client,
-      userId,
-      ingest,
-      reconstruction,
-      saved: savedContinuation,
-      rows: allParsed.filter((r) => r.date === String(ingest.as_of_date)),
-      admit: async (plan) => {
-        if (
-          await maybeDownloadJson(
-            client,
-            `${userId}/results/us-replay-state/${ingest.as_of_date}.json`,
-          )
-        )
-          throw new Error(
-            "US replay publication is incomplete; resume the same immutable replay manifest",
-          );
-        const { data: currentIngest, error } = await client
-          .from("us_screening_ingest")
-          .select("*")
-          .eq("user_id", userId)
-          .maybeSingle();
-        const currentPlan =
-          !error && currentIngest
-            ? await loadUsDailyContinuation(client, userId, currentIngest)
-            : null;
-        if (!currentPlan || currentPlan.planHash !== plan.planHash)
-          throw new Error("US continuation ingest changed during admission");
-        await loadUsReconstructionContinuation({
-          client,
-          userId,
-          currentDate: String(ingest.as_of_date),
-          previousSessionDate: sourceMetadata.previousSessionDate!,
-          lastHistory,
-          rankArtifact: reconstruction,
-          currentRows: allParsed.filter((r) => r.date === String(ingest.as_of_date)),
-          successor: plan,
-        });
-      },
-    });
-    return;
-  }
   const portfolioGap =
     Boolean(lastHistory) && sourceMetadata.previousSessionDate !== lastHistory?.date;
 
@@ -305,7 +202,7 @@ export async function runUsScreening(
 
   const latestRows = allParsed.filter((row) => row.date === String(ingest.as_of_date));
   if (!latestRows.length) throw new Error("US latest-date rows are missing");
-  let analysis = runUsProspectiveAnalysis(
+  const analysis = runUsProspectiveAnalysis(
     latestRows,
     portfolioGap || String(ingest.as_of_date) === OPERATIONAL_SIGNAL_START
       ? {}
@@ -313,54 +210,6 @@ export async function runUsScreening(
   );
   if (analysis.date !== String(ingest.as_of_date))
     throw new Error(`입력 기준일 불일치: DB ${ingest.as_of_date} / CSV ${analysis.date}`);
-
-  // Detect stale/missing operating predecessors before Shadow can advance. All
-  // affected books are admitted together; ordinary screening cannot repair gaps.
-  const operatingPrevious = new Map<
-    string,
-    { state: UsPortfolioState; nav_usd: number; date: string } | null
-  >();
-  for (const strategy of !legacyOperating || portfolioGap ? [] : US_PROSPECTIVE_STRATEGIES) {
-    const { data: frozen, error: frozenError } = await client
-      .from("us_strategy_registry")
-      .select("rule_version,config")
-      .eq("user_id", userId)
-      .eq("strategy_id", strategy.id)
-      .maybeSingle();
-    if (frozenError) throw frozenError;
-    if (
-      frozen &&
-      (frozen.rule_version !== US_PROSPECTIVE_RULE_VERSION ||
-        stableJson(frozen.config) !== stableJson(strategy))
-    )
-      throw new Error("Frozen strategy version differs; explicit migration required");
-    const { data: prev, error: previousError } = await client
-      .from("us_portfolio_snapshots")
-      .select("state,nav_usd,date")
-      .eq("user_id", userId)
-      .eq("strategy_id", strategy.id)
-      .lt("date", analysis.date)
-      .order("date", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (previousError) throw previousError;
-    if (lastHistory && prev?.date !== lastHistory.date)
-      throw new Error(`Previous portfolio state is missing: ${strategy.id}`);
-    const state = prev?.state as UsPortfolioState | undefined;
-    for (const symbol of new Set([
-      ...Object.keys(state?.positions ?? {}),
-      ...Object.keys(state?.pendingTargets ?? {}),
-      ...Object.keys(state?.pendingExits ?? {}),
-    ])) {
-      const row = latestRows.find((r) => r.symbol === symbol);
-      if (!row || !(Number(row.open) > 0) || !(Number(row.close) > 0))
-        throw new Error(`Operating US security lacks current prices: ${symbol}`);
-    }
-    operatingPrevious.set(
-      strategy.id,
-      prev ? { ...prev, state: hydrateUsOperatingState(prev.state as UsPortfolioState) } : null,
-    );
-  }
 
   // Lock a date's input before any ledger writes, including retries after partial failure.
   const manifestPath = `${userId}/results/us-screening/${analysis.date}.manifest.json`;
@@ -388,49 +237,6 @@ export async function runUsScreening(
   )
     throw new Error("Daily US result is immutable");
 
-  // Date/hash/metadata and immutable-result admission must precede any Shadow mutation.
-  await refreshActualHistory();
-  stages.models = "RUNNING";
-  await saveStages();
-  const shadowReplay = await replayUsShadow({
-    client,
-    userId,
-    rows: allParsed,
-    sourceCapturedAt: String(ingest.collected_at),
-    calculatedAt: new Date().toISOString(),
-    mode: "service",
-  }).catch(async () => {
-    stages.models = "FAILED";
-    stages.publication = "WAITING_FOLLOWUP";
-    await saveStages();
-    throw new Error("US model replay failed; actual valuation status is preserved");
-  });
-  stages.models = shadowReplay.deferred ? "WAITING_INPUT" : "COMPLETED";
-  stages.publication = "WAITING_FOLLOWUP";
-  await saveStages();
-  console.log(
-    JSON.stringify({
-      shadowReplay: {
-        market: shadowReplay.market,
-        processed: shadowReplay.processed.map(({ date, status }) => ({ date, status })),
-        deferred: shadowReplay.deferred
-          ? { date: shadowReplay.deferred.date, waitingInput: true }
-          : null,
-        latestRecordedDate: shadowReplay.latestRecordedDate,
-        throughDate: shadowReplay.throughDate,
-      },
-    }),
-  );
-  if (
-    !legacyOperating &&
-    (shadowReplay.deferred || shadowReplay.latestRecordedDate !== String(ingest.as_of_date))
-  )
-    throw new Error(
-      "Restart US Shadow has not completed this session; screening publication is held",
-    );
-  if (shadowReplay.latestAnalysis?.date === String(ingest.as_of_date))
-    analysis = shadowReplay.latestAnalysis;
-
   const cachePayload = {
     generatedAt: new Date().toISOString(),
     dataHash: ingest.data_hash,
@@ -440,6 +246,7 @@ export async function runUsScreening(
       schemaVersion: ingest.schema_version,
       metadata: ingest.metadata,
     },
+    signalCoverage: { predecessorComplete: !portfolioGap, pending: journal.pending },
     analysis: {
       date: analysis.date,
       ruleVersion: analysis.ruleVersion,
@@ -457,181 +264,14 @@ export async function runUsScreening(
     signals: usProspectiveCompactSignals(analysis),
   };
 
-  if (portfolioGap) {
-    console.warn(
-      "US operating portfolio snapshot gap detected; latest investment screen is refreshed, while the independent Shadow ledger was replayed date-by-date.",
-    );
-  }
-  for (const strategy of !legacyOperating || portfolioGap ? [] : US_PROSPECTIVE_STRATEGIES) {
-    const { data: frozen, error: frozenError } = await client
-      .from("us_strategy_registry")
-      .select("rule_version,config")
-      .eq("user_id", userId)
-      .eq("strategy_id", strategy.id)
-      .maybeSingle();
-    if (frozenError) throw frozenError;
-    if (
-      frozen &&
-      (frozen.rule_version !== US_PROSPECTIVE_RULE_VERSION ||
-        stableJson(frozen.config) !== stableJson(strategy))
-    )
-      throw new Error("Frozen strategy version differs; explicit migration required");
-    const { error: registryError } = await client.from("us_strategy_registry").upsert(
-      {
-        user_id: userId,
-        strategy_id: strategy.id,
-        label: strategy.label,
-        role: strategy.role,
-        rule_version: US_PROSPECTIVE_RULE_VERSION,
-        config: strategy,
-        frozen_at: "2026-09-28T00:00:00+09:00",
-        active: true,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id,strategy_id" },
-    );
-    if (registryError) throw new Error(`US 전략 정의 저장 실패: ${registryError.message}`);
-
-    const prev = operatingPrevious.get(strategy.id) ?? null;
-    const previousState = (prev?.state as UsPortfolioState | null) ?? null;
-    const previousNav = prev ? Number(prev.nav_usd) : null;
-    const stepped = stepUsProspectiveOperatingPortfolio(
-      strategy,
-      analysis,
-      previousState,
-      previousNav,
-    );
-
-    const { error: snapshotError } = await client.from("us_portfolio_snapshots").upsert(
-      {
-        user_id: userId,
-        strategy_id: strategy.id,
-        date: analysis.date,
-        rule_version: US_PROSPECTIVE_RULE_VERSION,
-        nav_usd: stepped.nav,
-        cash_usd: stepped.cash,
-        benchmark_nav: stepped.benchmarkNav,
-        daily_return: stepped.dailyReturn,
-        cumulative_return: stepped.cumulativeReturn,
-        turnover: stepped.turnover,
-        fees_usd: stepped.feesUsd,
-        positions_count: stepped.positionsCount,
-        state: {
-          ...stepped.state,
-          orderPreview: buildUsOrderPreview(strategy, stepped.state, analysis.rows),
-        },
-      },
-      { onConflict: "user_id,strategy_id,date" },
-    );
-    if (snapshotError) throw new Error(`US 포트폴리오 스냅샷 저장 실패: ${snapshotError.message}`);
-
-    // 전일의 PENDING 표시는 이번 step에서 체결되거나 그대로 이월될 수 있다.
-    // 먼저 이전 표시를 닫고, 아래 upsert에서 아직 남은 pending만 같은 key로 다시 PENDING 처리한다.
-    const { error: rollError } = await client
-      .from("us_portfolio_trades")
-      .update({
-        status: "CANCELLED",
-        detail: { resolution: "ROLLED_FORWARD_OR_RESOLVED", resolved_on: analysis.date },
-        updated_at: new Date().toISOString(),
-      })
-      .eq("user_id", userId)
-      .eq("strategy_id", strategy.id)
-      .eq("status", "PENDING")
-      .lt("signal_date", analysis.date);
-    if (rollError) throw new Error(`US 이전 대기주문 정리 실패: ${rollError.message}`);
-
-    if (stepped.trades.length > 0) {
-      const tradeRows = stepped.trades.map((trade) => ({
-        user_id: userId,
-        trade_key: trade.tradeKey,
-        strategy_id: trade.strategyId,
-        signal_date: trade.signalDate,
-        execution_date: trade.executionDate,
-        symbol: trade.symbol,
-        name: trade.name,
-        sector: trade.sector,
-        side: trade.side,
-        reason: trade.reason,
-        status: trade.status,
-        model_price: trade.modelPrice,
-        model_shares: trade.modelShares,
-        model_notional: trade.modelNotional,
-        fee_usd: trade.feeUsd,
-        core_rank: trade.coreRank,
-        detail: trade.detail,
-        updated_at: new Date().toISOString(),
-      }));
-      const { error: tradeError } = await client
-        .from("us_portfolio_trades")
-        .upsert(tradeRows, { onConflict: "user_id,trade_key" });
-      if (tradeError) throw new Error(`US 거래 원장 저장 실패: ${tradeError.message}`);
-    }
-  }
-
-  // SPY benchmark gets its own daily snapshot for easy charting/comparison.
-  const spy = analysis.rows.find((row) => row.symbol === "SPY");
-  if (legacyOperating && !portfolioGap && spy?.close) {
-    const { data: firstSpy, error: firstSpyError } = await client
-      .from("us_portfolio_snapshots")
-      .select("state")
-      .eq("user_id", userId)
-      .eq("strategy_id", "SPY_BENCHMARK")
-      .order("date", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (firstSpyError) throw firstSpyError;
-    const basePrice = Number(
-      (firstSpy?.state as { basePrice?: number } | null)?.basePrice ?? spy.close,
-    );
-    const nav = 100_000 * (spy.close / basePrice);
-    const { error: spyRegistryError } = await client.from("us_strategy_registry").upsert(
-      {
-        user_id: userId,
-        strategy_id: "SPY_BENCHMARK",
-        label: "SPY Benchmark",
-        role: "BENCHMARK",
-        rule_version: US_PROSPECTIVE_RULE_VERSION,
-        config: { symbol: "SPY", initialCapital: 100000 },
-        frozen_at: "2026-09-28T00:00:00+09:00",
-        active: true,
-      },
-      { onConflict: "user_id,strategy_id" },
-    );
-    if (spyRegistryError) throw spyRegistryError;
-    const { error: spySnapshotError } = await client.from("us_portfolio_snapshots").upsert(
-      {
-        user_id: userId,
-        strategy_id: "SPY_BENCHMARK",
-        date: analysis.date,
-        rule_version: US_PROSPECTIVE_RULE_VERSION,
-        nav_usd: nav,
-        cash_usd: 0,
-        benchmark_nav: nav,
-        daily_return: null,
-        cumulative_return: nav / 100_000 - 1,
-        turnover: 0,
-        fees_usd: 0,
-        positions_count: 1,
-        state: { basePrice, currentPrice: spy.close, symbol: "SPY" },
-      },
-      { onConflict: "user_id,strategy_id,date" },
-    );
-    if (spySnapshotError) throw spySnapshotError;
-  }
-
-  // October 12+ publication depends only on the restart Shadow books. Retired
-  // operating rows cannot block this marker or be recreated by ordinary retries.
-  // History is the completion marker. A failed run is replayed only from the prior date.
-  // Publish immutable daily result before the marker; publish latest only after all ledgers succeed.
+  // No strategy, Shadow, valuation or benchmark ledger is written by daily screening.
   if (!existingResult) await uploadJson(client, resultPath, cachePayload);
   const { error: historyError } = await client.from("us_screening_history").insert(historyRecord);
   if (historyError) throw historyError;
   await uploadJson(client, latestCachePath, existingResult ?? cachePayload);
   try {
     await publishBrowserViews(client, userId, existingResult ?? cachePayload);
-    stages.publication = ["UPDATED", "REUSED"].includes(stages.actualPortfolio)
-      ? "COMPLETED"
-      : "WAITING_FOLLOWUP";
+    stages.publication = "COMPLETED";
   } catch {
     stages.publication = "FAILED";
     await saveStages();
@@ -655,7 +295,6 @@ export async function runUsScreening(
 }
 
 async function main() {
-  await verifyShadowRuntimeManifests();
   const userId = arg("--user") ?? process.env["SUPABASE_USER_ID"];
   if (!userId) throw new Error("--user 또는 SUPABASE_USER_ID가 필요합니다.");
   await runUsScreening(trustedSupabaseClient(), userId);

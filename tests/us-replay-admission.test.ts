@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { bytesHash } from "../scripts/us-replay-source";
 import { sourceCsv } from "./us-replay-fixtures";
 import { US_PROSPECTIVE_RULE_VERSION } from "../src/lib/engine/usProspective";
-import { runUsScreening } from "../scripts/run-us-screening";
+import { runHistoricalUsScreening as runUsScreening } from "../scripts/historical-us-screening";
 import type { trustedSupabaseClient } from "../scripts/analysis-run-store";
 const spy = vi.hoisted(() => ({ replay: vi.fn(), recovered: vi.fn() }));
 vi.mock("../scripts/us-recovery-publication", () => ({

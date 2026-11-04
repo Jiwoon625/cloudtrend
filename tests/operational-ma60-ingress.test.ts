@@ -30,6 +30,10 @@ const state = vi.hoisted(() => ({
   localCompute: vi.fn(),
   localSnapshot: vi.fn(),
 }));
+vi.mock("../src/lib/signalJournal.server", () => ({ latestSignalConfig: async () => null }));
+vi.mock("../src/lib/krSignalJournal.server", () => ({
+  publishKrSignalJournal: async () => ({ pending: [] }),
+}));
 vi.mock("../src/lib/operationalUnderlyingIndexRelease", () => ({
   get OPERATIONAL_INDEX_ENABLED() {
     return state.enabled;
@@ -288,10 +292,7 @@ describe("actual synthetic ingress paths, no external writes", () => {
       });
       const meta = savedOperationalIdentity(web!.payload.analysis);
       expect(Boolean(meta)).toBe(enabled && installed && date >= "2026-10-19");
-      const original = state.webShadow.mock.calls[0]![0];
-      expect(original.analysis.operationalIndex).toBeUndefined();
-      const frozenDataset = stableCacheJson(original.dataset);
-      const frozenEngine = stableCacheJson(deterministicAnalysis(original.analysis));
+      expect(state.webShadow).not.toHaveBeenCalled();
       await runScreening([
         "--supabase-user-id",
         "00000000-0000-4000-8000-000000000001",
@@ -306,15 +307,7 @@ describe("actual synthetic ingress paths, no external writes", () => {
       expect(deterministicAnalysis(actions!.payload.analysis)).toEqual(
         deterministicAnalysis(web!.payload.analysis),
       );
-      expect(state.cliShadow.mock.calls[0]![0].dataset).toEqual(original.dataset);
-      expect(stableCacheJson(original.dataset)).toBe(frozenDataset);
-      expect(
-        stableCacheJson(
-          deterministicAnalysis(
-            runFullMarketAnalysis(original.dataset, DEFAULT_SCORING_CONFIG).analysis,
-          ),
-        ),
-      ).toBe(frozenEngine);
+      expect(state.cliShadow).not.toHaveBeenCalled();
       expect(
         cliFingerprint(state.inputs as LoadedSourceInput[], DEFAULT_SCORING_CONFIG, meta),
       ).toBe(result.inputFingerprint);

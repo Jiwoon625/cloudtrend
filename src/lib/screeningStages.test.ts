@@ -16,7 +16,7 @@ it("keeps authenticated caller identities within a single owner/path segment", (
 it("never treats absent, partial or unknown status fields as successful completion", () => {
   expect(validScreeningStages(initialScreeningStages())).toBe(true);
   expect(initialScreeningStages().publication).toBe("NOT_RUN");
-  expect(initialScreeningStages(true).models).toBe("SKIPPED_PRELIMINARY");
+  expect(initialScreeningStages(true).models).toBe("DISABLED");
   for (const value of [
     null,
     {},

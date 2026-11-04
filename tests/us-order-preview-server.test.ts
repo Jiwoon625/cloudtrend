@@ -271,14 +271,14 @@ describe("US preview authentication boundary", () => {
   });
 });
 
-it("persists only a presentation sibling after a new session step, never in completed-date replay", () => {
+it("daily screening never persists financial order previews; archived preview reads remain read-only", () => {
   const source = readFileSync("scripts/run-us-screening.ts", "utf8");
   const completed = source.slice(
     source.indexOf("if (lastHistory?.date === ingest.as_of_date)"),
     source.indexOf("const sourceMetadata"),
   );
   expect(completed).not.toContain("buildUsOrderPreview");
-  expect(source).toMatch(
+  expect(source).not.toMatch(
     /state:\s*\{\s*\.\.\.stepped.state,\s*orderPreview: buildUsOrderPreview\(strategy, stepped.state, analysis.rows\)/,
   );
   const read = readFileSync("src/lib/usOrderPreview.server.ts", "utf8");

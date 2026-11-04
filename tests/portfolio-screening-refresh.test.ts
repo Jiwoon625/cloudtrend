@@ -24,7 +24,9 @@ const mocks = vi.hoisted(() => ({
   portfolio: vi.fn(),
   parse: vi.fn(),
   prices: vi.fn(),
+  journal: vi.fn(),
 }));
+vi.mock("../src/lib/krSignalJournal.server", () => ({ publishKrSignalJournal: mocks.journal }));
 vi.mock("@tanstack/react-start", () => ({
   createServerFn: () => ({ inputValidator: () => ({ handler: (fn: unknown) => fn }) }),
 }));
@@ -112,6 +114,7 @@ beforeEach(() => {
   // Preserve the real parser contract: this historical fixture predates MA60 rollout.
   mocks.parse.mockReturnValue({ dataset: { asOfDate: analysis.asOfDate } });
   mocks.analyze.mockReturnValue({ analysis, dataset: { asOfDate: analysis.asOfDate } });
+  mocks.journal.mockResolvedValue({ pending: [] });
   mocks.shadow.mockResolvedValue({ status: "UP_TO_DATE" });
   mocks.portfolio.mockResolvedValue({
     status: "UPDATED",
@@ -161,7 +164,7 @@ describe("screening publication and portfolio refresh", () => {
     });
     for (let request = 0; request < 2; request++) {
       const result = await runWebScreeningForUser(client, "owner", DEFAULT_SCORING_CONFIG);
-      expect(result.portfolioRefresh.status).toBe("PRELIMINARY");
+      expect(result.portfolioRefresh.status).toBe("DISABLED");
       expect(result.octoberShadow).toBeNull();
       expect(objects.get("owner/cache/screening/latest.json")).toMatchObject({
         payload: {
@@ -236,47 +239,41 @@ describe("screening publication and portfolio refresh", () => {
     expect(replaced.inputFingerprint).not.toBe(first.inputFingerprint);
     expect(replaced.reused).toBe(false);
     expect(mocks.analyze).toHaveBeenCalledTimes(2);
-    expect(mocks.portfolio).toHaveBeenLastCalledWith(client, "owner", {
-      sources: afterSources,
-      texts: [complete],
-    });
+    expect(mocks.portfolio).not.toHaveBeenCalled();
     const again = await runWebScreeningForUser(client, "owner", DEFAULT_SCORING_CONFIG);
     expect(again.reused).toBe(true);
-    expect(mocks.load).toHaveBeenCalledTimes(2);
+    expect(mocks.load).toHaveBeenCalledTimes(3);
     expect(mocks.analyze).toHaveBeenCalledTimes(2);
-    expect(mocks.shadow).toHaveBeenCalledTimes(2);
+    expect(mocks.shadow).not.toHaveBeenCalled();
   });
-  it("unchanged verified screening reuses results without source download, engine calculation, or shadow replay", async () => {
+  it("unchanged screening reuses analysis while checking daily signal gaps without financial calls", async () => {
     cache();
     const result = await runWebScreeningForUser(client, "owner", DEFAULT_SCORING_CONFIG);
     expect(result.reused).toBe(true);
-    expect(mocks.load).not.toHaveBeenCalled();
+    expect(mocks.load).toHaveBeenCalledTimes(1);
     expect(mocks.analyze).not.toHaveBeenCalled();
     expect(mocks.shadow).not.toHaveBeenCalled();
-    expect(mocks.portfolio).toHaveBeenCalledExactlyOnceWith(client, "owner");
+    expect(mocks.portfolio).not.toHaveBeenCalled();
     expect(mocks.persist).not.toHaveBeenCalled();
   });
-  it("publishes changed input history before refreshing portfolio with verified sources", async () => {
+  it("publishes immutable screening history before the signal-only journal", async () => {
     const result = await runWebScreeningForUser(client, "owner", DEFAULT_SCORING_CONFIG);
     expect(result.reused).toBe(false);
     expect(mocks.persist.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.portfolio.mock.invocationCallOrder[0]!,
+      mocks.journal.mock.invocationCallOrder[0]!,
     );
-    expect(mocks.portfolio).toHaveBeenCalledWith(client, "owner", {
-      sources,
-      texts: ["verified source"],
-    });
+    expect(mocks.portfolio).not.toHaveBeenCalled();
     expect(mocks.persist.mock.calls[0]![2].sourceRegisteredAt).toBe("2026-10-06T23:52:20Z");
     expect(result.portfolioRefresh).toEqual({
-      status: "UPDATED",
-      asOfDate: "2026-10-06",
-      calculatedAt: "2026-10-07T00:00:00Z",
+      status: "DISABLED",
+      asOfDate: null,
+      calculatedAt: null,
     });
     expect(objects.get(screeningPublicationPath("owner", result))).toMatchObject(
       screeningPublicationReceipt(result),
     );
     await runWebScreeningForUser(client, "owner", DEFAULT_SCORING_CONFIG);
-    expect(mocks.load).toHaveBeenCalledTimes(1);
+    expect(mocks.load).toHaveBeenCalledTimes(2);
     expect(mocks.analyze).toHaveBeenCalledTimes(1);
   });
   it("does not reuse a partial publication after a prior shadow or portfolio failure", async () => {
@@ -299,7 +296,7 @@ describe("screening publication and portfolio refresh", () => {
     ]);
     expect(mocks.load).toHaveBeenCalledTimes(1);
     expect(mocks.analyze).toHaveBeenCalledTimes(1);
-    expect(mocks.portfolio).toHaveBeenCalledTimes(1);
+    expect(mocks.portfolio).not.toHaveBeenCalled();
   });
   it("changing strategy config invalidates cached screening", async () => {
     cache();
@@ -330,7 +327,7 @@ it("isolates simultaneous owners with identical source fingerprints", async () =
   ]);
   expect(mocks.load).toHaveBeenCalledTimes(2);
   expect(mocks.analyze).toHaveBeenCalledTimes(2);
-  expect(mocks.portfolio.mock.calls.map((call) => call[1]).sort()).toEqual(["owner-a", "owner-b"]);
+  expect(mocks.journal.mock.calls.map((call) => call[1]).sort()).toEqual(["owner-a", "owner-b"]);
   expect(objects.has("owner-a/cache/screening/latest.json")).toBe(true);
   expect(objects.has("owner-b/cache/screening/latest.json")).toBe(true);
 });
@@ -367,13 +364,17 @@ it("a late older completion never overwrites a newer screening generation", asyn
   });
   expect([...objects.keys()].filter((path) => path.includes("/publications/"))).toHaveLength(1);
 });
-it("a private portfolio failure leaves independent Shadow published and reports only sanitized partial status", async () => {
+it("broken retired ledger writers cannot block screening publication", async () => {
   mocks.portfolio.mockRejectedValue(new Error("private journal account data"));
   const result = await runWebScreeningForUser(client, "owner", DEFAULT_SCORING_CONFIG);
-  expect(mocks.shadow).toHaveBeenCalledTimes(1);
-  expect(result.portfolioRefresh).toEqual({ status: "FAILED", asOfDate: null, calculatedAt: null });
+  expect(mocks.shadow).not.toHaveBeenCalled();
+  expect(result.portfolioRefresh).toEqual({
+    status: "DISABLED",
+    asOfDate: null,
+    calculatedAt: null,
+  });
   expect(JSON.stringify(result)).not.toContain("private journal");
-  expect([...objects.keys()].filter((path) => path.includes("/publications/"))).toHaveLength(0);
+  expect([...objects.keys()].filter((path) => path.includes("/publications/"))).toHaveLength(1);
 });
 
 it("receipt identity ignores extra cache payload, timestamps and CLI upload metadata", () => {
@@ -398,8 +399,8 @@ it("cached screening survives a sanitized portfolio failure without replaying th
   mocks.portfolio.mockRejectedValue(new Error("private journal detail"));
   const result = await runWebScreeningForUser(client, "owner", DEFAULT_SCORING_CONFIG);
   expect(result.reused).toBe(true);
-  expect(result.portfolioRefresh.status).toBe("FAILED");
-  expect(mocks.load).not.toHaveBeenCalled();
+  expect(result.portfolioRefresh.status).toBe("DISABLED");
+  expect(mocks.load).toHaveBeenCalledTimes(1);
   expect(mocks.analyze).not.toHaveBeenCalled();
   expect(JSON.stringify(result)).not.toContain("private journal");
 });

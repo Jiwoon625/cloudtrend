@@ -366,13 +366,8 @@ export function UsScreenerPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Link to="/shadow" className="text-xs underline">
-              전략 원장 · Shadow
-            </Link>
-            <Link to="/us/portfolio">
-              <Button size="sm" variant="outline">
-                US 포트폴리오
-              </Button>
+            <Link to="/history" className="text-xs underline">
+              일별 신호 이력
             </Link>
             <Button size="sm" variant="outline" onClick={download}>
               <Download className="size-3.5" />
@@ -380,6 +375,13 @@ export function UsScreenerPage() {
             </Button>
           </div>
         </header>
+        {query.data?.signalCoverage?.predecessorComplete === false ? (
+          <p role="status" className="rounded border p-3 text-xs text-warn">
+            직전 거래일 자료가 누락되어 순위 돌파·연속 조건을 확정할 수 없습니다. 표시된 신호가
+            없더라도 ‘매수 신호 없음’으로 해석하지 마세요. 일별 신호 이력에서 자료 대기 날짜를
+            확인할 수 있습니다.
+          </p>
+        ) : null}
         <UsRecoveryNotice metadata={query.data?.source?.metadata} />
         {revision ? (
           <div
