@@ -266,6 +266,14 @@ test("retired financial writer failures cannot affect screening or expose privat
 function prospectiveInput() {
   const dataset = structuredClone(getMockDataset());
   dataset.asOfDate = "2026-10-19";
+  // This prospective fixture must contain an actual target-date observation;
+  // changing only the header now correctly fails daily price eligibility.
+  for (const bars of Object.values(dataset.bars)) {
+    if (bars.length) bars.push({ ...bars[bars.length - 1]!, tradeDate: dataset.asOfDate });
+  }
+  for (const bars of Object.values(dataset.observedBars ?? {})) {
+    if (bars.length) bars.push({ ...bars[bars.length - 1]!, tradeDate: dataset.asOfDate });
+  }
   inputs[0]!.validation.stats.maxDate = dataset.asOfDate;
   mocks.parse.mockReturnValue({ dataset, stats: { rows: 1 } });
   return {
