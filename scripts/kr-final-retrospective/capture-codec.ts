@@ -48,7 +48,7 @@ export function* captureCanonicalChunks(value: unknown): Generator<Buffer> {
       ancestors.delete(v);
       return;
     }
-    check(plain(v) && !ancestors.has(v));
+    check(plain(v) && !ancestors.has(v), "NON_JSON_VALUE");
     ancestors.add(v);
     yield "{";
     let first = true;
@@ -110,8 +110,8 @@ const V1_KEYS = [
   "archives",
   "legacyObjects",
 ];
-function check(ok: unknown): asserts ok {
-  if (!ok) throw Error("CAPTURE_CODEC_REJECTED");
+function check(ok: unknown, reason?: string): asserts ok {
+  if (!ok) throw Error("CAPTURE_CODEC_REJECTED" + (reason ? "_" + reason : ""));
 }
 function plain(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype;
@@ -134,7 +134,7 @@ function validateOriginal(c: FinalCaptureV1) {
 function encodedSize(c: FinalCapture, emit?: (event: CaptureCodecDiagnostic) => void) {
   const { bytes } = captureCanonicalProof(c);
   emit?.({ status: "CAPTURE_CODEC_STORED_BYTES", bytes });
-  check(bytes > 0 && bytes <= LIMIT);
+  check(bytes > 0 && bytes <= LIMIT, "LOGICAL_LIMIT");
   return bytes;
 }
 export async function encodeFinalCapture(
@@ -142,7 +142,7 @@ export async function encodeFinalCapture(
   emit?: (event: CaptureCodecDiagnostic) => void,
 ): Promise<FinalCaptureV2> {
   validateOriginal(original);
-  check(plain(original.dataset.observedBars));
+  check(plain(original.dataset.observedBars), "OBSERVED_BARS_REQUIRED");
   sameKeys(original.dataset.bars, original.dataset.observedBars);
   // Canonical hashing also rejects undefined, nonfinite values, sparse arrays and nonplain JSON.
   const originalProof = captureCanonicalProof(original);
@@ -160,7 +160,7 @@ export async function encodeFinalCapture(
     for (const bar of bars) {
       const exact = canonicalSeriesJson(bar);
       while (cursor < all.length && canonicalSeriesJson(all[cursor]) !== exact) cursor++;
-      check(cursor < all.length);
+      check(cursor < all.length, "BAR_NOT_EXACT_OBSERVATION");
       indices.push(cursor++);
     }
     entries.push([symbol, indices]);
@@ -234,7 +234,7 @@ export async function hydrateFinalCapture(stored: FinalCapture): Promise<FinalCa
   // Increasing unique indices permit at most one analytical copy of each observation.
   // This is an in-memory expansion bound, NOT a relaxation of the 256MiB stored limit.
   const restoredProof = captureCanonicalProof(original);
-  check(restoredProof.bytes <= 2 * size);
-  check(restoredProof.hash === decodedCaptureHash);
+  check(restoredProof.bytes <= 2 * size, "EXPANSION_LIMIT");
+  check(restoredProof.hash === decodedCaptureHash, "ROUNDTRIP_HASH");
   return original;
 }

@@ -114,6 +114,7 @@ beforeEach(async () => {
   capture.upsert.mockResolvedValue({ error: null });
   const archive = createImmutableArchiveFixture();
   capture.trusted.mockReturnValue({
+    storage: { from: () => ({ upload: async () => ({ error: null }) }) },
     from: (table: string) => (table === "screening_run_archive" ? archive() : query),
   });
   capture.replay.mockResolvedValue({ processed: [], deferred: null });
