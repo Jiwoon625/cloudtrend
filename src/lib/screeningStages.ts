@@ -22,7 +22,7 @@ export function initialScreeningStages(preliminary = false): ScreeningStages {
   };
 }
 export function screeningStagesPath(userId: string, runId: string) {
-  if (!/^[a-f\d-]{36}$/i.test(userId) || !/^[a-zA-Z0-9:_-]{1,200}$/.test(runId))
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(userId) || !/^[a-zA-Z0-9:_-]{1,200}$/.test(runId))
     throw new Error("Invalid screening status identity");
   return `${userId}/results/screening/stages/${runId}.json`;
 }

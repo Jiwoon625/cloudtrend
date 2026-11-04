@@ -57,7 +57,9 @@ for (const currency of ["KRW", "USD"] as const) {
         dates,
         prices: rows
           .filter((r) => r.date >= "2026-10-12")
-          .map((r) => ({ symbol: r.symbol, date: r.date, close: r.close })),
+          .flatMap((r) =>
+            r.close === null ? [] : [{ symbol: r.symbol, date: r.date, close: r.close }],
+          ),
       });
     }
     console.log(JSON.stringify({ currency, status: result.status, canonicalLedgerChanged: false }));

@@ -104,7 +104,9 @@ export async function runUsScreening(
         dates: sourceDates,
         prices: allParsed
           .filter((r) => r.date >= "2026-10-12")
-          .map((r) => ({ symbol: r.symbol, date: r.date, close: r.close })),
+          .flatMap((r) =>
+            r.close === null ? [] : [{ symbol: r.symbol, date: r.date, close: r.close }],
+          ),
       });
       stages.actualPortfolio = result.status;
     } catch {
