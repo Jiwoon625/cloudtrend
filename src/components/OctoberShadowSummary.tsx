@@ -1,3 +1,4 @@
+import { AllocatedPerformanceComparison } from "./AllocatedPerformanceComparison";
 import { formatKstDateTime } from "@/lib/format";
 import { IntegratedAllocationShadowPanel } from "./IntegratedAllocationShadowPanel";
 import { ShadowTimeline } from "./ShadowTimeline";
@@ -195,6 +196,12 @@ export function OctoberShadowSummary() {
           />
         </label>
       </div>
+      {market !== "ALLOCATION" && (
+        <AllocatedPerformanceComparison
+          owner={owner}
+          book={query.data?.books.find((book) => book.kind === kind)}
+        />
+      )}
       {market === "ALLOCATION" ? (
         <IntegratedAllocationShadowPanel owner={owner} period={{ from, to }} />
       ) : (

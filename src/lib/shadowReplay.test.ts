@@ -33,7 +33,28 @@ const persistence = vi.hoisted(() => ({ store: vi.fn() }));
 vi.mock("./ledger/octoberShadowRepository.server", () => ({
   octoberShadowStore: persistence.store,
 }));
-afterEach(() => vi.restoreAllMocks());
+const allocation = vi.hoisted(() => ({
+  stageKr: vi.fn(() => {
+    throw new Error("integrated KR must remain disconnected");
+  }),
+  stageUs: vi.fn(() => {
+    throw new Error("integrated US must remain disconnected");
+  }),
+  replay: vi.fn(() => {
+    throw new Error("integrated replay must remain disconnected");
+  }),
+}));
+vi.mock("./integratedAllocationReplay.server", () => ({
+  stageIntegratedKrEvidence: allocation.stageKr,
+  stageIntegratedUsEvidence: allocation.stageUs,
+  replayIntegratedAllocation: allocation.replay,
+}));
+afterEach(() => {
+  expect(allocation.stageKr).not.toHaveBeenCalled();
+  expect(allocation.stageUs).not.toHaveBeenCalled();
+  expect(allocation.replay).not.toHaveBeenCalled();
+  vi.restoreAllMocks();
+});
 
 describe("preliminary replay isolation", () => {
   it("rejects an undeclared latest pending marker before opening any financial journal", async () => {

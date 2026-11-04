@@ -1,3 +1,9 @@
+import {
+  validScreeningStages,
+  screeningStagesPath,
+  screeningStageLabels,
+  type ScreeningStage,
+} from "@/lib/screeningStages";
 import { supabase } from "@/lib/cloud";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -61,11 +67,25 @@ function HistoryPage() {
   const selected = runs.find((s) => historyRecordKey(s) === run) ?? runs[0];
   const stageQuery = useQuery({
     queryKey: ["screening-stage-status", selected?.runId],
-    enabled: !!selected?.runId && selected.market !== "US",
+    enabled: !!selected?.runId,
     retry: false,
     queryFn: async () => {
       const { data: auth, error: authError } = await supabase.auth.getUser();
       if (authError || !auth.user) throw new Error("로그인 확인 필요");
+      const status = await supabase.storage
+        .from("cloudtrend-data")
+        .download(screeningStagesPath(auth.user.id, selected!.runId!));
+      if (!status.error && status.data) {
+        const saved = JSON.parse(await status.data.text());
+        if (
+          saved.version !== 1 ||
+          saved.runId !== selected!.runId ||
+          !validScreeningStages(saved.pipelineStatus)
+        )
+          throw new Error("단계별 상태 식별 불일치");
+        return saved.pipelineStatus as Record<string, string>;
+      }
+      if (status.error && !/not.?found|404/i.test(status.error.message)) throw status.error;
       const { data, error } = await supabase
         .from("analysis_runs")
         .select("summary")
@@ -205,7 +225,7 @@ function HistoryPage() {
                   ? Object.entries(stageQuery.data)
                       .map(
                         ([key, value]) =>
-                          `${({ screening: "스크리닝", actualPortfolio: "실제 평가", models: "모델 기록", publication: "완료 증빙" } as Record<string, string>)[key] ?? key}: ${({ COMPLETED: "완료", FAILED: "실패", WAITING_INPUT: "자료 대기", WAITING_FOLLOWUP: "후속 처리 대기", NOT_RUN: "미실행", SKIPPED_PRELIMINARY: "예비자료 · 보류" } as Record<string, string>)[value] ?? value}`,
+                          `${({ screening: "스크리닝", actualPortfolio: "실제 평가", models: "모델 기록", publication: "완료 증빙" } as Record<string, string>)[key] ?? key}: ${screeningStageLabels[value as ScreeningStage] ?? value}`,
                       )
                       .join(" · ")
                   : "단계별 상태 미기록"}
