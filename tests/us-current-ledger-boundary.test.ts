@@ -12,6 +12,9 @@ import { usesLegacyUsOperatingLedger } from "../src/lib/legacyUsLedgerBoundary";
 import type { trustedSupabaseClient } from "../scripts/analysis-run-store";
 
 const mocks = vi.hoisted(() => ({ replay: vi.fn(), publish: vi.fn() }));
+vi.mock("../src/lib/usSignalJournal.server", () => ({
+  publishUsSignalJournal: async () => ({ pending: [] }),
+}));
 vi.mock("../src/lib/shadowReplay.server", () => ({ replayUsShadow: mocks.replay }));
 vi.mock("../scripts/us-screening-publication", () => ({
   compactRow: (row: unknown) => row,
@@ -128,7 +131,7 @@ describe("retired US operating ledger boundary", () => {
   ])("publishes %s without any old operating tables or continuation", async (date, previous) => {
     const f = fixture(date, previous);
     await runUsScreening(f.client, "owner");
-    expect(mocks.replay).toHaveBeenCalledTimes(1);
+    expect(mocks.replay).not.toHaveBeenCalled();
     expect(f.writes).toContain("us_screening_history");
     expect(f.writes).toContain("owner/cache/us-screening/latest.json");
     expect(f.downloads.some((path) => path.includes("us-continuation"))).toBe(false);
@@ -139,12 +142,12 @@ describe("retired US operating ledger boundary", () => {
     await runUsScreening(f.client, "owner");
     const immutable = f.files.get("owner/results/us-screening/2026-10-12.json");
     await runUsScreening(f.client, "owner");
-    expect(mocks.replay).toHaveBeenCalledTimes(1);
+    expect(mocks.replay).not.toHaveBeenCalled();
     expect(f.writes.filter((x) => x === "us_screening_history")).toHaveLength(1);
     expect(f.files.get("owner/results/us-screening/2026-10-12.json")).toBe(immutable);
     expect(mocks.publish).toHaveBeenCalledTimes(2);
   });
-  it("does not publish a completion marker while restart Shadow is deferred", async () => {
+  it("publishes screening independently when the retired Shadow would be deferred", async () => {
     const f = fixture();
     mocks.replay.mockResolvedValue({
       market: "US",
@@ -152,15 +155,18 @@ describe("retired US operating ledger boundary", () => {
       deferred: { date: "2026-10-12" },
       latestRecordedDate: null,
     });
-    await expect(runUsScreening(f.client, "owner")).rejects.toThrow("has not completed");
-    expect(f.writes).not.toContain("us_screening_history");
-    expect(mocks.publish).not.toHaveBeenCalled();
+    await runUsScreening(f.client, "owner");
+    expect(f.writes).toContain("us_screening_history");
+    expect(mocks.replay).not.toHaveBeenCalled();
+    expect(mocks.publish).toHaveBeenCalledOnce();
   });
-  it("requires missing dates to use the new replay route before ordinary screening", async () => {
+  it("publishes current screening with an explicit predecessor gap without writing models", async () => {
     const f = fixture();
     f.setHistory({ date: "2026-10-08" });
-    await expect(runUsScreening(f.client, "owner")).rejects.toThrow("restart-series recovery");
-    expect(f.writes).toEqual([]);
+    await runUsScreening(f.client, "owner");
+    const saved = JSON.parse(f.files.get("owner/results/us-screening/2026-10-12.json")!);
+    expect(saved.signalCoverage.predecessorComplete).toBe(false);
+    expect(saved.analysis.rows.every((r: { onset80: boolean }) => !r.onset80)).toBe(true);
     expect(mocks.replay).not.toHaveBeenCalled();
   });
   it("old continuation cannot accept a new date even if called directly", async () => {

@@ -29,7 +29,6 @@ import {
   DashboardSignalCounts,
   DashboardSignalLists,
   DashboardStrategyRules,
-  UsDashboardPortfolio,
   useDashboardOperations,
 } from "@/components/DashboardOperations";
 import { dashboardQueryOptions } from "@/lib/analysisQuery";
@@ -340,55 +339,6 @@ function DashboardContent({
         )}
       </details>
       <div className="space-y-4">
-        <div className="space-y-4">
-          <Card
-            title="KOSPI / KOSDAQ 포트폴리오"
-            icon={<ShieldCheck className="size-4 text-primary" />}
-          >
-            <p className="mb-2 text-[10px] text-muted-foreground">
-              배정·입출금 기준 · KRW (ETF와 공유)
-            </p>
-            <KeyValue
-              label="순입금"
-              value={
-                portfolio
-                  ? portfolio.netContributions === null
-                    ? "자금 확인 대기"
-                    : formatWon(Number(portfolio.netContributions))
-                  : portfolioFallback
-              }
-            />
-            <KeyValue
-              label="현금"
-              value={
-                portfolio
-                  ? portfolio.cash === null
-                    ? "자금 확인 대기"
-                    : formatWon(Number(portfolio.cash))
-                  : portfolioFallback
-              }
-            />
-            <KeyValue
-              label="실제 보유 종목수"
-              value={
-                portfolio
-                  ? `국내주식 ${portfolio.assetPositions.KR}종목 · ETF ${portfolio.assetPositions.ETF}종목`
-                  : portfolioFallback
-              }
-            />
-            {portfolio?.fundingStatus === "INCOMPLETE" ? (
-              <p className="mt-2 text-[10px] text-warn">입출금·체결의 자금 연결을 확인해 주세요.</p>
-            ) : null}
-            <Link
-              to="/portfolio"
-              className="mt-3 inline-flex text-[11px] font-medium text-primary hover:underline"
-            >
-              포트폴리오 상세 보기 →
-            </Link>
-          </Card>
-          <UsDashboardPortfolio query={operations} />
-        </div>
-
         <Card
           title="KOSPI 시장 상태 · 진입 조건"
           icon={<Activity className="size-4 text-primary" />}

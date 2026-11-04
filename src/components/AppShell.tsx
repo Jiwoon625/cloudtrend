@@ -15,13 +15,11 @@ export interface AppShellSource {
 const NAV = [
   { to: "/scoring", label: "데이터 관리" },
   { to: "/", label: "대시보드" },
-  { to: "/portfolio", label: "포트폴리오" },
   { to: "/screener/stocks", label: "주식스크리너" },
   { to: "/screener/etfs", label: "ETF스크리너" },
   { to: "/us/screener", label: "US스크리너" },
   { to: "/sectors", label: "섹터" },
   { to: "/history", label: "스크리닝 이력" },
-  { to: "/shadow", label: "Shadow" },
   { to: "/operating-rules", label: "운영규칙" },
 ] as const;
 
@@ -104,6 +102,13 @@ export function AppShell({
                 {item.label}
               </Link>
             ))}
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer p-2">보관 기록</summary>
+              <div className="flex gap-3 p-2">
+                <Link to="/portfolio">포트폴리오·원장</Link>
+                <Link to="/shadow">Shadow·과거 성과</Link>
+              </div>
+            </details>
             <ThemeToggle />
           </nav>
         </div>

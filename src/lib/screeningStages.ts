@@ -1,4 +1,5 @@
 export type ScreeningStage =
+  | "DISABLED"
   | "COMPLETED"
   | "RUNNING"
   | "FAILED"
@@ -12,12 +13,12 @@ export type ScreeningStage =
 export type ScreeningStages = Record<
   "screening" | "actualPortfolio" | "models" | "publication",
   ScreeningStage
->;
+> & { signalHistory?: ScreeningStage };
 export function initialScreeningStages(preliminary = false): ScreeningStages {
   return {
     screening: "COMPLETED",
-    actualPortfolio: preliminary ? "SKIPPED_PRELIMINARY" : "NOT_RUN",
-    models: preliminary ? "SKIPPED_PRELIMINARY" : "NOT_RUN",
+    actualPortfolio: "DISABLED",
+    models: "DISABLED",
     publication: "NOT_RUN",
   };
 }
@@ -27,6 +28,7 @@ export function screeningStagesPath(userId: string, runId: string) {
   return `${userId}/results/screening/stages/${runId}.json`;
 }
 export const screeningStageLabels: Record<ScreeningStage, string> = {
+  DISABLED: "일상 운영 제외",
   COMPLETED: "완료",
   RUNNING: "진행 중",
   FAILED: "실패",
@@ -43,7 +45,10 @@ export function validScreeningStages(value: unknown): value is ScreeningStages {
   if (!value || typeof value !== "object") return false;
   const row = value as Record<string, unknown>;
   return (
-    Object.keys(row).length === 4 &&
+    (Object.keys(row).length === 4 ||
+      (Object.keys(row).length === 5 &&
+        typeof row["signalHistory"] === "string" &&
+        Object.hasOwn(screeningStageLabels, row["signalHistory"]))) &&
     ["screening", "actualPortfolio", "models", "publication"].every(
       (key) =>
         typeof row[key] === "string" && Object.hasOwn(screeningStageLabels, row[key] as string),

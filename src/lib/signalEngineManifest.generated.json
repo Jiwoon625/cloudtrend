@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "codeHash": "fc52ddb2b129c84879a1c734f5bd60b5f716efa6b167da5539a3df037efee286",
+  "usCodeHash": "7d5295a657f752c81088468a2bf7fab6f36f6f9acca5f5673fce52a590b0337c",
+  "KR": {
+    "version": "screening-signal-engine-v1",
+    "files": {
+      "src/lib/engine/additionalStockSectorMaster.ts": "sha256:654fbd023fe4c5b32b946c199d3db4c06259c32f77a90befb0fd35c7894ea378",
+      "src/lib/engine/dataset.ts": "sha256:784821737f364dd422d085b88ecef922cce15e7fe4c3b89b0ae87851e4f97c87",
+      "src/lib/engine/etfResearchMapping.json": "sha256:64f1c2583e55a5acef61e8a0ef79e3dcf3c34e2483770053a064f00bdbd1ba06",
+      "src/lib/engine/etfStrategy.ts": "sha256:1bb6b888e83852b9b11ab3b0741fdd31ed8b1b6a4f1f5da3e4ed93514d82f07d",
+      "src/lib/engine/fullMarketAnalysis.ts": "sha256:e07951891f14bbb6a0a81744f921b3f6fd27c794ff77186d67594dbe80e03f4a",
+      "src/lib/engine/historicalInstrumentScore.ts": "sha256:f25068a6e9070b79cf454f189d130d12c8a5bc082ab0f11f2ef774d308956ee9",
+      "src/lib/engine/indicators.ts": "sha256:4862c805f7c1c3731fdeb60c08ab9ba47baaa37983aa408c2483346ef9e8032b",
+      "src/lib/engine/kospiEntryConfirmation.ts": "sha256:fab80594dda2a76b67325457252b51ba9fb8cf7dcfea6ebe27a0df372922d37c",
+      "src/lib/engine/kospiMarketGate.ts": "sha256:4187e60af90fa66cfc922c73003491efc0c5f01e63d64c57742960885aa8907a",
+      "src/lib/engine/kospiShadow.ts": "sha256:98ed2b7f20e8d428e245332574283432e83851f37cc4b0aabfa5483adee21d03",
+      "src/lib/engine/kospiVolatility.ts": "sha256:7c4d43f18ceef204c638274cb5e60f6dcb33f2a8f7b9ed565ee3d43f2f370585",
+      "src/lib/engine/manualDataset.ts": "sha256:e77961837f9fa24ce0c316624b530177d1ad1f877eeabe4e063b1b8a1a7d110d",
+      "src/lib/engine/operationalStrategy.ts": "sha256:643cec8514075360f7895bfa22a9d5117db370d13be2e737aee522e68115b1af",
+      "src/lib/engine/pipeline.ts": "sha256:a3d3ac48786112ec02f11d4d58cc00c16877271c5a0afc5c624326da6c8ccdd3",
+      "src/lib/engine/priorityScoreV8.ts": "sha256:9a263d860f1dcafc68f2168c35d4191158ffdaf7b3edf33f688948a95ee9418f",
+      "src/lib/engine/scoring.ts": "sha256:10d399a840acd61d0369ce9c5a3ced96f72f84f1c9183c7474f45893b8f3afbf",
+      "src/lib/engine/sectorRotation.ts": "sha256:9faaf474a045ab2503b510cbcc6f8df50665e222b6f112a9889668837b7d4353",
+      "src/lib/engine/sectorRotationFullUniverse.ts": "sha256:bf5fd12bef69b784c9a886876d6655762b6afe7fcbd8f73a186950d56b5f16c3",
+      "src/lib/engine/sectors.ts": "sha256:466fe58e3a8469334c992d90968795135088a23f8d4215ab0ff129e6da709e2f",
+      "src/lib/engine/sectorScoreAdjustment.ts": "sha256:810cc969c35b129600bbc4ba3c243840def8bbb854bff9c2511ffd30a7753838",
+      "src/lib/engine/stockSectorMaster.ts": "sha256:c8bf803c54f9a24cd9e8942eba98d84f652ed92e317d9f2e2000ef35704ba660",
+      "src/lib/engine/usProspectivePortfolio.ts": "sha256:a593e9fb5e23dc353b0f1951176da4fd60e6b3858e2aa4d6e241d66e40a8324a",
+      "src/lib/engine/v8SectorPriceLeadership.ts": "sha256:1161aca2b8219712ce27df35a051f13a2177c3c965db34f163b204eaa1643078",
+      "src/lib/engine/v8SectorPriceLeadershipPolicy.ts": "sha256:a20de64beb856963b466aaacbf5613a58d4d179ad076df7002171fb859b99fb6",
+      "src/lib/engine/verifiedKrIndexMembership.generated.json": "sha256:fd2ae20e23ef64a495beecd2c9792783dd2d2740a3ec1329855ccc1c300c5a95",
+      "src/lib/engine/verifiedKrIndexMembership.ts": "sha256:db197a0db126e17d102c3c0faab69f5a5a2adef74b4a4821d5d15b7d012a3424",
+      "src/lib/engine/vfConfig.ts": "sha256:d5b6fa115ff765785ead12764a29f10df2da80833de63f68af48f97d76e77573",
+      "src/lib/etfPartialEvidence.ts": "sha256:2f19d7cd4de13452c2df498d0892498c09cf3401908850cc42721c3ea959e826",
+      "src/lib/etfReportScore.ts": "sha256:d6551e10eee422ec43fae358833093b4bb01c2353d2fb82530f9a4e362c5c5c4",
+      "src/lib/krxPreliminary.ts": "sha256:187d4be5b138bc77d52377658e841bfdc2346bbc1960c87b49e1149a0350f1e8",
+      "src/lib/krxReviewReference.ts": "sha256:f3819402a22fd3d4d201e92f809fbcf898f78ef94723ba56b237fdaf7e17c455",
+      "src/lib/krxReviewReferenceParser.ts": "sha256:6cf78ef73af07fc7df707f9afe427f92b1081b61b2a3dd2183f227a0c75e1ad2",
+      "src/lib/ledger/date.ts": "sha256:81b0ae4d40041a75f9fe940914a4aa7bd3db71ce8b152e73b152a5642014a9e0",
+      "src/lib/ledger/decimal.ts": "sha256:be029e6565b8bd9a340954a6a68c5cb639453f61cb636894664bcb3d9722d7f0",
+      "src/lib/ledger/modelSeries.ts": "sha256:63a758daf1abfc74bfcba395d6b21693f0185a48c206e064fa8eb76d4d1693ce",
+      "src/lib/onsetProfile.ts": "sha256:7b90575e14ca00ab8777ed8d721a597273cbdf18245567d8bd986cb612f57297",
+      "src/lib/operationalEtfMa60.ts": "sha256:110d017e894d4fe6ebc2baf1ef47063b42c3ba974177b879b1a06d013e9f35e0",
+      "src/lib/operationalSignalStart.ts": "sha256:ee5c5daef23502939726ec6fe354ad05adbb776071093a0645f7f57e0c3cac97",
+      "src/lib/operationalUnderlyingIndex.ts": "sha256:d53b6eb90a0785c707eaac0445c0b3a8554961fa4c700a4d1e9c631520670f8e",
+      "src/lib/positionSignalContext.ts": "sha256:037f198190e237134a6a547543a61650c986d2436208f22d4010894f4483fa3f",
+      "src/lib/screeningPublicationAnalysis.ts": "sha256:9f503f1ec3a94ef4559ed7a3b36c9bbddc9fe7c93c684dbb58335245d2a4c6f1",
+      "src/lib/screeningRunArchive.ts": "sha256:e9d79fd3a86dffd51176e61f2e734e05f6a154860cee4e161dc55a7a7c00dbc6",
+      "src/lib/screeningSnapshot.ts": "sha256:16a9a1fd32cb85c21e8b6d331f31cff13a41f66d7a74c93ea6ff2f8f6b104bb1",
+      "src/lib/screeningSnapshotStorage.ts": "sha256:e78f9c6210a8d6af85567244cbbb1c64a3d41d0e0429c53545584127222d8ef9",
+      "src/lib/shadowReplayCalculation.ts": "sha256:929a91338736c4b1853f5113c2870648092d2b0f3d43150bb9838b25cc107d4f",
+      "src/lib/sourceData.ts": "sha256:2f2f313ed65a34e83a0705cf3a61ecd4166d34b68193c1f5998fbf9e61b44390",
+      "src/lib/sourceTimingEvidence.ts": "sha256:ef72ba92c6778012e3e8f0844957bf91e5169687fc3d8d19628e03e761df0599",
+      "src/lib/statusDisplay.ts": "sha256:dd3fc532b98c305d1d4ed22e44d4432bc8b3b2a62760a2b33ff7245293f9e45b",
+      "src/lib/stockAssessmentDisplay.ts": "sha256:063589dd4b1c91f872090da0a05de8344e02ab25289f8a4ec375fa868a7a3861",
+      "src/lib/underlyingIndexSupplementRelease.ts": "sha256:f29cc4d577703942d0d79514f6789ab762e2585949f39cdbb9e25e4efadad8fd",
+      "src/lib/usCandidatePriority.ts": "sha256:b56ffa6bb73880e9f9ac737b70d42537d1e661c6970491a1a53381d1bbb4092b"
+    },
+    "dependencies": {
+      "typescript": "5.9.3"
+    },
+    "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
+  },
+  "US": {
+    "version": "screening-signal-engine-v1",
+    "files": {
+      "src/lib/engine/usProspective.ts": "sha256:f971c957b03391ad166ddaa88d06badb7e64f94385088fb966469fe9853bd37a"
+    },
+    "dependencies": {
+      "typescript": "5.9.3"
+    },
+    "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
+  }
+}

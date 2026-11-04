@@ -9,7 +9,12 @@ export type UsProspectiveSummary = Omit<UsProspectiveCache, "analysis"> & {
 export function usBrowserViews(result: UsProspectiveCache) {
   const { generatedAt, dataHash, source } = result;
   const { date, ruleVersion, summary, rows } = result.analysis;
-  const base = { generatedAt, dataHash, source };
+  const base = {
+    generatedAt,
+    dataHash,
+    source,
+    ...(result.signalCoverage ? { signalCoverage: result.signalCoverage } : {}),
+  };
   return {
     screening: { ...base, analysis: { date, ruleVersion, summary, rows } },
     summary: {

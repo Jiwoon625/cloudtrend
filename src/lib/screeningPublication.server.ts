@@ -11,7 +11,7 @@ import {
 
 // Bump this protocol for calculation-affecting publication adapters/profiles/snapshots
 // outside the transitive engine manifest; build-generated runtime hash covers engine changes.
-export const SCREENING_PUBLICATION_VERSION = "portfolio-sync-v1";
+export const SCREENING_PUBLICATION_VERSION = "screening-signals-v2";
 export type ScreeningPublicationIdentity = {
   inputFingerprint: string;
   resultDigest: string;
@@ -42,7 +42,7 @@ export function screeningPublicationReceipt(expected: ScreeningPublicationIdenti
   };
 }
 
-/** Called only after history, portfolio refresh and non-deferred Shadow publication succeed. */
+/** Called after screening/history publication. Retired financial writers are not completion dependencies. */
 export async function completeScreeningPublication(
   client: SupabaseClient,
   userId: string,

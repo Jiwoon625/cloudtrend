@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { trustedSupabaseClient } from "../scripts/analysis-run-store";
 import { stableJson } from "../scripts/analysis-run-store";
-import { runUsScreening } from "../scripts/run-us-screening";
+import { runHistoricalUsScreening as runUsScreening } from "../scripts/historical-us-screening";
 import { runUsGapReplay } from "../scripts/run-us-gap-replay";
 import { bytesHash } from "../scripts/us-replay-source";
 import {

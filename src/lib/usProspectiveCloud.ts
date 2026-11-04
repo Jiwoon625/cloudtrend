@@ -42,6 +42,10 @@ export interface UsProspectiveCacheRow {
 }
 
 export interface UsProspectiveCache {
+  signalCoverage?: {
+    predecessorComplete: boolean;
+    pending: Array<{ date: string; reason: string }>;
+  };
   generatedAt: string;
   dataHash: string;
   source: {

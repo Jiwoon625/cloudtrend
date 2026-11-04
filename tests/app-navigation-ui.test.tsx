@@ -16,7 +16,7 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 describe("final consolidated navigation", () => {
-  it("uses the requested exact ten-tab order with one portfolio and one data status destination", () => {
+  it("keeps daily screening navigation separate from preserved portfolio and Shadow records", () => {
     const html = renderToStaticMarkup(
       <AppShell>
         <p>content</p>
@@ -25,13 +25,11 @@ describe("final consolidated navigation", () => {
     const labels = [
       "데이터 관리",
       "대시보드",
-      "포트폴리오",
       "주식스크리너",
       "ETF스크리너",
       "US스크리너",
       "섹터",
       "스크리닝 이력",
-      "Shadow",
       "운영규칙",
     ];
     const positions = labels.map((text) => html.indexOf(`>${text}</a>`));
@@ -41,6 +39,9 @@ describe("final consolidated navigation", () => {
     expect(html).not.toContain('href="/us"');
     expect(html).not.toContain('href="/position-sizing"');
     expect(html).toContain('aria-label="주 메뉴"');
+    expect(html).toContain("보관 기록");
+    expect(html).toContain("포트폴리오·원장");
+    expect(html).toContain("Shadow·과거 성과");
     expect(html).not.toContain("본 서비스는 규칙 기반 스크리닝");
     expect(html).not.toContain("최종 판단과 책임은 이용자에게");
   });

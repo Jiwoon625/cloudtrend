@@ -11,6 +11,14 @@ const capture = vi.hoisted(() => ({
   trusted: vi.fn(),
   upsert: vi.fn(),
 }));
+vi.mock("../src/lib/screeningPublication.server", async (original) => ({
+  ...(await original<typeof import("../src/lib/screeningPublication.server")>()),
+  completeScreeningPublication: async () => {},
+}));
+vi.mock("../src/lib/signalJournal.server", () => ({ latestSignalConfig: async () => null }));
+vi.mock("../src/lib/krSignalJournal.server", () => ({
+  publishKrSignalJournal: async () => ({ pending: [] }),
+}));
 vi.mock("../scripts/source-registry-store", () => ({ loadAnalysisSourceInputs: capture.load }));
 vi.mock("../src/lib/engine/manualDataset", () => ({
   parseManualMarketData: () => ({ dataset: { asOfDate: "2026-10-06" }, stats: {} }),
@@ -133,7 +141,7 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-it("passes the original receipt to replay and preserves snapshot registration in the screening CLI", async () => {
+it("preserves source registration in screening history without invoking model replay", async () => {
   await runScreening([
     "--supabase-user-id",
     "11111111-1111-4111-8111-111111111111",
@@ -142,9 +150,7 @@ it("passes the original receipt to replay and preserves snapshot registration in
     "--upload",
     "--force",
   ]);
-  const replay = capture.replay.mock.calls[0]![0];
-  expect(replay.sources[0].validation_result).toEqual(inputs[0]!.sourceRecord.validation_result);
-  expect(sourceCaptureForDate(replay.sources, "2026-10-06")).toBe(origin.activated_at);
+  expect(capture.replay).not.toHaveBeenCalled();
   expect(capture.upsert).toHaveBeenCalledWith(
     expect.objectContaining({
       snapshot: expect.objectContaining({ sourceRegisteredAt: origin.activated_at }),

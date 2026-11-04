@@ -1,0 +1,60 @@
+name: Daily screening signal history
+on:
+  schedule:
+    - cron: "25 22 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/daily-signal-history.yml]
+  pull_request:
+    paths:
+      - .github/workflows/daily-signal-history.yml
+      - scripts/run-screening.ts
+      - scripts/run-us-screening.ts
+      - scripts/build-signal-manifest.ts
+      - src/lib/*SignalJournal*
+      - src/lib/signalJournal*
+      - tests/screening-only-boundary.test.ts
+permissions:
+  contents: read
+concurrency:
+  group: daily-signal-history-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vite-node --script scripts/build-signal-manifest.ts
+      - run: npx vitest run src/lib/signalJournal.server.test.ts src/lib/signalJournalReplay.test.ts tests/screening-only-boundary.test.ts tests/portfolio-screening-refresh.test.ts tests/us-current-ledger-boundary.test.ts src/lib/screeningStages.test.ts
+  record:
+    if: github.event_name != 'pull_request'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        market: [KR, US]
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Record Korean and ETF screening signals from available sources
+        if: matrix.market == 'KR'
+        run: npm run screening:run -- --supabase-user-id "$SUPABASE_USER_ID" --upload
+      - name: Record US screening signals from available sources
+        if: matrix.market == 'US'
+        run: npm run us:screening -- --user "$SUPABASE_USER_ID"

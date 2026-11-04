@@ -11,7 +11,7 @@ import {
   runUsProspectiveAnalysis,
   US_PROSPECTIVE_RULE_VERSION,
 } from "../src/lib/engine/usProspective";
-import { runUsScreening } from "../scripts/run-us-screening";
+import { runHistoricalUsScreening as runUsScreening } from "../scripts/historical-us-screening";
 import { sourceCsv } from "./us-replay-fixtures";
 import { createImmutableArchiveFixture } from "./immutable-archive-fixture";
 

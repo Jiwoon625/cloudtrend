@@ -450,16 +450,16 @@ describe("ETF registration and dashboard preservation", () => {
     expect(() => validateEtfHoldingSymbols(["AAPL"])).toThrow();
     expect(() => validateEtfHoldingSymbols("069500")).toThrow();
   });
-  it("preserves untouched dashboard panels and hides only disqualification distribution", () => {
+  it("preserves screening analysis panels while removing daily portfolio valuation panels", () => {
     const source = readFileSync(new URL("../src/routes/index.tsx", import.meta.url), "utf8");
     for (const preserved of [
-      "KOSPI / KOSDAQ 포트폴리오",
       "KOSPI 시장 상태 · 진입 조건",
       "Sector Rotation · 전체 섹터",
       "주식 Universe 검사 생략 사유",
       "PdfExportButton",
     ])
       expect(source).toContain(preserved);
+    expect(source).not.toContain("KOSPI / KOSDAQ 포트폴리오");
     expect(source).not.toContain("summary.failReasons");
     expect(source).not.toContain("ScreenerTable");
     expect(source).toContain("DashboardSignalLists");
