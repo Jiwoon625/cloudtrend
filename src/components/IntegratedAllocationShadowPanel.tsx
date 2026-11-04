@@ -58,7 +58,7 @@ export function IntegratedAllocationShadowContent({
           .map((s) => s.lastSessionDate)
           .filter(Boolean)
           .sort()
-          .at(-1) ?? "첫 세션 대기"}
+          .at(-1) ?? "세션 기록 없음"}
       </p>
       <div className="grid grid-cols-3 gap-2">
         {(["K", "E", "U"] as const).map((m) => (
@@ -75,7 +75,7 @@ export function IntegratedAllocationShadowContent({
         ))}
       </div>
       <div className="overflow-x-auto">
-        <h4>현재 보유 · 최신 완료 세션 기준</h4>
+        <h4>기록 당시 보유 · 마지막 저장 세션 기준</h4>
         {Object.values(ledger.markets).every((m) => !m.positions.length) ? (
           <p>보유종목 없음</p>
         ) : (
@@ -109,7 +109,7 @@ export function IntegratedAllocationShadowContent({
           월말 판단의 기간 필터는 집계월 말일 기준이며, 실제 자료 전달·판단 완료 시각과 다릅니다.
         </p>
         {!records.length ? (
-          <p role="status">선택 기간 기록 없음 · 첫 세션 전에는 빈 장부를 유지합니다.</p>
+          <p role="status">선택 기간에 보관된 기록이 없습니다.</p>
         ) : (
           records.map((r) => (
             <div key={r.id} className="border-t py-2 text-xs">
@@ -157,11 +157,9 @@ export function IntegratedAllocationShadowContent({
       </p>
       {ledger.contract.kind === "O1" ? (
         <p className="text-xs">
-          초기 목표는 9월 11일 연구 종료 시점의 검증된 20세션 수요를 선택한 값입니다. 운영 중 전달된
-          진입조건 충족 신호를 신호확정일의 달력월별로 모아 다음 달 목표를 갱신하고 유휴현금만
-          이동합니다. 첫 집계는 10월 12일부터 월말까지의 부분월입니다. 시장 관측이 빠졌으면 기존
-          목표를 유지합니다. 별도 참조 장부를 계산하지 않는 새 운영 방식으로, 원본 O1 연구 성과와
-          구분합니다. 목표 0% 시장의 미체결 매수는 취소하며 보유종목은 강제매도하지 않습니다.
+          보관된 O1 모델은 당시 전달된 진입 신호를 월별로 집계해 다음 달 목표와 유휴현금 배분을
+          계산했습니다. 10월 12일부터 시작한 부분월 기록이며 원본 O1 연구 성과와 구분합니다. 현재는
+          월말 비중 변경이나 신규 세션 기록을 자동 수행하지 않습니다.
         </p>
       ) : (
         <p className="text-xs">
@@ -169,8 +167,8 @@ export function IntegratedAllocationShadowContent({
         </p>
       )}
       <p className="text-xs">
-        한국·미국은 연초 시장별 자산 기준으로 새 종목 예산을 갱신합니다. ETF는 진입 직전 완료 종가의
-        시장자산과 변동성 비중을 사용합니다.
+        보관 기록의 산식: 한국·미국은 연초 시장별 자산 기준 종목 예산, ETF는 진입 직전 완료 종가의
+        시장자산과 변동성 비중을 사용했습니다.
       </p>
     </div>
   );
@@ -282,10 +280,7 @@ export function IntegratedAllocationShadowPanel({
 }) {
   const ownerRef = useRef(owner);
   ownerRef.current = owner;
-  const [kind, setKind] = useState<"O1" | "S07">("O1"),
-    [busy, setBusy] = useState(false),
-    [message, setMessage] = useState<string | null>(null);
-  const lock = useRef(false);
+  const [kind, setKind] = useState<"O1" | "S07">("O1");
   async function token(id: string) {
     const { data, error } = await supabase.auth.getSession();
     if (error || data.session?.user.id !== id || ownerRef.current !== id)
@@ -303,31 +298,12 @@ export function IntegratedAllocationShadowPanel({
         data: { action: "load", accessToken: await token(owner!) },
       }),
   });
-  async function initialize() {
-    if (!owner || lock.current) return;
-    const id = owner;
-    lock.current = true;
-    setBusy(true);
-    setMessage(null);
-    try {
-      await integratedAllocationShadowServer({
-        data: { action: "initialize", accessToken: await token(id) },
-      });
-      if (ownerRef.current === id) {
-        await query.refetch();
-        setMessage("자산배분 Shadow 초기화 내역을 확인했습니다.");
-      }
-    } catch {
-      if (ownerRef.current === id)
-        setMessage("초기화 응답을 확인하지 못했습니다. 새로고침으로 기존 기록을 확인하세요.");
-    } finally {
-      lock.current = false;
-      setBusy(false);
-    }
-  }
   const book = query.data?.books.find((b) => b.kind === kind);
   return (
     <section aria-label="자산배분 Shadow" className="space-y-3 rounded border p-4">
+      <p className="text-sm text-muted-foreground">
+        통합배분은 일상 운영에서 제외했습니다. 아래는 마지막 저장일 기준의 보관 기록입니다.
+      </p>
       <label>
         자산배분 전략{" "}
         <select value={kind} onChange={(e) => setKind(e.target.value as "O1" | "S07")}>
@@ -336,11 +312,11 @@ export function IntegratedAllocationShadowPanel({
         </select>
       </label>
       <Button
-        disabled={!owner || busy || query.isFetching}
+        disabled={!owner || query.isFetching}
         variant="outline"
         onClick={() => void query.refetch()}
       >
-        배분 Shadow 새로고침
+        배분 보관 기록 다시 불러오기
       </Button>
       {!owner ? (
         <p>로그인 후 조회합니다.</p>
@@ -364,14 +340,8 @@ export function IntegratedAllocationShadowPanel({
           )}
         />
       ) : (
-        <div>
-          <p>신규 배분 장부 등록 대기</p>
-          <Button disabled={busy} onClick={() => void initialize()}>
-            승인한 O1·60/20/20 새 장부 초기화
-          </Button>
-        </div>
+        <p>보관된 배분 장부가 없습니다. 일상 운영에서는 새 장부를 생성하지 않습니다.</p>
       )}
-      {message ? <p role="status">{message}</p> : null}
     </section>
   );
 }

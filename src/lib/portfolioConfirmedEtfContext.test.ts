@@ -76,3 +76,28 @@ it("fails closed on corrupted confirmed quote content", async () => {
   s.objects.set(path, JSON.stringify(changed));
   await expect(loadConfirmedEtfContext(s.client, "owner")).rejects.toThrow(/integrity/);
 });
+it.each([
+  "screening-cache-v8-verified-kr-index-20261030-v1",
+  "screening-cache-v8-verified-kr-index-20261008-v1",
+])("preserves historical FINAL marks across the %s cache upgrade", async (version) => {
+  const s = store();
+  await preserveConfirmedEtfContext(s.client, "owner", { ...cached(), version });
+  const saved = await loadConfirmedEtfContext(s.client, "owner");
+  expect(saved?.date).toBe(analysis.asOfDate);
+  expect(saved?.rows.length).toBeGreaterThan(0);
+  expect(s.upload).toHaveBeenCalledTimes(1);
+});
+it("still rejects tampered legacy marks and unknown cache formats without writes", async () => {
+  const s = store();
+  await expect(
+    preserveConfirmedEtfContext(s.client, "owner", {
+      ...cached(),
+      version: "screening-cache-v8-verified-kr-index-20261030-v1",
+      payload: { analysis: { ...analysis, asOfDate: "2099-01-01" } },
+    }),
+  ).rejects.toThrow(/unverified/);
+  await expect(
+    preserveConfirmedEtfContext(s.client, "owner", { ...cached(), version: "unknown-v99" }),
+  ).rejects.toThrow(/unverified/);
+  expect(s.upload).not.toHaveBeenCalled();
+});

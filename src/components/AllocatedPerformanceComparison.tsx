@@ -34,12 +34,12 @@ export function AllocatedPerformanceComparison({
     point.issues.length === 0;
   return (
     <section className="rounded-lg border p-4 space-y-2" aria-label="실제·전략 성과 비교">
-      <h2 className="font-semibold">실제·선택 전략 성과 비교</h2>
+      <h2 className="font-semibold">실제·선택 전략 성과 비교 · 보관 기록</h2>
       <p className="text-xs text-muted-foreground">
         2026-10-12 이후 명시적으로 배정한 실제 체결과 현금만 사용합니다.{" "}
         {currency === "KRW" ? "실제 국내 주식·ETF 공통 자금" : "실제 미국 자금"}과 선택한 독립
         전략을 {currency} 기준으로 비교합니다. 미입력 배당·비용은 반영되지 않으며 증권사 대사 완료
-        수익률은 아닙니다.
+        수익률은 아닙니다. 일상 스크리닝에서는 이 비교 성과를 자동 계산하지 않습니다.
       </p>
       {query.isError ? (
         <p role="alert">{query.error.message}</p>
@@ -66,8 +66,9 @@ export function AllocatedPerformanceComparison({
         </table>
       ) : (
         <p className="text-sm">
-          비교 자료 대기 · 다음 스크리닝에서 실제 성과를 구성합니다. 원장 변경, 같은 날짜의 가격
-          누락 또는 추가 입출금이 있으면 확인 전까지 비교 수익률을 표시하지 않습니다.
+          동일 기준일의 검증된 비교 자료가 없습니다. 성과는 별도 연구 시 계산하며, 다음 스크리닝이나
+          새로고침으로 생성되지 않습니다. 원장 변경, 가격 누락 또는 추가 입출금이 있으면 확인 전까지
+          비교 수익률을 표시하지 않습니다.
         </p>
       )}
       {query.data && (

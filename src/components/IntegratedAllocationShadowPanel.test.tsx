@@ -80,11 +80,11 @@ describe("integrated allocation Shadow display", () => {
     expect(render("2024-04-15", "2026-10-31")).toContain(
       "2026-10-31 집계월 말일 · 다음 달 비중 판단",
     );
-    expect(render("", "2026-10-30")).toContain("선택 기간 기록 없음");
-    expect(render("2026-11-01", "")).toContain("선택 기간 기록 없음");
+    expect(render("", "2026-10-30")).toContain("선택 기간에 보관된 기록이 없습니다.");
+    expect(render("2026-11-01", "")).toContain("선택 기간에 보관된 기록이 없습니다.");
     ledger.receipts[0]!.record.date = "2028-02";
     expect(render("2028-02-29", "2028-02-29")).toContain("2028-02-29 집계월 말일");
-    expect(render("", "2028-02-28")).toContain("선택 기간 기록 없음");
+    expect(render("", "2028-02-28")).toContain("선택 기간에 보관된 기록이 없습니다.");
   });
   it("separates new calendar-month O1 from its historical initial seed and research", async () => {
     const ledger = await createIntegratedAllocationShadow("O1", { codeHash: hash });
@@ -93,7 +93,7 @@ describe("integrated allocation Shadow display", () => {
     expect(html.match(/33.33%/g)).toHaveLength(3);
     expect(html).toContain("부분월");
     expect(html).toContain("원본 O1 연구 성과와 구분");
-    expect(html).toContain("첫 세션 대기");
+    expect(html).toContain("세션 기록 없음");
     expect(html).not.toContain("독립 기준 장부의 수요");
   });
   it("uses actual calendar-date range for the history, leaving latest holdings explicitly scoped", async () => {
@@ -126,7 +126,7 @@ describe("integrated allocation Shadow display", () => {
         period={{ from: "2026-10-14", to: "2026-10-15" }}
       />,
     );
-    expect(excluded).toContain("선택 기간 기록 없음");
+    expect(excluded).toContain("선택 기간에 보관된 기록이 없습니다.");
     expect(excluded).not.toContain("A BUY");
     const included = renderToStaticMarkup(
       <IntegratedAllocationShadowContent
@@ -135,7 +135,7 @@ describe("integrated allocation Shadow display", () => {
       />,
     );
     expect(included).toContain("A BUY 1주");
-    expect(included).toContain("최신 완료 세션 기준");
+    expect(included).toContain("마지막 저장 세션 기준");
     expect(included).toContain("60/20/20 정적 초기배분");
   });
 });
