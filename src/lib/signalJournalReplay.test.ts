@@ -156,3 +156,17 @@ it("US missing predecessor is pending, never a fabricated empty signal or reset 
   expect(mock.usAnalyze).not.toHaveBeenCalled();
   expect(mock.record).not.toHaveBeenCalled();
 });
+
+it("an invalid historical source stays pending without preventing the current screen signal", async () => {
+  mock.analyze.mockImplementationOnce(() => {
+    throw new Error("historical provider mismatch");
+  });
+  const result = await publishKrSignalJournal(client, "owner", {
+    dataset: { asOfDate: "2026-11-05", tradeDates: ["2026-11-04", "2026-11-05"] } as MarketDataset,
+    config,
+    snapshot: { asOfDate: "2026-11-05", strategyVersion: "v1" } as ScreeningSnapshot,
+    sourceHash: "s",
+  });
+  expect(result.pending.find((p) => p.date === "2026-11-04")?.reason).toContain("재시도");
+  expect(mock.record.mock.calls.map((c) => c[3].asOfDate)).toEqual(["2026-11-05"]);
+});

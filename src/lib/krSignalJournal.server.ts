@@ -79,20 +79,29 @@ export async function publishKrSignalJournal(
       continue;
     }
     reconstructed++;
-    // Slice dated inputs before analysis; never copy a later day's score/signals backward.
-    const sliced = sliceKrDatasetForReplay(dataset, date);
-    if (sliced.krxReviewObservations) sliced.krxReviewObservations = {};
-    const oldConfig = rule.config as ScoringConfig;
-    const { analysis, dataset: prepared } = runFullMarketAnalysis(sliced, oldConfig);
-    const provider = await loadOperationalIndex(client, owner, prepared, new Date().toISOString());
-    const projected = screeningPublicationAnalysis(analysis, prepared, oldConfig, provider);
-    const result = appendEtfReportEvidence(
-      buildSnapshot(projected, undefined, `signal-KR-${date}-${rule.id.slice(0, 16)}`),
-      projected,
-    );
-    await recordSignal(client, owner, "KR", result, rule, sourceHash, "RECONSTRUCTED", [
-      "후일 수집자료로 복원: 당시 데이터 제공 범위·수정 전 가격·종목 구성의 완전한 재현은 아님",
-    ]);
+    try {
+      // Slice dated inputs before analysis; never copy a later day's score/signals backward.
+      const sliced = sliceKrDatasetForReplay(dataset, date);
+      if (sliced.krxReviewObservations) sliced.krxReviewObservations = {};
+      const oldConfig = rule.config as ScoringConfig;
+      const { analysis, dataset: prepared } = runFullMarketAnalysis(sliced, oldConfig);
+      const provider = await loadOperationalIndex(
+        client,
+        owner,
+        prepared,
+        new Date().toISOString(),
+      );
+      const projected = screeningPublicationAnalysis(analysis, prepared, oldConfig, provider);
+      const result = appendEtfReportEvidence(
+        buildSnapshot(projected, undefined, `signal-KR-${date}-${rule.id.slice(0, 16)}`),
+        projected,
+      );
+      await recordSignal(client, owner, "KR", result, rule, sourceHash, "RECONSTRUCTED", [
+        "후일 수집자료로 복원: 당시 데이터 제공 범위·수정 전 가격·종목 구성의 완전한 재현은 아님",
+      ]);
+    } catch {
+      pending.push({ date, reason: "과거 자료 검증·기록 미완료 · 다음 실행에서 재시도" });
+    }
   }
   await saveSignalCoverage(client, owner, "KR", snapshot.asOfDate, pending);
   return { pending };
