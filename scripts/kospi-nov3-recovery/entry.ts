@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { safeCaptureProgress, safeChildTermination } from "./diagnostics";
 import { spawnSync } from "node:child_process";
 import {
   readEvidence,
@@ -439,6 +440,21 @@ export async function main() {
         maxBuffer: 1024 * 1024,
         timeout: 50 * 60 * 1000,
       });
+      let progress: unknown = null;
+      try {
+        const progressFile = file("capture-progress");
+        if (fs.statSync(progressFile).size <= 4096)
+          progress = JSON.parse(fs.readFileSync(progressFile, "utf8"));
+      } catch {
+        /* Missing or malformed progress never exposes the underlying error. */
+      }
+      console.log(
+        JSON.stringify({
+          status: "PURE_CAPTURE_DIAGNOSTIC",
+          ...safeCaptureProgress(progress),
+          ...safeChildTermination(child),
+        }),
+      );
       need(child.status === 0 && !child.error);
       return read("capture-status");
     }

@@ -18,6 +18,7 @@ import { DEFAULT_SCORING_CONFIG } from "../../src/lib/engine/scoring";
 import { computeKrCompanion } from "../kr-nov3-recovery/entry";
 import { prepareNov3Recovery } from "./core";
 import runtime from "../../src/lib/kospiShadowPublicationRuntime.generated.json";
+import { captureProgress, type CaptureStage } from "./diagnostics";
 const H = (v: unknown) => captureCanonicalProof(v).hash;
 const raw = (v: Uint8Array | string) => "sha256:" + createHash("sha256").update(v).digest("hex");
 const need = (v: unknown) => {
@@ -39,12 +40,22 @@ export function savePrivate(file: string, value: unknown) {
 }
 /** Run in a separate process with no credentials and network disabled. */
 export async function computeNov3Capture(dir: string) {
+  const started = Date.now();
+  const mark = (stage: CaptureStage, index: number | null = null) => {
+    fs.writeFileSync(
+      path.join(dir, "capture-progress.json"),
+      JSON.stringify(captureProgress(stage, index, started)),
+      { mode: 0o600 },
+    );
+  };
+  mark("CAPTURE_READ");
   const c = JSON.parse(fs.readFileSync(path.join(dir, "capture.json"), "utf8"));
   need(c.version === "kospi-nov3-readonly-capture-v1");
   need(Array.isArray(c.sourceRows) && c.sourceRows.length > 0 && c.sourceRows.length <= 128);
   const texts: string[] = [];
   const sourceObjects: any[] = [];
-  for (const r of c.sourceRows) {
+  for (const [index, r] of c.sourceRows.entries()) {
+    mark("SOURCE_READ", index);
     need(
       /^[a-f0-9-]{36}$/.test(r.id) &&
         r.user_id === c.owner &&
@@ -55,12 +66,14 @@ export async function computeNov3Capture(dir: string) {
     need(raw(bytes) === r.file_hash);
     const gzip = r.canonical_format === "csv.gz" || r.storage_path.endsWith(".gz");
     if (gzip) bytes = gunzipSync(bytes, { maxOutputLength: SOURCE_MAX_FILE_BYTES });
+    mark("SOURCE_VALIDATE", index);
     const v = await validateSourceBytes({
       bytes,
       filename: r.original_filename.replace(/\.gz$/i, ""),
       contentType: gzip ? "text/csv" : r.content_type,
       streamingCsv: true,
     });
+    mark("SOURCE_MANIFEST", index);
     need(
       v.valid &&
         v.dataHash === r.data_hash &&
@@ -79,14 +92,17 @@ export async function computeNov3Capture(dir: string) {
     });
     texts.push(v.canonicalCsv);
   }
+  mark("PUBLICATION_VALIDATE");
   for (const [i, r] of c.sourceRows.entries()) {
     const p = krSourcePublication(r);
     if (p) need(raw(p.manifestText) === p.manifestSha256);
     if (!p || p.phase !== "PRELIMINARY" || unresolvedKrPendingSources(c.sourceRows).includes(r))
       need(!/PENDING_PUBLICATION|KRX_PENDING|KRX_PUBLICATION_PENDING/i.test(texts[i]));
   }
+  mark("DATASET_PARSE");
   const dataset = parseManualMarketDataWithReferences(texts).dataset;
   need(dataset.asOfDate === "2026-11-03");
+  mark("DATASET_HASH");
   const datasetHash = H(dataset),
     sourceHash = raw(
       c.sourceRows
@@ -144,12 +160,14 @@ export async function computeNov3Capture(dir: string) {
       },
       date,
     );
+  mark("SESSION_PREDECESSOR");
   const baselineSession = build("2026-11-02"),
     adjustedSession = {
       ...baselineSession,
       sourceHash: datasetHash,
       sourceCollectedAt: c.capturedAt,
     };
+  mark("SESSION_TARGET");
   const target = {
     ...build("2026-11-03"),
     sourceHash: datasetHash,
@@ -179,6 +197,7 @@ export async function computeNov3Capture(dir: string) {
     generationPins: c.generationPins,
     priorRecovery: c.priorRecovery,
   };
+  mark("HISTORICAL_PROOF");
   const result = await prepareNov3Recovery(input);
   const receipt = {
     version: "kospi-nov3-recovery-preparation-v1",
@@ -188,6 +207,7 @@ export async function computeNov3Capture(dir: string) {
     input,
     result,
   };
+  mark("RECEIPT_WRITE");
   savePrivate(path.join(dir, "receipt.json"), receipt);
   const { priorRecovery: _prior, ...compact } = input;
   void _prior;
@@ -207,6 +227,7 @@ export async function computeNov3Capture(dir: string) {
   });
   need(selectedFinalIndex >= 0);
   const selectedFinalSourceRow = c.sourceRows[selectedFinalIndex];
+  mark("KR_COMPANION");
   const companion = await computeKrCompanion(
     {
       ...c,
@@ -221,6 +242,7 @@ export async function computeNov3Capture(dir: string) {
     path.join(path.dirname(dir), "kr-nov3-private"),
     texts[selectedFinalIndex],
   );
+  mark("OUTPUT_WRITE");
   savePrivate(path.join(dir, "companion-status.json"), companion);
   if (result.status !== "PROVEN_NOV3_RETROSPECTIVE_CONTINUATION")
     return {
