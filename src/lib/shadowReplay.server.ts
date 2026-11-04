@@ -414,17 +414,6 @@ async function replayKrShadowMarket(input: {
       const sourceHash = (await hashSeriesValue(
         currentDateEvidence(dataset, snapshot),
       )) as SeriesHash;
-      if (date >= "2026-10-12") {
-        const { stageIntegratedKrEvidence } = await import("./integratedAllocationReplay.server");
-        await stageIntegratedKrEvidence(input.client, input.userId, {
-          dataset,
-          analysis,
-          sourceHash,
-          availableAt: clock.modelAvailableAt,
-          decisionAt: clock.modelDecisionAt,
-          calculatedAt,
-        });
-      }
       const currentSymbols = new Set(snapshot.entries.map((entry) => entry.symbol));
       const priorSymbols = previousSnapshot?.entries
         .map((entry) => entry.symbol)
@@ -737,16 +726,6 @@ async function replayUsShadowMarket(input: {
         date,
         rows: [...rows].sort((a, b) => a.symbol.localeCompare(b.symbol)),
       })) as SeriesHash;
-      if (date >= "2026-10-12") {
-        const { stageIntegratedUsEvidence } = await import("./integratedAllocationReplay.server");
-        await stageIntegratedUsEvidence(input.client, input.userId, {
-          analysis,
-          sourceHash,
-          availableAt: clock.modelAvailableAt,
-          decisionAt: clock.modelDecisionAt,
-          calculatedAt,
-        });
-      }
       const codeHash = await reviewedReplayCodeHash(store, US_KINDS, date);
       const previousSessionDate =
         calendar.regularSessions.filter((session) => session < date).at(-1) ?? "2026-10-02";
@@ -850,34 +829,6 @@ async function replayUsShadowMarket(input: {
   };
 }
 
-async function finishIntegratedReplay<T extends ShadowReplayBatchResult>(
-  input: { client: SupabaseClient; userId: string; mode?: "service" | "authenticated-owner" },
-  result: T,
-) {
-  if (result.throughDate < "2026-10-12") return result;
-  try {
-    const { replayIntegratedAllocationAvailable } =
-      await import("./integratedAllocationReplay.server");
-    return {
-      ...result,
-      integratedAllocation: await replayIntegratedAllocationAvailable(
-        input.client,
-        input.userId,
-        result.throughDate,
-        result.calculatedAt,
-        input.mode ?? "service",
-      ),
-    };
-  } catch (error) {
-    return {
-      ...result,
-      integratedAllocation: {
-        recorded: 0,
-        waiting: error instanceof Error ? error.message : "통합 자산배분 연결 확인 필요",
-      },
-    };
-  }
-}
 export async function replayKrShadow(input: Parameters<typeof replayKrShadowMarket>[0]) {
   const publication = await verifyKrScreeningPublication(input.client, input.userId, input.sources);
   if (publication.phase === "PRELIMINARY") {
@@ -904,8 +855,8 @@ export async function replayKrShadow(input: Parameters<typeof replayKrShadowMark
     ),
     false,
   );
-  return finishIntegratedReplay(input, await replayKrShadowMarket(input));
+  return replayKrShadowMarket(input);
 }
 export async function replayUsShadow(input: Parameters<typeof replayUsShadowMarket>[0]) {
-  return finishIntegratedReplay(input, await replayUsShadowMarket(input));
+  return replayUsShadowMarket(input);
 }

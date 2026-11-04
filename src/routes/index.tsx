@@ -170,9 +170,9 @@ function Dashboard() {
       await queryClient.invalidateQueries({ queryKey: ["portfolio-ledgers"] });
       await queryClient.invalidateQueries({ queryKey: DASHBOARD_OPERATIONS_QUERY });
       queryClient.removeQueries({ queryKey: ["instrument"] });
-      if (result.refresh?.portfolioRefresh.status === "FAILED")
+      if (result.refresh?.pipelineStatus.publication !== "COMPLETED")
         toast.warning(
-          "스크리닝은 완료됐지만 포트폴리오 갱신에 실패했습니다. 포트폴리오에서 다시 확인하세요.",
+          "스크리닝은 저장됐지만 후속 처리에 대기 또는 실패가 있습니다. 스크리닝 이력에서 실제 평가·모델 기록 상태를 확인하세요.",
         );
       else
         toast.success(

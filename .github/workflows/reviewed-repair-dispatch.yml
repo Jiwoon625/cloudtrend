@@ -1,0 +1,19 @@
+name: Dispatch reviewed November operating repair
+on:
+  push:
+    branches: [main, ops/nov3-reviewed-repair]
+    paths: [.github/operations/nov3-repair.json]
+permissions:
+  contents: read
+  actions: write
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Dispatch only the reviewed recovery phase
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/dispatch-reviewed-repair.mjs

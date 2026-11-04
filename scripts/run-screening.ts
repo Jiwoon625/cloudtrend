@@ -1,3 +1,6 @@
+import { publishAllocatedPerformanceHistory } from "../src/lib/allocatedPerformanceHistory.server";
+import { initialScreeningStages } from "../src/lib/screeningStages";
+import { saveScreeningStages } from "../src/lib/screeningStages.server";
 import { runScreeningFollowups } from "./screening-followups";
 import { applyKrScreeningPublication } from "../src/lib/krScreeningPublication";
 import { verifyKrScreeningPublication } from "../src/lib/krScreeningPublication.server";
@@ -240,12 +243,7 @@ export async function runScreening(argv = process.argv.slice(2)) {
   const coreSnapshot = buildSnapshot(analysis, sourceRegisteredAt, runId);
   // Shadow is replayed separately from the latest investment-screen view.
   const previous = await loadPreviousSnapshot(client, options.supabaseUserId, coreSnapshot.date);
-  const pipelineStatus = {
-    screening: "COMPLETED",
-    actualPortfolio: preliminary ? "SKIPPED_PRELIMINARY" : "NOT_RUN",
-    models: preliminary ? "SKIPPED_PRELIMINARY" : "NOT_RUN",
-    publication: "NOT_RUN",
-  };
+  const pipelineStatus = initialScreeningStages(preliminary);
   const summary = {
     pipelineStatus,
     ...buildScreeningSummary(analysis, coreSnapshot, previous),
@@ -321,11 +319,50 @@ export async function runScreening(argv = process.argv.slice(2)) {
     });
 
     memory("cache-publish-end");
+    await saveScreeningStages(client, options.supabaseUserId, runId, pipelineStatus);
     if (!preliminary) {
       const { portfolioRefresh, octoberShadow } = await runScreeningFollowups({
-        refreshPortfolio: () => refreshPortfolioAfterScreening(client, options.supabaseUserId),
-        replayModels: () =>
-          replayKrShadow({
+        refreshPortfolio: async () => {
+          pipelineStatus.actualPortfolio = "RUNNING";
+          await saveScreeningStages(client, options.supabaseUserId, runId, pipelineStatus);
+          try {
+            const refreshed = await refreshPortfolioAfterScreening(client, options.supabaseUserId);
+            if (refreshed.status === "FAILED") {
+              pipelineStatus.actualPortfolio = "FAILED";
+              return refreshed;
+            }
+            if (analysis.asOfDate < "2026-10-12") {
+              pipelineStatus.actualPortfolio = refreshed.status;
+              return refreshed;
+            }
+            const history = await publishAllocatedPerformanceHistory(
+              client,
+              options.supabaseUserId,
+              {
+                currency: "KRW",
+                sourceHash: dataVersion,
+                throughDate: analysis.asOfDate,
+                dates: dataset.tradeDates,
+                prices: Object.entries(dataset.bars).flatMap(([symbol, bars]) =>
+                  bars
+                    .filter((b) => b.tradeDate >= "2026-10-12")
+                    .map((b) => ({ symbol, date: b.tradeDate, close: b.close })),
+                ),
+              },
+            );
+            pipelineStatus.actualPortfolio = history.status;
+            return { ...refreshed, status: history.status };
+          } catch (error) {
+            pipelineStatus.actualPortfolio = "FAILED";
+            throw error;
+          } finally {
+            await saveScreeningStages(client, options.supabaseUserId, runId, pipelineStatus);
+          }
+        },
+        replayModels: async () => {
+          pipelineStatus.models = "RUNNING";
+          await saveScreeningStages(client, options.supabaseUserId, runId, pipelineStatus);
+          return replayKrShadow({
             client,
             userId: options.supabaseUserId,
             dataset,
@@ -342,7 +379,8 @@ export async function runScreening(argv = process.argv.slice(2)) {
               savedAt: source.savedAt,
               validation_result: source.sourceRecord?.validation_result,
             })),
-          }),
+          });
+        },
       });
       process.stdout.write(`${JSON.stringify({ portfolioRefresh })}\n`);
       pipelineStatus.actualPortfolio = portfolioRefresh.status;
@@ -352,9 +390,16 @@ export async function runScreening(argv = process.argv.slice(2)) {
           : octoberShadow.deferred
             ? "WAITING_INPUT"
             : "COMPLETED";
-      if (!octoberShadow.deferred && portfolioRefresh.status !== "FAILED") {
-        await completeScreeningPublication(client, options.supabaseUserId, webCache);
-        pipelineStatus.publication = "COMPLETED";
+      if (
+        pipelineStatus.models === "COMPLETED" &&
+        ["UPDATED", "REUSED"].includes(portfolioRefresh.status)
+      ) {
+        try {
+          await completeScreeningPublication(client, options.supabaseUserId, webCache);
+          pipelineStatus.publication = "COMPLETED";
+        } catch {
+          pipelineStatus.publication = "FAILED";
+        }
       } else pipelineStatus.publication = "WAITING_FOLLOWUP";
       process.stdout.write(`${JSON.stringify({ octoberShadow })}\n`);
     } else {
@@ -362,6 +407,7 @@ export async function runScreening(argv = process.argv.slice(2)) {
         `${JSON.stringify({ krPublication, financialSideEffects: "SKIPPED" })}\n`,
       );
     }
+    await saveScreeningStages(client, options.supabaseUserId, runId, pipelineStatus);
     await writeScreeningJson(bundleFile, bundle);
     await writeFile(
       path.join(outputDir, "screening-summary.json"),

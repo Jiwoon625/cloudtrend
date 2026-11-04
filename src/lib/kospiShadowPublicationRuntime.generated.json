@@ -45,7 +45,7 @@
       "src/lib/engine/verifiedKrIndexMembership.ts": "sha256:db197a0db126e17d102c3c0faab69f5a5a2adef74b4a4821d5d15b7d012a3424",
       "src/lib/engine/vfConfig.ts": "sha256:d5b6fa115ff765785ead12764a29f10df2da80833de63f68af48f97d76e77573",
       "src/lib/integratedAllocationRuntimeAdmission.ts": "sha256:190f2483aa6829097fdccce8b71b242a302810f51d268a19c20b01164c6a8170",
-      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:8ee2290ab2c0395afab76b777dba90fa64d7186d995ec9a20e35f37f7b1c97c9",
+      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:f813615d81752a9ec6cae89546ecb28e34c5869ccafd7637d433d9dbefe8497e",
       "src/lib/kospiShadowEquivalence.ts": "sha256:2789f238279fbbb1cbf39296201dc1d24b1233c2dc784961d56d3ba945f62a42",
       "src/lib/kospiShadowSeries.ts": "sha256:6b086d777d8ca77ac07c71d8e765ac31ff9f92c3769828637a4ca5946c0b000e",
       "src/lib/kospiShadowStore.ts": "sha256:48a47b264e9d420573f71d09a094742d3b130f67bb04c987ec2b9188cc7b18f1",
@@ -111,7 +111,7 @@
       "src/lib/engine/verifiedKrIndexMembership.ts": "sha256:64494a205a21b81321eae809aa27908fcf046e10c418ea45fa711d76eb204556",
       "src/lib/engine/vfConfig.ts": "sha256:223a3c3f8ce733c8dade8496b1aff5af2b4894f110232ea05c03a9376c8c48b1",
       "src/lib/integratedAllocationRuntimeAdmission.ts": "sha256:0d1c3c9696a969a06f31fb277de8c280afc2fb473d1c4ba4d9d2521cfe2f213d",
-      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:9c721a2486eaa969b0acbb19bb97a1360a0637671eae12df5c8f3dbaa20bfa01",
+      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:f86b2a55b14554352d28eceb95ebf1f5c0635c9d754c3684e24ab8a11823b69f",
       "src/lib/kospiShadowEquivalence.ts": "sha256:a9e5ee98fa2897663638920cda44733800957f7acffe275ce665501a8407b3c0",
       "src/lib/kospiShadowSeries.ts": "sha256:c401249c9c16ea688ac21651a88fe0f5b9ae72e5b03858d93ec63401e810bf67",
       "src/lib/kospiShadowStore.ts": "sha256:45bc1d1df7ce78393c7fe29449ffdd9c77ab0e9214d864677eb8b4738c0c4550",
@@ -130,5 +130,5 @@
       "src/lib/usCandidatePriority.ts": "sha256:9a58e7d7999f00a2051d72321cad62d06af671ce069d5d110a5899abe3bbc3eb"
     }
   },
-  "codeHash": "sha256:44302163927c05ea07d2ade57b747f03e29d7ab601ccb9f173bd80b175c868e5"
+  "codeHash": "sha256:bb8e4459ec654c041b2816ea818794701918015246fa267a00d20ca1c1b8bcc0"
 }

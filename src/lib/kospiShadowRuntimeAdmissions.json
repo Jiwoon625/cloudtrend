@@ -60,6 +60,10 @@
     {
       "runtimeCodeHash": "sha256:44302163927c05ea07d2ade57b747f03e29d7ab601ccb9f173bd80b175c868e5",
       "reviewId": "kr-unison-v3-nov3-shared-runtime-admissions-20261104"
+    },
+    {
+      "runtimeCodeHash": "sha256:bb8e4459ec654c041b2816ea818794701918015246fa267a00d20ca1c1b8bcc0",
+      "reviewId": "integrated-daily-isolation-shared-admission-20261104"
     }
   ]
 }

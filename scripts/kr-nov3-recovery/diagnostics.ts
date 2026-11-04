@@ -42,6 +42,12 @@ const GUARD_CODES = [
 export const KR_COMPANION_CHECKS = [
   ...GUARD_CODES,
   "CAPTURE_CODEC_REJECTED",
+  "CAPTURE_CODEC_REJECTED_NON_JSON_VALUE",
+  "CAPTURE_CODEC_REJECTED_LOGICAL_LIMIT",
+  "CAPTURE_CODEC_REJECTED_OBSERVED_BARS_REQUIRED",
+  "CAPTURE_CODEC_REJECTED_BAR_NOT_EXACT_OBSERVATION",
+  "CAPTURE_CODEC_REJECTED_EXPANSION_LIMIT",
+  "CAPTURE_CODEC_REJECTED_ROUNDTRIP_HASH",
   "TYPE_ERROR",
   "RANGE_ERROR",
   "SYNTAX_ERROR",
@@ -73,7 +79,11 @@ export function safeKrCompanionDiagnostic(value: unknown): KrCompanionDiagnostic
 export function krCompanionFailureCheck(error: unknown): KrCompanionCheck {
   if (!(error instanceof Error)) return "UNKNOWN";
   for (const code of GUARD_CODES) if (error.message === "KR_NOV3_RECOVERY_" + code) return code;
-  if (error.message === "CAPTURE_CODEC_REJECTED") return "CAPTURE_CODEC_REJECTED";
+  if (
+    error.message.startsWith("CAPTURE_CODEC_REJECTED") &&
+    KR_COMPANION_CHECKS.includes(error.message as KrCompanionCheck)
+  )
+    return error.message as KrCompanionCheck;
   if (error instanceof TypeError) return "TYPE_ERROR";
   if (error instanceof RangeError) return "RANGE_ERROR";
   if (error instanceof SyntaxError) return "SYNTAX_ERROR";

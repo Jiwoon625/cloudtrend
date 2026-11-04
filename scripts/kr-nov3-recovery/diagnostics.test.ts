@@ -83,3 +83,10 @@ it("diagnostic failure cannot alter successful or failed calculation outcomes", 
     }, report),
   ).rejects.toBe(failure);
 });
+
+it("publishes only allowlisted codec failures, never paths or private values", () => {
+  expect(krCompanionFailureCheck(Error("CAPTURE_CODEC_REJECTED_LOGICAL_LIMIT"))).toBe(
+    "CAPTURE_CODEC_REJECTED_LOGICAL_LIMIT",
+  );
+  expect(krCompanionFailureCheck(Error("CAPTURE_CODEC_REJECTED_PRIVATE_OWNER"))).toBe("UNKNOWN");
+});

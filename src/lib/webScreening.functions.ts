@@ -1,3 +1,9 @@
+import {
+  publishAllocatedPerformanceHistory,
+  publishCachedDomesticActualHistory,
+} from "./allocatedPerformanceHistory.server";
+import { initialScreeningStages, type ScreeningStages } from "./screeningStages";
+import { saveScreeningStages } from "./screeningStages.server";
 import { preserveConfirmedEtfContext } from "./confirmedEtfContext.server";
 import { applyKrScreeningPublication } from "./krScreeningPublication";
 import { verifyKrScreeningPublication } from "./krScreeningPublication.server";
@@ -112,6 +118,7 @@ type WebScreeningRefreshResult = {
   inputFingerprint: string;
   resultDigest: string;
   publicationId: string;
+  pipelineStatus: ScreeningStages;
 };
 
 /** Server-only entry point; callers must authenticate and provide the verified owner. */
@@ -217,14 +224,36 @@ export async function runWebScreeningForUser(
           throw new Error(
             "재사용 확인 중 스크리닝 입력이나 결과가 변경됐습니다. 최신 결과를 다시 확인하세요.",
           );
+        const pipelineStatus = initialScreeningStages();
+        pipelineStatus.models = "REUSED";
+        pipelineStatus.actualPortfolio = "RUNNING";
+        await saveScreeningStages(client, userId, cached.publicationId, pipelineStatus);
+        const portfolioRefresh = await refreshPortfolioAfterScreening(client, userId).catch(() => ({
+          status: "FAILED" as const,
+          asOfDate: null,
+          calculatedAt: null,
+        }));
+        pipelineStatus.actualPortfolio = portfolioRefresh.status;
+        if (
+          portfolioRefresh.status !== "FAILED" &&
+          cached.payload.analysis.asOfDate >= "2026-10-12"
+        ) {
+          const history = await publishCachedDomesticActualHistory(client, userId, {
+            sourceHash: fingerprint,
+            throughDate: cached.payload.analysis.asOfDate,
+            sources: registered,
+          }).catch(() => ({ status: "FAILED" as const }));
+          pipelineStatus.actualPortfolio = history.status;
+        }
+        pipelineStatus.publication = ["UPDATED", "REUSED"].includes(pipelineStatus.actualPortfolio)
+          ? "COMPLETED"
+          : "WAITING_FOLLOWUP";
+        await saveScreeningStages(client, userId, cached.publicationId, pipelineStatus);
         return {
           ok: true,
           reused: true,
-          portfolioRefresh: await refreshPortfolioAfterScreening(client, userId).catch(() => ({
-            status: "FAILED" as const,
-            asOfDate: null,
-            calculatedAt: null,
-          })),
+          pipelineStatus,
+          portfolioRefresh,
           octoberShadow: cached.octoberShadow ?? null,
           asOfDate: cached.payload.analysis.asOfDate,
           rows: cached.payload.analysis.rows.length,
@@ -283,6 +312,45 @@ export async function runWebScreeningForUser(
       engineAnalysis,
       latestSourceRegistration(sources, engineAnalysis.asOfDate),
     );
+    const snapshot = appendEtfReportEvidence(
+      buildSnapshot(
+        analysis,
+        latestSourceRegistration(sources, analysis.asOfDate),
+        screening.publicationId,
+      ),
+      analysis,
+    );
+    if (!preliminary) await persistScreeningSnapshot(client, userId, snapshot);
+    const pipelineStatus = initialScreeningStages(preliminary);
+    const saveStages = () =>
+      saveScreeningStages(client, userId, screening.publicationId, pipelineStatus);
+    if (!preliminary) pipelineStatus.actualPortfolio = "RUNNING";
+    await saveStages();
+    const portfolioRefresh = preliminary
+      ? { status: "PRELIMINARY" as const, asOfDate: null, calculatedAt: null }
+      : await refreshPortfolioAfterScreening(client, userId, {
+          sources,
+          texts,
+        }).catch(() => ({ status: "FAILED" as const, asOfDate: null, calculatedAt: null }));
+
+    pipelineStatus.actualPortfolio =
+      portfolioRefresh.status === "PRELIMINARY" ? "SKIPPED_PRELIMINARY" : portfolioRefresh.status;
+    if (!preliminary && portfolioRefresh.status !== "FAILED" && analysis.asOfDate >= "2026-10-12") {
+      const actualHistory = await publishAllocatedPerformanceHistory(client, userId, {
+        currency: "KRW",
+        sourceHash: fingerprint,
+        throughDate: analysis.asOfDate,
+        dates: dataset.tradeDates,
+        prices: Object.entries(dataset.bars).flatMap(([symbol, bars]) =>
+          bars
+            .filter((b) => b.tradeDate >= "2026-10-12")
+            .map((b) => ({ symbol, date: b.tradeDate, close: b.close })),
+        ),
+      }).catch(() => ({ status: "FAILED" as const }));
+      pipelineStatus.actualPortfolio = actualHistory.status;
+    }
+    if (!preliminary) pipelineStatus.models = "RUNNING";
+    await saveStages();
     const octoberShadow = preliminary
       ? null
       : await recordWebOctoberShadow({
@@ -294,23 +362,22 @@ export async function runWebScreeningForUser(
           snapshot: shadowSnapshot,
           sources,
           decisionAt: screening.createdAt,
+        }).catch(() => {
+          pipelineStatus.models = "FAILED";
+          return {
+            status: "DEFERRED" as const,
+            market: "KR" as const,
+            calculatedAt: screening.createdAt,
+            processed: [],
+            deferred: { date: analysis.asOfDate, reason: "MODEL_REPLAY_FAILED" },
+            latestRecordedDate: null,
+            throughDate: analysis.asOfDate,
+          };
         });
 
-    const snapshot = appendEtfReportEvidence(
-      buildSnapshot(
-        analysis,
-        latestSourceRegistration(sources, analysis.asOfDate),
-        screening.publicationId,
-      ),
-      analysis,
-    );
-    if (!preliminary) await persistScreeningSnapshot(client, userId, snapshot);
-    const portfolioRefresh = preliminary
-      ? { status: "PRELIMINARY" as const, asOfDate: null, calculatedAt: null }
-      : await refreshPortfolioAfterScreening(client, userId, {
-          sources,
-          texts,
-        }).catch(() => ({ status: "FAILED" as const, asOfDate: null, calculatedAt: null }));
+    if (!preliminary && pipelineStatus.models !== "FAILED")
+      pipelineStatus.models = octoberShadow?.status === "DEFERRED" ? "WAITING_INPUT" : "COMPLETED";
+    await saveStages();
 
     const roundTrip = await readJson<{
       version?: string;
@@ -349,16 +416,26 @@ export async function runWebScreeningForUser(
     // history/portfolio write cannot be hidden behind an already-uploaded cache.
     if (
       !preliminary &&
-      octoberShadow?.status !== "DEFERRED" &&
-      portfolioRefresh.status !== "FAILED"
-    )
-      await completeScreeningPublication(client, userId, {
-        inputFingerprint: fingerprint,
-        resultDigest: digest,
-        publicationId: screening.publicationId,
-      });
+      pipelineStatus.models === "COMPLETED" &&
+      ["UPDATED", "REUSED"].includes(pipelineStatus.actualPortfolio)
+    ) {
+      try {
+        await completeScreeningPublication(client, userId, {
+          inputFingerprint: fingerprint,
+          resultDigest: digest,
+          publicationId: screening.publicationId,
+        });
+        pipelineStatus.publication = "COMPLETED";
+      } catch (error) {
+        pipelineStatus.publication = "FAILED";
+        await saveStages();
+        throw error;
+      }
+    } else pipelineStatus.publication = preliminary ? "SKIPPED_PRELIMINARY" : "WAITING_FOLLOWUP";
+    await saveStages();
     return {
       reused: false,
+      pipelineStatus,
       portfolioRefresh,
       ok: true as const,
       octoberShadow,

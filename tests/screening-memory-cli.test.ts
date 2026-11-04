@@ -76,9 +76,10 @@ beforeEach(async () => {
   upserts = [];
   previousStored = null;
   const storage = {
-    upload: async (key: string, body: string | AsyncIterable<{ toString(): string }>) => {
+    upload: async (key: string, body: string | Blob | AsyncIterable<{ toString(): string }>) => {
       let text = "";
       if (typeof body === "string") text = body;
+      else if (body instanceof Blob) text = await body.text();
       else for await (const chunk of body) text += chunk.toString();
       uploaded.set(key, text);
       return { error: null };

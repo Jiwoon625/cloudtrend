@@ -1,3 +1,6 @@
+import { initialScreeningStages } from "../src/lib/screeningStages";
+import { saveScreeningStages } from "../src/lib/screeningStages.server";
+import { publishAllocatedPerformanceHistory } from "../src/lib/allocatedPerformanceHistory.server";
 import { verifyShadowRuntimeManifests } from "./verify-shadow-runtime-manifests";
 import { OPERATIONAL_SIGNAL_START } from "../src/lib/operationalSignalStart";
 import { usesLegacyUsOperatingLedger } from "../src/lib/legacyUsLedgerBoundary";
@@ -85,6 +88,33 @@ export async function runUsScreening(
   )
     throw new Error("US source row count, symbol count or latest date mismatch");
 
+  const runId = `us-${ingest.as_of_date}-${ingest.data_hash}`;
+  const stages = initialScreeningStages();
+  const saveStages = () =>
+    legacyOperating ? Promise.resolve() : saveScreeningStages(client, userId, runId, stages);
+  const refreshActualHistory = async () => {
+    if (legacyOperating) return;
+    stages.actualPortfolio = "RUNNING";
+    await saveStages();
+    try {
+      const result = await publishAllocatedPerformanceHistory(client, userId, {
+        currency: "USD",
+        sourceHash: String(ingest.data_hash),
+        throughDate: String(ingest.as_of_date),
+        dates: sourceDates,
+        prices: allParsed
+          .filter((r) => r.date >= "2026-10-12")
+          .flatMap((r) =>
+            r.close === null ? [] : [{ symbol: r.symbol, date: r.date, close: r.close }],
+          ),
+      });
+      stages.actualPortfolio = result.status;
+    } catch {
+      stages.actualPortfolio = "FAILED";
+    }
+    await saveStages();
+  };
+
   const { data: lastHistory, error: lastError } = await client
     .from("us_screening_history")
     .select("date,data_hash,rule_version")
@@ -117,6 +147,12 @@ export async function runUsScreening(
       recoveredView ?? completed,
     );
     await publishBrowserViews(client, userId, recoveredView ?? completed);
+    stages.models = "REUSED";
+    await refreshActualHistory();
+    stages.publication = ["UPDATED", "REUSED"].includes(stages.actualPortfolio)
+      ? "COMPLETED"
+      : "WAITING_FOLLOWUP";
+    await saveStages();
     console.log("US date already completed; portfolio and streak unchanged.");
     return;
   }
@@ -353,6 +389,9 @@ export async function runUsScreening(
     throw new Error("Daily US result is immutable");
 
   // Date/hash/metadata and immutable-result admission must precede any Shadow mutation.
+  await refreshActualHistory();
+  stages.models = "RUNNING";
+  await saveStages();
   const shadowReplay = await replayUsShadow({
     client,
     userId,
@@ -360,7 +399,15 @@ export async function runUsScreening(
     sourceCapturedAt: String(ingest.collected_at),
     calculatedAt: new Date().toISOString(),
     mode: "service",
+  }).catch(async () => {
+    stages.models = "FAILED";
+    stages.publication = "WAITING_FOLLOWUP";
+    await saveStages();
+    throw new Error("US model replay failed; actual valuation status is preserved");
   });
+  stages.models = shadowReplay.deferred ? "WAITING_INPUT" : "COMPLETED";
+  stages.publication = "WAITING_FOLLOWUP";
+  await saveStages();
   console.log(
     JSON.stringify({
       shadowReplay: {
@@ -580,7 +627,17 @@ export async function runUsScreening(
   const { error: historyError } = await client.from("us_screening_history").insert(historyRecord);
   if (historyError) throw historyError;
   await uploadJson(client, latestCachePath, existingResult ?? cachePayload);
-  await publishBrowserViews(client, userId, existingResult ?? cachePayload);
+  try {
+    await publishBrowserViews(client, userId, existingResult ?? cachePayload);
+    stages.publication = ["UPDATED", "REUSED"].includes(stages.actualPortfolio)
+      ? "COMPLETED"
+      : "WAITING_FOLLOWUP";
+  } catch {
+    stages.publication = "FAILED";
+    await saveStages();
+    throw new Error("US browser publication failed; retry the completed immutable result");
+  }
+  await saveStages();
 
   console.log(
     JSON.stringify(
