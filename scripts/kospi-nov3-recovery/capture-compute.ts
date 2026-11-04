@@ -16,6 +16,7 @@ import {
 import { buildKospiShadowSession } from "../../src/lib/engine/kospiShadowDataset";
 import { DEFAULT_SCORING_CONFIG } from "../../src/lib/engine/scoring";
 import { computeKrCompanion } from "../kr-nov3-recovery/entry";
+import type { KrCompanionDiagnostic } from "../kr-nov3-recovery/diagnostics";
 import { prepareNov3Recovery } from "./core";
 import runtime from "../../src/lib/kospiShadowPublicationRuntime.generated.json";
 import { captureProgress, type CaptureStage } from "./diagnostics";
@@ -41,10 +42,14 @@ export function savePrivate(file: string, value: unknown) {
 /** Run in a separate process with no credentials and network disabled. */
 export async function computeNov3Capture(dir: string) {
   const started = Date.now();
-  const mark = (stage: CaptureStage, index: number | null = null) => {
+  const mark = (
+    stage: CaptureStage,
+    index: number | null = null,
+    krCompanion?: KrCompanionDiagnostic,
+  ) => {
     fs.writeFileSync(
       path.join(dir, "capture-progress.json"),
-      JSON.stringify(captureProgress(stage, index, started)),
+      JSON.stringify(captureProgress(stage, index, started, krCompanion)),
       { mode: 0o600 },
     );
   };
@@ -241,6 +246,7 @@ export async function computeNov3Capture(dir: string) {
     DEFAULT_SCORING_CONFIG,
     path.join(path.dirname(dir), "kr-nov3-private"),
     texts[selectedFinalIndex],
+    (diagnostic) => mark("KR_COMPANION", null, diagnostic),
   );
   mark("OUTPUT_WRITE");
   savePrivate(path.join(dir, "companion-status.json"), companion);

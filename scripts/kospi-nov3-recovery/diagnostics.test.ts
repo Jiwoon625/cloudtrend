@@ -134,3 +134,27 @@ it("records the exact failing source stage without leaking captured identifiers"
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it("passes only fixed companion phase and check through the public diagnostic boundary", () => {
+  const current = safeCaptureProgress({
+    stage: "KR_COMPANION",
+    krCompanion: { phase: "RAW_EVIDENCE", check: "RAW_SHORT_VOLUME", private: "SECRET" },
+  });
+  expect(current).toMatchObject({
+    stage: "KR_COMPANION",
+    krCompanion: { phase: "RAW_EVIDENCE", check: "RAW_SHORT_VOLUME" },
+  });
+  expect(JSON.stringify(current)).not.toContain("SECRET");
+  const hostile = safeCaptureProgress({
+    stage: "KR_COMPANION",
+    krCompanion: { phase: "PRIVATE_SOURCE_PATH", check: "PRIVATE_FIELD_VALUE" },
+  });
+  expect(hostile.krCompanion).toEqual({ phase: "UNKNOWN", check: "UNKNOWN" });
+  expect(JSON.stringify(hostile)).not.toContain("PRIVATE");
+  expect(
+    captureProgress("KR_COMPANION", null, Date.now(), {
+      phase: "CAPTURE_ENCODING",
+      check: "CAPTURE_CODEC_REJECTED",
+    }).krCompanion,
+  ).toEqual({ phase: "CAPTURE_ENCODING", check: "CAPTURE_CODEC_REJECTED" });
+});

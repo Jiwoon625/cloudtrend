@@ -24,6 +24,11 @@ import {
 import type { FinalCapture, FinalCaptureV1 } from "../kr-final-retrospective/contracts";
 import { check, same, KINDS, PREDECESSOR, DATES, prepareKrNov3Recovery } from "./core";
 import { krNov3ApprovalCandidate } from "./apply";
+import {
+  withKrCompanionDiagnostics,
+  type KrCompanionDiagnostic,
+  type KrCompanionPhase,
+} from "./diagnostics";
 import octoberRuntime from "../../src/lib/ledger/octoberShadowEngineManifest.generated.json";
 import kospiRuntime from "../../src/lib/kospiShadowPublicationRuntime.generated.json";
 const admittedRuntimeHashes = {
@@ -70,7 +75,9 @@ export async function buildKrCompanionCapture(
   c: any,
   dataset: MarketDataset,
   config: ScoringConfig,
+  mark: (phase: KrCompanionPhase) => void = () => {},
 ): Promise<FinalCapture> {
+  mark("CAPTURE_VALIDATION");
   check(
     c.version === "kospi-nov3-readonly-capture-v1" &&
       typeof c.owner === "string" &&
@@ -200,6 +207,7 @@ export async function buildKrCompanionCapture(
       c.priorRecovery?.[role]?.hash === captureCanonicalProof(c.priorRecovery[role].payload).hash,
       "NOVEMBER_LINEAGE_HASH",
     );
+  mark("CAPTURE_ENCODING");
   return encodeFinalCapture({
     version: "kr-final-retrospective-capture-v1",
     owner: c.owner,
@@ -239,6 +247,19 @@ export async function buildKrCompanionCapture(
     archives,
     legacyObjects,
   });
+}
+
+/** Accept an exact nonnegative integer with optional decimal-zero spelling only.
+ * This interprets the bound canonical field, never rewrites or rounds source bytes. */
+export function parseRawShortSellingVolume(value: unknown): number {
+  check(
+    typeof value === "string" &&
+      value === value.trim() &&
+      /^\d+(?:\.0+)?$/.test(value) &&
+      Number.isSafeInteger(Number(value)),
+    "RAW_SHORT_VOLUME",
+  );
+  return Number(value);
 }
 
 export function extractUnisonRawEvidence(c: any, canonicalCsv: string) {
@@ -293,12 +314,11 @@ export function extractUnisonRawEvidence(c: any, canonicalCsv: string) {
     }
     const get = (key: string) => cells[columns.indexOf(key)];
     if (get("symbol") !== "018000" || !expected.includes(get("date"))) return;
-    const n = get("shortSellingVolume");
-    check(/^\d+$/.test(n) && Number.isSafeInteger(Number(n)), "RAW_SHORT_VOLUME");
+    const n = parseRawShortSellingVolume(get("shortSellingVolume"));
     rows.push({
       date: get("date"),
       symbol: "018000",
-      shortSellingVolume: Number(n),
+      shortSellingVolume: n,
       tradingValueSource: get("tradingValueSource"),
       investorValueSource: get("investorValueSource"),
     });
@@ -331,16 +351,34 @@ export async function computeKrCompanion(
   config: ScoringConfig,
   outputDir: string,
   selectedFinalCanonicalCsv?: string,
+  report: (value: KrCompanionDiagnostic) => void = () => {},
 ) {
+  return withKrCompanionDiagnostics(
+    (mark) =>
+      computeKrCompanionInner(c, dataset, config, outputDir, selectedFinalCanonicalCsv, mark),
+    report,
+  );
+}
+async function computeKrCompanionInner(
+  c: any,
+  dataset: MarketDataset,
+  config: ScoringConfig,
+  outputDir: string,
+  selectedFinalCanonicalCsv: string | undefined,
+  mark: (phase: KrCompanionPhase) => void,
+) {
+  mark("OUTPUT_DIRECTORY");
   check(path.isAbsolute(outputDir), "PRIVATE_OUTPUT_PATH");
   fs.mkdirSync(outputDir, { recursive: true, mode: 0o700 });
   fs.chmodSync(outputDir, 0o700);
+  mark("RAW_EVIDENCE");
   check(typeof selectedFinalCanonicalCsv === "string", "RAW_EVIDENCE_REQUIRED");
   const enriched = {
     ...c,
     unisonRawEvidence: extractUnisonRawEvidence(c, selectedFinalCanonicalCsv),
   };
-  const captured = await buildKrCompanionCapture(enriched, dataset, config);
+  const captured = await buildKrCompanionCapture(enriched, dataset, config, mark);
+  mark("CAPTURE_WRITE");
   saveKrPrivate(path.join(outputDir, "capture.json"), captured);
   let plan;
   const stages = new Set([
@@ -362,6 +400,7 @@ export async function computeKrCompanion(
     ...Array.from({ length: 5 }, (_, i) => `MODEL_APPEND_${i}`),
   ]);
   let stage = "HYDRATE";
+  mark("PLAN_COMPUTE");
   try {
     plan = await prepareKrNov3Recovery(captured, (next) => {
       check(stages.has(next), "DIAGNOSTIC_STAGE");
@@ -385,6 +424,7 @@ export async function computeKrCompanion(
       operationalApproval: false,
       historicalAvailabilityClaim: false,
     };
+    mark("BLOCKED_DIAGNOSIS_WRITE");
     saveKrPrivate(path.join(outputDir, "diagnosis.json"), diagnosis);
     return {
       status: "KR_PLAN_BLOCKED",
@@ -395,9 +435,13 @@ export async function computeKrCompanion(
       historicalAvailabilityClaim: false,
     };
   }
+  mark("PLAN_WRITE");
   saveKrPrivate(path.join(outputDir, "plan.json"), plan);
+  mark("APPROVAL_CANDIDATE");
   const approvalCandidate = await krNov3ApprovalCandidate(plan);
+  mark("APPROVAL_WRITE");
   saveKrPrivate(path.join(outputDir, "approval-candidate.json"), approvalCandidate);
+  mark("COMPLETE");
   return {
     status: "KR_PLAN_COMPUTED_REVIEW_REQUIRED",
     planHash: captureCanonicalProof(plan).hash,
