@@ -4,6 +4,13 @@ export const KR_ETF_LIFECYCLE_VERSION = "kr-etf-lifecycle-v1" as const;
 const sourceUrl = "https://www.aceetf.co.kr/cs/notice/7022";
 export const KR_ETF_LIFECYCLE_EVENTS = [
   {
+    symbol: "0040S0",
+    name: "HANARO 글로벌피지컬AI액티브",
+    tradingHaltDate: "2026-11-03",
+    delistingDate: "2026-11-04",
+    sourceUrl: "https://www.hanaroetf.com/customer/notice/8c7e0fb91b4412d9ce00",
+  },
+  {
     symbol: "261920",
     name: "ACE MSCI필리핀(합성)",
     tradingHaltDate: "2026-10-28",
