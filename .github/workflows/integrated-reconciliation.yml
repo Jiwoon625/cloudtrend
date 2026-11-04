@@ -1,9 +1,5 @@
 name: Integrated multi-day reconciliation
 on:
-  workflow_run:
-    workflows: [CloudTrend screening, US Prospective Screening]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
     inputs:
       inspection_budget_mib:
@@ -48,19 +44,10 @@ jobs:
       - run: node scripts/build-integrated-reconcile.mjs
   reconcile:
     concurrency:
-      group: ${{ (github.event_name == 'workflow_run' || inputs.apply == true) && 'integrated-multiday-reconciliation' || format('integrated-inspect-{0}', github.run_id) }}
+      group: ${{ inputs.apply == true && 'integrated-multiday-reconciliation' || format('integrated-inspect-{0}', github.run_id) }}
       cancel-in-progress: false
     needs: verify
-    if: >-
-      github.repository == 'Jiwoon625/cloudtrend' &&
-      ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event == 'workflow_dispatch' &&
-      github.event.workflow_run.head_sha == github.sha &&
-      (github.event.workflow_run.path == '.github/workflows/cloudtrend-analysis.yml' ||
-       (github.event.workflow_run.path == '.github/workflows/us-prospective-screening.yml' &&
-        github.event.workflow_run.display_title == 'US screening completion eligible')) &&
-      github.event.workflow_run.head_repository.full_name == github.repository))
+    if: github.repository == 'Jiwoon625/cloudtrend' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -84,5 +71,5 @@ jobs:
           SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
           RECONCILE_INSPECTION_BUDGET_MIB: ${{ inputs.inspection_budget_mib || '8' }}
           RECONCILE_THROUGH_DATE: ${{ inputs.through_date || '' }}
-          RECONCILE_APPLY: ${{ github.event_name == 'workflow_run' && 'true' || inputs.apply && 'true' || 'false' }}
+          RECONCILE_APPLY: ${{ inputs.apply && 'true' || 'false' }}
         run: node --max-old-space-size=2048 "$RUNNER_TEMP/integrated-reconcile-code/run.mjs"
