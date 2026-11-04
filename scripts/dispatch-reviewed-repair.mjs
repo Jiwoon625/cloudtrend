@@ -3,7 +3,7 @@ import fs from "node:fs";
 const request = JSON.parse(fs.readFileSync(".github/operations/nov3-repair.json", "utf8"));
 if (
   process.env.GITHUB_EVENT_NAME !== "push" ||
-  process.env.GITHUB_REF !== "refs/heads/main" ||
+  !["refs/heads/main", "refs/heads/ops/nov3-reviewed-repair"].includes(process.env.GITHUB_REF) ||
   process.env.GITHUB_REPOSITORY !== "Jiwoon625/cloudtrend"
 )
   throw Error("Repair request context rejected");

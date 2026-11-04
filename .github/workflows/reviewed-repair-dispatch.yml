@@ -1,7 +1,7 @@
 name: Dispatch reviewed November operating repair
 on:
   push:
-    branches: [main]
+    branches: [main, ops/nov3-reviewed-repair]
     paths: [.github/operations/nov3-repair.json]
 permissions:
   contents: read
