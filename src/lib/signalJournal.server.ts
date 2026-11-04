@@ -168,10 +168,17 @@ export async function signalSessionCalendar(
     day: "2-digit",
   }).format(now);
   const calendar = await octoberModelCalendar(market, today > sourceDate ? today : sourceDate);
-  return calendar.regularSessions.filter(
-    (date) =>
-      date >= SIGNAL_JOURNAL_START && Date.parse(regularCloseAt(market, date)) <= now.getTime(),
-  );
+  return calendar.regularSessions.filter((date) => {
+    if (date < SIGNAL_JOURNAL_START || date > today) return false;
+    // Past sessions are over regardless of their special close hour. Do not make
+    // all later daily history depend on an old, unresolved special-hours notice.
+    if (date < today) return true;
+    try {
+      return Date.parse(regularCloseAt(market, date)) <= now.getTime();
+    } catch {
+      return false;
+    } // Today's unconfirmed close is not yet eligible.
+  });
 }
 
 export async function completedSignalKeys(

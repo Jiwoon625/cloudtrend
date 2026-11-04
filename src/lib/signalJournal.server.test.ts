@@ -140,3 +140,9 @@ it("scheduled screening can load the last chosen config rather than resetting to
   await signalRules(client, "owner", "KR", "v1", { threshold: 9 }, "2026-11-05T01:00:00Z");
   expect(await latestSignalConfig(client, "owner")).toEqual({ threshold: 9 });
 });
+
+it("past special-hours sessions do not block all subsequent signal history", async () => {
+  const dates = await signalSessionCalendar("KR", "2026-11-19", new Date("2026-11-20T01:00:00Z"));
+  expect(dates).toContain("2026-11-19");
+  expect(dates).not.toContain("2026-11-20");
+});
