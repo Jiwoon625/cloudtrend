@@ -1,9 +1,10 @@
+import { packObservedTable, unpackObservedTable } from "./capture-table-codec";
 /** Pure lossless representation only. No dates/values/fields are rounded, filtered or repaired. */
 import { canonicalSeriesJson, type SeriesHash } from "../../src/lib/ledger/modelSeries";
 import { createHash } from "node:crypto";
 import { Buffer } from "node:buffer";
 import type { MarketDataset } from "../../src/lib/engine/dataset";
-import type { FinalCapture, FinalCaptureV1, FinalCaptureV2 } from "./contracts";
+import type { FinalCapture, FinalCaptureV1, FinalCaptureV2, FinalCaptureV3 } from "./contracts";
 export type CaptureCodecDiagnostic = {
   status:
     | "CAPTURE_CODEC_ORIGINAL_BYTES"
@@ -140,7 +141,8 @@ function encodedSize(c: FinalCapture, emit?: (event: CaptureCodecDiagnostic) => 
 export async function encodeFinalCapture(
   original: FinalCaptureV1,
   emit?: (event: CaptureCodecDiagnostic) => void,
-): Promise<FinalCaptureV2> {
+  options: { format?: "auto" | "table" } = {},
+): Promise<FinalCaptureV2 | FinalCaptureV3> {
   validateOriginal(original);
   check(plain(original.dataset.observedBars), "OBSERVED_BARS_REQUIRED");
   sameKeys(original.dataset.bars, original.dataset.observedBars);
@@ -178,11 +180,28 @@ export async function encodeFinalCapture(
     },
     decodedCaptureHash,
   };
-  encodedSize(encoded, emit);
+  let stored: FinalCaptureV2 | FinalCaptureV3 = encoded;
+  if (options.format === "table" || captureCanonicalProof(encoded).bytes > LIMIT) {
+    check(originalProof.bytes <= 1024 ** 3, "EXPANSION_LIMIT");
+    const { observedBars: _observed, ...metadata } = dataset;
+    void _observed;
+    stored = {
+      ...encoded,
+      version: "kr-final-retrospective-capture-v3",
+      dataset: {
+        version: "kr-final-retrospective-bars-table-v1",
+        dataset: metadata,
+        observedTable: packObservedTable(observed),
+        barIndices: encoded.dataset.barIndices,
+        datasetHash,
+      },
+    };
+  }
+  encodedSize(stored, emit);
   // Decode and prove the entire original capture, not merely market bars, before admission.
-  await hydrateFinalCapture(encoded);
+  await hydrateFinalCapture(stored);
   emit?.({ status: "CAPTURE_CODEC_ROUNDTRIP_VERIFIED" });
-  return encoded;
+  return stored;
 }
 export async function hydrateFinalCapture(stored: FinalCapture): Promise<FinalCaptureV1> {
   check(plain(stored));
@@ -192,11 +211,46 @@ export async function hydrateFinalCapture(stored: FinalCapture): Promise<FinalCa
     return stored;
   }
   keys(stored, [...V1_KEYS, "decodedCaptureHash"]);
+  if (stored.version === "kr-final-retrospective-capture-v3") {
+    const size = encodedSize(stored),
+      codec = stored.dataset;
+    keys(codec, ["version", "dataset", "observedTable", "barIndices", "datasetHash"]);
+    check(
+      codec.version === "kr-final-retrospective-bars-table-v1" &&
+        HASH.test(stored.decodedCaptureHash) &&
+        HASH.test(codec.datasetHash) &&
+        plain(codec.dataset) &&
+        !Object.hasOwn(codec.dataset, "bars") &&
+        !Object.hasOwn(codec.dataset, "observedBars"),
+    );
+    const observedBars = unpackObservedTable(
+      codec.observedTable,
+      size,
+    ) as unknown as MarketDataset["bars"];
+    return hydrateIndexedCapture(
+      {
+        ...stored,
+        version: "kr-final-retrospective-capture-v2",
+        dataset: {
+          version: "kr-final-retrospective-bars-index-v1",
+          dataset: { ...codec.dataset, observedBars },
+          barIndices: codec.barIndices,
+          datasetHash: codec.datasetHash,
+        },
+      },
+      1024 ** 3,
+    );
+  }
   check(
     stored.version === "kr-final-retrospective-capture-v2" && HASH.test(stored.decodedCaptureHash),
   );
-  const size = encodedSize(stored),
-    codec = stored.dataset;
+  return hydrateIndexedCapture(stored, 2 * encodedSize(stored));
+}
+async function hydrateIndexedCapture(
+  stored: FinalCaptureV2,
+  maximumDecodedBytes: number,
+): Promise<FinalCaptureV1> {
+  const codec = stored.dataset;
   keys(codec, ["version", "dataset", "barIndices", "datasetHash"]);
   check(
     codec.version === "kr-final-retrospective-bars-index-v1" &&
@@ -234,7 +288,7 @@ export async function hydrateFinalCapture(stored: FinalCapture): Promise<FinalCa
   // Increasing unique indices permit at most one analytical copy of each observation.
   // This is an in-memory expansion bound, NOT a relaxation of the 256MiB stored limit.
   const restoredProof = captureCanonicalProof(original);
-  check(restoredProof.bytes <= 2 * size, "EXPANSION_LIMIT");
+  check(restoredProof.bytes <= maximumDecodedBytes, "EXPANSION_LIMIT");
   check(restoredProof.hash === decodedCaptureHash, "ROUNDTRIP_HASH");
   return original;
 }

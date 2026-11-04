@@ -63,7 +63,17 @@ export interface FinalCaptureV2 extends Omit<FinalCaptureV1, "version" | "datase
   dataset: EncodedCaptureDataset;
   decodedCaptureHash: SeriesHash;
 }
-export type FinalCapture = FinalCaptureV1 | FinalCaptureV2;
+export interface FinalCaptureV3 extends Omit<FinalCaptureV2, "version" | "dataset"> {
+  version: "kr-final-retrospective-capture-v3";
+  dataset: {
+    version: "kr-final-retrospective-bars-table-v1";
+    dataset: Omit<MarketDataset, "bars" | "observedBars">;
+    observedTable: import("./capture-table-codec").ObservedTable;
+    barIndices: Record<string, number[]>;
+    datasetHash: SeriesHash;
+  };
+}
+export type FinalCapture = FinalCaptureV1 | FinalCaptureV2 | FinalCaptureV3;
 
 /** Public-safe compute protocol: fixed literals only, never arbitrary exception text. */
 export const FINAL_COMPUTE_STAGES = [
