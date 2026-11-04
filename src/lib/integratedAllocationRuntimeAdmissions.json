@@ -45,6 +45,11 @@
       "runtimeCodeHash": "sha256:beab26ef5b4cbab6d4f34b31ac443b14d427d91856f67a6d63b6276e279e91c2",
       "frozenCodeHash": "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4",
       "reviewId": "kr-official-index-verification-20261030-v1"
+    },
+    {
+      "runtimeCodeHash": "sha256:2e62ac366babfc18c096e60a51ed0f40eb9c418a8093b69d3f70c65309eb9d95",
+      "frozenCodeHash": "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4",
+      "reviewId": "kr-unison-v3-exact-nov3-retrospective-20261104"
     }
   ]
 }

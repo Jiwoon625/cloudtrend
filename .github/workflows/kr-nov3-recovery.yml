@@ -1,0 +1,96 @@
+name: KR November 3 reviewed recovery PLAN APPLY
+on:
+  pull_request:
+    paths:
+      - scripts/kr-nov3-recovery/**
+      - scripts/build-kospi-nov3-recovery.mjs
+      - .github/workflows/kr-nov3-recovery.yml
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [AUTHORIZE, STAGE_AUTHORITY, VALIDATE, APPLY]
+        required: true
+      expected_plan_hash:
+        description: Exact independently reviewed owner-private five-book Nov3 plan hash
+        type: string
+        required: true
+      expected_approval_hash:
+        description: Exact independently reviewed KR approval candidate hash
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: kospi-prospective-shadow
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit -p scripts/kr-nov3-recovery/tsconfig.json
+      - run: npx vitest run scripts/kr-nov3-recovery --maxWorkers=1 --minWorkers=1
+      - run: node scripts/build-kospi-nov3-recovery.mjs
+  recovery:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      RECOVERY_CONCURRENCY_GROUP: kospi-prospective-shadow
+      EXPECTED_PLAN_HASH: ${{ inputs.expected_plan_hash }}
+      EXPECTED_APPROVAL_HASH: ${{ inputs.expected_approval_hash }}
+      RECOVERY_MODE: ${{ inputs.mode }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify exact code and credential-free boundary
+        run: |
+          git merge-base --is-ancestor 67802773929033b17b76e1ffee5db76ba4078fd4 HEAD
+          node --experimental-strip-types scripts/verify-kospi-shadow-runtime.ts
+          npx vite-node --script scripts/verify-shadow-runtime-manifests.ts
+          npx tsc --noEmit -p scripts/kr-nov3-recovery/tsconfig.json
+          npx vitest run scripts/kr-nov3-recovery --maxWorkers=1 --minWorkers=1
+          node scripts/build-kospi-nov3-recovery.mjs
+      - name: Read exact independently reviewed private capture and plan
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          KR_NOV3_AUTH_ENTRY: "true"
+        run: node "$RUNNER_TEMP/kospi-nov3-code/kr-transport.mjs" kr-materialize
+      - name: Reproduce original capture and plan without credentials
+        run: |
+          env -i PATH="$PATH" HOME="$RUNNER_TEMP/kr-nov3-private" TMPDIR="$RUNNER_TEMP/kr-nov3-private" NODE_OPTIONS="--max-old-space-size=8192" \
+            node "$RUNNER_TEMP/kospi-nov3-code/kr-pure.mjs" kr-reproduce "$RUNNER_TEMP/kr-nov3-private/workflow-materialized"
+      - name: Run exact independently selected KR phase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          KR_NOV3_AUTH_ENTRY: "true"
+        run: |
+          case "$RECOVERY_MODE" in
+            AUTHORIZE) phase=kr-stage-approval ;;
+            STAGE_AUTHORITY) phase=kr-stage-authority ;;
+            VALIDATE) phase=kr-validate ;;
+            APPLY) phase=kr-apply ;;
+            *) exit 1 ;;
+          esac
+          node "$RUNNER_TEMP/kospi-nov3-code/kr-transport.mjs" "$phase"
+      - name: Delete ephemeral private evidence
+        if: always()
+        run: rm -rf -- "$RUNNER_TEMP/kr-nov3-private" "$RUNNER_TEMP/kospi-nov3-code"
