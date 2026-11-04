@@ -6,7 +6,7 @@ import {
   buildKrLifecycle,
 } from "../src/lib/krEtfLifecycle";
 import { validateSourceText } from "../src/lib/sourceData";
-const symbols = ["005930", ...events.map((e) => e.symbol)];
+const symbols = ["005930", ...events.map((e) => e.symbol)].sort();
 const plan = (dates = ["2026-10-27", "2026-10-28", "2026-10-29"]) => {
   const activeEvents = events.filter((e) => dates.at(-1)! >= e.tradingHaltDate);
   return {
@@ -14,8 +14,8 @@ const plan = (dates = ["2026-10-27", "2026-10-28", "2026-10-29"]) => {
     sourceUniverseSymbols: symbols,
     requestedCollectionDates: dates,
     events: activeEvents,
-    requestedSymbols: dates[0]! < "2026-10-28" ? symbols : ["005930"],
-    latestExpectedSymbols: activeEvents.length ? ["005930"] : symbols,
+    requestedSymbols: symbols.filter(s => !activeEvents.some(e => e.symbol === s && dates[0]! >= e.tradingHaltDate)),
+    latestExpectedSymbols: symbols.filter(s => !activeEvents.some(e => e.symbol === s)),
   };
 };
 const csv = (dates = ["2026-10-27", "2026-10-28", "2026-10-29"]) =>
@@ -34,7 +34,7 @@ const rows = async (dates?: string[]) => (await validateSourceText(csv(dates), "
 test("mixed range preserves pre-halt keys and requires all healthy latest observations", async () => {
   expect(validateKrEtfLifecycleRows(plan(), await rows())).toEqual(plan());
 });
-test.each([["2026-10-27"], ["2026-10-28"], ["2026-10-29"]])(
+test.each([["2026-10-27"], ["2026-10-28"], ["2026-10-29"], ["2026-11-02"], ["2026-11-03"], ["2026-11-04"]])(
   "exact cessation boundary %s",
   async (d) => {
     const dates = [d];
@@ -157,7 +157,7 @@ test("accepts canonical six-character uppercase alphanumeric KR codes without al
   const alphanumeric = ["0000D0", "0046A0", "0091C0"];
   p.sourceUniverseSymbols = [...symbols, ...alphanumeric].sort();
   p.requestedSymbols = p.sourceUniverseSymbols;
-  p.latestExpectedSymbols = ["005930", ...alphanumeric].sort();
+  p.latestExpectedSymbols = [...p.latestExpectedSymbols, ...alphanumeric].sort();
   expect(parseKrEtfLifecyclePlan(p)).toEqual(p);
   const base = await rows();
   const extra = base
