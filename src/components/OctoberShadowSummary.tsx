@@ -17,7 +17,7 @@ import { WEBSITE_PERFORMANCE_START, websiteShadowSummary } from "@/lib/websitePe
 const labels: Record<OctoberShadowBookSummary["kind"], string> = {
   KR_MIXED: "한국 혼합",
   KR_KOSPI: "KOSPI",
-  KR_KOSDAQ: "KOSDAQ 현행전략 · 독립 Shadow",
+  KR_KOSDAQ: "KOSDAQ · 보관 Shadow",
   US_A0: "미국 A0 고정예산",
   ETF_V02: "ETF v0.2",
   US_A2: "미국 A2 고정예산",
@@ -25,9 +25,9 @@ const labels: Record<OctoberShadowBookSummary["kind"], string> = {
   KR_KOSPI_CONFIRM1_BEAR: "KOSPI 하루확인·불황 시 RSAccel 필터",
 };
 const states: Record<OctoberShadowBookSummary["status"], string> = {
-  NOT_INITIALIZED: "등록 대기",
-  INITIALIZED_WAITING: "초기화 완료 · 첫 실제 세션 대기",
-  RECORDED: "실제 세션 기록 연결됨",
+  NOT_INITIALIZED: "보관 장부 없음",
+  INITIALIZED_WAITING: "초기화만 기록됨 · 세션 기록 없음",
+  RECORDED: "저장된 모델 세션 조회",
   UNAVAILABLE: "자료 확인 필요",
 };
 const replayStateLabel = (status: Summary["replayStatus"][number]["status"]) =>
@@ -87,7 +87,7 @@ export function OctoberShadowSummary() {
       if (active) {
         authEvents++;
         setOwner(session?.user.id ?? null);
-        setAuthError(session ? null : "신규 Shadow 조회를 위해 로그인 세션을 확인해 주세요.");
+        setAuthError(session ? null : "보관 Shadow 조회를 위해 로그인 세션을 확인해 주세요.");
       }
     });
     void supabase.auth
@@ -95,12 +95,12 @@ export function OctoberShadowSummary() {
       .then(({ data, error }) => {
         if (!active || authEvents > 0) return;
         if (error || !data.session)
-          setAuthError("신규 Shadow 조회를 위해 로그인 세션을 확인해 주세요.");
+          setAuthError("보관 Shadow 조회를 위해 로그인 세션을 확인해 주세요.");
         else setOwner(data.session.user.id);
       })
       .catch(() => {
         if (active && authEvents === 0)
-          setAuthError("신규 Shadow 로그인 세션을 불러오지 못했습니다.");
+          setAuthError("보관 Shadow 로그인 세션을 불러오지 못했습니다.");
       });
     return () => {
       active = false;
@@ -144,7 +144,7 @@ export function OctoberShadowSummary() {
           <option value="KR">한국</option>
           <option value="US">미국</option>
           <option value="ETF">ETF</option>
-          <option value="ALLOCATION">자산배분</option>
+          <option value="ALLOCATION">자산배분 · 보관</option>
         </select>
         {market !== "ALLOCATION" ? (
           <>
@@ -245,7 +245,7 @@ export function OctoberShadowSummaryContent({
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 id="october-shadow-title" className="text-lg font-semibold">
-            독립 Shadow 원장
+            독립 Shadow 원장 · 보관 기록
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
             장부당 시작자본 1억원 · 기존 연구 이력과 분리 · 읽기 전용
@@ -257,16 +257,17 @@ export function OctoberShadowSummaryContent({
           disabled={refreshing || loading}
           className="rounded border px-3 py-2 text-sm disabled:opacity-50"
         >
-          신규 장부 새로고침
+          보관 기록 다시 불러오기
         </button>
       </header>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        초기화는 거래일 기록이 아닙니다. 최초·최근 세션은 정규장 데이터가 저장된 후 표시합니다. 실제
-        계좌·주문과 연결되지 않는 비교 모델이며, KRW와 USD는 합산하지 않습니다.
+        초기화는 거래일 기록이 아닙니다. 최초·최근 세션은 보관된 모델 기록의 날짜입니다. 실제
+        계좌·주문과 연결되지 않는 비교 모델이며, KRW와 USD는 합산하지 않습니다. 새 기록은 자동
+        생성되지 않으며, 보류 사유는 당시 계산의 진단입니다.
       </p>
       {loading ? (
         <p role="status" className="text-sm">
-          신규 Shadow 등록정보와 세션을 확인 중입니다.
+          보관 Shadow 등록정보와 세션을 확인 중입니다.
         </p>
       ) : null}
       {error ? (
@@ -275,11 +276,10 @@ export function OctoberShadowSummaryContent({
         </p>
       ) : null}
       <details className="rounded border p-3 text-xs">
-        <summary>거래일 달력 확인 범위</summary>
+        <summary>별도 성과 연구 시 확인사항</summary>
         <p className="mt-2">
-          거래일 달력은 2026-12-31까지 확인했습니다. 한국 2026-11-19 특별 거래시간은 거래소 공지
-          확인 대기이며, 해당일 기록 전에 보완해야 합니다. 이후 거래일도 공식 달력을 확인해
-          연장하며, 확인되지 않은 날짜는 기록을 건너뛰지 않고 중단합니다.
+          연구 대상 기간의 거래일·특별 거래시간과 주식병합·분할·상장폐지 내역을 확인한 뒤
+          계산합니다. 기존 기록은 보존하며, 확인되지 않은 가격·수량·수익률을 추정하지 않습니다.
         </p>
       </details>
       {summary?.replayStatus.length ? (
@@ -287,7 +287,7 @@ export function OctoberShadowSummaryContent({
           className="rounded border p-3"
           open={summary.replayStatus.some((r) => r.status === "FAILED")}
         >
-          <summary className="text-xs">Replay 진단·계산시각</summary>
+          <summary className="text-xs">과거 Replay 진단·계산시각</summary>
           <div className="grid gap-3 sm:grid-cols-2">
             {summary.replayStatus
               .filter(
@@ -315,7 +315,7 @@ export function OctoberShadowSummaryContent({
                       ? "사후 복원 계산"
                       : "다음 거래일 체결 전에 계산"}
                     {replay.executionAt
-                      ? ` · 다음 체결시각 ${formatKstDateTime(replay.executionAt)} KST`
+                      ? ` · 기록상 체결시각 ${formatKstDateTime(replay.executionAt)} KST`
                       : ""}
                   </p>
                   {replay.reason ? (
@@ -345,29 +345,29 @@ export function OctoberShadowSummaryContent({
                   {states[book.status]}
                 </p>
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                  <dt className="text-muted-foreground">예정 회계 시작</dt>
+                  <dt className="text-muted-foreground">기록상 회계 시작</dt>
                   <dd>{book.scheduledStart}</dd>
-                  <dt className="text-muted-foreground">최초 실제 기록 세션</dt>
+                  <dt className="text-muted-foreground">최초 모델 기록 세션</dt>
                   <dd>{book.firstSessionDate ?? "아직 없음"}</dd>
                   <dt className="text-muted-foreground">최근 기록 세션</dt>
                   <dd>{book.latestSessionDate ?? "아직 없음"}</dd>
                   <dt className="text-muted-foreground">초기 모델 현금</dt>
                   <dd>{money(book.initialCapital, book.currency)}</dd>
-                  <dt className="text-muted-foreground">현재 모델 현금</dt>
+                  <dt className="text-muted-foreground">마지막 기록 모델 현금</dt>
                   <dd>{money(book.cash, book.currency)}</dd>
                   <dt className="text-muted-foreground">기록 세전 NAV</dt>
                   <dd>
                     {book.status === "INITIALIZED_WAITING"
-                      ? "첫 세션 대기"
+                      ? "세션 기록 없음"
                       : money(book.nav, book.currency)}
                   </dd>
                   <dt className="text-muted-foreground">독립 모델 누적수익률</dt>
                   <dd>
                     {book.returnPercent === null
-                      ? "첫 세션 대기"
+                      ? "세션 기록 없음"
                       : `${book.returnPercent.toFixed(2)}%`}
                   </dd>
-                  <dt className="text-muted-foreground">보유 / 대기 신호</dt>
+                  <dt className="text-muted-foreground">기록 당시 보유 / 대기 신호</dt>
                   <dd>
                     {book.positions ?? "미확인"} / {book.pending ?? "미확인"}
                   </dd>
@@ -492,7 +492,7 @@ export function OctoberShadowSummaryContent({
                 {book.tax ? (
                   <UsTaxEstimatePanel
                     estimate={book.tax}
-                    title="신규 Shadow 세금 · 독립 가상 납세자 추정"
+                    title="보관 Shadow 세금 · 독립 가상 납세자 추정"
                   />
                 ) : null}
               </article>

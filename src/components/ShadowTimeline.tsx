@@ -63,7 +63,7 @@ export function ShadowTimeline({
           </>
         ) : null}
         <span>
-          전체 시리즈 MDD {book.mddPercent == null ? "산정 대기" : `${book.mddPercent.toFixed(2)}%`}
+          전체 시리즈 MDD {book.mddPercent == null ? "기록 없음" : `${book.mddPercent.toFixed(2)}%`}
         </span>
       </div>
       {invalid ? (

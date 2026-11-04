@@ -37,7 +37,7 @@ describe("October Shadow registry cards", () => {
       checkedAt,
       books,
     });
-    expect((html.match(/초기화 완료 · 첫 실제 세션 대기/g) ?? []).length).toBe(8);
+    expect((html.match(/초기화만 기록됨 · 세션 기록 없음/g) ?? []).length).toBe(8);
     expect(html).toContain("KOSPI 하루확인·불황 시 RSAccel 필터");
     expect(html).toContain("$74,671.44");
     expect(html).not.toContain("계좌별 초기 투자금액 ÷ 고정 목표 20종목");
@@ -45,7 +45,7 @@ describe("October Shadow registry cards", () => {
     expect(html).toContain("7.552원");
     expect(html).toContain("0 / 0");
     expect(html).toContain("초기화는 거래일 기록이 아닙니다");
-    expect(html).toContain("첫 세션 대기");
+    expect(html).toContain("세션 기록 없음");
     expect(html).not.toContain("실제 소유자 · 과세대상 계좌 합산");
   });
   it("shows retrospective replay and a deferred input reason separately from signal date", async () => {
@@ -77,7 +77,7 @@ describe("October Shadow registry cards", () => {
     expect(html).toContain("한국 Shadow replay");
     expect(html).toContain("신호 기준일 2026-10-12");
     expect(html).toContain("2026-10-14 09:00:00 KST");
-    expect(html).toContain("다음 체결시각 2026-10-13 09:00:00 KST");
+    expect(html).toContain("기록상 체결시각 2026-10-13 09:00:00 KST");
     expect(html).toContain("사후 복원 계산");
     expect(html).toContain("자료 대기");
     expect(html).toContain("보류 사유: 해당 거래일 종목 행이 없습니다.");
@@ -93,8 +93,8 @@ describe("October Shadow registry cards", () => {
       checkedAt,
       books: [book],
     });
-    expect(html).toContain("실제 세션 기록 연결됨");
-    expect(html).toContain("최초 실제 기록 세션</dt><dd>2026-10-12");
+    expect(html).toContain("저장된 모델 세션 조회");
+    expect(html).toContain("최초 모델 기록 세션</dt><dd>2026-10-12");
     expect(html).toContain("가상 납세자");
   });
   it("renders loading, retry button disabled during fetching, and explicit read failure", () => {
@@ -140,7 +140,7 @@ it("keeps personal capital planning and obsolete allocation setup out of indepen
   expect(html).not.toContain("운용계획");
   expect(html).not.toContain("배분전략 확정 대기 · CM6");
   expect(html).not.toContain("총 계획금액과 시장 배분을 확인한 뒤");
-  expect(html).toContain("독립 Shadow 원장");
+  expect(html).toContain("독립 Shadow 원장 · 보관 기록");
 });
 
 it("renders only the selected book and excludes beta replay from a restart view", async () => {

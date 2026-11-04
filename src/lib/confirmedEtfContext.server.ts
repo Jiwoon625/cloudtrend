@@ -11,6 +11,14 @@ import {
 
 const BUCKET = "cloudtrend-data";
 const VERSION = "confirmed-etf-context-v1";
+// v8 and v9 share the serialized analysis/digest contract. Only the current
+// screening eligibility changed in v9; verified historical marks remain valid.
+// This allowlist is for archival price preservation, never current cache reuse.
+const COMPATIBLE_MARK_CACHE_VERSIONS = new Set<string>([
+  SCREENING_CACHE_VERSION,
+  "screening-cache-v8-verified-kr-index-20261030-v1",
+  "screening-cache-v8-verified-kr-index-20261008-v1",
+]);
 const location = (uid: string) => `${uid}/cache/screening/confirmed-etf-context.json`;
 const digest = (value: unknown) =>
   createHash("sha256").update(stableCacheJson(value)).digest("hex");
@@ -30,7 +38,7 @@ export async function preserveConfirmedEtfContext(
   const analysis = candidate?.payload?.analysis;
   if (!analysis || analysis.krPublication?.phase === "PRELIMINARY") return;
   if (
-    candidate?.version !== SCREENING_CACHE_VERSION ||
+    !COMPATIBLE_MARK_CACHE_VERSIONS.has(candidate?.version ?? "") ||
     !candidate.resultDigest ||
     digest(deterministicAnalysis(analysis)) !== candidate.resultDigest
   )
