@@ -27,8 +27,8 @@ vi.mock("../src/lib/krxReviewReferenceParser", () => ({
   parseManualMarketDataWithReferences: () => ({ dataset: { asOfDate: "2026-10-06" }, stats: {} }),
   withKrxReviewReferences: (analysis: unknown) => analysis,
 }));
-vi.mock("../src/lib/engine/fullMarketAnalysis", () => ({
-  runFullMarketAnalysis: () => ({
+vi.mock("../src/lib/currentScreening", () => ({
+  runCurrentScreening: () => ({
     dataset: { asOfDate: "2026-10-06" },
     analysis: {
       asOfDate: "2026-10-06",

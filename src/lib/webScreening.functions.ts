@@ -30,7 +30,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
 
 import { parseManualMarketDataWithReferences as parseManualMarketData } from "./krxReviewReferenceParser";
-import { runFullMarketAnalysis } from "@/lib/engine/fullMarketAnalysis";
+import { runCurrentScreening } from "@/lib/currentScreening";
 import { mergeScoringConfig, type ScoringConfig } from "@/lib/engine/scoring";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
 import {
@@ -267,7 +267,7 @@ export async function runWebScreeningForUser(
     if (krPublication.phase !== registeredPublication.phase)
       throw new Error("계산 중 KRX 공표 상태가 변경됐습니다. 최신 입력으로 다시 시도하세요.");
     const parsed = parseManualMarketData(texts);
-    const { analysis: engineAnalysis, dataset } = runFullMarketAnalysis(parsed.dataset, config);
+    const { analysis: engineAnalysis, dataset } = runCurrentScreening(parsed.dataset, config);
     const operationalIndex = await loadOperationalIndex(
       client,
       userId,
@@ -319,7 +319,7 @@ export async function runWebScreeningForUser(
     else
       await runSignalJournalStage(pipelineStatus, saveStages, () =>
         publishKrSignalJournal(client, userId, {
-          dataset,
+          dataset: parsed.dataset,
           config,
           snapshot,
           sourceHash: fingerprint,

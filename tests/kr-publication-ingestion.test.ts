@@ -112,7 +112,9 @@ it("forwards independently validated lifecycle through CLI and API without requi
     version: "kr-etf-lifecycle-v1",
     sourceUniverseSymbols: ["005930", "261920", "280320", "465620"],
     requestedCollectionDates: ["2026-10-29"],
-    events: KR_ETF_LIFECYCLE_EVENTS,
+    events: KR_ETF_LIFECYCLE_EVENTS.filter((event) =>
+      ["261920", "280320", "465620"].includes(event.symbol),
+    ),
     requestedSymbols: ["005930"],
     latestExpectedSymbols: ["005930"],
   });
