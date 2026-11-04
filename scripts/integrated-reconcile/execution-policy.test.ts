@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { reconciliationBudget } from "./execution-policy";
 const workflow = readFileSync(".github/workflows/integrated-reconciliation.yml", "utf8");
 const upstream = readFileSync(".github/workflows/us-prospective-screening.yml", "utf8");
-const gate = workflow.match(/ {4}if: >-\n([\s\S]*?)\n {4}runs-on:/)![1].trim();
+const gate = workflow.match(/ {4}if: (.*)/)![1].trim();
 const title = upstream.match(/run-name: \$\{\{ (.*) \}\}/)![1];
 const repo = "Jiwoon625/cloudtrend";
 function allowed(overrides: Record<string, unknown> = {}, root: Record<string, unknown> = {}) {
@@ -40,7 +40,7 @@ it.each([false, true])(
       inputs: { replay_manifest_path: "", replay_apply: apply },
     });
     expect(display_title).toBe("US screening completion eligible");
-    expect(allowed({ display_title })).toBe(true);
+    expect(allowed({ display_title })).toBe(false);
   },
 );
 it.each([false, true])(
@@ -75,7 +75,7 @@ it("normal KR upload dispatch eligible; comments and push validation excluded", 
       path: ".github/workflows/cloudtrend-analysis.yml",
       display_title: "arbitrary dispatch title",
     }),
-  ).toBe(true);
+  ).toBe(false);
   expect(
     allowed({ path: ".github/workflows/cloudtrend-analysis.yml", event: "issue_comment" }),
   ).toBe(false);
@@ -105,7 +105,7 @@ it.each([false, true].flatMap((apply) => [false, true].map((screen) => ({ apply,
         replay_then_screen: screen,
       },
     });
-    expect(allowed({ display_title })).toBe(apply && screen);
+    expect(allowed({ display_title })).toBe(false);
   },
 );
 it("unchanged collector multi-day atomic chain carries explicit apply-and-screen signal", () => {
@@ -118,4 +118,8 @@ it("unchanged collector multi-day atomic chain carries explicit apply-and-screen
   expect(stage).toContain("if len(_dates_to_run) > 1:");
   expect(stage).toContain("['publish_us_atomic_chain']");
   expect(stage).toContain("['dispatch_us_once']");
+});
+
+it("has no automatic reconciliation subscription", () => {
+  expect(workflow).not.toMatch(/\n  (workflow_run|schedule|push):/);
 });

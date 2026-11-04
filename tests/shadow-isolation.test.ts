@@ -40,8 +40,8 @@ describe("Shadow persistence and source integration boundaries", () => {
   it("publishes only via serial main-branch jobs after successful collection, without raw datasets", () => {
     const w = read(".github/workflows/kospi-shadow.yml");
     expect(w).toContain("cancel-in-progress: false");
-    expect(w).toContain("github.event.workflow_run.conclusion == 'success'");
-    expect(w).toContain("github.event.workflow_run.event != 'pull_request'");
+    expect(w).toContain("github.event_name == 'workflow_dispatch'");
+    expect(w).not.toMatch(/\n  (workflow_run|schedule|push):/);
     expect(w).not.toContain("pull_request_target");
   });
 });

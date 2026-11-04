@@ -190,8 +190,8 @@ for (const phase of ["prices", "warm"] as const) {
       expect.anything(),
       "11111111-1111-1111-1111-111111111111",
     );
-    expect(mocks.shadow.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.portfolioRefresh.mock.invocationCallOrder[0]!,
+    expect(mocks.portfolioRefresh.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.shadow.mock.invocationCallOrder[0]!,
     );
     expect(mocks.complete).toHaveBeenCalledTimes(1);
     expect(mocks.complete.mock.invocationCallOrder[0]).toBeGreaterThan(
@@ -200,6 +200,11 @@ for (const phase of ["prices", "warm"] as const) {
     const bundle = JSON.parse(uploaded.get(run.result_path)!);
     expect(bundle.schemaVersion).toBe(1);
     expect(bundle.summary).toEqual(run.summary);
+    expect(run.summary.pipelineStatus).toMatchObject({
+      screening: "COMPLETED",
+      models: "COMPLETED",
+      publication: "COMPLETED",
+    });
     expect(bundle.result.rows.length).toBe(run.summary.counts.total);
     expect(bundle.data.sources[0].bytes).toBe(6);
     expect(Object.keys(bundle)).toEqual([
