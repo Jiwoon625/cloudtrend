@@ -1,0 +1,30 @@
+name: Export historical screening review prices
+on:
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+jobs:
+  export:
+    if: github.event.issue.number == 16 && github.actor == github.repository_owner && github.event.comment.body == '/cloudtrend export screening-pnl 2026-11-04'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Export bounded historical prices without database writes
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          NODE_OPTIONS: --max-old-space-size=6144
+        run: npx vite-node --script scripts/export-screening-pnl-review.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screening-pnl-review
+          path: pnl-review-output/
+          retention-days: 7
