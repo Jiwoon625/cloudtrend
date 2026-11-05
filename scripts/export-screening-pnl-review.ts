@@ -38,5 +38,8 @@ await writeFile(
 );
 console.log("Read-only price export complete", Object.keys(bars).length);
 // Preserve the original completed run before attempting historical signal repair.
-const original = await downloadJson(client, `${owner}/results/screening/20261026173147-974ea726.json`);
+const original = await downloadJson(
+  client,
+  `${owner}/results/screening/20261026173147-974ea726.json`,
+);
 await writeFile("pnl-review-output/kr-original-20261026.json", JSON.stringify(original));
