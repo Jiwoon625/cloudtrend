@@ -1,0 +1,61 @@
+name: Recover November 4 Korean signal journal
+on:
+  pull_request:
+    paths:
+      - scripts/recover-kr-nov4-signals.ts
+      - .github/workflows/kr-nov4-signal-recovery.yml
+  issue_comment:
+    types: [created]
+permissions:
+  contents: read
+concurrency:
+  group: kr-nov4-signal-recovery
+  cancel-in-progress: false
+jobs:
+  recover:
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event.issue.number == 16 && github.actor == github.repository_owner &&
+       github.event.comment.body == '/cloudtrend recover kr-signals 2026-11-04')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/checkout@v4
+        with:
+          ref: 3434eed24a7eb67f3244e18b0a7cb80ed7be0e81
+          path: historical-engine
+      - name: Prepare exact historical engine
+        run: |
+          ln -s "$GITHUB_WORKSPACE/node_modules" historical-engine/node_modules
+          cp scripts/recover-kr-nov4-signals.ts historical-engine/scripts/
+          cd historical-engine
+          ../node_modules/.bin/vite-node --script scripts/build-signal-manifest.ts
+          ../node_modules/.bin/vite-node --script scripts/recover-kr-nov4-signals.ts --self-test
+      - name: Restore only the dated signal journal
+        if: github.event_name == 'issue_comment'
+        working-directory: historical-engine
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: ../node_modules/.bin/vite-node --script scripts/recover-kr-nov4-signals.ts --apply
+      - name: Refresh current screening and coverage with current engine
+        if: github.event_name == 'issue_comment'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: npm run screening:run -- --supabase-user-id "$SUPABASE_USER_ID" --upload
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'issue_comment' && always()
+        with:
+          name: kr-nov4-signal-recovery-${{ github.run_id }}
+          path: historical-engine/recovery-output/
+          if-no-files-found: ignore
+          retention-days: 14
