@@ -67,7 +67,6 @@ jobs:
       COLLECTOR_RUN_ID: ${{ inputs.collector_run_id }}
       SOURCE_STORAGE: ${{ inputs.source_storage }}
       NODE_OPTIONS: --max-old-space-size=10240
-      SOURCE_VALIDATION_CACHE_DIR: ${{ runner.temp }}/source-validation
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -92,6 +91,8 @@ jobs:
       - name: Build current signal configuration
         run: npx vite-node --config scripts/drive-screening.config.ts scripts/build-signal-manifest.ts
       - name: Run existing engine on completed input
+        env:
+          SOURCE_VALIDATION_CACHE_DIR: ${{ runner.temp }}/source-validation
         run: npx vite-node --config scripts/drive-screening.config.ts scripts/run-drive-screening-entry.ts
       - name: Save execution results and receipt to the selected Drive run
         if: ${{ always() && steps.prepare.outcome != 'skipped' }}
