@@ -1,0 +1,114 @@
+name: CloudTrend Drive screening executor
+
+on:
+  workflow_dispatch:
+    inputs:
+      folder_id:
+        description: 수집 완료 run 폴더의 Google Drive ID
+        required: true
+        type: string
+        default: 1dmPKBphuAm-6xXB-FCujuCIsgz5FtM4Z
+      collector_run_id:
+        description: 수집 완료 실행 ID
+        required: true
+        type: string
+        default: 288f696eb14c4ef48f267f3fcfb61151
+      source_storage:
+        description: drive=드라이브 결과 저장 / supabase=홈페이지 반영
+        type: choice
+        options: [drive, supabase]
+        default: drive
+  pull_request:
+    paths:
+      - .github/workflows/drive-screening.yml
+      - scripts/drive-screening-transfer.py
+      - scripts/run-drive-screening.ts
+      - scripts/run-drive-screening-entry.ts
+      - scripts/drive-screening.config.ts
+      - scripts/launch-drive-screening.py
+      - tests/drive-*
+
+permissions:
+  contents: read
+
+# Share the existing screening writer lock. No scheduled collection or Shadow work.
+concurrency:
+  group: CloudTrend screening-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: python -m unittest discover -s tests -p 'drive_*test.py'
+      - run: npx vitest run tests/drive-source.test.ts
+
+  screening:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      GOOGLE_DRIVE_ACCESS_TOKEN: ${{ secrets.GOOGLE_DRIVE_ACCESS_TOKEN }}
+      GOOGLE_DRIVE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS_JSON }}
+      DRIVE_FOLDER_ID: ${{ inputs.folder_id }}
+      COLLECTOR_RUN_ID: ${{ inputs.collector_run_id }}
+      SOURCE_STORAGE: ${{ inputs.source_storage }}
+      NODE_OPTIONS: --max-old-space-size=10240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate server configuration
+        run: |
+          test -n "$SUPABASE_URL"
+          test -n "$SUPABASE_SERVICE_ROLE_KEY"
+          test -n "$SUPABASE_USER_ID"
+      - run: npm ci
+      - name: Read completed collector files directly from Drive
+        id: prepare
+        run: >-
+          python scripts/drive-screening-transfer.py prepare
+          --folder "$DRIVE_FOLDER_ID" --run-id "$COLLECTOR_RUN_ID"
+          --mode "$SOURCE_STORAGE"
+      - name: Build current signal configuration
+        run: npx vite-node --config scripts/drive-screening.config.ts scripts/build-signal-manifest.ts
+      - name: Run existing engine on completed input
+        env:
+          SOURCE_VALIDATION_CACHE_DIR: ${{ runner.temp }}/source-validation
+        run: npx vite-node --config scripts/drive-screening.config.ts scripts/run-drive-screening-entry.ts
+      - name: Save execution results and receipt to the selected Drive run
+        if: ${{ always() && steps.prepare.outcome != 'skipped' }}
+        run: |
+          if test -f drive-screening/execution-receipt.json; then
+            python scripts/drive-screening-transfer.py save --folder "$DRIVE_FOLDER_ID" --run-id "$COLLECTOR_RUN_ID"
+          fi
+      - name: Summarize execution
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          p = Path('drive-screening/execution-receipt.json')
+          if p.exists():
+              r = json.loads(p.read_text())
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as f:
+                  f.write(f"상태: {r['status']} · 자료: {r['phase']} · 원본: {r['sourceStorage']}\n")
+          PY

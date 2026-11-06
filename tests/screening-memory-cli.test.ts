@@ -452,3 +452,24 @@ test("PRELIMINARY CLI publishes view and completed analysis record without histo
   expect(mocks.prices).not.toHaveBeenCalled();
   expect(mocks.warm).not.toHaveBeenCalled();
 });
+
+// Direct Drive execution uses the same engine and publication evidence but is read-only.
+test("provided Drive inputs compute a local result without registry loading, uploads or journals", async () => {
+  const result = await runScreening(
+    args().filter((arg) => arg !== "--upload"),
+    inputs as never,
+    { kind: "GOOGLE_DRIVE_WITH_REGISTERED_HISTORY" },
+  );
+  expect(mocks.load).not.toHaveBeenCalled();
+  expect(mocks.cache).not.toHaveBeenCalled();
+  expect(mocks.complete).not.toHaveBeenCalled();
+  expect(mocks.shadow).not.toHaveBeenCalled();
+  expect(upserts).toHaveLength(0);
+  expect(uploaded.size).toBe(0);
+  expect(result?.outputDir).toContain("screening-");
+});
+
+test("provided Drive inputs cannot accidentally publish the dashboard", async () => {
+  await expect(runScreening(args(), inputs as never)).rejects.toThrow("calculation-only");
+  expect(mocks.trusted).not.toHaveBeenCalled();
+});
