@@ -3,7 +3,7 @@
     "version": "kospi-shadow-publication-runtime-v2",
     "files": {
       "scripts/analysis-run-store.ts": "sha256:460ce2ea41c15433410b2b8cb212ccaa8e8b7fa1cd7e0984333ce58b53d5cf9d",
-      "scripts/archived-storage.ts": "sha256:e5d7b2c5570835ede019dd122aefacbc3d05df5d5361bfa0c6897e9a2cc5db9c",
+      "scripts/archived-storage.ts": "sha256:fd7f7a22ba69acdffda24276fbb560ce83fe2b9b1459e22de95c07a96c8bbe17",
       "scripts/build-kospi-shadow-manifest.ts": "sha256:7e1a8769bbb2cd69850437c19fee43c1adbfe93a9c01eaa0725edcfd45076487",
       "scripts/integrated-allocation-code-manifest.ts": "sha256:e074d41491e7282e775c09811e4611adb8554ea7360924b10bd8f7ba7e630ddd",
       "scripts/kospi-shadow-code-manifest.ts": "sha256:3d189fd60f73fba23335671aee0119a5a6d7ecf2ca91ead82c16ce6da84591dc",
@@ -70,7 +70,7 @@
     "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1",
     "rawFiles": {
       "scripts/analysis-run-store.ts": "sha256:68b8c87f7a65231f718f3679b45b98e03216add12662524c1c7d5ef203321b93",
-      "scripts/archived-storage.ts": "sha256:f4f3723f9262238ea1fd4bc14aeede2b6e122eae792b8c98fa45db0ef67c0747",
+      "scripts/archived-storage.ts": "sha256:6f92918deeac018765dac27d959fe8c440298bc61d7991af2ca95843c6bcfca6",
       "scripts/build-kospi-shadow-manifest.ts": "sha256:f416dcba685857b6c9932838fa73191532abef51d8bcf79a1af8da82dc024ef6",
       "scripts/integrated-allocation-code-manifest.ts": "sha256:e32e6a056fb523b3144ebd316eb5344750ceed01099ab3bdf256d9da274aa174",
       "scripts/kospi-shadow-code-manifest.ts": "sha256:b819e2b3d1ebf8e4edde46c33220771c4a8f6a61364fb1605597897ea31fdfb0",
@@ -132,5 +132,5 @@
       "src/lib/usCandidatePriority.ts": "sha256:9a58e7d7999f00a2051d72321cad62d06af671ce069d5d110a5899abe3bbc3eb"
     }
   },
-  "codeHash": "sha256:a3dec4a3bfa1fcec6b52993ee7c024bd5b4f293f7aa485930a84683e3813364f"
+  "codeHash": "sha256:ff60b0668981cbd64570fe902564266b32ad1e1a58761a9babfb01371f0981b0"
 }

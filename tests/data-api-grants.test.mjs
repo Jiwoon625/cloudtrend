@@ -59,6 +59,7 @@ try {
     shadow_replay_audit: ["SELECT,INSERT", "SELECT,INSERT"],
     us_operating_replays: ["", "SELECT,INSERT"],
     screening_run_archive: ["SELECT,INSERT", "SELECT,INSERT"],
+    screening_recovery_evidence: ["SELECT", "SELECT,INSERT"],
     actual_entry_decisions: ["SELECT,INSERT", ""],
     operational_index_installations: [
       "SELECT,INSERT",

@@ -16,6 +16,8 @@ export const Route = createFileRoute("/history-instrument/$symbol")({
     market: String(s["market"] ?? "KR"),
     strategyVersion: String(s["strategyVersion"] ?? ""),
     dataHash: String(s["dataHash"] ?? ""),
+    historySource:
+      s["historySource"] === "KR_ORIGINAL_RECOVERY" ? ("KR_ORIGINAL_RECOVERY" as const) : undefined,
   }),
   head: () => ({ meta: [{ title: "과거 신호 근거 | CloudTrend" }] }),
   component: HistoricalInstrument,
@@ -42,6 +44,16 @@ function HistoricalInstrument() {
         <p>해당 실행에 종목 기록이 없습니다.</p>
       ) : (
         <div className="space-y-4">
+          {s!.historySource === "KR_ORIGINAL_RECOVERY" ? (
+            <div
+              role="note"
+              className="rounded border border-amber-500 bg-amber-50 p-3 text-sm text-amber-950"
+            >
+              <strong>잠정 원본 복원 · 확정 신호 아님</strong>
+              <p>당시 저장된 계산 조건입니다. 실제 거래 및 확정 이력에는 반영하지 않습니다.</p>
+              <p className="break-all text-xs">원본 SHA256: {s!.recoveryEvidence?.sourceSha256}</p>
+            </div>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             기준일 {s!.asOfDate} · 전략{" "}
             {s!.strategyVersion ?? row.operationalSignalVersion ?? "과거 버전 미기록"} · 실행 ID{" "}

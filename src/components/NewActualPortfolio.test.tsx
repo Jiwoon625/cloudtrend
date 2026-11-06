@@ -469,7 +469,8 @@ describe("new-only portfolio presentation", () => {
     expect(html).not.toContain("실제 성과 자료 대조·확정");
     expect(html).not.toContain("기존 원장 누적손익");
     const shadowSource = readFileSync(new URL("./ShadowPage.tsx", import.meta.url), "utf8");
-    expect(shadowSource).toContain("한국·미국·ETF의 독립 모델");
+    expect(shadowSource).toContain("한국·미국·ETF의 채택·비교전략과 통합배분의 기존 기록");
+    expect(shadowSource).toContain("Shadow·전략원장·통합배분은 일상 스크리닝에서 분리");
     expect(shadowSource).toContain("<OctoberShadowSummary />");
     expect(shadowSource).not.toMatch(/KospiShadowPanel|별도 KOSPI|showKospiCorrection/);
     expect(shadowSource).not.toContain("UsPortfolioView");

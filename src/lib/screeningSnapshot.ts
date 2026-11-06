@@ -34,9 +34,18 @@ export interface SnapshotEntry {
 }
 
 export interface ScreeningSnapshot {
+  /** Verified original preliminary evidence; separate from confirmed history. */
+  recoveryEvidence?: {
+    version: 1;
+    method: "ORIGINAL_STORED_RESULT";
+    sourcePath: string;
+    sourceSha256: string;
+    sourceBytes: number;
+    sourceCodeVersion: string;
+  };
   krPublication?: import("./krScreeningPublication").KrScreeningPublication;
   dataHash?: string;
-  historySource?: "US_DAILY";
+  historySource?: "US_DAILY" | "KR_ORIGINAL_RECOVERY";
   /** DB insertion time; never substituted for analysis or publication time. */
   storedAt?: string;
   runId?: string;
