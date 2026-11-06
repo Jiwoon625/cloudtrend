@@ -12,11 +12,24 @@ import {
 import { serializeScreeningRunArchive } from "../src/lib/screeningRunArchiveStorage";
 import type { ScreeningSnapshot } from "../src/lib/screeningSnapshot";
 
+interface RecoveryTestRow {
+  run_id: string | undefined;
+  date: string;
+  market: string;
+  strategy_version: string | undefined;
+  calculated_at: string;
+  created_at: string;
+  snapshot: unknown;
+  source_path: string;
+  source_sha256: string;
+  source_bytes: number;
+  source_code_version: string;
+}
 const state = vi.hoisted(() => ({
-  row: null as any,
-  confirmed: [] as any[],
-  error: null as any,
-  calls: [] as any[],
+  row: null as unknown as RecoveryTestRow,
+  confirmed: [] as RecoveryTestRow[],
+  error: null as { message: string } | null,
+  calls: [] as unknown[],
 }));
 vi.mock("../src/lib/cloud", () => ({
   userId: async () => "bdfc8818-33a7-4030-9dbd-ecad39f223ac",
@@ -25,7 +38,7 @@ vi.mock("../src/lib/cloud", () => ({
       state.calls.push(table);
       const q = {
         select: () => q,
-        eq: (...v: any[]) => {
+        eq: (...v: unknown[]) => {
           state.calls.push(v);
           return q;
         },
@@ -148,10 +161,11 @@ it("reads original values with pending exits and zero operational entries", asyn
 it.each(["phase", "hash", "version", "date", "path"])(
   "rejects changed %s evidence",
   async (change) => {
-    if (change === "phase") state.row.snapshot.krPublication.phase = "FINAL";
+    if (change === "phase")
+      (state.row.snapshot as ScreeningSnapshot).krPublication!.phase = "FINAL";
     if (change === "hash") state.row.source_sha256 = "0".repeat(64);
     if (change === "version") state.row.source_code_version = "0".repeat(40);
-    if (change === "date") state.row.snapshot.asOfDate = "2026-10-27";
+    if (change === "date") (state.row.snapshot as ScreeningSnapshot).asOfDate = "2026-10-27";
     if (change === "path") state.row.source_path = "other-owner/results/screening/run.json";
     await expect(
       readScreeningArchive(snapshot.runId!, snapshot.asOfDate, snapshot.savedAt, identity),
