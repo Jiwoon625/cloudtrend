@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { readArchivedObject, ARCHIVE_READER_SHA256 } from "./archived-storage";
-import { downloadJson } from "./analysis-run-store";
+import { downloadJson, downloadObjectBytes } from "./analysis-run-store";
 import { createReadOnlyTransport, objectPath } from "./kr-vintage-preflight/transport";
 
 const uid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
@@ -49,6 +49,17 @@ function client(error: unknown, data: string | null = null) {
   } as never;
 }
 describe("historical archive reads", () => {
+  it("preserves no-cache origin reads for historical source bytes", async () => {
+    const download = vi.fn(async () => ({ data: new Blob(["{}"]), error: null }));
+    const api = { storage: { from: () => ({ download }) } } as never;
+    const source = `${uid}/source/screening/source.csv`;
+    await downloadObjectBytes(api, source);
+    expect(download).toHaveBeenCalledWith(
+      source,
+      { cacheNonce: expect.any(String) },
+      { cache: "no-store" },
+    );
+  });
   it("pins the Python reader source in the reviewed runtime", async () => {
     expect(
       createHash("sha256")
@@ -133,5 +144,26 @@ describe("historical archive reads", () => {
     );
     await expect(read(p, 1000, "HEAD")).rejects.toThrow("PREFLIGHT_INPUT_REJECTED");
     await expect(read("/rest/v1/analysis_runs")).rejects.toThrow("PREFLIGHT_INPUT_REJECTED");
+  });
+  it("rejects oversized multi-chunk HTTP 400 errors without hanging on a cloned stream", async () => {
+    await fixture();
+    const p = objectPath("cloudtrend-data", key, uid);
+    const read = createReadOnlyTransport(
+      "https://synthetic.supabase.co",
+      "synthetic",
+      new Set([p]),
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new Uint8Array(3000));
+              controller.enqueue(new Uint8Array(3000));
+              controller.close();
+            },
+          }),
+          { status: 400 },
+        ),
+    );
+    await expect(read(p)).rejects.toThrow("PREFLIGHT_INPUT_REJECTED");
   });
 });

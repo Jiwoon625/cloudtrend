@@ -72,6 +72,10 @@
     {
       "runtimeCodeHash": "sha256:699a4638aa87adeaa08bdf2e5fef0cd75ee18510d3a1ac3a75c70250b4944996",
       "reviewId": "drive-archive-readonly-fallback-20261107"
+    },
+    {
+      "runtimeCodeHash": "sha256:a3dec4a3bfa1fcec6b52993ee7c024bd5b4f293f7aa485930a84683e3813364f",
+      "reviewId": "drive-archive-preserve-source-freshness-20261107"
     }
   ]
 }

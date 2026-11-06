@@ -9,7 +9,7 @@ import {
 import { assertStoredOctoberRun } from "../../src/lib/ledger/octoberShadowPipeline";
 import { resolveKrInputArchive, krExecutionBar } from "../../src/lib/ledger/octoberShadowArchive";
 import { nextKrRegularSession } from "../../src/lib/ledger/krShadowDecision";
-import { requireCheck } from "../kr-vintage-preflight/transport";
+import { requireCheck } from "../kr-vintage-preflight/guards";
 const same = (a: unknown, b: unknown) => canonicalSeriesJson(a) === canonicalSeriesJson(b);
 const H = /^sha256:[a-f0-9]{64}$/;
 const KINDS = ["ETF_V02", "KR_KOSDAQ", "KR_KOSPI", "KR_KOSPI_CONFIRM1_BEAR", "KR_MIXED"];

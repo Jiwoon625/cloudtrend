@@ -2,7 +2,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import fs from "node:fs";
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { rawHash, requireCheck } from "./guards";
+export { rawHash, requireCheck } from "./guards";
 import { isMissingStorageObject, readArchivedObject } from "../archived-storage";
 import { canonicalSeriesJson, hashSeriesValue } from "../../src/lib/ledger/modelSeries";
 
@@ -15,7 +16,9 @@ const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 async function missingHistoricalResponse(response: Response) {
   if (response.status === 404) return true;
   if (response.status !== 400 || !response.body) return false;
-  const reader = response.clone().body!.getReader();
+  // Non-success responses are rejected below, so consume this single stream.
+  // Cloning here would leave an unread tee branch whose cancellation can hang.
+  const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let length = 0;
   try {
@@ -33,12 +36,7 @@ async function missingHistoricalResponse(response: Response) {
     await reader.cancel().catch(() => {});
   }
 }
-export const rawHash = (bytes: Uint8Array | string) =>
-  "sha256:" + createHash("sha256").update(bytes).digest("hex");
 const same = (a: unknown, b: unknown) => canonicalSeriesJson(a) === canonicalSeriesJson(b);
-export function requireCheck(value: unknown): asserts value {
-  if (!value) throw new Error("PREFLIGHT_INPUT_REJECTED");
-}
 const object = (v: any) => v && typeof v === "object" && !Array.isArray(v);
 const keys = (v: any, allowed: string[]) =>
   object(v) && Object.keys(v).every((k) => allowed.includes(k));

@@ -54,12 +54,13 @@ export async function downloadObjectBytes(
   client: SupabaseClient,
   objectPath: string,
 ): Promise<Uint8Array> {
+  const fresh = objectPath.endsWith("/latest.json") || objectPath.includes("/source/screening/");
   const { data, error } = await client.storage
     .from(ANALYSIS_BUCKET)
     .download(
       objectPath,
-      objectPath.endsWith("/latest.json") ? { cacheNonce: crypto.randomUUID() } : undefined,
-      objectPath.endsWith("/latest.json") ? { cache: "no-store" } : undefined,
+      fresh ? { cacheNonce: crypto.randomUUID() } : undefined,
+      fresh ? { cache: "no-store" } : undefined,
     );
   if (error) {
     if (isMissingStorageObject(error)) {

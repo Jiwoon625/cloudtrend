@@ -5,7 +5,7 @@ import {
   hashSeriesValue,
   type SeriesHash,
 } from "../../src/lib/ledger/modelSeries";
-import { requireCheck } from "../kr-vintage-preflight/transport";
+import { requireCheck } from "../kr-vintage-preflight/guards";
 export const OPERATION_MANIFEST = "kr-adjusted-recovery-operation-input:";
 export const FULL_PLAN = "kr-adjusted-recovery-full-plan:";
 export const APPLY_APPROVAL = "kr-adjusted-recovery-apply-approval:";

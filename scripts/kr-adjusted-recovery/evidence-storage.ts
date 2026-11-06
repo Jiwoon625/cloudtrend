@@ -1,7 +1,7 @@
 import { gzipSync, gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { canonicalSeriesJson, hashSeriesValue } from "../../src/lib/ledger/modelSeries";
-import { requireCheck } from "../kr-vintage-preflight/transport";
+import { requireCheck } from "../kr-vintage-preflight/guards";
 
 /** Encoding only. The database digest binds this envelope; receiptHash binds the complete logical evidence. */
 export const RECOVERY_EVIDENCE_FORMAT = "kr-recovery-evidence-gzip-v1";
