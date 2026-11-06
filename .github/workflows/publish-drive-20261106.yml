@@ -19,7 +19,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
       NODE_OPTIONS: --max-old-space-size=10240
-      SOURCE_VALIDATION_CACHE_DIR: ${{ runner.temp }}/source-validation
+      SOURCE_VALIDATION_CACHE_DIR: /tmp/cloudtrend-source-validation-${{ github.run_id }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
