@@ -47,7 +47,7 @@ import {
   type KrRetrospectiveAuthority,
 } from "../../src/lib/ledger/krRetrospectivePublication";
 import { verifyPreparationPayload } from "./verify";
-import { requireCheck } from "../kr-vintage-preflight/transport";
+import { requireCheck } from "../kr-vintage-preflight/guards";
 const same = (a: unknown, b: unknown) => canonicalSeriesJson(a) === canonicalSeriesJson(b);
 const KINDS = ["KR_MIXED", "KR_KOSPI", "KR_KOSDAQ", "ETF_V02", "KR_KOSPI_CONFIRM1_BEAR"];
 export interface OrderedRecoveryInput {

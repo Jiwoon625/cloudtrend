@@ -6,6 +6,7 @@ import {
   ANALYSIS_BUCKET,
   codeVersion,
   downloadJson,
+  downloadObjectBytes,
   sha256,
   stableJson,
 } from "./analysis-run-store";
@@ -225,11 +226,9 @@ async function loadHistoricalSession(
   for (const record of proof.selected) {
     if (record.user_id !== uid || !record.storage_path.startsWith(`${uid}/source/screening/`))
       throw new Error("Cross-owner historical source path");
-    const { data, error } = await client.storage
-      .from(ANALYSIS_BUCKET)
-      .download(record.storage_path, { cacheNonce: crypto.randomUUID() }, { cache: "no-store" });
-    if (error || !data) throw new Error("Historical source download failed");
-    texts.push(await verifyHistoricalBytes(record, new Uint8Array(await data.arrayBuffer())));
+    texts.push(
+      await verifyHistoricalBytes(record, await downloadObjectBytes(client, record.storage_path)),
+    );
   }
   const { dataset } = parseManualMarketData(texts);
   if (dataset.asOfDate !== date) throw new Error("Historical merged dataset is not exact-date");

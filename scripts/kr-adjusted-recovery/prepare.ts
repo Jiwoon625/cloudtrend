@@ -26,7 +26,7 @@ import { regularOpenAt, regularCloseAt } from "../../src/lib/ledger/octoberShado
 import octoberRuntime from "../../src/lib/ledger/octoberShadowEngineManifest.generated.json";
 import integratedRuntime from "../../src/lib/integratedAllocationRuntime.generated.json";
 import kospiRuntime from "../../src/lib/kospiShadowPublicationRuntime.generated.json";
-import { requireCheck, rawHash } from "../kr-vintage-preflight/transport";
+import { requireCheck, rawHash } from "../kr-vintage-preflight/guards";
 import {
   verifyArchivePrefixBodies,
   nonTargetDatasetIdentity,

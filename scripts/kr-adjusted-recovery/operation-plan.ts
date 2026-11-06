@@ -14,7 +14,7 @@ import { parseManualMarketDataWithReferences } from "../../src/lib/krxReviewRefe
 import { classifyKrScreeningPublication } from "../../src/lib/krScreeningPublication";
 import { planCurrentHistoryCorrection } from "../kr-current-history-correction";
 import { kospiRetrospectiveApprovalCandidate } from "../kospi-final-retrospective-apply";
-import { rawHash, requireCheck } from "../kr-vintage-preflight/transport";
+import { rawHash, requireCheck } from "../kr-vintage-preflight/guards";
 import { prepareRecovery } from "./prepare";
 import { planOrderedKrRecovery } from "./ordered-plan";
 import {

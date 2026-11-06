@@ -2,7 +2,7 @@
 import { canonicalSeriesJson, hashSeriesValue } from "../../src/lib/ledger/modelSeries";
 import { economicSessionInputs } from "../../src/lib/integratedAllocationEquivalence";
 import { validateSourceText } from "../../src/lib/sourceData";
-import { requireCheck, rawHash } from "../kr-vintage-preflight/transport";
+import { requireCheck, rawHash } from "../kr-vintage-preflight/guards";
 import { diagnoseKospiCompletedBoundary } from "../kospi-boundary-diagnostic";
 import { verifyKospiPriorityAdmission } from "../kospi-priority-admission";
 import { shadowObjectPath } from "../../src/lib/kospiShadowStore";
