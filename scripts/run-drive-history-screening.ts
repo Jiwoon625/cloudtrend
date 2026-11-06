@@ -70,7 +70,9 @@ export async function runDriveHistoryScreening(directory: string, publishDashboa
         manifestSha256: `sha256:${identity.sha256}`,
       });
       validateKrPublicationManifest(publication, m.actualLatestPriceDate);
-      if (new Set(m.deltaMembers.map((p: any) => p.name)).size !== m.deltaMembers.length)
+      if (
+        new Set(m.deltaMembers.map((p: { name: string }) => p.name)).size !== m.deltaMembers.length
+      )
         throw new Error("Duplicate delta parts");
       const latestSymbols = new Set<string>();
       const indexes = new Set<string>();

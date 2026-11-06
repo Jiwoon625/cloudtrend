@@ -38,7 +38,7 @@ async function main() {
     });
     const records = drive.manifest.sources.map((s) => s.sourceRecord);
     let reads = 0;
-    const query: any = {
+    const query = {
       select() {
         return this;
       },
@@ -51,7 +51,7 @@ async function main() {
       order() {
         return this;
       },
-      then(resolve: any) {
+      then(resolve: (value: { data: typeof records; error: null }) => unknown) {
         resolve({ data: records, error: null });
       },
     };
