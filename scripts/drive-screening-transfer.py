@@ -57,7 +57,12 @@ class Drive:
                 require(len(result) <= limit, "Drive response exceeds size limit")
                 return result
         except urllib.error.HTTPError as error:
-            raise RuntimeError(f"Drive 요청 실패 ({error.code}); Google 인증과 폴더 접근 권한을 확인해 주세요.") from None
+            body = ""
+            try:
+                body = error.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            raise RuntimeError(f"Drive 요청 실패 ({error.code}): {body}") from None
 
     def children(self, folder_id):
         require(ID.fullmatch(folder_id), "Invalid Drive folder ID")
