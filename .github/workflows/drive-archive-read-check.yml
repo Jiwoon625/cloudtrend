@@ -1,0 +1,29 @@
+name: Verified historical Drive archive reads
+on:
+  pull_request:
+    paths:
+      - scripts/archived-storage*
+      - scripts/read-drive-archive.py
+      - scripts/analysis-run-store.ts
+      - scripts/kospi-shadow-late-recovery.ts
+      - scripts/kr-vintage-preflight/**
+      - tests/drive_archive_reader_test.py
+      - vitest.archive.config.ts
+      - .github/workflows/drive-archive-read-check.yml
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: npx vitest run --config vitest.archive.config.ts
+      - run: python3 -m unittest discover -s tests -p 'drive_archive_reader_test.py'

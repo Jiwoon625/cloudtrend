@@ -6,6 +6,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import type { AnalysisRunKind, AnalysisRunSummaryRecord } from "../src/lib/analysisRunBundle";
 import { retryIdempotentStorageUpload } from "./storage-upload-retry";
+import { isMissingStorageObject, readArchivedObject } from "./archived-storage";
 
 export const ANALYSIS_BUCKET = "cloudtrend-data";
 
@@ -49,7 +50,10 @@ export function trustedSupabaseClient() {
   return createClient(url, secretKey, { auth: { persistSession: false } });
 }
 
-export async function downloadJson<T>(client: SupabaseClient, objectPath: string): Promise<T> {
+export async function downloadObjectBytes(
+  client: SupabaseClient,
+  objectPath: string,
+): Promise<Uint8Array> {
   const { data, error } = await client.storage
     .from(ANALYSIS_BUCKET)
     .download(
@@ -57,8 +61,20 @@ export async function downloadJson<T>(client: SupabaseClient, objectPath: string
       objectPath.endsWith("/latest.json") ? { cacheNonce: crypto.randomUUID() } : undefined,
       objectPath.endsWith("/latest.json") ? { cache: "no-store" } : undefined,
     );
-  if (error) throw new Error(`Supabase 다운로드 실패 (${objectPath}): ${error.message}`);
-  return JSON.parse(await data.text()) as T;
+  if (error) {
+    if (isMissingStorageObject(error)) {
+      const archived = await readArchivedObject(objectPath);
+      if (archived) return archived;
+    }
+    throw new Error(`Supabase 다운로드 실패 (${objectPath}): ${error.message}`);
+  }
+  return new Uint8Array(await data.arrayBuffer());
+}
+
+export async function downloadJson<T>(client: SupabaseClient, objectPath: string): Promise<T> {
+  return JSON.parse(
+    Buffer.from(await downloadObjectBytes(client, objectPath)).toString("utf8"),
+  ) as T;
 }
 
 export async function uploadJson(client: SupabaseClient, objectPath: string, value: unknown) {

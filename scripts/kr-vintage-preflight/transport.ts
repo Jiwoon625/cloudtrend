@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { isMissingStorageObject, readArchivedObject } from "../archived-storage";
 import { canonicalSeriesJson, hashSeriesValue } from "../../src/lib/ledger/modelSeries";
 
 export const CAPSULE_PREFIX = "kr-vintage-preflight-evidence:";
@@ -10,6 +11,28 @@ export const CAPSULE_VERSION = "kr-vintage-preflight-evidence-v1";
 const hashPattern = /^sha256:[a-f0-9]{64}$/;
 const uuidPattern = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+
+async function missingHistoricalResponse(response: Response) {
+  if (response.status === 404) return true;
+  if (response.status !== 400 || !response.body) return false;
+  const reader = response.clone().body!.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.length;
+      if (length > 4096) return false;
+      chunks.push(value);
+    }
+    return isMissingStorageObject(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+  } catch {
+    return false;
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+}
 export const rawHash = (bytes: Uint8Array | string) =>
   "sha256:" + createHash("sha256").update(bytes).digest("hex");
 const same = (a: unknown, b: unknown) => canonicalSeriesJson(a) === canonicalSeriesJson(b);
@@ -110,6 +133,35 @@ export function createReadOnlyTransport(
       redirect: "error",
       cache: "no-store",
     });
+    // Only a confirmed missing historical object can use an explicitly pinned Drive archive.
+    // Database reads, HEAD generation checks, authorization failures and network errors stay live.
+    const archivePrefix = "/storage/v1/object/authenticated/cloudtrend-data/";
+    if (
+      !response.redirected &&
+      (!response.url || new URL(response.url).origin === base.origin) &&
+      method === "GET" &&
+      relative.startsWith(archivePrefix) &&
+      (await missingHistoricalResponse(response))
+    ) {
+      const archived = await readArchivedObject(
+        decodeURIComponent(relative.slice(archivePrefix.length)),
+        limit,
+      );
+      if (archived) {
+        total += archived.length;
+        requireCheck(total <= 1024 * 1024 * 1024);
+        observeResponse?.(
+          relative,
+          new Response(new Uint8Array(archived), {
+            headers: {
+              "content-length": String(archived.length),
+              "x-cloudtrend-source": "verified-drive-archive",
+            },
+          }),
+        );
+        return archived;
+      }
+    }
     requireCheck(
       response.ok &&
         !response.redirected &&

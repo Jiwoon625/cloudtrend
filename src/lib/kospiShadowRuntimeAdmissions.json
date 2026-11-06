@@ -68,6 +68,10 @@
     {
       "runtimeCodeHash": "sha256:d6996396cd50e329e2897d62dcb6b8a932027aa78766e0d2df28a652068e4a85",
       "reviewId": "kr-hanaro-0040s0-cessation-20261104-v1"
+    },
+    {
+      "runtimeCodeHash": "sha256:699a4638aa87adeaa08bdf2e5fef0cd75ee18510d3a1ac3a75c70250b4944996",
+      "reviewId": "drive-archive-readonly-fallback-20261107"
     }
   ]
 }
