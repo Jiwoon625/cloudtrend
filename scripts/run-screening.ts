@@ -44,7 +44,7 @@ import {
   trustedSupabaseClient,
   uploadJson,
 } from "./analysis-run-store";
-import { loadAnalysisSourceInputs } from "./source-registry-store";
+import { loadAnalysisSourceInputs, type LoadedSourceInput } from "./source-registry-store";
 import { publishRecentPrices, warmRecentCharts } from "../src/lib/instrumentChartStore.server";
 import { writeScreeningJson, uploadScreeningJsonFile } from "./screening-json-file";
 import { persistWebScreeningCaches } from "./web-screening-cache-store";
@@ -143,12 +143,22 @@ function releaseSourcePayloads(inputs: Awaited<ReturnType<typeof loadAnalysisSou
   }
 }
 
-export async function runScreening(argv = process.argv.slice(2)) {
+export async function runScreening(
+  argv = process.argv.slice(2),
+  providedInputs?: LoadedSourceInput[],
+  inputProvenance?: Record<string, unknown>,
+) {
   memory("start");
   const options = parseArgs(argv);
+  if (providedInputs && options.upload)
+    throw new Error(
+      "Direct Drive inputs are calculation-only; use the Supabase mode to publish the dashboard.",
+    );
   const client = trustedSupabaseClient();
   const [inputs, config] = await Promise.all([
-    loadAnalysisSourceInputs(client, options.supabaseUserId, "screening", { compact: true }),
+    providedInputs
+      ? Promise.resolve(providedInputs)
+      : loadAnalysisSourceInputs(client, options.supabaseUserId, "screening", { compact: true }),
     loadConfig(options.configPath, client, options.supabaseUserId),
   ]);
 
@@ -269,6 +279,7 @@ export async function runScreening(argv = process.argv.slice(2)) {
     schemaVersion: 1 as const,
     run,
     data: {
+      ...(inputProvenance ? { inputProvenance } : {}),
       source: inputs.some((input) => input.sourceRecord)
         ? ("SUPABASE_SOURCE_REGISTRY" as const)
         : ("SUPABASE_KR" as const),
@@ -400,9 +411,10 @@ export async function runScreening(argv = process.argv.slice(2)) {
   process.stdout.write(
     `${JSON.stringify({ reused: false, run, outputDir, resultPath: options.upload ? resultPath : null, webCache, summary }, null, 2)}\n`,
   );
+  if (providedInputs) return { run, outputDir, summary };
 }
 
-if (!process.env["VITEST"])
+if (!process.env["VITEST"] && path.basename(process.argv[1] ?? "") === "run-screening.ts")
   runScreening().catch((error: unknown) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
