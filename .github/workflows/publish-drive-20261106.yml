@@ -1,0 +1,59 @@
+name: Publish verified Drive screen 2026-11-06
+on:
+  push:
+    branches: [ops/publish-drive-20261106]
+    paths:
+      - .github/workflows/publish-drive-20261106.yml
+      - scripts/ops/publish-drive-20261106.py
+permissions:
+  contents: read
+concurrency:
+  group: CloudTrend screening-refs/heads/main
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+      NODE_OPTIONS: --max-old-space-size=10240
+      SOURCE_VALIDATION_CACHE_DIR: ${{ runner.temp }}/source-validation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - name: Prepare pinned private inputs and preserve baseline identity
+        run: python scripts/ops/publish-drive-20261106.py prepare
+      - name: Build current signal configuration
+        run: npx vite-node --config scripts/drive-screening.config.ts scripts/build-signal-manifest.ts
+      - name: Calculate without writes
+        run: CT_DRIVE_RUN_DIR=drive-publication-20261106/preflight npx vite-node --config scripts/drive-screening.config.ts scripts/run-drive-screening-entry.ts
+      - name: Compare every analysis field against saved Drive result
+        run: python scripts/ops/publish-drive-20261106.py compare
+      - name: Back up current dashboard caches before publication
+        run: python scripts/ops/publish-drive-20261106.py backup
+      - name: Publish through existing source and screening contracts
+        run: CT_DRIVE_RUN_DIR=drive-publication-20261106/publication npx vite-node --config scripts/drive-screening.config.ts scripts/run-drive-screening-entry.ts
+      - name: Verify homepage caches and preserved confirmed history
+        run: python scripts/ops/publish-drive-20261106.py verify
+      - name: Save publication evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drive-publication-20261106-evidence
+          path: |
+            drive-publication-20261106/*verification.json
+            drive-publication-20261106/before.json
+            drive-publication-20261106/before-cache-manifest.json
+            drive-publication-20261106/before-cache/
+            drive-publication-20261106/publication/execution-receipt.json
+            drive-publication-20261106/publication/results/
+          retention-days: 7
