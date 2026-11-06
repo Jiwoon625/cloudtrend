@@ -7,6 +7,7 @@ export default defineConfig({
       "tests/history-retention.test.ts",
       "tests/screening-execution-archive.test.ts",
       "tests/screening-run-archive-storage.test.ts",
+      "tests/preliminary-recovery.test.ts",
     ],
   },
 });

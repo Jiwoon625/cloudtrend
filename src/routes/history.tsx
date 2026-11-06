@@ -217,9 +217,29 @@ function HistoryPage() {
               <option key={historyRecordKey(s)} value={historyRecordKey(s)}>
                 {s.asOfDate} · {s.market ?? "KR"} · {formatKstDateTime(s.savedAt)} KST ·{" "}
                 {s.runId ?? "과거 일별 대표"}
+                {s.historySource === "KR_ORIGINAL_RECOVERY" ? " · 잠정 원본 복원" : ""}
               </option>
             ))}
           </select>
+          {detail.data?.historySource === "KR_ORIGINAL_RECOVERY" ? (
+            <div
+              role="note"
+              className="rounded border border-amber-500 bg-amber-50 p-3 text-sm text-amber-950"
+            >
+              <strong>잠정 원본 복원 · 확정 신호 아님</strong>
+              <p>
+                당시 실제 저장된 실행 결과입니다. 시가총액 등 필수 자료가 미확인된 상태와 계산
+                신호를 그대로 보존했습니다.
+              </p>
+              <p>
+                실제 거래 및 확정 일별 이력에는 반영하지 않습니다. 복원 등록:{" "}
+                {formatKstDateTime(detail.data.storedAt!)} KST
+              </p>
+              <p className="break-all text-xs">
+                원본 SHA256: {detail.data.recoveryEvidence?.sourceSha256}
+              </p>
+            </div>
+          ) : null}
           {(detail.data as SignalSnapshot | undefined)?.signalJournal ? (
             <div className="rounded border p-3 text-xs">
               {(detail.data as SignalSnapshot).signalJournal.kind === "RECONSTRUCTED"
@@ -311,6 +331,10 @@ function HistoryPage() {
                           market: selected.market ?? "KR",
                           strategyVersion: selected.strategyVersion ?? "",
                           dataHash: selected.dataHash ?? "",
+                          historySource:
+                            selected.historySource === "KR_ORIGINAL_RECOVERY"
+                              ? "KR_ORIGINAL_RECOVERY"
+                              : undefined,
                         }}
                         className="text-primary hover:underline"
                       >

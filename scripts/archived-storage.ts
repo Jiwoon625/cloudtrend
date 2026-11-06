@@ -26,13 +26,13 @@ export function isMissingStorageObject(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const e = error as Record<string, unknown>;
   // Storage's legacy missing-object response uses HTTP 400 with statusCode 404.
-  const status = Number(e.statusCode ?? e.status);
+  const status = Number(e["statusCode"] ?? e["status"]);
   if (status === 401 || status === 403 || status >= 500) return false;
   return (
     status === 404 ||
-    ["NoSuchKey", "not_found", "NotFound"].includes(String(e.code)) ||
+    ["NoSuchKey", "not_found", "NotFound"].includes(String(e["code"])) ||
     ((status === 400 || !Number.isFinite(status)) &&
-      /^object not found[.!]?$/i.test(String(e.message)))
+      /^object not found[.!]?$/i.test(String(e["message"])))
   );
 }
 interface ArchiveObject {
