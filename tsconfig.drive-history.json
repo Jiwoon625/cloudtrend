@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "scripts/drive-history-inputs.ts",
+    "scripts/drive-history-network.ts",
+    "scripts/run-drive-history-screening.ts",
+    "scripts/verify-drive-history.ts",
+    "tests/drive-history-v7.test.ts",
+    "tests/drive-history-runner.test.ts"
+  ],
+  "compilerOptions": {
+    "noImplicitReturns": false
+  }
+}

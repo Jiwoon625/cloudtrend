@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: kr-nov4-signal-recovery
+  group: ${{ github.event_name == 'pull_request' && format('{0}-validation-{1}', github.workflow, github.ref) || 'CloudTrend screening-writer' }}
   cancel-in-progress: false
 jobs:
   recover:

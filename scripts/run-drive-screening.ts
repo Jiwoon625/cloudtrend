@@ -13,8 +13,14 @@ import {
   loadAnalysisSourceInputs,
   recordFor,
   type SourceRecord,
+  type LoadedSourceInput,
 } from "./source-registry-store";
-import { validateSourceBytes, validateSourceText, compareSourceRows } from "../src/lib/sourceData";
+import {
+  validateSourceBytes,
+  validateSourceText,
+  visitDelimitedRows,
+  compareSourceRows,
+} from "../src/lib/sourceData";
 import {
   buildKrSourcePublication,
   buildKrPendingSupersessions,
@@ -38,7 +44,11 @@ interface PreparedRun {
 interface CollectorManifest {
   createdAt: string;
   actualLatestPriceDate: string;
-  krxPublicationEvidence: { phase: string; calendar?: { previousSession?: string } };
+  krxPublicationEvidence: {
+    phase: string;
+    calendar?: { previousSession?: string; sessions?: string[] };
+  };
+  requestedSymbols?: string[];
   csv: Array<{ file: string; sha256: string; bytes: number }>;
 }
 
@@ -99,11 +109,22 @@ async function readPreparedGroup(directory: string) {
   return { spec, manifest, publication, parts };
 }
 
-export async function runDriveScreening(root: string, upload = true) {
+export interface DriveScreeningHistory {
+  inputs: LoadedSourceInput[];
+  provenance: Record<string, unknown>;
+  /** Enable only the bounded result writer after every calculation check has passed. */
+  beforePublish?: (runId: string) => void;
+}
+export async function runDriveScreening(
+  root: string,
+  upload = true,
+  history?: DriveScreeningHistory,
+) {
   const directory = path.resolve(root);
   const { spec, manifest, publication, parts } = await readPreparedGroup(directory);
   const userId = process.env["SUPABASE_USER_ID"];
   if (!userId || !/^[a-f0-9-]{36}$/i.test(userId)) throw new Error("Missing SUPABASE_USER_ID");
+  if (history && spec.mode === "supabase") throw new Error("Drive history cannot register sources");
   const client = trustedSupabaseClient();
   if (spec.mode === "supabase" && (await maybeDriveHead(client, userId)))
     throw new Error(
@@ -137,14 +158,16 @@ export async function runDriveScreening(root: string, upload = true) {
     if (spec.mode !== "supabase") {
       // Use the established historical sources, then overlay verified Drive daily rows.
       // Virtual descriptors exist only in this process: the collector registry is untouched.
-      const inputs = await loadAnalysisSourceInputs(client, userId, "screening", { compact: true });
+      const inputs = history
+        ? [...history.inputs]
+        : await loadAnalysisSourceInputs(client, userId, "screening", { compact: true });
       const baseline = inputs.map((i) => ({
         id: i.id,
         fileHash: i.fileHash,
         dataHash: i.dataHash,
       }));
       const groups: Array<Awaited<ReturnType<typeof readPreparedGroup>>> = [];
-      if (spec.mode === "publish") {
+      if (spec.mode === "publish" || history) {
         if (
           spec.expectedHeadHash === undefined ||
           !Array.isArray(spec.parents) ||
@@ -160,17 +183,29 @@ export async function runDriveScreening(root: string, upload = true) {
         }
       }
       groups.push({ spec, manifest, publication, parts });
-      if (spec.mode === "publish") {
+      const missingSessions = new Map<string, Set<string>>();
+      let requiredSymbols: string[] = [];
+      if (spec.mode === "publish" || history) {
         const previous = manifest.krxPublicationEvidence.calendar?.previousSession;
         const priorDates = [
-          ...active.map((s) => s.max_date ?? ""),
+          ...(history
+            ? inputs.map((i) => i.sourceRecord?.max_date ?? "")
+            : active.map((s) => s.max_date ?? "")),
           ...groups.slice(0, -1).map((g) => g.manifest.actualLatestPriceDate),
         ];
         const through = priorDates.sort().at(-1) ?? "";
-        if (previous && through < previous)
-          throw new Error(
-            `이전 거래일 ${previous}의 이력이 없습니다. 해당 날짜의 Drive run부터 실행해 주세요.`,
-          );
+        if (previous && through < previous) {
+          const sessions = manifest.krxPublicationEvidence.calendar?.sessions;
+          if (!history || !sessions?.includes(previous) || !manifest.requestedSymbols?.length)
+            throw new Error(
+              `이전 거래일 ${previous}의 이력이 없습니다. 해당 날짜의 Drive run부터 실행해 주세요.`,
+            );
+          // A v7 delta may itself contain every intervening trading session. Verify its
+          // normalized rows below instead of trusting a manifest coverage assertion.
+          requiredSymbols = [...manifest.requestedSymbols, "KOSPI", "KOSDAQ"];
+          for (const date of sessions)
+            if (date > through && date <= previous) missingSessions.set(date, new Set());
+        }
       }
       const proofSources: DriveResultSource[] = [];
       const seen = new Set<string>();
@@ -182,6 +217,20 @@ export async function runDriveScreening(root: string, upload = true) {
             streamingCsv: group.publication.phase !== "FINAL",
           });
           if (!validation.valid) throw new Error(`Saved CSV validation failed: ${part.path}`);
+          if (group.spec === spec && missingSessions.size) {
+            let symbol = -1,
+              date = -1,
+              close = -1;
+            visitDelimitedRows(validation.canonicalCsv, (row, index) => {
+              if (index === 0) {
+                symbol = row.indexOf("symbol");
+                date = row.indexOf("date");
+                close = row.indexOf("close");
+              } else if (Number(row[close]) > 0 && row[symbol]) {
+                missingSessions.get(row[date] ?? "")?.add(row[symbol]!);
+              }
+            });
+          }
           const id = `drive-${group.spec.runId}-${part.sha256.slice(0, 16)}`;
           if (seen.has(id)) continue;
           seen.add(id);
@@ -280,6 +329,9 @@ export async function runDriveScreening(root: string, upload = true) {
             dataHash: validation.dataHash,
           });
         }
+      for (const [date, symbols] of missingSessions)
+        if (requiredSymbols.some((symbol) => !symbols.has(symbol)))
+          throw new Error(`이전 거래일 ${date}의 종목·지수 이력이 불완전합니다.`);
       receipt["status"] = "SCREENING";
       await save();
       if (spec.mode === "publish" && process.env["CT_PREPARE_CHARTS"] === "true") {
@@ -304,11 +356,13 @@ export async function runDriveScreening(root: string, upload = true) {
           archiveSha256: spec.archiveSha256,
           manifestSha256: spec.manifestSha256,
           historicalSources: baseline,
+          ...history?.provenance,
         },
       );
       receipt["phase"] = result?.summary.krPublication?.phase ?? "FINAL";
       if (spec.mode === "publish") {
         if (!result) throw new Error("Calculated Drive result is missing");
+        history?.beforePublish?.(result.run.id);
         const published = await publishDriveResult({
           client,
           owner: userId,

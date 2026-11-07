@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import stat
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -18,6 +19,13 @@ MAX_FILE = 45 * 1024 * 1024
 MAX_ARCHIVE = 80 * 1024 * 1024
 MAX_EXPANDED = 256 * 1024 * 1024
 ID = re.compile(r"^[A-Za-z0-9_-]{10,200}$")
+SHA256 = re.compile(r"^[a-f0-9]{64}$")
+V7_BASELINE_SHA = "d0cb8477ca6f94a5ebbcbd8e79928635222e46f20e116fafb902c7763e0bfe92"
+MAX_MANIFEST = 1024 * 1024
+MAX_HEAD = 8 * 1024 * 1024
+MAX_PARENT_SOURCES = 64
+MAX_PARENT_BYTES = 512 * 1024 * 1024
+MAX_DELTA_EXPANDED = 128 * 1024 * 1024
 
 
 def require(ok, message):
@@ -160,6 +168,233 @@ def inspect_archive(data, run_id):
     return m, manifest_bytes, parts
 
 
+
+def flat_csv_name(name):
+    require(isinstance(name, str) and name.endswith(".csv") and
+            PurePosixPath(name).name == name and "\\" not in name and "\0" not in name,
+            "Delta must contain flat CSV only")
+    return name
+
+
+def v7_manifest(raw_manifest):
+    """Read the original collector proof without adding or rewriting a CSV inventory."""
+    require(len(raw_manifest) <= MAX_MANIFEST, "Run manifest exceeds size limit")
+    m = json.loads(raw_manifest)
+    require(isinstance(m, dict) and m.get("version") == "drive-history-collector-v7.0-preview" and
+            m.get("complete") is True, "Run incomplete or unsupported")
+    require(m.get("history_backend") == "drive" and m.get("baselineSha256") == V7_BASELINE_SHA and
+            m.get("parentManifestSha256") == V7_BASELINE_SHA, "Unsupported history parent")
+    require(m.get("missingSymbols") == [] and m.get("missingIndexSymbols") == [] and
+            m.get("missingSymbolCount") == 0 and m.get("correctionCount") == 0,
+            "Unresolved coverage/corrections")
+    files = m.get("files")
+    require(isinstance(files, list) and len(files) == 1 and isinstance(files[0], dict) and
+            files[0].get("name") == "delta.zip", "Expected one delta package")
+    descriptor = files[0]
+    require(isinstance(descriptor.get("sha256"), str) and
+            SHA256.fullmatch(descriptor["sha256"].removeprefix("sha256:")) and
+            type(descriptor.get("bytes")) is int and 0 < descriptor["bytes"] <= MAX_ARCHIVE,
+            "Invalid delta archive descriptor")
+    entries = m.get("deltaMembers")
+    require(isinstance(entries, list) and 0 < len(entries) <= 2000, "No/too many delta parts")
+    seen = set()
+    for entry in entries:
+        require(isinstance(entry, dict), "Invalid delta member descriptor")
+        name = flat_csv_name(entry.get("name"))
+        require(name not in seen, "Duplicate delta part")
+        seen.add(name)
+        require(isinstance(entry.get("sha256"), str) and
+                SHA256.fullmatch(entry["sha256"].removeprefix("sha256:")) and
+                type(entry.get("bytes")) is int and 0 < entry["bytes"] <= MAX_FILE,
+                "Invalid delta member hash/size")
+    require(sum(entry["bytes"] for entry in entries) <= MAX_DELTA_EXPANDED,
+            "Delta expansion limit exceeded")
+    return m
+
+
+def inspect_v7_archive(data, raw_manifest):
+    m = v7_manifest(raw_manifest)
+    descriptor = m["files"][0]
+    require(len(data) == descriptor["bytes"] and
+            hashlib.sha256(data).hexdigest() == descriptor["sha256"].removeprefix("sha256:"),
+            "Delta archive hash/size mismatch")
+    expected = {entry["name"]: entry for entry in m["deltaMembers"]}
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        infos = z.infolist()
+        names = [info.filename for info in infos]
+        require(len(names) == len(set(names)) and set(names) == set(expected),
+                "Delta package inventory mismatch")
+        require(sum(info.file_size for info in infos) <= MAX_DELTA_EXPANDED,
+                "Delta expansion limit exceeded")
+        by_name = {info.filename: info for info in infos}
+        parts = []
+        # Manifest order is authoritative even if ZIP member order is different.
+        for name, entry in expected.items():
+            info = by_name[name]
+            flat_csv_name(info.filename)
+            require(not stat.S_ISLNK(info.external_attr >> 16) and not info.is_dir() and
+                    info.file_size == entry["bytes"] and info.file_size <= MAX_FILE,
+                    "Unsafe delta member")
+            raw = z.read(info)  # ZIP CRC is checked before SHA256.
+            digest = hashlib.sha256(raw).hexdigest()
+            require(len(raw) == entry["bytes"] and digest == entry["sha256"].removeprefix("sha256:"),
+                    "Delta CSV hash/size mismatch")
+            parts.append({"name": name, "bytes": raw, "sha256": digest})
+    return m, raw_manifest, parts
+
+
+def validate_group_manifest(manifest, run_id=None):
+    identifier = manifest.get("runId")
+    require(isinstance(identifier, str) and re.fullmatch(r"[A-Za-z0-9_-]{8,128}", identifier) and
+            (run_id is None or identifier == run_id), "Invalid/mismatched collector run ID")
+    date = manifest.get("actualLatestPriceDate")
+    require(isinstance(date, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) and
+            date == manifest.get("cutoffDateInclusive"), "Invalid collector session")
+    require(manifest.get("mode") == "SCREENING" and
+            manifest.get("krxPublicationEvidence", {}).get("phase") in ("PRELIMINARY", "FINAL"),
+            "Missing publication evidence")
+    return date
+
+
+def write_prepared_group(output, raw_manifest, parts, *, run_id, archive_id, archive_sha,
+                         mode="drive", layout=None):
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "collector-manifest.json").write_bytes(raw_manifest)
+    for part in parts:
+        flat_csv_name(part["name"])
+        (output / part["name"]).write_bytes(part["bytes"])
+    spec = {"version": "drive-screening-input-v1", "runId": run_id, "mode": mode,
+            "archiveFileId": archive_id, "archiveSha256": archive_sha,
+            "manifestSha256": hashlib.sha256(raw_manifest).hexdigest(),
+            "parts": [{"path": part["name"], "sha256": part["sha256"]} for part in parts]}
+    if layout:
+        spec["layout"] = layout
+    return spec
+
+
+def read_published_head():
+    """The sole Supabase read is a bounded, cache-busted result metadata object."""
+    base = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+    owner = os.environ.get("SUPABASE_USER_ID", "")
+    require(base.startswith("https://") and re.fullmatch(r"[a-f0-9-]{36}", owner) and key,
+            "Missing server publication configuration")
+    request = urllib.request.Request(
+        base + "/storage/v1/object/cloudtrend-data/" + owner +
+        "/results/drive-screening/input-head/latest.json?cacheNonce=" + str(uuid.uuid4()),
+        headers={"Authorization": "Bearer " + key, "apikey": key, "cache-control": "no-cache"})
+    try:
+        with urllib.request.urlopen(request, timeout=90) as response:
+            raw = response.read(MAX_HEAD + 1)
+        require(len(raw) <= MAX_HEAD, "Drive history metadata exceeds limit")
+        head = json.loads(raw)
+        require(isinstance(head, dict), "Invalid Drive history checkpoint")
+        return head
+    except urllib.error.HTTPError as error:
+        try:
+            missing = json.loads(error.read(MAX_HEAD + 1))
+        except (ValueError, TypeError):
+            missing = {}
+        if error.code == 404 or (error.code == 400 and isinstance(missing, dict) and
+                str(missing.get("error", "")).lower() in ("not_found", "object not found")):
+            return None
+        raise RuntimeError(f"Drive history checkpoint read failed ({error.code})") from None
+
+
+def prepare_published_parents(drive, output, as_of_date):
+    """Retain ordered published legacy Drive groups without source writes."""
+    head = read_published_head()
+    prepared = {"parents": [], "expectedHeadHash": hashlib.sha256(json.dumps(
+        head, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+        if head is not None else None}
+    if head is None:
+        return prepared
+    require(head.get("version") == "drive-input-head-v1", "Unknown Drive history checkpoint")
+    evidence = head.get("drivePublication", {})
+    require(isinstance(evidence, dict) and evidence.get("version") == "drive-result-publication-v1" and
+            isinstance(evidence.get("asOfDate"), str) and
+            re.fullmatch(r"\d{4}-\d{2}-\d{2}", evidence["asOfDate"]) and
+            evidence["asOfDate"] <= as_of_date, "Selected run is older than published Drive history")
+    entries = evidence.get("sources")
+    require(isinstance(entries, list) and 0 < len(entries) <= MAX_PARENT_SOURCES,
+            "Invalid Drive history source count")
+    groups, archives, source_ids = [], set(), set()
+    for entry in entries:
+        require(isinstance(entry, dict), "Invalid historical source")
+        archive_id = entry.get("archiveFileId", "")
+        require(isinstance(archive_id, str) and ID.fullmatch(archive_id), "Invalid historical Drive archive ID")
+        require(isinstance(entry.get("archiveSha256"), str) and SHA256.fullmatch(entry["archiveSha256"]),
+                "Invalid historical Drive archive hash")
+        require(entry.get("layout") is None, "Unsupported historical Drive layout")
+        record = entry.get("record", {})
+        require(isinstance(record, dict), "Invalid historical source record")
+        source_id = record.get("id")
+        if source_id is not None:
+            require(isinstance(source_id, str) and source_id not in source_ids,
+                    "Duplicate historical source ID")
+            source_ids.add(source_id)
+        if not groups or groups[-1][0]["archiveFileId"] != archive_id:
+            require(archive_id not in archives, "Interleaved historical Drive archive groups")
+            groups.append([])
+            archives.add(archive_id)
+        groups[-1].append(entry)
+    compressed = expanded = 0
+    for entries in groups:
+        entry = entries[0]
+        archive_id, archive_sha = entry["archiveFileId"], entry["archiveSha256"]
+        proofs = []
+        for source in entries:
+            require(source["archiveSha256"] == archive_sha,
+                    "Conflicting historical archive descriptors")
+            proof = source["record"].get("validation_result", {}).get("krPublication")
+            require(isinstance(proof, dict) and isinstance(proof.get("requestId"), str) and
+                    isinstance(proof.get("manifestSha256"), str) and
+                    re.fullmatch(r"sha256:[a-f0-9]{64}", proof["manifestSha256"]),
+                    "Invalid historical publication proof")
+            proofs.append(proof)
+        publication = proofs[0]
+        require(all(p["requestId"] == publication["requestId"] and
+                    p["manifestSha256"] == publication["manifestSha256"] for p in proofs),
+                "Conflicting historical manifest proofs")
+        data = drive.download(archive_id)
+        compressed += len(data)
+        require(len(data) <= MAX_ARCHIVE and compressed <= MAX_PARENT_BYTES,
+                "Historical Drive archive byte limit exceeded")
+        require(hashlib.sha256(data).hexdigest() == archive_sha, "Historical Drive archive hash mismatch")
+        manifest, raw_manifest, parts = inspect_archive(data, publication["requestId"])
+        require("sha256:" + hashlib.sha256(raw_manifest).hexdigest() == publication["manifestSha256"],
+                "Historical manifest mismatch")
+        require(validate_group_manifest(manifest, publication["requestId"]) <= as_of_date,
+                "Historical manifest is newer than selected run")
+        require(all("manifestText" not in p or p["manifestText"].encode("utf-8") == raw_manifest
+                    for p in proofs), "Conflicting historical manifest text")
+        expanded += sum(len(part["bytes"]) for part in parts)
+        require(expanded <= MAX_PARENT_BYTES, "Historical Drive expansion limit exceeded")
+        names = [source.get("csvFile") for source in entries]
+        # Legacy metadata without per-part descriptors retains the archive manifest order.
+        if any(name is not None for name in names):
+            require(all(isinstance(name, str) for name in names) and len(set(names)) == len(names) and
+                    set(names) == {part["name"] for part in parts},
+                    "Historical CSV inventory mismatch")
+            by_name = {part["name"]: part for part in parts}
+            parts = [by_name[name] for name in names]
+            for source, part in zip(entries, parts):
+                record = source["record"]
+                require(record.get("file_hash") == "sha256:" + part["sha256"] and
+                        record.get("file_size_bytes") == len(part["bytes"]) and
+                        record.get("storage_bucket") == "google-drive" and
+                        record.get("storage_path") == f"drive://{archive_id}/kr-outputs/{part['name']}",
+                        "Historical CSV source binding mismatch")
+        directory = "parent-" + str(len(prepared["parents"])).zfill(3)
+        parent = Path(output) / directory
+        spec = write_prepared_group(parent, raw_manifest, parts, run_id=publication["requestId"],
+                                    archive_id=archive_id, archive_sha=archive_sha)
+        (parent / "input.json").write_text(json.dumps(spec, ensure_ascii=False, indent=2))
+        prepared["parents"].append(directory)
+    return prepared
+
+
 def prepare(drive, folder, run_id, output, mode):
     children = drive.children(folder)
     archives = [f for f in children if f["name"] == "kr-outputs.zip"]
@@ -179,52 +414,7 @@ def prepare(drive, folder, run_id, output, mode):
                 "archiveFileId": archives[0]["id"], "archiveSha256": hashlib.sha256(archive).hexdigest(),
                 "manifestSha256": hashlib.sha256(raw_manifest).hexdigest(), "parts": descriptors}
     if mode == "publish":
-        prepared["parents"] = []
-        base = os.environ.get("SUPABASE_URL", "").rstrip("/")
-        key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
-        owner = os.environ.get("SUPABASE_USER_ID", "")
-        require(base.startswith("https://") and re.fullmatch(r"[a-f0-9-]{36}", owner) and key, "Missing server publication configuration")
-        request = urllib.request.Request(base + "/storage/v1/object/cloudtrend-data/" + owner + "/results/drive-screening/input-head/latest.json?cacheNonce=" + str(uuid.uuid4()),
-            headers={"Authorization":"Bearer "+key,"apikey":key,"cache-control":"no-cache"})
-        try:
-            with urllib.request.urlopen(request,timeout=90) as response:
-                raw = response.read(8*1024*1024+1)
-            require(len(raw)<=8*1024*1024,"Drive history metadata exceeds limit")
-            head = json.loads(raw)
-        except urllib.error.HTTPError as error:
-            try: missing = json.loads(error.read())
-            except Exception: missing = {}
-            if error.code == 404 or (error.code == 400 and str(missing.get("error", "")).lower() in ("not_found", "object not found")):
-                head = None
-            else: raise RuntimeError(f"Drive history checkpoint read failed ({error.code})") from None
-        prepared["expectedHeadHash"] = hashlib.sha256(json.dumps(head,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest() if head else None
-        if head:
-            require(head.get("version")=="drive-input-head-v1", "Unknown Drive history checkpoint")
-            evidence = head.get("drivePublication", {})
-            require(evidence.get("version")=="drive-result-publication-v1" and evidence.get("asOfDate", "")<=manifest["actualLatestPriceDate"], "Selected run is older than published Drive history")
-            entries=evidence.get("sources")
-            require(isinstance(entries,list) and 0<len(entries)<=64,"Invalid Drive history source count")
-            seen=set()
-            for entry in entries:
-                archive_id=entry.get("archiveFileId", "")
-                require(ID.fullmatch(archive_id),"Invalid historical Drive archive ID")
-                if archive_id in seen: continue
-                seen.add(archive_id)
-                data=drive.download(archive_id)
-                require(hashlib.sha256(data).hexdigest()==entry.get("archiveSha256"),"Historical Drive archive hash mismatch")
-                publication=entry["record"]["validation_result"]["krPublication"]
-                old_manifest, old_raw, old_parts=inspect_archive(data,publication["requestId"])
-                require("sha256:"+hashlib.sha256(old_raw).hexdigest()==publication["manifestSha256"],"Historical manifest mismatch")
-                directory="parent-"+str(len(prepared["parents"])).zfill(3)
-                parent=output/directory;parent.mkdir(exist_ok=True)
-                (parent/"collector-manifest.json").write_bytes(old_raw)
-                for part in old_parts:(parent/part["name"]).write_bytes(part["bytes"])
-                old_spec={"version":"drive-screening-input-v1","runId":publication["requestId"],"mode":"drive",
-                    "archiveFileId":archive_id,"archiveSha256":entry["archiveSha256"],
-                    "manifestSha256":hashlib.sha256(old_raw).hexdigest(),
-                    "parts":[{"path":part["name"],"sha256":part["sha256"]} for part in old_parts]}
-                (parent/"input.json").write_text(json.dumps(old_spec,ensure_ascii=False,indent=2))
-                prepared["parents"].append(directory)
+        prepared.update(prepare_published_parents(drive, output, manifest["actualLatestPriceDate"]))
     (output / "input.json").write_text(json.dumps(prepared, ensure_ascii=False, indent=2))
     return {"runId": run_id, "phase": manifest["krxPublicationEvidence"]["phase"], "symbols": len(manifest["requestedSymbols"]), "parts": len(parts)}
 
