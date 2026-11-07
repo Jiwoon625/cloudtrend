@@ -5,7 +5,14 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { preliminarySource } from "./kr-preliminary-fixture";
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), load: vi.fn(), register: vi.fn(), run: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  list: vi.fn(),
+  load: vi.fn(),
+  register: vi.fn(),
+  run: vi.fn(),
+  head: vi.fn(),
+  publish: vi.fn(),
+}));
 vi.mock("../scripts/analysis-run-store", async (original) => ({
   ...(await original<typeof import("../scripts/analysis-run-store")>()),
   trustedSupabaseClient: () => ({}),
@@ -17,12 +24,18 @@ vi.mock("../scripts/source-registry-store", async (original) => ({
   registerSourceBytes: mocks.register,
 }));
 vi.mock("../scripts/run-screening", () => ({ runScreening: mocks.run }));
+vi.mock("../scripts/publish-drive-result", () => ({
+  maybeDriveHead: mocks.head,
+  publishDriveResult: mocks.publish,
+}));
 import { runDriveScreening } from "../scripts/run-drive-screening";
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
 let directory: string;
 let spec: { mode: string; [key: string]: unknown };
 beforeEach(async () => {
   vi.resetAllMocks();
+  mocks.head.mockResolvedValue(null);
+  mocks.publish.mockResolvedValue({ roundTripVerified: true, sourceUploads: 0 });
   vi.stubEnv("SUPABASE_USER_ID", "00000000-0000-4000-8000-000000000001");
   directory = await mkdtemp(path.join(tmpdir(), "drive-screening-test-"));
   const csv =
@@ -123,4 +136,132 @@ test("newer published source data prevents an accidental historical replay", asy
   mocks.list.mockResolvedValue([{ max_date: "2026-10-07" }]);
   await expect(runDriveScreening(directory)).rejects.toThrow("최신");
   expect(mocks.run).not.toHaveBeenCalled();
+});
+
+test("v1.1 calculates once and publishes only the result without registering source bytes", async () => {
+  spec.mode = "publish";
+  spec.parents = [];
+  spec.expectedHeadHash = null;
+  mocks.list.mockResolvedValue([{ max_date: "2026-10-05" }]);
+  await writeFile(path.join(directory, "input.json"), JSON.stringify(spec));
+  mocks.run.mockResolvedValue({
+    outputDir: directory,
+    summary: { krPublication: { phase: "PRELIMINARY" } },
+  });
+  await runDriveScreening(directory);
+  expect(mocks.run).toHaveBeenCalledTimes(1);
+  expect(mocks.register).not.toHaveBeenCalled();
+  expect(mocks.run.mock.calls[0]![0]).not.toContain("--upload");
+  expect(mocks.publish).toHaveBeenCalledWith(
+    expect.objectContaining({ owner: process.env["SUPABASE_USER_ID"], expectedHeadHash: null }),
+  );
+  const receipt = JSON.parse(
+    await readFile(path.join(directory, "execution-receipt.json"), "utf8"),
+  );
+  expect(receipt).toMatchObject({
+    dashboardPublished: true,
+    sourceUploads: 0,
+    phase: "PRELIMINARY",
+  });
+});
+
+test("publishing a run cannot silently skip a missing previous trading session", async () => {
+  spec.mode = "publish";
+  spec.parents = [];
+  spec.expectedHeadHash = null;
+  await writeFile(path.join(directory, "input.json"), JSON.stringify(spec));
+  mocks.list.mockResolvedValue([{ max_date: "2026-10-02" }]);
+  await expect(runDriveScreening(directory)).rejects.toThrow("이전 거래일");
+  expect(mocks.run).not.toHaveBeenCalled();
+  expect(mocks.publish).not.toHaveBeenCalled();
+});
+
+test("a competing Drive history head blocks result publication", async () => {
+  spec.mode = "publish";
+  spec.parents = [];
+  spec.expectedHeadHash = null;
+  await writeFile(path.join(directory, "input.json"), JSON.stringify(spec));
+  mocks.head.mockResolvedValue({ version: "changed" });
+  await expect(runDriveScreening(directory)).rejects.toThrow("head changed");
+  expect(mocks.publish).not.toHaveBeenCalled();
+  expect(mocks.run).not.toHaveBeenCalled();
+});
+
+test("legacy raw-source publication cannot silently drop prior Drive deltas", async () => {
+  spec.mode = "supabase";
+  await writeFile(path.join(directory, "input.json"), JSON.stringify(spec));
+  mocks.head.mockResolvedValue({ version: "drive-input-head-v1" });
+  await expect(runDriveScreening(directory)).rejects.toThrow("v1.1");
+  expect(mocks.register).not.toHaveBeenCalled();
+  expect(mocks.run).not.toHaveBeenCalled();
+});
+
+test("FINAL Drive input derives exact pending repair evidence from verified rows", async () => {
+  const { validateSourceText, compareSourceRows } = await import("../src/lib/sourceData");
+  const { recordFor } = await import("../scripts/source-registry-store");
+  const { buildKrSourcePublication } = await import("../src/lib/krScreeningPublication.server");
+  const oldText = await readFile(path.join(directory, "input.csv"), "utf8");
+  const validation = await validateSourceText(oldText, "prior.csv");
+  const raw = preliminarySource().source.validation_result.krPublication;
+  const prior = recordFor({
+    id: "prior-pending",
+    userId: process.env["SUPABASE_USER_ID"]!,
+    sourceType: "screening",
+    origin: "github_action",
+    storagePath: "prior.csv",
+    validation,
+    overlap: compareSourceRows([], []),
+  });
+  prior.validation_result = {
+    ...prior.validation_result,
+    krPublication: buildKrSourcePublication(raw, prior),
+  };
+  mocks.load.mockResolvedValue([
+    {
+      id: prior.id,
+      fileHash: prior.file_hash,
+      dataHash: prior.data_hash,
+      schemaHash: prior.schema_hash,
+      text: validation.canonicalCsv,
+      validation: { ...validation, rows: [] },
+      sourceRecord: prior,
+    },
+  ]);
+  const csv = oldText
+    .replace("marketCapSource\n", "marketCapSource,marketCap\n")
+    .replace("2500,0,\n", "2500,0,,\n")
+    .replace("KRX_PENDING_PUBLICATION\n", "KRX_STOCK,100000000000\n");
+  const manifest = JSON.parse(
+    await readFile(path.join(directory, "collector-manifest.json"), "utf8"),
+  );
+  manifest.latestKrxPublicationPending = false;
+  manifest.krxPublicationEvidence.phase = "FINAL";
+  for (const market of Object.values(manifest.krxPublicationEvidence.markets) as Array<
+    Record<string, unknown>
+  >)
+    Object.assign(market, {
+      status: "PUBLISHED",
+      lastPublishedDate: "2026-10-06",
+      usableRows: 1,
+      rawRows: 1,
+    });
+  manifest.csv = [{ file: "input.csv", sha256: sha(csv), bytes: Buffer.byteLength(csv) }];
+  const manifestText = JSON.stringify(manifest);
+  spec.manifestSha256 = sha(manifestText);
+  spec.parts = [{ path: "input.csv", sha256: sha(csv) }];
+  await writeFile(path.join(directory, "input.json"), JSON.stringify(spec));
+  await writeFile(path.join(directory, "collector-manifest.json"), manifestText);
+  await writeFile(path.join(directory, "input.csv"), csv);
+  await runDriveScreening(directory);
+  const inputs = mocks.run.mock.calls[0]![1];
+  expect(inputs[1].sourceRecord.validation_result.krPublication.supersedesPending).toEqual([
+    {
+      sourceId: prior.id,
+      fileHash: prior.file_hash,
+      dataHash: prior.data_hash,
+      schemaHash: prior.schema_hash,
+      asOfDate: "2026-10-06",
+    },
+  ]);
+  expect(mocks.register).not.toHaveBeenCalled();
 });

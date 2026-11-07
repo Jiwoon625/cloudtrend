@@ -94,7 +94,7 @@ beforeEach(() => {
 });
 function setup(summary: unknown, shared: unknown = screening) {
   mocks.read.mockImplementation(async (path: string) =>
-    path.includes("/dashboard/") ? summary : shared,
+    path.includes("/input-head/") ? null : path.includes("/dashboard/") ? summary : shared,
   );
 }
 test.each([null, { ...expected, version: "old" }, { ...expected, inputFingerprint: "old" }])(
@@ -110,7 +110,7 @@ test.each([null, { ...expected, version: "old" }, { ...expected, inputFingerprin
 test("valid summary retains the small-cache fast path", async () => {
   setup(expected);
   expect(await readDashboardCache()).toEqual(expected);
-  expect(mocks.read).toHaveBeenCalledTimes(1);
+  expect(mocks.read).toHaveBeenCalledTimes(2);
   expect(mocks.write).not.toHaveBeenCalled();
 });
 test.each([
@@ -202,11 +202,12 @@ test("concurrent read-only observers share one pending read without calculations
   const client = new QueryClient();
   const options = dashboardCacheReadQueryOptions(["dashboard-coalesced-test"]);
   let release!: (value: unknown) => void;
-  mocks.read.mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        release = resolve;
-      }),
+  mocks.read.mockImplementation((path: string) =>
+    path.includes("/input-head/")
+      ? Promise.resolve(null)
+      : new Promise((resolve) => {
+          release = resolve;
+        }),
   );
   const a = new QueryObserver(client, options);
   const b = new QueryObserver(client, options);
@@ -220,7 +221,7 @@ test("concurrent read-only observers share one pending read without calculations
     release(expected);
     expect(await first).toEqual(expected);
     expect(await second).toEqual(expected);
-    expect(mocks.read).toHaveBeenCalledTimes(1);
+    expect(mocks.read).toHaveBeenCalledTimes(2);
     expect(mocks.compute).not.toHaveBeenCalled();
     expect(mocks.raw).not.toHaveBeenCalled();
   } finally {

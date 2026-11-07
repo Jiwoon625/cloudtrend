@@ -1,5 +1,11 @@
 import { operationalIndexContextServer } from "./underlyingIndexDiagnostics.functions";
 import {
+  currentDriveGeneration,
+  krResultPhase,
+  drivePublicationSources,
+  type DriveResultPublication,
+} from "./driveResultPublication";
+import {
   screeningInputIdentity,
   savedOperationalIdentity,
   type OperationalIndexIdentity,
@@ -38,6 +44,7 @@ export { DASHBOARD_CACHE_VERSION, INSTRUMENT_CACHE_VERSION, SCREENING_CACHE_VERS
 export type { DashboardSummary };
 
 interface CacheMeta {
+  publicationId?: string | undefined;
   version: string;
   createdAt: string;
   inputFingerprint: string;
@@ -65,14 +72,17 @@ async function analysisDigest(analysis: AnalysisResult) {
   return sha256Text(stableCacheJson(deterministicAnalysis(analysis)));
 }
 
-export async function currentInputFingerprint(operationalIndex?: OperationalIndexIdentity) {
+export async function currentInputFingerprint(
+  operationalIndex?: OperationalIndexIdentity,
+  drive?: DriveResultPublication,
+) {
   const [sources, config] = await Promise.all([
     listActiveScreeningSourceFingerprints(),
     Promise.resolve(getActiveScoringConfig()),
   ]);
   // Registered sources define the identity without loading the legacy CSV/parser bundle.
   const meta = sources.length ? null : (await import("./manualDataStore")).getManualDataMeta();
-  return sha256Text(
+  const base = await sha256Text(
     stableCacheJson(
       screeningInputIdentity(
         sources,
@@ -89,6 +99,9 @@ export async function currentInputFingerprint(operationalIndex?: OperationalInde
       ),
     ),
   );
+  if (!drive) return base;
+  const combined = await drivePublicationSources(drive, sources, base, drive.asOfDate, drive.phase);
+  return sha256Text(stableCacheJson(screeningInputIdentity(combined, config, operationalIndex)));
 }
 
 async function screeningPath() {
@@ -119,13 +132,39 @@ async function gunzipJson<T>(bytes: Uint8Array): Promise<T> {
   return JSON.parse(await new Response(stream).text()) as T;
 }
 
+async function matchesDriveHead(cache: {
+  publicationId?: string | undefined;
+  inputFingerprint: string;
+  resultDigest: string;
+  drivePublication?: DriveResultPublication | undefined;
+}) {
+  const head = await readObject<{ version?: string }>(
+    await ownerPath("results/drive-screening/input-head/latest.json"),
+  );
+  if (cache.drivePublication || head?.version === "drive-input-head-v1")
+    return currentDriveGeneration(head, cache);
+  return true;
+}
+
 export async function readScreeningCache(): Promise<ScreeningCachePayload | null> {
   const cached = await readObject<ScreeningCachePayload>(await screeningPath());
   if (!cached || cached.version !== SCREENING_CACHE_VERSION) return null;
   const expectedInput = await currentInputFingerprint(
     savedOperationalIdentity(cached.payload.analysis),
+    cached.payload.source?.drivePublication,
   );
-  if (cached.inputFingerprint !== expectedInput) return null;
+  const drive = cached.payload.source?.drivePublication;
+  if (
+    drive &&
+    (drive.asOfDate !== cached.payload.analysis.asOfDate ||
+      drive.phase !== krResultPhase(cached.payload.analysis))
+  )
+    return null;
+  if (
+    cached.inputFingerprint !== expectedInput ||
+    !(await matchesDriveHead({ ...cached, drivePublication: drive }))
+  )
+    return null;
   const digest = await analysisDigest(cached.payload.analysis);
   return digest === cached.resultDigest ? cached : null;
 }
@@ -133,9 +172,18 @@ export async function readScreeningCache(): Promise<ScreeningCachePayload | null
 export async function readDashboardCache(): Promise<DashboardSummary | null> {
   const path = await dashboardPath();
   const cached = await readObject<DashboardSummary>(path);
-  if (cached?.version === DASHBOARD_CACHE_VERSION) {
-    const expectedInput = await currentInputFingerprint(savedOperationalIdentity(cached));
-    if (cached.inputFingerprint === expectedInput) return cached;
+  if (
+    cached?.version === DASHBOARD_CACHE_VERSION &&
+    (!cached.drivePublication ||
+      (cached.drivePublication.asOfDate === cached.asOfDate &&
+        cached.drivePublication.phase === krResultPhase(cached)))
+  ) {
+    const expectedInput = await currentInputFingerprint(
+      savedOperationalIdentity(cached),
+      cached.drivePublication,
+    );
+    if (cached.inputFingerprint === expectedInput && (await matchesDriveHead(cached)))
+      return cached;
   }
 
   // The dashboard is only a projection. A missing/stale summary must not trigger
@@ -149,6 +197,11 @@ export async function readDashboardCache(): Promise<DashboardSummary | null> {
     screening.resultDigest,
     screening.createdAt,
   );
+  if (screening.payload.source?.drivePublication) {
+    recovered.drivePublication = screening.payload.source.drivePublication;
+    if (screening.publicationId) recovered.publicationId = screening.publicationId;
+    return recovered; // Read-only projection cannot overwrite a newer publication.
+  }
   // Rendering must not depend on the repair upload (or a CDN read-after-write).
   void writeObject(path, recovered).catch((error: unknown) => {
     console.warn("대시보드 요약 캐시 복원 저장 실패", error);
@@ -352,7 +405,10 @@ async function chartIdentity(payload: AnalysisPayload, uid: string, configKey: s
       void digest.catch(() => chartDigests.delete(payload));
     }
     pending = Promise.all([
-      currentInputFingerprint(savedOperationalIdentity(payload.analysis)),
+      currentInputFingerprint(
+        savedOperationalIdentity(payload.analysis),
+        payload.source?.drivePublication,
+      ),
       digest,
     ])
       .then(([inputFingerprint, resultDigest]) => ({ inputFingerprint, resultDigest }))

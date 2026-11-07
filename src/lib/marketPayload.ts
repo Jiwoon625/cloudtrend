@@ -1,7 +1,9 @@
 import type { AnalysisResult, ScreeningRow, chartSeries, scoreHistory } from "./engine/pipeline";
 import type { dataStatusVolatility } from "./dataStatusPresentation";
+import type { DriveResultPublication } from "./driveResultPublication";
 
 export interface DataSourceStatus {
+  drivePublication?: DriveResultPublication;
   /** 실데이터 사용 여부 */
   live: boolean;
   /** 입력 자료가 준비되었는지 여부. 기존 저장 결과와의 호환 필드. */
