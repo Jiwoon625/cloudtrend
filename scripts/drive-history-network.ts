@@ -21,7 +21,8 @@ export function installDriveReadOnlyNetwork() {
     if (url.hostname.endsWith(".supabase.co")) {
       const decoded = decodeURIComponent(url.pathname);
       const historical = /\/source\/(?:screening|us-screening)\//.test(decoded);
-      const write = !["GET", "HEAD"].includes(method);
+      const isStorageList = method === "POST" && decoded.startsWith("/storage/v1/object/list/");
+      const write = !["GET", "HEAD"].includes(method) && !isStorageList;
       const category = historical
         ? "historical-source"
         : write
