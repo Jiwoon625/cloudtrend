@@ -35,7 +35,7 @@ interface PreparedRun {
 interface CollectorManifest {
   createdAt: string;
   actualLatestPriceDate: string;
-  krxPublicationEvidence: { phase: string };
+  krxPublicationEvidence: { phase: string; calendar?: { previousSession?: string } };
   csv: Array<{ file: string; sha256: string; bytes: number }>;
 }
 
@@ -157,6 +157,18 @@ export async function runDriveScreening(root: string, upload = true) {
         }
       }
       groups.push({ spec, manifest, publication, parts });
+      if (spec.mode === "publish") {
+        const previous = manifest.krxPublicationEvidence.calendar?.previousSession;
+        const priorDates = [
+          ...active.map((s) => s.max_date ?? ""),
+          ...groups.slice(0, -1).map((g) => g.manifest.actualLatestPriceDate),
+        ];
+        const through = priorDates.sort().at(-1) ?? "";
+        if (previous && through < previous)
+          throw new Error(
+            `이전 거래일 ${previous}의 이력이 없습니다. 해당 날짜의 Drive run부터 실행해 주세요.`,
+          );
+      }
       const proofSources: DriveResultSource[] = [];
       const seen = new Set<string>();
       for (const group of groups)

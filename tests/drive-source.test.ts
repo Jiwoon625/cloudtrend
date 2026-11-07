@@ -142,6 +142,7 @@ test("v1.1 calculates once and publishes only the result without registering sou
   spec.mode = "publish";
   spec.parents = [];
   spec.expectedHeadHash = null;
+  mocks.list.mockResolvedValue([{ max_date: "2026-10-05" }]);
   await writeFile(path.join(directory, "input.json"), JSON.stringify(spec));
   mocks.run.mockResolvedValue({
     outputDir: directory,
@@ -162,6 +163,17 @@ test("v1.1 calculates once and publishes only the result without registering sou
     sourceUploads: 0,
     phase: "PRELIMINARY",
   });
+});
+
+test("publishing a run cannot silently skip a missing previous trading session", async () => {
+  spec.mode = "publish";
+  spec.parents = [];
+  spec.expectedHeadHash = null;
+  await writeFile(path.join(directory, "input.json"), JSON.stringify(spec));
+  mocks.list.mockResolvedValue([{ max_date: "2026-10-02" }]);
+  await expect(runDriveScreening(directory)).rejects.toThrow("이전 거래일");
+  expect(mocks.run).not.toHaveBeenCalled();
+  expect(mocks.publish).not.toHaveBeenCalled();
 });
 
 test("a competing Drive history head blocks result publication", async () => {

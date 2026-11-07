@@ -33,7 +33,7 @@ GitHub token 권한은 기존과 같이 대상 저장소 `Jiwoon625/cloudtrend`�
 
 홈페이지의 새로운 Drive 결과 reader는 기존 활성 원천·설정·운영 지수의 fingerprint에 Drive 파일별 해시·공표 명세·순서를 결합해 검사한다. 표에 결과만 복사하고 기존 원천 fingerprint인 것처럼 가장하지 않는다. 기존 등록 원천 cache도 같은 방식으로 계속 읽는다. 홈페이지의 명시적 재실행은 유효한 Drive 게시 결과를 재사용하며, 등록 원천만으로 더 오래된 결과를 덮어쓰지 않는다.
 
-원천 bytes는 Drive에 보존한다. Supabase의 `results/drive-screening/input-head/latest.json`에는 파일 ID·SHA256·공표 명세·적용 순서만 남긴다. 다음 실행은 이전 Drive ZIP을 검증해 이어 읽는다. 이전 ZIP의 삭제·수정, 기준 원천/설정 변화, 누락된 부모 이력, 동시 head 변경은 조용히 무시하지 않고 중단한다. 64개 추가 입력을 넘으면 별도 baseline 정리가 필요하며 오래된 이력을 자동으로 버리지 않는다. 기존 원천 업로드 방식과 섞어 기준을 바꾼 경우도 자동 이관으로 간주하지 않는다.
+원천 bytes는 Drive에 보존한다. Supabase의 `results/drive-screening/input-head/latest.json`에는 파일 ID·SHA256·공표 명세·적용 순서만 남긴다. 다음 실행은 이전 Drive ZIP을 검증해 이어 읽는다. 이전 거래일의 실행 누락, 이전 ZIP의 삭제·수정, 기준 원천/설정 변화, 누락된 부모 이력, 동시 head 변경은 조용히 무시하지 않고 중단한다. 64개 추가 입력을 넘으면 별도 baseline 정리가 필요하며 오래된 이력을 자동으로 버리지 않는다. 기존 원천 업로드 방식과 섞어 기준을 바꾼 경우도 자동 이관으로 간주하지 않는다. 이전 거래일이 비어 있으면 해당 날짜의 Drive run부터 차례로 실행해야 한다.
 
 기존 두 한국 GitHub 게시 workflow는 같은 writer lock을 사용한다. 게시 직전/후 활성 원천 fingerprint를 다시 확인하고 오래된 날짜 및 같은 날짜 FINAL→PRELIMINARY 덮어쓰기를 차단한다. 게시 중 실패한 metadata head는 다음 실행의 재개 근거로 보존한다. 이 기능은 운영 DB의 분산 트랜잭션을 추가하는 방식이 아니며, 실패 시 영수증을 확인하고 같은 run으로 재개해야 한다.
 
