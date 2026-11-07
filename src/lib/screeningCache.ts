@@ -1,4 +1,5 @@
 import { operationalIndexContextServer } from "./underlyingIndexDiagnostics.functions";
+import { drivePublicationSources, type DriveResultPublication } from "./driveResultPublication";
 import {
   screeningInputIdentity,
   savedOperationalIdentity,
@@ -65,14 +66,17 @@ async function analysisDigest(analysis: AnalysisResult) {
   return sha256Text(stableCacheJson(deterministicAnalysis(analysis)));
 }
 
-export async function currentInputFingerprint(operationalIndex?: OperationalIndexIdentity) {
+export async function currentInputFingerprint(
+  operationalIndex?: OperationalIndexIdentity,
+  drive?: DriveResultPublication,
+) {
   const [sources, config] = await Promise.all([
     listActiveScreeningSourceFingerprints(),
     Promise.resolve(getActiveScoringConfig()),
   ]);
   // Registered sources define the identity without loading the legacy CSV/parser bundle.
   const meta = sources.length ? null : (await import("./manualDataStore")).getManualDataMeta();
-  return sha256Text(
+  const base = await sha256Text(
     stableCacheJson(
       screeningInputIdentity(
         sources,
@@ -89,6 +93,9 @@ export async function currentInputFingerprint(operationalIndex?: OperationalInde
       ),
     ),
   );
+  if (!drive) return base;
+  const combined = await drivePublicationSources(drive, sources, base, drive.asOfDate, drive.phase);
+  return sha256Text(stableCacheJson(screeningInputIdentity(combined, config, operationalIndex)));
 }
 
 async function screeningPath() {
@@ -124,7 +131,15 @@ export async function readScreeningCache(): Promise<ScreeningCachePayload | null
   if (!cached || cached.version !== SCREENING_CACHE_VERSION) return null;
   const expectedInput = await currentInputFingerprint(
     savedOperationalIdentity(cached.payload.analysis),
+    cached.payload.source.drivePublication,
   );
+  const drive = cached.payload.source.drivePublication;
+  if (
+    drive &&
+    (drive.asOfDate !== cached.payload.analysis.asOfDate ||
+      drive.phase !== cached.payload.analysis.krPublication?.phase)
+  )
+    return null;
   if (cached.inputFingerprint !== expectedInput) return null;
   const digest = await analysisDigest(cached.payload.analysis);
   return digest === cached.resultDigest ? cached : null;
@@ -133,8 +148,16 @@ export async function readScreeningCache(): Promise<ScreeningCachePayload | null
 export async function readDashboardCache(): Promise<DashboardSummary | null> {
   const path = await dashboardPath();
   const cached = await readObject<DashboardSummary>(path);
-  if (cached?.version === DASHBOARD_CACHE_VERSION) {
-    const expectedInput = await currentInputFingerprint(savedOperationalIdentity(cached));
+  if (
+    cached?.version === DASHBOARD_CACHE_VERSION &&
+    (!cached.drivePublication ||
+      (cached.drivePublication.asOfDate === cached.asOfDate &&
+        cached.drivePublication.phase === cached.krPublication?.phase))
+  ) {
+    const expectedInput = await currentInputFingerprint(
+      savedOperationalIdentity(cached),
+      cached.drivePublication,
+    );
     if (cached.inputFingerprint === expectedInput) return cached;
   }
 
@@ -149,6 +172,8 @@ export async function readDashboardCache(): Promise<DashboardSummary | null> {
     screening.resultDigest,
     screening.createdAt,
   );
+  if (screening.payload.source.drivePublication)
+    recovered.drivePublication = screening.payload.source.drivePublication;
   // Rendering must not depend on the repair upload (or a CDN read-after-write).
   void writeObject(path, recovered).catch((error: unknown) => {
     console.warn("대시보드 요약 캐시 복원 저장 실패", error);
@@ -352,7 +377,10 @@ async function chartIdentity(payload: AnalysisPayload, uid: string, configKey: s
       void digest.catch(() => chartDigests.delete(payload));
     }
     pending = Promise.all([
-      currentInputFingerprint(savedOperationalIdentity(payload.analysis)),
+      currentInputFingerprint(
+        savedOperationalIdentity(payload.analysis),
+        payload.source.drivePublication,
+      ),
       digest,
     ])
       .then(([inputFingerprint, resultDigest]) => ({ inputFingerprint, resultDigest }))

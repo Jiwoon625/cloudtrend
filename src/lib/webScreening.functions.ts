@@ -1,4 +1,5 @@
 import { runSignalJournalStage } from "./signalJournalStage";
+import { drivePublicationSources, type DriveResultPublication } from "./driveResultPublication";
 import { publishKrSignalJournal } from "./krSignalJournal.server";
 import { initialScreeningStages, type ScreeningStages } from "./screeningStages";
 import { saveScreeningStages } from "./screeningStages.server";
@@ -135,11 +136,56 @@ export async function runWebScreeningForUser(
       publicationId?: string;
       inputFingerprint: string;
       resultDigest: string;
-      payload: { analysis: AnalysisResult };
+      payload: { analysis: AnalysisResult; source?: { drivePublication?: DriveResultPublication } };
     }>(client, `${userId}/cache/screening/latest.json`).catch(missingCache);
     const savedIdentity = cached?.payload?.analysis
       ? savedOperationalIdentity(cached.payload.analysis)
       : undefined;
+    const drive = cached?.payload?.source?.drivePublication;
+    const driveHead = await readJson<{ version?: string }>(
+      client,
+      `${userId}/results/drive-screening/input-head/latest.json`,
+    ).catch(missingCache);
+    if (driveHead?.version === "drive-input-head-v1" && !drive)
+      throw new Error("Drive 운영 이력이 있습니다. v1.1 실행기로 최신 결과를 게시해 주세요.");
+    if (drive && cached?.payload.analysis) {
+      const combined = await drivePublicationSources(
+        drive,
+        registered,
+        inputFingerprint(registered, config, savedIdentity),
+        cached.payload.analysis.asOfDate,
+        cached.payload.analysis.krPublication?.phase,
+      );
+      const expected = inputFingerprint(combined as typeof registered, config, savedIdentity);
+      if (
+        expected !== cached.inputFingerprint ||
+        resultDigest(cached.payload.analysis) !== cached.resultDigest ||
+        !cached.publicationId
+      )
+        throw new Error("Drive 게시 결과 검증에 실패했습니다. 실행기에서 다시 게시해 주세요.");
+      const summary = buildDashboardSummary(cached.payload.analysis, expected, cached.resultDigest);
+      summary.drivePublication = drive;
+      await uploadJson(client, `${userId}/cache/dashboard/latest.json`, summary);
+      return {
+        ok: true,
+        reused: true,
+        portfolioRefresh: { status: "DISABLED", asOfDate: null, calculatedAt: null },
+        octoberShadow: null,
+        asOfDate: cached.payload.analysis.asOfDate,
+        rows: cached.payload.analysis.rows.length,
+        sources: combined.length,
+        inputFingerprint: expected,
+        resultDigest: cached.resultDigest,
+        publicationId: cached.publicationId,
+        pipelineStatus: {
+          screening: "COMPLETED",
+          actualPortfolio: "DISABLED",
+          models: "DISABLED",
+          publication: "COMPLETED",
+          signalHistory: drive.phase === "PRELIMINARY" ? "SKIPPED_PRELIMINARY" : "NOT_RUN",
+        },
+      };
+    }
     // Resolve the owner, not a global source max_date heuristic. A rollback still reads a
     // valid saved provider; a new publication with changed inputs follows the current flag.
     if (
@@ -295,6 +341,13 @@ export async function runWebScreeningForUser(
     if (sourceRegisteredAt) dashboard.sourceRegisteredAt = sourceRegisteredAt;
     const screeningPath = `${userId}/cache/screening/latest.json`;
     const dashboardPath = `${userId}/cache/dashboard/latest.json`;
+
+    const newer = await readJson<{
+      publicationId?: string;
+      payload?: { source?: { drivePublication?: unknown } };
+    }>(client, screeningPath).catch(missingCache);
+    if (newer?.payload?.source?.drivePublication && newer.publicationId !== cached?.publicationId)
+      throw new Error("계산 중 새 Drive 결과가 게시됐습니다. 홈페이지를 새로고침해 주세요.");
 
     if (preliminary) await preserveConfirmedEtfContext(client, userId, cached);
 

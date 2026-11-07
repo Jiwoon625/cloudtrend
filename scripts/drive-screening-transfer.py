@@ -12,6 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+import uuid
 
 MAX_FILE = 45 * 1024 * 1024
 MAX_ARCHIVE = 80 * 1024 * 1024
@@ -177,6 +178,53 @@ def prepare(drive, folder, run_id, output, mode):
     prepared = {"version": "drive-screening-input-v1", "runId": run_id, "mode": mode, "folderId": folder,
                 "archiveFileId": archives[0]["id"], "archiveSha256": hashlib.sha256(archive).hexdigest(),
                 "manifestSha256": hashlib.sha256(raw_manifest).hexdigest(), "parts": descriptors}
+    if mode == "publish":
+        prepared["parents"] = []
+        base = os.environ.get("SUPABASE_URL", "").rstrip("/")
+        key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+        owner = os.environ.get("SUPABASE_USER_ID", "")
+        require(base.startswith("https://") and re.fullmatch(r"[a-f0-9-]{36}", owner) and key, "Missing server publication configuration")
+        request = urllib.request.Request(base + "/storage/v1/object/cloudtrend-data/" + owner + "/results/drive-screening/input-head/latest.json?cacheNonce=" + str(uuid.uuid4()),
+            headers={"Authorization":"Bearer "+key,"apikey":key,"cache-control":"no-cache"})
+        try:
+            with urllib.request.urlopen(request,timeout=90) as response:
+                raw = response.read(8*1024*1024+1)
+            require(len(raw)<=8*1024*1024,"Drive history metadata exceeds limit")
+            head = json.loads(raw)
+        except urllib.error.HTTPError as error:
+            try: missing = json.loads(error.read())
+            except Exception: missing = {}
+            if error.code == 404 or (error.code == 400 and str(missing.get("error", "")).lower() in ("not_found", "object not found")):
+                head = None
+            else: raise RuntimeError(f"Drive history checkpoint read failed ({error.code})") from None
+        prepared["expectedHeadHash"] = hashlib.sha256(json.dumps(head,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()).hexdigest() if head else None
+        if head:
+            require(head.get("version")=="drive-input-head-v1", "Unknown Drive history checkpoint")
+            evidence = head.get("drivePublication", {})
+            require(evidence.get("version")=="drive-result-publication-v1" and evidence.get("asOfDate", "")<=manifest["actualLatestPriceDate"], "Selected run is older than published Drive history")
+            entries=evidence.get("sources")
+            require(isinstance(entries,list) and 0<len(entries)<=64,"Invalid Drive history source count")
+            seen=set()
+            for entry in entries:
+                archive_id=entry.get("archiveFileId", "")
+                require(ID.fullmatch(archive_id),"Invalid historical Drive archive ID")
+                if archive_id in seen: continue
+                seen.add(archive_id)
+                data=drive.download(archive_id)
+                require(hashlib.sha256(data).hexdigest()==entry.get("archiveSha256"),"Historical Drive archive hash mismatch")
+                publication=entry["record"]["validation_result"]["krPublication"]
+                old_manifest, old_raw, old_parts=inspect_archive(data,publication["requestId"])
+                require("sha256:"+hashlib.sha256(old_raw).hexdigest()==publication["manifestSha256"],"Historical manifest mismatch")
+                directory="parent-"+str(len(prepared["parents"])).zfill(3)
+                parent=output/directory;parent.mkdir(exist_ok=True)
+                (parent/"collector-manifest.json").write_bytes(old_raw)
+                for part in old_parts:(parent/part["name"]).write_bytes(part["bytes"])
+                old_spec={"version":"drive-screening-input-v1","runId":publication["requestId"],"mode":"drive",
+                    "archiveFileId":archive_id,"archiveSha256":entry["archiveSha256"],
+                    "manifestSha256":hashlib.sha256(old_raw).hexdigest(),
+                    "parts":[{"path":part["name"],"sha256":part["sha256"]} for part in old_parts]}
+                (parent/"input.json").write_text(json.dumps(old_spec,ensure_ascii=False,indent=2))
+                prepared["parents"].append(directory)
     (output / "input.json").write_text(json.dumps(prepared, ensure_ascii=False, indent=2))
     return {"runId": run_id, "phase": manifest["krxPublicationEvidence"]["phase"], "symbols": len(manifest["requestedSymbols"]), "parts": len(parts)}
 
@@ -187,7 +235,7 @@ def main():
     p.add_argument("--folder", required=True)
     p.add_argument("--run-id", required=True)
     p.add_argument("--directory", default="drive-screening")
-    p.add_argument("--mode", choices=["drive", "supabase"], default="drive")
+    p.add_argument("--mode", choices=["drive", "supabase", "publish"], default="drive")
     args = p.parse_args()
     require(ID.fullmatch(args.folder), "Invalid folder ID")
     require(re.fullmatch(r"[A-Za-z0-9_-]{8,128}", args.run_id), "Invalid run ID")

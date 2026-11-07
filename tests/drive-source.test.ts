@@ -5,7 +5,14 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { preliminarySource } from "./kr-preliminary-fixture";
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), load: vi.fn(), register: vi.fn(), run: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  list: vi.fn(),
+  load: vi.fn(),
+  register: vi.fn(),
+  run: vi.fn(),
+  head: vi.fn(),
+  publish: vi.fn(),
+}));
 vi.mock("../scripts/analysis-run-store", async (original) => ({
   ...(await original<typeof import("../scripts/analysis-run-store")>()),
   trustedSupabaseClient: () => ({}),
@@ -17,12 +24,18 @@ vi.mock("../scripts/source-registry-store", async (original) => ({
   registerSourceBytes: mocks.register,
 }));
 vi.mock("../scripts/run-screening", () => ({ runScreening: mocks.run }));
+vi.mock("../scripts/publish-drive-result", () => ({
+  maybeDriveHead: mocks.head,
+  publishDriveResult: mocks.publish,
+}));
 import { runDriveScreening } from "../scripts/run-drive-screening";
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
 let directory: string;
 let spec: { mode: string; [key: string]: unknown };
 beforeEach(async () => {
   vi.resetAllMocks();
+  mocks.head.mockResolvedValue(null);
+  mocks.publish.mockResolvedValue({ roundTripVerified: true, sourceUploads: 0 });
   vi.stubEnv("SUPABASE_USER_ID", "00000000-0000-4000-8000-000000000001");
   directory = await mkdtemp(path.join(tmpdir(), "drive-screening-test-"));
   const csv =
@@ -122,5 +135,51 @@ test("a failed calculation saves a retryable receipt without changing the source
 test("newer published source data prevents an accidental historical replay", async () => {
   mocks.list.mockResolvedValue([{ max_date: "2026-10-07" }]);
   await expect(runDriveScreening(directory)).rejects.toThrow("최신");
+  expect(mocks.run).not.toHaveBeenCalled();
+});
+
+test("v1.1 calculates once and publishes only the result without registering source bytes", async () => {
+  spec.mode = "publish";
+  spec.parents = [];
+  spec.expectedHeadHash = null;
+  await writeFile(path.join(directory, "input.json"), JSON.stringify(spec));
+  mocks.run.mockResolvedValue({
+    outputDir: directory,
+    summary: { krPublication: { phase: "PRELIMINARY" } },
+  });
+  await runDriveScreening(directory);
+  expect(mocks.run).toHaveBeenCalledTimes(1);
+  expect(mocks.register).not.toHaveBeenCalled();
+  expect(mocks.run.mock.calls[0]![0]).not.toContain("--upload");
+  expect(mocks.publish).toHaveBeenCalledWith(
+    expect.objectContaining({ owner: process.env["SUPABASE_USER_ID"], expectedHeadHash: null }),
+  );
+  const receipt = JSON.parse(
+    await readFile(path.join(directory, "execution-receipt.json"), "utf8"),
+  );
+  expect(receipt).toMatchObject({
+    dashboardPublished: true,
+    sourceUploads: 0,
+    phase: "PRELIMINARY",
+  });
+});
+
+test("a competing Drive history head blocks result publication", async () => {
+  spec.mode = "publish";
+  spec.parents = [];
+  spec.expectedHeadHash = null;
+  await writeFile(path.join(directory, "input.json"), JSON.stringify(spec));
+  mocks.head.mockResolvedValue({ version: "changed" });
+  await expect(runDriveScreening(directory)).rejects.toThrow("head changed");
+  expect(mocks.publish).not.toHaveBeenCalled();
+  expect(mocks.run).not.toHaveBeenCalled();
+});
+
+test("legacy raw-source publication cannot silently drop prior Drive deltas", async () => {
+  spec.mode = "supabase";
+  await writeFile(path.join(directory, "input.json"), JSON.stringify(spec));
+  mocks.head.mockResolvedValue({ version: "drive-input-head-v1" });
+  await expect(runDriveScreening(directory)).rejects.toThrow("v1.1");
+  expect(mocks.register).not.toHaveBeenCalled();
   expect(mocks.run).not.toHaveBeenCalled();
 });

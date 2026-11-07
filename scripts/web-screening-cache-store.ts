@@ -5,6 +5,7 @@ import {
   type OperationalIndexIdentity,
 } from "../src/lib/screeningInputIdentity";
 import { memory } from "./screening-memory";
+import type { DriveResultPublication } from "../src/lib/driveResultPublication";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
@@ -110,6 +111,7 @@ export async function persistWebScreeningCaches(input: {
   analysis: AnalysisResult;
   snapshot: ScreeningSnapshot;
   previous: ScreeningSnapshot | null;
+  resultOnly?: DriveResultPublication;
 }) {
   const fingerprint = inputFingerprint(
     input.inputs,
@@ -119,6 +121,24 @@ export async function persistWebScreeningCaches(input: {
   const digest = resultDigest(input.analysis);
   const screeningPath = `${input.userId}/cache/screening/latest.json`;
   const existing = await maybeDownloadJson<ExistingScreeningCache>(input.client, screeningPath);
+  if (!input.resultOnly) {
+    const driveHead = await maybeDownloadJson<{ version?: string }>(
+      input.client,
+      `${input.userId}/results/drive-screening/input-head/latest.json`,
+    );
+    if (driveHead?.version === "drive-input-head-v1")
+      throw new Error(
+        "Drive 추가 이력이 있는 운영입니다. 등록 원천만으로 덮어쓰지 말고 v1.1에서 게시해 주세요.",
+      );
+  }
+  if (
+    existing?.payload?.analysis &&
+    (existing.payload.analysis.asOfDate > input.analysis.asOfDate ||
+      (existing.payload.analysis.asOfDate === input.analysis.asOfDate &&
+        existing.payload.analysis.krPublication?.phase === "FINAL" &&
+        input.analysis.krPublication?.phase === "PRELIMINARY"))
+  )
+    throw new Error("최신 또는 확정 홈페이지 결과를 과거·잠정 결과로 덮어쓸 수 없습니다.");
   if (
     existing?.version === SCREENING_CACHE_VERSION &&
     existing.inputFingerprint === fingerprint &&
@@ -133,7 +153,12 @@ export async function persistWebScreeningCaches(input: {
   if (input.analysis.krPublication?.phase === "PRELIMINARY")
     await preserveConfirmedEtfContext(input.client, input.userId, existing);
 
-  const source = { live: true, credentialsConfigured: true, fallbackReason: null };
+  const source = {
+    live: true,
+    credentialsConfigured: true,
+    fallbackReason: null,
+    ...(input.resultOnly ? { drivePublication: input.resultOnly } : {}),
+  };
   const payload: AnalysisPayload = { analysis: input.analysis, source };
   const publicationId = crypto.randomUUID();
   const screening = {
@@ -145,15 +170,16 @@ export async function persistWebScreeningCaches(input: {
     payload,
   };
   const dashboard = buildDashboardSummary(input.analysis, fingerprint, digest);
+  if (input.resultOnly) dashboard.drivePublication = input.resultOnly;
   if (input.snapshot.sourceRegisteredAt)
     dashboard.sourceRegisteredAt = input.snapshot.sourceRegisteredAt;
   memory("dashboard-built", dashboard.counts);
   memory("raw-cache-merge-start");
-  const canonicalCsv = canonicalMergedCsv(input.inputs);
+  const canonicalCsv = input.resultOnly ? "" : canonicalMergedCsv(input.inputs);
   memory("raw-cache-merge-end");
   const rawPath = `${input.userId}/raw/screening/latest.csv`;
   const rawCacheBytes = Buffer.byteLength(canonicalCsv);
-  const shouldUploadRawCache = rawCacheBytes <= MAX_RAW_CACHE_BYTES;
+  const shouldUploadRawCache = !input.resultOnly && rawCacheBytes <= MAX_RAW_CACHE_BYTES;
   const dashboardPath = `${input.userId}/cache/dashboard/latest.json`;
   const latestInput = input.inputs.at(-1);
   const meta = {
@@ -175,7 +201,9 @@ export async function persistWebScreeningCaches(input: {
       : Promise.resolve(0),
     uploadJson(input.client, screeningPath, screening),
     uploadJson(input.client, dashboardPath, dashboard),
-    uploadJson(input.client, `${input.userId}/kr.json`, meta),
+    input.resultOnly
+      ? Promise.resolve({ body: "" })
+      : uploadJson(input.client, `${input.userId}/kr.json`, meta),
   ]);
 
   memory("cache-uploads-end");
@@ -201,7 +229,7 @@ export async function persistWebScreeningCaches(input: {
       rawPath: shouldUploadRawCache ? rawPath : null,
       screeningPath,
       dashboardPath,
-      krPath: `${input.userId}/kr.json`,
+      krPath: input.resultOnly ? null : `${input.userId}/kr.json`,
     },
     bytes: {
       raw: rawBytes,

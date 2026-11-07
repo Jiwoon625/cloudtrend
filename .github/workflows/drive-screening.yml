@@ -14,10 +14,14 @@ on:
         type: string
         default: 288f696eb14c4ef48f267f3fcfb61151
       source_storage:
-        description: drive=드라이브 결과 저장 / supabase=홈페이지 반영
+        description: publish=결과만 홈페이지 게시 / drive=계산만 / supabase=기존 원천등록
         type: choice
-        options: [drive, supabase]
+        options: [drive, supabase, publish]
         default: drive
+      prepare_charts:
+        description: 홈페이지 게시 후 최근 120일 차트 결과도 준비
+        type: boolean
+        default: true
   pull_request:
     paths:
       - .github/workflows/drive-screening.yml
@@ -26,6 +30,13 @@ on:
       - scripts/run-drive-screening-entry.ts
       - scripts/drive-screening.config.ts
       - scripts/launch-drive-screening.py
+      - scripts/launch-drive-screening-v1_1.py
+      - scripts/publish-drive-result.ts
+      - scripts/prepare-drive-result-charts.ts
+      - scripts/prepare-drive-result-charts-entry.ts
+      - src/lib/driveResultPublication.ts
+      - collectors/CloudTrend_screening_executor_v1.1.ipynb
+      - tsconfig.drive-executor-v11.json
       - tests/drive-*
 
 permissions:
@@ -33,7 +44,7 @@ permissions:
 
 # Share the existing screening writer lock. No scheduled collection or Shadow work.
 concurrency:
-  group: CloudTrend screening-${{ github.ref }}
+  group: CloudTrend screening-writer
   cancel-in-progress: false
 
 jobs:
@@ -51,7 +62,8 @@ jobs:
           python-version: "3.12"
       - run: npm ci
       - run: python -m unittest discover -s tests -p 'drive_*test.py'
-      - run: npx vitest run tests/drive-source.test.ts
+      - run: npx vitest run tests/drive-source.test.ts tests/drive-publication*.test.ts
+      - run: npx tsc --noEmit -p tsconfig.drive-executor-v11.json
 
   screening:
     if: github.event_name == 'workflow_dispatch'
@@ -66,6 +78,7 @@ jobs:
       DRIVE_FOLDER_ID: ${{ inputs.folder_id }}
       COLLECTOR_RUN_ID: ${{ inputs.collector_run_id }}
       SOURCE_STORAGE: ${{ inputs.source_storage }}
+      CT_PREPARE_CHARTS: ${{ inputs.prepare_charts }}
       NODE_OPTIONS: --max-old-space-size=10240
     steps:
       - uses: actions/checkout@v4
@@ -94,6 +107,9 @@ jobs:
         env:
           SOURCE_VALIDATION_CACHE_DIR: ${{ runner.temp }}/source-validation
         run: npx vite-node --config scripts/drive-screening.config.ts scripts/run-drive-screening-entry.ts
+      - name: Prepare recent result charts
+        if: ${{ inputs.source_storage == 'publish' && inputs.prepare_charts }}
+        run: npx vite-node --config scripts/drive-screening.config.ts scripts/prepare-drive-result-charts-entry.ts
       - name: Save execution results and receipt to the selected Drive run
         if: ${{ always() && steps.prepare.outcome != 'skipped' }}
         run: |
