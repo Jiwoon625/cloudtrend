@@ -93,7 +93,8 @@ export async function runDriveHistoryScreening(directory: string, publishDashboa
 }
 if (
   !process.env["VITEST"] &&
-  path.basename(process.argv[1] ?? "") === "run-drive-history-screening.ts"
+  (path.basename(process.argv[1] ?? "") === "run-drive-history-screening.ts" ||
+    process.argv.some((arg) => arg.endsWith("run-drive-history-screening.ts")))
 )
   runDriveHistoryScreening(
     process.env["DRIVE_HISTORY_DIRECTORY"] ?? "drive-history-work",
