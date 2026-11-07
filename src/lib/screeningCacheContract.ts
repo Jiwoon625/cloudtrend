@@ -1,4 +1,5 @@
 import type { OperationalIndexIdentity } from "./screeningInputIdentity";
+import type { DriveResultPublication } from "./driveResultPublication";
 import { isOperationalEntry } from "@/lib/engine/operationalStrategy";
 import { compactDashboardRow } from "@/lib/dashboardRow";
 import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
@@ -9,6 +10,8 @@ export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v9-current-price-2026110
 export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v9-current-price-20261104-v1" as const;
 
 export interface DashboardSummary {
+  publicationId?: string;
+  drivePublication?: DriveResultPublication;
   krPublication?: AnalysisResult["krPublication"];
   operationalIndex?: OperationalIndexIdentity;
   /** Source registration is not collection completion. */

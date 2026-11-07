@@ -1,4 +1,4 @@
-name: CloudTrend Drive history v7 (validation preview)
+name: CloudTrend Drive history v7
 on:
   workflow_dispatch:
     inputs:
@@ -15,21 +15,25 @@ on:
         type: string
         required: true
       publish_dashboard:
-        description: 아직 비활성 — 웹 identity 및 실제 E2E 검증 후 별도 전환 필요
+        description: 검증 후 결과만 홈페이지에 게시 (기본값은 계산만)
         type: boolean
         default: false
   pull_request:
     paths:
       - ".github/workflows/drive-history-screening-v7.yml"
       - "scripts/*drive-history*"
+      - "scripts/run-drive-screening.ts"
+      - "scripts/drive-screening-transfer.py"
+      - "tests/drive_v7_transfer_test.py"
       - "collectors/drive_history_v7/**"
       - "tests/drive_history_v7_test.py"
       - "tests/drive-history-v7.test.ts"
+      - "tests/drive-history-runner.test.ts"
 permissions:
   contents: read
-# Calculation does not publish. Keep the existing executor lock; see documented cross-workflow gaps.
+# Serialize result publication with every existing screening writer.
 concurrency:
-  group: CloudTrend screening-${{ github.ref }}
+  group: ${{ github.event_name == 'workflow_dispatch' && 'CloudTrend screening-writer' || format('CloudTrend v7-validation-{0}', github.ref) }}
   cancel-in-progress: false
 jobs:
   test:
@@ -47,8 +51,8 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npx tsc --noEmit -p tsconfig.drive-history.json
       - run: pip install -r collectors/drive_history_v7/requirements.txt
-      - run: python -m unittest discover -s tests -p 'drive_history_v7_test.py'
-      - run: npx vitest run --config scripts/drive-screening.config.ts tests/drive-history-v7.test.ts tests/drive-source.test.ts
+      - run: python -m unittest discover -s tests -p 'drive_*test.py'
+      - run: npx vitest run --config scripts/drive-screening.config.ts tests/drive-history-v7.test.ts tests/drive-history-runner.test.ts tests/drive-source.test.ts tests/drive-publication.test.ts tests/drive-publication-publisher.test.ts tests/drive-publication-writes.test.ts
   calculate:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -72,9 +76,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Check read-only configuration
+      - name: Check execution configuration
         run: |
-          test "$PUBLISH_DASHBOARD" != true
+          if test "$PUBLISH_DASHBOARD" = true; then
+            test -n "$RUN_MANIFEST_ID"
+            test -n "$RUN_MANIFEST_SHA256"
+          fi
           test -n "$GOOGLE_DRIVE_CREDENTIALS_JSON"
           test -n "$SUPABASE_URL"
           test -n "$SUPABASE_SERVICE_ROLE_KEY"
@@ -88,10 +95,11 @@ jobs:
             test -n "$RUN_MANIFEST_SHA256"
             args+=(--manifest-id "$RUN_MANIFEST_ID" --manifest-sha "$RUN_MANIFEST_SHA256")
           fi
+          if test "$PUBLISH_DASHBOARD" = true; then args+=(--publish); fi
           python scripts/drive-history-transfer.py prepare --result-folder "$RESULT_FOLDER_ID" "${args[@]}"
       - name: Build official signal versions
         run: npx vite-node --config scripts/drive-screening.config.ts scripts/build-signal-manifest.ts
-      - name: Calculate with official engine and enforce zero Supabase source requests/writes
+      - name: Calculate with official engine; allow only opted-in result writes
         run: /usr/bin/time -v npx vite-node --config scripts/drive-screening.config.ts scripts/run-drive-history-screening.ts
       - name: Save receipts/results to private Drive and verify readback
         if: always()
@@ -109,6 +117,6 @@ jobs:
           if p.exists():
               r=json.loads(p.read_text())
               with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
-                  f.write(f"상태: {r['status']} · 홈페이지 게시: 안 함 · 원천: Drive\n")
+                  f.write(f"상태: {r['status']} · 홈페이지 게시: {r.get('dashboardPublished', False)} · 원천: Drive\n")
                   f.write(f"메모리 최대: {r['peakRssBytes']/1024**3:.2f} GiB · 소요: {r['elapsedMs']/1000:.1f}초\n")
           PY

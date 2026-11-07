@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["vite/client", "node"], "noImplicitReturns": false },
+  "include": [
+    "scripts/run-drive-screening.ts",
+    "scripts/publish-drive-result.ts",
+    "scripts/prepare-drive-result-charts-entry.ts"
+  ]
+}

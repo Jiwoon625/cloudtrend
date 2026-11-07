@@ -7,6 +7,7 @@ export interface NetworkReceipt {
 }
 export function installDriveReadOnlyNetwork() {
   const original = globalThis.fetch;
+  let resultPaths = new Set<string>();
   const receipt: NetworkReceipt = {
     allowed: {},
     denied: [],
@@ -28,16 +29,34 @@ export function installDriveReadOnlyNetwork() {
           : decoded.startsWith("/rest/")
             ? "db-read"
             : "storage-state-or-cache-read";
-      if (historical || write) {
+      const resultWrite = write && ["POST", "PUT"].includes(method) && resultPaths.has(decoded);
+      if (historical || (write && !resultWrite)) {
         receipt.denied.push({ method, category });
         throw new Error(`Drive validation blocked ${category}`);
       }
+      if (resultWrite) receipt.supabaseWrites++;
       receipt.allowed[category] = (receipt.allowed[category] ?? 0) + 1;
     } else receipt.allowed["other-read"] = (receipt.allowed["other-read"] ?? 0) + 1;
     return original(input, init);
   };
   return {
     receipt,
+    enableResultWrites: (owner: string, runId: string) => {
+      if (!/^[a-f0-9-]{36}$/.test(owner) || !/^[A-Za-z0-9_-]{8,128}$/.test(runId))
+        throw new Error("Invalid result write identity");
+      const prefix = `/storage/v1/object/cloudtrend-data/${owner}/`;
+      resultPaths = new Set(
+        [
+          "results/drive-screening/input-head/latest.json",
+          "cache/screening/latest.json",
+          "cache/dashboard/latest.json",
+          "cache/screening/confirmed-etf-context.json",
+          `results/screening/${runId}.json`,
+          "results/screening/latest.json",
+          `results/drive-screening/receipts/${runId}.json`,
+        ].map((p) => prefix + p),
+      );
+    },
     restore: () => {
       globalThis.fetch = original;
     },

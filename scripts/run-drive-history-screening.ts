@@ -1,24 +1,23 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import { loadDriveHistory, hashBytes, KR_BASELINE_SHA, KR_OWNER } from "./drive-history-inputs";
+import { loadDriveHistory, KR_BASELINE_SHA, KR_OWNER } from "./drive-history-inputs";
 import { installDriveReadOnlyNetwork } from "./drive-history-network";
-import { recordFor } from "./source-registry-store";
-import { validateSourceBytes, compareSourceRows } from "../src/lib/sourceData";
-import {
-  parseKrPublicationRequest,
-  validateKrPublicationManifest,
-} from "../src/lib/krScreeningPublication";
-import { buildKrSourcePublication } from "../src/lib/krScreeningPublication.server";
+import { runDriveScreening } from "./run-drive-screening";
 import { runScreening } from "./run-screening";
 
+/** Reuse the frozen engine and result publisher; never register or upload source CSV. */
 export async function runDriveHistoryScreening(directory: string, publishDashboard = false) {
-  // Never remove the old providedInputs + upload guard. A future publisher must verify web identity too.
-  if (publishDashboard)
-    throw new Error(
-      "Dashboard publication is not enabled: live equivalence, web identity and distributed writer-lock verification are required",
-    );
   if (process.env["SUPABASE_USER_ID"] !== KR_OWNER)
     throw new Error("Pinned baseline owner mismatch");
+  // Branch-independent shared workflow serialization, not a claim of a distributed CAS lock.
+  if (
+    publishDashboard &&
+    (process.env["GITHUB_ACTIONS"] !== "true" ||
+      !process.env["GITHUB_WORKFLOW_REF"]?.includes(
+        "/.github/workflows/drive-history-screening-v7.yml@",
+      ))
+  )
+    throw new Error("V7 publication requires the shared screening-writer Actions workflow");
   const root = path.resolve(directory);
   await mkdir(root, { recursive: true });
   const started = Date.now();
@@ -28,7 +27,8 @@ export async function runDriveHistoryScreening(directory: string, publishDashboa
     version: "drive-history-execution-v1",
     history_backend: "drive",
     result_backend: "drive",
-    publish_dashboard: false,
+    publish_dashboard: publishDashboard,
+    dashboardPublished: false,
     baselineSha256: KR_BASELINE_SHA,
     status: "VALIDATING",
     queriedAt: new Date().toISOString(),
@@ -45,131 +45,40 @@ export async function runDriveHistoryScreening(directory: string, publishDashboa
       );
     });
     receipt["inputEvidence"] = evidence;
-    let manifestText: string | null = null;
+    let prepared: { mode?: string } | undefined;
     try {
-      manifestText = await readFile(path.join(root, "run-manifest.json"), "utf8");
+      prepared = JSON.parse(await readFile(path.join(root, "prepared/input.json"), "utf8"));
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
     }
-    if (manifestText) {
-      const m = JSON.parse(manifestText);
-      const identity = JSON.parse(await readFile(path.join(root, "run-identity.json"), "utf8"));
-      if (
-        hashBytes(manifestText) !== identity.sha256 ||
-        m.baselineSha256 !== KR_BASELINE_SHA ||
-        m.parentManifestSha256 !== KR_BASELINE_SHA ||
-        m.complete !== true ||
-        m.correctionCount !== 0
-      )
-        throw new Error("Run integrity/parent/complete contract mismatch");
-      const publication = parseKrPublicationRequest({
-        version: "kr-screening-publication-v1",
-        phase: m.krxPublicationEvidence?.phase,
-        requestId: m.runId,
-        manifestText,
-        manifestSha256: `sha256:${identity.sha256}`,
-      });
-      validateKrPublicationManifest(publication, m.actualLatestPriceDate);
-      if (
-        new Set(m.deltaMembers.map((p: { name: string }) => p.name)).size !== m.deltaMembers.length
-      )
-        throw new Error("Duplicate delta parts");
-      const latestSymbols = new Set<string>();
-      const indexes = new Set<string>();
-      const keys = new Set<string>();
-      for (const part of m.deltaMembers) {
-        if (
-          typeof part.name !== "string" ||
-          path.basename(part.name) !== part.name ||
-          !part.name.endsWith(".csv")
-        )
-          throw new Error("Unsafe daily part");
-        const bytes = new Uint8Array(await readFile(path.join(root, "delta", part.name)));
-        if (hashBytes(bytes) !== part.sha256 || bytes.length !== part.bytes)
-          throw new Error("Delta part changed");
-        const validation = await validateSourceBytes({
-          bytes,
-          filename: part.name,
-          streamingCsv: true,
-        });
-        if (
-          !validation.valid ||
-          !validation.stats.maxDate ||
-          validation.stats.maxDate > m.actualLatestPriceDate
-        )
-          throw new Error("Delta source validation failed");
-        const id = `drive-v7-${hashBytes(m.runId + part.sha256).slice(0, 32)}`;
-        const source = recordFor({
-          id,
-          userId: KR_OWNER,
-          sourceType: "screening",
-          origin: "github_action",
-          storagePath: `drive://${identity.fileId}/${part.name}`,
-          validation,
-          overlap: compareSourceRows([], []),
-        });
-        const sourceRecord = {
-          ...source,
-          storage_bucket: "google-drive",
-          status: "active" as const,
-          created_at: m.createdAt,
-          activated_at: m.createdAt,
-          updated_at: m.createdAt,
-          superseded_by: null,
-          validation_result: {
-            ...source.validation_result,
-            krPublication: buildKrSourcePublication(publication, source),
-          },
-        };
-        // Validate canonical coverage without an alternate merge or deduplication policy.
-        const { visitDelimitedRows } = await import("../src/lib/sourceData");
-        visitDelimitedRows(validation.canonicalCsv, (row, index) => {
-          if (index === 0) return;
-          const key = `${row[0]}\u0000${row[4]}`;
-          if (keys.has(key)) throw new Error("Duplicate delta symbol/date");
-          keys.add(key);
-          if (row[4] === m.actualLatestPriceDate && Number(row[8]) > 0) {
-            if (["STOCK", "ETF"].includes(row[3] ?? "")) latestSymbols.add(row[0]!);
-            else indexes.add(row[0]!);
-          }
-        });
-        inputs.push({
-          id,
-          fileName: part.name,
-          bytes: bytes.length,
-          savedAt: m.createdAt,
-          text: validation.canonicalCsv,
-          fileHash: validation.fileHash,
-          dataHash: validation.dataHash,
-          schemaHash: validation.schemaHash,
-          sourceRecord,
-          validation: { ...validation, rows: [] },
-        });
-      }
-      if (
-        JSON.stringify([...latestSymbols].sort()) !==
-          JSON.stringify([...m.requestedSymbols].sort()) ||
-        !indexes.has("KOSPI") ||
-        !indexes.has("KOSDAQ")
-      )
-        throw new Error("Target date universe/index coverage differs from manifest");
-      receipt["runManifestSha256"] = identity.sha256;
-      receipt["sourceAsOfDate"] = m.actualLatestPriceDate;
-      receipt["missingPriceExcludedSymbols"] = m.missingPriceExcludedSymbols;
-    }
     receipt["status"] = "CALCULATING";
     await save();
-    const result = await runScreening(
-      ["--supabase-user-id", KR_OWNER, "--output", path.join(root, "results"), "--force"],
-      inputs,
-      {
-        kind: "VERIFIED_IMMUTABLE_DRIVE_HISTORY",
-        ...evidence,
-        runManifestSha256: receipt["runManifestSha256"] ?? null,
-      },
-    );
-    receipt["status"] = "COMPLETED_CALCULATION_ONLY";
-    receipt["result"] = result;
+    if (prepared) {
+      if (prepared.mode !== (publishDashboard ? "publish" : "drive"))
+        throw new Error("Prepared run and publication option differ");
+      await runDriveScreening(path.join(root, "prepared"), false, {
+        inputs,
+        provenance: { kind: "VERIFIED_IMMUTABLE_DRIVE_HISTORY", ...evidence },
+        beforePublish: (runId) => boundary.enableResultWrites(KR_OWNER, runId),
+      });
+      const result = JSON.parse(
+        await readFile(path.join(root, "prepared/execution-receipt.json"), "utf8"),
+      );
+      receipt["result"] = result;
+      receipt["dashboardPublished"] = result.dashboardPublished === true;
+      receipt["phase"] = result.phase;
+      receipt["status"] = publishDashboard ? "COMPLETED_PUBLISHED" : "COMPLETED_CALCULATION_ONLY";
+    } else {
+      if (publishDashboard)
+        throw new Error("Completed collection manifest required for publication");
+      // Retain the original baseline-only comparison mode; it never publishes.
+      receipt["result"] = await runScreening(
+        ["--supabase-user-id", KR_OWNER, "--output", path.join(root, "results"), "--force"],
+        inputs,
+        { kind: "VERIFIED_IMMUTABLE_DRIVE_HISTORY", ...evidence },
+      );
+      receipt["status"] = "COMPLETED_CALCULATION_ONLY";
+    }
   } catch (e) {
     receipt["status"] = "FAILED";
     receipt["failureClass"] = e instanceof Error ? e.name : "Unknown";

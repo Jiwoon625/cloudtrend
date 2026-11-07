@@ -25,6 +25,9 @@ on:
       - .github/workflows/screening-memory-regression.yml
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('{0}-validation-{1}', github.workflow, github.ref) || 'CloudTrend screening-writer' }}
+  cancel-in-progress: false
 jobs:
   validate:
     runs-on: ubuntu-latest
