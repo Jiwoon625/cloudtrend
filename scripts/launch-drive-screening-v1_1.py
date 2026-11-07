@@ -45,7 +45,7 @@ def launch(folder_id, run_id, mode="publish", wait=True, prepare_charts=True):
     token = userdata.get("GITHUB_TOKEN")
     # Don't overwrite a shared short-lived credential while an existing runner is using it.
     for status in ("in_progress", "queued", "waiting", "pending", "requested"):
-        runs = github(token, f"actions/workflows/{WORKFLOW}/runs?status={status}&per_page=1")
+        runs = github(token, f"actions/workflows/{WORKFLOW}/runs?status={status}&event=workflow_dispatch&per_page=1")
         if runs.get("workflow_runs"):
             raise RuntimeError("현재 스크리닝 실행기가 처리 중입니다. 기존 작업이 끝난 뒤 실행해 주세요.")
     auth.authenticate_user()
