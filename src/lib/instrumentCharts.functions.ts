@@ -1,3 +1,4 @@
+import { currentDriveGeneration, type DriveResultPublication } from "./driveResultPublication";
 import { createHash } from "node:crypto";
 import { loadOperationalIndex } from "./operationalUnderlyingIndex.server";
 import { savedOperationalIdentity } from "./screeningInputIdentity";
@@ -62,15 +63,36 @@ async function session(input: Input) {
   );
   if (readError) throw new Error(`스크리닝 결과 조회 실패: ${readError.message}`);
   const saved = JSON.parse(await blob.text()) as {
+    publicationId?: string;
     inputFingerprint: string;
     resultDigest: string;
-    payload: { analysis: AnalysisResult; source?: { drivePublication?: unknown } };
+    payload: { analysis: AnalysisResult; source?: { drivePublication?: DriveResultPublication } };
   };
   if (
     saved.inputFingerprint !== input.inputFingerprint ||
     saved.resultDigest !== input.resultDigest
   )
     throw new Error("스크리닝 자료가 변경됐습니다. 페이지를 새로고침해 주세요.");
+  const { data: headBlob, error: headError } = await downloadFreshObject(
+    client,
+    "cloudtrend-data",
+    `${uid}/results/drive-screening/input-head/latest.json`,
+  );
+  if (
+    headError &&
+    String(headError.statusCode) !== "404" &&
+    !/object not found/i.test(headError.message)
+  )
+    throw new Error(headError.message);
+  const head = headBlob ? JSON.parse(await headBlob.text()) : null;
+  if (
+    (saved.payload.source?.drivePublication || head?.version === "drive-input-head-v1") &&
+    !currentDriveGeneration(head, {
+      ...saved,
+      drivePublication: saved.payload.source?.drivePublication,
+    })
+  )
+    throw new Error("스크리닝이 게시 중입니다. 잠시 후 새로고침해 주세요.");
   savedOperationalIdentity(saved.payload.analysis);
   if (
     createHash("sha256")

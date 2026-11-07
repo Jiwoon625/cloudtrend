@@ -10,6 +10,7 @@ export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v9-current-price-2026110
 export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v9-current-price-20261104-v1" as const;
 
 export interface DashboardSummary {
+  publicationId?: string;
   drivePublication?: DriveResultPublication;
   krPublication?: AnalysisResult["krPublication"];
   operationalIndex?: OperationalIndexIdentity;

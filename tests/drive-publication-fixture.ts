@@ -7,17 +7,30 @@ import {
 } from "../src/lib/driveResultPublication";
 
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
-export function driveFixture() {
+export function driveFixture(phase: "PRELIMINARY" | "FINAL" = "PRELIMINARY") {
   const fixture = preliminarySource();
   const raw = fixture.source.validation_result.krPublication;
   const manifest = JSON.parse(raw.manifestText);
   manifest.createdAt = fixture.source.created_at;
+  if (phase === "FINAL") {
+    manifest.latestKrxPublicationPending = false;
+    manifest.krxPublicationEvidence.phase = "FINAL";
+    for (const market of Object.values(manifest.krxPublicationEvidence.markets) as Array<
+      Record<string, unknown>
+    >)
+      Object.assign(market, {
+        status: "PUBLISHED",
+        lastPublishedDate: fixture.source.max_date,
+        usableRows: 1,
+        rawRows: 1,
+      });
+  }
   manifest.csv = [
     { file: "input.csv", bytes: Buffer.byteLength(fixture.text), sha256: fixture.source.file_hash },
   ];
   const manifestText = JSON.stringify(manifest);
   const publication = buildKrSourcePublication(
-    { ...raw, manifestText, manifestSha256: "sha256:" + sha(manifestText) },
+    { ...raw, phase, manifestText, manifestSha256: "sha256:" + sha(manifestText) },
     fixture.source,
   );
   const entry: DriveResultSource = {
@@ -42,7 +55,7 @@ export function driveFixture() {
     version: "drive-result-publication-v1",
     baseFingerprint: sha("base"),
     asOfDate: fixture.source.max_date,
-    phase: "PRELIMINARY",
+    phase,
     sources: [entry],
   } satisfies DriveResultPublication;
 }

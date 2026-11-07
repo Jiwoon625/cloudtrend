@@ -1,5 +1,10 @@
 import { operationalIndexContextServer } from "./underlyingIndexDiagnostics.functions";
-import { drivePublicationSources, type DriveResultPublication } from "./driveResultPublication";
+import {
+  currentDriveGeneration,
+  krResultPhase,
+  drivePublicationSources,
+  type DriveResultPublication,
+} from "./driveResultPublication";
 import {
   screeningInputIdentity,
   savedOperationalIdentity,
@@ -39,6 +44,7 @@ export { DASHBOARD_CACHE_VERSION, INSTRUMENT_CACHE_VERSION, SCREENING_CACHE_VERS
 export type { DashboardSummary };
 
 interface CacheMeta {
+  publicationId?: string | undefined;
   version: string;
   createdAt: string;
   inputFingerprint: string;
@@ -126,6 +132,20 @@ async function gunzipJson<T>(bytes: Uint8Array): Promise<T> {
   return JSON.parse(await new Response(stream).text()) as T;
 }
 
+async function matchesDriveHead(cache: {
+  publicationId?: string | undefined;
+  inputFingerprint: string;
+  resultDigest: string;
+  drivePublication?: DriveResultPublication | undefined;
+}) {
+  const head = await readObject<{ version?: string }>(
+    await ownerPath("results/drive-screening/input-head/latest.json"),
+  );
+  if (cache.drivePublication || head?.version === "drive-input-head-v1")
+    return currentDriveGeneration(head, cache);
+  return true;
+}
+
 export async function readScreeningCache(): Promise<ScreeningCachePayload | null> {
   const cached = await readObject<ScreeningCachePayload>(await screeningPath());
   if (!cached || cached.version !== SCREENING_CACHE_VERSION) return null;
@@ -137,10 +157,14 @@ export async function readScreeningCache(): Promise<ScreeningCachePayload | null
   if (
     drive &&
     (drive.asOfDate !== cached.payload.analysis.asOfDate ||
-      drive.phase !== cached.payload.analysis.krPublication?.phase)
+      drive.phase !== krResultPhase(cached.payload.analysis))
   )
     return null;
-  if (cached.inputFingerprint !== expectedInput) return null;
+  if (
+    cached.inputFingerprint !== expectedInput ||
+    !(await matchesDriveHead({ ...cached, drivePublication: drive }))
+  )
+    return null;
   const digest = await analysisDigest(cached.payload.analysis);
   return digest === cached.resultDigest ? cached : null;
 }
@@ -152,13 +176,14 @@ export async function readDashboardCache(): Promise<DashboardSummary | null> {
     cached?.version === DASHBOARD_CACHE_VERSION &&
     (!cached.drivePublication ||
       (cached.drivePublication.asOfDate === cached.asOfDate &&
-        cached.drivePublication.phase === cached.krPublication?.phase))
+        cached.drivePublication.phase === krResultPhase(cached)))
   ) {
     const expectedInput = await currentInputFingerprint(
       savedOperationalIdentity(cached),
       cached.drivePublication,
     );
-    if (cached.inputFingerprint === expectedInput) return cached;
+    if (cached.inputFingerprint === expectedInput && (await matchesDriveHead(cached)))
+      return cached;
   }
 
   // The dashboard is only a projection. A missing/stale summary must not trigger
@@ -172,8 +197,11 @@ export async function readDashboardCache(): Promise<DashboardSummary | null> {
     screening.resultDigest,
     screening.createdAt,
   );
-  if (screening.payload.source?.drivePublication)
-    recovered.drivePublication = screening.payload.source?.drivePublication;
+  if (screening.payload.source?.drivePublication) {
+    recovered.drivePublication = screening.payload.source.drivePublication;
+    if (screening.publicationId) recovered.publicationId = screening.publicationId;
+    return recovered; // Read-only projection cannot overwrite a newer publication.
+  }
   // Rendering must not depend on the repair upload (or a CDN read-after-write).
   void writeObject(path, recovered).catch((error: unknown) => {
     console.warn("대시보드 요약 캐시 복원 저장 실패", error);

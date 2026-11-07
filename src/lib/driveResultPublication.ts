@@ -4,6 +4,40 @@ import {
   type KrSourcePublication,
 } from "./krScreeningPublication";
 import type { FingerprintSource } from "./screeningInputIdentity";
+import { stableCacheJson } from "./screeningCacheContract";
+import type { AnalysisResult } from "./engine/pipeline";
+
+/** FINAL is implicit in the frozen engine; only PRELIMINARY attaches metadata. */
+export function krResultPhase(value: { krPublication?: AnalysisResult["krPublication"] }) {
+  return value.krPublication?.phase ?? "FINAL";
+}
+export function currentDriveGeneration(
+  head: unknown,
+  cache: {
+    publicationId?: string | undefined;
+    inputFingerprint: string;
+    resultDigest: string;
+    drivePublication?: DriveResultPublication | undefined;
+  },
+) {
+  if (!head || typeof head !== "object") return false;
+  const h = head as {
+    version?: string;
+    publicationId?: string | undefined;
+    inputFingerprint?: string;
+    resultDigest?: string;
+    drivePublication?: DriveResultPublication | undefined;
+  };
+  return (
+    h.version === "drive-input-head-v1" &&
+    typeof h.publicationId === "string" &&
+    h.publicationId === cache.publicationId &&
+    h.inputFingerprint === cache.inputFingerprint &&
+    h.resultDigest === cache.resultDigest &&
+    !!cache.drivePublication &&
+    stableCacheJson(h.drivePublication) === stableCacheJson(cache.drivePublication)
+  );
+}
 
 export interface DriveResultSource {
   archiveFileId: string;

@@ -1,3 +1,4 @@
+import { currentDriveGeneration, type DriveResultPublication } from "./driveResultPublication";
 import { loadConfirmedEtfContext } from "./confirmedEtfContext.server";
 import { loadActualEntryDecisions } from "./actualEntryDecisions.server";
 import { activeEntryDecisions } from "./actualEntryDecisions";
@@ -131,6 +132,19 @@ export async function projection(client: SupabaseClient, uid: string, kind: "kr"
       ? await readJson<DashboardSummary>(client, `${uid}/cache/dashboard/latest.json`)
       : await readJson<UsProspectiveCache>(client, `${uid}/cache/us-screening/summary-v1.json`);
   if (!meta) return null;
+  const head =
+    kind === "kr"
+      ? await readJson<{ version?: string }>(
+          client,
+          `${uid}/results/drive-screening/input-head/latest.json`,
+        )
+      : null;
+  if (
+    kind === "kr" &&
+    ((meta as DashboardSummary).drivePublication || head?.version === "drive-input-head-v1") &&
+    !currentDriveGeneration(head, meta as DashboardSummary)
+  )
+    throw new Error("국내 스크리닝이 게시 중입니다. 잠시 후 새로고침해 주세요.");
   if (kind === "kr" && (meta as DashboardSummary).version !== DASHBOARD_CACHE_VERSION)
     throw new Error("KOSPI 하루·RS 확인 규칙으로 스크리닝을 다시 실행해 주세요.");
   const digest =
@@ -170,13 +184,23 @@ export async function projection(client: SupabaseClient, uid: string, kind: "kr"
     if (kind === "kr") {
       const full = await readJson<{
         version: string;
+        publicationId?: string;
+        inputFingerprint: string;
         resultDigest: string;
-        payload: { analysis: AnalysisResult };
+        payload: {
+          analysis: AnalysisResult;
+          source?: { drivePublication?: DriveResultPublication };
+        };
       }>(client, `${uid}/cache/screening/latest.json`);
       if (
         !full?.payload?.analysis ||
         full.version !== SCREENING_CACHE_VERSION ||
-        full.resultDigest !== digest
+        full.resultDigest !== digest ||
+        ((full.payload.source?.drivePublication || head?.version === "drive-input-head-v1") &&
+          !currentDriveGeneration(head, {
+            ...full,
+            drivePublication: full.payload.source?.drivePublication,
+          }))
       ) {
         throw new Error("국내 스크리닝이 갱신 중입니다. 잠시 후 새로고침해 주세요.");
       }

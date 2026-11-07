@@ -6,6 +6,7 @@ import {
 } from "../src/lib/screeningInputIdentity";
 import { memory } from "./screening-memory";
 import type { DriveResultPublication } from "../src/lib/driveResultPublication";
+import { krResultPhase } from "../src/lib/driveResultPublication";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
@@ -112,6 +113,7 @@ export async function persistWebScreeningCaches(input: {
   snapshot: ScreeningSnapshot;
   previous: ScreeningSnapshot | null;
   resultOnly?: DriveResultPublication;
+  generationId?: string;
 }) {
   const fingerprint = inputFingerprint(
     input.inputs,
@@ -135,8 +137,8 @@ export async function persistWebScreeningCaches(input: {
     existing?.payload?.analysis &&
     (existing.payload.analysis.asOfDate > input.analysis.asOfDate ||
       (existing.payload.analysis.asOfDate === input.analysis.asOfDate &&
-        existing.payload.analysis.krPublication?.phase === "FINAL" &&
-        input.analysis.krPublication?.phase === "PRELIMINARY"))
+        krResultPhase(existing.payload.analysis) === "FINAL" &&
+        krResultPhase(input.analysis) === "PRELIMINARY"))
   )
     throw new Error("최신 또는 확정 홈페이지 결과를 과거·잠정 결과로 덮어쓸 수 없습니다.");
   if (
@@ -160,7 +162,7 @@ export async function persistWebScreeningCaches(input: {
     ...(input.resultOnly ? { drivePublication: input.resultOnly } : {}),
   };
   const payload: AnalysisPayload = { analysis: input.analysis, source };
-  const publicationId = crypto.randomUUID();
+  const publicationId = input.generationId ?? crypto.randomUUID();
   const screening = {
     version: SCREENING_CACHE_VERSION,
     publicationId,
@@ -170,7 +172,10 @@ export async function persistWebScreeningCaches(input: {
     payload,
   };
   const dashboard = buildDashboardSummary(input.analysis, fingerprint, digest);
-  if (input.resultOnly) dashboard.drivePublication = input.resultOnly;
+  if (input.resultOnly) {
+    dashboard.drivePublication = input.resultOnly;
+    dashboard.publicationId = publicationId;
+  }
   if (input.snapshot.sourceRegisteredAt)
     dashboard.sourceRegisteredAt = input.snapshot.sourceRegisteredAt;
   memory("dashboard-built", dashboard.counts);

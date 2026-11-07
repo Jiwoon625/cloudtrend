@@ -1,5 +1,10 @@
 import { runSignalJournalStage } from "./signalJournalStage";
-import { drivePublicationSources, type DriveResultPublication } from "./driveResultPublication";
+import {
+  currentDriveGeneration,
+  krResultPhase,
+  drivePublicationSources,
+  type DriveResultPublication,
+} from "./driveResultPublication";
 import { publishKrSignalJournal } from "./krSignalJournal.server";
 import { initialScreeningStages, type ScreeningStages } from "./screeningStages";
 import { saveScreeningStages } from "./screeningStages.server";
@@ -154,7 +159,7 @@ export async function runWebScreeningForUser(
         registered,
         inputFingerprint(registered, config, savedIdentity),
         cached.payload.analysis.asOfDate,
-        cached.payload.analysis.krPublication?.phase,
+        krResultPhase(cached.payload.analysis),
       );
       const expected = inputFingerprint(combined as typeof registered, config, savedIdentity);
       if (
@@ -163,9 +168,13 @@ export async function runWebScreeningForUser(
         !cached.publicationId
       )
         throw new Error("Drive 게시 결과 검증에 실패했습니다. 실행기에서 다시 게시해 주세요.");
-      const summary = buildDashboardSummary(cached.payload.analysis, expected, cached.resultDigest);
-      summary.drivePublication = drive;
-      await uploadJson(client, `${userId}/cache/dashboard/latest.json`, summary);
+      const currentHead = await readJson(
+        client,
+        `${userId}/results/drive-screening/input-head/latest.json`,
+      ).catch(missingCache);
+      if (!currentDriveGeneration(currentHead, { ...cached, drivePublication: drive }))
+        throw new Error("스크리닝이 게시 중입니다. 잠시 후 새로고침해 주세요.");
+      // Reuse is read-only; an old refresh must never overwrite a newer summary.
       return {
         ok: true,
         reused: true,

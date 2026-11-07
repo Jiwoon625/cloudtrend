@@ -14,8 +14,11 @@ import {
   recordFor,
   type SourceRecord,
 } from "./source-registry-store";
-import { validateSourceBytes, compareSourceRows } from "../src/lib/sourceData";
-import { buildKrSourcePublication } from "../src/lib/krScreeningPublication.server";
+import { validateSourceBytes, validateSourceText, compareSourceRows } from "../src/lib/sourceData";
+import {
+  buildKrSourcePublication,
+  buildKrPendingSupersessions,
+} from "../src/lib/krScreeningPublication.server";
 import { runScreening } from "./run-screening";
 import { publishDriveResult, maybeDriveHead } from "./publish-drive-result";
 import { stableCacheJson } from "../src/lib/screeningCacheContract";
@@ -176,7 +179,7 @@ export async function runDriveScreening(root: string, upload = true) {
           const validation = await validateSourceBytes({
             bytes: part.bytes,
             filename: part.path,
-            streamingCsv: true,
+            streamingCsv: group.publication.phase !== "FINAL",
           });
           if (!validation.valid) throw new Error(`Saved CSV validation failed: ${part.path}`);
           const id = `drive-${group.spec.runId}-${part.sha256.slice(0, 16)}`;
@@ -192,6 +195,44 @@ export async function runDriveScreening(root: string, upload = true) {
             overlap: compareSourceRows([], []),
           });
           const krPublication = buildKrSourcePublication(group.publication, record);
+          if (krPublication.phase === "FINAL") {
+            const targets = validation.rows.filter(
+              (r) => r.date === krPublication.asOfDate && ["STOCK", "ETF"].includes(r.type),
+            );
+            if (
+              !targets.length ||
+              targets.some(
+                (r) =>
+                  !(Number(r.marketCap) > 0) ||
+                  r["marketCapSource"] !== (r.type === "ETF" ? "KRX_ETF" : "KRX_STOCK"),
+              )
+            )
+              throw new Error(
+                "FINAL requires exact official capitalization on actual latest source rows",
+              );
+            const repairs: NonNullable<typeof krPublication.supersedesPending> = [];
+            for (const prior of inputs) {
+              if (
+                !prior.sourceRecord ||
+                krSourcePublication(prior.sourceRecord)?.phase !== "PRELIMINARY" ||
+                prior.sourceRecord.row_count > validation.rows.length
+              )
+                continue;
+              const normalized = prior.validation.rows.length
+                ? prior.validation
+                : await validateSourceText(prior.text, "prior.csv");
+              if (!normalized.valid)
+                throw new Error("Previous pending source normalization failed");
+              repairs.push(
+                ...buildKrPendingSupersessions(
+                  [{ source: prior.sourceRecord, rows: normalized.rows }],
+                  validation.rows,
+                  krPublication.asOfDate,
+                ),
+              );
+            }
+            if (repairs.length) krPublication.supersedesPending = repairs;
+          }
           const savedAt = new Date(group.manifest.createdAt).toISOString();
           const source = {
             ...record,

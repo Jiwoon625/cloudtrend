@@ -195,3 +195,73 @@ test("legacy raw-source publication cannot silently drop prior Drive deltas", as
   expect(mocks.register).not.toHaveBeenCalled();
   expect(mocks.run).not.toHaveBeenCalled();
 });
+
+test("FINAL Drive input derives exact pending repair evidence from verified rows", async () => {
+  const { validateSourceText, compareSourceRows } = await import("../src/lib/sourceData");
+  const { recordFor } = await import("../scripts/source-registry-store");
+  const { buildKrSourcePublication } = await import("../src/lib/krScreeningPublication.server");
+  const oldText = await readFile(path.join(directory, "input.csv"), "utf8");
+  const validation = await validateSourceText(oldText, "prior.csv");
+  const raw = preliminarySource().source.validation_result.krPublication;
+  const prior = recordFor({
+    id: "prior-pending",
+    userId: process.env["SUPABASE_USER_ID"]!,
+    sourceType: "screening",
+    origin: "github_action",
+    storagePath: "prior.csv",
+    validation,
+    overlap: compareSourceRows([], []),
+  });
+  prior.validation_result = {
+    ...prior.validation_result,
+    krPublication: buildKrSourcePublication(raw, prior),
+  };
+  mocks.load.mockResolvedValue([
+    {
+      id: prior.id,
+      fileHash: prior.file_hash,
+      dataHash: prior.data_hash,
+      schemaHash: prior.schema_hash,
+      text: validation.canonicalCsv,
+      validation: { ...validation, rows: [] },
+      sourceRecord: prior,
+    },
+  ]);
+  const csv = oldText
+    .replace("marketCapSource\n", "marketCapSource,marketCap\n")
+    .replace("2500,0,\n", "2500,0,,\n")
+    .replace("KRX_PENDING_PUBLICATION\n", "KRX_STOCK,100000000000\n");
+  const manifest = JSON.parse(
+    await readFile(path.join(directory, "collector-manifest.json"), "utf8"),
+  );
+  manifest.latestKrxPublicationPending = false;
+  manifest.krxPublicationEvidence.phase = "FINAL";
+  for (const market of Object.values(manifest.krxPublicationEvidence.markets) as Array<
+    Record<string, unknown>
+  >)
+    Object.assign(market, {
+      status: "PUBLISHED",
+      lastPublishedDate: "2026-10-06",
+      usableRows: 1,
+      rawRows: 1,
+    });
+  manifest.csv = [{ file: "input.csv", sha256: sha(csv), bytes: Buffer.byteLength(csv) }];
+  const manifestText = JSON.stringify(manifest);
+  spec.manifestSha256 = sha(manifestText);
+  spec.parts = [{ path: "input.csv", sha256: sha(csv) }];
+  await writeFile(path.join(directory, "input.json"), JSON.stringify(spec));
+  await writeFile(path.join(directory, "collector-manifest.json"), manifestText);
+  await writeFile(path.join(directory, "input.csv"), csv);
+  await runDriveScreening(directory);
+  const inputs = mocks.run.mock.calls[0]![1];
+  expect(inputs[1].sourceRecord.validation_result.krPublication.supersedesPending).toEqual([
+    {
+      sourceId: prior.id,
+      fileHash: prior.file_hash,
+      dataHash: prior.data_hash,
+      schemaHash: prior.schema_hash,
+      asOfDate: "2026-10-06",
+    },
+  ]);
+  expect(mocks.register).not.toHaveBeenCalled();
+});

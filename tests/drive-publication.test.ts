@@ -47,3 +47,24 @@ describe("explicit Drive cache provenance", () => {
     ).rejects.toThrow();
   });
 });
+
+test("Drive generations reject an old dashboard or altered proof", async () => {
+  const { currentDriveGeneration, krResultPhase } =
+    await import("../src/lib/driveResultPublication");
+  const cache = {
+    publicationId: "A",
+    inputFingerprint: "input",
+    resultDigest: "digest",
+    drivePublication: driveFixture(),
+  };
+  const head = { version: "drive-input-head-v1", ...cache };
+  expect(currentDriveGeneration(head, cache)).toBe(true);
+  expect(currentDriveGeneration({ ...head, publicationId: "B" }, cache)).toBe(false);
+  expect(
+    currentDriveGeneration(head, {
+      ...cache,
+      drivePublication: { ...cache.drivePublication, asOfDate: "2026-10-07" },
+    }),
+  ).toBe(false);
+  expect(krResultPhase({})).toBe("FINAL");
+});

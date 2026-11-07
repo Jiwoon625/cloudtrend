@@ -5,9 +5,11 @@ import {
   drivePublicationSources,
   type DriveResultPublication,
   type DriveResultSource,
+  krResultPhase,
 } from "../src/lib/driveResultPublication";
+import { classifyKrScreeningPublication } from "../src/lib/krScreeningPublication";
 import { savedOperationalIdentity } from "../src/lib/screeningInputIdentity";
-import { stableCacheJson } from "../src/lib/screeningCacheContract";
+import { stableCacheJson, deterministicAnalysis } from "../src/lib/screeningCacheContract";
 import { buildSnapshot } from "../src/lib/screeningSnapshot";
 import { listSourceRecords, type LoadedSourceInput } from "./source-registry-store";
 import { downloadJson, uploadJson, sha256 } from "./analysis-run-store";
@@ -49,7 +51,7 @@ export async function publishDriveResult(input: {
       sources: Array<{ id: string; fileHash: string; dataHash: string; schemaHash: string }>;
     };
   };
-  if (bundle.run.kind !== "SCREENING" || !bundle.result.krPublication)
+  if (bundle.run.kind !== "SCREENING" || !bundle.result.asOfDate)
     throw new Error("Missing calculated Drive result");
   const sourceIdentity = (s: {
     id: string;
@@ -87,11 +89,15 @@ export async function publishDriveResult(input: {
     )
       throw new Error("이전 Drive 입력 이력이 누락되거나 변경됐습니다.");
   }
+  const actual = inputs.flatMap((i) => (i.sourceRecord ? [i.sourceRecord] : []));
+  const verifiedPhase = classifyKrScreeningPublication(actual, bundle.result.asOfDate).phase;
+  if (krResultPhase(bundle.result) !== verifiedPhase)
+    throw new Error("Calculated result phase differs from verified source contracts");
   const proof: DriveResultPublication = {
     version: "drive-result-publication-v1",
     baseFingerprint: baseline,
     asOfDate: bundle.result.asOfDate,
-    phase: bundle.result.krPublication.phase,
+    phase: verifiedPhase,
     sources: input.sources,
   };
   const combined = await drivePublicationSources(
@@ -101,7 +107,6 @@ export async function publishDriveResult(input: {
     proof.asOfDate,
     proof.phase,
   );
-  const actual = inputs.flatMap((i) => (i.sourceRecord ? [i.sourceRecord] : []));
   const expected = inputFingerprint(
     combined.map((sourceRecord) => ({ sourceRecord })) as LoadedSourceInput[],
     bundle.config,
@@ -109,22 +114,33 @@ export async function publishDriveResult(input: {
   );
   if (expected !== inputFingerprint(inputs, bundle.config, op) || combined.length !== actual.length)
     throw new Error("Calculated inputs differ from Drive publication evidence");
-  const latest = await downloadJson<{ payload?: { analysis?: AnalysisResult } }>(
-    client,
-    `${owner}/cache/screening/latest.json`,
-  );
-  const old = latest.payload?.analysis;
+  let latest: { payload?: { analysis?: AnalysisResult } } | null;
+  try {
+    latest = await downloadJson(client, `${owner}/cache/screening/latest.json`);
+  } catch (error) {
+    if (error instanceof Error && /Object not found|not_found|404/i.test(error.message))
+      latest = null;
+    else throw error;
+  }
+  const old = latest?.payload?.analysis;
   if (
     old &&
     (old.asOfDate > bundle.result.asOfDate ||
       (old.asOfDate === bundle.result.asOfDate &&
-        old.krPublication?.phase === "FINAL" &&
+        krResultPhase(old) === "FINAL" &&
         proof.phase === "PRELIMINARY"))
   )
     throw new Error("현재 홈페이지의 최신·확정 결과를 덮어쓸 수 없습니다.");
   // This bounded metadata head retains prior Drive deltas without copying their CSV bytes.
   // Write it before caches: a failed cache write remains safely resumable without losing history.
-  const next = { version: "drive-input-head-v1", drivePublication: proof };
+  const generationId = crypto.randomUUID();
+  const next = {
+    version: "drive-input-head-v1",
+    drivePublication: proof,
+    publicationId: generationId,
+    inputFingerprint: expected,
+    resultDigest: sha256(stableCacheJson(deterministicAnalysis(bundle.result))),
+  };
   await uploadJson(client, `${owner}/${DRIVE_INPUT_HEAD}`, next);
   if (stableCacheJson(await maybeDriveHead(client, owner)) !== stableCacheJson(next))
     throw new Error("Drive input head readback mismatch");
@@ -137,6 +153,7 @@ export async function publishDriveResult(input: {
     snapshot: buildSnapshot(bundle.result, undefined, bundle.run.id),
     previous: null,
     resultOnly: proof,
+    generationId,
   });
   const dashboard = await downloadJson<{
     inputFingerprint: string;
