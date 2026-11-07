@@ -91,17 +91,13 @@ export async function runDriveHistoryScreening(directory: string, publishDashboa
   }
   return receipt;
 }
-if (
-  !process.env["VITEST"] &&
-  (path.basename(process.argv[1] ?? "") === "run-drive-history-screening.ts" ||
-    process.argv.some((arg) => arg.endsWith("run-drive-history-screening.ts")))
-)
+if (!process.env["VITEST"])
   runDriveHistoryScreening(
     process.env["DRIVE_HISTORY_DIRECTORY"] ?? "drive-history-work",
     process.env["PUBLISH_DASHBOARD"] === "true",
-  ).catch(() => {
+  ).catch((e) => {
     process.stderr.write(
-      "Drive history execution failed; inspect validation receipt and server configuration.\n",
+      `Drive history execution failed: ${e instanceof Error ? e.message : String(e)}\n`,
     );
     process.exitCode = 1;
   });
