@@ -1,6 +1,7 @@
 vi.mock("../src/lib/actualEntryDecisions.server", () => ({
   loadActualEntryDecisions: async () => ({ revision: 0, events: [] }),
 }));
+import { driveFixture } from "./drive-publication-fixture";
 import { describe, it, expect, vi } from "vitest";
 import { gzipSync } from "node:zlib";
 import {
@@ -27,7 +28,36 @@ const client = {
   storage: { from: () => ({ upload: async () => ({ error: null }) }) },
 } as unknown as SupabaseClient;
 describe("dashboard projection policy cache identity", () => {
+  it.each([false, true])(
+    "rejects a stale %s dashboard before reusing a projection",
+    async (drive) => {
+      const proof = driveFixture();
+      vi.mocked(downloadFreshObject).mockImplementation(async (_c, _b, path) => {
+        const value = path.endsWith("dashboard/latest.json")
+          ? {
+              version: DASHBOARD_CACHE_VERSION,
+              publicationId: "A",
+              inputFingerprint: "input",
+              resultDigest: "digest",
+              ...(drive ? { drivePublication: proof } : {}),
+            }
+          : path.endsWith("input-head/latest.json")
+            ? {
+                version: "drive-input-head-v1",
+                publicationId: "B",
+                inputFingerprint: "input",
+                resultDigest: "digest",
+                drivePublication: proof,
+              }
+            : null;
+        if (!value) throw new Error("Should reject before loading full screening");
+        return { data: new Blob([JSON.stringify(value)]), error: null };
+      });
+      await expect(projection(client, `stale-dashboard-${drive}`, "kr")).rejects.toThrow("게시 중");
+    },
+  );
   it("uses immutable compressed projection without loading the 20MB screening result", async () => {
+    vi.mocked(downloadFreshObject).mockClear();
     const owner = "compressed-projection-unit";
     const digest = "saved-digest";
     const key = `${owner}:kr:dashboard-operations-exit-diagnostics-v7:${digest}`;
@@ -41,6 +71,7 @@ describe("dashboard projection policy cache identity", () => {
       },
     } as unknown as SupabaseClient;
     vi.mocked(downloadFreshObject).mockImplementation(async (_client, _bucket, path) => {
+      if (path.endsWith("input-head/latest.json")) return { data: null, error: null };
       if (!path.endsWith("dashboard/latest.json"))
         throw new Error("full screening and legacy pointer must not be downloaded");
       return {
@@ -55,7 +86,7 @@ describe("dashboard projection policy cache identity", () => {
       };
     });
     expect((await projection(localClient, owner, "kr"))?.date).toBe("2026-10-16");
-    expect(downloadFreshObject).toHaveBeenCalledTimes(1);
+    expect(downloadFreshObject).toHaveBeenCalledTimes(2);
   });
   it("reprojects a v6 missing-data EXIT without changing the saved screening diagnostic", async () => {
     const diagnostic = {
