@@ -131,9 +131,9 @@ export async function readScreeningCache(): Promise<ScreeningCachePayload | null
   if (!cached || cached.version !== SCREENING_CACHE_VERSION) return null;
   const expectedInput = await currentInputFingerprint(
     savedOperationalIdentity(cached.payload.analysis),
-    cached.payload.source.drivePublication,
+    cached.payload.source?.drivePublication,
   );
-  const drive = cached.payload.source.drivePublication;
+  const drive = cached.payload.source?.drivePublication;
   if (
     drive &&
     (drive.asOfDate !== cached.payload.analysis.asOfDate ||
@@ -172,8 +172,8 @@ export async function readDashboardCache(): Promise<DashboardSummary | null> {
     screening.resultDigest,
     screening.createdAt,
   );
-  if (screening.payload.source.drivePublication)
-    recovered.drivePublication = screening.payload.source.drivePublication;
+  if (screening.payload.source?.drivePublication)
+    recovered.drivePublication = screening.payload.source?.drivePublication;
   // Rendering must not depend on the repair upload (or a CDN read-after-write).
   void writeObject(path, recovered).catch((error: unknown) => {
     console.warn("대시보드 요약 캐시 복원 저장 실패", error);
@@ -379,7 +379,7 @@ async function chartIdentity(payload: AnalysisPayload, uid: string, configKey: s
     pending = Promise.all([
       currentInputFingerprint(
         savedOperationalIdentity(payload.analysis),
-        payload.source.drivePublication,
+        payload.source?.drivePublication,
       ),
       digest,
     ])
