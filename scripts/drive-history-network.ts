@@ -32,7 +32,7 @@ export function installDriveReadOnlyNetwork() {
       const resultWrite = write && ["POST", "PUT"].includes(method) && resultPaths.has(decoded);
       if (historical || (write && !resultWrite)) {
         receipt.denied.push({ method, category });
-        throw new Error(`Drive validation blocked ${category}`);
+        throw new Error(`Drive validation blocked ${category}: ${method} ${url.pathname}`);
       }
       if (resultWrite) receipt.supabaseWrites++;
       receipt.allowed[category] = (receipt.allowed[category] ?? 0) + 1;
