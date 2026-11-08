@@ -435,3 +435,71 @@ test.each([false, 0, "", undefined])(
     expect(mocks.write).not.toHaveBeenCalled();
   },
 );
+
+test("certified membership changes project only proven unchanged rows without publishing or upgrading", async () => {
+  const compatibility = await import("../src/lib/krIndexCacheCompatibility");
+  const { readScreeningCache } = await import("../src/lib/screeningCache");
+  const historical = structuredClone(analysis);
+  historical.rows = historical.rows
+    .filter((row) => row.instrument.instrumentType === "STOCK")
+    .slice(0, 2);
+  expect(historical.rows).toHaveLength(2);
+  for (const row of historical.rows) {
+    row.instrument.indexMembershipsKnown = true;
+    row.instrument.indexMemberships = ["KOSPI200"];
+    row.instrument.indexMembershipsProvenance = {
+      source: "KRX_OFFICIAL_CONSTITUENTS",
+      snapshotAsOfDate: "2026-10-30",
+      evaluationAsOfDate: historical.asOfDate,
+      sourceUrls: [],
+    };
+  }
+  const changed = historical.rows[0]!.instrument.symbol;
+  const retained = historical.rows[1]!.instrument.symbol;
+  const version = compatibility.PREVIOUS_KR_INDEX_CACHE_VERSION;
+  const old = {
+    ...screening,
+    version,
+    payload: { analysis: historical },
+    resultDigest: hash(deterministicAnalysis(historical)),
+    inputFingerprint: hash({
+      version,
+      strategyConfig: DEFAULT_SCORING_CONFIG,
+      sources: [],
+      legacyFallback: { dataHash: null, schemaHash: null, savedAt: null, chars: null },
+    }),
+  };
+  const before = structuredClone(old);
+  const spy = vi.spyOn(compatibility, "verifiedKrIndexCacheCompatibility").mockResolvedValue({
+    excludedSymbols: [changed],
+    referenceDate: "2026-11-09",
+    latestMemberships: { [retained]: ["KOSPI200"] },
+  });
+  try {
+    setup(null, old);
+    const recovered = await readDashboardCache();
+    expect(recovered?.counts.total).toBe(1);
+    expect(recovered?.savedResultCompatibility).toEqual({
+      version,
+      excludedSymbols: [changed],
+      referenceDate: "2026-11-09",
+    });
+    expect(recovered?.asOfDate).toBe(historical.asOfDate);
+    expect(recovered?.calculatedAt).toBe(historical.calculatedAt);
+    expect(recovered?.resultDigest).toBe(old.resultDigest);
+    for (const rows of [
+      recovered?.top,
+      recovered?.onsetRows,
+      recovered?.kospiEntryRows,
+      recovered?.exitRows,
+    ]) {
+      expect(rows?.every((row) => row.instrument.symbol !== changed)).toBe(true);
+    }
+    expect(await readScreeningCache()).toBeNull();
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(mocks.compute).not.toHaveBeenCalled();
+    expect(old).toEqual(before);
+  } finally {
+    spy.mockRestore();
+  }
+});

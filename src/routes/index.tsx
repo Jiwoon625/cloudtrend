@@ -282,7 +282,18 @@ function DashboardContent({
         <p role="status" className="mb-3 rounded border p-3 text-sm">
           이전 저장결과 · 기준일 {summary.asOfDate} · 계산 시각{" "}
           {formatKstDateTime(summary.calculatedAt)} (KST). 새 계산을 수행하지 않은 이전 저장
-          결과입니다. 당시 저장된 지수 판정을 유지합니다. 상세 근거는 스크리닝{" "}
+          결과입니다. 현재 매매 판단에 사용할 수 없습니다. 당시 저장된 지수 판정을 유지합니다.
+          {summary.savedResultCompatibility.excludedSymbols?.length ? (
+            <span>
+              {" "}
+              지수 목록 {summary.savedResultCompatibility.referenceDate} 기준 편입 변경 또는 영향
+              미확인
+              {summary.savedResultCompatibility.excludedSymbols.length}개 종목은 제외했습니다. 종목
+              수는 표시 대상 기준입니다. 점수·순위 및 업종·시장 값은 재계산하지 않은 당시 전체 계산
+              값입니다.{" "}
+            </span>
+          ) : null}
+          상세 근거는 스크리닝{" "}
           <a href="/history" className="underline">
             이력
           </a>
