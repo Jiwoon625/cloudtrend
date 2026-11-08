@@ -1,5 +1,6 @@
 import {
   PREVIOUS_KR_INDEX_CACHE_VERSION,
+  projectUnchangedIndexRows,
   verifiedKrIndexCacheCompatibility,
 } from "./krIndexCacheCompatibility";
 import { operationalIndexContextServer } from "./underlyingIndexDiagnostics.functions";
@@ -186,10 +187,11 @@ async function readPreviousKrIndexDashboard(
   if (
     !cached ||
     cached.version !== PREVIOUS_KR_INDEX_CACHE_VERSION ||
-    cached.payload?.source?.drivePublication ||
-    !(await verifiedKrIndexCacheCompatibility())
+    cached.payload?.source?.drivePublication
   )
     return null;
+  const scope = await verifiedKrIndexCacheCompatibility();
+  if (!scope) return null;
   const head = await readObject<unknown>(
     await ownerPath("results/drive-screening/input-head/latest.json"),
   );
@@ -206,14 +208,23 @@ async function readPreviousKrIndexDashboard(
     (await analysisDigest(analysis)) !== cached.resultDigest
   )
     return null;
+  const projection = scope.excludedSymbols.length
+    ? projectUnchangedIndexRows(analysis, scope.excludedSymbols, scope.latestMemberships)
+    : null;
+  const visible = projection?.analysis ?? analysis;
   const projected = buildDashboardSummary(
-    analysis,
+    visible,
     cached.inputFingerprint,
     cached.resultDigest,
     cached.createdAt,
   );
   // Projection schema is current, but the calculation remains explicitly the original saved one.
-  projected.savedResultCompatibility = { version: cached.version };
+  projected.savedResultCompatibility = {
+    version: cached.version,
+    ...(projection
+      ? { excludedSymbols: projection.hiddenSymbols, referenceDate: scope.referenceDate }
+      : {}),
+  };
   return projected; // Never repair/persist this read-only projection.
 }
 
