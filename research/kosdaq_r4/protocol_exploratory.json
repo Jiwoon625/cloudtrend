@@ -1,0 +1,32 @@
+{
+  "experiment_id": "kosdaq-exits-gates-r4E-20261108",
+  "status": "EXPLORATORY_SPECIFIED_AFTER_PRIMARY_R4_RESULTS_BEFORE_THIS_EXPERIMENT",
+  "reason": "499 of 1039 original high-score exits use UP90; adding earlier exits does not test replacement of the original profit-taking signal. Keep DOWN30 and H60, replace only held high-score UP90; reuse the already fixed H5/T8 thresholds.",
+  "independent_oos": false,
+  "threshold_search": false,
+  "costs_oneway": [
+    0.0015,
+    0.003
+  ],
+  "primary": [
+    "hi9_replace_up90_t8",
+    "hi9_replace_up90_h5"
+  ],
+  "variants": [
+    {
+      "name": "baseline"
+    },
+    {
+      "name": "hi9_replace_up90_t8",
+      "highScoreMin": 9,
+      "trail": 0.08,
+      "replaceProfitExitOnHighScore": true
+    },
+    {
+      "name": "hi9_replace_up90_h5",
+      "highScoreMin": 9,
+      "maxHold": 5,
+      "replaceProfitExitOnHighScore": true
+    }
+  ]
+}

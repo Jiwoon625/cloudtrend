@@ -1,0 +1,99 @@
+{
+  "experiment_id": "kosdaq-exits-gates-r4-20261108",
+  "date_kst": "2026-11-08",
+  "base_main": "66a55464235ea8be078ceedfd97b2245d0b42e4d",
+  "r3_research_commit": "1798e3ed5dc30469d007af32f459dc8552a1dffe",
+  "status": "FROZEN_BEFORE_CANDIDATE_RESULTS",
+  "entry_score_rejection": false,
+  "entry_score_high": 9,
+  "holding_days": "market sessions inclusive of entry; trigger after Nth close, fill subsequent observed positive-volume open",
+  "trail": "max(entry open, observed closes since entry); one close confirmation; next observed open; no stop-price clipping",
+  "gate": "actual KOSDAQ index, close strictly below trailing 20 observed consecutive market-session closes; use last completed session before entry; never execution-day close",
+  "gate_limit": "maximum distinct held names while below SMA20; no forced sell or redistribution; blocked fresh entry cancelled, no gate deferral",
+  "costs_oneway": [
+    0.0015,
+    0.003
+  ],
+  "primary": [
+    "hi9_h5",
+    "hi9_t8",
+    "gate_stop",
+    "gate_cap10"
+  ],
+  "variants": [
+    {
+      "name": "baseline"
+    },
+    {
+      "name": "hi9_h3",
+      "highScoreMin": 9,
+      "maxHold": 3
+    },
+    {
+      "name": "hi9_h5",
+      "highScoreMin": 9,
+      "maxHold": 5
+    },
+    {
+      "name": "hi9_h10",
+      "highScoreMin": 9,
+      "maxHold": 10
+    },
+    {
+      "name": "hi9_t5",
+      "highScoreMin": 9,
+      "trail": 0.05
+    },
+    {
+      "name": "hi9_t8",
+      "highScoreMin": 9,
+      "trail": 0.08
+    },
+    {
+      "name": "hi9_t10",
+      "highScoreMin": 9,
+      "trail": 0.1
+    },
+    {
+      "name": "hi9_t8_arm3",
+      "highScoreMin": 9,
+      "trail": 0.08,
+      "trailActivate": 0.03
+    },
+    {
+      "name": "hi9_h5_t8",
+      "highScoreMin": 9,
+      "maxHold": 5,
+      "trail": 0.08
+    },
+    {
+      "name": "all_t8",
+      "trail": 0.08
+    },
+    {
+      "name": "gate_stop",
+      "gateSlots": 0
+    },
+    {
+      "name": "gate_cap5",
+      "gateSlots": 5
+    },
+    {
+      "name": "gate_cap10",
+      "gateSlots": 10
+    },
+    {
+      "name": "hi9_t8_gate_cap10",
+      "highScoreMin": 9,
+      "trail": 0.08,
+      "gateSlots": 10
+    }
+  ],
+  "independent_oos": false,
+  "threshold_search": false,
+  "future_rule_changes": false,
+  "operational_changes": false,
+  "recent_scope": "same R3 observed inputs through 2026-11-06; known signal gaps and KR 1106 incomplete retained",
+  "long_scope": "same 2017-08-21 to 2026-09-11 frozen 325-symbol legacy input, conditional diagnostic NOT PIT certified",
+  "stale_signal_save_time": "separate retained-save-time sensitivity; original logical-clock reproduction never relabeled as actual account"
+}
