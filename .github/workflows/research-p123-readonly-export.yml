@@ -1,0 +1,23 @@
+name: Isolated P1-P3 read-only research inputs
+on:
+  push:
+    branches: [research/p123-r3-20261108]
+    paths: [research/p123_r3/read_export.py]
+permissions:
+  contents: read
+jobs:
+  private-research-read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      GOOGLE_DRIVE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pandas==2.2.3 pyarrow==19.0.1 numpy==2.2.6
+      - name: Read bounded inputs and save only derived private research evidence
+        run: python research/p123_r3/read_export.py
