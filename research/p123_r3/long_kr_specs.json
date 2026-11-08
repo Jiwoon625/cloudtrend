@@ -1,0 +1,10 @@
+[
+ {"name":"baseline_30bp","fee":0.0015},
+ {"name":"score9_30bp","fee":0.0015,"scoreMax":9},
+ {"name":"stop10_30bp","fee":0.0015,"stop":0.1},
+ {"name":"score9_stop10_30bp","fee":0.0015,"scoreMax":9,"stop":0.1},
+ {"name":"baseline_60bp","fee":0.003},
+ {"name":"score9_60bp","fee":0.003,"scoreMax":9},
+ {"name":"stop10_60bp","fee":0.003,"stop":0.1},
+ {"name":"score9_stop10_60bp","fee":0.003,"scoreMax":9,"stop":0.1}
+]
