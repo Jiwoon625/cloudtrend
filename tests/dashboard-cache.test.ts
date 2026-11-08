@@ -315,3 +315,123 @@ test("source metadata failure disables the live read-only polling observer", asy
     vi.useRealTimers();
   }
 });
+
+test("exact prior KR index revision is a read-only dashboard projection, not a screener upgrade", async () => {
+  const { PREVIOUS_KR_INDEX_CACHE_VERSION } = await import("../src/lib/krIndexCacheCompatibility");
+  const { readScreeningCache } = await import("../src/lib/screeningCache");
+  const old = {
+    ...screening,
+    version: PREVIOUS_KR_INDEX_CACHE_VERSION,
+    inputFingerprint: hash({
+      version: PREVIOUS_KR_INDEX_CACHE_VERSION,
+      strategyConfig: DEFAULT_SCORING_CONFIG,
+      sources: [],
+      legacyFallback: { dataHash: null, schemaHash: null, savedAt: null, chars: null },
+    }),
+  };
+  setup(null, old);
+  const recovered = await readDashboardCache();
+  expect(recovered?.savedResultCompatibility).toEqual({
+    version: PREVIOUS_KR_INDEX_CACHE_VERSION,
+  });
+  expect(recovered?.calculatedAt).toBe(analysis.calculatedAt);
+  expect(recovered?.asOfDate).toBe(analysis.asOfDate);
+  expect(recovered?.inputFingerprint).toBe(old.inputFingerprint);
+  expect(recovered?.resultDigest).toBe(old.resultDigest);
+  expect(await readScreeningCache()).toBeNull();
+  expect(mocks.write).not.toHaveBeenCalled();
+  expect(mocks.compute).not.toHaveBeenCalled();
+});
+
+test.each(["digest", "sources", "version", "drive"])(
+  "prior revision refuses %s mismatch without writing",
+  async (failure) => {
+    const version = "screening-cache-v9-current-price-20261104-v1";
+    const old = {
+      ...screening,
+      version,
+      inputFingerprint: hash({
+        version,
+        strategyConfig: DEFAULT_SCORING_CONFIG,
+        sources: [],
+        legacyFallback: { dataHash: null, schemaHash: null, savedAt: null, chars: null },
+      }),
+    };
+    if (failure === "digest") old.resultDigest = "corrupt";
+    if (failure === "sources")
+      mocks.sources.mockResolvedValue([
+        { id: "changed", data_hash: "new", schema_hash: "schema", activated_at: null },
+      ]);
+    if (failure === "version") old.version = "screening-cache-v8-verified-kr-index-20261030-v1";
+    setup(null, old);
+    if (failure === "drive")
+      mocks.read.mockImplementation(async (path: string) =>
+        path.includes("input-head")
+          ? { version: "drive-input-head-v1" }
+          : path.includes("screening/latest")
+            ? old
+            : null,
+      );
+    expect(await readDashboardCache()).toBeNull();
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(mocks.compute).not.toHaveBeenCalled();
+  },
+);
+
+test("compatibility rejects changed constituents or unreviewed reference dates", async () => {
+  const { sameVerifiedKrIndexConstituents } = await import("../src/lib/krIndexCacheCompatibility");
+  const { default: reference } =
+    await import("../src/lib/engine/verifiedKrIndexMembership.generated.json");
+  expect(sameVerifiedKrIndexConstituents(reference)).toBe(true);
+  const altered = structuredClone(reference);
+  altered.snapshots[2]!.indexes[0]!.constituents[0]!.symbol = "999999";
+  expect(sameVerifiedKrIndexConstituents(altered)).toBe(false);
+  altered.snapshots[2]!.asOfDate = "2026-11-09";
+  expect(sameVerifiedKrIndexConstituents(altered)).toBe(false);
+});
+
+test("compatibility preserves original analysis without inferring index provenance", async () => {
+  const version = "screening-cache-v9-current-price-20261104-v1";
+  const historical = { ...analysis, asOfDate: "2026-10-20" };
+  setup(null, {
+    ...screening,
+    version,
+    payload: { analysis: historical },
+    resultDigest: hash(deterministicAnalysis(historical)),
+    inputFingerprint: hash({
+      version,
+      strategyConfig: DEFAULT_SCORING_CONFIG,
+      sources: [],
+      legacyFallback: { dataHash: null, schemaHash: null, savedAt: null, chars: null },
+    }),
+  });
+  const before = structuredClone(historical);
+  const result = await readDashboardCache();
+  expect(result?.savedResultCompatibility).toEqual({ version });
+  expect(result?.asOfDate).toBe(historical.asOfDate);
+  expect(result?.calculatedAt).toBe(historical.calculatedAt);
+  expect(historical).toEqual(before);
+  expect(mocks.write).not.toHaveBeenCalled();
+});
+
+test.each([false, 0, "", undefined])(
+  "prior revision refuses malformed Drive head %j",
+  async (head) => {
+    const version = "screening-cache-v9-current-price-20261104-v1";
+    const old = {
+      ...screening,
+      version,
+      inputFingerprint: hash({
+        version,
+        strategyConfig: DEFAULT_SCORING_CONFIG,
+        sources: [],
+        legacyFallback: { dataHash: null, schemaHash: null, savedAt: null, chars: null },
+      }),
+    };
+    mocks.read.mockImplementation(async (path: string) =>
+      path.includes("input-head") ? head : path.includes("screening/latest") ? old : null,
+    );
+    expect(await readDashboardCache()).toBeNull();
+    expect(mocks.write).not.toHaveBeenCalled();
+  },
+);

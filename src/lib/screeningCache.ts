@@ -1,3 +1,7 @@
+import {
+  PREVIOUS_KR_INDEX_CACHE_VERSION,
+  verifiedKrIndexCacheCompatibility,
+} from "./krIndexCacheCompatibility";
 import { operationalIndexContextServer } from "./underlyingIndexDiagnostics.functions";
 import {
   currentDriveGeneration,
@@ -75,6 +79,7 @@ async function analysisDigest(analysis: AnalysisResult) {
 export async function currentInputFingerprint(
   operationalIndex?: OperationalIndexIdentity,
   drive?: DriveResultPublication,
+  readVersion: string = SCREENING_CACHE_VERSION,
 ) {
   const [sources, config] = await Promise.all([
     listActiveScreeningSourceFingerprints(),
@@ -83,8 +88,8 @@ export async function currentInputFingerprint(
   // Registered sources define the identity without loading the legacy CSV/parser bundle.
   const meta = sources.length ? null : (await import("./manualDataStore")).getManualDataMeta();
   const base = await sha256Text(
-    stableCacheJson(
-      screeningInputIdentity(
+    stableCacheJson({
+      ...screeningInputIdentity(
         sources,
         config,
         operationalIndex,
@@ -97,7 +102,8 @@ export async function currentInputFingerprint(
               chars: meta?.chars ?? null,
             },
       ),
-    ),
+      version: readVersion,
+    }),
   );
   if (!drive) return base;
   const combined = await drivePublicationSources(drive, sources, base, drive.asOfDate, drive.phase);
@@ -147,7 +153,12 @@ async function matchesDriveHead(cache: {
 }
 
 export async function readScreeningCache(): Promise<ScreeningCachePayload | null> {
-  const cached = await readObject<ScreeningCachePayload>(await screeningPath());
+  return validateScreeningCache(await readObject<ScreeningCachePayload>(await screeningPath()));
+}
+
+async function validateScreeningCache(
+  cached: ScreeningCachePayload | null,
+): Promise<ScreeningCachePayload | null> {
   if (!cached || cached.version !== SCREENING_CACHE_VERSION) return null;
   const expectedInput = await currentInputFingerprint(
     savedOperationalIdentity(cached.payload.analysis),
@@ -167,6 +178,43 @@ export async function readScreeningCache(): Promise<ScreeningCachePayload | null
     return null;
   const digest = await analysisDigest(cached.payload.analysis);
   return digest === cached.resultDigest ? cached : null;
+}
+
+async function readPreviousKrIndexDashboard(
+  cached: (CacheMeta & { payload: AnalysisPayload }) | null,
+): Promise<DashboardSummary | null> {
+  if (
+    !cached ||
+    cached.version !== PREVIOUS_KR_INDEX_CACHE_VERSION ||
+    cached.payload?.source?.drivePublication ||
+    !(await verifiedKrIndexCacheCompatibility())
+  )
+    return null;
+  const head = await readObject<unknown>(
+    await ownerPath("results/drive-screening/input-head/latest.json"),
+  );
+  if (head !== null) return null; // This narrow bridge deliberately does not support Drive publications.
+  const analysis = cached.payload.analysis;
+  if (!analysis || !Number.isFinite(Date.parse(analysis.calculatedAt))) return null;
+  const expected = await currentInputFingerprint(
+    savedOperationalIdentity(analysis),
+    undefined,
+    PREVIOUS_KR_INDEX_CACHE_VERSION,
+  );
+  if (
+    cached.inputFingerprint !== expected ||
+    (await analysisDigest(analysis)) !== cached.resultDigest
+  )
+    return null;
+  const projected = buildDashboardSummary(
+    analysis,
+    cached.inputFingerprint,
+    cached.resultDigest,
+    cached.createdAt,
+  );
+  // Projection schema is current, but the calculation remains explicitly the original saved one.
+  projected.savedResultCompatibility = { version: cached.version };
+  return projected; // Never repair/persist this read-only projection.
 }
 
 export async function readDashboardCache(): Promise<DashboardSummary | null> {
@@ -189,8 +237,9 @@ export async function readDashboardCache(): Promise<DashboardSummary | null> {
   // The dashboard is only a projection. A missing/stale summary must not trigger
   // another engine run when the shared screening result is already valid.
   // readScreeningCache checks version, active inputs and the full result digest.
-  const screening = await readScreeningCache();
-  if (!screening) return null;
+  const stored = await readObject<ScreeningCachePayload>(await screeningPath());
+  const screening = await validateScreeningCache(stored);
+  if (!screening) return readPreviousKrIndexDashboard(stored);
   const recovered = buildDashboardSummary(
     screening.payload.analysis,
     screening.inputFingerprint,

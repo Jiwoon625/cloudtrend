@@ -13,6 +13,7 @@ export const INSTRUMENT_CACHE_VERSION =
   "instrument-cache-v9-current-price-verified-kr-index-20261106-v1" as const;
 
 export interface DashboardSummary {
+  savedResultCompatibility?: { version: string };
   publicationId?: string;
   drivePublication?: DriveResultPublication;
   krPublication?: AnalysisResult["krPublication"];

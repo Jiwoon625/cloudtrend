@@ -160,7 +160,10 @@ function Dashboard() {
   const cacheMissing = summaryQuery.isSuccess && summaryQuery.data === null;
   const emptyPresentation = dashboardCacheEmptyPresentation(sourceAvailability.data);
   const started = requested || Boolean(summaryQuery.data);
-  const operations = useDashboardOperations(started, summaryQuery.data?.resultDigest);
+  const operations = useDashboardOperations(
+    started && !summaryQuery.data?.savedResultCompatibility,
+    summaryQuery.data?.savedResultCompatibility ? undefined : summaryQuery.data?.resultDigest,
+  );
   const rescreen = async () => {
     setRescreening(true);
     try {
@@ -275,6 +278,17 @@ function DashboardContent({
   return (
     <>
       <KrPreliminaryNotice publication={summary.krPublication} />
+      {summary.savedResultCompatibility && (
+        <p role="status" className="mb-3 rounded border p-3 text-sm">
+          이전 저장결과 · 기준일 {summary.asOfDate} · 계산 시각{" "}
+          {formatKstDateTime(summary.calculatedAt)} (KST). 새 계산을 수행하지 않은 이전 저장
+          결과입니다. 당시 저장된 지수 판정을 유지합니다. 상세 근거는 스크리닝{" "}
+          <a href="/history" className="underline">
+            이력
+          </a>
+          에서 확인하세요.
+        </p>
+      )}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <p className="text-[12px] text-muted-foreground">
           기준일 {summary.asOfDate} · 모델{" "}
@@ -287,57 +301,74 @@ function DashboardContent({
       </div>
 
       <p className="mb-2 text-xs text-muted-foreground">
-        오전·저녁 하루 두 번, 자료수집 완료 후 게시된 최신 결과입니다. 시각만으로 진입 확정 여부를
-        판단하지 않습니다.
+        {summary.savedResultCompatibility
+          ? "기존 계산 결과를 보존하여 표시하고 있습니다."
+          : "오전·저녁 하루 두 번, 자료수집 완료 후 게시된 최신 결과입니다."}{" "}
+        시각만으로 진입 확정 여부를 판단하지 않습니다.
       </p>
-      <details className="rounded border p-2">
-        <summary className="cursor-pointer text-sm">시장별 집계·자료 확인사항</summary>
-        <DashboardSignalCounts query={operations} counts={summary.counts} />
-      </details>
-      <div className="my-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
-        {(["KR", "US"] as const).map((market) => {
-          const publication = operations.data?.publications?.[market];
-          return (
-            <span key={market}>
-              {market === "KR" ? "한국·ETF" : "미국"} · {screeningSession(publication?.collectedAt)}
-              {publication?.collectedAt
-                ? ` ${formatKstDateTime(publication.collectedAt)}`
-                : publication?.registeredAt
-                  ? ` · 자료 등록 ${formatKstDateTime(publication.registeredAt)}`
-                  : ""}{" "}
-              · 계산{" "}
-              {publication?.calculatedAt ? formatKstDateTime(publication.calculatedAt) : "미확인"}{" "}
-              KST
-            </span>
-          );
-        })}
-      </div>
-      <DashboardSignalLists query={operations} />
-      <details
-        className="my-3 rounded border p-3"
-        onToggle={(event) => setReviewOpen(event.currentTarget.open)}
-      >
-        <summary className="cursor-pointer text-sm">원신호·자료 확인 대기 후보</summary>
-        {operations.data ? (
-          reviewOpen ? (
-            <Suspense
-              fallback={
-                <p className="my-4 text-xs text-muted-foreground" role="status">
-                  후보 검토 자료 불러오는 중…
-                </p>
-              }
-            >
-              <DomesticAssessmentPanel markets={operations.data.markets} review />
-            </Suspense>
-          ) : null
-        ) : (
-          <p className="my-4 text-xs text-muted-foreground" role="status">
-            {operations.isError
-              ? "후보 검토 자료 조회 실패 · 기존 판단 자료를 다시 확인해 주세요."
-              : "후보 검토 자료 불러오는 중…"}
-          </p>
-        )}
-      </details>
+      {summary.savedResultCompatibility ? (
+        <p className="my-3 rounded border p-3 text-sm">
+          이전 저장결과이므로 현재 행동판정은 표시하지 않습니다.{" "}
+          <a href="/history" className="underline">
+            이력
+          </a>
+          에서 당시 결과를 확인하세요.
+        </p>
+      ) : (
+        <>
+          <details className="rounded border p-2">
+            <summary className="cursor-pointer text-sm">시장별 집계·자료 확인사항</summary>
+            <DashboardSignalCounts query={operations} counts={summary.counts} />
+          </details>
+          <div className="my-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted-foreground">
+            {(["KR", "US"] as const).map((market) => {
+              const publication = operations.data?.publications?.[market];
+              return (
+                <span key={market}>
+                  {market === "KR" ? "한국·ETF" : "미국"} ·{" "}
+                  {screeningSession(publication?.collectedAt)}
+                  {publication?.collectedAt
+                    ? ` ${formatKstDateTime(publication.collectedAt)}`
+                    : publication?.registeredAt
+                      ? ` · 자료 등록 ${formatKstDateTime(publication.registeredAt)}`
+                      : ""}{" "}
+                  · 계산{" "}
+                  {publication?.calculatedAt
+                    ? formatKstDateTime(publication.calculatedAt)
+                    : "미확인"}{" "}
+                  KST
+                </span>
+              );
+            })}
+          </div>
+          <DashboardSignalLists query={operations} />
+          <details
+            className="my-3 rounded border p-3"
+            onToggle={(event) => setReviewOpen(event.currentTarget.open)}
+          >
+            <summary className="cursor-pointer text-sm">원신호·자료 확인 대기 후보</summary>
+            {operations.data ? (
+              reviewOpen ? (
+                <Suspense
+                  fallback={
+                    <p className="my-4 text-xs text-muted-foreground" role="status">
+                      후보 검토 자료 불러오는 중…
+                    </p>
+                  }
+                >
+                  <DomesticAssessmentPanel markets={operations.data.markets} review />
+                </Suspense>
+              ) : null
+            ) : (
+              <p className="my-4 text-xs text-muted-foreground" role="status">
+                {operations.isError
+                  ? "후보 검토 자료 조회 실패 · 기존 판단 자료를 다시 확인해 주세요."
+                  : "후보 검토 자료 불러오는 중…"}
+              </p>
+            )}
+          </details>
+        </>
+      )}
       <div className="space-y-4">
         <Card
           title="KOSPI 시장 상태 · 진입 조건"
