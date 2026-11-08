@@ -24,7 +24,7 @@ def main():
     mod=importlib.util.module_from_spec(s);s.loader.exec_module(mod)
     drive=mod.Drive(mod.get_token())
     existing=drive.children(FOLDER)
-    if any(r['name']=='bounded-us-inputs-r3-v2.zip' for r in existing):
+    if any(r['name']=='bounded-us-inputs-r3-v3.zip' for r in existing):
         print('Bounded research export already present; no duplicate write');return
     history_bytes=drive.download('1cWHJeNCPBSZVa0fWfXqO6en5SX-GKcOY')
     hist=pd.read_parquet(io.BytesIO(history_bytes));hist['date']=pd.to_datetime(hist.date).dt.strftime('%Y-%m-%d')
@@ -74,12 +74,13 @@ def main():
             n=len(g);observed=g.return20.notna().sum();rs=float(g.return20.median()-spy) if observed and np.isfinite(spy) else None
             sectors.append({'date':day,'sector':sector,'n':n,'observed':int(observed),'coverage':observed/n,'rs20':rs,'ready':bool(observed>=10 and observed/n>=.8),'median_ret120':g.ret120.median(),'median_ret252':g.ret252.median(),'classification':'DATE_LOCAL_STORED_SOURCE','available_at':next(r['available_at'] for r in receipts if r['date']==day)})
     selected=prices[prices.symbol.isin(SYMBOLS)]
-    files={'prices_selected.csv':selected.to_csv(index=False).encode(),'sector_asof.csv':pd.DataFrame(sectors).to_csv(index=False).encode(),'source_receipts.json':json.dumps(receipts,indent=2).encode()}
+    factors=pd.concat([f[f.symbol.isin(SYMBOLS)] for f in frames],ignore_index=True)
+    files={'prices_selected.csv':selected.to_csv(index=False).encode(),'sector_asof.csv':pd.DataFrame(sectors).to_csv(index=False).encode(),'source_features_selected.csv':factors.to_csv(index=False).encode(),'source_receipts.json':json.dumps(receipts,indent=2).encode()}
     files['manifest.json']=json.dumps({'experiment':'p123-r3-20261108','cache_file_id':'1cWHJeNCPBSZVa0fWfXqO6en5SX-GKcOY','cache_sha256':sha(history_bytes),'cache_max_date':str(hist.date.max()),'source_end':'2026-11-06','selected_symbols':sorted(SYMBOLS),'files':{n:{'sha256':sha(b),'bytes':len(b)} for n,b in files.items()},'operations':'GET only on Supabase; new private Drive file only','full_raw_universe_uploaded':False,'script_sha256':sha(pathlib.Path(__file__).read_bytes())},indent=2).encode()
     z=io.BytesIO()
     with zipfile.ZipFile(z,'w',zipfile.ZIP_DEFLATED) as package:
         for n,b in files.items():package.writestr(n,b)
-    payload=z.getvalue();upload=drive.upload(FOLDER,'bounded-us-inputs-r3-v2.zip',payload,'application/zip')
+    payload=z.getvalue();upload=drive.upload(FOLDER,'bounded-us-inputs-r3-v3.zip',payload,'application/zip')
     if sha(drive.download(upload['id']))!=sha(payload):raise ValueError('Drive readback mismatch')
     print('Read-only research export completed; private Drive readback verified')
 if __name__=='__main__':main()
