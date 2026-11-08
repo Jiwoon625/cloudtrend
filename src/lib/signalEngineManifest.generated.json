@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "codeHash": "4289777db26e0b189e46f4303df73748ed992d81ad41ad5cf2fffea36540f059",
+  "codeHash": "0d2307099c51f1d0e3a37773651001fdbb2bd83cefcc45bb279018689e27d09b",
   "usCodeHash": "7d5295a657f752c81088468a2bf7fab6f36f6f9acca5f5673fce52a590b0337c",
   "KR": {
     "version": "screening-signal-engine-v1",
@@ -30,7 +30,7 @@
       "src/lib/engine/usProspectivePortfolio.ts": "sha256:a593e9fb5e23dc353b0f1951176da4fd60e6b3858e2aa4d6e241d66e40a8324a",
       "src/lib/engine/v8SectorPriceLeadership.ts": "sha256:1161aca2b8219712ce27df35a051f13a2177c3c965db34f163b204eaa1643078",
       "src/lib/engine/v8SectorPriceLeadershipPolicy.ts": "sha256:a20de64beb856963b466aaacbf5613a58d4d179ad076df7002171fb859b99fb6",
-      "src/lib/engine/verifiedKrIndexMembership.generated.json": "sha256:fd2ae20e23ef64a495beecd2c9792783dd2d2740a3ec1329855ccc1c300c5a95",
+      "src/lib/engine/verifiedKrIndexMembership.generated.json": "sha256:4a6c093ccdcac3d104a919dfd34f6e9ded451164ce50b716295cfaef39b3ba98",
       "src/lib/engine/verifiedKrIndexMembership.ts": "sha256:db197a0db126e17d102c3c0faab69f5a5a2adef74b4a4821d5d15b7d012a3424",
       "src/lib/engine/vfConfig.ts": "sha256:d5b6fa115ff765785ead12764a29f10df2da80833de63f68af48f97d76e77573",
       "src/lib/etfPartialEvidence.ts": "sha256:2f19d7cd4de13452c2df498d0892498c09cf3401908850cc42721c3ea959e826",

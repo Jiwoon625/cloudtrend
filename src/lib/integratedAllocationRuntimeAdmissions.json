@@ -55,6 +55,11 @@
       "runtimeCodeHash": "sha256:8123810fba3e1aeaeeff1c1e83f731af30dadb2c50701b86e507d0cec739a661",
       "frozenCodeHash": "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4",
       "reviewId": "disconnect-integrated-daily-screening-only-20261104"
+    },
+    {
+      "runtimeCodeHash": "sha256:6010730627ad80716a4b5e574996dffcd20b850315e120d5113a074d08fc95bb",
+      "frozenCodeHash": "sha256:dffdb12c0e7b79ca68d246b0f607b83bf6d1324b90cb7a50bafea79acd2332d4",
+      "reviewId": "kr-official-index-verification-20261106-v1"
     }
   ]
 }

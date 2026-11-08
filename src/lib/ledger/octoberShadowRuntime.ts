@@ -104,6 +104,8 @@ export const REVIEWED_RETROSPECTIVE_SOURCE_RUNTIME_HASH =
   "sha256:9738f045962175e20e34f1ffae330fd36abe1491356fd63957dababd5e15de97" as const;
 
 export const REVIEWED_SHADOW_RUNTIME_CODE_HASHES = Object.freeze([
+  // Independently reviewed November 6 KRX snapshot; unchanged membership and scores.
+  "sha256:c76bfb242a0a5b8f55c4a96ad07a9804f40b153f23b1e33a81a26c5cdf2d315d",
   // Reviewed finite Unison v3 cohort and exact Nov 3 retrospective authority; frozen history unchanged.
   "sha256:f62db333107b75961b3cb828534627d137203033324a887717978923f26cdde5",
   // Independently reviewed October 30 KRX verification snapshot; unchanged memberships and scores.
