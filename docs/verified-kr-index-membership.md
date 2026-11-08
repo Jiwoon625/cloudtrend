@@ -110,3 +110,62 @@ only these separately verified hashes are appended. Deployment is tracked separa
 - Repository ESLint: no errors; 9 pre-existing Fast Refresh warnings.
 - Production build: passed before final review handoff.
 - Final integrated admission: ledger 410, October Shadow 90, source pipeline 103, screening memory 163, UI reorganization 136 and dashboard 549 passed. Final integrated type check, ESLint (zero errors; 9 existing warnings), and production build also passed. Publication is tracked separately.
+
+## November 8 maintenance: November 6 official snapshot
+
+All three official KRX constituents tabs were explicitly queried with `20261106`
+before CSV export on November 8. Each series displayed November 6 as its latest
+data date. The CSVs have no date column: the UI query supplies the date evidence.
+KOSPI200 / KOSDAQ150 / KRX300 have 201 / 150 / 301 rows and unique codes, union
+384, with no additions, removals or name changes compared with October 30.
+This verifies the endpoint snapshot, not every possible intermediate event.
+
+The JSON appends the complete November 6 snapshot and preserves both prior
+snapshots exactly. It retains only symbol/name and official provenance, not raw
+prices or market values. Two exports have observed UTC intervals; KRX300 has
+only its filesystem download-completion timestamp, explicitly not an invented
+observation interval. Download was November 8, not contemporaneous November 6
+knowledge. Analyses through November 5 continue to select the older snapshot.
+
+The live cache revision is advanced within v9-current-price (not reverted to v8)
+to `v9-current-price-verified-kr-index-20261106-v1`. Membership scoring, US A0,
+allocation/cost rules, frozen identities, and historical prices, sources, ledgers
+and research results remain unchanged. No historical calculation is rerun.
+
+Separate collection-universe review found November 6 US ingest price coverage
+complete for 5,303 symbols, with zero price failures/provider gaps. VJET and WQEY
+remain scoring holds (25 verified post-event bars versus 253 required), not new
+delistings or price failures. The latest maintained US roster could not be
+retrieved: local copies do not match the production roster hash, so none were
+used to overwrite the current roster. No new US index admission condition is
+introduced.
+
+Korean active source registry has 614 stocks and 1,184 ETFs for November 6,
+versus 1,188 ETFs in the differently-windowed November 5 source. The four-count
+difference is not proof of four daily price gaps or delistings; exact source
+symbol-set reconciliation remains pending. Both source lifecycle metadata are
+absent, and the separate lifecycle/halts tables are empty, which is not proof
+that repository date-effective ETF policies are absent. Existing policies are
+preserved. Official ACE evidence identifies 0259R0 as a November 3 new listing;
+its presence in the latest source and collection eligibility still need checking.
+Other unverified IPO candidates are not automatically admitted.
+
+Collection-target additions, exclusions and status changes applied in this run:
+zero. This is a partial collection-universe audit, not certification that no
+eligible new instruments exist. Runtime review, regression and deployment results
+are recorded separately after verification.
+
+Independent November 8 review verified all three CSV hashes and exact constituent
+sets against the appended snapshot and approved these exact executable digests:
+
+- October Shadow: `sha256:c76bfb242a0a5b8f55c4a96ad07a9804f40b153f23b1e33a81a26c5cdf2d315d`.
+- Integrated allocation: `sha256:6010730627ad80716a4b5e574996dffcd20b850315e120d5113a074d08fc95bb`.
+- KOSPI publication: `sha256:a7be012bc6aa82613b981251a74756434224c31d7f76f8c3ded260acf85648e0`.
+
+Only final reviewed digests are admitted; previous admissions/frozen identities
+remain. Both Shadow preflight and native KOSPI runtime verification passed.
+Focused tests 53, source pipeline 161, screening memory 357, UI reorganization
+147, dashboard 783, ledger 506 and October Shadow 183 passed (suite counts overlap).
+TypeScript and changed-file ESLint passed. Runtime generation also refreshes the
+KR signal manifest; US signal codeHash remains unchanged. Deployment is recorded
+in the private maintenance notes after live verification.

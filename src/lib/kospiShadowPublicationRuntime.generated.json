@@ -42,11 +42,11 @@
       "src/lib/engine/usProspectivePortfolio.ts": "sha256:a593e9fb5e23dc353b0f1951176da4fd60e6b3858e2aa4d6e241d66e40a8324a",
       "src/lib/engine/v8SectorPriceLeadership.ts": "sha256:1161aca2b8219712ce27df35a051f13a2177c3c965db34f163b204eaa1643078",
       "src/lib/engine/v8SectorPriceLeadershipPolicy.ts": "sha256:a20de64beb856963b466aaacbf5613a58d4d179ad076df7002171fb859b99fb6",
-      "src/lib/engine/verifiedKrIndexMembership.generated.json": "sha256:fd2ae20e23ef64a495beecd2c9792783dd2d2740a3ec1329855ccc1c300c5a95",
+      "src/lib/engine/verifiedKrIndexMembership.generated.json": "sha256:4a6c093ccdcac3d104a919dfd34f6e9ded451164ce50b716295cfaef39b3ba98",
       "src/lib/engine/verifiedKrIndexMembership.ts": "sha256:db197a0db126e17d102c3c0faab69f5a5a2adef74b4a4821d5d15b7d012a3424",
       "src/lib/engine/vfConfig.ts": "sha256:d5b6fa115ff765785ead12764a29f10df2da80833de63f68af48f97d76e77573",
       "src/lib/integratedAllocationRuntimeAdmission.ts": "sha256:190f2483aa6829097fdccce8b71b242a302810f51d268a19c20b01164c6a8170",
-      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:f813615d81752a9ec6cae89546ecb28e34c5869ccafd7637d433d9dbefe8497e",
+      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:c4659871674bfd33b488c0ded2d3cade4039f28db221ef88d27fcf58b6824c1b",
       "src/lib/kospiShadowEquivalence.ts": "sha256:2789f238279fbbb1cbf39296201dc1d24b1233c2dc784961d56d3ba945f62a42",
       "src/lib/kospiShadowSeries.ts": "sha256:6b086d777d8ca77ac07c71d8e765ac31ff9f92c3769828637a4ca5946c0b000e",
       "src/lib/kospiShadowStore.ts": "sha256:48a47b264e9d420573f71d09a094742d3b130f67bb04c987ec2b9188cc7b18f1",
@@ -59,7 +59,7 @@
       "src/lib/ledger/krShadowDecision.ts": "sha256:119a087fa3d90b05ac0fa183ab9b40e4acbb6495871dd511d11a220c7bd180fc",
       "src/lib/ledger/modelSeries.ts": "sha256:63a758daf1abfc74bfcba395d6b21693f0185a48c206e064fa8eb76d4d1693ce",
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:9c8b5e98035e53d81dedc58c43f7ddf8678ad835bbe449a21d63088dabd76a32",
-      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:8df9e173f34ef232b8ec04b1611ba796a4fb8dd011338b90cbd20a9b02f3714a",
+      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:a8cbcc4cedf9043aee5f86aa9a8ccb2c0e7863c9376bcc8fe7f00e0118f4b792",
       "src/lib/sourceData.ts": "sha256:2f2f313ed65a34e83a0705cf3a61ecd4166d34b68193c1f5998fbf9e61b44390",
       "src/lib/sourceTimingEvidence.ts": "sha256:ef72ba92c6778012e3e8f0844957bf91e5169687fc3d8d19628e03e761df0599",
       "src/lib/usCandidatePriority.ts": "sha256:b56ffa6bb73880e9f9ac737b70d42537d1e661c6970491a1a53381d1bbb4092b"
@@ -109,11 +109,11 @@
       "src/lib/engine/usProspectivePortfolio.ts": "sha256:38fb2e4adb8ce968aea573d14a46dd6d99160a77b911ba1c5c7a4c6a2a7b244d",
       "src/lib/engine/v8SectorPriceLeadership.ts": "sha256:30ee65b267deecc33dbe88281ef312a0c9d66ca4b20a17d00821b9cc0806c08d",
       "src/lib/engine/v8SectorPriceLeadershipPolicy.ts": "sha256:4787748150964bf4128211e16006ce592ec9024756203fa85a97bcbbc26bfcc4",
-      "src/lib/engine/verifiedKrIndexMembership.generated.json": "sha256:e360ee013c1fff3390f902ebebde633a3beb8959b107bbca5cada5f2c86e0e10",
+      "src/lib/engine/verifiedKrIndexMembership.generated.json": "sha256:c60cfa4d95e3104c7a6f4597a097a4442a25d63a61476fa707c61a2912d156ad",
       "src/lib/engine/verifiedKrIndexMembership.ts": "sha256:64494a205a21b81321eae809aa27908fcf046e10c418ea45fa711d76eb204556",
       "src/lib/engine/vfConfig.ts": "sha256:223a3c3f8ce733c8dade8496b1aff5af2b4894f110232ea05c03a9376c8c48b1",
       "src/lib/integratedAllocationRuntimeAdmission.ts": "sha256:0d1c3c9696a969a06f31fb277de8c280afc2fb473d1c4ba4d9d2521cfe2f213d",
-      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:f86b2a55b14554352d28eceb95ebf1f5c0635c9d754c3684e24ab8a11823b69f",
+      "src/lib/integratedAllocationRuntimeAdmissions.json": "sha256:4a7fe585dc6703bdc0039c27a9fba06c6803cc9e7ab52f4f5f811cc396d52a2f",
       "src/lib/kospiShadowEquivalence.ts": "sha256:a9e5ee98fa2897663638920cda44733800957f7acffe275ce665501a8407b3c0",
       "src/lib/kospiShadowSeries.ts": "sha256:c401249c9c16ea688ac21651a88fe0f5b9ae72e5b03858d93ec63401e810bf67",
       "src/lib/kospiShadowStore.ts": "sha256:45bc1d1df7ce78393c7fe29449ffdd9c77ab0e9214d864677eb8b4738c0c4550",
@@ -126,11 +126,11 @@
       "src/lib/ledger/krShadowDecision.ts": "sha256:10f576d585622fcba52e78f3cd2bc6b182d484a747f054af7a2aca507aca6b9b",
       "src/lib/ledger/modelSeries.ts": "sha256:976a23c3ca6c4ef7fa9bd35ef3494689c9dbd89d247a2decc7b1f05507d00e6f",
       "src/lib/ledger/octoberShadowCalendar.ts": "sha256:7bed0267e32a379849e76a154f082706767585cd4bc42961c1b2b40693d0a741",
-      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:8b0ad3cc849dfce274ba81482c1091606ab99f493800bcae967cf70f0a532b27",
+      "src/lib/ledger/octoberShadowRuntime.ts": "sha256:3478ef1fb8cbf3acf3f1e9df6c7559ea3700ba04162bdc0a9891c2afe1a51023",
       "src/lib/sourceData.ts": "sha256:3553fe89ad60adb413fd9ef79e00a55e3873c6038a1e090bc3e982166d7d9a5b",
       "src/lib/sourceTimingEvidence.ts": "sha256:6a83fcaf64adead3ac7765d06e08a09a7eee076688c08841dda1a2380bf097b5",
       "src/lib/usCandidatePriority.ts": "sha256:9a58e7d7999f00a2051d72321cad62d06af671ce069d5d110a5899abe3bbc3eb"
     }
   },
-  "codeHash": "sha256:ff60b0668981cbd64570fe902564266b32ad1e1a58761a9babfb01371f0981b0"
+  "codeHash": "sha256:a7be012bc6aa82613b981251a74756434224c31d7f76f8c3ded260acf85648e0"
 }

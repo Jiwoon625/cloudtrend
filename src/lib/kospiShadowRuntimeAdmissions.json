@@ -80,6 +80,10 @@
     {
       "runtimeCodeHash": "sha256:ff60b0668981cbd64570fe902564266b32ad1e1a58761a9babfb01371f0981b0",
       "reviewId": "archive-error-typing-equivalence-20261107"
+    },
+    {
+      "runtimeCodeHash": "sha256:a7be012bc6aa82613b981251a74756434224c31d7f76f8c3ded260acf85648e0",
+      "reviewId": "kr-official-index-verification-20261106-v1"
     }
   ]
 }

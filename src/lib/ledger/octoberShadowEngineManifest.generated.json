@@ -29,7 +29,7 @@
       "src/lib/engine/usProspectivePortfolio.ts": "sha256:a593e9fb5e23dc353b0f1951176da4fd60e6b3858e2aa4d6e241d66e40a8324a",
       "src/lib/engine/v8SectorPriceLeadership.ts": "sha256:1161aca2b8219712ce27df35a051f13a2177c3c965db34f163b204eaa1643078",
       "src/lib/engine/v8SectorPriceLeadershipPolicy.ts": "sha256:a20de64beb856963b466aaacbf5613a58d4d179ad076df7002171fb859b99fb6",
-      "src/lib/engine/verifiedKrIndexMembership.generated.json": "sha256:fd2ae20e23ef64a495beecd2c9792783dd2d2740a3ec1329855ccc1c300c5a95",
+      "src/lib/engine/verifiedKrIndexMembership.generated.json": "sha256:4a6c093ccdcac3d104a919dfd34f6e9ded451164ce50b716295cfaef39b3ba98",
       "src/lib/engine/verifiedKrIndexMembership.ts": "sha256:db197a0db126e17d102c3c0faab69f5a5a2adef74b4a4821d5d15b7d012a3424",
       "src/lib/engine/vfConfig.ts": "sha256:d5b6fa115ff765785ead12764a29f10df2da80833de63f68af48f97d76e77573",
       "src/lib/ledger/date.ts": "sha256:81b0ae4d40041a75f9fe940914a4aa7bd3db71ce8b152e73b152a5642014a9e0",
@@ -55,5 +55,5 @@
     },
     "normalization": "ES2022_ESMODULE_PARSED_TOKEN_TREE_WITHOUT_TRIVIA_V1"
   },
-  "codeHash": "sha256:f62db333107b75961b3cb828534627d137203033324a887717978923f26cdde5"
+  "codeHash": "sha256:c76bfb242a0a5b8f55c4a96ad07a9804f40b153f23b1e33a81a26c5cdf2d315d"
 }

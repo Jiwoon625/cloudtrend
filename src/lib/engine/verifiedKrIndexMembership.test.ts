@@ -39,7 +39,11 @@ it("appends the October 30 verified snapshot without changing the original Octob
   expect(createHash("sha256").update(JSON.stringify(snapshot)).digest("hex")).toBe(
     "c8dbe33c980debbdf428ca6635fc16cfb56b70dfe193da0dfff042612298739d",
   );
-  expect(reference.snapshots.map((item) => item.asOfDate)).toEqual(["2026-10-08", "2026-10-30"]);
+  expect(reference.snapshots.map((item) => item.asOfDate)).toEqual([
+    "2026-10-08",
+    "2026-10-30",
+    "2026-11-06",
+  ]);
   const latest = reference.snapshots[1]!;
   expect(latest.dateEvidence).toContain("20261030");
   expect(latest.dateEvidence).toContain("no date column");
@@ -58,6 +62,83 @@ it("appends the October 30 verified snapshot without changing the original Octob
     for (const member of index.constituents)
       expect(Object.keys(member)).toEqual(["symbol", "name"]);
   });
+});
+
+it("preserves both prior snapshots when appending November 6 evidence", () => {
+  expect(
+    reference.snapshots
+      .slice(0, 2)
+      .map((item) => createHash("sha256").update(JSON.stringify(item)).digest("hex")),
+  ).toEqual([
+    "c8dbe33c980debbdf428ca6635fc16cfb56b70dfe193da0dfff042612298739d",
+    "7f6485720b5f12348bcee47d2b07b4d8af7c6b831dfadd67cabc52e80bb18e4c",
+  ]);
+  const latest = reference.snapshots[2]!;
+  expect(latest.asOfDate).toBe("2026-11-06");
+  expect(latest.dateEvidence).toContain("20261106");
+  expect(latest.dateEvidence).toContain("no date column");
+  expect(latest.indexes.map((index) => index.indexCode)).toEqual([
+    "KOSPI200",
+    "KOSDAQ150",
+    "KRX300",
+  ]);
+  for (const index of latest.indexes) {
+    expect(index.constituents).toHaveLength(index.count);
+    expect(new Set(index.constituents.map((member) => member.symbol)).size).toBe(index.count);
+    expect(index.sourceCsvSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(index.sourceUrl).toMatch(/^https:\/\/index\.krx\.co\.kr\//);
+    for (const member of index.constituents) {
+      expect(Object.keys(member)).toEqual(["symbol", "name"]);
+      expect(member.symbol).toMatch(/^[0-9A-Z]{6}$/);
+    }
+  }
+});
+
+it("selects November 6 only from its boundary and reverse-slices tagged membership", () => {
+  const previous = reference.snapshots[1]!;
+  const latest = reference.snapshots[2]!;
+  const symbols = new Set([
+    ...previous.indexes.flatMap((index) => index.constituents.map((member) => member.symbol)),
+    ...latest.indexes.flatMap((index) => index.constituents.map((member) => member.symbol)),
+    "033340",
+  ]);
+  for (const symbol of symbols) {
+    const before = resolveVerifiedKrIndexMembership(symbol, "2026-11-05");
+    const after = resolveVerifiedKrIndexMembership(symbol, "2026-11-06");
+    expect(before.indexMembershipsProvenance?.snapshotAsOfDate).toBe("2026-10-30");
+    expect(after.indexMembershipsProvenance?.snapshotAsOfDate).toBe("2026-11-06");
+    expect(before.indexMemberships).toEqual(
+      previous.indexes
+        .filter((index) => index.constituents.some((member) => member.symbol === symbol))
+        .map((index) => index.indexCode),
+    );
+    expect(after.indexMemberships).toEqual(
+      latest.indexes
+        .filter((index) => index.constituents.some((member) => member.symbol === symbol))
+        .map((index) => index.indexCode),
+    );
+    const isLatestMember = latest.indexes.some((index) =>
+      index.constituents.some((member) => member.symbol === symbol),
+    );
+    expect(score(symbol, "2026-11-06").rows[0]).toMatchObject({
+      status: isLatestMember ? "PASS" : "FAIL",
+      points: isLatestMember ? 2 : 0,
+    });
+    const tagged = { ...base, symbol, ...after };
+    expect(resolveInstrumentMembershipAtDate(tagged, "2026-11-05")).toEqual({
+      ...base,
+      symbol,
+      ...before,
+    });
+    expect(tagged.indexMembershipsProvenance?.snapshotAsOfDate).toBe("2026-11-06");
+    expect(resolveVerifiedKrIndexMembership(symbol, "2026-11-09").indexMemberships).toEqual(
+      after.indexMemberships,
+    );
+  }
+  expect(score("005930", "2026-11-06").rows[0]!.actual).not.toContain("이월");
+  expect(score("005930", "2026-11-09").rows[0]!.actual).toContain(
+    "KRX 공식 2026-11-06 확인 (최신 확인본 이월)",
+  );
 });
 
 it("uses the latest eligible verification date without leaking it into an earlier analysis", () => {

@@ -5,9 +5,12 @@ import { compactDashboardRow } from "@/lib/dashboardRow";
 import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
 import { isKospiRelativeMomentumConfirmed } from "@/lib/kospiRelativeQuality";
 
-export const SCREENING_CACHE_VERSION = "screening-cache-v9-current-price-20261104-v1" as const;
-export const DASHBOARD_CACHE_VERSION = "dashboard-cache-v9-current-price-20261104-v1" as const;
-export const INSTRUMENT_CACHE_VERSION = "instrument-cache-v9-current-price-20261104-v1" as const;
+export const SCREENING_CACHE_VERSION =
+  "screening-cache-v9-current-price-verified-kr-index-20261106-v1" as const;
+export const DASHBOARD_CACHE_VERSION =
+  "dashboard-cache-v9-current-price-verified-kr-index-20261106-v1" as const;
+export const INSTRUMENT_CACHE_VERSION =
+  "instrument-cache-v9-current-price-verified-kr-index-20261106-v1" as const;
 
 export interface DashboardSummary {
   publicationId?: string;
