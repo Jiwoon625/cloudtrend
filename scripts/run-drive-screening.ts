@@ -314,12 +314,13 @@ export async function runDriveScreening(
               // can never admit. For a part that is index-only, this run's coverage of every one of
               // its rows is the whole repair; anything else stays unresolved.
               const priorDate = priorPublication.asOfDate;
-              const indexOnly =
+              const hasPendingTarget = normalized.rows.some(
+                (row) => row.date === priorDate && ["STOCK", "ETF"].includes(row.type),
+              );
+              const covered =
                 normalized.rows.length > 0 &&
-                !normalized.rows.some(
-                  (row) => row.date === priorDate && ["STOCK", "ETF"].includes(row.type),
-                ) && normalized.rows.every((row) => supersessionKeys.has(sourceRowKey(row)));
-              if (indexOnly && prior.sourceRecord.id)
+                normalized.rows.every((row) => supersessionKeys.has(sourceRowKey(row)));
+              if (!hasPendingTarget && covered && prior.sourceRecord.id)
                 repairs.push({
                   sourceId: prior.sourceRecord.id,
                   fileHash: priorPublication.sourceFileHash,
