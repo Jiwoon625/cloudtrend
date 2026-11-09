@@ -185,8 +185,12 @@ def v7_manifest(raw_manifest):
     require(m.get("history_backend") == "drive" and m.get("baselineSha256") == V7_BASELINE_SHA and
             m.get("parentManifestSha256") == V7_BASELINE_SHA, "Unsupported history parent")
     require(m.get("missingSymbols") == [] and m.get("missingIndexSymbols") == [] and
-            m.get("missingSymbolCount") == 0 and m.get("correctionCount") == 0,
-            "Unresolved coverage/corrections")
+            m.get("missingSymbolCount") == 0, "Unresolved coverage")
+    corrections = m.get("correctionCount")
+    require(type(corrections) is int and corrections >= 0, "Invalid correction count")
+    reviewed = []
+    if corrections:
+        reviewed = reviewed_corrections(m, corrections)
     files = m.get("files")
     require(isinstance(files, list) and len(files) == 1 and isinstance(files[0], dict) and
             files[0].get("name") == "delta.zip", "Expected one delta package")
@@ -209,7 +213,37 @@ def v7_manifest(raw_manifest):
                 "Invalid delta member hash/size")
     require(sum(entry["bytes"] for entry in entries) <= MAX_DELTA_EXPANDED,
             "Delta expansion limit exceeded")
+    # A reviewed restatement must be carried by the very delta that overlays the old basis.
+    require(set(reviewed) <= {entry["name"] for entry in entries},
+            "Reviewed correction symbols are missing from the delta")
     return m
+
+
+def reviewed_corrections(m, count):
+    """Admit restated prices only with a complete adjusted-refresh review; never a blank override."""
+    review = m.get("correctionReview")
+    require(isinstance(review, dict) and review.get("version") == "kr-adjusted-correction-review-v1",
+            "Unresolved price corrections")
+    minimum = review.get("minimumWindowSessions")
+    require(type(minimum) is int and minimum >= 120, "Correction review window is too short")
+    windows = review.get("windowSessions")
+    require(type(windows) is int and windows >= minimum, "Correction review did not cover the window")
+    symbols = review.get("symbols")
+    require(isinstance(symbols, list) and symbols and len(set(symbols)) == len(symbols) and
+            all(isinstance(symbol, str) and re.fullmatch(r"[0-9A-Z]{6}", symbol) for symbol in symbols),
+            "Correction review symbols are invalid")
+    dates = review.get("dates")
+    require(isinstance(dates, list) and dates and
+            all(isinstance(date, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", date) for date in dates) and
+            max(dates) <= m.get("actualLatestPriceDate", ""), "Correction review dates are invalid")
+    require(review.get("accepted") is True and review.get("provider") == "TOSS_ADJUSTED_CANDLE" and
+            review.get("detectedCount") == count and review.get("symbolCount") == len(symbols) and
+            review.get("reason") == "ADJUSTED_RESTATEMENT_COVERED_BY_REFRESH_WINDOW" and
+            review.get("rejected") == [], "Correction review is not a verified provider restatement")
+    require(m.get("adjustedRefreshWindow", 0) >= minimum and
+            sorted(m.get("adjustedRefreshSymbols") or []) == sorted(symbols),
+            "Manifest adjusted-refresh coverage differs from the review")
+    return [symbol + ".csv" for symbol in symbols]
 
 
 def inspect_v7_archive(data, raw_manifest):

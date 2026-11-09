@@ -22,7 +22,11 @@ import requests
 import pandas as pd
 from bs4 import BeautifulSoup
 from tqdm.auto import tqdm
-from IPython.display import display, FileLink
+try:
+    from IPython.display import display, FileLink
+except ImportError:
+    display = print
+    FileLink = str
 
 from urllib.parse import urlparse as _bootstrap_urlparse
 
@@ -1187,6 +1191,7 @@ TOSS_CHART_GAP = .15
 TOSS_TREND_GAP = .12
 TOSS_STOCK_GAP = .35
 TOSS_INDICATOR_GAP = .12
+TOSS_INDICATOR_CHART_GAP = .12
 COLLECTION_STOP_EVENT = threading.Event()
 _ACTIVE_STATUS = {}
 _ACTIVE_STATUS_LOCK = threading.Lock()

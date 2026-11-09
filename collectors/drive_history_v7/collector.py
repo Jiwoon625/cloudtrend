@@ -6,6 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from history import BASELINE_SHA, atomic, checked, require, sha
 VERSION='drive-history-collector-v7.0-preview'
+# The engine's longest look-back (MA120/120-session eligibility). A restated basis is only
+# continuous for every indicator when the refreshed window covers at least this many sessions.
+MIN_ADJUSTED_REFRESH=120
 
 def load_observations(baseline, manifest, delta_paths=()):
     # This is coverage planning, NOT a pandas replacement for the field-level official parser.
@@ -28,20 +31,59 @@ def load_observations(baseline, manifest, delta_paths=()):
                     if r.get(field,'').strip(): values[field]=r[field]
     return dates,metadata,last_price,latest_values
 
-def incremental_plan(dates, universe, sessions, overlap=5, pending_dates=()):
+def incremental_plan(dates, universe, sessions, overlap=5, pending_dates=(), refresh_symbols=(), refresh_overlap=None):
     require(sessions and sessions==sorted(set(sessions)),'Invalid provider calendar')
     require(isinstance(overlap,int) and overlap>=1,'Overlap must be positive')
     plans=[]
+    refresh=list(refresh_symbols)
+    require(len(set(refresh))==len(refresh),'Duplicate adjusted-refresh symbol')
+    require(set(refresh)<=set(universe),'Adjusted refresh is limited to the configured universe')
+    if refresh:
+        require(isinstance(refresh_overlap,int) and refresh_overlap>overlap,
+                'Adjusted refresh window must exceed the incremental overlap')
     for symbol in universe:
         known=dates.get(symbol,set()); require(known,'New symbol requires an explicitly reviewed history bootstrap')
         first=min(known); expected=[d for d in sessions if d>=first]
         gaps=[d for d in expected if d not in known]
-        recheck=expected[-overlap:]+[d for d in pending_dates if d>=first and d<=sessions[-1]]
+        window=refresh_overlap if symbol in refresh else overlap
+        recheck=expected[-window:]+[d for d in pending_dates if d>=first and d<=sessions[-1]]
         wanted=sorted(set(gaps+recheck)); start=wanted[0] if wanted else sessions[-1]
         plans.append({'symbol':symbol,'firstObserved':first,'lastObserved':max(known),'missingSessions':gaps,
                       'recheckSessions':sorted(set(recheck)),'start':start,'end':sessions[-1],
+                      'adjustedRefresh':symbol in refresh,'windowSessions':window,
                       'providerSessions':sum(d>=start for d in sessions)})
     return plans
+
+def review_adjusted_corrections(corrections, plans, *, minimum_window=MIN_ADJUSTED_REFRESH):
+    """Decide whether detected restatements are fully covered by a requested adjusted refresh.
+
+    A restatement may only leave quarantine when every changed pair belongs to a symbol whose
+    provider candle series was re-collected over the whole indicator window. Anything else
+    stays an unresolved correction and keeps the run incomplete.
+    """
+    by_symbol={p['symbol']:p for p in plans}
+    symbols=sorted({c['symbol'] for c in corrections}); dates=sorted({c['date'] for c in corrections})
+    rejected=[]
+    for symbol in symbols:
+        plan=by_symbol.get(symbol)
+        if plan is None: rejected.append({'symbol':symbol,'reason':'SYMBOL_NOT_IN_COLLECTION_PLAN'});continue
+        if not plan.get('adjustedRefresh'): rejected.append({'symbol':symbol,'reason':'NO_ADJUSTED_REFRESH_WINDOW'});continue
+        if plan['windowSessions']<minimum_window: rejected.append({'symbol':symbol,'reason':'REFRESH_WINDOW_TOO_SHORT'});continue
+        days=sorted({c['date'] for c in corrections if c['symbol']==symbol})
+        if days and (days[0]<plan['start'] or days[-1]>plan['end']):
+            rejected.append({'symbol':symbol,'reason':'RESTATEMENT_OUTSIDE_REFRESH_WINDOW'})
+    for c in corrections:
+        if c.get('provider')!='TOSS_ADJUSTED_CANDLE':
+            rejected.append({'symbol':c['symbol'],'date':c['date'],'field':c['field'],'reason':'UNPROVEN_PROVIDER'});break
+    windows=[by_symbol[s]['windowSessions'] for s in symbols if s in by_symbol and by_symbol[s].get('adjustedRefresh')]
+    accepted=bool(symbols) and not rejected
+    return {'version':'kr-adjusted-correction-review-v1','accepted':accepted,
+            'detectedCount':len(corrections),'symbolCount':len(symbols),'symbols':symbols,
+            'pairCount':len({(c['symbol'],c['date']) for c in corrections}),'dates':dates,
+            'fields':sorted({c['field'] for c in corrections}),'provider':'TOSS_ADJUSTED_CANDLE',
+            'minimumWindowSessions':minimum_window,'windowSessions':min(windows) if windows else 0,
+            'reason':'ADJUSTED_RESTATEMENT_COVERED_BY_REFRESH_WINDOW' if accepted else 'UNCOVERED_PRICE_RESTATEMENT',
+            'rejected':rejected[:50]}
 
 @contextmanager
 def run_lock(directory):
@@ -74,8 +116,14 @@ def publication_evidence(p, sessions, checked_at):
             'calendar':{'latestSession':latest,'previousSession':previous,'sessions':sessions,'checkedAt':checked_at,
                         'source':'TOSS_BOTH_MARKET_INDEX_CANDLES'},'markets':markets}
 
-def collect(baseline, manifest, root, *, cutoff, run_id=None, excluded_symbols=(), overlap=5, parent=None):
-    """Uses the existing approved Toss/KRX endpoints in Colab; no Supabase credential is needed."""
+def collect(baseline, manifest, root, *, cutoff, run_id=None, excluded_symbols=(), overlap=5, parent=None,
+            refresh_symbols=(), refresh_overlap=MIN_ADJUSTED_REFRESH):
+    """Uses the existing approved Toss/KRX endpoints in Colab; no Supabase credential is needed.
+
+    `refresh_symbols` re-collects the provider's adjusted candle series over the full indicator
+    window for the named symbols, so a corporate-action restatement is continuous instead of
+    leaving old-basis rows next to new-basis rows.
+    """
     import pandas as pd
     import provider as p
     run_id=run_id or uuid.uuid4().hex;require(re.fullmatch(r'[A-Za-z0-9_-]{8,128}',run_id),'Invalid run ID')
@@ -119,8 +167,10 @@ def collect(baseline, manifest, root, *, cutoff, run_id=None, excluded_symbols=(
         for source in manifest['sources']:
             contract=source['sourceRecord']['validation_result'].get('krPublication',{})
             if contract.get('phase')=='PRELIMINARY':pending_dates.append(contract['asOfDate'])
-        plans=incremental_plan(dates,universe,sessions,overlap,pending_dates)
-        atomic(run/'collection-plan.json',json.dumps({'plans':plans,'lastActualPriceDates':last_price,'excludedSymbols':sorted(exclusions)},ensure_ascii=False,indent=2).encode())
+        plans=incremental_plan(dates,universe,sessions,overlap,pending_dates,
+                               refresh_symbols=refresh_symbols,refresh_overlap=refresh_overlap)
+        atomic(run/'collection-plan.json',json.dumps({'plans':plans,'lastActualPriceDates':last_price,'excludedSymbols':sorted(exclusions),
+                                                      'adjustedRefreshSymbols':sorted(set(refresh_symbols))},ensure_ascii=False,indent=2).encode())
         publication=publication_evidence(p,sessions,datetime.now(timezone.utc).isoformat())
         expected=[];missing=[];price_excluded=[];corrections=[]
         for n,plan in enumerate(plans):
@@ -164,7 +214,7 @@ def collect(baseline, manifest, root, *, cutoff, run_id=None, excluded_symbols=(
                     if field in old and pd.notna(row.get(field)) and abs(float(old[field])-float(row[field]))>1e-8:
                         corrections.append({'symbol':symbol,'date':row['date'],'field':field,'before':old[field],'after':str(row[field]),'provider':'TOSS_ADJUSTED_CANDLE','checkpointSha256':sha(file.read_bytes())})
             expected.append(file)
-            if (n+1)%10==0:print(f'검증 완료 {n+1}/{len(plans)}; 누락 {len(missing)}; 당일 가격 제외 {len(price_excluded)}')
+            if (n+1)%50==0:print(f'수집 {n+1}/{len(plans)}; 누락 {len(missing)}; 당일 가격 제외 {len(price_excluded)}; 수정주가 변경 {len(corrections)}',flush=True)
         # Index collection is independently bounded to earliest required delta; full baseline is kept for all indicators.
         first=min(p['start'] for p in plans)
         for symbol,frame in probes.items():
@@ -172,8 +222,11 @@ def collect(baseline, manifest, root, *, cutoff, run_id=None, excluded_symbols=(
             flow=p.get_market_investor_flow_frame(symbol,sum(d>=first for d in sessions));frame=p.merge_on_date(frame,[flow]);frame['tradingValue']=0;frame['tradingValueSource']='NOT_APPLICABLE_INDEX';frame['investorValueSource']='TOSS_MARKET_INDICATOR_KRW'
             file=run/'checkpoints'/f'{symbol}.csv';atomic(file,frame_csv(frame));expected.append(file)
         atomic(run/'corrections.json',json.dumps(corrections,ensure_ascii=False,indent=2).encode())
-        # Price restatement is quarantined: full adjusted history/event evidence must be reviewed before completion.
-        complete=not missing and not corrections
+        # A restatement leaves quarantine only when every changed pair sits inside a requested
+        # adjusted-refresh window of at least MIN_ADJUSTED_REFRESH sessions.
+        correction_review=review_adjusted_corrections(corrections,plans)
+        atomic(run/'correction-review.json',json.dumps(correction_review,ensure_ascii=False,indent=2).encode())
+        complete=not missing and (not corrections or correction_review['accepted'])
         archive=run/'delta.zip';buf=io.BytesIO();entries=[]
         with zipfile.ZipFile(buf,'w',zipfile.ZIP_DEFLATED) as z:
             for f in expected:
@@ -188,6 +241,8 @@ def collect(baseline, manifest, root, *, cutoff, run_id=None, excluded_symbols=(
                 'actualLatestPriceDate':cutoff,'cutoffDateInclusive':cutoff,'requestedSymbols':targets,
                 'excludedSymbols':sorted(exclusions),'missingPriceExcludedSymbols':price_excluded,'missingSymbols':[m['symbol'] for m in missing],
                 'missingSymbolCount':len(missing),'missingIndexSymbols':[], 'correctionCount':len(corrections),
+                'correctionReview':correction_review,
+                'adjustedRefreshSymbols':sorted(set(refresh_symbols)),'adjustedRefreshWindow':refresh_overlap if refresh_symbols else 0,
                 'latestKrxPublicationPending':publication['phase']=='PRELIMINARY','latestKrxPendingDate':cutoff if publication['phase']=='PRELIMINARY' else None,
                 'krxPublicationEvidence':publication,'deltaMembers':entries,
                 'files':[{'name':'delta.zip','bytes':archive.stat().st_size,'sha256':sha(archive.read_bytes())}],
