@@ -15,6 +15,7 @@ import { listSourceRecords, type LoadedSourceInput } from "./source-registry-sto
 import { downloadJson, uploadJson, sha256 } from "./analysis-run-store";
 import { uploadScreeningJsonFile } from "./screening-json-file";
 import { persistWebScreeningCaches, inputFingerprint } from "./web-screening-cache-store";
+import { liveRegistryInput } from "./live-registry-timestamp";
 import type { AnalysisResult } from "../src/lib/engine/pipeline";
 import type { ScoringConfig } from "../src/lib/engine/scoring";
 
@@ -39,7 +40,9 @@ export async function publishDriveResult(input: {
   sources: DriveResultSource[];
   expectedHeadHash: string | null;
 }) {
-  const { client, owner, inputs } = input;
+  const { client, owner } = input;
+  // Compare registry identity in the form a live read produces (see liveRegistryTimestamp).
+  const inputs = input.inputs.map(liveRegistryInput);
   const file = path.join(input.outputDir, "screening-bundle.json");
   const bundle = JSON.parse(await readFile(file, "utf8")) as {
     result: AnalysisResult;
