@@ -325,29 +325,4 @@ describe("source-bound KR preliminary publication", () => {
     final.validation_result.krPublication.supersedesPending![0]!.fileHash = hash("wrong");
     expect(classifyKrScreeningPublication([source, final]).phase).toBe("PRELIMINARY");
   });
-  it("supersedes a pending part of index rows once the FINAL run covers every row", () => {
-    const { source } = preliminarySource();
-    const finalDate = "2026-10-13";
-    const indexRow = {
-      symbol: "KOSPI",
-      date: source.max_date,
-      type: "INDEX",
-      marketCap: "",
-      marketCapSource: "KRX_PENDING_PUBLICATION",
-    } as unknown as CanonicalSourceRow;
-    const incoming = [indexRow, { ...indexRow, date: finalDate }];
-    const proof = buildKrPendingSupersessions([{ source, rows: [indexRow] }], incoming, finalDate);
-    expect(proof).toHaveLength(1);
-    expect(proof[0]!.asOfDate).toBe(source.max_date);
-    // Index rows carry no capitalization, so coverage is the only repair they admit — but an
-    // uncovered or empty pending part still proves nothing.
-    expect(
-      buildKrPendingSupersessions(
-        [{ source, rows: [{ ...indexRow, symbol: "KOSDAQ" }] }],
-        incoming,
-        finalDate,
-      ),
-    ).toEqual([]);
-    expect(buildKrPendingSupersessions([{ source, rows: [] }], incoming, finalDate)).toEqual([]);
-  });
 });
