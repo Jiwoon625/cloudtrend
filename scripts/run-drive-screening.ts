@@ -214,10 +214,7 @@ export async function runDriveScreening(
       // One run's transport parts split the same days, so a pending source can straddle the
       // boundary between two parts. Read this run's rows once and judge pending supersession
       // against all of them instead of the single part being recorded.
-      const runPartValidation = new Map<
-        string,
-        Awaited<ReturnType<typeof validateSourceBytes>>
-      >();
+      const runPartValidation = new Map<string, Awaited<ReturnType<typeof validateSourceBytes>>>();
       const runRows: CanonicalSourceRow[] = [];
       if (publication.phase === "FINAL")
         for (const part of parts) {
