@@ -3,7 +3,12 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-const mocks = vi.hoisted(() => ({ load: vi.fn(), prepared: vi.fn(), engine: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  load: vi.fn(),
+  prepared: vi.fn(),
+  engine: vi.fn(),
+  charts: vi.fn(),
+}));
 vi.mock("../scripts/drive-history-inputs", () => ({
   loadDriveHistory: mocks.load,
   KR_OWNER: "11111111-1111-1111-1111-111111111111",
@@ -11,6 +16,9 @@ vi.mock("../scripts/drive-history-inputs", () => ({
 }));
 vi.mock("../scripts/run-drive-screening", () => ({ runDriveScreening: mocks.prepared }));
 vi.mock("../scripts/run-screening", () => ({ runScreening: mocks.engine }));
+vi.mock("../scripts/prepare-drive-result-charts", () => ({
+  prepareDriveCharts: mocks.charts,
+}));
 import { runDriveHistoryScreening } from "../scripts/run-drive-history-screening";
 
 const owner = "11111111-1111-1111-1111-111111111111";
@@ -61,6 +69,7 @@ beforeEach(async () => {
   });
   mocks.prepared.mockImplementation(async (directory) => result(directory));
   mocks.engine.mockResolvedValue({ status: "COMPLETED" });
+  mocks.charts.mockResolvedValue(undefined);
 });
 afterEach(async () => {
   vi.unstubAllEnvs();
@@ -216,4 +225,34 @@ describe("Drive history execution wrapper", () => {
       expect(globalThis.fetch).toBe(transport);
     },
   );
+
+  it("prepares recent charts and restores network when publishing to dashboard", async () => {
+    actions();
+    await prepared("publish");
+    mocks.prepared.mockImplementation(async (directory) => result(directory, true));
+    const completed = await runDriveHistoryScreening(root, true);
+    expect(process.env["CT_PREPARE_CHARTS"]).toBe("true");
+    expect(mocks.charts).toHaveBeenCalledWith(path.join(root, "prepared"));
+    expect(completed).toMatchObject({
+      status: "COMPLETED_PUBLISHED",
+      dashboardPublished: true,
+      recentChartsPrepared: true,
+    });
+    expect(globalThis.fetch).toBe(transport);
+  });
+
+  it("records chart preparation warning without failing screening publication", async () => {
+    actions();
+    await prepared("publish");
+    mocks.prepared.mockImplementation(async (directory) => result(directory, true));
+    mocks.charts.mockRejectedValueOnce(new Error("Storage timeout"));
+    const completed = await runDriveHistoryScreening(root, true);
+    expect(mocks.charts).toHaveBeenCalledWith(path.join(root, "prepared"));
+    expect(completed).toMatchObject({
+      status: "COMPLETED_PUBLISHED",
+      dashboardPublished: true,
+      chartPreparationError: "Storage timeout",
+    });
+    expect(globalThis.fetch).toBe(transport);
+  });
 });

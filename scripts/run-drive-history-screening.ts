@@ -4,6 +4,7 @@ import { loadDriveHistory, KR_BASELINE_SHA, KR_OWNER } from "./drive-history-inp
 import { installDriveReadOnlyNetwork } from "./drive-history-network";
 import { runDriveScreening } from "./run-drive-screening";
 import { runScreening } from "./run-screening";
+import { prepareDriveCharts } from "./prepare-drive-result-charts";
 
 /** Reuse the frozen engine and result publisher; never register or upload source CSV. */
 export async function runDriveHistoryScreening(directory: string, publishDashboard = false) {
@@ -56,6 +57,7 @@ export async function runDriveHistoryScreening(directory: string, publishDashboa
     if (prepared) {
       if (prepared.mode !== (publishDashboard ? "publish" : "drive"))
         throw new Error("Prepared run and publication option differ");
+      if (publishDashboard) process.env["CT_PREPARE_CHARTS"] = "true";
       await runDriveScreening(path.join(root, "prepared"), false, {
         inputs,
         provenance: { kind: "VERIFIED_IMMUTABLE_DRIVE_HISTORY", ...evidence },
@@ -68,6 +70,19 @@ export async function runDriveHistoryScreening(directory: string, publishDashboa
       receipt["dashboardPublished"] = result.dashboardPublished === true;
       receipt["phase"] = result.phase;
       receipt["status"] = publishDashboard ? "COMPLETED_PUBLISHED" : "COMPLETED_CALCULATION_ONLY";
+      if (publishDashboard && result.dashboardPublished === true) {
+        boundary.restore();
+        try {
+          await prepareDriveCharts(path.join(root, "prepared"));
+          receipt["recentChartsPrepared"] = true;
+        } catch (chartError) {
+          process.stderr.write(
+            `Chart preparation warning: ${chartError instanceof Error ? chartError.message : String(chartError)}\n`,
+          );
+          receipt["chartPreparationError"] =
+            chartError instanceof Error ? chartError.message : String(chartError);
+        }
+      }
     } else {
       if (publishDashboard)
         throw new Error("Completed collection manifest required for publication");
