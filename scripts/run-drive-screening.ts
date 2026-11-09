@@ -284,7 +284,10 @@ export async function runDriveScreening(
               throw new Error(
                 "FINAL requires exact official capitalization on actual latest source rows",
               );
-            const supersessionRows = runRows.length ? runRows : validation.rows;
+            // Only this run's own parts may be read from the run-wide row set; a retained parent
+            // keeps the rows of its own part so its republished identity stays unchanged.
+            const supersessionRows =
+              group.spec === spec && runRows.length ? runRows : validation.rows;
             const supersessionKeys = new Set(supersessionRows.map((row) => sourceRowKey(row)));
             const repairs: NonNullable<typeof krPublication.supersedesPending> = [];
             for (const prior of inputs) {
