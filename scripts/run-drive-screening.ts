@@ -21,6 +21,7 @@ import {
   visitDelimitedRows,
   compareSourceRows,
 } from "../src/lib/sourceData";
+import { isIndexOnlyDatePart } from "./index-only-date-part";
 import {
   buildKrSourcePublication,
   buildKrPendingSupersessions,
@@ -248,13 +249,17 @@ export async function runDriveScreening(
             const targets = validation.rows.filter(
               (r) => r.date === krPublication.asOfDate && ["STOCK", "ETF"].includes(r.type),
             );
+            // The v7 delta carries separate KOSPI/KOSDAQ index parts. They hold verified prices and
+            // flow only, so capitalization is asserted on stock/ETF parts and skipped for index ones.
+            const indexOnlyPart = isIndexOnlyDatePart(validation.rows, krPublication.asOfDate);
             if (
-              !targets.length ||
-              targets.some(
-                (r) =>
-                  !(Number(r.marketCap) > 0) ||
-                  r["marketCapSource"] !== (r.type === "ETF" ? "KRX_ETF" : "KRX_STOCK"),
-              )
+              !indexOnlyPart &&
+              (!targets.length ||
+                targets.some(
+                  (r) =>
+                    !(Number(r.marketCap) > 0) ||
+                    r["marketCapSource"] !== (r.type === "ETF" ? "KRX_ETF" : "KRX_STOCK"),
+                ))
             )
               throw new Error(
                 "FINAL requires exact official capitalization on actual latest source rows",
