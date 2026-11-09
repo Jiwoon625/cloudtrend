@@ -135,12 +135,15 @@ export function buildKrPendingSupersessions(
   return previous.flatMap(({ source, rows }) => {
     const prior = krSourcePublication(source);
     if (prior?.phase !== "PRELIMINARY" || prior.asOfDate > asOfDate || !source.id) return [];
-    const covered = rows.every((row) => incomingRows.has(sourceRowKey(row)));
+    const covered = rows.length > 0 && rows.every((row) => incomingRows.has(sourceRowKey(row)));
     const targets = rows.filter(
       (row) => row.date === prior.asOfDate && ["STOCK", "ETF"].includes(row.type),
     );
+    // A pending part may hold only index rows (KOSPI/KOSDAQ prices and flows carry no
+    // capitalization). Coverage of those rows is the whole repair; requiring a capitalization
+    // target would leave every evening preview's index part permanently unresolved.
     const repaired =
-      targets.length > 0 &&
+      targets.length === 0 ||
       targets.every((row) => {
         const next = incomingRows.get(sourceRowKey(row));
         return (

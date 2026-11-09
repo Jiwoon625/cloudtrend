@@ -20,6 +20,7 @@ import {
   validateSourceText,
   visitDelimitedRows,
   compareSourceRows,
+  type CanonicalSourceRow,
 } from "../src/lib/sourceData";
 import { isIndexOnlyDatePart } from "./index-only-date-part";
 import {
@@ -210,13 +211,34 @@ export async function runDriveScreening(
       }
       const proofSources: DriveResultSource[] = [];
       const seen = new Set<string>();
-      for (const group of groups)
-        for (const part of group.parts) {
+      // One run's transport parts split the same days, so a pending source can straddle the
+      // boundary between two parts. Read this run's rows once and judge pending supersession
+      // against all of them instead of the single part being recorded.
+      const runPartValidation = new Map<
+        string,
+        Awaited<ReturnType<typeof validateSourceBytes>>
+      >();
+      const runRows: CanonicalSourceRow[] = [];
+      if (publication.phase === "FINAL")
+        for (const part of parts) {
           const validation = await validateSourceBytes({
             bytes: part.bytes,
             filename: part.path,
-            streamingCsv: group.publication.phase !== "FINAL",
+            streamingCsv: false,
           });
+          if (!validation.valid) throw new Error(`Saved CSV validation failed: ${part.path}`);
+          runPartValidation.set(part.path, validation);
+          runRows.push(...validation.rows);
+        }
+      for (const group of groups)
+        for (const part of group.parts) {
+          const validation =
+            (group.spec === spec ? runPartValidation.get(part.path) : undefined) ??
+            (await validateSourceBytes({
+              bytes: part.bytes,
+              filename: part.path,
+              streamingCsv: group.publication.phase !== "FINAL",
+            }));
           if (!validation.valid) throw new Error(`Saved CSV validation failed: ${part.path}`);
           if (group.spec === spec && missingSessions.size) {
             let symbol = -1,
@@ -264,12 +286,13 @@ export async function runDriveScreening(
               throw new Error(
                 "FINAL requires exact official capitalization on actual latest source rows",
               );
+            const supersessionRows = runRows.length ? runRows : validation.rows;
             const repairs: NonNullable<typeof krPublication.supersedesPending> = [];
             for (const prior of inputs) {
               if (
                 !prior.sourceRecord ||
                 krSourcePublication(prior.sourceRecord)?.phase !== "PRELIMINARY" ||
-                prior.sourceRecord.row_count > validation.rows.length
+                prior.sourceRecord.row_count > supersessionRows.length
               )
                 continue;
               const normalized = prior.validation.rows.length
@@ -280,7 +303,7 @@ export async function runDriveScreening(
               repairs.push(
                 ...buildKrPendingSupersessions(
                   [{ source: prior.sourceRecord, rows: normalized.rows }],
-                  validation.rows,
+                  supersessionRows,
                   krPublication.asOfDate,
                 ),
               );
