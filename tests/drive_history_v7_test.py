@@ -4,7 +4,7 @@ from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'collectors'/'drive_history_v7'))
 import history as h
-from collector import incremental_plan,run_lock,collect
+from collector import incremental_plan,review_adjusted_corrections,run_lock,collect,MIN_ADJUSTED_REFRESH
 spec=importlib.util.spec_from_file_location('v7transfer',ROOT/'scripts'/'drive-history-transfer.py');transport=importlib.util.module_from_spec(spec);spec.loader.exec_module(transport)
 
 class FakeDrive:
@@ -12,6 +12,43 @@ class FakeDrive:
     def download(self,key):return self.objects[key]
 
 class Contracts(unittest.TestCase):
+    def test_adjusted_refresh_windows_the_full_indicator_span(self):
+        sessions=[f'2026-{m:02d}-{d:02d}' for m in range(1,7) for d in range(1,29)][:130]
+        plans={p['symbol']:p for p in incremental_plan(
+            {'000001':set(sessions),'000002':set(sessions)},['000001','000002'],sessions,
+            overlap=1,refresh_symbols=['000002'],refresh_overlap=MIN_ADJUSTED_REFRESH)}
+        self.assertEqual(plans['000001']['providerSessions'],1);self.assertFalse(plans['000001']['adjustedRefresh'])
+        self.assertEqual(plans['000002']['providerSessions'],MIN_ADJUSTED_REFRESH);self.assertTrue(plans['000002']['adjustedRefresh'])
+        self.assertEqual(plans['000002']['start'],sessions[-MIN_ADJUSTED_REFRESH])
+        with self.assertRaisesRegex(ValueError,'window must exceed'):
+            incremental_plan({'000001':set(sessions)},['000001'],sessions,overlap=5,
+                             refresh_symbols=['000001'],refresh_overlap=5)
+        with self.assertRaisesRegex(ValueError,'configured universe'):
+            incremental_plan({'000001':set(sessions)},['000001'],sessions,overlap=5,
+                             refresh_symbols=['999999'])
+        with self.assertRaisesRegex(ValueError,'Duplicate'):
+            incremental_plan({'000001':set(sessions)},['000001'],sessions,overlap=5,
+                             refresh_symbols=['000001','000001'])
+
+    def test_restatement_leaves_quarantine_only_when_covered(self):
+        sessions=[f'2026-{m:02d}-{d:02d}' for m in range(1,7) for d in range(1,29)][:130]
+        plans=incremental_plan({'000001':set(sessions),'000002':set(sessions)},['000001','000002'],sessions,
+                               overlap=1,refresh_symbols=['000002'],refresh_overlap=MIN_ADJUSTED_REFRESH)
+        pair={'symbol':'000002','date':sessions[-3],'field':'close','before':'100','after':'50','provider':'TOSS_ADJUSTED_CANDLE'}
+        accepted=review_adjusted_corrections([pair],plans)
+        self.assertTrue(accepted['accepted']);self.assertEqual(accepted['detectedCount'],1)
+        self.assertEqual(accepted['windowSessions'],MIN_ADJUSTED_REFRESH)
+        unscoped=review_adjusted_corrections([{**pair,'symbol':'000001'}],plans)
+        self.assertFalse(unscoped['accepted']);self.assertEqual(unscoped['rejected'][0]['reason'],'NO_ADJUSTED_REFRESH_WINDOW')
+        unproven=review_adjusted_corrections([{**pair,'provider':'TOSS_RAW_CANDLE'}],plans)
+        self.assertFalse(unproven['accepted']);self.assertEqual(unproven['reason'],'UNCOVERED_PRICE_RESTATEMENT')
+        outside=review_adjusted_corrections([{**pair,'date':sessions[-MIN_ADJUSTED_REFRESH-1]}],plans)
+        self.assertFalse(outside['accepted']);self.assertEqual(outside['rejected'][0]['reason'],'RESTATEMENT_OUTSIDE_REFRESH_WINDOW')
+        short=review_adjusted_corrections([pair],incremental_plan(
+            {'000002':set(sessions)},['000002'],sessions,overlap=1,refresh_symbols=['000002'],refresh_overlap=60))
+        self.assertFalse(short['accepted']);self.assertEqual(short['rejected'][0]['reason'],'REFRESH_WINDOW_TOO_SHORT')
+        self.assertFalse(review_adjusted_corrections([],plans)['accepted'])
+
     def test_gaps_are_not_recent_three_calendar_days(self):
         sessions=['2026-11-02','2026-11-03','2026-11-04','2026-11-05','2026-11-06']
         p=incremental_plan({'000001':{'2026-11-02','2026-11-05'}},['000001'],sessions,overlap=1)[0]

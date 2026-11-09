@@ -330,5 +330,73 @@ class DeltaSafetyTests(unittest.TestCase):
             t.inspect_v7_archive(archive + b'tamper', raw)
 
 
+class AdjustedCorrectionTests(unittest.TestCase):
+    """A restated basis may pass only with a complete, provider-proven refresh review."""
+
+    review = {'version': 'kr-adjusted-correction-review-v1', 'accepted': True, 'detectedCount': 3,
+              'symbolCount': 1, 'symbols': ['005930'], 'pairCount': 1, 'dates': ['2026-10-26'],
+              'fields': ['close', 'high', 'low', 'open'], 'provider': 'TOSS_ADJUSTED_CANDLE',
+              'minimumWindowSessions': 120, 'windowSessions': 120,
+              'reason': 'ADJUSTED_RESTATEMENT_COVERED_BY_REFRESH_WINDOW', 'rejected': []}
+
+    def manifest(self, **changes):
+        raw, _ = fixture()
+        m = json.loads(raw)
+        m.update({'correctionCount': 3, 'correctionReview': copy.deepcopy(self.review),
+                  'adjustedRefreshSymbols': ['005930'], 'adjustedRefreshWindow': 120})
+        for key, value in changes.items():
+            if key in ('correctionReview', 'reviewKey'):
+                continue
+            m[key] = value
+        for key, value in changes.items():
+            if key == 'correctionReview':
+                m['correctionReview'][value[0]] = value[1]
+            if key == 'reviewKey':
+                m['correctionReview'].pop(value, None)
+        return m
+
+    def test_verified_refresh_review_is_admitted(self):
+        m = self.manifest()
+        self.assertEqual(t.v7_manifest(json.dumps(m).encode())['correctionCount'], 3)
+
+    def test_absent_or_rejected_review_keeps_the_run_quarantined(self):
+        for changes, message in [({'reviewKey': 'version'}, 'Unresolved price corrections'),
+                                 ({'correctionReview': ('accepted', False)}, 'not a verified'),
+                                 ({'correctionReview': ('rejected', [{'symbol': '005930'}])}, 'not a verified'),
+                                 ({'correctionReview': ('reason', 'UNCOVERED_PRICE_RESTATEMENT')}, 'not a verified'),
+                                 ({'correctionReview': ('provider', 'OTHER')}, 'not a verified'),
+                                 ({'correctionReview': ('detectedCount', 4)}, 'not a verified'),
+                                 ({'correctionReview': ('minimumWindowSessions', 60),
+                                   'adjustedRefreshWindow': 60}, 'too short'),
+                                 ({'correctionReview': ('windowSessions', 60)}, 'did not cover'),
+                                 ({'correctionReview': ('symbols', [])}, 'symbols are invalid'),
+                                 ({'correctionReview': ('symbols', ['005930', '005930'])}, 'symbols are invalid'),
+                                 ({'correctionReview': ('symbols', ['../../etc']),
+                                   'adjustedRefreshSymbols': ['../../etc']}, 'symbols are invalid'),
+                                 ({'correctionReview': ('dates', ['2026-12-01'])}, 'dates are invalid'),
+                                 ({'adjustedRefreshSymbols': ['000660']}, 'coverage differs'),
+                                 ({'adjustedRefreshWindow': 119}, 'coverage differs')]:
+            with self.subTest(changes=changes):
+                with self.assertRaisesRegex(ValueError, message):
+                    t.v7_manifest(json.dumps(self.manifest(**changes)).encode())
+
+    def test_zero_corrections_still_requires_no_review(self):
+        raw, _ = fixture()
+        self.assertEqual(t.v7_manifest(raw)['correctionCount'], 0)
+        with self.assertRaisesRegex(ValueError, 'Invalid correction count'):
+            t.v7_manifest(json.dumps({**json.loads(raw), 'correctionCount': -1}).encode())
+
+    def test_reviewed_symbol_must_be_carried_by_the_admitted_delta(self):
+        members = [('KOSPI.csv', b'symbol,securityType,date,close\nKOSPI,INDEX,2026-11-06,2500\n'),
+                   ('000660.csv', b'symbol,securityType,date,close\n000660,STOCK,2026-11-06,100\n'),
+                   ('KOSDAQ.csv', b'symbol,securityType,date,close\nKOSDAQ,INDEX,2026-11-06,800\n')]
+        raw, _ = fixture(members=members)
+        m = json.loads(raw)
+        m.update({'correctionCount': 3, 'correctionReview': copy.deepcopy(self.review),
+                  'adjustedRefreshSymbols': ['005930'], 'adjustedRefreshWindow': 120})
+        with self.assertRaisesRegex(ValueError, 'missing from the delta'):
+            t.v7_manifest(json.dumps(m).encode())
+
+
 if __name__ == '__main__':
     unittest.main()

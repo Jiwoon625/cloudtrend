@@ -25,7 +25,9 @@
 - `drive-history-inputs.ts`: 실제 CSV를 현재 `validateSourceBytes`로 재검증하고 등록 file/data/schema hash와 비교한다. 불일치는 원래 값과 새 값을 영수증에 따로 남기고 중단한다. 등록값을 수정하지 않는다.
 - `collector.py`: 개별 종목의 실제 관측일과 두 시장 지수 API의 거래일을 비교해 전체 누락 구간과 겹침 재확인 구간을 계획한다. 기존 configured universe만 유지하고 신규 종목 자동 편입을 거부한다. 종목별 미확인 가격은 제외 목록에 기록한다. 휴장일을 평일 규칙으로 합성하지 않는다.
 - 과거 52개와 새 CSV는 **분리된 순서 있는 입력 층**이다. Colab에서 과거를 concat/drop_duplicates로 병합하지 않는다. Actions에서 현행 `parseManualMarketDataWithReferences`와 frozen parser가 필드별 보강·0·공백·KRX reference 우선순위·ETF 매핑을 그대로 처리한다.
-- 전체 baseline을 유지하므로 MA60 기준으로 역사를 자르지 않는다. 현재 엔진의 MA120/120일 적격성, 수급 20일 변화, 시장 및 ETF 지표도 같은 원천을 쓴다. 요청한 겹침 구간의 수정주가 변화는 공급자·날짜·변경 필드·checkpoint hash를 기록하고 완료를 보류한다. 확정 신호를 다시 쓰지 않는다.
+- 전체 baseline을 유지하므로 MA60 기준으로 역사를 자르지 않는다. 현재 엔진의 MA120/120일 적격성, 수급 20일 변화, 시장 및 ETF 지표도 같은 원천을 쓴다. 요청한 겹침 구간의 수정주가 변화는 공급자·날짜·변경 필드·checkpoint hash를 기록한다.
+- 기업행사로 수정주가 계열이 새 기준으로 재계산되면, 영향을 받은 종목만 `refresh_symbols`로 지정해 최근 120거래일(엔진 최장 look-back)을 다시 수집한다. 그 120봉 창 안의 변경은 `correctionReview`(공급자 `TOSS_ADJUSTED_CANDLE`, 종목·날짜·창 길이·감사 해시)로 입증된 경우에만 완료·게시할 수 있고, 창을 벗어난 변경이나 리프레시되지 않은 종목의 변경은 기존처럼 완료를 보류한다. 이 방식은 불변 baseline을 덮어쓰지 않고 순서 있는 delta 층으로 같은 (종목, 날짜) 행을 새 기준으로 덮어써, MA120·120일 적격성·수급 20일 어떤 지표도 옛 기준과 새 기준을 한 창 안에서 섞지 않는다.
+- 같은 날짜 대량 수정이 감지되면 별도 실행을 기다리지 않고 그 종목들을 120봉 리프레시로 다시 수집하는 것이 운영 원칙이다. 수정이 100종목 이상이면 다음 정기 수집 전에 즉시 리프레시 실행을 띄운다.
 - `provider.py`는 기존 Drive의 KR v3.3.3 bundle(SHA256 `91d4992be9a2d06916ee2e425cb43d210350eed5e73a83429dbb4d041c8b7aba`)의 검토 대상 함수들을 정적 Python 코드로 분리한 것이다. 기존 수집기 파일을 수정하지 않았다. 기존 publisher·pickle·업로드된 코드 실행을 포함하지 않는다. 응답 본문을 오류 로그에 남기지 않는다.
 - FINAL/PRELIMINARY는 기존 publication 계약을 검증하며 임의 FINAL 승격을 하지 않는다. KRX 지연은 직전 실제 거래일 공표가 확인되는 경우만 허용한다. 누락 날짜·시장 불일치·입력 충돌은 완료를 차단한다.
 - `drive-history-network.ts`는 Supabase source/screening 및 source/us-screening 요청을 보내기 전에 차단한다. DB 설정·이전 snapshot·승인된 operational-index/cache 읽기는 별도 집계한다. 계산 중 모든 Supabase 변경 요청도 차단하며 게시 직전에만 제한된 결과 경로를 연다.
