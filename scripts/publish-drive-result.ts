@@ -107,8 +107,7 @@ export async function publishDriveResult(input: {
     for (const entry of carried) {
       const published = entry.record;
       const target = inputs.find((i) => i.sourceRecord?.id === published.id);
-      if (target)
-        target.sourceRecord = published as unknown as LoadedSourceInput["sourceRecord"];
+      if (target) target.sourceRecord = published as unknown as LoadedSourceInput["sourceRecord"];
     }
   }
   const actual = inputs.flatMap((i) => (i.sourceRecord ? [i.sourceRecord] : []));
