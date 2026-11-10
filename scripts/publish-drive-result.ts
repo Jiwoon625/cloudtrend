@@ -102,6 +102,13 @@ export async function publishDriveResult(input: {
     )
       throw new Error("이전 Drive 입력 이력이 누락되거나 변경됐습니다.");
     input.sources = [...carried, ...input.sources.slice(carried.length)];
+    // Judge the calculation on the same contracts that will be published: a parent's identity
+    // (and the fingerprint that binds it) must use the published contract, not a re-derivation.
+    for (const entry of carried) {
+      const published = entry.record;
+      const target = inputs.find((i) => i.sourceRecord?.id === published.id);
+      if (target) target.sourceRecord = published as LoadedSourceInput["sourceRecord"];
+    }
   }
   const actual = inputs.flatMap((i) => (i.sourceRecord ? [i.sourceRecord] : []));
   const verifiedPhase = classifyKrScreeningPublication(actual, bundle.result.asOfDate).phase;
