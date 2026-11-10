@@ -1,46 +1,36 @@
-name: CloudTrend Drive history v7
+name: Conditional Drive input-head recovery
 on:
   workflow_dispatch:
     inputs:
       run_manifest_id:
-        description: 완료된 새 수집 manifest file ID (비우면 고정 baseline만 계산)
+        description: Approved r3 manifest identity (recovery only, no calculation)
         type: string
-        required: false
+        required: true
       run_manifest_sha256:
-        description: 위 manifest의 SHA256 (64자리)
+        description: Approved r3 manifest SHA256
         type: string
-        required: false
+        required: true
       result_folder_id:
-        description: 비공개 Drive 결과 폴더 ID
+        description: Existing private Drive evidence folder
         type: string
         required: true
       publish_dashboard:
-        description: 검증 후 결과만 홈페이지에 게시 (기본값은 계산만)
+        description: Must remain false; this operation only restores the verified prior input head
         type: boolean
         default: false
-  pull_request:
-    paths:
-      - ".github/workflows/drive-history-screening-v7.yml"
-      - "scripts/*drive-history*"
-      - "scripts/run-drive-screening.ts"
-      - "scripts/drive-screening-transfer.py"
-      - "tests/drive_v7_transfer_test.py"
-      - "collectors/drive_history_v7/**"
-      - "tests/drive_history_v7_test.py"
-      - "tests/drive-history-v7.test.ts"
-      - "tests/drive-history-runner.test.ts"
 permissions:
   contents: read
-# Serialize result publication with every existing screening writer.
 concurrency:
-  group: ${{ github.event_name == 'workflow_dispatch' && 'CloudTrend screening-writer' || format('CloudTrend v7-validation-{0}', github.ref) }}
+  group: CloudTrend screening-writer
   cancel-in-progress: false
 jobs:
-  test:
-    if: github.event_name == 'pull_request'
+  recover-head:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -48,75 +38,53 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Check recovery-only invocation
+        env:
+          RUN_MANIFEST_ID: ${{ inputs.run_manifest_id }}
+          RUN_MANIFEST_SHA256: ${{ inputs.run_manifest_sha256 }}
+          RESULT_FOLDER_ID: ${{ inputs.result_folder_id }}
+          PUBLISH_DASHBOARD: ${{ inputs.publish_dashboard }}
+        run: |
+          test "$PUBLISH_DASHBOARD" = false
+          test "$RUN_MANIFEST_ID" = 1cWurTJFLbo4bdDJ1HLX59WRbhw4pgmuv
+          test "$RUN_MANIFEST_SHA256" = 87dd6bf35065e3d9f3bea039817a82b697c5a62b5fdc205b9fc9eea2f7434a5b
+          test "$RESULT_FOLDER_ID" = "$(python -c 'import json; print(json.load(open(".github/operations/drive-chart-restoration.json"))["resultFolderId"])')"
       - run: npm ci --ignore-scripts
-      - run: npx tsc --noEmit -p tsconfig.drive-history.json
-      - run: pip install -r collectors/drive_history_v7/requirements.txt
-      - run: python -m unittest discover -s tests -p 'drive_*test.py'
-      - run: npx vitest run --config scripts/drive-screening.config.ts tests/drive-history-v7.test.ts tests/drive-history-runner.test.ts tests/drive-source.test.ts tests/drive-parent-contracts.test.ts tests/drive-publication.test.ts tests/drive-publication-publisher.test.ts tests/drive-publication-writes.test.ts
-  calculate:
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
-      GOOGLE_DRIVE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS_JSON }}
-      RUN_MANIFEST_ID: ${{ inputs.run_manifest_id }}
-      RUN_MANIFEST_SHA256: ${{ inputs.run_manifest_sha256 }}
-      RESULT_FOLDER_ID: ${{ inputs.result_folder_id }}
-      PUBLISH_DASHBOARD: ${{ inputs.publish_dashboard }}
-      NODE_OPTIONS: --max-old-space-size=5120
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Check execution configuration
-        run: |
-          if test "$PUBLISH_DASHBOARD" = true; then
-            test -n "$RUN_MANIFEST_ID"
-            test -n "$RUN_MANIFEST_SHA256"
-          fi
-          test -n "$GOOGLE_DRIVE_CREDENTIALS_JSON"
-          test -n "$SUPABASE_URL"
-          test -n "$SUPABASE_SERVICE_ROLE_KEY"
-          test -n "$SUPABASE_USER_ID"
-          test -n "$RESULT_FOLDER_ID"
-      - run: npm ci --ignore-scripts
-      - name: Read private Drive baseline and verified delta (no cache required)
-        run: |
-          args=()
-          if test -n "$RUN_MANIFEST_ID"; then
-            test -n "$RUN_MANIFEST_SHA256"
-            args+=(--manifest-id "$RUN_MANIFEST_ID" --manifest-sha "$RUN_MANIFEST_SHA256")
-          fi
-          if test "$PUBLISH_DASHBOARD" = true; then args+=(--publish); fi
-          python scripts/drive-history-transfer.py prepare --result-folder "$RESULT_FOLDER_ID" "${args[@]}"
-      - name: Build official signal versions
-        run: npx vite-node --config scripts/drive-screening.config.ts scripts/build-signal-manifest.ts
-      - name: Calculate with official engine; allow only opted-in result writes
-        run: /usr/bin/time -v npx vite-node --config scripts/drive-screening.config.ts scripts/run-drive-history-screening.ts
-      - name: Save receipts/results to private Drive and verify readback
+      - run: npx tsc --noEmit -p tsconfig.drive-head-recovery.json
+      - run: npx vitest run --config scripts/drive-screening.config.ts tests/recover-drive-input-head.test.ts
+      - name: Inspect exact failed head and verified prior caches without writes
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: npx vite-node --script scripts/recover-drive-input-head.ts
+      - name: Restore only the verified previous input head and read back both cache generations
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+        run: npx vite-node --script scripts/recover-drive-input-head.ts --apply
+      - name: Save recovery evidence only to private Drive with readback verification
         if: always()
-        run: |
-          if test -f drive-history-work/execution-receipt.json; then
-            python scripts/drive-history-transfer.py save --result-folder "$RESULT_FOLDER_ID"
-          fi
-      - name: Summary
-        if: always()
+        env:
+          GOOGLE_DRIVE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS_JSON }}
+          RESULT_FOLDER_ID: ${{ inputs.result_folder_id }}
         run: |
           python - <<'PY'
-          import json,os
+          import io, json, os, sys, zipfile
           from pathlib import Path
-          p=Path('drive-history-work/execution-receipt.json')
-          if p.exists():
-              r=json.loads(p.read_text())
-              with open(os.environ['GITHUB_STEP_SUMMARY'],'a') as f:
-                  f.write(f"상태: {r['status']} · 홈페이지 게시: {r.get('dashboardPublished', False)} · 원천: Drive\n")
-                  f.write(f"메모리 최대: {r['peakRssBytes']/1024**3:.2f} GiB · 소요: {r['elapsedMs']/1000:.1f}초\n")
+          report = Path('drive-input-head-recovery-report.json')
+          if not report.exists():
+              sys.exit(0)
+          approved = json.loads(Path('.github/operations/drive-chart-restoration.json').read_text())['resultFolderId']
+          if os.environ['RESULT_FOLDER_ID'] != approved:
+              raise ValueError('Unexpected recovery evidence destination')
+          sys.path.insert(0, 'collectors/drive_history_v7')
+          from history import Drive
+          stream = io.BytesIO()
+          with zipfile.ZipFile(stream, 'w', zipfile.ZIP_DEFLATED) as archive:
+              archive.write(report, report.name)
+          name = 'drive-head-recovery-' + os.environ['GITHUB_RUN_ID'] + '-' + os.environ['GITHUB_RUN_ATTEMPT'] + '.zip'
+          saved = Drive().upload(approved, name, stream.getvalue())
+          print(json.dumps({'resultFileId': saved['id'], 'readbackVerified': True}))
           PY

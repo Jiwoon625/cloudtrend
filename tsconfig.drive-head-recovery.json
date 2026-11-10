@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["scripts/recover-drive-input-head.ts", "tests/recover-drive-input-head.test.ts"],
+  "compilerOptions": { "noImplicitReturns": false }
+}
