@@ -485,3 +485,170 @@ test("multiday delta rejects missing symbols, indexes, intermediate sessions and
   expect(mocks.publish).not.toHaveBeenCalled();
   expect(history.beforePublish).not.toHaveBeenCalled();
 });
+
+async function publishedSplitParent() {
+  const { mkdir, copyFile } = await import("node:fs/promises");
+  const { stableCacheJson } = await import("../src/lib/screeningCacheContract");
+  const { buildKrSourcePublication } = await import("../src/lib/krScreeningPublication.server");
+  const history = await injectedHistory("2026-10-06");
+  const prior = history.inputs[0]!.sourceRecord;
+  prior.validation_result = {
+    ...prior.validation_result,
+    krPublication: buildKrSourcePublication(
+      preliminarySource().source.validation_result.krPublication,
+      prior,
+    ),
+  };
+  const manifest = JSON.parse(
+    await readFile(path.join(directory, "collector-manifest.json"), "utf8"),
+  );
+  manifest.latestKrxPublicationPending = false;
+  manifest.krxPublicationEvidence.phase = "FINAL";
+  for (const market of Object.values(manifest.krxPublicationEvidence.markets) as Record<
+    string,
+    unknown
+  >[])
+    Object.assign(market, {
+      status: "PUBLISHED",
+      lastPublishedDate: "2026-10-06",
+      usableRows: 1,
+      rawRows: 1,
+    });
+  const header = "symbol,name,market,type,date,close,volume,marketCapSource,marketCap\n";
+  const files = [
+    header + "KOSPI,Index,INDEX,INDEX,2026-10-06,2500,0,,\n",
+    header + "TEST,Synthetic,KOSPI,STOCK,2026-10-06,100,1000,KRX_STOCK,100000000000\n",
+  ];
+  manifest.csv = files.map((csv, i) => ({
+    file: `part-${i}.csv`,
+    sha256: sha(csv),
+    bytes: Buffer.byteLength(csv),
+  }));
+  Object.assign(spec, {
+    mode: "publish",
+    parents: [],
+    expectedHeadHash: null,
+    manifestSha256: sha(JSON.stringify(manifest)),
+    parts: manifest.csv.map((p: { file: string; sha256: string }) => ({
+      path: p.file,
+      sha256: p.sha256,
+    })),
+  });
+  await writeFile(path.join(directory, "input.json"), JSON.stringify(spec));
+  await writeFile(path.join(directory, "collector-manifest.json"), JSON.stringify(manifest));
+  for (let i = 0; i < files.length; i++)
+    await writeFile(path.join(directory, `part-${i}.csv`), files[i]!);
+  await runDriveScreening(directory, false, history);
+  const sources = structuredClone(mocks.publish.mock.calls[0]![0].sources);
+  expect(sources[0].record.validation_result.krPublication.supersedesPending).toHaveLength(1);
+  const parentDir = path.join(directory, "parent-000");
+  await mkdir(parentDir);
+  for (const name of ["input.json", "collector-manifest.json", "part-0.csv", "part-1.csv"])
+    await copyFile(path.join(directory, name), path.join(parentDir, name));
+  const head = {
+    version: "drive-input-head-v1",
+    drivePublication: {
+      version: "drive-result-publication-v1",
+      baseFingerprint: sha("historical-baseline"),
+      asOfDate: "2026-10-06",
+      phase: "FINAL",
+      sources,
+    },
+  };
+  mocks.head.mockResolvedValue(head);
+  manifest.runId = "current-run-index-only";
+  manifest.csv = manifest.csv.slice(0, 1);
+  Object.assign(spec, {
+    runId: manifest.runId,
+    parents: ["parent-000"],
+    expectedHeadHash: sha(stableCacheJson(head)),
+    manifestSha256: sha(JSON.stringify(manifest)),
+    parts: (spec.parts as unknown[]).slice(0, 1),
+  });
+  await writeFile(path.join(directory, "input.json"), JSON.stringify(spec));
+  await writeFile(path.join(directory, "collector-manifest.json"), JSON.stringify(manifest));
+  mocks.run.mockClear();
+  mocks.publish.mockClear();
+  history.beforePublish.mockClear();
+  return { history, head, sources };
+}
+
+test.each(["drive", "publish"])(
+  "%s calculation preserves published across-part parent repairs before scoring",
+  async (mode) => {
+    const { classifyKrScreeningPublication } = await import("../src/lib/krScreeningPublication");
+    const { history, sources } = await publishedSplitParent();
+    spec.mode = mode;
+    await writeFile(path.join(directory, "input.json"), JSON.stringify(spec));
+    await runDriveScreening(directory, false, history);
+    const inputs = mocks.run.mock.calls[0]![1];
+    expect(
+      classifyKrScreeningPublication(
+        inputs.map((i: (typeof history.inputs)[number]) => i.sourceRecord),
+        "2026-10-06",
+      ).phase,
+    ).toBe("FINAL");
+    expect(inputs[1].sourceRecord.validation_result).toEqual(sources[0].record.validation_result);
+    expect(
+      inputs[3].sourceRecord.validation_result.krPublication.supersedesPending,
+    ).toBeUndefined();
+    if (mode === "publish")
+      expect(mocks.publish.mock.calls[0]![0].sources.slice(0, 2)).toEqual(sources);
+  },
+);
+
+test.each(["missing", "reordered", "archive", "duplicate", "bytes", "manifest", "current-borrow"])(
+  "invalid %s parent fails before calculation and publication",
+  async (mutation) => {
+    const { history } = await publishedSplitParent();
+    const p = path.join(directory, "parent-000/input.json");
+    const parent = JSON.parse(await readFile(p, "utf8"));
+    if (mutation === "missing") parent.parts.pop();
+    if (mutation === "reordered") parent.parts.reverse();
+    if (mutation === "archive") parent.archiveSha256 = sha("modified");
+    if (mutation === "manifest") {
+      const file = path.join(directory, "parent-000/collector-manifest.json");
+      const manifest = JSON.parse(await readFile(file, "utf8"));
+      manifest.extraChangedField = "not the published manifest";
+      await writeFile(file, JSON.stringify(manifest));
+      parent.manifestSha256 = sha(JSON.stringify(manifest));
+    }
+    if (mutation === "duplicate") spec.parents = ["parent-000", "parent-000"];
+    if (mutation === "bytes")
+      await writeFile(path.join(directory, "parent-000/part-0.csv"), "changed");
+    if (mutation === "current-borrow") spec.parents = [];
+    await writeFile(p, JSON.stringify(parent));
+    await writeFile(path.join(directory, "input.json"), JSON.stringify(spec));
+    await expect(runDriveScreening(directory, false, history)).rejects.toThrow();
+    expect(mocks.run).not.toHaveBeenCalled();
+    expect(mocks.publish).not.toHaveBeenCalled();
+    expect(history.beforePublish).not.toHaveBeenCalled();
+  },
+);
+
+test.each(["drive", "publish"])(
+  "%s exact current archive already in the published parents is idempotent",
+  async (mode) => {
+    const { copyFile } = await import("node:fs/promises");
+    const { classifyKrScreeningPublication } = await import("../src/lib/krScreeningPublication");
+    const { history, sources } = await publishedSplitParent();
+    const checkpoint = { parents: spec.parents, expectedHeadHash: spec.expectedHeadHash };
+    spec = JSON.parse(await readFile(path.join(directory, "parent-000/input.json"), "utf8"));
+    Object.assign(spec, checkpoint, { mode });
+    await writeFile(path.join(directory, "input.json"), JSON.stringify(spec));
+    await copyFile(
+      path.join(directory, "parent-000/collector-manifest.json"),
+      path.join(directory, "collector-manifest.json"),
+    );
+    await runDriveScreening(directory, false, history);
+    const inputs = mocks.run.mock.calls[0]![1];
+    expect(inputs).toHaveLength(3);
+    expect(
+      classifyKrScreeningPublication(
+        inputs.map((i: (typeof history.inputs)[number]) => i.sourceRecord),
+        "2026-10-06",
+      ).phase,
+    ).toBe("FINAL");
+    if (mode === "publish") expect(mocks.publish.mock.calls[0]![0].sources).toEqual(sources);
+  },
+);

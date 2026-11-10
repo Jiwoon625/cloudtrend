@@ -4,6 +4,7 @@ import { validDate } from "./ledger/date";
 import { selectKrxReviewReference, type KrxReviewObservation } from "./krxReviewReference";
 import { calculateKrxPreliminary } from "./krxPreliminary";
 import type { MarketDataset } from "./engine/dataset";
+import type { DailyPrice } from "./engine/types";
 import type { AnalysisResult } from "./engine/pipeline";
 
 const normalize = (key: string) => key.replace(/\s|_/g, "").toLowerCase();
@@ -30,6 +31,10 @@ const referenceColumns = new Set([
   "listedshares",
   "etfmarketcap",
   "etftradingvalue",
+  "tradingvalue",
+  "amount",
+  "tradingamount",
+  "거래대금",
   "etfnav",
   "etfnetassettotalamount",
   "etflistedunits",
@@ -56,6 +61,8 @@ const chartAliases: Record<string, string[]> = {
   etfUnderlyingIndexClose: ["etfunderlyingindexclose"],
   marketCapSource: ["marketcapsource"],
   tradingValueSource: ["tradingvaluesource"],
+  etfTradingValue: ["etftradingvalue"],
+  tradingValue: ["tradingvalue", "amount", "tradingamount", "거래대금"],
 };
 const chartCsvColumns = new Map(
   Object.entries(chartAliases).flatMap(([field, aliases]) =>
@@ -68,7 +75,7 @@ const chartField = (raw: Record<string, unknown>, field: string): unknown => {
   return undefined;
 };
 
-/** Minimal independent presentation parser: no edits to the frozen engine parser. */
+/** Current input adapter and presentation evidence; the frozen replay parser stays intact. */
 export function parseManualMarketDataWithReferences(
   ...args: Parameters<typeof parseManualMarketData>
 ) {
@@ -80,6 +87,9 @@ export function parseManualMarketDataWithReferences(
   >();
   const symbols = new Map(parsed.dataset.instruments.map((i) => [i.symbol, i.instrumentType]));
   const acceptedCloses = new Map<string, number>();
+  // Retain only a same-row witness from the last accepted ETF observation. A
+  // later metadata-only row must not attach its source label to an older amount.
+  const turnoverCandidates = new Map<DailyPrice, number | null>();
   const consume = (raw: Record<string, unknown>) => {
     const row = Object.fromEntries(
       Object.entries(raw)
@@ -99,6 +109,7 @@ export function parseManualMarketDataWithReferences(
     const source = etf ? "KRX_ETF" : "KRX_STOCK";
     const capExact = row["marketcapsource"] === source;
     const valueExact = row["tradingvaluesource"] === source;
+    let exactEtfTurnover: number | null = null;
     if (etf) {
       // Replay only the frozen parser's acceptance/enrichment boundary. Its ETF
       // values are written by accepted ETF rows, never rejected close rows or
@@ -150,7 +161,7 @@ export function parseManualMarketDataWithReferences(
         rawMarket !== "지수" &&
         (rawType === "ETF" || rawMarket === "ETF");
       const underlyingClose = numeric(chartField(raw, "etfUnderlyingIndexClose"));
-      if (etf && sourceIsEtf && underlyingClose !== null && underlyingClose > 0) {
+      if (sourceIsEtf) {
         const bars = parsed.dataset.observedBars?.[symbol] ?? parsed.dataset.bars[symbol] ?? [];
         let lo = 0,
           hi = bars.length;
@@ -160,7 +171,29 @@ export function parseManualMarketDataWithReferences(
           else hi = mid;
         }
         const bar = bars[lo];
-        if (bar?.tradeDate === date && bar.etfUnderlyingIndexClose === underlyingClose) {
+        if (bar?.tradeDate === date) {
+          const dedicated = chartField(raw, "etfTradingValue");
+          const amount = numeric(chartField(raw, "tradingValue"));
+          // KRX ACC_TRDVAL is already KRW. Copy the observed amount without any
+          // scaling, price*volume estimate, previous-day carry, or source upgrade.
+          const missing = dedicated == null || String(dedicated).trim() === "";
+          exactEtfTurnover =
+            missing &&
+            chartField(raw, "tradingValueSource") === "KRX_ETF" &&
+            amount !== null &&
+            amount >= 0
+              ? amount
+              : null;
+          if (bar.etfTradingValue == null && exactEtfTurnover !== null)
+            turnoverCandidates.set(bar, exactEtfTurnover);
+          else turnoverCandidates.delete(bar);
+        }
+        if (
+          bar?.tradeDate === date &&
+          underlyingClose !== null &&
+          underlyingClose > 0 &&
+          bar.etfUnderlyingIndexClose === underlyingClose
+        ) {
           const name = String(row["etfunderlyingindexname"] ?? "").trim();
           const exact =
             chartField(raw, "marketCapSource") === "KRX_ETF" ||
@@ -181,7 +214,8 @@ export function parseManualMarketDataWithReferences(
       );
     if (!etf && capExact) values.listedShares = numeric(row["listedshares"]);
     if (etf) {
-      if (valueExact) values.tradingValue = numeric(row["etftradingvalue"]);
+      if (valueExact)
+        values.tradingValue = numeric(chartField(raw, "etfTradingValue")) ?? exactEtfTurnover;
       values.nav = numeric(row["etfnav"]);
       values.aum = numeric(row["etfnetassettotalamount"]);
       values.listedUnits = numeric(row["etflistedunits"]);
@@ -244,6 +278,15 @@ export function parseManualMarketDataWithReferences(
         }
       });
     }
+  }
+  for (const [bar, amount] of turnoverCandidates) {
+    if (
+      bar.etfTradingValue == null &&
+      amount !== null &&
+      bar.tradingValueSource === "KRX_ETF" &&
+      bar.tradingValue === amount
+    )
+      bar.etfTradingValue = amount;
   }
   // Bound the extra memory to the latest usable value per field, not source history.
   for (const [symbol, facts] of latest) {

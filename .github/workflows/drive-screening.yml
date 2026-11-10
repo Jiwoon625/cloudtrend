@@ -63,7 +63,7 @@ jobs:
       - run: npm ci
       - run: python -m pip install -r collectors/drive_history_v7/requirements.txt
       - run: python -m unittest discover -s tests -p 'drive_*test.py'
-      - run: npx vitest run tests/drive-source.test.ts tests/drive-publication*.test.ts
+      - run: npx vitest run tests/drive-source.test.ts tests/drive-parent-contracts.test.ts tests/drive-publication*.test.ts
       - run: npx tsc --noEmit -p tsconfig.drive-executor-v11.json
 
   screening:

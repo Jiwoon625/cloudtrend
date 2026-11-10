@@ -170,3 +170,28 @@ test("previous-cache permission errors block before any writes", async () => {
   await expect(publishDriveResult(r)).rejects.toThrow("permission denied");
   expect(m.paths).toEqual([]);
 });
+
+test.each(["archive", "manifest", "missing"])(
+  "publisher revalidates %s parent binding before any writes",
+  async (mutation) => {
+    const { sha256 } = await import("../scripts/analysis-run-store");
+    const r = await request("FINAL");
+    await publishDriveResult(r);
+    const head = m.store.get(`${owner}/results/drive-screening/input-head/latest.json`);
+    const repeat = {
+      ...r,
+      expectedHeadHash: sha256(stableCacheJson(head)),
+      sources: structuredClone(r.sources),
+    };
+    if (mutation === "archive") repeat.sources[0]!.archiveSha256 = "b".repeat(64);
+    if (mutation === "manifest")
+      repeat.sources[0]!.record.validation_result.krPublication.manifestSha256 =
+        "sha256:" + "b".repeat(64);
+    if (mutation === "missing") repeat.sources = [];
+    m.paths = [];
+    m.files = [];
+    await expect(publishDriveResult(repeat)).rejects.toThrow("이전 Drive 입력");
+    expect(m.paths).toEqual([]);
+    expect(m.files).toEqual([]);
+  },
+);
