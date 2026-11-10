@@ -1,0 +1,68 @@
+name: Record published Drive screening history
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [CloudTrend Drive history v7, CloudTrend Drive screening executor]
+    types: [completed]
+  push:
+    branches: [main]
+    paths: [.github/operations/drive-result-history.json]
+  pull_request:
+    paths:
+      - .github/workflows/drive-result-history.yml
+      - .github/operations/drive-result-history.json
+      - scripts/drive-result-history.ts
+      - tests/drive-result-history.test.ts
+      - tsconfig.drive-result-history.json
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('drive-journal-test-{0}', github.ref) || 'CloudTrend screening-writer' }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.event_name != 'workflow_run' || (github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx tsc --noEmit -p tsconfig.drive-result-history.json
+      - run: npx vitest run --config scripts/drive-screening.config.ts tests/drive-result-history.test.ts tests/screening-snapshot-storage.test.ts
+  record:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - run: npm ci --ignore-scripts
+      - name: Record only verified original FINAL screening snapshots
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          JOURNAL_BACKFILL: ${{ github.event_name != 'workflow_run' }}
+        run: npx vite-node --config scripts/drive-screening.config.ts scripts/drive-result-history.ts
+      - name: Save journal verification to existing private Drive results
+        if: always()
+        env:
+          GOOGLE_DRIVE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS_JSON }}
+        run: |
+          if test -f drive-history-journal/execution-receipt.json; then
+            python scripts/drive-history-transfer.py save --directory drive-history-journal --result-folder 1oO6XkkJLY2UFGd5TRB34AEy5UVH9fEuK
+          fi
