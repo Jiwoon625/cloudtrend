@@ -295,9 +295,11 @@ export async function warmRecentEtfCharts(
   if (!(await readChartBundle(client, uid, priceReadyPath))) {
     for (let i = 0; i < symbols.length; i += 8) {
       const settled = await Promise.allSettled(
-        symbols.slice(i, i + 8).map((symbol) =>
-          prepareChartBucket(client, uid, identity, ctx, symbol, "120", "etf-prices"),
-        ),
+        symbols
+          .slice(i, i + 8)
+          .map((symbol) =>
+            prepareChartBucket(client, uid, identity, ctx, symbol, "120", "etf-prices"),
+          ),
       );
       const failed = settled.find((result) => result.status === "rejected");
       if (failed?.status === "rejected") throw failed.reason;
@@ -313,9 +315,7 @@ export async function warmRecentEtfCharts(
   for (let i = 0; i < symbols.length; i += 4) {
     const batch = symbols.slice(i, i + 4);
     const settled = await Promise.allSettled(
-      batch.map((symbol) =>
-        prepareChartBucket(client, uid, identity, ctx, symbol, "120", "etf"),
-      ),
+      batch.map((symbol) => prepareChartBucket(client, uid, identity, ctx, symbol, "120", "etf")),
     );
     settled.forEach((result, j) => {
       if (result.status === "rejected") {
