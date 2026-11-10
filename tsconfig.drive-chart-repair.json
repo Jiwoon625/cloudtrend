@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "scripts/drive-chart-repair.ts",
+    "src/lib/fullInstrumentCharts.server.ts",
+    "src/lib/chartSavedUniverse.ts",
+    "tests/chart-saved-universe.test.ts",
+    "tests/drive-chart-repair-boundary.test.ts",
+    "tests/full-instrument-charts.test.ts"
+  ],
+  "compilerOptions": {
+    "noImplicitReturns": false
+  }
+}

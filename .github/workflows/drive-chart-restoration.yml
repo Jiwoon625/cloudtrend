@@ -1,0 +1,104 @@
+name: Verified Drive chart restoration
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, fix/drive-m0-restore-audit-20261110]
+    paths: [.github/operations/drive-chart-restoration.json]
+  pull_request:
+    paths:
+      - .github/workflows/drive-chart-restoration.yml
+      - scripts/drive-chart-repair*
+      - src/lib/chartSavedUniverse.ts
+      - src/lib/fullInstrumentCharts.server.ts
+      - src/lib/instrumentChartStore.server.ts
+      - tests/chart-saved-universe.test.ts
+      - tests/drive-chart-repair-boundary.test.ts
+      - tests/full-instrument-charts.test.ts
+      - tsconfig.drive-chart-repair.json
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.ref == 'refs/heads/main' && 'CloudTrend screening-writer' || format('drive-chart-verify-{0}', github.ref) }}
+  cancel-in-progress: false
+jobs:
+  format-reviewed-branch:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/drive-m0-restore-audit-20261110'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/drive-m0-restore-audit-20261110
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Format only reviewed repair files
+        run: |
+          npx prettier --write scripts/drive-chart-repair.ts src/lib/chartSavedUniverse.ts src/lib/fullInstrumentCharts.server.ts tests/chart-saved-universe.test.ts tests/drive-chart-repair-boundary.test.ts
+          git add scripts/drive-chart-repair.ts src/lib/chartSavedUniverse.ts src/lib/fullInstrumentCharts.server.ts tests/chart-saved-universe.test.ts tests/drive-chart-repair-boundary.test.ts
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'style: format reviewed Drive chart repair'
+            git push origin HEAD:fix/drive-m0-restore-audit-20261110
+          fi
+      - run: npx tsc --noEmit -p tsconfig.drive-chart-repair.json
+      - run: npx vitest run --config scripts/drive-screening.config.ts tests/chart-saved-universe.test.ts tests/drive-chart-repair-boundary.test.ts tests/fast-chart.test.ts tests/etf-instrument-chart.test.ts
+  verify:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci --ignore-scripts
+      - run: npx tsc --noEmit -p tsconfig.drive-chart-repair.json
+      - run: npx vitest run --config scripts/drive-screening.config.ts tests/chart-saved-universe.test.ts tests/drive-chart-repair-boundary.test.ts tests/fast-chart.test.ts tests/etf-instrument-chart.test.ts tests/drive-history-v7.test.ts tests/drive-history-runner.test.ts tests/drive-publication.test.ts tests/drive-publication-writes.test.ts
+      - run: python -m py_compile scripts/drive-chart-repair-transfer.py
+  repair:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci --ignore-scripts
+      - name: Verify immutable Drive baseline and published deltas
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          GOOGLE_DRIVE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS_JSON }}
+        run: python scripts/drive-chart-repair-transfer.py prepare
+      - name: Restore charts only and verify every full-history result
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_USER_ID: ${{ secrets.SUPABASE_USER_ID }}
+          NODE_OPTIONS: --max-old-space-size=5120
+        run: npx vite-node --config scripts/drive-screening.config.ts scripts/drive-chart-repair.ts
+      - name: Save repair evidence to private Drive with readback verification
+        if: always()
+        env:
+          GOOGLE_DRIVE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS_JSON }}
+        run: |
+          if test -f drive-chart-work/transport-receipt.json; then
+            python scripts/drive-chart-repair-transfer.py save
+          fi
