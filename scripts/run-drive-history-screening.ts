@@ -6,6 +6,11 @@ import { runDriveScreening } from "./run-drive-screening";
 import { runScreening } from "./run-screening";
 import { prepareDriveCharts } from "./prepare-drive-result-charts";
 
+/** A published dashboard is not a completed release while its charts are unavailable. */
+export function driveHistoryExitCode(receipt: Record<string, unknown>) {
+  return receipt["status"] === "COMPLETED_PUBLISHED_CHARTS_PENDING" ? 1 : 0;
+}
+
 /** Reuse the frozen engine and result publisher; never register or upload source CSV. */
 export async function runDriveHistoryScreening(directory: string, publishDashboard = false) {
   if (process.env["SUPABASE_USER_ID"] !== KR_OWNER)
@@ -72,12 +77,18 @@ export async function runDriveHistoryScreening(directory: string, publishDashboa
       receipt["status"] = publishDashboard ? "COMPLETED_PUBLISHED" : "COMPLETED_CALCULATION_ONLY";
       if (publishDashboard && result.dashboardPublished === true) {
         boundary.restore();
+        receipt["status"] = "COMPLETED_PUBLISHED_CHARTS_PENDING";
+        receipt["recentChartsPrepared"] = false;
+        receipt["fullChartsPrepared"] = false;
+        await save();
         try {
           await prepareDriveCharts(path.join(root, "prepared"));
           receipt["recentChartsPrepared"] = true;
+          receipt["fullChartsPrepared"] = true;
+          receipt["status"] = "COMPLETED_PUBLISHED";
         } catch (chartError) {
           process.stderr.write(
-            `Chart preparation warning: ${chartError instanceof Error ? chartError.message : String(chartError)}\n`,
+            `Chart preparation incomplete: ${chartError instanceof Error ? chartError.message : String(chartError)}\n`,
           );
           receipt["chartPreparationError"] =
             chartError instanceof Error ? chartError.message : String(chartError);
@@ -110,9 +121,13 @@ if (!process.env["VITEST"])
   runDriveHistoryScreening(
     process.env["DRIVE_HISTORY_DIRECTORY"] ?? "drive-history-work",
     process.env["PUBLISH_DASHBOARD"] === "true",
-  ).catch((e) => {
-    process.stderr.write(
-      `Drive history execution failed: ${e instanceof Error ? e.message : String(e)}\n`,
-    );
-    process.exitCode = 1;
-  });
+  )
+    .then((receipt) => {
+      process.exitCode = driveHistoryExitCode(receipt);
+    })
+    .catch((e) => {
+      process.stderr.write(
+        `Drive history execution failed: ${e instanceof Error ? e.message : String(e)}\n`,
+      );
+      process.exitCode = 1;
+    });
