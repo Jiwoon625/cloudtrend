@@ -1,3 +1,4 @@
+import { currentScreeningEngineIdentity } from "../src/lib/screeningEngineIdentity";
 import { expect, test, vi } from "vitest";
 import { driveFixture } from "./drive-publication-fixture";
 import { DEFAULT_SCORING_CONFIG } from "../src/lib/engine/scoring";
@@ -46,6 +47,7 @@ test("result-only cache publishing never uploads CSV, kr.json, registry or finan
     },
   };
   const result = await persistWebScreeningCaches({
+    engineIdentity: currentScreeningEngineIdentity,
     client: client as never,
     userId: "synthetic-owner",
     inputs,

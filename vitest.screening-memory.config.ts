@@ -4,6 +4,9 @@ export default defineConfig({
   test: {
     include: [
       "tests/screening-memory*.test.ts",
+      "tests/screening-engine-identity.test.ts",
+      "tests/drive-publication-publisher.test.ts",
+      "tests/drive-publication-writes.test.ts",
       "src/lib/sourceData.test.ts",
       "src/lib/engine/manualDataset.test.ts",
       "src/lib/engine/screeningSourceContract.test.ts",

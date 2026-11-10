@@ -5,6 +5,9 @@ import { beforeEach, expect, test, vi } from "vitest";
 import { getMockDataset } from "../src/lib/engine/mockProvider";
 import { runAnalysis } from "../src/lib/engine/pipeline";
 import { DEFAULT_SCORING_CONFIG } from "../src/lib/engine/scoring";
+import { driveFixture } from "./drive-publication-fixture";
+import { preliminarySource } from "./kr-preliminary-fixture";
+import { chartPath } from "../src/lib/instrumentChartContract";
 import {
   buildDashboardSummary,
   deterministicAnalysis,
@@ -503,3 +506,143 @@ test("certified membership changes project only proven unchanged rows without pu
     spy.mockRestore();
   }
 });
+
+test("browser and server share fail-closed same-engine regression policy before writes", async () => {
+  const { buildAndPersistScreeningCaches } = await import("../src/lib/screeningCache");
+  const { currentScreeningEngineIdentity, assertScreeningResultTransition } =
+    await import("../src/lib/screeningEngineIdentity");
+  const previous = { ...screening, engineIdentity: currentScreeningEngineIdentity };
+  setup(null, previous);
+  mocks.raw.mockResolvedValue(null);
+  mocks.compute.mockReturnValue({ analysis: { ...analysis, dataVersion: "changed" } });
+  expect(() =>
+    assertScreeningResultTransition(previous, { ...previous, resultDigest: "changed" }),
+  ).toThrow("regression guard");
+  await expect(buildAndPersistScreeningCaches()).rejects.toThrow("regression guard");
+  expect(mocks.write).not.toHaveBeenCalled();
+});
+
+async function novemberLegacyDriveGeneration() {
+  const { currentInputFingerprint } = await import("../src/lib/screeningCache");
+  const { source, text } = preliminarySource("2026-11-10");
+  const declaration = source.validation_result.krPublication;
+  const manifest = JSON.parse(declaration.manifestText);
+  manifest.createdAt = source.created_at;
+  manifest.csv = [{ file: "input.csv", bytes: Buffer.byteLength(text), sha256: source.file_hash }];
+  const manifestText = JSON.stringify(manifest);
+  const proof = driveFixture();
+  proof.asOfDate = source.max_date;
+  proof.baseFingerprint = await currentInputFingerprint();
+  proof.sources[0]!.record = {
+    ...proof.sources[0]!.record,
+    id: `drive-${declaration.requestId}-${source.file_hash.slice(7, 23)}`,
+    data_hash: source.data_hash,
+    schema_hash: source.schema_hash,
+    file_hash: source.file_hash,
+    max_date: source.max_date,
+    file_size_bytes: Buffer.byteLength(text),
+    created_at: new Date(source.created_at).toISOString(),
+    activated_at: new Date(source.activated_at).toISOString(),
+    validation_result: {
+      krPublication: {
+        ...declaration,
+        manifestText,
+        manifestSha256: `sha256:${createHash("sha256").update(manifestText).digest("hex")}`,
+      },
+    },
+  };
+  const savedAnalysis = {
+    ...analysis,
+    asOfDate: proof.asOfDate,
+    krPublication: {
+      version: "kr-screening-publication-v1" as const,
+      phase: "PRELIMINARY" as const,
+      asOfDate: proof.asOfDate,
+      heldFields: [],
+      financialSideEffects: false,
+      requestIds: [declaration.requestId],
+    },
+  };
+  const fingerprint = await currentInputFingerprint(undefined, proof);
+  const shared = {
+    ...screening,
+    publicationId: "synthetic-nov10-legacy",
+    inputFingerprint: fingerprint,
+    resultDigest: hash(deterministicAnalysis(savedAnalysis)),
+    payload: { analysis: savedAnalysis, source: { drivePublication: proof } },
+  };
+  const head = {
+    version: "drive-input-head-v1",
+    publicationId: shared.publicationId,
+    inputFingerprint: fingerprint,
+    resultDigest: shared.resultDigest,
+    drivePublication: proof,
+  };
+  const summary = {
+    ...buildDashboardSummary(savedAnalysis, fingerprint, shared.resultDigest, shared.createdAt),
+    publicationId: shared.publicationId,
+    drivePublication: proof,
+  };
+  return { shared, head, summary };
+}
+
+test.each(["present", "missing"])(
+  "Nov10 legacy PRELIMINARY cache reads with %s dashboard preserve scores and chart keys without writes",
+  async (dashboard) => {
+    const { readScreeningCache } = await import("../src/lib/screeningCache");
+    const { currentScreeningEngineIdentity } = await import("../src/lib/screeningEngineIdentity");
+    const { shared, head, summary } = await novemberLegacyDriveGeneration();
+    const before = stableCacheJson({ shared, head, summary });
+    mocks.read.mockImplementation(async (path: string) =>
+      path.includes("/input-head/")
+        ? head
+        : path.includes("/dashboard/")
+          ? dashboard === "present"
+            ? summary
+            : null
+          : shared,
+    );
+    expect(await readScreeningCache()).toBe(shared);
+    expect(await readDashboardCache()).toEqual(summary);
+    expect(stableCacheJson({ shared, head, summary })).toBe(before);
+    expect(shared).not.toHaveProperty("engineIdentity");
+    expect(head).not.toHaveProperty("engineIdentity");
+    const withIdentity = { ...shared, engineIdentity: currentScreeningEngineIdentity };
+    for (const kind of ["prices", "scored", "etf", "etf-prices"] as const)
+      for (const range of ["120", "all"] as const)
+        expect(chartPath(withIdentity, "215620", range, kind)).toBe(
+          chartPath(shared, "215620", range, kind),
+        );
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(mocks.compute).not.toHaveBeenCalled();
+    expect(mocks.raw).not.toHaveBeenCalled();
+  },
+);
+
+test.each(["engine", "phase"])(
+  "Nov10 legacy Drive read still rejects mismatched %s metadata without writes",
+  async (mismatch) => {
+    const { readScreeningCache } = await import("../src/lib/screeningCache");
+    const { currentScreeningEngineIdentity } = await import("../src/lib/screeningEngineIdentity");
+    const { shared, head } = await novemberLegacyDriveGeneration();
+    if (mismatch === "phase") {
+      Object.assign(shared.payload.analysis.krPublication, { phase: "FINAL" });
+      shared.resultDigest = hash(deterministicAnalysis(shared.payload.analysis));
+      head.resultDigest = shared.resultDigest;
+    }
+    mocks.read.mockImplementation(async (path: string) =>
+      path.includes("/input-head/")
+        ? mismatch === "engine"
+          ? { ...head, engineIdentity: currentScreeningEngineIdentity }
+          : head
+        : path.includes("/dashboard/")
+          ? null
+          : shared,
+    );
+    expect(await readScreeningCache()).toBeNull();
+    expect(await readDashboardCache()).toBeNull();
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(mocks.compute).not.toHaveBeenCalled();
+    expect(mocks.raw).not.toHaveBeenCalled();
+  },
+);

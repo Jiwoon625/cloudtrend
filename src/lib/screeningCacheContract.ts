@@ -1,3 +1,4 @@
+import type { ScreeningEngineIdentity } from "./screeningEngineIdentity";
 import type { OperationalIndexIdentity } from "./screeningInputIdentity";
 import type { DriveResultPublication } from "./driveResultPublication";
 import { isOperationalEntry } from "@/lib/engine/operationalStrategy";
@@ -13,6 +14,7 @@ export const INSTRUMENT_CACHE_VERSION =
   "instrument-cache-v9-current-price-verified-kr-index-20261106-v1" as const;
 
 export interface DashboardSummary {
+  engineIdentity?: ScreeningEngineIdentity;
   savedResultCompatibility?: {
     version: string;
     excludedSymbols?: string[];

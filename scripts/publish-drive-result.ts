@@ -1,8 +1,14 @@
+import { verifiedCalculationEngineIdentity } from "./screening-engine-identity";
+import {
+  assertScreeningEngineIdentity,
+  type ScreeningEngineIdentity,
+} from "../src/lib/screeningEngineIdentity";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   drivePublicationSources,
+  currentDriveGeneration,
   type DriveResultPublication,
   type DriveResultSource,
   krResultPhase,
@@ -14,7 +20,11 @@ import { buildSnapshot } from "../src/lib/screeningSnapshot";
 import { listSourceRecords, type LoadedSourceInput } from "./source-registry-store";
 import { downloadJson, uploadJson, sha256 } from "./analysis-run-store";
 import { uploadScreeningJsonFile } from "./screening-json-file";
-import { persistWebScreeningCaches, inputFingerprint } from "./web-screening-cache-store";
+import {
+  preflightWebScreeningCaches,
+  inputFingerprint,
+  type ExistingScreeningCache,
+} from "./web-screening-cache-store";
 import { liveRegistryInput } from "./live-registry-timestamp";
 import type { AnalysisResult } from "../src/lib/engine/pipeline";
 import type { ScoringConfig } from "../src/lib/engine/scoring";
@@ -47,6 +57,7 @@ export async function publishDriveResult(input: {
   const inputs = input.inputs.map(liveRegistryInput);
   const file = path.join(input.outputDir, "screening-bundle.json");
   const bundle = JSON.parse(await readFile(file, "utf8")) as {
+    engineIdentity: ScreeningEngineIdentity;
     result: AnalysisResult;
     config: ScoringConfig;
     run: { id: string; kind: string };
@@ -56,6 +67,12 @@ export async function publishDriveResult(input: {
       sources: Array<{ id: string; fileHash: string; dataHash: string; schemaHash: string }>;
     };
   };
+  assertScreeningEngineIdentity(bundle.engineIdentity);
+  const verifiedEngine = await verifiedCalculationEngineIdentity();
+  if (bundle.engineIdentity.codeHash !== verifiedEngine.codeHash)
+    throw new Error(
+      "Calculated engine differs from publishing engine; recalculate without relabelling the bundle",
+    );
   if (bundle.run.kind !== "SCREENING" || !bundle.result.asOfDate)
     throw new Error("Missing calculated Drive result");
   const sourceIdentity = (s: {
@@ -121,7 +138,7 @@ export async function publishDriveResult(input: {
   );
   if (expected !== inputFingerprint(inputs, bundle.config, op) || combined.length !== actual.length)
     throw new Error("Calculated inputs differ from Drive publication evidence");
-  let latest: { payload?: { analysis?: AnalysisResult } } | null;
+  let latest: ExistingScreeningCache | null;
   try {
     latest = await downloadJson(client, `${owner}/cache/screening/latest.json`);
   } catch (error) {
@@ -129,6 +146,20 @@ export async function publishDriveResult(input: {
       latest = null;
     else throw error;
   }
+  if (
+    head &&
+    (!latest?.inputFingerprint ||
+      !latest.resultDigest ||
+      !currentDriveGeneration(head, {
+        ...latest,
+        inputFingerprint: latest.inputFingerprint,
+        resultDigest: latest.resultDigest,
+        drivePublication: latest.payload?.source?.drivePublication,
+      }))
+  )
+    throw new Error(
+      "Drive head and predecessor cache generation differ; recover before publication",
+    );
   const old = latest?.payload?.analysis;
   if (
     old &&
@@ -139,35 +170,55 @@ export async function publishDriveResult(input: {
   )
     throw new Error("현재 홈페이지의 최신·확정 결과를 덮어쓸 수 없습니다.");
   // This bounded metadata head retains prior Drive deltas without copying their CSV bytes.
-  // Write it before caches: a failed cache write remains safely resumable without losing history.
+  // Complete all cache guards before head mutation. Multi-object storage is not atomic.
   const generationId = crypto.randomUUID();
   const next = {
     version: "drive-input-head-v1",
+    engineIdentity: bundle.engineIdentity,
     drivePublication: proof,
     publicationId: generationId,
     inputFingerprint: expected,
     resultDigest: sha256(stableCacheJson(deterministicAnalysis(bundle.result))),
   };
-  await uploadJson(client, `${owner}/${DRIVE_INPUT_HEAD}`, next);
-  if (stableCacheJson(await maybeDriveHead(client, owner)) !== stableCacheJson(next))
-    throw new Error("Drive input head readback mismatch");
-  const published = await persistWebScreeningCaches({
+  const cacheInput = {
     client,
     userId: owner,
     inputs,
     config: bundle.config,
     analysis: bundle.result,
+    engineIdentity: bundle.engineIdentity,
     snapshot: buildSnapshot(bundle.result, undefined, bundle.run.id),
     previous: null,
     resultOnly: proof,
     generationId,
-  });
+  };
+  const publishCaches = await preflightWebScreeningCaches(cacheInput);
+  const prewriteSources = await listSourceRecords(client, owner, "screening");
+  if (
+    inputFingerprint(
+      prewriteSources.map((sourceRecord) => ({ sourceRecord })) as LoadedSourceInput[],
+      bundle.config,
+      op,
+    ) !== baseline
+  )
+    throw new Error("Publication source registry changed during preflight");
+  // Recheck the checkpoint after preflight reads and before the first write.
+  if (stableCacheJson(await maybeDriveHead(client, owner)) !== stableCacheJson(head))
+    throw new Error("Drive publication head changed during preflight");
+  await uploadJson(client, `${owner}/${DRIVE_INPUT_HEAD}`, next);
+  if (stableCacheJson(await maybeDriveHead(client, owner)) !== stableCacheJson(next))
+    throw new Error("Drive input head readback mismatch");
+  const published = await publishCaches();
   const dashboard = await downloadJson<{
+    publicationId: string;
+    engineIdentity: ScreeningEngineIdentity;
     inputFingerprint: string;
     resultDigest: string;
     drivePublication?: DriveResultPublication;
   }>(client, `${owner}/cache/dashboard/latest.json`);
   if (
+    dashboard.publicationId !== generationId ||
+    stableCacheJson(dashboard.engineIdentity) !== stableCacheJson(bundle.engineIdentity) ||
     dashboard.inputFingerprint !== published.inputFingerprint ||
     dashboard.resultDigest !== published.resultDigest ||
     stableCacheJson(dashboard.drivePublication) !== stableCacheJson(proof)

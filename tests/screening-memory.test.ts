@@ -1,3 +1,4 @@
+import { currentScreeningEngineIdentity } from "../src/lib/screeningEngineIdentity";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import type { ReadStream } from "node:fs";
 import { tmpdir } from "node:os";
@@ -214,6 +215,7 @@ test("legacy and compact normalization yield identical full analysis, candidates
   >[0]["client"];
   const base = { client, userId: "user", config: DEFAULT_SCORING_CONFIG, previous: null };
   const first = await persistWebScreeningCaches({
+    engineIdentity: currentScreeningEngineIdentity,
     ...base,
     inputs: [loaded(a, "a")],
     analysis: legacy.analysis,
@@ -222,6 +224,7 @@ test("legacy and compact normalization yield identical full analysis, candidates
   const input = loaded(b, "a");
   input.validation.rows = [];
   const second = await persistWebScreeningCaches({
+    engineIdentity: currentScreeningEngineIdentity,
     ...base,
     inputs: [input],
     analysis: compact.analysis,

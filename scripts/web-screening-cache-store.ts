@@ -1,3 +1,7 @@
+import {
+  assertScreeningResultTransition,
+  type ScreeningEngineIdentity,
+} from "../src/lib/screeningEngineIdentity";
 import { preserveConfirmedEtfContext } from "../src/lib/confirmedEtfContext.server";
 import {
   screeningInputIdentity,
@@ -25,7 +29,9 @@ import type { LoadedSourceInput } from "./source-registry-store";
 
 const MAX_RAW_CACHE_BYTES = 45 * 1024 * 1024;
 
-interface ExistingScreeningCache {
+export interface ExistingScreeningCache {
+  publicationId?: string;
+  engineIdentity?: ScreeningEngineIdentity;
   version?: string;
   inputFingerprint?: string;
   resultDigest?: string;
@@ -104,7 +110,8 @@ export function canonicalMergedCsv(inputs: LoadedSourceInput[]) {
   return `${[CANONICAL_SOURCE_COLUMNS.join(","), ...rows.values()].join("\n")}\n`;
 }
 
-export async function persistWebScreeningCaches(input: {
+export interface WebScreeningCacheInput {
+  engineIdentity: ScreeningEngineIdentity;
   client: SupabaseClient;
   userId: string;
   inputs: LoadedSourceInput[];
@@ -114,7 +121,10 @@ export async function persistWebScreeningCaches(input: {
   previous: ScreeningSnapshot | null;
   resultOnly?: DriveResultPublication;
   generationId?: string;
-}) {
+}
+
+/** Read/validate only. Must finish before ANY publication object is mutated. */
+export async function preflightWebScreeningCaches(input: WebScreeningCacheInput) {
   const fingerprint = inputFingerprint(
     input.inputs,
     input.config,
@@ -143,14 +153,35 @@ export async function persistWebScreeningCaches(input: {
     throw new Error("최신 또는 확정 홈페이지 결과를 과거·잠정 결과로 덮어쓸 수 없습니다.");
   if (
     existing?.version === SCREENING_CACHE_VERSION &&
-    existing.inputFingerprint === fingerprint &&
-    existing.resultDigest &&
-    existing.resultDigest !== digest
-  ) {
-    throw new Error(
-      `스크리닝 regression guard 실패: 동일 원천·동일 산식인데 결과 digest가 변경되었습니다. expected=${existing.resultDigest}, actual=${digest}`,
-    );
-  }
+    (!existing.payload?.analysis ||
+      resultDigest(existing.payload.analysis) !== existing.resultDigest)
+  )
+    throw new Error("Existing screening cache content does not match its result digest");
+  assertScreeningResultTransition(
+    existing ? { ...existing, asOfDate: existing.payload?.analysis?.asOfDate } : null,
+    {
+      version: SCREENING_CACHE_VERSION,
+      inputFingerprint: fingerprint,
+      resultDigest: digest,
+      engineIdentity: input.engineIdentity,
+      asOfDate: input.analysis.asOfDate,
+    },
+  );
+  return () => writeWebScreeningCaches(input, fingerprint, digest, existing);
+}
+
+export async function persistWebScreeningCaches(input: WebScreeningCacheInput) {
+  const publish = await preflightWebScreeningCaches(input);
+  return publish();
+}
+
+async function writeWebScreeningCaches(
+  input: WebScreeningCacheInput,
+  fingerprint: string,
+  digest: string,
+  existing: ExistingScreeningCache | null,
+) {
+  const screeningPath = `${input.userId}/cache/screening/latest.json`;
 
   if (input.analysis.krPublication?.phase === "PRELIMINARY")
     await preserveConfirmedEtfContext(input.client, input.userId, existing);
@@ -165,6 +196,7 @@ export async function persistWebScreeningCaches(input: {
   const publicationId = input.generationId ?? crypto.randomUUID();
   const screening = {
     version: SCREENING_CACHE_VERSION,
+    engineIdentity: input.engineIdentity,
     publicationId,
     createdAt: new Date().toISOString(),
     inputFingerprint: fingerprint,
@@ -172,6 +204,7 @@ export async function persistWebScreeningCaches(input: {
     payload,
   };
   const dashboard = buildDashboardSummary(input.analysis, fingerprint, digest);
+  dashboard.engineIdentity = input.engineIdentity;
   if (input.resultOnly) {
     dashboard.drivePublication = input.resultOnly;
     dashboard.publicationId = publicationId;
@@ -217,7 +250,13 @@ export async function persistWebScreeningCaches(input: {
     ? resultDigest(roundTrip.payload.analysis)
     : null;
   memory("cache-roundtrip-end");
-  if (roundTrip.resultDigest !== digest || roundTripDigest !== digest) {
+  if (
+    roundTrip.resultDigest !== digest ||
+    roundTripDigest !== digest ||
+    roundTrip.publicationId !== publicationId ||
+    roundTrip.inputFingerprint !== fingerprint ||
+    stableCacheJson(roundTrip.engineIdentity) !== stableCacheJson(input.engineIdentity)
+  ) {
     throw new Error(
       `스크리닝 cache 저장 후 digest 검증 실패: stored=${roundTrip.resultDigest ?? "null"}, recalculated=${roundTripDigest ?? "null"}, expected=${digest}`,
     );
@@ -225,6 +264,7 @@ export async function persistWebScreeningCaches(input: {
 
   return {
     publicationId,
+    engineIdentity: input.engineIdentity,
     inputFingerprint: fingerprint,
     resultDigest: digest,
     regressionBaseline: existing?.resultDigest ?? null,

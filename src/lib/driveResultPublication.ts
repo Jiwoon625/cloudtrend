@@ -1,3 +1,4 @@
+import type { ScreeningEngineIdentity } from "./screeningEngineIdentity";
 import {
   krSourcePublication,
   validateKrPublicationManifest,
@@ -14,6 +15,7 @@ export function krResultPhase(value: { krPublication?: AnalysisResult["krPublica
 export function currentDriveGeneration(
   head: unknown,
   cache: {
+    engineIdentity?: ScreeningEngineIdentity | undefined;
     publicationId?: string | undefined;
     inputFingerprint: string;
     resultDigest: string;
@@ -23,6 +25,7 @@ export function currentDriveGeneration(
   if (!head || typeof head !== "object") return false;
   const h = head as {
     version?: string;
+    engineIdentity?: ScreeningEngineIdentity | undefined;
     publicationId?: string | undefined;
     inputFingerprint?: string;
     resultDigest?: string;
@@ -34,6 +37,7 @@ export function currentDriveGeneration(
     h.publicationId === cache.publicationId &&
     h.inputFingerprint === cache.inputFingerprint &&
     h.resultDigest === cache.resultDigest &&
+    stableCacheJson(h.engineIdentity ?? null) === stableCacheJson(cache.engineIdentity ?? null) &&
     !!cache.drivePublication &&
     stableCacheJson(h.drivePublication) === stableCacheJson(cache.drivePublication)
   );

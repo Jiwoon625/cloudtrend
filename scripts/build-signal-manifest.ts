@@ -1,16 +1,9 @@
+import { SCREENING_ENGINE_ROOTS } from "./screening-engine-identity";
 import { writeFile } from "node:fs/promises";
 import { shadowEngineManifest } from "./october-shadow-code-manifest";
 const kr = await shadowEngineManifest(
   process.cwd(),
-  [
-    "src/lib/currentScreening.ts",
-    "src/lib/engine/manualDataset.ts",
-    "src/lib/shadowReplayCalculation.ts",
-    "src/lib/screeningPublicationAnalysis.ts",
-    "src/lib/screeningSnapshot.ts",
-    "src/lib/etfReportScore.ts",
-    "src/lib/operationalUnderlyingIndex.ts",
-  ],
+  SCREENING_ENGINE_ROOTS,
   "screening-signal-engine-v1",
 );
 const us = await shadowEngineManifest(

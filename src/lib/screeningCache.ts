@@ -1,4 +1,9 @@
 import {
+  currentScreeningEngineIdentity,
+  assertScreeningResultTransition,
+  type ScreeningEngineIdentity,
+} from "./screeningEngineIdentity";
+import {
   PREVIOUS_KR_INDEX_CACHE_VERSION,
   projectUnchangedIndexRows,
   verifiedKrIndexCacheCompatibility,
@@ -49,6 +54,7 @@ export { DASHBOARD_CACHE_VERSION, INSTRUMENT_CACHE_VERSION, SCREENING_CACHE_VERS
 export type { DashboardSummary };
 
 interface CacheMeta {
+  engineIdentity?: ScreeningEngineIdentity;
   publicationId?: string | undefined;
   version: string;
   createdAt: string;
@@ -140,6 +146,7 @@ async function gunzipJson<T>(bytes: Uint8Array): Promise<T> {
 }
 
 async function matchesDriveHead(cache: {
+  engineIdentity?: ScreeningEngineIdentity | undefined;
   publicationId?: string | undefined;
   inputFingerprint: string;
   resultDigest: string;
@@ -257,6 +264,7 @@ export async function readDashboardCache(): Promise<DashboardSummary | null> {
     screening.resultDigest,
     screening.createdAt,
   );
+  if (screening.engineIdentity) recovered.engineIdentity = screening.engineIdentity;
   if (screening.payload.source?.drivePublication) {
     recovered.drivePublication = screening.payload.source.drivePublication;
     if (screening.publicationId) recovered.publicationId = screening.publicationId;
@@ -306,14 +314,23 @@ export async function buildAndPersistScreeningCaches(): Promise<{
   const resultDigest = await analysisDigest(payload.analysis);
   if (
     previous?.version === SCREENING_CACHE_VERSION &&
-    previous.inputFingerprint === inputFingerprint &&
-    previous.resultDigest !== resultDigest
+    (!previous.payload?.analysis ||
+      (await analysisDigest(previous.payload.analysis)) !== previous.resultDigest)
   )
-    throw new Error(
-      `스크리닝 regression guard 실패: 동일 원천·동일 산식인데 결과가 달라졌습니다. expected=${previous.resultDigest}, actual=${resultDigest}`,
-    );
+    throw new Error("Existing screening cache content does not match its result digest");
+  assertScreeningResultTransition(
+    previous ? { ...previous, asOfDate: previous.payload?.analysis?.asOfDate } : null,
+    {
+      version: SCREENING_CACHE_VERSION,
+      inputFingerprint,
+      resultDigest,
+      engineIdentity: currentScreeningEngineIdentity,
+      asOfDate: payload.analysis.asOfDate,
+    },
+  );
 
   const screening: ScreeningCachePayload = {
+    engineIdentity: { ...currentScreeningEngineIdentity },
     version: SCREENING_CACHE_VERSION,
     createdAt: new Date().toISOString(),
     inputFingerprint,
@@ -327,6 +344,7 @@ export async function buildAndPersistScreeningCaches(): Promise<{
     // 이력 저장 실패가 V8 스크리닝 결과 생성을 막지 않게 한다.
   }
   const dashboard = buildDashboardSummary(payload.analysis, inputFingerprint, resultDigest);
+  if (screening.engineIdentity) dashboard.engineIdentity = screening.engineIdentity;
   await Promise.all([
     writeObject(await screeningPath(), screening),
     writeObject(await dashboardPath(), dashboard),
