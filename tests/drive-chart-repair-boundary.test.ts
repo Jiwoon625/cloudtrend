@@ -3,7 +3,10 @@ import { installChartRepairBoundary } from "../scripts/drive-chart-repair";
 import { KR_OWNER } from "../scripts/drive-history-inputs";
 
 const original = globalThis.fetch;
-afterEach(() => { globalThis.fetch = original; vi.restoreAllMocks(); });
+afterEach(() => {
+  globalThis.fetch = original;
+  vi.restoreAllMocks();
+});
 const request = {
   version: "drive-chart-restoration-v1",
   mode: "repair" as const,
@@ -27,8 +30,11 @@ test("only verified chart uploads can be enabled; all source and ledger writes r
     chart.replace(KR_OWNER, "other-owner"),
     chart.replace(request.resultDigest, "c".repeat(64)),
     chart.replace("ahbvrtugugwnbrfnbxzp", "different-project"),
-  ]) await expect(fetch(url, { method: "POST" })).rejects.toThrow("blocked");
-  await expect(fetch(`${base}/storage/v1/object/cloudtrend-data/${KR_OWNER}/source/screening/source.csv`)).rejects.toThrow("blocked");
+  ])
+    await expect(fetch(url, { method: "POST" })).rejects.toThrow("blocked");
+  await expect(
+    fetch(`${base}/storage/v1/object/cloudtrend-data/${KR_OWNER}/source/screening/source.csv`),
+  ).rejects.toThrow("blocked");
   await expect(fetch(chart, { method: "DELETE" })).rejects.toThrow("blocked");
   expect(network).toHaveBeenCalledTimes(2);
   expect(boundary.network.chartWrites).toBe(1);
@@ -42,5 +48,7 @@ test("diagnosis mode cannot be promoted to a writer", () => {
   expect(() => boundary.enable()).toThrow("Diagnosis cannot write");
   boundary.restore();
   expect(() => installChartRepairBoundary("other-owner", request)).toThrow();
-  expect(() => installChartRepairBoundary(KR_OWNER, { ...request, resultDigest: "invalid" })).toThrow();
+  expect(() =>
+    installChartRepairBoundary(KR_OWNER, { ...request, resultDigest: "invalid" }),
+  ).toThrow();
 });

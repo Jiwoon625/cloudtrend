@@ -89,15 +89,7 @@ export async function warmFullInstrumentCharts(
           validate(full);
         }
         await prepareChartBucket(client, owner, identity, ctx, symbol, "all", priceKind);
-        const recent = await prepareChartBucket(
-          client,
-          owner,
-          identity,
-          ctx,
-          symbol,
-          "120",
-          kind,
-        );
+        const recent = await prepareChartBucket(client, owner, identity, ctx, symbol, "120", kind);
         if (stableCacheJson(full.chart.slice(-120)) !== stableCacheJson(recent.chart))
           throw new Error("Full and recent score histories differ");
         if (
@@ -124,7 +116,9 @@ export async function warmFullInstrumentCharts(
         if (
           etf &&
           stableCacheJson(storedPrices[symbol]!.chart) !==
-            stableCacheJson(full.chart.map(({ tradeDate, close, volume }) => ({ tradeDate, close, volume })))
+            stableCacheJson(
+              full.chart.map(({ tradeDate, close, volume }) => ({ tradeDate, close, volume })),
+            )
         )
           throw new Error("ETF price/volume observations differ from M0 chart");
         const chart = full as EtfInstrumentChartBundle;
@@ -149,15 +143,24 @@ export async function warmFullInstrumentCharts(
     await options.progress?.(Math.min(offset + 8, rows.length), rows.length);
   }
   if (failures.length)
-    throw new Error(`Full-history chart verification failed (${failures.length}): ${failures.join(" | ")}`);
-  for (const kind of options.includeStocks ? (["etf", "scored"] as const) : (["etf"] as const)) {
-    const readyPath = chartReadyPath(identity, kind).replace("-ready.json.gz", "-all-ready.json.gz");
-    const count = coverage.filter((item) => item.kind === (kind === "etf" ? "ETF" : "STOCK")).length;
-    const { error } = await client.storage.from("cloudtrend-data").upload(
-      `${owner}/${readyPath}`,
-      gzipSync(JSON.stringify({ ready: { symbols: count, readbackVerified: true } })),
-      { contentType: "application/octet-stream", upsert: true },
+    throw new Error(
+      `Full-history chart verification failed (${failures.length}): ${failures.join(" | ")}`,
     );
+  for (const kind of options.includeStocks ? (["etf", "scored"] as const) : (["etf"] as const)) {
+    const readyPath = chartReadyPath(identity, kind).replace(
+      "-ready.json.gz",
+      "-all-ready.json.gz",
+    );
+    const count = coverage.filter(
+      (item) => item.kind === (kind === "etf" ? "ETF" : "STOCK"),
+    ).length;
+    const { error } = await client.storage
+      .from("cloudtrend-data")
+      .upload(
+        `${owner}/${readyPath}`,
+        gzipSync(JSON.stringify({ ready: { symbols: count, readbackVerified: true } })),
+        { contentType: "application/octet-stream", upsert: true },
+      );
     if (error) throw new Error("Full-history completion marker upload failed");
   }
   return coverage;
