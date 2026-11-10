@@ -268,7 +268,11 @@ export async function warmRecentCharts(
   return result;
 }
 
-/** Recent-only ETF preparation; full history remains opt-in like the stock chart. */
+/** Recent-only ETF preparation; full history remains opt-in like the stock chart.
+ * Publish verified observed ETF prices for the full universe before expensive historical M0.
+ * A single bad M0 bundle must not starve unrelated ETF buckets. The final ready
+ * marker still requires every ETF score/card parity check to pass.
+ */
 export async function warmRecentEtfCharts(
   client: SupabaseClient,
   uid: string,
@@ -284,15 +288,48 @@ export async function warmRecentEtfCharts(
     representatives.set(chartPath(identity, symbol, "120", "etf"), symbol);
   }
   const symbols = [...representatives.values()];
-  for (let i = 0; i < symbols.length; i += 4) {
-    const results = await Promise.allSettled(
-      symbols.slice(i, i + 4).map(async (symbol) => {
-        await prepareChartBucket(client, uid, identity, ctx, symbol, "120", "etf-prices");
-        return prepareChartBucket(client, uid, identity, ctx, symbol, "120", "etf");
-      }),
-    );
-    const failed = results.find((result) => result.status === "rejected");
-    if (failed?.status === "rejected") throw failed.reason;
+
+  // Finish the price/volume phase independently; no M0 or peer calculations may
+  // block price/volume for another ETF. The identity is revision-scoped.
+  const priceReadyPath = chartReadyPath(identity, "etf-prices");
+  if (!(await readChartBundle(client, uid, priceReadyPath))) {
+    for (let i = 0; i < symbols.length; i += 8) {
+      const settled = await Promise.allSettled(
+        symbols.slice(i, i + 8).map((symbol) =>
+          prepareChartBucket(client, uid, identity, ctx, symbol, "120", "etf-prices"),
+        ),
+      );
+      const failed = settled.find((result) => result.status === "rejected");
+      if (failed?.status === "rejected") throw failed.reason;
+    }
+    await writeBundle(client, uid, priceReadyPath, {
+      ready: { buckets: representatives.size },
+    });
   }
-  await writeBundle(client, uid, readyPath, { ready: { buckets: representatives.size } });
+
+  // Keep strict M0/card/index parity. A rejected bucket is never partially
+  // uploaded, but other independently verified buckets can still be published.
+  const failures: string[] = [];
+  for (let i = 0; i < symbols.length; i += 4) {
+    const batch = symbols.slice(i, i + 4);
+    const settled = await Promise.allSettled(
+      batch.map((symbol) =>
+        prepareChartBucket(client, uid, identity, ctx, symbol, "120", "etf"),
+      ),
+    );
+    settled.forEach((result, j) => {
+      if (result.status === "rejected") {
+        failures.push(
+          `${batch[j]}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+        );
+      }
+    });
+  }
+  if (failures.length)
+    throw new Error(
+      `ETF 상세 차트 ${failures.length}개 버킷 검증 실패 (나머지 버킷 및 전체 가격 차트 저장 완료): ${failures.join(" | ")}`,
+    );
+  await writeBundle(client, uid, readyPath, {
+    ready: { buckets: representatives.size },
+  });
 }
