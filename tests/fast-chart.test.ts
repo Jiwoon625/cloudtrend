@@ -330,3 +330,50 @@ test("ETF bucket duplicate requests coalesce and a failed warmup never publishes
   await expect(warmRecentEtfCharts(failed.client, "etf-fail", identity, ctx)).rejects.toThrow();
   expect([...failed.files.keys()].some((path) => path.endsWith("/etf-ready.json.gz"))).toBe(false);
 });
+
+test("one mismatched ETF M0 does not prevent other ETFs and every observed price chart", async () => {
+  const { warmRecentEtfCharts } = await import("../src/lib/instrumentChartStore.server");
+  const { chartReadyPath } = await import("../src/lib/instrumentChartContract");
+  const ctx = context();
+  const etfs = ctx.analysis.rows.filter((row) => row.instrument.instrumentType === "ETF");
+  const broken = etfs[0]!;
+  const healthy = etfs.find(
+    (row) =>
+      chartPath(identity, row.instrument.symbol, "120", "etf") !==
+      chartPath(identity, broken.instrument.symbol, "120", "etf"),
+  )!;
+  expect(healthy).toBeDefined();
+  // Corrupt only the published presentation score. Parity must still fail closed,
+  // while the unrelated ETF's independently verified bundle remains usable.
+  broken.etfStrategy = {
+    ...broken.etfStrategy!,
+    date: ctx.analysis.asOfDate,
+    dataStatus: "ready",
+    technical: 50,
+    priority: 50,
+    health: 50,
+    environment: 50,
+    environmentSource: "stock_sector",
+    score: 99,
+    region: "KR",
+    issues: [],
+  };
+  const cache = storage();
+  await expect(warmRecentEtfCharts(cache.client, "isolated", identity, ctx)).rejects.toThrow(
+    "버킷 검증 실패",
+  );
+  expect(cache.files.has(`isolated/${chartReadyPath(identity, "etf-prices")}`)).toBe(true);
+  expect(cache.files.has(`isolated/${chartReadyPath(identity, "etf")}`)).toBe(false);
+  for (const row of [broken, healthy])
+    expect(
+      cache.files.has(
+        `isolated/${chartPath(identity, row.instrument.symbol, "120", "etf-prices")}`,
+      ),
+    ).toBe(true);
+  expect(
+    cache.files.has(`isolated/${chartPath(identity, healthy.instrument.symbol, "120", "etf")}`),
+  ).toBe(true);
+  expect(
+    cache.files.has(`isolated/${chartPath(identity, broken.instrument.symbol, "120", "etf")}`),
+  ).toBe(false);
+});
