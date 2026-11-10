@@ -40,6 +40,22 @@ on:
         required: false
         default: false
         type: boolean
+      drive_file_id:
+        description: "Private Drive file id of the frozen US screening input CSV (ordinary run)"
+        required: false
+        type: string
+      drive_file_sha256:
+        description: "Exact SHA256 of that CSV (64 lowercase hex)"
+        required: false
+        type: string
+      drive_metadata_file_id:
+        description: "Private Drive file id of the collector's registered-source record"
+        required: false
+        type: string
+      drive_metadata_sha256:
+        description: "Exact SHA256 of that record (64 lowercase hex)"
+        required: false
+        type: string
   pull_request:
     paths:
       - "src/lib/engine/usProspective*.ts"
@@ -50,6 +66,10 @@ on:
       - "vitest.dashboard.config.ts"
       - "src/routes/us*.tsx"
       - "scripts/run-us-screening.ts"
+      - "scripts/us-drive-input.py"
+      - "tests/us-drive-*.test.ts"
+      - "tests/us_drive_input_test.py"
+      - "collectors/drive_history_v7/history.py"
       - "scripts/run-us-gap-replay.ts"
       - "scripts/us-*-replay*.ts"
       - "scripts/us-replay-source.ts"
@@ -91,6 +111,10 @@ on:
       - "vitest.dashboard.config.ts"
       - "src/routes/us*.tsx"
       - "scripts/run-us-screening.ts"
+      - "scripts/us-drive-input.py"
+      - "tests/us-drive-*.test.ts"
+      - "tests/us_drive_input_test.py"
+      - "collectors/drive_history_v7/history.py"
       - "scripts/run-us-gap-replay.ts"
       - "scripts/us-*-replay*.ts"
       - "scripts/us-replay-source.ts"
@@ -154,6 +178,7 @@ jobs:
         with:
           python-version: "3.13"
       - run: python -m pip install pandas==2.2.3 pyarrow==23.0.1
+      - run: python -m unittest tests.us_drive_input_test
       - run: python scripts/test-us-collector.py
       - run: python collectors/lite_r3/test_runtime.py
       - run: python collectors/lite_r3/test_us_source_quality.py
@@ -169,6 +194,7 @@ jobs:
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       SUPABASE_USER_ID: ${{ inputs.supabase_user_id || secrets.SUPABASE_USER_ID }}
       EXPECTED_SERVER_CODE_SHA: ${{ inputs.expected_server_code_sha }}
+      GOOGLE_DRIVE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_DRIVE_CREDENTIALS_JSON }}
     steps:
       - name: Verify reviewed server revision before operational access
         shell: bash
@@ -185,6 +211,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
       - run: npm ci
       - name: Run frozen US prospective engine or verified dated recovery
         env:
@@ -194,10 +223,35 @@ jobs:
           REPLAY_THEN_SCREEN: ${{ inputs.replay_then_screen }}
           REPLAY_EXPECTED_PLAN_HASH: ${{ inputs.replay_expected_plan_hash }}
           REPLAY_PUBLISH_RECOVERED_VIEW: ${{ inputs.replay_publish_recovered_view }}
+          DRIVE_FILE_ID: ${{ inputs.drive_file_id }}
+          DRIVE_FILE_SHA256: ${{ inputs.drive_file_sha256 }}
+          DRIVE_METADATA_FILE_ID: ${{ inputs.drive_metadata_file_id }}
+          DRIVE_METADATA_SHA256: ${{ inputs.drive_metadata_sha256 }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -n "$REPLAY_MANIFEST_PATH" ]]; then
+          if [[ -n "$DRIVE_FILE_ID" ]]; then
+            test -n "$DRIVE_FILE_SHA256"
+            test -n "$DRIVE_METADATA_FILE_ID"
+            test -n "$DRIVE_METADATA_SHA256"
+            test -z "$REPLAY_MANIFEST_PATH"
+            test -z "$REPLAY_MANIFEST_HASH"
+            test "$REPLAY_APPLY" != "true"
+            test "$REPLAY_THEN_SCREEN" != "true"
+            test "$REPLAY_PUBLISH_RECOVERED_VIEW" != "true"
+            test -z "$REPLAY_EXPECTED_PLAN_HASH"
+            test -n "$GOOGLE_DRIVE_CREDENTIALS_JSON"
+            python scripts/us-drive-input.py \
+              --file-id "$DRIVE_FILE_ID" \
+              --file-sha256 "$DRIVE_FILE_SHA256" \
+              --metadata-file-id "$DRIVE_METADATA_FILE_ID" \
+              --metadata-sha256 "$DRIVE_METADATA_SHA256" \
+              --output us-drive-input
+            npm run us:screening -- --user "$SUPABASE_USER_ID" \
+              --input-file us-drive-input/us_screening_input.csv \
+              --input-metadata us-drive-input/us_screening_source.json \
+              --input-sha256 "$DRIVE_FILE_SHA256"
+          elif [[ -n "$REPLAY_MANIFEST_PATH" ]]; then
             test -n "$REPLAY_MANIFEST_HASH"
             args=(--user "$SUPABASE_USER_ID" --manifest "$REPLAY_MANIFEST_PATH" --manifest-hash "$REPLAY_MANIFEST_HASH")
             if [[ "$REPLAY_APPLY" == "true" ]]; then args+=(--apply); fi
