@@ -207,6 +207,33 @@ export async function getInstrumentChartForSession(data: Input) {
     throw new Error("분석 결과에 없는 ETF입니다.");
   const cached = await readChartBundle<ChartBundle>(ctx.client, ctx.uid, path);
   if (cached?.[symbol]) return cached[symbol]!;
+
+  // All 120-day price caches were already written at publication, including
+  // ETFs. Recover their exact positive-close observations when a later ETF
+  // M0 parity rejection prevented its separate ETF price cache from warming.
+  // Never reuse a score, cross-revision cache, or full-history substitute.
+  if (data.kind === "etf-prices" && data.range === "120") {
+    const prior = await readChartBundle<PriceChart>(
+      ctx.client,
+      ctx.uid,
+      chartPath(data, symbol, "120", "prices"),
+    );
+    const prices = prior?.[symbol];
+    if (
+      prices &&
+      Array.isArray(prices.chart) &&
+      prices.chart.length > 0 &&
+      prices.chart.every(
+        (point) =>
+          /^\d{4}-\d{2}-\d{2}$/.test(point.tradeDate) &&
+          point.tradeDate <= ctx.analysis.asOfDate &&
+          typeof point.close === "number" &&
+          Number.isFinite(point.close) &&
+          point.close > 0,
+      )
+    )
+      return prices;
+  }
   return await prepareChartBucket(
     ctx.client,
     ctx.uid,
