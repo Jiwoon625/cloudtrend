@@ -19,7 +19,10 @@ vi.mock("../scripts/run-screening", () => ({ runScreening: mocks.engine }));
 vi.mock("../scripts/prepare-drive-result-charts", () => ({
   prepareDriveCharts: mocks.charts,
 }));
-import { runDriveHistoryScreening } from "../scripts/run-drive-history-screening";
+import {
+  driveHistoryExitCode,
+  runDriveHistoryScreening,
+} from "../scripts/run-drive-history-screening";
 
 const owner = "11111111-1111-1111-1111-111111111111";
 const prefix = `https://example.supabase.co/storage/v1/object/cloudtrend-data/${owner}/`;
@@ -226,7 +229,7 @@ describe("Drive history execution wrapper", () => {
     },
   );
 
-  it("prepares recent charts and restores network when publishing to dashboard", async () => {
+  it("prepares recent and full charts before marking publication complete", async () => {
     actions();
     await prepared("publish");
     mocks.prepared.mockImplementation(async (directory) => result(directory, true));
@@ -237,11 +240,13 @@ describe("Drive history execution wrapper", () => {
       status: "COMPLETED_PUBLISHED",
       dashboardPublished: true,
       recentChartsPrepared: true,
+      fullChartsPrepared: true,
     });
+    expect(driveHistoryExitCode(completed)).toBe(0);
     expect(globalThis.fetch).toBe(transport);
   });
 
-  it("records chart preparation warning without failing screening publication", async () => {
+  it("keeps the dashboard but fails overall completion when charts are missing", async () => {
     actions();
     await prepared("publish");
     mocks.prepared.mockImplementation(async (directory) => result(directory, true));
@@ -249,10 +254,14 @@ describe("Drive history execution wrapper", () => {
     const completed = await runDriveHistoryScreening(root, true);
     expect(mocks.charts).toHaveBeenCalledWith(path.join(root, "prepared"));
     expect(completed).toMatchObject({
-      status: "COMPLETED_PUBLISHED",
+      status: "COMPLETED_PUBLISHED_CHARTS_PENDING",
       dashboardPublished: true,
+      recentChartsPrepared: false,
+      fullChartsPrepared: false,
       chartPreparationError: "Storage timeout",
     });
+    expect(driveHistoryExitCode(completed)).toBe(1);
+    expect(await receipt()).toMatchObject(completed);
     expect(globalThis.fetch).toBe(transport);
   });
 });

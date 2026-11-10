@@ -2,6 +2,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { loadDriveHistory, KR_OWNER } from "./drive-history-inputs";
+import { liveRegistryInput } from "./live-registry-timestamp";
 import { downloadJson, trustedSupabaseClient } from "./analysis-run-store";
 import { inputFingerprint } from "./web-screening-cache-store";
 import type { LoadedSourceInput, SourceRecord } from "./source-registry-store";
@@ -180,7 +181,10 @@ export async function repairDriveCharts(directory = "drive-chart-work") {
     const metadata = savedOperationalIdentity(bundle.result);
     await stage("saved-generation-verified", { asOfDate: bundle.result.asOfDate });
 
-    const { inputs } = await loadDriveHistory(path.join(root, "baseline"));
+    const history = await loadDriveHistory(path.join(root, "baseline"));
+    // Match the publisher's lossless psql-to-ISO timestamp normalization.
+    // File/data/schema hashes and raw Drive bytes are unchanged.
+    const inputs = history.inputs.map(liveRegistryInput);
     if (
       inputFingerprint(inputs, bundle.config, metadata) !==
       localHead.drivePublication.baseFingerprint

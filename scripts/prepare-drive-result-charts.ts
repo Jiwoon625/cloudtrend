@@ -1,9 +1,10 @@
-/** Derive recent chart results from verified runner-local inputs; never uploads source CSV. */
-import { readFile } from "node:fs/promises";
+/** Derive recent and full chart results from verified inputs; never uploads source CSV. */
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { parseManualMarketDataWithReferences } from "../src/lib/krxReviewReferenceParser";
 import { restoreChartContext, warmRecentCharts } from "../src/lib/instrumentChartStore.server";
+import { warmFullInstrumentCharts } from "../src/lib/fullInstrumentCharts.server";
 import { loadOperationalIndex } from "../src/lib/operationalUnderlyingIndex.server";
 import { savedOperationalIdentity } from "../src/lib/screeningInputIdentity";
 import { trustedSupabaseClient, downloadJson } from "./analysis-run-store";
@@ -13,9 +14,8 @@ export async function prepareDriveCharts(root: string) {
   const directory = path.resolve(root),
     owner = process.env["SUPABASE_USER_ID"];
   if (!owner) throw new Error("Missing owner");
-  const receipt = JSON.parse(
-    await readFile(path.join(directory, "execution-receipt.json"), "utf8"),
-  );
+  const receiptPath = path.join(directory, "execution-receipt.json");
+  const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
   if (
     receipt.mode !== "publish" ||
     receipt.dashboardPublished !== true ||
@@ -78,6 +78,28 @@ export async function prepareDriveCharts(root: string) {
     receipt.publication.resultDigest,
     provider ?? undefined,
   );
-  await warmRecentCharts(client, owner, receipt.publication, ctx);
-  console.log(JSON.stringify({ recentChartsPrepared: true, asOfDate: bundle.result.asOfDate }));
+  receipt.chartPreparation = { status: "PREPARING", recent: false, full: false };
+  await writeFile(receiptPath, JSON.stringify(receipt, null, 2));
+  try {
+    await warmRecentCharts(client, owner, receipt.publication, ctx);
+    receipt.chartPreparation.recent = true;
+    await writeFile(receiptPath, JSON.stringify(receipt, null, 2));
+    const coverage = await warmFullInstrumentCharts(client, owner, receipt.publication, ctx, {
+      includeStocks: true,
+    });
+    receipt.chartPreparation = {
+      status: "COMPLETED_VERIFIED",
+      recent: true,
+      full: true,
+      etfs: coverage.filter((item) => item.kind === "ETF").length,
+      stocks: coverage.filter((item) => item.kind === "STOCK").length,
+      readbackVerified: true,
+    };
+    console.log(JSON.stringify({ chartPreparation: receipt.chartPreparation }));
+  } catch (error) {
+    receipt.chartPreparation.status = "INCOMPLETE";
+    throw error;
+  } finally {
+    await writeFile(receiptPath, JSON.stringify(receipt, null, 2));
+  }
 }
