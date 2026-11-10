@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { buildFullUniverseSectorDataset } from "./engine/sectorRotationFullUniverse";
+import { chartSavedUniverse } from "./chartSavedUniverse";
 import { deterministicAnalysis, stableCacheJson } from "./screeningCacheContract";
 import { gzipSync, gunzipSync } from "node:zlib";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -48,7 +49,7 @@ export function restoreChartContext(
   if (digest !== expectedDigest)
     throw new Error("저장된 스크리닝 결과 검증에 실패했습니다. 스크리닝을 다시 실행해 주세요.");
   return {
-    dataset: buildFullUniverseSectorDataset(rawDataset),
+    dataset: buildFullUniverseSectorDataset(chartSavedUniverse(rawDataset, analysis)),
     analysis,
     config,
     ...(operationalIndex ? { operationalIndex } : {}),
