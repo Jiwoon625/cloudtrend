@@ -1,3 +1,4 @@
+import { currentScreeningEngineIdentity } from "../src/lib/screeningEngineIdentity";
 import { preliminarySource } from "./kr-preliminary-fixture";
 import { createImmutableArchiveFixture } from "./immutable-archive-fixture";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -196,6 +197,8 @@ for (const phase of ["prices", "warm"] as const) {
     expect(mocks.complete).toHaveBeenCalledTimes(1);
     const bundle = JSON.parse(uploaded.get(run.result_path)!);
     expect(bundle.schemaVersion).toBe(1);
+    expect(bundle.engineIdentity).toEqual(currentScreeningEngineIdentity);
+    expect(mocks.cache.mock.calls[0]![0].engineIdentity).toEqual(bundle.engineIdentity);
     expect(bundle.summary).toEqual(run.summary);
     expect(run.summary.pipelineStatus).toMatchObject({
       screening: "COMPLETED",
@@ -206,6 +209,7 @@ for (const phase of ["prices", "warm"] as const) {
     expect(bundle.data.sources[0].bytes).toBe(6);
     expect(Object.keys(bundle)).toEqual([
       "schemaVersion",
+      "engineIdentity",
       "run",
       "data",
       "config",

@@ -6,6 +6,14 @@ on:
     paths:
       - scripts/**
       - tests/screening-memory*.ts
+      - tests/screening-engine-identity.test.ts
+      - tests/drive-publication-publisher.test.ts
+      - tests/drive-publication-writes.test.ts
+      - src/lib/screeningEngineIdentity.ts
+      - src/lib/signalEngineManifest.generated.json
+      - src/lib/screeningCache.ts
+      - src/lib/screeningCacheContract.ts
+      - src/lib/driveResultPublication.ts
       - tests/ci-source-privacy.test.ts
       - tests/source-validation-cache.test.ts
       - tests/source-registration-cache.test.ts
@@ -38,6 +46,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npx tsc --noEmit
       - name: Regression contracts
         run: |
           npx vitest run --config vitest.screening-memory.config.ts

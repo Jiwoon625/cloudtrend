@@ -1,3 +1,4 @@
+import { verifiedCalculationEngineIdentity } from "./screening-engine-identity";
 import { latestSignalConfig } from "../src/lib/signalJournal.server";
 import { runSignalJournalStage } from "../src/lib/signalJournalStage";
 import { publishKrSignalJournal } from "../src/lib/krSignalJournal.server";
@@ -234,6 +235,7 @@ export async function runScreening(
     }
   }
 
+  const engineIdentity = await verifiedCalculationEngineIdentity();
   const {
     analysis: engineAnalysis,
     dataset,
@@ -277,6 +279,7 @@ export async function runScreening(
   };
   const bundle = {
     schemaVersion: 1 as const,
+    engineIdentity,
     run,
     data: {
       ...(inputProvenance ? { inputProvenance } : {}),
@@ -323,6 +326,7 @@ export async function runScreening(
 
     memory("cache-publish-start");
     webCache = await persistWebScreeningCaches({
+      engineIdentity,
       client,
       userId: options.supabaseUserId,
       inputs,
