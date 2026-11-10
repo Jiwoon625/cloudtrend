@@ -180,7 +180,11 @@ async function main() {
       client,
       `${JOURNAL_OWNER}/results/screening/latest.json`,
     );
-    const latestRun = latest.resultPath.split("/").at(-1)?.replace(/\.json$/, "") ?? "";
+    const latestRun =
+      latest.resultPath
+        .split("/")
+        .at(-1)
+        ?.replace(/\.json$/, "") ?? "";
     let runIds = [latestRun];
     if (process.env["JOURNAL_BACKFILL"] === "true") {
       const request = JSON.parse(

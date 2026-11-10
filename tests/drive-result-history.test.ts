@@ -5,6 +5,7 @@ import { deterministicAnalysis, stableCacheJson } from "../src/lib/screeningCach
 import {
   installJournalBoundary,
   JOURNAL_OWNER,
+  recordOriginalJournal,
   verifiedJournalSnapshot,
 } from "../scripts/drive-result-history";
 
@@ -55,7 +56,9 @@ test.each(["phase", "date", "resultDigest", "resultPath"])(
 
 test("does not upgrade a preliminary calculation even with a matching hash", () => {
   const { receipt, bundle } = fixture();
-  bundle.result.krPublication = { phase: "PRELIMINARY" } as AnalysisResult["krPublication"];
+  bundle.result.krPublication = {
+    phase: "PRELIMINARY",
+  } as NonNullable<AnalysisResult["krPublication"]>;
   receipt.resultDigest = createHash("sha256")
     .update(stableCacheJson(deterministicAnalysis(bundle.result)))
     .digest("hex");
@@ -90,4 +93,55 @@ test("network permits only approved owner journals, never raw sources or financi
   expect(boundary.network.journalWrites).toBe(1);
   expect(transport).toHaveBeenCalledTimes(1);
   boundary.restore();
+});
+
+function memoryClient() {
+  const tables = new Map<string, Map<string, Record<string, unknown>>>();
+  const client = {
+    from: (table: string) => {
+      const rows = tables.get(table) ?? new Map<string, Record<string, unknown>>();
+      tables.set(table, rows);
+      let key = "";
+      const query = {
+        select: () => query,
+        eq: (field: string, value: string) => {
+          if (field === "date" || field === "run_id") key = value;
+          return query;
+        },
+        maybeSingle: async () => ({ data: rows.get(key) ?? null, error: null }),
+        single: async () => ({ data: rows.get(key) ?? null, error: null }),
+        upsert: async (value: Record<string, unknown>) => {
+          const id = String(value[table === "screening_history" ? "date" : "run_id"]);
+          if (table === "screening_history" || !rows.has(id))
+            rows.set(id, JSON.parse(JSON.stringify(value)));
+          return { error: null };
+        },
+      };
+      return query;
+    },
+  } as unknown as Parameters<typeof recordOriginalJournal>[0];
+  return { client, tables };
+}
+
+test("restores and readback-verifies the daily snapshot idempotently", async () => {
+  const { receipt, bundle } = fixture();
+  const snapshot = verifiedJournalSnapshot(receipt, bundle, runId);
+  const { client, tables } = memoryClient();
+  await expect(recordOriginalJournal(client, snapshot)).resolves.toBe("RECORDED_VERIFIED");
+  await expect(recordOriginalJournal(client, snapshot)).resolves.toBe("RECORDED_VERIFIED");
+  expect(tables.get("screening_history")?.size).toBe(1);
+  expect(tables.get("screening_run_archive")?.size).toBe(1);
+});
+
+test("archives an older original without replacing a newer same-date representative", async () => {
+  const { receipt, bundle } = fixture();
+  const snapshot = verifiedJournalSnapshot(receipt, bundle, runId);
+  const newer = { ...snapshot, savedAt: "2026-11-10T01:00:00Z", runId: "newer-run" };
+  const { client, tables } = memoryClient();
+  tables.set("screening_history", new Map([[snapshot.date, { snapshot: newer }]]));
+  await expect(recordOriginalJournal(client, snapshot)).resolves.toBe(
+    "ARCHIVED_WITHOUT_REPLACING_NEWER",
+  );
+  expect(tables.get("screening_history")?.get(snapshot.date)?.["snapshot"]).toBe(newer);
+  expect(tables.get("screening_run_archive")?.has(runId)).toBe(true);
 });
