@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["scripts/drive-result-history.ts", "tests/drive-result-history.test.ts"],
+  "compilerOptions": {
+    "noImplicitReturns": false
+  }
+}
