@@ -86,11 +86,22 @@ export async function publishDriveResult(input: {
       head.drivePublication.asOfDate,
       head.drivePublication.phase,
     );
+    const carried = head.drivePublication.sources;
+    const derived = input.sources.slice(0, carried.length);
+    // Everything about a published parent must still be reproduced, but its publication contract
+    // is immutable: a proof can legitimately be derived across the parts of the run that first
+    // published it, which a later re-derivation from that part alone cannot reconstruct. Carry the
+    // published contract forward instead of re-deriving it, and only append this run's own parts.
+    const binding = (s: DriveResultSource) => ({
+      ...s,
+      record: { ...s.record, validation_result: undefined },
+    });
     if (
-      stableCacheJson(input.sources.slice(0, head.drivePublication.sources.length)) !==
-      stableCacheJson(head.drivePublication.sources)
+      derived.length !== carried.length ||
+      stableCacheJson(derived.map(binding)) !== stableCacheJson(carried.map(binding))
     )
       throw new Error("이전 Drive 입력 이력이 누락되거나 변경됐습니다.");
+    input.sources = [...carried, ...input.sources.slice(carried.length)];
   }
   const actual = inputs.flatMap((i) => (i.sourceRecord ? [i.sourceRecord] : []));
   const verifiedPhase = classifyKrScreeningPublication(actual, bundle.result.asOfDate).phase;
