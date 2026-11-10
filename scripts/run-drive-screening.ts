@@ -284,10 +284,11 @@ export async function runDriveScreening(
               throw new Error(
                 "FINAL requires exact official capitalization on actual latest source rows",
               );
-            // Only this run's own parts may be read from the run-wide row set; a retained parent
-            // keeps the rows of its own part so its republished identity stays unchanged.
-            const supersessionRows =
-              group.spec === spec && runRows.length ? runRows : validation.rows;
+            // Only this run's own parts may be read from the run-wide row set, and only they may
+            // take on a new proof: a retained parent republishes the contract it already carried,
+            // otherwise the previous Drive input history no longer matches.
+            const isCurrentRun = group.spec === spec;
+            const supersessionRows = isCurrentRun && runRows.length ? runRows : validation.rows;
             const supersessionKeys = new Set(supersessionRows.map((row) => sourceRowKey(row)));
             const repairs: NonNullable<typeof krPublication.supersedesPending> = [];
             for (const prior of inputs) {
@@ -323,7 +324,7 @@ export async function runDriveScreening(
               const covered =
                 normalized.rows.length > 0 &&
                 normalized.rows.every((row) => supersessionKeys.has(sourceRowKey(row)));
-              if (!hasPendingTarget && covered && prior.sourceRecord.id)
+              if (isCurrentRun && !hasPendingTarget && covered && prior.sourceRecord.id)
                 repairs.push({
                   sourceId: prior.sourceRecord.id,
                   fileHash: priorPublication.sourceFileHash,
