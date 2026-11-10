@@ -8,6 +8,7 @@
     "scripts/us-replay-continuation.ts",
     "scripts/us-shadow-replay-plan.ts",
     "scripts/read-current-report-context.ts",
-    "scripts/plan-legacy-ledger-retirement.ts"
+    "scripts/plan-legacy-ledger-retirement.ts",
+    "tests/us-drive-source.test.ts"
   ]
 }

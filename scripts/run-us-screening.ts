@@ -7,6 +7,7 @@ import { usesLegacyUsOperatingLedger } from "../src/lib/legacyUsLedgerBoundary";
 import { loadPublishedUsRecoveryView } from "./us-recovery-publication";
 import { compactRow, publishBrowserViews } from "./us-screening-publication";
 import { assertUsScreeningCoverage } from "./us-replay-source";
+import { readFileSync } from "node:fs";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
@@ -27,6 +28,104 @@ import {
 function arg(name: string) {
   const i = process.argv.indexOf(name);
   return i >= 0 ? process.argv[i + 1] : undefined;
+}
+
+/** One screening source, whether it was registered in Supabase or handed over from Drive. */
+export interface UsScreeningSource {
+  user_id?: string;
+  as_of_date: string;
+  storage_bucket: string;
+  storage_path: string;
+  row_count: number;
+  symbol_count: number;
+  data_hash: string;
+  schema_version: string;
+  source_provider: string;
+  collected_at: string;
+  metadata: Record<string, unknown>;
+}
+
+const DRIVE_BUCKET = "google-drive";
+
+/**
+ * Read a private-Drive handover: the frozen input CSV plus the collector's own
+ * registered-source record. Nothing is fetched from Supabase Storage, so a source
+ * that already lives in Drive costs no Supabase storage or egress.
+ */
+export function loadUsScreeningSourceFromFiles(
+  csvPath: string,
+  metadataPath: string,
+  expectedHash?: string,
+): { source: UsScreeningSource; csv: string } {
+  const raw = readFileSync(csvPath);
+  const actualHash = `sha256:${sha256(raw)}`;
+  const expected = (expectedHash ?? "").trim().replace(/^sha256:/, "");
+  if (expected && expected !== actualHash.slice("sha256:".length))
+    throw new Error("US 입력 해시 불일치: 전달된 지문과 로컬 CSV가 다릅니다");
+  const declared = JSON.parse(readFileSync(metadataPath, "utf8")) as Partial<UsScreeningSource>;
+  if (!declared || typeof declared !== "object" || Array.isArray(declared))
+    throw new Error("US 입력 메타데이터 형식이 올바르지 않습니다");
+  const text = raw.toString("utf8");
+  const rows = parseUsProspectiveCsv(text);
+  const dates = [...new Set(rows.map((row) => row.date))].sort();
+  const asOfDate = dates.at(-1);
+  if (dates.length !== 1 || !asOfDate || !/^\d{4}-\d{2}-\d{2}$/.test(asOfDate))
+    throw new Error("US 입력 CSV는 단일 기준일의 행만 담아야 합니다");
+  const symbolCount = new Set(rows.map((row) => row.symbol)).size;
+  if (declared.data_hash !== actualHash)
+    throw new Error("US 입력 해시 불일치: 등록 기록과 로컬 CSV가 다릅니다");
+  if (declared.as_of_date !== asOfDate)
+    throw new Error("US 입력 기준일이 등록 기록과 다릅니다");
+  if (declared.row_count !== rows.length || declared.symbol_count !== symbolCount)
+    throw new Error("US 입력 행/종목 수가 등록 기록과 다릅니다");
+  if (!declared.metadata || typeof declared.metadata !== "object" || Array.isArray(declared.metadata))
+    throw new Error("US 입력 메타데이터가 비어 있습니다");
+  const bucket = declared.storage_bucket === DRIVE_BUCKET ? DRIVE_BUCKET : ANALYSIS_BUCKET;
+  if (
+    typeof declared.storage_path !== "string" ||
+    !declared.storage_path ||
+    (bucket === DRIVE_BUCKET && !declared.storage_path.startsWith("drive://"))
+  )
+    throw new Error("US 입력 원천 위치 기록이 올바르지 않습니다");
+  for (const key of ["schema_version", "source_provider", "collected_at"] as const)
+    if (typeof declared[key] !== "string" || !declared[key])
+      throw new Error(`US 입력 메타데이터에 ${key}가 없습니다`);
+  if (!Number.isFinite(Date.parse(String(declared.collected_at))))
+    throw new Error("US 입력 수집 시각이 올바르지 않습니다");
+  assertUsScreeningCoverage(declared.metadata, rows);
+  return {
+    source: {
+      ...declared,
+      as_of_date: asOfDate,
+      data_hash: actualHash,
+      row_count: rows.length,
+      symbol_count: symbolCount,
+      storage_bucket: bucket,
+      metadata: declared.metadata,
+    } as UsScreeningSource,
+    csv: text,
+  };
+}
+
+async function loadRegisteredUsSource(
+  client: ReturnType<typeof trustedSupabaseClient>,
+  userId: string,
+) {
+  const { data: ingest, error: ingestError } = await client
+    .from("us_screening_ingest")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (ingestError) throw new Error(`US ingest 조회 실패: ${ingestError.message}`);
+  return ingest;
+}
+
+function requireInputMetadata(inputFile: string, metadataPath: string | undefined) {
+  if (!metadataPath)
+    throw new Error(
+      `--input-file(${inputFile})에는 수집기가 남긴 --input-metadata 원천 기록이 함께 필요합니다.`,
+    );
+  return metadataPath;
 }
 
 async function downloadText(client: ReturnType<typeof trustedSupabaseClient>, path: string) {
@@ -50,21 +149,21 @@ async function maybeDownloadJson<T>(
 export async function runUsScreening(
   client: ReturnType<typeof trustedSupabaseClient>,
   userId: string,
+  options: { source?: UsScreeningSource; csv?: string } = {},
 ) {
-  const { data: ingest, error: ingestError } = await client
-    .from("us_screening_ingest")
-    .select("*")
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (ingestError) throw new Error(`US ingest 조회 실패: ${ingestError.message}`);
+  const ingest = options.source ?? (await loadRegisteredUsSource(client, userId));
   if (!ingest) {
     console.log("No US ingest yet; nothing to process.");
     return;
   }
   const legacyOperating = usesLegacyUsOperatingLedger(String(ingest.as_of_date));
-  if (ingest.storage_bucket !== ANALYSIS_BUCKET) throw new Error("Unexpected US storage bucket");
+  // A Drive handover is verified by the caller's file hash, not by a Storage bucket.
+  if (!options.source && ingest.storage_bucket !== ANALYSIS_BUCKET)
+    throw new Error("Unexpected US storage bucket");
 
-  const csv = await downloadText(client, String(ingest.storage_path));
+  if (options.source && typeof options.csv !== "string")
+    throw new Error("US Drive 입력 본문이 함께 전달되지 않았습니다");
+  const csv = options.csv ?? (await downloadText(client, String(ingest.storage_path)));
   const actualHash = `sha256:${sha256(Buffer.from(csv, "utf8"))}`;
   if (actualHash !== String(ingest.data_hash))
     throw new Error(`US 입력 해시 불일치: DB ${ingest.data_hash} / Storage ${actualHash}`);
@@ -298,7 +397,23 @@ export async function runUsScreening(
 async function main() {
   const userId = arg("--user") ?? process.env["SUPABASE_USER_ID"];
   if (!userId) throw new Error("--user 또는 SUPABASE_USER_ID가 필요합니다.");
-  await runUsScreening(trustedSupabaseClient(), userId);
+  const inputFile = arg("--input-file");
+  const inputMetadata = arg("--input-metadata");
+  const inputSha256 = arg("--input-sha256");
+  const handover = inputFile
+    ? loadUsScreeningSourceFromFiles(
+        inputFile,
+        requireInputMetadata(inputFile, inputMetadata),
+        inputSha256,
+      )
+    : undefined;
+  if (!handover && (inputMetadata || inputSha256))
+    throw new Error("--input-metadata/--input-sha256는 --input-file과 함께 써야 합니다.");
+  await runUsScreening(
+    trustedSupabaseClient(),
+    userId,
+    handover ? { source: handover.source, csv: handover.csv } : {},
+  );
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
   main().catch((error) => {
