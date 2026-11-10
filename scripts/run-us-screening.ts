@@ -74,11 +74,14 @@ export function loadUsScreeningSourceFromFiles(
   const symbolCount = new Set(rows.map((row) => row.symbol)).size;
   if (declared.data_hash !== actualHash)
     throw new Error("US 입력 해시 불일치: 등록 기록과 로컬 CSV가 다릅니다");
-  if (declared.as_of_date !== asOfDate)
-    throw new Error("US 입력 기준일이 등록 기록과 다릅니다");
+  if (declared.as_of_date !== asOfDate) throw new Error("US 입력 기준일이 등록 기록과 다릅니다");
   if (declared.row_count !== rows.length || declared.symbol_count !== symbolCount)
     throw new Error("US 입력 행/종목 수가 등록 기록과 다릅니다");
-  if (!declared.metadata || typeof declared.metadata !== "object" || Array.isArray(declared.metadata))
+  if (
+    !declared.metadata ||
+    typeof declared.metadata !== "object" ||
+    Array.isArray(declared.metadata)
+  )
     throw new Error("US 입력 메타데이터가 비어 있습니다");
   const bucket = declared.storage_bucket === DRIVE_BUCKET ? DRIVE_BUCKET : ANALYSIS_BUCKET;
   if (

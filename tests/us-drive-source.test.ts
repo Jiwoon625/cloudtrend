@@ -2,10 +2,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import {
-  loadUsScreeningSourceFromFiles,
-  runUsScreening,
-} from "../scripts/run-us-screening";
+import { loadUsScreeningSourceFromFiles, runUsScreening } from "../scripts/run-us-screening";
 import { bytesHash } from "../scripts/us-replay-source";
 import { sourceCsv } from "./us-replay-fixtures";
 import type { trustedSupabaseClient } from "../scripts/analysis-run-store";
@@ -121,7 +118,9 @@ describe("private Drive screening handover", () => {
 
   it("requires the collector record and the CSV together", () => {
     const h = handover();
-    expect(() => loadUsScreeningSourceFromFiles(h.csvPath, join(h.files.dir, "missing.json"))).toThrow();
+    expect(() =>
+      loadUsScreeningSourceFromFiles(h.csvPath, join(h.files.dir, "missing.json")),
+    ).toThrow();
   });
 });
 
