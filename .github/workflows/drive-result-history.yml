@@ -3,6 +3,7 @@ on:
   workflow_dispatch:
   workflow_run:
     workflows: [CloudTrend Drive history v7, CloudTrend Drive screening executor]
+    branches: [main]
     types: [completed]
   push:
     branches: [main]
