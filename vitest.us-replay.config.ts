@@ -7,6 +7,7 @@ export default defineConfig({
     include: [
       "tests/us-replay-*.test.ts",
       "tests/us-source-quality.test.ts",
+      "tests/us-drive-source.test.ts",
       "tests/us-operating-replay.test.ts",
       "tests/us-recovery-*.test.ts",
       "tests/us-recovery-*.test.tsx",
