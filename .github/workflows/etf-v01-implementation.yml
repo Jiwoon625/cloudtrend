@@ -9,6 +9,8 @@ on:
         "src/components/EtfScreener.tsx",
         "src/routes/screener.etfs.tsx",
         "src/lib/engine/manualDataset.ts",
+        "src/lib/krxReviewReferenceParser.ts",
+        "tests/etf-turnover-adapter.test.ts",
         "src/components/PortfolioAssetHub.tsx",
         "src/lib/dashboardOperations*",
         "src/lib/screeningCacheContract.ts",
@@ -35,7 +37,7 @@ jobs:
       - run: npm ci
       - run: mkdir -p etf-validation
       - name: Verify confirmed ETF and existing stock rules
-        run: npx vitest run src/lib/engine/etfStrategy.test.ts src/lib/engine/operationalStrategy.test.ts src/lib/portfolioStrategy.test.ts src/lib/statusDisplay.test.ts src/lib/engine/screeningSourceContract.test.ts tests/dashboard-operations.test.ts tests/dashboard-cache.test.ts tests/etf-confirmation-ui.test.tsx --reporter=default --reporter=json --outputFile=etf-validation/unit-tests.json
+        run: npx vitest run tests/etf-turnover-adapter.test.ts src/lib/engine/etfStrategy.test.ts src/lib/engine/operationalStrategy.test.ts src/lib/portfolioStrategy.test.ts src/lib/statusDisplay.test.ts src/lib/engine/screeningSourceContract.test.ts tests/dashboard-operations.test.ts tests/dashboard-cache.test.ts tests/etf-confirmation-ui.test.tsx --reporter=default --reporter=json --outputFile=etf-validation/unit-tests.json
       - run: npm run build
       - name: Verify portfolio session cache and patched framework resolutions
         run: npx vitest run tests/portfolio-session-cache.test.ts --reporter=default
