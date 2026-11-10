@@ -19,6 +19,8 @@ import { liveRegistryInput } from "./live-registry-timestamp";
 import type { AnalysisResult } from "../src/lib/engine/pipeline";
 import type { ScoringConfig } from "../src/lib/engine/scoring";
 
+import { carryPublishedParentContracts } from "./drive-parent-contracts";
+
 export const DRIVE_INPUT_HEAD = "results/drive-screening/input-head/latest.json";
 export async function maybeDriveHead(client: SupabaseClient, owner: string) {
   try {
@@ -86,29 +88,13 @@ export async function publishDriveResult(input: {
       head.drivePublication.asOfDate,
       head.drivePublication.phase,
     );
-    const carried = head.drivePublication.sources;
-    const derived = input.sources.slice(0, carried.length);
-    // Everything about a published parent must still be reproduced, but its publication contract
-    // is immutable: a proof can legitimately be derived across the parts of the run that first
-    // published it, which a later re-derivation from that part alone cannot reconstruct. Carry the
-    // published contract forward instead of re-deriving it, and only append this run's own parts.
-    const binding = (s: DriveResultSource) => ({
-      ...s,
-      record: { ...s.record, validation_result: undefined },
-    });
-    if (
-      derived.length !== carried.length ||
-      stableCacheJson(derived.map(binding)) !== stableCacheJson(carried.map(binding))
-    )
-      throw new Error("이전 Drive 입력 이력이 누락되거나 변경됐습니다.");
-    input.sources = [...carried, ...input.sources.slice(carried.length)];
-    // Judge the calculation on the same contracts that will be published: a parent's identity
-    // (and the fingerprint that binds it) must use the published contract, not a re-derivation.
-    for (const entry of carried) {
-      const published = entry.record;
-      const target = inputs.find((i) => i.sourceRecord?.id === published.id);
-      if (target) target.sourceRecord = published as unknown as LoadedSourceInput["sourceRecord"];
-    }
+    const count = head.drivePublication.sources.length;
+    const carried = await carryPublishedParentContracts(
+      head.drivePublication,
+      input.sources.slice(0, count),
+      inputs,
+    );
+    input.sources = [...carried, ...input.sources.slice(count)];
   }
   const actual = inputs.flatMap((i) => (i.sourceRecord ? [i.sourceRecord] : []));
   const verifiedPhase = classifyKrScreeningPublication(actual, bundle.result.asOfDate).phase;

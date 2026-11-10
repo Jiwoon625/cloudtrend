@@ -52,7 +52,7 @@ jobs:
       - run: npx tsc --noEmit -p tsconfig.drive-history.json
       - run: pip install -r collectors/drive_history_v7/requirements.txt
       - run: python -m unittest discover -s tests -p 'drive_*test.py'
-      - run: npx vitest run --config scripts/drive-screening.config.ts tests/drive-history-v7.test.ts tests/drive-history-runner.test.ts tests/drive-source.test.ts tests/drive-publication.test.ts tests/drive-publication-publisher.test.ts tests/drive-publication-writes.test.ts
+      - run: npx vitest run --config scripts/drive-screening.config.ts tests/drive-history-v7.test.ts tests/drive-history-runner.test.ts tests/drive-source.test.ts tests/drive-parent-contracts.test.ts tests/drive-publication.test.ts tests/drive-publication-publisher.test.ts tests/drive-publication-writes.test.ts
   calculate:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest

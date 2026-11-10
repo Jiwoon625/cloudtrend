@@ -31,6 +31,7 @@ import {
 import { runScreening } from "./run-screening";
 import { publishDriveResult, maybeDriveHead } from "./publish-drive-result";
 import { stableCacheJson } from "../src/lib/screeningCacheContract";
+import { carryPublishedParentContracts, driveSourceBinding } from "./drive-parent-contracts";
 import type { DriveResultSource } from "../src/lib/driveResultPublication";
 
 interface PreparedRun {
@@ -170,6 +171,7 @@ export async function runDriveScreening(
         dataHash: i.dataHash,
       }));
       const groups: Array<Awaited<ReturnType<typeof readPreparedGroup>>> = [];
+      let pinnedHead: Awaited<ReturnType<typeof maybeDriveHead>> = null;
       if (spec.mode === "publish" || history) {
         if (
           spec.expectedHeadHash === undefined ||
@@ -180,6 +182,9 @@ export async function runDriveScreening(
         const head = await maybeDriveHead(client, userId);
         if ((head ? sha(stableCacheJson(head)) : null) !== spec.expectedHeadHash)
           throw new Error("Drive input head changed after preparation");
+        pinnedHead = head;
+        if (new Set(spec.parents).size !== spec.parents.length)
+          throw new Error("Duplicate parent directory");
         for (const parent of spec.parents) {
           if (!/^parent-\d{3}$/.test(parent)) throw new Error("Invalid parent directory");
           groups.push(await readPreparedGroup(path.join(directory, parent)));
@@ -228,7 +233,15 @@ export async function runDriveScreening(
           runPartValidation.set(part.path, validation);
           runRows.push(...validation.rows);
         }
-      for (const group of groups)
+      for (const group of groups) {
+        if (group.spec === spec && (spec.mode === "publish" || history)) {
+          const carried = await carryPublishedParentContracts(
+            pinnedHead?.drivePublication,
+            proofSources,
+            inputs,
+          );
+          proofSources.splice(0, proofSources.length, ...carried);
+        }
         for (const part of group.parts) {
           const validation =
             (group.spec === spec ? runPartValidation.get(part.path) : undefined) ??
@@ -253,8 +266,7 @@ export async function runDriveScreening(
             });
           }
           const id = `drive-${group.spec.runId}-${part.sha256.slice(0, 16)}`;
-          if (seen.has(id)) continue;
-          seen.add(id);
+
           const record = recordFor({
             id,
             userId,
@@ -346,7 +358,7 @@ export async function runDriveScreening(
             superseded_by: null,
             validation_result: { ...record.validation_result, krPublication },
           } as SourceRecord;
-          proofSources.push({
+          const proofSource: DriveResultSource = {
             archiveFileId: group.spec.archiveFileId,
             archiveSha256: group.spec.archiveSha256,
             csvFile: part.path,
@@ -363,7 +375,22 @@ export async function runDriveScreening(
               created_at: source.created_at,
               validation_result: { krPublication },
             },
-          });
+          };
+          if (seen.has(id) || inputs.some((input) => input.id === id)) {
+            // Re-running the exact already-published current archive is idempotent. The
+            // parent contract was authenticated above; never let a collision replace it.
+            const existing = proofSources.filter((entry) => entry.record.id === id);
+            if (
+              group.spec !== spec ||
+              existing.length !== 1 ||
+              stableCacheJson(driveSourceBinding(existing[0]!)) !==
+                stableCacheJson(driveSourceBinding(proofSource))
+            )
+              throw new Error("Duplicate or modified Drive source identity");
+            continue;
+          }
+          seen.add(id);
+          proofSources.push(proofSource);
           inputs.push({
             id,
             fileName: part.path,
@@ -382,6 +409,7 @@ export async function runDriveScreening(
             dataHash: validation.dataHash,
           });
         }
+      }
       for (const [date, symbols] of missingSessions)
         if (requiredSymbols.some((symbol) => !symbols.has(symbol)))
           throw new Error(`이전 거래일 ${date}의 종목·지수 이력이 불완전합니다.`);
