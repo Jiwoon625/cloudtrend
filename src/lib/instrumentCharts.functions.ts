@@ -225,7 +225,7 @@ export async function getInstrumentChartForSession(data: Input) {
       prices.chart.length > 0 &&
       prices.chart.every(
         (point) =>
-          /^\\d{4}-\\d{2}-\\d{2}$/.test(point.tradeDate) &&
+          /^\d{4}-\d{2}-\d{2}$/.test(point.tradeDate) &&
           point.tradeDate <= ctx.analysis.asOfDate &&
           typeof point.close === "number" &&
           Number.isFinite(point.close) &&
