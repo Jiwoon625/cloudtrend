@@ -139,7 +139,9 @@ async function main() {
   const outcomes: Outcome[] = [];
   for (const tail of COMPRESSED_CACHE_OBJECT_TAILS) outcomes.push(await migrateOne(client, tail));
   for (const outcome of outcomes)
-    console.log(`${outcome.object}: ${outcome.state}${outcome.saving ? ` · ${outcome.saving}` : ""}`);
+    console.log(
+      `${outcome.object}: ${outcome.state}${outcome.saving ? ` · ${outcome.saving}` : ""}`,
+    );
   console.log(JSON.stringify({ outcomes }, null, 2));
 }
 

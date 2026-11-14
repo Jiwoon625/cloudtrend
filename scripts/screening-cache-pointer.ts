@@ -25,15 +25,13 @@ export async function uploadCachePointer(
   const target = compressedCacheObjectPath(objectPath);
   await retryIdempotentStorageUpload(
     async () => {
-      const { error } = await client.storage.from(ANALYSIS_BUCKET).upload(
-        target,
-        Buffer.from(bytes),
-        {
+      const { error } = await client.storage
+        .from(ANALYSIS_BUCKET)
+        .upload(target, Buffer.from(bytes), {
           contentType: COMPRESSED_CACHE_CONTENT_TYPE,
           upsert: true,
           cacheControl: "0",
-        },
-      );
+        });
       if (error) throw error;
     },
     { bucket: ANALYSIS_BUCKET, objectPath: target, bytes: bytes.byteLength },
