@@ -220,7 +220,8 @@ beforeEach(async () => {
           // The screening/dashboard pointers are gzip bodies; keep them byte-exact
           // (a Buffer body from the CLI publisher is a Uint8Array, not a Blob).
           if (body instanceof Uint8Array) state.objects.set(p, new Uint8Array(body));
-          else if (body instanceof Blob) state.objects.set(p, new Uint8Array(await body.arrayBuffer()));
+          else if (body instanceof Blob)
+            state.objects.set(p, new Uint8Array(await body.arrayBuffer()));
           else if (typeof body === "string") state.objects.set(p, body);
           else {
             let text = "";

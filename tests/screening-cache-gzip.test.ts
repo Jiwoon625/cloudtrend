@@ -21,8 +21,9 @@ import { readFreshCacheObject, writeFreshCacheObject } from "../src/lib/cacheObj
 
 const bytes = (value: unknown) => new Blob([JSON.stringify(value)]).arrayBuffer();
 const gzip = (value: unknown) =>
-  new Blob([new Uint8Array(gzipSync(Buffer.from(JSON.stringify(value)))) as BlobPart])
-    .arrayBuffer();
+  new Blob([
+    new Uint8Array(gzipSync(Buffer.from(JSON.stringify(value)))) as BlobPart,
+  ]).arrayBuffer();
 
 /** Minimal storage double: objects are keyed by path, a missing path is a 404. */
 function storage(objects: Record<string, () => Promise<ArrayBuffer>>) {
@@ -34,7 +35,8 @@ function storage(objects: Record<string, () => Promise<ArrayBuffer>>) {
         download: async (path: string) => {
           downloads.push(path);
           const body = objects[path];
-          if (!body) return { data: null, error: { message: "Object not found", statusCode: "404" } };
+          if (!body)
+            return { data: null, error: { message: "Object not found", statusCode: "404" } };
           return { data: new Blob([await body()]), error: null };
         },
         upload: async (path: string, body: BlobPart, options: unknown) => {
@@ -69,18 +71,18 @@ test("gzip round trip preserves the stored payload", async () => {
 test("a compressed pointer is read and the plain pointer is never downloaded", async () => {
   const value = { version: "v1", payload: { rows: [] } };
   const io = storage({ "owner/cache/screening/latest.json.gz": () => gzip(value) });
-  expect(await readFreshCacheObject(io.client, "bucket", "owner/cache/screening/latest.json")).toEqual(
-    value,
-  );
+  expect(
+    await readFreshCacheObject(io.client, "bucket", "owner/cache/screening/latest.json"),
+  ).toEqual(value);
   expect(io.downloads).toEqual(["owner/cache/screening/latest.json.gz"]);
 });
 
 test("a plain pointer keeps working while a publication still holds only the old object", async () => {
   const value = { version: "v1", payload: { rows: [] } };
   const io = storage({ "owner/cache/screening/latest.json": () => bytes(value) });
-  expect(await readFreshCacheObject(io.client, "bucket", "owner/cache/screening/latest.json")).toEqual(
-    value,
-  );
+  expect(
+    await readFreshCacheObject(io.client, "bucket", "owner/cache/screening/latest.json"),
+  ).toEqual(value);
   expect(io.downloads).toEqual([
     "owner/cache/screening/latest.json.gz",
     "owner/cache/screening/latest.json",
@@ -94,9 +96,9 @@ test("a damaged compressed body falls back to the readable plain pointer", async
     "owner/cache/dashboard/latest.json": () => bytes(value),
   });
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-  expect(await readFreshCacheObject(io.client, "bucket", "owner/cache/dashboard/latest.json")).toEqual(
-    value,
-  );
+  expect(
+    await readFreshCacheObject(io.client, "bucket", "owner/cache/dashboard/latest.json"),
+  ).toEqual(value);
   expect(warn).toHaveBeenCalled();
   warn.mockRestore();
 });
@@ -104,9 +106,9 @@ test("a damaged compressed body falls back to the readable plain pointer", async
 test("a gzip body stored under the plain name is decoded by its magic bytes", async () => {
   const value = { version: "v1", migrated: true };
   const io = storage({ "owner/cache/dashboard/latest.json": () => gzip(value) });
-  expect(await readFreshCacheObject(io.client, "bucket", "owner/cache/dashboard/latest.json")).toEqual(
-    value,
-  );
+  expect(
+    await readFreshCacheObject(io.client, "bucket", "owner/cache/dashboard/latest.json"),
+  ).toEqual(value);
 });
 
 test("absent pointers read as null and a real failure stays visible", async () => {
@@ -136,9 +138,7 @@ test("writing a cache pointer stores only the compressed body", async () => {
     "owner/cache/screening/latest.json",
     value,
   );
-  expect(io.uploads.map((upload) => upload.path)).toEqual([
-    "owner/cache/screening/latest.json.gz",
-  ]);
+  expect(io.uploads.map((upload) => upload.path)).toEqual(["owner/cache/screening/latest.json.gz"]);
   expect(io.uploads[0]!.options).toMatchObject({
     upsert: true,
     contentType: COMPRESSED_CACHE_CONTENT_TYPE,

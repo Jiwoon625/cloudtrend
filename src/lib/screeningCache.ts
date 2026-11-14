@@ -146,9 +146,7 @@ async function matchesDriveHead(cache: {
 
 export async function readScreeningCache(): Promise<ScreeningCachePayload | null> {
   const path = await screeningPath();
-  const validated = await validateScreeningCache(
-    await readObject<ScreeningCachePayload>(path),
-  );
+  const validated = await validateScreeningCache(await readObject<ScreeningCachePayload>(path));
   // Any validated read refreshes the reuse entry, so a publication seen by one part of
   // the page is not shadowed by an older entry held for another stock panel.
   if (!validated) {
@@ -181,7 +179,11 @@ export function invalidateSharedScreeningCache() {
 export async function readSharedScreeningCache(): Promise<ScreeningCachePayload | null> {
   const path = await screeningPath();
   const remembered = sharedScreeningRead;
-  if (remembered && remembered.path === path && Date.now() - remembered.at < SHARED_SCREENING_READ_TTL_MS)
+  if (
+    remembered &&
+    remembered.path === path &&
+    Date.now() - remembered.at < SHARED_SCREENING_READ_TTL_MS
+  )
     return remembered.value;
   return readScreeningCache();
 }

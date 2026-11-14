@@ -39,11 +39,13 @@ describe("cloud file persistence", () => {
           : JSON.stringify(value);
         return { data: new Blob([body as BlobPart]), error: null };
       });
-      mocks.upload.mockImplementation(async (path: string, body: { arrayBuffer(): Promise<ArrayBuffer> }) => {
-        expect(path).toBe(`owner/cache/${kind}/latest.json.gz`);
-        origin = await gunzipJson(new Uint8Array(await body.arrayBuffer()));
-        return { error: null };
-      });
+      mocks.upload.mockImplementation(
+        async (path: string, body: { arrayBuffer(): Promise<ArrayBuffer> }) => {
+          expect(path).toBe(`owner/cache/${kind}/latest.json.gz`);
+          origin = await gunzipJson(new Uint8Array(await body.arrayBuffer()));
+          return { error: null };
+        },
+      );
       const path = `owner/cache/${kind}/latest.json`;
       expect(await readObject(path)).toEqual({ revision: "old" });
       await writeObject(path, { revision: "new" });

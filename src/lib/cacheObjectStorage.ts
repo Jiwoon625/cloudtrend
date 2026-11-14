@@ -23,7 +23,9 @@ export async function downloadFreshBytes(
 }
 
 function isMissingObject(error: { statusCode?: string; message: string }) {
-  return String(error.statusCode) === "404" || /object not found|not_found|404/i.test(error.message);
+  return (
+    String(error.statusCode) === "404" || /object not found|not_found|404/i.test(error.message)
+  );
 }
 
 /**
@@ -83,15 +85,13 @@ export async function writeFreshCacheObject(
 ): Promise<number> {
   const bytes = await gzipJson(value);
   const target = compressedCacheObjectPath(path);
-  const { error } = await client.storage.from(bucket).upload(
-    target,
-    new Blob([bytes as BlobPart], { type: COMPRESSED_CACHE_CONTENT_TYPE }),
-    {
+  const { error } = await client.storage
+    .from(bucket)
+    .upload(target, new Blob([bytes as BlobPart], { type: COMPRESSED_CACHE_CONTENT_TYPE }), {
       upsert: true,
       contentType: COMPRESSED_CACHE_CONTENT_TYPE,
       cacheControl: "0",
-    },
-  );
+    });
   if (error) throw new Error(`압축 캐시 저장 실패 (${target}): ${error.message}`);
   return bytes.byteLength;
 }

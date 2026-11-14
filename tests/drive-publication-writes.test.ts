@@ -23,7 +23,8 @@ test("result-only cache publishing writes only the two gzip pointers and no raw 
     storage: {
       from: () => ({
         upload: async (path: string, body: Blob | Uint8Array) => {
-          const bytes = body instanceof Blob ? new Uint8Array(await body.arrayBuffer()) : new Uint8Array(body);
+          const bytes =
+            body instanceof Blob ? new Uint8Array(await body.arrayBuffer()) : new Uint8Array(body);
           uploads.set(path, await gunzipJson(bytes));
           return { error: null };
         },

@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
 }));
 const client = () => ({
-  storage: { from: () => ({ download: mocks.download, upload: mocks.upload, remove: mocks.remove }) },
+  storage: {
+    from: () => ({ download: mocks.download, upload: mocks.upload, remove: mocks.remove }),
+  },
 });
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({ auth: { getSession: mocks.getSession }, ...client() }),
@@ -75,7 +77,8 @@ vi.mock("@/lib/cloud", () => ({
   userId: async () => "owner",
   CLOUD_DATA_BUCKET: "cloudtrend-data",
   supabase: { auth: { getSession: mocks.getSession }, ...client() },
-  readObject: async (path: string) => readFreshCacheObject(client() as never, "cloudtrend-data", path),
+  readObject: async (path: string) =>
+    readFreshCacheObject(client() as never, "cloudtrend-data", path),
   writeObject: vi.fn(),
   readBinaryObject: vi.fn(async () => null),
   writeBinaryObject: vi.fn(),
@@ -107,10 +110,10 @@ test("the node publisher writes the compressed pointer and reads either encoding
 });
 
 test("browsing several symbols reuses one verified shared-cache read for a few seconds", async () => {
-  const { readSharedScreeningCache, invalidateSharedScreeningCache } = await import(
-    "../src/lib/screeningCache"
-  );
-  const pointerReads = () => reads.filter((path) => path.endsWith("cache/screening/latest.json.gz")).length;
+  const { readSharedScreeningCache, invalidateSharedScreeningCache } =
+    await import("../src/lib/screeningCache");
+  const pointerReads = () =>
+    reads.filter((path) => path.endsWith("cache/screening/latest.json.gz")).length;
   expect(await readSharedScreeningCache()).not.toBeNull();
   expect(await readSharedScreeningCache()).not.toBeNull();
   expect(pointerReads()).toBe(1);
