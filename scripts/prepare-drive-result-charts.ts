@@ -8,6 +8,7 @@ import { warmFullInstrumentCharts } from "../src/lib/fullInstrumentCharts.server
 import { loadOperationalIndex } from "../src/lib/operationalUnderlyingIndex.server";
 import { savedOperationalIdentity } from "../src/lib/screeningInputIdentity";
 import { trustedSupabaseClient, downloadJson } from "./analysis-run-store";
+import { downloadCachePointer } from "./screening-cache-pointer";
 import type { AnalysisResult } from "../src/lib/engine/pipeline";
 import type { ScoringConfig } from "../src/lib/engine/scoring";
 export async function prepareDriveCharts(root: string) {
@@ -51,10 +52,11 @@ export async function prepareDriveCharts(root: string) {
   texts.length = 0;
   const client = trustedSupabaseClient(),
     meta = savedOperationalIdentity(bundle.result);
-  const current = await downloadJson<{ inputFingerprint: string; resultDigest: string }>(
+  const current = await downloadCachePointer<{ inputFingerprint: string; resultDigest: string }>(
     client,
     `${owner}/cache/screening/latest.json`,
   );
+  if (!current) throw new Error("게시된 스크리닝 결과를 찾지 못했습니다.");
   if (
     current.inputFingerprint !== receipt.publication.inputFingerprint ||
     current.resultDigest !== receipt.publication.resultDigest

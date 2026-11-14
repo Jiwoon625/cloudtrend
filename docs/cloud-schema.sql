@@ -90,3 +90,32 @@ create policy cloudtrend_owner_update_cache on storage.objects for update to aut
      or name ~ ('^'||(select auth.uid())::text||'/cache/instruments/[A-Za-z0-9._-]+[.]json[.]gz$')
    )
  );
+
+-- 압축(gzip) 스크리닝·대시보드 포인터 upsert 허용.
+-- 저장 본문은 cache/screening/latest.json.gz, cache/dashboard/latest.json.gz 두 개뿐이다.
+create policy cloudtrend_owner_insert_compressed_cache on storage.objects for insert to authenticated
+ with check (
+   bucket_id='cloudtrend-data'
+   and (storage.foldername(name))[1]=(select auth.uid())::text
+   and (
+     name=(select auth.uid())::text||'/cache/screening/latest.json.gz'
+     or name=(select auth.uid())::text||'/cache/dashboard/latest.json.gz'
+   )
+ );
+create policy cloudtrend_owner_update_compressed_cache on storage.objects for update to authenticated
+ using (
+   bucket_id='cloudtrend-data'
+   and (storage.foldername(name))[1]=(select auth.uid())::text
+   and (
+     name=(select auth.uid())::text||'/cache/screening/latest.json.gz'
+     or name=(select auth.uid())::text||'/cache/dashboard/latest.json.gz'
+   )
+ )
+ with check (
+   bucket_id='cloudtrend-data'
+   and (storage.foldername(name))[1]=(select auth.uid())::text
+   and (
+     name=(select auth.uid())::text||'/cache/screening/latest.json.gz'
+     or name=(select auth.uid())::text||'/cache/dashboard/latest.json.gz'
+   )
+ );

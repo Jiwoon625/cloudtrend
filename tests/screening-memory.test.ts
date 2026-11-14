@@ -235,6 +235,11 @@ test("legacy and compact normalization yield identical full analysis, candidates
   expect(second.regressionMatched).toBe(true);
   expect(second.roundTripVerified).toBe(true);
   expect(files.has("user/raw/screening/latest.csv")).toBe(true);
-  expect(files.has("user/cache/dashboard/latest.json")).toBe(true);
+  // Screening/dashboard pointers are published gzip-encoded; the plain objects are only
+  // a read fallback for a deployment that does not know the compressed path yet.
+  expect(files.has("user/cache/screening/latest.json.gz")).toBe(true);
+  expect(files.has("user/cache/dashboard/latest.json.gz")).toBe(true);
+  expect(files.has("user/cache/screening/latest.json")).toBe(false);
+  expect(files.has("user/cache/dashboard/latest.json")).toBe(false);
   expect(JSON.parse(files.get("user/kr.json")!).meta.chars).toBe(b.canonicalCsv.length);
 });

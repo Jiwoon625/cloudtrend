@@ -2,7 +2,7 @@ import runtimeManifest from "./ledger/octoberShadowEngineManifest.generated.json
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AnalysisResult } from "./engine/pipeline";
-import { downloadFreshObject } from "./freshStorage";
+import { readFreshCacheObject } from "./cacheObjectStorage";
 import {
   deterministicAnalysis,
   SCREENING_CACHE_VERSION,
@@ -49,15 +49,14 @@ export async function completeScreeningPublication(
   expected: ScreeningPublicationIdentity,
 ) {
   const path = `${userId}/cache/screening/latest.json`;
-  const { data, error } = await downloadFreshObject(client, "cloudtrend-data", path);
-  if (error) throw new Error("스크리닝 완료 상태를 확인하지 못했습니다.");
-  const cached = JSON.parse(await data.text()) as {
+  const cached = await readFreshCacheObject<{
     version: string;
     inputFingerprint: string;
     resultDigest: string;
     publicationId: string;
     payload: { analysis: AnalysisResult };
-  };
+  }>(client, "cloudtrend-data", path);
+  if (!cached) throw new Error("스크리닝 완료 상태를 확인하지 못했습니다.");
   if (
     cached.version !== SCREENING_CACHE_VERSION ||
     cached.inputFingerprint !== expected.inputFingerprint ||
@@ -71,16 +70,11 @@ export async function completeScreeningPublication(
     throw new Error("완료 확인 중 스크리닝 결과가 변경됐습니다. 최신 결과를 다시 확인하세요.");
   if (cached.payload.analysis.krPublication?.phase === "PRELIMINARY")
     throw new Error("PRELIMINARY screening cannot issue a final financial publication receipt");
-  const dashboard = await downloadFreshObject(
-    client,
-    "cloudtrend-data",
-    `${userId}/cache/dashboard/latest.json`,
-  );
-  if (dashboard.error) throw new Error("대시보드 완료 상태를 확인하지 못했습니다.");
-  const summary = JSON.parse(await dashboard.data.text()) as {
+  const summary = await readFreshCacheObject<{
     inputFingerprint: string;
     resultDigest: string;
-  };
+  }>(client, "cloudtrend-data", `${userId}/cache/dashboard/latest.json`).catch(() => null);
+  if (!summary) throw new Error("대시보드 완료 상태를 확인하지 못했습니다.");
   if (
     summary.inputFingerprint !== expected.inputFingerprint ||
     summary.resultDigest !== expected.resultDigest

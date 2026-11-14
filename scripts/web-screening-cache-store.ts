@@ -25,6 +25,8 @@ import type { ScreeningSnapshot } from "../src/lib/screeningSnapshot";
 import { CANONICAL_SOURCE_COLUMNS, visitDelimitedRows } from "../src/lib/sourceData";
 import type { AnalysisPayload } from "../src/lib/marketPayload";
 import { ANALYSIS_BUCKET, downloadJson, sha256, uploadJson } from "./analysis-run-store";
+import { compressedCacheObjectPath } from "../src/lib/cacheObjectEncoding";
+import { downloadCachePointer, uploadCachePointer } from "./screening-cache-pointer";
 import type { LoadedSourceInput } from "./source-registry-store";
 
 const MAX_RAW_CACHE_BYTES = 45 * 1024 * 1024;
@@ -91,6 +93,14 @@ async function maybeDownloadJson<T>(client: SupabaseClient, objectPath: string):
   }
 }
 
+async function maybeDownloadCachePointer<T>(
+  client: SupabaseClient,
+  objectPath: string,
+): Promise<T | null> {
+  // The pointer is stored gzip-encoded, with the plain object as the pre-migration fallback.
+  return downloadCachePointer<T>(client, objectPath);
+}
+
 export function canonicalMergedCsv(inputs: LoadedSourceInput[]) {
   // Inputs are already validated canonical CSV. Keep one encoded line per key,
   // rather than reconstructing 102-property objects for the entire history.
@@ -132,7 +142,10 @@ export async function preflightWebScreeningCaches(input: WebScreeningCacheInput)
   );
   const digest = resultDigest(input.analysis);
   const screeningPath = `${input.userId}/cache/screening/latest.json`;
-  const existing = await maybeDownloadJson<ExistingScreeningCache>(input.client, screeningPath);
+  const existing = await maybeDownloadCachePointer<ExistingScreeningCache>(
+    input.client,
+    screeningPath,
+  );
   if (!input.resultOnly) {
     const driveHead = await maybeDownloadJson<{ version?: string }>(
       input.client,
@@ -182,6 +195,8 @@ async function writeWebScreeningCaches(
   existing: ExistingScreeningCache | null,
 ) {
   const screeningPath = `${input.userId}/cache/screening/latest.json`;
+  // Storage keeps the gzip-encoded body; receipts report the object that actually exists.
+  const storedScreeningPath = compressedCacheObjectPath(screeningPath);
 
   if (input.analysis.krPublication?.phase === "PRELIMINARY")
     await preserveConfirmedEtfContext(input.client, input.userId, existing);
@@ -237,15 +252,17 @@ async function writeWebScreeningCaches(
     shouldUploadRawCache
       ? uploadText(input.client, rawPath, canonicalCsv, "text/csv")
       : Promise.resolve(0),
-    uploadJson(input.client, screeningPath, screening),
-    uploadJson(input.client, dashboardPath, dashboard),
+    // The two pointers are stored gzip-encoded; everything else keeps its plain body.
+    uploadCachePointer(input.client, screeningPath, screening).then((body) => ({ body })),
+    uploadCachePointer(input.client, dashboardPath, dashboard).then((body) => ({ body })),
     input.resultOnly
       ? Promise.resolve({ body: "" })
       : uploadJson(input.client, `${input.userId}/kr.json`, meta),
   ]);
 
   memory("cache-uploads-end");
-  const roundTrip = await downloadJson<ExistingScreeningCache>(input.client, screeningPath);
+  const roundTrip = await downloadCachePointer<ExistingScreeningCache>(input.client, screeningPath);
+  if (!roundTrip) throw new Error("스크리닝 cache 저장 후 재읽기에 실패했습니다.");
   const roundTripDigest = roundTrip.payload?.analysis
     ? resultDigest(roundTrip.payload.analysis)
     : null;
@@ -272,8 +289,8 @@ async function writeWebScreeningCaches(
     roundTripVerified: true,
     paths: {
       rawPath: shouldUploadRawCache ? rawPath : null,
-      screeningPath,
-      dashboardPath,
+      screeningPath: storedScreeningPath,
+      dashboardPath: compressedCacheObjectPath(dashboardPath),
       krPath: input.resultOnly ? null : `${input.userId}/kr.json`,
     },
     bytes: {

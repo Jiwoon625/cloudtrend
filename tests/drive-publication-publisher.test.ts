@@ -37,6 +37,19 @@ vi.mock("../scripts/screening-json-file", () => ({
     return { bytes: 1 };
   }),
 }));
+// The two homepage pointers are stored gzip-encoded; keep the write/read log in one place.
+vi.mock("../scripts/screening-cache-pointer", () => ({
+  uploadCachePointer: vi.fn(async (_client, p: string, v: unknown) => {
+    // Record the stored gzip object; the in-memory map keeps the decoded logical value.
+    m.paths.push(`${p}.gz`);
+    m.store.set(p, v);
+    return Buffer.from("");
+  }),
+  downloadCachePointer: vi.fn(async (_client, p: string) => {
+    if (m.readFailure && p.endsWith("cache/screening/latest.json")) throw new Error(m.readFailure);
+    return m.store.get(`${p}.gz`) ?? m.store.get(p) ?? null;
+  }),
+}));
 vi.mock("../src/lib/confirmedEtfContext.server", () => ({ preserveConfirmedEtfContext: vi.fn() }));
 vi.mock("../src/lib/screeningSnapshot", () => ({ buildSnapshot: () => ({}) }));
 vi.mock("../scripts/source-registry-store", async (original) => ({

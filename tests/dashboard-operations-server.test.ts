@@ -72,15 +72,22 @@ describe("dashboard projection policy cache identity", () => {
     } as unknown as SupabaseClient;
     vi.mocked(downloadFreshObject).mockImplementation(async (_client, _bucket, path) => {
       if (path.endsWith("input-head/latest.json")) return { data: null, error: null };
-      if (!path.endsWith("dashboard/latest.json"))
-        throw new Error("full screening and legacy pointer must not be downloaded");
+      // The compressed pointer is the only cache object this projection may download.
+      if (!path.endsWith("dashboard/latest.json.gz"))
+        throw new Error("full screening and uncompressed pointer must not be downloaded");
       return {
         data: new Blob([
-          JSON.stringify({
-            version: DASHBOARD_CACHE_VERSION,
-            resultDigest: digest,
-            createdAt: "2026-10-17T00:10:00.000Z",
-          }),
+          new Uint8Array(
+            gzipSync(
+              Buffer.from(
+                JSON.stringify({
+                  version: DASHBOARD_CACHE_VERSION,
+                  resultDigest: digest,
+                  createdAt: "2026-10-17T00:10:00.000Z",
+                }),
+              ),
+            ),
+          ) as BlobPart,
         ]),
         error: null,
       };
@@ -145,10 +152,20 @@ describe("dashboard projection policy cache identity", () => {
     expect(JSON.stringify(diagnostic)).toBe(before);
   });
   it("refuses stale policy summary before reading/reusing a sidecar", async () => {
-    vi.mocked(downloadFreshObject).mockResolvedValueOnce({
-      data: new Blob([JSON.stringify({ version: "old-policy", resultDigest: "old" })]),
-      error: null,
-    });
+    vi.mocked(downloadFreshObject).mockImplementation(async (_client, _bucket, path) =>
+      path.endsWith("dashboard/latest.json.gz")
+        ? {
+            data: new Blob([
+              new Uint8Array(
+                gzipSync(
+                  Buffer.from(JSON.stringify({ version: "old-policy", resultDigest: "old" })),
+                ),
+              ) as BlobPart,
+            ]),
+            error: null,
+          }
+        : { data: null, error: null },
+    );
     await expect(projection(client, "old-summary", "kr")).rejects.toThrow("다시 실행");
   });
   it("refuses matching digest when full payload policy version is old", async () => {

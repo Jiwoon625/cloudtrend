@@ -9,6 +9,7 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({ auth: { getSession: mocks.getSession }, storage: { from: () => mocks } }),
 }));
 import { readFile, writeFile, readObject, writeObject } from "./cloud";
+import { gunzipJson, gzipJson } from "./cacheObjectEncoding";
 describe("cloud file persistence", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -28,16 +29,19 @@ describe("cloud file persistence", () => {
   it.each(["dashboard", "screening"])(
     "reads a new %s revision instead of a cached latest pointer after upload",
     async (kind) => {
-      let origin = { revision: "old" };
-      const stale = origin;
-      mocks.download.mockImplementation(async (_path, options, parameters) => ({
-        data: new Blob([
-          JSON.stringify(options?.cacheNonce && parameters?.cache === "no-store" ? origin : stale),
-        ]),
-        error: null,
-      }));
-      mocks.upload.mockImplementation(async (_path, body) => {
-        origin = JSON.parse(await body.text());
+      let origin: unknown = { revision: "old" };
+      const stale = { revision: "stale" };
+      mocks.download.mockImplementation(async (path: string, options, parameters) => {
+        const value = options?.cacheNonce && parameters?.cache === "no-store" ? origin : stale;
+        // The screening/dashboard pointers are stored gzip-encoded.
+        const body = path.endsWith(".gz")
+          ? new Uint8Array(await gzipJson(value))
+          : JSON.stringify(value);
+        return { data: new Blob([body as BlobPart]), error: null };
+      });
+      mocks.upload.mockImplementation(async (path: string, body: { arrayBuffer(): Promise<ArrayBuffer> }) => {
+        expect(path).toBe(`owner/cache/${kind}/latest.json.gz`);
+        origin = await gunzipJson(new Uint8Array(await body.arrayBuffer()));
         return { error: null };
       });
       const path = `owner/cache/${kind}/latest.json`;
@@ -48,6 +52,12 @@ describe("cloud file persistence", () => {
         mocks.download.mock.calls[1]![1]!.cacheNonce,
       );
       expect(mocks.upload.mock.calls[0]![2]!.cacheControl).toBe("0");
+      // Every read of a mutable pointer stays a fresh, CDN-bypassing request.
+      for (const call of mocks.download.mock.calls) {
+        expect(call[0]).toBe(`owner/cache/${kind}/latest.json.gz`);
+        expect(call[1]!.cacheNonce).toBeTruthy();
+        expect(call[2]!.cache).toBe("no-store");
+      }
     },
   );
   it("does not report network failures as empty data", async () => {

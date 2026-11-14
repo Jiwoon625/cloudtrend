@@ -9,7 +9,9 @@ const objectPrefix = `/storage/v1/object/cloudtrend-data/${KR_OWNER}/`;
 const resultPaths = [
   "results/drive-screening/input-head/latest.json",
   "cache/screening/latest.json",
+  "cache/screening/latest.json.gz",
   "cache/dashboard/latest.json",
+  "cache/dashboard/latest.json.gz",
   "cache/screening/confirmed-etf-context.json",
   `results/screening/${runId}.json`,
   "results/screening/latest.json",

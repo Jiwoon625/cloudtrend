@@ -7,6 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { operationalFixture } from "./operational-ma60-fixture";
 import { UNDERLYING_INDEX_RELEASE } from "../src/lib/underlyingIndexSupplementRelease";
 import { OPERATIONAL_INDEX_VERSION } from "../src/lib/operationalUnderlyingIndex";
+import { gunzipJson, isGzipEncoded } from "../src/lib/cacheObjectEncoding";
 import { DEFAULT_SCORING_CONFIG } from "../src/lib/engine/scoring";
 import { runFullMarketAnalysis } from "../src/lib/engine/fullMarketAnalysis";
 import { validateSourceText } from "../src/lib/sourceData";
@@ -20,7 +21,7 @@ const state = vi.hoisted(() => ({
   corruption: false,
   client: null as unknown,
   inputs: [] as unknown[],
-  objects: new Map<string, string>(),
+  objects: new Map<string, string | Uint8Array>(),
   sources: [] as unknown[],
   dataset: null as unknown,
   webShadow: vi.fn(),
@@ -97,8 +98,15 @@ vi.mock("../src/lib/underlyingIndexDiagnostics.functions", async (original) => {
 vi.mock("../src/lib/cloud", () => ({
   userId: async () => "00000000-0000-4000-8000-000000000001",
   ownerPath: async (p: string) => `00000000-0000-4000-8000-000000000001/${p}`,
-  readObject: async (p: string) =>
-    state.objects.has(p) ? JSON.parse(state.objects.get(p)!) : null,
+  // The screening/dashboard pointers are stored gzip-encoded; read either body.
+  readObject: async (p: string) => {
+    const stored = state.objects.get(p) ?? state.objects.get(`${p}.gz`);
+    if (stored === undefined) return null;
+    if (typeof stored === "string") return JSON.parse(stored);
+    return isGzipEncoded(stored)
+      ? gunzipJson<unknown>(stored)
+      : JSON.parse(new TextDecoder().decode(stored));
+  },
   writeObject: async (p: string, v: unknown) => {
     state.objects.set(p, JSON.stringify(v));
   },
@@ -209,11 +217,16 @@ beforeEach(async () => {
             ? { data: new Blob([state.objects.get(p)!]), error: null }
             : { data: null, error: { message: "Object not found" } },
         upload: async (p: string, body: string | Blob | AsyncIterable<Buffer>) => {
-          let text = "";
-          if (typeof body === "string") text = body;
-          else if (body instanceof Blob) text = await body.text();
-          else for await (const part of body) text += part.toString();
-          state.objects.set(p, text);
+          // The screening/dashboard pointers are gzip bodies; keep them byte-exact
+          // (a Buffer body from the CLI publisher is a Uint8Array, not a Blob).
+          if (body instanceof Uint8Array) state.objects.set(p, new Uint8Array(body));
+          else if (body instanceof Blob) state.objects.set(p, new Uint8Array(await body.arrayBuffer()));
+          else if (typeof body === "string") state.objects.set(p, body);
+          else {
+            let text = "";
+            for await (const part of body) text += part.toString();
+            state.objects.set(p, text);
+          }
           return { error: null };
         },
       }),

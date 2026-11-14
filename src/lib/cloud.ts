@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
+import { isCompressedCacheObject } from "./cacheObjectEncoding";
+import { readFreshCacheObject, writeFreshCacheObject } from "./cacheObjectStorage";
 
 // Publishable credentials only. Authorization is enforced by Supabase RLS.
 export const supabase = createClient(
@@ -33,6 +35,16 @@ export async function ownerPath(relative: string) {
 }
 
 export async function readObject<T>(path: string): Promise<T | null> {
+  // Screening/dashboard pointers are gzip-encoded in storage (see cacheObjectEncoding).
+  if (isCompressedCacheObject(path)) {
+    try {
+      return await readFreshCacheObject<T>(supabase, BUCKET, path);
+    } catch (error) {
+      throw new Error(
+        `클라우드 파일을 불러오지 못했습니다: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
   const { data, error } = await (path.endsWith("/latest.json")
     ? downloadFreshObject(supabase, BUCKET, path)
     : supabase.storage.from(BUCKET).download(path));
@@ -44,6 +56,10 @@ export async function readObject<T>(path: string): Promise<T | null> {
 }
 
 export async function writeObject(path: string, value: unknown) {
+  if (isCompressedCacheObject(path)) {
+    await writeFreshCacheObject(supabase, BUCKET, path, value);
+    return;
+  }
   const body = new Blob([JSON.stringify(value)], { type: "application/json" });
   if (body.size > MAX_FILE_BYTES)
     throw new Error("파일 1개 크기는 45MB 이하여야 합니다. 파일을 나눠 여러 개로 올려 주세요.");

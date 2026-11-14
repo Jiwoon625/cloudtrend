@@ -9,7 +9,7 @@ import { loadActiveSources, inputFingerprint } from "../src/lib/screeningSources
 import { parseManualMarketDataWithReferences as parseManualMarketData } from "../src/lib/krxReviewReferenceParser";
 import { mergeScoringConfig } from "../src/lib/engine/scoring";
 import type { AnalysisResult } from "../src/lib/engine/pipeline";
-import { downloadFreshObject } from "../src/lib/freshStorage";
+import { downloadCachePointer } from "./screening-cache-pointer";
 import { savedOperationalIdentity } from "../src/lib/screeningInputIdentity";
 import { loadOperationalIndex } from "../src/lib/operationalUnderlyingIndex.server";
 import {
@@ -38,18 +38,13 @@ export async function repairChartCache({
   stage?: (name: string, detail?: unknown) => void;
 }) {
   if (!uid) throw new Error("SUPABASE_USER_ID required");
-  const { data: blob, error } = await downloadFreshObject(
-    client,
-    "cloudtrend-data",
-    `${uid}/cache/screening/latest.json`,
-  );
-  if (error) throw error;
-  const saved = JSON.parse(await blob.text()) as {
+  const saved = await downloadCachePointer<{
     version: string;
     inputFingerprint: string;
     resultDigest: string;
     payload: { analysis: AnalysisResult };
-  };
+  }>(client, `${uid}/cache/screening/latest.json`);
+  if (!saved) throw new Error("저장된 스크리닝 결과가 없습니다.");
   if (saved.version !== SCREENING_CACHE_VERSION || !saved.payload?.analysis)
     throw new Error("Saved screening version or analysis is invalid");
   const metadata = savedOperationalIdentity(saved.payload.analysis);

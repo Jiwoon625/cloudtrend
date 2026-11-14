@@ -10,7 +10,10 @@ const mocks = vi.hoisted(() => ({
   read: vi.fn(),
   warm: vi.fn(),
 }));
-vi.mock("../scripts/analysis-run-store", () => ({ trustedSupabaseClient: mocks.trusted }));
+vi.mock("../scripts/analysis-run-store", () => ({
+  trustedSupabaseClient: mocks.trusted,
+  ANALYSIS_BUCKET: "cloudtrend-data",
+}));
 vi.mock("../src/lib/screeningSources.server", async (original) => ({
   ...(await original<typeof import("../src/lib/screeningSources.server")>()),
   loadActiveSources: mocks.sources,

@@ -15,6 +15,7 @@ import {
 } from "../src/lib/screeningCacheContract";
 import type { AnalysisResult } from "../src/lib/engine/pipeline";
 import { validateSourceText } from "../src/lib/sourceData";
+import { gunzipJson, gzipJson, isGzipEncoded } from "../src/lib/cacheObjectEncoding";
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
   load: vi.fn(),
@@ -89,6 +90,8 @@ const sources = [
 let objects: Map<string, unknown>;
 let client: SupabaseClient;
 let beforeDownload: ((path: string) => void) | null = null;
+/** Storage keeps gzip-encoded pointers; this map stays keyed by the logical object path. */
+const logicalPath = (path: string) => path.replace(/\.json\.gz$/, ".json");
 beforeEach(() => {
   vi.resetAllMocks();
   objects = new Map();
@@ -98,12 +101,21 @@ beforeEach(() => {
       from: () => ({
         download: async (path: string) => {
           beforeDownload?.(path);
-          return objects.has(path)
-            ? { data: new Blob([JSON.stringify(objects.get(path))]), error: null }
-            : { data: null, error: { message: "Object not found" } };
+          const key = logicalPath(path);
+          if (!objects.has(key)) return { data: null, error: { message: "Object not found" } };
+          const body = path.endsWith(".gz")
+            ? new Uint8Array(await gzipJson(objects.get(key)))
+            : JSON.stringify(objects.get(key));
+          return { data: new Blob([body as BlobPart]), error: null };
         },
         upload: async (path: string, body: Blob) => {
-          objects.set(path, JSON.parse(await body.text()));
+          const bytes = new Uint8Array(await body.arrayBuffer());
+          objects.set(
+            logicalPath(path),
+            isGzipEncoded(bytes)
+              ? await gunzipJson(bytes)
+              : JSON.parse(new TextDecoder().decode(bytes)),
+          );
           return { error: null };
         },
       }),

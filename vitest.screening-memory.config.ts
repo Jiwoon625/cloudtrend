@@ -16,6 +16,8 @@ export default defineConfig({
       "tests/instrument-chart-cache.test.ts",
       "tests/history-asof.test.ts",
       "tests/dashboard-cache.test.ts",
+      "tests/screening-cache-gzip.test.ts",
+      "tests/screening-cache-pointer.test.ts",
     ],
   },
 });

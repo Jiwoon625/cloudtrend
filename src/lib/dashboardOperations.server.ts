@@ -9,6 +9,8 @@ import { createHash } from "node:crypto";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
+import { isCompressedCacheObject } from "./cacheObjectEncoding";
+import { readFreshCacheObject } from "./cacheObjectStorage";
 import type { AnalysisResult } from "./engine/pipeline";
 import {
   DASHBOARD_CACHE_VERSION,
@@ -53,6 +55,16 @@ async function authenticate(accessToken: string) {
   return { client, uid: data.user.id };
 }
 async function readJson<T>(client: SupabaseClient, path: string, gzip = false): Promise<T | null> {
+  // The screening/dashboard pointers are gzip-encoded in storage; other pointers are plain.
+  if (!gzip && isCompressedCacheObject(path)) {
+    try {
+      return await readFreshCacheObject<T>(client, BUCKET, path);
+    } catch (error) {
+      throw new Error(
+        `저장된 결과 조회 실패: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
   const { data, error } = await downloadFreshObject(client, BUCKET, path);
   if (error) {
     if (String(error.statusCode) === "404" || /object not found/i.test(error.message)) return null;

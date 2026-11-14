@@ -36,6 +36,7 @@ import {
   writeBinaryObject,
   writeObject,
 } from "@/lib/cloud";
+import { gunzipJson, gzipJson } from "./cacheObjectEncoding";
 import type { AnalysisResult } from "@/lib/engine/pipeline";
 import { getActiveScoringConfig } from "@/lib/scoringConfigStore";
 import type { AnalysisPayload, InstrumentDetailPayload } from "@/lib/marketPayload";
@@ -117,6 +118,7 @@ export async function currentInputFingerprint(
   return sha256Text(stableCacheJson(screeningInputIdentity(combined, config, operationalIndex)));
 }
 
+/** Storage keeps both the gzip-encoded object and the pre-migration plain one. */
 async function screeningPath() {
   return ownerPath("cache/screening/latest.json");
 }
@@ -125,24 +127,6 @@ async function dashboardPath() {
 }
 async function instrumentPath(symbol: string) {
   return ownerPath(`cache/instruments/${symbol.toUpperCase()}.json.gz`);
-}
-
-async function gzipJson(value: unknown): Promise<Uint8Array> {
-  if (typeof CompressionStream === "undefined")
-    throw new Error("이 브라우저는 gzip 캐시 생성을 지원하지 않습니다.");
-  const stream = new Blob([JSON.stringify(value)], { type: "application/json" })
-    .stream()
-    .pipeThrough(new CompressionStream("gzip"));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
-}
-
-async function gunzipJson<T>(bytes: Uint8Array): Promise<T> {
-  if (typeof DecompressionStream === "undefined")
-    throw new Error("이 브라우저는 gzip 캐시 해제를 지원하지 않습니다.");
-  const stream = new Blob([bytes as BlobPart])
-    .stream()
-    .pipeThrough(new DecompressionStream("gzip"));
-  return JSON.parse(await new Response(stream).text()) as T;
 }
 
 async function matchesDriveHead(cache: {
@@ -161,7 +145,45 @@ async function matchesDriveHead(cache: {
 }
 
 export async function readScreeningCache(): Promise<ScreeningCachePayload | null> {
-  return validateScreeningCache(await readObject<ScreeningCachePayload>(await screeningPath()));
+  const path = await screeningPath();
+  const validated = await validateScreeningCache(
+    await readObject<ScreeningCachePayload>(path),
+  );
+  // Any validated read refreshes the reuse entry, so a publication seen by one part of
+  // the page is not shadowed by an older entry held for another stock panel.
+  if (!validated) {
+    invalidateSharedScreeningCache();
+    return null;
+  }
+  sharedScreeningRead = { path, at: Date.now(), value: validated };
+  return validated;
+}
+
+/**
+ * One stock panel needs the whole shared screening result. Browsing symbols would
+ * otherwise download the shared cache once per symbol, so a verified read is reused for
+ * a few seconds. This is shorter than the page's own query stale time and every write of
+ * the shared cache through this module drops the entry immediately.
+ */
+const SHARED_SCREENING_READ_TTL_MS = 45_000;
+let sharedScreeningRead: {
+  path: string;
+  at: number;
+  value: ScreeningCachePayload;
+} | null = null;
+
+/** Drops the short-lived reuse entry after this process writes the shared cache. */
+export function invalidateSharedScreeningCache() {
+  sharedScreeningRead = null;
+}
+
+/** A validated shared-cache read that a browsing session can reuse for a few seconds. */
+export async function readSharedScreeningCache(): Promise<ScreeningCachePayload | null> {
+  const path = await screeningPath();
+  const remembered = sharedScreeningRead;
+  if (remembered && remembered.path === path && Date.now() - remembered.at < SHARED_SCREENING_READ_TTL_MS)
+    return remembered.value;
+  return readScreeningCache();
 }
 
 async function validateScreeningCache(
@@ -349,6 +371,8 @@ export async function buildAndPersistScreeningCaches(): Promise<{
     writeObject(await screeningPath(), screening),
     writeObject(await dashboardPath(), dashboard),
   ]);
+  // A stock panel opened right after this build must not read the superseded entry.
+  invalidateSharedScreeningCache();
   const roundTrip = await readObject<ScreeningCachePayload>(await screeningPath());
   if (!roundTrip || (await analysisDigest(roundTrip.payload.analysis)) !== resultDigest)
     throw new Error("스크리닝 cache 저장 후 digest 검증에 실패했습니다.");
@@ -369,7 +393,8 @@ export async function getOrBuildDashboardSummary(): Promise<DashboardSummary> {
 
 export async function getCachedInstrumentDetail(symbol: string): Promise<InstrumentDetailPayload> {
   const normalized = symbol.trim().toUpperCase();
-  const screening = await readScreeningCache();
+  // Browsing several symbols reuses one verified shared-cache read (see readSharedScreeningCache).
+  const screening = await readSharedScreeningCache();
   if (!screening)
     throw new Error(
       "저장된 스크리닝 결과를 확인할 수 없습니다. 데이터 관리에서 게시 상태를 확인해 주세요.",

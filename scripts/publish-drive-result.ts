@@ -19,6 +19,7 @@ import { stableCacheJson, deterministicAnalysis } from "../src/lib/screeningCach
 import { buildSnapshot } from "../src/lib/screeningSnapshot";
 import { listSourceRecords, type LoadedSourceInput } from "./source-registry-store";
 import { downloadJson, uploadJson, sha256 } from "./analysis-run-store";
+import { downloadCachePointer } from "./screening-cache-pointer";
 import { uploadScreeningJsonFile } from "./screening-json-file";
 import {
   preflightWebScreeningCaches,
@@ -140,7 +141,7 @@ export async function publishDriveResult(input: {
     throw new Error("Calculated inputs differ from Drive publication evidence");
   let latest: ExistingScreeningCache | null;
   try {
-    latest = await downloadJson(client, `${owner}/cache/screening/latest.json`);
+    latest = await downloadCachePointer(client, `${owner}/cache/screening/latest.json`);
   } catch (error) {
     if (error instanceof Error && /Object not found|not_found|404/i.test(error.message))
       latest = null;
@@ -209,13 +210,14 @@ export async function publishDriveResult(input: {
   if (stableCacheJson(await maybeDriveHead(client, owner)) !== stableCacheJson(next))
     throw new Error("Drive input head readback mismatch");
   const published = await publishCaches();
-  const dashboard = await downloadJson<{
+  const dashboard = await downloadCachePointer<{
     publicationId: string;
     engineIdentity: ScreeningEngineIdentity;
     inputFingerprint: string;
     resultDigest: string;
     drivePublication?: DriveResultPublication;
   }>(client, `${owner}/cache/dashboard/latest.json`);
+  if (!dashboard) throw new Error("Drive dashboard readback missing");
   if (
     dashboard.publicationId !== generationId ||
     stableCacheJson(dashboard.engineIdentity) !== stableCacheJson(bundle.engineIdentity) ||

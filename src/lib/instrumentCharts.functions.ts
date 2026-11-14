@@ -5,6 +5,7 @@ import { savedOperationalIdentity } from "./screeningInputIdentity";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
+import { readFreshCacheObject } from "./cacheObjectStorage";
 import { mergeScoringConfig } from "./engine/scoring";
 import { parseManualMarketDataWithReferences as parseManualMarketData } from "./krxReviewReferenceParser";
 import { stableCacheJson, deterministicAnalysis } from "./screeningCacheContract";
@@ -56,18 +57,17 @@ async function session(input: Input) {
   const { data, error } = await client.auth.getUser(input.accessToken);
   if (error || !data.user) throw new Error("로그인 세션을 확인해 주세요.");
   const uid = data.user.id;
-  const { data: blob, error: readError } = await downloadFreshObject(
-    client,
-    "cloudtrend-data",
-    `${uid}/cache/screening/latest.json`,
-  );
-  if (readError) throw new Error(`스크리닝 결과 조회 실패: ${readError.message}`);
-  const saved = JSON.parse(await blob.text()) as {
+  const saved = await readFreshCacheObject<{
     publicationId?: string;
     inputFingerprint: string;
     resultDigest: string;
     payload: { analysis: AnalysisResult; source?: { drivePublication?: DriveResultPublication } };
-  };
+  }>(client, "cloudtrend-data", `${uid}/cache/screening/latest.json`).catch((error: unknown) => {
+    throw new Error(
+      `스크리닝 결과 조회 실패: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  });
+  if (!saved) throw new Error("스크리닝 결과 조회 실패: 저장된 결과가 없습니다.");
   if (
     saved.inputFingerprint !== input.inputFingerprint ||
     saved.resultDigest !== input.resultDigest

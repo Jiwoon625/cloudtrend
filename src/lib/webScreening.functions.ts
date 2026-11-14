@@ -31,6 +31,8 @@ import { inputFingerprint, loadActiveSources, listActiveSources } from "./screen
 import { primeChartContext, publishRecentPrices } from "./instrumentChartStore.server";
 import { createHash } from "node:crypto";
 import { downloadFreshObject } from "./freshStorage";
+import { isCompressedCacheObject } from "./cacheObjectEncoding";
+import { readFreshCacheObject, writeFreshCacheObject } from "./cacheObjectStorage";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createServerFn } from "@tanstack/react-start";
@@ -65,6 +67,11 @@ function resultDigest(analysis: AnalysisResult) {
 }
 
 async function uploadJson(client: SupabaseClient, path: string, value: unknown) {
+  // The screening/dashboard pointers are stored gzip-encoded (see cacheObjectEncoding).
+  if (isCompressedCacheObject(path)) {
+    await writeFreshCacheObject(client, ANALYSIS_BUCKET, path, value);
+    return;
+  }
   const body = new Blob([JSON.stringify(value)], { type: "application/json" });
   const { error } = await client.storage.from(ANALYSIS_BUCKET).upload(path, body, {
     upsert: true,
@@ -75,6 +82,18 @@ async function uploadJson(client: SupabaseClient, path: string, value: unknown) 
 }
 
 async function readJson<T>(client: SupabaseClient, path: string): Promise<T> {
+  if (isCompressedCacheObject(path)) {
+    let value: T | null;
+    try {
+      value = await readFreshCacheObject<T>(client, ANALYSIS_BUCKET, path);
+    } catch (error) {
+      throw new Error(
+        `스크리닝 캐시 재검증 실패 (${path}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (value === null) throw new Error(`스크리닝 캐시 재검증 실패 (${path}): Object not found`);
+    return value;
+  }
   const { data, error } = await downloadFreshObject(client, ANALYSIS_BUCKET, path);
   if (error) throw new Error(`스크리닝 캐시 재검증 실패 (${path}): ${error.message}`);
   return JSON.parse(await data.text()) as T;

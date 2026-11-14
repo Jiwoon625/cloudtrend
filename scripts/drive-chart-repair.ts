@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { loadDriveHistory, KR_OWNER } from "./drive-history-inputs";
 import { liveRegistryInput } from "./live-registry-timestamp";
 import { downloadJson, trustedSupabaseClient } from "./analysis-run-store";
+import { downloadCachePointer } from "./screening-cache-pointer";
 import { inputFingerprint } from "./web-screening-cache-store";
 import type { LoadedSourceInput, SourceRecord } from "./source-registry-store";
 import { validateSourceBytes } from "../src/lib/sourceData";
@@ -143,7 +144,8 @@ export async function repairDriveCharts(directory = "drive-chart-work") {
     const localHead = JSON.parse(await readFile(path.join(root, "head.json"), "utf8")) as Head;
     const headPath = `${owner}/results/drive-screening/input-head/latest.json`;
     const cachePath = `${owner}/cache/screening/latest.json`;
-    const saved = await downloadJson<Saved>(client, cachePath);
+    const saved = await downloadCachePointer<Saved>(client, cachePath);
+    if (!saved) throw new Error("게시된 스크리닝 결과를 찾지 못했습니다.");
     const assertCurrent = async () => {
       const head = await downloadJson<Head>(client, headPath);
       if (
