@@ -1,6 +1,11 @@
 -- Screening/dashboard pointers are stored gzip-encoded (see docs/screening-cache-gzip.md).
 -- The uncompressed objects stay writable so a deploy that only knows the old layout still
 -- works while the change rolls out; the compressed object is what the app writes from now on.
+-- The two policies below were already created in production outside this file, so the
+-- statements are made idempotent: an existing policy of the same name is replaced with
+-- the identical definition instead of aborting the migration with "already exists".
+drop policy if exists "cloudtrend_owner_insert_compressed_cache" on storage.objects;
+
 create policy "cloudtrend_owner_insert_compressed_cache"
 on storage.objects
 for insert
@@ -13,6 +18,8 @@ with check (
     or name = (select auth.uid())::text || '/cache/dashboard/latest.json.gz'
   )
 );
+
+drop policy if exists "cloudtrend_owner_update_compressed_cache" on storage.objects;
 
 create policy "cloudtrend_owner_update_compressed_cache"
 on storage.objects

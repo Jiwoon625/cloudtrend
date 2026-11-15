@@ -466,7 +466,7 @@ describe("US operating chronological recovery planner", () => {
   it("keeps persistence service-only, append-only snapshots and explicit model-only trade columns", () => {
     const sql = readFileSync(
       new URL(
-        "../supabase/migrations/20261008030458_atomic_us_operating_replay.sql",
+        "../supabase/migrations/20261008035110_atomic_us_operating_replay.sql",
         import.meta.url,
       ),
       "utf8",
@@ -665,7 +665,7 @@ describe("US operating replay fee execution-date boundary", () => {
         "create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls; create schema auth; create table auth.users(id uuid primary key); create function auth.uid() returns uuid language sql stable as $$select null::uuid$$; grant usage on schema public,auth to anon,authenticated,service_role;",
       );
       await db.exec(migration("20260928064908_us_prospective_pipeline_v1.sql"));
-      await db.exec(migration("20261008030458_atomic_us_operating_replay.sql"));
+      await db.exec(migration("20261008035110_atomic_us_operating_replay.sql"));
       await db.exec(
         "grant select,insert,update on public.us_strategy_registry,public.us_portfolio_snapshots,public.us_portfolio_trades to service_role;",
       );

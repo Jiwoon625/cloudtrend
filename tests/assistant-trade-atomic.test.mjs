@@ -19,8 +19,8 @@ try {
     "supabase/migrations/20261019151441_assistant_trade_proposal_claims.sql",
     "supabase/migrations/20261020015017_assistant_trade_owner_transitions.sql",
     "supabase/migrations/20261021070811_assistant_trade_record_etf_decimal.sql",
-    "supabase/migrations/20261021074827_assistant_trade_atomic_evidence.sql",
-    "supabase/migrations/20261029161000_assistant_trade_record_sell.sql",
+    "supabase/migrations/20261021075556_assistant_trade_atomic_evidence.sql",
+    "supabase/migrations/20261029083624_assistant_trade_record_sell.sql",
   ])
     await db.exec(readFileSync(new URL(path, root), "utf8"));
   const uid = "bdfc8818-33a7-4030-9dbd-ecad39f223ac";
