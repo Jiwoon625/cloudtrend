@@ -85,3 +85,14 @@ before activating `v2` production collection. The changed executable manifest
 must undergo the repository's independent exact-digest review; do not bypass it.
 This source patch alone neither upgrades the pinned notebook nor changes stored
 sources, historical scores, ledgers or the current production universe.
+
+### Candidate admission review (2026-11-15)
+
+An independent review recomputed candidate runtime digest
+`sha256:20ffd2a3e7dbae570e6af288404c14ff691ad977ba45090b34980273abd0ab8a`.
+Only `krEtfLifecycle.ts` changed in the transitive publication manifest.
+The exact digest is appended with review ID
+`kr-dated-etf-lifecycle-v2-independent-review-20261115`; prior admissions remain.
+Native runtime verification and the complete production build pass. This admits
+server-side v2 validation only: no private collector pin, historical input,
+result, or ledger is changed by this review.
