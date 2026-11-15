@@ -66,6 +66,8 @@ try {
       "SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER",
     ],
     assistant_trade_proposals: ["SELECT", "SELECT,INSERT,UPDATE"],
+    // service-role-only collector lock: no anon/authenticated access, no UPDATE grant
+    collector_run_locks: ["", "SELECT,INSERT,DELETE"],
   };
   for (const { relname } of (
     await db.query(
