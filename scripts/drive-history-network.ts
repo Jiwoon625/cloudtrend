@@ -42,9 +42,14 @@ export function installDriveReadOnlyNetwork() {
   };
   return {
     receipt,
-    enableResultWrites: (owner: string, runId: string) => {
+    enableResultWrites: (owner: string, runId: string, publicationId?: string) => {
       if (!/^[a-f0-9-]{36}$/.test(owner) || !/^[A-Za-z0-9_-]{8,128}$/.test(runId))
         throw new Error("Invalid result write identity");
+      if (
+        publicationId !== undefined &&
+        !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(publicationId)
+      )
+        throw new Error("Invalid result publication identity");
       const prefix = `/storage/v1/object/cloudtrend-data/${owner}/`;
       resultPaths = new Set(
         [
@@ -54,6 +59,9 @@ export function installDriveReadOnlyNetwork() {
           "cache/dashboard/latest.json",
           "cache/dashboard/latest.json.gz",
           "cache/screening/confirmed-etf-context.json",
+          ...(publicationId
+            ? [`cache/data-status/${publicationId}.json`, "cache/data-status/latest.json"]
+            : []),
           `results/screening/${runId}.json`,
           "results/screening/latest.json",
           `results/drive-screening/receipts/${runId}.json`,

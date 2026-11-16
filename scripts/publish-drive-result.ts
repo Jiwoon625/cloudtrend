@@ -58,6 +58,7 @@ export async function publishDriveResult(input: {
   inputs: LoadedSourceInput[];
   sources: DriveResultSource[];
   expectedHeadHash: string | null;
+  beforeWrite?: (runId: string, publicationId: string) => void;
 }) {
   const { client, owner } = input;
   // Compare registry identity in the form a live read produces (see liveRegistryTimestamp).
@@ -214,6 +215,7 @@ export async function publishDriveResult(input: {
   // Recheck the checkpoint after preflight reads and before the first write.
   if (stableCacheJson(await maybeDriveHead(client, owner)) !== stableCacheJson(head))
     throw new Error("Drive publication head changed during preflight");
+  input.beforeWrite?.(bundle.run.id, generationId);
   await uploadJson(client, `${owner}/${DRIVE_INPUT_HEAD}`, next);
   if (stableCacheJson(await maybeDriveHead(client, owner)) !== stableCacheJson(next))
     throw new Error("Drive input head readback mismatch");

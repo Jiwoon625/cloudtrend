@@ -117,7 +117,7 @@ export interface DriveScreeningHistory {
   inputs: LoadedSourceInput[];
   provenance: Record<string, unknown>;
   /** Enable only the bounded result writer after every calculation check has passed. */
-  beforePublish?: (runId: string) => void;
+  beforePublish?: (runId: string, publicationId: string) => void;
 }
 export async function runDriveScreening(
   root: string,
@@ -443,7 +443,6 @@ export async function runDriveScreening(
       receipt["phase"] = result?.summary.krPublication?.phase ?? "FINAL";
       if (spec.mode === "publish") {
         if (!result) throw new Error("Calculated Drive result is missing");
-        history?.beforePublish?.(result.run.id);
         const published = await publishDriveResult({
           client,
           owner: userId,
@@ -451,6 +450,7 @@ export async function runDriveScreening(
           inputs,
           sources: proofSources,
           expectedHeadHash: spec.expectedHeadHash!,
+          ...(history?.beforePublish ? { beforeWrite: history.beforePublish } : {}),
         });
         receipt["publication"] = published;
         receipt["dashboardPublished"] = true;
