@@ -22,12 +22,24 @@ import { screeningPublicationAnalysis } from "./screeningPublicationAnalysis";
 import { appendEtfReportEvidence } from "./etfReportScore";
 import { createDataStatusCache } from "./dataStatusCache";
 import {
+  krDataStatusPointerKey,
+  readKrDataStatusPointer,
+  resolvePublishedKrDataStatus,
+} from "./krDataStatus.server";
+import { latestSourceDate } from "./dataStatusPublication";
+import type { DataStatusPayload } from "./marketPayload";
+import {
   completeScreeningPublication,
   SCREENING_PUBLICATION_VERSION,
   SCREENING_CALCULATION_VERSION,
   screeningPublicationPath,
 } from "./screeningPublication.server";
-import { inputFingerprint, loadActiveSources, listActiveSources } from "./screeningSources.server";
+import {
+  inputFingerprint,
+  loadActiveSources,
+  listActiveSourceRecords,
+  listActiveSources,
+} from "./screeningSources.server";
 import { primeChartContext, publishRecentPrices } from "./instrumentChartStore.server";
 import { createHash } from "node:crypto";
 import { downloadFreshObject } from "./freshStorage";
@@ -479,6 +491,8 @@ export async function runWebScreeningForUser(
 
 // Keep only small QA responses; raw market data is never retained here.
 const dataStatusCache = createDataStatusCache();
+// "게시 요약 없음"도 한 시간 동안 기억해 매 요청마다 스크리닝 캐시를 다시 읽지 않는다.
+const publishedDataStatusCache = createDataStatusCache<DataStatusPayload | null>();
 
 export const dataStatusServer = createServerFn({ method: "POST" })
   .inputValidator((input: { accessToken: string; config?: unknown }) => ({
@@ -492,7 +506,23 @@ export const dataStatusServer = createServerFn({ method: "POST" })
     });
     const { data: auth, error } = await client.auth.getUser(data.accessToken);
     if (error || !auth.user) throw new Error("로그인 세션 검증에 실패했습니다.");
-    const sources = await listActiveSources(client, auth.user.id);
+    // Drive v7 게시본이 원천 CSV보다 최신이면 게시 요약만 읽고 끝낸다(수백 MB 재다운로드 없음).
+    const records = await listActiveSourceRecords(client, auth.user.id);
+    const legacyLatestDate = latestSourceDate(records);
+    const pointer = await readKrDataStatusPointer(client, auth.user.id);
+    // 같은 게시 세대는 다시 계산하지 않는다. 포인터가 없을 때는 한 시간 단위로만 재확인한다.
+    const revision = `${krDataStatusPointerKey(pointer)}:${legacyLatestDate ?? "none"}:${new Date().toISOString().slice(0, 13)}`;
+    const published = await publishedDataStatusCache.get(
+      auth.user.id,
+      `published:${revision}`,
+      () => resolvePublishedKrDataStatus(client, auth.user.id, legacyLatestDate, pointer),
+    );
+    if (published) return published;
+    if (records.length === 0)
+      throw new Error(
+        "활성 스크리닝 원천데이터가 없습니다. 데이터 관리에서 게시 상태를 확인해 주세요.",
+      );
+    const sources = records;
     const fingerprint = inputFingerprint(sources, data.config);
     const checkedAt = new Date();
     const qualityDate = checkedAt.toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
@@ -501,11 +531,15 @@ export const dataStatusServer = createServerFn({ method: "POST" })
       if (inputFingerprint(loadedSources, data.config) !== fingerprint)
         throw new Error("원천자료가 변경됐습니다. 데이터 상태를 다시 조회해 주세요.");
       const { computeDatasetDataStatus } = await import("./datasetDataStatus");
-      const status = computeDatasetDataStatus(
-        parseManualMarketData(texts).dataset,
-        data.config,
-        checkedAt,
-      );
+      const parsed = parseManualMarketData(texts);
+      const status: DataStatusPayload = {
+        ...computeDatasetDataStatus(parsed.dataset, data.config, checkedAt),
+        evidence: {
+          version: "kr-data-status-evidence-v1",
+          source: "ACTIVE_SOURCE_CSV",
+          asOfDate: parsed.dataset.asOfDate,
+        },
+      };
       const currentSources = await listActiveSources(client, auth.user.id);
       if (inputFingerprint(currentSources, data.config) !== fingerprint)
         throw new Error("검증 중 원천자료가 변경됐습니다. 데이터 상태를 다시 조회해 주세요.");

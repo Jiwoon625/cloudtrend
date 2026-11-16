@@ -39,6 +39,49 @@ export interface InstrumentDetailPayload {
   history: ReturnType<typeof scoreHistory>;
 }
 
+export interface DataStatusChecks {
+  ohlcErrors: number;
+  negativeVolume: number;
+  duplicates: number;
+  futureDates: number;
+  afterAsOfDates?: number;
+  insufficient: number;
+  abnormalMoves: number;
+}
+
+export interface DataStatusCoverageRow {
+  provider: string;
+  kind: string;
+  count: number;
+  entities: number;
+  ok: boolean;
+  availableEntities?: number;
+  asOfDate?: string;
+}
+
+export interface DataStatusBarCoverage {
+  symbol: string;
+  name: string;
+  bars: number;
+  first: string;
+  last: string;
+}
+
+/**
+ * Where the quality evidence behind a status payload was produced. A payload without the
+ * publication-time dataset calculation carries `unavailable` instead of inventing counts.
+ */
+export interface DataStatusEvidence {
+  version: "kr-data-status-evidence-v1";
+  source: "DRIVE_PUBLICATION_DATA_STATUS" | "PUBLISHED_ANALYSIS" | "ACTIVE_SOURCE_CSV";
+  asOfDate: string;
+  phase?: "PRELIMINARY" | "FINAL";
+  publicationId?: string;
+  computedAt?: string;
+  /** Payload sections this evidence source cannot establish. */
+  unavailable?: string[];
+}
+
 export interface DataStatusPayload {
   source: DataSourceStatus;
   asOfDate: string;
@@ -51,23 +94,9 @@ export interface DataStatusPayload {
   volatilityObservation?: ReturnType<typeof dataStatusVolatility>;
   qualityDate?: string;
   qualityTimezone?: "Asia/Seoul";
-  coverage: Array<{
-    provider: string;
-    kind: string;
-    count: number;
-    entities: number;
-    ok: boolean;
-    availableEntities?: number;
-    asOfDate?: string;
-  }>;
-  checks: {
-    ohlcErrors: number;
-    negativeVolume: number;
-    duplicates: number;
-    futureDates: number;
-    afterAsOfDates?: number;
-    insufficient: number;
-    abnormalMoves: number;
-  };
-  barCoverage: Array<{ symbol: string; name: string; bars: number; first: string; last: string }>;
+  coverage: DataStatusCoverageRow[];
+  /** Absent when the payload was built without the publication-time dataset calculation. */
+  checks?: DataStatusChecks;
+  barCoverage?: DataStatusBarCoverage[];
+  evidence?: DataStatusEvidence;
 }

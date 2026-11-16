@@ -19,24 +19,41 @@ export function MarketDataOverview({
   kr?: DataStatusPayload;
   us?: UsProspectiveSummary | null;
 }) {
-  const krBars = kr?.barCoverage ?? [];
-  const validDates = krBars
+  const krBars = kr?.barCoverage ?? null;
+  const krBarRows = krBars ?? [];
+  const validDates = krBarRows
     .flatMap((r) => [r.first, r.last])
     .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))
     .sort();
+  const asOfInstrumentRow = kr?.coverage.find((row) => row.kind === "종목 일봉(기준일)");
   const cards = [
     {
       title: "한국 · 주식·ETF",
       href: "#kr-data",
       fields: [
         ["데이터 기준일", kr?.asOfDate ?? "미확인"],
+        [
+          "게시 구분",
+          kr?.evidence?.phase
+            ? kr.evidence.phase === "FINAL"
+              ? "FINAL · 확정"
+              : "PRELIMINARY · 잠정"
+            : "미확인",
+        ],
         ["공급자", kr?.dataProvider ?? "미확인"],
         ["데이터 버전", kr?.dataVersion ?? "미확인"],
         ["전략 버전", kr?.strategyVersion ?? "미확인"],
-        ["수집 종목", kr ? `${krBars.length.toLocaleString()}종목` : "미확인"],
+        [
+          "수집 종목",
+          krBars
+            ? `${krBars.length.toLocaleString()}종목`
+            : asOfInstrumentRow
+              ? `${asOfInstrumentRow.entities.toLocaleString()}종목 · 기준일 ${asOfInstrumentRow.asOfDate ?? "미확인"}`
+              : "미확인",
+        ],
         [
           "기본 추세 120봉",
-          kr
+          krBars
             ? `${krBars.filter((r) => r.bars >= 120).length.toLocaleString()} / ${krBars.length.toLocaleString()}종목 · 120봉 기준`
             : "미확인",
         ],
@@ -46,7 +63,9 @@ export function MarketDataOverview({
         ],
         [
           "52주 항목 252봉",
-          kr ? `${krBars.filter((r) => r.bars >= 252).length} / ${krBars.length}종목` : "미확인",
+          krBars
+            ? `${krBars.filter((r) => r.bars >= 252).length} / ${krBars.length}종목`
+            : "미확인",
         ],
         ["자료 구분", kr ? (kr.isLive ? "실데이터" : "합성 데이터") : "미확인"],
       ],

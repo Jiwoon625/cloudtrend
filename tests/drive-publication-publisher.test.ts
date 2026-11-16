@@ -112,6 +112,34 @@ async function request(phase: "PRELIMINARY" | "FINAL" = "PRELIMINARY") {
       run: { id: "synthetic-run", kind: "SCREENING" },
       summary: {},
       data: { asOfDate: proof.asOfDate, sources: inputs },
+      dataStatus: {
+        source: { live: true, credentialsConfigured: true, fallbackReason: null },
+        asOfDate: proof.asOfDate,
+        dataProvider: "MANUAL_INPUT",
+        dataVersion: "manual-synthetic",
+        strategyVersion: "synthetic",
+        isLive: true,
+        notes: [],
+        capabilities: {
+          marketCap: true,
+          fundamentals: false,
+          etfFacts: false,
+          sectors: true,
+          investorFlow: true,
+          volatilityIndex: true,
+          exactTradingValue: true,
+        },
+        coverage: [],
+        checks: {
+          ohlcErrors: 0,
+          negativeVolume: 0,
+          duplicates: 0,
+          futureDates: 0,
+          insufficient: 0,
+          abnormalMoves: 0,
+        },
+        barCoverage: [],
+      },
     }),
   );
   return {
@@ -172,6 +200,37 @@ test("implicit FINAL bundle publishes and binds both result caches to its genera
   expect(m.store.get(`${owner}/cache/dashboard/latest.json`)).toMatchObject({
     publicationId: head.publicationId,
   });
+});
+
+test("publication stores a data-status summary bound to the published generation", async () => {
+  const receipt = await publishDriveResult(await request("FINAL"));
+  const pointer = m.store.get(`${owner}/cache/data-status/latest.json`) as {
+    version: string;
+    publicationId: string;
+    resultDigest: string;
+    asOfDate: string;
+    phase: string;
+    path: string;
+  };
+  expect(pointer).toMatchObject({
+    version: "kr-data-status-v1",
+    publicationId: receipt.publicationId,
+    asOfDate: "2026-10-06",
+    phase: "FINAL",
+  });
+  expect(pointer.path).toBe(`${owner}/cache/data-status/${receipt.publicationId}.json`);
+  const artifact = m.store.get(pointer.path) as {
+    publicationId: string;
+    resultDigest: string;
+    payload: { asOfDate: string; evidence: { publicationId: string } };
+  };
+  expect(artifact.resultDigest).toBe(pointer.resultDigest);
+  expect(artifact.payload.asOfDate).toBe("2026-10-06");
+  expect(artifact.payload.evidence.publicationId).toBe(receipt.publicationId);
+  // 포인터는 요약보다 먼저 저장되지 않는다(세대가 어긋난 요약을 가리키지 않게).
+  expect(m.paths.indexOf(pointer.path)).toBeLessThan(
+    m.paths.indexOf(`${owner}/cache/data-status/latest.json`),
+  );
 });
 test("implicit FINAL cannot be downgraded by a same-day preliminary result", async () => {
   const r = await request();

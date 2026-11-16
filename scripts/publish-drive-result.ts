@@ -30,6 +30,12 @@ import { liveRegistryInput } from "./live-registry-timestamp";
 import type { AnalysisResult } from "../src/lib/engine/pipeline";
 import type { ScoringConfig } from "../src/lib/engine/scoring";
 
+import {
+  buildKrDataStatusPublication,
+  krDataStatusPointerPath,
+  krDataStatusObjectPath,
+} from "../src/lib/dataStatusPublication";
+import type { DataStatusPayload } from "../src/lib/marketPayload";
 import { carryPublishedParentContracts } from "./drive-parent-contracts";
 
 export const DRIVE_INPUT_HEAD = "results/drive-screening/input-head/latest.json";
@@ -63,6 +69,8 @@ export async function publishDriveResult(input: {
     config: ScoringConfig;
     run: { id: string; kind: string };
     summary: Record<string, unknown>;
+    /** 계산 단계의 데이터셋에서 만든 데이터 상태 요약(홈페이지는 이것만 읽는다). */
+    dataStatus?: DataStatusPayload;
     data: {
       asOfDate: string;
       sources: Array<{ id: string; fileHash: string; dataHash: string; schemaHash: string }>;
@@ -227,6 +235,29 @@ export async function publishDriveResult(input: {
   )
     throw new Error("Drive dashboard readback mismatch");
   const resultPath = `${owner}/results/screening/${bundle.run.id}.json`;
+  // 데이터 상태 요약은 게시 세대에 묶어 남긴다. 홈페이지 데이터 상태 화면이
+  // 원천 CSV(수백 MB) 대신 이 객체 하나를 읽고, 세대가 다르면 CSV 경로로 내려간다.
+  if (!bundle.dataStatus)
+    throw new Error("게시 번들에 데이터 상태 요약이 없습니다. 계산 단계를 확인해 주세요.");
+  const dataStatus = buildKrDataStatusPublication({
+    owner,
+    publicationId: generationId,
+    resultDigest: next.resultDigest,
+    analysis: bundle.result,
+    payload: bundle.dataStatus,
+  });
+  await uploadJson(client, krDataStatusObjectPath(owner, generationId), dataStatus.artifact);
+  if (
+    stableCacheJson(await downloadJson(client, dataStatus.pointer.path)) !==
+    stableCacheJson(dataStatus.artifact)
+  )
+    throw new Error("데이터 상태 요약 readback mismatch");
+  await uploadJson(client, krDataStatusPointerPath(owner), dataStatus.pointer);
+  if (
+    stableCacheJson(await downloadJson(client, krDataStatusPointerPath(owner))) !==
+    stableCacheJson(dataStatus.pointer)
+  )
+    throw new Error("데이터 상태 포인터 readback mismatch");
   await uploadScreeningJsonFile(client, resultPath, file);
   await uploadJson(client, `${owner}/results/screening/latest.json`, {
     run: bundle.run,

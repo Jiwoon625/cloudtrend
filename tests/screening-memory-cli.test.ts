@@ -215,7 +215,11 @@ for (const phase of ["prices", "warm"] as const) {
       "config",
       "summary",
       "result",
+      "dataStatus",
     ]);
+    // 데이터 상태 요약은 게시 번들과 같은 계산에서 나온 것이어야 한다.
+    expect(bundle.dataStatus.asOfDate).toBe(bundle.result.asOfDate);
+    expect(bundle.dataStatus.barCoverage.length).toBeGreaterThan(0);
     const latest = JSON.parse(
       uploaded.get("11111111-1111-1111-1111-111111111111/results/screening/latest.json")!,
     );
