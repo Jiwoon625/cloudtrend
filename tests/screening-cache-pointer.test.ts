@@ -122,3 +122,52 @@ test("browsing several symbols reuses one verified shared-cache read for a few s
   expect(await readSharedScreeningCache()).not.toBeNull();
   expect(pointerReads()).toBe(2);
 });
+
+test("concurrent panels download and validate the shared screening only once", async () => {
+  const { readScreeningCache, readSharedScreeningCache, invalidateSharedScreeningCache } =
+    await import("../src/lib/screeningCache");
+  invalidateSharedScreeningCache();
+  const results = await Promise.all([
+    readScreeningCache(),
+    readSharedScreeningCache(),
+    readSharedScreeningCache(),
+  ]);
+  expect(results.every((r) => r?.resultDigest === screening.resultDigest)).toBe(true);
+  expect(reads.filter((p) => p.endsWith("cache/screening/latest.json.gz"))).toHaveLength(1);
+  // A later explicit read must still inspect the origin, not the 45-second reuse entry.
+  await readScreeningCache();
+  expect(reads.filter((p) => p.endsWith("cache/screening/latest.json.gz"))).toHaveLength(2);
+});
+
+test("a failed concurrent read does not poison the next request", async () => {
+  const { readScreeningCache, invalidateSharedScreeningCache } =
+    await import("../src/lib/screeningCache");
+  invalidateSharedScreeningCache();
+  mocks.download.mockRejectedValueOnce(new Error("offline"));
+  // The compressed reader can try a plain fallback, which must fail too here.
+  mocks.download.mockRejectedValueOnce(new Error("offline"));
+  const results = await Promise.allSettled([readScreeningCache(), readScreeningCache()]);
+  expect(results.every((r) => r.status === "rejected")).toBe(true);
+  expect(await readScreeningCache()).not.toBeNull();
+});
+
+test("invalidation prevents an older in-flight read from repopulating shared reuse", async () => {
+  const { readScreeningCache, readSharedScreeningCache, invalidateSharedScreeningCache } =
+    await import("../src/lib/screeningCache");
+  invalidateSharedScreeningCache();
+  let finish!: (value: { data: Blob; error: null }) => void;
+  mocks.download.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const pending = readScreeningCache();
+  await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+  invalidateSharedScreeningCache();
+  finish({ data: new Blob([(await gzipJson(screening)) as BlobPart]), error: null });
+  expect(await pending).not.toBeNull();
+  reads.length = 0;
+  expect(await readSharedScreeningCache()).not.toBeNull();
+  expect(reads.filter((p) => p.endsWith("cache/screening/latest.json.gz"))).toHaveLength(1);
+});

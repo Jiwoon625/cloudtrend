@@ -3,12 +3,10 @@ import { MarketDataContent } from "@/components/MarketDataPage";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Database, Play } from "lucide-react";
-import { useState } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { ManualDataInput } from "@/components/ManualDataInput";
 import { Button } from "@/components/ui/button";
-import { getManualDataText } from "@/lib/manualDataStore";
 import { setScreeningStarted } from "@/lib/screeningRun";
 
 export const Route = createFileRoute("/scoring")({
@@ -30,10 +28,8 @@ export const Route = createFileRoute("/scoring")({
 function ScoringPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [hasData, setHasData] = useState(() => (getManualDataText() ?? "").trim().length > 0);
 
-  const onDataChanged = (ok: boolean) => {
-    setHasData(ok);
+  const onDataChanged = () => {
     setScreeningStarted(false);
     queryClient.removeQueries({ queryKey: ["market-analysis"] });
     void queryClient.invalidateQueries({ queryKey: ["portfolio-ledgers"] });
@@ -41,8 +37,7 @@ function ScoringPage() {
     queryClient.removeQueries({ queryKey: ["instrument"] });
   };
 
-  const startScreening = () => {
-    setScreeningStarted(true);
+  const openResults = () => {
     void navigate({ to: "/" });
   };
 
@@ -55,11 +50,23 @@ function ScoringPage() {
         </p>
       </div>
 
+      <section className="mb-4 rounded-lg border border-border bg-card p-4">
+        <h2 className="text-sm font-semibold">Drive v7 수집·게시</h2>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          한국·ETF는 Colab에서 자료를 수집하고 Drive 실행기에서 계산·게시합니다. 게시가 완료되면 이
+          사이트에서 저장 결과와 차트를 확인할 수 있습니다. 사이트를 열 때 자료수집이나 전체
+          스크리닝을 다시 실행하지 않습니다.
+        </p>
+        <Button size="sm" className="mt-3 gap-1.5" onClick={openResults}>
+          <Play className="size-3.5" /> 저장 결과 보기
+        </Button>
+      </section>
+
       <section className="mb-4 overflow-hidden rounded-lg border border-border bg-card">
         <header className="flex items-center gap-1.5 border-b border-border bg-surface-strong px-3 py-2">
           <Database className="size-4 text-primary" />
           <div>
-            <h2 className="text-sm font-semibold">1. 시세 데이터 입력</h2>
+            <h2 className="text-sm font-semibold">직접 파일 입력 · 기존 경로</h2>
             <p className="text-[11px] text-muted-foreground">
               CSV/JSON 또는 붙여넣기로 입력합니다. 업로드 데이터는 계정의 Supabase 원천데이터와
               연결되어 기기 간 공유됩니다.
@@ -68,16 +75,9 @@ function ScoringPage() {
         </header>
         <div className="space-y-3 p-3">
           <ManualDataInput onChanged={onDataChanged} />
-          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
-            <Button size="sm" className="gap-1.5" onClick={startScreening} disabled={!hasData}>
-              <Play className="size-3.5" /> 스크리닝 시작
-            </Button>
-            <span className="text-[11px] text-muted-foreground">
-              {hasData
-                ? "저장된 활성 자료를 분석하고 결과·계산 근거·실행 이력을 갱신합니다."
-                : "먼저 데이터를 입력하고 데이터 적용을 눌러 주세요."}
-            </span>
-          </div>
+          <p className="text-[11px] text-muted-foreground">
+            Drive v7 게시 결과를 확인하는 경우에는 이 화면에 원자료를 다시 입력할 필요가 없습니다.
+          </p>
         </div>
       </section>
 
