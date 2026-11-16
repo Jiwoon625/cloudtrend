@@ -384,7 +384,7 @@ test("injected history rejects raw Supabase source registration mode", async () 
   expect(history.beforePublish).not.toHaveBeenCalled();
 });
 
-test("injected publication enables its writer with the calculated run id immediately before publishing", async () => {
+test("injected publication delegates exact-generation authorization to the validated publisher", async () => {
   await saveCheckpoint("publish");
   const history = await injectedHistory();
   mocks.run.mockResolvedValue({
@@ -392,9 +392,13 @@ test("injected publication enables its writer with the calculated run id immedia
     outputDir: directory,
     summary: { krPublication: { phase: "PRELIMINARY" } },
   });
-  mocks.publish.mockImplementation(async () => {
+  mocks.publish.mockImplementation(async (request) => {
+    expect(history.beforePublish).not.toHaveBeenCalled();
+    expect(request.beforeWrite).toBe(history.beforePublish);
+    request.beforeWrite("calculated-run-not-collector-run", "00000000-0000-4000-8000-000000000002");
     expect(history.beforePublish).toHaveBeenCalledExactlyOnceWith(
       "calculated-run-not-collector-run",
+      "00000000-0000-4000-8000-000000000002",
     );
     return { roundTripVerified: true, sourceUploads: 0 };
   });
@@ -405,7 +409,7 @@ test("injected publication enables its writer with the calculated run id immedia
   expect(history.beforePublish.mock.invocationCallOrder[0]).toBeGreaterThan(
     mocks.run.mock.invocationCallOrder[0]!,
   );
-  expect(history.beforePublish.mock.invocationCallOrder[0]).toBeLessThan(
+  expect(history.beforePublish.mock.invocationCallOrder[0]).toBeGreaterThan(
     mocks.publish.mock.invocationCallOrder[0]!,
   );
   const receipt = JSON.parse(

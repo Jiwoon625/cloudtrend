@@ -57,10 +57,13 @@ test("result-only cache publishing writes only the two gzip pointers and no raw 
     previous: null,
     resultOnly: proof,
   });
-  expect([...uploads.keys()]).toEqual([
-    "synthetic-owner/cache/screening/latest.json.gz",
-    "synthetic-owner/cache/dashboard/latest.json.gz",
-  ]);
+  // Independent gzip uploads complete concurrently; assert the exact set, not completion order.
+  expect(new Set(uploads.keys())).toEqual(
+    new Set([
+      "synthetic-owner/cache/screening/latest.json.gz",
+      "synthetic-owner/cache/dashboard/latest.json.gz",
+    ]),
+  );
   expect(result.roundTripVerified).toBe(true);
   expect(result.bytes.raw).toBe(0);
   expect(result.paths.krPath).toBeNull();

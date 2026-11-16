@@ -154,7 +154,14 @@ describe("Drive history execution wrapper", () => {
     mocks.prepared.mockImplementation(async (directory, _upload, history) => {
       const resultUrl = prefix + "results/screening/run-12345678.json";
       await expect(fetch(resultUrl, { method: "POST" })).rejects.toThrow("blocked supabase-write");
-      history.beforePublish("run-12345678");
+      const generation = "00000000-0000-4000-8000-000000000002";
+      history.beforePublish("run-12345678", generation);
+      for (const suffix of [
+        `cache/data-status/${generation}.json`,
+        "cache/data-status/latest.json",
+      ]) {
+        await expect(fetch(prefix + suffix, { method: "POST" })).resolves.toBeInstanceOf(Response);
+      }
       await expect(fetch(resultUrl, { method: "POST" })).resolves.toBeInstanceOf(Response);
       for (const suffix of [
         "source/screening/raw.csv",
@@ -174,9 +181,9 @@ describe("Drive history execution wrapper", () => {
     expect(completed).toMatchObject({
       status: "COMPLETED_PUBLISHED",
       dashboardPublished: true,
-      network: { supabaseWrites: 1 },
+      network: { supabaseWrites: 3 },
     });
-    expect(transport).toHaveBeenCalledTimes(1);
+    expect(transport).toHaveBeenCalledTimes(3);
     expect(globalThis.fetch).toBe(transport);
   });
 

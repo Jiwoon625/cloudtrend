@@ -482,3 +482,26 @@ test("Nov9 FINAL cannot replace Nov10 PRELIMINARY during cache preflight, before
   expect(m.paths).toEqual([]);
   expect(m.files).toEqual([]);
 });
+
+test("authorizes the exact publication generation after preflight and before writes", async () => {
+  const r = await request("FINAL");
+  const beforeWrite = vi.fn((_run: string, _publication: string) => {
+    expect(m.paths).toEqual([]);
+  });
+  const receipt = await publishDriveResult({ ...r, beforeWrite });
+  expect(beforeWrite).toHaveBeenCalledTimes(1);
+  expect(beforeWrite.mock.calls[0]?.[1]).toBe(receipt.publicationId);
+  expect(m.paths).toContain(`${owner}/cache/data-status/${receipt.publicationId}.json`);
+});
+test("authorization rejection fails before any publication write", async () => {
+  const r = await request("FINAL");
+  await expect(
+    publishDriveResult({
+      ...r,
+      beforeWrite: () => {
+        throw new Error("denied generation");
+      },
+    }),
+  ).rejects.toThrow("denied generation");
+  expect(m.paths).toEqual([]);
+});

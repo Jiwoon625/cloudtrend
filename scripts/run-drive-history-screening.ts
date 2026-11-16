@@ -66,7 +66,8 @@ export async function runDriveHistoryScreening(directory: string, publishDashboa
       await runDriveScreening(path.join(root, "prepared"), false, {
         inputs,
         provenance: { kind: "VERIFIED_IMMUTABLE_DRIVE_HISTORY", ...evidence },
-        beforePublish: (runId) => boundary.enableResultWrites(KR_OWNER, runId),
+        beforePublish: (runId, publicationId) =>
+          boundary.enableResultWrites(KR_OWNER, runId, publicationId),
       });
       const result = JSON.parse(
         await readFile(path.join(root, "prepared/execution-receipt.json"), "utf8"),
