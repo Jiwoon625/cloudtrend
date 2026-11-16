@@ -47,7 +47,9 @@ describe("V8 formula location", () => {
     expect(html).toContain("데이터 관리");
     expect(html).toContain("입력 화면");
     expect(html).toContain("자료 상태");
-    expect(html).toContain("스크리닝 시작");
+    expect(html).toContain("저장 결과 보기");
+    expect(html).toContain("Drive v7 수집·게시");
+    expect(html).not.toContain("스크리닝 시작");
     expect(html).not.toContain("계산 산식");
     expect(html).not.toContain("기술점수 구성요소");
   });

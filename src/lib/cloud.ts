@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
+import { isMutableViewObject } from "./mutableViewObject";
 import { isCompressedCacheObject } from "./cacheObjectEncoding";
 import { readFreshCacheObject, writeFreshCacheObject } from "./cacheObjectStorage";
 
@@ -45,7 +46,7 @@ export async function readObject<T>(path: string): Promise<T | null> {
       );
     }
   }
-  const { data, error } = await (path.endsWith("/latest.json")
+  const { data, error } = await (isMutableViewObject(path)
     ? downloadFreshObject(supabase, BUCKET, path)
     : supabase.storage.from(BUCKET).download(path));
   if (error) {
@@ -66,7 +67,7 @@ export async function writeObject(path: string, value: unknown) {
   const { error } = await supabase.storage.from(BUCKET).upload(path, body, {
     upsert: true,
     contentType: "application/json",
-    ...(path.endsWith("/latest.json") ? { cacheControl: "0" } : {}),
+    ...(isMutableViewObject(path) ? { cacheControl: "0" } : {}),
   });
   if (error) throw new Error(`클라우드 저장 실패: ${error.message}`);
 }
@@ -87,13 +88,16 @@ export async function writeTextObject(path: string, text: string, contentType = 
   const { error } = await supabase.storage.from(BUCKET).upload(path, body, {
     upsert: true,
     contentType,
+    ...(isMutableViewObject(path) ? { cacheControl: "0" } : {}),
   });
   if (error) throw new Error(`클라우드 저장 실패: ${error.message}`);
   return body.size;
 }
 
 export async function readBinaryObject(path: string): Promise<Uint8Array | null> {
-  const { data, error } = await supabase.storage.from(BUCKET).download(path);
+  const { data, error } = await (isMutableViewObject(path)
+    ? downloadFreshObject(supabase, BUCKET, path)
+    : supabase.storage.from(BUCKET).download(path));
   if (error) {
     if (isMissing(error as { statusCode?: string; message: string })) return null;
     throw new Error(`클라우드 바이너리를 불러오지 못했습니다: ${error.message}`);
@@ -112,6 +116,7 @@ export async function writeBinaryObject(
   const { error } = await supabase.storage.from(BUCKET).upload(path, body, {
     upsert: true,
     contentType,
+    ...(isMutableViewObject(path) ? { cacheControl: "0" } : {}),
   });
   if (error) throw new Error(`클라우드 저장 실패: ${error.message}`);
   return bytes.byteLength;

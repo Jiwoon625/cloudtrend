@@ -144,17 +144,33 @@ async function matchesDriveHead(cache: {
   return true;
 }
 
+// Coalesce concurrent readers only. Explicit later reads still check the current publication.
+const screeningReads = new Map<string, Promise<ScreeningCachePayload | null>>();
+let screeningReadEpoch = 0;
+
 export async function readScreeningCache(): Promise<ScreeningCachePayload | null> {
   const path = await screeningPath();
-  const validated = await validateScreeningCache(await readObject<ScreeningCachePayload>(path));
-  // Any validated read refreshes the reuse entry, so a publication seen by one part of
-  // the page is not shadowed by an older entry held for another stock panel.
-  if (!validated) {
-    invalidateSharedScreeningCache();
-    return null;
+  const configKey = stableCacheJson(getActiveScoringConfig());
+  const key = `${path}:${configKey}`;
+  const existing = screeningReads.get(key);
+  if (existing) return existing;
+  const epoch = screeningReadEpoch;
+  const pending = (async () => {
+    const validated = await validateScreeningCache(await readObject<ScreeningCachePayload>(path));
+    // A request started before invalidation must not repopulate the reuse cache.
+    if (epoch === screeningReadEpoch) {
+      sharedScreeningRead = validated
+        ? { path, configKey, at: Date.now(), value: validated }
+        : null;
+    }
+    return validated;
+  })();
+  screeningReads.set(key, pending);
+  try {
+    return await pending;
+  } finally {
+    if (screeningReads.get(key) === pending) screeningReads.delete(key);
   }
-  sharedScreeningRead = { path, at: Date.now(), value: validated };
-  return validated;
 }
 
 /**
@@ -166,6 +182,7 @@ export async function readScreeningCache(): Promise<ScreeningCachePayload | null
 const SHARED_SCREENING_READ_TTL_MS = 45_000;
 let sharedScreeningRead: {
   path: string;
+  configKey: string;
   at: number;
   value: ScreeningCachePayload;
 } | null = null;
@@ -173,6 +190,8 @@ let sharedScreeningRead: {
 /** Drops the short-lived reuse entry after this process writes the shared cache. */
 export function invalidateSharedScreeningCache() {
   sharedScreeningRead = null;
+  screeningReadEpoch++;
+  screeningReads.clear();
 }
 
 /** A validated shared-cache read that a browsing session can reuse for a few seconds. */
@@ -182,6 +201,7 @@ export async function readSharedScreeningCache(): Promise<ScreeningCachePayload 
   if (
     remembered &&
     remembered.path === path &&
+    remembered.configKey === stableCacheJson(getActiveScoringConfig()) &&
     Date.now() - remembered.at < SHARED_SCREENING_READ_TTL_MS
   )
     return remembered.value;
@@ -192,22 +212,18 @@ async function validateScreeningCache(
   cached: ScreeningCachePayload | null,
 ): Promise<ScreeningCachePayload | null> {
   if (!cached || cached.version !== SCREENING_CACHE_VERSION) return null;
-  const expectedInput = await currentInputFingerprint(
-    savedOperationalIdentity(cached.payload.analysis),
-    cached.payload.source?.drivePublication,
-  );
   const drive = cached.payload.source?.drivePublication;
+  const [expectedInput, headMatches] = await Promise.all([
+    currentInputFingerprint(savedOperationalIdentity(cached.payload.analysis), drive),
+    matchesDriveHead({ ...cached, drivePublication: drive }),
+  ]);
   if (
     drive &&
     (drive.asOfDate !== cached.payload.analysis.asOfDate ||
       drive.phase !== krResultPhase(cached.payload.analysis))
   )
     return null;
-  if (
-    cached.inputFingerprint !== expectedInput ||
-    !(await matchesDriveHead({ ...cached, drivePublication: drive }))
-  )
-    return null;
+  if (cached.inputFingerprint !== expectedInput || !headMatches) return null;
   const digest = await analysisDigest(cached.payload.analysis);
   return digest === cached.resultDigest ? cached : null;
 }
@@ -268,12 +284,11 @@ export async function readDashboardCache(): Promise<DashboardSummary | null> {
       (cached.drivePublication.asOfDate === cached.asOfDate &&
         cached.drivePublication.phase === krResultPhase(cached)))
   ) {
-    const expectedInput = await currentInputFingerprint(
-      savedOperationalIdentity(cached),
-      cached.drivePublication,
-    );
-    if (cached.inputFingerprint === expectedInput && (await matchesDriveHead(cached)))
-      return cached;
+    const [expectedInput, headMatches] = await Promise.all([
+      currentInputFingerprint(savedOperationalIdentity(cached), cached.drivePublication),
+      matchesDriveHead(cached),
+    ]);
+    if (cached.inputFingerprint === expectedInput && headMatches) return cached;
   }
 
   // The dashboard is only a projection. A missing/stale summary must not trigger

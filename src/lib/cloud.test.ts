@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@supabase/supabase-js", () => ({
   createClient: () => ({ auth: { getSession: mocks.getSession }, storage: { from: () => mocks } }),
 }));
-import { readFile, writeFile, readObject, writeObject } from "./cloud";
+import { readFile, writeFile, readObject, writeObject, readBinaryObject } from "./cloud";
 import { gunzipJson, gzipJson } from "./cacheObjectEncoding";
 describe("cloud file persistence", () => {
   beforeEach(() => {
@@ -84,5 +84,34 @@ describe("cloud file persistence", () => {
       "45MB",
     );
     expect(mocks.upload).not.toHaveBeenCalled();
+  });
+});
+
+describe("mutable v7 browser views", () => {
+  it.each([
+    "owner/cache/us-screening/view-v1.json.gz",
+    "owner/cache/us-screening/summary-v1.json",
+    "owner/cache/instruments/005930.json.gz",
+  ])("bypasses stale CDN responses for %s", async (path) => {
+    mocks.download.mockReset();
+    mocks.download.mockImplementation(async (_path, options, parameters) => ({
+      data: new Blob([
+        JSON.stringify({
+          revision: options?.cacheNonce && parameters?.cache === "no-store" ? "new" : "old",
+        }),
+      ]),
+      error: null,
+    }));
+    const value = path.endsWith(".gz")
+      ? JSON.parse(new TextDecoder().decode((await readBinaryObject(path))!))
+      : await readObject(path);
+    expect(value).toEqual({ revision: "new" });
+  });
+  it("retains normal caching for content-addressed chart bundles", async () => {
+    mocks.download.mockReset();
+    mocks.download.mockResolvedValue({ data: new Blob(["chart"]), error: null });
+    const path = "owner/cache/charts/chart-v3/fingerprint/digest/bucket-1-prices.json.gz";
+    await readBinaryObject(path);
+    expect(mocks.download).toHaveBeenCalledWith(path);
   });
 });
