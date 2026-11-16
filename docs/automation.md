@@ -1,8 +1,8 @@
-# CloudTrend 자동 스크리닝
+# 기존 Supabase 입력용 스크리닝 실행
 
 GitHub Actions의 `CloudTrend screening` 워크플로는 Supabase에 저장된 활성 `screening` 원천데이터를 사용해 웹 스크리너·대시보드와 같은 운영 점수 스냅샷을 계산합니다.
 
-장기 백테스트와 연구 실행은 GitHub Actions에서 제거했습니다. 한국·미국 시장의 연구용 canonical 데이터와 결과는 Google Drive에 보관하고, 계산은 Google Colab에서 수행합니다.
+이 문서는 기존 활성 Supabase source를 읽는 실행 경로입니다. 현재 한국·ETF Drive v7 실행은 [별도 문서](drive-history-v7/README.md)를 따릅니다. 범용 백테스트 옵션의 제거와 CM 전용 연구 Actions의 존재를 구분합니다. 모든 연구가 Colab에서만 실행되는 것은 아닙니다.
 
 ## Actions 화면에서 수동 실행
 
