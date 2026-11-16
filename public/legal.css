@@ -1,0 +1,97 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: #f5f7fb;
+  color: #172033;
+  font:
+    16px/1.8 system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+header,
+main,
+footer {
+  max-width: 880px;
+  margin: auto;
+  padding: 24px;
+}
+header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+  border-bottom: 1px solid #dce3ef;
+}
+header > a {
+  font-size: 22px;
+  font-weight: 750;
+  text-decoration: none;
+}
+a {
+  color: #2254ac;
+  text-underline-offset: 4px;
+}
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+h1 {
+  font-size: clamp(30px, 6vw, 44px);
+  line-height: 1.25;
+  letter-spacing: -0.04em;
+}
+h2 {
+  font-size: 22px;
+  margin-top: 36px;
+}
+p,
+li {
+  overflow-wrap: anywhere;
+}
+.lead {
+  font-size: 19px;
+  color: #42516b;
+}
+.card {
+  background: white;
+  border: 1px solid #dce3ef;
+  border-radius: 16px;
+  padding: 24px;
+  margin: 24px 0;
+}
+.eyebrow {
+  font-size: 13px;
+  color: #64748b;
+  letter-spacing: 0.06em;
+}
+.button {
+  display: inline-block;
+  background: #2254ac;
+  color: white;
+  padding: 10px 22px;
+  border-radius: 8px;
+  text-decoration: none;
+}
+footer {
+  border-top: 1px solid #dce3ef;
+  color: #64748b;
+  font-size: 14px;
+}
+@media (max-width: 520px) {
+  header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  header,
+  main,
+  footer {
+    padding: 20px;
+  }
+  .card {
+    padding: 20px;
+  }
+}
