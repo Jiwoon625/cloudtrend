@@ -405,4 +405,30 @@ describe("KR loading and ETF metadata display", () => {
     expect(html).not.toContain("ETF NAV·총보수·순자산</td>");
     expect(kr.capabilities.etfFacts).toBe(false);
   });
+  it("labels the published 기준일 and does not invent counts it was not given", () => {
+    const derived = {
+      ...kr,
+      asOfDate: "2026-11-13",
+      checks: undefined,
+      barCoverage: undefined,
+      evidence: {
+        version: "kr-data-status-evidence-v1" as const,
+        source: "PUBLISHED_ANALYSIS" as const,
+        asOfDate: "2026-11-13",
+        phase: "FINAL" as const,
+        unavailable: ["checks", "barCoverage"],
+      },
+    };
+    const html = renderToStaticMarkup(<KrMarketDataPanel data={derived} />);
+    expect(html).toContain("기준일 2026-11-13");
+    expect(html).toContain("게시 FINAL(확정)");
+    expect(html).toContain("게시 원천 자동 검증 요약이 아직 없습니다");
+    expect(html).toContain("종목별 일봉 구간 요약이 없습니다");
+    expect(html).toContain("확인되지 않은 항목을 0으로 채우지 않습니다");
+    // 검증 결과 없음은 0건 집계와 구분된다.
+    expect(html).not.toContain("OHLC 논리 오류");
+    const page = renderToStaticMarkup(<MarketDataPage />);
+    expect(page).toContain("게시 구분");
+    expect(page).toContain("미확인");
+  });
 });

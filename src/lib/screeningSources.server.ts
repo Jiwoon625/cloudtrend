@@ -38,7 +38,8 @@ function decodeSource(bytes: Uint8Array) {
   }
 }
 
-export async function listActiveSources(client: SupabaseClient, userId: string) {
+/** 활성 원천 목록만 읽는다. Drive 게시본만 있는 계정처럼 0건이 정상인 호출자를 위해 던지지 않는다. */
+export async function listActiveSourceRecords(client: SupabaseClient, userId: string) {
   const { data, error } = await client
     .from("analysis_source_files")
     .select(
@@ -53,9 +54,12 @@ export async function listActiveSources(client: SupabaseClient, userId: string) 
     .order("created_at", { ascending: true })
     .order("id", { ascending: true });
   if (error) throw new Error(`스크리닝 원천데이터 목록 조회 실패: ${error.message}`);
-  const sources = (data ?? []) as ActiveSourceRecord[];
-  if (sources.length === 0) throw new Error("활성 스크리닝 원천데이터가 없습니다.");
+  return (data ?? []) as ActiveSourceRecord[];
+}
 
+export async function listActiveSources(client: SupabaseClient, userId: string) {
+  const sources = await listActiveSourceRecords(client, userId);
+  if (sources.length === 0) throw new Error("활성 스크리닝 원천데이터가 없습니다.");
   return sources;
 }
 
