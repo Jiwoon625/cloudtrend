@@ -5,7 +5,6 @@ import { useState } from "react";
 import { supabase } from "@/lib/cloud";
 import {
   compareOperationalIndexServer,
-  installUnderlyingIndexArtifactServer,
   readUnderlyingIndexDiagnosticsServer,
 } from "@/lib/underlyingIndexDiagnostics.functions";
 import { Button } from "@/components/ui/button";
@@ -15,16 +14,6 @@ async function accessToken() {
   const { data, error } = await supabase.auth.getSession();
   if (error || !data.session) throw new Error("먼저 로그인해 주세요.");
   return data.session.access_token;
-}
-async function compressedFile(file: File) {
-  if (file.size > 16 * 1024 * 1024) throw new Error("검증자료 크기는 16MB 이하여야 합니다.");
-  const bytes = new Uint8Array(
-    await new Response(file.stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer(),
-  );
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += 8192)
-    binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-  return btoa(binary);
 }
 const number = (value: number | null) =>
   value === null ? "미확인" : value.toLocaleString("ko-KR", { maximumFractionDigits: 6 });
@@ -36,10 +25,7 @@ export function UnderlyingIndexDiagnosticsPanel() {
   const [result, setResult] = useState<Result | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [search, setSearch] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [originalFile, setOriginalFile] = useState<File | null>(null);
   async function compare() {
     setBusy(true);
     setError("");
@@ -79,38 +65,6 @@ export function UnderlyingIndexDiagnosticsPanel() {
       setResult(
         await readUnderlyingIndexDiagnosticsServer({ data: { accessToken: await accessToken() } }),
       );
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : typeof e === "object" && e !== null && "message" in e
-            ? String(e.message)
-            : "요청을 완료하지 못했습니다. 로그인 상태와 연결을 확인하세요.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-  async function install() {
-    if (!file) return;
-    setResult(null);
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      const installed = await installUnderlyingIndexArtifactServer({
-        data: {
-          accessToken: await accessToken(),
-          compressedBase64: await compressedFile(file),
-          ...(originalFile ? { originalCompressedBase64: await compressedFile(originalFile) } : {}),
-        },
-      });
-      setNotice(
-        installed.reused
-          ? "동일한 검증자료가 이미 연결되어 있습니다. 중복 저장하지 않았습니다."
-          : "검증된 기초지수 전용 자료만 연결했습니다. 원래 가격자료는 그대로입니다.",
-      );
-      setResult(null);
     } catch (e) {
       setError(
         e instanceof Error
@@ -199,15 +153,10 @@ export function UnderlyingIndexDiagnosticsPanel() {
           {error}
         </p>
       )}
-      {notice && (
-        <p role="status" className="text-sm">
-          {notice}
-        </p>
-      )}
       {result?.status === "not-installed" && (
         <p className="text-sm">
-          검증된 기초지수 전용 자료가 아직 연결되지 않았습니다. 일반 스크리닝 업로드는 사용하지
-          마세요.
+          검증된 기초지수 전용 자료가 아직 연결되지 않았습니다. 자동화된 자료 연결 상태를 확인해
+          주세요.
         </p>
       )}
       {result?.status === "disabled" && (
@@ -321,40 +270,6 @@ export function UnderlyingIndexDiagnosticsPanel() {
           </details>
         </>
       )}
-      <details className="text-xs">
-        <summary>검증된 전용 자료 연결</summary>
-        <p className="my-2 text-muted-foreground">
-          사전에 바이트 해시가 고정된 기초지수 전용 자료만 허용됩니다. 일반 CSV·가격 자료는 받지
-          않습니다. 같은 소유자의 비공개 저장소에 새 불변 파일로 보관하며 기존 자료는 덮어쓰지
-          않습니다.
-        </p>
-        <input
-          aria-label="검증된 기초지수 전용 자료"
-          type="file"
-          accept="application/json,.json"
-          disabled={busy}
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-        />
-        <label className="block text-xs text-muted-foreground">
-          승인 전 원본 검증자료 (최초 설치 계정만, 이미 있으면 생략)
-          <input
-            type="file"
-            accept="application/json,.json"
-            disabled={busy}
-            onChange={(e) => setOriginalFile(e.target.files?.[0] ?? null)}
-            className="mt-1 block text-xs"
-          />
-        </label>
-        <Button
-          className="mt-2"
-          size="sm"
-          variant="outline"
-          disabled={!file || busy}
-          onClick={() => void install()}
-        >
-          검증자료만 연결
-        </Button>
-      </details>
     </section>
   );
 }
