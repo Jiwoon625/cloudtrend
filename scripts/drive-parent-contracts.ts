@@ -31,9 +31,14 @@ export async function carryPublishedParentContracts(
   );
   const carried = publication.sources;
 
+  // A retained parent is identified by the immutable Drive bytes it was published from. Its
+  // canonical data/schema hashes are re-derived on every run by the validator in the current
+  // runner image, so those derived values can legitimately differ for the very same bytes
+  // (for example after a base-image or locale change). Compare the published byte binding,
+  // then carry the published contract verbatim: the engine still reads the actual part bytes.
   if (
-    stableCacheJson(parents.map(driveSourceBinding)) !==
-    stableCacheJson(carried.map(driveSourceBinding))
+    stableCacheJson(parents.map(driveByteBinding)) !==
+    stableCacheJson(carried.map(driveByteBinding))
   )
     throw new Error("이전 Drive 입력 이력이 누락되거나 변경됐습니다.");
   const ids = new Set<string>();
@@ -45,24 +50,59 @@ export async function carryPublishedParentContracts(
   // Validate every target before changing any contract.
   const targets = carried.map(({ record }) => {
     const target = inputs.find((i) => i.id === record.id);
+    // Byte identity is the contract for a retained parent: the part read here must be the
+    // exact Drive bytes the publication recorded. Derived canonical hashes are adopted below.
     if (
       !target?.sourceRecord ||
       target.fileHash !== record.file_hash ||
-      target.dataHash !== record.data_hash ||
-      target.schemaHash !== record.schema_hash ||
       target.sourceRecord.file_hash !== record.file_hash ||
-      target.sourceRecord.data_hash !== record.data_hash ||
-      target.sourceRecord.schema_hash !== record.schema_hash
+      target.bytes !== record.file_size_bytes
     )
       throw new Error("Published parent differs from calculation input");
     return target;
   });
   carried.forEach(({ record }, index) => {
     const target = targets[index]!;
-    target.sourceRecord = { ...target.sourceRecord!, validation_result: record.validation_result };
+    // The identity of a retained parent is the contract it was published with, not a value
+    // re-derived in this runner image. The bytes are proven identical above by file_hash.
+    target.fileHash = record.file_hash as typeof target.fileHash;
+    target.dataHash = record.data_hash as typeof target.dataHash;
+    target.schemaHash = record.schema_hash as typeof target.schemaHash;
+    target.sourceRecord = {
+      ...target.sourceRecord!,
+      file_hash: record.file_hash,
+      data_hash: record.data_hash,
+      schema_hash: record.schema_hash,
+      validation_result: record.validation_result,
+    };
   });
   return carried;
 }
+
+export const driveByteBinding = (s: DriveResultSource) => {
+  const p = s.record.validation_result.krPublication;
+  return {
+    archiveFileId: s.archiveFileId,
+    archiveSha256: s.archiveSha256,
+    csvFile: s.csvFile,
+    record: {
+      id: s.record.id,
+      file_hash: s.record.file_hash,
+      file_size_bytes: s.record.file_size_bytes,
+      max_date: s.record.max_date,
+      storage_bucket: s.record.storage_bucket,
+      storage_path: s.record.storage_path,
+      created_at: s.record.created_at,
+      activated_at: s.record.activated_at,
+      publication: {
+        phase: p.phase,
+        requestId: p.requestId,
+        manifestSha256: p.manifestSha256,
+        asOfDate: p.asOfDate,
+      },
+    },
+  };
+};
 
 export const driveSourceBinding = (s: DriveResultSource) => ({
   ...s,
