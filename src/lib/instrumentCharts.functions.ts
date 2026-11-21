@@ -1,19 +1,15 @@
 import { currentDriveGeneration, type DriveResultPublication } from "./driveResultPublication";
 import { createHash } from "node:crypto";
-import { loadOperationalIndex } from "./operationalUnderlyingIndex.server";
 import { savedOperationalIdentity } from "./screeningInputIdentity";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { downloadFreshObject } from "./freshStorage";
+import { readFreshPointerOnce } from "./freshPointerCache";
 import { readFreshCacheObject } from "./cacheObjectStorage";
 import { mergeScoringConfig } from "./engine/scoring";
-import { parseManualMarketDataWithReferences as parseManualMarketData } from "./krxReviewReferenceParser";
 import { stableCacheJson, deterministicAnalysis } from "./screeningCacheContract";
-import { loadActiveSources, inputFingerprint } from "./screeningSources.server";
 import {
-  restoreChartContext,
   cachedChartContext,
-  primeChartContext,
   prepareChartBucket,
   warmRecentCharts,
   readChartBundle,
@@ -57,34 +53,43 @@ async function session(input: Input) {
   const { data, error } = await client.auth.getUser(input.accessToken);
   if (error || !data.user) throw new Error("로그인 세션을 확인해 주세요.");
   const uid = data.user.id;
-  const saved = await readFreshCacheObject<{
-    publicationId?: string;
-    inputFingerprint: string;
-    resultDigest: string;
-    payload: { analysis: AnalysisResult; source?: { drivePublication?: DriveResultPublication } };
-  }>(client, "cloudtrend-data", `${uid}/cache/screening/latest.json`).catch((error: unknown) => {
-    throw new Error(
-      `스크리닝 결과 조회 실패: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  });
+  // 포인터는 CDN을 우회해 읽으므로 종목 상세 한 번에 같은 1MB대 객체를 여러 번 받는다.
+  // 짧은 TTL·동시 요청 합치기로 uncached egress를 줄인다(게시 직후 최대 20초 지연 가능).
+  const saved = await readFreshPointerOnce(`${uid}:hard:cache/screening/latest.json`, () =>
+    readFreshCacheObject<{
+      publicationId?: string;
+      inputFingerprint: string;
+      resultDigest: string;
+      payload: { analysis: AnalysisResult; source?: { drivePublication?: DriveResultPublication } };
+    }>(client, "cloudtrend-data", `${uid}/cache/screening/latest.json`).catch((error: unknown) => {
+      throw new Error(
+        `스크리닝 결과 조회 실패: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }),
+  );
   if (!saved) throw new Error("스크리닝 결과 조회 실패: 저장된 결과가 없습니다.");
   if (
     saved.inputFingerprint !== input.inputFingerprint ||
     saved.resultDigest !== input.resultDigest
   )
     throw new Error("스크리닝 자료가 변경됐습니다. 페이지를 새로고침해 주세요.");
-  const { data: headBlob, error: headError } = await downloadFreshObject(
-    client,
-    "cloudtrend-data",
-    `${uid}/results/drive-screening/input-head/latest.json`,
+  const head = await readFreshPointerOnce<{ version?: string } | null>(
+    `${uid}:hard:results/drive-screening/input-head`,
+    () =>
+      downloadFreshObject(
+        client,
+        "cloudtrend-data",
+        `${uid}/results/drive-screening/input-head/latest.json`,
+      ).then(async ({ data: headBlob, error: headError }) => {
+        if (
+          headError &&
+          String(headError.statusCode) !== "404" &&
+          !/object not found/i.test(headError.message)
+        )
+          throw new Error(headError.message);
+        return headBlob ? (JSON.parse(await headBlob.text()) as { version?: string }) : null;
+      }),
   );
-  if (
-    headError &&
-    String(headError.statusCode) !== "404" &&
-    !/object not found/i.test(headError.message)
-  )
-    throw new Error(headError.message);
-  const head = headBlob ? JSON.parse(await headBlob.text()) : null;
   if (
     (saved.payload.source?.drivePublication || head?.version === "drive-input-head-v1") &&
     !currentDriveGeneration(head, {
@@ -115,40 +120,15 @@ async function context(input: Input, ctx: Awaited<ReturnType<typeof session>>) {
   const key = `${ctx.uid}:${input.inputFingerprint}:${input.resultDigest}:${stableCacheJson(config)}`;
   const existing = contexts.get(key);
   if (existing) return existing;
-  const pending = (async () => {
-    if (ctx.drivePublication)
-      throw new Error(
-        "이 Drive 결과의 상세 차트가 아직 준비되지 않았습니다. 실행기의 최근 120일 차트 준비를 마친 뒤 새로고침해 주세요. 전체 기간 차트는 별도 준비가 필요합니다.",
-      );
-    const { sources, texts } = await loadActiveSources(ctx.client, ctx.uid, 3);
-    if (
-      inputFingerprint(sources, config, savedOperationalIdentity(ctx.analysis)) !==
-      input.inputFingerprint
-    )
-      throw new Error("원천자료 또는 점수 설정이 변경됐습니다. 새로고침해 주세요.");
-    const parsed = parseManualMarketData(texts);
-    const result = restoreChartContext(parsed.dataset, ctx.analysis, config, input.resultDigest);
-    const metadata = savedOperationalIdentity(ctx.analysis);
-    if (metadata) {
-      const provider = await loadOperationalIndex(
-        ctx.client,
-        ctx.uid,
-        parsed.dataset,
-        new Date().toISOString(),
-        false,
-        metadata,
-      );
-      if (
-        !provider ||
-        provider.version !== metadata.version ||
-        provider.artifactSha256 !== metadata.artifactSha256 ||
-        provider.asOfDate !== metadata.asOfDate
-      )
-        throw new Error("저장된 스크리닝과 MA60 자료 버전이 다릅니다.");
-      result.operationalIndex = provider;
-    }
-    primeChartContext(ctx.uid, input.inputFingerprint, input.resultDigest, result);
-    return result;
+  const pending = (async (): Promise<ChartContext> => {
+    // 라이브 차트 요청은 저장된 스크리닝 캐시와 게시된 차트 번들만 읽는다. 여기서 원천 CSV
+    // 세트(활성 52개, 약 315MiB)를 통째로 내려받던 폴백은 제거했다. 차트는 게시 실행기가
+    // cache/charts/에 미리 준비하며(최근 120일·전체 기간), 번들이 없으면 다시 게시해야 한다.
+    throw new Error(
+      ctx.drivePublication
+        ? "이 Drive 결과의 상세 차트가 아직 준비되지 않았습니다. 실행기의 차트 준비를 마친 뒤 새로고침해 주세요."
+        : "이 결과의 상세 차트가 게시되지 않았습니다. 실행기에서 최신 결과를 다시 게시해 주세요.",
+    );
   })().finally(() => contexts.delete(key));
   contexts.set(key, pending);
   return pending;

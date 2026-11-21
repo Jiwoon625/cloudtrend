@@ -5,6 +5,8 @@ export default defineConfig({
   test: {
     include: [
       "tests/portfolio-screening-refresh.test.ts",
+      "tests/screening-source-download-boundary.test.ts",
+      "src/lib/freshPointerCache.test.ts",
       "src/lib/screeningSnapshotStorage.test.ts",
       "tests/screening-snapshot-boundaries.test.ts",
       "tests/web-screening-server-only.test.ts",

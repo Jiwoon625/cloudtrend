@@ -226,6 +226,13 @@ export async function runWebScreeningForUser(
         },
       };
     }
+    // CSV 원천 기반 재계산(구 세대)은 명시적 옵트인에서만 돈다. 라이브 배포에서는 활성 원천
+    // 52개(약 315MiB)를 통째로 내려받게 되므로, Drive 게시본이 없는 계정은 재계산 대신 재게시를
+    // 요구한다. 로컬·복구 화면에서만 CLOUDTREND_LEGACY_CSV_SCREENING=1로 열 수 있다.
+    if (process.env["CLOUDTREND_LEGACY_CSV_SCREENING"] !== "1")
+      throw new Error(
+        "이 결과는 Drive v7 게시본이 아닙니다. 실행기에서 최신 결과를 게시한 뒤 화면을 확인해 주세요.",
+      );
     // Resolve the owner, not a global source max_date heuristic. A rollback still reads a
     // valid saved provider; a new publication with changed inputs follows the current flag.
     if (
@@ -490,7 +497,6 @@ export async function runWebScreeningForUser(
 }
 
 // Keep only small QA responses; raw market data is never retained here.
-const dataStatusCache = createDataStatusCache();
 // "게시 요약 없음"도 한 시간 동안 기억해 매 요청마다 스크리닝 캐시를 다시 읽지 않는다.
 const publishedDataStatusCache = createDataStatusCache<DataStatusPayload | null>();
 
@@ -518,31 +524,10 @@ export const dataStatusServer = createServerFn({ method: "POST" })
       () => resolvePublishedKrDataStatus(client, auth.user.id, legacyLatestDate, pointer),
     );
     if (published) return published;
-    if (records.length === 0)
-      throw new Error(
-        "활성 스크리닝 원천데이터가 없습니다. 데이터 관리에서 게시 상태를 확인해 주세요.",
-      );
-    const sources = records;
-    const fingerprint = inputFingerprint(sources, data.config);
-    const checkedAt = new Date();
-    const qualityDate = checkedAt.toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
-    return dataStatusCache.get(auth.user.id, `${fingerprint}:${qualityDate}`, async () => {
-      const { sources: loadedSources, texts } = await loadActiveSources(client, auth.user.id, 3);
-      if (inputFingerprint(loadedSources, data.config) !== fingerprint)
-        throw new Error("원천자료가 변경됐습니다. 데이터 상태를 다시 조회해 주세요.");
-      const { computeDatasetDataStatus } = await import("./datasetDataStatus");
-      const parsed = parseManualMarketData(texts);
-      const status: DataStatusPayload = {
-        ...computeDatasetDataStatus(parsed.dataset, data.config, checkedAt),
-        evidence: {
-          version: "kr-data-status-evidence-v1",
-          source: "ACTIVE_SOURCE_CSV",
-          asOfDate: parsed.dataset.asOfDate,
-        },
-      };
-      const currentSources = await listActiveSources(client, auth.user.id);
-      if (inputFingerprint(currentSources, data.config) !== fingerprint)
-        throw new Error("검증 중 원천자료가 변경됐습니다. 데이터 상태를 다시 조회해 주세요.");
-      return status;
-    });
+    // 게시 요약이 현재 게시본과 맞지 않거나 없으면, 예전에는 활성 원천 CSV 52개(약 315MiB)를
+    // 내려받아 직접 계산했다. 그 다운로드가 Free 플랜 egress 한도를 넘기던 주된 원인이므로
+    // 라이브 화면은 여기서 멈추고 실행기 게시를 요구한다(추정값으로 채우지 않는다).
+    throw new Error(
+      "이 게시본의 데이터 상태 요약이 없습니다. 실행기에서 최신 결과를 다시 게시한 뒤 확인해 주세요.",
+    );
   });
