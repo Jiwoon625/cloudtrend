@@ -1,8 +1,9 @@
 import type { CanonicalSourceRow } from "./sourceData";
 
-export const KR_ETF_LIFECYCLE_VERSION = "kr-etf-lifecycle-v1" as const;
+export const KR_ETF_LIFECYCLE_VERSION = "kr-etf-lifecycle-v2" as const;
+const LEGACY_VERSION = "kr-etf-lifecycle-v1" as const;
 const sourceUrl = "https://www.aceetf.co.kr/cs/notice/7022";
-export const KR_ETF_LIFECYCLE_EVENTS = [
+const LEGACY_EVENTS = [
   {
     symbol: "0040S0",
     name: "HANARO 글로벌피지컬AI액티브",
@@ -32,8 +33,26 @@ export const KR_ETF_LIFECYCLE_EVENTS = [
     sourceUrl,
   },
 ] as const;
+/** Append-only registry: legacy plans remain bound to their original evidence. */
+export const KR_ETF_LIFECYCLE_EVENTS = [
+  ...LEGACY_EVENTS,
+  {
+    symbol: "244660",
+    name: "KODEX 퀄리티Plus",
+    tradingHaltDate: "2026-11-12",
+    delistingDate: "2026-11-13",
+    sourceUrl: "https://kind.krx.co.kr/external/2026/11/11/000489/20261111001000/68051.htm",
+  },
+  {
+    symbol: "321410",
+    name: "KODEX 멀티에셋하이인컴(H)",
+    tradingHaltDate: "2026-11-12",
+    delistingDate: "2026-11-13",
+    sourceUrl: "https://kind.krx.co.kr/external/2026/11/11/000493/20261111001010/68051.htm",
+  },
+] as const;
 export interface KrEtfLifecyclePlan {
-  version: typeof KR_ETF_LIFECYCLE_VERSION;
+  version: typeof KR_ETF_LIFECYCLE_VERSION | typeof LEGACY_VERSION;
   sourceUniverseSymbols: string[];
   requestedCollectionDates: string[];
   events: Array<(typeof KR_ETF_LIFECYCLE_EVENTS)[number]>;
@@ -85,12 +104,13 @@ export function parseKrEtfLifecyclePlan(value: unknown): KrEtfLifecyclePlan {
   )
     fail("invalid session date");
   const target = dates.at(-1)!;
-  const events = KR_ETF_LIFECYCLE_EVENTS.filter(
-    (e) => symbols.includes(e.symbol) && target >= e.tradingHaltDate,
-  );
+  if (v["version"] !== LEGACY_VERSION && v["version"] !== KR_ETF_LIFECYCLE_VERSION)
+    fail("unsupported registry version");
+  const registry = v["version"] === LEGACY_VERSION ? LEGACY_EVENTS : KR_ETF_LIFECYCLE_EVENTS;
+  const events = registry.filter((e) => symbols.includes(e.symbol) && target >= e.tradingHaltDate);
   const affected = new Map<string, (typeof events)[number]>(events.map((e) => [e.symbol, e]));
   const expected: KrEtfLifecyclePlan = {
-    version: KR_ETF_LIFECYCLE_VERSION,
+    version: v["version"] as KrEtfLifecyclePlan["version"],
     sourceUniverseSymbols: symbols,
     requestedCollectionDates: dates,
     events: [...events],
