@@ -168,6 +168,9 @@ let dir: string;
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 beforeEach(async () => {
   vi.clearAllMocks();
+  // 이 파일은 Drive v7 이전의 CSV 원천 재계산 경로를 검증한다. 그 경로는 라이브 배포에서
+  // 원천 세트 전체(약 315MiB)를 내려받지 않도록 옵트인으로만 동작하므로 여기서 연다.
+  vi.stubEnv("CLOUDTREND_LEGACY_CSV_SCREENING", "1");
   vi.setSystemTime(new Date("2026-10-19T12:00:00Z"));
   dir = await mkdtemp(path.join(tmpdir(), "ma60-ingress-"));
   state.enabled = false;
