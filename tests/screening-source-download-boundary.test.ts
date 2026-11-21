@@ -126,6 +126,29 @@ describe("live web paths never download the whole active source set", () => {
     expect(sourceDownloads()).toEqual([]);
   });
 
+  it("a legacy generation without the opt-in also refuses instead of downloading sources", async () => {
+    client({
+      "cache/screening/latest.json.gz": {
+        version: "screening-cache-v1",
+        publicationId: "publication",
+        inputFingerprint: fingerprint,
+        resultDigest,
+        payload: { analysis, source: {} },
+      },
+    });
+    await expect(
+      getInstrumentChartForSession({
+        accessToken: "token-" + "x".repeat(30),
+        inputFingerprint: fingerprint,
+        resultDigest,
+        symbol: "005930",
+        range: "120",
+        kind: "prices",
+      }),
+    ).rejects.toThrow("상세 차트가 게시되지 않았습니다");
+    expect(sourceDownloads()).toEqual([]);
+  });
+
   it("portfolio sync with stored history refuses instead of rebuilding a dataset from sources", async () => {
     mocks.sources = [{ id: "source" }];
     mocks.history = [{ snapshot: { asOfDate: "2026-11-19", entries: [] } }];

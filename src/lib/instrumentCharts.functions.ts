@@ -1,5 +1,6 @@
 import { currentDriveGeneration, type DriveResultPublication } from "./driveResultPublication";
 import { createHash } from "node:crypto";
+import { loadOperationalIndex } from "./operationalUnderlyingIndex.server";
 import { savedOperationalIdentity } from "./screeningInputIdentity";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
@@ -7,9 +8,13 @@ import { downloadFreshObject } from "./freshStorage";
 import { readFreshPointerOnce } from "./freshPointerCache";
 import { readFreshCacheObject } from "./cacheObjectStorage";
 import { mergeScoringConfig } from "./engine/scoring";
+import { parseManualMarketDataWithReferences as parseManualMarketData } from "./krxReviewReferenceParser";
 import { stableCacheJson, deterministicAnalysis } from "./screeningCacheContract";
+import { loadActiveSources, inputFingerprint } from "./screeningSources.server";
 import {
+  restoreChartContext,
   cachedChartContext,
+  primeChartContext,
   prepareChartBucket,
   warmRecentCharts,
   readChartBundle,
@@ -122,13 +127,44 @@ async function context(input: Input, ctx: Awaited<ReturnType<typeof session>>) {
   if (existing) return existing;
   const pending = (async (): Promise<ChartContext> => {
     // 라이브 차트 요청은 저장된 스크리닝 캐시와 게시된 차트 번들만 읽는다. 여기서 원천 CSV
-    // 세트(활성 52개, 약 315MiB)를 통째로 내려받던 폴백은 제거했다. 차트는 게시 실행기가
-    // cache/charts/에 미리 준비하며(최근 120일·전체 기간), 번들이 없으면 다시 게시해야 한다.
-    throw new Error(
-      ctx.drivePublication
-        ? "이 Drive 결과의 상세 차트가 아직 준비되지 않았습니다. 실행기의 차트 준비를 마친 뒤 새로고침해 주세요."
-        : "이 결과의 상세 차트가 게시되지 않았습니다. 실행기에서 최신 결과를 다시 게시해 주세요.",
-    );
+    // 세트(활성 52개, 약 315MiB)를 통째로 내려받던 폴백은 Drive 게시본에도, 구세대 화면에도
+    // 기본으로 열리지 않는다. 차트는 게시 실행기가 cache/charts/에 미리 준비한다.
+    if (ctx.drivePublication || process.env["CLOUDTREND_LEGACY_CSV_SCREENING"] !== "1")
+      throw new Error(
+        ctx.drivePublication
+          ? "이 Drive 결과의 상세 차트가 아직 준비되지 않았습니다. 실행기의 차트 준비를 마친 뒤 새로고침해 주세요."
+          : "이 결과의 상세 차트가 게시되지 않았습니다. 실행기에서 최신 결과를 다시 게시해 주세요.",
+      );
+    // 명시적으로 옵트인한 로컬·복구 화면에서만 구세대 CSV 원천으로 컨텍스트를 복원한다.
+    const { sources, texts } = await loadActiveSources(ctx.client, ctx.uid, 3);
+    if (
+      inputFingerprint(sources, config, savedOperationalIdentity(ctx.analysis)) !==
+      input.inputFingerprint
+    )
+      throw new Error("원천자료 또는 점수 설정이 변경됐습니다. 새로고침해 주세요.");
+    const parsed = parseManualMarketData(texts);
+    const result = restoreChartContext(parsed.dataset, ctx.analysis, config, input.resultDigest);
+    const metadata = savedOperationalIdentity(ctx.analysis);
+    if (metadata) {
+      const provider = await loadOperationalIndex(
+        ctx.client,
+        ctx.uid,
+        parsed.dataset,
+        new Date().toISOString(),
+        false,
+        metadata,
+      );
+      if (
+        !provider ||
+        provider.version !== metadata.version ||
+        provider.artifactSha256 !== metadata.artifactSha256 ||
+        provider.asOfDate !== metadata.asOfDate
+      )
+        throw new Error("저장된 스크리닝과 MA60 자료 버전이 다릅니다.");
+      result.operationalIndex = provider;
+    }
+    primeChartContext(ctx.uid, input.inputFingerprint, input.resultDigest, result);
+    return result;
   })().finally(() => contexts.delete(key));
   contexts.set(key, pending);
   return pending;
