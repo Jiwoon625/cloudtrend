@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import {
   KR_ETF_LIFECYCLE_EVENTS as events,
+  KR_ETF_LIFECYCLE_VERSION,
   parseKrEtfLifecyclePlan,
   validateKrEtfLifecycleRows,
   buildKrLifecycle,
@@ -10,7 +11,7 @@ const symbols = ["005930", ...events.map((e) => e.symbol)].sort();
 const plan = (dates = ["2026-10-27", "2026-10-28", "2026-10-29"]) => {
   const activeEvents = events.filter((e) => dates.at(-1)! >= e.tradingHaltDate);
   return {
-    version: "kr-etf-lifecycle-v1",
+    version: KR_ETF_LIFECYCLE_VERSION,
     sourceUniverseSymbols: symbols,
     requestedCollectionDates: dates,
     events: activeEvents,
@@ -43,6 +44,9 @@ test.each([
   ["2026-11-02"],
   ["2026-11-03"],
   ["2026-11-04"],
+  ["2026-11-11"],
+  ["2026-11-12"],
+  ["2026-11-13"],
 ])("exact cessation boundary %s", async (d) => {
   const dates = [d];
   expect(validateKrEtfLifecycleRows(plan(dates), await rows(dates))).toEqual(plan(dates));
@@ -200,4 +204,42 @@ test("rejects duplicate and unsorted alphanumeric source identity lists", () => 
     ["005930", "0046A0"],
   ])
     expect(() => parseKrEtfLifecyclePlan({ ...plan(), sourceUniverseSymbols })).toThrow();
+});
+
+test("legacy v1 plans retain their original registry and do not silently change", () => {
+  const p = plan(["2026-11-12"]);
+  const legacy = {
+    ...p,
+    version: "kr-etf-lifecycle-v1",
+    events: p.events.filter((e) => !["244660", "321410"].includes(e.symbol)),
+    requestedSymbols: [...p.requestedSymbols, "244660", "321410"].sort(),
+    latestExpectedSymbols: [...p.latestExpectedSymbols, "244660", "321410"].sort(),
+  };
+  expect(parseKrEtfLifecyclePlan(legacy)).toEqual(legacy);
+  expect(() => parseKrEtfLifecyclePlan({ ...legacy, version: KR_ETF_LIFECYCLE_VERSION })).toThrow();
+  expect(() => parseKrEtfLifecyclePlan({ ...p, version: "kr-etf-lifecycle-v3" })).toThrow();
+});
+
+test("November closures preserve mixed-window history and reject halted rows", async () => {
+  const dates = ["2026-11-11", "2026-11-12", "2026-11-13"];
+  const p = plan(dates),
+    base = await rows(dates);
+  expect(validateKrEtfLifecycleRows(p, base)).toEqual(p);
+  for (const symbol of ["244660", "321410"]) {
+    expect(() =>
+      validateKrEtfLifecycleRows(
+        p,
+        base.filter((r) => r.symbol !== symbol),
+      ),
+    ).toThrow();
+    expect(() =>
+      validateKrEtfLifecycleRows(p, [
+        ...base,
+        {
+          ...base.find((r) => r.symbol === symbol)!,
+          date: "2026-11-12",
+        },
+      ]),
+    ).toThrow();
+  }
 });

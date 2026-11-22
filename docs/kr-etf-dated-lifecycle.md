@@ -62,3 +62,37 @@ A passing fixture/build is not evidence that a provider currently serves an old
 instrument. If a bounded pre-halt request still fails, preserve that failure and
 review existing verified historical evidence separately. Never mark missing
 required history complete merely because the instrument later ceased trading.
+
+## November 15 maintenance candidate (not deployed)
+
+`kr-etf-lifecycle-v2` adds two exact KIND notices published on November 11:
+
+| Code   | Display name              | Trading halt | Delisting  | Official evidence                                                          |
+| ------ | ------------------------- | ------------ | ---------- | -------------------------------------------------------------------------- |
+| 244660 | KODEX 퀄리티Plus          | 2026-11-12   | 2026-11-13 | https://kind.krx.co.kr/external/2026/11/11/000489/20261111001000/68051.htm |
+| 321410 | KODEX 멀티에셋하이인컴(H) | 2026-11-12   | 2026-11-13 | https://kind.krx.co.kr/external/2026/11/11/000493/20261111001010/68051.htm |
+
+Both notices state voluntary investment-trust termination. This is not a
+classification inferred from missing prices. Existing `v1` plans remain bound to
+the original four-event registry, byte-for-byte event evidence included. They are
+not silently upgraded or rewritten. New `v2` plans apply the new cessation dates,
+retain pre-halt history and reject fabricated halt-day observations. Accepting an
+old `v1` plan is compatibility behavior, not verification that it is appropriate
+for a new collection run.
+
+The collector's separate pinned runtime and ingest commit must be coordinated
+before activating `v2` production collection. The changed executable manifest
+must undergo the repository's independent exact-digest review; do not bypass it.
+This source patch alone neither upgrades the pinned notebook nor changes stored
+sources, historical scores, ledgers or the current production universe.
+
+### Candidate admission review (2026-11-15)
+
+An independent review recomputed candidate runtime digest
+`sha256:20ffd2a3e7dbae570e6af288404c14ff691ad977ba45090b34980273abd0ab8a`.
+Only `krEtfLifecycle.ts` changed in the transitive publication manifest.
+The exact digest is appended with review ID
+`kr-dated-etf-lifecycle-v2-independent-review-20261115`; prior admissions remain.
+Native runtime verification and the complete production build pass. This admits
+server-side v2 validation only: no private collector pin, historical input,
+result, or ledger is changed by this review.
