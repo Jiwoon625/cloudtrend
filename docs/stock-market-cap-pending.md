@@ -46,7 +46,7 @@ PostgreSQL's JSONB output normalization is documented in [JSON input/output synt
 
 ## Shadow archive schema compatibility
 
-The forward migration `20261008021537_shadow_pending_archive_validation.sql` admits the two current snapshot fields to the existing bounded `KR_DAILY_INPUT` archive schema. Both absent retains legacy semantics; current evidence requires both fields and a boolean `hardFilterPassed`:
+The forward migration `20261008022517_shadow_pending_archive_validation.sql` admits the two current snapshot fields to the existing bounded `KR_DAILY_INPUT` archive schema. Both absent retains legacy semantics; current evidence requires both fields and a boolean `hardFilterPassed`:
 
 - PASS: true, no pending reasons
 - PENDING: false, at least one pending reason
@@ -56,4 +56,4 @@ The forward migration `20261008021537_shadow_pending_archive_validation.sql` adm
 
 The migration replaces only the existing invoker function, preserves its owner/ACL and empty search path, and adds no grants, roles, policies or helper endpoints. Regression coverage uses real PostgreSQL plus two-session TypeScript-generated snapshots and prepared publications, checking owner/service persistence, replay, exact retry, conflicting hash/payload rejection, legacy equality and pending-entry suppression. Shadow migrations now trigger the integrity workflow independently of application edits.
 
-Rollback, if needed, is a new forward migration restoring the previous function body from `20261006201500_shadow_runtime_hash_provenance.sql` while retaining the existing owner and ACL. Do not delete or rewrite archived evidence or completed sessions. The old validator rejects new-format snapshots again, so replay would remain blocked until a corrected forward fix is deployed. Application/UI rollback is not needed for this schema-only runtime change.
+Rollback, if needed, is a new forward migration restoring the previous function body from `20261006115158_shadow_runtime_hash_provenance.sql` while retaining the existing owner and ACL. Do not delete or rewrite archived evidence or completed sessions. The old validator rejects new-format snapshots again, so replay would remain blocked until a corrected forward fix is deployed. Application/UI rollback is not needed for this schema-only runtime change.

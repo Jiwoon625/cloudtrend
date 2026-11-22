@@ -1,0 +1,13 @@
+-- 20261013102104 cloudtrend_legacy_retirement_20261013_canary_v1
+-- Record-only entry, no executable statement.
+--
+-- This version exists in the production migration history (project
+-- ahbvrtugugwnbrfnbxzp, inserted 2026-10-13 through a path other than the CLI), so the
+-- file is kept only so that `supabase db push` can match local files against remote
+-- history instead of aborting with "Remote migration versions not found".
+--
+-- The stored body was a private DRAFT canary: it took ACCESS EXCLUSIVE locks on the
+-- ledger tables and always rolled its own subtransaction back (SQLSTATE 'ZC001'). It
+-- was never authorised for production and must never be executed. Its full text is
+-- preserved unexecuted at
+--   docs/archive/20261013102104_cloudtrend_legacy_retirement_20261013_canary_v1.sql

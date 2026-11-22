@@ -1,14 +1,14 @@
 import type { DataStatusPayload } from "./marketPayload";
 
 /** Small owner/revision-scoped QA summaries only; never retain raw source text. */
-export function createDataStatusCache(maxEntries = 4) {
-  const completed = new Map<string, DataStatusPayload>();
-  const pending = new Map<string, Promise<DataStatusPayload>>();
+export function createDataStatusCache<T = DataStatusPayload>(maxEntries = 4) {
+  const completed = new Map<string, T>();
+  const pending = new Map<string, Promise<T>>();
   return {
-    async get(owner: string, fingerprint: string, build: () => Promise<DataStatusPayload>) {
+    async get(owner: string, fingerprint: string, build: () => Promise<T>) {
       const key = JSON.stringify(["data-status-v3", owner, fingerprint]);
       const hit = completed.get(key);
-      if (hit) return hit;
+      if (hit !== undefined) return hit;
       const active = pending.get(key);
       if (active) return active;
       const task = build()

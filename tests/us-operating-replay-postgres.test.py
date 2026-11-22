@@ -19,7 +19,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / 'supabase/migrations'
-MIGRATION = MIGRATIONS / '20261008030458_atomic_us_operating_replay.sql'
+MIGRATION = MIGRATIONS / '20261008035110_atomic_us_operating_replay.sql'
 A = '11111111-1111-4111-8111-111111111111'
 B = '22222222-2222-4222-8222-222222222222'
 STRATEGIES = ['A0_QUARTER_PRIMARY', 'A2_QUARTER_SHADOW',

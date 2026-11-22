@@ -15,12 +15,12 @@ const CAPABILITY_LABELS: Record<string, string> = {
 
 export function KrMarketDataPanel({ data }: { data: DataStatusPayload }) {
   const [barSort, setBarSort] = useState<"asc" | "desc" | null>(null);
+  const barRows = data.barCoverage ?? null;
   const barCoverage = useMemo(() => {
-    if (barSort === null) return data.barCoverage;
-    return [...data.barCoverage].sort((a, b) =>
-      barSort === "asc" ? a.bars - b.bars : b.bars - a.bars,
-    );
-  }, [data.barCoverage, barSort]);
+    if (!barRows) return [];
+    if (barSort === null) return barRows;
+    return [...barRows].sort((a, b) => (barSort === "asc" ? a.bars - b.bars : b.bars - a.bars));
+  }, [barRows, barSort]);
   const BarSortIcon = barSort === null ? ArrowUpDown : barSort === "asc" ? ArrowUp : ArrowDown;
   const coverageLabel = (row: DataStatusPayload["coverage"][number]) =>
     row.availableEntities === undefined
@@ -38,28 +38,41 @@ export function KrMarketDataPanel({ data }: { data: DataStatusPayload }) {
         (key === "marketCap" && row.kind === "시가총액") ||
         (key === "investorFlow" && row.kind === "투자자별 순매수"),
     );
-  const validations = [
-    { label: "OHLC 논리 오류", value: data.checks.ohlcErrors },
-    { label: "음수 거래량", value: data.checks.negativeVolume },
-    { label: "동일 종목·일자 중복", value: data.checks.duplicates },
-    {
-      label: `검사일 이후 미래 날짜${data.qualityDate ? ` (${data.qualityDate} KST)` : ""}`,
-      value: data.checks.futureDates,
-    },
-    ...(data.checks.afterAsOfDates === undefined
-      ? []
-      : [{ label: "자료 기준일 이후 관측", value: data.checks.afterAsOfDates }]),
-    { label: "지표 최소 기간(120봉) 미충족", value: data.checks.insufficient },
-    { label: "비정상 급등락 (검토 플래그)", value: data.checks.abnormalMoves },
-  ];
+  const checks = data.checks;
+  const validations = checks
+    ? [
+        { label: "OHLC 논리 오류", value: checks.ohlcErrors },
+        { label: "음수 거래량", value: checks.negativeVolume },
+        { label: "동일 종목·일자 중복", value: checks.duplicates },
+        {
+          label: `검사일 이후 미래 날짜${data.qualityDate ? ` (${data.qualityDate} KST)` : ""}`,
+          value: checks.futureDates,
+        },
+        ...(checks.afterAsOfDates === undefined
+          ? []
+          : [{ label: "자료 기준일 이후 관측", value: checks.afterAsOfDates }]),
+        { label: "지표 최소 기간(120봉) 미충족", value: checks.insufficient },
+        { label: "비정상 급등락 (검토 플래그)", value: checks.abnormalMoves },
+      ]
+    : [];
 
   return (
     <section id="kr-data" className="min-w-0 scroll-mt-4" aria-label="한국 데이터 상세">
       <h2 className="text-lg font-bold tracking-tight">한국 · 데이터 상태 및 계산 로그</h2>
-      <p className="mb-4 text-[12px] text-muted-foreground">
+      <p className="mb-2 text-[12px] text-muted-foreground">
         공급자 {data.dataProvider} · 기준일 {data.asOfDate} · 데이터 버전 {data.dataVersion} · 전략
         v{data.strategyVersion} · {data.isLive ? "실데이터" : "합성 데이터"}
+        {data.evidence?.phase
+          ? ` · 게시 ${data.evidence.phase === "FINAL" ? "FINAL(확정)" : "PRELIMINARY(잠정)"}`
+          : null}
       </p>
+      {data.evidence?.source === "PUBLISHED_ANALYSIS" ? (
+        <p className="mb-4 rounded-lg border border-border bg-card p-3 text-[12px] leading-relaxed text-muted-foreground">
+          이 기준일은 Drive v7 게시본(스크리닝 결과)에서 만든 요약입니다. 종목별 일봉 구간과 자동
+          검증 결과는 게시 원천 계산본에서만 만들 수 있어, 다음 게시 실행부터 이 화면에 표시됩니다.
+          확인되지 않은 항목을 0으로 채우지 않습니다.
+        </p>
+      ) : null}
 
       {data.notes.length > 0 ? (
         <ul className="mb-4 space-y-1 rounded-lg border border-border bg-card p-3 text-[12px] leading-relaxed text-muted-foreground">
@@ -129,16 +142,24 @@ export function KrMarketDataPanel({ data }: { data: DataStatusPayload }) {
             </h3>
             <table className="w-full text-[12px]">
               <tbody>
-                {validations.map((v) => (
-                  <tr key={v.label} className="border-b border-border last:border-0">
-                    <td className="px-3 py-2">{v.label}</td>
-                    <td
-                      className={`num px-3 py-2 text-right font-semibold ${v.value === 0 ? "text-up" : "text-warn"}`}
-                    >
-                      {formatCount(v.value)}건
+                {checks ? (
+                  validations.map((v) => (
+                    <tr key={v.label} className="border-b border-border last:border-0">
+                      <td className="px-3 py-2">{v.label}</td>
+                      <td
+                        className={`num px-3 py-2 text-right font-semibold ${v.value === 0 ? "text-up" : "text-warn"}`}
+                      >
+                        {formatCount(v.value)}건
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      게시 원천 자동 검증 요약이 아직 없습니다(다음 게시부터 제공).
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
             <p className="px-3 py-2 text-[11px] text-muted-foreground">
@@ -225,17 +246,25 @@ export function KrMarketDataPanel({ data }: { data: DataStatusPayload }) {
               </tr>
             </thead>
             <tbody>
-              {barCoverage.map((b) => (
-                <tr key={b.symbol} className="border-t border-border">
-                  <td className="px-2 py-1.5">{b.name}</td>
-                  <td className="num px-2 py-1.5">{b.symbol}</td>
-                  <td className={`num px-2 py-1.5 text-right ${b.bars < 120 ? "text-warn" : ""}`}>
-                    {formatCount(b.bars)}
+              {barRows ? (
+                barCoverage.map((b) => (
+                  <tr key={b.symbol} className="border-t border-border">
+                    <td className="px-2 py-1.5">{b.name}</td>
+                    <td className="num px-2 py-1.5">{b.symbol}</td>
+                    <td className={`num px-2 py-1.5 text-right ${b.bars < 120 ? "text-warn" : ""}`}>
+                      {formatCount(b.bars)}
+                    </td>
+                    <td className="num px-2 py-1.5">{b.first}</td>
+                    <td className="num px-2 py-1.5">{b.last}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr className="border-t border-border">
+                  <td colSpan={5} className="px-2 py-3 text-muted-foreground">
+                    이 게시본에는 종목별 일봉 구간 요약이 없습니다. 다음 게시부터 표시됩니다.
                   </td>
-                  <td className="num px-2 py-1.5">{b.first}</td>
-                  <td className="num px-2 py-1.5">{b.last}</td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>개인정보처리방침 | CloudTrend</title>
+    <meta
+      name="description"
+      content="CloudTrend의 계정, 이용 기록, Google Drive 데이터 처리 및 연결 해제 안내."
+    />
+    <link rel="stylesheet" href="/legal.css" />
+    <link rel="icon" href="/favicon.ico" />
+  </head>
+  <body>
+    <header>
+      <a href="/about.html">CloudTrend</a>
+      <nav aria-label="공개 안내">
+        <a href="/about.html">서비스 소개</a><a href="/privacy.html">개인정보처리방침</a
+        ><a href="/">로그인</a>
+      </nav>
+    </header>
+    <main>
+      <p class="eyebrow">PRIVACY</p>
+      <h1>개인정보처리방침</h1>
+      <p>작성 기준일: 2026년 11월 16일</p>
+      <p>
+        이 문서는 CloudTrend 웹 서비스와 운영자가 설정한 Google Drive 기반 자료 처리 과정에서 다루는
+        정보를 설명합니다. 운영 및 개인정보 문의:
+        <a href="mailto:sgu151012@gmail.com">sgu151012@gmail.com</a>
+      </p>
+      <h2>1. 처리하는 정보와 목적</h2>
+      <ul>
+        <li>
+          <strong>계정 정보:</strong> 이메일, 계정 식별자, 로그인 인증·세션 정보를 계정 생성,
+          로그인, 사용자별 자료 접근에 사용합니다. 이메일·비밀번호 인증은 Supabase Auth를 통해
+          처리합니다.
+        </li>
+        <li>
+          <strong>이용자가 입력하거나 올린 자료:</strong> 시장 자료, 매수·매도 기록, 보유 내역, 분석
+          설정 및 계산 결과를 저장·조회·동기화하고 스크리닝과 연구 기능을 제공하는 데 사용합니다.
+        </li>
+        <li>
+          <strong>브라우저 저장 정보:</strong> 로그인 유지 및 화면 상태·캐시 저장을 위해 브라우저
+          저장소를 사용합니다. 브라우저에서 이를 삭제하면 다시 로그인하거나 화면 설정을 선택해야 할
+          수 있습니다.
+        </li>
+        <li>
+          <strong>접속·오류 정보:</strong> 서비스 제공 및 오류 진단 과정에서 호스팅·인증 제공자가
+          접속 시각, IP 주소, 요청·기기 정보, 오류 기록을 처리할 수 있습니다. 개발 미리보기
+          환경에서는 Lovable 오류 진단 기능이 사용됩니다.
+        </li>
+      </ul>
+      <h2>2. Google Drive 접근과 사용</h2>
+      <p>
+        운영자가 승인한 Google 계정의 Drive에서 설정된 CloudTrend 폴더·파일의 식별자, 이름,
+        메타데이터와 파일 내용을 읽습니다. 대상에는 시장 원천자료, 과거 데이터 묶음, 실행 설정과
+        검증 기록이 포함됩니다. 이를 사용해 스크리닝을 계산하고 결과·검증 기록 등의 파일을 Drive에
+        업로드합니다.
+      </p>
+      <p>
+        기존 연동은 <code>https://www.googleapis.com/auth/drive</code> 권한을 사용합니다. 이 권한은
+        기술적으로 Drive의 파일 조회·수정·생성·삭제를 허용하는 넓은 범위입니다. 실제 처리 대상은
+        CloudTrend 실행에 설정된 자료이며, 단순 방문자의 Drive를 자동으로 연결하거나 전체 개인
+        문서를 스캔하는 기능은 제공하지 않습니다.
+      </p>
+      <p>
+        Google 로그인 비밀번호를 CloudTrend가 받는 방식은 아닙니다. 승인 후 발급된 OAuth 인증정보는
+        GitHub Actions의 Secret 등 운영자가 설정한 실행 환경에서 API 접근에 사용합니다. 연결된
+        데이터와 인증정보는 스크리닝·자료 보관 및 관련 운영을 위해 처리하며, 광고 타기팅이나 판매를
+        위한 데이터로 사용하지 않습니다.
+      </p>
+      <h2>3. 저장과 서비스 제공업체</h2>
+      <ul>
+        <li><strong>Google Drive:</strong> 운영자가 지정한 원천자료·실행 자료·보관 파일</li>
+        <li>
+          <strong>GitHub Actions:</strong> 원천자료 다운로드, 계산, 검증·게시 작업 및 실행
+          로그·산출물
+        </li>
+        <li>
+          <strong>Supabase:</strong> 계정 인증, 사용자별 자료, 스크리닝 결과·이력·차트 캐시 및
+          포트폴리오 정보
+        </li>
+        <li><strong>Vercel:</strong> 웹 페이지 및 웹 요청 처리</li>
+      </ul>
+      <p>
+        연결된 자료는 기능 수행에 필요한 실행 환경과 저장 서비스로 전달됩니다. 서비스 제공업체의
+        서버 위치와 설정에 따라 국외에서 처리될 수 있습니다. 계정별 자료의 접근 제어와 운영용
+        인증정보 관리는 각각 애플리케이션 및 해당 서비스의 설정을 따릅니다.
+      </p>
+      <h2>4. 보관과 삭제</h2>
+      <p>
+        계정·사용자 입력 자료는 서비스 이용과 조회를 위해 저장되며, 원천자료와 과거 연구·스크리닝
+        결과는 재현과 검증을 위해 보관됩니다. 현재 모든 자료에 공통으로 적용되는 자동 삭제 주기는
+        없습니다. 실행 로그·백업 등은 각 저장 서비스의 설정에 따라 별도로 남을 수 있습니다.
+      </p>
+      <p>
+        자료 열람·정정·삭제 또는 계정 삭제를 요청하려면 위 문의 이메일로 연락해 주세요. 대상 자료와
+        계정을 확인한 뒤 처리 범위 및 백업·법령상 보존 등 잔여 사항을 안내합니다. 브라우저 저장
+        정보는 이용자가 브라우저 설정에서 직접 삭제할 수 있습니다.
+      </p>
+      <h2>5. Google 연결 해제</h2>
+      <p>
+        <a href="https://myaccount.google.com/connections">Google 계정의 서드 파티 연결 관리</a>에서
+        CloudTrend 접근 권한을 철회할 수 있습니다. 권한을 철회하면 연결을 필요로 하는 다음 실행이
+        실패할 수 있습니다. 철회는 이미 복사되어 Drive·Supabase·실행 환경에 저장된 자료를 자동으로
+        삭제하지 않으므로, 저장 자료 삭제는 별도로 요청해 주세요.
+      </p>
+      <h2>6. 변경 및 문의</h2>
+      <p>
+        데이터 처리 방식이 바뀌면 이 페이지를 갱신합니다. Google 데이터의 새로운 용도나 추가 권한이
+        필요한 경우 해당 변경을 알리고 필요한 동의를 받습니다. 문의할 때 비밀번호, OAuth 토큰 또는
+        비밀키를 보내지 마세요.
+      </p>
+      <p><a href="/about.html">CloudTrend 서비스 소개로 돌아가기</a></p>
+    </main>
+    <footer>CloudTrend · 문의 <a href="mailto:sgu151012@gmail.com">sgu151012@gmail.com</a></footer>
+  </body>
+</html>

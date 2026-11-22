@@ -135,6 +135,14 @@ function RootComponent() {
       <CloudAccount>
         <Outlet />
       </CloudAccount>
+      <footer className="flex flex-wrap justify-center gap-4 border-t px-4 py-4 text-xs text-muted-foreground">
+        <a href="/about.html" className="underline">
+          서비스 소개
+        </a>
+        <a href="/privacy.html" className="underline">
+          개인정보처리방침
+        </a>
+      </footer>
       <Toaster richColors />
     </QueryClientProvider>
   );

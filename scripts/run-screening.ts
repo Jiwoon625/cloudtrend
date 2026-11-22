@@ -21,6 +21,7 @@ import process from "node:process";
 import { buildScreeningSummary } from "../src/lib/analysisRunBundle";
 import { appendEtfReportEvidence, etfReportScoreSummary } from "../src/lib/etfReportScore";
 import { runCurrentScreening } from "../src/lib/currentScreening";
+import { computeDatasetDataStatus } from "../src/lib/datasetDataStatus";
 import { parseManualMarketDataWithReferences as parseManualMarketData } from "../src/lib/krxReviewReferenceParser";
 import {
   DEFAULT_SCORING_CONFIG,
@@ -277,6 +278,14 @@ export async function runScreening(
     dataVersion,
     runKey,
   };
+  // 데이터 상태 화면은 이 계산에서 이미 메모리에 있는 데이터셋으로 요약을 만든다.
+  // 홈페이지는 이 요약만 읽으므로 원천 CSV를 다시 내려받지 않는다(게시 시 세대에 묶임).
+  // 시장 데이터셋이 없는 계산(부분 픽스처·도구용 호출)은 요약을 만들지 않고, 게시 단계가
+  // 이 요약을 필수로 확인하므로 실제 게시 실행에서는 빠질 수 없다.
+  const dataStatus =
+    Array.isArray(dataset?.instruments) && Array.isArray(dataset?.tradeDates)
+      ? computeDatasetDataStatus(dataset, config)
+      : null;
   const bundle = {
     schemaVersion: 1 as const,
     engineIdentity,
@@ -310,6 +319,7 @@ export async function runScreening(
     config,
     summary,
     result: analysis,
+    ...(dataStatus ? { dataStatus } : {}),
   };
 
   const outputDir = path.resolve(options.outputRoot, `screening-${runId}`);

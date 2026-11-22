@@ -16,7 +16,7 @@
 
 국내·미국 주식과 ETF의 종가 데이터를 바탕으로 시장 상태, 추세 신호, 섹터 로테이션과 종목별 점수를 계산하는 **규칙 기반 리서치 도구**입니다.
 
-CloudTrend는 사용자가 직접 준비한 일봉 데이터를 브라우저에서 분석합니다. 결과뿐 아니라 각 점수의 조건, 산정 가능 점수, 데이터 누락과 실격 사유를 함께 보여주며, 투자 판단이나 자동 주문을 대신하지 않습니다.
+CloudTrend는 수집·실행기가 계산하여 게시한 일봉 스크리닝 결과를 웹에서 조회합니다. 결과뿐 아니라 각 점수의 조건, 산정 가능 점수, 데이터 누락과 실격 사유를 함께 보여주며, 투자 판단이나 자동 주문을 대신하지 않습니다.
 
 ## 현재 제공 기능
 
@@ -54,14 +54,14 @@ CloudTrend는 사용자가 직접 준비한 일봉 데이터를 브라우저에�
 
 ## 사용 흐름
 
-1. **데이터·산식** 화면에서 한국 시장 CSV·JSON을 업로드하거나 데이터를 붙여넣습니다.
-2. 파싱 결과와 경고를 확인하고 **스크리닝 시작**을 누릅니다.
-3. 대시보드, 주식·ETF 스크리너, 섹터, 종목 상세 및 데이터 상태 화면에서 결과를 확인합니다.
-4. 필요한 경우 산식과 가중치를 조정해 다시 계산합니다.
-5. 장기 백테스트와 피처 연구는 Google Drive의 canonical 데이터를 Google Colab에서 불러와 수행합니다.
-6. 미국 시장은 **US 시장·데이터** 화면에서 데이터를 별도로 입력해 실행합니다.
+1. 한국·ETF는 Drive v7 수집기에서 자료를 수집하고 검증된 Drive baseline·이전 delta·현재 delta를 공식 실행기에 제공합니다.
+2. v7 실행의 게시 옵션을 선택하면 계산 완료 후 결과와 출처 metadata를 Supabase에 게시합니다. 실행기 1.1을 별도로 실행할 필요는 없습니다.
+3. 홈페이지 **데이터 관리 → 저장 결과 보기** 또는 대시보드·스크리너에서 게시된 결과를 확인합니다. 페이지 조회만으로 전체 스크리닝을 실행하지 않습니다.
+4. 직접 CSV/JSON을 등록하는 기존 입력 경로는 별도로 유지됩니다. Drive 게시 결과를 보려고 원자료를 재업로드할 필요는 없습니다.
+5. 홈페이지 게시, 확정 신호 이력 기록, Shadow 재생, 실제 원장 기록은 서로 다른 작업입니다. 게시 성공을 모든 기록 갱신 완료로 해석하지 않습니다.
+6. 연구는 해당 연구의 실행 지침을 따릅니다. Drive·Colab 경로와 별도 CM Actions 워크플로가 공존합니다.
 
-한국 스크리닝 입력 CSV는 Supabase의 비공개 Storage에 계정별로 저장되어 GitHub screening workflow와 웹앱이 사용합니다. 장기 백테스트용 한국·미국 canonical 데이터는 Google Drive에 보관하며 Google Colab에서 계산합니다.
+한국·ETF v7의 상세 절차와 검증 범위는 [v7 실행 문서](docs/drive-history-v7/README.md)를 참고하세요. 아래 원천 등록 설명은 기존 직접 입력 경로에 해당합니다.
 
 웹과 GPT/ChatGPT Work 업로드는 같은 검증·정규화 모듈과 `analysis_source_files` 등록부를 사용합니다.
 원본 파일은 비공개 `source` 경로, 실행 결과는 `results` 경로에 분리하며 파일·데이터·스키마
@@ -198,9 +198,9 @@ bun run lint
 
 장기 백테스트는 Google Drive + Google Colab 구조로 운영합니다. 한국시장 데이터는 `CloudTrend/한국시장`, 미국시장 데이터는 `CloudTrend/미국시장` 아래의 canonical·연구 폴더를 사용합니다.
 
-GitHub는 Production 점수·진입/청산 규칙과 코드 버전을 관리합니다. 과거 Supabase backtest source를 GitHub Actions가 다운로드해 실행하던 경로는 종료했습니다. 연구 결과를 운영에 채택할 때만 검증된 변경을 `src/lib/engine/**`에 반영합니다.
+GitHub는 Production 점수·진입/청산 규칙과 코드 버전을 관리합니다. 기존 범용 Supabase backtest source 실행 경로와 별도 CM 연구 Actions를 구분합니다. 연구 결과를 운영에 채택할 때만 검증된 변경을 `src/lib/engine/**`에 반영합니다.
 
-## GPT·GitHub Actions 자동 스크리닝
+## 기존 Supabase 입력용 GPT·GitHub Actions 스크리닝
 
 `CloudTrend screening` Actions 워크플로는 Supabase의 활성 screening 입력을 사용해 웹 스크리너·대시보드와 같은 최신 점수 스냅샷을 계산합니다. 결과와 실행 이력은 Supabase의 운영용 Storage/DB에 계속 축적합니다.
 

@@ -26,7 +26,7 @@ export async function getOrBuildDashboardSummaryServerFirst() {
   const cached = await readDashboardCache();
   if (cached) return cached;
   throw new Error(
-    "저장된 결과가 없거나 자료가 갱신되었습니다. 자료수집 후 게시된 스크리닝을 기다리거나 데이터 관리에서 명시적으로 실행해 주세요.",
+    "저장된 결과가 없거나 자료가 갱신되었습니다. 자동 수집·계산·게시가 완료되기를 기다린 뒤 데이터 관리에서 게시 상태를 확인해 주세요.",
   );
 }
 
@@ -34,7 +34,7 @@ export async function getOrBuildScreeningPayloadServerFirst() {
   const cached = await readScreeningCache();
   if (cached) return cached.payload;
   throw new Error(
-    "저장된 결과가 없거나 자료가 갱신되었습니다. 자료수집 후 게시된 스크리닝을 기다리거나 데이터 관리에서 명시적으로 실행해 주세요.",
+    "저장된 결과가 없거나 자료가 갱신되었습니다. 자동 수집·계산·게시가 완료되기를 기다린 뒤 데이터 관리에서 게시 상태를 확인해 주세요.",
   );
 }
 

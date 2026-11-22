@@ -6,6 +6,7 @@ export default defineConfig({
       "tests/screening-memory*.test.ts",
       "tests/screening-engine-identity.test.ts",
       "tests/drive-publication-publisher.test.ts",
+      "tests/kr-data-status-publication.test.ts",
       "tests/drive-publication-writes.test.ts",
       "src/lib/sourceData.test.ts",
       "src/lib/engine/manualDataset.test.ts",
