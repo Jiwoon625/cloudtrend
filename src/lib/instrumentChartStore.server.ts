@@ -28,6 +28,11 @@ import {
   type ChartIdentity,
   type ChartKind,
 } from "./instrumentChartContract";
+import {
+  downloadStorageObject,
+  STORAGE_READ_RETRIES,
+  type StorageReadRetryOptions,
+} from "./storageReadRetry";
 const BUCKET = "cloudtrend-data";
 export interface ChartContext {
   dataset: MarketDataset;
@@ -121,17 +126,27 @@ export async function readChartBundle<T>(
   client: SupabaseClient,
   uid: string,
   path: string,
+  retryOptions?: StorageReadRetryOptions,
 ): Promise<Record<string, T> | null> {
-  const { data, error } = await client.storage.from(BUCKET).download(`${uid}/${path}`);
-  if (error) {
-    if (String(error.statusCode) === "404" || error.message === "Object not found") return null;
-    throw new Error(`차트 캐시 읽기 실패: ${error.message}`);
-  }
+  const objectPath = `${uid}/${path}`;
+  // A missing bundle still means "regenerate" (null); a transient storage failure is
+  // retried inside the reader so one flaky 403 cannot fail the whole screening run.
+  const outcome = await downloadStorageObject(client, BUCKET, objectPath, {
+    onRetry: ({ attempt, delayMs, error }) =>
+      console.warn(
+        `차트 캐시 읽기 일시 오류, ${delayMs}ms 후 재시도 (${attempt}/${STORAGE_READ_RETRIES}): ${path} ${error.statusCode ?? ""} ${error.message ?? "<none>"}`,
+      ),
+    ...(retryOptions ?? {}),
+  });
+  if (outcome.status === "missing") return null;
+  if (outcome.status === "failed")
+    throw new Error(
+      `차트 캐시 읽기 실패: ${outcome.error.message?.trim() || "<none>"} (${outcome.attempts}회 시도)`,
+    );
   try {
-    return JSON.parse(gunzipSync(new Uint8Array(await data.arrayBuffer())).toString()) as Record<
-      string,
-      T
-    >;
+    return JSON.parse(
+      gunzipSync(new Uint8Array(await outcome.data.arrayBuffer())).toString(),
+    ) as Record<string, T>;
   } catch (error) {
     console.warn("손상된 차트 캐시를 다시 생성합니다.", error);
     return null;

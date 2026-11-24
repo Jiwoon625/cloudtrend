@@ -10,6 +10,7 @@ export default defineConfig({
       "tests/instrument-chart-cache.test.ts",
       "tests/instrument-chart-loading.test.ts",
       "tests/instrument-chart-ui.test.tsx",
+      "tests/storage-read-retry.test.ts",
     ],
   },
 });
