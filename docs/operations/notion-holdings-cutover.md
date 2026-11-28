@@ -6,8 +6,8 @@ CloudTrend no longer operates a trade ledger. Actual trades are recorded in Noti
 
 | Item | State |
 | --- | --- |
-| Code on `main` | `cb46350` — PR #429 (manual security master, dashboard signals, actual-only K4/E4) squash `2d61bb6`, PR #430 (build-gate test isolation) squash `cb46350` |
-| Production deployment | Reports commit `cb46350` in `/deployment-manifest.json` and the `x-cloudtrend-code-version` response header |
+| Application code on `main` | `cb46350` — PR #429 (manual security master, dashboard signals, actual-only K4/E4) squash `2d61bb6`, PR #430 (build-gate test isolation) squash `cb46350`. Documentation-only commits after it (PR #431 and later) do not change runtime |
+| Production deployment | `cloudtrend.vercel.app` serves the `main` commit current at deploy time; checked at `e94fef6` in `/deployment-manifest.json` and the `x-cloudtrend-code-version` response header |
 | Holdings snapshot | `revision 2`, confirmed 2026-11-28 13:46:23 KST — 53 registered symbols, 13 held, reconciled against the 13 positive-quantity rows of the Notion master |
 | Legacy ledger writes | Retired in production: `CLOUDTREND_LEDGER_ARCHIVE_ONLY=1` set on Vercel Production on 2026-11-28 |
 | `/portfolio?asset=KR` | Shows the retirement notice ("기존 원장 운영은 종료되었습니다. 실제 보유현황은 종목마스터DB에서 수정하세요.") and the actual-fill input is disabled — verified on the production site after the `cb46350` deployment |
@@ -58,12 +58,12 @@ Actual-only policy `master-price-exit-v1`: KOSPI K4 uses the current confirmed K
 
 1. **Direct write paths.** Inventory and retire (or explicitly keep) database RPCs, direct Data API writes and CLI/research commands that bypass the application ingress barrier. Keep historical and research data, all original screening rows and strategy versions.
 2. **Archive read-only UI.** Provide a dedicated read-only screen for the retired ledgers and old portfolio endpoints; `/portfolio?asset=KR` currently shows only the retirement notice. Verify backup/restore for the archive.
-3. **Production approval path check.** The `410 LEDGER_RETIRED` response of `/api/assistant-trades` is pinned by automated tests and the runtime lock was verified through the sharing server environment on `/portfolio?asset=KR`, but a real owner-authenticated approval request has not been exercised against production.
+3. **Production approval path check.** The `410 LEDGER_RETIRED` response of `/api/assistant-trades` is pinned by automated tests and the runtime lock was verified on `/portfolio?asset=KR`, which reads the same server environment variable, but a real owner-authenticated approval request has not been exercised against production.
 4. **P1 — master screen UX.** Mobile readability, fixed symbol name/code columns, thousands separators, key columns first, paste-error reporting, and a document title that reflects the security master instead of reusing the portfolio title.
 5. **P2 — cleanup.** Remove or further isolate the superseded Notion API adapter and the retired ledger UI/automation code, and clear the remaining build warnings (vite-tsconfig-paths resolution).
 
 ## Validation
 
-Unit, PGlite RLS/CAS and signal-projection tests for the manual master, the K4/E4 price-exit tests, the archive-gate tests and the existing screening/history regressions run in PR CI (14/14 workflows on PR #429; `lint`, `Ledger foundation`, `verify` and `ui-regression` on PR #430). Production checks after the `cb46350` deployment: `/deployment-manifest.json` commit, the master screen reporting 53 registered / 13 held at `revision 2`, the retirement notice on `/portfolio?asset=KR`, the archive inbox on `/assistant-trades`, and dashboard rendering with the 2026-11-27 screening date. Authenticated end-to-end QA of cell editing and saving was exercised by the owner when the snapshot was confirmed; no automated login-based E2E covers it.
+Unit, PGlite RLS/CAS and signal-projection tests for the manual master, the K4/E4 price-exit tests, the archive-gate tests and the existing screening/history regressions run in PR CI (14/14 workflows on PR #429; `lint`, `Ledger foundation`, `verify` and `ui-regression` on PR #430). Production checks after the `cb46350` deployment, re-checked once the documentation commit `e94fef6` was live: the `/deployment-manifest.json` commit, the master screen reporting 53 registered / 13 held at `revision 2`, the retirement notice on `/portfolio?asset=KR`, the archive inbox on `/assistant-trades`, and dashboard rendering with the 2026-11-27 screening date. Authenticated end-to-end QA of cell editing and saving was exercised by the owner when the snapshot was confirmed; no automated login-based E2E covers it.
 
 Prior decisions: [screening-only operation](./screening-only-signal-history.md), [current report source contract](../current-report-source-contract.md).
