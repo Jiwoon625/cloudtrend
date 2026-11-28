@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/cloud";
 import { manualMasterServer } from "@/lib/manualMaster.functions";
+import { manualMasterSignalsServer } from "@/lib/manualMasterSignals.functions";
 import {
   applyMasterPaste, masterChanges, masterColumns, masterIdentity, masterToday, newMasterRow,
   validateMasterRows, type MasterKey, type MasterRow, type MasterSnapshot,
@@ -27,6 +28,7 @@ export function ManualSecurityMaster() {
   const [paste,setPaste]=useState("");
   const [preview,setPreview]=useState<MasterRow[]|null>(null);
   const [confirmed,setConfirmed]=useState(false);
+  const [signals,setSignals]=useState<Awaited<ReturnType<typeof manualMasterSignalsServer>>|null>(null);
   const lock=useRef(false);
   const dirty=JSON.stringify(rows)!==JSON.stringify(saved?.rows??[])||asOf!==(saved?.asOf??masterToday());
 
@@ -43,7 +45,7 @@ export function ManualSecurityMaster() {
     return()=>{alive=false;};
   },[]);
 
-  const resetPreview=()=>{setPreview(null);setConfirmed(false);};
+  const resetPreview=()=>{setPreview(null);setConfirmed(false);setSignals(null);};
   const edit=(i:number,key:MasterKey,value:string)=>{
     if(lock.current)return;
     setRows(old=>old.map((r,j)=>j===i?{...r,[key]:value,...(key==="listing"?{currency:value==="미국"?"USD":"KRW"}:{})}:r));
@@ -87,6 +89,15 @@ export function ManualSecurityMaster() {
       if(!s)throw new Error("저장 결과 확인 실패");
       setSaved(s);setRows(s.rows);setAsOf(s.asOf);resetPreview();setMessage("저장 완료 · 최신 집계 스냅샷 확인");
     }catch(e){resetPreview();setMessage((e instanceof Error?e.message:"저장 실패")+" · 다시 조회하여 저장 여부를 확인하세요.");}
+    finally{lock.current=false;setBusy(false);}
+  }
+  async function signalPreview(){
+    if(lock.current||busy||!saved||dirty)return;
+    lock.current=true;setBusy(true);setSignals(null);setMessage("");
+    try{
+      const result=await manualMasterSignalsServer({data:{accessToken:await token(),revision:saved.revision}});
+      setSignals(result);
+    }catch(e){setMessage(e instanceof Error?e.message:"신호 조회 실패");}
     finally{lock.current=false;setBusy(false);}
   }
   const changes=preview?masterChanges(saved?.rows??[],preview):null;
@@ -142,6 +153,8 @@ export function ManualSecurityMaster() {
         <textarea className="min-h-28 w-full rounded border bg-background p-2 text-sm" aria-label="전체 표 붙여넣기" value={paste} disabled={disabled} onChange={e=>setPaste(e.target.value)}/>
         <button className={buttonClass} type="button" disabled={disabled||!paste.trim()} onClick={pasteAll}>편집 표에 적용 (저장 전)</button>
       </details>
+      <button type="button" className={buttonClass} disabled={disabled||!saved||dirty} onClick={()=>void signalPreview()}>저장된 보유현황 기준 진입·청산 미리보기</button>
+      {signals&&<section className="space-y-3 rounded border p-4"><h2 className="font-semibold">진입·청산 후보 미리보기 · revision {signals.revision}</h2>{signals.warnings.map(w=><p className="text-xs text-muted-foreground" key={w}>{w}</p>)}{signals.markets.map(m=><div key={m.market} className="rounded border p-3"><h3 className="font-medium">{m.market} · {m.date??"스크리닝 미확인"}</h3>{!m.holdingsKnown?<p>보유현황 기준일 확인 필요</p>:<><p className="text-sm">진입 후보 {m.onsets.length} · 청산 후보 {m.exits.length}</p>{m.onsets.map(x=><p key={"in"+x.symbol} className="text-sm">진입 후보 · {x.name} ({x.symbol}) · {x.reason}</p>)}{m.exits.map(x=><p key={"out"+x.symbol} className="text-sm">청산 후보 · {x.name} ({x.symbol}) · {x.reason}</p>)}</>}</div>)}</section>}
       {changes&&preview&&<section className="space-y-3 rounded-lg border p-4" aria-label="저장 미리보기">
         <h2 className="font-semibold">저장 미리보기</h2>
         <p className="text-sm">신규 {changes.added.length} · 변경 {changes.changed.length} · 전량매도 {changes.closed.length} · 삭제 {changes.removed.length}</p>
