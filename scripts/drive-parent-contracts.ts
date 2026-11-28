@@ -55,7 +55,9 @@ export async function carryPublishedParentContracts(
     if (
       !target?.sourceRecord ||
       target.fileHash !== record.file_hash ||
-      target.sourceRecord.file_hash !== record.file_hash
+      target.sourceRecord.file_hash !== record.file_hash ||
+      target.dataHash !== target.sourceRecord.data_hash ||
+      target.schemaHash !== target.sourceRecord.schema_hash
     )
       throw new Error("Published parent differs from calculation input");
     return target;

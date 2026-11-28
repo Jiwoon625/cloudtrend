@@ -19,7 +19,31 @@ it("manual master owner isolation, anonymous denial and revision CAS", async () 
     const insert = (uid: string) =>
       db.query(
         "insert into public.manual_security_master(user_id,revision,as_of,rows) values($1,1,'2026-11-28',$2)",
-        [uid, JSON.stringify([{"symbol":"005930","name":"Synthetic","listing":"KOSPI","assetType":"주식","currency":"KRW","quantity":"1","averageKrw":"100","amountKrw":"100","buyQuantity":"1","buyAmount":"100","sellQuantity":"0","sellAmount":"0","sellCost":"0","realized":"0","dividends":"0","fees":"0","start":"2026-11-01","lastSell":""}])],
+        [
+          uid,
+          JSON.stringify([
+            {
+              symbol: "005930",
+              name: "Synthetic",
+              listing: "KOSPI",
+              assetType: "주식",
+              currency: "KRW",
+              quantity: "1",
+              averageKrw: "100",
+              amountKrw: "100",
+              buyQuantity: "1",
+              buyAmount: "100",
+              sellQuantity: "0",
+              sellAmount: "0",
+              sellCost: "0",
+              realized: "0",
+              dividends: "0",
+              fees: "0",
+              start: "2026-11-01",
+              lastSell: "",
+            },
+          ]),
+        ],
       );
     await insert(owner);
     await expect(insert(other)).rejects.toThrow(/row-level security/);

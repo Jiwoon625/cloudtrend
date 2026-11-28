@@ -247,7 +247,7 @@ export function ManualSecurityMaster() {
             {saved
               ? new Date(saved.savedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })
               : "미등록"}{" "}
-              revision {saved?.revision ?? 0}
+            revision {saved?.revision ?? 0}
             {dirty ? " · 미저장 변경" : ""}
           </p>
         </div>
