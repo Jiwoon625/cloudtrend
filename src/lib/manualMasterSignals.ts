@@ -51,12 +51,18 @@ export function projectManualMasterSignals(
   return {
     revision: snapshot?.revision ?? null,
     asOf: snapshot?.asOf ?? null,
-    markets: applyMasterPriceExits(projectActualEntryDecisions(markets, entries), confirmed?.rows ?? [], priceExits),
+    markets: applyMasterPriceExits(
+      projectActualEntryDecisions(markets, entries),
+      confirmed?.rows ?? [],
+      priceExits,
+    ),
     warnings: [
       "종목마스터 기준: 기존 스크리닝 조건·확인·H60·실보유·최근매도일을 결합합니다.",
       ...(!confirmed ? ["종목마스터 미확인 또는 검토 대기 · 실제 진입·청산 판단 보류"] : []),
       "K4: 현재 원화 평단가 -8%. E4: 보유시작일 이후 최고 종가 -10%. 확인된 종가 신호는 전량매도 전까지 유지합니다.",
-      ...Object.values(priceExits).filter((e) => e.auditStatus === "PENDING" || e.auditStatus === "MISMATCH").map((e) => e.symbol + " 가격청산 근거 확인 대기"),
+      ...Object.values(priceExits)
+        .filter((e) => e.auditStatus === "PENDING" || e.auditStatus === "MISMATCH")
+        .map((e) => e.symbol + " 가격청산 근거 확인 대기"),
       "매매가 없으면 마지막 저장 보유현황을 계속 사용합니다. 종목마스터 변경일은 유효기간이 아닙니다.",
       ...(confirmed?.rows.some((r) => !r.lastSell)
         ? [

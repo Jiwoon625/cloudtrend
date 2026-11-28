@@ -48,8 +48,14 @@ export function evaluateMasterExit(
   const mark = index.rows.find(
     (r) => r.symbol === row.symbol && r.market === result.market && r.date === index.date,
   );
-  if (!mark?.price || !Number.isFinite(mark.price) || mark.price <= 0 ||
-      index.date < row.start || (result.market === "KOSPI" && index.date < asOf)) return result;
+  if (
+    !mark?.price ||
+    !Number.isFinite(mark.price) ||
+    mark.price <= 0 ||
+    index.date < row.start ||
+    (result.market === "KOSPI" && index.date < asOf)
+  )
+    return result;
   const close = units(mark.price.toFixed(12));
   let basis: bigint;
   let ratio: bigint;
@@ -60,15 +66,26 @@ export function evaluateMasterExit(
     const relevant = bars.filter((b) => b.tradeDate >= row.start);
     if (
       !relevant.length ||
-      relevant.some((b) => !validMasterDay(b.tradeDate) || b.tradeDate > index.date ||
-        !Number.isFinite(b.close) || b.close <= 0) ||
+      relevant.some(
+        (b) =>
+          !validMasterDay(b.tradeDate) ||
+          b.tradeDate > index.date ||
+          !Number.isFinite(b.close) ||
+          b.close <= 0,
+      ) ||
       new Set(relevant.map((b) => b.tradeDate)).size !== relevant.length
-    ) return result;
+    )
+      return result;
     const byDay = new Map(relevant.map((b) => [b.tradeDate, b.close]));
     const required = index.tradeDates.filter((d) => d >= row.start && d <= index.date);
-    if (!index.tradeDates.some((d) => d <= row.start) ||
-        !required.length || required.some((d) => !byDay.has(d)) ||
-        !byDay.has(row.start) || byDay.get(index.date) !== mark.price) return result;
+    if (
+      !index.tradeDates.some((d) => d <= row.start) ||
+      !required.length ||
+      required.some((d) => !byDay.has(d)) ||
+      !byDay.has(row.start) ||
+      byDay.get(index.date) !== mark.price
+    )
+      return result;
     result.peak = Math.max(...relevant.map((b) => b.close));
     basis = units(result.peak.toFixed(12));
     ratio = 90n;
@@ -110,7 +127,8 @@ export function catchUpMasterExit(
     new Set(bars.map((bar) => bar.tradeDate)).size !== bars.length ||
     dates.some((d) => !Number.isFinite(byDate.get(d)) || (byDate.get(d) ?? 0) <= 0) ||
     byDate.get(index.date) !== current.observedClose
-  ) return current;
+  )
+    return current;
   for (const date of dates) {
     const price = byDate.get(date)!;
     const historical = {
@@ -141,22 +159,39 @@ export function applyMasterPriceExits(
     for (const row of rows) {
       if (Number(row.quantity) <= 0 || strategyMarket(row) !== group.market) continue;
       const exit = evidence[row.symbol];
-      if (!exit?.reason || !exit.signalDate || !exit.threshold ||
-          !["VERIFIED", "LATCHED"].includes(exit.auditStatus ?? "")) continue;
+      if (
+        !exit?.reason ||
+        !exit.signalDate ||
+        !exit.threshold ||
+        !["VERIFIED", "LATCHED"].includes(exit.auditStatus ?? "")
+      )
+        continue;
       if (exit.start !== row.start || exit.market !== group.market) continue;
-      const reason = exit.reason + " · 청산 기준 " + Number(exit.threshold).toLocaleString("ko-KR") + "원";
+      const reason =
+        exit.reason + " · 청산 기준 " + Number(exit.threshold).toLocaleString("ko-KR") + "원";
       const existing = exits.findIndex((r) => r.symbol === row.symbol);
       const previous = existing >= 0 ? exits[existing] : undefined;
       const signal = {
-        symbol: row.symbol, name: row.name, market: group.market,
-        sector: previous?.sector ?? "-", date: exit.signalDate,
-        price: exit.observedClose, score: previous?.score ?? null, priority: previous?.priority ?? 0,
+        symbol: row.symbol,
+        name: row.name,
+        market: group.market,
+        sector: previous?.sector ?? "-",
+        date: exit.signalDate,
+        price: exit.observedClose,
+        score: previous?.score ?? null,
+        priority: previous?.priority ?? 0,
         reason: previous ? reason + " · " + previous.reason : reason,
-        held: true, actualQuantity: Number(row.quantity), actualEntryDate: row.start,
+        held: true,
+        actualQuantity: Number(row.quantity),
+        actualEntryDate: row.start,
       };
       if (existing >= 0) exits[existing] = signal;
       else exits.push(signal);
     }
-    return { ...group, exits, exitCount: group.exitCount === null && !exits.length ? null : exits.length };
+    return {
+      ...group,
+      exits,
+      exitCount: group.exitCount === null && !exits.length ? null : exits.length,
+    };
   });
 }
