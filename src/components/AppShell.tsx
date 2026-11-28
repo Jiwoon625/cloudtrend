@@ -102,7 +102,13 @@ export function AppShell({
                 {item.label}
               </Link>
             ))}
-            <Link to="/portfolio" search={{ asset: "KR", master: "1" }} className="inline-flex min-h-11 items-center rounded-md px-2.5 py-2 text-[13px] font-medium text-muted-foreground hover:bg-accent">종목마스터DB</Link>
+            <Link
+              to="/portfolio"
+              search={{ asset: "KR", master: "1" }}
+              className="inline-flex min-h-11 items-center rounded-md px-2.5 py-2 text-[13px] font-medium text-muted-foreground hover:bg-accent"
+            >
+              종목마스터DB
+            </Link>
             <details className="text-xs text-muted-foreground">
               <summary className="cursor-pointer p-2">보관 기록</summary>
               <div className="flex gap-3 p-2">

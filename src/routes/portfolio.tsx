@@ -139,7 +139,12 @@ type Edit = {
 function PortfolioPage() {
   const { asset, master } = Route.useSearch();
   const navigate = Route.useNavigate();
-  if (master === "1") return <AppShell><ManualSecurityMaster /></AppShell>;
+  if (master === "1")
+    return (
+      <AppShell>
+        <ManualSecurityMaster />
+      </AppShell>
+    );
   return (
     <>
       <div className="mx-auto max-w-6xl px-4 pt-2 text-right">

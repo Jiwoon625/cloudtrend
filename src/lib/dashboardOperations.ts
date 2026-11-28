@@ -297,10 +297,13 @@ export function marketSignals(
   )
     return result;
   const held = new Map((holdings ?? []).filter((p) => p.shares > 0).map((p) => [p.symbol, p]));
-  const soldSince = (date: string) => new Set([
-    ...soldSymbolsSinceSignal(executions, market, date),
-    ...recentSales.filter((sale) => sale.market === market && sale.date >= date).map((sale) => sale.symbol),
-  ]);
+  const soldSince = (date: string) =>
+    new Set([
+      ...soldSymbolsSinceSignal(executions, market, date),
+      ...recentSales
+        .filter((sale) => sale.market === market && sale.date >= date)
+        .map((sale) => sale.symbol),
+    ]);
   const sold = soldSince(index.date);
   const rows = new Map(index.rows.filter((r) => r.market === market).map((r) => [r.symbol, r]));
   // Missing/legacy/stale evidence cannot establish an observed zero. Counts refer to
