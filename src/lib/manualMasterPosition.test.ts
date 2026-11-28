@@ -36,9 +36,7 @@ it("uses master holdings and sale dates without synthetic trades or actionable s
 });
 it("does not convert pending or missing master into empty holdings", () => {
   expect(() => projectMasterPositionContext(null, [])).toThrow();
-  expect(() =>
-    projectMasterPositionContext({ ...master, reviewStatus: "pending" }, []),
-  ).toThrow();
+  expect(() => projectMasterPositionContext({ ...master, reviewStatus: "pending" }, [])).toThrow();
   // The read contract does not depend on screening dates or daily confirmation.
   const ctx = projectMasterPositionContext(master, []);
   expect(ctx.masterAsOf).toBe("2026-11-28");

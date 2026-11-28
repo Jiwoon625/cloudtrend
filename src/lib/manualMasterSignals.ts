@@ -30,8 +30,7 @@ export function projectManualMasterSignals(
   }
   const markets = DASHBOARD_MARKETS.map((market) => {
     const index = market === "US" ? us : kr;
-    const holdings =
-      index && confirmed ? positions.filter((p) => p.market === market) : null;
+    const holdings = index && confirmed ? positions.filter((p) => p.market === market) : null;
     return marketSignals(
       index,
       market,
