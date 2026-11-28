@@ -1,3 +1,5 @@
+import { ManualSecurityMaster } from "@/components/ManualSecurityMaster";
+import { AppShell } from "@/components/AppShell";
 import { PortfolioValuationWarning } from "@/components/PortfolioValuationWarning";
 import {
   projectExecutionMemo,
@@ -37,8 +39,9 @@ export const Route = createFileRoute("/portfolio")({
   ssr: false,
   validateSearch: (
     search: Record<string, unknown> & SearchSchemaInput,
-  ): { asset: PortfolioAsset } => ({
+  ): { asset: PortfolioAsset; master?: "1" } => ({
     asset: search["asset"] === "US" || search["asset"] === "ETF" ? search["asset"] : "KR",
+    ...(search["master"] === "1" || search["master"] === 1 ? { master: "1" as const } : {}),
   }),
   head: () => ({ meta: [{ title: "포트폴리오 | 실제 보유·체결" }] }),
   component: PortfolioPage,
@@ -134,8 +137,9 @@ type Edit = {
 };
 
 function PortfolioPage() {
-  const { asset } = Route.useSearch();
+  const { asset, master } = Route.useSearch();
   const navigate = Route.useNavigate();
+  if (master === "1") return <AppShell><ManualSecurityMaster /></AppShell>;
   return (
     <>
       <div className="mx-auto max-w-6xl px-4 pt-2 text-right">
