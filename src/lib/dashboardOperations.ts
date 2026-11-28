@@ -72,6 +72,7 @@ export interface DashboardIndexRow extends Omit<DashboardSignal, "reason"> {
 }
 /** Server-side projection only. No OHLC history, score breakdowns, or shadow fields. */
 export interface DashboardIndex {
+  priceIdentity?: import("./instrumentChartContract").ChartIdentity;
   sourceCollectedAt?: string | undefined;
   sourceRegisteredAt?: string | undefined;
   screeningCreatedAt?: string | undefined;

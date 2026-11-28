@@ -6,6 +6,7 @@ import { projection } from "./dashboardOperations.server";
 import { loadActualEntryDecisions } from "./actualEntryDecisions.server";
 import { activeEntryDecisions } from "./actualEntryDecisions";
 import { projectManualMasterSignals } from "./manualMasterSignals";
+import { loadMasterPriceExits } from "./manualMasterPriceExit.server";
 export const manualMasterSignalsServer = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
     z
@@ -39,8 +40,9 @@ export const manualMasterSignalsServer = createServerFn({ method: "POST" })
         .then(activeEntryDecisions)
         .catch(() => null),
     ]);
+    const priceExits = await loadMasterPriceExits(client, uid, snapshot, kr);
     const after = await loadManualMaster(client, uid);
     if (!after || after.revision !== snapshot.revision)
       throw new Error("보유현황이 변경되었습니다. 다시 조회하세요.");
-    return projectManualMasterSignals(snapshot, kr, us, entries);
+    return projectManualMasterSignals(snapshot, kr, us, entries, priceExits);
   });

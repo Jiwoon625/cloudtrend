@@ -170,6 +170,7 @@ export async function projection(client: SupabaseClient, uid: string, kind: "kr"
     kind === "kr"
       ? {
           ...index,
+          priceIdentity: { inputFingerprint: (meta as DashboardSummary).inputFingerprint, resultDigest: (meta as DashboardSummary).resultDigest },
           screeningCreatedAt: (meta as DashboardSummary).createdAt,
           sourceRegisteredAt: (meta as DashboardSummary).sourceRegisteredAt,
         }
@@ -508,14 +509,18 @@ export async function loadMasterDashboardOperations(
   ]);
   const after = await safe("종목마스터 버전", () => loadManualMaster(client, uid));
   const stable = snapshot && after?.revision === snapshot.revision ? snapshot : null;
-  const projected = projectManualMasterSignals(stable, kr, us, entries);
+  const { loadMasterPriceExits } = await import("./manualMasterPriceExit.server");
+  const priceExits = await loadMasterPriceExits(client, uid, stable, kr);
+  const final = await safe("종목마스터 버전", () => loadManualMaster(client, uid));
+  const checked = stable && final?.revision === stable.revision ? stable : null;
+  const projected = projectManualMasterSignals(checked, kr, us, entries, priceExits);
   const held =
-    stable?.reviewStatus === "confirmed" ? masterPositionProjection(stable.rows).positions : null;
+    checked?.reviewStatus === "confirmed" ? masterPositionProjection(checked.rows).positions : null;
   return {
     master: {
-      revision: stable?.revision ?? null,
-      asOf: stable?.asOf ?? null,
-      status: stable?.reviewStatus ?? "unavailable",
+      revision: checked?.revision ?? null,
+      asOf: checked?.asOf ?? null,
+      status: checked?.reviewStatus ?? "unavailable",
       counts: held
         ? {
             KOSPI: held.filter((p) => p.market === "KOSPI").length,

@@ -4,6 +4,8 @@ import { masterPositionProjection, type MasterSnapshot } from "./manualMaster";
 import { activeEntryDecisions, type EntryDecision } from "./actualEntryDecisions";
 import { loadActualEntryDecisions } from "./actualEntryDecisions.server";
 import type { DomesticPositionContext } from "./positionSignalContext";
+import { projection } from "./dashboardOperations.server";
+import { loadMasterPriceExits } from "./manualMasterPriceExit.server";
 
 export function projectMasterPositionContext(
   snapshot: MasterSnapshot | null,
@@ -49,5 +51,10 @@ export async function loadMasterPositionContext(client: SupabaseClient, uid: str
   const after = await loadManualMaster(client, uid);
   if (!snapshot || after?.revision !== snapshot.revision)
     throw new Error("종목마스터 변경 · 다시 조회하세요.");
-  return projectMasterPositionContext(snapshot, entries);
+  const context = projectMasterPositionContext(snapshot, entries);
+  const kr = await projection(client, uid, "kr").catch(() => null);
+  const priceExits = await loadMasterPriceExits(client, uid, snapshot, kr);
+  const final = await loadManualMaster(client, uid);
+  if (final?.revision !== snapshot.revision) throw new Error("종목마스터 변경 · 다시 조회하세요.");
+  return { ...context, priceExits: { ...context.priceExits, ...priceExits } };
 }
