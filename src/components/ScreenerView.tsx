@@ -125,7 +125,8 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         return false;
       if (id === "ENTRY")
         return (
-          !!positionContext && isPortfolioAwareOperationalEntry(r, positionContext, analysis.asOfDate)
+          !!positionContext &&
+          isPortfolioAwareOperationalEntry(r, positionContext, analysis.asOfDate)
         );
       if (id === "KOSDAQ_ENTRY_8")
         return (

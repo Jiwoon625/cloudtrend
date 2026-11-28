@@ -28,16 +28,19 @@ const master: MasterSnapshot = {
   ],
 };
 it("uses master holdings and sale dates without synthetic trades or actionable stops", () => {
-  const ctx = projectMasterPositionContext(master, [], ["2026-11-27"]);
+  const ctx = projectMasterPositionContext(master, []);
   expect(ctx.heldSymbols).toEqual(["0046A0"]);
   expect(ctx.lastSellDateBySymbol).toEqual({ "000002": "2026-11-27" });
   expect(ctx.priceExits?.["0046A0"]?.reason).toBeNull();
   expect(ctx.masterRevision).toBe(1);
 });
-it("does not convert pending, missing or stale master into empty holdings", () => {
-  expect(() => projectMasterPositionContext(null, [], ["2026-11-27"])).toThrow();
+it("does not convert pending or missing master into empty holdings", () => {
+  expect(() => projectMasterPositionContext(null, [])).toThrow();
   expect(() =>
-    projectMasterPositionContext({ ...master, reviewStatus: "pending" }, [], ["2026-11-27"]),
+    projectMasterPositionContext({ ...master, reviewStatus: "pending" }, []),
   ).toThrow();
-  expect(() => projectMasterPositionContext(master, [], ["2026-11-29"])).toThrow();
+  // The read contract does not depend on screening dates or daily confirmation.
+  const ctx = projectMasterPositionContext(master, []);
+  expect(ctx.masterAsOf).toBe("2026-11-28");
+  expect(ctx.heldSymbols).toEqual(["0046A0"]);
 });

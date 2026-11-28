@@ -70,12 +70,48 @@ it("uses held/last-sell aggregates without changing raw rows", () => {
   expect(JSON.stringify(index)).toBe(before);
   expect(kr.conditions?.map((r) => r.actualState).sort()).toEqual(["CONSUMED", "HELD"]);
 });
-it("older snapshot cannot imply actual zero holdings", () => {
-  const result = projectManualMasterSignals({ ...snapshot, asOf: "2026-11-27" }, index, null, []);
-  const kr = result.markets.find((m) => m.market === "KOSDAQ")!;
-  expect(kr.holdingsKnown).toBe(false);
-  expect(kr.onsetCount).toBeNull();
-  expect(kr.exitCount).toBeNull();
+it.each(["2026-12-08", "2027-02-26"])(
+  "keeps held exits and new entries on %s without saving unchanged master again",
+  (nextDate) => {
+    const nextIndex = {
+      ...index,
+      date: nextDate,
+      tradeDates: [...index.tradeDates, nextDate],
+      rows: index.rows.map((r) => ({ ...r, date: nextDate })),
+    };
+    const before = JSON.stringify(snapshot);
+    const result = projectManualMasterSignals(snapshot, nextIndex, null, []);
+    const kr = result.markets.find((m) => m.market === "KOSDAQ")!;
+    expect(kr.holdingsKnown).toBe(true);
+    expect(kr.onsets.map((r) => r.symbol)).toEqual([sold.symbol]);
+    expect(kr.exits.map((r) => r.symbol)).toEqual([row.symbol]);
+    expect(kr.conditions?.map((r) => r.actualState).sort()).toEqual(["HELD", "READY"]);
+    expect(result.revision).toBe(snapshot.revision);
+    expect(result.asOf).toBe(snapshot.asOf);
+    expect(JSON.stringify(snapshot)).toBe(before);
+  },
+);
+
+it("continues the available market when the other screening is absent", () => {
+  const us: DashboardIndex = {
+    date: "2026-12-08",
+    tradeDates: [],
+    rows: [
+      {
+        ...index.rows[0]!,
+        market: "US",
+        symbol: "SYNTH",
+        date: "2026-12-08",
+        onset: true,
+        exitReason: null,
+      },
+    ],
+  };
+  const result = projectManualMasterSignals(snapshot, null, us, []);
+  expect(result.markets.find((m) => m.market === "US")?.onsets.map((r) => r.symbol)).toEqual([
+    "SYNTH",
+  ]);
+  expect(result.markets.find((m) => m.market === "KOSDAQ")?.onsetCount).toBeNull();
 });
 
 it("pending or unavailable master preserves raw conditions but cannot imply zero holdings", () => {

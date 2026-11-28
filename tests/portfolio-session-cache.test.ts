@@ -48,12 +48,8 @@ test("legacy ledger cache remains bounded while dashboard no longer loads legacy
   expect(dashboard).not.toContain("PortfolioFreshnessSummary");
   expect(dashboard).toContain("newActualPools?.KRW");
   expect(dashboard).not.toContain("portfolio.document.actualCapital");
-  expect(dashboard).toMatch(
-    /invalidateQueries\(\{\s*queryKey:\s*\["portfolio-ledgers"\]/,
-  );
-  expect(dashboard).toMatch(
-    /invalidateQueries\(\{\s*queryKey:\s*\["domestic-position-context"\]/,
-  );
+  expect(dashboard).toMatch(/invalidateQueries\(\{\s*queryKey:\s*\["portfolio-ledgers"\]/);
+  expect(dashboard).toMatch(/invalidateQueries\(\{\s*queryKey:\s*\["domestic-position-context"\]/);
   // The Drive v7 status route only opens the published results; it does not rebuild or reset data.
   const scoring = readFileSync("src/routes/scoring.tsx", "utf8");
   expect(scoring).not.toContain("invalidateQueries");

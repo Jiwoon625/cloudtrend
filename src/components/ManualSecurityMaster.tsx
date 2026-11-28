@@ -235,7 +235,7 @@ export function ManualSecurityMaster() {
         <h1 className="text-2xl font-bold">종목마스터DB</h1>
         <p className="text-sm text-muted-foreground">
           매매 후 Notion 집계값을 직접 입력하거나 복사하여 저장하세요. 거래내역은 저장하지 않습니다.
-          평단가와 금액은 모두 원화 기준입니다.
+          평단가와 금액은 모두 원화 기준입니다. 매매가 없으면 다시 저장할 필요가 없습니다.
         </p>
         <p className="text-xs text-muted-foreground">
           검증 브랜치: 대시보드와 스크리너는 확인된 종목마스터를 사용합니다.
@@ -262,7 +262,7 @@ export function ManualSecurityMaster() {
           </p>
         </div>
         <label className="text-sm">
-          보유 기준일
+          마지막 보유현황 변경일
           <input
             className={fieldClass}
             type="date"
@@ -445,7 +445,7 @@ export function ManualSecurityMaster() {
                 {m.market} · {m.date ?? "스크리닝 미확인"}
               </h3>
               {!m.holdingsKnown ? (
-                <p>보유현황 기준일 확인 필요</p>
+                <p>종목마스터 또는 스크리닝 조회 확인 필요</p>
               ) : (
                 <>
                   <p className="text-sm">
@@ -491,7 +491,7 @@ export function ManualSecurityMaster() {
               disabled={disabled}
               onChange={(e) => setConfirmed(e.target.checked)}
             />{" "}
-            기준일과 전체 보유/미보유 집계가 실제 Notion 및 계좌 내역과 일치함을 확인합니다.
+            변경일과 전체 보유/미보유 집계가 실제 Notion 및 계좌 내역과 일치함을 확인합니다.
           </label>
           <button
             className={buttonClass + " bg-primary text-primary-foreground"}
