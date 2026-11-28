@@ -271,6 +271,7 @@ export function marketSignals(
   >[] = [],
   sectorContext: DashboardSectorContext | null = null,
   signalStartDate?: string,
+  recentSales: readonly { market: DashboardMarket; symbol: string; date: string }[] = [],
 ): DashboardMarketSignals {
   const result: DashboardMarketSignals = {
     market,
@@ -296,7 +297,11 @@ export function marketSignals(
   )
     return result;
   const held = new Map((holdings ?? []).filter((p) => p.shares > 0).map((p) => [p.symbol, p]));
-  const sold = soldSymbolsSinceSignal(executions, market, index.date);
+  const soldSince = (date: string) => new Set([
+    ...soldSymbolsSinceSignal(executions, market, date),
+    ...recentSales.filter((sale) => sale.market === market && sale.date >= date).map((sale) => sale.symbol),
+  ]);
+  const sold = soldSince(index.date);
   const rows = new Map(index.rows.filter((r) => r.market === market).map((r) => [r.symbol, r]));
   // Missing/legacy/stale evidence cannot establish an observed zero. Counts refer to
   // the displayed analysis session, never the browser clock or a holdings estimate.
@@ -362,11 +367,7 @@ export function marketSignals(
     const consumed =
       (market === "ETF" && row.etfEntry?.originDate) ||
       (market === "KOSPI" && row.kospiEntry?.originDate)
-        ? soldSymbolsSinceSignal(
-            executions,
-            market,
-            (row.kospiEntry?.originDate ?? row.etfEntry?.originDate)!,
-          ).has(row.symbol)
+        ? soldSince((row.kospiEntry?.originDate ?? row.etfEntry?.originDate)!).has(row.symbol)
         : sold.has(row.symbol);
     if (
       entryInSeries &&
