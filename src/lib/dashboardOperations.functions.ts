@@ -5,8 +5,8 @@ export const dashboardOperationsServer = createServerFn({ method: "POST" })
     accessToken: String(input.accessToken ?? ""),
   }))
   .handler(async ({ data }) => {
-    const { loadDashboardOperations } = await import("./dashboardOperations.server");
-    return loadDashboardOperations(data.accessToken);
+    const { loadMasterDashboardOperations } = await import("./dashboardOperations.server");
+    return loadMasterDashboardOperations(data.accessToken);
   });
 
 export const dashboardEtfHoldingsServer = createServerFn({ method: "POST" })

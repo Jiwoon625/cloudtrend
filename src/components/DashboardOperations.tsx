@@ -428,7 +428,10 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
           </select>
         </div>
         <p className="mt-1 text-xs text-muted-foreground">
-          실제 원장 기준 · 시장별 최신 기준일 · 전략 원장과 비교 성과는{" "}
+          {query.data?.master
+            ? `종목마스터 기준 · ${query.data.master.asOf ?? "미확인"} · revision ${query.data.master.revision ?? "—"} · `
+            : "실제 원장 기준 · 시장별 최신 기준일 · "}
+          전략 원장과 비교 성과는{" "}
           <Link to="/shadow" className="underline">
             Shadow
           </Link>
@@ -492,7 +495,7 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
           onClose={() => setDecisionCandidate(null)}
         />
       ) : null}
-      {purchaseCandidate ? (
+      {purchaseCandidate && !query.data?.master ? (
         <Suspense
           fallback={
             <p role="status" className="p-4">
@@ -507,7 +510,7 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
           />
         </Suspense>
       ) : null}
-      {allocationCandidate ? (
+      {allocationCandidate && !query.data?.master ? (
         <div className="p-3">
           <Button variant="outline" onClick={() => setAllocationCandidate(null)}>
             예산 검토 닫기
@@ -573,7 +576,15 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
                     </td>
                     {tab === "onsets" || tab === "all" ? (
                       <td className="px-3 py-3">
-                        {rowKind(row) === "onsets" ? (
+                        {rowKind(row) === "onsets" && query.data?.master ? (
+                          <Link
+                            to="/portfolio"
+                            search={{ asset: "KR", master: "1" }}
+                            className="text-xs underline"
+                          >
+                            종목마스터 확인
+                          </Link>
+                        ) : rowKind(row) === "onsets" ? (
                           <>
                             <Button
                               size="sm"

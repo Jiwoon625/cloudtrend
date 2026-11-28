@@ -111,6 +111,12 @@ export interface DashboardActualPoolSummary {
   assetPositions: Record<import("./newActualPortfolio").NewActualAsset, number>;
 }
 export interface DashboardOperations {
+  master?: {
+    revision: number | null;
+    asOf: string | null;
+    status: "confirmed" | "pending" | "unavailable";
+    counts: Record<DashboardMarket, number> | null;
+  };
   publications?: {
     KR: { collectedAt: string | null; registeredAt: string | null; calculatedAt: string | null };
     US: { collectedAt: string | null; registeredAt: string | null; calculatedAt: string | null };

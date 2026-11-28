@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/cloud";
 import { manualMasterServer } from "@/lib/manualMaster.functions";
 import { manualMasterSignalsServer } from "@/lib/manualMasterSignals.functions";
@@ -35,6 +36,7 @@ async function token() {
 }
 
 export function ManualSecurityMaster() {
+  const queryClient = useQueryClient();
   const [saved, setSaved] = useState<MasterSnapshot | null>(null);
   const [rows, setRows] = useState<MasterRow[]>([]);
   const [asOf, setAsOf] = useState(masterToday);
@@ -180,6 +182,8 @@ export function ManualSecurityMaster() {
       setAsOf(s.asOf);
       resetPreview();
       setMessage("저장 완료 · 최신 집계 스냅샷 확인");
+      void queryClient.invalidateQueries({ queryKey: ["domestic-position-context"] });
+      void queryClient.invalidateQueries({ queryKey: ["dashboard-operations"] });
     } catch (e) {
       resetPreview();
       setMessage(
@@ -228,7 +232,7 @@ export function ManualSecurityMaster() {
           평단가와 금액은 모두 원화 기준입니다.
         </p>
         <p className="text-xs text-muted-foreground">
-          검증 브랜치: 기존 진입·청산 신호는 아직 이 표에 연결되지 않았습니다.
+          검증 브랜치: 대시보드와 스크리너는 확인된 종목마스터를 사용합니다.
         </p>
       </header>
       {saved?.reviewStatus === "pending" && (

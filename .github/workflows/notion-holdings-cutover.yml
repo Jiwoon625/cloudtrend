@@ -37,6 +37,6 @@ jobs:
       - run: npm ci
       - run: npx vite-node --script scripts/build-signal-manifest.ts
       - run: npm run test:screening-identity
-      - run: npx vitest run src/lib/manualMaster.test.ts src/lib/manualMasterSignals.test.ts tests/manual-security-master-postgres.test.ts
+      - run: npx vitest run src/lib/manualMaster.test.ts src/lib/manualMasterSignals.test.ts src/lib/manualMasterPosition.test.ts tests/manual-security-master-postgres.test.ts
       - run: npx tsc --noEmit
       - run: npx vitest run src/lib/currentScreening.test.ts src/lib/signalJournal.server.test.ts src/lib/signalJournalReplay.test.ts tests/screening-only-boundary.test.ts tests/portfolio-screening-refresh.test.ts tests/us-current-ledger-boundary.test.ts src/lib/screeningStages.test.ts

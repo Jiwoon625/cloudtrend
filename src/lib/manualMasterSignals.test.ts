@@ -77,3 +77,16 @@ it("older snapshot cannot imply actual zero holdings", () => {
   expect(kr.onsetCount).toBeNull();
   expect(kr.exitCount).toBeNull();
 });
+
+it("pending or unavailable master preserves raw conditions but cannot imply zero holdings", () => {
+  for (const input of [{ ...snapshot, reviewStatus: "pending" as const }, null]) {
+    const projected = projectManualMasterSignals(input, index, null, []);
+    const kr = projected.markets.find((m) => m.market === "KOSDAQ")!;
+    expect(kr.holdingsKnown).toBe(false);
+    expect(kr.onsets).toEqual([]);
+    expect(kr.exits).toEqual([]);
+    expect(kr.onsetCount).toBeNull();
+    expect(kr.conditionCount).toBe(2);
+    expect(kr.conditions?.every((r) => r.actualState === "UNKNOWN")).toBe(true);
+  }
+});

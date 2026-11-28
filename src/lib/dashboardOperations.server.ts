@@ -483,6 +483,67 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
   };
 }
 
+/** Master-only operational read. Never fall back to a ledger or write a holding. */
+export async function loadMasterDashboardOperations(accessToken: string): Promise<DashboardOperations> {
+  const { client, uid } = await authenticate(accessToken);
+  const warnings: string[] = [];
+  const safe = async <T>(label: string, read: () => Promise<T>): Promise<T | null> => {
+    try {
+      return await read();
+    } catch {
+      warnings.push(label + " 조회 실패");
+      return null;
+    }
+  };
+  const { loadManualMaster } = await import("./manualMaster.server");
+  const { masterPositionProjection } = await import("./manualMaster");
+  const { projectManualMasterSignals } = await import("./manualMasterSignals");
+  const [snapshot, kr, us, entries] = await Promise.all([
+    safe("종목마스터", () => loadManualMaster(client, uid)),
+    safe("국내 신호", () => projection(client, uid, "kr")),
+    safe("미국 신호", () => projection(client, uid, "us")),
+    safe("미매수 제한", () => loadActualEntryDecisions(client, uid).then(activeEntryDecisions)),
+  ]);
+  const after = await safe("종목마스터 버전", () => loadManualMaster(client, uid));
+  const stable = snapshot && after?.revision === snapshot.revision ? snapshot : null;
+  const projected = projectManualMasterSignals(stable, kr, us, entries);
+  const held = stable?.reviewStatus === "confirmed" ? masterPositionProjection(stable.rows).positions : null;
+  return {
+    master: {
+      revision: stable?.revision ?? null,
+      asOf: stable?.asOf ?? null,
+      status: stable?.reviewStatus ?? "unavailable",
+      counts: held
+        ? {
+            KOSPI: held.filter((p) => p.market === "KOSPI").length,
+            KOSDAQ: held.filter((p) => p.market === "KOSDAQ").length,
+            ETF: held.filter((p) => p.market === "ETF").length,
+            US: held.filter((p) => p.market === "US").length,
+          }
+        : null,
+    },
+    publications: {
+      KR: {
+        collectedAt: kr?.sourceCollectedAt ?? null,
+        registeredAt: kr?.sourceRegisteredAt ?? null,
+        calculatedAt: kr?.screeningCreatedAt ?? null,
+      },
+      US: {
+        collectedAt: us?.sourceCollectedAt ?? null,
+        registeredAt: us?.sourceRegisteredAt ?? null,
+        calculatedAt: us?.screeningCreatedAt ?? null,
+      },
+    },
+    markets: projected.markets,
+    actualAllocation: null,
+    newActualPools: null,
+    usOrderPreview: null,
+    usPortfolio: null,
+    etfHoldings: null,
+    warnings: [...warnings, ...projected.warnings],
+  };
+}
+
 export async function saveDashboardEtfHoldings(accessToken: string, input: unknown) {
   const { client, uid } = await authenticate(accessToken);
   const symbols = validateEtfHoldingSymbols(input);

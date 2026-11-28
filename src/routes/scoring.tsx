@@ -1,4 +1,5 @@
 import { MarketDataContent } from "@/components/MarketDataPage";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Play } from "lucide-react";
@@ -24,8 +25,12 @@ export const Route = createFileRoute("/scoring")({
 
 function ScoringPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const openResults = () => {
+  const openResults = async () => {
+    await queryClient.invalidateQueries({ queryKey: ["portfolio-ledgers"] });
+    await queryClient.invalidateQueries({ queryKey: ["domestic-position-context"] });
+    await queryClient.invalidateQueries({ queryKey: ["dashboard-operations"] });
     void navigate({ to: "/" });
   };
 
