@@ -23,3 +23,9 @@
 The previous Notion adapter tests remain for historical comparison. New manual master unit tests, manual-master signal projection and PGlite owner isolation/CAS tests are included in PR CI. Full integrated validation remains required; CI status is tracked on the draft PR.
 
 Prior decision: [screening-only operation](./screening-only-signal-history.md), [current report source contract](../current-report-source-contract.md).
+
+## Reversible legacy operational retirement gate (rehearsal only)
+
+`CLOUDTREND_LEDGER_ARCHIVE_ONLY=1` is a server-only rollout switch. It is not set in production by this change. With the switch on, mixed load/write legacy portfolio endpoints (including loads that initialize or persist price-exit evidence), old position-context fallback, capital/allocation edits, integrated initialization, actual performance preview/save, manual ETF membership writes, assistant proposal/approval operations are rejected. MCP continues to expose source registration; archived proposal listing and existing pure archive readers remain available. No old rows, storage objects or research functions are deleted.
+
+This is an application-ingress barrier, not a claim that all database RPCs, direct Data API writes, or explicit CLI/research commands are revoked. Before activating it, inventory those paths, provide a read-only archive view for the mixed legacy portfolio endpoints, and verify backup/restore, K4/E4 parity, confirmed master, and authenticated QA. Keep daily screening and immutable history outside the barrier. The switch remains off until those requirements are met.

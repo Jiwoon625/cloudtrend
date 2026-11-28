@@ -1,3 +1,4 @@
+import { assertLegacyLedgerActive } from "./legacyLedgerRetirement.server";
 import { createServerFn } from "@tanstack/react-start";
 
 export const dashboardOperationsServer = createServerFn({ method: "POST" })
@@ -15,6 +16,7 @@ export const dashboardEtfHoldingsServer = createServerFn({ method: "POST" })
     symbols: input.symbols,
   }))
   .handler(async ({ data }) => {
+    assertLegacyLedgerActive();
     const { saveDashboardEtfHoldings } = await import("./dashboardOperations.server");
     return saveDashboardEtfHoldings(data.accessToken, data.symbols);
   });

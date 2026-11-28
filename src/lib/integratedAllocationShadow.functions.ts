@@ -1,3 +1,4 @@
+import { assertLegacyLedgerActive } from "./legacyLedgerRetirement.server";
 import type { AllocationWarningEvidence } from "./allocationWarningPresentation";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -24,6 +25,7 @@ export const integratedAllocationShadowServer = createServerFn({ method: "POST" 
     const auth = await client.auth.getUser(data.accessToken);
     if (auth.error || !auth.data.user || auth.data.user.is_anonymous)
       throw new Error("로그인 소유자 확인 필요");
+    if (data.action === "initialize") assertLegacyLedgerActive();
     const { readIntegratedAllocationBook, initializeIntegratedAllocationBook } =
       await import("./integratedAllocationStore.server");
     const kinds = data.kind ? [data.kind] : (["O1", "S07"] as const);

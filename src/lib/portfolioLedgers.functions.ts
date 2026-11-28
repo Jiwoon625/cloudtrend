@@ -1,3 +1,4 @@
+import { assertLegacyLedgerActive } from "./legacyLedgerRetirement.server";
 import { loadActualEntryDecisions } from "./actualEntryDecisions.server";
 import { activeEntryDecisions } from "./actualEntryDecisions";
 import { isActionableActualPriceExit } from "./newActualPriceExit";
@@ -70,6 +71,7 @@ export const portfolioLedgersServer = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => request.parse(input))
   .handler(async ({ data }): Promise<PortfolioLedgerViewState> => {
     const { client, uid } = await authenticate(data.accessToken);
+    assertLegacyLedgerActive();
     return operateLedgers(client, uid, data);
   });
 
@@ -84,6 +86,7 @@ export const portfolioPositionContextServer = createServerFn({ method: "POST" })
       const { loadMasterPositionContext } = await import("./manualMasterPosition.server");
       return loadMasterPositionContext(client, uid);
     }
+    assertLegacyLedgerActive();
     const context = await loadActualPositionContextForOwner(client, uid);
     if (context.actualPools?.KRW) {
       try {

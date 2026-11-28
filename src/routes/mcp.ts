@@ -1,4 +1,8 @@
 import process from "node:process";
+import {
+  legacyLedgerArchiveOnly,
+  assertLegacyLedgerActive,
+} from "../lib/legacyLedgerRetirement.server";
 
 import { createFileRoute } from "@tanstack/react-router";
 
@@ -156,6 +160,7 @@ const PROPOSE_BUY_TOOL = {
 } as const;
 
 async function callProposeTrade(args: unknown, side: "BUY" | "SELL") {
+  assertLegacyLedgerActive();
   const parsed = side === "BUY" ? parseAssistantActualBuy(args) : parseAssistantActualTrade(args);
   if (parsed.side !== side) throw new Error("거래 구분이 요청한 매수/매도 도구와 다릅니다.");
   const userId = configuredUserId();
@@ -427,8 +432,9 @@ async function handleRpc(body: JsonRpcRequest) {
         typeof params?.["protocolVersion"] === "string" ? params["protocolVersion"] : "2025-06-18",
       capabilities: { tools: { listChanged: false } },
       serverInfo: { name: "cloudtrend", version: "1.0.0" },
-      instructions:
-        "Source files: register_cloudtrend_source_file. Real BUY or SELL evidence: propose_cloudtrend_actual_buy / propose_cloudtrend_actual_sell save PENDING proposals only. The owner must sign in and explicitly approve at /assistant-trades before the unchanged owner-authorized actual ledger records anything. Never claim a pending proposal is a recorded fill.",
+      instructions: legacyLedgerArchiveOnly()
+        ? "Source files: register_cloudtrend_source_file. Actual trades are recorded in Notion and the manually edited CloudTrend master; legacy trade proposals are retired."
+        : "Source files: register_cloudtrend_source_file. Real BUY or SELL evidence: propose_cloudtrend_actual_buy / propose_cloudtrend_actual_sell save PENDING proposals only. The owner must sign in and explicitly approve at /assistant-trades before the unchanged owner-authorized actual ledger records anything. Never claim a pending proposal is a recorded fill.",
     });
   }
 
@@ -439,7 +445,11 @@ async function handleRpc(body: JsonRpcRequest) {
   if (method === "ping") return rpcResult(id, {});
 
   if (method === "tools/list") {
-    return rpcResult(id, { tools: [REGISTER_TOOL, PROPOSE_BUY_TOOL, PROPOSE_SELL_TOOL] });
+    return rpcResult(id, {
+      tools: legacyLedgerArchiveOnly()
+        ? [REGISTER_TOOL]
+        : [REGISTER_TOOL, PROPOSE_BUY_TOOL, PROPOSE_SELL_TOOL],
+    });
   }
 
   if (method === "tools/call") {
@@ -480,7 +490,9 @@ export const Route = createFileRoute("/mcp")({
         return json({
           name: "cloudtrend",
           transport: "streamable-http",
-          tools: [REGISTER_TOOL.name, PROPOSE_BUY_TOOL.name, PROPOSE_SELL_TOOL.name],
+          tools: legacyLedgerArchiveOnly()
+            ? [REGISTER_TOOL.name]
+            : [REGISTER_TOOL.name, PROPOSE_BUY_TOOL.name, PROPOSE_SELL_TOOL.name],
           fileParams: ["file"],
         });
       },
