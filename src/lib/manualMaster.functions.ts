@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { validateMasterRows, masterChanges, type MasterSnapshot } from "./manualMaster";
 const table="manual_security_master";
+import { loadManualMaster } from "./manualMaster.server";
 const request=z.discriminatedUnion("action",[
   z.object({action:z.literal("load"),accessToken:z.string().min(1)}).strict(),
   z.object({action:z.literal("save"),accessToken:z.string().min(1),expectedRevision:z.number().int().nonnegative(),asOf:z.string(),rows:z.array(z.unknown()).max(2000),confirmed:z.literal(true)}).strict(),
@@ -14,12 +15,7 @@ export const manualMasterServer=createServerFn({method:"POST"}).inputValidator((
   const auth=await client.auth.getUser(data.accessToken);
   if(auth.error||!auth.data.user||auth.data.user.is_anonymous)throw new Error("로그인 세션을 확인하세요.");
   const uid=auth.data.user.id;
-  const read=async():Promise<MasterSnapshot|null>=>{
-    const {data:row,error}=await client.from(table).select("revision,as_of,rows,saved_at").eq("user_id",uid).maybeSingle();
-    if(error)throw new Error("종목마스터 조회 실패");
-    if(!row)return null;
-    return {revision:row.revision,asOf:row.as_of,rows:validateMasterRows(row.rows,row.as_of),savedAt:row.saved_at};
-  };
+  const read=()=>loadManualMaster(client,uid);
   const before=await read();
   if(data.action==="load")return before;
   if((before?.revision??0)!==data.expectedRevision)throw new Error("다른 저장이 발생했습니다. 다시 조회하세요.");
