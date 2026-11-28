@@ -4,7 +4,7 @@ import { chartPath } from "./instrumentChartContract";
 import { readChartBundle, type PriceChart } from "./instrumentChartStore.server";
 import { downloadFreshObject } from "./freshStorage";
 import { strategyMarket, validMasterDay, type MasterSnapshot, type MasterRow } from "./manualMaster";
-import { evaluateMasterExit, masterExitPending, MASTER_EXIT_POLICY, type MasterExit } from "./manualMasterPriceExit";
+import { catchUpMasterExit, masterExitPending, MASTER_EXIT_POLICY, type MasterExit } from "./manualMasterPriceExit";
 import type { DashboardIndex } from "./dashboardOperations";
 import { loadManualMaster } from "./manualMaster.server";
 
@@ -80,16 +80,17 @@ export async function loadMasterPriceExits(
         (kr.date === today && !afterClose)
       ) continue;
       let bars: PriceChart["chart"] = [];
-      if (strategyMarket(row) === "ETF") {
+      {
         const identity = kr.priceIdentity;
         const recent = await chart(chartPath(identity, row.symbol, "120", "prices"));
         bars = recent?.[row.symbol]?.chart ?? [];
-        if (!bars.some((b) => b.tradeDate === row.start)) {
+        const from = strategyMarket(row) === "ETF" ? row.start : snapshot.asOf;
+        if (!bars.some((b) => b.tradeDate <= from)) {
           const full = await chart(chartPath(identity, row.symbol, "all", "prices"));
           bars = full?.[row.symbol]?.chart ?? [];
         }
       }
-      const exit = evaluateMasterExit(row, snapshot.asOf, kr, bars);
+      const exit = catchUpMasterExit(row, snapshot.asOf, kr, bars);
       if (!exit.reason) {
         result[row.symbol] = exit;
         continue;

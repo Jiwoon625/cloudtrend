@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { newMasterRow } from "./manualMaster";
-import { evaluateMasterExit, applyMasterPriceExits } from "./manualMasterPriceExit";
+import { evaluateMasterExit, applyMasterPriceExits, catchUpMasterExit } from "./manualMasterPriceExit";
 import type { DashboardIndex, DashboardMarketSignals } from "./dashboardOperations";
 
 const start = "2026-11-24", date = "2026-11-27";
@@ -38,4 +38,12 @@ it("deduplicates price and score exits and keeps a latched signal even if no cur
   expect(applyMasterPriceExits([group], [{ ...row, quantity: "5", averageKrw: "8000" }], evidence)[0]?.exitCount).toBe(1);
   expect(applyMasterPriceExits([group],[{...row,quantity:"0"}],evidence)[0]?.exits).toEqual([]);
   expect(applyMasterPriceExits([group],[{...row,start:"2026-11-28"}],evidence)[0]?.exits).toEqual([]);
+});
+
+it("recovers a missed crossing after the confirmed master date even if price rebounded", () => {
+  const bars = dates.map((tradeDate, i) => ({ tradeDate, close: [10000, 9100, 9500, 10000][i]! }));
+  const result = catchUpMasterExit(row, start, index(10000), bars);
+  expect(result.reason).toBe("K4");
+  expect(result.signalDate).toBe("2026-11-25");
+  expect(catchUpMasterExit(row, "2026-11-26", index(10000), bars).reason).toBeNull();
 });

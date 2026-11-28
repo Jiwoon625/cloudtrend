@@ -88,6 +88,49 @@ export function evaluateMasterExit(
   };
 }
 
+/**
+ * Catch up missed observations only under the currently confirmed aggregate basis.
+ * Never apply today's K4 basis to a close before that basis was saved.
+ * ETF peaks are initialized from first-entry closes, not acquisition price.
+ */
+export function catchUpMasterExit(
+  row: MasterRow,
+  asOf: string,
+  index: DashboardIndex,
+  bars: readonly ClosePoint[],
+): MasterExit {
+  const current = evaluateMasterExit(row, asOf, index, bars);
+  if (current.auditStatus !== "VERIFIED") return current;
+  const from = asOf > row.start ? asOf : row.start;
+  const byDate = new Map(bars.map((bar) => [bar.tradeDate, bar.close]));
+  const dates = [...new Set(index.tradeDates)].filter((d) => d >= from && d < index.date).sort();
+  if (
+    !index.tradeDates.some((d) => d <= from) ||
+    bars.some((bar) => !validMasterDay(bar.tradeDate) || bar.tradeDate > index.date) ||
+    new Set(bars.map((bar) => bar.tradeDate)).size !== bars.length ||
+    dates.some((d) => !Number.isFinite(byDate.get(d)) || (byDate.get(d) ?? 0) <= 0) ||
+    byDate.get(index.date) !== current.observedClose
+  ) return current;
+  for (const date of dates) {
+    const price = byDate.get(date)!;
+    const historical = {
+      ...index,
+      date,
+      rows: index.rows.map((r) =>
+        r.symbol === row.symbol && r.market === current.market ? { ...r, date, price } : r,
+      ),
+    };
+    const evaluated = evaluateMasterExit(
+      row,
+      asOf,
+      historical,
+      bars.filter((bar) => bar.tradeDate <= date),
+    );
+    if (evaluated.reason) return evaluated;
+  }
+  return current;
+}
+
 export function applyMasterPriceExits(
   markets: DashboardMarketSignals[],
   rows: MasterRow[],
