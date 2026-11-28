@@ -7,6 +7,7 @@ export default defineConfig({
   test: {
     include: [
       "src/routes/-api.assistant-trades.test.ts",
+      "src/lib/legacyLedgerRetirement.test.ts",
       "src/lib/assistantActualTrade.test.ts",
       "src/lib/newActualPortfolio.server.test.ts",
       "src/lib/newActualPortfolioInput.test.ts",
