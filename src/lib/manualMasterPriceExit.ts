@@ -49,7 +49,7 @@ export function evaluateMasterExit(
     (r) => r.symbol === row.symbol && r.market === result.market && r.date === index.date,
   );
   if (!mark?.price || !Number.isFinite(mark.price) || mark.price <= 0 ||
-      index.date < row.start || index.date < asOf) return result;
+      index.date < row.start || (result.market === "KOSPI" && index.date < asOf)) return result;
   const close = units(mark.price.toFixed(12));
   let basis: bigint;
   let ratio: bigint;

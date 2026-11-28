@@ -30,6 +30,7 @@ async function readSignal(client: SupabaseClient, path: string, row: MasterRow):
     signal.observationDate !== signal.signalDate ||
     !signal.threshold || !Number.isFinite(Number(signal.threshold)) || Number(signal.threshold) <= 0 ||
     !signal.observedClose || !Number.isFinite(signal.observedClose) ||
+    signal.observedClose <= 0 ||
     signal.observedClose > Number(signal.threshold) + 1e-8
   ) throw new Error("청산신호 근거 오류");
   return { ...signal, auditStatus: "LATCHED", status: "청산 대기 · 전량매도 전까지 유지" };
@@ -64,10 +65,20 @@ export async function loadMasterPriceExits(
       const prior = await readSignal(client, path, row);
       if (prior) {
         if (prior.signalDate! > today || (prior.signalDate === today && !afterClose)) continue;
+        const sameDateMark = kr?.rows.find((r) => r.symbol === row.symbol && r.market === prior.market && r.date === prior.signalDate);
+        if (kr?.pricePublicationFinal && sameDateMark?.price != null && sameDateMark.price !== prior.observedClose) {
+          result[row.symbol] = { ...masterExitPending(row), auditStatus: "MISMATCH", status: "청산신호 원천가격 대사 확인 대기" };
+          continue;
+        }
         result[row.symbol] = prior;
         continue;
       }
-      if (!kr?.priceIdentity || kr.date > today || (kr.date === today && !afterClose)) continue;
+      if (
+        !kr?.priceIdentity ||
+        kr.pricePublicationFinal !== true ||
+        kr.date > today ||
+        (kr.date === today && !afterClose)
+      ) continue;
       let bars: PriceChart["chart"] = [];
       if (strategyMarket(row) === "ETF") {
         const identity = kr.priceIdentity;

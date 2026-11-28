@@ -31,6 +31,11 @@ it("deduplicates price and score exits and keeps a latched signal even if no cur
   const out = applyMasterPriceExits([group],[row],evidence);
   expect(out[0]?.exits[0]?.reason).toContain("K4");
   expect(out[0]?.exitCount).toBe(1);
+  const withScore = { ...group, exits: [{ ...out[0]!.exits[0]!, reason: "UP95" }], exitCount: 1 };
+  const combined = applyMasterPriceExits([withScore], [row], evidence);
+  expect(combined[0]?.exitCount).toBe(1);
+  expect(combined[0]?.exits[0]?.reason).toContain("UP95");
+  expect(applyMasterPriceExits([group], [{ ...row, quantity: "5", averageKrw: "8000" }], evidence)[0]?.exitCount).toBe(1);
   expect(applyMasterPriceExits([group],[{...row,quantity:"0"}],evidence)[0]?.exits).toEqual([]);
   expect(applyMasterPriceExits([group],[{...row,start:"2026-11-28"}],evidence)[0]?.exits).toEqual([]);
 });

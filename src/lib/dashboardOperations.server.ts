@@ -170,7 +170,11 @@ export async function projection(client: SupabaseClient, uid: string, kind: "kr"
     kind === "kr"
       ? {
           ...index,
-          priceIdentity: { inputFingerprint: (meta as DashboardSummary).inputFingerprint, resultDigest: (meta as DashboardSummary).resultDigest },
+          priceIdentity: {
+            inputFingerprint: (meta as DashboardSummary).inputFingerprint,
+            resultDigest: (meta as DashboardSummary).resultDigest,
+          },
+          pricePublicationFinal: (meta as DashboardSummary).krPublication?.phase === "FINAL",
           screeningCreatedAt: (meta as DashboardSummary).createdAt,
           sourceRegisteredAt: (meta as DashboardSummary).sourceRegisteredAt,
         }

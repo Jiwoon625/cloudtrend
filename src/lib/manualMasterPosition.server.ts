@@ -40,7 +40,7 @@ export function projectMasterPositionContext(
   };
 }
 
-/** Read only; do not silently substitute a ledger, cached holdings, or zero holdings. */
+/** Read holdings without a ledger fallback; only derived exit evidence may be persisted. */
 export async function loadMasterPositionContext(client: SupabaseClient, uid: string) {
   const [snapshot, entries] = await Promise.all([
     loadManualMaster(client, uid),
