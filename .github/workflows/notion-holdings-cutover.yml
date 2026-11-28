@@ -1,0 +1,33 @@
+name: Notion holdings cutover validation
+on:
+  pull_request:
+    paths:
+      - 'src/lib/notionMasterHoldings.mjs'
+      - 'tests/notion-master-holdings.test.mjs'
+      - 'docs/operations/notion-holdings-cutover.md'
+      - '.github/workflows/notion-holdings-cutover.yml'
+permissions:
+  contents: read
+jobs:
+  isolated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node tests/notion-master-holdings.test.mjs
+  screening-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vite-node --script scripts/build-signal-manifest.ts
+      - run: npm run test:screening-identity
+      - run: npx vitest run src/lib/currentScreening.test.ts src/lib/signalJournal.server.test.ts src/lib/signalJournalReplay.test.ts tests/screening-only-boundary.test.ts tests/portfolio-screening-refresh.test.ts tests/us-current-ledger-boundary.test.ts src/lib/screeningStages.test.ts
