@@ -48,7 +48,9 @@ export async function loadMasterPositionContext(client: SupabaseClient, uid: str
     loadManualMaster(client, uid),
     projection(client, uid, "kr").catch(() => null),
     projection(client, uid, "us").catch(() => null),
-    loadActualEntryDecisions(client, uid).then(activeEntryDecisions).catch(() => null),
+    loadActualEntryDecisions(client, uid)
+      .then(activeEntryDecisions)
+      .catch(() => null),
   ]);
   if (!kr || !us) throw new Error("스크리닝 기준일 확인 필요");
   const after = await loadManualMaster(client, uid);
