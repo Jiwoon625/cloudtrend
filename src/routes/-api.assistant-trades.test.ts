@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { LEGACY_LEDGER_RETIRED_MESSAGE } from "../lib/legacyLedgerRetirement.server";
 
 const state = vi.hoisted(() => ({
   uid: "bdfc8818-33a7-4030-9dbd-ecad39f223ac",
@@ -122,8 +123,14 @@ function targetSnapshot(value: unknown) {
   });
 }
 
+// The production build sets CLOUDTREND_LEDGER_ARCHIVE_ONLY=1, so the approval
+// writer suite must not inherit the operator's cutover switch. Each test starts
+// with the legacy ledger active and the value is restored afterwards.
+const ambientArchiveOnly = process.env["CLOUDTREND_LEDGER_ARCHIVE_ONLY"];
+
 beforeEach(() => {
   vi.clearAllMocks();
+  delete process.env["CLOUDTREND_LEDGER_ARCHIVE_ONLY"];
   state.uid = "bdfc8818-33a7-4030-9dbd-ecad39f223ac";
   process.env["SUPABASE_USER_ID"] = state.uid;
   state.authError = null;
@@ -134,6 +141,52 @@ beforeEach(() => {
   state.rpc.mockReset();
   state.save.mockReset();
   state.snapshot.mockReset();
+});
+
+afterEach(() => {
+  if (ambientArchiveOnly === undefined) delete process.env["CLOUDTREND_LEDGER_ARCHIVE_ONLY"];
+  else process.env["CLOUDTREND_LEDGER_ARCHIVE_ONLY"] = ambientArchiveOnly;
+});
+
+describe("legacy ledger archive-only retirement gate", () => {
+  it("answers an owner approval with 410 and touches no ledger when the cutover switch is on", async () => {
+    process.env["CLOUDTREND_LEDGER_ARCHIVE_ONLY"] = "1";
+    state.proposal = {
+      id: "faa46c4e-ea94-4ff8-85f3-22e458da8b26",
+      user_id: state.uid,
+      source_page_id: "3fed908c-ac2f-817e-bf54-c58ab0cde580",
+      status: "PENDING",
+      trade: { market: "KOSDAQ", symbol: "064290", side: "BUY", shares: 1, price: 1 },
+    };
+    const response = await post();
+    expect(response.status).toBe(410);
+    expect(await response.json()).toEqual({
+      error: LEGACY_LEDGER_RETIRED_MESSAGE,
+      code: "LEDGER_RETIRED",
+    });
+    expect(state.getUser).toHaveBeenCalledTimes(1);
+    expect(state.rpc).not.toHaveBeenCalled();
+    expect(state.save).not.toHaveBeenCalled();
+    expect(state.snapshot).not.toHaveBeenCalled();
+  });
+
+  it("keeps the archived proposal inbox readable while approvals are retired", async () => {
+    process.env["CLOUDTREND_LEDGER_ARCHIVE_ONLY"] = "1";
+    state.active = [{ id: "archived-1", created_at: "2026-10-19T00:00:00Z", status: "PENDING" }];
+    const response = await get();
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.proposals.map((p: { id: string }) => p.id)).toEqual(["archived-1"]);
+    expect(body.pendingTotal).toBe(1);
+  });
+
+  it("stays reversible: the same approval is no longer refused after the switch is cleared", async () => {
+    process.env["CLOUDTREND_LEDGER_ARCHIVE_ONLY"] = "1";
+    expect((await post()).status).toBe(410);
+    process.env["CLOUDTREND_LEDGER_ARCHIVE_ONLY"] = "0";
+    // The approval writer's own validation now answers instead of the barrier.
+    expect((await post()).status).not.toBe(410);
+  });
 });
 
 describe("assistant trade owner approval", () => {
