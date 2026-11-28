@@ -1,3 +1,4 @@
+import { assertLegacyLedgerActive } from "./legacyLedgerRetirement.server";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -22,6 +23,7 @@ export const operatingAllocationServer = createServerFn({ method: "POST" })
       const auth = await client.auth.getUser(data.accessToken);
       if (auth.error || !auth.data.user || auth.data.user.is_anonymous)
         throw new Error(OPERATING_ALLOCATION_ERRORS.auth);
+      if (data.action !== "load") assertLegacyLedgerActive();
       const { loadOperatingAllocation, writeOperatingAllocation } =
         await import("./operatingAllocation.server");
       return data.action === "load"

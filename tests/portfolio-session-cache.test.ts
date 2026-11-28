@@ -48,11 +48,12 @@ test("legacy ledger cache remains bounded while dashboard no longer loads legacy
   expect(dashboard).not.toContain("PortfolioFreshnessSummary");
   expect(dashboard).toContain("newActualPools?.KRW");
   expect(dashboard).not.toContain("portfolio.document.actualCapital");
-  for (const path of ["src/routes/index.tsx", "src/routes/scoring.tsx"]) {
-    expect(readFileSync(path, "utf8")).toMatch(
-      /invalidateQueries\(\{\s*queryKey:\s*\["portfolio-ledgers"\]/,
-    );
-  }
+  expect(dashboard).toMatch(/invalidateQueries\(\{\s*queryKey:\s*\["portfolio-ledgers"\]/);
+  expect(dashboard).toMatch(/invalidateQueries\(\{\s*queryKey:\s*\["domestic-position-context"\]/);
+  // The Drive v7 status route only opens the published results; it does not rebuild or reset data.
+  const scoring = readFileSync("src/routes/scoring.tsx", "utf8");
+  expect(scoring).not.toContain("invalidateQueries");
+  expect(scoring).toContain('navigate({ to: "/" })');
 });
 
 test("the portfolio hub reads only owner-scoped new-series data with bounded freshness", async () => {

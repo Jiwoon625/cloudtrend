@@ -1,4 +1,8 @@
 import process from "node:process";
+import {
+  legacyLedgerArchiveOnly,
+  LEGACY_LEDGER_RETIRED_MESSAGE,
+} from "../lib/legacyLedgerRetirement.server";
 import { createFileRoute } from "@tanstack/react-router";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
@@ -442,6 +446,8 @@ export const Route = createFileRoute("/api/assistant-trades")({
           const authenticated = await owner(request);
           if (!(request.headers.get("content-type") ?? "").includes("application/json"))
             return reply({ error: "JSON 요청이 필요합니다." }, 415);
+          if (legacyLedgerArchiveOnly())
+            return reply({ error: LEGACY_LEDGER_RETIRED_MESSAGE, code: "LEDGER_RETIRED" }, 410);
           return await apply(request, authenticated);
         } catch (error) {
           if (error instanceof AssistantTradesError)

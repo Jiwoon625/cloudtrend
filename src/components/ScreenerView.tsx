@@ -124,7 +124,10 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
       )
         return false;
       if (id === "ENTRY")
-        return isPortfolioAwareOperationalEntry(r, positionContext, analysis.asOfDate);
+        return (
+          !!positionContext &&
+          isPortfolioAwareOperationalEntry(r, positionContext, analysis.asOfDate)
+        );
       if (id === "KOSDAQ_ENTRY_8")
         return (
           r.snapshot.tradeDate === analysis.asOfDate &&
@@ -151,6 +154,7 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         );
       if (id === "KOSPI_CONFIRMED")
         return (
+          !!positionContext &&
           r.instrument.market === "KOSPI" &&
           isPortfolioAwareOperationalEntry(r, positionContext, analysis.asOfDate)
         );
@@ -272,13 +276,13 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         {PRESETS.map((p) => (
           <button
             key={p.id}
-            disabled={p.id === "EXIT" && !positions.isSuccess}
+            disabled={["ENTRY", "EXIT", "KOSPI_CONFIRMED"].includes(p.id) && !positions.isSuccess}
             type="button"
             onClick={() => setPreset(preset === p.id ? null : p.id)}
             className={`rounded-full border px-2.5 py-1 text-[11px] transition-colors ${preset === p.id ? "border-primary bg-primary text-primary-foreground" : "border-border bg-surface hover:bg-accent"}`}
           >
             {p.label} (
-            {p.id === "EXIT" && !positions.isSuccess
+            {["ENTRY", "EXIT", "KOSPI_CONFIRMED"].includes(p.id) && !positions.isSuccess
               ? "미확인"
               : base.filter((r) => presetMatches(r, p.id)).length}
             )
@@ -338,9 +342,9 @@ export function ScreenerView({ mode, analysis }: { mode: Mode; analysis: Analysi
         ) : null}
       </div>
 
-      {preset === "EXIT" && !positions.isSuccess ? (
+      {preset && ["ENTRY", "EXIT", "KOSPI_CONFIRMED"].includes(preset) && !positions.isSuccess ? (
         <p role="status" className="text-xs">
-          보유 조회가 완료되면 청산 목록을 표시합니다.
+          종목마스터 확인이 완료되면 실제 진입·청산 목록을 표시합니다.
         </p>
       ) : (
         <ScreenerTable

@@ -34,3 +34,17 @@ test.each(["duplicate", "record-id", "file", "data", "schema"])(
     expect(inputs).toEqual(before);
   },
 );
+
+test("identical bytes can carry the published contract after consistent derived hash drift", async () => {
+  const { publication, inputs } = fixture();
+  const input = inputs[0]!;
+  input.dataHash = "rederived-data";
+  input.schemaHash = "rederived-schema";
+  input.sourceRecord!.data_hash = input.dataHash;
+  input.sourceRecord!.schema_hash = input.schemaHash;
+  await expect(
+    carryPublishedParentContracts(publication, publication.sources, inputs),
+  ).resolves.toEqual(publication.sources);
+  expect(input.dataHash).toBe(publication.sources[0]!.record.data_hash);
+  expect(input.schemaHash).toBe(publication.sources[0]!.record.schema_hash);
+});

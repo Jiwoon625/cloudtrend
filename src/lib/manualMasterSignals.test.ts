@@ -1,0 +1,128 @@
+import { it, expect } from "vitest";
+import { newMasterRow, type MasterSnapshot } from "./manualMaster";
+import { projectManualMasterSignals } from "./manualMasterSignals";
+import type { DashboardIndex } from "./dashboardOperations";
+const date = "2026-11-28";
+const row = {
+  ...newMasterRow(),
+  symbol: "005930",
+  name: "Synthetic held",
+  listing: "KOSDAQ",
+  quantity: "2",
+  averageKrw: "100",
+  amountKrw: "200",
+  start: "2026-11-01",
+};
+const sold = {
+  ...row,
+  symbol: "000002",
+  name: "Synthetic sold",
+  quantity: "0",
+  averageKrw: "",
+  amountKrw: "0",
+  lastSell: date,
+};
+const snapshot: MasterSnapshot = {
+  revision: 1,
+  reviewStatus: "confirmed",
+  asOf: date,
+  savedAt: date + "T00:00:00Z",
+  rows: [row, sold],
+};
+const index: DashboardIndex = {
+  date,
+  tradeDates: [date],
+  rows: [
+    {
+      symbol: row.symbol,
+      name: row.name,
+      market: "KOSDAQ",
+      sector: "test",
+      sectorCode: "test",
+      date,
+      price: 100,
+      score: 9,
+      priority: 1,
+      onset: true,
+      exitReason: "UP90",
+    },
+    {
+      symbol: sold.symbol,
+      name: sold.name,
+      market: "KOSDAQ",
+      sector: "test",
+      sectorCode: "test",
+      date,
+      price: 100,
+      score: 8,
+      priority: 1,
+      onset: true,
+      exitReason: null,
+    },
+  ],
+};
+it("uses held/last-sell aggregates without changing raw rows", () => {
+  const before = JSON.stringify(index);
+  const projected = projectManualMasterSignals(snapshot, index, null, []);
+  const kr = projected.markets.find((m) => m.market === "KOSDAQ")!;
+  expect(kr.onsets).toEqual([]);
+  expect(kr.exits.map((r) => r.symbol)).toEqual([row.symbol]);
+  expect(JSON.stringify(index)).toBe(before);
+  expect(kr.conditions?.map((r) => r.actualState).sort()).toEqual(["CONSUMED", "HELD"]);
+});
+it.each(["2026-12-08", "2027-02-26"])(
+  "keeps held exits and new entries on %s without saving unchanged master again",
+  (nextDate) => {
+    const nextIndex = {
+      ...index,
+      date: nextDate,
+      tradeDates: [...index.tradeDates, nextDate],
+      rows: index.rows.map((r) => ({ ...r, date: nextDate })),
+    };
+    const before = JSON.stringify(snapshot);
+    const result = projectManualMasterSignals(snapshot, nextIndex, null, []);
+    const kr = result.markets.find((m) => m.market === "KOSDAQ")!;
+    expect(kr.holdingsKnown).toBe(true);
+    expect(kr.onsets.map((r) => r.symbol)).toEqual([sold.symbol]);
+    expect(kr.exits.map((r) => r.symbol)).toEqual([row.symbol]);
+    expect(kr.conditions?.map((r) => r.actualState).sort()).toEqual(["HELD", "READY"]);
+    expect(result.revision).toBe(snapshot.revision);
+    expect(result.asOf).toBe(snapshot.asOf);
+    expect(JSON.stringify(snapshot)).toBe(before);
+  },
+);
+
+it("continues the available market when the other screening is absent", () => {
+  const us: DashboardIndex = {
+    date: "2026-12-08",
+    tradeDates: [],
+    rows: [
+      {
+        ...index.rows[0]!,
+        market: "US",
+        symbol: "SYNTH",
+        date: "2026-12-08",
+        onset: true,
+        exitReason: null,
+      },
+    ],
+  };
+  const result = projectManualMasterSignals(snapshot, null, us, []);
+  expect(result.markets.find((m) => m.market === "US")?.onsets.map((r) => r.symbol)).toEqual([
+    "SYNTH",
+  ]);
+  expect(result.markets.find((m) => m.market === "KOSDAQ")?.onsetCount).toBeNull();
+});
+
+it("pending or unavailable master preserves raw conditions but cannot imply zero holdings", () => {
+  for (const input of [{ ...snapshot, reviewStatus: "pending" as const }, null]) {
+    const projected = projectManualMasterSignals(input, index, null, []);
+    const kr = projected.markets.find((m) => m.market === "KOSDAQ")!;
+    expect(kr.holdingsKnown).toBe(false);
+    expect(kr.onsets).toEqual([]);
+    expect(kr.exits).toEqual([]);
+    expect(kr.onsetCount).toBeNull();
+    expect(kr.conditionCount).toBe(2);
+    expect(kr.conditions?.every((r) => r.actualState === "UNKNOWN")).toBe(true);
+  }
+});

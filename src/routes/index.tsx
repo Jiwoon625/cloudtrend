@@ -170,6 +170,7 @@ function Dashboard() {
       const result = await rebuildScreeningCachesServerFirst();
       await queryClient.invalidateQueries({ queryKey: ["market-analysis"] });
       await queryClient.invalidateQueries({ queryKey: ["portfolio-ledgers"] });
+      await queryClient.invalidateQueries({ queryKey: ["domestic-position-context"] });
       await queryClient.invalidateQueries({ queryKey: DASHBOARD_OPERATIONS_QUERY });
       queryClient.removeQueries({ queryKey: ["instrument"] });
       if (result.refresh?.pipelineStatus.publication !== "COMPLETED")

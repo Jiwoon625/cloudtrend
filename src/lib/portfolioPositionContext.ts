@@ -13,7 +13,7 @@ export async function loadDomesticPositionContext(): Promise<DomesticPositionCon
   if (error) throw error;
   if (!data.session) throw new Error("먼저 로그인해 주세요.");
   return portfolioPositionContextServer({
-    data: { accessToken: data.session.access_token },
+    data: { accessToken: data.session.access_token, source: "master" },
   });
 }
 

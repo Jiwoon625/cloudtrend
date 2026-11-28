@@ -1,3 +1,4 @@
+import { assertLegacyLedgerActive } from "./legacyLedgerRetirement.server";
 import { verifyKrScreeningPublication } from "./krScreeningPublication.server";
 import { hydrateScreeningSnapshot } from "./screeningSnapshotStorage";
 import { createServerFn } from "@tanstack/react-start";
@@ -23,6 +24,7 @@ export const portfolioServer = createServerFn({ method: "POST" })
     const { data: auth, error } = await client.auth.getUser(data.accessToken);
     if (error || !auth.user) throw new Error("로그인 세션 검증에 실패했습니다.");
     const uid = auth.user.id;
+    assertLegacyLedgerActive();
     if (data.sync) {
       const sources = await listActiveSources(client, uid);
       if ((await verifyKrScreeningPublication(client, uid, sources)).phase === "PRELIMINARY")

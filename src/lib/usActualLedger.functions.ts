@@ -1,3 +1,4 @@
+import { assertLegacyLedgerActive } from "./legacyLedgerRetirement.server";
 import { validateExecutionSourceLinks } from "./ledger/executionMemo";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
@@ -56,5 +57,6 @@ export const usActualLedgerServer = createServerFn({ method: "POST" })
     );
     const auth = await client.auth.getUser(data.accessToken);
     if (auth.error || !auth.data.user) throw new Error("로그인 세션을 확인하세요.");
+    assertLegacyLedgerActive();
     return operateUsActual(client, auth.data.user.id, data);
   });

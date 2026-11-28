@@ -10,7 +10,7 @@ import { historyEntryStatus, isHistoryOperationalEntry } from "./historyEntryPre
 import type { AnalysisResult, ScreeningRow } from "@/lib/engine/pipeline";
 import type { SnapshotEntry } from "@/lib/screeningSnapshot";
 
-const state = vi.hoisted(() => ({ showDisqualified: true }));
+const state = vi.hoisted(() => ({ showDisqualified: true, holdingsKnown: true }));
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
   return {
@@ -23,7 +23,12 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
 }));
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => ({ data: { heldSymbols: [], lastSellDateBySymbol: {} } }),
+  useQuery: () => ({
+    isSuccess: state.holdingsKnown,
+    isError: !state.holdingsKnown,
+    data: state.holdingsKnown ? { heldSymbols: [], lastSellDateBySymbol: {} } : undefined,
+    refetch: vi.fn(),
+  }),
 }));
 vi.mock("@/lib/portfolioPositionContext", () => ({ loadDomesticPositionContext: vi.fn() }));
 
@@ -65,6 +70,7 @@ const table = (row: ScreeningRow) =>
 
 beforeEach(() => {
   state.showDisqualified = true;
+  state.holdingsKnown = true;
 });
 
 describe("missing market-cap judgment presentation", () => {
@@ -187,6 +193,18 @@ describe("missing market-cap judgment presentation", () => {
       expect(html).not.toContain("KOSPI 원시 Onset");
     },
   );
+
+  it("labels missing actual holdings as unknown, not zero", () => {
+    state.holdingsKnown = false;
+    const analysis = {
+      asOfDate: date,
+      rows: [pendingRow()],
+      marketGate: { status: "NEUTRAL", metCount: 2 },
+    } as AnalysisResult;
+    const html = renderToStaticMarkup(<ScreenerView mode="STOCK" analysis={analysis} />);
+    expect(html).toContain("진입 준비 (미확인)");
+    expect(html).not.toContain("진입 준비 (0)");
+  });
 
   it("subordinates stored KOSPI confirmation when current eligibility is pending", () => {
     const html = renderToStaticMarkup(

@@ -61,6 +61,7 @@ try {
     screening_run_archive: ["SELECT,INSERT", "SELECT,INSERT"],
     screening_recovery_evidence: ["SELECT", "SELECT,INSERT"],
     actual_entry_decisions: ["SELECT,INSERT", ""],
+    manual_security_master: ["SELECT,INSERT", ""],
     operational_index_installations: [
       "SELECT,INSERT",
       "SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER",
@@ -214,6 +215,9 @@ try {
     ["us_portfolio_trades", "model_price", false],
     ["actual_entry_decisions", "events", true],
     ["actual_entry_decisions", "user_id", false],
+    ["manual_security_master", "rows", true],
+    ["manual_security_master", "review_status", true],
+    ["manual_security_master", "user_id", false],
   ]) {
     const [{ allowed }] = (
       await db.query("select has_column_privilege($1,$2,$3,'UPDATE') allowed", [

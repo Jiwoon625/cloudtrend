@@ -1,3 +1,4 @@
+import { assertLegacyLedgerActive } from "./legacyLedgerRetirement.server";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -32,6 +33,7 @@ export const operatingCapitalPlanServer = createServerFn({ method: "POST" })
       const auth = await client.auth.getUser(data.accessToken);
       if (auth.error || !auth.data.user) throw new Error(CAPITAL_PLAN_ERRORS.auth);
       const uid = auth.data.user.id;
+      if (data.action !== "load") assertLegacyLedgerActive();
       if (data.action === "load")
         return { action: "load", ...(await loadOperatingCapitalPlan(client, uid)) };
       return { action: data.action, ...(await writeOperatingCapitalPlan(client, uid, data)) };

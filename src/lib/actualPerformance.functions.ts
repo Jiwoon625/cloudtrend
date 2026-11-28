@@ -1,3 +1,4 @@
+import { assertLegacyLedgerActive } from "./legacyLedgerRetirement.server";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -62,6 +63,7 @@ export const actualPerformanceServer = createServerFn({ method: "POST" })
           view: actualPerformanceView(series),
         };
       }
+      assertLegacyLedgerActive();
       const input = { ...data.input, expectedRevision: data.expectedRevision };
       if (data.action === "preview")
         return {

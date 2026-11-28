@@ -1,3 +1,4 @@
+import { assertLegacyLedgerActive } from "./legacyLedgerRetirement.server";
 import { createServerFn } from "@tanstack/react-start";
 import { createClient } from "@supabase/supabase-js";
 import { parseNewActualPortfolioRequest } from "./newActualPortfolioInput";
@@ -24,6 +25,7 @@ export const newActualPortfolioServer = createServerFn({ method: "POST" })
     );
     const auth = await client.auth.getUser(data.accessToken);
     if (auth.error || !auth.data.user) throw new Error("로그인 세션을 확인하세요.");
+    assertLegacyLedgerActive();
     try {
       if (data.action !== "load") await saveNewActualPortfolio(client, auth.data.user.id, data);
       return await loadNewActualPortfolio(client, auth.data.user.id);
