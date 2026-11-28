@@ -99,9 +99,35 @@ export function DashboardSignalCounts({
         실제 포트폴리오 진입/EXIT
       </h2>
       <p className="mb-2 text-[10px] leading-relaxed text-muted-foreground">
-        시장별 최신 확정 거래일의 조건과 실제 원장 체결을 함께 봅니다. 조건 충족은 주문·체결 확정이
-        아니며 현금·배분·수량 확인이 필요합니다. Shadow 보유는 실제 후보를 막지 않습니다.
+        {query.data?.master
+          ? "시장별 최신 스크리닝과 확인된 종목마스터 보유현황을 함께 봅니다. 조건 충족은 주문·체결 확정이 아닙니다."
+          : "시장별 최신 확정 거래일의 조건과 실제 원장 체결을 함께 봅니다. 조건 충족은 주문·체결 확정이 아니며 현금·배분·수량 확인이 필요합니다. Shadow 보유는 실제 후보를 막지 않습니다."}
       </p>
+      {query.data?.master && (
+        <div className="mb-3 rounded border p-3 text-xs">
+          <p className="font-medium">
+            종목마스터 · {query.data.master.asOf ?? "기준일 미확인"}
+            {" · "}
+            {query.data.master.status === "confirmed" ? "확인 완료" : "검토 대기"}
+          </p>
+          {query.data.master.counts ? (
+            <p className="mt-1">
+              {MARKETS.map((m) => LABEL[m] + " " + query.data!.master!.counts![m] + "종목").join(
+                " · ",
+              )}
+            </p>
+          ) : (
+            <p className="mt-1 text-warn">실제 보유·진입·청산 확인 대기</p>
+          )}
+          <Link
+            to="/portfolio"
+            search={{ asset: "KR", master: "1" }}
+            className="mt-1 inline-block underline"
+          >
+            종목마스터 확인 →
+          </Link>
+        </div>
+      )}
       {heldPriceExits.length > 0 && (
         <div role="alert" className="mb-3 rounded-md border border-warn p-3 text-xs">
           <p className="font-semibold">
@@ -447,7 +473,9 @@ export function DashboardSignalLists({ query }: { query: OperationsQuery }) {
             않습니다. EXIT는 실제 원장 보유종목의 청산 신호만 집계하며, ETF 자료 미확인은 청산
             신호가 아닙니다. KOSPI는 체결 직전 완료 거래일 시장국면을 다시 확인합니다.
           </p>
-          {tab !== "exits" && selectedMarkets.some((m) => m === "KOSPI" || m === "KOSDAQ") ? (
+          {!query.data?.master &&
+          tab !== "exits" &&
+          selectedMarkets.some((m) => m === "KOSPI" || m === "KOSDAQ") ? (
             <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
               실제 S06 배분은 한국/ETF/미국 40/20/40입니다. 실제 보유·예약 슬롯과 시장별 현금 귀속을
               함께 확인합니다. 예산이나 현금이 미확정이어도 진입 조건 충족은 계속 표시합니다. 예상

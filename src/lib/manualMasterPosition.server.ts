@@ -16,6 +16,9 @@ export function projectMasterPositionContext(
   if (!dates.length || dates.some((date) => date > snapshot.asOf))
     throw new Error("종목마스터 기준일 확인 필요");
   const { positions, recentSells } = masterPositionProjection(snapshot.rows);
+  const symbols = snapshot.rows.map((r) => r.symbol);
+  if (new Set(symbols).size !== symbols.length)
+    throw new Error("시장 간 동일 종목코드 · 상세 보유 조회 확인 필요");
   return {
     masterRevision: snapshot.revision,
     masterAsOf: snapshot.asOf,

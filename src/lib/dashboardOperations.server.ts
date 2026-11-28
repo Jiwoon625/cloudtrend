@@ -484,7 +484,9 @@ export async function loadDashboardOperations(accessToken: string): Promise<Dash
 }
 
 /** Master-only operational read. Never fall back to a ledger or write a holding. */
-export async function loadMasterDashboardOperations(accessToken: string): Promise<DashboardOperations> {
+export async function loadMasterDashboardOperations(
+  accessToken: string,
+): Promise<DashboardOperations> {
   const { client, uid } = await authenticate(accessToken);
   const warnings: string[] = [];
   const safe = async <T>(label: string, read: () => Promise<T>): Promise<T | null> => {
@@ -507,7 +509,8 @@ export async function loadMasterDashboardOperations(accessToken: string): Promis
   const after = await safe("종목마스터 버전", () => loadManualMaster(client, uid));
   const stable = snapshot && after?.revision === snapshot.revision ? snapshot : null;
   const projected = projectManualMasterSignals(stable, kr, us, entries);
-  const held = stable?.reviewStatus === "confirmed" ? masterPositionProjection(stable.rows).positions : null;
+  const held =
+    stable?.reviewStatus === "confirmed" ? masterPositionProjection(stable.rows).positions : null;
   return {
     master: {
       revision: stable?.revision ?? null,

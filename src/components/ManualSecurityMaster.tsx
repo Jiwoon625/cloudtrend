@@ -182,8 +182,14 @@ export function ManualSecurityMaster() {
       setAsOf(s.asOf);
       resetPreview();
       setMessage("저장 완료 · 최신 집계 스냅샷 확인");
-      void queryClient.invalidateQueries({ queryKey: ["domestic-position-context"] });
-      void queryClient.invalidateQueries({ queryKey: ["dashboard-operations"] });
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ["domestic-position-context"] }),
+        queryClient.cancelQueries({ queryKey: ["dashboard-operations"] }),
+      ]);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["domestic-position-context"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard-operations"] }),
+      ]);
     } catch (e) {
       resetPreview();
       setMessage(
